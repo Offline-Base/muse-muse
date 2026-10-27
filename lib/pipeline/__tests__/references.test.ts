@@ -8,6 +8,7 @@ import {
   validateNote,
   validateReferences,
 } from "@/lib/pipeline/references";
+import { uploadFailureMessage } from "@/lib/client/upload";
 
 const URL_OK = "https://abc123xyz.public.blob.vercel-storage.com/inspo/photo-Xy12.png";
 
@@ -120,5 +121,14 @@ describe("validateReferences", () => {
     assert.equal(validateReferences([ref({ fileName: "  " })]).ok, false);
     assert.equal(validateReferences("nope").ok, false);
     assert.equal(validateReferences([null]).ok, false);
+  });
+});
+
+describe("uploadFailureMessage", () => {
+  it("names the real reason a token request failed", () => {
+    assert.match(uploadFailureMessage(401, "signed_out"), /Sign in again/);
+    assert.match(uploadFailureMessage(429, "upload_limit"), /Too many uploads/);
+    assert.match(uploadFailureMessage(503, "uploads_unavailable"), /aren't set up/);
+    assert.match(uploadFailureMessage(0, undefined), /connection/);
   });
 });

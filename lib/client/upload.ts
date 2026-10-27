@@ -38,6 +38,29 @@ function uuid(): string {
 
 export class UploadError extends Error {}
 
+/** What to tell the user when the token route answers `status` with error `code`. */
+export function uploadFailureMessage(status: number, code: string | undefined): string {
+  if (status === 401) return "Upload wasn't allowed. Sign in again, then retry.";
+  if (status === 429 || code === "upload_limit") return "Too many uploads from here in the last hour. Try again later.";
+  if (status === 503 || code === "uploads_unavailable") return "File uploads aren't set up on this site yet.";
+  return "Upload failed. Check your connection and retry.";
+}
+
+/** The Blob client reports every token route failure as "client token", so this asks the route once more for why. */
+async function tokenFailureMessage(pathname: string): Promise<string> {
+  try {
+    const res = await fetch(INSPO_UPLOAD_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "blob.generate-client-token", payload: { pathname, clientPayload: null, multipart: false } }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    return uploadFailureMessage(res.ok ? 0 : res.status, body.error);
+  } catch {
+    return uploadFailureMessage(0, undefined);
+  }
+}
+
 /** Local runs (`npm run dev:local`) have no Blob store: the file goes to /api/files/upload in one request. */
 async function uploadLocal(
   file: PreparedFile,
@@ -89,10 +112,7 @@ export async function uploadInspo(
   } catch (err) {
     if (opts.signal?.aborted) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    // The token route answers 401 when the session is gone; the Blob client only reports "client token".
-    if (/client token/i.test(message)) {
-      throw new UploadError("Upload wasn't allowed. Sign in again, then retry.");
-    }
+    if (/client token/i.test(message)) throw new UploadError(await tokenFailureMessage(pathname));
     throw new UploadError("Upload failed. Check your connection and retry.");
   }
 }
