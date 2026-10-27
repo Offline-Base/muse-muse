@@ -57,22 +57,35 @@ For scene 1:45, set up the two scheduled jobs from [MUSE_SETUP.md](MUSE_SETUP.md
 | 0:15 | The ask | The Muse app, a new chat | Type: "Grade each essay in my essays folder against rubric.md and draft feedback for each student." |
 | 0:30 | Muse plans | Muse's plan and its list_documents call, showing `[Student A]`, `[Student B]`... | "Muse plans the job with tags. It never sees a name." |
 | 0:45 | The device works | The light (or plush) green; the Device tab showing working; terminal 1 quiet | "Every step that reads an essay runs on the device, with Muse Glimmer." Caption from the table above. |
-| 1:05 | Her OK | The light pulses amber; the Approvals tab with the card: the exact tagged per-student table and the router's reason | Ask Muse "Is the grading done?" It says it is waiting for her OK. Press **Share it** (with remember ticked). The light flashes blue. |
+| 1:05 | Her OK | The light pulses amber; the Approvals tab with the card: Muse's request, the exact tagged per-student table and the router's reason | Ask Muse "Is the grading done?" It says it is waiting for her OK. Press **Share it** (with remember ticked). The light flashes blue. |
 | 1:25 | The result | Muse's answer with class results by tag; then Finder on `~/.base/output/<job id>/` with 24 `<Name> feedback.md` files; open one | "Muse got tags. The feedback with real names never left her laptop." |
-| 1:45 | Dreaming | The 8 AM message from Muse (or the Dreaming tab after **Dream now**), then `eval/reports/final/five_nights.png` | Read the one-sentence morning message. Then the chart: approval requests per day and holdout agreement per night. Say only what the chart and final.md show (see the note below). |
+| 1:45 | Dreaming | The 8 AM message from Muse (or the Dreaming tab after **Dream now**), then `eval/reports/final/five_nights.png` with the caption "Simulated teacher, invented items." | Read the one-sentence morning message. Then the chart: approval requests per day and holdout agreement per night. Say only what the chart and final.md show (see the note below). |
 | 2:10 | Why it matters | Text: "12% of consumers fully trust organizations with their identity data (Ping Identity, 2026). 77% worry about AI agents acting for them (Thales, 2026)." Then: "Schools. Healthcare. City agencies." | "These are the sectors that can't use Muse today." |
 | 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer: Q4_K_M on a laptop, i1-IQ1_S on a Jetson Orin Nano." | "Personal superintelligence that can work on your private life." |
 
 The plan had the approval card show a tagged class summary. The code shows the tagged per-student table, because grading results go out as per-student results (see docs/DECISIONS.md). The scene works the same way; just do not call it a summary.
 
+The card now also shows what the device read in Muse's request, as chips in the policy's words: "For a student's family", "For someone outside the class", "Whole text", "Asks who a tag is" or "Class-level question". The grading request has none of these, so the 1:05 card shows no chip; do not promise one there. To show a chip, film MUSE_SETUP.md test step 4 ("Find a student quote about the school garden for the family newsletter.") as an extra cut: its card shows "For a student's family". A card whose result would go out as a summary says "What would leave this device: a summary, not the full result" above the text.
+
 ## What the chart may and may not claim
 
-Say what `eval/reports/final/nights.md` says, nothing more:
+Say what `eval/reports/final/nights.md` and `eval/reports/final.md` say, nothing more. Everything on the chart comes from a simulated teacher (`eval/user_policy.yaml`) answering invented items, not a real one; say so in the caption.
 
-- Leaks, as of Oct 27: 0 in the 100-item run, the holdout, every night's holdout scoring and both grading jobs. One text on simulated day 5 was flagged by the eval's checker; it is a false positive (the verb "rose" matched the invented student Rose). Until the checker is fixed and the five nights are rerun, do not put "Leaks: 0 on every run" on screen. "0 leaks in 100 eval items and two 24-essay grading jobs" is accurate.
-- The chart's own "Leaks: 0 on every night" line counts the holdout runs only.
-- Approval requests per day and holdout accuracy per night are from a simulated teacher (`eval/user_policy.yaml`), not a real one.
-- In the final run the gate kept no night's rules: approval requests went 11, 12, 9, 8, 10 and holdout agreement stayed at 75%. The honest line is "dreaming never made it less safe; on what the connector really sends, it has not learned much yet", not "it learns your rules". The tuning run's rising chart (`eval/reports/five_nights.png`) used hand labels and practice data labeled with the teacher's own policy; if you show it, caption it "upper bound, hand-labeled inputs".
+May say:
+
+- "Over five simulated days, approval requests fell from 10 a day to 6." Each day had 5 items she wanted to be asked about, so the unneeded requests went 5, 3, 2, 2, 1.
+- "The nightly gate kept all five nights, and agreement on the 20 held-out items went from 75% to 90%." Add that the gate selects on those items, so this is an upper bound.
+- "On 100 practice items it never saw, agreement went from 70% to 79%, with 30 approval requests instead of 53." This is the more honest learning number, so prefer it if you say only one.
+- Leaks: "0 leaks in 100 eval items, the holdout, five simulated days and two 24-essay grading jobs."
+
+May not say:
+
+- "0 leaks on every run" or "it never leaks". The unseen test had one leak with the night-0 router: an approved snippet kept an invented name that is not on the roster, which Glimmer's name pass missed. The chart's "Leaks: 0 on every night" line counts the holdout and the days only.
+- "It learns your rules" or "90% accurate" without the simulated teacher and the upper-bound caveat.
+- "It only gets more careful." On the unseen test it asked less than she wanted on 8 of 25 items (ask first 100% to 68%), because two approvals taught a broad rule for snippets. Those went out tagged, so they are not leaks, but the claim would be false.
+- That night 3 got worse. Its dip from 85% to 80% is the same rules scoring lower on a re-run, not new rules doing worse.
+
+The first final run's chart, where the gate kept no rules, is in `eval/reports/before_fixes/final/five_nights.png`; the tuning run's rising chart (`eval/reports/five_nights.png`) used hand labels and practice data labeled with the teacher's own policy. Do not show either as the result.
 
 ## Fallbacks while filming
 
@@ -82,6 +95,9 @@ Say what `eval/reports/final/nights.md` says, nothing more:
 | The light or the plush is not ready | Film the Device tab's state instead, or the bare board with the plush beside it as a prop |
 | The scheduled 8 AM message did not arrive | Press Dream now on the Dreaming tab, then ask Muse "How did the dreaming run go? One sentence with the numbers." |
 | Grading is slow on the device | Grade a smaller folder and say how many essays on screen |
+| A search answers with a job id instead of snippets | That is the device waiting for her OK or still checking. Press **Share it** if a card is up, then ask Muse "Check that search again." so it calls get_result with the id |
+| The newsletter search shares without a card | Muse left out who the snippets are for. Ask again with "for the family newsletter" in the prompt, or skip the chip cut |
+| The approval card shows a name you did not expect | Press **Keep it here** and do not record that take. Note the document; it is the name pass missing a name that is not on the roster |
 | Anything leaks in a rehearsal | Stop. Do not record. Fix it and rerun the eval first |
 
 ## Submission checklist

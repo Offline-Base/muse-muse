@@ -149,6 +149,30 @@ class JobStore:
     def fail(self, job_id: str, error: str) -> None:
         self.set_status(job_id, "failed", error=error)
 
+    def job_for_result(self, kind: str, instructions: str, raw_result: str, result_kind: str) -> str:
+        """A finished job for a result made inside one tool call, such as a search, so it can be
+        released like a private task's result.
+
+        While an identical one (same kind, request and raw result) is still unreleased, being
+        released or waiting for the user, its id comes back instead: a retried call joins that
+        release rather than starting a second one and a second approval card.
+        """
+        with self._lock, self._connect() as db:
+            row = db.execute(
+                "SELECT id FROM jobs WHERE kind = ? AND instructions = ? AND raw_result = ? AND status != 'failed' "
+                "AND release_status IN ('none', 'releasing', 'waiting') ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (kind, instructions, raw_result),
+            ).fetchone()
+            if row is not None:
+                return row["id"]
+            job_id, now = uuid.uuid4().hex[:16], time.time()
+            db.execute(
+                "INSERT INTO jobs (id, kind, instructions, status, created_at, finished_at, result_kind, raw_result) "
+                "VALUES (?, ?, ?, 'done', ?, ?, ?, ?)",
+                (job_id, kind, instructions, now, now, result_kind, raw_result),
+            )
+            return job_id
+
     def claim_release(self, job_id: str) -> bool:
         """Mark a finished job's release as under way. Only one caller wins; the rest see False.
 

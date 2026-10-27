@@ -12,6 +12,8 @@ Command: `uv run python -m eval.run_eval --set eval/tasks.jsonl --name topics_cl
 | Learned rules | none |
 | Router inputs | as the connector sends them: kind mapped to what the device emits, topics only from the guard's keyword scan |
 
+Note added Oct 27, after a review; the metrics below are unedited. The Router inputs line above is wrong for this run. Topics also came from never-share keywords in Muse's tagged request (a request-only one was refused then; it asks now) and from the device model's labels for the policy's request topics, about one extra Glimmer call per result. The run also predates `production_labels`: per_student items went in as per_student with no job topics, where the agent sends a grading table with `grades, writing` only when the request has a grading word and anything else as free_text. Compare it with later reports with that in mind.
+
 ## Overall
 
 | Metric | Value |

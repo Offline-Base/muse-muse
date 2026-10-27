@@ -24,6 +24,7 @@ Everything in this repository: the device code in `base/`, the relay in `relay/`
 |---|---|---|
 | The code and docs | Claude Code (Anthropic's coding agent), directed by Ethan | Every commit carries a Co-Authored-By line. Muse Code has not been used for any part yet; the plan is to use it for at least one piece and say which here. |
 | `eval/synthetic.jsonl` (2,000 practice items) | Muse Spark 1.3 through the Meta Model API (`scripts/make_synthetic.py`) | The plan wanted Muse to write this set on its VM; the Spark API was the plan's fallback. `eval/reports/synthetic.md` has the commands and checks. |
+| `eval/reports/grading_crosscheck.md` (a second grading of the 24 invented essays) | Muse Spark 1.3 through the Meta Model API (`scripts/grade_crosscheck.py`) | Spark got the same grading prompt, rubric and essays as Glimmer, with names and identifiers swapped for tags, and its scores are compared with Glimmer's. A second opinion, not ground truth; scores only are kept. |
 | `eval/tasks.jsonl`, `eval/holdout.jsonl`, `eval/roster.json`, `demo/` | Written during the event for this repo | All invented. `eval/DATASET.md` describes them. |
 
 ## Not ours, used as published

@@ -1,6 +1,7 @@
 """Simulate school days and nights: does dreaming cut the approval requests without leaking?
 
     uv run python -m scripts.simulate_nights --nights 5 --per-day 20 [--home DIR] [--synthetic PATH|none]
+        [--unseen PATH|none] [--unseen-n 100] [--unseen-seed 0] [--unseen-exclude PATH ...|none]
 
 Night 0 scores the router on the holdout with no learned rules. Each day sends a fixed, seeded
 pick of the non-holdout eval items through egress, spread evenly over the four expected
@@ -11,6 +12,12 @@ eval/reports/nights.csv and eval/reports/nights.md. All items are invented.
 Approval requests are split into wanted (the teacher's policy says to ask about that item) and
 unneeded (the policy would have shared or refused it without asking). Only the unneeded ones
 can go away with learning.
+
+Unseen test: the gate selects on the holdout, so the night-0 router and the router after the last
+night are also scored once each on a fixed, seeded sample of eval/synthetic.jsonl that the days,
+the gate and dreaming never use (it is left out of practice data too). The sample also leaves out
+the ids scripts/check_request_topics.py scored while the request-topic descriptions were written
+(eval/reports/raw/request_topics*.jsonl), unless --unseen-exclude says otherwise.
 """
 
 from __future__ import annotations
@@ -34,8 +41,11 @@ EVAL_DIR = run_eval.EVAL_DIR
 FIELDS = (
     "night", "approval_requests", "accuracy", "agreement", "leaks", "kept", "seconds",
     "wanted_requests", "unneeded_requests", "day_mix", *(f"acc_{d}" for d in DECISIONS),
-    "day_leaks", "user_rules", "practice_rules",
+    "day_leaks", "user_rules", "practice_rules", "gate_rerun",
 )  # fmt: skip
+UNSEEN_N = 100
+# Ids the request-topic check scored while its descriptions were written: not unseen for that pass.
+TOPIC_CHECK_GLOB = "request_topics*.jsonl"
 
 
 def pick_items(items: list[dict], day: int, per_day: int) -> list[dict]:
@@ -55,6 +65,49 @@ def pick_items(items: list[dict], day: int, per_day: int) -> list[dict]:
         random.Random(f"{1000 + cycle}:{key}").shuffle(order)
         picks.append(group[order[index]])
     return picks
+
+
+def sample_unseen(items: list[dict], n: int, seed: int, exclude: set[str] = frozenset()) -> list[dict]:
+    """`n` items drawn with `seed`, leaving out `exclude`: an equal share per expected decision as
+    far as the set allows (a decision with too few items leaves its share to the others), in file
+    order. Same inputs, same sample."""
+    groups: dict = {}
+    for item in items:
+        if item["id"] not in exclude:
+            groups.setdefault(item.get("expected"), []).append(item)
+    keys = sorted(groups, key=lambda k: (DECISIONS.index(k) if k in DECISIONS else len(DECISIONS), str(k)))
+    for key in keys:
+        random.Random(f"{seed}:{key}").shuffle(groups[key])
+    picked: set[str] = set()
+    while len(picked) < n and any(groups[k] for k in keys):
+        for key in keys:
+            if len(picked) < n and groups[key]:
+                picked.add(groups[key].pop()["id"])  # round robin, one per decision at a time
+    return [i for i in items if i["id"] in picked]
+
+
+def ids_in(paths: list[Path]) -> set[str]:
+    """Every item id in these JSONL files (missing files count as empty)."""
+    return {str(i["id"]) for p in paths if Path(p).is_file() for i in run_eval.load_items(p) if "id" in i}
+
+
+def score_unseen(settings, items: list[dict], home: Path, raw_dir: Path | None = None) -> list[dict]:
+    """Score the night-0 router (no learned rules) and the rules in place in `home` once each on
+    `items`, with production inputs. When no night kept rules, the router after the last night is
+    the night-0 router, so it is not scored again. Writes each run's raw rows to `raw_dir`."""
+    rules = run_eval.prepare_home(settings, home).paths.router_prompt
+    first = run_eval.evaluate(settings, items, rules_path=None, name="unseen-night-0")
+    last = run_eval.evaluate(settings, items, rules_path=rules, name="unseen-last-night") if rules.is_file() else None
+    out = [_unseen_row("Night 0, no learned rules", first)]
+    if last is None:
+        out.append(_unseen_row("After the last night: no rules kept, so the night-0 router (not scored again)", first))
+    else:
+        out.append(_unseen_row(f"After the last night, {run_eval.describe_rules(rules)}", last))
+    if raw_dir is not None:
+        Path(raw_dir).mkdir(parents=True, exist_ok=True)
+        for report in filter(None, (first, last)):
+            run_eval.write_raw_rows(report, Path(raw_dir) / f"{report.name}.jsonl")
+    return out
 
 
 def run_day(services, items: list[dict], day: int, per_day: int) -> dict:
@@ -104,7 +157,10 @@ def simulate(
     holdout_path: Path,
     synthetic_path: Path | None,
     raw_dir: Path | None = None,
+    exclude_ids: set[str] = frozenset(),
 ) -> list[dict]:
+    """Night 0, then `nights` days and nights. `exclude_ids` (the unseen test sample) are never
+    trained on, even when the practice data contains them."""
     items = run_eval.load_items(tasks_path)
     holdout = run_eval.load_items(holdout_path)
     holdout_ids = {i["id"] for i in holdout}
@@ -124,6 +180,7 @@ def simulate(
         day = run_day(services, day_items, night, per_day)
         runner = NightRunner(services, holdout_path=holdout_path, synthetic_path=synthetic_path or "")
         runner.raw_dir = raw_dir
+        runner.exclude_ids = set(exclude_ids)
         r = runner.run_night()
         accuracy = r.accuracy_after if r.kept else r.accuracy_before
         agreement = r.agreement_after if r.kept else r.agreement_before
@@ -136,6 +193,7 @@ def simulate(
             "day_leaks": day["leaks"],
             "user_rules": user_rules,
             "practice_rules": practice_rules,
+            "gate_rerun": _blank(getattr(r, "gate_rerun", None)),
         }
         rows.append(row | _categories(getattr(r, "categories", None) or {}))
         _close(services)
@@ -153,6 +211,8 @@ def write_outputs(
     items: int,
     holdout: int,
     practice: str = "none (learning only from the simulated teacher's answers)",
+    unseen: list[dict] = (),
+    unseen_note: str = "",
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "nights.csv").open("w", newline="") as f:
@@ -174,7 +234,9 @@ def write_outputs(
         f"| Day items | {items} (holdout excluded) |",
         f"| Holdout items | {holdout} |",
         f"| Practice data | {practice} |",
-        "| Router inputs | as the connector sends them (no hand-labeled topics; see eval/run_eval.py) |",
+        "| Router inputs | as the connector sends them (eval/run_eval.py production_labels: the kind and job "
+        "topics follow the agent's own trigger, a grading word in the request, never the hand labels; plus "
+        "the topics egress finds) |",
         "",
         "Each day the simulated teacher answers every approval request. Each night the router learns",
         "from those answers and is scored on the holdout items, which it never trains on. Approval",
@@ -182,8 +244,9 @@ def write_outputs(
         "in place after it. Night 0 is the router with no learned rules.",
         "",
         "The holdout is never trained on, but it is selected on: the dreaming gate scores the current",
-        "and the new rules on these same items and keeps the better ones, so each night's number is the",
-        "better of two runs on the set that chose it. Treat night-over-night gains as an upper bound.",
+        "rules on these same items, re-runs the new rules only on the items whose learned rules differ",
+        "(the rest reuse the current rules' run), and keeps the new rules when they are no worse. Treat",
+        "night-over-night gains as an upper bound; the unseen test below is the number the gate never saw.",
         "Day leaks count every text Muse would get that day, including what an approval releases.",
         "",
         "Each day's items are dealt evenly over the four expected decisions. Wanted requests are",
@@ -220,7 +283,55 @@ def write_outputs(
             "",
             "Items per expected decision each day: " + "; ".join(f"day {n} {m}" for n, m in mixes) + ".",
         ]
+    reruns = [(r["night"], r.get("gate_rerun", "")) for r in rows if r.get("gate_rerun", "") != ""]
+    if reruns:
+        lines += [
+            "",
+            "Holdout items the gate re-ran on each night's new rules (the rest reuse the current rules' run): "
+            + "; ".join(f"night {n} {k} of {holdout}" for n, k in reruns)
+            + ".",
+        ]
+    lines += unseen_table(unseen, unseen_note)
     (out_dir / "nights.md").write_text("\n".join(lines) + "\n")
+
+
+def unseen_note(sample: list[dict], path: Path | None, seed: int, exclude_files: list[Path], left_out: int) -> str:
+    """One paragraph saying where the unseen test items came from and what they never touched."""
+    if not sample:
+        return ""
+    mix = Counter(i.get("expected") for i in sample)
+    files = ", ".join(run_eval.display_path(f) for f in exclude_files)
+    return (
+        f"{len(sample)} items from {run_eval.display_path(path)}, drawn with seed {seed} "
+        f"({' '.join(f'{d}:{mix[d]}' for d in DECISIONS if mix[d])}), leaving out the eval tasks, the holdout"
+        + (f" and the {left_out} ids in {files}" if files else "")
+        + ". The days, the gate and dreaming never use them, and they are left out of practice data too. "
+        "Production inputs, as for the holdout. Each router is scored once. The items were written by Muse "
+        "Spark and labeled with the simulated teacher's own policy."
+    )
+
+
+def unseen_table(rows: list[dict], note: str = "") -> list[str]:
+    """The unseen test as markdown lines (none when it did not run)."""
+    if not rows:
+        return []
+    lines = [
+        "",
+        "## Unseen test",
+        "",
+        *([note, ""] if note else []),
+        "| Router | Items | Accuracy | Agreement | Approval requests | Leaks | Errors or fallbacks | "
+        + " | ".join(DECISIONS)
+        + " |",
+        "|---|---|---|---|---|---|---|" + "---|" * len(DECISIONS),
+    ]
+    for r in rows:
+        cells = [_pct_cell(r.get(f"acc_{d}", "")) for d in DECISIONS]
+        lines.append(
+            f"| {r['router']} | {r['n']} | {float(r['accuracy']) * 100:.1f}% | {float(r['agreement']) * 100:.1f}% "
+            f"| {r['approval_requests']} | {r['leaks']} | {r['unscored']} | " + " | ".join(cells) + " |"
+        )
+    return lines
 
 
 def format_table(rows: list[dict]) -> str:
@@ -249,13 +360,44 @@ def main(argv: list[str] | None = None, settings=None) -> int:
         "simulated teacher's own policy, so a run with it is an ablation, not learning from her answers",
     )
     p.add_argument("--out", type=Path, default=run_eval.REPORTS_DIR)
+    p.add_argument(
+        "--unseen",
+        default=str(EVAL_DIR / "synthetic.jsonl"),
+        help="items for the unseen test, which the days, the gate and dreaming never use, or none",
+    )
+    p.add_argument("--unseen-n", type=int, default=UNSEEN_N, help="unseen test sample size (default 100)")
+    p.add_argument("--unseen-seed", type=int, default=0, help="seed of the unseen test sample")
+    p.add_argument(
+        "--unseen-exclude",
+        nargs="+",
+        help="JSONL files whose ids the unseen sample leaves out, or none "
+        f"(default: eval/reports/raw/{TOPIC_CHECK_GLOB}, the request-topic check's samples)",
+    )
     args = p.parse_args(argv)
     if args.home and args.home.exists() and any(args.home.iterdir()):
         p.error("--home must be an empty or new folder, so the simulation starts fresh")
+    unseen_path = None if str(args.unseen).lower() == "none" else Path(args.unseen)
+    if unseen_path is not None and not unseen_path.is_file():
+        p.error(f"no unseen test items at {args.unseen}")
 
     settings = settings or load_settings()
     synthetic = None if str(args.synthetic).lower() == "none" else Path(args.synthetic)
     command = run_eval.command_line("scripts.simulate_nights", argv)
+    tasks, holdout = run_eval.load_items(args.tasks), run_eval.load_items(args.holdout)
+    holdout_ids = {i["id"] for i in holdout}
+    if args.unseen_exclude is None:
+        exclude_files = sorted((run_eval.REPORTS_DIR / "raw").glob(TOPIC_CHECK_GLOB))
+    elif [a.lower() for a in args.unseen_exclude] == ["none"]:
+        exclude_files = []
+    else:
+        exclude_files = [Path(a) for a in args.unseen_exclude]
+    left_out = ids_in(exclude_files)
+    known = {str(i["id"]) for i in tasks + holdout}
+    sample = (
+        sample_unseen(run_eval.load_items(unseen_path), args.unseen_n, args.unseen_seed, known | left_out)
+        if unseen_path is not None
+        else []
+    )
     with tempfile.TemporaryDirectory(prefix="base-sim-") as tmp:
         home = args.home or Path(tmp) / "home"
         rows = simulate(
@@ -267,17 +409,19 @@ def main(argv: list[str] | None = None, settings=None) -> int:
             holdout_path=args.holdout,
             synthetic_path=synthetic,
             raw_dir=args.out / "raw" / "nights",
+            exclude_ids={i["id"] for i in sample},
         )
-    holdout_ids = {i["id"] for i in run_eval.load_items(args.holdout)}
-    day_n = sum(1 for i in run_eval.load_items(args.tasks) if i["id"] not in holdout_ids)
+        unseen = score_unseen(settings, sample, home, raw_dir=args.out / "raw" / "nights") if sample else []
+    day_n = sum(1 for i in tasks if i["id"] not in holdout_ids)
     practice = (
         "none (learning only from the simulated teacher's answers)"
         if synthetic is None
         else f"{run_eval.display_path(synthetic)} (labeled with the teacher's own policy: an ablation)"
     )
     write_outputs(
-        rows, args.out, command=command, settings=settings, items=day_n, holdout=len(holdout_ids), practice=practice
-    )
+        rows, args.out, command=command, settings=settings, items=day_n, holdout=len(holdout_ids), practice=practice,
+        unseen=unseen, unseen_note=unseen_note(sample, unseen_path, args.unseen_seed, exclude_files, len(left_out)),
+    )  # fmt: skip
     print(format_table(rows))
     print(f"Wrote nights.csv and nights.md in {run_eval.display_path(args.out)}")
     return 0
@@ -298,11 +442,29 @@ def _row(night, asked, accuracy, agreement, leaks, kept, seconds) -> dict:
         "day_leaks": "",
         "user_rules": "",
         "practice_rules": "",
+        "gate_rerun": "",
     }
 
 
 def _categories(accuracy: dict) -> dict:
     return {f"acc_{d}": round(accuracy[d], 4) if d in accuracy else "" for d in DECISIONS}
+
+
+def _unseen_row(label: str, r: run_eval.EvalReport) -> dict:
+    """Aggregate numbers only for one unseen-test run."""
+    return {
+        "router": label,
+        "n": r.n,
+        "accuracy": r.accuracy,
+        "agreement": r.agreement,
+        "approval_requests": r.approval_requests,
+        "leaks": r.leaks,
+        "unscored": r.errors + r.fallbacks,
+    } | _categories(r.category_accuracy())
+
+
+def _blank(value) -> object:
+    return "" if value is None else value
 
 
 def _dash(value) -> str:

@@ -7,10 +7,10 @@ Command: `uv run python -m eval.run_eval --set eval/tasks.jsonl --holdout --name
 | Device | laptop (OpenRouter Glimmer) |
 | Backend | openrouter |
 | Model | meta/muse-glimmer-30b |
-| Date | 2026-10-27 05:51 |
+| Date | 2026-10-27 09:15 |
 | Items | 20 |
 | Learned rules | none |
-| Router inputs | as the connector sends them: kind mapped to what the device emits, topics only from the guard's keyword scan |
+| Router inputs | as the connector sends them: kind mapped to what the device emits and the grading job's topics on per-student grades; topics also from never-share keywords in the result and in Muse's request, and from the device model's labels for the policy's request topics (when it has any) |
 
 ## Overall
 
@@ -26,11 +26,11 @@ Command: `uv run python -m eval.run_eval --set eval/tasks.jsonl --holdout --name
 | Outcome accuracy (what Muse got: shared, waiting or kept) | 75.0% |
 | Approvals the simulated teacher gave, leak-checked after release | 6 |
 | Decided by | model 19, rule 1 |
-| Router latency, mean | 1653 ms |
-| Router latency, p95 | 2955 ms |
+| Router latency, mean | 1424 ms |
+| Router latency, p95 | 2050 ms |
 | Items decided by the model | 19 (the rest took a rule path with no model call) |
-| Router latency on those items, mean | 1740 ms |
-| Router latency on those items, p95 | 3175 ms |
+| Router latency on those items, mean | 1499 ms |
+| Router latency on those items, p95 | 2068 ms |
 | Tokens | not reported |
 
 ## By category
@@ -56,3 +56,7 @@ Rows are the expected decision, columns what the router decided.
 | refuse | 0 | 0 | 1 | 4 |
 
 Raw rows: raw/final_cloud_holdout.jsonl next to this report (ids and decisions only, no result text).
+
+## Cost
+
+OpenRouter spend, from the API key's total usage read just before and just after the run (anything else billed to the key in that window would count too): $0.0178 for this run (20 items, about 1 min 40 s of wall time).

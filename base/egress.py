@@ -11,13 +11,15 @@ from __future__ import annotations
 import functools
 import logging
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from base import events as events_module
 from base import guard as guard_module
 from base.config import CloudBackendRefused, assert_synthetic
-from base.types import Hit, RouteDecision, RouteInput, TagResult, default_share_form
+from base.router import never_share_floor
+from base.types import IDENTIFIER_KINDS, Hit, RouteDecision, RouteInput, TagResult, default_share_form
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +29,6 @@ KEPT_TEXT = "Kept on your device."
 SUMMARY_FAILED = "A class summary could not be made without per-student detail, so it stayed on the device."
 NAME_CHECK_FAILED = "The device could not finish its check for names, so the result stayed on the device."
 TOPIC_CHECK_FAILED = "The device could not finish reading what the request is for, so the result stayed on the device."
-REQUEST_WITHHELD = "(request withheld)"
 
 # Kinds whose text is built by the device itself from numbers only: the guard's roster and
 # identifier passes cover them, so they skip the model's second pass for names. Document lists
@@ -74,6 +75,51 @@ class Released:
     # True when a check could not run (the model was down or busy): nothing was decided or
     # recorded, and the same release can be tried again later.
     retryable: bool = False
+
+
+def request_keyword_topics(raw_request: str, tagged_request: str, never_share: Mapping, scan=None) -> list[str]:
+    """Never-share topics whose keywords are in Muse's request. The raw request is scanned too
+    (a local regex on the device; nothing is stored or sent), so a keyword inside a tagged span
+    still counts: "1200 Oak Avenue" is "[Address 1]" once tagged."""
+    scan = scan or guard_module.blocked_topics
+    return list(dict.fromkeys([*scan(raw_request or "", never_share), *scan(tagged_request or "", never_share)]))
+
+
+def needs_topic_pass(result_kind: str, tagged: TagResult, own_topics: Sequence[str], policy: Any) -> bool:
+    """Whether the request-topic model pass could change the outcome: not for NO_TOPIC_PASS kinds,
+    and not when the result's own never-share topics already make the floor refuse."""
+    if result_kind in NO_TOPIC_PASS:
+        return False
+    never_share = policy.never_share
+    own_blocked = [t for t in own_topics if t in never_share]
+    return never_share_floor(tagged.blocked, own_blocked, getattr(policy, "ask_first", None) or ()) != "refuse"
+
+
+def route_input(
+    asked: TagResult,
+    result_kind: str,
+    tagged: TagResult,
+    own_topics: Sequence[str],
+    asked_about: Sequence[str],
+    never_share: Mapping,
+    summary: str | None = None,
+) -> RouteInput:
+    """The RouteInput egress routes: the tagged result with its hits and blocked reasons, plus the
+    identifier hits in Muse's tagged request (`asked`); the result's own topics (`own_topics`: job
+    and keyword topics) then the request's (`asked_about`); and in `request_blocked` the
+    never-share topics only the request names. scripts/cloud/quant_eval_modal.py builds its
+    lookups with it too, so the two cannot drift apart."""
+    return RouteInput(
+        request=asked.text,
+        result_kind=result_kind,
+        tagged_text=tagged.text,
+        # an identifier in the request (an address, a phone) is a reason to ask too
+        hits=[*tagged.hits, *(h for h in asked.hits if h.kind in IDENTIFIER_KINDS)],
+        blocked=list(tagged.blocked),
+        summary=summary,
+        topics=list(dict.fromkeys([*own_topics, *asked_about])),
+        request_blocked=[t for t in asked_about if t in never_share and t not in own_topics],
+    )
 
 
 def refusal_text(floors: list[str] | tuple[str, ...] | None = None) -> str:
@@ -127,25 +173,19 @@ class Egress:
             held = RouteDecision("refuse", NAME_CHECK_FAILED, "fallback", 0, ["name_check"])
             return Released("refused", HELD_TEXT, None, held, None, retryable=True)
         # Muse's request is stored on the device and shown to the router: tag it too, in case
-        # Muse was given a real name some other way.
-        request = self._tag_request(request)
+        # Muse was given a real name some other way. The raw request goes no further than here.
+        own_topics = list(dict.fromkeys([*topics, *tagged.topics]))
         try:
-            asked_about = self._request_topics(request, result_kind, synthetic)
-        except Exception as exc:  # the topic pass broke: hold rather than route without it
-            log.warning("request topics failed (%s); holding the result", type(exc).__name__)
+            asked = self._tag_request(request)
+            asked_about = self._request_topics(request, asked.text, result_kind, tagged, own_topics, synthetic)
+        except Exception as exc:  # tagging the request or the topic pass broke: hold, never route without it
+            log.warning("request check failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "topic_check_failed")
             held = RouteDecision("refuse", TOPIC_CHECK_FAILED, "fallback", 0, ["topic_check"])
             return Released("refused", HELD_TEXT, None, held, tagged, retryable=True)
-        all_topics = list(dict.fromkeys([*topics, *tagged.topics, *asked_about]))
-        inp = RouteInput(
-            request=request,
-            result_kind=result_kind,
-            tagged_text=tagged.text,
-            hits=list(tagged.hits),
-            blocked=list(tagged.blocked),
-            summary=summary,
-            topics=all_topics,
-        )
+        request = asked.text
+        inp = route_input(asked, result_kind, tagged, own_topics, asked_about, s.policy.never_share, summary)
+        all_topics = inp.topics
         route = s.router.decide(inp, synthetic=synthetic)
         shown_form = default_share_form(result_kind, all_topics)
 
@@ -238,30 +278,33 @@ class Egress:
             never_share=s.policy.never_share,
         )
 
-    def _tag_request(self, request: str) -> str:
-        """Muse's request with roster names, known values and identifiers tagged (no model call)."""
+    def _tag_request(self, request: str) -> TagResult:
+        """Muse's request with roster names, known values and identifiers tagged (no model call).
+        Raises if tagging fails; the caller holds the result."""
         if not request:
-            return request
+            return TagResult(request or "")
         s = self.services
-        try:
-            return self.guard.tag(request, s.roster, s.tagmap).text
-        except Exception as exc:  # unsure: keep only that a request was made
-            log.warning("request tagging failed: %s", type(exc).__name__)
-            return REQUEST_WITHHELD
+        return self.guard.tag(request, s.roster, s.tagmap)
 
-    def _request_topics(self, request: str, result_kind: str, synthetic: bool) -> list[str]:
+    def _request_topics(
+        self, raw_request: str, request: str, result_kind: str, tagged: TagResult, own_topics: list[str], synthetic: bool
+    ) -> list[str]:
         """Never-share topics named in Muse's request, plus the policy's request topics the answer
-        model finds in it ("meant for a student's family"). A result can be harmless text while the
-        request says where it is going, so rules and dreaming need both. Raises if the model pass
-        fails; the caller holds the result."""
+        model finds in the tagged `request` ("meant for a student's family"). A result can be
+        harmless text while the request says where it is going, so rules and dreaming need both.
+
+        The keyword scan reads the raw request too (request_keyword_topics), and the model pass
+        runs only when its labels could change the outcome (needs_topic_pass). Raises if the model
+        pass fails; the caller holds the result."""
         s = self.services
-        scan = getattr(self.guard, "blocked_topics", None) or guard_module.blocked_topics
-        found = list(scan(request, s.policy.never_share))
+        found = request_keyword_topics(
+            raw_request, request, s.policy.never_share, getattr(self.guard, "blocked_topics", None)
+        )
         wanted = getattr(s.policy, "request_topics", None) or {}
         label = getattr(getattr(s, "answer_llm", None), "request_topics", None)
-        if wanted and callable(label) and result_kind not in NO_TOPIC_PASS and request and request != REQUEST_WITHHELD:
-            found += label(request, wanted, synthetic=synthetic)
-        return found
+        if not (wanted and callable(label) and request and needs_topic_pass(result_kind, tagged, own_topics, s.policy)):
+            return found
+        return found + label(request, wanted, synthetic=synthetic)
 
     def _name_pass(self, result_kind: str, synthetic: bool):
         if result_kind in NO_NAME_PASS:

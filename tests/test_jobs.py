@@ -134,3 +134,54 @@ def test_adds_missing_columns_to_an_older_table(tmp_path):
     store.finish(job_id, "raw", "free_text", topics=["grades"])
     store.set_release(job_id, "shared", released_text="ok")
     assert store.get(job_id)["topics"] == ["grades"]
+
+
+def test_job_for_result_keeps_one_release_per_identical_result(store):
+    args = ("search", "evidence", "1. raw snippet", "snippet")
+    first = store.job_for_result(*args)
+    job = store.get(first)
+    assert job["kind"] == "search" and job["status"] == "done" and job["release_status"] == "none"
+    assert job["instructions"] == "evidence" and job["raw_result"] == "1. raw snippet"
+    assert job["result_kind"] == "snippet" and job["finished_at"] == job["created_at"]
+    assert store.active_count() == 0  # never counted against the private task limit
+    # Unreleased, being released or waiting for the user: a retried call gets the same job.
+    assert store.job_for_result(*args) == first
+    assert store.claim_release(first)
+    assert store.job_for_result(*args) == first
+    store.set_release(first, "waiting", approval_id=4)
+    assert store.job_for_result(*args) == first
+    # A different request, result or kind is its own job.
+    others = {
+        store.job_for_result("search", "evidence\nPurpose: for the family newsletter", "1. raw snippet", "snippet"),
+        store.job_for_result("search", "evidence", "1. another snippet", "snippet"),
+        store.job_for_result("private_task", "evidence", "1. raw snippet", "snippet"),
+    }
+    assert len(others) == 3 and first not in others
+    # Once shared or refused, the same result later is a new job with its own check.
+    store.set_release(first, "shared", released_text="[Student A] cites the article")
+    later = store.job_for_result(*args)
+    assert later != first
+    store.set_release(later, "refused", released_text="Kept on your device.")
+    assert store.job_for_result(*args) not in (first, later)
+
+
+def test_job_for_result_from_many_threads_makes_one_job(store):
+    ids = []
+    threads = [
+        threading.Thread(target=lambda: ids.append(store.job_for_result("search", "q", "raw", "snippet")))
+        for _ in range(20)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(set(ids)) == 1 and len(store.list_recent(50)) == 1
+
+
+def test_a_search_release_cut_off_by_a_restart_is_picked_up_again(store):
+    job_id = store.job_for_result("search", "q", "raw", "snippet")
+    assert store.claim_release(job_id)
+    assert store.fail_unfinished() == 0  # a finished search is not failed, only its claim reset
+    job = store.get(job_id)
+    assert job["status"] == "done" and job["release_status"] == "none"
+    assert store.job_for_result("search", "q", "raw", "snippet") == job_id

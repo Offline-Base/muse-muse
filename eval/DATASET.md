@@ -73,6 +73,22 @@ Topics. The never-share topics are `iep, medical, discipline, custody, immigrati
 
 Some of the tricky items: a nickname-only mention (t008), misspellings (t009, t015, t018, t024), a curly apostrophe (t011), "her 504" with no IEP keyword (t077), discipline with no keyword (t085), a parent's phone inside an otherwise fine class average (t092), a parent's email in a family note (t093), an indirect request for a student's identity (t098), re-identification from "moved here from Ohio and uses a wheelchair" (t099), and a "class average" that is one student's score (t100).
 
+## How the eval sends an item
+
+`result_kind` and `topics` are labels for scoring. By default `eval/run_eval.py` gives the router what the connector would really send (`production_labels`), not the labels:
+
+| Labeled kind | Sent as | Topics sent with it | Why |
+|---|---|---|---|
+| `per_student` whose request has a grading word (grade, feedback, score, rubric) | `per_student` | `grades, writing` (`TOPICS_GRADING`) | The agent grades only when Muse's instructions have one of those words (`GRADING_WORDS`) and the folder has a rubric, which the eval's essays folder always does; only the grading job emits per_student, and it always attaches these topics (base/workspace/agent.py) |
+| `per_student`, anything else (t008's "grader", t010's "Compare ... on Evidence", t071 to t074: attendance, reading groups) | `free_text` | none | The agent answers those through its generic path, which returns free_text with no job topics, whatever the item's hand labels say |
+| `sensitive_record`, `contact_info` | `snippet` | none | Record text reaches Muse only through search_documents |
+| `class_aggregate` | `free_text` | none | A private task's answer is free_text |
+| `document_list`, `snippet`, `free_text` | as labeled | none | |
+
+The item's `summary` goes in only for per_student. Egress then adds the topics the device finds itself, as in production: never-share keywords in the result and in Muse's request, and the answer model's labels for the policy's request topics. `--oracle-labels` sends the labeled kind and topics instead, for comparison with earlier reports.
+
+`request` is sent as written. For a snippet (a search) it stands for search_documents' `query` plus its optional `purpose`, which egress reads as `<query>` then `Purpose: <purpose>`. So the snippet items assume Muse fills in `purpose` with who the result is for, as the connector's instructions ask. A search that sends only its search words gives the device less to read than these items do.
+
 ## The policy in plain words
 
 The simulated teacher's rules, in the order they are checked (first match wins):

@@ -5,10 +5,15 @@ write them to the router's rules file. Deterministic, and rebuilt from scratch e
 the current decision log (yesterday's file is never read), so deleted decisions drop out.
 
 Given the user's policy, a rule's group is the result kind plus only the topics the policy names
-(so "grades, reading" and "grades" share a rule), groups that the never-share floor always
-refuses get no rule, and a topic whose decisions all say ask first or refuse also gets a rule
-of its own that holds for any kind. The router reads the file back with read_rules() and
-match_rule() and shows the model the one rule that fits.
+(so "grades, reading" and "grades" share a rule), and a topic whose decisions all say ask first
+or refuse also gets a rule of its own that holds for any kind. A never-share topic in the result
+itself is refused by the floor without asking, so a group with one gets no rule from practice
+data; the user is asked only when Muse's request alone names one, and those answers can become
+ask first or refuse rules (never share rules: that floor asks whatever a rule says). The router
+reads the file back with read_rules() and match_rule() and shows the model the one rule that fits.
+learned_floor() gives the strictest "ask first" or "refuse" rule that still holds for a result,
+so a topic Muse's request adds can move a result to a narrower group but never out from under a
+broader rule.
 
 lora backend: write a chat-format training JSONL into the adapters folder. Training itself runs
 in the cloud with scripts/cloud/train_lora_modal.py; nothing is trained on this machine.
@@ -35,6 +40,7 @@ MIN_DECISIONS = 2
 MIN_AGREEMENT = 0.8
 MIN_TOPIC_DECISIONS = 3  # a rule for one topic across every kind needs a little more evidence
 TOPIC_RULE_DECISIONS = ("ask_user", "refuse")  # a topic is a reason for care, never for sharing
+FLOOR_DECISIONS = ("ask_user", "refuse")  # learned rules that hold as floors in the router
 
 KIND_NAMES = {
     "document_list": "Document lists",
@@ -170,7 +176,10 @@ def learn_rules(examples: Iterable[Example], policy=None) -> list[Rule]:
     """User rules first; synthetic fallbacks only for groups the user has never decided.
 
     Group rules come before topic rules in each section. With `policy`, groups use only the
-    policy's topics and skip any group the never-share floor always refuses.
+    policy's topics. A group with a never-share topic the floor refuses (`floored_topics`) gets
+    no practice rule, and only an ask first or refuse rule from the user's own decisions: the
+    user is asked about one only when Muse's request alone names it (the result's own refuses
+    without a card), and that "request:<topic>" floor asks whatever a share rule says.
     """
     relevant, floored = relevant_topics(policy), floored_topics(policy)
     keyed = []
@@ -178,12 +187,16 @@ def learn_rules(examples: Iterable[Example], policy=None) -> list[Rule]:
         if e.label not in DECISIONS:
             continue
         key = rule_key(e.result_kind, e.topics, relevant)
-        if not floored.intersection(key[1]):
+        if e.source == "user" or not floored.intersection(key[1]):
             keyed.append((key, e))
     user = [(k, e) for k, e in keyed if e.source == "user"]
     synthetic = [(k, e) for k, e in keyed if e.source != "user"]
     user_groups, synthetic_groups = _group(user), _group(synthetic)
-    user_rules = [r for key, rows in user_groups.items() if (r := _rule(key, rows, "user"))]
+    user_rules = [
+        r
+        for key, rows in user_groups.items()
+        if (r := _rule(key, rows, "user")) and (r.decision in FLOOR_DECISIONS or not floored.intersection(key[1]))
+    ]
     fallback = [
         r
         for key, rows in synthetic_groups.items()
@@ -217,21 +230,26 @@ def render_rules(
         "# Learned rules for the privacy router",
         "",
         f"Rebuilt from scratch on {day} from {user_count} of your decisions{practice}.",
-        "Use the rule whose kind and topics match the result exactly. Your rules always win over "
-        "practice defaults, and the safety floors still apply after any rule.",
+        "The device shows each result with the rule that fits it best: the rule whose kind and "
+        "topics match it exactly. An ask first or refuse rule also holds for every result of its "
+        "kind that has all of its topics, with or without more (topics: none covers the whole "
+        "kind), so a closer rule never loosens it; when the device shows such a rule too, it is "
+        "the stricter one: follow it. Your rules always win over practice defaults, and the "
+        "safety floors still apply after any rule.",
         "Words: share tagged = share_tagged, share a summary = share_summary, ask first = ask_user, "
         "refuse = refuse.",
     ]
     if any(r.result_kind is None for r in rules):
         lines.append(
-            "A topic rule (topic: X) holds for any kind of result with that topic when no rule "
-            "matches its kind and topics exactly; when several fit, the strictest wins. The device "
-            "picks the one rule that fits each result and shows it with the result."
+            "A topic rule (topic: X) holds for any kind of result with that topic, even when "
+            "another rule matches its kind and topics; when several fit, the strictest wins. "
+            "The device shows a topic rule as the best fit when no rule matches exactly."
         )
     if floored:
         lines.append(
-            "Results with a never-share topic (" + ", ".join(sorted(floored)) + ") are always refused "
-            "by the safety floor, so no rule lists them."
+            "Results with a never-share topic (" + ", ".join(sorted(floored)) + ") in their own text "
+            "are always refused by the safety floor. One named only in Muse's request (the Blocked line "
+            "then says none) is asked about instead, unless a refuse rule here holds for it."
         )
     lines += ["", "## Your rules", ""]
     lines += [r.line() for r in user] or ["No rules yet."]
@@ -289,6 +307,35 @@ def match_rule(rules: list[RuleLine], result_kind: str, topics: tuple[str, ...])
         if topical:
             return max(topical, key=lambda r: STRICTNESS[r.decision])
     return None
+
+
+def covers(rule: RuleLine, result_kind: str, topics: tuple[str, ...]) -> bool:
+    """A topic rule for one of the result's topics, or a rule for its kind whose topics are all
+    among the result's ("topics: none" covers the whole kind)."""
+    if rule.kind is None:
+        return bool(rule.topics) and rule.topics[0] in topics
+    return rule.kind == result_kind and set(rule.topics) <= set(topics)
+
+
+def learned_floor(rules: list[RuleLine], result_kind: str, topics: tuple[str, ...]) -> RuleLine | None:
+    """The strictest "ask first" or "refuse" rule that holds for a result whose (kind, topics)
+    went through rule_key, or None.
+
+    It holds when match_rule picks it, or when it covers the result: your rules first, practice
+    defaults only when none of your rules covers it. So a topic the request adds (class_level,
+    parents) cannot lift a result out from under a broader rule, and a closer share rule never
+    loosens a stricter one. Among equally strict rules yours wins, then the one match_rule picks.
+    """
+    topics = tuple(topics)
+    shown = match_rule(rules, result_kind, topics)
+    held = [r for r in rules if r.source == "user" and covers(r, result_kind, topics)]
+    held = held or [r for r in rules if r.source != "user" and covers(r, result_kind, topics)]
+    if shown is not None:
+        held.append(shown)
+    strict = [r for r in held if r.decision in FLOOR_DECISIONS]
+    if not strict:
+        return None
+    return max(strict, key=lambda r: (STRICTNESS[r.decision], r.source == "user", r == shown))
 
 
 def train(

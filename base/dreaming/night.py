@@ -63,6 +63,7 @@ class NightReport:
     rules: int = 0
     note: str = ""
     categories: dict = field(default_factory=dict)  # holdout accuracy per expected decision, rules in place
+    gate_rerun: int | None = None  # holdout items the gate re-ran on the new rules; None if it did not run
 
     def numbers(self) -> dict:
         """Aggregate numbers only."""
@@ -94,6 +95,9 @@ class NightRunner:
         self.stale_after = stale_after
         self.events = getattr(services, "events", None) or default_events
         self.raw_dir: Path | None = None  # set by the simulation: per-item gate rows go here
+        # Set by the simulation: its unseen test items, never trained on (like the holdout), so a
+        # practice set that contains them cannot teach the router the answers.
+        self.exclude_ids: set[str] = set()
         self._thread: threading.Thread | None = None
         with self._db() as con:
             con.executescript(_SCHEMA)
@@ -171,7 +175,8 @@ class NightRunner:
         settings = self.settings
         holdout = run_eval.load_items(self.holdout_path) if self.holdout_path.is_file() else []
         holdout_ids = {str(i["id"]) for i in holdout}
-        examples = dataset.build(self.services.approvals, self.synthetic_path, holdout_ids)
+        never_train = holdout_ids | {str(i) for i in self.exclude_ids}
+        examples = dataset.build(self.services.approvals, self.synthetic_path, never_train)
         user_ids = sorted({e.row_id for e in examples if e.source == "user" and e.row_id is not None})
         learned_from = sum(1 for e in examples if e.source == "user")
 
@@ -184,6 +189,7 @@ class NightRunner:
         policy = getattr(self.services, "policy", None)
         result = train.train(examples, settings, out_path=candidate, policy=policy)
         note = result.message
+        rerun = None
         if result.cloud_required or not holdout:
             candidate.unlink(missing_ok=True)
             if tainted:
@@ -195,9 +201,13 @@ class NightRunner:
                 note += " No holdout items, so nothing was kept."
         else:
             g = gate.gate(self.services, candidate, current, holdout, force=tainted)
-            before, after, kept = g.before, g.after, g.keep
+            before, after, kept, rerun = g.before, g.after, g.keep, g.rerun
             self._write_raw(before, after)
             in_place_ids = user_ids if kept else ([] if tainted else prev_ids)
+            note += (
+                f" The gate re-ran {rerun} of {len(holdout)} holdout items on the new rules; the rest have "
+                "the same learned rules in both files and reuse the current rules' run."
+            )
             if g.reasons and not kept:
                 note += " Kept the current rules: " + "; ".join(g.reasons) + "."
 
@@ -217,6 +227,7 @@ class NightRunner:
             rules=result.rules,
             note=note.strip(),
             categories=in_place.category_accuracy(),
+            gate_rerun=rerun,
         )
         with self._db() as con:
             con.execute(

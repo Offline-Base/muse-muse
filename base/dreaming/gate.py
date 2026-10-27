@@ -1,8 +1,20 @@
 """Keep tonight's rules only if they are no worse than the current ones on the holdout.
 
-Both rule files are scored with eval/run_eval.py on the holdout items (never trained on), each in
-a fresh temporary home. The candidate is kept only if overall accuracy, every category's accuracy
-and agreement with the teacher's policy are no worse, and it leaks nothing.
+Paired: the current rules are scored once with eval/run_eval.py on the holdout items (never
+trained on) in a fresh temporary home. The candidate is then re-run, in another fresh home, only
+on the items whose learned rules differ between the two files (Router.learned_view: the rule shown
+with the item and the rule behind its learned floor). Every other item keeps the current run's
+row. Router decisions flip on a few items between identical runs, so two separate runs could
+reject a good night on noise alone. An item the current run could not route (it raised, or a
+check held it before the router ran) has no learned view to compare and is re-run too.
+
+The pairing assumes a rule that is neither shown with an item nor behind its floor does not
+change that item's decision. The model's system prompt lists every rule, but its step 3 makes
+only the shown ones binding, and the learned floor is applied in code.
+
+The candidate is kept only if overall accuracy, every category's accuracy and agreement with the
+teacher's policy are no worse, it leaks nothing (a leak on a reused item counts against it too),
+and neither side has more than MAX_UNSCORED_SHARE of items that errored or fell back.
 """
 
 from __future__ import annotations
@@ -23,6 +35,7 @@ class GateResult:
     before: EvalReport
     after: EvalReport
     reasons: list[str] = field(default_factory=list)  # why the candidate scored worse, if it did
+    rerun: int = 0  # holdout items scored again on the candidate rules; the rest reuse the current run
 
 
 def compare(before: EvalReport, after: EvalReport) -> list[str]:
@@ -48,6 +61,32 @@ def compare(before: EvalReport, after: EvalReport) -> list[str]:
     return reasons
 
 
+def changed_items(
+    services, before: EvalReport, items: list[dict], current_text: str, candidate_text: str
+) -> list[dict]:
+    """The holdout items the candidate must be re-run on: those whose learned view differs between
+    the two rules texts, and those the current run has no RouteInput for. Every item, when the
+    services have no router that can tell (Router.learned_view)."""
+    view = getattr(getattr(services, "router", None), "learned_view", None)
+    inputs = {r.get("id"): r.get("route_input") for r in before.rows}
+    out = []
+    for item in items:
+        inp = inputs.get(item.get("id"))
+        if not callable(view) or inp is None or view(inp, current_text) != view(inp, candidate_text):
+            out.append(item)
+    return out
+
+
+def paired(before: EvalReport, rerun: EvalReport, *, rules: str) -> EvalReport:
+    """The candidate's report: its re-run rows where it has them, the current run's rows (marked
+    reused) everywhere else."""
+    fresh = {r["id"]: r | {"reused": False} for r in rerun.rows}
+    rows = [fresh.pop(r["id"], None) or r | {"reused": True} for r in before.rows]
+    rows += fresh.values()  # an id the current run did not have (never expected)
+    command = f"dreaming gate: {len(rerun.rows)} of {len(rows)} holdout items re-run on the candidate rules"
+    return run_eval.rescore(rows, rerun if rerun.rows else before, name="gate-candidate", rules=rules, command=command)
+
+
 def gate(
     services,
     candidate_rules_path: str | Path,
@@ -56,7 +95,7 @@ def gate(
     *,
     force: bool = False,
 ) -> GateResult:
-    """Score both rule files and swap the candidate into place if it passes.
+    """Score both rule files, paired, and swap the candidate into place if it passes.
 
     `force` is for nights when the current rules were learned from decisions the user has since
     deleted: the candidate then replaces them as long as it leaks nothing, and if it leaks, the
@@ -66,10 +105,21 @@ def gate(
     if not candidate.is_file():
         raise FileNotFoundError(f"no candidate rules at {candidate.name}")
     settings = services.settings
+    has_current = current.is_file()
     before = run_eval.evaluate(
-        settings, holdout_items, rules_path=current if current.is_file() else None, name="gate-current"
+        settings, holdout_items, rules_path=current if has_current else None, name="gate-current"
     )
-    after = run_eval.evaluate(settings, holdout_items, rules_path=candidate, name="gate-candidate")
+    current_text = current.read_text() if has_current else ""  # "" means no learned rules, not the router's own file
+    todo = changed_items(services, before, holdout_items, current_text, candidate.read_text())
+    if len(todo) == len(holdout_items):
+        after = run_eval.evaluate(settings, holdout_items, rules_path=candidate, name="gate-candidate")
+    else:
+        rerun = (
+            run_eval.evaluate(settings, todo, rules_path=candidate, name="gate-candidate")
+            if todo
+            else EvalReport(name="gate-candidate")
+        )
+        after = paired(before, rerun, rules=run_eval.describe_rules(candidate))
     reasons = compare(before, after)
     keep = not reasons or (force and after.leaks == 0)
     if keep:
@@ -78,4 +128,4 @@ def gate(
         candidate.unlink(missing_ok=True)
         if force:
             current.unlink(missing_ok=True)
-    return GateResult(keep=keep, before=before, after=after, reasons=reasons)
+    return GateResult(keep=keep, before=before, after=after, reasons=reasons, rerun=len(todo))

@@ -355,3 +355,128 @@ def test_floor_reason_replaces_the_model_reason_when_the_floor_decides(settings,
     out = make_router(settings, policy, llm).decide(inp)
     assert out.decision == "refuse"
     assert "11:30" not in out.reason and "medical" in out.reason
+
+
+# ----- request topics and learned floors (review of the request-topics change) -----
+
+LEARNED_HEAD = "# Learned rules for the privacy router\n\n## Your rules\n\n"
+PRACTICE_HEAD = "\n## Practice defaults (only where you have not decided yet)\n\n"
+SNIPPET_REFUSE = "- Document snippets (kind: snippet; topics: none): refuse. You said no to 4 of 4 and said don't ask again."
+FREE_TEXT_REFUSE = "- Free-text answers (kind: free_text; topics: none): refuse. You said no to 3 of 3 and said don't ask again."
+SNIPPET_SHARE = "- Document snippets (kind: snippet; topics: none): share tagged. You approved 3 of 3 and said don't ask again."
+CLASS_SNIPPET_SUMMARY = (
+    "- Document snippets (kind: snippet; topics: class_level): share a summary. "
+    "You approved 3 of 3 and said don't ask again."
+)
+
+
+@pytest.fixture
+def eval_policy():
+    return UserPolicy.load(EVAL_POLICY)
+
+
+def learned_router(settings, policy, user=(), practice=(), reply="share_summary"):
+    rules = LEARNED_HEAD + "\n".join(user) + "\n"
+    if practice:
+        rules += PRACTICE_HEAD + "\n".join(practice) + "\n"
+    llm = FakeLLM({"decision": reply, "reason": "Model says so."})
+    return make_router(settings, policy, llm, rules_text=rules)
+
+
+def test_a_request_topic_does_not_lift_a_result_out_of_a_learned_refuse(settings, eval_policy):
+    router = learned_router(settings, eval_policy, [SNIPPET_REFUSE])
+    inp = route_input(kind="snippet", text="[Student A] wrote about the garden.", topics=["class_level"],
+                      request="class-wide patterns in the journal entries")  # fmt: skip
+    out = router.decide(inp)
+    assert out.decision == "refuse" and out.floors == ["learned:refuse"]
+    assert out.reason == "You said not to share results like this."
+    user = router.llm.calls[0]["messages"][1]["content"]
+    assert "Learned rule for this result: none" in user  # no rule for (snippet, class_level) itself
+    assert f"Learned rule that also holds: {SNIPPET_REFUSE.removeprefix('- ')}" in user
+
+
+def test_a_family_request_does_not_lift_free_text_out_of_a_learned_refuse(settings, eval_policy):
+    router = learned_router(settings, eval_policy, [FREE_TEXT_REFUSE], reply="ask_user")
+    out = router.decide(route_input(kind="free_text", text="Reading goals for May.", topics=["parents"]))
+    assert out.decision == "refuse" and "learned:refuse" in out.floors
+
+
+def test_a_learned_share_rule_plus_a_request_topic_loosens_nothing(settings, eval_policy):
+    router = learned_router(settings, eval_policy, [SNIPPET_SHARE], reply="ask_user")
+    out = router.decide(route_input(kind="snippet", text="[Student A] wrote a poem.", topics=["class_level"]))
+    assert out.decision == "ask_user" and out.floors == []  # the model's ask stands
+    assert "also holds" not in router.llm.calls[0]["messages"][1]["content"]
+
+
+def test_a_closer_share_rule_never_loosens_a_broader_strict_rule(settings, eval_policy):
+    router = learned_router(settings, eval_policy, [CLASS_SNIPPET_SUMMARY, SNIPPET_REFUSE])
+    out = router.decide(route_input(kind="snippet", text="[Student A] wrote a poem.", topics=["class_level"]))
+    assert out.decision == "refuse" and out.floors == ["learned:refuse"]
+    user = router.llm.calls[0]["messages"][1]["content"]
+    assert f"Learned rule for this result: {CLASS_SNIPPET_SUMMARY.removeprefix('- ')}" in user
+    assert f"Learned rule that also holds: {SNIPPET_REFUSE.removeprefix('- ')}" in user
+
+
+def test_a_learned_topic_rule_holds_even_with_an_exact_share_rule(settings, eval_policy):
+    exact = "- Free-text answers (kind: free_text; topics: parents): share tagged. You approved 2 of 2 and said don't ask again."
+    topic = "- Anything about parents (topic: parents): ask first. You wanted to be asked 4 of 4 times, so keep asking."
+    router = learned_router(settings, eval_policy, [exact, topic], reply="share_tagged")
+    out = router.decide(route_input(kind="free_text", text="Reading goals for May.", topics=["parents"]))
+    assert out.decision == "ask_user" and out.floors == ["learned:ask_user"]
+
+
+def test_practice_defaults_never_outrank_your_rules(settings, eval_policy):
+    practice_refuse = "- Document snippets (kind: snippet; topics: none): refuse. 5 of 5 practice examples agree."
+    inp = route_input(kind="snippet", text="[Student A] wrote a poem.", topics=["class_level"])
+    yours = learned_router(settings, eval_policy, [CLASS_SNIPPET_SUMMARY], [practice_refuse])
+    out = yours.decide(inp)
+    assert out.decision == "share_summary" and out.floors == []  # you decided this exact group
+
+    practice_share = "- Document snippets (kind: snippet; topics: class_level): share a summary. 4 of 4 practice examples agree."
+    broader = learned_router(settings, eval_policy, [SNIPPET_REFUSE], [practice_share])
+    out = broader.decide(inp)
+    assert out.decision == "refuse" and out.reason == "You said not to share results like this."
+
+    # With none of your rules covering a result, a practice ask first or refuse still holds.
+    practice_only = learned_router(settings, eval_policy, [], [practice_refuse])
+    assert practice_only.decide(inp).decision == "refuse"
+
+
+def test_learned_view_captures_what_a_rules_file_adds(settings, eval_policy):
+    router = learned_router(settings, eval_policy, [SNIPPET_REFUSE])
+    inp = route_input(kind="snippet", text="[Student A] wrote a poem.", topics=["class_level"])
+    view = router.learned_view(inp)
+    assert view.shown is None and view.floor == SNIPPET_REFUSE
+    assert (view.floor_decision, view.floor_source) == ("refuse", "user")
+    assert hash(view) == hash(router.learned_view(inp, router.rules()))  # hashable, same rules, same view
+
+    looser = LEARNED_HEAD + SNIPPET_SHARE + "\n"
+    other = router.learned_view(inp, looser)
+    assert other != view and other.shown is None and other.floor is None
+    assert router.learned_view(inp, "") == (None, None, None, None)
+    assert len({view, other, router.learned_view(inp)}) == 2
+
+
+def test_never_share_word_only_in_the_request_asks_instead_of_refusing(settings, policy):
+    # "Do not mention any IEP": the result has no IEP, so the user decides; nothing is refused silently.
+    llm = FakeLLM({"decision": "share_tagged", "reason": "Fine."})
+    inp = route_input(kind="free_text", text="Our reading goals: two books a month.", topics=["iep"],
+                      request_blocked=["iep"], request="Draft a newsletter blurb. Do not mention any IEP.")  # fmt: skip
+    out = make_router(settings, policy, llm).decide(inp)
+    assert out.decision == "ask_user" and out.floors == ["request:iep"]
+    assert out.reason == "The request mentions a topic you never share, so you decide."
+    assert "Topics: iep" in llm.calls[0]["messages"][1]["content"]  # the model still sees it
+
+    # The same topic in the result itself still refuses.
+    own = route_input(kind="free_text", text="[Student A] has an IEP.", topics=["iep"], blocked=["Mentions an IEP"])
+    assert make_router(settings, policy, llm).decide(own).floors == ["blocked:iep"]
+
+
+def test_never_share_floor_matches_the_router():
+    from base.router import never_share_floor
+
+    assert never_share_floor([], [], set()) is None
+    assert never_share_floor(["Mentions something"], [], set()) == "refuse"
+    assert never_share_floor(["Mentions discipline"], ["discipline"], {"discipline"}) == "ask_user"
+    assert never_share_floor(["a", "b"], ["discipline"], {"discipline"}) == "refuse"
+    assert never_share_floor([], ["discipline", "iep"], {"discipline"}) == "refuse"

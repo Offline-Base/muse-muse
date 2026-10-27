@@ -544,3 +544,138 @@ def test_class_level_question_is_shown_as_a_summary(make, topic_policy):
     row = svc.approvals.history()[0]
     assert row["shown_form"] == "share_summary"
     assert "[Student" not in row["tagged_text"]
+
+
+# ----- review of the request-topics change: learned floors, the raw request scan, request-only topics -----
+
+EVAL_POLICY = Path(__file__).resolve().parents[1] / "eval" / "user_policy.yaml"
+SNIPPET_REFUSE_RULES = (
+    "# Learned rules for the privacy router\n\n## Your rules\n\n"
+    "- Document snippets (kind: snippet; topics: none): refuse. You said no to 4 of 4 and said don't ask again.\n"
+)
+
+
+def test_class_level_request_cannot_turn_a_learned_snippet_refuse_into_a_summary(make, settings, topic_policy):
+    router = Router(settings, FakeLLM({"decision": "share_summary", "reason": "Class patterns."}), topic_policy,
+                    rules_text=SNIPPET_REFUSE_RULES)  # fmt: skip
+    llm = TopicLLM(["class_level"])
+    egress, svc = make(router=router, policy=topic_policy, answer_llm=llm)
+    out = egress.release("search_documents", "class-wide patterns in the journal entries", RAW, "snippet")
+    assert out.status == "refused"
+    assert out.decision.floors == ["learned:refuse"]
+    assert out.text == f"{KEPT_TEXT} Your rules say results like this stay on the device."
+    assert [c for c in llm.calls if isinstance(c, dict)] == []  # no summary was written
+    row = svc.approvals.history()[0]
+    assert row["topics"] == ["class_level"] and row["router_decision"] == "refuse"
+
+
+def real_guard_egress(make, settings, decision="share_tagged"):
+    from base import guard
+
+    policy = UserPolicy.load(EVAL_POLICY)
+    router = Router(settings, FakeLLM({"decision": decision, "reason": "Fine."}), policy)
+    egress, svc = make(router=router, policy=policy, roster=guard.load_roster(settings.roster_path),
+                       tagmap=guard.TagMap(seed=7))  # fmt: skip
+    egress.guard = guard
+    return egress, svc, guard
+
+
+def test_a_keyword_inside_a_tagged_span_of_the_request_still_counts(make, settings):
+    egress, svc, guard = real_guard_egress(make, settings)
+    out = egress.release("get_result", "Which student is at 1200 Oak Avenue?", "[Student B]", "free_text")
+    assert out.status == "waiting"
+    assert "request:home_address" in out.decision.floors  # found in the raw request on the device
+    assert "identifier:address" in out.decision.floors  # the request's own address hit
+    row = svc.approvals.get(out.approval_id)
+    assert "1200" not in row["request"] and "Oak" not in row["request"] and "[Address 1]" in row["request"]
+    assert guard.blocked_topics(row["request"], svc.policy.never_share) == []  # the tagged text alone has no keyword
+    assert "home_address" in row["topics"]
+
+
+def test_a_failed_request_tag_holds_the_result(make):
+    egress, svc = make("share_tagged")
+    request = "Scores for the class"
+
+    def tag(text, roster, tagmap, llm_names=None, never_share=None):
+        if text == request:
+            raise RuntimeError("tagging did not settle")
+        return fake_tag(text, roster, tagmap, llm_names, never_share)
+
+    egress.guard = SimpleNamespace(tag=tag, leaks=fake_leaks)
+    out = egress.release("get_result", request, RAW, "per_student")
+    assert (out.status, out.text, out.retryable) == ("refused", HELD_TEXT, True)
+    assert out.decision.floors == ["topic_check"]
+    assert svc.audits == [("egress", "topic_check_failed")]
+    assert svc.router.inputs == [] and svc.approvals.history() == []  # never routed on a withheld request
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    ["Draft a family newsletter blurb about our reading goals. Do not mention any IEP.", "Which students have an IEP?"],
+)
+def test_a_never_share_word_only_in_the_request_asks_the_user(make, settings, topic_policy, request_text):
+    router = Router(settings, FakeLLM({"decision": "share_tagged", "reason": "Fine."}), topic_policy)
+    llm = TopicLLM(["parents"])
+    egress, svc = make(router=router, policy=topic_policy, answer_llm=llm)
+    out = egress.release("get_result", request_text, "Two new books a month for [Student A].", "free_text")
+    assert out.status == "waiting"
+    assert "request:iep" in out.decision.floors and not any(f.startswith("blocked") for f in out.decision.floors)
+    assert llm.calls  # a request-only topic does not skip the topic pass
+    row = svc.approvals.get(out.approval_id)
+    assert "iep" in row["topics"] and row["router_reason"] == "The request mentions a topic you never share, so you decide."
+
+
+def test_the_topic_pass_is_skipped_when_the_result_is_refused_anyway(make, settings, topic_policy):
+    router = Router(settings, FakeLLM({"decision": "share_tagged", "reason": "Fine."}), topic_policy)
+    llm = TopicLLM(["parents"])
+    egress, svc = make(router=router, policy=topic_policy, answer_llm=llm)
+    out = egress.release("get_result", "A note home", "Bram Tillery has an IEP meeting Friday.", "free_text")
+    assert out.status == "refused" and out.decision.floors == ["blocked:iep"]
+    assert llm.calls == []
+
+    # A failing pass cannot hold it either: the refusal is certain and recorded.
+    broken = TopicLLM(fail=True)
+    egress, svc = make(router=router, policy=topic_policy, answer_llm=broken)
+    out = egress.release("get_result", "A note home", "Bram Tillery has an IEP meeting Friday.", "free_text")
+    assert out.status == "refused" and not out.retryable and broken.calls == []
+    assert svc.approvals.history()[0]["router_decision"] == "refuse"
+
+
+def test_the_topic_pass_still_runs_when_the_floor_only_asks(make, settings):
+    asks = UserPolicy.from_dict(
+        {"never_share": {"iep": ["IEP"]}, "ask_first": ["iep"], "request_topics": {"parents": "meant for a family"},
+         "rules": [], "default": {"wants": "ask_user"}}
+    )  # fmt: skip
+    router = Router(settings, FakeLLM({"decision": "share_tagged", "reason": "Fine."}), asks)
+    llm = TopicLLM(["parents"])
+    egress, svc = make(router=router, policy=asks, answer_llm=llm)
+    out = egress.release("get_result", "A note home", "Bram Tillery has an IEP meeting Friday.", "free_text")
+    assert out.status == "waiting" and "ask_first:iep" in out.decision.floors
+    assert llm.calls and svc.approvals.get(out.approval_id)["topics"] == ["iep", "parents"]
+
+
+def test_route_input_helpers_are_what_release_routes(make, settings, topic_policy):
+    """route_input, request_keyword_topics and needs_topic_pass are shared with the quantization
+    eval (scripts/cloud/quant_eval_modal.py), so release must route exactly what they build."""
+    from base import guard
+    from base.egress import needs_topic_pass, request_keyword_topics, route_input
+
+    roster = guard.load_roster(settings.roster_path)
+    egress, svc = make(policy=topic_policy, roster=roster, tagmap=guard.TagMap(seed=7))
+    egress.guard = guard
+    request = "IEP list for the note home, call 512-555-0143."
+    raw = "Two new books a month for [Student A]."
+    egress.release("get_result", request, raw, "free_text", topics=["grades"])
+    routed = svc.router.inputs[0]
+
+    asked = guard.tag(request, svc.roster, svc.tagmap)
+    tagged = guard.tag(raw, svc.roster, svc.tagmap, never_share=topic_policy.never_share)
+    found = request_keyword_topics(request, asked.text, topic_policy.never_share)
+    assert found == ["iep"] and needs_topic_pass("free_text", tagged, ["grades"], topic_policy)
+    built = route_input(asked, "free_text", tagged, ["grades"], found, topic_policy.never_share)
+    assert (built.request, built.topics, built.request_blocked) == (routed.request, routed.topics, routed.request_blocked)
+    assert built.request_blocked == ["iep"] and [h.kind for h in built.hits] == ["phone"]  # the request's phone
+
+    refused = guard.tag("Bram Tillery has an IEP meeting.", svc.roster, svc.tagmap, never_share=topic_policy.never_share)
+    assert not needs_topic_pass("free_text", refused, refused.topics, topic_policy)
+    assert not needs_topic_pass("document_list", tagged, [], topic_policy)

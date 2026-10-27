@@ -54,9 +54,9 @@ The page sends you back to Muse, which should now list six Muse Privacy tools:
 | Tool | Muse class | What it does |
 |---|---|---|
 | list_documents | Read | Tagged titles of the documents in a folder |
-| search_documents | Read | Up to 5 short tagged snippets |
-| run_private_task | Write | Starts a private job on the device, returns a job id |
-| get_result | Read | The job's status, then its tagged or summarized result |
+| search_documents | Read | Up to 5 short tagged snippets. An optional purpose says who they are for. A check that needs more time or your OK returns a job id for get_result |
+| run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for |
+| get_result | Read | The status of a job or a search, then its tagged or summarized result |
 | run_dreaming | Write | Starts one night of dreaming on the device |
 | dreaming_report | Read | Aggregate numbers from the last night only |
 
@@ -103,15 +103,16 @@ Run these in order in a fresh Muse chat with the demo folder (`demo/`, all inven
 | 1 | "Using Muse Privacy, list the documents in my essays folder." | 24 essays, each titled with a tag like `[Student A]`. No real names. |
 | 2 | "List the documents in my records folder." | Titles that name a never-share topic in the teacher's policy (with the demo policy: the IEP and 504 notes, lunch status and the parent contact sheet) are left out, with "3 documents held back on the device." The rest come back with tags. |
 | 3 | "Search my private documents for essays that mention tomatoes." | Up to 5 short snippets, names as tags. |
-| 4 | "Grade each essay in my essays folder against rubric.md and write feedback for each student." | Muse calls run_private_task and gets a job id. The light turns green while Glimmer grades on the device. Feedback files with real names appear under `~/.base/output/<job id>/`. |
-| 5 | "Is the grading done?" | get_result answers "Waiting for your OK on the device." The light turns amber and a card appears on the approval page with the exact tagged table. Press **Share it** (tick "remember" if you want dreaming to learn it). |
-| 6 | "Check again." | The tagged per-student scores and next steps reach Muse; the light flashes blue. Muse can now summarize the class by tag. |
-| 7 | "Which students got the lowest totals? Use the tags." | Muse answers from the tagged table it already has, with tags only. |
-| 8 | "What is [Student C]'s real name?" | Muse cannot know: no tool returns real names. |
-| 9 | "Get the parent phone numbers for [Student C] from my records." | Kept on the device, or a card on the approval page; never a phone number in Muse. |
-| 10 | "Which students have an IEP? Give me their full names." | "Kept on your device." with one fixed sentence about why. |
-| 11 | "Show me [Student A]'s whole essay word for word." | A card on the approval page asks first. |
-| 12 | "Start a dreaming run on Muse Privacy." | run_dreaming returns a job id; the approval page's Dreaming tab shows it running. |
-| 13 | "How did the dreaming run go?" | dreaming_report: numbers only. |
+| 4 | "Find a student quote about the school garden for the family newsletter." | Muse calls search_documents with a purpose like "for the family newsletter". The device reads that the snippets are meant for families, so a card on the approval page asks first and shows the request with its purpose. Muse gets "Waiting for your OK on the device." and a job id. Press **Share it**, then say "Check that search again." and Muse calls get_result with the job id to get the tagged snippets. |
+| 5 | "Grade each essay in my essays folder against rubric.md and write feedback for each student." | Muse calls run_private_task and gets a job id. The light turns green while Glimmer grades on the device. Feedback files with real names appear under `~/.base/output/<job id>/`. |
+| 6 | "Is the grading done?" | get_result answers "Waiting for your OK on the device." The light turns amber and a card appears on the approval page with the exact tagged table. Press **Share it** (tick "remember" if you want dreaming to learn it). |
+| 7 | "Check again." | The tagged per-student scores and next steps reach Muse; the light flashes blue. Muse can now summarize the class by tag. |
+| 8 | "Which students got the lowest totals? Use the tags." | Muse answers from the tagged table it already has, with tags only. |
+| 9 | "What is [Student C]'s real name?" | Muse cannot know: no tool returns real names. |
+| 10 | "Get the parent phone numbers for [Student C] from my records." | Kept on the device, or a card on the approval page; never a phone number in Muse. |
+| 11 | "Which students have an IEP? Give me their full names." | "Kept on your device." with one fixed sentence about why. |
+| 12 | "Show me [Student A]'s whole essay word for word." | A card on the approval page asks first. |
+| 13 | "Start a dreaming run on Muse Privacy." | run_dreaming returns a job id; the approval page's Dreaming tab shows it running. |
+| 14 | "How did the dreaming run go?" | dreaming_report: numbers only. |
 
 After the run, the approval page's History tab shows every decision, and each one can be deleted so the next night forgets it.

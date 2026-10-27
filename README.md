@@ -4,7 +4,7 @@ Muse can't touch the private, tedious work that is most ready for automation: gr
 
 Built solo for the Meta Global AI Developer Hackathon, startup track. Every person, essay and record in this repo is invented.
 
-**Status, Oct 27.** The whole path runs and is tested on a laptop, but every measured number so far used Muse Glimmer on OpenRouter with invented data (a development mode). Glimmer on the device, the Jetson, the deployed relay and the Muse app itself have not been run yet; [docs/HANDOFF.md](docs/HANDOFF.md) lists what waits on what.
+**Status, Oct 27.** The whole path runs and is tested on a laptop, but every measured number so far used Muse Glimmer on OpenRouter with invented data (a development mode). The final numbers below were measured after the request-topic review fixes, on one code state. Glimmer on the device, the Jetson, the deployed relay and the Muse app itself have not been run yet; [docs/HANDOFF.md](docs/HANDOFF.md) lists what waits on what.
 
 ## How it works
 
@@ -19,7 +19,7 @@ flowchart LR
     conn["Connector<br/>MCP server on 127.0.0.1:8790"]
     agent["Workspace agent<br/>reads documents, runs jobs"]
     glimmer["Muse Glimmer<br/>llama-server on 127.0.0.1"]
-    egress["Egress, the only exit<br/>tag names and identifiers, model name pass,<br/>privacy router, final leak check"]
+    egress["Egress, the only exit<br/>tag names and identifiers, model name pass,<br/>request topics: who the result is for,<br/>privacy router, final leak check"]
     page["Approval page<br/>127.0.0.1:8787"]
     home[("BASE_HOME on the device<br/>feedback files with real names,<br/>decision log, tag map")]
     dream["Dreaming, nightly<br/>rules from your decisions, holdout gate"]
@@ -41,14 +41,14 @@ flowchart LR
 1. You ask Muse in plain words. Muse plans the job on its VM and calls the connector's six tools: `list_documents`, `search_documents`, `run_private_task`, `get_result`, `run_dreaming`, `dreaming_report`.
 2. Muse reaches the device through the relay, which the device dials out to, so nothing on the device is open to the internet.
 3. On the device, the agent swaps tags back to names only to choose what to do, and gives Glimmer the documents with every name and identifier already swapped for tags. Finished files with real names (for grading, one feedback file per student) are written only under `BASE_HOME`.
-4. Every result goes through `base/egress.py`: exact checks for names on the roster and identifiers (phones, emails, SSNs, Luhn-checked cards, student ids, addresses, dates of birth), a second pass where Glimmer finds names the roster misses, then the privacy router, which decides to share it tagged, share a summary, ask you on the approval page, or keep it. A final leak check runs on every text before it leaves, and fails closed.
-5. Each night, dreaming rebuilds the router's rules from your approve and deny decisions, and keeps them only if they score no worse on a holdout set with zero leaks.
+4. Every result goes through `base/egress.py`: exact checks for names on the roster and identifiers (phones, emails, SSNs, Luhn-checked cards, student ids, addresses, dates of birth), and a second pass where Glimmer finds names the roster misses. Then the device reads Muse's request: a keyword scan for never-share topics, and one Glimmer call that labels who the result is for and what it asks (for a student's family, for someone outside the class, a whole text, who a tag really is, a class-level question). The privacy router then decides to share it tagged, share a summary, ask you on the approval page, or keep it. A final leak check runs on every text before it leaves, and fails closed. If a check cannot run, the result is held on the device.
+5. Each night, dreaming rebuilds the router's rules from your approve and deny decisions, grouped by the kind of result and its topics, request topics included. It keeps them only if they score no worse on a holdout set with zero leaks. A learned "ask first" or "refuse" rule is a floor: it holds for every narrower group of its kind, so a closer share rule can never loosen it.
 
 On a Jetson, grading can be handed to the laptop's 4-bit Glimmer: the laptop dials out to the Jetson (`base/heavy/worker.py`), so the managed laptop never listens on the network. The interfaces between modules are in [docs/CONTRACTS.md](docs/CONTRACTS.md).
 
 ## Built during the event, and before
 
-All of the code in this repository was written during the event; the first commit is from Oct 27, 2026. Three earlier Offline Base projects by the same author were read for ideas only, and nothing was copied from them: decision-guard (exact checks before text is sent, for `base/guard.py`), base-router-subagent (a device that dials out to a Cloudflare relay with OAuth and pairing codes, for `relay/` and `base/connector/`) and decision-tree (a status light, for `base/light.py` and `hardware/light/`). The code was written with Claude Code; the 2,000-item practice set was written by Muse Spark 1.3. Details and the open-source libraries used are in [docs/PRIOR_WORK.md](docs/PRIOR_WORK.md).
+All of the code in this repository was written during the event; the first commit is from Oct 27, 2026. Three earlier Offline Base projects by the same author were read for ideas only, and nothing was copied from them: decision-guard (exact checks before text is sent, for `base/guard.py`), base-router-subagent (a device that dials out to a Cloudflare relay with OAuth and pairing codes, for `relay/` and `base/connector/`) and decision-tree (a status light, for `base/light.py` and `hardware/light/`). The code was written with Claude Code; Muse Spark 1.3 wrote the 2,000-item practice set and graded the invented essays a second time as a cross-check. Details and the open-source libraries used are in [docs/PRIOR_WORK.md](docs/PRIOR_WORK.md).
 
 ## Setup
 
@@ -104,6 +104,7 @@ To hand grading to the laptop, print the worker token on the board with `j base.
 2. On the laptop: put that address in `.env` as `RELAY_URL`, run `uv run python -m base.connector.relay_client register` once, then keep `uv run python -m base.connector.relay_client run` going next to `python -m base`.
 3. In Muse, **Settings > Connectors**, add a custom connector with the address plus `/mcp`. Leave the client ID and secret empty.
 4. Muse opens the relay's Link your device page. Run `uv run python -m base.connector.relay_client pair` and type the code there within 10 minutes. Each code works once.
+5. Tell Muse who each result is for. The connector's instructions ask Muse to say it ("for my own grading", "for the family newsletter") in run_private_task's instructions and in search_documents' optional `purpose`; the device reads it to decide what it can share. A search whose check needs more time or your OK answers with a job id, and Muse gets the snippets with get_result.
 
 [docs/MUSE_SETUP.md](docs/MUSE_SETUP.md) has the full steps, the Muse Code fallback, the two scheduled jobs to give Muse (dreaming at 2 AM, a one-sentence report at 8 AM) and a test script of prompts. None of it has been tried in the Muse app yet.
 
@@ -115,39 +116,44 @@ To hand grading to the laptop, print the worker token on the board with `j base.
 | Muse Glimmer 30B, `meta/muse-glimmer-30b` on OpenRouter | OpenRouter (development only) | Every model step today, on invented data. The device refuses any folder without a `.synthetic` marker in this mode. |
 | Muse Glimmer, Meta's Q4_K_M GGUF (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`) | The laptop, llama-server | Grading, the name pass, summaries and the privacy router (Glimmer is its own router; its small assistant model is a speculative-decoding drafter, not a chat model). |
 | Muse Glimmer i1-IQ1_S (6.5 GB, `mradermacher/Muse-Glimmer-30B-i1-GGUF`) | The Jetson Orin Nano 8GB, llama-server | Lookups, tagging and routing on the board; grading goes to the laptop's Q4_K_M when its worker is connected. |
-| Muse Spark 1.3 | Meta Model API | The eval harness and the 2,000 invented practice items. `base/spark.py` refuses any text with a roster name or an identifier, and is never used for user data. |
+| Muse Spark 1.3 | Meta Model API | The eval harness, the 2,000 invented practice items and a second-opinion grading cross-check on the tagged essays. `base/spark.py` refuses any text with a roster name or an identifier, and is never used for user data. |
 
 ## Numbers
 
-All on OpenRouter's Glimmer with invented data. Each links to the report, which starts with the command that made it; raw rows are under `eval/reports/raw/`. The summary with every source is [eval/reports/final.md](eval/reports/final.md).
+All on OpenRouter's Glimmer with invented data. Each links to the report, which starts with the command that made it; raw rows are next to each report under `raw/`. The summary with every source is [eval/reports/final.md](eval/reports/final.md).
 
 | What | Number | Report |
 |---|---|---|
-| Leaks | 0 in the 100-item run, the holdout, every night's holdout scoring and both 24-essay grading jobs. One text on simulated day 5 was flagged by the eval's checker; it is a false positive (the verb "rose" in a class summary matched the invented student Rose), explained first in final.md | [final.md](eval/reports/final.md#leaks-one-flagged-and-it-is-not-a-real-leak) |
-| Router accuracy, 100 items, first day, inputs as the connector sends them | 75% overall: share tagged 3 of 25, share a summary 24 of 25, ask first 25 of 25, refuse 23 of 25. No item was shared that should have been asked about or kept | [final_cloud.md](eval/reports/final_cloud.md) |
-| Agreement with the simulated teacher on the 20 holdout items | 75% | [final_cloud_holdout.md](eval/reports/final_cloud_holdout.md) |
-| Approval requests per simulated day (20 items a day, 5 she wants to be asked about) | 11, 12, 9, 8, 10 | [final/nights.md](eval/reports/final/nights.md) |
-| Holdout agreement after each of five nights of dreaming | 75, 70, 75, 75, 75, 75%; the gate kept no night's rules | [final/nights.md](eval/reports/final/nights.md) |
-| Grading 24 essays, from Muse's request to the tagged result Muse read | 32.4 s on a first day (the job itself 26.3 s, 27 Glimmer calls), with an instant approval | [e2e_cloud_no_rules.md](eval/reports/e2e_cloud_no_rules.md) |
-| Cloud speed per step | Router 1.7 s mean (p95 3.3 s), name pass 2.1 s, grading one essay 4.2 to 4.3 s | [final.md, section 6](eval/reports/final.md#6-speed-in-cloud-mode) |
-| Grading consistency between two runs | Same total for 21 of 24 essays; same criterion score 92 of 96 times | [grading_spotcheck.md](eval/reports/grading_spotcheck.md) |
+| Leaks | 0 in the 100-item run (34 approved releases checked too), the holdout, every night's holdout scoring, every simulated day with approvals, and both 24-essay grading jobs. **1 on the unseen test** with the night-0 router: an approved search snippet kept an invented name that is not on the roster and that Glimmer's name pass missed. 0 with the rules after the last night | [final.md](eval/reports/final.md#leaks) |
+| Router accuracy, 100 items, first day, inputs as the connector sends them | 76% overall: share tagged 3 of 25, share a summary 25 of 25, ask first 25 of 25, refuse 23 of 25; 48 approval requests. No item was shared that should have been asked about or kept | [final_cloud.md](eval/reports/final_cloud.md) |
+| Agreement with the simulated teacher on the 20 holdout items, first day | 75% | [final_cloud_holdout.md](eval/reports/final_cloud_holdout.md) |
+| Approval requests per simulated day (20 items a day, 5 she wants to be asked about) | 10, 8, 7, 7, 6 (unneeded ones 5, 3, 2, 2, 1) | [final/nights.md](eval/reports/final/nights.md) |
+| Holdout agreement after each of five nights of dreaming | 75, 85, 85, 80, 90, 90%; the gate kept all five nights. The gate selects on the holdout, so this is an upper bound | [final/nights.md](eval/reports/final/nights.md) |
+| Unseen test: 100 practice items no step ever saw | 70% with no rules, 79% after the last night; approval requests 53 to 30. Ask first fell from 100% to 68%: 8 snippets she wanted asked about were shared tagged | [final/nights.md](eval/reports/final/nights.md#unseen-test) |
+| Grading 24 essays, from Muse's request to the tagged result Muse read | 33.4 s on a first day (the job itself 26.0 s, 28 Glimmer calls), with an instant approval; 30.1 s with one learned rule | [e2e_cloud_no_rules.md](eval/reports/e2e_cloud_no_rules.md) |
+| Cloud speed per step | Router 1.6 s mean in the 100-item run (p95 3.0 s); bench means: router 1.9 s, name pass 1.3 s, request topics 0.8 s, grading one essay 3.8 s | [final.md, section 7](eval/reports/final.md#7-speed-in-cloud-mode) |
+| Request labels on 160 held-out invented requests (precision / recall) | parents 0.86 / 0.86, someone outside the class 0.75 / 0.84, class-level 0.94 / 0.94, who a tag is 1.00 / 1.00 (6 items), whole text 0.50 / 1.00 | [request_topics.md](eval/reports/request_topics.md) |
+| Grading consistency | Same total for 21 of 24 essays between two Glimmer runs; Muse Spark 1.3 gave the same total for 15 of 24 and within one point for 23 of 24 | [grading_spotcheck.md](eval/reports/grading_spotcheck.md), [grading_crosscheck.md](eval/reports/grading_crosscheck.md) |
 
 ![Five nights of dreaming on production inputs](eval/reports/final/five_nights.png)
 
-The chart's leak line counts the holdout runs; the day-5 flag above is not in it.
+The chart's leak line counts the holdout and the simulated days; the unseen test's one leak is not in it.
 
 Not measured yet: Glimmer's speed on the laptop and on a Jetson, the Jetson's memory use, quantization quality (Q4_K_M against i1-IQ1_S), a router LoRA, and Ethan's own grading spot-check ([eval/reports/grading_spotcheck.md](eval/reports/grading_spotcheck.md) is ready for his scores).
 
 ## Known limits
 
 - **No device numbers yet.** Every number is Glimmer on OpenRouter with invented data. Speed on the laptop and the Jetson, the Jetson's memory, and how much the 1-bit quant loses are all unmeasured.
-- **Not tried with the real Muse app.** The relay is tested locally with a client playing Muse. Whether the app takes a custom connector, which OAuth client style it uses, and its scheduled jobs are untested. Pre-registered OAuth clients are not supported, and redirect URIs must be https or loopback.
-- **The router errs on the strict side.** On a first day it asks about most tagged per-student results the simulated teacher would share without asking (21 of 25 in the final run). It never shared an item it should have asked about or kept, but that is one simulated teacher's policy over 100 items, and two items she would refuse were asked about instead.
-- **Dreaming has not learned much from real inputs.** Its rules key on the kind of result and the never-share topics the guard finds, not on Muse's request. What separates this teacher's cases (families, people outside the class, a whole essay) is in the request, so on what the connector really sends the gate kept none of five nights' rules. The rising curves in the tuning run used hand labels. Approving a class-level result also teaches "share tagged", never "share a summary".
-- **The eval's leak checker matches names case-insensitively,** so a common word that is also a roster name ("rose") can be flagged; it flagged one model-written summary in the final simulation. The device's own final check did not flag it, correctly.
-- **Small holdout.** 20 items, 5 per decision, which the gate also selects on, so a single changed decision moves a category by 20 points and night-over-night gains are an upper bound.
-- **The name pass costs a model call per result,** and a name it wrongly finds in a summary makes egress refuse that summary. Initials such as "C.R." are not tagged.
-- **Long jobs work by polling.** Muse starts a job and calls get_result until it is done; the relay holds no stream open and answers 504 after 60 seconds without a reply from the device.
+- **Not tried with the real Muse app.** The relay is tested locally with a client playing Muse. Whether the app takes a custom connector, which OAuth client style it uses, whether it fills in who a result is for, and its scheduled jobs are untested. Pre-registered OAuth clients are not supported, and redirect URIs must be https or loopback.
+- **A name off the roster depends on Glimmer's name pass.** When the pass misses one, an approved card releases it, and the final check cannot stop it because it knows only the roster and the tag map. This happened once on the unseen test. On a real device you would see the name on the card before you approve.
+- **The router errs on the strict side on a first day.** It asks about most tagged per-student results the simulated teacher would share without asking (21 of 25 in the final run), and two items she would refuse were asked about instead. It never shared an item it should have asked about or kept, but that is one simulated teacher's policy over 100 items.
+- **Dreaming can learn too broad a rule from a few answers.** Two approvals of snippets with no topics taught "share tagged" for every such snippet, so on the unseen test the router no longer asked about 8 of 25 items the teacher wanted to see first. They went out tagged, so they are not leaks.
+- **The learning numbers are simulated and partly selected on.** The teacher is a policy file. The gate selects on the 20 holdout items, and the request-topic descriptions were written with the eval requests in view, so the holdout's 75% to 90% is an upper bound; the unseen test's 70% to 79% is the more honest number, and its items are Spark-written in a similar style. One changed decision moves a holdout category by 20 points, and the same rules scored 85% and then 80% on two runs.
+- **Request topics depend on how Muse asks.** A search query alone rarely says who the snippets are for, so the device needs Muse to fill in `purpose`. Glimmer over-labels whole-text requests (precision 0.50 on held-out requests), so asking for one paragraph can be treated as asking for a whole essay.
+- **A never-share word only in Muse's request asks instead of refusing.** "Do not mention any IEP" is a caution, so it no longer refuses a harmless result; the cost is that "Which students have an IEP?" over a list of tags also asks, unless the router or a learned refuse rule refuses it.
+- **A broader learned "ask first" or "refuse" rule outranks a narrower share rule you taught.** If free-text answers with no topics learn "ask first", a learned "share a summary" for class-level answers does not take effect under it.
+- **Each result costs up to two extra model calls,** the name pass and the request-topic label (none for document lists and dreaming reports). A name the pass wrongly finds in a summary makes egress refuse that summary. Initials such as "C.R." are not tagged.
+- **Long jobs work by polling.** Muse starts a job and calls get_result until it is done; the relay holds no stream open and answers 504 after 60 seconds without a reply from the device. A search whose check runs past 40 seconds or waits for you returns a job id, so Muse has to follow it with get_result too.
 - **A Jetson's approval page uses a self-signed certificate,** so browsers warn on first visit; the laptop worker pins it.
 - **The status light and the enclosure are designed, not built.** The firmware is unit-tested but not flashed, and the enclosure's mounting holes are placeholders until a board is measured.
 

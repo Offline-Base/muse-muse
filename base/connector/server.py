@@ -43,6 +43,11 @@ SNIPPET_CHARS = 300
 RELEASE_WAIT_SECONDS = 40.0
 MAX_CHECK_FAILURES = 3  # a check that fails this many times in a row holds the result for good
 CHECKING_NOTE = "The device is still checking this result. Call get_result again in a little while."
+SEARCH_CHECKING_NOTE = "The device is still checking these snippets. Call get_result with this job_id in a little while."
+# A search's snippets are released as a finished job of this kind, so a slow check can be picked
+# up later with get_result. Its decision row still names the tool Muse called.
+SEARCH_KIND = "search"
+RELEASE_TOOLS = {SEARCH_KIND: "search_documents"}
 
 INSTRUCTIONS = """\
 Muse Privacy is a private workspace on the user's own device. The documents stay there, and every \
@@ -52,8 +57,12 @@ step that reads them runs on the device with its own model.
 always has the same tag on this device, so plan with the tags.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
+- Say who a result is for and what it will be used for, for example "for my own grading", "for the \
+family newsletter" or "to send to the principal". Put it in run_private_task's instructions and in \
+search_documents' purpose. The device uses it to decide what it can share.
 - Longer work runs in the background: call run_private_task, then get_result with the job id until \
-the status is no longer queued or running.
+the status is no longer queued or running. A search that needs more time or the user's OK gives you \
+a job id for get_result too.
 - Some results wait for the user's OK on the device, and some are kept on the device. Tell the user \
 plainly and do not try to get the same content another way.
 - Finished files with real names, such as feedback for each student, are written on the device for \
@@ -71,9 +80,9 @@ START_DREAMING = ToolAnnotations(
 
 USAGE = {
     "list_documents": 'list_documents takes folder, a folder name as text ("" for the top level).',
-    "search_documents": "search_documents takes query, a short search as text.",
+    "search_documents": "search_documents takes query, a short search as text, and an optional purpose as text.",
     "run_private_task": "run_private_task takes instructions and folder, both as text.",
-    "get_result": "get_result takes job_id, the text id that run_private_task returned.",
+    "get_result": "get_result takes job_id, the text id that run_private_task or search_documents returned.",
     "run_dreaming": "run_dreaming takes no arguments.",
     "dreaming_report": "dreaming_report takes no arguments.",
 }
@@ -245,8 +254,8 @@ class Connector:
         guard = importlib.import_module("base.guard")
         return guard.blocked_topics(text, never_share)
 
-    def search_documents(self, query: str) -> tuple[CallToolResult, str]:
-        query = query.strip()
+    def search_documents(self, query: str, purpose: str = "") -> tuple[CallToolResult, str]:
+        query, purpose = query.strip(), purpose.strip()
         if not query:
             raise ToolFailure("Pass a short search query, for example: rubric criteria for evidence.")
         snippets = list(self.services.index.search(restore_tags(self.services, query), k=5))[:5]
@@ -256,8 +265,18 @@ class Connector:
             )
         else:
             raw = "No matching passages."
-        released = self.services.egress.release("search_documents", query, raw, "snippet")
-        return _text(released.text), released.status
+        # Who the snippets are for is part of Muse's request, so egress tags and labels it with the rest.
+        request = f"{query}\nPurpose: {purpose}" if purpose else query
+        # Released as a finished job with get_result's bounded wait, so a slow check answers "still
+        # checking" with a job_id before the relay gives up, and a retried search joins the release.
+        jobs = self.services.jobs
+        job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet")
+        status, text = self._release(job_id, jobs.get(job_id))
+        if status in ("shared", "refused"):
+            return _text(text), status
+        if status == "running":
+            return _json({"job_id": job_id, "status": "running", "result": SEARCH_CHECKING_NOTE}), "pending"
+        return _json({"job_id": job_id, "status": status, "result": text}), status
 
     def run_private_task(self, instructions: str, folder: str) -> tuple[CallToolResult, str]:
         instructions, folder = instructions.strip(), folder.strip()
@@ -351,7 +370,7 @@ class Connector:
         """One egress release for a finished job, stored unless a check could not run."""
         jobs, egress = self.services.jobs, self.services.egress
         released = egress.release(
-            "get_result",
+            RELEASE_TOOLS.get(_get(job, "kind"), "get_result"),
             _get(job, "instructions") or "",
             _get(job, "raw_result") or "",
             _get(job, "result_kind") or "free_text",
@@ -467,13 +486,23 @@ def build_server(services: Any) -> MCPServer:
         description=(
             "Search the user's private documents on the device and get up to 5 short snippets. Names and "
             "identifiers in the snippets come back as tags like [Student A]. You can put tags in the query, "
-            "for example [Student A] thesis, and the device swaps them for the real names before it searches."
+            "for example [Student A] thesis, and the device swaps them for the real names before it searches. "
+            "Say in purpose who the snippets are for and what they will be used for, for example: for the "
+            "family newsletter. If the device needs more time or the user's OK, you get a job_id instead: "
+            "call get_result with it."
         ),
     )
     def search_documents(
         query: Annotated[str, Field(max_length=500, description="What to look for; tags are fine")],
+        purpose: Annotated[
+            str,
+            Field(
+                max_length=300,
+                description="Who the snippets are for and what they will be used for, for example: for my own grading",
+            ),
+        ] = "",
     ) -> CallToolResult:
-        return c.call("search_documents", c.search_documents, query)
+        return c.call("search_documents", c.search_documents, query, purpose)
 
     @server.tool(
         name="run_private_task",
@@ -481,15 +510,16 @@ def build_server(services: Any) -> MCPServer:
         annotations=START_TASK,
         description=(
             "Start a task on the user's device over the documents in one folder, for example: grade each "
-            "essay against rubric.md and write feedback for each student. The device does the work with its "
-            "own model and writes finished files with real names on the device, where the user opens them; "
-            "those files are never sent to you. Refer to people by their tags, like [Student A]. Returns a "
-            "job_id and status at once; then call get_result with the job_id."
+            "essay against rubric.md and write feedback for each student. Say who the result is for and what "
+            "it will be used for, for example: for my own grading, or for the family newsletter. The device "
+            "does the work with its own model and writes finished files with real names on the device, where "
+            "the user opens them; those files are never sent to you. Refer to people by their tags, like "
+            "[Student A]. Returns a job_id and status at once; then call get_result with the job_id."
         ),
     )
     def run_private_task(
         instructions: Annotated[
-            str, Field(max_length=4000, description="What to do; refer to people by tag")
+            str, Field(max_length=4000, description="What to do and who the result is for; refer to people by tag")
         ],
         folder: Annotated[str, Field(max_length=300, description="Folder with the documents to work on")],
     ) -> CallToolResult:
@@ -500,15 +530,15 @@ def build_server(services: Any) -> MCPServer:
         title="Get a task result",
         annotations=READ,
         description=(
-            "Get the status and result of a job from run_private_task. While the status is queued or running, "
-            "call again in a little while. A shared result has names as tags, or is a summary. Status "
-            "waiting means the result is waiting for the user's OK on the device: tell the user and call again "
-            "later. Status refused means it is kept on the device; do not ask for it another way. Files with "
-            "real names always stay on the device."
+            "Get the status and result of a job_id from run_private_task or search_documents. While the "
+            "status is queued or running, call again in a little while. A shared result has names as tags, or "
+            "is a summary. Status waiting means the result is waiting for the user's OK on the device: tell the "
+            "user and call again later. Status refused means it is kept on the device; do not ask for it "
+            "another way. Files with real names always stay on the device."
         ),
     )
     def get_result(
-        job_id: Annotated[str, Field(max_length=100, description="The job_id from run_private_task")],
+        job_id: Annotated[str, Field(max_length=100, description="The job_id from run_private_task or search_documents")],
     ) -> CallToolResult:
         return c.call("get_result", c.get_result, job_id)
 

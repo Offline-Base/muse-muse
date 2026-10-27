@@ -5,8 +5,9 @@ else is one strict-JSON question to Glimmer. Floors run after either path, so a 
 can only make the decision stricter, never looser.
 
 Learned rules (the dreaming file) are read back here: the one rule that fits a result is shown
-to the model, and a learned "ask first" or "refuse" rule is also a floor, so the model cannot
-loosen what the user asked for.
+to the model, and the strictest learned "ask first" or "refuse" rule that holds for it is a floor
+(train.learned_floor), so neither the model nor a topic Muse's request adds can loosen what the
+user asked for. When that floor comes from another rule, the model is shown it too.
 """
 
 from __future__ import annotations
@@ -14,7 +15,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any
+from collections.abc import Collection, Sequence
+from typing import Any, NamedTuple
 
 from base import guard
 from base.dreaming import train as learned_rules
@@ -58,7 +60,9 @@ the class down to a few students by a personal trait or a one-time event only th
 for an average.
 2. ask_user when the result is meant for anyone outside the class (families, a newsletter, other \
 staff, the district, a club), or is a student's whole essay.
-3. When a learned rule for this result is shown, follow it.
+3. When a learned rule for this result is shown, follow it. When a learned rule that also holds \
+is shown too, it is the stricter one: follow it (a rule for fewer topics still holds for a result \
+with more).
 4. share_summary for class-level counts, averages, distributions and patterns.
 5. ask_user for per-student detail (scores, feedback, excerpts, attendance, groups) that no \
 learned rule covers.
@@ -80,6 +84,7 @@ FALLBACK_REASON = "The router could not decide, so it asks you first."
 UNKNOWN_PERSON_REASON = "A title or file name names someone who is not on the roster."
 POLICY_REASON = "Your rule {id} says results like this stay on the device."
 DIGITS_REASON = "Contains a long number that could be an identifier."
+REQUEST_TOPIC_REASON = "The request mentions a topic you never share, so you decide."
 
 # Kinds made of the device's own aggregate numbers, where a long number is not an identifier.
 NUMBER_KINDS = frozenset({"class_aggregate", "dreaming_report"})
@@ -115,9 +120,32 @@ def _clean_reason(value: Any) -> str:
     return text[:REASON_LIMIT].rstrip()
 
 
-def build_user_message(inp: RouteInput, learned: str | None = None) -> str:
-    """The RouteInput as the model sees it: kinds of hits, never their values, and the learned
-    rule that fits it (`learned`, a rule line), if any."""
+def never_share_floor(
+    blocked: Sequence[str], blocked_topics: Sequence[str], ask_first: Collection[str]
+) -> Decision | None:
+    """The never-share floor: None when nothing is blocked, ask_user when every blocked reason
+    maps to an ask_first topic, else refuse. Egress uses it too, to skip a pass it makes moot."""
+    if not (blocked or blocked_topics):
+        return None
+    can_ask = bool(blocked_topics) and set(blocked_topics) <= set(ask_first) and len(blocked) <= len(blocked_topics)
+    return "ask_user" if can_ask else "refuse"
+
+
+class LearnedView(NamedTuple):
+    """Everything the learned rules add to one decision: the rule line shown with the result
+    and the rule behind the learned floor (with its decision and section). Hashable, so the
+    gate can compare two rule files item by item."""
+
+    shown: str | None
+    floor: str | None
+    floor_decision: str | None
+    floor_source: str | None
+
+
+def build_user_message(inp: RouteInput, learned: str | None = None, also: str | None = None) -> str:
+    """The RouteInput as the model sees it: kinds of hits, never their values, the learned rule
+    that fits it (`learned`, a rule line), if any, and the stricter one behind the learned floor
+when that is another rule (`also`)."""
     secrets = [h.value for h in inp.hits if h.value and len(h.value) >= 3]
     kinds = sorted({h.kind for h in inp.hits})
     text = _scrub(inp.tagged_text or "", secrets)
@@ -132,6 +160,7 @@ def build_user_message(inp: RouteInput, learned: str | None = None) -> str:
             f"Blocked: {'; '.join(inp.blocked) or 'none'}",
             f"Found and tagged: {', '.join(kinds) or 'none'}",
             f"Learned rule for this result: {(learned or 'none').removeprefix('- ')}",
+            *([f"Learned rule that also holds: {also.removeprefix('- ')}"] if also else []),
             "Tagged text:",
             text,
         ]
@@ -164,32 +193,51 @@ class Router:
     def system_prompt(self) -> str:
         return SYSTEM_PROMPT + (self.rules() or NO_RULES)
 
-    def learned_rule(self, inp: RouteInput, rules: str | None = None):
-        """The learned rule that fits this result (a train.RuleLine), or None."""
+    def learned(self, inp: RouteInput, rules: str | None = None):
+        """(the learned rule shown with this result, the learned rule behind its floor), each a
+        train.RuleLine or None."""
         rules = self.rules() if rules is None else rules
         if not rules:
-            return None
+            return None, None
+        lines = learned_rules.read_rules(rules)
         key = learned_rules.rule_key(inp.result_kind, inp.topics, learned_rules.relevant_topics(self.policy))
-        return learned_rules.match_rule(learned_rules.read_rules(rules), *key)
+        return learned_rules.match_rule(lines, *key), learned_rules.learned_floor(lines, *key)
 
-    def messages(self, inp: RouteInput, learned=None) -> list[dict]:
+    def learned_rule(self, inp: RouteInput, rules: str | None = None):
+        """The learned rule shown with this result (a train.RuleLine), or None."""
+        return self.learned(inp, rules)[0]
+
+    def learned_view(self, inp: RouteInput, rules_text: str | None = None) -> LearnedView:
+        """What a rules file (default: this router's own) adds to the decision for `inp`."""
+        shown, floor = self.learned(inp, rules_text)
+        return LearnedView(
+            getattr(shown, "text", None),
+            getattr(floor, "text", None),
+            getattr(floor, "decision", None),
+            getattr(floor, "source", None),
+        )
+
+    def messages(self, inp: RouteInput, learned=None, floor=None) -> list[dict]:
+        shown = getattr(learned, "text", None)
+        also = getattr(floor, "text", None)
         return [
             {"role": "system", "content": self.system_prompt()},
-            {"role": "user", "content": build_user_message(inp, getattr(learned, "text", None))},
+            {"role": "user", "content": build_user_message(inp, shown, also if also != shown else None)},
         ]
 
     def decide(self, inp: RouteInput, *, synthetic: bool = False) -> RouteDecision:
         start = time.perf_counter()
-        blocked_topics = [t for t in inp.topics if t in self.policy.never_share]
+        request_only = set(inp.request_blocked)
+        blocked_topics = [t for t in inp.topics if t in self.policy.never_share and t not in request_only]
         is_blocked = bool(inp.blocked or blocked_topics)
-        learned = self.learned_rule(inp)
+        learned, learned_floor = self.learned(inp)
 
         outcome = self._rule_path(inp, is_blocked)
         if outcome is None:
-            outcome = self._ask_model(inp, synthetic, learned)
+            outcome = self._ask_model(inp, synthetic, learned, learned_floor)
         decision, reason, source = outcome
 
-        floor, floors, floor_reason = self._floors(inp, blocked_topics, learned)
+        floor, floors, floor_reason = self._floors(inp, blocked_topics, learned_floor)
         final = stricter(decision, floor)
         if floor_reason and STRICTNESS[floor] >= STRICTNESS[final]:
             reason = floor_reason  # the floor decided it, whatever the model said
@@ -224,12 +272,14 @@ class Router:
             and not (r.topics_any and set(r.topics_any) <= set(self.policy.never_share))
         ]
 
-    def _ask_model(self, inp: RouteInput, synthetic: bool, learned=None) -> tuple[Decision, str, str]:
+    def _ask_model(
+        self, inp: RouteInput, synthetic: bool, learned=None, learned_floor=None
+    ) -> tuple[Decision, str, str]:
         kw: dict[str, Any] = {"reasoning": "low", "max_tokens": MAX_TOKENS, "synthetic": synthetic}
         if self.adapter is not None:
             kw["adapter"] = self.adapter
         try:
-            out = self.llm.chat_json(self.messages(inp, learned), ROUTE_SCHEMA, **kw)
+            out = self.llm.chat_json(self.messages(inp, learned, learned_floor), ROUTE_SCHEMA, **kw)
         except Exception as exc:  # any model or parse failure falls back to asking
             log.warning("router model call failed: %s", type(exc).__name__)
             return "ask_user", FALLBACK_REASON, "fallback"
@@ -242,27 +292,33 @@ class Router:
     def _floors(
         self, inp: RouteInput, blocked_topics: list[str], learned=None
     ) -> tuple[Decision, list[str], str]:
-        """The strictest floor that applies, every floor that fired, and the reason for the strictest."""
+        """The strictest floor that applies, every floor that fired, and the reason for the strictest.
+
+        `learned` is the rule behind the learned floor (train.learned_floor), not the shown rule.
+        """
         floor: Decision = "share_tagged"
         floors: list[str] = []
         reason = ""
 
-        if inp.blocked or blocked_topics:
-            ask_first = self.policy.ask_first
+        blocked_floor = never_share_floor(inp.blocked, blocked_topics, self.policy.ask_first)
+        if blocked_floor is not None:
             # ask_first relaxes the floor only when every blocked reason maps to an ask_first topic
-            can_ask = (
-                bool(blocked_topics)
-                and set(blocked_topics) <= ask_first
-                and len(inp.blocked) <= len(blocked_topics)
-            )
+            can_ask = blocked_floor == "ask_user"
             label = "ask_first" if can_ask else "blocked"
             if blocked_topics:
                 floors.extend(f"{label}:{t}" for t in blocked_topics)
             else:
                 floors.append(label)
-            floor = "ask_user" if can_ask else "refuse"
+            floor = blocked_floor
             reason = "; ".join(r.rstrip(".") for r in inp.blocked) or "Mentions a topic you never share"
             reason += ". You asked to be asked first." if can_ask else "."
+
+        # A never-share word only in Muse's request ("Do not mention any IEP") may be a caution,
+        # not a question about the topic, so the user decides instead of a silent refusal.
+        if inp.request_blocked:
+            floors.extend(f"request:{t}" for t in inp.request_blocked)
+            if STRICTNESS["ask_user"] > STRICTNESS[floor]:
+                floor, reason = "ask_user", REQUEST_TOPIC_REASON
 
         found = sorted({h.kind for h in inp.hits if h.kind in IDENTIFIER_KINDS})
         if found:
@@ -283,7 +339,8 @@ class Router:
             if STRICTNESS["refuse"] > STRICTNESS[floor]:
                 floor, reason = "refuse", POLICY_REASON.format(id=rule.id)
 
-        # A learned "ask first" or "refuse" rule holds like a floor; a learned share rule never loosens one.
+        # The strictest learned "ask first" or "refuse" rule that holds is a floor; a learned share
+        # rule never loosens one, and neither does a topic the request adds.
         wanted = getattr(learned, "decision", None)
         if wanted in ("ask_user", "refuse"):
             floors.append(f"learned:{wanted}")

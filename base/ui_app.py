@@ -2,7 +2,8 @@
 
 Pages are plain HTML built from ui/templates with string.Template (jinja2 is not installed),
 plus ui/static/app.css and ui/static/app.js. Only tag-only fields of a decision row are ever
-rendered (request, tagged_text, router reason, blocked reasons); raw results stay in the stores.
+rendered (request, tagged_text, router reason, blocked reasons, and the row's request topics as
+the policy's labels); raw results stay in the stores.
 
 Access: bound to loopback, the page needs no login but only answers to loopback Host headers
 (a DNS-rebinding guard). Bound to a LAN address (Jetson), every route except /health, /pair and
@@ -76,6 +77,16 @@ SOURCE_LABELS = {
     "cache": "Same as a recent decision",
 }
 TAG_RE = re.compile(r"\[(?:Student [A-Z]{1,2}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB) \d+)\]")
+# Card chips for the shipped policy's request topics (eval/user_policy.yaml), its descriptions cut
+# to a few words. Any other request topic is labeled from its own description (topic_label).
+REQUEST_TOPIC_LABELS = {
+    "parents": "For a student's family",
+    "third_party": "For someone outside the class",
+    "full_text": "Whole text",
+    "deanonymize": "Asks who a tag is",
+    "class_level": "Class-level question",
+}
+TOPIC_LABEL_WORDS = 6
 
 SECURITY_HEADERS = [
     (b"x-frame-options", b"DENY"),
@@ -515,10 +526,45 @@ def _chips(items: Iterable[str], cls: str = "") -> str:
     return '<ul class="chips">' + "".join(f'<li class="chip {cls}">{esc(i)}</li>' for i in items) + "</ul>"
 
 
-def approval_card(row: Any) -> str:
+def topic_label(topic: str, description: str = "") -> str:
+    """A few plain words for a request topic: the shipped label, else the description's first clause
+    ("meant for the school board: ..." -> "For the school board")."""
+    if topic in REQUEST_TOPIC_LABELS:
+        return REQUEST_TOPIC_LABELS[topic]
+    words = re.split(r"[:;,(]", description or "", maxsplit=1)[0].split()
+    if words and words[0].lower() == "meant":
+        words = words[1:]
+    if not words:
+        return topic.replace("_", " ").capitalize()
+    text = " ".join(words[:TOPIC_LABEL_WORDS])
+    return text[0].upper() + text[1:]
+
+
+def request_topic_chips(row: Any, request_topics: Mapping[str, str] | None) -> str:
+    """Chips for the row's topics that are policy request topics, in policy order, with the policy's
+    description as the tooltip. Only policy wording is shown, never anything from the request."""
+    topics = set(_as_list(_val(row, "topics")))
+    items = [
+        f'<li class="chip topic" title="{esc(desc)}">{esc(topic_label(name, desc))}</li>'
+        for name, desc in (request_topics or {}).items()
+        if name in topics
+    ]
+    if not items:
+        return ""
+    return '<ul class="chips topics" aria-label="What the request is about">' + "".join(items) + "</ul>"
+
+
+def _request_topics(services: Any) -> dict[str, str]:
+    """The policy's request topics (name -> description), or {} when there is no policy."""
+    topics = getattr(getattr(services, "policy", None), "request_topics", None)
+    return dict(topics) if isinstance(topics, Mapping) else {}
+
+
+def approval_card(row: Any, request_topics: Mapping[str, str] | None = None) -> str:
     r = public_row(row)
     rid = str(r["id"])
-    form = "a short summary, with tags" if r["shown_form"] == "share_summary" else "the tagged text above"
+    summary = r["shown_form"] == "share_summary"  # egress stores the summary as the row's tagged text
+    form = "a short summary, with tags" if summary else "the tagged text above"
     meta = [
         r["tool"],
         _kind_label(r["result_kind"]),
@@ -531,6 +577,10 @@ def approval_card(row: Any) -> str:
         id_url=quote(rid, safe=""),
         when=r["when"],
         request=r["request"] or "No request text",
+        topics_html=request_topic_chips(row, request_topics),
+        leave_label="What would leave this device: a summary, not the full result"
+        if summary
+        else "What would leave this device",
         tagged_html=highlight_tags(r["tagged_text"]),
         blocked_html=_chips(r["blocked"], "warn"),
         router_reason=r["router_reason"] or "The router wants your OK before this leaves.",
@@ -808,9 +858,10 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def approvals_page(request: Request) -> HTMLResponse:
         rows = pending_rows()
+        topics = _request_topics(services)
         content = render(
             "approvals.html",
-            cards_html="".join(approval_card(r) for r in rows),
+            cards_html="".join(approval_card(r, topics) for r in rows),
             empty_hidden="" if not rows else "hidden",
         )
         return page(request, "approvals", "Approvals", content)

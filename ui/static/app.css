@@ -213,6 +213,9 @@ a { color: var(--accent); }
 .chip.warn { background: var(--wait-soft); color: var(--wait-text); }
 .chip.send { background: var(--accent-soft); color: var(--accent); }
 .chip.danger { background: var(--danger-soft); color: var(--danger); }
+/* Request topics: an outline chip next to the request, apart from the amber blocked chips. */
+.chip.topic { padding: 1px 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.request + .chips.topics { margin-top: -8px; }
 
 /* Buttons and inputs */
 .btn {

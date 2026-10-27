@@ -208,6 +208,122 @@ def test_approvals_page_shows_cards_newest_first(client):
     assert '<span class="badge">2</span>' in body
 
 
+REQUEST_TOPICS = {
+    "parents": "meant for a student's family: parents, guardians, a note or letter home",
+    "class_level": "asks for class-level numbers or patterns (an average, a count, a trend)",
+    "school_board": "meant for the school board: board meetings, minutes, public comment",
+}
+
+
+def topic_row(**kw):
+    row = {
+        **make_rows()[0],
+        "id": 9,
+        "request": "Draft a note home to [Student C]'s family about her essay score",
+        "topics": json.dumps(["grades", "parents", "third_party"]),
+        "tagged_text": "[Student C] scored 3 of 4 on organization.",
+        "router_reason": "This is headed to a family, so I asked first.",
+    }
+    return {**row, **kw}
+
+
+def topic_client(settings, rows, request_topics=REQUEST_TOPICS):
+    policy = SimpleNamespace(never_share={"iep": ["IEP"]}, request_topics=request_topics)
+    app = create_app(make_services(settings, approvals=FakeApprovals(rows), policy=policy))
+    return TestClient(app, base_url=LOCAL)
+
+
+def card(body, rid):
+    start = body.index(f'id="approval-{rid}"')
+    return body[start : body.index("</article>", start)]
+
+
+def test_card_shows_request_topics_as_outline_chips(settings):
+    with topic_client(settings, [topic_row()]) as c:
+        body = card(c.get("/").text, 9)
+    assert '<li class="chip topic" title="meant for a student&#x27;s family: parents, guardians, a note or letter' in body
+    assert ">For a student&#x27;s family</li>" in body
+    assert 'aria-label="What the request is about"' in body
+    assert "Class-level question" not in body  # a policy topic the row does not have
+    assert "For someone outside the class" not in body  # third_party is on the row but not in this policy
+    assert "Mentions grades" not in body and ">grades<" not in body  # not a request topic
+    assert 'class="chip warn"' not in body  # nothing blocked, so no amber chip
+    assert body.count("Draft a note home to [Student C]&#x27;s family") == 1  # the request, shown once
+    assert body.index('class="request"') < body.index("chip topic") < body.index('class="tagged"')
+    assert "What would leave this device</div>" in body  # shared tagged, not as a summary
+
+
+def test_topic_chips_sit_apart_from_blocked_chips(settings):
+    row = topic_row(topics=["iep", "parents"], blocked=json.dumps(["Mentions an IEP or 504 plan"]))
+    with topic_client(settings, [row]) as c:
+        body = card(c.get("/").text, 9)
+    assert '<li class="chip warn">Mentions an IEP or 504 plan</li>' in body
+    assert body.count("chip topic") == 1 and "iep" not in body.split('class="chips topics"')[1].split("</ul>")[0]
+
+
+def test_summary_card_says_a_summary_would_leave(settings):
+    row = topic_row(
+        request="What was the class average on evidence?",
+        topics=["class_level"],
+        shown_form="share_summary",
+        tagged_text="The class averaged 2.9 of 4 on evidence.",
+    )
+    with topic_client(settings, [row]) as c:
+        body = card(c.get("/").text, 9)
+    assert "What would leave this device: a summary, not the full result" in body
+    assert "If you share it, Muse gets a short summary, with tags." in body
+    assert ">Class-level question</li>" in body
+
+
+def test_cards_without_policy_request_topics_have_no_topic_chips(settings):
+    with topic_client(settings, [topic_row()], request_topics={}) as c:
+        body = c.get("/").text
+    assert "chip topic" not in body and "For a student" not in body
+
+
+def test_topic_labels():
+    assert ui_app.topic_label("parents", REQUEST_TOPICS["parents"]) == "For a student's family"
+    assert ui_app.topic_label("school_board", REQUEST_TOPICS["school_board"]) == "For the school board"
+    assert ui_app.topic_label("long_one", "asks for a b c d e f g h") == "Asks for a b c d"
+    assert ui_app.topic_label("club_fair", "") == "Club fair"
+
+
+def test_every_shipped_request_topic_has_a_short_label():
+    from base.policy import UserPolicy
+
+    topics = UserPolicy.load(ui_app.REPO_ROOT / "eval" / "user_policy.yaml").request_topics
+    assert topics, "the shipped policy has request topics"
+    for name, desc in topics.items():
+        assert name in ui_app.REQUEST_TOPIC_LABELS, name
+        label = ui_app.topic_label(name, desc)
+        assert len(label.split()) <= ui_app.TOPIC_LABEL_WORDS and "—" not in label
+
+
+def test_real_store_and_policy_show_topics_and_summary(settings, tmp_path):
+    approvals = pytest.importorskip("base.approvals")
+    from base.policy import UserPolicy
+
+    store = approvals.ApprovalStore(tmp_path / "base.db")
+    store.create_pending(
+        tool="get_result",
+        request="Write the class trend in evidence scores for the family newsletter",
+        result_kind="free_text",
+        tagged_text="Evidence scores rose across the class this month.",
+        router_decision="ask_user",
+        router_reason="This is headed to families, so I asked first.",
+        topics=["class_level", "parents", "grades"],
+        shown_form="share_summary",
+    )
+    policy = UserPolicy.load(ui_app.REPO_ROOT / "eval" / "user_policy.yaml")
+    app = create_app(make_services(settings, approvals=store, policy=policy), nights_csv=tmp_path / "none.csv")
+    with TestClient(app, base_url=LOCAL) as c:
+        body = c.get("/").text
+    assert body.index(">For a student&#x27;s family</li>") < body.index(">Class-level question</li>")  # policy order
+    assert "What would leave this device: a summary, not the full result" in body
+    assert "—" not in body
+    store.close()
+
+
 @pytest.mark.parametrize("path", ["/history", "/history?show=pending", "/dreaming", "/device", "/pair"])
 def test_other_pages_render(client, path):
     r = client.get(path)

@@ -4,7 +4,8 @@
 
 Every run gets a fresh temporary BASE_HOME, so it never touches the real decision log, unless
 --home is given. Writes eval/reports/NAME.md (exact command at the top) and
-eval/reports/raw/NAME.jsonl (ids and decisions only, never the result text).
+eval/reports/raw/NAME.jsonl (ids, decisions and the policy topic names egress routed on, never
+the result or request text).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from pathlib import Path
 from base import guard
 from base.config import REPO_ROOT, load_settings
 from base.types import DECISIONS
+from base.workspace.agent import GRADING_WORDS, TOPICS_GRADING
 
 EVAL_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = EVAL_DIR / "reports"
@@ -39,8 +41,13 @@ SUMMARY_KEYS = (
 
 # What the connector really sends for each eval kind. The device never builds sensitive_record,
 # contact_info or class_aggregate results: a search sends "snippet" and a private task's answer
-# is "free_text". The labeled kind and topics are for scoring only, unless --oracle-labels.
+# is "free_text". per_student depends on the item (production_labels). The labeled kind and
+# topics are for scoring only, unless --oracle-labels.
 PRODUCTION_KIND = {"sensitive_record": "snippet", "contact_info": "snippet", "class_aggregate": "free_text"}
+# The agent emits per_student only from the grading job, which always attaches TOPICS_GRADING
+# (base/workspace/agent.py). It grades when Muse's instructions match GRADING_WORDS and the folder
+# has a rubric; the eval's essays folder always has one, so the words decide. Anything else comes
+# back from the generic map-reduce path as free_text with no job topics.
 # What Muse gets, per expected decision: shared text, a wait for the OK, or a kept message.
 OUTCOME_FOR = {"share_tagged": "shared", "share_summary": "shared", "ask_user": "waiting", "refuse": "refused"}
 # A gate run with more items than this share of errors and fallbacks says nothing about the rules.
@@ -149,24 +156,52 @@ def evaluate(
                 close()
 
 
+def production_labels(item: Mapping) -> tuple[str, list[str]]:
+    """The result kind and job topics the connector would send with this item's result.
+
+    A per_student item whose request has a grading word (agent.GRADING_WORDS: grade, feedback,
+    score, rubric) is the grading job's table (per_student, with TOPICS_GRADING, as the agent
+    always attaches them), whatever its hand labels say; any other per_student item ("What did
+    the grader say", attendance, reading groups) is the generic path's free_text with no job
+    topics. Other kinds map through PRODUCTION_KIND, with no job topics.
+    """
+    kind = item["result_kind"]
+    if kind == "per_student":
+        if GRADING_WORDS.search(item.get("request") or ""):
+            return "per_student", list(TOPICS_GRADING)
+        return "free_text", []
+    return PRODUCTION_KIND.get(kind, kind), []
+
+
 def release_item(services, item: Mapping, *, tool: str = "eval", day: int | None = None, oracle: bool = False):
     """Send one invented eval item through egress, the way a connector tool result goes.
 
-    By default the router gets only what production gives it: the kind the connector would send
-    (PRODUCTION_KIND), no hand-labeled topics (topics then come from guard.tag's keyword scan, as
-    in production) and no summary for kinds the agent never summarizes. `oracle=True` passes the
-    hand labels, for comparison with earlier reports only.
+    By default the router gets only what production gives it (production_labels): the kind the
+    connector would send, the job's own topics where the agent attaches them (the grading job's
+    per-student table) and a summary only for per_student. Egress then adds what the device finds
+    itself, as in production: never-share keywords in the result and in Muse's request, and the
+    device model's labels for the policy's request topics.
+
+    A snippet item's `request` stays the item's sentence. It stands for search_documents' query
+    plus its optional `purpose` (egress sees "<query>\\nPurpose: <purpose>"), so it assumes Muse
+    fills in purpose; a search without one gives egress the search words only.
+
+    `oracle=True` passes the hand-labeled kind and topics instead (egress still adds its own), for
+    comparison with earlier reports only.
     """
     release = services.egress.release
-    kind = item["result_kind"] if oracle else PRODUCTION_KIND.get(item["result_kind"], item["result_kind"])
-    summary = item.get("summary") if oracle or kind == "per_student" else None
+    if oracle:
+        kind, topics, summary = item["result_kind"], list(item.get("topics") or []), item.get("summary")
+    else:
+        kind, topics = production_labels(item)
+        summary = item.get("summary") if kind == "per_student" else None
     kwargs = {
         "tool": tool,
         "request": item["request"],
         "raw_text": item["result"],
         "result_kind": kind,
         "summary": summary,
-        "topics": list(item.get("topics") or []) if oracle else [],
+        "topics": topics,
         "item_id": item["id"],
     }
     if day is not None:
@@ -195,7 +230,18 @@ def run(
     rows in the decision log."""
     settings = services.settings
     roster_values = _roster_values(getattr(services, "roster", None))
-    rows = [_score(services, item, roster_values, oracle=oracle, check_approved=check_approved) for item in items]
+    names = policy_topic_names(getattr(services, "policy", None))
+    router = getattr(services, "router", None)
+    if router is not None:
+        services.router = RouterTap(router)  # egress reads services.router on every release
+    try:
+        rows = [
+            _score(services, item, roster_values, names, oracle=oracle, check_approved=check_approved)
+            for item in items
+        ]
+    finally:
+        if router is not None:
+            services.router = router
     return _report(
         rows,
         name=name,
@@ -227,17 +273,57 @@ def find_leaks(services, text: str, item: Mapping, roster_values: Iterable[str])
     return sorted(found)
 
 
+class RouterTap:
+    """Forwards to the router and keeps the last RouteInput egress routed, so a row can say which
+    topics egress used and the dreaming gate can compare two rule files item by item."""
+
+    def __init__(self, router):
+        self.router = router
+        self.last = None
+
+    def __getattr__(self, name):
+        return getattr(self.router, name)
+
+    def decide(self, inp, *args, **kw):
+        self.last = inp
+        return self.router.decide(inp, *args, **kw)
+
+
+def policy_topic_names(policy) -> frozenset[str]:
+    """Every topic name the policy defines (never-share, request and rule topics): the only topic
+    strings a raw row may carry."""
+    from base.dreaming import train
+
+    return train.relevant_topics(policy) or frozenset()
+
+
 def _score(
-    services, item: Mapping, roster_values: list[str], *, oracle: bool = False, check_approved: bool = False
+    services,
+    item: Mapping,
+    roster_values: list[str],
+    topic_names: frozenset[str] = frozenset(),
+    *,
+    oracle: bool = False,
+    check_approved: bool = False,
 ) -> dict:
     row = {"id": item["id"], "expected": item["expected"], "wants": services.policy.wants(item)}
+    tap = getattr(services, "router", None)
+    tap = tap if isinstance(tap, RouterTap) else None
+    if tap is not None:
+        tap.last = None
     start = _now_ms()
     try:
         released = release_item(services, item, oracle=oracle)
     except Exception as exc:  # one failed item must not end a 100-item run
         row.update(decision="error", status="error", source="error", floors=[], leaked=False, leak_kinds=[])
-        row.update(fallback=False, latency_ms=_now_ms() - start, error=type(exc).__name__)
+        row.update(fallback=False, latency_ms=_now_ms() - start, error=type(exc).__name__, topics=None)
+        row["route_input"] = None
         return row
+    # What egress routed on, or None when a check held the result before the router ran. The
+    # RouteInput stays in memory for the gate; raw rows get only the policy's topic names.
+    inp = tap.last if tap is not None else None
+    row["route_input"] = inp
+    row["topics"] = None if inp is None else [t for t in getattr(inp, "topics", None) or () if t in topic_names]
     rd = released.decision
     decision = getattr(rd, "decision", rd)
     latency = getattr(rd, "latency_ms", None)
@@ -341,17 +427,26 @@ def write_report(report: EvalReport, out_dir: str | Path = REPORTS_DIR) -> tuple
 
 
 def write_raw_rows(report: EvalReport, path: str | Path) -> None:
-    """One JSON line per item: ids, decisions and leak kinds only, never the result text."""
+    """One JSON line per item: ids, decisions, leak kinds and the policy topic names egress routed
+    on (None when a check held the result before the router), never the result or request text."""
     keep = (
         "id", "expected", "wants", "decision", "status", "source", "floors", "fallback",
-        "leaked", "leak_kinds", "leak_kinds_after_approval",
+        "leaked", "leak_kinds", "leak_kinds_after_approval", "topics",
     )  # fmt: skip
     with Path(path).open("w") as f:
         for r in report.rows:
             out = {k: r.get(k) for k in keep} | {"latency_ms": r.get("latency_ms")}
-            if "error" in r:
-                out["error"] = r["error"]
+            for extra in ("error", "reused"):  # reused: a gate row copied from the current rules' run
+                if extra in r:
+                    out[extra] = r[extra]
             f.write(json.dumps(out) + "\n")
+
+
+def rescore(rows: list[dict], like: EvalReport, **meta) -> EvalReport:
+    """A report over `rows` (as run() makes them), with `like`'s name, device, backend, model,
+    command, rules and labels unless `meta` gives others. The dreaming gate merges two runs this way."""
+    base = {k: getattr(like, k) for k in ("name", "device", "backend", "model", "command", "rules", "labels")}
+    return _report(list(rows), **(base | meta))
 
 
 def render_markdown(r: EvalReport) -> str:
@@ -421,8 +516,15 @@ def render_markdown(r: EvalReport) -> str:
 
 
 LABELS_TEXT = {
-    "production": "as the connector sends them: kind mapped to what the device emits, topics only from the guard's keyword scan",
-    "oracle": "hand labels (kind and topics from the item, which production never has): for comparison only",
+    "production": (
+        "as the connector sends them: kind mapped to what the device emits and the grading job's topics on "
+        "per-student grades; topics also from never-share keywords in the result and in Muse's request, and "
+        "from the device model's labels for the policy's request topics (when it has any)"
+    ),
+    "oracle": (
+        "hand labels (kind and topics from the item, which production never has), plus the topics egress finds "
+        "itself (keywords and the device model's request-topic labels): for comparison only"
+    ),
 }
 
 

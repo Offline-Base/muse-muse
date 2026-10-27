@@ -1,15 +1,20 @@
-{"step": "Router decision", "run": 1, "latency_ms": 2654, "completion_tokens": 144, "reasoning_tokens": 113, "tokens_per_s": 54.3}
-{"step": "Router decision", "run": 2, "latency_ms": 2131, "completion_tokens": 148, "reasoning_tokens": 101, "tokens_per_s": 69.5}
-{"step": "Router decision", "run": 3, "latency_ms": 1887, "completion_tokens": 158, "reasoning_tokens": 118, "tokens_per_s": 83.7}
-{"step": "Router decision", "run": 4, "latency_ms": 2146, "completion_tokens": 140, "reasoning_tokens": 103, "tokens_per_s": 65.2}
-{"step": "Router decision", "run": 5, "latency_ms": 1528, "completion_tokens": 109, "reasoning_tokens": 85, "tokens_per_s": 71.3}
-{"step": "Second pass for names", "run": 1, "latency_ms": 4089, "completion_tokens": 235, "reasoning_tokens": 232, "tokens_per_s": 57.5}
-{"step": "Second pass for names", "run": 2, "latency_ms": 1074, "completion_tokens": 150, "reasoning_tokens": 142, "tokens_per_s": 139.7}
-{"step": "Second pass for names", "run": 3, "latency_ms": 2185, "completion_tokens": 182, "reasoning_tokens": 177, "tokens_per_s": 83.3}
-{"step": "Second pass for names", "run": 4, "latency_ms": 1446, "completion_tokens": 209, "reasoning_tokens": 200, "tokens_per_s": 144.5}
-{"step": "Second pass for names", "run": 5, "latency_ms": 1493, "completion_tokens": 190, "reasoning_tokens": 172, "tokens_per_s": 127.3}
-{"step": "Grade one essay", "run": 1, "latency_ms": 3724, "completion_tokens": 476, "reasoning_tokens": 287, "tokens_per_s": 127.8}
-{"step": "Grade one essay", "run": 2, "latency_ms": 3906, "completion_tokens": 496, "reasoning_tokens": 309, "tokens_per_s": 127.0}
-{"step": "Grade one essay", "run": 3, "latency_ms": 4399, "completion_tokens": 528, "reasoning_tokens": 351, "tokens_per_s": 120.0}
-{"step": "Grade one essay", "run": 4, "latency_ms": 4722, "completion_tokens": 550, "reasoning_tokens": 380, "tokens_per_s": 116.5}
-{"step": "Grade one essay", "run": 5, "latency_ms": 4263, "completion_tokens": 508, "reasoning_tokens": 317, "tokens_per_s": 119.2}
+{"step": "Router decision", "run": 1, "latency_ms": 1767, "completion_tokens": 116, "reasoning_tokens": 79, "tokens_per_s": 65.6}
+{"step": "Router decision", "run": 2, "latency_ms": 1694, "completion_tokens": 126, "reasoning_tokens": 109, "tokens_per_s": 74.4}
+{"step": "Router decision", "run": 3, "latency_ms": 1632, "completion_tokens": 121, "reasoning_tokens": 87, "tokens_per_s": 74.1}
+{"step": "Router decision", "run": 4, "latency_ms": 2259, "completion_tokens": 145, "reasoning_tokens": 96, "tokens_per_s": 64.2}
+{"step": "Router decision", "run": 5, "latency_ms": 2234, "completion_tokens": 167, "reasoning_tokens": 120, "tokens_per_s": 74.8}
+{"step": "Second pass for names", "run": 1, "latency_ms": 1566, "completion_tokens": 207, "reasoning_tokens": 200, "tokens_per_s": 132.2}
+{"step": "Second pass for names", "run": 2, "latency_ms": 1411, "completion_tokens": 189, "reasoning_tokens": 179, "tokens_per_s": 133.9}
+{"step": "Second pass for names", "run": 3, "latency_ms": 1125, "completion_tokens": 149, "reasoning_tokens": 138, "tokens_per_s": 132.4}
+{"step": "Second pass for names", "run": 4, "latency_ms": 1288, "completion_tokens": 177, "reasoning_tokens": 163, "tokens_per_s": 137.4}
+{"step": "Second pass for names", "run": 5, "latency_ms": 1159, "completion_tokens": 144, "reasoning_tokens": 132, "tokens_per_s": 124.2}
+{"step": "Request topics", "run": 1, "latency_ms": 931, "completion_tokens": 89, "reasoning_tokens": 83, "tokens_per_s": 95.6}
+{"step": "Request topics", "run": 2, "latency_ms": 764, "completion_tokens": 91, "reasoning_tokens": 82, "tokens_per_s": 119.1}
+{"step": "Request topics", "run": 3, "latency_ms": 769, "completion_tokens": 95, "reasoning_tokens": 90, "tokens_per_s": 123.5}
+{"step": "Request topics", "run": 4, "latency_ms": 676, "completion_tokens": 83, "reasoning_tokens": 76, "tokens_per_s": 122.8}
+{"step": "Request topics", "run": 5, "latency_ms": 885, "completion_tokens": 108, "reasoning_tokens": 98, "tokens_per_s": 122.0}
+{"step": "Grade one essay", "run": 1, "latency_ms": 3792, "completion_tokens": 522, "reasoning_tokens": 340, "tokens_per_s": 137.7}
+{"step": "Grade one essay", "run": 2, "latency_ms": 3957, "completion_tokens": 573, "reasoning_tokens": 386, "tokens_per_s": 144.8}
+{"step": "Grade one essay", "run": 3, "latency_ms": 3105, "completion_tokens": 458, "reasoning_tokens": 312, "tokens_per_s": 147.5}
+{"step": "Grade one essay", "run": 4, "latency_ms": 3594, "completion_tokens": 472, "reasoning_tokens": 303, "tokens_per_s": 131.3}
+{"step": "Grade one essay", "run": 5, "latency_ms": 4714, "completion_tokens": 611, "reasoning_tokens": 420, "tokens_per_s": 129.6}

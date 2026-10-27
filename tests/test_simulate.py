@@ -167,7 +167,7 @@ def test_simulate_nights_end_to_end(settings, tmp_path, fake_world, capsys):
     tasks, hold = write_items(tmp_path)
     out = tmp_path / "reports"
     argv = ["--nights", "5", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold),
-            "--synthetic", str(tmp_path / "none.jsonl"), "--out", str(out)]  # fmt: skip
+            "--synthetic", str(tmp_path / "none.jsonl"), "--out", str(out), "--unseen", "none"]  # fmt: skip
     assert simulate_nights.main(argv, settings=settings) == 0
 
     with (out / "nights.csv").open() as f:
@@ -235,7 +235,7 @@ def test_requests_split_into_wanted_and_unneeded(settings, tmp_path, fake_world)
     tasks, hold = write_items(tmp_path)
     out = tmp_path / "reports"
     argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold),
-            "--synthetic", str(tmp_path / "none.jsonl"), "--out", str(out)]  # fmt: skip
+            "--synthetic", str(tmp_path / "none.jsonl"), "--out", str(out), "--unseen", "none"]  # fmt: skip
     assert simulate_nights.main(argv, settings=settings) == 0
     with (out / "nights.csv").open() as f:
         rows = list(csv.DictReader(f))
@@ -304,7 +304,8 @@ def test_default_run_has_no_practice_data_and_counts_rules_and_day_leaks(setting
     # learns only from her answers; eval F4: what each approval releases is leak-checked.
     tasks, hold = write_items(tmp_path)
     out = tmp_path / "reports"
-    argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out)]
+    argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out),
+            "--unseen", "none"]  # fmt: skip
     assert simulate_nights.main(argv, settings=settings) == 0
     with (out / "nights.csv").open() as f:
         rows = list(csv.DictReader(f))
@@ -312,6 +313,7 @@ def test_default_run_has_no_practice_data_and_counts_rules_and_day_leaks(setting
     assert int(rows[1]["user_rules"]) >= 1
     md = (out / "nights.md").read_text()
     assert "| Practice data | none" in md and "selected on" in md
+    assert "a grading word in the request, never the hand labels" in md  # how production_labels picks the path
     assert sorted(p.name for p in (out / "raw" / "nights").iterdir())[:2] == ["night-1-candidate.jsonl", "night-1-current.jsonl"]
 
 
@@ -332,3 +334,115 @@ def test_speed_series_share_one_metric(tmp_path, capsys):
     series = charts.read_speed(tmp_path)
     assert {metric for _, metric, _ in series} == {"Tokens/s"}  # three files have it, two have latency
     assert "left out old_speed.md" in capsys.readouterr().err
+
+
+# ----- unseen test: a sample the days, the gate and dreaming never use -----
+
+
+def write_unseen(tmp_path, per_group=2):
+    items = []
+    for g, (kind, topics, expected) in enumerate(GROUPS):
+        for n in range(per_group):
+            student = STUDENTS[n % len(STUDENTS)]
+            items.append({"id": f"u{g}{n}", "request": f"unseen {kind} {n}", "result": f"{student.name}: {kind} u{n}",
+                          "result_kind": kind, "topics": topics, "expected": expected, "names": [student.name],
+                          "identifiers": []})  # fmt: skip
+    path = tmp_path / "unseen.jsonl"
+    path.write_text("".join(json.dumps(i) + "\n" for i in items))
+    return path
+
+
+def test_unseen_sample_is_seeded_balanced_and_leaves_out_ids():
+    from collections import Counter
+
+    from base.types import DECISIONS
+
+    items = [{"id": f"{d}-{n}", "expected": d} for d in DECISIONS for n in range(40)]
+    sample = simulate_nights.sample_unseen(items, 100, seed=3)
+    assert Counter(i["expected"] for i in sample) == {d: 25 for d in DECISIONS}
+    assert sample == simulate_nights.sample_unseen(items, 100, seed=3)  # same seed, same sample
+    assert sample != simulate_nights.sample_unseen(items, 100, seed=4)
+    assert sample == [i for i in items if i in sample]  # in file order
+
+    left_out = {f"refuse-{n}" for n in range(30)}  # only 10 refuse items remain
+    short = simulate_nights.sample_unseen(items, 100, seed=3, exclude=left_out)
+    assert Counter(i["expected"] for i in short) == {
+        "share_tagged": 30, "share_summary": 30, "ask_user": 30, "refuse": 10,
+    }  # fmt: skip
+    assert not left_out & {i["id"] for i in short}
+    assert len(simulate_nights.sample_unseen(items[:10], 100, seed=3)) == 10
+    six = simulate_nights.sample_unseen(items, 6, seed=3)
+    assert Counter(i["expected"] for i in six) == {"share_tagged": 2, "share_summary": 2, "ask_user": 1, "refuse": 1}
+
+
+def test_ids_in_reads_ids_and_skips_missing_files(tmp_path):
+    f = tmp_path / "a.jsonl"
+    f.write_text('{"id": "syn-0001", "topics": []}\n{"id": "syn-0002"}\n')
+    assert simulate_nights.ids_in([f, tmp_path / "missing.jsonl"]) == {"syn-0001", "syn-0002"}
+
+
+def test_unseen_table_has_one_row_per_router():
+    r = run_eval.EvalReport(name="x", n=4, accuracy=0.5, agreement=0.25, approval_requests=2, errors=1,
+                            categories={"refuse": {"accuracy": 1.0}})  # fmt: skip
+    lines = simulate_nights.unseen_table([simulate_nights._unseen_row("Night 0, no learned rules", r)], "Where from.")
+    assert lines[1] == "## Unseen test" and "Where from." in lines
+    assert "| Night 0, no learned rules | 4 | 50.0% | 25.0% | 2 | 0 | 1 | - | - | - | 100% |" in lines
+    assert simulate_nights.unseen_table([]) == []
+
+
+def test_unseen_test_scores_two_routers_once_on_items_nothing_else_uses(settings, tmp_path, fake_world, monkeypatch):
+    tasks, hold = write_items(tmp_path)
+    unseen = write_unseen(tmp_path)
+    out = tmp_path / "reports"
+    calls = []
+    evaluate = run_eval.evaluate
+
+    def spy(settings, items, *, rules_path=None, name, **kw):
+        calls.append((name, sorted(i["id"] for i in items)))
+        return evaluate(settings, items, rules_path=rules_path, name=name, **kw)
+
+    monkeypatch.setattr(run_eval, "evaluate", spy)
+    # The practice data is the unseen file itself: its sampled items must still never be trained on.
+    argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out),
+            "--synthetic", str(unseen), "--unseen", str(unseen), "--unseen-n", "8", "--unseen-exclude", "none"]  # fmt: skip
+    assert simulate_nights.main(argv, settings=settings) == 0
+
+    ids = sorted(f"u{g}{n}" for g in range(4) for n in range(2))
+    assert [c for c in calls if c[0].startswith("unseen")] == [("unseen-night-0", ids), ("unseen-last-night", ids)]
+    assert all(not set(ids) & set(seen) for name, seen in calls if not name.startswith("unseen"))
+    with (out / "nights.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert rows[1]["practice_rules"] == "0" and rows[2]["practice_rules"] == "0"
+    assert rows[1]["gate_rerun"] == "4"  # the fake router cannot compare learned rules, so all are re-run
+
+    md = (out / "nights.md").read_text()
+    assert "## Unseen test" in md and "8 items from" in md and "share_tagged:2 share_summary:2 ask_user:2 refuse:2" in md
+    assert "| Night 0, no learned rules | 8 | 25.0% |" in md
+    assert "| After the last night, router_rules.md (" in md and "| 8 | 75.0% |" in md
+    assert "night 1 4 of 4" in md and "—" not in md
+    raw = out / "raw" / "nights"
+    assert (raw / "unseen-night-0.jsonl").is_file() and (raw / "unseen-last-night.jsonl").is_file()
+
+
+def test_unseen_sample_leaves_out_the_request_topic_check_ids_by_default(settings, tmp_path, fake_world, monkeypatch):
+    tasks, hold = write_items(tmp_path)
+    unseen = write_unseen(tmp_path)
+    reports = tmp_path / "repo-reports"
+    (reports / "raw").mkdir(parents=True)
+    (reports / "raw" / "request_topics_tuning.jsonl").write_text('{"id": "u00", "topics": []}\n{"id": "u31"}\n')
+    monkeypatch.setattr(run_eval, "REPORTS_DIR", reports)
+    out = tmp_path / "reports"
+    argv = ["--nights", "1", "--per-day", "8", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out),
+            "--unseen", str(unseen)]  # fmt: skip
+    assert simulate_nights.main(argv, settings=settings) == 0
+    md = (out / "nights.md").read_text()
+    assert "6 items from" in md and "the 2 ids in" in md and "request_topics_tuning.jsonl" in md
+    used = {json.loads(line)["id"] for line in (out / "raw" / "nights" / "unseen-night-0.jsonl").read_text().splitlines()}
+    assert len(used) == 6 and not used & {"u00", "u31"}
+
+
+def test_unseen_test_needs_its_file(settings, tmp_path, fake_world):
+    tasks, hold = write_items(tmp_path)
+    with pytest.raises(SystemExit):
+        simulate_nights.main(["--tasks", str(tasks), "--holdout", str(hold), "--unseen", str(tmp_path / "nope.jsonl")],
+                             settings=settings)  # fmt: skip

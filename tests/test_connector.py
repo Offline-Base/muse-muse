@@ -24,6 +24,7 @@ from base.config import CloudBackendRefused
 from base.connector import server
 from base.connector.audit import Audit, audit, recent
 from base.connector.server import build_server, connector_app, read_or_create_token
+from base.workspace.jobs import JobStore
 
 REAL_A = "Zephyrine Quoll"
 REAL_B = "Barnaby Thistlewick"
@@ -142,6 +143,27 @@ class FakeJobs:
 
     def get(self, job_id):
         return self.rows.get(job_id)
+
+    def job_for_result(self, kind, instructions, raw_result, result_kind):
+        """Like JobStore: an identical result still being released keeps its job."""
+        for row in self.rows.values():
+            same = (row.get("kind"), row["instructions"], row.get("raw_result")) == (kind, instructions, raw_result)
+            if same and row.get("release_status") in ("none", "releasing", "waiting"):
+                return row["id"]
+        job_id = f"{kind}-{len(self.rows) + 1}"
+        self.rows[job_id] = {
+            "id": job_id,
+            "kind": kind,
+            "status": "done",
+            "instructions": instructions,
+            "result_kind": result_kind,
+            "raw_result": raw_result,
+            "release_status": "none",
+            "approval_id": None,
+            "released_text": None,
+            "topics": [],
+        }
+        return job_id
 
     def set_release(self, job_id, status, approval_id=None, released_text=None):
         """Like JobStore: approval_id is an int and the job status moves with the release."""
@@ -281,6 +303,13 @@ async def test_descriptions_written_for_muse(client):
     assert "[Student A]" in tools["search_documents"].description
     assert "OK on the device" in tools["get_result"].description
     assert "real names" in tools["run_private_task"].description
+    # Request topics need Muse to say who a result is for (review gap: request topics).
+    assert "who a result is for" in server.INSTRUCTIONS and "for the family newsletter" in server.INSTRUCTIONS
+    assert "who the result is for" in tools["run_private_task"].description
+    assert "purpose" in tools["search_documents"].description
+    assert "search_documents" in tools["get_result"].description
+    search_args = tools["search_documents"].input_schema
+    assert set(search_args["properties"]) == {"query", "purpose"} and search_args["required"] == ["query"]
     async with Client(client.server) as c:
         assert c.instructions == server.INSTRUCTIONS
 
@@ -347,6 +376,8 @@ async def test_search_restores_tags_and_releases_short_snippets(client, services
     [call] = services.egress.calls
     assert call["request"] == f"{TAG_A} thesis"  # Muse's tag-only request, not the restored one
     assert call["result_kind"] == "snippet"
+    job = services.jobs.rows[call["job_id"]]  # released as a search job, like a task's result
+    assert job["kind"] == "search" and job["release_status"] == "shared"
     assert call["raw_text"].count(f"{REAL_A} essay") == 5  # at most 5 even if the index returns more
     for block in call["raw_text"].split("\n\n"):
         assert len(block.split("\n", 1)[1]) <= server.SNIPPET_CHARS + 4
@@ -568,10 +599,13 @@ async def test_sdk_argument_errors_become_plain_messages(client, services):
     assert "validation" not in text.lower() and "pydantic" not in text.lower()
     long = await client.call_tool("search_documents", {"query": "x" * 600})
     assert long.is_error and "query" in text_of(long)
+    long_purpose = await client.call_tool("search_documents", {"query": "x", "purpose": "y" * 400})
+    assert long_purpose.is_error and "purpose" in text_of(long_purpose)
     missing = await client.call_tool("get_result", {})
     assert missing.is_error and "job_id" in text_of(missing)
     assert outcomes(services) == [
         ("list_documents", "bad_input"),
+        ("search_documents", "bad_input"),
         ("search_documents", "bad_input"),
         ("get_result", "bad_input"),
     ]
@@ -749,8 +783,6 @@ class SlowEgress(FakeEgress):
 
 
 def real_jobs(tmp_path):
-    from base.workspace.jobs import JobStore
-
     jobs = JobStore(tmp_path / "jobs.db")
     job_id = jobs.create("private_task", "Grade the essays", "essays")
     jobs.finish(job_id, f"{REAL_A}: 3 of 4", "per_student", summary="Average 3", topics=["grades"])
@@ -826,3 +858,118 @@ def test_standalone_get_on_mcp_is_405(services):
     with TestClient(app, base_url=BASE_URL) as tc:
         r = tc.get("/mcp", headers={"authorization": "Bearer " + "t" * 32, "accept": "text/event-stream"})
     assert r.status_code == 405
+
+
+# ----- search releases like get_result: bounded wait, a job_id, one release (review: relay's 55 s) -----
+
+
+def wait_for_release(jobs, job_id, timeout=5.0):
+    import time as _time
+
+    deadline = _time.monotonic() + timeout
+    while jobs.get(job_id)["release_status"] in ("none", "releasing"):
+        assert _time.monotonic() < deadline, "the release did not finish"
+        _time.sleep(0.02)
+
+
+async def test_search_purpose_is_part_of_the_request(client, services):
+    purpose = f"  for the family newsletter about {TAG_B} "
+    result = await client.call_tool("search_documents", {"query": f"{TAG_A} garden", "purpose": purpose})
+    assert services.index.searched == [(f"{REAL_A} garden", 5)]  # only the query is searched
+    assert services.restored == [f"{TAG_A} garden"]  # the purpose is never swapped to real names
+    [call] = services.egress.calls
+    assert call["request"] == f"{TAG_A} garden\nPurpose: for the family newsletter about {TAG_B}"
+    assert call["tool"] == "search_documents" and call["result_kind"] == "snippet"
+    assert text_of(result) == services.egress.outputs()[0]
+
+
+def test_slow_search_answers_still_checking_with_a_job_id(services, tmp_path, monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(server, "RELEASE_WAIT_SECONDS", 0.05)
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    services.egress = SlowEgress(delay=0.5)
+    c = server.Connector(services)
+    started = _time.perf_counter()
+    result, outcome = c.search_documents("evidence", "for my own grading")
+    assert _time.perf_counter() - started < 0.4  # bounded by the wait, not by the slow check
+    body = result.structured_content
+    assert outcome == "pending" and body["status"] == "running"
+    assert body["result"] == server.SEARCH_CHECKING_NOTE and REAL_A not in json.dumps(body)
+    job_id = body["job_id"]
+    assert services.jobs.get(job_id)["kind"] == "search"
+    wait_for_release(services.jobs, job_id)
+    done = c.get_result(job_id)[0].structured_content
+    assert done == {"job_id": job_id, "status": "shared", "result": services.egress.outputs()[0]}
+    assert_no_real_names(done["result"])
+    [call] = services.egress.calls
+    assert call["tool"] == "search_documents" and call["job_id"] == job_id
+    assert call["request"] == "evidence\nPurpose: for my own grading" and call["result_kind"] == "snippet"
+
+
+def test_a_retried_search_joins_the_release(services, tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "RELEASE_WAIT_SECONDS", 0.05)
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    services.egress = SlowEgress(delay=0.4)
+    c = server.Connector(services)
+    first = c.search_documents("evidence")[0].structured_content
+    again = c.search_documents("evidence")[0].structured_content  # Muse retries while it is checked
+    assert again == first and first["status"] == "running"
+    wait_for_release(services.jobs, first["job_id"])
+    assert len(services.egress.calls) == 1
+    assert c.get_result(first["job_id"])[0].structured_content["status"] == "shared"
+    assert len(services.egress.calls) == 1
+    # Once that release is done, the same search later is checked again, as before.
+    monkeypatch.setattr(server, "RELEASE_WAIT_SECONDS", 5.0)
+    assert c.search_documents("evidence")[1] == "shared" and len(services.egress.calls) == 2
+
+
+def test_concurrent_identical_searches_release_once(services, tmp_path):
+    import concurrent.futures
+
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    services.egress = SlowEgress(delay=0.3)
+    c = server.Connector(services)
+    with concurrent.futures.ThreadPoolExecutor(2) as pool:
+        got = sorted(pool.map(lambda _: c.search_documents("evidence")[1], range(2)))
+    assert got == ["pending", "shared"] and len(services.egress.calls) == 1
+
+
+async def test_a_search_waiting_for_the_user_gives_a_job_id_to_follow(client, services):
+    services.egress.status = services.egress.resolve_status = "waiting"
+    args = {"query": "evidence", "purpose": "for the family newsletter"}
+    body = (await client.call_tool("search_documents", args)).structured_content
+    assert body["status"] == "waiting" and "OK on the device" in body["result"]
+    again = (await client.call_tool("search_documents", args)).structured_content
+    assert again == body
+    assert len(services.egress.calls) == 1 and services.egress.resolved == [1]  # one approval card
+    services.egress.resolve_status = "shared"
+    done = json.loads(text_of(await client.call_tool("get_result", {"job_id": body["job_id"]})))
+    assert done == {"job_id": body["job_id"], "status": "shared", "result": f"RESOLVED 1: {TAG_A} scored 3"}
+    assert outcomes(services) == [
+        ("search_documents", "waiting"),
+        ("search_documents", "waiting"),
+        ("get_result", "shared"),
+    ]
+
+
+def test_a_search_check_that_could_not_run_is_tried_again(services, tmp_path):
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    services.egress = SlowEgress(retryable_first=1)
+    c = server.Connector(services)
+    result, outcome = c.search_documents("evidence")
+    body = result.structured_content
+    assert outcome == "pending" and body["status"] == "running"
+    assert services.jobs.get(body["job_id"])["release_status"] == "none"  # not stored as refused
+    assert c.get_result(body["job_id"])[0].structured_content["status"] == "shared"
+
+
+def test_a_search_whose_check_crashes_is_plain_and_runs_again(services, tmp_path):
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    services.egress.fail = True
+    c = server.Connector(services)
+    crashed = c.call("search_documents", c.search_documents, "evidence")
+    assert crashed.is_error and text_of(crashed) == server.GENERIC_ERROR
+    services.egress.fail = False
+    retried = c.call("search_documents", c.search_documents, "evidence")
+    assert text_of(retried) == services.egress.outputs()[0] and len(services.egress.calls) == 1

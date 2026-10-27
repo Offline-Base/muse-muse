@@ -102,6 +102,9 @@ class RouteInput:
     blocked: list[str] = field(default_factory=list)
     summary: str | None = None
     topics: list[str] = field(default_factory=list)
+    # Never-share topics named only in Muse's request, not in the result ("Do not mention any
+    # IEP"). They stay in `topics`, but floor the result to ask_user instead of refuse.
+    request_blocked: list[str] = field(default_factory=list)
 
 
 @dataclass

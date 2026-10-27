@@ -1,9 +1,10 @@
-"""Time Glimmer's three kinds of step on this machine and write eval/reports/<label>_speed.md.
+"""Time each kind of Glimmer step on this machine and write eval/reports/<label>_speed.md.
 
     uv run python -m scripts.bench_speed --label laptop [--runs 3] [--out eval/reports]
 
-Steps: one router decision, one second pass for names, and grading one essay, each on invented
-demo data (demo/ is marked .synthetic). It calls the Glimmer that GLIMMER_BACKEND points at: on
+Steps: one router decision, one second pass for names, one request-topics label (the policy's
+request_topics on an invented demo request) and grading one essay, each on invented demo data
+(demo/ is marked .synthetic). It calls the Glimmer that GLIMMER_BACKEND points at: on
 llama_server that is the model on this device (the number to quote as device speed); on openrouter
 it is the cloud, and the report says so. Nothing is downloaded or started here. Raw rows go to
 eval/reports/raw/<label>_speed.jsonl.
@@ -16,20 +17,30 @@ import json
 import re
 import statistics
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from base.config import REPO_ROOT, load_settings
-from base.local_llm import LocalLLM
+from base.local_llm import NAMES_PROMPT, NAMES_SCHEMA, TOPICS_PROMPT, LocalLLM, topics_schema
+from base.policy import UserPolicy
 from base.router import ROUTE_SCHEMA, SYSTEM_PROMPT
 from base.workspace.agent import GRADE_SCHEMA, GRADE_SYSTEM
 from eval import run_eval
 
 DEMO = REPO_ROOT / "demo"
-STEPS = ("Router decision", "Second pass for names", "Grade one essay")
+STEPS = ("Router decision", "Second pass for names", "Request topics", "Grade one essay")
+DEMO_REQUEST = "Draft a note home to [Student C]'s family about her essay score."
 
 
-def step_messages(demo: Path = DEMO) -> dict[str, tuple[list[dict], dict | None, int]]:
-    """(messages, schema, max_tokens) for each step, from the invented demo folder."""
+def topics_messages(request: str, topics: Mapping[str, str]) -> list[dict]:
+    """The messages LocalLLM.request_topics sends for `request` (tested to stay the same)."""
+    listed = "\n".join(f"- {name}: {desc}" for name, desc in topics.items())
+    return [{"role": "system", "content": f"{TOPICS_PROMPT}\n\nTopics:\n{listed}"}, {"role": "user", "content": request}]
+
+
+def step_messages(demo: Path = DEMO, topics: Mapping[str, str] | None = None) -> dict[str, tuple[list[dict], dict | None, int]]:
+    """(messages, schema, max_tokens) for each step, from the invented demo folder. With no
+    request topics (a policy without any) the topics step is left out, as egress skips the call."""
     essay = sorted((demo / "essays").glob("*.md"))[0].read_text()
     rubric = (demo / "rubric.md").read_text()
     route = (
@@ -37,22 +48,24 @@ def step_messages(demo: Path = DEMO) -> dict[str, tuple[list[dict], dict | None,
         "Blocked: none\nFound and tagged: student\nLearned rule for this result: none\nTagged text:\n"
         "| [Student A] | 3 | 3 | 2 | 3 | 11 |"
     )
-    from base.local_llm import NAMES_PROMPT, NAMES_SCHEMA
-
-    return {
+    steps = {
         "Router decision": ([{"role": "system", "content": SYSTEM_PROMPT + "None yet."},
                              {"role": "user", "content": route}], ROUTE_SCHEMA, 1500),  # fmt: skip
         "Second pass for names": ([{"role": "system", "content": NAMES_PROMPT},
                                    {"role": "user", "content": essay}], NAMES_SCHEMA, 1500),  # fmt: skip
+        "Request topics": (topics_messages(DEMO_REQUEST, topics or {}), topics_schema(list(topics or {})), 1500),
         "Grade one essay": ([{"role": "system", "content": GRADE_SYSTEM},
                              {"role": "user", "content": f"Rubric:\n{rubric}\n\nEssay:\n{essay}"}], GRADE_SCHEMA, 3000),  # fmt: skip
     }
+    if not topics:
+        del steps["Request topics"]
+    return steps
 
 
-def measure(llm, runs: int, demo: Path = DEMO) -> list[dict]:
+def measure(llm, runs: int, demo: Path = DEMO, topics: Mapping[str, str] | None = None) -> list[dict]:
     """One row per call: step, latency, completion tokens and tokens per second."""
     rows = []
-    for step, (messages, schema, max_tokens) in step_messages(demo).items():
+    for step, (messages, schema, max_tokens) in step_messages(demo, topics).items():
         for i in range(runs):
             result = llm.chat(messages, json_schema=schema, max_tokens=max_tokens, synthetic=True)
             seconds = max(result.latency_ms, 1) / 1000
@@ -105,7 +118,7 @@ def main(argv: list[str] | None = None, settings=None, llm=None) -> int:
         p.error("--runs must be at least 1")
     settings = settings or load_settings()
     llm = llm or LocalLLM(settings, "answer")
-    rows = measure(llm, args.runs)
+    rows = measure(llm, args.runs, topics=UserPolicy.load(settings.policy_path).request_topics)
     command = run_eval.command_line("scripts.bench_speed", argv)
     args.out.mkdir(parents=True, exist_ok=True)
     md = args.out / f"{args.label}_speed.md"

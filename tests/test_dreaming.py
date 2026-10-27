@@ -186,7 +186,7 @@ def small_policy():
 def test_policy_grouping_drops_unnamed_topics_and_floored_groups(settings):
     examples = [ex("per_student", ["grades", "reading"], "share_tagged", approved=True, remember=True)] * 2
     examples += [ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)]
-    examples += [ex("sensitive_record", ["iep"], "refuse", approved=False, remember=True)] * 3
+    examples += [ex("sensitive_record", ["iep"], "refuse", source="synthetic")] * 3
     examples += [
         ex("sensitive_record", ["custody"], "refuse", approved=False, remember=True)
     ] * 2  # ask_first
@@ -200,7 +200,40 @@ def test_policy_grouping_drops_unnamed_topics_and_floored_groups(settings):
         "You said no to 2 of 2 and said don't ask again.",
     ]  # "reading" is not a policy topic; iep is always refused by the floor, custody only asks
     assert result.rules == 2
-    assert "never-share topic (iep) are always refused" in text
+    assert "never-share topic (iep) in their own text are always refused by the safety floor" in text
+    assert "so no rule lists them" not in text
+
+
+def test_a_request_only_never_share_topic_learns_from_the_users_answers(settings):
+    # "Which students have an IEP?" over a list of tags: the result has no keyword, so the device
+    # asked (floor request:iep). Deny plus remember is a refuse rule the router then holds.
+    from base.router import Router
+    from base.types import RouteInput
+
+    denied = [ex("free_text", ["iep"], "refuse", approved=False, remember=True)] * 2
+    train.train(denied, settings, day="2026-10-27", policy=small_policy())
+    text = settings.paths.router_prompt.read_text()
+    assert "- Free-text answers (kind: free_text; topics: iep): refuse. You said no to 2 of 2" in text
+    assert "One named only in Muse's request (the Blocked line then says none) is asked about instead" in text
+
+    class Shares:
+        def chat_json(self, *_a, **_kw):
+            return {"decision": "share_tagged", "reason": "Fine."}
+
+    inp = RouteInput("Which students have an IEP?", "free_text", "[Student A], [Student B]", topics=["iep"],
+                     request_blocked=["iep"])  # fmt: skip
+    out = Router(settings, Shares(), small_policy()).decide(inp)
+    assert out.decision == "refuse" and out.floors == ["request:iep", "learned:refuse"]
+
+    # Asks stay asks; approvals never become a share rule there (the request floor asks anyway).
+    asked = [ex("free_text", ["iep"], "ask_user", approved=True, remember=False)] * 3
+    assert [(r.result_kind, r.topics, r.decision) for r in train.learn_rules(asked, small_policy())] == [
+        ("free_text", ("iep",), "ask_user"), (None, ("iep",), "ask_user")
+    ]  # fmt: skip
+    approved = [ex("free_text", ["iep"], "share_tagged", approved=True, remember=True)] * 3
+    assert train.learn_rules(approved, small_policy()) == []
+    # Practice data with a floored topic still teaches nothing.
+    assert train.learn_rules([ex("free_text", ["iep"], "refuse", source="synthetic")] * 4, small_policy()) == []
 
 
 def test_topic_rules_are_strict_only_and_need_three_decisions(settings):
@@ -387,6 +420,122 @@ def test_gate_force_replaces_rules_from_deleted_decisions(settings, tmp_path, sc
     assert not current.exists() and not candidate.exists()  # no rules beats rules from deleted rows
 
 
+# ----- paired gate: only items whose learned rules differ are re-run -----
+
+
+class ViewRouter:
+    """Fake Router.learned_view: the rule lines of a rules text that name the item's kind."""
+
+    def learned_view(self, inp, rules_text=None):
+        return tuple(line for line in (rules_text or "").splitlines() if inp.result_kind in line)
+
+
+GATE_ITEMS = [
+    {"id": "a", "request": "r", "result_kind": "snippet", "expected": "refuse"},
+    {"id": "b", "request": "r", "result_kind": "per_student", "expected": "share_tagged"},
+    {"id": "c", "request": "r", "result_kind": "free_text", "expected": "ask_user"},
+]
+
+
+def gate_row(item, decision, *, leaked=False, fallback=False, routed=True):
+    from base.types import RouteInput
+
+    return {
+        "id": item["id"], "expected": item["expected"], "wants": item["expected"], "decision": decision,
+        "status": run_eval.OUTCOME_FOR.get(decision, "refused"), "source": "fallback" if fallback else "model",
+        "floors": [], "fallback": fallback, "leaked": leaked, "leak_kinds": ["name"] if leaked else [],
+        "latency_ms": 5, "route_input": RouteInput(item["request"], item["result_kind"], "") if routed else None,
+    }  # fmt: skip
+
+
+@pytest.fixture
+def paired_runs(monkeypatch):
+    """Fake evaluate over rows, scored by run_eval itself. decide[(rules, id)] overrides the right
+    answer, extra[(rules, id)] marks a row leaked, fallen back or not routed; `calls` shows which
+    items each rules file was run on."""
+    decide, extra, calls = {}, {}, []
+
+    def evaluate(settings, items, *, rules_path=None, name, **kw):
+        key = "none" if rules_path is None else rules_path.read_text().splitlines()[0]
+        calls.append((key, [i["id"] for i in items]))
+        rows = [gate_row(i, decide.get((key, i["id"]), i["expected"]), **extra.get((key, i["id"]), {})) for i in items]
+        return run_eval.rescore(rows, EvalReport(name=name), rules=key)
+
+    monkeypatch.setattr(run_eval, "evaluate", evaluate)
+    return decide, extra, calls
+
+
+def paired_files(tmp_path):
+    current, candidate = tmp_path / "router_rules.md", tmp_path / "router_rules.candidate.md"
+    current.write_text("current\n- snippet: refuse\n")
+    candidate.write_text("candidate\n- snippet: refuse\n- per_student: share tagged\n")
+    return candidate, current
+
+
+def test_paired_gate_reruns_only_items_whose_learned_rules_changed(settings, tmp_path, paired_runs):
+    decide, _, calls = paired_runs
+    decide[("current", "b")] = "ask_user"  # the current rules miss b; the new per_student rule fixes it
+    decide[("candidate", "a")] = "share_tagged"  # a flip a separate candidate run could have hit
+    decide[("candidate", "c")] = "share_tagged"
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(SimpleNamespace(settings=settings, router=ViewRouter()), candidate, current, GATE_ITEMS)
+
+    assert calls == [("current", ["a", "b", "c"]), ("candidate", ["b"])]
+    assert g.keep and g.rerun == 1 and g.reasons == []
+    assert (g.before.accuracy, g.after.accuracy) == (round(2 / 3, 4), 1.0)
+    assert {r["id"]: r["reused"] for r in g.after.rows} == {"a": True, "b": False, "c": True}
+    assert g.after.name == "gate-candidate" and "1 of 3 holdout items re-run" in g.after.command
+    assert current.read_text().startswith("candidate")
+
+
+def test_paired_gate_with_unchanged_learned_rules_needs_no_candidate_run(settings, tmp_path, paired_runs):
+    _, _, calls = paired_runs
+    candidate, current = paired_files(tmp_path)
+    candidate.write_text("candidate\n- snippet: refuse\n")  # same rules for every holdout kind
+    g = gate.gate(SimpleNamespace(settings=settings, router=ViewRouter()), candidate, current, GATE_ITEMS)
+    assert calls == [("current", ["a", "b", "c"])] and g.rerun == 0
+    assert g.keep and g.after.summary() == g.before.summary()
+    assert all(r["reused"] for r in g.after.rows)
+
+
+def test_paired_gate_reruns_items_the_current_run_could_not_route(settings, tmp_path, paired_runs):
+    _, extra, calls = paired_runs
+    extra[("current", "c")] = {"routed": False, "fallback": True}  # a check held it before the router
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(SimpleNamespace(settings=settings, router=ViewRouter()), candidate, current, GATE_ITEMS)
+    assert calls[1] == ("candidate", ["b", "c"]) and g.rerun == 2
+
+
+def test_paired_gate_still_checks_leaks_and_unscored_items(settings, tmp_path, paired_runs):
+    decide, extra, _ = paired_runs
+    services = SimpleNamespace(settings=settings, router=ViewRouter())
+
+    extra[("candidate", "b")] = {"leaked": True}  # a leak on a re-run item
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(services, candidate, current, GATE_ITEMS)
+    assert not g.keep and any("leaked on 1" in r for r in g.reasons)
+    assert current.read_text().startswith("current") and not candidate.exists()
+
+    extra.clear()
+    extra[("current", "a")] = {"leaked": True}  # a leak on a reused item counts against the candidate too
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(services, candidate, current, GATE_ITEMS)
+    assert not g.keep and g.rerun == 1 and g.after.leaks == 1
+
+    extra.clear()
+    extra[("current", "c")] = {"fallback": True}  # 1 of 3 fell back, over the 10% limit, on both sides
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(services, candidate, current, GATE_ITEMS)
+    assert not g.keep and sum("could not be scored" in r for r in g.reasons) == 2
+
+
+def test_gate_without_a_router_that_can_compare_reruns_everything(settings, tmp_path, paired_runs):
+    _, _, calls = paired_runs
+    candidate, current = paired_files(tmp_path)
+    g = gate.gate(SimpleNamespace(settings=settings), candidate, current, GATE_ITEMS)
+    assert calls[1] == ("candidate", ["a", "b", "c"]) and g.rerun == 3
+
+
 # ----- night -----
 
 
@@ -537,6 +686,30 @@ def test_report_for_a_finished_night(settings, holdout_file, tmp_path, by_rule_c
     assert runner.report_for("dream-none") is None
 
 
+def test_night_says_how_many_holdout_items_the_gate_reran(settings, holdout_file, tmp_path, paired_runs):
+    rows = [row(i, "snippet", [], "deny", True) for i in range(1, 4)]
+    runner = runner_for(settings, rows, holdout_file, tmp_path)
+    runner.services.router = ViewRouter()
+    first = runner.run_night()  # no rules yet, then a snippet rule: the snippet item's view changed
+    assert first.kept and first.gate_rerun == 1 and "re-ran 1 of 1 holdout items" in first.note
+    assert "gate_rerun" not in runner.last_report()  # aggregate numbers for Muse stay as they were
+
+    second = runner.run_night()  # the same decisions give the same rules: nothing to re-run
+    assert second.gate_rerun == 0 and second.kept and "re-ran 0 of 1" in second.note
+    _, _, calls = paired_runs
+    assert [ids for _, ids in calls] == [["h1"], ["h1"], ["h1"]]
+
+
+def test_night_never_trains_on_excluded_ids(settings, holdout_file, tmp_path, by_rule_count, monkeypatch):
+    seen = []
+    build = dataset.build
+    monkeypatch.setattr(dataset, "build", lambda store, path, ids: seen.append(set(ids)) or build(store, path, ids))
+    runner = runner_for(settings, [], holdout_file, tmp_path)
+    runner.exclude_ids = {"syn-0001"}  # the simulation's unseen test items
+    runner.run_night()
+    assert seen == [{"h1", "syn-0001"}]
+
+
 def test_lora_rows_that_still_name_someone_never_leave(settings):
     # Review privacy F9: requests are Muse's text, and approved text never passed final_check.
     from dataclasses import replace as dc_replace
@@ -578,3 +751,59 @@ def test_class_level_requests_are_shared_as_a_summary():
     assert default_share_form("free_text", ["parents", "class_level"]) == "share_summary"
     assert default_share_form("class_aggregate") == "share_summary"
     assert default_share_form("per_student", ["parents"]) == "share_tagged"
+
+
+# ----- learned floors: a request topic never loosens a learned rule (train.learned_floor) -----
+
+
+def rule_line(kind, topics, decision, source="user"):
+    return train.RuleLine(kind, tuple(sorted(topics)), decision, source, f"{kind} {topics} {decision} {source}")
+
+
+def test_covers_is_same_kind_with_fewer_topics_or_a_topic_rule():
+    assert train.covers(rule_line("snippet", [], "refuse"), "snippet", ("class_level",))
+    assert train.covers(rule_line("snippet", ["parents"], "ask_user"), "snippet", ("class_level", "parents"))
+    assert not train.covers(rule_line("snippet", ["parents"], "ask_user"), "snippet", ("class_level",))
+    assert not train.covers(rule_line("free_text", [], "refuse"), "snippet", ())
+    assert train.covers(rule_line(None, ["parents"], "ask_user"), "per_student", ("parents",))
+    assert not train.covers(rule_line(None, ["parents"], "ask_user"), "per_student", ())
+
+
+def test_learned_floor_is_the_strictest_rule_that_still_holds():
+    broad = rule_line("snippet", [], "refuse")
+    closer = rule_line("snippet", ["class_level"], "share_summary")
+    asks = rule_line("snippet", ["parents"], "ask_user")
+    assert train.match_rule([closer, broad], "snippet", ("class_level",)) == closer  # shown to the model
+    assert train.learned_floor([closer, broad], "snippet", ("class_level",)) == broad  # still the floor
+    assert train.learned_floor([asks, broad], "snippet", ("class_level", "parents")) == broad
+    assert train.learned_floor([asks], "snippet", ("class_level", "parents")) == asks
+    assert train.learned_floor([closer], "snippet", ("class_level",)) is None  # a share rule is never a floor
+    assert train.learned_floor([broad], "free_text", ("class_level",)) is None  # another kind
+    assert train.learned_floor([], "snippet", ()) is None
+
+
+def test_learned_floor_keeps_your_rules_ahead_of_practice_defaults():
+    yours = rule_line("snippet", ["class_level"], "share_summary")
+    practice = rule_line("snippet", [], "refuse", "synthetic")
+    assert train.learned_floor([yours, practice], "snippet", ("class_level",)) is None
+    assert train.learned_floor([practice], "snippet", ("class_level",)) == practice
+    # Among equally strict rules, yours gives the reason.
+    mine = rule_line("snippet", [], "refuse")
+    exact_practice = rule_line("snippet", ["class_level"], "refuse", "synthetic")
+    assert train.learned_floor([mine, exact_practice], "snippet", ("class_level",)) == mine
+
+
+def test_rules_header_and_router_prompt_say_broader_strict_rules_still_hold(settings):
+    from base.router import SYSTEM_PROMPT
+
+    examples = [ex("snippet", [], "refuse", approved=False, remember=True)] * 2
+    train.train(examples, settings, day="2026-10-27", policy=small_policy())
+    text = settings.paths.router_prompt.read_text()
+    assert "Use the rule whose kind and topics match the result exactly." not in text
+    assert "has all of its topics, with or without more (topics: none covers the whole kind)" in text
+    assert "it is the stricter one: follow it" in text
+    assert "is shown too, it is the stricter one: follow it" in SYSTEM_PROMPT
+    assert "\u2014" not in text
+    rules = train.read_rules(text)
+    key = train.rule_key("snippet", ["parents"], train.relevant_topics(small_policy()))
+    assert train.match_rule(rules, *key) is None and train.learned_floor(rules, *key).decision == "refuse"

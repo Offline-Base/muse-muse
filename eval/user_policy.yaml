@@ -15,7 +15,9 @@ never_share:
   parent_contact: ["parent phone", "parent email", "phone number", "email address", "cell phone", "emergency contact", "guardian contact", "contact sheet"]
   lunch_status: ["free lunch", "reduced lunch", "free or reduced", "free and reduced", "lunch status", "meal benefits", "lunch balance"]
 
-# She never wants to be asked about a never_share topic: those are always refused.
+# She never wants to be asked about a never_share topic in a result: those are always refused.
+# One named only in Muse's request is asked about, since the request may only be ruling it out
+# ("Do not mention any IEP"); her answer with "don't ask again" becomes a learned rule.
 ask_first: []
 
 # What Muse's request is for. The device model labels each request with these (the result text
