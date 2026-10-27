@@ -6,12 +6,12 @@ About 44 hours: 3 a night on weekdays and 10 on Saturday and Sunday. Submissions
 
 The Official Rules weren't on the public event pages as of Oct 26 at 9:30 PM ET. Check your acceptance email and the Discord, then answer these:
 
-- [ ] Is code written before Oct 26 allowed? If so, does it need disclosure? This repo is scaffold and docs only.
+- [x] Is code written before Oct 26 allowed? If so, does it need disclosure? **Answer (Oct 27): a scaffold is fine, code is not.** The scaffold is commit e3ba154, exactly as received.
 - [ ] Can one person submit more than one project?
 - [ ] What does the submission need: video length, public repo, write-up, live link, test access for judges?
 - [ ] Are there any limits on open-source use? (The Vercel Open Agents template and the v0-style builder guide are useful references.)
-- [ ] Do judges need their own credits, or will they spend yours? This decides how open the live demo can be.
-- [ ] Is there anything on using Meta's brand, look or content? This affects the dashboard-native UI and the rebuilds of Meta's videos.
+- [x] Do judges need their own credits, or will they spend yours? This decides how open the live demo can be. **Answer (Oct 27): we have our own credit.** Production runs with no sign-in (`OPEN_ACCESS=guest`) on the platform's key.
+- [x] Is there anything on using Meta's brand, look or content? This affects the dashboard-native UI and the rebuilds of Meta's videos. **Answer (Oct 27): Meta's brand is fine, and the UI should be near identical to Meta's dashboard.**
 
 ## Day-one spikes
 

@@ -103,6 +103,7 @@ The goal is that a Meta judge can picture Muse Muse as a tab in the Meta AI deve
 
 - **Match** the layout patterns: left navigation, a page header, cards, tables, and a playground-style split view for the build room. Also match the type scale, spacing, pill and tab shapes, and both themes.
 - **Don't use** Meta's logo or wordmark, "Meta" in the product header, Meta's proprietary font files, a domain that looks like dev.meta.ai, or any sign-in or API-key page styled like Meta's.
+- The rules check (Oct 27) found Meta's brand and look are allowed, and the UI should be near identical to Meta's dashboard. The live site is public with no sign-in, so it still keeps its own name, mark and the "Not an official Meta product" line, which is what stops a near-identical console from reading as Meta's own.
 - **Always show** a "Concept" tag in the header and "Not an official Meta product" in the footer.
 - **Never ask for keys.** Users never paste a Meta key into Muse Muse. The platform uses its own key on the server.
 

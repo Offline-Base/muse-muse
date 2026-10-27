@@ -82,7 +82,7 @@ Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds tar
 npm run dev:local               # then open http://localhost:3000
 ```
 
-This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` in `.env.local`. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. Without `VERCEL_TOKEN` a build stops after the demo video and isn't published to its own link. The live preview in the build room works while the build runs.
+This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` in `.env.local`. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach. The live preview in the build room works while the build runs.
 
 ## Docs
 

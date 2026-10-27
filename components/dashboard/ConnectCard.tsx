@@ -35,7 +35,16 @@ function command(client: Client, p: ConnectProduct): [string, string, string] {
  * The dashboard's top card, laid out like "Start building with Muse": client tabs on the right of the title, a
  * second row of tabs to pick a product, and the command in a code block with a copy button.
  */
-export function ConnectCard({ products, unpublished }: { products: ConnectProduct[]; unpublished: number }) {
+export function ConnectCard({
+  products,
+  unpublished,
+  publishOff,
+}: {
+  products: ConnectProduct[];
+  unpublished: number;
+  /** Why products aren't published here (env.publishOffReason), or null when they are. */
+  publishOff: string | null;
+}) {
   const id = useId();
   const [client, setClient] = useState<Client>("muse");
   const [slug, setSlug] = useState(products[0]?.slug ?? null);
@@ -98,7 +107,7 @@ export function ConnectCard({ products, unpublished }: { products: ConnectProduc
           <>
             <p className="hero-card-desc">
               {unpublished
-                ? `Connectors go live when a product is published to its own link. ${unpublished === 1 ? "One product is" : `${unpublished} products are`} built but not published, because VERCEL_TOKEN isn't set here.`
+                ? `Connectors go live when a product is published to its own link. ${unpublished === 1 ? "One product is" : `${unpublished} products are`} built but not published${publishOff ? `, because ${publishOff}` : ""}.`
                 : "Every product Muse Muse publishes gets a connector. Make one first, then its connector URL shows up here."}
             </p>
             <Link className="btn btn-outline" href="/">

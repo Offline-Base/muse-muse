@@ -3,7 +3,8 @@ import { Icon } from "@/components/icons";
 export interface SetupFacts {
   buildModel: string;
   maxFixRounds: number;
-  publish: boolean;
+  /** Why products aren't published here (env.publishOffReason), or null when they are. */
+  publishOff: string | null;
 }
 
 /**
@@ -16,15 +17,16 @@ export function SetupPanel({ facts }: { facts: SetupFacts }) {
     ["Builder", "Muse Code"],
     ["Fix rounds", `Up to ${facts.maxFixRounds}`],
   ];
+  const publish = !facts.publishOff;
   const switches: Array<[string, boolean, string]> = [
     ["Screenshot judge", true, "Muse Spark 1.3 checks the screenshots against the brief"],
     ["Demo video", true, "Each product's smoke test is recorded as an MP4"],
     [
       "Publish",
-      facts.publish,
-      facts.publish ? "Ships to its own link" : "Off on this machine: VERCEL_TOKEN isn't set",
+      publish,
+      facts.publishOff ? `Off here: ${facts.publishOff}` : "Ships to its own link",
     ],
-    ["Muse app connector", facts.publish, "Serves the product's actions over MCP"],
+    ["Muse app connector", publish, "Serves the product's actions over MCP"],
   ];
   return (
     <aside className="panel panel-static" aria-label="Build setup">

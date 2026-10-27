@@ -9,7 +9,7 @@
  *             download from localhost goes inline (lib/brief/media.ts inlineMedia).
  *
  * Needs MODEL_API_KEY, VERCEL_OIDC_TOKEN (from `vercel env pull`, good for 12 hours) and BUILDER_SNAPSHOT_ID in
- * .env.local. Publishing a product as its own Vercel project also needs VERCEL_TOKEN.
+ * .env.local. Products aren't published to their own link from here, even with VERCEL_TOKEN set (env.publishOffReason).
  */
 import { spawn, spawnSync } from "node:child_process";
 

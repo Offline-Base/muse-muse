@@ -29,7 +29,7 @@ interface Scenario {
   refineRefusal?: string;
   demoThrows?: boolean;
   deployState?: "READY" | "ERROR";
-  /** What publishEnabledStep answers. Defaults to true. */
+  /** False makes publishOffStep give a reason. Defaults to true. */
   publish?: boolean;
   provisionThrows?: Error;
 }
@@ -142,9 +142,9 @@ const fakeSteps = {
     record("finishDemoStep", input);
     return "https://x/demo.mp4";
   },
-  publishEnabledStep: async () => {
-    record("publishEnabledStep");
-    return scenario.publish ?? true;
+  publishOffStep: async () => {
+    record("publishOffStep");
+    return scenario.publish === false ? "VERCEL_TOKEN isn't set" : null;
   },
   startDeployStep: async (input: unknown) => {
     record("startDeployStep", input);

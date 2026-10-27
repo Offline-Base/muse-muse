@@ -667,10 +667,10 @@ export interface DeployStart {
  * Mints the live token and starts the deployment in one step, so the plaintext token only travels to Vercel's env.
  * Saves the project id right away so a retry or a later refinement reuses the project.
  */
-/** False when VERCEL_TOKEN is unset, as on a local run (`npm run dev:local`): the product then isn't published. */
-export async function publishEnabledStep(): Promise<boolean> {
+/** Why the product won't be published (env.publishOffReason), or null when it will be. */
+export async function publishOffStep(): Promise<string | null> {
   "use step";
-  return Boolean(process.env.VERCEL_TOKEN);
+  return env.publishOffReason;
 }
 
 export async function startDeployStep(input: {
@@ -741,7 +741,7 @@ export async function registerStep(input: {
   productId: string;
   sandboxName: string;
   sessionId: string;
-  /** All three are null when publishing is off (publishEnabledStep). */
+  /** All three are null when publishing is off (publishOffStep). */
   projectId: string | null;
   liveUrl: string | null;
   liveTokenId: string | null;

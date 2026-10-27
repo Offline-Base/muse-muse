@@ -1,3 +1,5 @@
+import { publicHost } from "@/lib/sandbox/policy";
+
 /**
  * Server environment. Getters throw a clear error when a required value is missing, so a misconfigured deploy fails
  * at the call that needs the value instead of at import time.
@@ -39,6 +41,15 @@ export const env = {
   /** Vercel REST API token for publishing products as their own projects. */
   get vercelToken() {
     return required("VERCEL_TOKEN");
+  },
+  /**
+   * Why products aren't published to their own link here, or null when they are. A local run never publishes, even
+   * with VERCEL_TOKEN set: the product would call this machine's gateway (GATEWAY_URL), which Vercel can't reach.
+   */
+  get publishOffReason(): string | null {
+    if (!process.env.VERCEL_TOKEN) return "VERCEL_TOKEN isn't set";
+    if (!publicHost(env.platformUrl)) return "it's a local run, and a published product couldn't reach this machine's gateway";
+    return null;
   },
   get vercelTeamId() {
     return process.env.VERCEL_TEAM_ID || undefined;

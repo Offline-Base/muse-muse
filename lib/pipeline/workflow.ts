@@ -32,7 +32,7 @@ import {
   pollMuseStep,
   pollTaskStep,
   previewStep,
-  publishEnabledStep,
+  publishOffStep,
   provisionStep,
   refineCheckStep,
   registerStep,
@@ -239,7 +239,7 @@ async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
 
 /**
  * Records the demo (non-fatal), deploys, and registers what shipped. Returns the live URL, or null when publishing is
- * off (no VERCEL_TOKEN, as on a local run), in which case the product is registered without one.
+ * off (no VERCEL_TOKEN, or a local run), in which case the product is registered without one.
  */
 async function ship(
   ctx: Ctx,
@@ -270,10 +270,11 @@ async function ship(
   }
 
   track.stage = "deploy";
-  if (!(await publishEnabledStep())) {
+  const publishOff = await publishOffStep();
+  if (publishOff) {
     await emitStep(ctx.buildId, {
       type: "log",
-      text: "Publishing is off for this run because VERCEL_TOKEN isn't set, so the product didn't get its own link. The preview, checks and demo above ran for real.",
+      text: `Publishing is off for this run (${publishOff}), so the product didn't get its own link. The preview, checks and demo above ran for real.`,
     });
     track.stage = "register";
     await setStatusStep(ctx.buildId, "deploying", { step: "register" });
@@ -350,7 +351,7 @@ async function finish(
   return {
     status: outcome,
     message: !liveUrl
-      ? `Finished as ${outcome} without publishing (VERCEL_TOKEN isn't set).`
+      ? `Finished as ${outcome} without publishing to its own link.`
       : outcome === "live"
         ? `Live at ${liveUrl}`
         : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,

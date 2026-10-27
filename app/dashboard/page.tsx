@@ -5,6 +5,7 @@ import { MiniBars } from "@/components/charts/MiniBars";
 import { ConnectCard } from "@/components/dashboard/ConnectCard";
 import { Icon } from "@/components/icons";
 import { NotConnected } from "@/components/ui";
+import { env } from "@/lib/env";
 import { compact, groupThousands, usd } from "@/lib/format";
 import {
   getUsage,
@@ -45,7 +46,7 @@ export default async function DashboardPage({
 
   return (
     <div className="page dash">
-      <ConnectCard products={connect} unpublished={shipped.length - published.length} />
+      <ConnectCard products={connect} unpublished={shipped.length - published.length} publishOff={env.publishOffReason} />
 
       <nav className="range" aria-label="Date range">
         {RANGES.map((r) => (

@@ -107,8 +107,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "Open the build room" } : undefined}
           >
             <p>
-              It passed its checks, but publishing was off when it was built (VERCEL_TOKEN wasn&apos;t set), so it has
-              no live link. Its recorded demo is in the panel.
+              It passed its checks, but publishing was off where it was built, such as a local run, so it has no live
+              link. Its recorded demo is in the panel.
             </p>
           </EmptyCard>
         ) : product.status === "disabled" ? (

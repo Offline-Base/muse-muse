@@ -53,7 +53,7 @@ export default async function Home() {
         <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" />
       </div>
       <SetupPanel
-        facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publish: Boolean(process.env.VERCEL_TOKEN) }}
+        facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}
       />
     </div>
   );
