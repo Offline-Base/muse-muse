@@ -9,3 +9,6 @@ next-env.d.ts
 
 # Local runs (npm run dev:local): PGlite database and stored files
 .data
+
+# Throwaway probe scripts
+scripts/.tmp*
