@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Iterator, Literal
+from typing import Literal
 
 Decision = Literal["share_tagged", "share_summary", "ask_user", "refuse"]
 DECISIONS: tuple[Decision, ...] = ("share_tagged", "share_summary", "ask_user", "refuse")
@@ -76,6 +77,12 @@ class TagResult:
     tag_map: dict[str, str] = field(default_factory=dict)
     hits: list[Hit] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+
+
+def default_share_form(result_kind: str) -> Decision:
+    """What an approved result is shared as: aggregates as a summary, everything else tagged."""
+    return "share_summary" if result_kind == "class_aggregate" else "share_tagged"
 
 
 @dataclass

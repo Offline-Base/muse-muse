@@ -51,7 +51,8 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 
 - `Person(name, first, last, nicknames=[], role="student", student_id=None)`; `Roster(teacher: Person, students: list[Person], school=None)`; `Roster.people()` yields teacher then students.
 - `Hit(kind, value, start, end)` where kind is one of `student, teacher, person, phone, email, ssn, card, otp, student_id, address, dob`.
-- `TagResult(text, tag_map: dict[str, str], hits: list[Hit], blocked: list[str])`: tag_map maps a tag like `[Student C]` to its real value.
+- `TagResult(text, tag_map: dict[str, str], hits: list[Hit], blocked: list[str], topics: list[str])`: tag_map maps a tag like `[Student C]` to its real value.
+- `default_share_form(result_kind) -> Decision`: `share_summary` for `class_aggregate`, else `share_tagged`.
 - `Decision = Literal["share_tagged", "share_summary", "ask_user", "refuse"]`, `STRICTNESS = {"share_tagged": 0, "share_summary": 1, "ask_user": 2, "refuse": 3}`, `stricter(a, b)`.
 - `RouteInput(request, result_kind, tagged_text, hits, blocked, summary=None, topics=[])`: request is Muse's request text (already tag-only), result_kind is one of the kinds below, topics are policy topic names the guard or workspace detected (for example `iep`, `grades`).
 - `RouteDecision(decision, reason, source, latency_ms, floors=[])`: source is `model`, `rule`, `fallback` or `cache`.
@@ -63,9 +64,10 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 - `find_identifiers(text) -> list[Hit]`: exact checks only. Luhn-valid 13 to 19 digit card numbers, US SSNs (###-##-####, not 000/666/9xx area unless the fixture says test), phone numbers (US formats incl. (512) 555-0143, 512.555.0143, +1 512 555 0143), emails, one-time codes (4 to 8 digits next to words like code, OTP, PIN, verification), student IDs (pattern from roster ids, plus `S` or `ID` followed by 5 to 8 digits), street addresses (number + street suffix), dates of birth next to "born"/"DOB"/"birthday".
 - `find_names(text, roster) -> list[Hit]`: full names, first names alone, last names alone when capitalized, listed nicknames, possessives ("Maya's"), and misspellings within one edit (Damerau-Levenshtein 1, only for tokens of 4+ letters, never for common English words; keep a stoplist).
 - `TagMap`: persistent, per device, at `settings.paths.tagmap`. Students get `[Student A]`, `[Student B]`, ... in a shuffled order chosen once per device (not roster order). Teacher is `[Teacher]`. Other kinds get numbered tags `[Phone 1]`, `[Email 1]`, `[SSN 1]`, `[Card 1]`, `[Code 1]`, `[ID 1]`, `[Address 1]`, `[DOB 1]`, `[Person 1]`. The same real value always gets the same tag on the device. The file is written 0600 and never leaves.
-- `tag(text, roster, tagmap, llm_names=None, policy=None) -> TagResult`: runs identifiers, roster names, then optional `llm_names(text) -> list[str]` (the local model's second pass for person names the roster missed, tagged as `[Person N]`), then `blocked_reasons`. Replacement is longest-span-first and never splits a tag. After tagging, re-scan the output; anything still found is replaced too.
+- `tag(text, roster, tagmap, llm_names=None, never_share=None) -> TagResult`: runs identifiers, roster names, then optional `llm_names(text) -> list[str]` (the local model's second pass for person names the roster missed, tagged as `[Person N]`), then `blocked_reasons`. Replacement is longest-span-first and never splits a tag. After tagging, re-scan the output; anything still found is replaced too.
 - `restore(text, tag_map) -> str`: swaps tags back, tolerant of Muse rephrasing: `Student A`, `[Student A]`, `Student A's`, `student a`, `(Student A)`.
-- `blocked_reasons(text, policy) -> list[str]`: plain-language reasons for content the policy never allows out (IEP or 504 details, medical or diagnosis, discipline records, custody, immigration status, home address of a student, parent contact info). Keyword based from the policy's `never_share` topics.
+- `blocked_topics(text, never_share) -> list[str]`: topic names from `never_share` (a dict topic -> keywords, from the policy) whose keywords appear in text, case-insensitive, word-bounded.
+- `blocked_reasons(text, never_share) -> list[str]`: one plain-language reason per blocked topic, for the approval page ("Mentions an IEP or 504 plan"). `TagResult.blocked` holds these reasons and `tag()` also returns the topic names in `TagResult.topics`.
 - `leaks(text, roster, tagmap) -> list[Hit]`: everything in text that is a real roster name, nickname, tagged real value, or identifier. Used by egress and the eval.
 
 ## Model clients
@@ -99,9 +101,45 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 
 ## Approvals (`base/approvals.py`)
 
-- `ApprovalStore(db)`. Table `decisions(id, ts, job_id, tool, request, result_kind, tagged_text, router_decision, router_reason, router_source, status, user_decision, decided_by, decided_at, deleted)`. Every routed result gets a row. `status`: `auto` (router did not ask), `pending`, `approved`, `denied`. `user_decision`: `approve` or `deny` when asked. `decided_by`: `user`, `policy_sim`.
-- `create_pending(...) -> id`, `decide(id, approve: bool, by="user")`, `pending()`, `history(limit)`, `delete(id)` (sets deleted=1 and blanks request and tagged_text), `training_rows(exclude_ids) -> list[dict]` (only non-deleted rows with a user decision).
-- `eval/user_policy.yaml` is loaded by `base/policy.py`: `UserPolicy.load(path)`, `policy.wants(item) -> Decision` (what this teacher wants for a request, from `kind` and `topics`), `policy.answer(item) -> "approve" | "deny"` (how the simulated teacher answers an approval request), `policy.never_share` (topic -> keywords), `policy.pre_approved(kind, topics) -> bool`.
+- `ApprovalStore(db_path)`. Table `decisions(id, ts, day, job_id, tool, request, result_kind, topics, tagged_text, shown_form, router_decision, router_reason, router_source, status, user_decision, remember, decided_by, decided_at, deleted, item_id)`. Every routed result gets a row. `status`: `auto` (router did not ask), `pending`, `approved`, `denied`. `shown_form` is what would be shared on approval: `default_share_form(result_kind)` from base/types.py. `user_decision`: `approve` or `deny`; `remember` is the "don't ask again for things like this" box. `decided_by`: `user` or `policy_sim`. `item_id` links eval items in simulations.
+- `record_auto(...) -> id`, `create_pending(...) -> id`, `decide(id, approve: bool, remember: bool = False, by="user")`, `get(id)`, `pending()`, `history(limit=50)`, `delete(id)` (sets deleted=1 and blanks request and tagged_text), `training_rows() -> list[dict]` (only non-deleted rows with a user decision), `counts_by_day() -> dict[int, int]` (approval requests per day).
+- Dreaming label for a decided row (`label_for(row)` in base/approvals.py): approve + remember -> `shown_form`; deny + remember -> `refuse`; no remember -> `ask_user` (the user wants to keep being asked).
+- The approval page shows the exact tagged text, the router's reason, any blocked reasons, two buttons (Share it / Keep it here) and the remember box.
+
+### Policy (`base/policy.py`, `eval/user_policy.yaml`)
+
+`UserPolicy.load(path)`. The YAML:
+
+```yaml
+name: Simulated 4th-grade teacher (invented)
+never_share:            # topic -> keywords; guard.blocked_topics uses these
+  iep: ["IEP", "504 plan", "individualized education", "special education", "speech therapy", "accommodation plan"]
+  medical: ["diagnosis", "ADHD", "medication", "allergy", "asthma", "therapist"]
+  # ...discipline, custody, immigration, home_address, parent_contact, lunch_status
+ask_first: []           # never_share topics where the router may ask instead of refuse
+rules:                  # first match wins
+  - id: no_iep_or_medical
+    topics_any: [iep, medical]
+    wants: refuse
+    on_ask: {approve: false, remember: true}
+  - id: class_averages
+    kinds: [class_aggregate]
+    wants: share_summary
+    pre_approved: true
+    on_ask: {approve: true, remember: true}
+  # ...
+default: {wants: ask_user, on_ask: {approve: false, remember: false}}
+```
+
+Match fields: `kinds` (result_kind in list), `topics_any`, `topics_all`, `request_any` (case-insensitive substrings of the request). `policy.match(item)` returns the rule; `policy.wants(item) -> Decision`; `policy.answer(item) -> (approve: bool, remember: bool)`; `policy.pre_approved(kind, topics) -> bool`; `policy.never_share -> dict[str, list[str]]`; `policy.ask_first -> set[str]`. `item` is any mapping with `request`, `result_kind`, `topics`. For every eval item, `expected == policy.wants(item)` must hold (tested).
+
+### Egress (`base/egress.py`)
+
+`Egress(services)`. `release(tool, request, raw_text, result_kind, *, job_id=None, summary=None, topics=(), item_id=None, day=None) -> Released(status, text, approval_id, decision, tag_result)` where status is `shared`, `waiting` or `refused`. It tags the raw text, routes it, records the decision row, and for `share_summary` shares the tagged `summary` (making one with the answer model if none was given). `resolve(approval_id) -> Released` returns the outcome after the user decides. `final_check(text) -> list[Hit]` runs `guard.leaks`; any hit turns the release into `refused` with text "Held on your device." and audit outcome `egress_blocked`. Text sent to Muse for `waiting` says the result is waiting for the user's OK on the device; for `refused` it gives the router's plain reason with no content.
+
+### Services (`base/services.py`)
+
+`Services.create(settings)` wires one of each: `settings, roster, tagmap, policy, answer_llm, router_llm, router, approvals, jobs, index, agent, egress, night (dreaming runner), events`. Modules that need others take a `services` object; tests pass a `types.SimpleNamespace` with only what they use.
 
 ## Connector (`base/connector/`)
 
@@ -149,3 +187,20 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 
 - On the Jetson, `queue.py` keeps heavy steps (grading) in the db; the approval server exposes `GET /heavy/next` (long poll) and `POST /heavy/<id>/result`, authenticated with the paired worker token.
 - `worker.py` runs on the laptop, dials out to the Jetson (`JETSON_URL`), runs each step against the laptop's Glimmer, posts the result back. If no worker has checked in within 30 s, the Jetson runs the step on its own 1-bit Glimmer and logs that.
+
+## Cross-module details pinned on Oct 27
+
+### Jobs and releases
+`JobStore` also has columns `release_status` (`none`, `shared`, `waiting`, `refused`), `approval_id`, `released_text` (text that already passed egress, safe to resend), `topics` (JSON list) and `summary` (aggregate text with no names, stays on the device until egress tags it). `JobStore.set_release(job_id, status, approval_id=None, released_text=None)`. The connector's `get_result` calls `egress.release(...)` the first time a finished job is read, stores the outcome with `set_release`, and on later reads calls `egress.resolve(approval_id)` while the status is `waiting`.
+
+### Heavy-step hook
+The workspace agent takes an optional `heavy` object with `run(kind: str, messages: list[dict], schema: dict | None) -> dict | None`. `None` means no laptop worker is available and the step runs on the device's own Glimmer. `base/heavy/queue.py` provides `HeavyQueue(db_path, wait_seconds=30)` implementing it, and `base/heavy/routes.py` provides a FastAPI `APIRouter` (`GET /heavy/next`, `POST /heavy/{step_id}/result`, `POST /heavy/hello`) that `base/ui_app.py` includes when `settings.heavy_queue` is on.
+
+### Relay frames (relay/ and base/connector/relay_client.py must agree)
+The device opens `wss://<relay>/device/connect` with `Authorization: Bearer <device secret>`. Frames are JSON text messages.
+- Relay to device: `{"type": "request", "id": "<uuid>", "method": "POST" | "GET" | "DELETE", "headers": {"content-type": ..., "accept": ..., "mcp-session-id": ..., "mcp-protocol-version": ...}, "body": "<raw request body text>"}`
+- Device to relay: `{"type": "response", "id": "<same uuid>", "status": 200, "headers": {"content-type": ..., "mcp-session-id": ...}, "body": "<raw response body text>"}`. If the local server answers with `text/event-stream`, the device collects the SSE `data:` lines for that request and sends them as one body with content-type `text/event-stream` (no long-lived streams in v1).
+- Keepalive: either side may send `{"type": "ping"}`; the other answers `{"type": "pong"}`.
+- Registration: `POST /device/register` with JSON `{"name": "<device label>"}` returns `{"device_id": "...", "secret": "..."}` once; the relay keeps only a SHA-256 of the secret. `POST /device/pair` with the bearer secret returns `{"code": "ABCD2345", "expires_in": 600}`, eight characters from an alphabet without 0/O/1/I, single use.
+- The relay answers `503 {"error": "device offline"}` when no device socket is connected, and `504` after 60 seconds with no response frame.
+- Header names in frames are lowercase. The relay never logs bodies.

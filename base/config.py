@@ -7,9 +7,10 @@ specific to one machine: addresses come from the environment or .env.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Literal
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SYNTHETIC_MARKER = ".synthetic"
