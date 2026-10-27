@@ -70,7 +70,8 @@ export const env = {
   },
   /**
    * Second code, typed in place of PLATFORM_ACCESS_CODE, that makes an ADMIN_EMAILS sign-in an admin one. Never share
-   * it. Admin is off while it's unset, and it never counts when it equals the shared code.
+   * it. Sign-in can't grant admin while it's unset, and it never counts when it equals the shared code. OPEN_ACCESS=admin
+   * is the one other way to admin (see openAccess).
    */
   get adminAccessCode() {
     return process.env.ADMIN_ACCESS_CODE || undefined;
@@ -80,6 +81,14 @@ export const env = {
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
+  },
+  /**
+   * OPEN_ACCESS as set: "guest", "admin", or "off" for anything else. It turns sign-in off for demos. Where "admin"
+   * actually applies is decided per request by effectiveOpenAccess in lib/auth.ts (Vercel previews and localhost only).
+   */
+  get openAccess(): "off" | "guest" | "admin" {
+    const mode = (process.env.OPEN_ACCESS || "").trim().toLowerCase();
+    return mode === "admin" || mode === "guest" ? mode : "off";
   },
   /** Bearer secret that lets scripts start batch rebuilds as the first admin (lib/auth.ts requireAdminOrAutomation). */
   get automationSecret() {

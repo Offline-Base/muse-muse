@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { start } from "workflow/api";
-import { requireUser } from "@/lib/auth";
+import { canActAsOwner, requireUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { attachRun, insertRefineBuild, markStartFailed } from "@/lib/pipeline/records";
@@ -13,8 +13,8 @@ type Ctx = { params: Promise<{ buildId: string }> };
 
 /**
  * POST {message, references?} -> 201 {buildId} of the new refine build for the product this build made.
- * 401 signed out, 403 not the owner or an admin, 404 unknown build, 409 {error: "busy"} while another build of the
- * product runs (or {error: "not_shipped"} before it has shipped). Also 429 daily_limit and 503 paused, as for new
+ * 401 signed out, 403 not the owner or an admin (the shared guest owns nothing), 404 unknown build, 409 {error: "busy"} while another build of the
+ * product runs (or {error: "not_shipped"} before it has shipped). Also 429 daily_limit (shared_limit for the guest) and 503 paused, as for new
  * builds, because a refinement spends credits too.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
@@ -36,7 +36,14 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!build.productId) return errorJson(409, "not_shipped");
   const [product] = await db().select().from(schema.products).where(eq(schema.products.id, build.productId)).limit(1);
   if (!product) return errorJson(404, "not_found");
-  if (product.ownerId !== user.id && !user.isAdmin) return errorJson(403, "Only the product's owner can change it.");
+  if (!canActAsOwner(user, product.ownerId)) {
+    return errorJson(
+      403,
+      user.openAccess
+        ? "Sign in to change a product. Everyone shares the guest account, so it can't tell who made what."
+        : "Only the product's owner can change it.",
+    );
+  }
   if (product.status !== "live" && product.status !== "partial") return errorJson(409, "not_shipped");
   if (!product.sandboxName || !product.museSessionId) return errorJson(409, "not_shipped");
 

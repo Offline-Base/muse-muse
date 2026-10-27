@@ -8,6 +8,7 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { canActAsOwner } from "@/lib/auth";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -33,7 +34,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const connectorUrl = `${origin}/api/mcp/${product.slug}`;
   const manifest = product.manifest;
   const shipped = product.status === "live" || product.status === "partial";
-  const isOwner = Boolean(user && (user.isAdmin || user.id === product.ownerId));
+  const isOwner = canActAsOwner(user, product.ownerId);
   const rebuild = rebuildRef(product.rebuildOf);
   const highlights = buildHighlights(events, latestBuild);
   const models: Array<{ id: string; usedFor: string }> = manifest?.models?.length

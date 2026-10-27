@@ -49,14 +49,20 @@ export async function spendPaused(): Promise<boolean> {
   return spendPausedDecision(await platformSpendToday(), env.dailySpendCapUsd);
 }
 
-export type BuildAllowance = { ok: true } | { ok: false; status: 429 | 503; error: "daily_limit" | "paused" };
+export type BuildAllowance =
+  | { ok: true }
+  | { ok: false; status: 429 | 503; error: "daily_limit" | "shared_limit" | "paused" };
 
-/** The spend cap applies to everyone. The daily quota applies to everyone but admins. */
+/**
+ * The spend cap applies to everyone. The daily quota applies to everyone but admins. The shared guest (OPEN_ACCESS=guest)
+ * gets "shared_limit" instead of "daily_limit", since the builds that used it up were usually someone else's.
+ */
 export async function checkBuildAllowed(user: SessionUser): Promise<BuildAllowance> {
   if (await spendPaused()) return { ok: false, status: 503, error: "paused" };
   if (user.isAdmin) return { ok: true };
   const used = await buildsStartedSince(user.id, quotaWindowStart(new Date()));
   // Admin sessions returned above. users.is_admin can be true for an admin's shared-code session, which isn't admin.
   const decision = quotaDecision({ isAdmin: false, quota: dailyBuildQuota(), used });
-  return decision.allowed ? { ok: true } : { ok: false, status: 429, error: "daily_limit" };
+  if (decision.allowed) return { ok: true };
+  return { ok: false, status: 429, error: user.openAccess ? "shared_limit" : "daily_limit" };
 }

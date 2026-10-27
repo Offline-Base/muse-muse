@@ -32,7 +32,11 @@ export default async function BuildsPage() {
     <div className="page">
       <PageHeader
         title="Builds"
-        subtitle="Every muse you've sent, with its status, time and cost."
+        subtitle={
+          user.openAccess && !user.isAdmin
+            ? "Every muse sent from the shared guest account, with its status, time and cost."
+            : "Every muse you've sent, with its status, time and cost."
+        }
         actions={
           <Link className="btn btn-primary" href="/">
             <Icon name="plus" size={18} />

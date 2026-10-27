@@ -10,23 +10,31 @@ import { initials } from "@/lib/format";
 export interface AccountUser {
   email: string;
   isAdmin: boolean;
+  /** Sign-in is off (OPEN_ACCESS), so this is the shared account rather than the visitor's own. */
+  openAccess?: boolean;
 }
 
-/** Bottom-of-sidebar account chip with a ⋯ menu, or a Sign in button when signed out. */
+/**
+ * Bottom-of-sidebar account chip with a ⋯ menu, or a Sign in button when signed out. While sign-in is off, the chip
+ * names the shared account and the menu offers Sign in instead of Sign out, since there's no session to end.
+ */
 export function AccountMenu({ user }: { user: AccountUser | null }) {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const signInHref = `/sign-in?next=${encodeURIComponent(pathname.startsWith("/sign-in") ? "/" : pathname)}`;
 
   if (!user) {
-    const next = pathname.startsWith("/sign-in") ? "/" : pathname;
     return (
-      <Link className="btn btn-outline account-signin" href={`/sign-in?next=${encodeURIComponent(next)}`}>
+      <Link className="btn btn-outline account-signin" href={signInHref}>
         <Icon name="user" size={18} />
         <span>Sign in</span>
       </Link>
     );
   }
+
+  const name = user.openAccess && !user.isAdmin ? "Guest" : user.email;
+  const role = user.isAdmin ? "Admin" : "Builder";
 
   async function signOut() {
     setBusy(true);
@@ -44,23 +52,30 @@ export function AccountMenu({ user }: { user: AccountUser | null }) {
   return (
     <div className="account">
       <span className="avatar" aria-hidden>
-        {initials(user.email)}
+        {initials(name)}
       </span>
       <span className="account-text">
-        <span className="account-name" title={user.email}>
-          {user.email}
+        <span className="account-name" title={name}>
+          {name}
         </span>
-        <span className="account-sub">{user.isAdmin ? "Admin" : "Builder"}</span>
+        <span className="account-sub">{user.openAccess ? `${role}, sign-in off` : role}</span>
       </span>
       <Menu label="Account menu" icon="more" align="end" buttonClassName="icon-btn icon-btn-plain">
         <Link className="menu-item" href="/builds">
           <Icon name="layers" size={18} />
           My builds
         </Link>
-        <button type="button" className="menu-item" onClick={signOut} disabled={busy}>
-          <Icon name="logout" size={18} />
-          {busy ? "Signing out" : "Sign out"}
-        </button>
+        {user.openAccess ? (
+          <Link className="menu-item" href={signInHref}>
+            <Icon name="user" size={18} />
+            Sign in
+          </Link>
+        ) : (
+          <button type="button" className="menu-item" onClick={signOut} disabled={busy}>
+            <Icon name="logout" size={18} />
+            {busy ? "Signing out" : "Sign out"}
+          </button>
+        )}
       </Menu>
     </div>
   );

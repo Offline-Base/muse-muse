@@ -5,7 +5,8 @@
  *   npm run rebuild-all -- <id> <id>    exactly these catalog ids
  *
  * Starts the batch through POST /api/rebuilds at PLATFORM_URL with the AUTOMATION_SECRET bearer (acting as the first
- * ADMIN_EMAILS user, who must have signed in once), polls each build every 20 s until all are finished, and prints a table plus
+ * ADMIN_EMAILS user, who must have signed in once or opened a preview once while it had OPEN_ACCESS=admin), polls each
+ * build every 20 s until all are finished, and prints a table plus
  * "N of M rebuilt in X for $Y".
  */
 import { env } from "@/lib/env";

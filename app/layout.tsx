@@ -24,7 +24,9 @@ export const viewport: Viewport = {
 // patterns, no Meta logo, wordmark or font, a visible Concept tag, and nothing that asks for keys.
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await currentUser();
-  const user = session ? { email: session.email, isAdmin: session.isAdmin } : null;
+  const user = session
+    ? { email: session.email, isAdmin: session.isAdmin, openAccess: Boolean(session.openAccess) }
+    : null;
   return (
     <html lang="en">
       <body>

@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { BuildRoom } from "@/components/build/BuildRoom";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
+import { canActAsOwner } from "@/lib/auth";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Build room" };
@@ -30,7 +31,7 @@ export default async function BuildRoomPage({
 
   const origin = await platformOrigin();
   // The product's owner decides, as in the messages route. The build's userId is whoever asked for that change.
-  const canRefine = Boolean(user && data.product && (user.isAdmin || user.id === data.product.ownerId));
+  const canRefine = Boolean(data.product && canActAsOwner(user, data.product.ownerId));
 
   return (
     <BuildRoom

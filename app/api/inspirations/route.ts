@@ -10,7 +10,7 @@ import { checkBuildAllowed } from "@/lib/quota";
 /**
  * POST {note, references, rebuildOf?} -> 201 {buildId}. Saves the muse, queues a build and starts the build workflow.
  * 400 bad input, 401 signed out, 403 rebuildOf from someone who isn't an admin (showcase rebuilds are admin-only, as
- * in /api/rebuilds), 429 {error: "daily_limit"}, 503 {error: "paused"} (daily spend cap).
+ * in /api/rebuilds), 429 {error: "daily_limit" | "shared_limit"}, 503 {error: "paused"} (daily spend cap).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();

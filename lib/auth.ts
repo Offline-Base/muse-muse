@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { eq, isNull } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
@@ -7,9 +7,10 @@ import { env } from "@/lib/env";
 /**
  * Sign-in for the hackathon: an email, a personal password and an access code. Testers and judges share
  * PLATFORM_ACCESS_CODE. The first password typed for an email claims it, and every later sign-in must match it.
- * Admin (no daily cap, batch rebuilds, kill switch) needs an email in ADMIN_EMAILS and the separate ADMIN_ACCESS_CODE.
- * The shared code never grants it. The session is an HMAC-signed cookie, so there's no session table. Browsing is
- * public. Building needs a session.
+ * Admin (no daily cap, batch rebuilds, kill switch) needs an email in ADMIN_EMAILS and the separate ADMIN_ACCESS_CODE,
+ * or OPEN_ACCESS=admin on a preview or localhost. The shared code never grants it. The session is an HMAC-signed cookie,
+ * so there's no session table. Browsing is public. Building needs a session, unless OPEN_ACCESS turns sign-in off (see
+ * effectiveOpenAccess).
  */
 export const SESSION_COOKIE = "mm_session";
 const SESSION_DAYS = 14;
@@ -22,6 +23,8 @@ export interface SessionUser {
   id: string;
   email: string;
   isAdmin: boolean;
+  /** Sign-in is off (OPEN_ACCESS) and this visitor, who has no session of their own, acts as the shared account. */
+  openAccess?: boolean;
 }
 
 function sign(payload: string): string {
@@ -92,6 +95,73 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return timingSafeEqual(key, expected);
 }
 
+// ---------- Open access ----------
+
+/** The shared account everyone builds as under OPEN_ACCESS=guest. A ".invalid" address can never be a real one. */
+export const GUEST_EMAIL = "guest@musemuse.invalid";
+
+type OpenAccessMode = "off" | "guest" | "admin";
+
+/** localhost, 127.x.x.x or [::1], with or without a port. */
+export function isLoopbackHost(host: string | null): boolean {
+  const name = (host ?? "").trim().toLowerCase().replace(/:\d+$/, "");
+  return name === "localhost" || name === "[::1]" || /^127(\.\d{1,3}){3}$/.test(name);
+}
+
+/**
+ * The OPEN_ACCESS mode that applies to this request. "admin" applies on Vercel previews, which deployment protection
+ * keeps to the team, and on a local run only when the request's Host is localhost, so a tunnel never hands out admin.
+ * Everywhere else, production included, it fails closed to "off". "guest" applies wherever it's set.
+ *
+ * The Host check can't stop someone on the same network who forges the header, which is why `npm run dev` listens on
+ * 127.0.0.1 only.
+ */
+export function effectiveOpenAccess(mode: OpenAccessMode, vercelEnv: string | undefined, h: Headers): OpenAccessMode {
+  if (mode !== "admin") return mode;
+  if (vercelEnv === "preview") return "admin";
+  if (vercelEnv === "production") return "off";
+  const hosts = [h.get("host"), h.get("x-forwarded-host")].filter((v): v is string => v !== null);
+  return hosts.length && hosts.every(isLoopbackHost) ? "admin" : "off";
+}
+
+/** Product owner powers (refining it): admins, and the owner, unless the "owner" is the guest everyone shares. */
+export function canActAsOwner(user: SessionUser | null, ownerId: string | null | undefined): boolean {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  return !user.openAccess && Boolean(ownerId) && user.id === ownerId;
+}
+
+/**
+ * Who a visitor without a session acts as, or null while sign-in is required. "admin" mode needs an ADMIN_EMAILS
+ * address to act as and falls back to the guest without one.
+ */
+export function openAccessIdentity(
+  mode: OpenAccessMode,
+  adminEmails: string[],
+): { email: string; isAdmin: boolean } | null {
+  if (mode === "off") return null;
+  if (mode === "admin" && adminEmails[0]) return { email: adminEmails[0], isAdmin: true };
+  return { email: GUEST_EMAIL, isAdmin: false };
+}
+
+/**
+ * True when the browser says the request came from another site. An open-access visitor has no SameSite cookie, so
+ * without this a page anywhere could post a form or a fetch that builds as them. Requests that carry neither header,
+ * such as curl, aren't from a browser and pass: under open access they could call the API directly anyway.
+ */
+export function isCrossSite(h: Headers): boolean {
+  const site = h.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return true;
+  const origin = h.get("origin");
+  if (!origin) return false;
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 // ---------- Sign-in ----------
 
 /** Which code was typed. The admin code counts only when it's set and differs from the shared one. */
@@ -141,7 +211,7 @@ export async function checkSignIn(
 ): Promise<SessionUser | null> {
   const email = input.email.trim().toLowerCase();
   const { password } = input;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200 || email === GUEST_EMAIL) return null;
   if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) return null;
   const kind = codeKind(input.code, config.accessCode, config.adminAccessCode);
   if (!kind) return null;
@@ -197,11 +267,44 @@ const dbStore: AuthStore = {
   },
 };
 
-/** The signed-in user, or null. Works in server components, route handlers and server actions. */
+/** Creates the user row if it's missing and leaves any password and admin flag as they are. */
+async function ensureUser(email: string): Promise<{ id: string; email: string }> {
+  const [row] = await db()
+    .insert(schema.users)
+    .values({ email, dailyBuildQuota: env.maxBuildsPerUserPerDay })
+    .onConflictDoUpdate({ target: schema.users.email, set: { email } })
+    .returning({ id: schema.users.id, email: schema.users.email });
+  return row;
+}
+
+/** Open-access accounts by "email|admin", so each server instance writes the row once. A failure is retried. */
+const openUsers = new Map<string, Promise<SessionUser>>();
+
+function openAccessUser(h: Headers): Promise<SessionUser> | null {
+  const who = openAccessIdentity(effectiveOpenAccess(env.openAccess, process.env.VERCEL_ENV, h), env.adminEmails);
+  if (!who) return null;
+  const key = `${who.email}|${who.isAdmin}`;
+  let user = openUsers.get(key);
+  if (!user) {
+    user = ensureUser(who.email).then((row) => ({ id: row.id, email: row.email, isAdmin: who.isAdmin, openAccess: true }));
+    user.catch((err) => {
+      console.error("[auth] couldn't load the open-access account:", err);
+      openUsers.delete(key);
+    });
+    openUsers.set(key, user);
+  }
+  return user;
+}
+
+/**
+ * The signed-in user, or null. Works in server components, route handlers and server actions. While OPEN_ACCESS is
+ * on, a visitor with no session gets the open-access account instead of null. A real session still wins.
+ */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const jar = await cookies();
   const user = decodeSession(jar.get(SESSION_COOKIE)?.value);
-  return user && { ...user, isAdmin: user.isAdmin && env.adminEmails.includes(user.email) };
+  if (user) return { ...user, isAdmin: user.isAdmin && env.adminEmails.includes(user.email) };
+  return (await openAccessUser(await headers())) ?? null;
 }
 
 export class AuthError extends Error {
@@ -213,10 +316,17 @@ export class AuthError extends Error {
   }
 }
 
-/** The signed-in user. An admin flag is confirmed against the database, so the cookie alone never grants admin. */
+/**
+ * The signed-in user. An admin flag is confirmed against the database, so the cookie alone never grants admin. The
+ * open-access account comes from OPEN_ACCESS, not a cookie, so it's refused to requests from other sites instead.
+ */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw new AuthError("Sign in to build.", 401);
+  if (user.openAccess) {
+    if (isCrossSite(await headers())) throw new AuthError("Requests from other sites can't build here.", 403);
+    return user;
+  }
   if (!user.isAdmin) return user;
   return { ...user, isAdmin: isAdminNow(user, await loadUser(user.id), env.adminEmails) };
 }
@@ -229,7 +339,8 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 /**
  * For scripts such as scripts/rebuild-all.ts: "Authorization: Bearer <AUTOMATION_SECRET>" acts as the first
- * ADMIN_EMAILS user, who must have signed in once so their row exists. Nobody's password is needed or claimed.
+ * ADMIN_EMAILS user, whose row must exist: they signed in once, or opened a preview once while it had OPEN_ACCESS=admin.
+ * Nobody's password is needed or claimed.
  * Only routes that call this accept the secret; everything else still needs a session.
  */
 export async function requireAdminOrAutomation(req: Request): Promise<SessionUser> {
@@ -239,7 +350,13 @@ export async function requireAdminOrAutomation(req: Request): Promise<SessionUse
   if (!secret || !safeEqual(header.slice("Bearer ".length), secret)) throw new AuthError("Admins only.", 403);
   const email = env.adminEmails[0];
   const [row] = email ? await db().select().from(schema.users).where(eq(schema.users.email, email)).limit(1) : [];
-  if (!row) throw new AuthError("The admin has to sign in once before automation can act for them.", 403);
+  if (!row) {
+    throw new AuthError(
+      "The admin has to sign in once, or open a preview deployment once while it has OPEN_ACCESS=admin (production " +
+        "ignores it), before automation can act for them.",
+      403,
+    );
+  }
   return { id: row.id, email: row.email, isAdmin: true };
 }
 

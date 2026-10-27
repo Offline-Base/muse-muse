@@ -25,7 +25,7 @@ export default async function SignInPage({
           <span className="brand-name">Muse Muse</span>
           <span className="concept">Concept</span>
         </p>
-        {user ? (
+        {user && !user.openAccess ? (
           <>
             <h1>You&apos;re signed in</h1>
             <p className="muted">
@@ -42,11 +42,29 @@ export default async function SignInPage({
           </>
         ) : (
           <>
-            <h1>Sign in to build</h1>
-            <p className="muted">
-              Browsing is open to everyone. Building spends model credits, so it needs your email, a password and the
-              access code the Muse Muse team shared with you.
-            </p>
+            {user ? (
+              <>
+                <h1>Sign-in is off for now</h1>
+                <p className="muted">
+                  Anyone can build right now without signing in. Builds go to{" "}
+                  {user.isAdmin ? <strong>{user.email}</strong> : "a shared guest account"}. Sign in only if you want
+                  builds under your own account.
+                </p>
+                <div className="row-actions">
+                  <Link className="btn btn-primary" href={next}>
+                    Continue without signing in
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h1>Sign in to build</h1>
+                <p className="muted">
+                  Browsing is open to everyone. Building spends model credits, so it needs your email, a password and
+                  the access code the Muse Muse team shared with you.
+                </p>
+              </>
+            )}
             <SignInForm next={next} />
             <p className="muted small">
               Muse Muse never asks for a Meta account or an API key. It uses its own key on the server.

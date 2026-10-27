@@ -182,3 +182,103 @@ describe("isAdminNow", () => {
     assert.equal(auth.isAdminNow(session, null, [ADMIN]), false);
   });
 });
+
+describe("open access", () => {
+  it("acts as the first admin email in admin mode, the guest otherwise, and nobody when off", () => {
+    assert.equal(auth.openAccessIdentity("off", [ADMIN]), null);
+    assert.deepEqual(auth.openAccessIdentity("admin", [ADMIN, "second@example.com"]), { email: ADMIN, isAdmin: true });
+    assert.deepEqual(auth.openAccessIdentity("admin", []), { email: auth.GUEST_EMAIL, isAdmin: false });
+    assert.deepEqual(auth.openAccessIdentity("guest", [ADMIN]), { email: auth.GUEST_EMAIL, isAdmin: false });
+  });
+
+  it("reads OPEN_ACCESS as off, guest or admin", async () => {
+    const { env } = await import("@/lib/env");
+    const saved = process.env.OPEN_ACCESS;
+    try {
+      const read = (mode: string | undefined) => {
+        if (mode === undefined) delete process.env.OPEN_ACCESS;
+        else process.env.OPEN_ACCESS = mode;
+        return env.openAccess;
+      };
+      assert.equal(read(undefined), "off");
+      assert.equal(read(""), "off");
+      assert.equal(read("yes"), "off");
+      assert.equal(read("1"), "off");
+      assert.equal(read(" Admin "), "admin");
+      assert.equal(read("GUEST"), "guest");
+    } finally {
+      if (saved === undefined) delete process.env.OPEN_ACCESS;
+      else process.env.OPEN_ACCESS = saved;
+    }
+  });
+
+  it("applies admin only on previews and localhost, and fails closed everywhere else", () => {
+    const at = (vercelEnv: string | undefined, headers: Record<string, string>) =>
+      auth.effectiveOpenAccess("admin", vercelEnv, new Headers(headers));
+    assert.equal(at("preview", { host: "muse-muse-abc.vercel.app" }), "admin");
+    assert.equal(at("production", { host: "localhost:3000" }), "off");
+    assert.equal(at("production", { host: "muse-muse.vercel.app" }), "off");
+    assert.equal(at(undefined, { host: "localhost:3000", "x-forwarded-host": "localhost:3000" }), "admin");
+    assert.equal(at("development", { host: "127.0.0.1:3000" }), "admin");
+    assert.equal(at(undefined, { host: "[::1]:3000" }), "admin");
+    assert.equal(at(undefined, { host: "192.168.1.20:3000" }), "off");
+    assert.equal(at(undefined, { host: "quiet-fox.trycloudflare.com" }), "off");
+    assert.equal(at(undefined, { host: "localhost:3000", "x-forwarded-host": "quiet-fox.trycloudflare.com" }), "off");
+    assert.equal(at(undefined, { host: "localhost.evil.example" }), "off");
+    assert.equal(at(undefined, {}), "off");
+  });
+
+  it("passes guest and off through untouched", () => {
+    for (const vercelEnv of ["production", "preview", undefined]) {
+      const h = new Headers({ host: "muse-muse.vercel.app" });
+      assert.equal(auth.effectiveOpenAccess("guest", vercelEnv, h), "guest");
+      assert.equal(auth.effectiveOpenAccess("off", vercelEnv, h), "off");
+    }
+  });
+
+  it("recognizes loopback hosts only", () => {
+    for (const host of ["localhost", "LOCALHOST:3000", "127.0.0.1", "127.1.2.3:80", "[::1]", "[::1]:3000"]) {
+      assert.equal(auth.isLoopbackHost(host), true, host);
+    }
+    for (const host of [null, "", "0.0.0.0:3000", "10.0.0.5", "127.0.0.1.nip.io", "localhost.example", "::1"]) {
+      assert.equal(auth.isLoopbackHost(host), false, String(host));
+    }
+  });
+
+  it("never gives the shared guest owner powers, even over products it started", () => {
+    const guest: SessionUser = { id: "g", email: auth.GUEST_EMAIL, isAdmin: false, openAccess: true };
+    const openAdmin: SessionUser = { id: "a", email: ADMIN, isAdmin: true, openAccess: true };
+    const owner: SessionUser = { id: "o", email: "o@example.com", isAdmin: false };
+    assert.equal(auth.canActAsOwner(guest, "g"), false);
+    assert.equal(auth.canActAsOwner(openAdmin, "someone-else"), true);
+    assert.equal(auth.canActAsOwner(owner, "o"), true);
+    assert.equal(auth.canActAsOwner(owner, "x"), false);
+    assert.equal(auth.canActAsOwner(owner, null), false);
+    assert.equal(auth.canActAsOwner(null, "o"), false);
+  });
+
+  it("won't let anyone claim the guest account with a password", async () => {
+    const store = memoryStore();
+    assert.equal(await auth.checkSignIn({ email: auth.GUEST_EMAIL, code: SHARED, password: PASSWORD }, store, config), null);
+    assert.equal(
+      await auth.checkSignIn({ email: " Guest@MuseMuse.invalid ", code: ADMIN_CODE, password: PASSWORD }, store, config),
+      null,
+    );
+    assert.equal(store.rows.size, 0);
+  });
+
+  it("treats a request as cross-site from Sec-Fetch-Site or a foreign Origin", () => {
+    const h = (init: Record<string, string>) => auth.isCrossSite(new Headers({ host: "mm.example", ...init }));
+    assert.equal(h({}), false);
+    assert.equal(h({ "sec-fetch-site": "same-origin", origin: "https://mm.example" }), false);
+    assert.equal(h({ "sec-fetch-site": "none" }), false);
+    assert.equal(h({ origin: "https://mm.example" }), false);
+    assert.equal(h({ "sec-fetch-site": "cross-site" }), true);
+    assert.equal(h({ "sec-fetch-site": "same-site", origin: "https://other.mm.example" }), true);
+    assert.equal(h({ "sec-fetch-site": "same-site" }), true);
+    assert.equal(h({ origin: "https://evil.example" }), true);
+    assert.equal(h({ origin: "null" }), true);
+    assert.equal(h({ origin: "https://mm.example", "x-forwarded-host": "mm.vercel.app" }), true);
+    assert.equal(h({ origin: "https://mm.vercel.app", "x-forwarded-host": "mm.vercel.app" }), false);
+  });
+});

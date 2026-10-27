@@ -33,7 +33,7 @@ Ethan shared three screenshots of Meta's developer dashboard on Oct 27, 2026: th
 | 2 | Builds (`/builds`, the signed-in user's builds), Rebuilds (`/rebuilds`), Gallery (`/gallery`) |
 | 3 | Usage (`/usage`) |
 | 4 | How it works ↗ (the repo's DESIGN.md or an about page), Status of the gateway (optional) |
-| Bottom | Signed-in chip with initials and email, and a ⋯ menu with Sign out. Signed out: a plain "Sign in" button |
+| Bottom | Signed-in chip with initials and email, and a ⋯ menu with Sign out. Signed out: a plain "Sign in" button. With sign-in off (`OPEN_ACCESS`): the shared account ("Guest", or the admin's email), "Admin, sign-in off" or "Builder, sign-in off", and Sign in in place of Sign out |
 
 Use inline SVG icons drawn in the same outline style (1.5 px stroke, `currentColor`), not an icon font or a CDN.
 

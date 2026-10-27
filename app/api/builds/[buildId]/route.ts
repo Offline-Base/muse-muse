@@ -36,7 +36,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     inspiration: inspiration ? omit(inspiration, "userId") : null,
     viewer: {
       signedIn: Boolean(viewer),
-      isOwner: Boolean(viewer && viewer.id === (product?.ownerId ?? build.userId)),
+      isOwner: Boolean(viewer && !viewer.openAccess && viewer.id === (product?.ownerId ?? build.userId)),
       isAdmin: Boolean(viewer?.isAdmin),
     },
   });
