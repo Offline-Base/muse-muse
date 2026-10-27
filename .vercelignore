@@ -1,0 +1,7 @@
+.env*
+!.env.example
+scripts/dev
+template/node_modules
+template/.next
+template/test-results
+template/playwright-report
