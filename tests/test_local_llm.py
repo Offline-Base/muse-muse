@@ -328,6 +328,16 @@ def test_llm_names_keeps_only_names_in_text(settings, sleeps):
     assert body["messages"][-1]["content"] == text
 
 
+@respx.mock
+def test_llm_names_keeps_the_words_of_a_name_not_written_whole(settings, sleeps):
+    found = ["Bennick Cinderfall", "Corvin Ashdal", "Imaginary Person", "Wren's"]
+    respx.post(f"{settings.answer_url}/chat/completions").mock(
+        return_value=httpx.Response(200, json=reply(json.dumps({"names": found})))
+    )
+    text = "Cinderfall, Bennick: 90 points. Corvin Ashdale revised. Wren helped."
+    assert make(settings, sleeps).llm_names(text, synthetic=True) == ["Bennick", "Cinderfall", "Corvin", "Wren"]
+
+
 def test_llm_names_empty_text_makes_no_call(settings, sleeps):
     assert make(settings, sleeps).llm_names("   ", synthetic=True) == []
 

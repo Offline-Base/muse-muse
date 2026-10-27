@@ -471,6 +471,209 @@ def test_llm_names_add_person_tags(roster, tagmap):
     assert [h.kind for h in leaks("Desmond Kowalczyk", roster, tagmap)] == ["person"]
 
 
+LEAKED_SNIPPET = "Bennick Cinderfall scored 90 points. Bennick corrected all errors on revision."
+
+
+@pytest.mark.parametrize("found", [["Bennick Cinderfall"], ["Cinderfall"], ["Bennick"]])
+def test_llm_names_tag_every_part_of_a_name(roster, tagmap, found):
+    # The model often reports the full name and not the first name alone (unseen syn-0765), or
+    # one word of the name only. Every mention is tagged either way.
+    out = tag(LEAKED_SNIPPET, roster, tagmap, llm_names=lambda text: found)
+    assert "Bennick" not in out.text and "Cinderfall" not in out.text
+    assert out.text.endswith("corrected all errors on revision.")
+    # Each part is a known value now, so the final check catches it in any later text.
+    assert [h.kind for h in leaks("Bennick said hi.", roster, tagmap)] == ["person"]
+
+
+def test_llm_name_parts_skip_titles_particles_and_lowercase_words(roster, tagmap):
+    out = tag("Ana de la Cruz met Cruz. Then de la came.", roster, tagmap, llm_names=lambda t: ["Ana de la Cruz"])
+    assert out.text == "[Person 1] met [Person 2]. Then de la came."
+    assert tagmap.get("[Person 3]") == "Ana"  # covered by the full name here, remembered for later
+    out = tag("Grace Hunter left. The hunter saw grace. Grace waved.", roster, tagmap, llm_names=lambda t: ["Grace Hunter"])
+    assert out.text == "[Person 4] left. The hunter saw grace. [Person 5] waved."
+    out = tag("Ms. Thornwick called. Ms. smiled.", roster, tagmap, llm_names=lambda t: ["Ms. Thornwick"])
+    assert out.text == "[Person 6] called. Ms. smiled."
+    assert guard._name_parts("Jordan Ashby-Cole Jr.") == ["Jordan", "Ashby-Cole", "Ashby", "Cole"]
+
+
+def test_llm_name_extension_stops_at_common_words_and_roster_names(roster, tagmap):
+    out = tag("Yesterday Cinderfall said Hello. Report For Cinderfall Today.", roster, tagmap, llm_names=lambda t: ["Cinderfall"])
+    assert out.text == "Yesterday [Person 1] said Hello. Report For [Person 1] Today."
+    maya = tagmap.tag_for("student", full(roster, "Maya"))
+    out = tag("Maya Cinderfall sat with Maya.", roster, tagmap, llm_names=lambda t: ["Maya Cinderfall"])
+    assert out.text.endswith(f"sat with {maya}.")  # the roster word keeps its student tag
+
+
+def names_said(*found):
+    return lambda text: list(found)
+
+
+def test_occurring_names_keeps_the_words_that_occur(roster, tagmap):
+    # LocalLLM.llm_names keeps these, so a name the model wrote differently still tags its words.
+    assert guard.occurring_names("Bennick Cinderfall", "Cinderfall, Bennick: 90.") == ["Bennick", "Cinderfall"]
+    assert guard.occurring_names("Bennick's", "Bennick scored 90.") == ["Bennick"]
+    assert guard.occurring_names("Made Up", "Bennick scored 90.") == []
+    text = "Bennick Cinderfall scored 90. Bennick revised."
+    out = tag(text, roster, tagmap, llm_names=lambda t: guard.occurring_names("Bennick Cinderfal", t))
+    assert out.text == "[Person 1] scored 90. [Person 2] revised."
+
+
+@pytest.mark.parametrize(
+    ("text", "found", "expected"),
+    [
+        ("Bennick Cinderfall S401399 scored 90.", ["Bennick Cinderfall"], "[Person 1] [ID 1] scored 90."),
+        ("Bennick Cinderfall S401399 scored 90.", ["Cinderfall"], "[Person 1] [ID 1] scored 90."),
+        ("Bennick S-401399 scored 90.", ["Bennick"], "[Person 1] [ID 1] scored 90."),
+        ("New student: Bennick Cinderfall S 401399.", ["Bennick"], "New student: [Person 1] [ID 1]."),
+        ("Cinderfall Bennick S401399 90 88 92", ["Bennick", "Cinderfall"], "[Person 1] [ID 1] 90 88 92"),
+        ("Lithia Emberfall ID S773451 scored 88.", ["Emberfall"], "[Person 1] ID [ID 1] scored 88."),
+        ("BENNICK CINDERFALL S401399 SCORED 90.", ["Cinderfall"], "[Person 1] [ID 1] SCORED 90."),
+        ("Bennick S4011 scored 90.", ["Bennick"], "[Person 1] S4011 scored 90."),
+        (
+            "Contact Bennick Cinderfall BCinderfall@example.org today.",
+            ["Bennick"],
+            "Contact [Person 1] [Email 1] today.",
+        ),
+    ],
+)
+def test_llm_name_never_takes_in_an_identifier(roster, tagmap, text, found, expected):
+    # The "S" of a student id is a capital letter, and the email starts with one. A name that took
+    # them in would leave the id digits bare, with no identifier hit for the router's floor.
+    out = tag(text, roster, tagmap, llm_names=names_said(*found))
+    assert out.text == expected
+    if "[ID 1]" in expected:
+        assert "student_id" in [h.kind for h in out.hits]
+
+
+def test_names_in_single_quotes_are_tagged(roster, tagmap):
+    out = tag("The card was signed ‘Maya’ and nothing else.", roster, tagmap)
+    maya, rose = (tagmap.tag_for("student", full(roster, n)) for n in ("Maya", "Rose"))
+    assert out.text == f"The card was signed ‘{maya}’ and nothing else."
+    assert tag("Maya wrote ‘Maya’ on her folder.", roster, tagmap).text == f"{maya} wrote ‘{maya}’ on her folder."
+    assert tag("She wrote 'Rosie' on the board.", roster, tagmap).text == f"She wrote '{rose}' on the board."
+    assert tag("'Maya, sit down,' the aide said.", roster, tagmap).text == f"'{maya}, sit down,' the aide said."
+    assert tag("‘Ms. Abernathy’ signed it.", roster, tagmap).text == "‘[Teacher]’ signed it."
+    liam = tagmap.tag_for("student", full(roster, "Liam"))
+    assert tag("O'Callaghan read.", roster, tagmap).text == f"{liam} read."  # still one name
+    said = names_said("Bennick", "Benny", "Cinderfall")
+    out = tag("Signed ‘Bennick’. Bennick ‘Benny’ Cinderfall scored 90.", roster, tagmap, llm_names=said)
+    assert out.text == "Signed ‘[Person 1]’. [Person 1] ‘[Person 2]’ [Person 3] scored 90."
+
+
+def test_llm_name_words_are_known_values_even_inside_a_longer_name(roster, tagmap):
+    text = "Bennick Cinderfall scored 90 points on the fractions check."
+    tag(text, roster, tagmap, llm_names=names_said("Bennick Cinderfall"))
+    later = tag("Bennick corrected all errors on revision.", roster, tagmap)  # the model missed it
+    assert "Bennick" not in later.text
+    assert [h.kind for h in leaks("Mr. Cinderfall called about it.", roster, tagmap)] == ["person"]
+    # A one-word report inside the fuller name the guard built is remembered too.
+    tag("Lithia Emberfall finished early.", roster, tagmap, llm_names=names_said("Emberfall"))
+    for later in ("Emberfall did well.", "Lithia did well."):
+        assert [h.kind for h in leaks(later, roster, tagmap)] == ["person"]
+
+
+def test_llm_name_extension_takes_in_accented_capitals(roster, tagmap):
+    out = tag("Élodie Cinderfall scored 90. Élodie revised.", roster, tagmap, llm_names=names_said("Cinderfall"))
+    assert out.text == "[Person 1] scored 90. [Person 2] revised."
+    out = tag("Bennick Østergaard scored 90. Østergaard revised.", roster, tagmap, llm_names=names_said("Bennick"))
+    assert "Østergaard" not in out.text
+    # A relative before a roster last name ("Tindall") the same way.
+    out = tag("Ángel Tindall picked her up.", roster, tagmap)
+    assert list(out.tag_map.values()) == ["Ángel Tindall"] and out.text.endswith("] picked her up.")
+
+
+def test_llm_names_with_possessives_and_punctuation(roster, tagmap):
+    out = tag("Bennick's score was 90. Bennick corrected all errors.", roster, tagmap, llm_names=names_said("Bennick's"))
+    assert out.text == "[Person 1]'s score was 90. [Person 1] corrected all errors."
+    out = tag("Cinderfall. Later Cinderfall revised.", roster, tagmap, llm_names=names_said("Cinderfall."))
+    assert out.text == "[Person 2]. Later [Person 2] revised."
+    text = "Ona Thistlewood's group won. Ona Thistlewood cheered."
+    for found in (["Ona Thistlewood"], ["Ona"], ["Ona Thistlewood's"]):
+        out = tag(text, roster, tagmap, llm_names=names_said(*found))
+        assert out.text == "[Person 3]'s group won. [Person 3] cheered.", found  # one person, 's kept
+    assert restore("Thank [Person 3] for leading.", out.tag_map) == "Thank Ona Thistlewood for leading."
+    out = tag("Bennick Cinderfall's score was 90. Cinderfall revised.", roster, tagmap, llm_names=names_said("Bennick"))
+    assert "Cinderfall" not in out.text and "'s score" in out.text
+
+
+def test_llm_name_lowercase_words_count_unless_particles(roster, tagmap):
+    for text in ("Bennick cinderfall scored 90. Cinderfall revised.", "Bennick Cinderfall scored 90. Cinderfall revised."):
+        out = tag(text, roster, tagmap, llm_names=names_said("Bennick cinderfall"))
+        assert "inderfall" not in out.text, text
+    assert guard._name_parts("Ana De La Cruz") == ["Ana", "Cruz"]
+    assert guard._name_parts("Van Thistlewood") == ["Van", "Thistlewood"]
+
+
+def test_llm_name_extension_skips_words_that_are_not_names(roster, tagmap):
+    text = "Algebra Bennick Cinderfall scored 90. We started algebra today."
+    out = tag(text, roster, tagmap, llm_names=names_said("Bennick"))
+    assert out.text == "Algebra [Person 1] scored 90. We started algebra today."
+    out = tag("Ana De La Cruz called. La Paz trip is set.", roster, tagmap, llm_names=names_said("Ana De La Cruz"))
+    assert out.text.endswith("called. La Paz trip is set.")
+    text = (
+        "Meanwhile Bennick finished the quiz early. Overall Bennick Cinderfall did well. "
+        "The overall score was 84%. Meanwhile, the class reviewed fractions."
+    )
+    for found in (["Bennick Cinderfall"], ["Bennick"]):
+        out = tag(text, roster, tagmap, llm_names=names_said(*found))
+        assert out.text.startswith("Meanwhile [Person") and "Overall [Person" in out.text
+        assert out.text.endswith("The overall score was 84%. Meanwhile, the class reviewed fractions.")
+    for label, found in (("Celebrating", "Korvin"), ("Nurse", "Korvin Starling"), ("Hi", "Korvin")):
+        out = tag(f"{label} Korvin Starling did well.", roster, tagmap, llm_names=names_said(found))
+        assert out.text.startswith(f"{label} [Person")
+        assert restore(out.text, out.tag_map) == f"{label} Korvin Starling did well."
+    text = "Nyssa Firebrook IEP meeting is Friday. IEP goals are attached."
+    out = tag(text, roster, tagmap, llm_names=names_said("Firebrook"))
+    assert out.text.endswith(" IEP meeting is Friday. IEP goals are attached.")
+    # One step only: a word taken in ("Spanish") takes in nothing more.
+    text = "Bennick Cinderfall Spanish homework is late. Algebra Spanish Tutoring starts Monday."
+    out = tag(text, roster, tagmap, llm_names=names_said("Cinderfall"))
+    assert "Algebra [Person" in out.text and "] Tutoring starts Monday." in out.text
+    # A name written in lowercase only inside an identifier (an email) is still taken in.
+    out = tag("Azura Willowmere lives here. Email azura@example.com.", roster, tagmap, llm_names=names_said("Willowmere"))
+    assert out.text.endswith("] lives here. Email [Email 1].") and "Azura" not in out.text
+    # Nothing that is not a name became a known value for later texts.
+    for later in (
+        "Next week we review algebra.",
+        "Overall, the class average was 84%.",
+        "Meanwhile the rest of the class worked.",
+        "The IEP team meets Monday.",
+        "Hi everyone.",
+    ):
+        assert tag(later, roster, tagmap).text == later and leaks(later, roster, tagmap) == []
+
+
+def test_common_word_parts_keep_the_roster_context_rules(tagmap):
+    out = tag("May Thornquist scored 18/20. The retest is May 5.", None, tagmap, llm_names=names_said("May Thornquist"))
+    assert out.text == "[Person 1] scored 18/20. The retest is May 5."
+    text = "Will Thornquist scored 90. Will you send him the rubric?"
+    out = tag(text, None, tagmap, llm_names=names_said("Will Thornquist"))
+    assert out.text.endswith("scored 90. Will you send him the rubric?")
+    out = tag("May Thornquist left. May revised her essay.", None, tagmap, llm_names=names_said("May Thornquist"))
+    assert out.text.startswith("[Person 1] left. [Person") and "May" not in out.text
+    # "May" is a known value now, and later texts get the same context rules.
+    for later in ("May 5 is the retest.", "May I add a note?", "Scores come in May."):
+        assert tag(later, None, tagmap).text == later and leaks(later, None, tagmap) == []
+    assert "May" not in tag("May revised it again.", None, tagmap).text
+
+
+def test_llm_name_extension_is_one_step_and_fast():
+    syllables = ["Bra", "Cel", "Dor", "Fen", "Gal", "Hob", "Jor", "Kel", "Lum", "Mor", "Nax", "Pel", "Quor", "Rin"]
+    words = [a + b.lower() for a in syllables for b in syllables if not guard._is_common(a + b.lower())]
+    lines = [f"- Bennick Cinderfall {words[i]} notes.docx" for i in range(150)] * 2
+    text = "\n".join(lines)
+    for found in (["Bennick Cinderfall"], ["Bennick"]):
+        started = time.perf_counter()
+        out = tag(text, None, TagMap(None), llm_names=names_said(*found))
+        elapsed = time.perf_counter() - started
+        assert elapsed < 2.0, f"{found} {elapsed:.3f} s"
+        assert "Bennick" not in out.text and "Cinderfall" not in out.text
+    # Reported in full, the name is one person and every document title stays readable.
+    out = tag(text, None, TagMap(None), llm_names=names_said("Bennick Cinderfall"))
+    assert set(TAG_RE.findall(out.text)) == {"[Person 1]"}
+    assert out.text.splitlines()[0] == f"- [Person 1] {words[0]} notes.docx"
+
+
 def test_llm_names_errors_propagate(roster, tagmap):
     def broken(text):
         raise RuntimeError("model down")

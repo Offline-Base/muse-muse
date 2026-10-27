@@ -4,6 +4,9 @@ The guard finds roster names and personal identifiers in text, swaps them for st
 [Student C] or [Phone 1], swaps tags back in Muse's requests, and reports anything that would leak.
 It runs on the device with plain regexes and a one-edit string check, so it keeps working when no
 model is reachable. The local model only adds an optional second pass for names (`llm_names`).
+Each word of a name from that pass is tagged alone too, a one-word name grows by up to two
+capitalized neighbors that look like a name, and every one of these values stays in the tag map,
+so later texts and the final leak check catch them with no model call (see _extra_name_cands).
 
 Ideas for the exact checks (Luhn, one-time codes next to a code word) came from decision-guard's
 prefilters; this is new Python written for this repo.
@@ -20,6 +23,7 @@ import threading
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -672,11 +676,28 @@ _SINGLE = frozenset({"first", "nick", "last", "part"})
 _TITLES = r"Mrs|Mr|Ms|Mx|Dr|Miss|Mister|Coach|Professor|Prof"
 _TOKEN = re.compile(r"[^\W\d_]+(?:['’\-‐‑][^\W\d_]+)*")
 _PREV_WORD = re.compile(r"([^\W\d_]+)[ \t]+$")
-_PRECEDING_NAMES = re.compile(r"((?:[A-Z][^\W\d_]*(?:['’\-‐‑][^\W\d_]+)*[ \t]+){1,2})$")
+# Up to two words right before or after a name; _name_like keeps the capitalized ones ("Émile" too).
+_PRECEDING_NAMES = re.compile(r"((?:[^\W\d_]+(?:['’\-‐‑][^\W\d_]+)*[ \t]+){1,2})$")
+_FOLLOWING_NAMES = re.compile(r"(?:[ \t]+[^\W\d_]+(?:['’\-‐‑][^\W\d_]+)*){1,2}")
+# Before a name: not a letter, and not an apostrophe right after a letter (the "Callaghan" in
+# "O'Callaghan"). An opening quote is fine: ‘Maya’ and 'Maya' are names.
+_NAME_START = r"(?<![^\W\d_])(?<![^\W\d_]['’])"
 _TITLE_WORDS = frozenset(
     {"mr", "mrs", "ms", "mx", "dr", "miss", "mister", "coach", "professor", "prof", "sir", "madam", "dear"}
 )
 _NEXT_WORD = re.compile(r"[ \t]+([^\W\d_]+|\d)")
+
+
+def _used_as_word(text: str, start: int, end: int, form: str) -> bool:
+    """For a capitalized name that is also a common word: whether the text uses it as the word."""
+    nxt = _NEXT_WORD.match(text, end)
+    next_word = nxt.group(1).lower() if nxt else ""
+    prv = _PREV_WORD.search(text, max(0, start - 30), start)
+    prev_word = prv.group(1).lower() if prv else ""
+    if next_word in _SUBJECT_PRONOUNS or prev_word in _DETERMINERS:
+        return True  # "May I go?", "Will you help?", "the Rose Garden"
+    # "May 5", "in May"
+    return form.lower() in _MONTHS and (next_word[:1].isdigit() or prev_word in _MONTH_PREPS)
 
 
 def _forms_for(p: Person) -> Iterable[tuple[str, str]]:
@@ -720,7 +741,7 @@ class _NameIndex:
         texts = sorted({e.form for es in self.forms.values() for e in es}, key=len, reverse=True)
         self.regex = (
             re.compile(
-                r"(?<![^\W\d_]|['’])(?:" + "|".join(_form_pattern(f) for f in texts) + r")(?![^\W\d_])",
+                _NAME_START + "(?:" + "|".join(_form_pattern(f) for f in texts) + r")(?![^\W\d_])",
                 re.IGNORECASE,
             )
             if texts
@@ -730,7 +751,7 @@ class _NameIndex:
         self.title_re = None
         if t.last:
             self.title_re = re.compile(
-                rf"(?<![^\W\d_]|['’])(?:{_TITLES})\.?\s+(?:{_form_pattern(t.first)}\s+)?{_form_pattern(t.last)}"
+                rf"{_NAME_START}(?:{_TITLES})\.?\s+(?:{_form_pattern(t.first)}\s+)?{_form_pattern(t.last)}"
                 r"(?![^\W\d_])",
                 re.IGNORECASE,
             )
@@ -758,17 +779,7 @@ class _NameIndex:
             # need four letters: "restrepo" in a file slug, "kowalczyk" in a note.
             short = len(_norm(form)) < (4 if types & {"last", "part"} else 3)
             return not (ambiguous or short)
-        if not ambiguous:
-            return True
-        nxt = _NEXT_WORD.match(text, end)
-        next_word = nxt.group(1).lower() if nxt else ""
-        prv = _PREV_WORD.search(text, max(0, start - 30), start)
-        prev_word = prv.group(1).lower() if prv else ""
-        if next_word in _SUBJECT_PRONOUNS or prev_word in _DETERMINERS:
-            return False  # "May I go?", "Will you help?", "the Rose Garden"
-        if form.lower() in _MONTHS and (next_word[:1].isdigit() or prev_word in _MONTH_PREPS):
-            return False  # "May 5", "in May"
-        return True
+        return not (ambiguous and _used_as_word(text, start, end, form))
 
     def _cand(self, value: str, start: int, end: int, entries: list[_Form]) -> _Cand:
         people = {e.person for e in entries}
@@ -796,16 +807,7 @@ class _NameIndex:
         Up to two capitalized words right before the last name count, unless they are common
         words, titles or roster names themselves.
         """
-        m = _PRECEDING_NAMES.search(text, max(0, start - 60), start)
-        if not m:
-            return None
-        begin = None
-        for t in reversed(list(_TOKEN.finditer(text, m.start(1), start))):
-            word = t.group()
-            if _is_common(word) or word.lower() in _TITLE_WORDS or _norm(word) in self.forms:
-                break
-            begin = t.start()
-        return begin
+        return _given_names_start(text, start, self.forms)
 
     def cands(self, text: str) -> list[_Cand]:
         out: list[_Cand] = []
@@ -871,29 +873,186 @@ def find_names(text: str, roster: Any) -> list[Hit]:
     return _hits(_remap(_resolve(_index(roster).cands(norm.text), _tag_spans(norm.text)), text, norm))
 
 
-def _extra_name_cands(text: str, names: Iterable[str], roster: Any) -> list[_Cand]:
-    """Names from the local model's second pass that the roster does not already cover."""
+def _given_names_start(
+    text: str, start: int, forms: Mapping[str, Any], joins: Callable[[re.Match[str]], bool] | None = None
+) -> int | None:
+    """Where up to two capitalized words right before `start` begin, stopping at a common word,
+    a title, a name in `forms` or a word `joins` refuses. None when there are none."""
+    m = _PRECEDING_NAMES.search(text, max(0, start - 60), start)
+    if not m:
+        return None
+    begin = None
+    for t in reversed(list(_TOKEN.finditer(text, m.start(1), start))):
+        if not _name_like(t.group(), forms) or (joins is not None and not joins(t)):
+            break
+        begin = t.start()
+    return begin
+
+
+def _family_names_end(
+    text: str, end: int, forms: Mapping[str, Any], joins: Callable[[re.Match[str]], bool] | None = None
+) -> int | None:
+    """Where up to two capitalized words right after `end` stop, with the same exceptions as
+    _given_names_start. A possessive ends the name before its 's ("Ona Thistlewood's group"). None
+    when there are none."""
+    m = _FOLLOWING_NAMES.match(text, end)
+    if not m:
+        return None
+    stop = None
+    for t in _TOKEN.finditer(text, end, m.end()):
+        possessive = t.group()[-2:].lower() in ("'s", "’s")
+        word = t.group()[:-2] if possessive else t.group()
+        if not _name_like(word, forms) or (joins is not None and not joins(t)):
+            break
+        stop = t.end() - 2 if possessive else t.end()
+        if possessive:
+            break
+    return stop
+
+
+def _name_like(word: str, forms: Mapping[str, Any]) -> bool:
+    if not word[:1].isupper():
+        return False
+    return not (_is_common(word) or word.lower() in _TITLE_WORDS or _norm(word) in forms)
+
+
+# Capitalized words seen right next to names in school text that are not names: greetings, labels,
+# roles and sentence openers. A model-found name never takes them in.
+_NOT_NAMES = frozenset(
+    "hi hello hey congrats congratulations welcome thanks meanwhile overall principal nurse officer judge"
+    " counselor grandma grandpa nana auntie remind email contact nickname neighbor celebrating review"
+    " reflection portfolio quiz draft elementary academy guardian".split()
+)
+_TOUCHES_DIGIT = re.compile(r"-?\d")
+
+
+def _extra_name_cands(
+    text: str, names: Iterable[str], roster: Any, stops: Iterable[tuple[int, int]] = ()
+) -> list[_Cand]:
+    """Names from the local model's second pass that the roster does not already cover.
+
+    Each word of a model-found name counts alone too (a later "Bennick" when the model reported
+    "Bennick Cinderfall"). A one-word name the model reported on its own, not inside a longer name
+    it also reported, takes in up to two capitalized words on each side: the model reporting only
+    "Cinderfall" still tags "Bennick Cinderfall", and the "Bennick" it took in counts alone where
+    the text capitalizes it. One step only: a word taken in takes in nothing more. A neighbor is
+    not taken in when it is one letter, touches a digit or an identifier span in `stops` (the "S"
+    of "S401399"), is in capitals next to a name that is not ("IEP"), is written in lowercase
+    elsewhere in the text ("Overall" and "overall") or is in _NOT_NAMES. The candidates overlap:
+    _resolve keeps the longest, and tag() remembers every one.
+    """
     idx = _index(roster) if roster is not None else None
-    out: list[_Cand] = []
+    roster_forms = idx.forms if idx is not None else {}
+    reported: list[str] = []
     for raw in names:
-        name = _normalize(" ".join(str(raw or "").split())).text.strip()
-        if len(_norm(name)) < 2:
+        name = _clean_name(raw)
+        if len(_norm(name)) < 2 or name in reported:
             continue
         if idx is not None and all(_norm(t) in idx.forms for t in name.split()):
             continue  # the roster pass tags it with the right student
-        common = " " not in name and _is_common(name)
-        if common and (len(name) < 3 or name.lower() in _FUNCTION_WORDS):
-            continue
-        pattern = re.compile(r"(?<![^\W\d_]|['’])" + _form_pattern(name) + r"(?![^\W\d_])", re.IGNORECASE)
-        for m in pattern.finditer(text):
-            # A name that is also a word ("Mason", "Grace") counts where the text capitalizes it.
-            if common and not text[m.start()].isupper():
+        reported.append(name)
+    in_longer = {_norm(p) for name in reported if " " in name for p in _name_parts(name)}
+    covered = bytearray(len(text))  # 1 inside an identifier
+    for s, e in stops:
+        covered[s:e] = b"\x01" * (e - s)
+    # Words the text writes in lowercase, not counting identifiers ("azura@example.com").
+    lower = {
+        t.group().lower() for t in _TOKEN.finditer(text) if t.group()[:1].islower() and not covered[t.start()]
+    }
+
+    def joins(t: re.Match[str], caps: bool) -> bool:
+        word = t.group()
+        return not (
+            len(word) < 2
+            or _TOUCHES_DIGIT.match(text, t.end())
+            or 1 in covered[t.start() : t.end()]
+            or (word.isupper() and not caps)
+            or word.lower() in lower
+            or _norm(word) in _NOT_NAMES
+        )
+
+    out: list[_Cand] = []
+    seen: set[str] = set()
+    taken_in: set[str] = set()
+    for name in reported:
+        for form in (name, *(p for p in _name_parts(name) if _norm(p) not in roster_forms)):
+            key = _norm(form)
+            if key in seen:
                 continue
-            out.append(_Cand("person", m.group(), m.start(), m.end(), _norm(name)))
+            seen.add(key)
+            common = " " not in form and _is_common(form)
+            if common and (len(form) < 3 or form.lower() in _FUNCTION_WORDS):
+                continue
+            extend = form == name and " " not in name and key not in in_longer
+            pattern = re.compile(_NAME_START + _form_pattern(form) + r"(?![^\W\d_])", re.IGNORECASE)
+            for m in pattern.finditer(text):
+                upper = text[m.start()].isupper()
+                # A name that is also a word ("Mason", "Grace") counts where the text capitalizes it
+                # and does not use it as the word ("May 5", "Will you").
+                if common and (not upper or _used_as_word(text, m.start(), m.end(), form)):
+                    continue
+                out.append(_Cand("person", m.group(), m.start(), m.end(), key))
+                if not (extend and upper):
+                    continue
+                ok = partial(joins, caps=m.group().isupper())
+                begin = _given_names_start(text, m.start(), roster_forms, ok)
+                stop = _family_names_end(text, m.end(), roster_forms, ok)
+                if begin is None and stop is None:
+                    continue
+                begin, stop = (m.start() if begin is None else begin), (stop or m.end())
+                out.append(_Cand("person", text[begin:stop], begin, stop, _norm(text[begin:stop])))
+                for t in _TOKEN.finditer(text, begin, stop):
+                    if not m.start() <= t.start() < m.end():
+                        taken_in.update(_norm(p) for p in (t.group(), *_name_parts(t.group())))
+    taken_in -= seen
+    if taken_in:
+        # One pass over the words of the text finds each word taken in wherever it is capitalized.
+        for t in _TOKEN.finditer(text):
+            s, e = t.span()
+            if text[e - 2 : e].lower() in ("'s", "’s"):
+                e -= 2
+            spans = [(s, e)]
+            if any(ch in "-‐‑" for ch in text[s:e]):
+                spans += [(s + p.start(), s + p.end()) for p in re.finditer(r"[^\-‐‑]+", text[s:e])]
+            for a, b in spans:
+                if text[a].isupper() and _norm(text[a:b]) in taken_in:
+                    out.append(_Cand("person", text[a:b], a, b, _norm(text[a:b])))
     return out
 
 
+def _clean_name(raw: Any) -> str:
+    """A model-found name the way the scan reads text: whitespace joined, normalized, and a
+    possessive or trailing punctuation left off ("Bennick's" and "Cinderfall." match bare names)."""
+    name = _normalize(" ".join(str(raw or "").split())).text.strip()
+    return re.sub(r"(?:['’][sS]|[.,;:!?])+$", "", name).strip()
+
+
+def _name_parts(name: str) -> list[str]:
+    """The words of a model-found name that can stand alone: every word of a multi-word name and
+    each 3+ letter piece of a hyphenated one, possessives left off. Titles and suffixes are left
+    out, and so are particles ("de", "van") in lowercase or after the first word. Any other
+    lowercase word counts ("Bennick cinderfall")."""
+    tokens = [re.sub(r"['’][sS]$", "", t) for t in _TOKEN.findall(name)]
+    parts: list[str] = []
+    for i, token in enumerate(tokens):
+        pieces = [token] if len(tokens) > 1 else []
+        pieces += [p for p in re.split(r"[\-‐‑]+", token) if p != token and len(p) >= 3]
+        for piece in pieces:
+            key = _norm(piece)
+            if len(key) < 2 or key in _TITLE_WORDS or key in _NAME_SUFFIXES:
+                continue
+            if key in _PARTICLES and (i > 0 or not piece[:1].isupper()):
+                continue
+            if piece not in parts:
+                parts.append(piece)
+    return parts
+
+
 _FUNCTION_WORDS = _SUBJECT_PRONOUNS | _DETERMINERS | _TITLE_WORDS
+_NAME_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv"})
+_PARTICLES = frozenset(
+    "de del della der den di da das dos du la le van von bin ibn al el ter ten".split()
+)
 
 
 def name_occurs(name: str, text: str) -> bool:
@@ -904,6 +1063,18 @@ def name_occurs(name: str, text: str) -> bool:
         return False
     pattern = re.compile(r"(?<![^\W\d_])" + _form_pattern(name) + r"(?![^\W\d_])", re.IGNORECASE)
     return pattern.search(_normalize(text).text) is not None
+
+
+def occurring_names(name: str, text: str) -> list[str]:
+    """What of a name the model reported occurs in `text`: the name, else each of its words that
+    does ("Bennick" and "Cinderfall" in "Cinderfall, Bennick", or "Bennick" when the model
+    misspelled the last name). Empty when nothing does, so a made-up name tags nothing."""
+    if name_occurs(name, text):
+        return [name]
+    clean = _clean_name(name)
+    if clean != name and name_occurs(clean, text):
+        return [clean]
+    return [p for p in _name_parts(clean) if name_occurs(p, text)]
 
 
 # ------------------------------------------------------------------ tag map
@@ -1119,8 +1290,9 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
             continue
         kind, key = info(tag)
         word = m.group()
-        if kind == "person" and " " not in word and _is_common(word) and not word[:1].isupper():
-            continue  # "Mason" the person, not "a mason jar"
+        if kind == "person" and " " not in word and _is_common(word):
+            if not word[:1].isupper() or _used_as_word(text, m.start(), m.end(), word):
+                continue  # "Mason" the person, not "a mason jar"; "May" the person, not "May 5"
         out.append(_Cand(kind, word, m.start(), m.end(), key))
     return out
 
@@ -1128,16 +1300,23 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
 # ------------------------------------------------------------------ tag, restore, leaks
 
 
-def _scan(text: str, roster: Any, tagmap: Any, extra_names: Iterable[str] = ()) -> list[_Cand]:
-    """Every private value in `text`, found in its normalized copy, with spans in `text`."""
+def _scan(
+    text: str, roster: Any, tagmap: Any, extra_names: Iterable[str] = (), model: list[_Cand] | None = None
+) -> list[_Cand]:
+    """Every private value in `text`, found in its normalized copy, with spans in `text`.
+    `model` collects every candidate from the model's names, overlapped ones included."""
     norm = _normalize(text)
     t = norm.text
     cands = _identifier_cands(t, roster)
+    stops = [(c.start, c.end) for c in cands]
     if roster is not None:
         cands += _index(roster).cands(t)
     cands += _known_cands(t, tagmap)
     if extra_names:
-        cands += _extra_name_cands(t, extra_names, roster)
+        extra = _extra_name_cands(t, extra_names, roster, stops)
+        if model is not None:
+            model += extra
+        cands += extra
     return _remap(_resolve(cands, _tag_spans(t)), text, norm)
 
 
@@ -1154,6 +1333,10 @@ def tag(
     After each pass the output is scanned again until nothing is found. Hits from the first pass
     carry positions in `text`; hits from a later pass (rare) carry positions in the partly tagged
     text. If `llm_names` raises, the error propagates so the caller holds the result.
+
+    Model-found names are tagged with their words and, for a one-word name, the capitalized
+    neighbors it takes in (_extra_name_cands). Every one of those values is then stored in the tag
+    map, even where a longer span covered it, so a later "Bennick" alone is a known value.
     """
     if tagmap is None:
         tagmap = TagMap(None)
@@ -1162,10 +1345,13 @@ def tag(
     extra = [n for n in llm_names(text) if isinstance(n, str)] if llm_names is not None else []
     hits: list[Hit] = []
     used: dict[str, str] = {}
+    model: list[_Cand] = []
     out = text or ""
-    for _ in range(_MAX_PASSES):
-        found = _scan(out, roster, tagmap, extra)
+    clean = False
+    for i in range(_MAX_PASSES):
+        found = _scan(out, roster, tagmap, extra, model if i == 0 else None)
         if not found:
+            clean = True
             break
         pieces: list[str] = []
         last = 0
@@ -1180,10 +1366,17 @@ def tag(
         pieces.append(out[last:])
         out = "".join(pieces)
     else:
-        if _scan(out, roster, tagmap, extra):
-            tagmap.flush()
-            raise GuardError("text still has private values after tagging")
+        clean = not _scan(out, roster, tagmap, extra)
+    # Every name the model pass found becomes a known value, also where a longer name covered it
+    # ("Bennick" inside "Hi Bennick", "Cinderfall" inside "Bennick Cinderfall"), so a later text
+    # that has it alone is tagged and the final check catches it. A common word ("Grace", "May")
+    # is remembered only where it was tagged on its own.
+    for c in model:
+        if " " in c.value or not _is_common(c.value):
+            tagmap.tag_for(c.kind, c.key, c.value)
     tagmap.flush()
+    if not clean:
+        raise GuardError("text still has private values after tagging")
     topics = blocked_topics(text or "", never_share)
     return TagResult(text=out, tag_map=used, hits=hits, blocked=[_reason(t) for t in topics], topics=topics)
 

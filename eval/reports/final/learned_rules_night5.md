@@ -11,10 +11,9 @@ Results with a never-share topic (custody, discipline, home_address, iep, immigr
 - Free-text answers (kind: free_text; topics: full_text): ask first. You wanted to be asked 7 of 7 times, so keep asking.
 - Free-text answers (kind: free_text; topics: parents): ask first. You wanted to be asked 7 of 7 times, so keep asking.
 - Per-student results (kind: per_student; topics: grades, writing): share tagged. You approved 3 of 3 and said don't ask again.
-- Free-text answers (kind: free_text; topics: class_level): share a summary. You approved 2 of 2 and said don't ask again.
 - Free-text answers (kind: free_text; topics: third_party): ask first. You wanted to be asked 2 of 2 times, so keep asking.
 - Per-student results (kind: per_student; topics: grades, third_party, writing): ask first. You wanted to be asked 2 of 2 times, so keep asking.
 - Document snippets (kind: snippet; topics: none): share tagged. You approved 2 of 2 and said don't ask again.
-- Anything about full text (topic: full_text): ask first. You wanted to be asked 7 of 7 times, so keep asking.
+- Document snippets (kind: snippet; topics: full_text): share tagged. You approved 2 of 2 and said don't ask again.
 - Anything about parents (topic: parents): ask first. You wanted to be asked 7 of 7 times, so keep asking.
 - Anything about third party (topic: third_party): ask first. You wanted to be asked 6 of 6 times, so keep asking.

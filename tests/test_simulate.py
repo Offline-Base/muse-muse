@@ -291,6 +291,64 @@ def test_charts_render_to_a_temp_dir(tmp_path, capsys):
     assert "Wrote" in capsys.readouterr().out
 
 
+def _night_rows(holdout_leaks, day_leaks=None):
+    rows = []
+    for n, k in enumerate(holdout_leaks):
+        row = {"night": str(n), "approval_requests": "" if n == 0 else "5", "agreement": "0.8", "leaks": str(k)}
+        if day_leaks is not None:
+            row["day_leaks"] = "" if n == 0 else str(day_leaks[n - 1])
+        rows.append(row)
+    return rows
+
+
+def test_leak_line_says_only_what_the_data_shows(tmp_path):
+    # The line used to say "Leaks: 0 on every night" from the holdout column alone, even when the
+    # unseen test in nights.md had a leak.
+    unseen_rows = [
+        {"router": "Night 0, no learned rules", "n": 100, "accuracy": 0.7, "agreement": 0.7,
+         "approval_requests": 53, "leaks": 1, "unscored": 0},
+        {"router": "After the last night, router_rules.md (10 rules)", "n": 100, "accuracy": 0.79,
+         "agreement": 0.79, "approval_requests": 30, "leaks": 0, "unscored": 0},
+    ]  # fmt: skip
+    md = tmp_path / "nights.md"
+    md.write_text("# Nights\n\n| Night | Leaks |\n|---|---|\n| 0 | 0 |\n" + "\n".join(simulate_nights.unseen_table(unseen_rows, "Note.")) + "\n\n## Cost\n\n$0.\n")  # fmt: skip
+    unseen = charts.read_unseen(md)
+    assert unseen == [("Night 0, no learned rules", 1), ("After the last night, router_rules.md (10 rules)", 0)]
+
+    rows = _night_rows([0, 0, 0], day_leaks=[0, 0])
+    assert charts.leak_note(rows, unseen) == (
+        "Leaks: holdout 0 every night; days 0 every day; "
+        "unseen test 1 with the night-0 router, 0 after the last night",
+        True,
+    )
+    # The full line is too long for the chart, so it wraps at spaces with nothing lost.
+    full, _ = charts.leak_note(rows, unseen)
+    wrapped = charts.wrap_note(full)
+    assert "\n" in wrapped and all(len(line) <= charts.NOTE_WIDTH for line in wrapped.splitlines())
+    assert wrapped.replace("\n", " ") == full
+    assert charts.leak_note(rows) == ("Leaks: holdout 0 every night; days 0 every day", False)
+    # Old nights.csv without day_leaks, no unseen table: holdout only.
+    assert charts.leak_note(_night_rows([0, 0])) == ("Leaks: holdout 0 every night", False)
+    assert charts.read_unseen(tmp_path / "missing.md") == []
+    (tmp_path / "plain.md").write_text("# Nights\n\n| Night | Leaks |\n|---|---|\n| 0 | 3 |\n")
+    assert charts.read_unseen(tmp_path / "plain.md") == []  # no Unseen test section
+    # Holdout and day leaks are read per night and per day, never assumed.
+    assert charts.leak_note(_night_rows([0, 2, 0], day_leaks=[0, 1])) == (
+        "Leaks: holdout 2 on night 1, 0 on the others; days 1 on day 2, 0 on the others",
+        True,
+    )
+
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    with (reports / "nights.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=simulate_nights.FIELDS, restval="")
+        writer.writeheader()
+        writer.writerows(_night_rows([0, 0, 0], day_leaks=[0, 0]))
+    (reports / "nights.md").write_text(md.read_text())
+    assert charts.main(["--reports", str(reports)]) == 0
+    assert (reports / "five_nights.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_speed_tables_prefer_tokens_per_second(tmp_path):
     (tmp_path / "laptop_speed.md").write_text(SPEED_MD)
     assert charts.read_speed(tmp_path) == [

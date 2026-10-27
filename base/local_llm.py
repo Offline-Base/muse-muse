@@ -402,8 +402,9 @@ class LocalLLM:
         """The guard's second pass: person names Glimmer finds in `text`.
 
         Only names that really occur in the text are returned, so a made-up name can never be
-        tagged into the output. For guard.tag, pass functools.partial(llm.llm_names, synthetic=True)
-        on the cloud backend.
+        tagged into the output. A name that does not occur whole ("Bennick Cinderfall" for
+        "Cinderfall, Bennick", or a misspelled last name) keeps the words of it that do. For
+        guard.tag, pass functools.partial(llm.llm_names, synthetic=True) on the cloud backend.
         """
         if not text.strip():
             return []
@@ -413,14 +414,15 @@ class LocalLLM:
             max_tokens=max_tokens,
             synthetic=synthetic,
         )
-        from base.guard import name_occurs  # lazy: guard does not need this module
+        from base.guard import occurring_names  # lazy: guard does not need this module
 
         names: list[str] = []
         for value in data.get("names") or []:
             name = str(value).strip()
-            # Kept when it occurs in the text, allowing for apostrophe, space and case differences.
-            if name and not name.startswith("[") and name not in names and name_occurs(name, text):
-                names.append(name)
+            if not name or name.startswith("["):
+                continue
+            # What occurs in the text, allowing for apostrophe, space and case differences.
+            names += [n for n in occurring_names(name, text) if n not in names]
         return names
 
     def request_topics(

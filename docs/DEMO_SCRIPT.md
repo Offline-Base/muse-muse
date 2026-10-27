@@ -1,6 +1,6 @@
 # Demo video script
 
-About two and a half minutes, ending on measured results, because the startup track judges technical execution and whether it holds up in production. Scenes follow the build plan. Every number said or shown must come from [eval/reports/final.md](../eval/reports/final.md); do not round it into something the report does not say.
+About two and a half minutes, ending on measured results, because the startup track judges technical execution and whether it holds up in production. Scenes follow the build plan. Every number said or shown must come from [eval/reports/final.md](../eval/reports/final.md); do not round it into something the report does not say. The only exceptions are the two survey figures in scene 2:10, which are other people's numbers (see the note under the scenes).
 
 ## Say which Glimmer graded
 
@@ -63,6 +63,8 @@ For scene 1:45, set up the two scheduled jobs from [MUSE_SETUP.md](MUSE_SETUP.md
 | 2:10 | Why it matters | Text: "12% of consumers fully trust organizations with their identity data (Ping Identity, 2026). 77% worry about AI agents acting for them (Thales, 2026)." Then: "Schools. Healthcare. City agencies." | "These are the sectors that can't use Muse today." |
 | 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer: Q4_K_M on a laptop, i1-IQ1_S on a Jetson Orin Nano." | "Personal superintelligence that can work on your private life." |
 
+The two survey figures in scene 2:10 are not measured here and are not in eval/reports. They come from Ping Identity's 2026 consumer survey (12% of consumers fully trust organizations to manage their identity data) and Thales's 2026 Digital Trust Index (77% uneasy about AI agents acting on their behalf; [cpl.thalesgroup.com/digital-trust-index](https://cpl.thalesgroup.com/digital-trust-index)). They were checked only against press coverage on Oct 27. Before recording, open each published report, confirm the number and its wording, and put the Ping Identity link here.
+
 The plan had the approval card show a tagged class summary. The code shows the tagged per-student table, because grading results go out as per-student results (see docs/DECISIONS.md). The scene works the same way; just do not call it a summary.
 
 The card now also shows what the device read in Muse's request, as chips in the policy's words: "For a student's family", "For someone outside the class", "Whole text", "Asks who a tag is" or "Class-level question". The grading request has none of these, so the 1:05 card shows no chip; do not promise one there. To show a chip, film MUSE_SETUP.md test step 4 ("Find a student quote about the school garden for the family newsletter.") as an extra cut: its card shows "For a student's family". A card whose result would go out as a summary says "What would leave this device: a summary, not the full result" above the text.
@@ -73,17 +75,18 @@ Say what `eval/reports/final/nights.md` and `eval/reports/final.md` say, nothing
 
 May say:
 
-- "Over five simulated days, approval requests fell from 10 a day to 6." Each day had 5 items she wanted to be asked about, so the unneeded requests went 5, 3, 2, 2, 1.
+- "Over five simulated days, approval requests fell from 10 a day to 6." Each day had 5 items she wanted to be asked about, so the unneeded requests went 5, 4, 2, 1, 1.
 - "The nightly gate kept all five nights, and agreement on the 20 held-out items went from 75% to 90%." Add that the gate selects on those items, so this is an upper bound.
-- "On 100 practice items it never saw, agreement went from 70% to 79%, with 30 approval requests instead of 53." This is the more honest learning number, so prefer it if you say only one.
-- Leaks: "0 leaks in 100 eval items, the holdout, five simulated days and two 24-essay grading jobs."
+- "On 100 practice items it never saw, agreement went from 72% to 81%, with 28 approval requests instead of 53." This is the more honest learning number, so prefer it if you say only one.
+- Leaks: "0 leaks in this round's measured runs: 100 eval items, the holdout, five simulated days, 100 practice items it never saw, and two 24-essay grading jobs." The chart's leak line says the same for the holdout, the days and the unseen test.
 
 May not say:
 
-- "0 leaks on every run" or "it never leaks". The unseen test had one leak with the night-0 router: an approved snippet kept an invented name that is not on the roster, which Glimmer's name pass missed. The chart's "Leaks: 0 on every night" line counts the holdout and the days only.
-- "It learns your rules" or "90% accurate" without the simulated teacher and the upper-bound caveat.
+- "It never leaks" or "it can't leak". Every run in the final round had 0 leaks, but the round before had one: an approved snippet kept an invented name that is not on the roster, because the guard tagged only the exact name Glimmer's name pass returned. The guard now tags every word of such a name, but a name the pass misses entirely would still go out on an approved card.
+- "It never shares what she would keep." On day 2 of the simulation a learned rule shared t085, a discipline note her policy refuses, tagged and with no card, and the night-5 rules did the same on the 100 eval items. The leak count does not see this, because its names were tagged.
+- "It learns your rules", "90% accurate" or "88% accurate" without the simulated teacher and the caveats: the holdout's 90% is an upper bound, and the night-5 rules' 88% on the 100 eval items is in-sample.
 - "It only gets more careful." On the unseen test it asked less than she wanted on 8 of 25 items (ask first 100% to 68%), because two approvals taught a broad rule for snippets. Those went out tagged, so they are not leaks, but the claim would be false.
-- That night 3 got worse. Its dip from 85% to 80% is the same rules scoring lower on a re-run, not new rules doing worse.
+- That night 3 got worse. Its dip from 90% to 85% is the same rules scoring lower on a re-run, not new rules doing worse.
 
 The first final run's chart, where the gate kept no rules, is in `eval/reports/before_fixes/final/five_nights.png`; the tuning run's rising chart (`eval/reports/five_nights.png`) used hand labels and practice data labeled with the teacher's own policy. Do not show either as the result.
 

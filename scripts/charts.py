@@ -4,8 +4,10 @@
 
 five_nights.png: approval requests per day (bars, split into requests the teacher wanted and
 unneeded ones when nights.csv has those columns) above agreement with the teacher after each
-night (line), with leaks noted on every night. speed.png: the tables in eval/reports/*_speed.md.
-Two measures never share one axis; each gets its own panel.
+night (line), with a leak line read from the data: holdout leaks per night, day leaks per day
+(when nights.csv has day_leaks) and the unseen test's leaks (when nights.md has an Unseen test
+table). speed.png: the tables in eval/reports/*_speed.md. Two measures never share one axis; each
+gets its own panel.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import argparse
 import csv
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 from matplotlib import font_manager, rc_context
@@ -34,6 +37,7 @@ PALETTES = {
     },
 }  # fmt: skip
 SERIES = ("chart-1", "chart-2", "accent")  # fixed order, never cycled
+NOTE_WIDTH = 88  # characters per line of the leak note at 11 pt on the 8 inch chart
 FONTS = ("Inter", "Helvetica Neue", "Arial", "DejaVu Sans")
 SPEED_COLUMNS = (
     re.compile(r"tok(en)?s?\s*/\s*s|tokens per second", re.I),
@@ -49,14 +53,53 @@ def read_nights(path: str | Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -> Path:
+def read_unseen(path: str | Path) -> list[tuple[str, int]]:
+    """(router label, leaks) for each row of the "Unseen test" table in nights.md, or [] when the
+    file or the table is missing."""
+    path = Path(path)
+    if not path.is_file():
+        return []
+    m = re.search(r"^## Unseen test[ \t]*$(.*?)(?=^## |\Z)", path.read_text(), re.M | re.S)
+    if not m:
+        return []
+    for table in parse_tables(m.group(1)):
+        header = table[0]
+        if "Router" in header and "Leaks" in header:
+            i, j = header.index("Router"), header.index("Leaks")
+            return [
+                (r[i], int(v)) for r in table[1:] if len(r) > max(i, j) and (v := _value(r[j])) is not None
+            ]
+    return []
+
+
+def leak_note(rows: list[dict], unseen: list[tuple[str, int]] = ()) -> tuple[str, bool]:
+    """The chart's leak line and whether anything leaked, from the data only: holdout leaks for
+    each night, day leaks for each day when nights.csv has them, and the unseen test's rows."""
+    holdout = [(int(r["night"]), int(float(r["leaks"]))) for r in rows if r.get("leaks") not in ("", None)]
+    days = [(int(r["night"]), int(float(r["day_leaks"]))) for r in rows if r.get("day_leaks") not in ("", None)]
+    parts = []
+    if holdout:
+        parts.append("holdout " + _per_point(holdout, "night"))
+    if days:
+        parts.append("days " + _per_point(days, "day"))
+    if unseen:
+        parts.append("unseen test " + ", ".join(f"{k} {_unseen_label(label)}" for label, k in unseen))
+    bad = any(k for _, k in (*holdout, *days, *unseen))
+    return ("Leaks: " + "; ".join(parts) if parts else "Leaks: not measured"), bad
+
+
+def five_nights_chart(
+    rows: list[dict], out: str | Path, theme: str = "light", unseen: list[tuple[str, int]] = ()
+) -> Path:
     pal = PALETTES[theme]
     nights = [int(r["night"]) for r in rows]
     days = [
         (int(r["night"]), int(float(r["approval_requests"]))) for r in rows if r["approval_requests"] != ""
     ]
     agreement = [float(r["agreement"]) * 100 for r in rows]
-    leaks = [int(float(r["leaks"])) for r in rows]
+    note, bad = leak_note(rows, unseen)
+    label = wrap_note(note)
+    extra = label.count("\n")  # each wrapped line needs room under the bottom panel
     with rc_context(_rc(pal)):
         fig = Figure(figsize=(8, 6.4), dpi=200, facecolor=pal["bg"])
         FigureCanvasAgg(fig)
@@ -97,15 +140,9 @@ def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -
         bottom.set_xticks(nights, [f"Night {n}" for n in nights])
         bottom.set_xlim(*xlim)
 
-        bad = [(n, k) for n, k in zip(nights, leaks, strict=True) if k]
-        note = (
-            "Leaks: 0 on every night"
-            if not bad
-            else "Leaks: " + ", ".join(f"{k} on night {n}" for n, k in bad)
-        )
         fig.legend(
             handles=[Line2D([], [], linestyle="", marker="o", markersize=7, color=pal["danger" if bad else "ok"])],
-            labels=[note], loc="lower left", bbox_to_anchor=(0.06, 0.0), frameon=False,
+            labels=[label], loc="lower left", bbox_to_anchor=(0.06, 0.0), frameon=False,
             labelcolor=pal["text-2"], fontsize=11,
         )  # fmt: skip
         count = max(nights) if nights else 0
@@ -113,7 +150,7 @@ def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -
                  color=pal["text"], va="top")  # fmt: skip
         fig.text(0.06, 0.935, "The simulated teacher answers each request; each night the router learns from it.",
                  fontsize=11, color=pal["text-2"], va="top")  # fmt: skip
-        fig.subplots_adjust(left=0.08, right=0.97, top=0.84, bottom=0.12)
+        fig.subplots_adjust(left=0.08, right=0.97, top=0.84, bottom=0.12 + 0.035 * extra)
         return _save(fig, out, pal)
 
 
@@ -214,9 +251,9 @@ def main(argv: list[str] | None = None) -> int:
 
     nights_csv = args.reports / "nights.csv"
     if nights_csv.is_file():
-        print(
-            f"Wrote {display_path(five_nights_chart(read_nights(nights_csv), out / 'five_nights.png', args.theme))}"
-        )
+        unseen = read_unseen(args.reports / "nights.md")
+        chart = five_nights_chart(read_nights(nights_csv), out / "five_nights.png", args.theme, unseen=unseen)
+        print(f"Wrote {display_path(chart)}")
     else:
         print("No nights.csv yet; run python -m scripts.simulate_nights first.")
     series = read_speed(args.reports)
@@ -255,6 +292,30 @@ def _split_requests(rows: list[dict]) -> dict[int, tuple[int, int]]:
             return {}
         out[int(r["night"])] = (int(float(wanted)), int(float(unneeded)))
     return out
+
+
+def wrap_note(note: str, width: int = NOTE_WIDTH) -> str:
+    """The leak line broken at spaces so each line fits under the chart."""
+    return "\n".join(textwrap.wrap(note, width, break_long_words=False)) or note
+
+
+def _per_point(points: list[tuple[int, int]], unit: str) -> str:
+    """'0 every night', or each nonzero count with its night or day and the rest as 0."""
+    bad = [(n, k) for n, k in points if k]
+    if not bad:
+        return f"0 every {unit}"
+    rest = ", 0 on the others" if len(bad) < len(points) else ""
+    return ", ".join(f"{k} on {unit} {n}" for n, k in bad) + rest
+
+
+def _unseen_label(label: str) -> str:
+    """A short phrase for an unseen-test row label from nights.md."""
+    low = label.strip().lower()
+    if low.startswith("night 0"):
+        return "with the night-0 router"
+    if low.startswith("after the last night"):
+        return "after the last night"
+    return "with " + re.split(r"[,:]", label.strip(), maxsplit=1)[0]
 
 
 def _value(cell: str) -> float | None:

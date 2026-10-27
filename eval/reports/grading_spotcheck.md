@@ -2,7 +2,7 @@
 
 The plan's grading-quality number is a manual check: a teacher scores 10 essays against the rubric and compares with Glimmer. Glimmer's side is filled in below; **the Ethan columns are blank on purpose.** Every student, essay and detail here is invented (`eval/roster.json`, `demo/essays/`).
 
-Source: the first-day grading run, `RUN_INTEGRATION=1 uv run pytest -q -s tests/test_e2e.py::test_e2e_cloud_grading_no_rules` (report `e2e_cloud_no_rules.md`), on Oct 27 at 05:52. Glimmer was `meta/muse-glimmer-30b` on OpenRouter, reasoning low, with each essay's names swapped for tags before the model saw it. "Run B" is the second grading run in the same command set, `tests/test_e2e.py::test_e2e_cloud_grading`, on the same 24 essays a minute later. Scores for all 24 essays in both runs: `raw/grading_spotcheck.jsonl` (scores only).
+Source: the first-day grading run, `RUN_INTEGRATION=1 uv run pytest -q -s tests/test_e2e.py::test_e2e_cloud_grading_no_rules`, on Oct 27 at 05:52. Its report is `e2e_cloud_no_rules.md` as of commit 291b0eb (`git show 291b0eb:eval/reports/e2e_cloud_no_rules.md`); the file of that name in the tree has been rerun since and is a later run. Glimmer was `meta/muse-glimmer-30b` on OpenRouter, reasoning low, with each essay's names swapped for tags before the model saw it. "Run B" is the second grading run in the same command set, `tests/test_e2e.py::test_e2e_cloud_grading`, on the same 24 essays a minute later (report `e2e_cloud.md` as of the same commit, 05:53). Scores for all 24 essays in both runs: `raw/grading_spotcheck.jsonl` (scores only).
 
 ## How the 10 were picked
 
