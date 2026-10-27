@@ -1,4 +1,4 @@
-import { clientIpHeaders, type RequestLike } from "./client";
+import { clientIpHeaders, gatewayEnv, type RequestLike } from "./client";
 
 export interface TranscriptTurn {
   speaker: string;
@@ -45,7 +45,7 @@ const MULTIPART_MAX_BYTES = 4 * 1024 * 1024;
  * empty list today, so treat the result as one block of text.
  */
 export async function transcribeFile(opts: TranscribeOptions): Promise<Transcript> {
-  const endpoint = `${gatewayV1()}/asr/transcribe`;
+  const endpoint = `${gatewayEnv().baseURL}/asr/transcribe`;
   let bytes = opts.bytes ? toUint8(opts.bytes) : null;
 
   if (!bytes) {
@@ -126,12 +126,6 @@ function toUint8(bytes: ArrayBuffer | Uint8Array): Uint8Array {
   return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }
 
-function gatewayV1(): string {
-  const gateway = process.env.GATEWAY_URL;
-  if (!gateway || !process.env.PRODUCT_TOKEN) throw new Error("GATEWAY_URL and PRODUCT_TOKEN must be set on the server.");
-  return `${gateway.replace(/\/$/, "")}/v1`;
-}
-
 function authHeaders(request?: RequestLike | null): Record<string, string> {
-  return { Authorization: `Bearer ${process.env.PRODUCT_TOKEN}`, ...clientIpHeaders(request) };
+  return { Authorization: `Bearer ${gatewayEnv().apiKey}`, ...clientIpHeaders(request) };
 }

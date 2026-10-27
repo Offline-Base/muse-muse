@@ -31,6 +31,16 @@ export function clientIpHeaders(from?: RequestLike | null): Record<string, strin
 }
 
 /**
+ * The gateway's /v1 base URL and this product's token. The platform writes GATEWAY_URL and PRODUCT_TOKEN into the
+ * product's env; they exist on the server only. Throws when either is missing.
+ */
+export function gatewayEnv(): { baseURL: string; apiKey: string } {
+  const { GATEWAY_URL: url, PRODUCT_TOKEN: token } = process.env;
+  if (url && token) return { baseURL: new URL("v1", url.endsWith("/") ? url : `${url}/`).href, apiKey: token };
+  throw new Error("GATEWAY_URL and PRODUCT_TOKEN aren't set. The Muse Muse platform writes both into the server env.");
+}
+
+/**
  * OpenAI SDK client pointed at the Muse Muse gateway.
  *
  * The gateway mirrors the Meta Model API paths (https://api.meta.ai/v1) and adds the real key on the server,
@@ -39,10 +49,5 @@ export function clientIpHeaders(from?: RequestLike | null): Record<string, strin
  * Always pass the incoming request (or `await headers()` in a server action) so every call carries the visitor's IP.
  */
 export function metaClient(request?: RequestLike | null): OpenAI {
-  const gateway = process.env.GATEWAY_URL;
-  const token = process.env.PRODUCT_TOKEN;
-  if (!gateway || !token) {
-    throw new Error("GATEWAY_URL and PRODUCT_TOKEN must be set on the server.");
-  }
-  return new OpenAI({ baseURL: `${gateway.replace(/\/$/, "")}/v1`, apiKey: token, defaultHeaders: clientIpHeaders(request) });
+  return new OpenAI({ ...gatewayEnv(), defaultHeaders: clientIpHeaders(request) });
 }

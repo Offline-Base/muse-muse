@@ -6,13 +6,9 @@ Hackathon codename for the Meta Global AI Developer Hackathon, Startup track. Mu
 
 ## Status
 
-**Design and scaffold, started Oct 24, 2026 before kickoff and updated Oct 26.** Every route and helper that needs real logic is a stub that returns 501 or throws, with a `TODO(kickoff, day N)` note pointing at the plan. Disclose this in the submission if the rules ask what existed before Oct 26.
+**Built from Oct 26 to Nov 4, 2026, for the Meta Global AI Developer Hackathon.** Before kickoff there was only a scaffold, committed exactly as received in `e3ba154`: design docs, the Meta model catalog, prompt drafts, the product template's rules and skills, types, the database schema, config, and route stubs that returned 501. All working code was written from Oct 26 on.
 
-What exists before kickoff:
-
-- Design docs, the Meta model catalog and prompt drafts in `docs/` and `catalog/`
-- The product template's rules (`template/AGENTS.md`) and skills (`template/.agents/skills/`)
-- Folder layout, types, the database schema and route stubs
+An Oct 27 audit compared every scaffold file with the current tree. It found five small helpers from the scaffold still in use: `museExecArgs`, `metaClient`, `imagePart` and `videoPart`, `toDataUrl` and `glimmerClient`. They were rewritten the same day. Everything else that survives from the scaffold is types, schema, config, docs or template boilerplate.
 
 ## How it works
 

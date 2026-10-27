@@ -12,34 +12,30 @@ export interface MuseExecOptions {
   model?: BuildModel;
   reasoningEffort?: ReasoningEffort;
   maxModelSteps?: number;
-  /** Inspo images to attach with --image (repeatable), as paths relative to the product dir. */
-  images?: string[];
   /** Muse Code's web tools can't reach anything through the build firewall, so they are off by default. */
   disableWebTools?: boolean;
 }
 
 export const DEFAULT_MAX_MODEL_STEPS = 200;
 
+/** What a run uses when the caller doesn't choose. */
+const EXEC_DEFAULTS = { model: "muse-spark-1.3", reasoningEffort: "high", maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
+
+/**
+ * argv for `muse exec`, after the binary name. --yolo skips Muse Code's own bubblewrap sandbox, which can't run in the
+ * microVM: the disposable, firewalled VM is the boundary. Inspo images are attached by the runner script
+ * (builder.ts startMuse), which checks the file exists first.
+ */
 export function museExecArgs(opts: MuseExecOptions): string[] {
-  const args = [
-    "exec",
-    "--json",
-    // Muse Code's own sandbox needs bubblewrap. The disposable, firewalled microVM is the boundary instead.
-    "--yolo",
-    "--session-id",
-    opts.sessionId,
-    "--prompt-file",
-    opts.promptFile,
-    "--model",
-    opts.model ?? "muse-spark-1.3",
-    "--reasoning-effort",
-    opts.reasoningEffort ?? "high",
-    "--max-model-steps",
-    String(opts.maxModelSteps ?? DEFAULT_MAX_MODEL_STEPS),
-  ];
-  if (opts.disableWebTools ?? true) args.push("--disable-web-tools");
-  for (const image of opts.images ?? []) args.push("--image", image);
-  return args;
+  const valued: Record<string, string> = {
+    "--session-id": opts.sessionId,
+    "--prompt-file": opts.promptFile,
+    "--model": opts.model ?? EXEC_DEFAULTS.model,
+    "--reasoning-effort": opts.reasoningEffort ?? EXEC_DEFAULTS.reasoningEffort,
+    "--max-model-steps": `${opts.maxModelSteps ?? EXEC_DEFAULTS.maxModelSteps}`,
+  };
+  const webTools = opts.disableWebTools === false ? [] : ["--disable-web-tools"];
+  return ["exec", "--json", "--yolo", ...Object.entries(valued).flat(), ...webTools];
 }
 
 /** Env for any muse command in the sandbox (docs/SPIKES.md). Stops the launcher from self-updating or starting a device sign-in. */

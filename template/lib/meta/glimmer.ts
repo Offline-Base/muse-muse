@@ -5,7 +5,7 @@ import OpenAI from "openai";
  * Glimmer is open weights and isn't on the Meta Model API, so this returns null unless GLIMMER_URL is set.
  */
 export function glimmerClient(): OpenAI | null {
-  const url = process.env.GLIMMER_URL;
-  if (!url) return null;
-  return new OpenAI({ baseURL: url, apiKey: process.env.GLIMMER_API_KEY ?? "not-needed" });
+  const baseURL = process.env.GLIMMER_URL?.trim().replace(/\/+$/, "");
+  // Self-hosted servers often run without a key, but the SDK needs a non-empty one.
+  return baseURL ? new OpenAI({ baseURL, apiKey: process.env.GLIMMER_API_KEY || "none" }) : null;
 }

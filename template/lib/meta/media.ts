@@ -1,9 +1,12 @@
 import OpenAI from "openai";
 
-/** Turns bytes into a base64 data URL for image_url, video_url, file_data or Muse Image inputs. */
-export function toDataUrl(bytes: ArrayBuffer | Uint8Array, mimeType: string): string {
-  const buf = bytes instanceof ArrayBuffer ? Buffer.from(new Uint8Array(bytes)) : Buffer.from(bytes);
-  return `data:${mimeType};base64,${buf.toString("base64")}`;
+/**
+ * Turns bytes into a base64 data URL for image_url, video_url, file_data or Muse Image inputs. Takes an ArrayBuffer or
+ * any view of one (Uint8Array, Buffer, DataView), and encodes only the bytes the view covers.
+ */
+export function toDataUrl(bytes: ArrayBuffer | ArrayBufferView, mimeType: string): string {
+  const view = ArrayBuffer.isView(bytes) ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength) : Buffer.from(bytes);
+  return `data:${mimeType || "application/octet-stream"};base64,${view.toString("base64")}`;
 }
 
 /** Downloads a URL on the server and returns it as a data URL. The fallback when Meta can't fetch a URL itself. */
