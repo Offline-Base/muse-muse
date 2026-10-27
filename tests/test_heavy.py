@@ -359,22 +359,32 @@ def test_worker_caps_each_step_below_the_jetsons_wait():
 
 def test_a_worker_busy_on_a_step_still_counts_as_present(tmp_path):
     # Review correctness F6: no hello while the model runs, and one essay can take over 30 s.
-    q = HeavyQueue(tmp_path / "q.db", wait_seconds=120, hello_window=0.05)
+    # The window starts wide so run() finds the worker however loaded the machine is, and narrows
+    # once the step is claimed, so only the claimed step can keep the worker present.
+    q = HeavyQueue(tmp_path / "q.db", wait_seconds=120, hello_window=60)
     q.hello("w1")
     import threading as _t
     import time as _time
 
+    seen = {}
+
     def work():
-        step = q.next(worker="w1", wait=2)
+        step = q.next(worker="w1", wait=20)
+        q.hello_window = 0.05
         _time.sleep(0.2)  # longer than the hello window
-        assert q.worker_present()  # claimed within wait_seconds
+        seen["busy"] = q.worker_present()  # claimed within wait_seconds
+        seen["submitted_at"] = _time.time()
         q.submit(step["id"], result={"ok": 1})
 
     t = _t.Thread(target=work)
     t.start()
     assert q.run("grade", [{"role": "user", "content": "x"}], None) == {"ok": 1}
     t.join()
-    assert q.worker_present()  # submit counted as a hello
+    assert seen["busy"]
+    # Submit counted as a hello: a window reaching back to just before it (the last hello before
+    # that was at least 0.2 s earlier) still finds the worker.
+    q.hello_window = _time.time() - seen["submitted_at"] + 0.15
+    assert q.worker_present()
 
 
 def test_worker_never_listens():

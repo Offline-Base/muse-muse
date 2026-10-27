@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from base import config
 from base.config import load_settings
 
 
@@ -12,6 +13,16 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "integration" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def no_repo_dotenv(request, monkeypatch):
+    """Unit tests never see the developer's .env (RELAY_URL, models, keys); integration tests do."""
+    if "integration" in request.keywords:
+        return
+    real = config.read_dotenv
+    repo_env = config.REPO_ROOT / ".env"
+    monkeypatch.setattr(config, "read_dotenv", lambda path: {} if path == repo_env else real(path))
 
 
 @pytest.fixture
