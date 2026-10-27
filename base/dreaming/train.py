@@ -132,7 +132,7 @@ def topic_label(topic: str) -> str:
 
 
 def relevant_topics(policy) -> frozenset[str] | None:
-    """Topics the policy names (never-share topics and every rule's topics), or None for no policy
+    """Topics the policy names (never-share topics, request topics and every rule's topics), or None for no policy
     (or an object that is not one).
 
     Rules group on these only, so a topic the policy never mentions cannot split a group.
@@ -140,6 +140,7 @@ def relevant_topics(policy) -> frozenset[str] | None:
     if policy is None or not hasattr(policy, "never_share"):
         return None
     topics = set(policy.never_share or {})
+    topics.update(getattr(policy, "request_topics", None) or {})
     for rule in getattr(policy, "rules", None) or []:
         topics.update(getattr(rule, "topics_any", ()) or ())
         topics.update(getattr(rule, "topics_all", ()) or ())

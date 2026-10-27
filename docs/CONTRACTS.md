@@ -11,7 +11,8 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
                                                                                        |
      tool call -> restore tags in arguments -> workspace / jobs -> raw local result (real names, stays here)
                                                                                        |
-            guard.tag(raw, llm_names=Glimmer's second pass) -> TagResult -> router.decide() -> RouteDecision
+            guard.tag(raw, llm_names=Glimmer's second pass) -> TagResult
+            + request topics (never-share keywords in Muse's request, Glimmer's request_topics pass) -> router.decide() -> RouteDecision
                                                                                        |
                share_tagged: tagged text | share_summary: local summary, tagged | ask_user: approval row, wait | refuse: held message
                                                                                        |
@@ -53,7 +54,7 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 - `Person(name, first, last, nicknames=(), role="student", student_id=None)`; `Roster(teacher, students: tuple[Person, ...], school=None)`; `Roster.people()` yields teacher then students. Frozen; `load_roster` returns tuples.
 - `Hit(kind, value, start, end)`, kind one of `student, teacher, person, phone, email, ssn, card, otp, student_id, address, dob` (`IDENTIFIER_KINDS` is the last eight). Egress may also report `check_failed`.
 - `TagResult(text, tag_map, hits, blocked, topics)`: `tag_map` maps each tag used in this text (like `[Student C]`) to its real value; `blocked` holds plain reasons, `topics` the never-share topic names.
-- `Decision` is `share_tagged | share_summary | ask_user | refuse`; `STRICTNESS`, `stricter(a, b)`, `default_share_form(kind)` (`share_summary` for `class_aggregate`, else `share_tagged`).
+- `Decision` is `share_tagged | share_summary | ask_user | refuse`; `STRICTNESS`, `stricter(a, b)`, `default_share_form(kind, topics=())` (`share_summary` for `class_aggregate` or when `CLASS_LEVEL_TOPIC` (`"class_level"`, a request topic) is in `topics`, else `share_tagged`).
 - `RouteInput(request, result_kind, tagged_text, hits=[], blocked=[], summary=None, topics=[])`; `RouteDecision(decision, reason, source, latency_ms=0, floors=[])`, source `model | rule | fallback | cache`.
 - Result kinds: `document_list, snippet, per_student, class_aggregate, contact_info, sensitive_record, free_text, dreaming_report`.
 
@@ -75,6 +76,7 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 - On a cloud backend every call must pass `synthetic=True` or it raises `CloudBackendRefused`. openrouter sends `reasoning: {"effort": ...}`; llama_server sends `chat_template_kwargs.reasoning_strength` and, with `adapter`, `lora: [{"id": int, "scale": 1.0}]` (an adapter on openrouter is a `ValueError`). A `Reasoning strength:` line is added to the system prompt if missing. A reply cut off with no content is retried once with double the budget, then `LLMTruncated`.
 - `chat_json(messages, schema, **kw) -> dict` (schema plain or `{name, strict, schema}`), one retry, then `LLMParseError`. Both subclass `LLMError`.
 - `llm_names(text, *, synthetic=False, max_tokens=1500) -> list[str]`: names Glimmer finds, kept only if they occur in the text (`guard.name_occurs`: apostrophe, space and case differences allowed). `health()`, `close()`.
+- `request_topics(request, topics: Mapping[str, str], *, synthetic=False, max_tokens=1500) -> list[str]`: the policy's request topics (name -> description) that Muse's tagged request matches, one strict-JSON call whose schema enumerates the names; returned in policy order. No call for an empty request or no topics. Measured against hand labels in eval/reports/request_topics.md (`scripts/check_request_topics.py`).
 
 `base/spark.py` (eval and synthetic data only):
 - `Spark(settings, roster=None)`: `chat(messages, *, max_tokens=4000, json_schema=None, effort="minimal", cache=True) -> SparkResult(content, usage, cached, finish_reason)`, `chat_json(messages, schema, **kw)`. Cache and usage in `eval/.cache/spark.db`, table `spark_calls(ts, model, prompt_tokens, completion_tokens, reasoning_tokens, cached, cached_tokens)`; `usage_summary(cache_path, since=None)`.
@@ -102,12 +104,15 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 
 ### Policy (`base/policy.py`, `eval/user_policy.yaml`)
 
-`UserPolicy.load(path)` (or `from_dict`), `PolicyError` naming the file and field. Top-level keys `name, description, never_share, ask_first, rules, default`; rule keys `id, kinds, topics_any, topics_all, request_any, wants, pre_approved, on_ask, note`. First match wins, else `default`. `ask_first` topics must be in `never_share`; `pre_approved` only with a share form; a rule without `on_ask` answers the way its `wants` implies.
+`UserPolicy.load(path)` (or `from_dict`), `PolicyError` naming the file and field. Top-level keys `name, description, never_share, ask_first, request_topics, rules, default`; rule keys `id, kinds, topics_any, topics_all, request_any, wants, pre_approved, on_ask, note`. First match wins, else `default`. `ask_first` topics must be in `never_share`; `pre_approved` only with a share form; a rule without `on_ask` answers the way its `wants` implies.
 
 ```yaml
 never_share:            # topic -> keywords; guard.blocked_topics uses these
   iep: ["IEP", "504 plan", "individualized education", "special education", "speech therapy", "accommodation plan"]
 ask_first: []
+request_topics:         # topic -> plain description; Glimmer labels Muse's request with these
+  parents: "meant for a student's family: parents, guardians, a note or letter home, a family newsletter"
+  class_level: "asks for class-level numbers or patterns (an average, a count, a trend)"
 rules:
   - id: class_averages
     kinds: [class_aggregate]
@@ -118,14 +123,15 @@ rules:
 default: {wants: ask_user, on_ask: {approve: false, remember: false}}
 ```
 
-`match(item) -> Rule`, `wants(item)`, `answer(item) -> (approve, remember)`, `pre_approved(kind, topics, request="")`, `never_share -> dict`, `ask_first -> set`. `item` is any mapping or object with `request`, `result_kind`, `topics`. For every eval item `expected == policy.wants(item)` (tested).
+`match(item) -> Rule`, `wants(item)`, `answer(item) -> (approve, remember)`, `pre_approved(kind, topics, request="")`, `never_share -> dict`, `ask_first -> set`, `request_topics -> dict[str, str]`. Request topic names are lowercase words and may not repeat a never-share topic; descriptions are whitespace-collapsed. `item` is any mapping or object with `request`, `result_kind`, `topics`. For every eval item `expected == policy.wants(item)` (tested).
 
 ### Egress (`base/egress.py`)
 
 `Egress(services, guard=None)`. `release(tool, request, raw_text, result_kind, *, job_id=None, summary=None, topics=(), item_id=None, day=None, synthetic=None) -> Released(status, text, approval_id, decision, tag_result, retryable=False)`, status `shared | waiting | refused`.
 - `synthetic=None` means: True only on a cloud backend whose workspace root is marked `.synthetic`. The eval passes True.
 - Tagging calls `guard.tag` with `llm_names=functools.partial(answer_llm.llm_names, synthetic=...)` for every kind except `dreaming_report` (`NO_NAME_PASS`; document titles and paths get the pass). If tagging or the name pass raises, the result is held: "Held on your device.", decision refuse with floor `name_check`, audit `name_check_failed`, no decision row, and `Released.retryable` True. A summary the model could not write is held the same way (audit `summary_failed`). Muse's `request` is tagged with the roster pass before it is routed or stored.
-- Then route, record one decision row (with `blocked`), and return. `share_summary` (and `ask_user` on `class_aggregate`) shares the tagged `summary`, or one the answer model writes from the tagged text; a summary that still has a `[Student X]` or `[Person N]` tag is refused.
+- Request topics: never-share keywords found in the tagged request (`guard.blocked_topics`, so "Which students have an IEP?" is floored even when the answer has no keyword), plus `answer_llm.request_topics(request, policy.request_topics)` for every kind except `document_list` and `dreaming_report` (`NO_TOPIC_PASS`). Both join `topics` and the result's own keyword topics in the RouteInput and the decision row. If the model pass raises, the result is held like a failed name check: floor `topic_check`, audit `topic_check_failed`, no decision row, `retryable` True. The row's `shown_form` is `default_share_form(kind, topics)`.
+- Then route, record one decision row (with `blocked`), and return. `share_summary` (and `ask_user` whose shown form is a summary: `class_aggregate`, or a `class_level` request) shares the tagged `summary`, or one the answer model writes from the tagged text; a summary that still has a `[Student X]` or `[Person N]` tag is refused.
 - `resolve(approval_id: int) -> Released`: pending -> waiting, approved -> the stored tagged text, denied or deleted -> "Kept on your device.". `approval_id` is set for waiting rows and resolve results only.
 - Texts to Muse: "Waiting for your OK on the device.", "Kept on your device. <one fixed sentence for the floor that kept it>" (`refusal_text(floors)`; the router's own reason is model text and stays on the approval page), "Held on your device.". After a shared result egress emits `sending`, then `waiting` or `idle`. Every one passes `final_check(text) -> list[Hit]` (`guard.leaks`; fails closed).
 
@@ -161,7 +167,7 @@ default: {wants: ask_user, on_ask: {approve: false, remember: false}}
 ## Dreaming (`base/dreaming/`)
 
 - `dataset.py`: `build(store, synthetic_path, holdout_ids=()) -> list[Example(request, result_kind, tagged_text, label, weight, topics, source, approved, remember, row_id, item_id)]`. User rows weigh 3, synthetic rows 1. Skips deleted rows and holdout ids. Labels come from `approvals.label_for`.
-- `train.py`: `train(examples, settings, backend=None, *, out_path=None, day=None, policy=None) -> TrainResult(backend, path, rules, examples, user_examples, cloud_required, message)`. Backend `prompt` (default) groups examples by `rule_key(kind, topics, relevant_topics(policy))` and writes one rule line per group with exact counts, plus strict topic rules `(topic: X)` that need evidence of their own, from scratch each night (deterministic, no model call). Groups the never-share floor always refuses (`floored_topics`) get no rule. `read_rules(text) -> list[RuleLine(kind, topics, decision, source, text)]` and `match_rule(rules, kind, topics)` read them back for the router. Backend `lora` writes `adapters/train-<date>.jsonl` and says to run `scripts/cloud/train_lora_modal.py`; it never launches it. In that file a row the user did not approve has its request and text withheld, and a row in which `guard.leaks` (roster and tag map) still finds anything is left out; with no roster or tag map nothing is written.
+- `train.py`: `train(examples, settings, backend=None, *, out_path=None, day=None, policy=None) -> TrainResult(backend, path, rules, examples, user_examples, cloud_required, message)`. Backend `prompt` (default) groups examples by `rule_key(kind, topics, relevant_topics(policy))` (relevant topics: never-share topics, request topics and every rule's topics) and writes one rule line per group with exact counts, plus strict topic rules `(topic: X)` that need evidence of their own, from scratch each night (deterministic, no model call). Groups the never-share floor always refuses (`floored_topics`) get no rule. `read_rules(text) -> list[RuleLine(kind, topics, decision, source, text)]` and `match_rule(rules, kind, topics)` read them back for the router. Backend `lora` writes `adapters/train-<date>.jsonl` and says to run `scripts/cloud/train_lora_modal.py`; it never launches it. In that file a row the user did not approve has its request and text withheld, and a row in which `guard.leaks` (roster and tag map) still finds anything is left out; with no roster or tag map nothing is written.
 - `gate.py`: `gate(services, candidate_rules_path, current_rules_path, holdout_items, *, force=False) -> GateResult(keep, before, after, reasons)`. Both rule files are scored with `run_eval.evaluate` on the holdout in fresh temp homes; keep only if overall accuracy, every category and agreement are no worse and leaks are 0, and neither run has more than 10% of items that errored or fell back (`MAX_UNSCORED_SHARE`), so a night scored while the model was down keeps the current rules. `force` replaces rules learned from since-deleted decisions as long as the candidate leaks nothing.
 - `night.py`: `NightRunner(services, *, holdout_path=None, synthetic_path=None)`: `start() -> job id` (the running one if a night is going), `run_night() -> NightReport` (raises `DreamingBusy(job_id)`), `running_job()`, `wait(timeout)`, `last_report() -> dict` with `learned_from, accuracy_before, accuracy_after, agreement_before, agreement_after, kept, leaks, seconds, night_number` (night 0, learned_from 0 and None for the rest before the first night). Lock and history in tables `dreaming_lock` (with an `owner` of pid and a per-process token: a lock whose process is gone is not a running night) and `dreaming_nights`. `report_for(job_id)` gives one night's numbers. `NightReport.categories` holds holdout accuracy per expected decision. `synthetic_path=""` means no practice data; `raw_dir` (set by the simulation) gets each night's gate rows.
 

@@ -131,3 +131,33 @@ def test_empty_policy_defaults_to_ask_user(tmp_path):
     assert policy.wants(item(kind="per_student")) == "ask_user"
     assert policy.never_share == {}
     assert policy.ask_first == set()
+
+
+def _with_topics(request_topics, never_share=None):
+    return {"never_share": never_share or {"iep": ["IEP"]}, "request_topics": request_topics, "rules": []}
+
+
+def test_request_topics_load_with_collapsed_whitespace():
+    policy = UserPolicy.from_dict(_with_topics({"parents": "  meant for\n a family  ", "class_level": "a class question"}))
+    assert policy.request_topics == {"parents": "meant for a family", "class_level": "a class question"}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"iep": "already a never-share topic"},
+        {"Third Party": "names are lowercase words"},
+        {"parents": ""},
+        {"parents": ["a list, not a description"]},
+        ["parents"],
+    ],
+)
+def test_bad_request_topics_are_refused(bad):
+    with pytest.raises(PolicyError):
+        UserPolicy.from_dict(_with_topics(bad))
+
+
+def test_eval_policy_request_topics_are_described():
+    policy = UserPolicy.load(Path(__file__).parent.parent / "eval" / "user_policy.yaml")
+    assert set(policy.request_topics) == {"parents", "third_party", "full_text", "deanonymize", "class_level"}
+    assert "reidentify" not in policy.request_topics  # left to the router's first step

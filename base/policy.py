@@ -1,4 +1,4 @@
-"""The user's privacy policy: never_share topics, ask_first topics and ordered rules.
+"""The user's privacy policy: never_share topics, ask_first topics, request topics and ordered rules.
 
 See docs/CONTRACTS.md (Policy). Rules are checked in file order and the first match wins;
 when none matches, the default applies. A rule matches when every match field it sets holds:
@@ -9,10 +9,15 @@ when none matches, the default applies. A rule matches when every match field it
 - request_any: at least one listed string is a case-insensitive substring of the request
 
 `item` in every method is any mapping (or object) with `request`, `result_kind` and `topics`.
+
+request_topics maps a topic to a plain description ("meant for a student's family"). The device
+model labels Muse's request with them (base/egress.py), so a rule can tell grades for the
+teacher from grades for families even when the result text is the same.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +29,7 @@ from base.types import DECISIONS, RESULT_KINDS, Decision
 
 MATCH_KEYS = ("kinds", "topics_any", "topics_all", "request_any")
 RULE_KEYS = frozenset({"id", *MATCH_KEYS, "wants", "pre_approved", "on_ask", "note"})
-TOP_KEYS = frozenset({"name", "description", "never_share", "ask_first", "rules", "default"})
+TOP_KEYS = frozenset({"name", "description", "never_share", "ask_first", "request_topics", "rules", "default"})
 DEFAULT_KEYS = frozenset({"wants", "on_ask"})
 ON_ASK_KEYS = frozenset({"approve", "remember"})
 SHARE_FORMS = frozenset({"share_tagged", "share_summary"})
@@ -85,10 +90,12 @@ class UserPolicy:
         ask_first: set[str],
         rules: list[Rule],
         default: Rule,
+        request_topics: dict[str, str] | None = None,
     ):
         self.name = name
         self._never_share = never_share
         self._ask_first = set(ask_first)
+        self._request_topics = dict(request_topics or {})
         self.rules = list(rules)
         self.default = default
 
@@ -99,6 +106,11 @@ class UserPolicy:
     @property
     def ask_first(self) -> set[str]:
         return set(self._ask_first)
+
+    @property
+    def request_topics(self) -> dict[str, str]:
+        """Topic name to the description the device model labels Muse's request with."""
+        return dict(self._request_topics)
 
     # Loading and validation
 
@@ -125,6 +137,11 @@ class UserPolicy:
         if stray:
             raise PolicyError(f"{source}: ask_first topics {sorted(stray)} are not in never_share")
 
+        request_topics = _parse_request_topics(data.get("request_topics") or {}, source)
+        clash = set(request_topics) & set(never_share)
+        if clash:
+            raise PolicyError(f"{source}: request_topics {sorted(clash)} are already never_share topics")
+
         raw_rules = data.get("rules") or []
         if not isinstance(raw_rules, list):
             raise PolicyError(f"{source}: rules must be a list")
@@ -139,7 +156,7 @@ class UserPolicy:
 
         default = _parse_default(data.get("default"), source)
         name = str(data.get("name") or Path(source).stem)
-        return cls(name, never_share, ask_first, rules, default)
+        return cls(name, never_share, ask_first, rules, default, request_topics)
 
     # Matching
 
@@ -184,6 +201,19 @@ def _parse_never_share(value: Any, source: str) -> dict[str, list[str]]:
         if not isinstance(topic, str) or not topic.strip():
             raise PolicyError(f"{source}: never_share topic names must be non-empty strings")
         out[topic] = list(_str_list(words, f"{source}: never_share.{topic}"))
+    return out
+
+
+def _parse_request_topics(value: Any, source: str) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise PolicyError(f"{source}: request_topics must map a topic to a description")
+    out: dict[str, str] = {}
+    for topic, desc in value.items():
+        if not isinstance(topic, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", topic):
+            raise PolicyError(f"{source}: request_topics names must be lowercase words like third_party, not {topic!r}")
+        if not isinstance(desc, str) or not desc.strip():
+            raise PolicyError(f"{source}: request_topics.{topic} needs a non-empty description")
+        out[topic] = " ".join(desc.split())
     return out
 
 

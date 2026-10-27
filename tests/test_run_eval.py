@@ -318,3 +318,19 @@ def test_text_released_after_an_approval_is_leak_checked(settings, tmp_path):
     rows = run_eval.run(services, [it], name="x", device_label="laptop", check_approved=True).rows
     assert decided == [(7, True, False)]
     assert rows[0]["leaked"] and rows[0]["leak_kinds_after_approval"] == ["other_name"]
+
+
+@pytest.mark.parametrize(
+    "text, value, found",
+    [
+        ("The class average rose from 2.4 to 2.9.", "Rose", False),  # a verb, not the student
+        ("Rose wrote about the garden.", "Rose", True),
+        ("ROSE wrote about the garden.", "Rose", True),
+        ("thanks to rose hallaway", "Rose Hallaway", True),  # a full name counts in any case
+        ("[Student A] used a mason jar.", "Mason", False),
+        ("Odessa wrote it.", "Odessa", True),
+        ("odessa wrote it.", "Odessa", True),  # not a common word, so any case
+    ],
+)
+def test_leak_check_treats_common_word_names_like_the_guard(text, value, found):
+    assert run_eval._contains(text, value) is found

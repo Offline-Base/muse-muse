@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 
+from base import guard
 from base.config import REPO_ROOT, load_settings
 from base.types import DECISIONS
 
@@ -540,7 +541,14 @@ def _guard_leaks(services, text: str) -> list:
 
 
 def _contains(text: str, value: str) -> bool:
-    return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", text, flags=re.IGNORECASE) is not None
+    """Whether `value` appears in `text` as a whole word, any case. A one-word value that is also
+    a common word ("Rose", "Grace") counts only where the text capitalizes it, the same rule
+    guard.tag uses, so "the average rose" is not scored as a leak of the student Rose."""
+    common = " " not in value.strip() and guard._is_common(value.strip())
+    for m in re.finditer(rf"(?<!\w){re.escape(value)}(?!\w)", text, flags=re.IGNORECASE):
+        if not common or text[m.start()].isupper():
+            return True
+    return False
 
 
 def _accepts(fn, name: str) -> bool:

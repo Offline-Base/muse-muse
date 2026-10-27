@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -174,6 +174,26 @@ NAMES_PROMPT = (
     "Do not list tags in square brackets such as [Student A] or [Teacher], places, schools or book "
     'titles. Reply with JSON only: {"names": [...]}. If there are none, reply {"names": []}.'
 )
+
+TOPICS_PROMPT = (
+    "Reasoning strength: low\n"
+    "You label a request that a cloud assistant sent to the user's device. Names are already tags "
+    "like [Student A]. Pick every topic below that the request matches, judging by who the result "
+    "is for and what it asks for. Pick none if none fit. Reply with JSON only: {\"topics\": [...]}."
+)
+
+
+def topics_schema(names: list[str]) -> dict:
+    return {
+        "name": "request_topics",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {"topics": {"type": "array", "items": {"type": "string", "enum": names}}},
+            "required": ["topics"],
+            "additionalProperties": False,
+        },
+    }
 
 
 class LocalLLM:
@@ -402,3 +422,26 @@ class LocalLLM:
             if name and not name.startswith("[") and name not in names and name_occurs(name, text):
                 names.append(name)
         return names
+
+    def request_topics(
+        self, request: str, topics: Mapping[str, str], *, synthetic: bool = False, max_tokens: int = 1500
+    ) -> list[str]:
+        """The policy's request topics that Muse's (already tagged) request matches.
+
+        `topics` maps a topic name to its description. Only listed names come back, in policy order.
+        """
+        if not request.strip() or not topics:
+            return []
+        names = list(topics)
+        listed = "\n".join(f"- {name}: {desc}" for name, desc in topics.items())
+        data = self.chat_json(
+            [
+                {"role": "system", "content": f"{TOPICS_PROMPT}\n\nTopics:\n{listed}"},
+                {"role": "user", "content": request},
+            ],
+            topics_schema(names),
+            max_tokens=max_tokens,
+            synthetic=synthetic,
+        )
+        found = {str(t) for t in data.get("topics") or []}
+        return [name for name in names if name in found]

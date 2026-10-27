@@ -18,6 +18,18 @@ never_share:
 # She never wants to be asked about a never_share topic: those are always refused.
 ask_first: []
 
+# What Muse's request is for. The device model labels each request with these (the result text
+# alone cannot say who it is going to), so dreaming can learn "grades for me" apart from "grades
+# for families". Plain descriptions, not keywords. Re-identifying a student by a trait is left to
+# the router's own first step: in a test on invented requests, labeling it this way was wrong more
+# often than right (eval/reports/request_topics.md).
+request_topics:
+  parents: "meant for a student's family: parents, guardians, a note or letter home, a family newsletter, a family conference"
+  third_party: "meant for someone outside this class other than families: other teachers or staff, the principal, the district, a club, a contest or showcase, a grant, a school newsletter, anything posted or published"
+  full_text: "asks for a student's whole piece of writing, word for word or in full, or many students' full pieces together (not a search, a quote, an excerpt or a summary)"
+  deanonymize: "asks who a tag really is: real or full names, unmasking, matching tags to people"
+  class_level: "asks for class-level numbers or patterns (an average, a count, a distribution, a trend) rather than per-student detail"
+
 rules:
   # Refused, and remembered as refused when she is asked.
   - id: never_share_topics

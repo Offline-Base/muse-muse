@@ -463,3 +463,84 @@ def test_blocked_reasons_are_stored_on_the_decision_row(make):
     assert svc.approvals.get(out.approval_id)["blocked"] == ["Mentions iep"]  # fake_tag's wording
     plain = egress.release("get_result", "Scores", RAW, "per_student")
     assert svc.approvals.get(plain.approval_id)["blocked"] == []
+
+
+class TopicLLM(FakeAnswerLLM):
+    def __init__(self, topics=(), fail=False):
+        super().__init__()
+        self.topics, self.fail, self.calls = list(topics), fail, []
+
+    def request_topics(self, request, topics, *, synthetic=False):
+        self.calls.append((request, dict(topics)))
+        if self.fail:
+            raise RuntimeError("model down")
+        return [t for t in self.topics if t in topics]
+
+
+@pytest.fixture
+def topic_policy():
+    return UserPolicy.from_dict(
+        {
+            "never_share": {"iep": ["IEP"]},
+            "request_topics": {"parents": "meant for a family", "class_level": "a class-level question"},
+            "rules": [],
+            "default": {"wants": "ask_user"},
+        }
+    )
+
+
+def test_request_topics_reach_the_router_and_the_row(make, topic_policy):
+    seen_inputs = []
+
+    class Router(FakeRouter):
+        def decide(self, inp, *, synthetic=False):
+            seen_inputs.append(inp)
+            return super().decide(inp, synthetic=synthetic)
+
+    llm = TopicLLM(["parents"])
+    egress, svc = make(router=Router("ask_user"), policy=topic_policy, answer_llm=llm)
+    out = egress.release("get_result", "A note for [Student A]'s family", RAW, "per_student", topics=["grades"])
+    assert out.status == "waiting"
+    assert seen_inputs[0].topics == ["grades", "parents"]
+    assert llm.calls and llm.calls[0][1] == topic_policy.request_topics
+    assert svc.approvals.history()[0]["topics"] == ["grades", "parents"]
+
+
+def test_never_share_word_in_the_request_is_a_topic(make, topic_policy):
+    seen_inputs = []
+
+    class Router(FakeRouter):
+        def decide(self, inp, *, synthetic=False):
+            seen_inputs.append(inp)
+            return super().decide(inp, synthetic=synthetic)
+
+    egress, _ = make(router=Router("refuse"), policy=topic_policy, answer_llm=TopicLLM())
+    egress.release("get_result", "Which students have an IEP?", "[Student A], [Student B]", "free_text")
+    assert "iep" in seen_inputs[0].topics
+
+
+def test_topic_pass_failure_holds_the_result(make, topic_policy):
+    egress, svc = make("share_tagged", policy=topic_policy, answer_llm=TopicLLM(fail=True))
+    out = egress.release("get_result", "Scores please", RAW, "per_student")
+    assert out.status == "refused"
+    assert out.retryable
+    assert out.decision.floors == ["topic_check"]
+    assert svc.approvals.history() == []
+    assert ("egress", "topic_check_failed") in svc.audits
+    assert_clean(out)
+
+
+def test_document_lists_skip_the_topic_pass(make, topic_policy):
+    llm = TopicLLM(["parents"])
+    egress, _ = make("share_tagged", policy=topic_policy, answer_llm=llm)
+    egress.release("list_documents", "List the essays for families", "essays/a.md", "document_list")
+    assert llm.calls == []
+
+
+def test_class_level_question_is_shown_as_a_summary(make, topic_policy):
+    llm = TopicLLM(["class_level"])
+    egress, svc = make("ask_user", policy=topic_policy, answer_llm=llm)
+    egress.release("get_result", "What is the class average?", RAW, "per_student", summary="Average 2.5 of 4.")
+    row = svc.approvals.history()[0]
+    assert row["shown_form"] == "share_summary"
+    assert "[Student" not in row["tagged_text"]

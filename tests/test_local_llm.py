@@ -332,6 +332,28 @@ def test_llm_names_empty_text_makes_no_call(settings, sleeps):
     assert make(settings, sleeps).llm_names("   ", synthetic=True) == []
 
 
+@respx.mock
+def test_request_topics_returns_listed_topics_in_policy_order(settings, sleeps):
+    route = respx.post(f"{settings.answer_url}/chat/completions").mock(
+        return_value=httpx.Response(200, json=reply(json.dumps({"topics": ["full_text", "parents", "made_up"]})))
+    )
+    topics = {"parents": "meant for a family", "third_party": "meant for staff", "full_text": "a whole essay"}
+    got = make(settings, sleeps).request_topics("Send [Student A]'s whole essay home", topics, synthetic=True)
+    assert got == ["parents", "full_text"]
+    body = body_of(route.calls.last)
+    schema = body["response_format"]["json_schema"]
+    assert schema["name"] == "request_topics"
+    assert schema["schema"]["properties"]["topics"]["items"]["enum"] == list(topics)
+    assert "- third_party: meant for staff" in body["messages"][0]["content"]
+    assert body["messages"][-1]["content"] == "Send [Student A]'s whole essay home"
+
+
+def test_request_topics_without_request_or_topics_makes_no_call(settings, sleeps):
+    llm = make(settings, sleeps)
+    assert llm.request_topics("  ", {"parents": "x"}, synthetic=True) == []
+    assert llm.request_topics("A note home", {}, synthetic=True) == []
+
+
 @pytest.mark.integration
 def test_openrouter_live_tiny_call():
     real = load_settings()

@@ -148,6 +148,8 @@ def step_kind(schema: dict | None) -> str:
         return "route"
     if schema.get("name") == "person_names":
         return "names"
+    if schema.get("name") == "request_topics":
+        return "topics"
     props = (schema.get("schema") or schema).get("properties", {})
     return "grade" if "scores" in props else "answer" if "answer" in props else "other"
 
@@ -170,6 +172,8 @@ def fake_glimmer(request: httpx.Request) -> httpx.Response:
     if fmt.get("name") == "route":
         kind = re.search(r"Result kind: (\w+)", user).group(1)
         reply = {"decision": "ask_user" if kind == "per_student" else "share_tagged", "reason": "Fake router."}
+    elif fmt.get("name") == "request_topics":  # the request's topics; grading for the teacher has none
+        reply = {"topics": []}
     elif fmt.get("name") == "person_names":  # finds roster names too, as the real model does
         reply = {"names": [n for n in [*STUDENTS, *NON_ROSTER] if n in user]}
     elif "scores" in props:
@@ -407,7 +411,7 @@ def write_report(
     by_kind: dict[tuple[str, str], list[dict]] = {}
     for row in calls:
         by_kind.setdefault((row["kind"], row["role"]), []).append(row)
-    labels = {"grade": "Grade one essay", "names": "Second pass for names", "route": "Privacy router",
+    labels = {"grade": "Grade one essay", "names": "Second pass for names", "topics": "Request topics", "route": "Privacy router",
               "summary": "Class summary", "answer": "Generic answer", "other": "Other"}  # fmt: skip
     tokens = {k: sum(r[k] for r in calls) for k in ("prompt_tokens", "completion_tokens", "reasoning_tokens")}
     decision = services.approvals.history(limit=50)

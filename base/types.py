@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -80,9 +80,17 @@ class TagResult:
     topics: list[str] = field(default_factory=list)
 
 
-def default_share_form(result_kind: str) -> Decision:
-    """What an approved result is shared as: aggregates as a summary, everything else tagged."""
-    return "share_summary" if result_kind == "class_aggregate" else "share_tagged"
+# The request topic that marks a class-level question (an average, a count, a trend). Results
+# for one are shown and shared as a summary, whatever their kind.
+CLASS_LEVEL_TOPIC = "class_level"
+
+
+def default_share_form(result_kind: str, topics: Iterable[str] = ()) -> Decision:
+    """What an approved result is shared as: aggregates and answers to a class-level question as
+    a summary, everything else tagged."""
+    if result_kind == "class_aggregate" or CLASS_LEVEL_TOPIC in topics:
+        return "share_summary"
+    return "share_tagged"
 
 
 @dataclass

@@ -561,3 +561,20 @@ def load_roster_for(settings):
     from base import guard
 
     return guard.load_roster(settings.roster_path)
+
+
+def test_relevant_topics_include_request_topics():
+    policy = UserPolicy.from_dict(
+        {"never_share": {"iep": ["IEP"]}, "request_topics": {"parents": "meant for a family"}, "rules": []}
+    )
+    relevant = train.relevant_topics(policy)
+    assert {"iep", "parents"} <= relevant
+    # grades for the teacher and grades for families land in different groups
+    assert train.rule_key("per_student", ["parents"], relevant) != train.rule_key("per_student", [], relevant)
+
+
+def test_class_level_requests_are_shared_as_a_summary():
+    assert default_share_form("per_student", ["class_level"]) == "share_summary"
+    assert default_share_form("free_text", ["parents", "class_level"]) == "share_summary"
+    assert default_share_form("class_aggregate") == "share_summary"
+    assert default_share_form("per_student", ["parents"]) == "share_tagged"
