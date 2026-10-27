@@ -35,9 +35,13 @@ export function clientIpHeaders(from?: RequestLike | null): Record<string, strin
  * product's env; they exist on the server only. Throws when either is missing.
  */
 export function gatewayEnv(): { baseURL: string; apiKey: string } {
-  const { GATEWAY_URL: url, PRODUCT_TOKEN: token } = process.env;
-  if (url && token) return { baseURL: new URL("v1", url.endsWith("/") ? url : `${url}/`).href, apiKey: token };
-  throw new Error("GATEWAY_URL and PRODUCT_TOKEN aren't set. The Muse Muse platform writes both into the server env.");
+  const missing = (["GATEWAY_URL", "PRODUCT_TOKEN"] as const).filter((name) => !process.env[name]);
+  if (missing.length) {
+    throw new Error(`Missing ${missing.join(" and ")} on the server. The Muse Muse platform sets both when it deploys the product.`);
+  }
+  const base = new URL(process.env.GATEWAY_URL as string);
+  base.pathname = `${base.pathname.replace(/\/+$/, "")}/v1`;
+  return { baseURL: base.href, apiKey: process.env.PRODUCT_TOKEN as string };
 }
 
 /**

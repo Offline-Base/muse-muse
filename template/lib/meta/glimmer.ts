@@ -1,11 +1,14 @@
 import OpenAI from "openai";
 
 /**
- * Client for a self-hosted Muse Glimmer endpoint (vLLM, SGLang or llama.cpp server).
- * Glimmer is open weights and isn't on the Meta Model API, so this returns null unless GLIMMER_URL is set.
+ * A self-hosted Muse Glimmer endpoint (vLLM, SGLang or a llama.cpp server). Glimmer is open weights and isn't on the
+ * Meta Model API, so this is null unless GLIMMER_URL is set. GLIMMER_MODEL names the served model (a fine-tune's
+ * name, for example) and GLIMMER_API_KEY is only needed when the server asks for one.
  */
-export function glimmerClient(): OpenAI | null {
+export function glimmer(): { client: OpenAI; model: string } | null {
   const baseURL = process.env.GLIMMER_URL?.trim().replace(/\/+$/, "");
-  // Self-hosted servers often run without a key, but the SDK needs a non-empty one.
-  return baseURL ? new OpenAI({ baseURL, apiKey: process.env.GLIMMER_API_KEY || "none" }) : null;
+  if (!baseURL) return null;
+  // The SDK refuses an empty key, and keyless servers ignore whatever is sent.
+  const client = new OpenAI({ baseURL, apiKey: process.env.GLIMMER_API_KEY || "none" });
+  return { client, model: process.env.GLIMMER_MODEL?.trim() || "muse-glimmer" };
 }

@@ -14,12 +14,12 @@ Glimmer is a 30B dense model distilled from Muse Spark and released under Apache
 A product deployed on Vercel can't run Glimmer itself. It can call Glimmer only when `GLIMMER_URL` points at an OpenAI-compatible endpoint someone hosts, such as vLLM on Modal or Baseten, or a home device exposed through a relay.
 
 ```ts
-import { glimmerClient } from "@/lib/meta/glimmer";
+import { glimmer } from "@/lib/meta/glimmer";
 
-const local = glimmerClient(); // null when GLIMMER_URL isn't set
+const local = glimmer(); // null when GLIMMER_URL isn't set
 if (local) {
-  const res = await local.chat.completions.create({
-    model: process.env.GLIMMER_MODEL ?? "muse-glimmer",
+  const res = await local.client.chat.completions.create({
+    model: local.model, // GLIMMER_MODEL, or "muse-glimmer"
     messages: [{ role: "user", content: "..." }],
   });
 }

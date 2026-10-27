@@ -1,4 +1,5 @@
 import { clientIpHeaders, gatewayEnv, type RequestLike } from "./client";
+import { byteView } from "./media";
 
 export interface TranscriptTurn {
   speaker: string;
@@ -46,7 +47,7 @@ const MULTIPART_MAX_BYTES = 4 * 1024 * 1024;
  */
 export async function transcribeFile(opts: TranscribeOptions): Promise<Transcript> {
   const endpoint = `${gatewayEnv().baseURL}/asr/transcribe`;
-  let bytes = opts.bytes ? toUint8(opts.bytes) : null;
+  let bytes = opts.bytes ? byteView(opts.bytes) : null;
 
   if (!bytes) {
     if (!opts.url) throw new Error("transcribeFile needs a url or bytes.");
@@ -120,10 +121,6 @@ function cleanText(text: unknown): string {
 function isWav(bytes: Uint8Array): boolean {
   const tag = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
   return bytes.byteLength > 44 && tag(0) === "RIFF" && tag(8) === "WAVE";
-}
-
-function toUint8(bytes: ArrayBuffer | Uint8Array): Uint8Array {
-  return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
 }
 
 function authHeaders(request?: RequestLike | null): Record<string, string> {
