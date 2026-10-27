@@ -242,7 +242,7 @@ These wait on Ethan's decisions or on hardware. No number for them exists.
 | Quantization quality (Q4_K_M against i1-IQ1_S and IQ1_M), now with the request-topic pass as a fourth job | Modal spend not approved | Ethan's go-ahead (about $2 to $5) | `scripts/cloud/quant_eval_modal.py --check` passes |
 | A router LoRA from dreaming | Cloud training not approved | Ethan's go-ahead (about $6 to $12), then a holdout run on llama-server | `scripts/cloud/train_lora_modal.py --check`; adapters have no gate yet |
 | Grading spot-check of 10 essays | Manual | Ethan's scores | [grading_spotcheck.md](grading_spotcheck.md) |
-| The flow in the Muse app (connector, pairing, the search purpose, scheduled jobs, the morning message) | Not tried. Ethan deployed the relay on Oct 27 (12:31 ET); no device or Muse client has connected through it yet | docs/MUSE_SETUP.md step 2 (connect the device), then the Muse app | `docs/MUSE_SETUP.md` |
+| The flow in the Muse app (connector, pairing, the search purpose, scheduled jobs, the morning message) | Not tried in the Muse app. Ethan deployed the relay on Oct 27 (12:31 ET); at 17:13 ET the laptop and a script playing Muse ran the whole path through the live relay (docs/HANDOFF.md) | docs/MUSE_SETUP.md steps 3 to 7 in the Muse app | `docs/MUSE_SETUP.md` |
 | How often Glimmer's name pass reports only part of a name, or misses one | The name-parts sweep measures the guard with fixed answers, not the model | A run of the real name pass over the sweep's 1384 items | Not built |
 
 ## Cost of these runs

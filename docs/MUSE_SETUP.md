@@ -2,7 +2,7 @@
 
 How to give Muse the Muse Privacy connector, pair it with your device, schedule dreaming, and check that it works.
 
-**Status (Oct 27): none of this has been tried in the Muse app yet.** The relay was deployed on Oct 27 but nothing has connected through it yet, and the menu names below are from Muse's connector guidelines ("Settings > Connectors"), not from a test. The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Fix this page after the first real test.
+**Status (Oct 27): none of this has been tried in the Muse app yet.** The relay was deployed on Oct 27, and that day the laptop connected to it and a script playing Muse ran the whole path through the live relay (discovery, client registration, the pairing page, the token, then tools/list and list_documents), but the Muse app itself has not connected yet, and the menu names below are from Muse's connector guidelines ("Settings > Connectors"), not from a test. The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Fix this page after the first real test.
 
 ## 1. Deploy the relay (once)
 
