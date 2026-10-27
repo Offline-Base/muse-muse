@@ -8,8 +8,9 @@ import { env } from "@/lib/env";
  *   screens/<buildId>/...     judge screenshots. Deleted after 7 days.
  *   demos/<buildId>/...       recorded demo MP4s. Kept.
  *   transcripts/<buildId>/... redacted Muse Code session exports. Kept.
+ *   fixtures/<buildId>/...    sample inputs the platform made for a build (Muse Image pictures, text files). Kept.
  */
-export type BlobPrefix = "inspo" | "uploads" | "screens" | "demos" | "transcripts";
+export type BlobPrefix = "inspo" | "uploads" | "screens" | "demos" | "transcripts" | "fixtures";
 
 export async function putFile(
   prefix: BlobPrefix,

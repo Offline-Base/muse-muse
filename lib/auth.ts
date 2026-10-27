@@ -86,7 +86,7 @@ export async function signIn(emailInput: string, code: string): Promise<SessionU
   const isAdmin = env.adminEmails.includes(email);
   const [row] = await db()
     .insert(schema.users)
-    .values({ email, isAdmin })
+    .values({ email, isAdmin, dailyBuildQuota: env.maxBuildsPerUserPerDay })
     .onConflictDoUpdate({ target: schema.users.email, set: { isAdmin } })
     .returning();
   const user: SessionUser = { id: row.id, email: row.email, isAdmin: row.isAdmin };

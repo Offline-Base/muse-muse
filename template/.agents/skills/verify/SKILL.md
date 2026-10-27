@@ -7,13 +7,16 @@ description: Use before finishing any build. Explains what npm run verify checks
 
 ## What `npm run verify` runs
 
-1. `tsc --noEmit`
-2. `next build`
-3. Starts the built app on port 3100 and checks that `/` returns 200 with no console errors
-4. `playwright test tests/smoke.spec.ts --project=smoke`, at phone size
-5. Validates `musemuse.json` against `musemuse.schema.json`
+| Step | Checks |
+|---|---|
+| typecheck | `next typegen`, then `tsc --noEmit` |
+| build | `next build` |
+| start | `next start` on port 3100 (or the next free port), and `GET /` returns 200 |
+| console | Chromium loads `/` at phone size with no `console.error` and no uncaught page errors |
+| smoke | `playwright test --project=smoke`: every spec in `tests/`, at phone size, with real model calls |
+| manifest | `musemuse.json` is valid against `musemuse.schema.json`, every action has `app/api/actions/<name>/route.ts`, every fixture file exists |
 
-It exits 0 only when every step passes. The platform runs the same script, then a judge model looks at your screenshots.
+It exits 0 only when every step passes. When a step fails it prints that step's output (tsc errors, build errors, the Playwright failure plus the server log), so read it and fix the cause. The last line is a JSON summary for the platform. The platform runs the same script, then a judge model looks at your screenshots. Don't edit `scripts/verify.mjs` or `playwright.config.ts`.
 
 ## Smoke test
 
@@ -41,6 +44,7 @@ test("primary flow works with the sample photo", async ({ page }) => {
 ```
 
 - Find elements by role and label, not CSS classes.
+- Use relative URLs (`page.goto("/")`, `request.post("/api/actions/...")`). verify may run the server on a port other than 3100.
 - Model calls can take a while, so allow up to 90 seconds per step.
 - Assert on the result the brief promises, not on loading text.
 - Keep the whole test under 3 minutes and 5 model calls.
@@ -59,7 +63,20 @@ Save 2 to 4 full-page screenshots in `test-results/judge/`, numbered in order: `
 
 ## Action routes
 
-Add one Playwright request test per action in `musemuse.json`. It should POST the example input to `/api/actions/<name>` and check that the response matches the output schema.
+Put one request test per action in `tests/actions.spec.ts`. It should POST the example input to `/api/actions/<name>` and check that the response matches the output schema. verify runs it with the smoke test. The demo video records only `tests/smoke.spec.ts`.
+
+```ts
+import { readFileSync } from "node:fs";
+import { test, expect } from "@playwright/test";
+
+test("count_birds returns a tally", async ({ request }) => {
+  const image = `data:image/jpeg;base64,${readFileSync("fixtures/feeder.jpg").toString("base64")}`;
+  const res = await request.post("/api/actions/count_birds", { data: { image } });
+  expect(res.status()).toBe(200);
+  const body = await res.json();
+  expect(Number.isInteger(body.count)).toBe(true);
+});
+```
 
 ## Never
 

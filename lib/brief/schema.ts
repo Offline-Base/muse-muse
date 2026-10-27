@@ -50,7 +50,15 @@ export const BriefSchema = z.object({
   complexity: z.enum(["simple", "standard", "complex"]),
   estimatedCostPerRunUsd: z.number().nonnegative(),
   costNotes: z.string(),
-  fixtures: z.array(z.object({ kind: MediaKind, description: z.string(), fromUserSample: z.boolean() })),
+  fixtures: z.array(
+    z.object({
+      kind: MediaKind,
+      description: z.string(),
+      fromUserSample: z.boolean(),
+      /** Which reference (0-based) is the sample when fromUserSample is true. Optional for older briefs. */
+      referenceIndex: z.number().int().nonnegative().nullable().optional(),
+    }),
+  ),
   actions: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]*$/), description: z.string() })),
 });
 

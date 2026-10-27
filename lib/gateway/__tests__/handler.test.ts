@@ -1,0 +1,252 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { AsrInputError, checkAudioUrl } from "@/lib/gateway/asr";
+import { handleGateway } from "@/lib/gateway/handler";
+import { fakeGateway, gatewayRequest, json, TEST_TOKEN } from "./helpers";
+
+const spark = (extra: Record<string, unknown> = {}) => json({ model: "muse-spark-1.3", input: "hi", ...extra });
+const JSON_CT = { "content-type": "application/json" };
+
+async function errorOf(res: Response) {
+  const body = (await res.json()) as { error: { type: string; code: string; message: string } };
+  return { status: res.status, ...body.error };
+}
+
+test("unknown endpoint -> 404 before any auth", async () => {
+  const g = fakeGateway();
+  const res = await handleGateway(new Request("https://p/api/gateway/v1/models"), ["models"], g.deps);
+  const err = await errorOf(res);
+  assert.equal(err.status, 404);
+  assert.equal(err.code, "unknown_endpoint");
+  assert.equal(res.headers.get("x-should-retry"), "false");
+});
+
+test("GET on a known endpoint -> 405", async () => {
+  const g = fakeGateway();
+  const res = await handleGateway(gatewayRequest("responses", null, {}, "GET"), ["responses"], g.deps);
+  assert.equal(res.status, 405);
+});
+
+test("missing or unknown token -> 401", async () => {
+  const g = fakeGateway();
+  const none = await handleGateway(
+    new Request("https://p/api/gateway/v1/responses", { method: "POST", body: spark(), headers: JSON_CT }),
+    ["responses"],
+    g.deps,
+  );
+  assert.equal((await errorOf(none)).code, "invalid_token");
+  const wrong = await handleGateway(
+    gatewayRequest("responses", spark(), { ...JSON_CT, authorization: "Bearer mm_live_nopenopenopenopenopenope" }),
+    ["responses"],
+    g.deps,
+  );
+  assert.equal(wrong.status, 401);
+});
+
+test("disabled or failed product -> 403 product_disabled", async () => {
+  for (const status of ["disabled", "failed", null] as const) {
+    const g = fakeGateway({ productStatus: status });
+    const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps));
+    assert.equal(err.status, 403);
+    assert.equal(err.code, "product_disabled");
+  }
+  const building = fakeGateway({ productStatus: "building", fetch: async () => Response.json({ ok: true }) });
+  assert.equal((await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], building.deps)).status, 200);
+});
+
+test("model checks: missing -> 400, not on the token or endpoint -> 404 model_not_found", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-spark-1.3"] } });
+  const missing = await errorOf(
+    await handleGateway(gatewayRequest("responses", json({ input: "hi" }), JSON_CT), ["responses"], g.deps),
+  );
+  assert.equal(missing.status, 400);
+  assert.equal(missing.code, "missing_model");
+
+  const wonder = await errorOf(
+    await handleGateway(gatewayRequest("responses", spark({ model: "muse-wonder-1.0" }), JSON_CT), ["responses"], g.deps),
+  );
+  assert.equal(wonder.status, 404);
+  assert.equal(wonder.code, "model_not_found");
+  assert.match(wonder.message, /Allowed: muse-spark-1\.3/);
+
+  const wrongEndpoint = await errorOf(
+    await handleGateway(gatewayRequest("images/generations", spark(), JSON_CT), ["images", "generations"], g.deps),
+  );
+  assert.equal(wrongEndpoint.code, "model_not_found");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("token budget spent -> 429 budget_exceeded; platform cap -> 503 platform_paused", async () => {
+  const broke = fakeGateway({ tokenSpend: 3 });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], broke.deps));
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "budget_exceeded");
+  assert.equal(err.type, "insufficient_quota");
+
+  const paused = fakeGateway({ platformSpend: 40 });
+  const p = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], paused.deps));
+  assert.equal(p.status, 503);
+  assert.equal(p.code, "platform_paused");
+});
+
+test("rate limits: 120/min per token, 20/min per end-user IP", async () => {
+  const ok = async () => Response.json({ ok: true });
+  const tokenKey = "token:00000000-0000-4000-8000-000000000001";
+  const atLimit = fakeGateway({ counts: { [tokenKey]: 119 }, fetch: ok });
+  assert.equal((await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], atLimit.deps)).status, 200);
+  const over = await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], atLimit.deps);
+  assert.equal(over.status, 429);
+  assert.equal((await errorOf(over)).code, "rate_limited");
+  assert.ok(Number(over.headers.get("retry-after")) >= 1);
+
+  const ipKey = "ip:00000000-0000-4000-8000-000000000002:203.0.113.7";
+  const perIp = fakeGateway({ counts: { [ipKey]: 20 }, fetch: ok });
+  const headers = { ...JSON_CT, "x-musemuse-client-ip": "203.0.113.7" };
+  const res = await handleGateway(gatewayRequest("responses", spark(), headers), ["responses"], perIp.deps);
+  assert.equal(res.status, 429);
+  assert.match((await errorOf(res)).message, /this user/);
+  assert.deepEqual(perIp.rateKeys[0], [tokenKey, ipKey]);
+
+  const noIp = fakeGateway({ fetch: ok });
+  await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], noIp.deps);
+  assert.deepEqual(noIp.rateKeys[0], [tokenKey]);
+});
+
+test("bodies over 4.5 MB -> 413 pointing at /uploads", async () => {
+  const g = fakeGateway();
+  const big = new Uint8Array(4.5 * 1024 * 1024 + 1);
+  const res = await handleGateway(gatewayRequest("files", big, { "content-type": "application/octet-stream" }), ["files"], g.deps);
+  const err = await errorOf(res);
+  assert.equal(err.status, 413);
+  assert.match(err.message, /https:\/\/platform\.example\/api\/gateway\/uploads/);
+});
+
+test("forward: master key, raw bytes and content type preserved; JSON passes through and is metered", async () => {
+  const reply = {
+    id: "resp_1",
+    model: "muse-spark-1.3",
+    output_text: "hello",
+    usage: { input_tokens: 10, input_tokens_details: { cached_tokens: 0 }, output_tokens: 5 },
+  };
+  const g = fakeGateway({
+    fetch: async () => new Response(JSON.stringify(reply), { headers: { "content-type": "application/json", "x-request-id": "r1" } }),
+  });
+  const sent = spark({ note: "ünïcode ✓" });
+  const res = await handleGateway(gatewayRequest("responses", sent, JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("x-request-id"), "r1");
+  assert.deepEqual(await res.json(), reply);
+  await g.settled();
+
+  const call = g.upstreamCalls[0];
+  assert.equal(call.url, "https://api.meta.ai/v1/responses");
+  const headers = call.init?.headers as Record<string, string>;
+  assert.equal(headers.authorization, "Bearer test-master-key");
+  assert.equal(headers["content-type"], "application/json");
+  assert.equal(new TextDecoder().decode(call.init?.body as Uint8Array), sent);
+  assert.ok(!JSON.stringify(headers).includes(TEST_TOKEN), "the product token never goes upstream");
+
+  assert.equal(g.usage.length, 1);
+  assert.equal(g.usage[0].ctx.source, "gateway");
+  assert.equal(g.usage[0].ctx.endpoint, "responses");
+  assert.equal(g.usage[0].items[0].inputTokens, 10);
+});
+
+test("upstream errors pass through unchanged and unmetered", async () => {
+  const g = fakeGateway({
+    fetch: async () =>
+      Response.json({ error: { type: "invalid_request_error", message: "bad" } }, { status: 400 }),
+  });
+  const res = await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 400);
+  assert.equal(((await res.json()) as { error: { message: string } }).error.message, "bad");
+  await g.settled();
+  assert.equal(g.usage.length, 0);
+});
+
+test("upstream unreachable -> 502", async () => {
+  const g = fakeGateway({
+    fetch: async () => {
+      throw new TypeError("fetch failed");
+    },
+  });
+  const res = await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 502);
+});
+
+test("images/generations is metered per returned image", async () => {
+  const g = fakeGateway({
+    fetch: async () => Response.json({ created: 1, data: [{ b64_json: "AAA" }, { b64_json: "BBB" }] }),
+  });
+  const res = await handleGateway(
+    gatewayRequest("images/generations", json({ model: "muse-image-1.0", prompt: "a cat", n: 2 }), JSON_CT),
+    ["images", "generations"],
+    g.deps,
+  );
+  assert.equal(res.status, 200);
+  await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.usage[0].items[0].images, 2);
+  assert.ok(Math.abs(g.usage[0].items[0].costUsd - 0.02) < 1e-12);
+});
+
+test("metering still completes when the product stops reading the stream", async () => {
+  const sse =
+    'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"hi"}\n\n' +
+    'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":7,"output_tokens":3}}}\n\n';
+  const g = fakeGateway({ fetch: async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) });
+  const res = await handleGateway(gatewayRequest("responses", spark({ stream: true }), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.headers.get("cache-control"), "no-cache, no-transform");
+  await res.body?.cancel();
+  await g.settled();
+  assert.equal(g.usage[0].items[0].inputTokens, 7);
+});
+
+test("asr JSON extension: audioUrl must be https on public Vercel Blob", async () => {
+  assert.ok(checkAudioUrl("https://abc.public.blob.vercel-storage.com/uploads/a.wav"));
+  for (const bad of [
+    "http://abc.public.blob.vercel-storage.com/a.wav",
+    "https://evil.com/a.wav",
+    "https://public.blob.vercel-storage.com/a.wav",
+    "https://abc.public.blob.vercel-storage.com.evil.com/a.wav",
+    "https://user:pw@abc.public.blob.vercel-storage.com/a.wav",
+    "https://abc.public.blob.vercel-storage.com:8443/a.wav",
+    "file:///etc/passwd",
+    42,
+  ]) {
+    assert.throws(() => checkAudioUrl(bad), AsrInputError, String(bad));
+  }
+  const g = fakeGateway();
+  const res = await handleGateway(
+    gatewayRequest("asr/transcribe", json({ model: "muse-voice-transcribe-1.0", audioUrl: "https://169.254.169.254/x" }), JSON_CT),
+    ["asr", "transcribe"],
+    g.deps,
+  );
+  assert.equal(res.status, 400);
+  assert.equal((await errorOf(res)).code, "invalid_audio_url");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("asr JSON extension: oversized audio -> 413, non-WAV -> 400", async () => {
+  const blobUrl = "https://abc.public.blob.vercel-storage.com/uploads/a.wav";
+  const big = fakeGateway({
+    fetch: async (input) =>
+      String(input) === blobUrl
+        ? new Response("x", { headers: { "content-length": String(61 * 1024 * 1024) } })
+        : new Response("no", { status: 599 }),
+  });
+  const r1 = await handleGateway(
+    gatewayRequest("asr/transcribe", json({ model: "muse-voice-transcribe-1.0", audioUrl: blobUrl }), JSON_CT),
+    ["asr", "transcribe"],
+    big.deps,
+  );
+  assert.equal(r1.status, 413);
+
+  const mp3 = fakeGateway({ fetch: async () => new Response(new Uint8Array(1000).fill(7)) });
+  const r2 = await handleGateway(
+    gatewayRequest("asr/transcribe", json({ model: "muse-voice-transcribe-1.0", audioUrl: blobUrl }), JSON_CT),
+    ["asr", "transcribe"],
+    mp3.deps,
+  );
+  assert.equal((await errorOf(r2)).code, "invalid_audio");
+});

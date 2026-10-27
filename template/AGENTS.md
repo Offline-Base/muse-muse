@@ -25,11 +25,14 @@ The inspo shows what to make. It is not material to copy.
 - Add a dependency only when the brief needs it. The SAM helpers (`@meta-sam/parser`, `@meta-sam/graphics`) are already installed.
 - The build machine can reach only npm, the Meta API and the Muse Muse gateway. Don't use `next/font/google`, remote images or CDNs. Use the system font stack in `app/globals.css`.
 - Server work goes in route handlers under `app/api/` or in server actions. Client components handle only UI.
+- Don't edit `scripts/verify.mjs`, `playwright.config.ts` or `app/api/upload/route.ts`.
+- ffmpeg and espeak-ng are installed. Make speech fixtures with `espeak-ng -w /tmp/raw.wav "some words"`, then `ffmpeg -i /tmp/raw.wav -ar 16000 -ac 1 fixtures/note.wav`. Use ffmpeg for any other fixture conversion.
 
 ## Calling Meta models
 
-- Call Meta only through the helpers in `lib/meta/`. They go through the Muse Muse gateway using `GATEWAY_URL` and `PRODUCT_TOKEN`.
+- Call Meta only through the helpers in `lib/meta/`. They go through the Muse Muse gateway using `GATEWAY_URL` and `PRODUCT_TOKEN`, which are already set in `.env.local` (`next start` and the tests read it). Never print, edit or copy `.env.local`.
 - Never call `api.meta.ai` directly. Never put a key, token or gateway URL in client code. Never log tokens.
+- Helpers: `metaClient()` (OpenAI SDK), `respondJson` (typed JSON from a zod schema, use it for anything the UI shows as fields), `transcribeFile` (WAV to text), `imagePart`, `filePart`, `videoPart`, `toDataUrl`. Browser side: `resizeImage` and `blobToDataUrl`, `toWav16k` (any recording to the WAV Muse Voice needs), `uploadMedia` (files over the 4.5 MB body limit).
 - Read the skill for a model before you use it:
   - `.agents/skills/meta-reasoning` covers Muse Spark 1.3 and Muse Wonder: text, vision, video, PDFs and JSON output.
   - `.agents/skills/meta-image` covers Muse Image: generate, edit and compose.
@@ -55,7 +58,7 @@ Expose each action from the brief as `POST /api/actions/<name>` with JSON in and
 ## Tests
 
 - Follow `.agents/skills/verify`.
-- Write `tests/smoke.spec.ts` to run the primary flow in a browser with the fixtures, using real model calls through the gateway.
+- Write `tests/smoke.spec.ts` to run the primary flow in a browser with the fixtures, using real model calls through the gateway, and `tests/actions.spec.ts` with one request test per action.
 - Save the screenshots the skill asks for. A judge model reads them.
 - Never skip, delete or weaken a test to get `npm run verify` to pass. Fix the product instead.
 

@@ -1,0 +1,862 @@
+/**
+ * The build workflow's steps ("use step"). Each one takes and returns small plain values, finishes in well under a
+ * few minutes, and is safe to run again on retry. Retries follow the STEPS table in ./steps.ts; steps that start
+ * detached work (Muse Code, verify, demo) never retry, so a retry can't start the same work twice.
+ *
+ * Plaintext gateway tokens are minted inside the step that hands them to the sandbox or to Vercel, so they never
+ * appear in a step's return value (step results are persisted in the workflow's event log).
+ */
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { FatalError, getStepMetadata } from "workflow";
+import type { Brief } from "@/lib/brief/schema";
+import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
+import { StructuredOutputError } from "@/lib/brief/structured";
+import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
+import { db, schema } from "@/lib/db/client";
+import { env } from "@/lib/env";
+import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
+import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { mintToken, revokeTokens } from "@/lib/gateway/tokens";
+import { judgeBuild } from "@/lib/judge";
+import { rebuildTargetFor } from "@/lib/pipeline/catalog";
+import {
+  allowedModelsFor,
+  museImagePaths,
+  nextFreeSlug,
+  normalizeSlug,
+  pickBuildModel,
+  SLUG_MAX,
+} from "@/lib/pipeline/logic";
+import { stepRetries } from "@/lib/pipeline/steps";
+import { pollDeploy, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import * as sandbox from "@/lib/sandbox/builder";
+import type { BuildModel } from "@/lib/sandbox/muse";
+import type {
+  BuildEventBody,
+  BuildStatus,
+  JudgeVerdict,
+  ModelUsage,
+  Reference,
+  Screenshot,
+  VerifySummary,
+} from "@/lib/types";
+import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
+
+/** Muse Code's step budget per run. */
+const MAX_MODEL_STEPS = 200;
+const BUILD_TOKEN_TTL_HOURS = 6;
+
+// ---------------------------------------------------------------------------------------------------------------
+// Helpers (not steps)
+
+async function loadBuild(buildId: string) {
+  const [build] = await db().select().from(schema.builds).where(eq(schema.builds.id, buildId)).limit(1);
+  if (!build) throw new FatalError(`Build ${buildId} was not found.`);
+  return build;
+}
+
+async function loadInspiration(inspirationId: string) {
+  const [row] = await db()
+    .select()
+    .from(schema.inspirations)
+    .where(eq(schema.inspirations.id, inspirationId))
+    .limit(1);
+  if (!row) throw new FatalError("The muse for this build was not found.");
+  return row;
+}
+
+async function loadProduct(productId: string) {
+  const [row] = await db().select().from(schema.products).where(eq(schema.products.id, productId)).limit(1);
+  if (!row) throw new FatalError("The product for this build was not found.");
+  return row;
+}
+
+function requireBrief(build: { brief: Brief | null }): Brief {
+  if (!build.brief) throw new FatalError("This build has no brief yet.");
+  return build.brief;
+}
+
+function attempt(): number {
+  try {
+    return getStepMetadata().attempt;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * On a retry, drops usage rows an earlier attempt of the same step already wrote: same build, source, endpoint,
+ * model and token counts within the last hour. A fresh model call never repeats exact counts, so this only catches
+ * replays of the same result (for example the same Muse run's usage read twice).
+ */
+async function unrecorded(ctx: UsageContext, items: ModelUsage[]): Promise<ModelUsage[]> {
+  if (attempt() <= 1 || !ctx.buildId) return items;
+  const since = new Date(Date.now() - 3_600_000);
+  const out: ModelUsage[] = [];
+  for (const u of items) {
+    const [hit] = await db()
+      .select({ id: schema.usage.id })
+      .from(schema.usage)
+      .where(
+        and(
+          eq(schema.usage.buildId, ctx.buildId),
+          eq(schema.usage.source, ctx.source),
+          eq(schema.usage.endpoint, ctx.endpoint),
+          eq(schema.usage.model, u.model),
+          eq(schema.usage.inputTokens, Math.round(u.inputTokens)),
+          eq(schema.usage.cachedInputTokens, Math.round(u.cachedInputTokens)),
+          eq(schema.usage.outputTokens, Math.round(u.outputTokens)),
+          eq(schema.usage.images, u.images ?? 0),
+          eq(schema.usage.videoFrames, u.videoFrames ?? 0),
+          gte(schema.usage.at, since),
+        ),
+      )
+      .limit(1);
+    if (!hit) out.push(u);
+  }
+  return out;
+}
+
+/** Records usage rows and adds their cost to the build, once per result even when the step retries. */
+async function charge(ctx: UsageContext & { buildId: string }, usage: ModelUsage[], what: string): Promise<void> {
+  const items = await unrecorded(ctx, usage);
+  if (!items.length) return;
+  await recordUsage(ctx, items);
+  await addBuildCost(
+    ctx.buildId,
+    items.reduce((sum, u) => sum + (u.costUsd || 0), 0),
+    what,
+  );
+}
+
+/** Brief spend, with voice memo transcription recorded under its own endpoint. */
+async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> {
+  const voice = usage.filter((u) => u.model === "muse-voice-transcribe-1.0");
+  const rest = usage.filter((u) => u.model !== "muse-voice-transcribe-1.0");
+  if (voice.length) await charge({ source: "platform", endpoint: "asr/transcribe", buildId }, voice, "Voice memo");
+  await charge({ source: "platform", endpoint: "responses", buildId }, rest, "Brief");
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  for (let e: unknown = err, i = 0; e && i < 4; i++) {
+    if ((e as { code?: unknown }).code === "23505") return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bookkeeping steps
+
+export interface BuildHead {
+  kind: "build" | "refine";
+  status: BuildStatus;
+  productId: string | null;
+}
+
+export async function loadBuildStep(buildId: string): Promise<BuildHead> {
+  "use step";
+  const build = await loadBuild(buildId);
+  return { kind: build.kind, status: build.status, productId: build.productId };
+}
+
+/** Moves the build to a status. `error` also saves the message as the build's error (refusals). */
+export async function setStatusStep(
+  buildId: string,
+  status: BuildStatus,
+  opts: { step?: string | null; message?: string; fixRounds?: number; error?: string } = {},
+): Promise<void> {
+  "use step";
+  await setBuildStatus(buildId, status, {
+    step: opts.step,
+    message: opts.message,
+    set: {
+      ...(opts.fixRounds !== undefined ? { fixRounds: opts.fixRounds } : {}),
+      ...(opts.error !== undefined ? { error: opts.error } : {}),
+    },
+  });
+}
+
+export async function emitStep(buildId: string, body: BuildEventBody): Promise<void> {
+  "use step";
+  await emit(buildId, body);
+}
+
+/** True when today's platform-wide spend is at or over DAILY_SPEND_CAP_USD. */
+export async function spendPausedStep(): Promise<boolean> {
+  "use step";
+  return (await platformSpendToday()) >= env.dailySpendCapUsd;
+}
+
+/**
+ * Marks the build failed with a plain message. A product that never shipped is marked failed too, and all its tokens
+ * are revoked (a deploy that failed may have minted a live token).
+ */
+export async function failStep(input: { buildId: string; productId: string | null; message: string }): Promise<void> {
+  "use step";
+  await setBuildStatus(input.buildId, "failed", { message: input.message, set: { error: input.message } });
+  await emit(input.buildId, { type: "error", message: input.message });
+  if (input.productId) {
+    const unshipped = await db()
+      .update(schema.products)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(and(eq(schema.products.id, input.productId), eq(schema.products.status, "building")))
+      .returning({ id: schema.products.id });
+    if (unshipped.length) await revokeTokens(input.productId);
+  }
+}
+
+/** Always runs last: stops the sandbox and revokes the build tokens. Never throws, so it can't mask the outcome. */
+export async function cleanupStep(input: {
+  buildId: string;
+  productId: string | null;
+  sandboxName: string | null;
+}): Promise<void> {
+  "use step";
+  if (input.productId) {
+    await revokeTokens(input.productId, "build").catch((err) => console.error("[cleanup] revoke", err));
+  }
+  if (input.sandboxName) {
+    try {
+      await sandbox.hibernate(input.sandboxName);
+    } catch (err) {
+      console.error("[cleanup] hibernate", err);
+      await emit(input.buildId, { type: "log", text: "The sandbox did not stop cleanly. It will time out on its own." }).catch(
+        () => undefined,
+      );
+    }
+  }
+}
+cleanupStep.maxRetries = stepRetries("hibernate");
+
+// ---------------------------------------------------------------------------------------------------------------
+// Brief and product
+
+export interface BriefSummary {
+  verdict: Brief["verdict"];
+  refusal: string | null;
+  name: string;
+  tagline: string;
+  model: BuildModel;
+}
+
+function summarize(brief: Brief): BriefSummary {
+  return {
+    verdict: brief.verdict,
+    refusal: brief.refusal,
+    name: brief.name,
+    tagline: brief.tagline,
+    model: pickBuildModel(brief.complexity, { buildModel: env.buildModel, complexBuildModel: env.complexBuildModel }),
+  };
+}
+
+/** Writes the brief with Muse Spark 1.3 and saves it. A retry after the brief was saved reuses it. */
+export async function briefStep(buildId: string): Promise<BriefSummary> {
+  "use step";
+  const build = await loadBuild(buildId);
+  if (build.brief) return summarize(build.brief);
+  const inspiration = await loadInspiration(build.inspirationId);
+  const result = await writeBrief({
+    note: inspiration.note,
+    references: inspiration.references,
+    rebuildOf: rebuildTargetFor(build.rebuildOf),
+  }).catch(async (err: unknown) => {
+    // A brief that failed both attempts still cost something. Record it before the step retries.
+    if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
+    throw err;
+  });
+  await chargeBrief(buildId, result.usage);
+  const summary = summarize(result.brief);
+  await db()
+    .update(schema.builds)
+    .set({ brief: result.brief, buildModel: summary.model })
+    .where(eq(schema.builds.id, buildId));
+  for (const t of result.transcripts) {
+    await emit(buildId, { type: "log", text: `Voice memo ${t.index + 1}: ${t.text}` });
+  }
+  await emit(buildId, { type: "brief", brief: result.brief });
+  return summary;
+}
+briefStep.maxRetries = stepRetries("brief");
+
+export interface ProductRef {
+  productId: string;
+  slug: string;
+}
+
+/**
+ * Creates the product row (status building) with a unique slug from the brief and links the build to it. Idempotent:
+ * a retry returns the product an earlier attempt created.
+ */
+export async function createProductStep(buildId: string): Promise<ProductRef> {
+  "use step";
+  const build = await loadBuild(buildId);
+  if (build.productId) {
+    const existing = await loadProduct(build.productId);
+    return { productId: existing.id, slug: existing.slug };
+  }
+  const brief = requireBrief(build);
+  const base = normalizeSlug(brief.slug);
+  const prefix = base.slice(0, SLUG_MAX - 6);
+  for (let tries = 0; tries < 6; tries++) {
+    const taken = await db()
+      .select({ slug: schema.products.slug })
+      .from(schema.products)
+      .where(sql`${schema.products.slug} like ${`${prefix}%`}`);
+    const slug = nextFreeSlug(
+      base,
+      taken.map((t) => t.slug),
+    );
+    const productId = randomUUID();
+    try {
+      await db().batch([
+        db().insert(schema.products).values({
+          id: productId,
+          slug,
+          name: brief.name,
+          tagline: brief.tagline,
+          ownerId: build.userId,
+          inspirationId: build.inspirationId,
+          rebuildOf: build.rebuildOf,
+          status: "building",
+        }),
+        db().update(schema.builds).set({ productId }).where(eq(schema.builds.id, buildId)),
+      ]);
+      return { productId, slug };
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+    }
+  }
+  throw new Error("Could not find a free product slug.");
+}
+createProductStep.maxRetries = stepRetries("provision");
+
+/** Fixture files for the product's tests. Failure is not fatal: Muse Code makes its own fixtures (AGENTS.md). */
+export async function fixturesStep(buildId: string): Promise<PreparedFixture[]> {
+  "use step";
+  const build = await loadBuild(buildId);
+  const inspiration = await loadInspiration(build.inspirationId);
+  try {
+    const result = await prepareFixtures({
+      buildId,
+      brief: requireBrief(build),
+      references: inspiration.references,
+    });
+    await charge(
+      { source: "platform", endpoint: "images/generations", buildId, productId: build.productId },
+      result.usage,
+      "Fixtures",
+    );
+    return result.fixtures;
+  } catch (err) {
+    if (attempt() <= stepRetries("provision")) throw err;
+    console.error("[fixtures]", err);
+    await emit(buildId, { type: "log", text: "Fixtures could not be prepared. Muse Code will make its own." });
+    return [];
+  }
+}
+fixturesStep.maxRetries = stepRetries("provision");
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sandbox
+
+export interface SandboxRef {
+  sandboxName: string;
+  sessionId: string;
+  /** inspo/ paths of the image references, for `muse exec --image`. */
+  images: string[];
+}
+
+/**
+ * Mints the build token and provisions the sandbox in one step, so the plaintext token stays inside it. Also fixes
+ * the Muse Code session id (a fresh UUID, reused on retry).
+ */
+export async function provisionStep(input: {
+  buildId: string;
+  productId: string;
+  slug: string;
+  fixtures: PreparedFixture[];
+}): Promise<SandboxRef> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const brief = requireBrief(build);
+  const inspiration = await loadInspiration(build.inspirationId);
+  const promptMarkdown = renderBuildPrompt(brief, {
+    inspoFiles: inspiration.references.map((r) => r.fileName),
+    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description })),
+    maxModelSteps: MAX_MODEL_STEPS,
+    rebuildOf: rebuildTargetFor(build.rebuildOf),
+  });
+  const { token } = await mintToken({
+    productId: input.productId,
+    scope: "build",
+    allowedModels: allowedModelsFor(brief),
+    dailyBudgetUsd: DEFAULT_LIMITS.buildTokenBudgetUsd,
+    ttlHours: BUILD_TOKEN_TTL_HOURS,
+  });
+  const { sandboxName } = await sandbox.provisionSandbox({
+    buildId: input.buildId,
+    slug: input.slug,
+    references: inspiration.references,
+    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, url: f.url })),
+    promptMarkdown,
+    buildToken: token,
+    gatewayUrl: env.gatewayUrl,
+  });
+  const sessionId = build.museSessionId ?? randomUUID();
+  await db().batch([
+    db().update(schema.builds).set({ sandboxName, museSessionId: sessionId }).where(eq(schema.builds.id, input.buildId)),
+    db()
+      .update(schema.products)
+      .set({ sandboxName, updatedAt: new Date() })
+      .where(eq(schema.products.id, input.productId)),
+  ]);
+  return { sandboxName, sessionId, images: museImagePaths(inspiration.references) };
+}
+provisionStep.maxRetries = stepRetries("provision");
+
+export interface MuseRun {
+  cmdId: string;
+  logPath: string;
+}
+
+/** Starts one `muse exec` run. Never retried: a retry could start a second run in the same session. */
+export async function startMuseStep(input: {
+  sandboxName: string;
+  sessionId: string;
+  promptFile: string;
+  images: string[];
+  model: BuildModel;
+  round: number;
+}): Promise<MuseRun> {
+  "use step";
+  return sandbox.startMuse({ ...input, maxModelSteps: MAX_MODEL_STEPS });
+}
+startMuseStep.maxRetries = stepRetries("build");
+
+export interface MusePollResult {
+  done: boolean;
+  exitCode: number | null;
+  offset: number;
+}
+
+/** Reads new Muse Code output, streams it to the build room, and records the run's usage once it ends. */
+export async function pollMuseStep(input: {
+  buildId: string;
+  productId: string;
+  sandboxName: string;
+  run: MuseRun;
+  offset: number;
+  /** The build room's round: 0 for the first run of a build, then the fix number. */
+  round: number;
+}): Promise<MusePollResult> {
+  "use step";
+  const poll = await sandbox.pollMuse({
+    sandboxName: input.sandboxName,
+    cmdId: input.run.cmdId,
+    logPath: input.run.logPath,
+    offset: input.offset,
+  });
+  if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
+  if (poll.done && poll.usage.length) {
+    await charge(
+      { source: "muse_code", endpoint: "muse exec", buildId: input.buildId, productId: input.productId },
+      poll.usage,
+      input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`,
+    );
+  }
+  return { done: poll.done, exitCode: poll.exitCode, offset: poll.offset };
+}
+pollMuseStep.maxRetries = 2;
+
+export async function killStep(sandboxName: string, cmdId: string): Promise<void> {
+  "use step";
+  await sandbox.killCommand(sandboxName, cmdId);
+}
+killStep.maxRetries = 2;
+
+export async function previewStep(buildId: string, sandboxName: string): Promise<string> {
+  "use step";
+  const { url } = await sandbox.startPreview(sandboxName);
+  await db().update(schema.builds).set({ previewUrl: url }).where(eq(schema.builds.id, buildId));
+  await emit(buildId, { type: "preview", url });
+  return url;
+}
+previewStep.maxRetries = stepRetries("preview");
+
+/** Starts `npm run verify` or `npm run demo`. Never retried, so two runs never overlap. */
+export async function startTaskStep(sandboxName: string, task: sandbox.SandboxTask): Promise<string> {
+  "use step";
+  const { cmdId } = await sandbox.startTask(sandboxName, task);
+  return cmdId;
+}
+startTaskStep.maxRetries = 0;
+
+export interface TaskPollResult {
+  done: boolean;
+  exitCode: number | null;
+  /** Only filled in once the task is done, to keep the event log small. */
+  outputTail: string;
+}
+
+export async function pollTaskStep(sandboxName: string, cmdId: string): Promise<TaskPollResult> {
+  "use step";
+  const poll = await sandbox.pollTask(sandboxName, cmdId);
+  return { done: poll.done, exitCode: poll.exitCode, outputTail: poll.done ? poll.outputTail : "" };
+}
+pollTaskStep.maxRetries = 2;
+
+export interface VerifyResult {
+  passed: boolean;
+  steps: Array<{ name: string; ok: boolean }>;
+  screenshots: Screenshot[];
+}
+
+/** Parses verify's summary line, uploads the judge screenshots, and tells the build room. */
+export async function collectVerifyStep(input: {
+  buildId: string;
+  sandboxName: string;
+  round: number;
+  exitCode: number | null;
+  outputTail: string;
+}): Promise<VerifyResult> {
+  "use step";
+  const { summary, screenshots } = await sandbox.collectVerifyResult(input);
+  await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots });
+  return {
+    passed: summary.passed,
+    steps: summary.steps.map((s) => ({ name: s.name, ok: s.ok })),
+    screenshots,
+  };
+}
+collectVerifyStep.maxRetries = 1;
+
+/** Records a verify run that hit its time cap as a failed check, so the fix round sees why. */
+export async function verifyTimedOutStep(input: { buildId: string; round: number; minutes: number }): Promise<VerifyResult> {
+  "use step";
+  const summary: VerifySummary = {
+    passed: false,
+    steps: [],
+    failureOutput: `npm run verify did not finish within ${input.minutes} minutes and was stopped. Look for a test or server that hangs.`,
+  };
+  await emit(input.buildId, { type: "verify", round: input.round, summary, screenshots: [] });
+  return { passed: false, steps: [], screenshots: [] };
+}
+
+/** Muse Spark 1.3 judges the screenshots against the brief and the image inspo. */
+export async function judgeStep(input: {
+  buildId: string;
+  productId: string;
+  round: number;
+  screenshots: Screenshot[];
+}): Promise<{ pass: boolean }> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const inspiration = await loadInspiration(build.inspirationId);
+  const result = await judgeBuild({
+    brief: requireBrief(build),
+    references: inspiration.references,
+    screenshots: input.screenshots,
+  });
+  await charge(
+    { source: "platform", endpoint: "responses", buildId: input.buildId, productId: input.productId },
+    result.usage,
+    input.round === 0 ? "Judge" : `Judge round ${input.round}`,
+  );
+  await emit(input.buildId, { type: "judge", round: input.round, verdict: result.verdict });
+  return { pass: result.verdict.pass };
+}
+judgeStep.maxRetries = 1;
+
+function isVerifyEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "verify" }> {
+  return p.type === "verify";
+}
+
+function isJudgeEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "judge" }> {
+  return p.type === "judge";
+}
+
+/**
+ * Renders fix-<n>.md from the last verify and judge results (read back from the build's events, so they never pass
+ * through the workflow log) and writes it into the product.
+ */
+export async function writeFixPromptStep(input: {
+  buildId: string;
+  sandboxName: string;
+  /** The fix number, 1 to MAX_FIX_ROUNDS. */
+  fix: number;
+  /** The build-room round whose results this fix answers. */
+  verifiedRound: number;
+}): Promise<string> {
+  "use step";
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, input.buildId), inArray(schema.buildEvents.type, ["verify", "judge"])))
+    .orderBy(desc(schema.buildEvents.id))
+    .limit(20);
+  const payloads = rows.map((r) => r.payload);
+  const verify: VerifySummary | null =
+    payloads.filter(isVerifyEvent).find((p) => p.round === input.verifiedRound)?.summary ?? null;
+  const judge: JudgeVerdict | null =
+    payloads.filter(isJudgeEvent).find((p) => p.round === input.verifiedRound)?.verdict ?? null;
+  const promptFile = `fix-${input.fix}.md`;
+  await sandbox.writeProductFile(input.sandboxName, promptFile, renderFixPrompt({ verify, judge, round: input.fix }));
+  return promptFile;
+}
+writeFixPromptStep.maxRetries = 2;
+
+export async function buildNotesStep(sandboxName: string): Promise<boolean> {
+  "use step";
+  return Boolean(await sandbox.readBuildNotes(sandboxName));
+}
+buildNotesStep.maxRetries = 2;
+
+/** Turns the demo run's video into an MP4 and tells the build room. */
+export async function finishDemoStep(input: {
+  buildId: string;
+  sandboxName: string;
+  title: string;
+  subtitle: string;
+}): Promise<string | null> {
+  "use step";
+  const { videoUrl } = await sandbox.finishDemo(input);
+  if (videoUrl) await emit(input.buildId, { type: "recording", url: videoUrl });
+  return videoUrl;
+}
+finishDemoStep.maxRetries = stepRetries("record");
+
+// ---------------------------------------------------------------------------------------------------------------
+// Deploy and register
+
+export interface DeployStart {
+  projectId: string;
+  deploymentId: string;
+  liveTokenId: string;
+}
+
+/**
+ * Mints the live token and starts the deployment in one step, so the plaintext token only travels to Vercel's env.
+ * Saves the project id right away so a retry or a later refinement reuses the project.
+ */
+export async function startDeployStep(input: {
+  buildId: string;
+  productId: string;
+  sandboxName: string;
+}): Promise<DeployStart> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const product = await loadProduct(input.productId);
+  const brief = build.brief ?? (await latestBrief(input.productId));
+  const live = await mintToken({
+    productId: input.productId,
+    scope: "live",
+    allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
+    dailyBudgetUsd: DEFAULT_LIMITS.liveTokenDailyBudgetUsd,
+  });
+  const started = await startDeployFromSandbox({
+    sandboxName: input.sandboxName,
+    slug: product.slug,
+    productName: product.name,
+    env: { GATEWAY_URL: env.gatewayUrl, PRODUCT_TOKEN: live.token },
+    projectId: product.vercelProjectId,
+  });
+  await db()
+    .update(schema.products)
+    .set({ vercelProjectId: started.projectId, updatedAt: new Date() })
+    .where(eq(schema.products.id, input.productId));
+  return { projectId: started.projectId, deploymentId: started.deploymentId, liveTokenId: live.id };
+}
+startDeployStep.maxRetries = stepRetries("deploy");
+
+/** The brief of the product's first build, for refinements (their own build rows have no brief). */
+async function latestBrief(productId: string): Promise<Brief | null> {
+  const [row] = await db()
+    .select({ brief: schema.builds.brief })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, productId), eq(schema.builds.kind, "build")))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  return row?.brief ?? null;
+}
+
+/** Fallback allowlist: whatever the product's current live token allows. */
+async function liveModels(productId: string): Promise<string[]> {
+  const [row] = await db()
+    .select({ allowedModels: schema.gatewayTokens.allowedModels })
+    .from(schema.gatewayTokens)
+    .where(and(eq(schema.gatewayTokens.productId, productId), eq(schema.gatewayTokens.scope, "live")))
+    .orderBy(desc(schema.gatewayTokens.createdAt))
+    .limit(1);
+  return row?.allowedModels ?? ["muse-spark-1.3"];
+}
+
+export async function pollDeployStep(deploymentId: string): Promise<DeployPoll> {
+  "use step";
+  return pollDeploy(deploymentId);
+}
+pollDeployStep.maxRetries = 2;
+
+/**
+ * Saves what shipped: manifest, live URL, demo, transcript and status. Then revokes the build tokens and every live
+ * token except the one the new deployment uses.
+ */
+export async function registerStep(input: {
+  buildId: string;
+  productId: string;
+  sandboxName: string;
+  sessionId: string;
+  projectId: string;
+  liveUrl: string;
+  liveTokenId: string;
+  demoVideoUrl: string | null;
+  status: "live" | "partial";
+}): Promise<void> {
+  "use step";
+  const manifest = await sandbox.readManifest(input.sandboxName);
+  let transcriptUrl: string | null = null;
+  try {
+    const transcript = await sandbox.exportTranscript({
+      sandboxName: input.sandboxName,
+      sessionId: input.sessionId,
+      buildId: input.buildId,
+    });
+    transcriptUrl = transcript.url;
+    if (transcript.highlights.length) {
+      await emit(input.buildId, { type: "log", text: `How it was built:\n${transcript.highlights.slice(0, 20).join("\n")}` });
+    }
+  } catch (err) {
+    console.error("[register] transcript", err);
+  }
+  await db()
+    .update(schema.products)
+    .set({
+      ...(manifest ? { manifest } : {}),
+      ...(input.demoVideoUrl ? { demoVideoUrl: input.demoVideoUrl } : {}),
+      ...(transcriptUrl ? { transcriptUrl } : {}),
+      liveUrl: input.liveUrl,
+      status: input.status,
+      latestBuildId: input.buildId,
+      sandboxName: input.sandboxName,
+      museSessionId: input.sessionId,
+      vercelProjectId: input.projectId,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.products.id, input.productId));
+  await revokeTokens(input.productId, "build");
+  await db()
+    .update(schema.gatewayTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(schema.gatewayTokens.productId, input.productId),
+        eq(schema.gatewayTokens.scope, "live"),
+        isNull(schema.gatewayTokens.revokedAt),
+        ne(schema.gatewayTokens.id, input.liveTokenId),
+      ),
+    );
+}
+registerStep.maxRetries = stepRetries("register");
+
+// ---------------------------------------------------------------------------------------------------------------
+// Refinements
+
+export interface RefineContext {
+  productId: string;
+  name: string;
+  tagline: string;
+  sandboxName: string;
+  sessionId: string;
+  model: BuildModel;
+  /** 1 for the product's first refinement, 2 for the next, and so on. */
+  refineIndex: number;
+}
+
+/** Loads what a refinement resumes: the product's sandbox, Muse Code session and build model. */
+export async function loadRefineStep(buildId: string): Promise<RefineContext> {
+  "use step";
+  const build = await loadBuild(buildId);
+  if (build.kind !== "refine" || !build.productId) throw new FatalError("This build is not a refinement.");
+  const product = await loadProduct(build.productId);
+  if (!product.sandboxName || !product.museSessionId) {
+    throw new FatalError("This product has no sandbox or Muse Code session to resume.");
+  }
+  const [{ n } = { n: 1 }] = await db()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.builds)
+    .where(
+      and(
+        eq(schema.builds.productId, product.id),
+        eq(schema.builds.kind, "refine"),
+        lte(schema.builds.startedAt, build.startedAt),
+      ),
+    );
+  const [previous] = await db()
+    .select({ buildModel: schema.builds.buildModel })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.kind, "build")))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  const model = pickBuildModel(previous?.buildModel === "muse-wonder-1.0" ? "complex" : "standard", {
+    buildModel: env.buildModel,
+    complexBuildModel: env.complexBuildModel,
+  });
+  await db()
+    .update(schema.builds)
+    .set({ sandboxName: product.sandboxName, museSessionId: product.museSessionId, buildModel: model })
+    .where(eq(schema.builds.id, buildId));
+  return {
+    productId: product.id,
+    name: product.name,
+    tagline: product.tagline,
+    sandboxName: product.sandboxName,
+    sessionId: product.museSessionId,
+    model,
+    refineIndex: Math.max(1, Number(n)),
+  };
+}
+
+/**
+ * Resumes the product's sandbox with a fresh build token (minted here, never returned), copies the new references
+ * in, and writes refine-<n>.md. Returns the prompt file and the new image paths for --image.
+ */
+export async function reopenStep(input: {
+  buildId: string;
+  productId: string;
+  sandboxName: string;
+  refineIndex: number;
+}): Promise<{ promptFile: string; images: string[] }> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const inspiration = await loadInspiration(build.inspirationId);
+  const brief = await latestBrief(input.productId);
+  const { token } = await mintToken({
+    productId: input.productId,
+    scope: "build",
+    allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
+    dailyBudgetUsd: DEFAULT_LIMITS.buildTokenBudgetUsd,
+    ttlHours: BUILD_TOKEN_TTL_HOURS,
+  });
+  const newReferences: Reference[] = inspiration.references;
+  await sandbox.reopenSandbox({
+    sandboxName: input.sandboxName,
+    buildToken: token,
+    gatewayUrl: env.gatewayUrl,
+    newReferences,
+  });
+  const prompt = renderRefinePrompt({
+    message: build.message ?? inspiration.note ?? "",
+    newReferences: newReferences.map((r) => ({
+      fileName: r.fileName,
+      describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
+    })),
+  });
+  const promptFile = `refine-${input.refineIndex}.md`;
+  await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);
+  return {
+    promptFile,
+    images: museImagePaths(newReferences),
+  };
+}
+reopenStep.maxRetries = stepRetries("provision");

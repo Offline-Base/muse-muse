@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
-// TODO(kickoff, day 3): wrap with withWorkflow from "workflow/next" when the build workflow lands.
 const nextConfig: NextConfig = {};
 
-export default nextConfig;
+// Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts). Workflows are found
+// through the start() calls in app/api/inspirations, app/api/builds/[buildId]/messages and app/api/rebuilds.
+export default withWorkflow(nextConfig);

@@ -1,10 +1,14 @@
-import { notImplemented } from "@/lib/http";
+import { after } from "next/server";
+import { gatewayDeps } from "@/lib/gateway/deps";
+import { handleGateway } from "@/lib/gateway/handler";
 
-// Meta Model API proxy for live products and build-time tests. See GATEWAY_CHECKS in lib/gateway/policy.ts.
-// TODO(kickoff, day 2): token lookup, allowlist, budget and rate limit, forward with streaming, usage metering.
-async function handle(_req: Request, { params }: { params: Promise<{ path: string[] }> }) {
+// Meta Model API proxy for live products and build-time tests. The checks live in lib/gateway/handler.ts.
+export const runtime = "nodejs";
+export const maxDuration = 300;
+
+async function handle(req: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  return notImplemented(`Proxy /v1/${path.join("/")} to the Meta Model API`);
+  return handleGateway(req, path, gatewayDeps((task) => after(task)));
 }
 
 export const GET = handle;

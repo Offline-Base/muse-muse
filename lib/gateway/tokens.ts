@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 
@@ -63,4 +63,20 @@ export async function revokeTokens(productId: string, scope?: TokenScope): Promi
         ...(scope ? [eq(schema.gatewayTokens.scope, scope)] : []),
       ),
     );
+}
+
+/** Stamps revokedAt on build tokens past their expiry, so they show as revoked too. Returns how many. */
+export async function revokeExpiredBuildTokens(now: Date = new Date()): Promise<number> {
+  const rows = await db()
+    .update(schema.gatewayTokens)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(schema.gatewayTokens.scope, "build"),
+        isNull(schema.gatewayTokens.revokedAt),
+        lt(schema.gatewayTokens.expiresAt, now),
+      ),
+    )
+    .returning({ id: schema.gatewayTokens.id });
+  return rows.length;
 }

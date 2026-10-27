@@ -1,8 +1,50 @@
-import { notImplemented } from "@/lib/http";
+import { start } from "workflow/api";
+import { requireUser } from "@/lib/auth";
+import { errorJson, readJson, route } from "@/lib/http";
+import { catalogItem } from "@/lib/pipeline/catalog";
+import { attachRun, insertBuild, markStartFailed } from "@/lib/pipeline/records";
+import { validateNote, validateReferences } from "@/lib/pipeline/references";
+import { buildProduct } from "@/lib/pipeline/workflow";
+import { checkBuildAllowed } from "@/lib/quota";
 
-// TODO(kickoff, day 3): require sign-in and check the daily build quota. Then store the note and the reference
-// files (already uploaded to Blob through an upload ticket), create a build row, start the build workflow,
-// and return { buildId }.
-export async function POST() {
-  return notImplemented("Save the inspo and note, then start the build workflow");
-}
+/**
+ * POST {note, references, rebuildOf?} -> 201 {buildId}. Saves the muse, queues a build and starts the build workflow.
+ * 400 bad input, 401 signed out, 429 {error: "daily_limit"}, 503 {error: "paused"} (daily spend cap).
+ */
+export const POST = route(async (req: Request) => {
+  const user = await requireUser();
+  const body = await readJson(req);
+
+  const note = validateNote(body.note);
+  if (!note.ok) return errorJson(400, note.error);
+  const references = validateReferences(body.references);
+  if (!references.ok) return errorJson(400, references.error);
+  if (!note.value && references.value.length === 0) return errorJson(400, "Add a note or at least one file.");
+
+  let rebuildOf: string | null = null;
+  if (body.rebuildOf !== undefined && body.rebuildOf !== null) {
+    if (typeof body.rebuildOf !== "string" || !catalogItem(body.rebuildOf)) {
+      return errorJson(400, "That rebuild isn't in the catalog.");
+    }
+    rebuildOf = body.rebuildOf;
+  }
+
+  const allowed = await checkBuildAllowed(user);
+  if (!allowed.ok) return errorJson(allowed.status, allowed.error);
+
+  const { buildId } = await insertBuild({
+    userId: user.id,
+    note: note.value,
+    references: references.value,
+    rebuildOf,
+  });
+  let runId: string;
+  try {
+    runId = (await start(buildProduct, [{ buildId }])).runId;
+  } catch (err) {
+    await markStartFailed(buildId, err);
+    return errorJson(500, "start_failed");
+  }
+  await attachRun(buildId, runId).catch((err) => console.error("[inspirations] attachRun", err));
+  return Response.json({ buildId }, { status: 201 });
+});

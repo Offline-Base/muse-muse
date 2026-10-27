@@ -15,6 +15,7 @@ Base URL `https://api.meta.ai/v1`, `Authorization: Bearer <key>`. `GET /v1/model
 - **PDFs** work two ways: `{ type: "input_file", file_id }` after `POST /v1/files` (multipart, `purpose=user_data`), or inline as `{ type: "input_file", filename, file_data: "data:application/pdf;base64,..." }`.
 - **Video** works two ways: `{ type: "input_video", file_id }` after `POST /v1/files`, or `{ type: "input_video", video_url: "data:video/mp4;base64,..." }`. A 3-second clip cost about 800 input tokens.
 - `POST /v1/files` returns `{ id: "file-...", bytes, filename, purpose, status: "uploaded", expires_at: null }`.
+- **Public https URLs are fetched by Meta.** A remote MP4 as `input_video.video_url` worked for Spark 1.3 and for SAM 3.1 (non-streamed too). So products and the platform can pass public Vercel Blob URLs straight through. When the origin refuses Meta's fetcher, the call fails with HTTP 400 `media_url_origin_error` ("failed to download media at input[0].content[1]: origin returned HTTP 400"); Wikimedia did this for an image. Fall back to a data URL or `POST /v1/files` when that happens.
 
 ### Muse Image
 

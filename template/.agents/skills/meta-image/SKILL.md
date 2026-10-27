@@ -21,18 +21,21 @@ const out = await meta.images.generate({
   prompt: "A walnut bookshelf with five shelves against a white wall, soft daylight",
   n: 1,
   size: "1024x1536",
+  output_format: "jpeg",
 });
-const b64 = out.data?.[0]?.b64_json; // base64 WebP by default
+const b64 = out.data?.[0]?.b64_json; // base64, always there unless you ask for a url
 ```
 
-Show it with `data:image/webp;base64,${b64}`.
+Show it with `data:image/jpeg;base64,${b64}` (`image/webp` when you leave `output_format` at its default).
 
 | Option | Values |
 |---|---|
 | `n` | 1 to 10. Each image is billed |
-| `size` | `"WxH"` sets the aspect ratio, not exact pixels. Up to 16:1 |
+| `size` | `"WxH"` sets **only the aspect ratio**, not pixels. `1024x768` came back as 1792×1344. Up to 16:1. Resize yourself if you need exact pixels |
 | `response_format` | `b64_json` (default) or `url`, a temporary signed URL. Don't store that URL |
 | `output_format` | `webp` (default), `png` or `jpeg` |
+
+The reply is `{ created, output_format, background, usage, data: [{ b64_json }] }`. Ignore `usage` token counts: billing is per image.
 
 ## Edit or combine photos
 
@@ -90,4 +93,4 @@ const next = await meta.responses.create({
 
 ## Cost
 
-$0.01 per image returned, so `n: 4` costs $0.04.
+$0.01 per image returned, so `n: 4` costs $0.04. A generation takes about 10 to 15 seconds, so show progress and allow 90 seconds in tests.

@@ -34,3 +34,19 @@ export const STEPS: readonly StepSpec[] = [
 ] as const;
 
 export const MAX_FIX_ROUNDS = 3;
+
+export function stepSpec(name: StepName): StepSpec {
+  const spec = STEPS.find((s) => s.name === name);
+  if (!spec) throw new Error(`Unknown step ${name}`);
+  return spec;
+}
+
+/** Retries from the table above, for `fn.maxRetries`. */
+export function stepRetries(name: StepName): number {
+  return stepSpec(name).retries;
+}
+
+/** Time cap for the poll loops that wait on long sandbox work. */
+export function stepTimeoutMs(name: StepName): number {
+  return stepSpec(name).timeoutMs;
+}

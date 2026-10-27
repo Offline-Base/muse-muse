@@ -5,6 +5,64 @@ import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
  * CONTRACT (owned by the brief agent). Pure functions that render prompts 2, 3 and 5 from docs/PROMPTS.md.
  */
 
+const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
+  "muse-spark-1.3": ".agents/skills/meta-reasoning",
+  "muse-wonder-1.0": ".agents/skills/meta-reasoning",
+  "muse-image-1.0": ".agents/skills/meta-image",
+  "sam-3.1": ".agents/skills/meta-sam",
+  "muse-voice-transcribe-1.0": ".agents/skills/meta-voice",
+  "muse-glimmer": ".agents/skills/meta-glimmer",
+};
+
+const FIT_MEANING: Record<RebuildTarget["rebuild"]["fit"], string> = {
+  clean: "the same demo, built on current models",
+  reframe: "the goal still matters, but the method changed",
+  partial: "part of it needs something outside Muse Muse",
+};
+
+/** A code fence longer than any backtick run inside the text. */
+function fence(text: string, lang = "text"): string {
+  const longest = Math.max(2, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
+  const ticks = "`".repeat(longest + 1);
+  return `${ticks}${lang}\n${text.replace(/\s+$/, "")}\n${ticks}`;
+}
+
+/** Capitalized, ending with a period. */
+function sentence(s: string): string {
+  const t = s.trim();
+  if (!t) return t;
+  return `${t[0].toUpperCase()}${t.slice(1)}${/[.!?)]$/.test(t) ? "" : "."}`;
+}
+
+function bullets(items: string[], empty = "None."): string {
+  return items.length ? items.map((s) => `- ${s}`).join("\n") : empty;
+}
+
+function quote(text: string): string {
+  return text
+    .trim()
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+function uniqueModels(brief: Brief): Brief["capabilities"][number]["model"][] {
+  return [...new Set(brief.capabilities.map((c) => c.model))];
+}
+
+function money(usd: number): string {
+  return usd >= 0.1 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(4).replace(/0+$/, "").replace(/\.$/, ".00")}`;
+}
+
+function extensionKind(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  if (["jpg", "jpeg", "png", "webp", "gif", "heic", "heif", "avif", "svg"].includes(ext)) return "image";
+  if (["mp4", "mov"].includes(ext)) return "video";
+  if (ext === "wav") return "audio";
+  if (ext === "pdf") return "pdf";
+  return "text";
+}
+
 /** brief.md, the prompt file for the first `muse exec`. */
 export function renderBuildPrompt(
   brief: Brief,
@@ -17,15 +75,226 @@ export function renderBuildPrompt(
     rebuildOf?: RebuildTarget | null;
   },
 ): string {
-  void brief;
-  void opts;
-  throw new Error("renderBuildPrompt: not implemented");
+  const out: string[] = [];
+  out.push(
+    "# Build this product",
+    "",
+    "Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, and read the skill for each model listed below.",
+    "",
+    "## Done means",
+    "",
+    "1. `npm run verify` exits 0.",
+    "2. `musemuse.json` is filled in from this brief and valid against `musemuse.schema.json`.",
+    "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    "",
+    "Then stop.",
+    "",
+    "## Product",
+    "",
+    `- Name: ${brief.name}`,
+    `- Slug: \`${brief.slug}\` (use it in musemuse.json)`,
+    `- Tagline: ${brief.tagline}`,
+    `- For: ${brief.user}`,
+    `- Complexity: ${brief.complexity}`,
+  );
+  if (brief.verdict === "partly") {
+    out.push("- Scope: the models can make the core of this, not all of it. Build the core well and show the limits below in the UI.");
+  }
+  if (brief.verdict === "no") {
+    out.push("", `This muse was refused. ${sentence(brief.refusal ?? "It can't be built with the listed models")} Don't build it. Write the reason in BUILD_NOTES.md and stop.`);
+    return out.join("\n") + "\n";
+  }
+
+  out.push(
+    "",
+    "## Primary flow",
+    "",
+    "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
+    "",
+    ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
+  );
+  if (brief.screens.length) {
+    out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
+  }
+
+  out.push(
+    "",
+    "## Meta models",
+    "",
+    "Use only these. The gateway rejects any other model. Call them through the helpers in `lib/meta/`.",
+    "",
+    bullets(brief.capabilities.map((c) => `\`${c.model}\`: ${sentence(c.need)} Why: ${sentence(c.why)} Skill: \`${SKILLS[c.model]}\`.`)),
+  );
+
+  out.push(
+    "",
+    "## Inputs",
+    "",
+    bullets(brief.inputs.map((i) => `${i.kind}${i.required ? " (required)" : " (optional)"}: ${i.notes}`), "None beyond the page itself."),
+    "",
+    "## Outputs",
+    "",
+    bullets(brief.outputs.map((o) => `${o.kind}: ${o.notes}`)),
+  );
+
+  out.push(
+    "",
+    "## Actions",
+    "",
+    "Serve each one as `POST /api/actions/<name>` with JSON in and JSON out. List it in `musemuse.json` with input and output JSON schemas and an example input, and have the UI call the same route.",
+    "",
+    bullets(brief.actions.map((a) => `\`${a.name}\`: ${a.description}`), "None listed. Expose the primary flow's main step as one action."),
+  );
+
+  out.push(
+    "",
+    "## Limits",
+    "",
+    "Show each one in the UI near the place where it matters, and list them in `musemuse.json`.",
+    "",
+    bullets(brief.limits),
+    "",
+    "## Cost",
+    "",
+    `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
+    "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
+  );
+
+  out.push("", "## Inspiration", "", brief.inspiration.summary);
+  if (opts.inspoFiles.length) {
+    out.push("", "The user's references are in `inspo/`. Here's what each one shows:");
+    opts.inspoFiles.forEach((file, i) => {
+      const ref = brief.inspiration.references.find((r) => r.index === i);
+      out.push("", `### \`inspo/${file}\`${ref ? ` (${ref.kind})` : ""}`, "", ref?.describes ?? "Not described in the brief. Open the file and look at it.");
+    });
+  } else {
+    out.push("", "There are no reference files. Work from this brief.");
+  }
+  out.push(
+    "",
+    "Take from them:",
+    "",
+    bullets(brief.inspiration.borrow),
+    "",
+    "Leave out:",
+    "",
+    bullets([
+      ...brief.inspiration.dontCopy,
+      "Always: names, logos, characters, copyrighted text, artwork and photos from the inspo, and the exact look of a real product (AGENTS.md).",
+    ]),
+  );
+
+  const rebuild = opts.rebuildOf;
+  if (rebuild) {
+    out.push(
+      "",
+      "## Rebuild of one of Meta's videos",
+      "",
+      `This product rebuilds "${rebuild.title}" (${rebuild.url}), a ${rebuild.era}-era video that demonstrates: ${rebuild.demonstrates}.`,
+      "",
+      `- Fit: ${rebuild.rebuild.fit}, meaning ${FIT_MEANING[rebuild.rebuild.fit]}.`,
+      `- Plan: ${rebuild.rebuild.plan}`,
+      "- Link to the video from the product's about text. Never embed, download or copy it, and don't use Meta's or Llama's names or logos in the product's look.",
+    );
+  }
+
+  out.push("", "## Sample files", "");
+  if (opts.fixtures.length) {
+    out.push("These are in `fixtures/`. The smoke test must use them.", "", bullets(opts.fixtures.map((f) => `\`fixtures/${f.fileName}\`: ${f.description}`)));
+  } else {
+    out.push("None were prepared.");
+  }
+  const preparedKinds = new Set(opts.fixtures.map((f) => extensionKind(f.fileName)));
+  const toMake = brief.fixtures.filter((f) => !preparedKinds.has(f.kind));
+  if (toMake.length) {
+    out.push(
+      "",
+      "Make these yourself, small, in `fixtures/` (AGENTS.md), and use them in the smoke test:",
+      "",
+      bullets(toMake.map((f) => `${f.kind}: ${f.description}`)),
+    );
+  }
+
+  const models = uniqueModels(brief);
+  out.push(
+    "",
+    "## Budget",
+    "",
+    `Stay under ${opts.maxModelSteps} steps. If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md.`,
+    models.includes("muse-wonder-1.0") ? "Muse Wonder is in preview and costs more. Use it only where the brief says." : "",
+  );
+  return out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n").trim() + "\n";
 }
+
+const STEP_LABELS: Record<string, string> = {
+  typecheck: "Typecheck (`tsc --noEmit`)",
+  build: "Build (`next build`)",
+  start: "Start (the built app on port 3100, `/` must return 200)",
+  console: "Console (no errors in the browser console on `/`)",
+  smoke: "Smoke test (`tests/smoke.spec.ts`)",
+  manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
+};
 
 /** fix.md for a fix round, run with --session-id so Muse Code keeps its context. */
 export function renderFixPrompt(input: { verify: VerifySummary | null; judge: JudgeVerdict | null; round: number }): string {
-  void input;
-  throw new Error("renderFixPrompt: not implemented");
+  const { verify, judge, round } = input;
+  const verifyFailed = verify !== null && !verify.passed;
+  const judgeFailed = judge !== null && !judge.pass;
+  const what = [verifyFailed ? "`npm run verify` failed" : "", judgeFailed ? "the screenshot judge failed the product" : ""]
+    .filter(Boolean)
+    .join(", and ");
+
+  const out: string[] = [
+    `# Fix round ${round}`,
+    "",
+    `${what ? what[0].toUpperCase() + what.slice(1) : "The checks failed"}. Fix the cause in the product code.`,
+    "",
+    "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
+    "- If a model call fails, check the request against the skill for that model before changing anything else.",
+    "- Keep the primary flow from brief.md working, and keep the footer.",
+    "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
+  ];
+
+  if (verify) {
+    const failing = verify.steps.filter((s) => !s.ok);
+    out.push("", "## Verify steps", "");
+    if (verify.steps.length) {
+      out.push(
+        bullets(
+          verify.steps.map((s) => {
+            const label = STEP_LABELS[s.name] ?? s.name;
+            const time = typeof s.ms === "number" ? ` (${(s.ms / 1000).toFixed(1)} s)` : "";
+            const detail = !s.ok && s.detail ? `: ${s.detail.replace(/\s+/g, " ").slice(0, 300)}` : "";
+            return `${s.ok ? "passed" : "FAILED"}: ${label}${time}${detail}`;
+          }),
+        ),
+      );
+    } else {
+      out.push(verify.passed ? "All passed." : "No step results were reported. The output below is all there is.");
+    }
+    if (failing.length > 1) {
+      out.push("", "Later failures often follow from the first one, so fix the first one first.");
+    }
+    if (verify.failureOutput.trim()) {
+      out.push("", "## Output (trimmed to the failing parts)", "", fence(verify.failureOutput));
+    }
+  }
+
+  if (judge && (judgeFailed || judge.mismatches.length)) {
+    out.push(
+      "",
+      judgeFailed ? "## Judge notes (it failed the screenshots)" : "## Judge notes (it passed, with these mismatches)",
+      "",
+      "The judge looked at the screenshots your smoke test saved in `test-results/judge/` and compared them with brief.md and inspo/.",
+    );
+    if (judge.reasons.length) out.push("", "Reasons:", "", bullets(judge.reasons));
+    if (judge.mismatches.length) out.push("", "Mismatches with the brief:", "", bullets(judge.mismatches));
+    out.push(
+      "",
+      "Change the product so the screens show what the brief promises. The last screenshot must show the final result, not an error, a spinner or an empty state. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
+    );
+  }
+  return out.join("\n") + "\n";
 }
 
 /** The prompt for a user's follow-up change to a shipped product. */
@@ -33,12 +302,74 @@ export function renderRefinePrompt(input: {
   message: string;
   newReferences: Array<{ fileName: string; describes: string }>;
 }): string {
-  void input;
-  throw new Error("renderRefinePrompt: not implemented");
+  const out: string[] = ["# Change request", "", "The user asked for this change to the live product:", "", quote(input.message)];
+  if (input.newReferences.length) {
+    out.push(
+      "",
+      "New inspiration is in `inspo/`. Use it under the same rules as before (AGENTS.md, Using the inspo):",
+      "",
+      bullets(input.newReferences.map((r) => `\`inspo/${r.fileName}\`: ${r.describes}`)),
+    );
+  }
+  out.push(
+    "",
+    "## What to do",
+    "",
+    "- Make the change and keep the primary flow working.",
+    "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
+    "- Update `musemuse.json` if actions, limits or cost changed.",
+    "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",
+    "- If the request is something AGENTS.md says not to build, or no listed model can do it, build the closest useful version, say so in the UI, and write it down.",
+    "- Add a short entry to BUILD_NOTES.md, then run `npm run verify` until it exits 0.",
+  );
+  return out.join("\n") + "\n";
 }
 
 /** The brief as readable markdown for the product page's "what it was asked to make". */
 export function briefToMarkdown(brief: Brief): string {
-  void brief;
-  throw new Error("briefToMarkdown: not implemented");
+  const verdict = { yes: "Can be made", partly: "Can be made, with limits", no: "Refused" }[brief.verdict];
+  const out: string[] = [`# ${brief.name}`, "", brief.tagline, "", `**For:** ${brief.user}`, "", `**Verdict:** ${verdict}`];
+  if (brief.verdict === "no" && brief.refusal) out.push("", quote(brief.refusal));
+
+  out.push("", "## Inspiration", "", brief.inspiration.summary);
+  if (brief.inspiration.references.length) {
+    out.push("", ...brief.inspiration.references.map((r) => `- **Reference ${r.index + 1}** (${r.kind}): ${r.describes}`));
+  }
+  if (brief.inspiration.borrow.length) out.push("", "**Takes from it:**", "", bullets(brief.inspiration.borrow));
+  if (brief.inspiration.dontCopy.length) out.push("", "**Leaves out:**", "", bullets(brief.inspiration.dontCopy));
+  if (brief.verdict === "no") return out.join("\n") + "\n";
+
+  out.push("", "## How it works", "", ...brief.primaryFlow.map((s, i) => `${i + 1}. ${s}`));
+  if (brief.screens.length) out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
+
+  out.push(
+    "",
+    "## Meta models",
+    "",
+    "| Need | Model | Why |",
+    "| --- | --- | --- |",
+    ...brief.capabilities.map((c) => `| ${cell(c.need)} | \`${c.model}\` | ${cell(c.why)} |`),
+  );
+  if (brief.inputs.length) {
+    out.push("", "## Inputs", "", bullets(brief.inputs.map((i) => `**${i.kind}**${i.required ? "" : " (optional)"}: ${i.notes}`)));
+  }
+  if (brief.outputs.length) out.push("", "## Outputs", "", bullets(brief.outputs.map((o) => `**${o.kind}**: ${o.notes}`)));
+  if (brief.actions.length) out.push("", "## Actions", "", bullets(brief.actions.map((a) => `\`${a.name}\`: ${a.description}`)));
+  out.push(
+    "",
+    "## Limits",
+    "",
+    bullets(brief.limits),
+    "",
+    "## Cost",
+    "",
+    `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
+    "",
+    `Complexity: ${brief.complexity}.`,
+  );
+  return out.join("\n") + "\n";
+}
+
+function cell(s: string): string {
+  return s.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 }

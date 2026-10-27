@@ -1,8 +1,17 @@
-import { notImplemented } from "@/lib/http";
+import { env } from "@/lib/env";
+import { productStatusById } from "@/lib/gateway/store";
+import { findToken } from "@/lib/gateway/tokens";
+import { handleGatewayUpload } from "@/lib/gateway/uploads";
 
-// Issues short-lived upload tickets so a product's browser can send large files straight to Vercel Blob,
-// staying clear of the 4.5 MB function body limit. Files expire after DEFAULT_LIMITS.uploadTtlHours.
-// TODO(kickoff, day 3): verify the product token, enforce type and size limits, return a Blob client token.
-export async function POST() {
-  return notImplemented("Issue an upload ticket for a product");
+// Vercel Blob client uploads for products, so large files skip the 4.5 MB function body limit. Products proxy their
+// own POST /api/upload here with "Authorization: Bearer <PRODUCT_TOKEN>". Files expire after 24 hours (cleanup cron).
+export const runtime = "nodejs";
+
+export async function POST(req: Request) {
+  return handleGatewayUpload(req, {
+    findToken,
+    productStatus: productStatusById,
+    blobToken: () => env.blobToken,
+    callbackUrl: env.platformUrl.startsWith("https://") ? `${env.gatewayUrl}/uploads` : undefined,
+  });
 }

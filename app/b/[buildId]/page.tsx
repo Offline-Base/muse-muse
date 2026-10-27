@@ -1,11 +1,51 @@
-// Build room. TODO(kickoff, day 3): subscribe to /api/builds/[buildId]/events and render the brief, the live
-// Muse Code log, the file list, the preview iframe and the check results.
-export default async function BuildRoom({ params }: { params: Promise<{ buildId: string }> }) {
-  const { buildId } = await params;
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { connection } from "next/server";
+import { BuildRoom } from "@/components/build/BuildRoom";
+import { NotConnected } from "@/components/ui";
+import { env } from "@/lib/env";
+import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
+
+export const metadata: Metadata = { title: "Build room" };
+
+export default async function BuildRoomPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ buildId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await connection();
+  const [{ buildId }, sp, user] = await Promise.all([params, searchParams, currentUser()]);
+  const result = await safeQuery(() => getBuildRoom(buildId));
+  if (!result.ok) {
+    return (
+      <div className="page">
+        <NotConnected reason={result.reason} what="this build" />
+      </div>
+    );
+  }
+  const data = result.data;
+  if (!data) notFound();
+
+  const origin = await platformOrigin();
+  const canRefine = Boolean(user && (user.isAdmin || user.id === data.build.userId));
+
   return (
-    <main>
-      <h1>Build {buildId}</h1>
-      <p className="muted">The build room is planned for kickoff week.</p>
-    </main>
+    <BuildRoom
+      build={data.build}
+      product={data.product}
+      inspiration={data.inspiration}
+      events={data.events}
+      history={data.history}
+      tokens={data.tokens}
+      canRefine={canRefine}
+      signedIn={Boolean(user)}
+      origin={origin}
+      serverNow={Date.now()}
+      focusRefine={sp.refine === "1"}
+      rebuild={rebuildRef(data.build.rebuildOf)}
+      maxFixRounds={env.maxFixRounds}
+    />
   );
 }

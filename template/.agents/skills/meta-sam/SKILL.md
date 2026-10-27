@@ -34,8 +34,17 @@ const events = await meta.responses.create({
 });
 
 const result = await parseImageStream(events).finalResult;
-const masks = recordsOfKind(result.records, "mask");
+if (result.outcome.status !== "completed") throw new Error("Segmentation ended early");
+const masks = recordsOfKind(result.records, "mask"); // one per instance; boxes via recordsOfKind(result.records, "box")
+const count = masks.length;
 ```
+
+### What comes back
+
+- Always pass `stream: true`. The stream is standard Responses SSE (`response.created`, `response.output_text.delta`, `response.output_text.done`, `response.completed`). The OpenAI SDK's stream goes straight into `parseImageStream` or `parseVideoStream`.
+- The result is packed into the output text as tokens, like `<0f>0<|box;x1=510;y1=265;x2=674;y2=408;w=800;h=600;c=0.96|><|mask;...|>,1<|box;...`. Never parse that by hand. Each record has `objectId`, `bounds` and, with `include_confidence`, `confidence` (0 to 1).
+- `response.completed` carries `usage: { images_processed: 1, input_tokens: 0, output_tokens: 0 }`. SAM is billed per image or video frame processed, not by tokens.
+- If you need the stream for something else too, collect the events into an array first, then parse from it.
 
 ### Prompt rules
 
@@ -54,7 +63,7 @@ const masks = recordsOfKind(result.records, "mask");
 ## Video
 
 1. In the browser, upload the clip with `uploadMedia` (product-ui skill). Function bodies can't carry video.
-2. On the server, send a concept and `videoPart({ url })` from `@/lib/meta/parts`.
+2. On the server, send a concept and `videoPart({ url })` from `@/lib/meta/parts`. Meta downloads public https URLs itself. If that fails with `media_url_origin_error`, upload the bytes with `meta.files.create` and use `videoPart({ fileId })`.
 3. Stream the results and parse them with `parseVideoStream`. Each frame comes back on its own line. With concept prompts, frames arrive in order. With box or point prompts they can arrive out of order, so use `frameIndexOf` rather than arrival order.
 
 ```ts
@@ -97,4 +106,7 @@ For box and point prompts, `metadata.propagation_direction` can be `both` (the d
 | Status | Meaning |
 |---|---|
 | 400 | Invalid prompt or metadata. The message names the problem. Fix it before retrying |
+| 400 `media_url_origin_error` | Meta couldn't download your media URL. Send a data URL (photos) or a file id instead |
 | 404 `model_not_found` | Wrong model id, or this product isn't allowed to use SAM |
+
+An empty result is not an error: zero masks means SAM found nothing for that phrase. Say so in the UI ("No birds found. Try a closer photo.").

@@ -1,48 +1,145 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { connection } from "next/server";
 import resources from "@/catalog/meta-resources.json";
+import { Icon } from "@/components/icons";
+import { RebuildButton } from "@/components/rebuilds/RebuildButton";
+import { ExternalLink, ModelChips, NotConnected, PageHeader, StatusPill } from "@/components/ui";
+import type { RebuildCardView } from "@/components/view-types";
+import { FIT_LABEL, dayLabel, plural, shortDuration, usd } from "@/lib/format";
+import { currentUser, joinRebuilds, listRebuilds, safeQuery } from "@/lib/queries";
 
-const FIT_LABEL: Record<string, string> = {
-  clean: "Clean rebuild",
-  reframe: "Reframe",
-  partial: "Partial",
-};
+export const metadata: Metadata = { title: "Rebuilds" };
 
-// Scaffold: lists the rebuild targets from the catalog. TODO(kickoff, day 7): show each rebuild's live product,
-// recorded demo, build time and cost, plus totals for the whole batch.
-export default function Rebuilds() {
+const FIT_TONE: Record<string, string> = { clean: "live", reframe: "building", partial: "partial" };
+
+function RebuildCard({ c, admin, isNew }: { c: RebuildCardView; admin: boolean; isNew?: boolean }) {
+  const shipped = c.product && (c.product.status === "live" || c.product.status === "partial");
+  const meta = [
+    c.attempts ? `Built in ${shortDuration(c.totalMs)}` : null,
+    c.attempts ? `${usd(c.totalCostUsd)} est.` : null,
+    c.attempts > 1 ? plural(c.attempts, "attempt") : null,
+  ].filter(Boolean);
   return (
-    <main>
-      <h1>Meta&apos;s demos, rebuilt</h1>
-      <p className="muted">
-        Every video on the first page of Meta&apos;s Videos section uses Llama. Each one below becomes a muse that Muse
-        Muse rebuilds on current Muse models and records. Checked {resources.checkedOn}.
-      </p>
+    <article className="pcard rcard">
+      <div className="pcard-media">
+        {c.product?.demoVideoUrl ? (
+          <video
+            src={c.product.demoVideoUrl}
+            preload="metadata"
+            controls
+            muted
+            playsInline
+            aria-label={`Demo of the rebuild of ${c.title}`}
+          />
+        ) : (
+          <div className="pcard-placeholder" aria-hidden>
+            <Icon name={isNew ? "sparkle" : "rebuild"} size={28} />
+            <span>{shipped ? "Demo coming" : "Not built yet"}</span>
+          </div>
+        )}
+      </div>
+      <div className="pcard-body">
+        <div className="pills">
+          {isNew ? (
+            <span className="pill pill-building">First demo</span>
+          ) : (
+            <span className={`pill pill-${FIT_TONE[c.fit] ?? "neutral"}`}>{FIT_LABEL[c.fit] ?? c.fit}</span>
+          )}
+          {!isNew ? <span className="pill pill-neutral">{c.era}</span> : null}
+        </div>
+        <h3 className="rcard-title">{isNew ? c.title : <ExternalLink href={c.url}>{c.title}</ExternalLink>}</h3>
+        <p className="muted small">{c.demonstrates}</p>
+        {!isNew ? <p className="small">{c.plan}</p> : null}
+        <ModelChips models={c.models} />
+        <div className="rcard-status">
+          {c.product ? (
+            <>
+              <StatusPill status={c.product.status} />
+              {shipped && c.product.liveUrl ? <ExternalLink href={c.product.liveUrl}>Live</ExternalLink> : null}
+              <Link href={`/p/${c.product.slug}`}>{c.product.name}</Link>
+            </>
+          ) : c.latestBuild ? (
+            <>
+              <StatusPill status={c.latestBuild.status} />
+              <Link href={`/b/${c.latestBuild.id}`}>Build room</Link>
+            </>
+          ) : (
+            <span className="muted small">Not built yet</span>
+          )}
+          {c.latestBuild && c.product ? <Link href={`/b/${c.latestBuild.id}`}>Latest build</Link> : null}
+        </div>
+        {meta.length ? <p className="pcard-meta">{meta.join(" · ")}</p> : null}
+        {admin ? <RebuildButton ids={[c.id]} text={c.attempts ? "Rebuild again" : "Rebuild"} /> : null}
+      </div>
+    </article>
+  );
+}
 
-      <section className="grid-cards" aria-label="Rebuilds of Meta's videos">
-        {resources.videos.map((video) => (
-          <article className="card" key={video.id}>
-            <span className="pill">{FIT_LABEL[video.rebuild.fit] ?? video.rebuild.fit}</span>
-            <h2 style={{ fontSize: "1.05rem", margin: 0 }}>
-              <a href={video.url} target="_blank" rel="noopener noreferrer">
-                {video.title}
-              </a>
-            </h2>
-            <p className="muted">{video.rebuild.plan}</p>
-            <p className="muted">Models: {video.rebuild.models.join(", ")}</p>
-            <p className="muted">Not built yet</p>
-          </article>
-        ))}
+export default async function Rebuilds() {
+  await connection();
+  const [user, result] = await Promise.all([currentUser(), safeQuery(() => listRebuilds())]);
+  const data = result.ok ? result.data : joinRebuilds([], []);
+  const admin = Boolean(user?.isAdmin);
+  const t = data.totals;
+
+  return (
+    <div className="page">
+      <PageHeader
+        title="Meta's demos, rebuilt"
+        subtitle={
+          <>
+            Every video on the first page of{" "}
+            <ExternalLink href={resources.source}>Meta&apos;s Videos section</ExternalLink> uses Llama. Each one becomes
+            a muse that Muse Muse rebuilds on current Muse models and records. Checked {dayLabel(resources.checkedOn)}.
+            The rebuilds link to Meta&apos;s videos and never copy them.
+          </>
+        }
+        actions={admin ? <RebuildButton text="Rebuild all" /> : null}
+      />
+
+      {!result.ok ? <NotConnected reason={result.reason} what="the rebuild results" /> : null}
+
+      {result.ok ? (
+        <section className="card totals" aria-label="Totals">
+          <p className="totals-big">
+            <strong>
+              {t.rebuilt} of {t.of}
+            </strong>{" "}
+            rebuilt{t.totalMs ? ` in ${shortDuration(t.totalMs)}` : ""} for {usd(t.totalCostUsd)}
+          </p>
+          <p className="muted small">
+            {t.firstDemos ? `Plus ${plural(t.firstDemos, "first demo")} for models Meta has no video for yet. ` : ""}
+            Time and cost include every attempt and fix round. Costs are estimates.
+          </p>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="videos-title" className="section">
+        <h2 id="videos-title" className="sr-only">
+          Meta&apos;s videos
+        </h2>
+        <div className="grid-cards">
+          {data.videos.map((c) => (
+            <RebuildCard key={c.id} c={c} admin={admin} />
+          ))}
+        </div>
       </section>
 
-      <h2>Demos Meta doesn&apos;t have yet</h2>
-      <section className="grid-cards" aria-label="First demos for newer models">
-        {resources.missing.map((item) => (
-          <article className="card" key={item.id}>
-            <span className="pill">{item.model}</span>
-            <p>{item.note}</p>
-            <p className="muted">{item.why}</p>
-          </article>
-        ))}
+      <section aria-labelledby="missing-title" className="section">
+        <div className="section-head">
+          <h2 id="missing-title">Demos Meta doesn&apos;t have yet</h2>
+        </div>
+        <p className="muted">
+          No video on the first page shows SAM 3.1, Muse Image, Voice Transcribe or Muse Wonder. These are first demos
+          for each.
+        </p>
+        <div className="grid-cards">
+          {data.missing.map((c) => (
+            <RebuildCard key={c.id} c={c} admin={admin} isNew />
+          ))}
+        </div>
       </section>
-    </main>
+    </div>
   );
 }

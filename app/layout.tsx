@@ -1,42 +1,43 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { MobileNav } from "@/components/shell/MobileNav";
+import { Sidebar } from "@/components/shell/Sidebar";
+import { currentUser } from "@/lib/queries";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Muse Muse",
-  description: "Give it an example or inspo and Muse makes it.",
+  title: { default: "Muse Muse", template: "%s · Muse Muse" },
+  description:
+    "Give it an example or some inspo and Muse makes it: a working product, tested and live at its own link.",
 };
 
-// Dashboard-native shell (docs/DESIGN.md, "Dashboard-native UI"): developer-dashboard patterns,
-// no Meta logo or wordmark, a visible Concept tag, and no sign-in or key pages styled like Meta's.
-const NAV = [
-  { href: "/", label: "Make" },
-  { href: "/rebuilds", label: "Rebuilds" },
-  { href: "/gallery", label: "Gallery" },
-  { href: "/usage", label: "Usage" },
-];
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f1f4f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b1014" },
+  ],
+};
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+// Dashboard-native shell (docs/DESIGN.md, "Dashboard-native UI"; docs/UI_PATTERNS.md): developer-dashboard
+// patterns, no Meta logo, wordmark or font, a visible Concept tag, and nothing that asks for keys.
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const session = await currentUser();
+  const user = session ? { email: session.email, isAdmin: session.isAdmin } : null;
   return (
     <html lang="en">
       <body>
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
         <div className="shell">
-          <aside className="sidenav" aria-label="Muse Muse">
-            <div className="brand">
-              <span>Muse Muse</span>
-              <span className="tag">Concept</span>
+          <Sidebar user={user} />
+          <div className="main">
+            <MobileNav user={user} />
+            <div id="main" className="main-inner" tabIndex={-1}>
+              {children}
             </div>
-            <nav aria-label="Sections">
-              {NAV.map((item) => (
-                <Link key={item.href} href={item.href}>
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </aside>
-          <div className="content">
-            {children}
             <footer className="site-foot">
               Muse Muse is an independent concept built on Meta&apos;s Model API. Not an official Meta product.
             </footer>

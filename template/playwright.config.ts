@@ -1,14 +1,19 @@
 import { defineConfig } from "@playwright/test";
 
 // Two runs of the same test:
-//   smoke: phone-sized check that the primary flow works (npm run verify)
-//   demo:  the same flow at 1280x720 with video recording and a little slow motion (npm run demo)
+//   smoke: phone-sized check that the primary flow works (npm run verify runs every spec in tests/)
+//   demo:  tests/smoke.spec.ts at 1280x720 with video recording and a little slow motion (npm run demo)
+// verify picks a free port and passes it as MUSEMUSE_PORT. Playwright's own output goes to test-results/playwright,
+// so the judge screenshots in test-results/judge survive its cleanup.
+const port = Number(process.env.MUSEMUSE_PORT) || 3100;
+
 export default defineConfig({
   testDir: "tests",
+  outputDir: "test-results/playwright",
   timeout: 180_000,
   reporter: [["list"], ["json", { outputFile: "test-results/report.json" }]],
   use: {
-    baseURL: "http://localhost:3100",
+    baseURL: `http://localhost:${port}`,
   },
   projects: [
     {
@@ -25,8 +30,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run start",
-    url: "http://localhost:3100",
+    command: `npx next start -p ${port}`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: true,
     timeout: 60_000,
   },
