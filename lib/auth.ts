@@ -114,7 +114,7 @@ export function isLoopbackHost(host: string | null): boolean {
  * Everywhere else, production included, it fails closed to "off". "guest" applies wherever it's set.
  *
  * The Host check can't stop someone on the same network who forges the header, which is why `npm run dev` listens on
- * 127.0.0.1 only.
+ * localhost only.
  */
 export function effectiveOpenAccess(mode: OpenAccessMode, vercelEnv: string | undefined, h: Headers): OpenAccessMode {
   if (mode !== "admin") return mode;

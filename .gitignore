@@ -6,3 +6,6 @@ next-env.d.ts
 .env*.local
 .vercel
 /.swc
+
+# Local runs (npm run dev:local): PGlite database and stored files
+.data

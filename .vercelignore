@@ -5,3 +5,4 @@ template/node_modules
 template/.next
 template/test-results
 template/playwright-report
+.data

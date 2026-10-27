@@ -32,6 +32,7 @@ import {
   pollMuseStep,
   pollTaskStep,
   previewStep,
+  publishEnabledStep,
   provisionStep,
   refineCheckStep,
   registerStep,
@@ -236,12 +237,15 @@ async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
   }
 }
 
-/** Records the demo (non-fatal), deploys, and registers what shipped. Returns the live URL. */
+/**
+ * Records the demo (non-fatal), deploys, and registers what shipped. Returns the live URL, or null when publishing is
+ * off (no VERCEL_TOKEN, as on a local run), in which case the product is registered without one.
+ */
 async function ship(
   ctx: Ctx,
   track: Track,
   product: { name: string; tagline: string; outcome: Exclude<Outcome, "failed"> },
-): Promise<string> {
+): Promise<string | null> {
   track.stage = "record";
   await setStatusStep(ctx.buildId, "recording", { step: "record" });
   let demoVideoUrl: string | null = null;
@@ -266,6 +270,26 @@ async function ship(
   }
 
   track.stage = "deploy";
+  if (!(await publishEnabledStep())) {
+    await emitStep(ctx.buildId, {
+      type: "log",
+      text: "Publishing is off for this run because VERCEL_TOKEN isn't set, so the product didn't get its own link. The preview, checks and demo above ran for real.",
+    });
+    track.stage = "register";
+    await setStatusStep(ctx.buildId, "deploying", { step: "register" });
+    await registerStep({
+      buildId: ctx.buildId,
+      productId: ctx.productId,
+      sandboxName: ctx.sandboxName,
+      sessionId: ctx.sessionId,
+      projectId: null,
+      liveUrl: null,
+      liveTokenId: null,
+      demoVideoUrl,
+      status: product.outcome,
+    });
+    return null;
+  }
   await setStatusStep(ctx.buildId, "deploying", { step: "deploy" });
   const deploy = await startDeployStep({
     buildId: ctx.buildId,
@@ -325,8 +349,9 @@ async function finish(
   const liveUrl = await ship(ctx, track, { ...product, outcome });
   return {
     status: outcome,
-    message:
-      outcome === "live"
+    message: !liveUrl
+      ? `Finished as ${outcome} without publishing (VERCEL_TOKEN isn't set).`
+      : outcome === "live"
         ? `Live at ${liveUrl}`
         : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,
   };

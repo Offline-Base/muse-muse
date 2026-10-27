@@ -79,12 +79,21 @@ function sandboxPlaceholder(sandboxName: string): string {
   return placeholderKey(env.modelApiKey, sandboxName);
 }
 
+/**
+ * True on a local run (`npm run dev:local`), where PLATFORM_URL is localhost: the sandbox can't reach the gateway, so
+ * the product calls Meta directly with the brokered placeholder key instead (policy.ts directProducts).
+ */
+function productsCallMetaDirectly(): boolean {
+  return publicHost(env.platformUrl) === null;
+}
+
 function lockedPolicy(sandboxName: string) {
   return builderNetworkPolicy({
     modelApiKey: env.modelApiKey,
     placeholderKey: sandboxPlaceholder(sandboxName),
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
+    directProducts: productsCallMetaDirectly(),
   });
 }
 
@@ -118,8 +127,9 @@ async function ensureTime(sandbox: Sandbox, needMs: number): Promise<void> {
   }
 }
 
-function envLocal(gatewayUrl: string, token: string): string {
-  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${gatewayUrl}\nPRODUCT_TOKEN=${token}\n`;
+function envLocal(sandboxName: string, gatewayUrl: string, token: string): string {
+  const [url, key] = productsCallMetaDirectly() ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
+  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n`;
 }
 
 async function download(items: Array<{ dir: "inspo" | "fixtures"; fileName: string; url: string }>) {
@@ -270,7 +280,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   await writeBatched(sandbox, [
     ...downloaded,
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
   return { sandboxName: name };
 }
@@ -287,7 +297,7 @@ export async function reopenSandbox(input: {
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
-  await writeBatched(sandbox, [...downloaded, { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.gatewayUrl, input.buildToken) }]);
+  await writeBatched(sandbox, [...downloaded, { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) }]);
 }
 
 /** Writes a text file inside PRODUCT_DIR, such as fix.md or refine.md. */

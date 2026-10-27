@@ -38,6 +38,28 @@ function uuid(): string {
 
 export class UploadError extends Error {}
 
+/** Local runs (`npm run dev:local`) have no Blob store: the file goes to /api/files/upload in one request. */
+async function uploadLocal(
+  file: PreparedFile,
+  pathname: string,
+  opts: { onProgress?: (percent: number) => void; signal?: AbortSignal },
+): Promise<Reference> {
+  const form = new FormData();
+  form.append("pathname", pathname);
+  form.append("file", new File([file.blob], file.fileName, { type: file.contentType }));
+  let res: Response;
+  try {
+    res = await fetch("/api/files/upload", { method: "POST", body: form, signal: opts.signal });
+  } catch (err) {
+    if (opts.signal?.aborted) throw err;
+    throw new UploadError("Upload failed. Check your connection and retry.");
+  }
+  const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (!res.ok || !body.url) throw new UploadError(body.error ?? "Upload failed. Try again.");
+  opts.onProgress?.(100);
+  return { url: body.url, kind: file.kind, fileName: file.fileName, contentType: file.contentType, size: file.blob.size };
+}
+
 /**
  * Uploads one prepared file straight to Vercel Blob through the platform's token route, at
  * "inspo/<uuid>-<safe name>", and returns the Reference to send with POST /api/inspirations.
@@ -47,6 +69,7 @@ export async function uploadInspo(
   opts: { onProgress?: (percent: number) => void; signal?: AbortSignal } = {},
 ): Promise<Reference> {
   const pathname = `inspo/${uuid()}-${safeFileName(file.fileName)}`;
+  if (process.env.NEXT_PUBLIC_LOCAL_FILES === "1") return uploadLocal(file, pathname, opts);
   try {
     const blob = await upload(pathname, file.blob, {
       access: "public",

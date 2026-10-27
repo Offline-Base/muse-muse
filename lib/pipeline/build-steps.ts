@@ -667,6 +667,12 @@ export interface DeployStart {
  * Mints the live token and starts the deployment in one step, so the plaintext token only travels to Vercel's env.
  * Saves the project id right away so a retry or a later refinement reuses the project.
  */
+/** False when VERCEL_TOKEN is unset, as on a local run (`npm run dev:local`): the product then isn't published. */
+export async function publishEnabledStep(): Promise<boolean> {
+  "use step";
+  return Boolean(process.env.VERCEL_TOKEN);
+}
+
 export async function startDeployStep(input: {
   buildId: string;
   productId: string;
@@ -735,9 +741,10 @@ export async function registerStep(input: {
   productId: string;
   sandboxName: string;
   sessionId: string;
-  projectId: string;
-  liveUrl: string;
-  liveTokenId: string;
+  /** All three are null when publishing is off (publishEnabledStep). */
+  projectId: string | null;
+  liveUrl: string | null;
+  liveTokenId: string | null;
   demoVideoUrl: string | null;
   status: "live" | "partial";
 }): Promise<void> {
@@ -788,7 +795,7 @@ export async function registerStep(input: {
         eq(schema.gatewayTokens.productId, input.productId),
         eq(schema.gatewayTokens.scope, "live"),
         isNull(schema.gatewayTokens.revokedAt),
-        ne(schema.gatewayTokens.id, input.liveTokenId),
+        input.liveTokenId ? ne(schema.gatewayTokens.id, input.liveTokenId) : undefined,
       ),
     );
 }

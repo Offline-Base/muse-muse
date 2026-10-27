@@ -74,6 +74,14 @@ cd template && npm install      # the product template is its own app
 
 Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds target well under 30 minutes, so Hobby works for the hackathon.
 
+## Run it on your machine
+
+```bash
+npm run dev:local               # then open http://localhost:3000
+```
+
+This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` in `.env.local`. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. Without `VERCEL_TOKEN` a build stops after the demo video and isn't published to its own link. The live preview in the build room works while the build runs.
+
 ## Docs
 
 - [docs/DESIGN.md](docs/DESIGN.md) covers the architecture, pipeline, security, cost, demo and risks.

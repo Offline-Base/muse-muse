@@ -23,6 +23,11 @@ export interface BuilderPolicyOptions {
    * a client token. Needed when a smoke test uploads a fixture that way.
    */
   blobUploads?: boolean;
+  /**
+   * Local runs only (platformHost is null): the sandbox can't reach the gateway, so the product calls Meta itself with
+   * the same placeholder key, and these extra routes are brokered too (DIRECT_PRODUCT_ROUTES).
+   */
+  directProducts?: boolean;
 }
 
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
@@ -44,6 +49,13 @@ export const BROKERED_META_ROUTES: ReadonlyArray<{ methods: string[]; path: stri
   { methods: ["GET"], path: "/v1/models" },
 ];
 
+/** What a product calls besides /v1/responses and /v1/files when it talks to Meta directly (directProducts). */
+export const DIRECT_PRODUCT_ROUTES: ReadonlyArray<{ methods: string[]; path: string }> = [
+  { methods: ["POST"], path: "/v1/images/generations" },
+  { methods: ["POST"], path: "/v1/images/edits" },
+  { methods: ["POST"], path: "/v1/asr/transcribe" },
+];
+
 export const META_BLOCKED_BODY = "Blocked by the Muse Muse build firewall. Products call Meta through GATEWAY_URL.";
 
 /**
@@ -56,7 +68,8 @@ export function placeholderKey(modelApiKey: string, sandboxName: string): string
 
 export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy {
   const placeholder = { key: { regex: "(?i)^authorization$" }, value: { exact: `Bearer ${opts.placeholderKey}` } };
-  const meta: NetworkPolicyRule[] = BROKERED_META_ROUTES.map((route) => ({
+  const routes = opts.directProducts ? [...BROKERED_META_ROUTES, ...DIRECT_PRODUCT_ROUTES] : BROKERED_META_ROUTES;
+  const meta: NetworkPolicyRule[] = routes.map((route) => ({
     match: { method: [...route.methods], path: { exact: route.path }, headers: [placeholder] },
     transform: [{ headers: { Authorization: `Bearer ${opts.modelApiKey}` } }],
   }));

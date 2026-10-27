@@ -29,6 +29,8 @@ interface Scenario {
   refineRefusal?: string;
   demoThrows?: boolean;
   deployState?: "READY" | "ERROR";
+  /** What publishEnabledStep answers. Defaults to true. */
+  publish?: boolean;
   provisionThrows?: Error;
 }
 
@@ -140,6 +142,10 @@ const fakeSteps = {
     record("finishDemoStep", input);
     return "https://x/demo.mp4";
   },
+  publishEnabledStep: async () => {
+    record("publishEnabledStep");
+    return scenario.publish ?? true;
+  },
   startDeployStep: async (input: unknown) => {
     record("startDeployStep", input);
     return { projectId: "prj_1", deploymentId: "dpl_1", liveTokenId: "tok-live" };
@@ -192,6 +198,18 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     mock.module(new URL("../build-steps.ts", import.meta.url).href, { namedExports: fakeSteps });
     mock.module("workflow", { namedExports: { sleep: async () => undefined } });
     wf = await import("../workflow");
+  });
+
+  it("registers without deploying when publishing is off, as on a local run", async () => {
+    reset({ publish: false });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+    assert.equal(named("startDeployStep").length, 0);
+    assert.equal(named("pollDeployStep").length, 0);
+    const reg = named("registerStep")[0]!.args[0] as { liveUrl: unknown; projectId: unknown; liveTokenId: unknown; demoVideoUrl: string };
+    assert.deepEqual([reg.liveUrl, reg.projectId, reg.liveTokenId], [null, null, null]);
+    assert.equal(reg.demoVideoUrl, "https://x/demo.mp4");
+    assert.equal(named("cleanupStep").length, 1);
+    assert.equal(statuses().at(-1), "live");
   });
 
   it("ships a build that passes on the first check", async () => {

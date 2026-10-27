@@ -5,7 +5,8 @@
   "description": "Give it an example or inspo and Muse makes it: a working product built by Muse Code on Meta's models.",
   "type": "module",
   "scripts": {
-    "dev": "next dev -H 127.0.0.1",
+    "dev": "next dev -H localhost",
+    "dev:local": "tsx --env-file-if-exists=.env.local scripts/dev-local.ts",
     "build": "tsx scripts/migrate.ts && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -30,6 +31,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.16",
     "@types/node": "26.6.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

@@ -3,6 +3,7 @@
  * tests share it.
  */
 import type { Reference, ReferenceKind } from "@/lib/types";
+import { localFileKey } from "@/lib/local-files";
 
 export const MAX_REFERENCES = 8;
 export const MAX_NOTE_CHARS = 4000;
@@ -34,8 +35,10 @@ export function kindForContentType(contentType: string): ReferenceKind | null {
   return null;
 }
 
-/** A public Vercel Blob URL under inspo/, which is where the upload route puts inspo. */
+/** A public Vercel Blob URL under inspo/, which is where the upload route puts inspo (or its local stand-in). */
 export function isInspoBlobUrl(raw: string): boolean {
+  const local = localFileKey(raw);
+  if (local) return local.startsWith("inspo/");
   let url: URL;
   try {
     url = new URL(raw);
