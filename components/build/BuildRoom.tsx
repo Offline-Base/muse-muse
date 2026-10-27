@@ -119,6 +119,7 @@ export function BuildRoom(props: BuildRoomProps) {
     let attempts = 0;
     let sawTerminal = false;
     let lastId = props.events[props.events.length - 1]?.id ?? 0;
+    let lastRefresh = 0;
     const buffer: BuildEvent[] = [];
 
     const drain = () => {
@@ -153,6 +154,13 @@ export function BuildRoom(props: BuildRoomProps) {
         buffer.push(ev);
         if (ev.type === "status" && isTerminalStatus(ev.status)) sawTerminal = true;
         if (!flush) flush = setTimeout(drain, 80);
+        // Columns such as the build model, session id and fix rounds change without an event of their own, so
+        // reload the build row on every status change, and now and then while Muse Code is working.
+        const now = Date.now();
+        if (ev.type === "status" || now - lastRefresh > 30_000) {
+          lastRefresh = now;
+          void refresh();
+        }
       });
       es.addEventListener("error", () => {
         if (sawTerminal) {

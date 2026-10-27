@@ -57,6 +57,8 @@ export function StackedBars({
   const ticks = [0, 1, 2, 3, 4].map((k) => (max / 4) * k);
   const empty = totals.every((t) => t === 0);
   const every = n <= 7 ? 1 : n <= 14 ? 2 : 5;
+  // Phones fit about four day labels; the rest are hidden by CSS (.x-wide-only).
+  const everyNarrow = Math.max(every, Math.ceil(n / 4));
   const W = n * 10;
 
   return (
@@ -106,9 +108,16 @@ export function StackedBars({
           {empty ? <p className="chart-empty">No usage in this range</p> : null}
         </div>
         <div className="chart-x" aria-hidden style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}>
-          {days.map((d, i) => (
-            <span key={d}>{i % every === 0 || i === n - 1 ? dayLabel(d) : ""}</span>
-          ))}
+          {days.map((d, i) => {
+            const last = i === n - 1;
+            const shown = i % every === 0 || last;
+            const narrow = (i % everyNarrow === 0 && n - 1 - i >= everyNarrow / 2) || last;
+            return (
+              <span key={d} className={shown && !narrow ? "x-wide-only" : undefined}>
+                {shown ? dayLabel(d) : ""}
+              </span>
+            );
+          })}
         </div>
       </div>
       <figcaption>
@@ -121,7 +130,9 @@ export function StackedBars({
           ))}
         </ul>
       </figcaption>
-      <table className="sr-only">
+      {/* sr-only goes on a wrapper: a table sizes itself to its content and ignores the 1px box, widening the page. */}
+      <div className="sr-only">
+      <table>
         <caption>{label}</caption>
         <thead>
           <tr>
@@ -144,6 +155,7 @@ export function StackedBars({
           ))}
         </tbody>
       </table>
+      </div>
     </figure>
   );
 }

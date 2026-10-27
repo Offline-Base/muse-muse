@@ -2862,6 +2862,12 @@ pre {
   overflow: visible;
 }
 
+@media (max-width: 560px) {
+  .chart-x .x-wide-only {
+    visibility: hidden;
+  }
+}
+
 .legend {
   list-style: none;
   margin: 12px 0 0;
