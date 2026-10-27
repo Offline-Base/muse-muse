@@ -14,11 +14,12 @@ import {
   wrapText,
 } from "@/lib/sandbox/artifacts";
 import { completeLines, condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
-import { type BuildModel, isSessionId, museExecArgs, SANDBOX_ENV } from "@/lib/sandbox/muse";
+import { type BuildModel, isSessionId, museEnv, museExecArgs } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
-import { builderNetworkPolicy, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
+import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { PREVIEW_WAIT_S, previewAnswered, previewWaitScript, type SandboxTask, taskScript } from "@/lib/sandbox/tasks";
 
 /**
  * CONTRACT (owned by the sandbox agent). Signatures are fixed; add optional fields only.
@@ -73,8 +74,18 @@ function productPath(rel: string): string {
   return `${PRODUCT_DIR}/${norm}`;
 }
 
-function lockedPolicy() {
-  return builderNetworkPolicy({ modelApiKey: env.modelApiKey, platformHost: publicHost(env.platformUrl), blobUploads: true });
+/** What Muse Code in this sandbox sends as its Meta key. The firewall swaps in the real one (policy.ts). */
+function sandboxPlaceholder(sandboxName: string): string {
+  return placeholderKey(env.modelApiKey, sandboxName);
+}
+
+function lockedPolicy(sandboxName: string) {
+  return builderNetworkPolicy({
+    modelApiKey: env.modelApiKey,
+    placeholderKey: sandboxPlaceholder(sandboxName),
+    platformHost: publicHost(env.platformUrl),
+    blobUploads: true,
+  });
 }
 
 function isNotFound(err: unknown): boolean {
@@ -236,7 +247,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     tags: { app: "musemuse", role: "product", slug: input.slug.slice(0, 60) },
   };
   const sandbox = snapshotId
-    ? await Sandbox.getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy() })
+    ? await Sandbox.getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) })
     : await Sandbox.getOrCreate({ ...common, networkPolicy: SNAPSHOT_POLICY });
 
   const ready = await sandbox.readFileToBuffer({ path: BUILDER_MARKER }).catch(() => null);
@@ -249,7 +260,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
-  await sandbox.update({ networkPolicy: lockedPolicy() });
+  await sandbox.update({ networkPolicy: lockedPolicy(name) });
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -272,7 +283,7 @@ export async function reopenSandbox(input: {
   newReferences: Reference[];
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
-  await sandbox.update({ networkPolicy: lockedPolicy() });
+  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
@@ -325,7 +336,7 @@ export async function startMuse(input: StartMuseInput): Promise<{ cmdId: string;
   const script = await writeRunner(sandbox, {
     name: tag,
     cwd: PRODUCT_DIR,
-    env: { ...SANDBOX_ENV },
+    env: museEnv(sandboxPlaceholder(input.sandboxName)),
     argv,
     prelude,
     stdoutPath: logPath,
@@ -427,39 +438,43 @@ export async function killCommand(sandboxName: string, cmdId: string): Promise<v
 // Preview, verify and demo
 
 async function localStatus(sandbox: Sandbox, port: number): Promise<string> {
-  const { stdout } = await sh(sandbox, `curl -s -o /dev/null -w "%{http_code}" --max-time 8 http://localhost:${port}/ || true`);
+  const { stdout } = await sh(sandbox, `curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:${port}/ || true`);
   return stdout.trim() || "000";
 }
 
-/** Starts `next dev` on 0.0.0.0:3000 if it isn't running, waits for a 200, and returns sandbox.domain(3000). */
+/**
+ * Starts `next dev` on 0.0.0.0:3000 if it isn't running, waits until GET / answers below 500 (redirects count), and
+ * returns sandbox.domain(3000). Whether the page works is left to verify. Bounded to about two minutes.
+ */
 export async function startPreview(sandboxName: string): Promise<{ url: string }> {
   const sandbox = await openSandbox(sandboxName);
   await ensureTime(sandbox, POLL_WORK_MS);
   const status = await localStatus(sandbox, 3000);
-  if (status !== "200") {
-    if (status === "000") {
-      const logPath = `${LOG_DIR}/dev.log`;
-      const script = await writeRunner(sandbox, { name: "dev", cwd: PRODUCT_DIR, argv: ["npm", "run", "dev"], stdoutPath: logPath });
-      const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
-      await recordCommand(sandbox, "dev", cmd.cmdId, logPath);
-    }
-    // next dev compiles the page on the first request, so allow it a while.
-    const wait = await sh(
-      sandbox,
-      'for i in $(seq 1 80); do c=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 http://localhost:3000/); [ "$c" = 200 ] && exit 0; sleep 0.5; done; echo "$c"; exit 1',
-      { allowFail: true },
-    );
-    if (wait.exitCode !== 0) {
-      const log = await tailText(sandbox, `${LOG_DIR}/dev.log`, 3000);
-      throw new Error(`Preview did not answer 200 on port 3000 (last status ${wait.stdout.trim() || "none"}). Dev server log:\n${log}`);
-    }
+  if (previewAnswered(status)) return { url: sandbox.domain(3000) };
+  // Nothing answers yet. Start next dev, unless an earlier attempt's is still starting up.
+  if (status === "000" && !(await runningCommand(sandbox, "dev"))) {
+    const logPath = `${LOG_DIR}/dev.log`;
+    const script = await writeRunner(sandbox, { name: "dev", cwd: PRODUCT_DIR, argv: ["npm", "run", "dev"], stdoutPath: logPath });
+    const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+    await recordCommand(sandbox, "dev", cmd.cmdId, logPath);
+  }
+  const wait = await sh(sandbox, previewWaitScript(3000), { allowFail: true, timeoutMs: (PREVIEW_WAIT_S + 30) * 1000 });
+  if (wait.exitCode !== 0) {
+    const last = wait.stdout.trim().split("\n").pop() || "000";
+    const log = await tailText(sandbox, `${LOG_DIR}/dev.log`, 3000);
+    const what = last === "000" ? `did not answer within ${PREVIEW_WAIT_S} s` : `answered ${last}`;
+    throw new Error(`The preview on port 3000 ${what}. Dev server log:\n${log}`);
   }
   return { url: sandbox.domain(3000) };
 }
 
-export type SandboxTask = "verify" | "demo";
+export type { SandboxTask };
 
-/** Starts `npm run verify` or `npm run demo` detached. Combined output goes to <task>.log, stdout alone to <task>.out. */
+/**
+ * Starts verify (scripts/verify.mjs) or the demo recording detached. Both first restore the platform-owned files from
+ * the pristine copy, and the demo first stops any server left on ports 3100-3199. Combined output goes to
+ * <task>.log, stdout alone to <task>.out.
+ */
 export async function startTask(sandboxName: string, task: SandboxTask): Promise<{ cmdId: string }> {
   const sandbox = await openSandbox(sandboxName);
   await ensureTime(sandbox, LONG_WORK_MS);
@@ -471,8 +486,7 @@ export async function startTask(sandboxName: string, task: SandboxTask): Promise
   const script = await writeRunner(sandbox, {
     name: task,
     cwd: PRODUCT_DIR,
-    // stdout is teed to its own file because verify's summary must be the last line of stdout, not of stderr.
-    argv: ["bash", "-c", `set -o pipefail; { npm run ${task} 2>&3 | tee ${q(outPath)}; } 3>&1`],
+    argv: ["bash", "-c", taskScript(task, outPath)],
     stdoutPath: logPath,
   });
   const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
@@ -540,7 +554,8 @@ export async function collectVerifyResult(input: {
 /**
  * After `npm run demo` finishes: turns test-results/**\/video.webm into an MP4 with a title card and step captions
  * (from test-results/report.json) using ffmpeg in the sandbox, uploads it to Blob (demos/<buildId>/demo.mp4), and
- * returns its URL. Null when there is no video.
+ * returns its URL. Null when there is no video, or when the demo run didn't pass (a failed or stale run is never
+ * published as the product's demo).
  */
 export async function finishDemo(input: {
   sandboxName: string;
@@ -553,6 +568,8 @@ export async function finishDemo(input: {
   const sandbox = await openSandbox(input.sandboxName);
   const reportBuf = await sandbox.readFileToBuffer({ path: `${PRODUCT_DIR}/test-results/report.json` }).catch(() => null);
   const run = reportBuf ? demoRunFromReport(reportBuf.toString("utf8")) : null;
+  // No demo result means report.json is verify's smoke run, so any video lying around is from an older demo.
+  if (run?.status !== "passed") return { videoUrl: null };
 
   let video = run?.videoPath ?? null;
   if (video && !video.startsWith("/")) video = `${PRODUCT_DIR}/${video}`;
@@ -687,7 +704,7 @@ export async function exportTranscript(input: {
   const [exported, filtered] = await Promise.all([
     sh(sandbox, `PATH="$HOME/.local/bin:$PATH" muse export --session ${q(input.sessionId)} --redacted --out ${q(out)}`, {
       cwd: PRODUCT_DIR,
-      env: { ...SANDBOX_ENV },
+      env: museEnv(sandboxPlaceholder(input.sandboxName)),
       allowFail: true,
       timeoutMs: 50_000,
     }),

@@ -29,7 +29,8 @@ export default async function BuildRoomPage({
   if (!data) notFound();
 
   const origin = await platformOrigin();
-  const canRefine = Boolean(user && (user.isAdmin || user.id === data.build.userId));
+  // The product's owner decides, as in the messages route. The build's userId is whoever asked for that change.
+  const canRefine = Boolean(user && data.product && (user.isAdmin || user.id === data.product.ownerId));
 
   return (
     <BuildRoom

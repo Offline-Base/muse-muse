@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox";
 
 /**
@@ -6,11 +7,15 @@ import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox";
  *
  * Deny by default. The real Meta key is injected into requests to api.meta.ai by the firewall (credentials
  * brokering, confirmed in docs/SPIKES.md), so code inside the sandbox, including generated product code, never sees
- * it. Muse Code runs with META_API_KEY=brokered.
+ * it. Only Muse Code's own calls get the key: they must be one of BROKERED_META_ROUTES and carry the sandbox's
+ * placeholder key, which only the Muse Code runner exports. The firewall answers every other api.meta.ai request
+ * itself with a 403. Product code reaches Meta through the platform gateway instead.
  */
 export interface BuilderPolicyOptions {
   /** The platform's Meta key. It goes into the firewall rule only, never into the sandbox env or files. */
   modelApiKey: string;
+  /** What Muse Code sends as its key (META_API_KEY), from placeholderKey(). Requests without it never get the real key. */
+  placeholderKey: string;
   /** Host of this platform, so product tests can reach the gateway with the build token. Null when it isn't public. */
   platformHost: string | null;
   /**
@@ -23,9 +28,41 @@ export interface BuilderPolicyOptions {
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
 export const BLOB_UPLOAD_HOSTS = ["vercel.com", "*.blob.vercel-storage.com"] as const;
 
+/**
+ * The only api.meta.ai calls that get the real key: what Muse Code 1.4.13's `muse exec` calls, from the routes in
+ * its binary (Oct 27). Without /muse-code/models it exits with "failed to fetch model catalog: API error 403".
+ * Listing, reading or deleting files, images, transcription, Muse Code's telemetry and web tools and everything else
+ * are refused at the firewall.
+ */
+export const BROKERED_META_ROUTES: ReadonlyArray<{ methods: string[]; path: string }> = [
+  // Model calls (streamed Responses API).
+  { methods: ["POST"], path: "/v1/responses" },
+  // Muse Code's model catalog, read at startup. Its method isn't visible in the binary, so both are allowed.
+  { methods: ["GET", "POST"], path: "/muse-code/models" },
+  // Upload only. Muse Code sends a video it reads to the Files API.
+  { methods: ["POST"], path: "/v1/files" },
+  { methods: ["GET"], path: "/v1/models" },
+];
+
+export const META_BLOCKED_BODY = "Blocked by the Muse Muse build firewall. Products call Meta through GATEWAY_URL.";
+
+/**
+ * A per-sandbox stand-in for the Meta key, derived from the real key so it needs no storage and can't be guessed.
+ * It reveals nothing about the key.
+ */
+export function placeholderKey(modelApiKey: string, sandboxName: string): string {
+  return `mm_sandbox_${createHmac("sha256", modelApiKey).update(`musemuse-placeholder:${sandboxName}`).digest("hex").slice(0, 40)}`;
+}
+
 export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy {
+  const placeholder = { key: { regex: "(?i)^authorization$" }, value: { exact: `Bearer ${opts.placeholderKey}` } };
+  const meta: NetworkPolicyRule[] = BROKERED_META_ROUTES.map((route) => ({
+    match: { method: [...route.methods], path: { exact: route.path }, headers: [placeholder] },
+    transform: [{ headers: { Authorization: `Bearer ${opts.modelApiKey}` } }],
+  }));
+  meta.push({ response: { statusCode: 403, body: META_BLOCKED_BODY, contentType: "text/plain" } });
   const allow: Record<string, NetworkPolicyRule[]> = {
-    "api.meta.ai": [{ transform: [{ headers: { Authorization: `Bearer ${opts.modelApiKey}` } }] }],
+    "api.meta.ai": meta,
     "registry.npmjs.org": [],
   };
   if (opts.platformHost) allow[opts.platformHost] = [];

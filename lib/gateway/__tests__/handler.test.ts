@@ -250,3 +250,155 @@ test("asr JSON extension: oversized audio -> 413, non-WAV -> 400", async () => {
   );
   assert.equal((await errorOf(r2)).code, "invalid_audio");
 });
+
+/** An upstream whose replies wait until `open()` is called. */
+function gatedUpstream(reply: () => Response = () => Response.json({ usage: { input_tokens: 10, output_tokens: 5 } })) {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  return { open: () => open(), fetch: (async () => (await gate, reply())) as typeof fetch };
+}
+
+const TOKEN_ID = "00000000-0000-4000-8000-000000000001";
+const SLOT_KEY = `inflight:${TOKEN_ID}`;
+
+test("in-flight cap: at most 4 calls per token run at once, and slots come back after metering", async () => {
+  const upstream = gatedUpstream();
+  const g = fakeGateway({ fetch: upstream.fetch });
+  const calls = Array.from({ length: 6 }, () =>
+    handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps),
+  );
+  // Let every request reach the upstream call or its rejection before the upstream answers.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(g.upstreamCalls.length, 4);
+  assert.equal(g.inFlight.get(SLOT_KEY), 4);
+  assert.equal(g.reservations.size, 4, "each running call holds a reservation");
+  upstream.open();
+  const results = await Promise.all(calls);
+  const rejected = results.filter((r) => r.status === 429);
+  assert.equal(rejected.length, 2);
+  assert.equal((await errorOf(rejected[0])).code, "too_many_in_flight");
+  assert.ok(Number(rejected[0].headers.get("retry-after")) >= 1);
+  assert.equal(rejected[0].headers.get("x-should-retry"), null, "the SDK may retry");
+  await Promise.all(results.filter((r) => r.status === 200).map((r) => r.arrayBuffer()));
+  await g.settled();
+  assert.equal(g.inFlight.get(SLOT_KEY), 0);
+  assert.equal(g.reservations.size, 0);
+  assert.equal(g.usage.length, 4);
+});
+
+test("budget: running calls' estimates count, so a burst can't overshoot before metering", async () => {
+  const upstream = gatedUpstream();
+  // Wonder with no max_output_tokens is estimated at 8,000 output tokens x $20/M = $0.16.
+  const g = fakeGateway({
+    token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 0.3 },
+    fetch: upstream.fetch,
+  });
+  const wonder = () => gatewayRequest("responses", spark({ model: "muse-wonder-1.0" }), JSON_CT);
+  const first = handleGateway(wonder(), ["responses"], g.deps);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const [reservation] = [...g.reservations.values()];
+  assert.ok(reservation.costUsd >= 0.16 && reservation.costUsd < 0.17, String(reservation.costUsd));
+
+  const second = await handleGateway(wonder(), ["responses"], g.deps);
+  const err = await errorOf(second);
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "budget_exceeded");
+  assert.match(err.message, /estimated at \$0\.16, more than the \$0\.14 left/);
+  assert.equal(g.upstreamCalls.length, 1);
+  assert.equal(g.inFlight.get(SLOT_KEY), 1, "the rejected call gave its slot back");
+
+  upstream.open();
+  await (await first).arrayBuffer();
+  await g.settled();
+  assert.equal(g.reservations.size, 0);
+  assert.equal(g.usage[0].items[0].inputTokens, 10, "the metered usage replaced the estimate");
+  assert.equal((await handleGateway(wonder(), ["responses"], g.deps)).status, 200, "real cost was lower");
+});
+
+test("platform cap counts this call's estimate too", async () => {
+  const g = fakeGateway({ platformSpend: 39.99, fetch: async () => Response.json({}) });
+  const res = await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps);
+  assert.equal((await errorOf(res)).code, "platform_paused");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("failed calls drop their reservation and slot", async () => {
+  const bad = fakeGateway({ fetch: async () => Response.json({ error: { message: "bad" } }, { status: 400 }) });
+  await (await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], bad.deps)).arrayBuffer();
+  const down = fakeGateway({
+    fetch: async () => {
+      throw new TypeError("fetch failed");
+    },
+  });
+  await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], down.deps);
+  const asr = fakeGateway();
+  await handleGateway(
+    gatewayRequest("asr/transcribe", json({ model: "muse-voice-transcribe-1.0", audioUrl: "https://evil.com/a.wav" }), JSON_CT),
+    ["asr", "transcribe"],
+    asr.deps,
+  );
+  const broken = fakeGateway();
+  broken.deps.reserveSpend = async () => {
+    throw new Error("db down");
+  };
+  assert.equal((await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], broken.deps)).status, 500);
+  for (const g of [bad, down, asr, broken]) {
+    await g.settled();
+    assert.equal(g.reservations.size, 0);
+    assert.equal(g.usage.length, 0);
+    assert.equal(g.inFlight.get(SLOT_KEY), 0);
+  }
+});
+
+test("a stream cut off mid-way is still metered, with an estimate when no usage arrived", async () => {
+  const g = fakeGateway({
+    fetch: async () => {
+      let sent = false;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent) return controller.error(new DOMException("timed out", "TimeoutError"));
+          sent = true;
+          controller.enqueue(new TextEncoder().encode('event: response.output_text.delta\ndata: {"delta":"hello"}\n\n'));
+        },
+      });
+      return new Response(body, { headers: { "content-type": "text/event-stream" } });
+    },
+  });
+  const res = await handleGateway(gatewayRequest("responses", spark({ stream: true }), JSON_CT), ["responses"], g.deps);
+  await res.arrayBuffer().catch(() => {});
+  await g.settled();
+  assert.equal(g.reservations.size, 0);
+  assert.equal(g.usage.length, 1);
+  assert.equal(g.usage[0].items[0].inputTokens, 1000);
+  assert.ok(g.usage[0].items[0].costUsd > 0, "spend is never invisible");
+  assert.equal(g.inFlight.get(SLOT_KEY), 0);
+});
+
+test("x-musemuse-client-ip: first forwarded entry, IPv6 by /64, junk ignored; never auth", async () => {
+  const ok = async () => Response.json({ ok: true });
+  const product = "00000000-0000-4000-8000-000000000002";
+  const cases: Array<[string, string | null]> = [
+    ["203.0.113.7, 10.0.0.1", `ip:${product}:203.0.113.7`],
+    ["2001:db8:1:2:aaaa::1", `ip:${product}:2001:db8:1:2::/64`],
+    ["2001:db8::9", `ip:${product}:2001:db8:0:0::/64`],
+    ["::ffff:198.51.100.4", `ip:${product}:198.51.100.4`],
+    ["not-an-ip", null],
+    ["1.2.3.4.5", null],
+  ];
+  for (const [header, key] of cases) {
+    const g = fakeGateway({ fetch: ok });
+    await handleGateway(gatewayRequest("responses", spark(), { ...JSON_CT, "x-musemuse-client-ip": header }), ["responses"], g.deps);
+    assert.deepEqual(g.rateKeys[0], [`token:${TOKEN_ID}`, ...(key ? [key] : [])], header);
+  }
+  const g = fakeGateway({ fetch: ok });
+  const noToken = await handleGateway(
+    new Request("https://p/api/gateway/v1/responses", {
+      method: "POST",
+      body: spark(),
+      headers: { ...JSON_CT, "x-musemuse-client-ip": "203.0.113.7" },
+    }),
+    ["responses"],
+    g.deps,
+  );
+  assert.equal(noToken.status, 401);
+});

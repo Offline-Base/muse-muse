@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
+import { checkChange } from "@/lib/brief/policy";
 import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
@@ -27,6 +28,7 @@ import {
   normalizeSlug,
   pickBuildModel,
   SLUG_MAX,
+  type JudgeCall,
 } from "@/lib/pipeline/logic";
 import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
@@ -37,6 +39,7 @@ import type {
   BuildStatus,
   JudgeVerdict,
   ModelUsage,
+  ProductStatus,
   Reference,
   Screenshot,
   VerifySummary,
@@ -384,7 +387,7 @@ export async function provisionStep(input: {
   const inspiration = await loadInspiration(build.inspirationId);
   const promptMarkdown = renderBuildPrompt(brief, {
     inspoFiles: inspiration.references.map((r) => r.fileName),
-    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description })),
+    fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
     maxModelSteps: MAX_MODEL_STEPS,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
   });
@@ -439,9 +442,16 @@ export interface MusePollResult {
   done: boolean;
   exitCode: number | null;
   offset: number;
+  /** True once this run's usage has been recorded. Pass it to the next poll. */
+  usageRecorded: boolean;
 }
 
-/** Reads new Muse Code output, streams it to the build room, and records the run's usage once it ends. */
+/**
+ * Reads new Muse Code output, streams it to the build room, and records the run's usage in whichever poll reads it.
+ * Muse Code writes run.usage once, near the end, and a poll can read it before the process has exited, so it is not
+ * tied to `done`. `usageRecorded` carries over between polls so a run is charged at most once, and charge() drops
+ * rows a retried attempt already wrote.
+ */
 export async function pollMuseStep(input: {
   buildId: string;
   productId: string;
@@ -450,6 +460,7 @@ export async function pollMuseStep(input: {
   offset: number;
   /** The build room's round: 0 for the first run of a build, then the fix number. */
   round: number;
+  usageRecorded?: boolean;
 }): Promise<MusePollResult> {
   "use step";
   const poll = await sandbox.pollMuse({
@@ -459,14 +470,15 @@ export async function pollMuseStep(input: {
     offset: input.offset,
   });
   if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
-  if (poll.done && poll.usage.length) {
+  const fresh = !input.usageRecorded && poll.usage.length > 0;
+  if (fresh) {
     await charge(
       { source: "muse_code", endpoint: "muse exec", buildId: input.buildId, productId: input.productId },
       poll.usage,
       input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`,
     );
   }
-  return { done: poll.done, exitCode: poll.exitCode, offset: poll.offset };
+  return { done: poll.done, exitCode: poll.exitCode, offset: poll.offset, usageRecorded: Boolean(input.usageRecorded) || fresh };
 }
 pollMuseStep.maxRetries = 2;
 
@@ -544,28 +556,49 @@ export async function verifyTimedOutStep(input: { buildId: string; round: number
   return { passed: false, steps: [], screenshots: [] };
 }
 
+/**
+ * The references the judge sees, in the order the brief indexes them. A refinement's own muse holds only its new
+ * files, so it gets the product's original references first and the new ones after them.
+ */
+async function judgeReferences(build: { kind: "build" | "refine"; inspirationId: string }, productId: string): Promise<Reference[]> {
+  const own = (await loadInspiration(build.inspirationId)).references;
+  if (build.kind !== "refine") return own;
+  const product = await loadProduct(productId);
+  const original = product.inspirationId ? (await loadInspiration(product.inspirationId)).references : [];
+  return [...original, ...own];
+}
+
 /** Muse Spark 1.3 judges the screenshots against the brief and the image inspo. */
 export async function judgeStep(input: {
   buildId: string;
   productId: string;
   round: number;
   screenshots: Screenshot[];
-}): Promise<{ pass: boolean }> {
+}): Promise<JudgeCall> {
   "use step";
   const build = await loadBuild(input.buildId);
-  const inspiration = await loadInspiration(build.inspirationId);
+  // Refine rows get the product's brief in loadRefineStep. Older ones fall back to the first build's, as deploy does.
+  const brief = build.brief ?? (await latestBrief(input.productId));
+  if (!brief) throw new FatalError("This build has no brief yet.");
+  const ctx: UsageContext & { buildId: string } = {
+    source: "platform",
+    endpoint: "responses",
+    buildId: input.buildId,
+    productId: input.productId,
+  };
+  const what = input.round === 0 ? "Judge" : `Judge round ${input.round}`;
   const result = await judgeBuild({
-    brief: requireBrief(build),
-    references: inspiration.references,
+    brief,
+    references: await judgeReferences(build, input.productId),
     screenshots: input.screenshots,
+  }).catch(async (err: unknown) => {
+    // A judge call that failed both attempts still cost something.
+    if (err instanceof StructuredOutputError) await charge(ctx, err.usage, what);
+    throw err;
   });
-  await charge(
-    { source: "platform", endpoint: "responses", buildId: input.buildId, productId: input.productId },
-    result.usage,
-    input.round === 0 ? "Judge" : `Judge round ${input.round}`,
-  );
+  await charge(ctx, result.usage, what);
   await emit(input.buildId, { type: "judge", round: input.round, verdict: result.verdict });
-  return { pass: result.verdict.pass };
+  return { pass: result.verdict.pass, blocking: result.verdict.blocking };
 }
 judgeStep.maxRetries = 1;
 
@@ -606,12 +639,6 @@ export async function writeFixPromptStep(input: {
   return promptFile;
 }
 writeFixPromptStep.maxRetries = 2;
-
-export async function buildNotesStep(sandboxName: string): Promise<boolean> {
-  "use step";
-  return Boolean(await sandbox.readBuildNotes(sandboxName));
-}
-buildNotesStep.maxRetries = 2;
 
 /** Turns the demo run's video into an MP4 and tells the build room. */
 export async function finishDemoStep(input: {
@@ -670,7 +697,7 @@ export async function startDeployStep(input: {
 }
 startDeployStep.maxRetries = stepRetries("deploy");
 
-/** The brief of the product's first build, for refinements (their own build rows have no brief). */
+/** The brief of the product's first build, for refinements (loadRefineStep copies it; older refine rows have none). */
 async function latestBrief(productId: string): Promise<Brief | null> {
   const [row] = await db()
     .select({ brief: schema.builds.brief })
@@ -700,7 +727,8 @@ pollDeployStep.maxRetries = 2;
 
 /**
  * Saves what shipped: manifest, live URL, demo, transcript and status. Then revokes the build tokens and every live
- * token except the one the new deployment uses.
+ * token except the one the new deployment uses. A product an admin turned off while it built stays "disabled": the
+ * gateway refuses its tokens, so the new deployment stays off until an admin turns it back on.
  */
 export async function registerStep(input: {
   buildId: string;
@@ -729,21 +757,28 @@ export async function registerStep(input: {
   } catch (err) {
     console.error("[register] transcript", err);
   }
-  await db()
+  const [saved] = await db()
     .update(schema.products)
     .set({
       ...(manifest ? { manifest } : {}),
       ...(input.demoVideoUrl ? { demoVideoUrl: input.demoVideoUrl } : {}),
       ...(transcriptUrl ? { transcriptUrl } : {}),
       liveUrl: input.liveUrl,
-      status: input.status,
+      status: sql<ProductStatus>`case when ${schema.products.status} = 'disabled' then 'disabled' else ${input.status} end`,
       latestBuildId: input.buildId,
       sandboxName: input.sandboxName,
       museSessionId: input.sessionId,
       vercelProjectId: input.projectId,
       updatedAt: new Date(),
     })
-    .where(eq(schema.products.id, input.productId));
+    .where(eq(schema.products.id, input.productId))
+    .returning({ status: schema.products.status });
+  if (saved?.status === "disabled") {
+    await emit(input.buildId, {
+      type: "log",
+      text: "An admin turned this product off while it was building, so it stays off until an admin turns it back on.",
+    });
+  }
   await revokeTokens(input.productId, "build");
   await db()
     .update(schema.gatewayTokens)
@@ -773,7 +808,37 @@ export interface RefineContext {
   refineIndex: number;
 }
 
-/** Loads what a refinement resumes: the product's sandbox, Muse Code session and build model. */
+/**
+ * Checks a change request against the brief writer's refusal policy before anything resumes. Returns the refusal for
+ * the person, or null when the change may go ahead. A check that can't get a valid reply throws, so the change never
+ * goes through unchecked.
+ */
+export async function refineCheckStep(buildId: string): Promise<{ refusal: string | null }> {
+  "use step";
+  const build = await loadBuild(buildId);
+  const inspiration = await loadInspiration(build.inspirationId);
+  const ctx: UsageContext & { buildId: string } = {
+    source: "platform",
+    endpoint: "responses",
+    buildId,
+    productId: build.productId,
+  };
+  const result = await checkChange({
+    message: build.message ?? inspiration.note ?? "",
+    references: inspiration.references,
+  }).catch(async (err: unknown) => {
+    if (err instanceof StructuredOutputError) await charge(ctx, err.usage, "Change check");
+    throw err;
+  });
+  await charge(ctx, result.usage, "Change check");
+  return { refusal: result.refusal };
+}
+refineCheckStep.maxRetries = stepRetries("brief");
+
+/**
+ * Loads what a refinement resumes: the product's sandbox, Muse Code session and build model. Also copies the product's
+ * brief onto the refine row, so the judge, the product page and the gallery always have one for the shipped build.
+ */
 export async function loadRefineStep(buildId: string): Promise<RefineContext> {
   "use step";
   const build = await loadBuild(buildId);
@@ -802,9 +867,15 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     buildModel: env.buildModel,
     complexBuildModel: env.complexBuildModel,
   });
+  const brief = build.brief ?? (await latestBrief(product.id));
   await db()
     .update(schema.builds)
-    .set({ sandboxName: product.sandboxName, museSessionId: product.museSessionId, buildModel: model })
+    .set({
+      sandboxName: product.sandboxName,
+      museSessionId: product.museSessionId,
+      buildModel: model,
+      ...(brief ? { brief } : {}),
+    })
     .where(eq(schema.builds.id, buildId));
   return {
     productId: product.id,
@@ -830,7 +901,7 @@ export async function reopenStep(input: {
   "use step";
   const build = await loadBuild(input.buildId);
   const inspiration = await loadInspiration(build.inspirationId);
-  const brief = await latestBrief(input.productId);
+  const brief = build.brief ?? (await latestBrief(input.productId));
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",

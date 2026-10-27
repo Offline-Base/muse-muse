@@ -1,14 +1,17 @@
 import { BlobError } from "@vercel/blob";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { gatewayError } from "@/lib/gateway/errors";
-import { parseBearer } from "@/lib/gateway/extract";
+import { clientIpKey, parseBearer } from "@/lib/gateway/extract";
 import type { GatewayToken } from "@/lib/gateway/handler";
-import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { CLIENT_IP_HEADER, DEFAULT_LIMITS } from "@/lib/gateway/policy";
 import type { ProductStatus } from "@/lib/types";
 
-/** What products may upload through {GATEWAY_URL}/uploads. */
+/** What products may upload through {GATEWAY_URL}/uploads. Raster images only: no SVG on the public Blob domain. */
 export const UPLOAD_CONTENT_TYPES = [
-  "image/*",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
   "video/mp4",
   "video/quicktime",
   "audio/wav",
@@ -36,6 +39,35 @@ export interface UploadDeps {
   blobToken(): string;
   /** Where Vercel Blob posts blob.upload-completed. Undefined when the platform has no public https origin. */
   callbackUrl?: string;
+  /** The gateway's fixed-window counter (lib/gateway/store.ts), here with uploadTicketWindowMs windows. */
+  hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
+  now?(): Date;
+}
+
+/**
+ * Upload tickets per product token, and per end user when the product forwards x-musemuse-client-ip. That header is
+ * only a rate-limit key, never auth.
+ */
+async function checkTicketLimits(req: Request, token: GatewayToken, deps: UploadDeps): Promise<Response | null> {
+  const now = deps.now?.() ?? new Date();
+  const windowMs = DEFAULT_LIMITS.uploadTicketWindowMs;
+  const windowStart = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
+  const limits: Record<string, number> = { [`upload:token:${token.id}`]: DEFAULT_LIMITS.uploadTicketsPerToken };
+  const ip = clientIpKey(req.headers.get(CLIENT_IP_HEADER));
+  if (ip) limits[`upload:ip:${token.productId}:${ip}`] = DEFAULT_LIMITS.uploadTicketsPerIp;
+  const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
+  const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
+  if (!over) return null;
+  const retryAfter = Math.max(1, Math.ceil((windowStart.getTime() + windowMs - now.getTime()) / 1000));
+  const who = over[0].startsWith("upload:ip:") ? "this user" : "this product";
+  return gatewayError(
+    429,
+    "rate_limit_error",
+    "rate_limited",
+    `Too many uploads from ${who}: the limit is ${over[1]} every ${Math.round(windowMs / 60_000)} minutes. ` +
+      `Try again in ${retryAfter} s.`,
+    { headers: { "retry-after": String(retryAfter) } },
+  );
 }
 
 function isUploadBody(body: unknown): body is HandleUploadBody {
@@ -48,8 +80,8 @@ class PathnameError extends Error {}
 
 /**
  * The Vercel Blob client-upload protocol for products. Token requests need "Authorization: Bearer <PRODUCT_TOKEN>"
- * on a product that isn't disabled or failed. The blob.upload-completed callback from Vercel carries no bearer;
- * handleUpload checks its x-vercel-signature instead.
+ * on a product that isn't disabled or failed, and are rate limited per token and per end user. The
+ * blob.upload-completed callback from Vercel carries no bearer; handleUpload checks its x-vercel-signature instead.
  */
 export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promise<Response> {
   let body: unknown;
@@ -73,6 +105,8 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
     if (!status || status === "disabled" || status === "failed") {
       return gatewayError(403, "permission_error", "product_disabled", "This product is turned off on Muse Muse.");
     }
+    const limited = await checkTicketLimits(req, token, deps);
+    if (limited) return limited;
   }
 
   try {
@@ -88,7 +122,7 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
           allowedContentTypes: UPLOAD_CONTENT_TYPES,
           maximumSizeInBytes: DEFAULT_LIMITS.uploadMaxBytes,
           addRandomSuffix: true,
-          validUntil: Date.now() + 60 * 60 * 1000,
+          validUntil: Date.now() + DEFAULT_LIMITS.uploadTicketValidMs,
           tokenPayload: JSON.stringify({ productId: token.productId }),
           ...(deps.callbackUrl ? { callbackUrl: deps.callbackUrl } : {}),
         };

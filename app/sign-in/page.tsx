@@ -44,8 +44,8 @@ export default async function SignInPage({
           <>
             <h1>Sign in to build</h1>
             <p className="muted">
-              Browsing is open to everyone. Building spends model credits, so it needs an email and the access code the
-              Muse Muse team shared with you.
+              Browsing is open to everyone. Building spends model credits, so it needs your email, a password and the
+              access code the Muse Muse team shared with you.
             </p>
             <SignInForm next={next} />
             <p className="muted small">

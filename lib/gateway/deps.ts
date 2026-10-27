@@ -1,7 +1,14 @@
 import { env } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
-import { hitRateLimits, productStatusById } from "@/lib/gateway/store";
+import {
+  acquireInFlight,
+  hitRateLimits,
+  productStatusById,
+  releaseInFlight,
+  reserveSpend,
+  settleSpend,
+} from "@/lib/gateway/store";
 import { findToken } from "@/lib/gateway/tokens";
 import { platformSpendToday, recordUsage, tokenSpendToday } from "@/lib/usage";
 
@@ -14,6 +21,10 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     platformSpendToday,
     dailySpendCapUsd: env.dailySpendCapUsd,
     hitRateLimits,
+    acquireInFlight,
+    releaseInFlight,
+    reserveSpend,
+    settleSpend,
     recordUsage,
     fetch: (input, init) => fetch(input, init),
     upstreamKey: () => env.modelApiKey,

@@ -69,8 +69,8 @@ export function renderBuildPrompt(
   opts: {
     /** File names inside inspo/, in reference order. */
     inspoFiles: string[];
-    /** File names inside fixtures/ with descriptions. */
-    fixtures: Array<{ fileName: string; description: string }>;
+    /** File names inside fixtures/ with descriptions. fromUserSample marks the person's own reference used as input. */
+    fixtures: Array<{ fileName: string; description: string; fromUserSample?: boolean }>;
     maxModelSteps: number;
     rebuildOf?: RebuildTarget | null;
   },
@@ -170,6 +170,7 @@ export function renderBuildPrompt(
   } else {
     out.push("", "There are no reference files. Work from this brief.");
   }
+  const userSamples = opts.fixtures.filter((f) => f.fromUserSample);
   out.push(
     "",
     "Take from them:",
@@ -181,6 +182,11 @@ export function renderBuildPrompt(
     bullets([
       ...brief.inspiration.dontCopy,
       "Always: names, logos, characters, copyrighted text, artwork and photos from the inspo, and the exact look of a real product (AGENTS.md).",
+      ...(userSamples.length
+        ? [
+            `Except the person's own samples in \`fixtures/\` (${userSamples.map((f) => `\`fixtures/${f.fileName}\``).join(", ")}). They are test inputs: the smoke test feeds them in, and the result screen may show them as the input or inside the result. Never use them as decoration.`,
+          ]
+        : []),
     ]),
   );
 
@@ -200,7 +206,11 @@ export function renderBuildPrompt(
 
   out.push("", "## Sample files", "");
   if (opts.fixtures.length) {
-    out.push("These are in `fixtures/`. The smoke test must use them.", "", bullets(opts.fixtures.map((f) => `\`fixtures/${f.fileName}\`: ${f.description}`)));
+    out.push(
+      "These are in `fixtures/`. The smoke test must use them.",
+      "",
+      bullets(opts.fixtures.map((f) => `\`fixtures/${f.fileName}\`${f.fromUserSample ? " (the person's own sample)" : ""}: ${f.description}`)),
+    );
   } else {
     out.push("None were prepared.");
   }
@@ -319,7 +329,8 @@ export function renderRefinePrompt(input: {
     "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
     "- Update `musemuse.json` if actions, limits or cost changed.",
     "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",
-    "- If the request is something AGENTS.md says not to build, or no listed model can do it, build the closest useful version, say so in the UI, and write it down.",
+    "- If the request is something AGENTS.md says not to build, change nothing. Write the reason in BUILD_NOTES.md and stop.",
+    "- If no listed model can do part of it, build the closest useful version, say so in the UI, and write the limit in BUILD_NOTES.md.",
     "- Add a short entry to BUILD_NOTES.md, then run `npm run verify` until it exits 0.",
   );
   return out.join("\n") + "\n";
@@ -338,6 +349,23 @@ export function briefToMarkdown(brief: Brief): string {
   if (brief.inspiration.borrow.length) out.push("", "**Takes from it:**", "", bullets(brief.inspiration.borrow));
   if (brief.inspiration.dontCopy.length) out.push("", "**Leaves out:**", "", bullets(brief.inspiration.dontCopy));
   if (brief.verdict === "no") return out.join("\n") + "\n";
+
+  const samples = brief.fixtures.filter((f) => f.fromUserSample);
+  if (samples.length) {
+    out.push(
+      "",
+      "**Test inputs:**",
+      "",
+      bullets(
+        samples.map((f) => {
+          const which = typeof f.referenceIndex === "number" ? `Reference ${f.referenceIndex + 1}, the person's own ${f.kind}` : `The person's own ${f.kind}`;
+          return `${which}: ${f.description}`;
+        }),
+      ),
+      "",
+      "The test feeds these to the product. Showing them as the input or inside the result is expected.",
+    );
+  }
 
   out.push("", "## How it works", "", ...brief.primaryFlow.map((s, i) => `${i + 1}. ${s}`));
   if (brief.screens.length) out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));

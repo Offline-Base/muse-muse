@@ -21,7 +21,12 @@ interface Scenario {
   /** One entry per verify run: did it pass, and which steps were ok. Last entry repeats. */
   verifies?: Array<{ passed: boolean; steps?: Record<string, boolean>; timeout?: boolean }>;
   judgePass?: boolean;
-  buildNotes?: boolean;
+  judgeBlocking?: boolean;
+  judgeThrows?: boolean;
+  /** The poll (1-based, per run) that reads run.usage. */
+  usageAtPoll?: number;
+  previewThrows?: boolean;
+  refineRefusal?: string;
   demoThrows?: boolean;
   deployState?: "READY" | "ERROR";
   provisionThrows?: Error;
@@ -85,15 +90,17 @@ const fakeSteps = {
     musePolled = 0;
     return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}` };
   },
-  pollMuseStep: async (input: unknown) => {
+  pollMuseStep: async (input: { usageRecorded?: boolean }) => {
     record("pollMuseStep", input);
     musePolled += 1;
     const done = musePolled >= (scenario.musePolls ?? 2);
-    return { done, exitCode: done ? (scenario.museExit ?? 0) : null, offset: musePolled * 100 };
+    const usageRecorded = Boolean(input.usageRecorded) || musePolled === scenario.usageAtPoll;
+    return { done, exitCode: done ? (scenario.museExit ?? 0) : null, offset: musePolled * 100, usageRecorded };
   },
   killStep: async (...args: unknown[]) => record("killStep", ...args),
   previewStep: async (...args: unknown[]) => {
     record("previewStep", ...args);
+    if (scenario.previewThrows) throw new Error("Preview did not answer 200 on port 3000 (last status 500).");
     return "https://sb-1.vercel.run";
   },
   startTaskStep: async (sandboxName: string, task: string) => {
@@ -111,9 +118,8 @@ const fakeSteps = {
   collectVerifyStep: async (input: { round: number }) => {
     record("collectVerifyStep", input);
     const v = currentVerify();
-    const steps = Object.entries(v.steps ?? { typecheck: v.passed, build: v.passed, start: v.passed }).map(
-      ([name, ok]) => ({ name, ok }),
-    );
+    const all = Object.fromEntries(["typecheck", "build", "start", "console", "smoke", "manifest"].map((n) => [n, v.passed]));
+    const steps = Object.entries(v.steps ?? all).map(([name, ok]) => ({ name, ok }));
     return { passed: v.passed, steps, screenshots: [{ url: "https://x/s.png", caption: "home" }] };
   },
   verifyTimedOutStep: async (input: unknown) => {
@@ -122,15 +128,13 @@ const fakeSteps = {
   },
   judgeStep: async (input: unknown) => {
     record("judgeStep", input);
-    return { pass: scenario.judgePass ?? true };
+    if (scenario.judgeThrows) throw new Error('Step "judgeStep" failed after 1 retry: judge_verdict: no valid reply');
+    const pass = scenario.judgePass ?? true;
+    return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true) };
   },
   writeFixPromptStep: async (input: { fix: number }) => {
     record("writeFixPromptStep", input);
     return `fix-${input.fix}.md`;
-  },
-  buildNotesStep: async (sandboxName: string) => {
-    record("buildNotesStep", sandboxName);
-    return scenario.buildNotes ?? false;
   },
   finishDemoStep: async (input: unknown) => {
     record("finishDemoStep", input);
@@ -146,6 +150,10 @@ const fakeSteps = {
     return { state, url: "https://musemuse-shelf-scout.vercel.app", errorMessage: state === "ERROR" ? "Build failed" : undefined };
   },
   registerStep: async (input: unknown) => record("registerStep", input),
+  refineCheckStep: async (buildId: string) => {
+    record("refineCheckStep", buildId);
+    return { refusal: scenario.refineRefusal ?? null };
+  },
   loadRefineStep: async (buildId: string) => {
     record("loadRefineStep", buildId);
     return {
@@ -268,28 +276,33 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.equal(named("judgeStep").length, 1);
   });
 
-  it("fixes when the judge fails even though verify passed", async () => {
-    reset({ verifies: [{ passed: true }], judgePass: false, buildNotes: false });
+  it("fixes when the judge fails even though verify passed, and never ships a blocking failure", async () => {
+    reset({ verifies: [{ passed: true }], judgePass: false, judgeBlocking: true });
     assert.deepEqual(await wf.buildProduct({ buildId: "b4" }), { status: "failed" });
     assert.equal(named("judgeStep").length, 4);
     assert.equal(named("startMuseStep").length, 4);
-    // Verify passed, so typecheck/build/start were ok, but without build notes it can't ship as partial.
+    // Every verify step passed, but the judge said it copies the inspo or shows no result.
     assert.equal(named("startDeployStep").length, 0);
   });
 
-  it("ships as partial when the app builds and runs and the build notes exist", async () => {
-    reset({
-      verifies: [{ passed: false, steps: { typecheck: true, build: true, start: true, smoke: false } }],
-      buildNotes: true,
-    });
+  it("ships as partial when every test passed and the judge failed it only on minor things", async () => {
+    reset({ verifies: [{ passed: true }], judgePass: false, judgeBlocking: false });
     assert.deepEqual(await wf.buildProduct({ buildId: "b5" }), { status: "partial" });
     assert.equal(named("collectVerifyStep").length, 4);
     assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "partial");
     assert.equal(statuses().at(-1), "partial");
   });
 
+  it("fails when the smoke test still fails after the last round, even though the app builds and starts", async () => {
+    reset({ verifies: [{ passed: false, steps: { typecheck: true, build: true, start: true, console: true, smoke: false } }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b5b" }), { status: "failed" });
+    assert.equal(named("collectVerifyStep").length, 4);
+    assert.equal(named("judgeStep").length, 0);
+    assert.equal(named("startDeployStep").length, 0);
+  });
+
   it("fails without deploying when the app doesn't build after the last round", async () => {
-    reset({ verifies: [{ passed: false, steps: { typecheck: true, build: false } }], buildNotes: true });
+    reset({ verifies: [{ passed: false, steps: { typecheck: true, build: false } }] });
     assert.deepEqual(await wf.buildProduct({ buildId: "b6" }), { status: "failed" });
     assert.equal(named("startDeployStep").length, 0);
     assert.deepEqual(named("failStep")[0]!.args[0], {
@@ -303,7 +316,10 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
   it("kills Muse Code at the 20-minute cap and fails the build", async () => {
     reset({ musePolls: Infinity });
     assert.deepEqual(await wf.buildProduct({ buildId: "b7" }), { status: "failed" });
-    assert.equal(named("pollMuseStep").length, 80);
+    // 80 polls, then one more after the kill to read (and charge) what the run wrote on its way out.
+    assert.equal(named("pollMuseStep").length, 81);
+    assert.equal((named("pollMuseStep")[80]!.args[0] as { offset: number }).offset, 8000);
+    assert.ok(calls.findIndex((c) => c.step === "killStep") < calls.findLastIndex((c) => c.step === "pollMuseStep"));
     assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-0"]);
     assert.equal(
       (named("failStep")[0]!.args[0] as { message: string }).message,
@@ -388,5 +404,103 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     const fail = named("failStep")[0]!.args[0] as { productId: string | null; message: string };
     assert.equal(fail.productId, null);
     assert.match(fail.message, /live version was kept/);
+  });
+
+  it("keeps the live version when a change builds but doesn't fully pass, instead of shipping it as partial", async () => {
+    const refine = { kind: "refine" as const, status: "queued", productId: "prod-1" };
+    // Builds and starts, but the smoke test fails every round.
+    reset({ head: refine, verifies: [{ passed: false, steps: { typecheck: true, build: true, start: true, console: true, smoke: false } }] });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r3" }), { status: "failed" });
+    assert.equal(named("startDeployStep").length, 0);
+    assert.equal(named("registerStep").length, 0);
+    assert.equal(
+      (named("failStep")[0]!.args[0] as { message: string }).message,
+      "The change did not pass its checks, so it was not deployed. The live version was kept.",
+    );
+
+    // Every test passes, but the judge fails it on something minor every round.
+    reset({ head: refine, verifies: [{ passed: true }], judgePass: false, judgeBlocking: false });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r4" }), { status: "failed" });
+    assert.equal(named("judgeStep").length, 4);
+    assert.equal(named("startDeployStep").length, 0);
+    assert.equal((named("failStep")[0]!.args[0] as { productId: string | null }).productId, null);
+  });
+
+  it("checks a change request against the policy first and refuses it without resuming anything", async () => {
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, refineRefusal: "Muse Muse won't copy a bank's sign-in page." });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r5" }), { status: "refused" });
+    assert.deepEqual(statuses(), ["briefing", "refused"]);
+    assert.deepEqual(named("setStatusStep")[1]!.args[2], {
+      message: "Muse Muse won't copy a bank's sign-in page. The live version was kept.",
+      error: "Muse Muse won't copy a bank's sign-in page. The live version was kept.",
+    });
+    for (const step of ["loadRefineStep", "reopenStep", "startMuseStep", "cleanupStep", "failStep"]) {
+      assert.equal(named(step).length, 0, step);
+    }
+
+    // An allowed change runs the check before it resumes the sandbox.
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" } });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r6" }), { status: "live" });
+    const order = calls.map((c) => c.step);
+    assert.ok(order.indexOf("refineCheckStep") < order.indexOf("loadRefineStep"));
+    assert.ok(order.indexOf("refineCheckStep") < order.indexOf("reopenStep"));
+  });
+
+  it("goes on to the checks when the preview doesn't start", async () => {
+    reset({ previewThrows: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b14" }), { status: "live" });
+    assert.ok(
+      named("emitStep").some((c) => String((c.args[1] as { text?: string }).text).startsWith("The preview did not start")),
+    );
+    assert.equal(named("collectVerifyStep").length, 1);
+    assert.equal(named("failStep").length, 0);
+
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, previewThrows: true });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r7" }), { status: "live" });
+    assert.equal(named("collectVerifyStep").length, 1);
+  });
+
+  it("treats a judge that can't run as a failed, non-blocking check and runs the fix rounds", async () => {
+    reset({ judgeThrows: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b15" }), { status: "partial" });
+    assert.equal(named("judgeStep").length, 4);
+    assert.equal(named("writeFixPromptStep").length, 3);
+    const judged = named("emitStep").filter((c) => (c.args[1] as { type: string }).type === "judge");
+    assert.equal(judged.length, 4);
+    const first = judged[0]!.args[1] as { round: number; verdict: { pass: boolean; blocking: boolean; reasons: string[] } };
+    assert.equal(first.round, 0);
+    assert.equal(first.verdict.pass, false);
+    assert.equal(first.verdict.blocking, false);
+    assert.match(first.verdict.reasons.join(" "), /judge step failed: judge_verdict: no valid reply/);
+  });
+
+  it("writes the final status only after cleanup, so a refinement can't start while the sandbox is still held", async () => {
+    reset({});
+    assert.deepEqual(await wf.buildProduct({ buildId: "b16" }), { status: "live" });
+    const order = calls.map((c) => c.step);
+    const liveAt = calls.findIndex((c) => c.step === "setStatusStep" && c.args[1] === "live");
+    assert.ok(order.indexOf("cleanupStep") >= 0 && order.indexOf("cleanupStep") < liveAt);
+    assert.equal(liveAt, calls.length - 1);
+
+    reset({ verifies: [{ passed: false, steps: { typecheck: false } }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b17" }), { status: "failed" });
+    assert.ok(calls.findIndex((c) => c.step === "cleanupStep") < calls.findIndex((c) => c.step === "failStep"));
+    assert.equal(calls.at(-1)!.step, "failStep");
+
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" } });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r8" }), { status: "live" });
+    assert.equal(calls.at(-1)!.step, "setStatusStep");
+    assert.ok(calls.findIndex((c) => c.step === "cleanupStep") < calls.length - 1);
+  });
+
+  it("charges a Muse Code run once: the poll that read its usage tells the next ones", async () => {
+    reset({ musePolls: 3, usageAtPoll: 1 });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b18" }), { status: "live" });
+    assert.deepEqual(
+      named("pollMuseStep")
+        .slice(0, 3)
+        .map((c) => (c.args[0] as { usageRecorded?: boolean }).usageRecorded),
+      [false, true, true],
+    );
   });
 });

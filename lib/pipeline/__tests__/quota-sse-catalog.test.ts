@@ -2,16 +2,23 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { catalogItems, itemId, rebuildNote, rebuildTargetFor } from "@/lib/pipeline/catalog";
 import { formatSseEvent, isTerminalEvent, parseCursor } from "@/lib/pipeline/sse";
-import { effectiveQuota, quotaDecision, quotaWindowStart, spendPausedDecision } from "@/lib/quota";
+import { dailyBuildQuota, quotaDecision, quotaWindowStart, spendPausedDecision } from "@/lib/quota";
 import type { BuildEvent } from "@/lib/types";
 
 describe("quota math", () => {
-  it("uses the user's quota, else the default", () => {
-    assert.equal(effectiveQuota(5, 3), 5);
-    assert.equal(effectiveQuota(0, 3), 0);
-    assert.equal(effectiveQuota(null, 3), 3);
-    assert.equal(effectiveQuota(undefined, 3), 3);
-    assert.equal(effectiveQuota(-1, 3), 3);
+  it("follows MAX_BUILDS_PER_USER_PER_DAY on every check, so a raised limit reaches users who signed in earlier", () => {
+    const saved = process.env.MAX_BUILDS_PER_USER_PER_DAY;
+    try {
+      delete process.env.MAX_BUILDS_PER_USER_PER_DAY;
+      assert.equal(dailyBuildQuota(), 3);
+      process.env.MAX_BUILDS_PER_USER_PER_DAY = "10";
+      assert.equal(dailyBuildQuota(), 10);
+      process.env.MAX_BUILDS_PER_USER_PER_DAY = "nope";
+      assert.equal(dailyBuildQuota(), 3);
+    } finally {
+      if (saved === undefined) delete process.env.MAX_BUILDS_PER_USER_PER_DAY;
+      else process.env.MAX_BUILDS_PER_USER_PER_DAY = saved;
+    }
   });
 
   it("blocks at the quota, exempts admins", () => {

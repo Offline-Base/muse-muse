@@ -42,11 +42,17 @@ export function museExecArgs(opts: MuseExecOptions): string[] {
   return args;
 }
 
+/** Env for any muse command in the sandbox (docs/SPIKES.md). Stops the launcher from self-updating or starting a device sign-in. */
+export const SANDBOX_ENV = { MUSE_NO_AUTO_UPDATE: "1", MUSE_LOGIN: "0" } as const;
+
 /**
- * Env for Muse Code in the sandbox (docs/SPIKES.md). META_API_KEY is a placeholder: the firewall swaps in the real
- * Authorization header. The other two stop the launcher from self-updating or starting a device sign-in.
+ * Env for a Muse Code run. META_API_KEY is the sandbox's placeholder (policy.ts placeholderKey): the firewall swaps in
+ * the real Authorization header only for requests that carry it. Only the Muse Code runner exports it, so the
+ * product's dev, verify and demo servers don't have it.
  */
-export const SANDBOX_ENV = { META_API_KEY: "brokered", MUSE_NO_AUTO_UPDATE: "1", MUSE_LOGIN: "0" } as const;
+export function museEnv(placeholder: string): Record<string, string> {
+  return { ...SANDBOX_ENV, META_API_KEY: placeholder };
+}
 
 /** Muse Code exit codes. 0 means the turn ended, not that the product works. Always gate on npm run verify. */
 export const MUSE_EXIT = { completed: 0, failed: 1, usage: 2 } as const;

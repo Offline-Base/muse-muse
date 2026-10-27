@@ -97,6 +97,8 @@ export interface JudgeVerdict {
   pass: boolean;
   reasons: string[];
   mismatches: string[];
+  /** True when a failure must stop the product shipping even as partial: copying, implying Meta made it, or no result. */
+  blocking?: boolean;
 }
 
 /** What the build room streams over server-sent events. Stored as build_events.payload. */

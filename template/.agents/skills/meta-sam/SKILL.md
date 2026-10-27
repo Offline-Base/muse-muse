@@ -16,7 +16,7 @@ import { metaClient } from "@/lib/meta/client";
 import { imagePart } from "@/lib/meta/parts";
 import { parseImageStream, recordsOfKind, decodeMaskToSVGPath } from "@meta-sam/parser";
 
-const meta = metaClient();
+const meta = metaClient(request); // the route handler's incoming request
 const events = await meta.responses.create({
   model: "sam-3.1",
   input: [

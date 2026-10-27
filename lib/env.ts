@@ -68,11 +68,22 @@ export const env = {
   get accessCode() {
     return required("PLATFORM_ACCESS_CODE");
   },
+  /**
+   * Second code, typed in place of PLATFORM_ACCESS_CODE, that makes an ADMIN_EMAILS sign-in an admin one. Never share
+   * it. Admin is off while it's unset, and it never counts when it equals the shared code.
+   */
+  get adminAccessCode() {
+    return process.env.ADMIN_ACCESS_CODE || undefined;
+  },
   get adminEmails(): string[] {
     return (process.env.ADMIN_EMAILS || "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
+  },
+  /** Bearer secret that lets scripts start batch rebuilds as the first admin (lib/auth.ts requireAdminOrAutomation). */
+  get automationSecret() {
+    return process.env.AUTOMATION_SECRET || undefined;
   },
   get cronSecret() {
     return process.env.CRON_SECRET || undefined;

@@ -1,6 +1,8 @@
-import { eq, lt, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
-import type { ProductStatus } from "@/lib/types";
+import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import type { UsageContext } from "@/lib/usage";
+import type { ModelUsage, ProductStatus } from "@/lib/types";
 
 /** Database calls the gateway, the kill switch and the cleanup cron make. Kept here so the logic stays testable. */
 
@@ -29,6 +31,83 @@ export async function hitRateLimits(keys: string[], windowStart: Date): Promise<
     })
     .returning({ key: schema.rateLimits.key, count: schema.rateLimits.count });
   return Object.fromEntries(rows.map((r) => [r.key, r.count]));
+}
+
+/** Start of the in-flight bucket that `now` falls in. */
+export function inFlightBucket(now: Date, bucketMs: number = DEFAULT_LIMITS.inFlightBucketMs): Date {
+  return new Date(Math.floor(now.getTime() / bucketMs) * bucketMs);
+}
+
+/**
+ * Takes one of `limit` in-flight slots for `key` and returns the bucket to release it in, or null when all are taken.
+ * Slots are rate_limits rows per bucket, and the check also counts the previous bucket's row, so calls that started
+ * before the bucket rolled over keep holding theirs. One statement: the upsert locks the bucket's row, so two callers
+ * can't both take the last slot. A slot that a crashed call never gave back stops counting two buckets later.
+ */
+export async function acquireInFlight(key: string, limit: number, now: Date): Promise<Date | null> {
+  const bucket = inFlightBucket(now);
+  const previous = new Date(bucket.getTime() - DEFAULT_LIMITS.inFlightBucketMs);
+  const held = sql`coalesce((select p.count from rate_limits p where p.key = ${key} and p.window_start = ${previous.toISOString()}::timestamptz), 0)`;
+  const rows = await db()
+    .insert(schema.rateLimits)
+    .select(sql`select ${key}, ${bucket.toISOString()}::timestamptz, 1 where ${held} < ${limit}`)
+    .onConflictDoUpdate({
+      target: [schema.rateLimits.key, schema.rateLimits.windowStart],
+      set: { count: sql`${schema.rateLimits.count} + 1` },
+      setWhere: sql`${schema.rateLimits.count} + ${held} < ${limit}`,
+    })
+    .returning({ count: schema.rateLimits.count });
+  return rows.length ? bucket : null;
+}
+
+/** Gives back a slot taken by acquireInFlight. */
+export async function releaseInFlight(key: string, bucket: Date): Promise<void> {
+  await db()
+    .update(schema.rateLimits)
+    .set({ count: sql`greatest(${schema.rateLimits.count} - 1, 0)` })
+    .where(and(eq(schema.rateLimits.key, key), eq(schema.rateLimits.windowStart, bucket)));
+}
+
+/**
+ * Records a call's estimated cost as a usage row before it is forwarded, so budget checks count calls still running.
+ * Returns the row id for settleSpend. If the call never settles (a crash), the estimate stays as its recorded cost.
+ */
+export async function reserveSpend(ctx: UsageContext, model: string | null, costUsd: number): Promise<string> {
+  const [row] = await db()
+    .insert(schema.usage)
+    .values({
+      source: ctx.source,
+      endpoint: ctx.endpoint,
+      productId: ctx.productId ?? null,
+      buildId: ctx.buildId ?? null,
+      tokenId: ctx.tokenId ?? null,
+      model,
+      costUsd,
+    })
+    .returning({ id: schema.usage.id });
+  return row.id;
+}
+
+/** Replaces a reservation with the metered usage in one statement, or deletes it when the call used nothing. */
+export async function settleSpend(id: string, item: ModelUsage | null): Promise<void> {
+  const used = item && (item.inputTokens || item.outputTokens || item.images || item.videoFrames || item.audioSeconds || item.costUsd);
+  if (!item || !used) {
+    await db().delete(schema.usage).where(eq(schema.usage.id, id));
+    return;
+  }
+  await db()
+    .update(schema.usage)
+    .set({
+      model: item.model,
+      inputTokens: Math.round(item.inputTokens),
+      cachedInputTokens: Math.round(item.cachedInputTokens),
+      outputTokens: Math.round(item.outputTokens),
+      images: item.images ?? 0,
+      videoFrames: item.videoFrames ?? 0,
+      audioSeconds: item.audioSeconds ?? 0,
+      costUsd: item.costUsd,
+    })
+    .where(eq(schema.usage.id, id));
 }
 
 export async function deleteRateLimitsBefore(before: Date): Promise<number> {

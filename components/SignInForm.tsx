@@ -5,19 +5,28 @@ import { useId, useState } from "react";
 import { Icon } from "@/components/icons";
 import { safeNext } from "@/lib/format";
 
+/** Matches MIN_PASSWORD_LENGTH in lib/auth.ts, which this client file can't import. */
+const MIN_PASSWORD = 10;
+
 export function SignInForm({ next }: { next: string }) {
   const router = useRouter();
   const emailId = useId();
+  const passwordId = useId();
   const codeId = useId();
   const errId = useId();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
-    if (!email.trim() || !code.trim()) {
-      setError("Enter your email and the access code.");
+    if (!email.trim() || !password || !code.trim()) {
+      setError("Enter your email, a password and the access code.");
+      return;
+    }
+    if (password.length < MIN_PASSWORD) {
+      setError(`Passwords are at least ${MIN_PASSWORD} characters.`);
       return;
     }
     setBusy(true);
@@ -26,7 +35,7 @@ export function SignInForm({ next }: { next: string }) {
       const res = await fetch("/api/auth/sign-in", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+        body: JSON.stringify({ email: email.trim(), password, code: code.trim() }),
       });
       if (res.ok) {
         router.replace(safeNext(next));
@@ -37,10 +46,12 @@ export function SignInForm({ next }: { next: string }) {
       const sentence = data.error && /\s/.test(data.error) ? data.error : null;
       setError(
         res.status === 401
-          ? (sentence ?? "That email and access code don't match. Check the code and try again.")
+          ? (sentence ?? "That email, password or access code didn't work. Check them and try again.")
           : res.status === 429
             ? (sentence ?? "Too many tries. Wait a minute, then try again.")
-            : "Sign-in isn't working right now. Try again in a moment.",
+            : res.status === 400 && sentence
+              ? sentence
+              : "Sign-in isn't working right now. Try again in a moment.",
       );
     } catch {
       setError("Couldn't reach Muse Muse. Check your connection.");
@@ -70,6 +81,23 @@ export function SignInForm({ next }: { next: string }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+      </div>
+      <div className="field">
+        <label htmlFor={passwordId}>Password</label>
+        <input
+          id={passwordId}
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          minLength={MIN_PASSWORD}
+          required
+          aria-describedby={`${passwordId}-hint`}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <p className="field-hint" id={`${passwordId}-hint`}>
+          New here? The password you type now becomes yours. Use at least {MIN_PASSWORD} characters.
+        </p>
       </div>
       <div className="field">
         <label htmlFor={codeId}>Access code</label>

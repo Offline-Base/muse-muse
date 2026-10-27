@@ -82,9 +82,15 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   if (insp && Array.isArray(insp.references)) {
     let refs = asArray(insp.references);
     const indexes = refs.map((r) => r.index).filter((i): i is number => typeof i === "number");
-    // The model sometimes numbers references from 1, like their labels.
-    const oneBased = indexes.length > 0 && !indexes.includes(0) && indexes.every((i) => i >= 1 && i <= references.length);
-    if (oneBased) refs = refs.map((r) => ({ ...r, index: (r.index as number) - 1 }));
+    // The model sometimes numbers references from 1, like their labels. Only an index equal to the reference count
+    // proves it (0-based indexes stop one short), so a partial 0-based list is left alone.
+    const oneBased =
+      !indexes.includes(0) && indexes.includes(references.length) && indexes.every((i) => i >= 1 && i <= references.length);
+    if (oneBased) {
+      refs = refs.map((r) => ({ ...r, index: (r.index as number) - 1 }));
+      // The fixtures' reference numbers come from the same reply, so they shift too.
+      for (const f of asArray(b.fixtures)) if (typeof f.referenceIndex === "number") f.referenceIndex -= 1;
+    }
     const byIndex = new Map<number, Loose>();
     for (const r of refs) {
       const i = r.index;

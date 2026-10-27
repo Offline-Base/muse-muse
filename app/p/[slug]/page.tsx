@@ -28,11 +28,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   }
   if (!result.data) notFound();
 
-  const { product, latestBuild, inspiration, history, events, runs } = result.data;
+  const { product, latestBuild, brief, inspiration, history, events, runs } = result.data;
   const origin = await platformOrigin();
   const connectorUrl = `${origin}/api/mcp/${product.slug}`;
   const manifest = product.manifest;
-  const brief = latestBuild?.brief ?? null;
   const shipped = product.status === "live" || product.status === "partial";
   const isOwner = Boolean(user && (user.isAdmin || user.id === product.ownerId));
   const rebuild = rebuildRef(product.rebuildOf);
@@ -95,8 +94,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               src={product.liveUrl}
               title={`${product.name}, the live product`}
               loading="lazy"
-              allow="camera; microphone; clipboard-write; fullscreen"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals"
+              allow="clipboard-write; fullscreen"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
               referrerPolicy="no-referrer"
             />
           </section>

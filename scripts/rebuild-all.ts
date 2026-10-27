@@ -4,8 +4,8 @@
  *   npm run rebuild-all                 every catalog item without a live or partial product yet
  *   npm run rebuild-all -- <id> <id>    exactly these catalog ids
  *
- * Signs in at PLATFORM_URL as the first ADMIN_EMAILS address with PLATFORM_ACCESS_CODE, starts the batch through
- * POST /api/rebuilds, polls each build every 20 s until all are finished, and prints a table plus
+ * Starts the batch through POST /api/rebuilds at PLATFORM_URL with the AUTOMATION_SECRET bearer (acting as the first
+ * ADMIN_EMAILS user, who must have signed in once), polls each build every 20 s until all are finished, and prints a table plus
  * "N of M rebuilt in X for $Y".
  */
 import { env } from "@/lib/env";
@@ -33,21 +33,10 @@ interface BuildSummary {
   product: { liveUrl: string | null } | null;
 }
 
-async function signIn(base: string): Promise<string> {
-  const email = env.adminEmails[0];
-  if (!email) throw new Error("ADMIN_EMAILS is empty. Put the admin's email first.");
-  const res = await fetch(`${base}/api/auth/sign-in`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, code: env.accessCode }),
-  });
-  if (!res.ok) throw new Error(`Sign-in failed (${res.status}): ${await res.text()}`);
-  const session = res.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0]!.trim())
-    .find((c) => c.startsWith("mm_session="));
-  if (!session) throw new Error("Sign-in returned no mm_session cookie.");
-  return session;
+/** Admin automation header for POST /api/rebuilds. Nobody signs in, so no account password is involved. */
+function automationHeaders(): Record<string, string> {
+  if (!env.automationSecret) throw new Error("AUTOMATION_SECRET is not set. Add it to .env.local (and on Vercel).");
+  return { authorization: `Bearer ${env.automationSecret}` };
 }
 
 function formatDuration(ms: number): string {
@@ -84,11 +73,10 @@ async function main(): Promise<void> {
     if (!catalogItem(id)) throw new Error(`${id} isn't in catalog/meta-resources.json.`);
   }
 
-  console.log(`Signing in at ${base} ...`);
-  const cookie = await signIn(base);
+  console.log(`Starting rebuilds at ${base} ...`);
   const res = await fetch(`${base}/api/rebuilds`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", ...automationHeaders() },
     body: JSON.stringify(ids.length ? { ids } : {}),
   });
   if (!res.ok) throw new Error(`POST /api/rebuilds failed (${res.status}): ${await res.text()}`);
@@ -123,7 +111,7 @@ async function main(): Promise<void> {
         .filter((r) => !done(r))
         .map(async (r) => {
           try {
-            const reply = await fetch(`${base}/api/builds/${r.buildId}`, { headers: { cookie } });
+            const reply = await fetch(`${base}/api/builds/${r.buildId}`);
             if (!reply.ok) return;
             const { build, product } = (await reply.json()) as BuildSummary;
             Object.assign(r, {

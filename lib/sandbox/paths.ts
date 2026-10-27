@@ -10,6 +10,15 @@ export const RUN_DIR = `${WORK_DIR}/run`;
 export const OUT_DIR = `${WORK_DIR}/out`;
 /** Written last by the toolchain setup, so a sandbox without it is not ready to build. */
 export const BUILDER_MARKER = `${WORK_DIR}/builder.json`;
+/**
+ * Read-only, root-owned copy of the platform-owned files the verify gate depends on, made at snapshot time. startTask
+ * puts them back in PRODUCT_DIR before every verify or demo, so Muse Code's edits to them can't fake a pass.
+ */
+export const PRISTINE_DIR = `${WORK_DIR}/pristine`;
+/** Paths relative to PRODUCT_DIR (and PRISTINE_DIR). verify.mjs imports smoke-report.mjs. Each must exist in template/. */
+export const PLATFORM_FILES = ["scripts/verify.mjs", "scripts/smoke-report.mjs", "playwright.config.ts", "musemuse.schema.json"] as const;
+/** Ports the product's own servers use: npm start, verify's pickPort and the demo's webServer. */
+export const PRODUCT_PORTS = { first: 3100, last: 3199 } as const;
 
 /** Exact tool versions the snapshot installs. Keep in step with template/package.json. */
 export const PLAYWRIGHT_VERSION = "1.64.1";

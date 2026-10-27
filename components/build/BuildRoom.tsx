@@ -8,7 +8,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
 import { BuildPanel } from "@/components/build/BuildPanel";
-import { deriveRoom, railStates, type Segment } from "@/components/build/derive";
+import { deriveRoom, railStates, refineSpot, type Segment } from "@/components/build/derive";
 import {
   BriefBody,
   CheckBody,
@@ -21,7 +21,16 @@ import {
   segmentMeta,
   tokensText,
 } from "@/components/build/turns";
-import { duration, elapsedMs, isTerminalStatus, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import {
+  duration,
+  elapsedMs,
+  isTerminalStatus,
+  parseManifest,
+  relativeTime,
+  statusLabel,
+  truncate,
+  usd,
+} from "@/lib/format";
 import type { BuildEvent, BuildStatus } from "@/lib/types";
 
 export interface BuildRoomProps {
@@ -31,7 +40,7 @@ export interface BuildRoomProps {
   events: BuildEvent[];
   history: BuildSummary[];
   tokens: { input: number; cached: number; output: number };
-  /** The viewer owns the build or is an admin. */
+  /** The viewer owns the product or is an admin. */
   canRefine: boolean;
   signedIn: boolean;
   origin: string;
@@ -95,13 +104,15 @@ export function BuildRoom(props: BuildRoomProps) {
       const data = (await res.json()) as { build?: unknown; product?: unknown };
       setBuild((prev) => mergeKnown(prev, data.build));
       if (data.product && typeof data.product === "object") {
-        setProduct((prev) =>
-          prev
+        setProduct((prev) => {
+          const next = prev
             ? mergeKnown(prev, data.product)
             : (data.product as ProductView).slug
               ? (data.product as ProductView)
-              : prev,
-        );
+              : prev;
+          // The API sends the stored manifest as is, so check its shape like the server render does.
+          return next && { ...next, manifest: parseManifest(next.manifest) };
+        });
       }
     } catch {
       // The page still shows what the event stream delivered.
@@ -236,9 +247,14 @@ export function BuildRoom(props: BuildRoomProps) {
   const finished = build.finishedAt ?? (room.terminal ? room.lastEventAt : null);
   const elapsed = elapsedMs(build.startedAt, finished, now);
   const openUrl = room.terminal ? (liveUrl ?? room.previewUrl) : (room.previewUrl ?? liveUrl);
-  const isLatest = !props.history.length || props.history[0]?.id === build.id;
   const shipped = room.status === "live" || room.status === "partial";
-  const showRefine = shipped && props.canRefine && isLatest;
+  const refine = refineSpot({
+    buildId: build.id,
+    terminal: room.terminal,
+    canRefine: props.canRefine,
+    product,
+    history: props.history,
+  });
   const isRefineBuild = build.kind === "refine";
   const showRefs = !isRefineBuild || (props.inspiration?.note ?? null) === build.message;
 
@@ -401,7 +417,7 @@ export function BuildRoom(props: BuildRoomProps) {
           </button>
         ) : null}
 
-        {showRefine ? (
+        {refine.show ? (
           <div id="refine">
             <Composer
               mode="refine"
@@ -411,10 +427,12 @@ export function BuildRoom(props: BuildRoomProps) {
               autoFocus={props.focusRefine}
             />
           </div>
-        ) : shipped && props.canRefine && !isLatest && props.history[0] ? (
+        ) : refine.elsewhere ? (
           <p className="muted center">
-            A newer build of this product exists.{" "}
-            <Link href={`/b/${props.history[0].id}`}>Open it to make more changes.</Link>
+            {refine.elsewhere.running ? "A change to this product is building." : "This isn't the current version."}{" "}
+            <Link href={`/b/${refine.elsewhere.buildId}`}>
+              {refine.elsewhere.running ? "Open it to follow along." : "Open the current version to make more changes."}
+            </Link>
           </p>
         ) : null}
       </div>

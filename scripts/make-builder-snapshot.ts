@@ -4,16 +4,43 @@
  *   npm run snapshot
  *
  * It boots `vercel/sandbox/universal` with open egress, installs ffmpeg, fonts, espeak-ng, Playwright's Chromium and
- * Muse Code, copies template/ to /vercel/app, runs npm ci, commits the template, then snapshots with no expiry.
+ * Muse Code, copies template/ to /vercel/app, runs npm ci, commits the template, keeps a root-owned read-only copy
+ * of the platform-owned verify files in /vercel/musemuse/pristine (startTask restores them before every verify and
+ * demo), checks that copy against template/, then snapshots with no expiry.
  * Builds start from the snapshot and run with the locked-down policy in lib/sandbox/policy.ts.
  * Save the printed id as BUILDER_SNAPSHOT_ID.
  */
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
+import { PLATFORM_FILES, PRISTINE_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
-import { readTemplateFiles, setupBuilder, templateHash } from "@/lib/sandbox/setup";
+import { readTemplateFiles, setupBuilder, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
+import { q, sh } from "@/lib/sandbox/shell";
 
 const MIN = 60_000;
+
+/** Throws unless every platform file in PRISTINE_DIR matches template/ and is root-owned with no write bits. */
+async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<void> {
+  const want = PLATFORM_FILES.map((f) => {
+    const file = files.find((t) => t.path === f);
+    if (!file) throw new Error(`template/${f} is missing, but PLATFORM_FILES in lib/sandbox/paths.ts lists it.`);
+    return `${createHash("sha1").update(file.content).digest("hex")}  ${f}`;
+  });
+  const list = PLATFORM_FILES.map(q).join(" ");
+  const sums = await sh(sandbox, `cd ${q(PRISTINE_DIR)} && sha1sum ${list}`);
+  const got = sums.stdout.trim().split("\n");
+  if (got.join("\n") !== want.join("\n")) throw new Error(`Pristine copy doesn't match template/:\n${sums.stdout}`);
+  const perms = await sh(sandbox, `cd ${q(PRISTINE_DIR)} && stat -c '%U %A %n' . ${list}`);
+  const bad = perms.stdout
+    .trim()
+    .split("\n")
+    .filter((l) => {
+      const [owner, mode = "w"] = l.split(" ");
+      return owner !== "root" || mode.includes("w");
+    });
+  if (bad.length) throw new Error(`Pristine copy is writable or not owned by root:\n${bad.join("\n")}`);
+}
 
 async function main() {
   const started = Date.now();
@@ -42,6 +69,8 @@ async function main() {
   try {
     const info = await setupBuilder(sandbox, files, log);
     console.log("builder:", JSON.stringify(info));
+    await checkPristine(sandbox, files);
+    console.log(`pristine: ${PLATFORM_FILES.join(", ")} match template/`);
 
     t = Date.now();
     const snapshot = await sandbox.snapshot({ expiration: 0 });

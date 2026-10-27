@@ -10,7 +10,7 @@ All calls run on the server.
 ```ts
 import { metaClient } from "@/lib/meta/client";
 
-const meta = metaClient();
+const meta = metaClient(request); // the route handler's incoming request, or await headers() in a server action
 ```
 
 ## Generate

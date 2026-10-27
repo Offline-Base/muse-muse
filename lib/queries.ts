@@ -5,7 +5,8 @@ import resources from "@/catalog/meta-resources.json";
 import { getSessionUser, type SessionUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
-import type { BuildEvent, MuseLogLine, RebuildFit } from "@/lib/types";
+import { parseManifest } from "@/lib/format";
+import type { Brief, BuildEvent, MuseLogLine, RebuildFit } from "@/lib/types";
 import type {
   BuildSummary,
   BuildView,
@@ -106,7 +107,7 @@ function toProductView(p: ProductRow): ProductView {
     ownerId: p.ownerId,
     inspirationId: p.inspirationId,
     rebuildOf: p.rebuildOf,
-    manifest: p.manifest ?? null,
+    manifest: parseManifest(p.manifest),
     latestBuildId: p.latestBuildId,
     liveUrl: p.liveUrl,
     demoVideoUrl: p.demoVideoUrl,
@@ -271,6 +272,20 @@ function briefModels(brief: BuildRow["brief"] | null | undefined): string[] {
   return Array.isArray(caps) ? [...new Set(caps.map((c) => c.model))] : [];
 }
 
+/**
+ * Each product's newest brief. Refinements have no brief of their own, so once one ships, the product's latest build
+ * has none and the brief comes from the newest build that does.
+ */
+async function latestBriefs(productIds: string[]): Promise<Map<string, Brief>> {
+  if (!productIds.length) return new Map();
+  const rows = await db()
+    .selectDistinctOn([schema.builds.productId], { productId: schema.builds.productId, brief: schema.builds.brief })
+    .from(schema.builds)
+    .where(and(inArray(schema.builds.productId, productIds), isNotNull(schema.builds.brief)))
+    .orderBy(schema.builds.productId, desc(schema.builds.startedAt));
+  return new Map(rows.flatMap((r) => (r.productId && r.brief ? [[r.productId, r.brief] as const] : [])));
+}
+
 export async function listShippedProducts(limit = 60): Promise<ProductCardView[]> {
   const rows = await db()
     .select({
@@ -288,18 +303,21 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
     .where(inArray(schema.products.status, ["live", "partial"]))
     .orderBy(desc(schema.products.updatedAt))
     .limit(limit);
+  const briefs = await latestBriefs(rows.filter((r) => !r.brief).map((r) => r.product.id));
 
   return rows.map((r) => {
     const p = r.product;
-    const models = p.manifest?.models?.length ? p.manifest.models.map((m) => m.id) : briefModels(r.brief);
+    const manifest = parseManifest(p.manifest);
+    const brief = r.brief ?? briefs.get(p.id) ?? null;
+    const models = manifest?.models.length ? manifest.models.map((m) => m.id) : briefModels(brief);
     return {
       slug: p.slug,
       name: p.name,
-      tagline: p.tagline || p.manifest?.tagline || r.brief?.tagline || "",
+      tagline: p.tagline || manifest?.tagline || brief?.tagline || "",
       status: p.status,
       liveUrl: p.liveUrl,
       demoVideoUrl: p.demoVideoUrl,
-      muse: p.manifest?.inspiration || r.note || r.brief?.inspiration.summary || null,
+      muse: manifest?.inspiration || r.note || brief?.inspiration.summary || null,
       models: [...new Set(models)],
       buildMs: r.startedAt && r.finishedAt ? r.finishedAt.getTime() - r.startedAt.getTime() : null,
       costUsd: r.costUsd == null ? null : num(r.costUsd),
@@ -314,6 +332,8 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
 export interface ProductPageData {
   product: ProductView;
   latestBuild: BuildView | null;
+  /** The newest brief of the product, which is an earlier build's once a refinement has shipped. */
+  brief: Brief | null;
   inspiration: InspirationView | null;
   history: BuildSummary[];
   events: BuildEvent[];
@@ -351,18 +371,22 @@ export async function getProductPage(slug: string): Promise<ProductPageData | nu
   ]);
 
   const latest = latestRows[0] ?? null;
-  const eventRows = latest
-    ? await d
-        .select()
-        .from(schema.buildEvents)
-        .where(eq(schema.buildEvents.buildId, latest.id))
-        .orderBy(asc(schema.buildEvents.id))
-        .limit(5000)
-    : [];
+  const [eventRows, briefs] = await Promise.all([
+    latest
+      ? d
+          .select()
+          .from(schema.buildEvents)
+          .where(eq(schema.buildEvents.buildId, latest.id))
+          .orderBy(asc(schema.buildEvents.id))
+          .limit(5000)
+      : [],
+    latest?.brief ? new Map<string, Brief>() : latestBriefs([p.id]),
+  ]);
 
   return {
     product: toProductView(p),
     latestBuild: latest ? toBuildView(latest) : null,
+    brief: latest?.brief ?? briefs.get(p.id) ?? null,
     inspiration: inspirationRows[0] ? toInspirationView(inspirationRows[0]) : null,
     history,
     events: eventRows.map((r) => ({ ...r.payload, id: r.id, at: r.at.toISOString() }) as BuildEvent),

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { handleMcp, type McpDeps, type McpProduct } from "@/lib/mcp/server";
+import { actionUrl, handleMcp, MAX_ACTION_REPLY_BYTES, type McpDeps, type McpProduct } from "@/lib/mcp/server";
 import type { Manifest } from "@/lib/types";
 
 const manifest: Manifest = {
@@ -175,4 +175,77 @@ test("the SDK's own MCP client can connect, list and call through the handler", 
   const result = await client.callTool({ name: "list_books", arguments: { imageUrl: "https://x/y.jpg" } });
   assert.deepEqual(result.structuredContent, { books: ["Dune", "Emma"], count: 2 });
   await client.close();
+});
+
+test("actionUrl: https liveUrl origin only, and the name can't leave /api/actions/", () => {
+  assert.equal(actionUrl("https://musemuse-shelfie.vercel.app/", "list_books")?.href, "https://musemuse-shelfie.vercel.app/api/actions/list_books");
+  assert.equal(actionUrl("https://musemuse-shelfie.vercel.app/some/path", "a b")?.href, "https://musemuse-shelfie.vercel.app/api/actions/a%20b");
+  for (const [live, name] of [
+    ["http://musemuse-shelfie.vercel.app", "x"],
+    ["https://user:pw@musemuse-shelfie.vercel.app", "x"],
+    ["not a url", "x"],
+    [null, "x"],
+    ["https://musemuse-shelfie.vercel.app", ".."],
+    ["https://musemuse-shelfie.vercel.app", "."],
+  ] as const) {
+    assert.equal(actionUrl(live, name), null, `${live} ${name}`);
+  }
+});
+
+test("tools/call: redirects aren't followed, replies over 1 MB are refused", async () => {
+  const seen: Array<{ url: string; redirect: RequestRedirect | undefined }> = [];
+  const deps: McpDeps = {
+    findProduct: async () => product,
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), redirect: init?.redirect });
+      const url = String(input);
+      if (url.endsWith("/list_books")) {
+        return new Response(null, { status: 307, headers: { location: "http://169.254.169.254/latest/meta-data" } });
+      }
+      if (url.endsWith("/count_words")) {
+        // A big reply with no content-length, sent in chunks.
+        let sent = 0;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (sent++ > 40) return controller.close();
+              controller.enqueue(new Uint8Array(64 * 1024).fill(0x61));
+            },
+          }),
+        );
+      }
+      return new Response("x", { headers: { "content-length": String(2 * MAX_ACTION_REPLY_BYTES) } });
+    }) as typeof fetch,
+  };
+  const call = (name: string, id: number) =>
+    rpc(deps, "shelfie", { jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: {} } });
+
+  const redirected = await call("list_books", 11);
+  assert.equal(redirected.body.result.isError, true);
+  assert.match(redirected.body.result.content[0].text, /redirect \(HTTP 307\)/);
+  assert.equal(seen.length, 1, "the Location is never requested");
+  assert.equal(seen[0].redirect, "manual");
+
+  const streamed = await call("count_words", 12);
+  assert.equal(streamed.body.result.isError, true);
+  assert.match(streamed.body.result.content[0].text, /more than 1 MB/);
+  const declared = await call("slow", 13);
+  assert.match(declared.body.result.content[0].text, /more than 1 MB/);
+});
+
+test("tools/call: a product whose liveUrl isn't https gets an error, not a request", async () => {
+  const deps = fakeDeps();
+  const insecure: McpProduct = { ...product, liveUrl: "http://musemuse-shelfie.vercel.app" };
+  const res = await handleMcp(
+    new Request(`${URL_BASE}/shelfie`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 14, method: "tools/call", params: { name: "list_books", arguments: {} } }),
+    }),
+    "shelfie",
+    { ...deps, findProduct: async () => insecure },
+  );
+  const body = JSON.parse(await res.text());
+  assert.equal(body.result.isError, true);
+  assert.equal(deps.calls.length, 0);
 });

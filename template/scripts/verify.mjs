@@ -1,8 +1,9 @@
 // Definition of done for a Muse Muse product. See .agents/skills/verify/SKILL.md. Don't edit this file.
 //
 // Steps: typecheck (next typegen + tsc --noEmit), build (next build), start (next start, GET / must be 200),
-// console (Chromium loads / with no console or page errors), smoke (playwright, smoke project, every spec in tests/),
-// manifest (musemuse.json valid against musemuse.schema.json, action routes and fixtures exist).
+// console (Chromium loads / with no console or page errors), smoke (playwright, smoke project, every spec in tests/,
+// with no test.only and no skipped tests; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
+// musemuse.schema.json, action routes and fixtures exist).
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
 // {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}
 import { spawn } from "node:child_process";
@@ -10,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { smokeReportProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -232,7 +234,9 @@ async function main() {
   if (ready) {
     await step("console", () => checkConsole(`http://localhost:${port}/`));
     await step("smoke", async () => {
-      const res = await run(BIN("playwright"), ["test", "--project=smoke"], {
+      const reportPath = path.join(ROOT, "test-results", "report.json");
+      rmSync(reportPath, { force: true });
+      const res = await run(BIN("playwright"), ["test", "--project=smoke", "--forbid-only"], {
         timeoutMs: 900_000,
         env: { MUSEMUSE_PORT: String(port), CI: "1" },
       });
@@ -240,11 +244,22 @@ async function main() {
         .map((k) => res.out.match(new RegExp(`(\\d+) ${k}`))?.[0])
         .filter(Boolean)
         .join(", ");
-      if (res.code === 0) return { ok: true, detail: counts || "tests passed" };
+      if (res.code === 0) {
+        let report;
+        try {
+          report = JSON.parse(readFileSync(reportPath, "utf8"));
+        } catch {
+          return { ok: false, detail: "Playwright wrote no test-results/report.json. Keep playwright.config.ts as it is.", output: res.out };
+        }
+        const problems = smokeReportProblems(report, { requireActions: hasActions() });
+        if (!problems.length) return { ok: true, detail: counts || "tests passed" };
+        return { ok: false, detail: problems[0], output: `${problems.join("\n")}\n\n${res.out}` };
+      }
       const srvLog = stripAnsi(serverLog).trim();
+      const focused = /focused with '\.only'/.test(res.out);
       return {
         ok: false,
-        detail: counts || "playwright failed",
+        detail: focused ? "test.only is not allowed. Remove it so every test runs." : counts || "playwright failed",
         output: `${res.out}${srvLog ? `\n\nServer log (last lines):\n${tail(srvLog, 1500)}` : ""}`,
       };
     });
@@ -256,6 +271,17 @@ async function main() {
 
   await step("manifest", checkManifest);
   await finish();
+}
+
+/** True when the product has actions, so tests/actions.spec.ts must run too. */
+function hasActions() {
+  if (existsSync(path.join(ROOT, "tests", "actions.spec.ts"))) return true;
+  try {
+    const manifest = JSON.parse(readFileSync(path.join(ROOT, "musemuse.json"), "utf8"));
+    return Array.isArray(manifest.actions) && manifest.actions.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function checkConsole(url) {

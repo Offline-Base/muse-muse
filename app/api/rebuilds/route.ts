@@ -1,5 +1,5 @@
 import { start } from "workflow/api";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminOrAutomation } from "@/lib/auth";
 import { badRequest, errorJson, readJson, route } from "@/lib/http";
 import { catalogItem, catalogItems, itemId, rebuildNote, type CatalogItem } from "@/lib/pipeline/catalog";
 import { attachRun, insertBuild, markStartFailed, rebuildIdsTaken } from "@/lib/pipeline/records";
@@ -12,7 +12,7 @@ import { spendPaused } from "@/lib/quota";
  * With ids, it rebuilds exactly those.
  */
 export const POST = route(async (req: Request) => {
-  const admin = await requireAdmin();
+  const admin = await requireAdminOrAutomation(req);
   // An empty or missing body means "everything not rebuilt yet".
   const body: Record<string, unknown> = await readJson(req).catch(() => ({}));
   const ids = body.ids;

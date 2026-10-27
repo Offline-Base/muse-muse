@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { GATEWAY_ENDPOINTS } from "@/lib/gateway/policy";
 import type { GatewayEndpoint } from "@/lib/types";
 
@@ -11,6 +12,34 @@ export function parseEndpoint(path: readonly string[]): GatewayEndpoint | null {
 export function parseBearer(header: string | null): string | null {
   const match = header?.match(/^Bearer\s+(\S+)\s*$/i);
   return match ? match[1] : null;
+}
+
+/** The first four groups of an IPv6 address, written as its /64. One person usually holds a whole /64. */
+function ipv6Prefix64(ip: string): string {
+  const parts = ip.toLowerCase().split("::");
+  const head = parts[0] ? parts[0].split(":") : [];
+  const tail = parts.length > 1 && parts[1] ? parts[1].split(":") : [];
+  const tailGroups = tail.reduce((n, g) => n + (g.includes(".") ? 2 : 1), 0);
+  const groups = parts.length > 1 ? [...head, ...Array(Math.max(0, 8 - head.length - tailGroups)).fill("0"), ...tail] : head;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => (parseInt(g, 16) || 0).toString(16))
+    .join(":")}::/64`;
+}
+
+/**
+ * The rate-limit key for the end user's IP that a product forwards in x-musemuse-client-ip, or null when the header is
+ * missing or malformed. It is only ever a rate-limit key, never auth, since a product can send anything there. Takes
+ * the first entry of a forwarded list; IPv6 addresses count by their /64.
+ */
+export function clientIpKey(header: string | null): string | null {
+  const first = header?.split(",")[0]?.trim().slice(0, 64).split("%")[0];
+  if (!first) return null;
+  const version = isIP(first);
+  if (version === 4) return first;
+  if (version !== 6) return null;
+  const mapped = first.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  return mapped && isIP(mapped[1]) === 4 ? mapped[1] : ipv6Prefix64(first);
 }
 
 export function isJsonContentType(contentType: string | null): boolean {

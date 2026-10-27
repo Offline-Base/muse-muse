@@ -47,18 +47,31 @@ export interface VerifyStepResult {
   ok: boolean;
 }
 
-/** Steps that must pass for a build that never fully passed to ship as partial: its main page builds and serves. */
-export const PARTIAL_REQUIRED_STEPS = ["typecheck", "build", "start"] as const;
+/** Steps that must pass for a new build that never fully passed to ship as partial: it builds, serves and runs its flow. */
+export const PARTIAL_REQUIRED_STEPS = ["typecheck", "build", "start", "console", "smoke"] as const;
+
+/** The judge's decision on the last checked round. `blocking` failures (copying, Meta branding, no result) never ship. */
+export interface JudgeCall {
+  pass: boolean;
+  blocking: boolean;
+}
 
 /**
- * live when verify and the judge both passed. Otherwise partial only when typecheck, build and start passed on the
- * last verify and Muse Code wrote BUILD_NOTES.md (the documented limits). Anything else fails and is not deployed.
+ * live when verify and the judge both passed. A refinement ships only then; otherwise the live version stays. A new
+ * build ships as partial only when typecheck, build, start, console and smoke passed on the last verify and the judge
+ * failed it for a reason that isn't blocking. Anything else fails and is not deployed.
  */
-export function decideOutcome(input: { passed: boolean; steps: VerifyStepResult[]; hasBuildNotes: boolean }): Outcome {
+export function decideOutcome(input: {
+  kind: "build" | "refine";
+  passed: boolean;
+  steps: VerifyStepResult[];
+  judge: JudgeCall | null;
+}): Outcome {
   if (input.passed) return "live";
+  if (input.kind === "refine") return "failed";
+  if (!input.judge || input.judge.pass || input.judge.blocking) return "failed";
   const ok = (name: string) => input.steps.some((s) => s.name === name && s.ok);
-  if (input.hasBuildNotes && PARTIAL_REQUIRED_STEPS.every(ok)) return "partial";
-  return "failed";
+  return PARTIAL_REQUIRED_STEPS.every(ok) ? "partial" : "failed";
 }
 
 /** How many polls fit in a time cap. At least one, so a tiny cap still checks once. */
@@ -121,12 +134,14 @@ export const SPEND_PAUSED_MESSAGE =
 const STAGE_LABELS: Record<string, string> = {
   start: "setup",
   brief: "brief",
+  policy: "request check",
   product: "product setup",
   fixtures: "fixtures",
   provision: "sandbox setup",
   build: "build",
   preview: "preview",
   verify: "check",
+  judge: "judge",
   fix: "fix",
   record: "demo recording",
   deploy: "deploy",

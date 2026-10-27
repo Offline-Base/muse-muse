@@ -1,4 +1,4 @@
-import type { BuildStatus, ProductStatus } from "@/lib/types";
+import type { BuildStatus, Manifest, ProductStatus } from "@/lib/types";
 
 /**
  * Display helpers shared by server pages and client components. Pure functions only: no server imports, no
@@ -185,9 +185,55 @@ export const FIT_LABEL: Record<string, string> = {
   partial: "Partial",
 };
 
-/** Only same-site paths are followed after sign-in, so ?next can't send people elsewhere. */
+/**
+ * Only same-site absolute paths are followed after sign-in, so ?next can't send people elsewhere. Control characters
+ * and backslashes are refused outright because URL parsers drop or rewrite them ("/\t/evil.example" is a different
+ * host), and what's left must still resolve to this site.
+ */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/";
-  if (next.startsWith("/sign-in")) return "/";
-  return next;
+  // eslint-disable-next-line no-control-regex
+  if (!next || !next.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(next)) return "/";
+  const base = "https://same-site.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== base || url.pathname.startsWith("/sign-in")) return "/";
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+const isString = (v: unknown): v is string => typeof v === "string";
+const listOf = (v: unknown, item: (x: unknown) => boolean): boolean => Array.isArray(v) && v.every(item);
+
+/**
+ * A stored musemuse.json when it has the Manifest shape, else null. A partial ship can store whatever Muse Code
+ * wrote, so pages read it through this and fall back to the brief instead of crashing on a bad field.
+ */
+export function parseManifest(m: unknown): Manifest | null {
+  if (!isObject(m)) return null;
+  const ok =
+    isString(m.name) &&
+    isString(m.slug) &&
+    isString(m.tagline) &&
+    isString(m.inspiration) &&
+    listOf(m.models, (x) => isObject(x) && isString(x.id) && isString(x.usedFor)) &&
+    listOf(
+      m.actions,
+      (x) =>
+        isObject(x) &&
+        isString(x.name) &&
+        isString(x.description) &&
+        isObject(x.input) &&
+        isObject(x.output) &&
+        (x.example === undefined || isObject(x.example)),
+    ) &&
+    listOf(m.fixtures, (x) => isObject(x) && isString(x.path) && isString(x.description)) &&
+    listOf(m.limits, isString) &&
+    typeof m.estimatedCostPerRunUsd === "number" &&
+    Number.isFinite(m.estimatedCostPerRunUsd) &&
+    m.estimatedCostPerRunUsd >= 0;
+  return ok ? (m as unknown as Manifest) : null;
 }

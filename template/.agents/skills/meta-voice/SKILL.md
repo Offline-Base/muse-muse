@@ -26,10 +26,10 @@ import { transcribeFile } from "@/lib/meta/voice";
 
 // data URL from the browser
 const bytes = Buffer.from(audio.slice(audio.indexOf(",") + 1), "base64");
-const { text, durationSec } = await transcribeFile({ bytes });
+const { text, durationSec } = await transcribeFile({ bytes, request }); // request: the route's incoming request
 
 // or a public URL from uploadMedia (pass size if you know it)
-const t = await transcribeFile({ url, size });
+const t = await transcribeFile({ url, size, request });
 ```
 
 `transcribeFile` sends small files as multipart, exactly like Meta's API. Files over 4 MB go as JSON `{ model, audioUrl }`, a Muse Muse gateway extension where the gateway downloads the file. It trims the text and strips the zero-width space Meta sometimes appends. It throws a plain `Error` with Meta's message on failure: show "Couldn't hear that. Try a shorter, clearer recording."

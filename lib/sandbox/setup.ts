@@ -5,6 +5,7 @@ import type { Sandbox } from "@vercel/sandbox";
 import { SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, MUSE_INSTALL_URL, OUT_DIR, PLAYWRIGHT_VERSION, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
+import { pristineCopyScript } from "@/lib/sandbox/tasks";
 
 /**
  * Turns a fresh `vercel/sandbox/universal` VM into a builder: system tools, Playwright's Chromium, Muse Code and the
@@ -12,7 +13,8 @@ import { q, sh } from "@/lib/sandbox/shell";
  * sandboxes run it only when no BUILDER_SNAPSHOT_ID is set, which is slow (a few minutes) but works from scripts.
  */
 
-const SKIP_NAMES = new Set(["node_modules", ".next", "test-results", "playwright-report", ".git", ".vercel", ".DS_Store"]);
+// __tests__ holds the template's own unit tests (template/scripts/__tests__), which products don't need.
+const SKIP_NAMES = new Set(["node_modules", ".next", "test-results", "playwright-report", ".git", ".vercel", ".DS_Store", "__tests__"]);
 
 function skipTemplateEntry(name: string): boolean {
   return SKIP_NAMES.has(name) || name.startsWith(".env") || name.endsWith(".tsbuildinfo");
@@ -66,10 +68,11 @@ async function timed<T>(log: Log, step: string, fn: () => Promise<T>, detail?: (
 }
 
 export async function installSystemTools(sandbox: Sandbox, log: Log): Promise<void> {
-  await timed(log, "apt: ffmpeg, fonts-dejavu-core, espeak-ng", () =>
+  // iproute2 gives `ss`, which the demo runner uses to find stale servers on the product ports (tasks.ts).
+  await timed(log, "apt: ffmpeg, fonts-dejavu-core, espeak-ng, iproute2", () =>
     sh(
       sandbox,
-      "apt-get update -q >/dev/null && apt-get install -y -q --no-install-recommends ffmpeg fonts-dejavu-core espeak-ng >/dev/null",
+      "apt-get update -q >/dev/null && apt-get install -y -q --no-install-recommends ffmpeg fonts-dejavu-core espeak-ng iproute2 >/dev/null",
       { sudo: true, env: { DEBIAN_FRONTEND: "noninteractive" } },
     ),
   );
@@ -117,6 +120,11 @@ export async function installTemplate(sandbox: Sandbox, files: TemplateFile[], l
   );
 }
 
+/** Keeps a root-owned, read-only copy of the platform-owned files outside the product, for startTask to restore. */
+export async function savePristineFiles(sandbox: Sandbox, log: Log): Promise<void> {
+  await timed(log, "pristine copy of the platform files", () => sh(sandbox, pristineCopyScript(), { sudo: true }));
+}
+
 export interface BuilderInfo {
   createdAt: string;
   muse: string;
@@ -139,5 +147,6 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await installSystemTools(sandbox, log);
   const muse = await installMuseCode(sandbox, log);
   await installTemplate(sandbox, files, log);
+  await savePristineFiles(sandbox, log);
   return writeBuilderMarker(sandbox, { muse, templateHash: templateHash(files) });
 }

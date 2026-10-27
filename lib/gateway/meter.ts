@@ -1,13 +1,18 @@
-import { fromResponsesUsage, usageCost } from "@/lib/meta/pricing";
+import { fromResponsesUsage, PRICES, usageCost } from "@/lib/meta/pricing";
 import type { GatewayEndpoint, ModelUsage } from "@/lib/types";
 
-/** Largest non-streamed body the meter will buffer to read usage from. Bigger bodies pass through unmetered. */
+/** Largest non-streamed body the meter will buffer to read usage from. Bigger bodies record minimalUsage. */
 const MAX_METER_JSON_BYTES = 256 * 1024 * 1024;
 
 /** Events that carry a final Responses usage object. */
 const RESPONSE_FINAL_EVENTS = new Set(["response.completed", "response.incomplete", "response.failed"]);
 /** Muse Image streaming events, one per finished image (catalog/meta-models.json). */
 const IMAGE_DONE_EVENTS = new Set(["image_generation.completed", "image_edit.completed"]);
+/** What a cut-off or unreadable reply records when it showed no usage, so its spend never goes unrecorded. */
+const MIN_INPUT_TOKENS = 1_000;
+const MIN_OUTPUT_TOKENS = 1_000;
+const MIN_AUDIO_MS = 60_000;
+const CHARS_PER_TOKEN = 4;
 
 export interface SseEvent {
   event: string | null;
@@ -146,18 +151,67 @@ export function usageFromJson(endpoint: GatewayEndpoint, model: string | null, b
   }
 }
 
+function tokenPriced(model: string | null): boolean {
+  const price = model ? (PRICES as Record<string, { input?: number }>)[model] : undefined;
+  return !!price?.input;
+}
+
+/**
+ * The usage to record for a reply that was cut off (timeout, reset) or couldn't be read: what was seen, and at least
+ * a minimal charge. Meta bills a call it started, so recording nothing would hide real spend.
+ */
+export function minimalUsage(
+  endpoint: GatewayEndpoint,
+  model: string | null,
+  seen: { outputTokens?: number; images?: number } = {},
+): ModelUsage[] {
+  if (!model) return [];
+  switch (endpoint) {
+    case "responses": {
+      if (model === "muse-image-1.0") return [imageUsage(Math.max(1, seen.images ?? 0))];
+      if (!tokenPriced(model)) {
+        const item = { model, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, images: 1 };
+        return [{ ...item, costUsd: usageCost(item) }];
+      }
+      const item = {
+        model,
+        inputTokens: MIN_INPUT_TOKENS,
+        cachedInputTokens: 0,
+        outputTokens: Math.max(MIN_OUTPUT_TOKENS, seen.outputTokens ?? 0),
+      };
+      return [{ ...item, costUsd: usageCost(item) }];
+    }
+    case "images/generations":
+    case "images/edits":
+      return [imageUsage(Math.max(1, seen.images ?? 0))];
+    case "asr/transcribe":
+      return [asrUsage(model, MIN_AUDIO_MS)];
+    case "files":
+      return [];
+  }
+}
+
 function eventType(e: SseEvent): string | null {
   if (e.event) return e.event;
   const match = e.data.match(/"type"\s*:\s*"([^"]+)"/);
   return match ? match[1] : null;
 }
 
-/** Usage from a server-sent events stream (Responses or Muse Image streaming). */
+/**
+ * Usage from a server-sent events stream (Responses or Muse Image streaming). `finish` is for a stream that ended;
+ * `partial` for one that broke off, from the deltas seen so far (token-billed models only, so SAM's large mask deltas
+ * are never buffered).
+ */
 export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | null) {
   let final: ModelUsage | null = null;
   let images = 0;
+  let deltaChars = 0;
+  const countDeltas = endpoint === "responses" && tokenPriced(model);
   const wanted = (name: string | null) =>
-    name === null || RESPONSE_FINAL_EVENTS.has(name) || IMAGE_DONE_EVENTS.has(name);
+    name === null ||
+    RESPONSE_FINAL_EVENTS.has(name) ||
+    IMAGE_DONE_EVENTS.has(name) ||
+    (countDeltas && name.endsWith(".delta"));
   const parser = new SseParser((e) => {
     const type = eventType(e);
     if (!type) return;
@@ -165,21 +219,34 @@ export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | nul
       images++;
       return;
     }
+    if (countDeltas && type.endsWith(".delta")) {
+      try {
+        const delta = (JSON.parse(e.data) as { delta?: unknown }).delta;
+        if (typeof delta === "string") deltaChars += delta.length;
+      } catch {
+        // Not JSON: nothing to count.
+      }
+      return;
+    }
     if (!RESPONSE_FINAL_EVENTS.has(type) || !model || endpoint !== "responses") return;
     try {
       const parsed = JSON.parse(e.data) as { response?: Record<string, unknown> };
       final = usageFromResponse(model, parsed.response) ?? final;
     } catch {
-      // A malformed final event leaves usage unrecorded rather than failing the stream.
+      // A malformed final event falls back to the estimate rather than failing the stream.
     }
   }, wanted);
+  const partial = (): ModelUsage[] =>
+    final ? [final] : minimalUsage(endpoint, model, { outputTokens: Math.ceil(deltaChars / CHARS_PER_TOKEN), images });
   return {
     push: (text: string) => parser.push(text),
     finish(): ModelUsage[] {
       parser.end();
       if (endpoint === "images/generations" || endpoint === "images/edits") return images ? [imageUsage(images)] : [];
-      return final ? [final] : [];
+      // A Responses stream that closed without a final event was cut off.
+      return endpoint === "responses" ? partial() : final ? [final] : [];
     },
+    partial,
   };
 }
 
@@ -188,8 +255,8 @@ function isEventStream(contentType: string | null): boolean {
 }
 
 /**
- * Reads one branch of a tee'd upstream body to the end and returns what it consumed. Never throws: metering
- * problems are logged and the call goes unmetered rather than breaking the product.
+ * Reads one branch of a tee'd upstream body to the end and returns what it consumed. Never throws: when the body is
+ * cut off (the upstream timeout, a reset) or can't be read, it logs and returns what it saw, or minimalUsage.
  */
 export async function meterBody(
   endpoint: GatewayEndpoint,
@@ -203,9 +270,9 @@ export async function meterBody(
   }
   const reader = body.getReader();
   const decoder = new TextDecoder();
+  const collector = isEventStream(contentType) ? sseUsageCollector(endpoint, model) : null;
   try {
-    if (isEventStream(contentType)) {
-      const collector = sseUsageCollector(endpoint, model);
+    if (collector) {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -221,17 +288,17 @@ export async function meterBody(
       if (done) break;
       size += value.byteLength;
       if (size > MAX_METER_JSON_BYTES) {
-        console.warn(`[gateway] ${endpoint} reply over ${MAX_METER_JSON_BYTES} bytes, not metered`);
+        console.warn(`[gateway] ${endpoint} reply over ${MAX_METER_JSON_BYTES} bytes, recording an estimate`);
         await reader.cancel().catch(() => {});
-        return [];
+        return minimalUsage(endpoint, model);
       }
       chunks.push(value);
     }
     const text = Buffer.concat(chunks).toString("utf8");
     return usageFromJson(endpoint, model, JSON.parse(text));
   } catch (err) {
-    console.warn(`[gateway] could not meter ${endpoint}:`, err instanceof Error ? err.message : err);
-    return [];
+    console.warn(`[gateway] ${endpoint} reply cut off or unreadable, recording an estimate:`, err instanceof Error ? err.message : err);
+    return collector ? collector.partial() : minimalUsage(endpoint, model);
   } finally {
     reader.releaseLock();
   }

@@ -79,7 +79,7 @@ Stay under {{maxModelSteps}} steps. If an approach fails twice, pick a simpler o
 
 ## 4. Judge
 
-Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[] }`.
+Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a missing main result, an error as the final screen, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. The live prompt is `lib/prompts/judge.ts`.
 
 ```text
 You check whether a product does what its brief says, using screenshots of its primary flow taken during an automated test. You also get the inspiration it was made from.
@@ -109,3 +109,7 @@ The user asked for this change to the live product:
 
 Make the change, keep the primary flow working, update musemuse.json if actions or models changed, and run `npm run verify`.
 ```
+
+## 6. Refinement policy check
+
+Before a refinement starts, `lib/brief/policy.ts` sends the message and the new files' names to `muse-spark-1.3` at low effort with `changeCheckInstructions` from `lib/prompts/brief.ts`. It uses the same refusal list (`REFUSE_WHEN`) as the brief writer. A refusal ends the refine as **refused**, starts no Muse Code run and keeps the live version. A check that can't get a valid reply fails closed.

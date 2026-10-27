@@ -75,6 +75,8 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const aborts = useRef(new Map<string, AbortController>());
   const thumbs = useRef(new Set<string>());
   const dragDepth = useRef(0);
+  // Set synchronously, so a second Enter or click before the next render can't start a second build.
+  const inFlight = useRef(false);
 
   const [note, setNote] = useState("");
   const [items, setItems] = useState<Attachment[]>([]);
@@ -272,6 +274,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
       goSignIn();
       return;
     }
+    if (inFlight.current) return;
     if (!hasContent) {
       setError(isRefine ? "Say what to change first." : "Add a note or some inspo first.");
       return;
@@ -284,6 +287,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
       setError("Remove or retry the files that didn't upload.");
       return;
     }
+    inFlight.current = true;
     setSubmitting(true);
     setError(null);
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
@@ -300,15 +304,18 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
       });
       data = await res.json().catch(() => ({}));
     } catch {
+      inFlight.current = false;
       setSubmitting(false);
       setError("Couldn't reach Muse Muse. Check your connection and try again.");
       return;
     }
     if ((res.status === 201 || res.status === 200) && data.buildId) {
+      // Stays in flight until the build room replaces this page.
       writeDraft(key, "");
       router.push(`/b/${data.buildId}`);
       return;
     }
+    inFlight.current = false;
     setSubmitting(false);
     if (res.status === 401) {
       goSignIn();

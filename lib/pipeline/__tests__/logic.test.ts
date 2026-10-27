@@ -49,30 +49,39 @@ describe("slugs", () => {
 describe("decideOutcome", () => {
   const steps = (ok: Record<string, boolean>) => Object.entries(ok).map(([name, v]) => ({ name, ok: v }));
 
-  it("is live when verify and the judge passed", () => {
-    assert.equal(decideOutcome({ passed: true, steps: [], hasBuildNotes: false }), "live");
+  const allOk = steps({ typecheck: true, build: true, start: true, console: true, smoke: true, manifest: true });
+  const minor = { pass: false, blocking: false };
+  const blocking = { pass: false, blocking: true };
+
+  it("is live when verify and the judge passed, for builds and refinements", () => {
+    assert.equal(decideOutcome({ kind: "build", passed: true, steps: allOk, judge: { pass: true, blocking: false } }), "live");
+    assert.equal(decideOutcome({ kind: "refine", passed: true, steps: allOk, judge: { pass: true, blocking: false } }), "live");
   });
 
-  it("is partial when typecheck, build and start passed and BUILD_NOTES.md exists", () => {
-    const s = steps({ typecheck: true, build: true, start: true, console: true, smoke: false, manifest: true });
-    assert.equal(decideOutcome({ passed: false, steps: s, hasBuildNotes: true }), "partial");
+  it("is partial only when every runtime step passed and the judge failed it for a minor reason", () => {
+    assert.equal(decideOutcome({ kind: "build", passed: false, steps: allOk, judge: minor }), "partial");
   });
 
-  it("fails without build notes", () => {
-    const s = steps({ typecheck: true, build: true, start: true, smoke: false });
-    assert.equal(decideOutcome({ passed: false, steps: s, hasBuildNotes: false }), "failed");
+  it("fails when the judge's failure is blocking (copying, Meta branding, no result)", () => {
+    assert.equal(decideOutcome({ kind: "build", passed: false, steps: allOk, judge: blocking }), "failed");
   });
 
-  it("fails when the app doesn't build or start", () => {
-    assert.equal(
-      decideOutcome({ passed: false, steps: steps({ typecheck: true, build: false, start: false }), hasBuildNotes: true }),
-      "failed",
-    );
-    assert.equal(
-      decideOutcome({ passed: false, steps: steps({ typecheck: true, build: true }), hasBuildNotes: true }),
-      "failed",
-    );
-    assert.equal(decideOutcome({ passed: false, steps: [], hasBuildNotes: true }), "failed");
+  it("fails when the judge never ran, because verify failed", () => {
+    const s = steps({ typecheck: true, build: true, start: true, console: true, smoke: true, manifest: false });
+    assert.equal(decideOutcome({ kind: "build", passed: false, steps: s, judge: null }), "failed");
+  });
+
+  it("fails when the smoke test or the console check failed", () => {
+    for (const broken of ["smoke", "console", "start", "build", "typecheck"]) {
+      const s = steps({ typecheck: true, build: true, start: true, console: true, smoke: true, [broken]: false });
+      assert.equal(decideOutcome({ kind: "build", passed: false, steps: s, judge: minor }), "failed", broken);
+    }
+    assert.equal(decideOutcome({ kind: "build", passed: false, steps: [], judge: minor }), "failed");
+  });
+
+  it("never ships a refinement that didn't fully pass, so the live version stays", () => {
+    assert.equal(decideOutcome({ kind: "refine", passed: false, steps: allOk, judge: minor }), "failed");
+    assert.equal(decideOutcome({ kind: "refine", passed: false, steps: allOk, judge: null }), "failed");
   });
 });
 

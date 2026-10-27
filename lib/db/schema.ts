@@ -20,6 +20,8 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   isAdmin: boolean("is_admin").notNull().default(false),
+  /** "scrypt$N$r$p$salt$hash". Null until the first sign-in, whose password claims the email. */
+  passwordHash: text("password_hash"),
   dailyBuildQuota: integer("daily_build_quota").notNull().default(3),
   createdAt: createdAt(),
 });

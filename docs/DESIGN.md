@@ -127,7 +127,7 @@ In the video, a clearly labeled mock frame can show where it would sit in the da
 | `POST /api/gateway/uploads` | Short-lived upload tickets so large files go straight to storage |
 | `/api/mcp/[slug]` | MCP endpoint that exposes a product's actions to the Muse app |
 
-Browsing is public. Building requires sign-in, because every build spends credits. Inspo uploads use the same direct-to-storage flow as products (see [Large files](#7-meta-gateway)).
+Browsing is public. Building requires sign-in, because every build spends credits. Sign-in takes an email, a personal password (the first one typed claims the email) and the shared access code. Admin needs an email in `ADMIN_EMAILS` and the separate `ADMIN_ACCESS_CODE`; the shared code never grants it. Scripts start batch rebuilds with the `AUTOMATION_SECRET` bearer instead of signing in. Inspo uploads use the same direct-to-storage flow as products (see [Large files](#7-meta-gateway)).
 
 ### 2. Build workflow
 
@@ -146,7 +146,7 @@ One durable workflow per build. Each row is a step with its own retries.
 | `register` | Saves the product, mints its gateway token, builds its MCP tool list from `musemuse.json` | Postgres | 30 s | 3 |
 | `hibernate` | Stops the sandbox. Persistent sandboxes snapshot on stop, so refinements resume where they left off | Vercel Sandbox | 1 min | 2 |
 
-If checks still fail after three rounds, the product ships as **partial** only when its main page renders and the failure is a documented limit. Otherwise the build ends as **failed** with Muse Code's notes. A broken product is never presented as working.
+If checks still fail after three rounds, a new product ships as **partial** only when typecheck, build, start, console and the smoke test all passed and the judge failed for a non-blocking reason (the judge marks copying, implying Meta made it, or a missing main result as blocking). Otherwise the build ends as **failed** with Muse Code's notes. A refinement ships only when its checks fully pass; otherwise the live version is kept. A broken product is never presented as working.
 
 Build status values: `queued`, `briefing`, `refused`, `provisioning`, `building`, `previewing`, `verifying`, `fixing`, `deploying`, `live`, `partial`, `failed`.
 
@@ -155,12 +155,12 @@ Build status values: `queued`, `briefing`, `refused`, `provisioning`, `building`
 - **Image.** A Node 24 managed image plus the Muse Code CLI, the template with its `node_modules`, and Playwright's Chromium, saved once as a snapshot so each build starts warm. `scripts/make-builder-snapshot.ts` rebuilds it whenever `template/` changes. The snapshot is made with open egress, and builds run with the locked-down policy below.
 - **One sandbox per product**, named `product-<slug>`, persistent, with port 3000 exposed for the preview.
 - **Network policy.** Deny by default. The allowlist has three entries:
-  - `api.meta.ai`, with a credentials-brokering rule that injects `Authorization: Bearer <MODEL_API_KEY>`
+  - `api.meta.ai`, with a credentials-brokering rule that injects `Authorization: Bearer <MODEL_API_KEY>` only for the routes Muse Code uses (`lib/sandbox/policy.ts` BROKERED_META_ROUTES) and only when the request carries the sandbox's placeholder key. Every other `api.meta.ai` request gets a 403 from the firewall; product code reaches Meta through the gateway
   - `registry.npmjs.org`, for packages
   - the platform's own domain, so the product's tests can reach the gateway
 
   `dev.meta.ai` is allowed only while creating the snapshot, for the Muse Code installer.
-- **Muse Code auth.** The sandbox gets `META_API_KEY=brokered`, a placeholder. The firewall replaces the header on the way out. Day-one spike 1 confirms Muse Code accepts this.
+- **Muse Code auth.** Only the Muse Code runner exports `META_API_KEY`, set to a per-sandbox placeholder derived from the real key (`placeholderKey()`). The firewall swaps it for the real key on the brokered routes. Spike 1 confirmed Muse Code accepts a placeholder, and the Oct 27 review fix confirmed builds work under the scoped routes.
 - **Muse Code sees the inspo two ways.** The brief carries Spark 1.3's written description of every reference, so the build works even with text only. Image references are also attached with `muse exec --image`. One third-party guide lists that flag and Meta's docs don't, so spike 1 checks it.
 - **Muse Code flags.** `muse exec --json --prompt-file brief.md --image inspo/<file> --model muse-spark-1.3 --reasoning-effort high --max-model-steps 200 --yolo`. `--yolo` turns off Muse Code's own sandbox and approvals. That is acceptable only because the whole microVM is disposable and firewalled, which is the case Muse Code's docs describe for it. Use `muse-wonder-1.0` when the brief marks the product as complex.
 - **Sessions.** Save Muse Code's session id from the JSONL stream. Fix rounds and user refinements call `muse exec --session-id <id>`. `muse export --session <id>` produces the transcript for the "how it was built" page.

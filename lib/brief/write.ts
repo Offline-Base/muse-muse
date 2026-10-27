@@ -84,6 +84,8 @@ export interface PreparedFixture {
   /** Public URL to copy from. */
   url: string;
   description: string;
+  /** True when the file is one of the person's own references, used as a test input. */
+  fromUserSample?: boolean;
 }
 
 /** Saves a file and returns its public URL. Defaults to Vercel Blob under fixtures/<buildId>/. */
@@ -223,7 +225,7 @@ export async function prepareFixtures(input: {
       used.add(sampleIndex);
       const ref = input.references[sampleIndex];
       const fileName = uniqueName(safeFileName(ref.fileName, ref.contentType, fallback), taken);
-      jobs.push(Promise.resolve({ fileName, url: ref.url, description: fixture.description }));
+      jobs.push(Promise.resolve({ fileName, url: ref.url, description: fixture.description, fromUserSample: true }));
       continue;
     }
 

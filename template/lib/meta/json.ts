@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { Response, ResponseInput } from "openai/resources/responses/responses";
 import { z } from "zod";
-import { metaClient } from "./client";
+import { metaClient, type RequestLike } from "./client";
 
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
@@ -16,7 +16,9 @@ export interface RespondJsonOptions<T> {
   /** Default "low". Even trivial answers use 150 to 400 reasoning tokens at low. */
   reasoningEffort?: JsonReasoningEffort;
   maxOutputTokens?: number;
-  /** Defaults to metaClient(), the gateway client. */
+  /** The incoming request, or `await headers()` in a server action, so the gateway can rate limit each visitor. */
+  request?: RequestLike | null;
+  /** Defaults to metaClient(request), the gateway client. */
   client?: OpenAI;
 }
 
@@ -50,7 +52,7 @@ type Mode = "strict" | "loose" | "instructions";
  * Other API errors (401, 429, media_url_origin_error) are thrown unchanged for the caller to handle.
  */
 export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
-  const client = opts.client ?? metaClient();
+  const client = opts.client ?? metaClient(opts.request);
   const generated = z.toJSONSchema(opts.schema, { unrepresentable: "any", io: "output" }) as Json;
   delete generated.$schema;
   // Structured output needs an object at the root, so arrays and scalars travel as { value }.

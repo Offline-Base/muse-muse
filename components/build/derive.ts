@@ -297,6 +297,35 @@ export function railStates(room: RoomState, kind: BuildView["kind"]): Record<Rai
   }
 }
 
+export type RefineSpot =
+  | { show: true }
+  | { show: false; elsewhere: { buildId: string; running: boolean } | null };
+
+/**
+ * Whether this build room offers the refine composer. Eligibility comes from the product, not this build: it shows
+ * while the product is live or partial and none of its other builds is running, on the product's current build or on
+ * its newest one (say, a refinement that failed and left the live version in place). Elsewhere it points at the
+ * running build or the current one.
+ */
+export function refineSpot(input: {
+  buildId: string;
+  terminal: boolean;
+  canRefine: boolean;
+  product: { status: string; latestBuildId: string | null } | null;
+  history: ReadonlyArray<{ id: string; status: string }>;
+}): RefineSpot {
+  const { product, history } = input;
+  const shipped = product?.status === "live" || product?.status === "partial";
+  if (!product || !shipped || !input.canRefine || !input.terminal) return { show: false, elsewhere: null };
+  const running = history.find((h) => h.id !== input.buildId && !isTerminalStatus(h.status));
+  if (running) return { show: false, elsewhere: { buildId: running.id, running: true } };
+  if (!history.length || product.latestBuildId === input.buildId || history[0].id === input.buildId) {
+    return { show: true };
+  }
+  const current = product.latestBuildId ?? history[0].id;
+  return { show: false, elsewhere: { buildId: current, running: false } };
+}
+
 /** Condensed view of one Muse Code round for display. */
 export type LogItem =
   | { type: "say"; text: string }

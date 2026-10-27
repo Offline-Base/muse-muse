@@ -9,7 +9,8 @@ import { checkBuildAllowed } from "@/lib/quota";
 
 /**
  * POST {note, references, rebuildOf?} -> 201 {buildId}. Saves the muse, queues a build and starts the build workflow.
- * 400 bad input, 401 signed out, 429 {error: "daily_limit"}, 503 {error: "paused"} (daily spend cap).
+ * 400 bad input, 401 signed out, 403 rebuildOf from someone who isn't an admin (showcase rebuilds are admin-only, as
+ * in /api/rebuilds), 429 {error: "daily_limit"}, 503 {error: "paused"} (daily spend cap).
  */
 export const POST = route(async (req: Request) => {
   const user = await requireUser();
@@ -23,6 +24,7 @@ export const POST = route(async (req: Request) => {
 
   let rebuildOf: string | null = null;
   if (body.rebuildOf !== undefined && body.rebuildOf !== null) {
+    if (!user.isAdmin) return errorJson(403, "Only admins can start a rebuild of Meta's demos.");
     if (typeof body.rebuildOf !== "string" || !catalogItem(body.rebuildOf)) {
       return errorJson(400, "That rebuild isn't in the catalog.");
     }

@@ -1,3 +1,5 @@
+import { clientIpHeaders, type RequestLike } from "./client";
+
 export interface TranscriptTurn {
   speaker: string;
   startSec: number;
@@ -20,6 +22,8 @@ export interface TranscribeOptions {
   /** Byte size when known, to skip downloading files that are too big for the multipart path. */
   size?: number;
   fileName?: string;
+  /** The incoming request, or `await headers()` in a server action, so the gateway can rate limit each visitor. */
+  request?: RequestLike | null;
 }
 
 export const VOICE_MODEL = "muse-voice-transcribe-1.0";
@@ -64,12 +68,12 @@ export async function transcribeFile(opts: TranscribeOptions): Promise<Transcrip
     const form = new FormData();
     form.append("request", JSON.stringify({ model: VOICE_MODEL, audioEncoding: "WAV" }));
     form.append("audio", new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), opts.fileName ?? "audio.wav");
-    res = await fetch(endpoint, { method: "POST", headers: authHeaders(), body: form });
+    res = await fetch(endpoint, { method: "POST", headers: authHeaders(opts.request), body: form });
   } else {
     if (!opts.url) throw new Error("Audio over 4 MB needs a public url (upload it with uploadMedia).");
     res = await fetch(endpoint, {
       method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      headers: { ...authHeaders(opts.request), "Content-Type": "application/json" },
       body: JSON.stringify({ model: VOICE_MODEL, audioUrl: opts.url }),
     });
   }
@@ -128,6 +132,6 @@ function gatewayV1(): string {
   return `${gateway.replace(/\/$/, "")}/v1`;
 }
 
-function authHeaders(): Record<string, string> {
-  return { Authorization: `Bearer ${process.env.PRODUCT_TOKEN}` };
+function authHeaders(request?: RequestLike | null): Record<string, string> {
+  return { Authorization: `Bearer ${process.env.PRODUCT_TOKEN}`, ...clientIpHeaders(request) };
 }

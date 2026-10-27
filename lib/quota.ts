@@ -11,9 +11,14 @@ export function quotaWindowStart(now: Date): Date {
   return new Date(now.getTime() - QUOTA_WINDOW_MS);
 }
 
-/** The user's own quota when their row has one, else the platform default. */
-export function effectiveQuota(rowQuota: number | null | undefined, fallback: number): number {
-  return typeof rowQuota === "number" && Number.isFinite(rowQuota) && rowQuota >= 0 ? rowQuota : fallback;
+/**
+ * Builds per rolling 24 hours for anyone who isn't an admin: MAX_BUILDS_PER_USER_PER_DAY, read on every check so a
+ * change reaches everyone at once. users.daily_build_quota is not read. signIn copies the env value into it only when
+ * the row is created and nothing ever changes it, so it can't tell an admin's override from a stale copy, and trusting
+ * it kept a raised limit from reaching anyone who had already signed in.
+ */
+export function dailyBuildQuota(): number {
+  return env.maxBuildsPerUserPerDay;
 }
 
 /** Admins are exempt. Everyone else may start `quota` builds per rolling 24 hours. */
@@ -50,16 +55,8 @@ export type BuildAllowance = { ok: true } | { ok: false; status: 429 | 503; erro
 export async function checkBuildAllowed(user: SessionUser): Promise<BuildAllowance> {
   if (await spendPaused()) return { ok: false, status: 503, error: "paused" };
   if (user.isAdmin) return { ok: true };
-  const [row] = await db()
-    .select({ quota: schema.users.dailyBuildQuota, isAdmin: schema.users.isAdmin })
-    .from(schema.users)
-    .where(eq(schema.users.id, user.id))
-    .limit(1);
   const used = await buildsStartedSince(user.id, quotaWindowStart(new Date()));
-  const decision = quotaDecision({
-    isAdmin: row?.isAdmin ?? false,
-    quota: effectiveQuota(row?.quota, env.maxBuildsPerUserPerDay),
-    used,
-  });
+  // Admin sessions returned above. users.is_admin can be true for an admin's shared-code session, which isn't admin.
+  const decision = quotaDecision({ isAdmin: false, quota: dailyBuildQuota(), used });
   return decision.allowed ? { ok: true } : { ok: false, status: 429, error: "daily_limit" };
 }

@@ -3,9 +3,13 @@
  * in a "use step" function in ./build-steps.ts, and long sandbox work is started detached and polled between durable
  * sleeps, so a 20-minute build is many short steps.
  *
- *   buildProduct:  brief -> product -> fixtures + provision -> build -> preview -> verify/fix loop -> outcome
- *                  -> record (non-fatal) -> deploy -> register -> hibernate
- *   refineProduct: reopen sandbox -> refine-<n>.md -> resume the Muse Code session -> same checks and shipping
+ *   buildProduct:  brief -> product -> fixtures + provision -> build -> preview (non-fatal) -> verify/fix loop
+ *                  -> outcome -> record (non-fatal) -> deploy -> register -> hibernate -> final status
+ *   refineProduct: policy check -> reopen sandbox -> refine-<n>.md -> resume the Muse Code session -> same checks
+ *                  and shipping, but only a change that passes every check ships
+ *
+ * The final status is written after hibernate, so a build only turns terminal (and a refinement can only start) once
+ * its sandbox and build tokens are cleaned up.
  *
  * Start them with start() from "workflow/api". Never call them directly.
  */
@@ -13,7 +17,6 @@ import { sleep } from "workflow";
 import { env } from "@/lib/env";
 import {
   briefStep,
-  buildNotesStep,
   cleanupStep,
   collectVerifyStep,
   createProductStep,
@@ -30,6 +33,7 @@ import {
   pollTaskStep,
   previewStep,
   provisionStep,
+  refineCheckStep,
   registerStep,
   reopenStep,
   setStatusStep,
@@ -48,6 +52,7 @@ import {
   failureMessage,
   pollTimedOut,
   SPEND_PAUSED_MESSAGE,
+  type JudgeCall,
   type Outcome,
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
@@ -107,20 +112,31 @@ async function runMuse(
   });
   const startedAt = Date.now();
   let offset = 0;
-  for (let polls = 1; ; polls++) {
-    await sleep(MUSE_POLL_MS);
-    const poll = await pollMuseStep({
+  let usageRecorded = false;
+  const poll = () =>
+    pollMuseStep({
       buildId: ctx.buildId,
       productId: ctx.productId,
       sandboxName: ctx.sandboxName,
       run: cmd,
       offset,
       round: run.round,
+      usageRecorded,
     });
-    offset = poll.offset;
-    if (poll.done) return { timedOut: false, exitCode: poll.exitCode };
+  for (let polls = 1; ; polls++) {
+    await sleep(MUSE_POLL_MS);
+    const read = await poll();
+    offset = read.offset;
+    usageRecorded = read.usageRecorded;
+    if (read.done) return { timedOut: false, exitCode: read.exitCode };
     if (pollTimedOut({ startedAt, now: Date.now(), capMs: run.capMs, intervalMs: MUSE_POLL_MS, polls })) {
       await killStep(ctx.sandboxName, cmd.cmdId);
+      // One last read, so whatever the run wrote on its way out (its usage, if it got that far) is shown and charged.
+      try {
+        await poll();
+      } catch {
+        // The run is stopped either way.
+      }
       await emitStep(ctx.buildId, {
         type: "log",
         text: `Muse Code was stopped after ${Math.round(run.capMs / 60_000)} minutes.`,
@@ -162,22 +178,44 @@ async function runVerify(ctx: Ctx, round: number): Promise<VerifyResult> {
   });
 }
 
+/** The judge's call. A judge that can't run counts as a failed, non-blocking check, so the fix loop handles it. */
+async function judge(ctx: Ctx, round: number, screenshots: VerifyResult["screenshots"]): Promise<JudgeCall> {
+  try {
+    return await judgeStep({ buildId: ctx.buildId, productId: ctx.productId, round, screenshots });
+  } catch (err) {
+    const verdict = {
+      pass: false,
+      blocking: false,
+      reasons: ["The screenshot judge could not run, so this round counts as not passed.", failureMessage("judge", err)],
+      mismatches: [] as string[],
+    };
+    await emitStep(ctx.buildId, { type: "judge", round, verdict });
+    return { pass: false, blocking: false };
+  }
+}
+
+interface Checks {
+  passed: boolean;
+  steps: VerifyStepResult[];
+  fixes: number;
+  /** The judge's call on the last round, or null when that round's verify failed. */
+  judge: JudgeCall | null;
+}
+
 /**
  * Verify, then judge if verify passed. On failure, resume the same Muse Code session with fix-<n>.md and check
  * again, up to MAX_FIX_ROUNDS. Returns the last result.
  */
-async function checkAndFix(ctx: Ctx, track: Track): Promise<{ passed: boolean; steps: VerifyStepResult[]; fixes: number }> {
+async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
   const rounds = maxFixRounds();
   for (let fix = 0; ; ) {
     const round = fix;
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify" });
     const verify = await runVerify(ctx, round);
-    const judged = verify.passed
-      ? await judgeStep({ buildId: ctx.buildId, productId: ctx.productId, round, screenshots: verify.screenshots })
-      : null;
+    const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
-    if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix };
+    if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
 
     fix += 1;
     track.stage = "fix";
@@ -218,7 +256,7 @@ async function ship(
         title: product.name,
         subtitle: product.tagline,
       });
-      if (!demoVideoUrl) await emitStep(ctx.buildId, { type: "log", text: "The demo run made no video this time." });
+      if (!demoVideoUrl) await emitStep(ctx.buildId, { type: "log", text: "The demo run did not pass, so no video was published." });
     }
   } catch (err) {
     await emitStep(ctx.buildId, {
@@ -267,26 +305,59 @@ async function ship(
   return liveUrl;
 }
 
-/** From the checks to the final status: decide live, partial or failed, then ship or stop. */
+/** How a run ended. Written as the build's status only after cleanup. */
+interface Ending {
+  status: Outcome;
+  message: string;
+}
+
+/** From the checks to the outcome: decide live, partial or failed, then ship or stop. */
 async function finish(
   ctx: Ctx,
   track: Track,
+  kind: "build" | "refine",
   product: { name: string; tagline: string },
-  checks: { passed: boolean; steps: VerifyStepResult[]; fixes: number },
+  checks: Checks,
   failedMessage: string,
-): Promise<BuildProductResult> {
-  const hasBuildNotes = checks.passed ? false : await buildNotesStep(ctx.sandboxName);
-  const outcome = decideOutcome({ passed: checks.passed, steps: checks.steps, hasBuildNotes });
+): Promise<Ending> {
+  const outcome = decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
   if (outcome === "failed") throw new BuildStop(failedMessage);
   const liveUrl = await ship(ctx, track, { ...product, outcome });
-  await setStatusStep(ctx.buildId, outcome, {
-    step: null,
+  return {
+    status: outcome,
     message:
       outcome === "live"
         ? `Live at ${liveUrl}`
-        : `Shipped as partial at ${liveUrl}. It runs, but some checks did not pass, and its build notes list what is missing.`,
-  });
-  return { status: outcome };
+        : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,
+  };
+}
+
+/** The preview is only for watching, so a page that doesn't answer yet goes on to the checks, which can fix it. */
+async function preview(ctx: Ctx): Promise<void> {
+  try {
+    await previewStep(ctx.buildId, ctx.sandboxName);
+  } catch (err) {
+    await emitStep(ctx.buildId, {
+      type: "log",
+      text: `The preview did not start, so the checks run without it. ${failureMessage("preview", err)}`,
+    });
+  }
+}
+
+/** cleanupStep catches its own errors. This also covers the step itself failing, so the run still ends. */
+async function cleanup(input: { buildId: string; productId: string | null; sandboxName: string | null }): Promise<void> {
+  try {
+    await cleanupStep(input);
+  } catch {
+    // The sandbox times out on its own, and build tokens expire.
+  }
+}
+
+/** Writes the final status. A failed refinement passes productId null, so the live product is left alone. */
+async function end(buildId: string, productId: string | null, ending: Ending): Promise<BuildProductResult> {
+  if (ending.status === "failed") await failStep({ buildId, productId, message: ending.message });
+  else await setStatusStep(buildId, ending.status, { step: null, message: ending.message });
+  return { status: ending.status };
 }
 
 export async function buildProduct(input: BuildProductInput): Promise<BuildProductResult> {
@@ -295,6 +366,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
   const track: Track = { stage: "start" };
   let productId: string | null = null;
   let sandboxName: string | null = null;
+  let ending: Ending;
   try {
     const head = await loadBuildStep(buildId);
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
@@ -333,23 +405,23 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });
-    await previewStep(buildId, sandboxName);
+    await preview(ctx);
 
     const checks = await checkAndFix(ctx, track);
     track.stage = "verify";
-    return await finish(
+    ending = await finish(
       ctx,
       track,
+      "build",
       brief,
       checks,
       `The product did not pass its checks after ${checks.fixes} fix ${checks.fixes === 1 ? "round" : "rounds"}, so it was not deployed.`,
     );
   } catch (err) {
-    await failStep({ buildId, productId, message: failureMessage(track.stage, err) });
-    return { status: "failed" };
-  } finally {
-    if (productId || sandboxName) await cleanupStep({ buildId, productId, sandboxName });
+    ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
+  if (productId || sandboxName) await cleanup({ buildId, productId, sandboxName });
+  return await end(buildId, productId, ending);
 }
 
 export async function refineProduct(input: BuildProductInput): Promise<BuildProductResult> {
@@ -358,11 +430,23 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
   const track: Track = { stage: "start" };
   let productId: string | null = null;
   let sandboxName: string | null = null;
+  let ending: Ending;
   try {
     const head = await loadBuildStep(buildId);
     if (TERMINAL_STATUSES.includes(head.status)) return { status: head.status };
     if (head.kind !== "refine") throw new BuildStop("This build is a new product, not a refinement.");
     await assertSpendOk();
+
+    // A change request never passes through the brief writer, so it gets the same refusal policy here, before
+    // anything resumes or spends on Muse Code.
+    track.stage = "policy";
+    await setStatusStep(buildId, "briefing", { step: "brief" });
+    const check = await refineCheckStep(buildId);
+    if (check.refusal) {
+      const message = `${check.refusal} The live version was kept.`;
+      await setStatusStep(buildId, "refused", { message, error: message });
+      return { status: "refused" };
+    }
 
     track.stage = "provision";
     await setStatusStep(buildId, "provisioning", { step: "provision" });
@@ -393,21 +477,21 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });
-    await previewStep(buildId, sandboxName);
+    await preview(ctx);
 
     const checks = await checkAndFix(ctx, track);
     track.stage = "verify";
-    return await finish(
+    ending = await finish(
       ctx,
       track,
+      "refine",
       refine,
       checks,
       "The change did not pass its checks, so it was not deployed. The live version was kept.",
     );
   } catch (err) {
-    await failStep({ buildId, productId: null, message: failureMessage(track.stage, err) });
-    return { status: "failed" };
-  } finally {
-    if (sandboxName) await cleanupStep({ buildId, productId, sandboxName });
+    ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
+  if (sandboxName) await cleanup({ buildId, productId, sandboxName });
+  return await end(buildId, null, ending);
 }

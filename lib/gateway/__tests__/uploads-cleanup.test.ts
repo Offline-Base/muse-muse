@@ -10,8 +10,10 @@ import { TEST_TOKEN } from "./helpers";
 /** A well-formed but fake read-write token: client tokens are signed locally, so no Blob store is needed. */
 const FAKE_BLOB_TOKEN = "vercel_blob_rw_teststore123_secretsecretsecretsecret";
 
-function deps(status: ProductStatus = "live"): UploadDeps {
+function deps(status: ProductStatus = "live", counters = new Map<string, number>()): UploadDeps & { rateKeys: string[][] } {
+  const rateKeys: string[][] = [];
   return {
+    rateKeys,
     findToken: async (t) =>
       t === TEST_TOKEN
         ? { id: "tok-1", productId: "prod-1", scope: "live", allowedModels: [], dailyBudgetUsd: 1 }
@@ -19,6 +21,11 @@ function deps(status: ProductStatus = "live"): UploadDeps {
     productStatus: async () => status,
     blobToken: () => FAKE_BLOB_TOKEN,
     callbackUrl: "https://platform.example/api/gateway/uploads",
+    hitRateLimits: async (keys, windowStart) => {
+      rateKeys.push([...keys, windowStart.toISOString()]);
+      return Object.fromEntries(keys.map((k) => [k, counters.set(k, (counters.get(k) ?? 0) + 1).get(k)!]));
+    },
+    now: () => new Date("2026-10-27T12:34:56Z"),
   };
 }
 
@@ -73,10 +80,46 @@ test("token request: returns a client token carrying the limits, productId and c
   assert.equal(payload.pathname, "uploads/clip.mp4");
   assert.ok(payload.allowedContentTypes.includes("video/mp4"));
   assert.ok(payload.allowedContentTypes.includes("text/plain"));
-  assert.equal(payload.maximumSizeInBytes, 200 * 1024 * 1024);
+  assert.ok(payload.allowedContentTypes.includes("image/jpeg"));
+  assert.ok(!payload.allowedContentTypes.some((t) => t === "image/*" || t.includes("svg")), "no SVG on the public Blob domain");
+  assert.equal(payload.maximumSizeInBytes, 100 * 1024 * 1024);
   assert.equal(payload.addRandomSuffix, true);
   assert.equal(payload.onUploadCompleted?.callbackUrl, "https://platform.example/api/gateway/uploads");
   assert.deepEqual(JSON.parse(payload.onUploadCompleted!.tokenPayload), { productId: "prod-1" });
+});
+
+test("token request: short-lived tickets", async () => {
+  const before = Date.now();
+  const res = await handleGatewayUpload(post(tokenEvent("uploads/clip.mp4")), deps());
+  const { clientToken } = (await res.json()) as { clientToken: string };
+  const { validUntil } = getPayloadFromClientToken(clientToken) as unknown as { validUntil: number };
+  assert.ok(validUntil - before <= 5 * 60_000 + 1000 && validUntil > before, String(validUntil - before));
+});
+
+test("token request: 30 tickets per token and 10 per end user every 10 minutes", async () => {
+  const counters = new Map<string, number>();
+  const d = deps("live", counters);
+  for (let i = 0; i < 30; i++) assert.equal((await handleGatewayUpload(post(tokenEvent("uploads/a.png")), d)).status, 200);
+  const over = await handleGatewayUpload(post(tokenEvent("uploads/a.png")), d);
+  assert.equal(over.status, 429);
+  const err = ((await over.json()) as { error: { code: string; message: string } }).error;
+  assert.equal(err.code, "rate_limited");
+  assert.match(err.message, /this product/);
+  assert.equal(over.headers.get("retry-after"), "304", "the window ends at 12:40");
+  assert.deepEqual(d.rateKeys[0], ["upload:token:tok-1", "2026-10-27T12:30:00.000Z"]);
+
+  const user = deps("live", new Map([["upload:ip:prod-1:203.0.113.7", 10]]));
+  const headers = { authorization: `Bearer ${TEST_TOKEN}`, "x-musemuse-client-ip": "203.0.113.7, 10.1.1.1" };
+  const res = await handleGatewayUpload(post(tokenEvent("uploads/a.png"), headers), user);
+  assert.equal(res.status, 429);
+  assert.match(((await res.json()) as { error: { message: string } }).error.message, /this user/);
+  assert.deepEqual(user.rateKeys[0], ["upload:token:tok-1", "upload:ip:prod-1:203.0.113.7", "2026-10-27T12:30:00.000Z"]);
+
+  // The header never stands in for the product token, and bad tokens don't spend the product's tickets.
+  const anon = deps();
+  const noToken = await handleGatewayUpload(post(tokenEvent("uploads/a.png"), { "x-musemuse-client-ip": "203.0.113.7" }), anon);
+  assert.equal(noToken.status, 401);
+  assert.equal(anon.rateKeys.length, 0);
 });
 
 test("upload-completed callback: no bearer needed, but the signature must match", async () => {

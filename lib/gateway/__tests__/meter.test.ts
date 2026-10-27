@@ -119,7 +119,60 @@ test("asr metering: audioDurationMs at $0.18 per hour", () => {
   assert.ok(Math.abs(item.costUsd - 0.18) < 1e-12);
 });
 
-test("files are free and unparseable bodies go unmetered", async () => {
+test("files are free; unparseable bodies record a minimal estimate", async () => {
   assert.deepEqual(await meterBody("files", null, "application/json", streamOf('{"id":"file-1"}', 4)), []);
-  assert.deepEqual(await meterBody("responses", "muse-spark-1.3", "application/json", streamOf("not json", 4)), []);
+  const [item] = await meterBody("responses", "muse-spark-1.3", "application/json", streamOf("not json", 4));
+  assert.equal(item.model, "muse-spark-1.3");
+  assert.equal(item.inputTokens, 1000);
+  assert.equal(item.outputTokens, 1000);
+  assert.ok(item.costUsd > 0);
+});
+
+/** A stream that sends `text` and then fails, like the upstream timeout or a reset mid-stream. */
+function failingStream(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  let sent = false;
+  return new ReadableStream({
+    pull(controller) {
+      if (sent) return controller.error(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+      sent = true;
+      controller.enqueue(bytes);
+    },
+  });
+}
+
+const delta = (text: string) =>
+  `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: text })}\n\n`;
+
+test("cut-off Responses stream: records the deltas seen, at least a minimal estimate", async () => {
+  const long = "x".repeat(8000);
+  const sse = 'event: response.created\ndata: {"type":"response.created","response":{"usage":null}}\n\n' + delta(long) + delta(long);
+  const [item] = await meterBody("responses", "muse-wonder-1.0", "text/event-stream", failingStream(sse));
+  assert.equal(item.model, "muse-wonder-1.0");
+  assert.equal(item.outputTokens, 4000, "16,000 delta characters at 4 per token");
+  assert.equal(item.inputTokens, 1000);
+  assert.ok(Math.abs(item.costUsd - (1000 * 4 + 4000 * 20) / 1e6) < 1e-12);
+
+  const [early] = await meterBody("responses", "muse-spark-1.3", "text/event-stream", failingStream(delta("hi")));
+  assert.equal(early.outputTokens, 1000, "nothing much seen: the minimal estimate");
+
+  // A stream that closes cleanly without a final event was cut off too.
+  const [closed] = await meterBody("responses", "muse-spark-1.3", "text/event-stream", streamOf(delta("hi"), 3));
+  assert.equal(closed.inputTokens, 1000);
+});
+
+test("cut-off streams after the final event keep the real usage; SAM and images record one image", async () => {
+  const done =
+    'event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":7,"output_tokens":3}}}\n\n';
+  const [real] = await meterBody("responses", "muse-spark-1.3", "text/event-stream", failingStream(done));
+  assert.equal(real.inputTokens, 7);
+  assert.equal(real.outputTokens, 3);
+
+  const [sam] = await meterBody("responses", "sam-3.1", "text/event-stream", failingStream(delta("<0f>0<|box;")));
+  assert.equal(sam.images, 1);
+  assert.ok(sam.costUsd > 0);
+
+  const [image] = await meterBody("images/generations", "muse-image-1.0", "text/event-stream", failingStream(": ping\n\n"));
+  assert.equal(image.images, 1);
+  assert.ok(Math.abs(image.costUsd - 0.01) < 1e-12);
 });

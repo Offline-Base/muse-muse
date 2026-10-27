@@ -12,16 +12,26 @@ import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/type
  * CONTRACT (owned by the brief agent).
  *
  * Prompt 4 in docs/PROMPTS.md: Muse Spark 1.3 sees the brief, the image inspo and the screenshots, and returns
- * { pass, reasons, mismatches } as structured output. Only image references are shown to the judge; other kinds are
- * described from the brief. With no screenshots it fails with a reason instead of calling the model.
+ * { pass, reasons, mismatches, blocking } as structured output. Only image references are shown to the judge; other
+ * kinds are described from the brief. With no screenshots it fails, blocking, with a reason instead of calling the
+ * model.
  */
 
-/** Field order puts the reasoning before the decision. */
+/** The verdict plus whether a failure is blocking: such a product never ships, not even as partial. */
+export type JudgeResult = JudgeVerdict & { blocking: boolean };
+
+/** Field order puts the reasoning before the decision. A missing `blocking` counts as blocking. */
 const VerdictSchema = z.object({
   reasons: z.array(z.string().min(1)).min(1).max(6),
   mismatches: z.array(z.string().min(1)).max(10),
   pass: z.boolean(),
+  blocking: z.boolean().optional(),
 });
+
+export function toJudgeResult(data: z.infer<typeof VerdictSchema>): JudgeResult {
+  const { pass, reasons, mismatches } = data;
+  return { pass, reasons, mismatches, blocking: pass ? false : (data.blocking ?? true) };
+}
 
 const MAX_INSPO = 4;
 const MAX_SCREENSHOTS = 4;
@@ -40,13 +50,15 @@ export async function judgeBuild(input: {
   brief: Brief;
   references: Reference[];
   screenshots: Screenshot[];
-}): Promise<{ verdict: JudgeVerdict; usage: ModelUsage[]; costUsd: number }> {
+}): Promise<{ verdict: JudgeResult; usage: ModelUsage[]; costUsd: number }> {
   if (!input.screenshots.length) {
+    // Nothing cleared the product's look, so this can't ship as partial.
     return {
       verdict: {
         pass: false,
         reasons: ["The smoke test saved no screenshots, so the judge had nothing to look at."],
         mismatches: ["Save 2 to 4 numbered full-page screenshots in test-results/judge/, ending on the final result."],
+        blocking: true,
       },
       usage: [],
       costUsd: 0,
@@ -100,8 +112,7 @@ export async function judgeBuild(input: {
     normalize: (raw) => cleanStrings(raw),
   });
   const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
-  const { pass, reasons, mismatches } = result.data;
-  return { verdict: { pass, reasons, mismatches }, usage: result.usage, costUsd };
+  return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
 }
 
 function guessImageType(url: string): string {

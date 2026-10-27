@@ -10,8 +10,13 @@ All calls run on the server, in a route handler or server action. The API matche
 ```ts
 import { metaClient } from "@/lib/meta/client";
 
-const meta = metaClient(); // OpenAI SDK pointed at the Muse Muse gateway
+export async function POST(request: Request) {
+  const meta = metaClient(request); // OpenAI SDK pointed at the Muse Muse gateway
+  // ...
+}
 ```
+
+Always pass the incoming `request` (in a server action, `await headers()` from `next/headers`). It sends the visitor's IP to the gateway as `x-musemuse-client-ip`, so the gateway limits each person separately and one visitor can't use up the product's daily budget. `respondJson` and `transcribeFile` take it as the `request` option.
 
 ## Pick the model
 
@@ -39,6 +44,7 @@ const cutList = await respondJson({
   schemaName: "cut_list",
   instructions: "You write cut lists for simple furniture. Use inches.",
   input: `Bookshelf: ${JSON.stringify(spec)}`,
+  request, // the route handler's incoming request
   // model: "muse-spark-1.3" (default), reasoningEffort: "low" (default)
 });
 ```
@@ -72,6 +78,7 @@ const result = await respondJson({
   schema: Tally,
   schemaName: "tally",
   input: [{ role: "user", content: [{ type: "input_text", text: "Count the birds." }, imagePart(dataUrl)] }],
+  request,
 });
 ```
 
