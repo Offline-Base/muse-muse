@@ -613,7 +613,7 @@ export interface UsageFilters {
   productId: string | null;
   model: string | null;
   view: UsageView;
-  rangeDays: 7 | 14 | 30;
+  rangeDays: 7 | 14 | 30 | 90;
   /** Last day shown, YYYY-MM-DD in UTC. */
   end: string;
 }
@@ -626,6 +626,8 @@ export interface UsageSeries {
 
 export interface UsageData {
   days: string[];
+  /** Per-day calls and tokens across every source and model, for the dashboard's cards. */
+  perDay: { calls: number[]; input: number[]; output: number[] };
   tokens: UsageSeries[];
   spend: UsageSeries[];
   builds: UsageSeries[];
@@ -682,7 +684,7 @@ export function parseUsageFilters(sp: Record<string, string | string[] | undefin
     productId: product && isUuid(product) ? product : null,
     model: model && /^[a-z0-9.-]{1,60}$/.test(model) ? model : null,
     view: one("view") === "model" ? "model" : "total",
-    rangeDays: range === 14 ? 14 : range === 30 ? 30 : 7,
+    rangeDays: range === 14 ? 14 : range === 30 ? 30 : range === 90 ? 90 : 7,
     end,
   };
 }
@@ -757,6 +759,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
   ]);
 
   const zero = () => days.map(() => 0);
+  const perDay = { calls: zero(), input: zero(), output: zero() };
   const tokensBySource = { gateway: zero(), building: zero() };
   const spendBySource = { gateway: zero(), building: zero() };
   const tokensByModel = new Map<string, number[]>();
@@ -785,6 +788,9 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
     const tokens = input + output;
     const cost = num(r.cost);
     const bucket = r.source === "gateway" ? "gateway" : "building";
+    perDay.calls[i] += num(r.calls);
+    perDay.input[i] += input;
+    perDay.output[i] += output;
     tokensBySource[bucket][i] += tokens;
     spendBySource[bucket][i] += cost;
     const model = r.model ?? "other";
@@ -830,6 +836,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
 
   return {
     days,
+    perDay,
     tokens:
       f.view === "model"
         ? modelSeries(tokensByModel)

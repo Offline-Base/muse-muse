@@ -274,18 +274,18 @@ export function BuildRoom(props: BuildRoomProps) {
       <div className="room-main">
         <div className="toolbar" aria-label="Build actions">
           <Link className="btn" href="/">
-            <Icon name="plus" size={18} />
+            <Icon name="plus" />
             <span>New muse</span>
           </Link>
           {openUrl ? (
             <a className="btn" href={openUrl} target="_blank" rel="noopener noreferrer">
-              <Icon name="monitor" size={18} />
+              <Icon name="monitor" />
               <span>Open preview</span>
               <span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : (
             <button type="button" className="btn" disabled title="The preview appears once the dev server starts">
-              <Icon name="monitor" size={18} />
+              <Icon name="monitor" />
               <span>Open preview</span>
             </button>
           )}
@@ -293,7 +293,7 @@ export function BuildRoom(props: BuildRoomProps) {
             <CopyButton value={connectorUrl} label="Copy the Muse app connector URL" text="Get connector" icon="plug" />
           ) : (
             <button type="button" className="btn" disabled title="The connector is ready once a product exists">
-              <Icon name="plug" size={18} />
+              <Icon name="plug" />
               <span>Get connector</span>
             </button>
           )}

@@ -15,13 +15,13 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f1f4f7" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b1014" },
+    { media: "(prefers-color-scheme: light)", color: "#f2f4f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1013" },
   ],
 };
 
 // Dashboard-native shell (docs/DESIGN.md, "Dashboard-native UI"; docs/UI_PATTERNS.md): developer-dashboard
-// patterns, no Meta logo, wordmark or font, a visible Concept tag, and nothing that asks for keys.
+// patterns, no Meta logo, wordmark or font, a visible Concept tag and disclaimer, and nothing that asks for keys.
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await currentUser();
   const user = session
@@ -40,9 +40,6 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <div id="main" className="main-inner" tabIndex={-1}>
               {children}
             </div>
-            <footer className="site-foot">
-              Muse Muse is an independent concept built on Meta&apos;s Model API. Not an official Meta product.
-            </footer>
           </div>
         </div>
       </body>

@@ -32,7 +32,9 @@ The full design is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ```text
 app/                      Platform UI and API routes (Next.js App Router)
-  page.tsx                Muse box (inspo upload and note)
+  page.tsx                Make: example cards and the muse box (inspo upload and note)
+  dashboard/              Requests, tokens, spend and product connectors
+  how-it-works/           The pipeline in five steps
   b/[buildId]/            Build room
   p/[slug]/               Product page
   rebuilds/               Meta's videos and their rebuilds

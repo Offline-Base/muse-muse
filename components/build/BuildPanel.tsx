@@ -3,9 +3,9 @@
 import { useId, useState } from "react";
 import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
-import { ExternalLink, ModelChips, StatusPill } from "@/components/ui";
+import { ModelChips, StatusPill } from "@/components/ui";
 import { RAIL, type RailStep, type RailState, type RoomState } from "@/components/build/derive";
-import { compact, duration, modelLabel, statusLabel, usd } from "@/lib/format";
+import { compact, duration, statusLabel, usd } from "@/lib/format";
 
 const RAIL_STATE_LABEL: Record<RailState, string> = {
   pending: "Not started",
@@ -62,6 +62,14 @@ export function BuildPanel(p: PanelProps) {
           <StatusPill status={room.status} />
         </div>
 
+        <div className="pfield">
+          <span className="panel-label">Model</span>
+          <div className="pbox pbox-off" aria-disabled="true">
+            <span>{p.buildModel ?? "Not chosen yet"}</span>
+            <Icon name="chevronDown" size={18} />
+          </div>
+        </div>
+
         <section className="panel-section" aria-labelledby={`${bodyId}-status`}>
           <h3 className="panel-label" id={`${bodyId}-status`}>
             Status
@@ -98,35 +106,43 @@ export function BuildPanel(p: PanelProps) {
 
         {p.models.length ? (
           <section className="panel-section">
-            <h3 className="panel-label">Models</h3>
+            <h3 className="panel-label">Models in the product</h3>
             <ModelChips models={p.models} />
           </section>
         ) : null}
 
-        <dl className="kv">
-          <div>
-            <dt>Build model</dt>
-            <dd>{p.buildModel ? modelLabel(p.buildModel) : "Not chosen yet"}</dd>
-          </div>
-          <div>
-            <dt>Session</dt>
-            <dd className="kv-session">
-              {p.sessionId ? (
-                <>
-                  <code title={p.sessionId}>{p.sessionId.slice(0, 8)}</code>
-                  <CopyButton value={p.sessionId} label="Copy Muse Code session id" className="icon-btn icon-btn-sm" />
-                </>
-              ) : (
-                <span className="muted">Not started</span>
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Fix rounds</dt>
-            <dd>
+        <div className="pfield-row">
+          <span className="panel-label">
+            Muse Code session
+            {p.sessionId ? (
+              <code className="pfield-code" title={p.sessionId}>
+                {p.sessionId.slice(0, 8)}
+              </code>
+            ) : null}
+          </span>
+          {p.sessionId ? (
+            <CopyButton value={p.sessionId} label="Copy Muse Code session id" className="round-btn" />
+          ) : (
+            <span className="muted">Not started</span>
+          )}
+        </div>
+
+        <div className="pfield">
+          <div className="pfield-row">
+            <span className="panel-label">Fix rounds</span>
+            <span className="numbox">
               {room.fixRounds} of {p.maxFixRounds}
-            </dd>
+            </span>
           </div>
+          <span className="meter" aria-hidden>
+            <span
+              className="meter-fill"
+              style={{ width: `${(Math.min(room.fixRounds, p.maxFixRounds) / Math.max(1, p.maxFixRounds)) * 100}%` }}
+            />
+          </span>
+        </div>
+
+        <dl className="kv">
           <div>
             <dt>Elapsed</dt>
             <dd>{duration(p.elapsedMs)}</dd>
@@ -147,33 +163,17 @@ export function BuildPanel(p: PanelProps) {
 
         <section className="panel-section">
           <h3 className="panel-label">Links</h3>
-          <ul className="link-list">
-            <li>
-              {room.previewUrl ? (
-                <ExternalLink href={room.previewUrl}>Preview</ExternalLink>
-              ) : (
-                <span className="muted">Preview appears once the dev server starts</span>
-              )}
-            </li>
-            {p.liveUrl ? (
-              <li>
-                <ExternalLink href={p.liveUrl}>Live product</ExternalLink>
-              </li>
-            ) : null}
-            {p.productSlug && room.terminal ? (
-              <li>
-                <a href={`/p/${p.productSlug}`}>Product page</a>
-              </li>
-            ) : null}
-            {p.demoUrl ? (
-              <li>
-                <ExternalLink href={p.demoUrl}>Demo video</ExternalLink>
-              </li>
-            ) : null}
-          </ul>
+          {room.previewUrl ? (
+            <PanelLink href={room.previewUrl} label="Preview" external />
+          ) : (
+            <p className="panel-note">The preview appears once the dev server starts.</p>
+          )}
+          {p.liveUrl ? <PanelLink href={p.liveUrl} label="Live product" external /> : null}
+          {p.productSlug && room.terminal ? <PanelLink href={`/p/${p.productSlug}`} label="Product page" /> : null}
+          {p.demoUrl ? <PanelLink href={p.demoUrl} label="Demo video" external /> : null}
           {p.connectorUrl ? (
-            <div className="field-block">
-              <span className="field-label">Connector URL</span>
+            <div className="pfield">
+              <span className="panel-label">Connector URL</span>
               <CopyField value={p.connectorUrl} label="Connector URL" />
             </div>
           ) : null}
@@ -185,7 +185,11 @@ export function BuildPanel(p: PanelProps) {
               <span>
                 <span className="live-dot" aria-hidden /> Live preview
               </span>
-              <ExternalLink href={room.previewUrl}>Open</ExternalLink>
+              <a href={room.previewUrl} target="_blank" rel="noopener noreferrer">
+                Open
+                <Icon name="external" size={14} className="ext-icon" />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
             </div>
             <iframe
               src={room.previewUrl}
@@ -198,5 +202,22 @@ export function BuildPanel(p: PanelProps) {
         ) : null}
       </div>
     </aside>
+  );
+}
+
+/** A panel row with a round button on the right, like the playground's "System instructions" row. */
+function PanelLink({ href, label, external }: { href: string; label: string; external?: boolean }) {
+  return (
+    <div className="pfield-row">
+      <span>{label}</span>
+      <a
+        className="round-btn"
+        href={href}
+        aria-label={external ? `${label} (opens in a new tab)` : label}
+        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      >
+        <Icon name={external ? "external" : "chevronRight"} size={18} />
+      </a>
+    </div>
   );
 }

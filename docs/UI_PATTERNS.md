@@ -1,38 +1,38 @@
 # UI patterns from the Meta Model API dashboard
 
-Ethan shared three screenshots of Meta's developer dashboard on Oct 27, 2026: the Chat playground (twice) and the Usage page. This file describes them so the Muse Muse platform UI can sit next to them like another tab. It follows "Dashboard-native UI" in DESIGN.md: copy the **patterns**, never the identity.
+Ethan shared screenshots of Meta's developer dashboard on Oct 27, 2026: the Chat playground (twice) and the Usage page, then the Dashboard, Chat, Image and Audio pages at 2x. The second set was measured pixel by pixel, and the numbers below are in CSS pixels from those measurements. This file describes them so the Muse Muse platform UI can sit next to them like another tab. It follows "Dashboard-native UI" in DESIGN.md: copy the **patterns**, never the identity.
 
 ## Hard rules (from DESIGN.md)
 
 - No Meta logo (the infinity mark), no "Meta" wordmark or "Meta Model API" in our header, and no Meta proprietary font. Use the system font stack in `app/globals.css`.
-- The brand slot says **Muse Muse** with a **Concept** pill. The footer says "Not an official Meta product."
+- The brand slot is our own two-sparkle mark, **Muse Muse** and a **Concept** pill. The sidebar foot says "Not an official Meta product." above the account chip.
 - Our sign-in page must not look like a Meta sign-in or API-key page. Keep it plain and clearly ours, and never ask for a Meta key.
 - Don't put "Ask Meta..." in our composer. Ours says something like "Describe it, or drop in your inspo...".
 
 ## Overall frame
 
-- **Three zones** on wide screens: a fixed left sidebar (about 300 px), a centered main column, and on the playground page a right settings panel (about 400 px).
-- **Sidebar background** is the soft blue-grey page color (our `--bg`, `#f1f4f7`). The **main area is white** (`--surface`). The sidebar has no visible border, only the color change.
-- Lots of whitespace. Borders are thin and low contrast (`#dce2e8`-ish), radii are large (cards about 24 px, inputs about 10 px, chat bubbles about 20 px), and there are almost no shadows except the floating composer.
-- Text: near-black `#1c2b33` for body, muted grey for secondary text. The accent is a bright blue (`--accent`).
+- **Three zones** on wide screens: a fixed 260 px left sidebar, a centered main column, and on playground pages a 360 px right settings panel 20 px from the top and right edges.
+- **Sidebar background** is `#f2f4f6` (`--bg`) with a 1 px `#e0e2e5` right border. The **main area is white** (`--surface`).
+- Lots of whitespace. Borders are 1 px `#e0e2e5` (`--line`). Cards, the hero card, example cards and the right panel all have a 16 px radius. Inputs have 10 px, the composer 24 px and chat bubbles 28 px. Only the composer has a shadow.
+- Text: `#111112` for body, `#676a71` for secondary text (`--muted`), 15 px base. The accent is `#2962d8` (`--accent`).
 
 ## Sidebar
 
-- **Top:** brand mark and name, 20 px, semibold. For us: "Muse Muse" plus the Concept pill, with no logo image.
-- **Nav rows:** a 20 px outline icon (1.5 px stroke, rounded line caps) followed by a 16 px label with medium weight. Each row is about 48 px tall with 12 px horizontal padding and a 10 px radius.
-- **Active row:** light blue fill (about `#d3e3fd`, our `--accent-soft`) with the icon and label in the accent text blue. Inactive rows are dark text with no fill, and hover gets a faint fill.
-- **Groups** are separated by 1 px horizontal dividers with about 10 px of margin. Meta's groups are [Home ↗], [Dashboard, Chat, Image, Audio, Segment], [API keys, Usage, Models, Team members, Billing] and [Status, Documentation ↗].
-- **External links** show a small "open in new" icon pinned to the right edge of the row.
-- **Bottom:** an account chip pinned to the bottom of the sidebar. It has a 40 px solid accent-blue circle with white initials, the name in semibold, a muted second line ("Business account"), and a "⋯" menu button on the right.
+- **Top:** a 40 px brand row (mark plus name, 18 px semibold) 12 px from the top, then 16 px of space. The sidebar has 8 px of side padding.
+- **Nav rows:** 40 px tall with 2 px between them and an 8 px radius. The icon draws about 18 px wide at x = 17 (our 24 px icons with 6 px left padding), and the 15 px medium label starts at x = 45.
+- **Active row:** `#cddbf4` fill (`--nav-active`) with the icon and label in `#2962d8`. Inactive rows are dark text with no fill, and hover gets a faint fill.
+- **Groups** are separated by 1 px `#e0e2e5` dividers with 8 px above and below. Meta's groups are [Home ↗], [Dashboard, Chat, Image, Audio, Segment], [API keys, Usage, Models, Team members, Billing] and [Status, Documentation ↗].
+- **External links** show a 20 px "open in new" icon pinned to the right edge of the row.
+- **Bottom:** an account chip 16 px from the bottom: a 32 px accent-blue circle with white initials, the name in 15 px semibold, a muted 12.5 px second line ("Business account"), and a "⋯" menu button on the right.
 
 **Muse Muse mapping:**
 
 | Group | Rows |
 |---|---|
-| 1 | Make (`/`, sparkle or plus icon) |
-| 2 | Builds (`/builds`, the signed-in user's builds), Rebuilds (`/rebuilds`), Gallery (`/gallery`) |
+| 1 | Dashboard (`/dashboard`) |
+| 2 | Make (`/`), Builds (`/builds`, the signed-in user's builds), Rebuilds (`/rebuilds`), Gallery (`/gallery`) |
 | 3 | Usage (`/usage`) |
-| 4 | How it works ↗ (the repo's DESIGN.md or an about page), Status of the gateway (optional) |
+| 4 | How it works (`/how-it-works`), Model API docs ↗ (`https://dev.meta.ai/docs/overview`) |
 | Bottom | Signed-in chip with initials and email, and a ⋯ menu with Sign out. Signed out: a plain "Sign in" button. With sign-in off (`OPEN_ACCESS`): the shared account ("Guest", or the admin's email), "Admin, sign-in off" or "Builder, sign-in off", and Sign in in place of Sign out |
 
 Use inline SVG icons drawn in the same outline style (1.5 px stroke, `currentColor`), not an icon font or a CDN.
@@ -47,7 +47,7 @@ For the build room: "+ New muse", "Open preview ↗", "Get connector" (copies th
 
 ### Main column (the conversation)
 
-- Centered, about 820 px wide.
+- Centered, 720 px wide, with 15 px text on a 28 px line height. Headings like "Quick verdict" are 18 px semibold, and the model's progress notes before the answer are muted italic lines.
 - **User turn:** right-aligned. Attached images show first as a rounded thumbnail (about 140×90 px, 16 px radius). The text is in a light grey pill bubble below it (`#eef0f3`, about 20 px radius, 12 by 18 px padding, 16 px text).
 - **Assistant turn:** left-aligned with **no bubble**, full column width. It's rich text: a bold lead phrase, bold mini headings ("What's in it:"), bullet lists with bold lead words, and tables.
 - **Tables:** a 1 px border around the whole table with a 16 px radius and overflow clipped. The header row has a grey fill (`#e9edf1`), bold, centered text. Cells have about 20 px of padding, left-aligned text, and 1 px row and column lines. The last row can be a bold "Total" row.
@@ -64,12 +64,12 @@ For the build room, the user turn is the muse (inspo thumbnails plus the note). 
 
 ### Right settings panel
 
-- A light grey rounded card (`--surface-2`, about 24 px radius) that fills the right column, with 24 px padding and rows spaced about 32 px apart.
-- **Field label** is 16 px medium, and the control sits below or to the right of it.
-- **Select:** white, 1 px border, 10 px radius, about 48 px tall, value at 16 px, chevron on the right.
-- **Icon action** next to a label, such as "System instructions ✎" or "Model settings ↻": a 36 px round button with a slightly darker grey fill and the icon centered.
-- **Slider with number box:** the label sits on the left with a small numeric input (about 90 px wide, 10 px radius, white) on the right of the same row, and the slider underneath runs the full width. The track is grey with the filled part in the accent blue, and the thumb is a 20 px accent-blue circle.
-- **Toggle:** a 44×26 px pill. On is accent blue with a white knob, off is light grey.
+- A `#f9f9f9` card with a 1 px `#f2f2f2` border and a 16 px radius, 360 px wide, with 22 px padding.
+- **Field label** is 15 px regular, and the control sits 12 px below or to the right of it. About 19 px separate one control from the next label.
+- **Select:** white, 1 px `#ced0d4` border, 10 px radius, 44 px tall, value at 15 px, chevron on the right. A disabled select has `#858585` text.
+- **Icon action** next to a label, such as "System instructions ✎" or "Model settings ↻": a 32 px round button with a `#e2e5e8` fill and the icon centered.
+- **Slider with number box:** the label sits on the left with a 36 px tall number box (about 66 px wide, 10 px radius, white) on the right of the same row, and the slider underneath runs the full width. The track is `#cdd3da` with the filled part in the accent blue, and the thumb is a 20 px accent-blue circle.
+- **Toggle:** a 44×24 px pill. On is accent blue with a white knob, off is `#cdd3da`.
 - **Disclosure row:** "Advanced" with a chevron on the right.
 
 For the build room, the panel becomes a read-only **build panel**:
@@ -79,6 +79,26 @@ For the build room, the panel becomes a read-only **build panel**:
 - Build model, Muse Code session id, fix rounds, elapsed time, and running cost.
 - Links: Preview, Live, Demo video, Connector URL.
 - The live preview, in an iframe card below the panel or in a tab, once it exists.
+
+## Dashboard page: the model for `/dashboard`
+
+- A 1088 px column, centered in the main area, starting 18 px from the top. Gaps between blocks are 12 px.
+- **Hero card:** `#f2f4f6` fill, 16 px radius, 24 px padding, about 253 px tall. Its head row has the title on the left (26 px semibold, accent blue) and a tab control on the right. A 1 px divider sits 16 px below, then a muted 16 px line, a second tab control and a 48 px white code block (1 px border, 10 px radius, 15 px mono, copy icon on the right). Meta's title is "Start building with Muse" with tabs for Muse Code, OpenCode, Claude Code, Codex, cURL and Python, and the code block holds the install command with its URL as a blue underlined link.
+- **Tab control:** a `#e4e6ea` track with 4 px padding and a 20 px radius. Items are 32 px tall with 16 px side padding, 15 px semibold and muted. The selected item is white with a small shadow and dark text.
+- **Range buttons:** "7d", "30d", "90d", 28 px tall, 8 px radius, 14 px text, 4 px apart. The selected one is filled `#28292c` with white text; the rest are white with a 1 px border.
+- **Stat cards:** three per row, 200 px tall, white, 1 px border, 16 px radius, 12 px padding. A 26 px bold number, a 15 px semibold label, then bars with no axis or gridlines: one 24 px `#7489f7` bar per day with a 4 px top radius, 86 px tall at most, and muted day labels 12 px below. Meta's first row is Requests, Input tokens and Output tokens. Its second row is an API keys card (a 40 px outlined icon circle, a muted label, the count, and "Create or manage keys" at the bottom), Spend as a bar card, and a Documentation card (a filled icon circle, an 18 px semibold title and a muted line at the bottom).
+
+For Muse Muse the hero card is **Use your products in Muse**, with tabs for Muse app, Claude Code and cURL, product tabs below, and the product's connector URL or command in the code block. It only offers published products, since an unpublished product's connector doesn't answer. The cards are Requests, Input tokens, Output tokens, then Products (opens the gallery), Spend (est.) and How it works.
+
+## Image playground: the model for Make (`/`)
+
+- The toolbar sits at the top right of the main area ("Get code", "History"; ours are "How it works" and "History").
+- About 100 px below it, a centered 24 px semibold title ("Start from an example") and a muted 15 px line.
+- Then three example cards, 960 px wide in all with 18 px gaps. Each has a photo about 160 px tall, a dark pill on the photo's top left ("Generate", "Image Edit", "Multi-Image"), a 19 px semibold title and a muted 14 px description. Clicking one loads its prompt and photo.
+- The composer is pinned to the bottom of the column, about 750 px wide.
+- The right panel holds a disabled Model select (grey text), more selects and switches.
+
+For Muse Muse, the examples are Receipt to spreadsheet, Sketch to habit tracker and Bakery menu boards, with photos made by `muse-image-1.0` in `public/examples/`. A click fills the note and attaches the photo as inspo. The panel shows the build setup as disabled controls: Model, Builder, Fix rounds, and switches for Screenshot judge, Demo video, Publish and Muse app connector (Publish and the connector are off when `VERCEL_TOKEN` isn't set).
 
 ## Usage page: the model for `/usage`
 
@@ -103,21 +123,31 @@ For Muse Muse, the full-width headline card is **Meta tokens driven** (input plu
 - **Product page:** a playground-like split. The left side holds the live product in a large iframe card with "Open ↗". The right panel holds models, limits, cost per run, the connector URL with a copy button, and "How it was built" (a summary of the Muse Code transcript, plus a download of the redacted export).
 - **Pills and chips:** 12 to 13 px, 600 weight, pill radius. Model chips use `--accent-soft` with accent text. Status pills: live is green, partial is amber, failed is red, building is blue.
 
-## Tokens to add to `app/globals.css`
+## Measured tokens in `app/globals.css`
 
 ```css
---sidebar-w: 300px;
---panel-w: 400px;
---col-w: 820px;
---radius-card: 24px;
---radius-input: 10px;
---radius-bubble: 20px;
---bubble: #eef0f3;          /* dark: #1f2930 */
---table-head: #e9edf1;      /* dark: #1c252d */
---nav-active: #d3e3fd;      /* dark: #10233d */
---chart-1: #7b8cf5;
---chart-2: #f2b97c;
---shadow-float: 0 8px 28px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
+--bg: #f2f4f6;              /* sidebar, hero card */
+--surface-2: #f9f9f9;       /* right panel, with a 1px #f2f2f2 border */
+--surface-3: #e4e6ea;       /* tab track */
+--line: #e0e2e5;
+--line-strong: #ced0d4;     /* select and number box borders */
+--fg: #111112;
+--muted: #676a71;
+--faint: #858585;           /* disabled select text */
+--accent: #2962d8;
+--nav-active: #cddbf4;
+--bubble: #e7eaee;          /* user bubble and table header */
+--icon-fill: #e2e5e8;       /* round icon buttons in the panel */
+--track: #cdd3da;           /* slider track, switch off */
+--ink: #28292c;             /* selected range button */
+--chart-1: #7489f7;
+--sidebar-w: 260px;
+--panel-w: 360px;
+--col-w: 720px;
+--composer-w: 760px;
+--page-w: 1088px;
+--radius-card: 16px;
+--radius-bubble: 28px;
 ```
 
 Both themes. Dark mode keeps the same structure: the sidebar on `--bg`, the main area on `--surface`, with the colors above swapped for their dark values.

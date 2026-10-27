@@ -18,6 +18,10 @@ import type { Reference } from "@/lib/types";
 export interface Example {
   label: string;
   note: string;
+  /** Playground cards only: the pill on the photo, a one-line description and the photo, attached as inspo. */
+  tag?: string;
+  text?: string;
+  image?: string;
 }
 
 interface Props {
@@ -30,6 +34,8 @@ interface Props {
   autoFocus?: boolean;
   /** Pins the composer to the bottom of the column, as in the playground. */
   floating?: boolean;
+  /** "playground" shows the examples as photo cards above a composer pinned to the bottom (the Make page). */
+  layout?: "playground";
 }
 
 /** Audio originals above this are refused before decoding, so a huge file can't exhaust the tab's memory. */
@@ -66,7 +72,7 @@ function writeDraft(key: string, value: string) {
  * remove button, audio is converted to 16 kHz mono WAV and big photos are resized before upload, and send starts the
  * build. Uploads begin as soon as a file is attached when the viewer is signed in.
  */
-export function Composer({ mode, buildId, signedIn, examples, placeholder, autoFocus, floating }: Props) {
+export function Composer({ mode, buildId, signedIn, examples, placeholder, autoFocus, floating, layout }: Props) {
   const router = useRouter();
   const inputId = useId();
   const hintId = useId();
@@ -83,6 +89,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [loadingExample, setLoadingExample] = useState<string | null>(null);
 
   const key = draftKey(mode, buildId);
   const isRefine = mode === "refine";
@@ -264,6 +271,26 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     return [ready && `${ready} ready`, busy && `${busy} uploading`, bad && `${bad} failed`].filter(Boolean).join(", ");
   }, [items]);
 
+  /** Fills the note and attaches the example's photo, the way Meta's example cards load theirs. */
+  async function applyExample(ex: Example) {
+    setNote(ex.note);
+    textarea.current?.focus();
+    if (!ex.image) return;
+    const fileName = ex.image.split("/").pop() ?? "example.jpg";
+    if (items.some((it) => it.name === fileName)) return;
+    setLoadingExample(ex.label);
+    try {
+      const res = await fetch(ex.image);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      addFiles([new File([blob], fileName, { type: blob.type || "image/jpeg" })]);
+    } catch {
+      setError("Couldn't load that example's photo. The note is filled in, so you can still send it.");
+    } finally {
+      setLoadingExample(null);
+    }
+  }
+
   function goSignIn() {
     writeDraft(key, note);
     router.push(`/sign-in?next=${encodeURIComponent(nextPath)}`);
@@ -324,8 +351,37 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     setError(errorMessage(res.status, data.error, isRefine));
   }
 
+  const playground = layout === "playground";
+
   return (
     <div className={`composer-wrap${floating ? " composer-floating" : ""}`}>
+      {playground && examples?.length ? (
+        <ul className="ex-grid" aria-label="Examples">
+          {examples.map((ex) => (
+            <li key={ex.label}>
+              <button
+                type="button"
+                className="ex-card"
+                onClick={() => void applyExample(ex)}
+                disabled={submitting || loadingExample !== null}
+                aria-busy={loadingExample === ex.label}
+              >
+                {ex.image ? (
+                  <span className="ex-media">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ex.image} alt="" loading="lazy" />
+                    {ex.tag ? <span className="ex-tag">{ex.tag}</span> : null}
+                  </span>
+                ) : null}
+                <span className="ex-body">
+                  <span className="ex-title">{ex.label}</span>
+                  {ex.text ? <span className="ex-text">{ex.text}</span> : null}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <form
         className={`composer${dragging ? " is-dragging" : ""}`}
         aria-label={isRefine ? "Ask for a change" : "Your muse"}
@@ -353,7 +409,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           id={inputId}
           ref={textarea}
           className="composer-input"
-          rows={isRefine ? 1 : 2}
+          rows={isRefine || playground ? 1 : 2}
           maxLength={4000}
           value={note}
           placeholder={
@@ -399,7 +455,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
               e.target.value = "";
             }}
           />
-          <p id={hintId} className="composer-hint">
+          <p id={hintId} className={playground && signedIn ? "sr-only" : "composer-hint"}>
             {signedIn
               ? isRefine
                 ? "Muse Code picks up where it left off. Add inspo if it helps."
@@ -431,7 +487,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           <span>{error}</span>
         </p>
       ) : null}
-      {examples?.length ? (
+      {examples?.length && !playground ? (
         <div className="examples">
           <span className="examples-label">Try a muse</span>
           <ul>

@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { Icon } from "@/components/icons";
 import { AccountMenu, type AccountUser } from "@/components/shell/AccountMenu";
 import { Brand } from "@/components/shell/Brand";
 import { NavLinks } from "@/components/shell/NavLinks";
+import { DISCLAIMER } from "@/components/shell/Sidebar";
 
 /** Phones: a top bar with the brand and a menu button that opens the nav as a sheet (a modal <dialog>). */
 export function MobileNav({ user }: { user: AccountUser | null }) {
@@ -41,16 +41,14 @@ export function MobileNav({ user }: { user: AccountUser | null }) {
       >
         <div className="sheet-inner">
           <div className="sheet-head">
-            <Link href="/" className="brand" onClick={close}>
-              <span className="brand-name">Muse Muse</span>
-              <span className="concept">Concept</span>
-            </Link>
+            <Brand onClick={close} />
             <button type="button" className="icon-btn icon-btn-plain" aria-label="Close menu" onClick={close}>
               <Icon name="close" />
             </button>
           </div>
           <NavLinks onNavigate={close} />
           <div className="sheet-foot">
+            <p className="disclaimer">{DISCLAIMER}</p>
             <AccountMenu user={user} />
           </div>
         </div>

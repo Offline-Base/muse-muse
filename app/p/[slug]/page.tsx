@@ -100,6 +100,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               referrerPolicy="no-referrer"
             />
           </section>
+        ) : shipped ? (
+          <EmptyCard
+            icon="monitor"
+            title="Not published"
+            action={latestBuild ? { href: `/b/${latestBuild.id}`, label: "Open the build room" } : undefined}
+          >
+            <p>
+              It passed its checks, but publishing was off when it was built (VERCEL_TOKEN wasn&apos;t set), so it has
+              no live link. Its recorded demo is in the panel.
+            </p>
+          </EmptyCard>
         ) : product.status === "disabled" ? (
           <EmptyCard icon="power" title="This product is turned off">
             <p>An admin switched it off. Its page and history stay here.</p>

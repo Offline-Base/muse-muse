@@ -150,7 +150,7 @@ function UsageBody({
           </a>
           <Menu text={rangeText} label="Date range" icon="calendar" buttonClassName="btn btn-outline">
             <ul className="menu-list">
-              {([7, 14, 30] as const).map((r) => (
+              {([7, 14, 30, 90] as const).map((r) => (
                 <li key={r}>
                   <Link
                     className="menu-item"

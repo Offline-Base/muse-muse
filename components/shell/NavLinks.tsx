@@ -16,6 +16,18 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           {gi > 0 ? <hr className="nav-sep" /> : null}
           <ul className="nav-group">
             {group.map((item) => {
+              if (item.external) {
+                return (
+                  <li key={item.href}>
+                    <a href={item.href} className="nav-link" target="_blank" rel="noopener noreferrer">
+                      <Icon name={item.icon} size={24} />
+                      <span>{item.label}</span>
+                      <Icon name="external" size={20} className="nav-ext" />
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  </li>
+                );
+              }
               const active = isActive(item, pathname);
               return (
                 <li key={item.href}>
@@ -25,7 +37,7 @@ export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
                     aria-current={active ? "page" : undefined}
                     onClick={onNavigate}
                   >
-                    <Icon name={item.icon} />
+                    <Icon name={item.icon} size={24} />
                     <span>{item.label}</span>
                   </Link>
                 </li>
