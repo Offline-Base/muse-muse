@@ -1,0 +1,241 @@
+/* Muse Muse platform tokens. Meta-inspired look, no Meta logos or wordmarks. */
+:root {
+  --bg: #f1f4f7;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --line: #dce2e8;
+  --fg: #1c2b33;
+  --fg-2: #44566a;
+  --muted: #5e6f80;
+  --accent: #0064e0;
+  --accent-text: #0057c2;
+  --accent-ink: #ffffff;
+  --accent-soft: #e7f0fd;
+  --radius-lg: 22px;
+  --pill: 999px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0f13;
+    --surface: #141b21;
+    --surface-2: #182129;
+    --line: #27323b;
+    --fg: #e8eef3;
+    --fg-2: #aebbc6;
+    --muted: #8d9ba7;
+    --accent: #1f6fe5;
+    --accent-text: #7db2ff;
+    --accent-ink: #ffffff;
+    --accent-soft: #10233d;
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  line-height: 1.55;
+}
+
+/* Dashboard shell: left navigation on wide screens, a top bar on phones. */
+.shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidenav {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  padding: 20px 14px;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  padding: 0 8px;
+}
+
+.tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.sidenav nav {
+  display: grid;
+  gap: 2px;
+}
+
+.sidenav nav a {
+  padding: 8px 10px;
+  border-radius: 10px;
+  color: var(--fg-2);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.sidenav nav a:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.content {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+}
+
+.site-foot {
+  padding: 16px max(16px, env(safe-area-inset-left, 0px)) 32px max(16px, env(safe-area-inset-right, 0px));
+  color: var(--muted);
+  font-size: 0.85rem;
+  max-width: 1040px;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidenav {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    grid-auto-flow: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+  }
+  .sidenav nav {
+    grid-auto-flow: column;
+    overflow-x: auto;
+  }
+}
+
+main {
+  max-width: 1040px;
+  width: 100%;
+  padding: 40px max(16px, env(safe-area-inset-left, 0px)) 48px max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  align-content: start;
+  gap: 20px;
+}
+
+.pill {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: var(--pill);
+  border: 1px solid var(--line);
+  color: var(--fg-2);
+  background: var(--surface-2);
+}
+
+.grid-cards {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  align-items: start;
+}
+
+.grid-cards .card {
+  display: grid;
+  gap: 8px;
+}
+
+.grid-cards .card p,
+.grid-cards .card h2 {
+  margin: 0;
+}
+
+.grid-cards .pill {
+  justify-self: start;
+}
+
+a {
+  color: var(--accent-text);
+  text-underline-offset: 2px;
+}
+
+.sidenav nav a,
+.brand {
+  color: var(--fg-2);
+}
+
+.brand span:first-child {
+  color: var(--fg);
+}
+
+.kpi {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: clamp(2rem, 1.2rem + 3vw, 3.2rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+textarea {
+  width: 100%;
+  min-height: 120px;
+  font: inherit;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+button {
+  font: inherit;
+  font-weight: 700;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+button:disabled {
+  opacity: 0.55;
+}

@@ -1,0 +1,166 @@
+{
+  "$comment": "Meta model catalog for Muse Muse. Checked against Meta's docs and press coverage on Oct 24, 2026. Fields marked verify need a day-one check.",
+  "api": {
+    "baseUrl": "https://api.meta.ai/v1",
+    "messagesBaseUrl": "https://api.meta.ai",
+    "auth": "Authorization: Bearer <key>",
+    "keyEnvForApi": "MODEL_API_KEY",
+    "keyEnvForMuseCode": "META_API_KEY",
+    "openaiCompatible": true,
+    "surfaces": ["responses", "chat.completions", "messages"],
+    "filesEndpoint": "POST /v1/files (purpose user_data)",
+    "docs": "https://dev.meta.ai/docs/overview"
+  },
+  "hackathon": {
+    "creditsUsd": 150,
+    "listedModels": ["Muse Spark series", "Muse Wonder", "Muse Image", "SAM 3.1", "Meta open-weights models", "Muse Code"]
+  },
+  "models": [
+    {
+      "id": "muse-spark-1.3",
+      "family": "Muse Spark",
+      "role": "Default reasoning, vision, video and coding model",
+      "hosted": true,
+      "endpoints": ["POST /v1/responses", "POST /v1/chat/completions", "POST /v1/messages"],
+      "input": ["text", "image", "pdf", "video"],
+      "output": ["text"],
+      "contextTokens": 1048576,
+      "maxOutputTokens": 131072,
+      "features": ["tools", "reasoning effort", "streaming", "structured output (verify request format)"],
+      "pricingUsdPerMillion": { "input": 1.25, "output": 4.25, "cachedInput": 0.15, "note": "Muse Spark 1.2 standard pricing; 1.3 reported unchanged. Verify on the pricing page." },
+      "status": "available",
+      "docs": "https://dev.meta.ai/docs/quickstart"
+    },
+    {
+      "id": "muse-spark-1.3-contributor",
+      "family": "Muse Spark",
+      "role": "Discounted Spark 1.3 for test runs",
+      "hosted": true,
+      "endpoints": ["POST /v1/responses", "POST /v1/chat/completions", "POST /v1/messages"],
+      "input": ["text", "image", "pdf", "video"],
+      "output": ["text"],
+      "pricingUsdPerMillion": { "input": 0.10, "output": 0.20, "note": "Listed for 1.2 contributor. Meta may train on prompts and completions. Rate limited in a rolling window." },
+      "status": "available",
+      "useFor": "Internal test builds only, never user data"
+    },
+    {
+      "id": "muse-wonder-1.0",
+      "family": "Muse Wonder",
+      "role": "Complex, long-horizon agentic work; audio input; web search",
+      "hosted": true,
+      "endpoints": ["POST /v1/responses", "POST /v1/chat/completions", "POST /v1/messages"],
+      "input": ["text", "image", "video", "audio", "pdf"],
+      "output": ["text"],
+      "contextTokens": 1048576,
+      "features": ["same request shape as Spark", "web search tool (about $2.50 per 1,000 queries)"],
+      "pricingUsdPerMillion": { "input": 4.0, "output": 20.0, "cachedInput": 0.20, "note": "From a third-party pricing write-up during preview. Verify." },
+      "rateLimits": "3,000 requests and 4M tokens per minute (third-party report, verify)",
+      "status": "preview",
+      "docs": "https://dev.meta.ai/docs/overview"
+    },
+    {
+      "id": "muse-image-1.0",
+      "family": "Muse Image",
+      "role": "Generate, edit and compose images",
+      "hosted": true,
+      "endpoints": ["POST /v1/images/generations", "POST /v1/images/edits", "POST /v1/responses (multi-turn, image_generation tool)"],
+      "input": ["text", "image (edits and composition, 1 to 10 images)"],
+      "output": ["image (b64_json default, or temporary signed url)"],
+      "parameters": {
+        "n": "1 to 10, default 1",
+        "size": "WxH string that sets aspect ratio, up to 16:1",
+        "response_format": "b64_json (default) or url",
+        "output_format": "webp (default), png, jpeg",
+        "stream": "true sends image_generation.completed or image_edit.completed events",
+        "tool_enablement": "image search, web search, shell (all on by default)",
+        "reasoning_strength": "high (default) or low"
+      },
+      "notSupported": ["mask", "input_fidelity", "partial_images", "moderation"],
+      "pricing": { "usdPerImage": 0.01, "note": "Failed or safety-filtered images are not billed" },
+      "errors": { "400": "bad prompt, size or unknown field; content_policy_violation for safety blocks", "415": "wrong Content-Type", "503": "retryable" },
+      "status": "available",
+      "docs": "https://dev.meta.ai/docs/image-generation"
+    },
+    {
+      "id": "sam-3.1",
+      "family": "Segment Anything",
+      "role": "Find, outline and track objects in images and video from a short text prompt, boxes or points",
+      "hosted": true,
+      "endpoints": ["POST /v1/responses (stream recommended)", "POST /v1/files (video upload)"],
+      "input": ["text concept or box/point tokens", "image (url or base64 data url)", "video (url, data url or file_id)"],
+      "output": ["boxes", "masks (~ lossless default, ! one_bit)", "optional confidence"],
+      "limits": {
+        "promptedObjects": 16,
+        "videoObjectsPerFrame": 16,
+        "videoMaxFrames": 15000,
+        "videoContainers": ["MP4", "MOV"],
+        "videoCodecs": ["H.264", "H.265", "MPEG-4"],
+        "rejected": ["VP9", "WebM"]
+      },
+      "promptRules": "One short noun phrase per call. No lists, commands, questions or negation. Box and point tokens need the media's displayed width and height.",
+      "clientLibraries": ["@meta-sam/parser", "@meta-sam/graphics", "@meta-sam/video", "@meta-sam/react", "meta-sam-parser (pip)"],
+      "pricing": { "note": "Video billed per frame, 50-frame minimum per request. Rates on Meta's pricing page." },
+      "status": "available",
+      "docs": "https://dev.meta.ai/docs/sam/segmenting"
+    },
+    {
+      "id": "muse-voice-transcribe-1.0",
+      "family": "Muse Voice",
+      "role": "Speech to text with turn detection and speaker labels",
+      "hosted": true,
+      "endpoints": ["POST /v1/asr/transcribe (file, verify request format)", "wss://api.meta.ai/v1/asr/realtime (realtime)"],
+      "input": ["audio"],
+      "output": ["transcript with turn-level timing, no word-level timestamps"],
+      "realtimeAudio": "PCM16 mono at 16 kHz or 24 kHz, per LiteLLM's docs",
+      "pricing": { "usdPerHour": 0.18 },
+      "status": "available",
+      "docs": "https://dev.meta.ai/docs/overview"
+    },
+    {
+      "id": null,
+      "name": "Muse Glimmer",
+      "family": "Open weights",
+      "role": "Local and edge agent model distilled from Muse Spark",
+      "hosted": false,
+      "license": "Apache 2.0",
+      "facts": ["30B dense", "Meta's quantized build is under 20 GB", "multimodal per Meta's docs", "runs on vLLM, SGLang, llama.cpp or ExecuTorch"],
+      "howToUse": "Self-host, or call an OpenAI-compatible endpoint you run on Modal, Baseten or Fireworks. Not on the Model API.",
+      "status": "open weights"
+    },
+    {
+      "id": null,
+      "name": "Muse Spark Open",
+      "family": "Open weights",
+      "role": "Open-weight Muse Spark",
+      "hosted": false,
+      "facts": ["816B total parameters, 42B active, mixture of experts", "text, images, audio and video in, text out", "self-host with SGLang or vLLM"],
+      "status": "open weights"
+    },
+    {
+      "id": null,
+      "name": "Muse Code",
+      "family": "Coding agent",
+      "role": "Terminal and CI coding agent that writes every Muse Muse product",
+      "install": "curl -fsSL https://dev.meta.ai/install.sh | sh",
+      "headless": "muse exec [--json] [--prompt-file path] [--max-model-steps n] [--session-id uuid] [--model id] [--reasoning-effort level] [--yolo]",
+      "attachImage": "--image <path> per a third-party guide (QAInsights); not in Meta's docs, verify",
+      "auth": "META_API_KEY, then a stored key, then a browser session",
+      "projectInstructions": ["AGENTS.md", "CLAUDE.md", ".agents/AGENTS.md", ".claude/CLAUDE.md"],
+      "projectSkills": ".agents/skills/<skill-id>/SKILL.md",
+      "settings": "~/.config/muse/settings.json with schema_version 1 (mcp_servers, hooks, permissions)",
+      "defaultModel": "muse-spark-1.2",
+      "reasoningEffort": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+      "exitCodes": { "0": "turn completed", "1": "failed, cancelled or hit max steps", "2": "usage error" },
+      "linuxSandboxNote": "Its own sandbox needs bubblewrap on a non-musl Linux build",
+      "docs": "https://dev.meta.ai/docs/muse-code/extending"
+    },
+    {
+      "id": null,
+      "name": "Muse app",
+      "family": "Consumer agent app",
+      "role": "Where a shipped product can be used as a custom connector",
+      "facts": ["Agent runs on its own cloud VM", "Custom connectors are created by asking Muse; remote MCP over HTTP works; local servers are not reachable", "US-only and adults-only at launch (Parallel)"],
+      "docs": "https://parallel.ai/articles/meta-muse-custom-integrations"
+    }
+  ]
+}

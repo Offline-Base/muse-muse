@@ -1,0 +1,111 @@
+{
+  "$comment": "Meta's developer videos as muses for rebuilds on current Muse models. First page of https://dev.meta.ai/resources/videos/ checked Oct 26, 2026. A Load more button may hide more. Rebuilds link to Meta's videos and never copy them.",
+  "source": "https://dev.meta.ai/resources/videos/",
+  "checkedOn": "2026-10-26",
+  "videos": [
+    {
+      "id": "structured-image-extraction",
+      "title": "Fine-tuning Llama models for structured image data extraction",
+      "url": "https://dev.meta.ai/llama/resources/videos/llama-fine-tune-structured-image-extraction",
+      "era": "Llama",
+      "demonstrates": "Customizing Llama to pull structured data out of images",
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-spark-1.3"],
+        "plan": "Same job without fine-tuning. Spark 1.3 reads the image and returns JSON that matches a schema. Upload a receipt or a form and get validated fields back.",
+        "note": "Make a tool that pulls structured fields out of photos of receipts and forms, with no fine-tuning"
+      }
+    },
+    {
+      "id": "whatsapp-multimodal-chatbot",
+      "title": "Building a multimodal WhatsApp chatbot with Llama 4",
+      "url": "https://dev.meta.ai/llama/resources/videos/build-multi-modal-whatsapp-chatbot-with-llama-4",
+      "era": "Llama 4",
+      "demonstrates": "A business chatbot on WhatsApp that handles text and images",
+      "rebuild": {
+        "fit": "partial",
+        "models": ["muse-spark-1.3", "muse-image-1.0", "muse-voice-transcribe-1.0"],
+        "plan": "A web chat for a small business that understands photos and voice notes and can reply with images. Connecting it to WhatsApp needs a WhatsApp Business account, so the rebuild shows the web version and documents the webhook.",
+        "note": "Make a customer chat for a small shop that understands photos and voice notes"
+      }
+    },
+    {
+      "id": "docs-to-blog-rag",
+      "title": "Generating technical blogs from your docs with Llama and RAG",
+      "url": "https://dev.meta.ai/llama/resources/videos/generate-technical-blogs-from-your-docs-with-Llama-and-RAG",
+      "era": "Llama",
+      "demonstrates": "Drafting blog posts from existing documentation with retrieval",
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-spark-1.3", "muse-image-1.0"],
+        "plan": "Upload or paste docs and get a draft post with a header image. Most doc sets fit in Spark 1.3's 1M-token context, so there is no retrieval pipeline to build.",
+        "note": "Turn my product docs into a technical blog post with a header image"
+      }
+    },
+    {
+      "id": "rich-documents",
+      "title": "Llama Best Practices: Unlock Rich Insights from Rich Documents",
+      "url": "https://dev.meta.ai/resources/videos/unlock-rich-insights-from-rich-documents",
+      "era": "Llama",
+      "demonstrates": "Extracting data from PDFs, invoices and reports with the DocumentLens recipe",
+      "rebuild": {
+        "fit": "clean",
+        "models": ["muse-spark-1.3", "sam-3.1"],
+        "plan": "Upload a PDF report. Spark 1.3 reads it directly and answers with tables and page references, and SAM 3.1 outlines the charts and figures on page images.",
+        "note": "Upload a PDF report and pull out the key numbers, tables and charts"
+      }
+    },
+    {
+      "id": "fine-tuning-real-world",
+      "title": "Llama Best Practices: Fine-Tuning Llama Models in the Real World",
+      "url": "https://dev.meta.ai/llama/resources/videos/fine-tuning-llama-models-in-the-real-world",
+      "era": "Llama",
+      "demonstrates": "Fine-tuning strategies for domain-specific problems",
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-spark-1.3"],
+        "plan": "Muse Muse builds apps, not training runs, and the hosted Muse models aren't fine-tuned through the API. The rebuild checks a few-shot Spark 1.3 setup against the user's labeled examples and says when fine-tuning open weights like Glimmer would still be worth it.",
+        "note": "Tell me whether my classification task still needs fine-tuning, using a few labeled examples"
+      }
+    },
+    {
+      "id": "llama-protections",
+      "title": "Implementing Llama Protections in GenAI applications",
+      "url": "https://dev.meta.ai/llama/resources/videos/implement-llama-protections-to-genAI-applications",
+      "era": "Llama Protections",
+      "demonstrates": "Safeguards for content moderation, jailbreak defense and code security",
+      "rebuild": {
+        "fit": "reframe",
+        "models": ["muse-spark-1.3"],
+        "plan": "A safety check in front of a chatbot that screens prompts and replies with Spark 1.3 and shows why something was blocked. Meta's open protection models stay the self-hosted option.",
+        "note": "Put a safety check in front of my chatbot that blocks jailbreaks and explains why"
+      }
+    }
+  ],
+  "missing": [
+    {
+      "id": "sam-first-demo",
+      "model": "sam-3.1",
+      "why": "No video for SAM 3.1 on the first page",
+      "note": "Count and outline things in a photo or a short video"
+    },
+    {
+      "id": "image-first-demo",
+      "model": "muse-image-1.0",
+      "why": "No video for Muse Image on the first page",
+      "note": "Restyle my product photos and put them in new scenes"
+    },
+    {
+      "id": "voice-first-demo",
+      "model": "muse-voice-transcribe-1.0",
+      "why": "No video for Muse Voice Transcribe on the first page",
+      "note": "Turn a recorded class or meeting into notes that show who said what"
+    },
+    {
+      "id": "wonder-first-demo",
+      "model": "muse-wonder-1.0",
+      "why": "Only a short embedded clip on the home page",
+      "note": "Plan a long multi-step project, like a 16-week marathon plan, and keep it updated"
+    }
+  ]
+}

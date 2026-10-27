@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:musemuse:manifest",
+  "title": "Muse Muse product manifest",
+  "description": "Filled in by Muse Code during a build. The platform uses it for the product page, the gateway allowlist and the Muse app connector.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "slug", "tagline", "inspiration", "models", "actions", "fixtures", "limits", "estimatedCostPerRunUsd"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 40 },
+    "tagline": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "inspiration": { "type": "string", "minLength": 1, "description": "One line on what the user gave and asked for" },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "usedFor"],
+        "properties": {
+          "id": {
+            "enum": ["muse-spark-1.3", "muse-wonder-1.0", "muse-image-1.0", "sam-3.1", "muse-voice-transcribe-1.0", "muse-glimmer"]
+          },
+          "usedFor": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "description": "Each action is served at POST /api/actions/<name> and becomes a Muse app connector tool.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description", "input", "output"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "description": { "type": "string", "minLength": 1 },
+          "input": { "type": "object", "description": "JSON Schema for the request body" },
+          "output": { "type": "object", "description": "JSON Schema for the response body" },
+          "example": { "type": "object", "description": "Example request body used by tests" }
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "description"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^fixtures/" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "limits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "estimatedCostPerRunUsd": { "type": "number", "minimum": 0 }
+  }
+}

@@ -1,0 +1,88 @@
+/* Muse Muse product tokens. Meta-inspired: bright blue accent, soft grey page, white cards, rounded pills.
+   Use these tokens for every color, radius and font. No Meta logos or wordmarks. */
+
+:root {
+  --bg: #f1f4f7;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --line: #dce2e8;
+  --fg: #1c2b33;
+  --fg-2: #44566a;
+  --muted: #5e6f80;
+  --accent: #0064e0;
+  --accent-text: #0057c2;
+  --accent-ink: #ffffff;
+  --accent-soft: #e7f0fd;
+  --good: #0b7a3e;
+  --warn: #8f5600;
+  --risk: #b3261e;
+  --radius-lg: 22px;
+  --radius: 14px;
+  --pill: 999px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0a0f13;
+    --surface: #141b21;
+    --surface-2: #182129;
+    --line: #27323b;
+    --fg: #e8eef3;
+    --fg-2: #aebbc6;
+    --muted: #8d9ba7;
+    --accent: #1f6fe5;
+    --accent-text: #7db2ff;
+    --accent-ink: #ffffff;
+    --accent-soft: #10233d;
+    --good: #4cc38a;
+    --warn: #f2b544;
+    --risk: #ff8a80;
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+main {
+  max-width: 960px;
+  margin-inline: auto;
+  padding: 32px max(16px, env(safe-area-inset-left, 0px)) 48px max(16px, env(safe-area-inset-right, 0px));
+}
+
+button.primary {
+  font: inherit;
+  font-weight: 700;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
