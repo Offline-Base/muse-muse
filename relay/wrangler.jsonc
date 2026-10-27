@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muse-privacy-relay",
+  "main": "src/index.ts",
+  // @cloudflare/vitest-pool-workers 0.22.x runs workerd that accepts dates up to 2026-08-22.
+  "compatibility_date": "2026-08-22",
+  "durable_objects": {
+    "bindings": [
+      // One object per device: the secret's hash and the device's WebSocket.
+      { "name": "DEVICE", "class_name": "DeviceHub" },
+      // One object for pairing codes (hashed, 10 minute expiry) and attempt counters.
+      { "name": "PAIRING", "class_name": "PairingGate" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DeviceHub", "PairingGate"] }],
+  // The OAuth library keeps clients, grants and tokens (hashed) here.
+  // deploy.sh creates the namespace on first run and writes its id in place of the placeholder.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "REPLACE_WITH_OAUTH_KV_ID" }],
+  // Errors are kept; per-request invocation logs (URLs, headers) are not. Bodies are never logged.
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false } }
+}

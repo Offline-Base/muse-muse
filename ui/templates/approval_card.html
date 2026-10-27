@@ -1,0 +1,19 @@
+<article class="card approval" id="approval-$id" data-id="$id">
+  <div class="card-top">
+    <span class="eyebrow">Muse asked</span>
+    <span class="when">$when</span>
+  </div>
+  <p class="request">$request</p>
+  <div class="field-label">What would leave this device</div>
+  <pre class="tagged">$tagged_html</pre>
+  $blocked_html
+  <p class="router"><span class="field-label inline">Why you are asked</span> $router_reason</p>
+  <p class="caption">If you share it, Muse gets $shown.</p>
+  <div class="metric-row">$meta</div>
+  <form class="js-approval actions" method="post" action="/api/approvals/$id_url">
+    <button class="btn primary" type="submit" name="approve" value="1">Share it</button>
+    <button class="btn secondary" type="submit" name="approve" value="0">Keep it here</button>
+    <label class="remember"><input type="checkbox" name="remember" value="1"> Don't ask again for things like this</label>
+  </form>
+  <p class="form-msg" role="status"></p>
+</article>

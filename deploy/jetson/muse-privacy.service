@@ -1,0 +1,48 @@
+# Muse Privacy server (approval page, connector, heavy-step queue). Installed by install.sh.
+[Unit]
+Description=Muse Privacy server
+Wants=muse-privacy-glimmer.service
+After=network-online.target muse-privacy-glimmer.service
+
+[Service]
+Type=simple
+User=muse-privacy
+Group=muse-privacy
+WorkingDirectory=/opt/muse-privacy/app
+Environment=BASE_DEVICE=jetson
+Environment=GLIMMER_BACKEND=llama_server
+Environment=BASE_HOME=/var/lib/muse-privacy/home
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Site settings (APPROVAL_HOST, RELAY_URL, LIGHT_SERIAL, WORKSPACE_ROOT). Root-owned, see README.
+EnvironmentFile=-/etc/muse-privacy/env
+ExecStart=/opt/muse-privacy/app/.venv/bin/python -m base
+Restart=on-failure
+RestartSec=5
+
+# Hardening. No PrivateDevices: the status light is a USB serial device (dialout group).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/muse-privacy
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=1G
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

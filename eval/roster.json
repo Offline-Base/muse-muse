@@ -1,0 +1,242 @@
+{
+  "school": "Quillmere Elementary",
+  "teacher": {
+    "name": "Celeste Fairbrook",
+    "first": "Celeste",
+    "last": "Fairbrook",
+    "nicknames": [
+      "Ms. Fairbrook"
+    ],
+    "role": "teacher",
+    "student_id": null
+  },
+  "students": [
+    {
+      "name": "Abigail Thornbury",
+      "first": "Abigail",
+      "last": "Thornbury",
+      "nicknames": [
+        "Abby",
+        "Gail"
+      ],
+      "role": "student",
+      "student_id": "S401127"
+    },
+    {
+      "name": "Benjamin Adeyemi",
+      "first": "Benjamin",
+      "last": "Adeyemi",
+      "nicknames": [
+        "Ben",
+        "Benji"
+      ],
+      "role": "student",
+      "student_id": "S401138"
+    },
+    {
+      "name": "Camila Restrepo",
+      "first": "Camila",
+      "last": "Restrepo",
+      "nicknames": [
+        "Cami",
+        "Mila"
+      ],
+      "role": "student",
+      "student_id": "S401145"
+    },
+    {
+      "name": "Dashiell Kowalczyk",
+      "first": "Dashiell",
+      "last": "Kowalczyk",
+      "nicknames": [
+        "Dash"
+      ],
+      "role": "student",
+      "student_id": "S401152"
+    },
+    {
+      "name": "Esperanza Moreno-Baptiste",
+      "first": "Esperanza",
+      "last": "Moreno-Baptiste",
+      "nicknames": [
+        "Espe",
+        "Ranzi"
+      ],
+      "role": "student",
+      "student_id": "S401169"
+    },
+    {
+      "name": "Farhan Siddiqui",
+      "first": "Farhan",
+      "last": "Siddiqui",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401173"
+    },
+    {
+      "name": "Gideon Pakalnis",
+      "first": "Gideon",
+      "last": "Pakalnis",
+      "nicknames": [
+        "Gid",
+        "Giddy"
+      ],
+      "role": "student",
+      "student_id": "S401186"
+    },
+    {
+      "name": "Hana Whitlock",
+      "first": "Hana",
+      "last": "Whitlock",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401190"
+    },
+    {
+      "name": "Ikaika Kealoha",
+      "first": "Ikaika",
+      "last": "Kealoha",
+      "nicknames": [
+        "Kai"
+      ],
+      "role": "student",
+      "student_id": "S401204"
+    },
+    {
+      "name": "Jasper Ellingsworth",
+      "first": "Jasper",
+      "last": "Ellingsworth",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401211"
+    },
+    {
+      "name": "Keturah Mensah",
+      "first": "Keturah",
+      "last": "Mensah",
+      "nicknames": [
+        "Kiki",
+        "Ket"
+      ],
+      "role": "student",
+      "student_id": "S401228"
+    },
+    {
+      "name": "Leopold Ferreira",
+      "first": "Leopold",
+      "last": "Ferreira",
+      "nicknames": [
+        "Leo",
+        "Polo"
+      ],
+      "role": "student",
+      "student_id": "S401235"
+    },
+    {
+      "name": "Maya Okafor",
+      "first": "Maya",
+      "last": "Okafor",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401242"
+    },
+    {
+      "name": "Maya Lindqvist",
+      "first": "Maya",
+      "last": "Lindqvist",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401259"
+    },
+    {
+      "name": "Priyanka Raghunathan",
+      "first": "Priyanka",
+      "last": "Raghunathan",
+      "nicknames": [
+        "Priya",
+        "Pinky"
+      ],
+      "role": "student",
+      "student_id": "S401263"
+    },
+    {
+      "name": "Quentin Beaumont",
+      "first": "Quentin",
+      "last": "Beaumont",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401270"
+    },
+    {
+      "name": "Rose Hallaway",
+      "first": "Rose",
+      "last": "Hallaway",
+      "nicknames": [
+        "Rosie"
+      ],
+      "role": "student",
+      "student_id": "S401287"
+    },
+    {
+      "name": "Santiago Villalobos",
+      "first": "Santiago",
+      "last": "Villalobos",
+      "nicknames": [
+        "Santi"
+      ],
+      "role": "student",
+      "student_id": "S401294"
+    },
+    {
+      "name": "Tessa O'Callan",
+      "first": "Tessa",
+      "last": "O'Callan",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401306"
+    },
+    {
+      "name": "Ty Vo",
+      "first": "Ty",
+      "last": "Vo",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401313"
+    },
+    {
+      "name": "Valentina Ostrowski",
+      "first": "Valentina",
+      "last": "Ostrowski",
+      "nicknames": [
+        "Val",
+        "Tina"
+      ],
+      "role": "student",
+      "student_id": "S401320"
+    },
+    {
+      "name": "Wren Achterberg",
+      "first": "Wren",
+      "last": "Achterberg",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401337"
+    },
+    {
+      "name": "Yusuf Demir",
+      "first": "Yusuf",
+      "last": "Demir",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401344"
+    },
+    {
+      "name": "Zainab Haddad",
+      "first": "Zainab",
+      "last": "Haddad",
+      "nicknames": [],
+      "role": "student",
+      "student_id": "S401351"
+    }
+  ]
+}

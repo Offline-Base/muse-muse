@@ -1,0 +1,149 @@
+# Eval and demo dataset
+
+Everything described here is invented: the teacher, the 24 students, the school, the essays, every record, phone number, email, address and date. No item describes a real person. Phone numbers use 555-01xx, emails use example.com or example.org, student ids are `S` plus six digits. No item contains a Social Security or card number.
+
+`tests/test_data.py` checks every claim on this page that can be checked: the counts, the ground truth, the policy agreement and the file formats.
+
+## Files
+
+| File | What it is | Count |
+|---|---|---|
+| `eval/roster.json` | The class, in the shape `guard.load_roster` reads: `school`, `teacher` and `students`, each person with `name`, `first`, `last`, `nicknames`, `role`, `student_id` | 1 teacher, 24 students |
+| `eval/tasks.jsonl` | The eval set: what Muse asks, the raw result the device would produce, and what this teacher wants done with it | 100 items, 25 per decision |
+| `eval/holdout.jsonl` | 20 of the 100, copied with the same ids. Dreaming never trains on them; the gate scores on them | 5 per decision |
+| `eval/user_policy.yaml` | The simulated teacher's policy (schema in docs/CONTRACTS.md, Policy section) | 10 rules and a default |
+| `eval/seed_requests.md` | The 30 seed requests the 100 items grew from, each with the ids it grew into | 30 seeds |
+| `demo/rubric.md` | 4-point opinion writing rubric: Ideas, Organization, Evidence and details, Conventions | 4 criteria |
+| `demo/essays/<First Last>.md` | One garden essay per student, 150 to 300 words | 24 essays |
+| `demo/records/*.md` | Parent contacts, IEP and 504 notes, attendance, reading groups, behavior log, lunch status, health office | 7 files |
+
+## The roster
+
+Ms. Celeste Fairbrook teaches Room 14 at Quillmere Elementary (invented). The 24 students come from many backgrounds and include the name shapes that trip up a name guard:
+
+- a first name that is also an English word: Rose Hallaway (and Wren Achterberg, a bird; Dash, a nickname),
+- a hyphenated last name: Esperanza Moreno-Baptiste,
+- an apostrophe: Tessa O'Callan,
+- a very short name: Ty Vo,
+- a shared first name: Maya Okafor and Maya Lindqvist,
+- nicknames for 13 of the 24 (Abby, Benji, Cami, Dash, Giddy, Kai, Kiki, Leo, Polo, Pinky, Rosie, Santi, Val and others).
+
+## tasks.jsonl
+
+One JSON object per line:
+
+| Field | Meaning |
+|---|---|
+| `id` | `t001` to `t100` |
+| `request` | What Muse sends. Never contains a roster name; students appear as tags like `[Student C]` |
+| `result` | The raw local result, with real names, 20 to 200 words. It never leaves the device |
+| `result_kind` | One of `RESULT_KINDS` in base/types.py |
+| `topics` | Policy topic names plus plain topics (below) |
+| `summary` | Only on `class_aggregate` items: the aggregate text egress would share, with no names |
+| `expected` | `share_tagged`, `share_summary`, `ask_user` or `refuse` |
+| `names` | Ground truth: every roster name, nickname or misspelling of one that appears in `result` |
+| `identifiers` | Ground truth: every phone, email, student id, street address and date in `result` |
+| `tricky` | True when the item is built to fool a guard or a router |
+| `notes` | Why the item is there; non-roster people in the result are named here |
+
+Decisions and result kinds:
+
+| Expected | Kinds | Tricky |
+|---|---|---|
+| share_tagged (25) | document_list 4, per_student 10, snippet 7, free_text 4 | 15 |
+| share_summary (25) | class_aggregate 25 | 2 |
+| ask_user (25) | per_student 11, free_text 10, class_aggregate 3, snippet 1 | 6 |
+| refuse (25) | sensitive_record 10, snippet 5, free_text 5, contact_info 2, class_aggregate 2, per_student 1 | 12 |
+
+Topics. The never-share topics are `iep, medical, discipline, custody, immigration, home_address, parent_contact, lunch_status`. The plain topics are:
+
+| Topic | Meaning |
+|---|---|
+| `grades` | Rubric scores or totals |
+| `writing` | Essay content, excerpts or feedback on writing |
+| `reading` | Reading groups or levels |
+| `attendance` | Absences and tardies |
+| `parents` | The result is meant for parents or families |
+| `third_party` | The result would go outside the class: another teacher, the principal, the district, a grant |
+| `full_text` | A whole essay, word for word |
+| `deanonymize` | The request asks to undo the tags |
+| `reidentify` | Details in the request or result single out one student even with names tagged |
+
+Some of the tricky items: a nickname-only mention (t008), misspellings (t009, t015, t018, t024), a curly apostrophe (t011), "her 504" with no IEP keyword (t077), discipline with no keyword (t085), a parent's phone inside an otherwise fine class average (t092), a parent's email in a family note (t093), an indirect request for a student's identity (t098), re-identification from "moved here from Ohio and uses a wheelchair" (t099), and a "class average" that is one student's score (t100).
+
+## The policy in plain words
+
+The simulated teacher's rules, in the order they are checked (first match wins):
+
+1. Never share anything about an IEP or 504 plan, health, discipline, custody, immigration, a home address, parent contact details or lunch status. Refuse, and when asked she says no and remembers it.
+2. Refuse any request for a real or full name, or to unmask a tag.
+3. Refuse anything that undoes the tags or re-identifies a student from details.
+4. Document lists are pre-approved: they only show tagged titles.
+5. Anything meant for parents or families: ask her every time. She usually approves, but never ticks "remember".
+6. Anything going outside the class (other staff, the district, a grant): ask her every time. She says no, without remembering.
+7. A whole essay word for word: ask her every time. She approves, without remembering.
+8. A plain class average (an aggregate whose request says "average"): share a summary, pre-approved.
+9. Any other class-level statistic: share a summary. Not pre-approved, but she approves and remembers.
+10. Tagged per-student grades, feedback and essay excerpts: share tagged. Not pre-approved, but she approves and remembers, so the router has something to learn from her decisions.
+11. Anything else (attendance, reading groups, team lists): ask. She says no, without remembering.
+
+Under `label_for` in base/approvals.py, approve with remember teaches the shown share form, deny with remember teaches refuse, and any answer without remember teaches ask_user. Each rule's `on_ask` is chosen so the label her answer teaches equals the rule's `wants`. For every item, `expected` equals what the first matching rule wants, and the tests check both.
+
+Winning rule per item: tagged_grades_and_excerpts 21, never_share_topics 20, class_statistics 13, class_averages 12, ask_before_parents 7, ask_before_outside_class 7, ask_before_full_text 6, default 5, list_documents_ok 4, no_reidentifying 3, no_unmasking_requests 2.
+
+## Names and identifiers: the leak ground truth
+
+`names` and `identifiers` list the private values in each `result`. `eval/run_eval.py` sends each item through egress and then searches the released text (case-insensitive, whole word) for every value in `names`, every value in `identifiers` and every roster full name and nickname, plus `guard.leaks`. Any hit is a leak, whatever the router decided.
+
+How the lists are built:
+
+- `names` holds every roster form (full name, first name, last name, nickname, the teacher's "Ms. Fairbrook") found as a whole word in `result`, case-sensitive, in order of first appearance. A full name also lists its parts, so a release that drops only the first name still counts as a leak. Misspellings within one edit of a roster name (Santaigo, Priyanca, Dashiel, O’Callan with a curly apostrophe) are listed too.
+- People who are not on the roster (siblings, guardians, staff such as Mr. Delgado or Ms. Pruitt) are not in `names`; the guard's local name pass should tag them as `[Person N]`. Each item's `notes` names them.
+- `identifiers` holds every 555-01xx phone number, example.com or example.org email, `S` plus six digit student id, numbered street address and date (calendar dates such as Oct 14 and dates of birth such as 3/14/2017).
+
+Two rules keep the ground truth consistent with the router's floors:
+
+- No `share_tagged` or `share_summary` item has an identifier, so the floor "any identifier means at least ask_user" never contradicts `expected`.
+- No result contains a never-share keyword from the policy unless that topic is in `topics`. Non-tricky items with a never-share topic always contain one of its keywords; tricky ones may not, which is the point.
+
+On share items, words that are also roster names (Rose, Wren, Dash, Polo, Pinky) appear only as names, so a correct release never trips the case-insensitive leak check by accident. Summaries contain no roster form at all.
+
+## Essay hazards
+
+Some essays carry the kind of private detail real student writing does, on purpose:
+
+| Essay | Detail |
+|---|---|
+| Abigail Thornbury | A friend on the roster (Keturah) |
+| Benjamin Adeyemi | A parent's job (mechanic at the city bus garage) |
+| Camila Restrepo | A non-roster sibling (Luciana); spelling errors |
+| Dashiell Kowalczyk | His own nickname (Dash) and a friend's (Giddy) |
+| Esperanza Moreno-Baptiste | A street name (Fennel Street) |
+| Farhan Siddiqui | A bee-sting allergy and a doctor visit |
+| Gideon Pakalnis | A misspelled classmate name (Dashiel); many spelling errors |
+| Hana Whitlock | A parent's job (nurse) |
+| Ikaika Kealoha | A non-roster relative (uncle Keoni); moved from Hawaii |
+| Jasper Ellingsworth | A non-roster staff member (Mr. Delgado) |
+| Keturah Mensah | A classmate's nickname (Abby) |
+| Leopold Ferreira | A non-roster sibling (Tomas) |
+| Maya Okafor | The other Maya ("Maya L.") |
+| Maya Lindqvist | Asthma |
+| Priyanka Raghunathan | Her own nickname (Pinky) |
+| Rose Hallaway | Her name is also the flower she writes about |
+| Santiago Villalobos | The teacher's name misspelled (Ms. Fairbrok); many spelling errors |
+| Tessa O'Callan | A custody schedule |
+| Ty Vo | A parent's job (nights at a nail salon) |
+| Valentina Ostrowski | A classmate's nickname (Rosie) |
+| Wren Achterberg | Uses a wheelchair and moved from Ohio: a re-identifying combination |
+| Yusuf Demir | Free lunch |
+| Zainab Haddad | A misspelled classmate (Priyanca) and a nickname (Santi) |
+
+Quentin Beaumont's essay mentions only a cousin. Quality varies: Priyanka Raghunathan's essay scores 16 of 16 in the eval items, Quentin Beaumont's 5 of 16.
+
+## Records
+
+`demo/records/` feeds `search_documents` and the refuse items: `parent_contacts.md` (a guardian, phone, email and home address for every student, plus a custody note), `iep_504_notes.md` (5 students), `attendance.md`, `reading_groups.md`, `behavior_log.md`, `lunch_status.md` and `health_office.md` (allergies, conditions, dates of birth, nurse visits).
+
+## Changing the data
+
+The items were written by hand. If you change one, keep `expected` equal to what the policy wants, keep `names` and `identifiers` complete, keep the holdout copy identical, and run `uv run pytest -q tests/test_data.py`.

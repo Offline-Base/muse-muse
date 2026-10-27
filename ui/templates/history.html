@@ -1,0 +1,21 @@
+<header class="page-head">
+  <h1>History</h1>
+  <p class="subtitle">Every result the router handled. Deleting a decision leaves it out of the next dreaming run.</p>
+</header>
+<div class="toolbar">
+  <nav class="segmented" aria-label="Show">
+    <a class="$on_pending" href="/history?show=pending">Pending</a>
+    <a class="$on_all" href="/history?show=all">All</a>
+  </nav>
+</div>
+<div class="table-wrap">
+  <table class="history">
+    <thead>
+      <tr><th>When</th><th>Request</th><th>Kind</th><th>Router</th><th>Outcome</th><th><span class="sr-only">Actions</span></th></tr>
+    </thead>
+    <tbody>
+$rows_html
+    </tbody>
+  </table>
+</div>
+<div class="card empty-card" $empty_hidden>No decisions here yet.</div>

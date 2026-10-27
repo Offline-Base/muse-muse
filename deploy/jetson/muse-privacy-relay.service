@@ -1,0 +1,48 @@
+# Dials out to the connector relay and forwards Muse's requests to the local connector.
+# Enable it after RELAY_URL is set in /etc/muse-privacy/env and the device is paired.
+[Unit]
+Description=Muse Privacy relay client (dials out to the connector relay)
+Wants=network-online.target muse-privacy.service
+After=network-online.target muse-privacy.service
+
+[Service]
+Type=simple
+User=muse-privacy
+Group=muse-privacy
+WorkingDirectory=/opt/muse-privacy/app
+Environment=BASE_DEVICE=jetson
+Environment=GLIMMER_BACKEND=llama_server
+Environment=BASE_HOME=/var/lib/muse-privacy/home
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-/etc/muse-privacy/env
+ExecStart=/opt/muse-privacy/app/.venv/bin/python -m base.connector.relay_client run
+Restart=on-failure
+RestartSec=10
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/muse-privacy
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=256M
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
