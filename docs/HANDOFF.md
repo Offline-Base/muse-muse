@@ -52,7 +52,7 @@ Verified here means run on this Mac, with Glimmer on OpenRouter and invented dat
 | 10 | Do the grading spot-check | The plan's grading-quality number is manual; Spark's cross-check is only a second opinion | Fill in the blank columns of `eval/reports/grading_spotcheck.md`, then add the agreement to final.md |
 | 11 | Decide t002's label | It expects a shared document list, but the list names an IEP file and a lunch-status file, which the connector holds back. The eval scores the refusal as a miss | Relabel it, or leave it and keep the explanation in post_fix.md |
 | 12 | Decide how much evidence a broad share rule needs | Two approvals taught "share tagged" for every snippet with no topics. On the unseen test the router stopped asking about 8 snippets the teacher wanted to see, and on day 2 of the simulation it shared t085, a discipline note her policy refuses, with no card (the night-5 rules did the same on the 100 tasks). The leak count does not see this | A code change in `base/dreaming/train.py` (for example more answers before a rule covers a whole kind), then rerun the simulation ($0.39 and 34 minutes in the last round; $0.42 and 1 h 44 min this round, while OpenRouter was slow) |
-| 13 | Record the video | Due with the submission | docs/DEMO_SCRIPT.md |
+| 13 | Record the video | Due with the submission | docs/DEMO_SCRIPT.md. First confirm the two survey figures in scene 2:10 against the published reports (the note under the scene table), or cut them |
 
 ## Cost so far
 
