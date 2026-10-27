@@ -1,0 +1,43 @@
+# Muse Privacy, Meta Global AI Developer Hackathon build
+
+Muse Privacy is a Muse connector that gives Muse a private workspace on the user's own device, a laptop or a Jetson Orin Nano. Muse plans work from its cloud VM using tags like "Student A." The device holds the documents, runs Muse Glimmer for every step that touches them, writes finished files with real names locally, and returns only tagged or summarized results. A privacy router decides for each result whether to share it tagged, share a summary, ask the user, or refuse, and a nightly "dreaming" job teaches it the user's approve and deny decisions. Under the hood this is Base, Offline Base's local AI stack.
+
+Read docs/CONTRACTS.md before writing or changing any module. It is the shared interface every module codes against. Shared types live in base/types.py and settings in base/config.py; change them only when CONTRACTS.md changes with them.
+
+## The hackathon
+- Meta Global AI Developer Hackathon, startup track, solo. Judged on technical execution and whether it holds up in production, so measured numbers and reliability beat polish.
+- Built with Meta's models: Muse (the app and its Secure VM) through the connector, Muse Glimmer for every private step and no other model family, and Muse Spark 1.3 through the Meta Model API for the eval harness and synthetic data.
+- Submissions are due Nov 4 at 9 PM ET. We submit by noon.
+- Everything is built in this repo during the event. Other Offline Base repos (decision-guard, base-router-subagent, decision-tree) are inspiration only: read them, then write new code here. Never import from them, vendor them, or symlink them. Record what each piece was inspired by in docs/PRIOR_WORK.md.
+
+## Where models run (as of Oct 27)
+- Development is cloud only for now. Do not download, serve, quantize or train any model on this Mac. The disk has about 15 GB free and Ethan asked for cloud. No `hf download`, no llama-server, no mlx-lm runs locally.
+- GLIMMER_BACKEND=openrouter (the default today) sends Glimmer calls to OpenRouter model `meta/muse-glimmer-30b`. This is a development mode for synthetic data only: base/config.py and the workspace refuse to read any folder without a `.synthetic` marker while the backend is a cloud endpoint. Never weaken that check.
+- GLIMMER_BACKEND=llama_server is the shipping mode: Glimmer on the device through llama-server's OpenAI-compatible API. Laptop: Meta's `Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf`. Jetson Orin Nano 8GB: `mradermacher/Muse-Glimmer-30B-i1-GGUF` i1-IQ1_S (6.5 GB) for lookups and tagging, with heavy steps handed to the laptop through the dial-out worker. Needs llama.cpp b10353 or newer.
+- Glimmer's "assistant" model is a DFlash speculative-decoding drafter, not a chat model, so Glimmer itself is the router (decided Oct 27 from the model card).
+- Glimmer prompting: put `Reasoning strength: low` (or medium/high/xhigh) in the system prompt; on llama-server use `chat_template_kwargs.reasoning_strength`. Reasoning counts against max_tokens, so give at least 1500. OpenRouter accepts `reasoning: {"effort": "low"}`, `response_format` json_schema (strict) and tools.
+- Muse Spark 1.3: POST https://api.meta.ai/v1/chat/completions, `Authorization: Bearer $META_API_KEY`, model `muse-spark-1.3`, `reasoning_effort` in minimal|low|medium|high|xhigh|max (no "none"), strict json_schema works, usage has `completion_tokens_details.reasoning_tokens`. Limits seen: 3000 requests and 4M tokens per minute.
+
+## Devices
+- BASE_DEVICE selects laptop or jetson. Never hardcode a device, URL, hostname or path to one machine.
+- The Mac is a managed work laptop: never bind anything on it to 0.0.0.0, scan the network, or start Tailscale. Servers on the laptop bind 127.0.0.1. The laptop reaches the Jetson by dialing out (base/heavy/worker.py); the Jetson never connects in to the laptop.
+- Do not touch any real Jetson board (no SSH, no fleet jobs). The Jetson path is built and tested in simulation until Ethan picks a board.
+- Anything that works on one device needs a test or smoke check for the other.
+
+## Hard rules
+- Nothing leaves the device except connector tool results, and every result passes guard.tag and the privacy router first. Raw documents, names, identifiers and the tag map never leave. Enforce this in code and test it.
+- Finished files with real names are written only on the device, under BASE_HOME (default ~/.base).
+- base/spark.py is only for the eval harness and synthetic data, never for user data, and refuses any input containing a roster name or a guard hit.
+- All test and demo data is synthetic. Never put real names, real student data or real personal data in fixtures, logs or commits. Phone numbers use 555-01xx, emails use example.com/example.org, SSNs start with 9 or 000, card numbers are well-known test numbers.
+- Secrets live in .env, which is gitignored. Never print, log or commit API keys, IP addresses, hostnames, usernames or Wi-Fi names.
+- Deleting a document, fact or decision row removes it from the next dreaming rebuild.
+- Every module gets pytest tests. Mock OpenRouter, the Meta API and llama-server in unit tests (respx), with integration tests marked `@pytest.mark.integration` and skipped unless RUN_INTEGRATION=1.
+- Keep code small and boring. Python 3.12, FastAPI, SQLite, uv. Ask before adding a framework. Use only dependencies already in pyproject.toml; if a new one is unavoidable, say so in your final report instead of editing pyproject.toml.
+- Any number we might quote goes into eval/reports with the command that produced it.
+- No em dashes in user-facing text (README, docs, UI copy, messages to Muse).
+
+## Commands
+- `uv run pytest -q` runs the unit tests. `uv run ruff check .` lints.
+- `uv run python -m base.server` starts the approval page and connector for BASE_DEVICE.
+
+Ports: answer model 8081, router 8082, approval page 8787, Muse connector 8790.

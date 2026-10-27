@@ -1,0 +1,98 @@
+"""Shared types. See docs/CONTRACTS.md before changing anything here."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Iterator, Literal
+
+Decision = Literal["share_tagged", "share_summary", "ask_user", "refuse"]
+DECISIONS: tuple[Decision, ...] = ("share_tagged", "share_summary", "ask_user", "refuse")
+STRICTNESS: dict[str, int] = {"share_tagged": 0, "share_summary": 1, "ask_user": 2, "refuse": 3}
+
+ResultKind = Literal[
+    "document_list",
+    "snippet",
+    "per_student",
+    "class_aggregate",
+    "contact_info",
+    "sensitive_record",
+    "free_text",
+    "dreaming_report",
+]
+RESULT_KINDS: tuple[str, ...] = (
+    "document_list",
+    "snippet",
+    "per_student",
+    "class_aggregate",
+    "contact_info",
+    "sensitive_record",
+    "free_text",
+    "dreaming_report",
+)
+
+HitKind = Literal[
+    "student", "teacher", "person", "phone", "email", "ssn", "card", "otp", "student_id", "address", "dob"
+]
+IDENTIFIER_KINDS: frozenset[str] = frozenset({"phone", "email", "ssn", "card", "otp", "student_id", "address", "dob"})
+
+
+def stricter(a: Decision, b: Decision) -> Decision:
+    """Return whichever decision keeps more on the device."""
+    return a if STRICTNESS[a] >= STRICTNESS[b] else b
+
+
+@dataclass(frozen=True)
+class Person:
+    name: str
+    first: str
+    last: str
+    nicknames: tuple[str, ...] = ()
+    role: str = "student"
+    student_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Roster:
+    teacher: Person
+    students: tuple[Person, ...]
+    school: str | None = None
+
+    def people(self) -> Iterator[Person]:
+        yield self.teacher
+        yield from self.students
+
+
+@dataclass(frozen=True)
+class Hit:
+    kind: str
+    value: str
+    start: int
+    end: int
+
+
+@dataclass
+class TagResult:
+    text: str
+    tag_map: dict[str, str] = field(default_factory=dict)
+    hits: list[Hit] = field(default_factory=list)
+    blocked: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RouteInput:
+    request: str
+    result_kind: str
+    tagged_text: str
+    hits: list[Hit] = field(default_factory=list)
+    blocked: list[str] = field(default_factory=list)
+    summary: str | None = None
+    topics: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RouteDecision:
+    decision: Decision
+    reason: str
+    source: Literal["model", "rule", "fallback", "cache"]
+    latency_ms: int = 0
+    floors: list[str] = field(default_factory=list)
