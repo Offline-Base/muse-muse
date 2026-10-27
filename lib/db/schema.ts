@@ -1,10 +1,25 @@
-import { index, integer, jsonb, pgTable, real, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  bigserial,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
+import type { Brief } from "@/lib/brief/schema";
+import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
+  isAdmin: boolean("is_admin").notNull().default(false),
   dailyBuildQuota: integer("daily_build_quota").notNull().default(3),
   createdAt: createdAt(),
 });
@@ -15,89 +30,152 @@ export const inspirations = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id),
     note: text("note"),
-    references: jsonb("references")
-      .$type<Array<{ url: string; kind: "image" | "video" | "audio" | "pdf"; fileName: string }>>()
-      .notNull()
-      .default([]),
+    references: jsonb("references").$type<Reference[]>().notNull().default([]),
     createdAt: createdAt(),
   },
   (t) => [index("inspirations_user_idx").on(t.userId)],
 );
 
-export const products = pgTable("products", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  slug: text("slug").notNull().unique(),
-  name: text("name").notNull(),
-  ownerId: uuid("owner_id").notNull().references(() => users.id),
-  manifest: jsonb("manifest").notNull(),
-  vercelProjectId: text("vercel_project_id"),
-  liveUrl: text("live_url"),
-  demoVideoUrl: text("demo_video_url"),
-  status: text("status", { enum: ["live", "partial", "disabled"] }).notNull(),
-  createdAt: createdAt(),
-});
+/**
+ * A product row is created as soon as the brief is approved (status "building"), so build-scoped gateway tokens and
+ * usage can point at it. It becomes "live" or "partial" when the build ships, or "failed" when it doesn't.
+ */
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    tagline: text("tagline").notNull().default(""),
+    ownerId: uuid("owner_id").notNull().references(() => users.id),
+    inspirationId: uuid("inspiration_id").references(() => inspirations.id),
+    /** Catalog id from catalog/meta-resources.json when this product rebuilds one of Meta's demos. */
+    rebuildOf: text("rebuild_of"),
+    /** musemuse.json, set when a build passes. */
+    manifest: jsonb("manifest").$type<Manifest>(),
+    /** The build that produced the current live version. No FK, to avoid a cycle with builds.product_id. */
+    latestBuildId: uuid("latest_build_id"),
+    sandboxName: text("sandbox_name"),
+    museSessionId: text("muse_session_id"),
+    vercelProjectId: text("vercel_project_id"),
+    liveUrl: text("live_url"),
+    demoVideoUrl: text("demo_video_url"),
+    transcriptUrl: text("transcript_url"),
+    status: text("status").$type<ProductStatus>().notNull().default("building"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("products_owner_idx").on(t.ownerId), index("products_rebuild_idx").on(t.rebuildOf)],
+);
 
 export const builds = pgTable(
   "builds",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     inspirationId: uuid("inspiration_id").notNull().references(() => inspirations.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    /** "build" makes a new product. "refine" resumes a shipped product's Muse Code session with a message. */
+    kind: text("kind").$type<"build" | "refine">().notNull().default("build"),
+    /** For refinements: the user's message. */
+    message: text("message"),
     rebuildOf: text("rebuild_of"),
     productId: uuid("product_id").references(() => products.id),
-    status: text("status").notNull(),
-    brief: jsonb("brief"),
+    status: text("status").$type<BuildStatus>().notNull().default("queued"),
+    /** The workflow step running now, for the build room's progress rail. */
+    step: text("step"),
+    brief: jsonb("brief").$type<Brief>(),
+    buildModel: text("build_model"),
     sandboxName: text("sandbox_name"),
     museSessionId: text("muse_session_id"),
+    workflowRunId: text("workflow_run_id"),
     fixRounds: integer("fix_rounds").notNull().default(0),
     previewUrl: text("preview_url"),
+    /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),
     error: text("error"),
     startedAt: createdAt(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
-  (t) => [index("builds_inspiration_idx").on(t.inspirationId), index("builds_product_idx").on(t.productId)],
+  (t) => [
+    index("builds_inspiration_idx").on(t.inspirationId),
+    index("builds_product_idx").on(t.productId),
+    index("builds_user_started_idx").on(t.userId, t.startedAt),
+    index("builds_rebuild_idx").on(t.rebuildOf),
+  ],
 );
 
+/** Append-only log the build room streams. `id` is the SSE cursor (Last-Event-ID). */
 export const buildEvents = pgTable(
   "build_events",
   {
-    id: uuid("id").primaryKey().defaultRandom(),
-    buildId: uuid("build_id").notNull().references(() => builds.id),
-    seq: integer("seq").notNull(),
-    type: text("type").notNull(),
-    payload: jsonb("payload").notNull(),
-    at: createdAt(),
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    buildId: uuid("build_id")
+      .notNull()
+      .references(() => builds.id),
+    type: text("type").$type<BuildEventBody["type"]>().notNull(),
+    payload: jsonb("payload").$type<BuildEventBody>().notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("build_events_build_seq_idx").on(t.buildId, t.seq)],
+  (t) => [index("build_events_build_id_idx").on(t.buildId, t.id)],
 );
 
 export const gatewayTokens = pgTable(
   "gateway_tokens",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    productId: uuid("product_id").notNull().references(() => products.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    /** HMAC-SHA256 of the token with GATEWAY_TOKEN_PEPPER. The token itself is never stored. */
     tokenHash: text("token_hash").notNull().unique(),
-    scope: text("scope", { enum: ["build", "live"] }).notNull(),
+    scope: text("scope").$type<"build" | "live">().notNull(),
     allowedModels: jsonb("allowed_models").$type<string[]>().notNull(),
     dailyBudgetUsd: real("daily_budget_usd").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [index("gateway_tokens_product_idx").on(t.productId)],
 );
 
+/**
+ * One row per Meta Model API call, from any source: the gateway (products and their tests), Muse Code runs, and the
+ * platform's own brief and judge calls. "Meta tokens driven" is the sum of input and output tokens here.
+ */
 export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    productId: uuid("product_id").notNull().references(() => products.id),
-    tokenId: uuid("token_id").notNull().references(() => gatewayTokens.id),
+    source: text("source").$type<"gateway" | "muse_code" | "platform">().notNull(),
+    productId: uuid("product_id").references(() => products.id),
+    buildId: uuid("build_id").references(() => builds.id),
+    tokenId: uuid("token_id").references(() => gatewayTokens.id),
     endpoint: text("endpoint").notNull(),
     model: text("model"),
-    units: real("units").notNull(),
-    unitType: text("unit_type").notNull(),
-    costUsd: real("cost_usd").notNull(),
-    at: createdAt(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    images: integer("images").notNull().default(0),
+    videoFrames: integer("video_frames").notNull().default(0),
+    audioSeconds: real("audio_seconds").notNull().default(0),
+    costUsd: real("cost_usd").notNull().default(0),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("usage_product_at_idx").on(t.productId, t.at)],
+  (t) => [
+    index("usage_product_at_idx").on(t.productId, t.at),
+    index("usage_token_at_idx").on(t.tokenId, t.at),
+    index("usage_build_idx").on(t.buildId),
+    index("usage_at_idx").on(t.at),
+  ],
+);
+
+/** Fixed-window counters for the gateway's per-IP rate limit. Old windows are deleted by the cleanup cron. */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 );

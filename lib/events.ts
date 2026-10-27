@@ -1,0 +1,61 @@
+import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { db, schema } from "@/lib/db/client";
+import type { BuildEvent, BuildEventBody, BuildStatus } from "@/lib/types";
+
+/** Appends one event to a build's log. The build room picks it up through the SSE route. */
+export async function emit(buildId: string, body: BuildEventBody): Promise<void> {
+  await db().insert(schema.buildEvents).values({ buildId, type: body.type, payload: body });
+}
+
+/**
+ * Moves a build to a new status (and optionally a new step), records it in the log, and stamps finishedAt for
+ * terminal statuses. Extra columns can be set in the same update.
+ */
+export async function setBuildStatus(
+  buildId: string,
+  status: BuildStatus,
+  opts: {
+    step?: string | null;
+    message?: string;
+    set?: Partial<typeof schema.builds.$inferInsert>;
+  } = {},
+): Promise<void> {
+  const terminal = status === "live" || status === "partial" || status === "failed" || status === "refused";
+  await db()
+    .update(schema.builds)
+    .set({
+      ...opts.set,
+      status,
+      ...(opts.step !== undefined ? { step: opts.step } : {}),
+      ...(terminal ? { finishedAt: new Date() } : {}),
+    })
+    .where(eq(schema.builds.id, buildId));
+  await emit(buildId, {
+    type: "status",
+    status,
+    ...(opts.step ? { step: opts.step } : {}),
+    ...(opts.message ? { message: opts.message } : {}),
+  });
+}
+
+/** Events after the given id, oldest first. */
+export async function eventsAfter(buildId: string, afterId: number, limit = 200): Promise<BuildEvent[]> {
+  const rows = await db()
+    .select()
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), gt(schema.buildEvents.id, afterId)))
+    .orderBy(asc(schema.buildEvents.id))
+    .limit(limit);
+  return rows.map((r) => ({ ...r.payload, id: r.id, at: r.at.toISOString() }));
+}
+
+/** Adds to a build's running cost and tells the build room. */
+export async function addBuildCost(buildId: string, addedUsd: number, what: string): Promise<void> {
+  if (!(addedUsd > 0)) return;
+  const [row] = await db()
+    .update(schema.builds)
+    .set({ costUsd: sql`${schema.builds.costUsd} + ${addedUsd}` })
+    .where(eq(schema.builds.id, buildId))
+    .returning({ costUsd: schema.builds.costUsd });
+  await emit(buildId, { type: "cost", totalUsd: row?.costUsd ?? addedUsd, addedUsd, what });
+}

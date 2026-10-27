@@ -10,7 +10,10 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "snapshot": "tsx --env-file-if-exists=.env.local scripts/make-builder-snapshot.ts",
+    "rebuild-all": "tsx --env-file-if-exists=.env.local scripts/rebuild-all.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -31,6 +34,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15",
     "typescript": "6.0.3"
   },
   "engines": {
