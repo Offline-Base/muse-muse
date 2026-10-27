@@ -252,9 +252,13 @@ def test_full_first_last_and_nicknames(roster):
     assert names("Okafor-Reyes, Maya", roster) == [("student", "Okafor-Reyes, Maya")]
 
 
-def test_last_names_only_when_capitalized(roster):
-    assert names("the bramwell file", roster) == []
+def test_lowercase_last_names_count_unless_short_or_a_common_word(roster):
+    # A lowercase surname is how names show up in file slugs and quick notes (review F6).
+    assert names("the bramwell file", roster) == [("student", "bramwell")]
     assert names("we met priya at noon", roster) == [("student", "priya")]
+    assert names("a lindqvist note", roster) == [("student", "lindqvist")]
+    assert names("met bo at noon", roster) == []  # two letters
+    assert names("the hunter green door", roster) == []  # a common word
 
 
 def test_possessives_hyphens_apostrophes_and_short_names(roster):

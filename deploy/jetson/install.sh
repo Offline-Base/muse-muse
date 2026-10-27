@@ -37,6 +37,8 @@ Usage: sudo deploy/jetson/install.sh [--build-llama] [--skip-model] [--start]
 Environment:
   MODEL_SHA256   expected SHA-256 of the GGUF, if you do not want it read from the Hugging Face API
   LLAMA_REF      llama.cpp tag to build (default b10353; needs b10353 or newer)
+  CUDACXX        the CUDA compiler (default /usr/local/cuda/bin/nvcc)
+  BUILD_JOBS     parallel compile jobs for --build-llama (default 2; more can run out of memory)
 EOF
 }
 
@@ -84,15 +86,51 @@ if [ ! -f "$CONF/env" ]; then
 # LIGHT_SERIAL=/dev/ttyACM0
 # Where your documents live on this board.
 # WORKSPACE_ROOT=/var/lib/muse-privacy/workspace
+# TLS for the approval port (install.sh made these). Copy cert.pem to the laptop for --ca-cert.
+APPROVAL_TLS_CERT=/var/lib/muse-privacy/home/tls/cert.pem
+APPROVAL_TLS_KEY=/var/lib/muse-privacy/home/tls/key.pem
 EOF
   chown root:"$SERVICE_USER" "$CONF/env"
   chmod 0640 "$CONF/env"
 fi
 
+say "llama-server key"
+# One random key, read by llama-server (--api-key-file) and by the server (BASE_HOME/llama_api_key),
+# so no other local process can use the model or change the router adapter's scale.
+KEY_FILE="$STATE/home/llama_api_key"
+if [ ! -s "$KEY_FILE" ]; then
+  (umask 077 && python3 -c 'import secrets; print(secrets.token_urlsafe(32))' >"$KEY_FILE")
+fi
+chown "$SERVICE_USER:$SERVICE_USER" "$KEY_FILE"
+chmod 0600 "$KEY_FILE"
+
+say "TLS certificate"
+# A self-signed certificate for the approval port, so the session cookie, the worker token and the
+# essays in heavy steps never cross the home network in the clear. The laptop worker pins it.
+TLS_DIR="$STATE/home/tls"
+if [ ! -s "$TLS_DIR/cert.pem" ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_USER" "$TLS_DIR"
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+      -subj "/CN=muse-privacy" -addext "subjectAltName=DNS:muse-privacy" \
+      -keyout "$TLS_DIR/key.pem" -out "$TLS_DIR/cert.pem" 2>/dev/null
+    chown "$SERVICE_USER:$SERVICE_USER" "$TLS_DIR/key.pem" "$TLS_DIR/cert.pem"
+    chmod 0600 "$TLS_DIR/key.pem"
+    chmod 0644 "$TLS_DIR/cert.pem"
+  else
+    echo "openssl is not installed, so no certificate was made; the approval page will be plain http."
+  fi
+fi
+
 say "App"
-# Copy the checkout, never its .env (secrets stay on the laptop) or its virtualenv.
-tar -C "$APP_SRC" --exclude=./.env --exclude=./.venv --exclude=./.git --exclude=./node_modules \
-  --exclude='*/__pycache__' -cf - . | tar -C "$PREFIX/app" -xf -
+# Copy only what git tracks: never .env (secrets stay on the laptop), a virtualenv, node_modules
+# or local state from anywhere in the tree. Without git, fall back to tar with unanchored excludes.
+if command -v git >/dev/null 2>&1 && git -C "$APP_SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$APP_SRC" archive --format=tar HEAD | tar -C "$PREFIX/app" -xf -
+else
+  tar -C "$APP_SRC" --exclude=.env --exclude=.venv --exclude=.git --exclude=node_modules \
+    --exclude=.wrangler --exclude=__pycache__ -cf - . | tar -C "$PREFIX/app" -xf -
+fi
 chown -R root:root "$PREFIX/app"
 if command -v uv >/dev/null 2>&1; then
   # Keep the Python uv installs under /opt so the service user can reach it (ProtectHome hides /root).
@@ -109,11 +147,18 @@ if [ -x "$LLAMA_BIN" ]; then
 elif [ "$BUILD_LLAMA" -eq 1 ]; then
   command -v git >/dev/null 2>&1 || die "missing command: git"
   command -v cmake >/dev/null 2>&1 || die "missing command: cmake"
+  # JetPack puts nvcc in /usr/local/cuda/bin, which sudo's secure_path leaves off PATH.
+  NVCC="${CUDACXX:-/usr/local/cuda/bin/nvcc}"
+  [ -x "$NVCC" ] || die "no CUDA compiler at $NVCC (install the JetPack CUDA toolkit, or set CUDACXX)"
+  export CUDACXX="$NVCC" PATH="$(dirname "$NVCC"):$PATH"
   [ -d "$PREFIX/llama.cpp" ] || git clone --depth 1 --branch "$LLAMA_REF" "$LLAMA_REPO" "$PREFIX/llama.cpp"
+  # The CUDA kernels need well over 1 GB each to compile, so build two at a time on the 8 GB
+  # board, with the model service stopped.
+  systemctl stop muse-privacy-glimmer.service 2>/dev/null || true
   # Orin is CUDA compute capability 8.7.
   cmake -S "$PREFIX/llama.cpp" -B "$PREFIX/llama.cpp/build" -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=87 \
-    -DCMAKE_BUILD_TYPE=Release
-  cmake --build "$PREFIX/llama.cpp/build" --config Release -j "$(nproc)" --target llama-server
+    -DCMAKE_BUILD_TYPE=Release -DLLAMA_BUILD_TESTS=OFF
+  cmake --build "$PREFIX/llama.cpp/build" --config Release -j "${BUILD_JOBS:-2}" --target llama-server
 else
   echo "llama-server is not at $LLAMA_BIN. Run again with --build-llama, or build llama.cpp $LLAMA_REF"
   echo "or newer with CUDA there yourself. The Glimmer service will not start until it exists."
@@ -186,5 +231,7 @@ Next steps:
   2. Start:   systemctl start muse-privacy-glimmer muse-privacy
      Logs:    journalctl -u muse-privacy-glimmer -u muse-privacy -f
   3. Pair the laptop worker: sudo -u $SERVICE_USER env BASE_HOME=$STATE/home $PREFIX/app/.venv/bin/python -m base.heavy.routes
+     and copy $STATE/home/tls/cert.pem to the laptop for the worker's --ca-cert.
   4. After pairing the relay: systemctl enable --now muse-privacy-relay
+  The board should boot without the desktop (multi-user.target): the model needs about 6.5 to 7.3 GB.
 EOF

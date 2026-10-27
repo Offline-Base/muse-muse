@@ -1,4 +1,7 @@
-/** Small crypto helpers. Everything the relay keeps about a secret is its SHA-256. */
+/**
+ * Small crypto helpers. The relay keeps a device secret only as its SHA-256 (the secret is 256
+ * random bits), and a pairing code or client IP only as an HMAC-SHA256 under PAIRING_PEPPER.
+ */
 
 const encoder = new TextEncoder();
 
@@ -17,6 +20,12 @@ export function randomBase64Url(byteCount: number): string {
 
 export async function sha256Hex(value: string): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))));
+}
+
+/** HMAC-SHA256 of `value` under `key`, as hex. */
+export async function hmacHex(key: string, value: string): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey("raw", encoder.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return toHex(new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(value))));
 }
 
 /** Constant-time string comparison. Different lengths are unequal without comparing bytes. */

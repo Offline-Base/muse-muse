@@ -28,6 +28,13 @@ class GateResult:
 def compare(before: EvalReport, after: EvalReport) -> list[str]:
     """Plain reasons the candidate is worse than the current rules. Empty means no worse."""
     reasons = []
+    limit = run_eval.MAX_UNSCORED_SHARE
+    for label, r in (("current", before), ("candidate", after)):
+        if r.unscored_share() > limit:  # the model was down: both sides score the same failure
+            reasons.append(
+                f"the router could not be scored on the {label} rules: {r.errors + r.fallbacks} of {r.n} "
+                "items had model errors"
+            )
     if after.leaks:
         reasons.append(f"leaked on {after.leaks} holdout items")
     if after.accuracy + EPSILON < before.accuracy:

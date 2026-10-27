@@ -14,6 +14,7 @@ import argparse
 import logging
 import os
 import random
+import ssl
 import sys
 import threading
 import uuid
@@ -50,6 +51,7 @@ class Worker:
         max_tokens: int = 4000,
         wait: float = MAX_NEXT_WAIT,
         sleep: Callable[[float], Any] | None = None,
+        ca_cert: str | None = None,
     ) -> None:
         self.base = jetson_url.rstrip("/")
         self.llm = llm
@@ -59,7 +61,11 @@ class Worker:
         self.wait = wait
         self.worker_id = "laptop-" + uuid.uuid4().hex[:8]
         self.headers = {"Authorization": f"Bearer {token}"}
-        self.client = client or httpx.Client(timeout=httpx.Timeout(10.0, read=wait + 15.0))
+        self.step_seconds: float | None = None  # how long the Jetson waits for a result (from hello)
+        # trust_env=False: heavy steps carry raw documents, so no environment or system proxy.
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(10.0, read=wait + 15.0), trust_env=False, verify=pinned_context(ca_cert)
+        )
         self.stop = threading.Event()
         self.sleep = sleep or self.stop.wait
 
@@ -70,13 +76,18 @@ class Worker:
         return response
 
     def hello(self) -> None:
-        self._check(
+        response = self._check(
             self.client.post(
                 f"{self.base}/heavy/hello",
                 json={"worker": self.worker_id, "cloud": self.cloud},
                 headers=self.headers,
             )
         )
+        try:
+            wait = float(response.json().get("wait_seconds"))
+            self.step_seconds = wait if wait > 0 else None
+        except (ValueError, TypeError, AttributeError):
+            pass
 
     def next_step(self) -> dict | None:
         response = self._check(
@@ -92,10 +103,12 @@ class Worker:
         """Run one step on the laptop's Glimmer. Errors are reported by type only, never content."""
         if self.cloud and not step.get("synthetic"):
             return {"error": "CloudBackendRefused"}
+        kw: dict[str, Any] = {"synthetic": self.synthetic, "max_tokens": self.max_tokens}
+        if self.step_seconds:
+            # Stop well before the Jetson gives up on the step and runs it itself.
+            kw["timeout"] = max(5.0, self.step_seconds - 10.0)
         try:
-            result = self.llm.chat_json(
-                step["messages"], step.get("schema"), synthetic=self.synthetic, max_tokens=self.max_tokens
-            )
+            result = self.llm.chat_json(step["messages"], step.get("schema"), **kw)
             if not isinstance(result, dict):
                 raise TypeError("result is not a JSON object")
             return {"result": result}
@@ -140,6 +153,19 @@ def _token_from_env() -> str | None:
     return os.environ.get("HEAVY_TOKEN") or read_dotenv(REPO_ROOT / ".env").get("HEAVY_TOKEN") or None
 
 
+def pinned_context(ca_cert: str | None) -> ssl.SSLContext | bool:
+    """TLS that trusts only the Jetson's own self-signed certificate (made by install.sh).
+
+    The certificate is the only trust anchor, so a host name check adds nothing: nobody without
+    the board's private key can present it. Without a certificate, the system's CAs.
+    """
+    if not ca_cert:
+        return True
+    context = ssl.create_default_context(cafile=ca_cert)
+    context.check_hostname = False
+    return context
+
+
 def _plain_http_off_loopback(url: str) -> bool:
     parts = urlsplit(url)
     return parts.scheme == "http" and parts.hostname not in ("127.0.0.1", "localhost", "::1")
@@ -155,6 +181,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--synthetic", action="store_true",
                         help="required when this laptop's Glimmer is a cloud endpoint: the data is invented")
     parser.add_argument("--max-tokens", type=int, default=4000, help="max tokens per step, reasoning included")
+    parser.add_argument("--ca-cert", help="the Jetson's TLS certificate to pin (printed by 'python -m base.heavy.routes')")
+    parser.add_argument("--allow-plain-http", action="store_true",
+                        help="dial a non-loopback http:// URL anyway; essays and the token then cross the network unencrypted")
     parser.add_argument("--once", action="store_true", help="handle at most one step, then exit")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -176,13 +205,20 @@ def main(argv: list[str] | None = None) -> int:
     token = args.token or _token_from_env()
     if not token:
         parser.exit(2, "Pass --token or set HEAVY_TOKEN. Print it on the Jetson with: python -m base.heavy.routes\n")
-    if _plain_http_off_loopback(url):
-        log.warning("The Jetson URL uses plain http. Heavy steps carry document text; use it only on your own network.")
+    if _plain_http_off_loopback(url) and not args.allow_plain_http:
+        parser.exit(
+            2,
+            "The Jetson URL uses plain http, and heavy steps carry whole essays and the worker token. Use the "
+            "https URL with --ca-cert (see 'python -m base.heavy.routes' on the Jetson), or pass "
+            "--allow-plain-http to accept the risk on a network you trust.\n",
+        )
+    if urlsplit(url).scheme == "https" and not args.ca_cert:
+        log.warning("No --ca-cert: the Jetson's self-signed certificate will not be trusted.")
 
     from base.local_llm import LocalLLM  # imported late so the checks above work without a model client
 
     worker = Worker(url, token, LocalLLM(settings, "answer"), synthetic=args.synthetic,
-                    cloud=settings.is_cloud_backend, max_tokens=args.max_tokens)
+                    cloud=settings.is_cloud_backend, max_tokens=args.max_tokens, ca_cert=args.ca_cert)
     log.info("heavy-step worker %s dialing out to the Jetson", worker.worker_id)
     try:
         if args.once:

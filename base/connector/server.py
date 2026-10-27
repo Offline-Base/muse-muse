@@ -13,7 +13,9 @@ import importlib
 import json
 import logging
 import os
+import re
 import secrets
+import threading
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -35,6 +37,12 @@ VERSION = "0.1.0"
 MCP_PATH = "/mcp"
 OPEN_PATHS = frozenset({"/health"})
 SNIPPET_CHARS = 300
+# How long get_result waits for a first release before answering "still checking". The relay
+# client gives up on a call after 55 s, so the answer has to come well before that; the release
+# keeps going in the background and the next get_result picks it up.
+RELEASE_WAIT_SECONDS = 40.0
+MAX_CHECK_FAILURES = 3  # a check that fails this many times in a row holds the result for good
+CHECKING_NOTE = "The device is still checking this result. Call get_result again in a little while."
 
 INSTRUCTIONS = """\
 Muse Privacy is a private workspace on the user's own device. The documents stay there, and every \
@@ -56,8 +64,9 @@ READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 START_TASK = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
+# Not idempotent: a call after a night has finished starts another full night.
 START_DREAMING = ToolAnnotations(
-    read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
 
 USAGE = {
@@ -168,6 +177,8 @@ class Connector:
 
     def __init__(self, services: Any):
         self.services = services
+        self._check_failures: dict[str, int] = {}
+        self._failures_lock = threading.Lock()
 
     def call(self, tool: str, fn: Callable[..., tuple[CallToolResult, str]], *args: Any) -> CallToolResult:
         """Run one tool, turn every failure into a plain message, and write the audit row."""
@@ -209,15 +220,30 @@ class Connector:
         _, docs = self._docs(folder)
         root = _get(_get(self.services, "settings"), "workspace_root")
         where = f"folder {folder}" if folder else "the workspace"
-        if docs:
-            lines = [f"{len(docs)} documents in {where}:"]
-            lines += [f"- {_get(d, 'title')} ({_relative(_get(d, 'path'), root)})" for d in docs]
+        entries = [f"- {_get(d, 'title')} ({_relative(_get(d, 'path'), root)})" for d in docs]
+        # A title that names a never-share topic stays on the device; the rest of the list still goes.
+        # File names count with their separators as spaces: camila_iep_goals.md names an IEP.
+        shown = [e for e in entries if not self._never_share_topics(re.sub(r"[_\-./]", " ", e))]
+        held = len(entries) - len(shown)
+        if shown:
+            lines = [f"{len(shown)} documents in {where}:", *shown]
         else:
-            lines = [f"No documents in {where}."]
+            lines = [f"No documents in {where}."] if not held else [f"No documents to show in {where}."]
+        if held:
+            lines.append(f"{held} {'document' if held == 1 else 'documents'} held back on the device.")
         released = self.services.egress.release(
             "list_documents", f"list {where}", "\n".join(lines), "document_list"
         )
         return _text(released.text), released.status
+
+    def _never_share_topics(self, text: str) -> list[str]:
+        """The policy's never-share topics whose keywords appear in `text`."""
+        policy = getattr(self.services, "policy", None)
+        never_share = getattr(policy, "never_share", None)
+        if not never_share:
+            return []
+        guard = importlib.import_module("base.guard")
+        return guard.blocked_topics(text, never_share)
 
     def search_documents(self, query: str) -> tuple[CallToolResult, str]:
         query = query.strip()
@@ -242,7 +268,12 @@ class Connector:
         real_folder, docs = self._docs(folder)
         if not docs:
             raise ToolFailure(f"The folder {_quote(folder)} has no documents to work on.")
-        job_id = str(self.services.agent.run_private_task(instructions, real_folder))
+        try:
+            job_id = str(self.services.agent.run_private_task(instructions, real_folder))
+        except Exception as exc:
+            if type(exc).__name__ == "AgentBusy":  # a plain sentence with a count, no content
+                raise ToolFailure(str(exc), outcome="busy") from None
+            raise
         status = _get(self.services.jobs.get(job_id), "status") or "queued"
         return _json({"job_id": job_id, "status": status}), "started"
 
@@ -250,6 +281,8 @@ class Connector:
         job_id = job_id.strip()
         if not job_id:
             raise ToolFailure("Pass the job_id that run_private_task returned.")
+        if job_id.startswith("dream-"):
+            return self._dream_result(job_id)
         job = self.services.jobs.get(job_id)
         if job is None:
             raise ToolFailure(
@@ -268,22 +301,55 @@ class Connector:
                 note = "The device kept this result on the device, and nothing was shared."
                 return _json({"job_id": job_id, "status": "refused", "result": note}), "refused"
         release_status, text = self._release(job_id, job)
-        return _json({"job_id": job_id, "status": release_status, "result": text}), release_status
+        outcome = "pending" if release_status == "running" else release_status
+        return _json({"job_id": job_id, "status": release_status, "result": text}), outcome
 
     def _release(self, job_id: str, job: Any) -> tuple[str, str]:
         """The flow in "Jobs and releases": release once, resolve while waiting, then resend."""
         jobs, egress = self.services.jobs, self.services.egress
         release_status = _get(job, "release_status") or "none"
         approval_id = _get(job, "approval_id")
+        if release_status == "releasing":
+            return "running", CHECKING_NOTE
         if release_status in ("shared", "refused"):
             return release_status, _get(job, "released_text") or ""
         if release_status == "waiting" and approval_id is not None:
-            released = egress.resolve(int(approval_id) if str(approval_id).isdigit() else approval_id)
+            released = egress.resolve(int(approval_id))
             if released.status != "waiting":
                 jobs.set_release(
                     job_id, released.status, approval_id=approval_id, released_text=released.text
                 )
             return released.status, released.text
+        claim = getattr(jobs, "claim_release", None)
+        if callable(claim) and not claim(job_id):
+            again = jobs.get(job_id)  # another call is releasing it, or just finished
+            if (_get(again, "release_status") or "none") in ("none", "releasing"):
+                return "running", CHECKING_NOTE
+            return self._release(job_id, again)
+        box: dict[str, Any] = {}
+        done = threading.Event()
+
+        def work() -> None:
+            try:
+                box["released"] = self._release_once(job_id, job)
+            except BaseException as exc:  # handed back to the waiting call below, if it still waits
+                box["error"] = exc
+                reset = getattr(jobs, "reset_release", None)
+                if callable(reset):
+                    reset(job_id)
+            finally:
+                done.set()
+
+        threading.Thread(target=work, name=f"release-{job_id}", daemon=True).start()
+        if not done.wait(RELEASE_WAIT_SECONDS):
+            return "running", CHECKING_NOTE
+        if "error" in box:
+            raise box["error"]
+        return box["released"]
+
+    def _release_once(self, job_id: str, job: Any) -> tuple[str, str]:
+        """One egress release for a finished job, stored unless a check could not run."""
+        jobs, egress = self.services.jobs, self.services.egress
         released = egress.release(
             "get_result",
             _get(job, "instructions") or "",
@@ -293,10 +359,34 @@ class Connector:
             summary=_get(job, "summary"),
             topics=_topics(job),
         )
+        if getattr(released, "retryable", False):
+            with self._failures_lock:
+                failures = self._check_failures[job_id] = self._check_failures.get(job_id, 0) + 1
+            if failures < MAX_CHECK_FAILURES:
+                reset = getattr(jobs, "reset_release", None)
+                if callable(reset):
+                    reset(job_id)
+                return "running", CHECKING_NOTE
+        with self._failures_lock:
+            self._check_failures.pop(job_id, None)
         jobs.set_release(
             job_id, released.status, approval_id=released.approval_id, released_text=released.text
         )
         return released.status, released.text
+
+    def _dream_result(self, job_id: str) -> tuple[CallToolResult, str]:
+        """get_result for a run_dreaming id: running while the night holds the lock, then its numbers."""
+        night = self.services.night
+        if night.running_job() == job_id:
+            note = "Dreaming is still running on the device. Call get_result again in a little while."
+            return _json({"job_id": job_id, "status": "running", "result": note}), "pending"
+        report_for = getattr(night, "report_for", None)
+        report = report_for(job_id) if callable(report_for) else None
+        if report is None:
+            raise ToolFailure(f"There is no dreaming run {_quote(job_id)} on this device. Start one with run_dreaming.")
+        released = self.services.egress.release("dreaming_report", "dreaming report", _report_text(report), "dreaming_report")
+        status = "done" if released.status == "shared" else released.status
+        return _json({"job_id": job_id, "status": status, "result": released.text}), released.status
 
     def run_dreaming(self) -> tuple[CallToolResult, str]:
         started = self.services.night.start()
@@ -307,18 +397,26 @@ class Connector:
         return _json({"job_id": None if job_id is None else str(job_id), "status": str(status)}), "started"
 
     def dreaming_report(self) -> tuple[CallToolResult, str]:
-        report = self.services.night.last_report()
-        finished = any(_get(report, k) is not None for k in ("accuracy_after", "agreement_after", "kept"))
-        lines = []
-        for field, label in REPORT_FIELDS if finished else ():
-            value = _get(report, field)
-            if isinstance(value, bool):
-                lines.append(f"- {label}: {'yes' if value else 'no'}")
-            elif isinstance(value, int | float):  # numbers only: nothing else from the report leaves
-                lines.append(f"- {label}: {round(value, 3)}")
-        raw = "Last dreaming run:\n" + "\n".join(lines) if lines else "No dreaming run has finished yet."
+        night = self.services.night
+        raw = _report_text(night.last_report())
+        running = getattr(night, "running_job", None)
+        if callable(running) and running():
+            raw = "A dreaming run is in progress. These numbers are from the run before it.\n" + raw
         released = self.services.egress.release("dreaming_report", "dreaming report", raw, "dreaming_report")
         return _text(released.text), released.status
+
+
+def _report_text(report: Any) -> str:
+    """A dreaming report as aggregate numbers only."""
+    finished = any(_get(report, k) is not None for k in ("accuracy_after", "agreement_after", "kept"))
+    lines = []
+    for field, label in REPORT_FIELDS if finished else ():
+        value = _get(report, field)
+        if isinstance(value, bool):
+            lines.append(f"- {label}: {'yes' if value else 'no'}")
+        elif isinstance(value, int | float):  # numbers only: nothing else from the report leaves
+            lines.append(f"- {label}: {round(value, 3)}")
+    return "Last dreaming run:\n" + "\n".join(lines) if lines else "No dreaming run has finished yet."
 
 
 def _plain_errors(connector: Connector):
@@ -489,6 +587,11 @@ class BearerAuth:
         if scope["type"] == "lifespan" or (scope["type"] == "http" and scope["path"] in self.open_paths):
             return await self.app(scope, receive, send)
         if scope["type"] == "http" and self.allowed(scope):
+            if scope.get("method") == "GET" and scope["path"].rstrip("/") == MCP_PATH:
+                # Stateless JSON mode has no server-sent stream to offer, so a GET gets 405
+                # instead of a stream that never ends.
+                response = JSONResponse({"error": "method not allowed"}, status_code=405, headers={"allow": "POST"})
+                return await response(scope, receive, send)
             return await self.app(scope, receive, send)
         if scope["type"] != "http":
             return await send({"type": "websocket.close", "code": 1008})

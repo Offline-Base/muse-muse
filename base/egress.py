@@ -8,6 +8,7 @@ returns text to Muse, including the waiting and refusal messages, goes through f
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from dataclasses import dataclass, field
@@ -23,6 +24,23 @@ WAITING_TEXT = "Waiting for your OK on the device."
 HELD_TEXT = "Held on your device."
 KEPT_TEXT = "Kept on your device."
 SUMMARY_FAILED = "A class summary could not be made without per-student detail, so it stayed on the device."
+NAME_CHECK_FAILED = "The device could not finish its check for names, so the result stayed on the device."
+
+# Kinds whose text is built by the device itself from numbers only: the guard's roster and
+# identifier passes cover them, so they skip the model's second pass for names. Document lists
+# are not here: titles are first headings and paths are file names, both written by people.
+NO_NAME_PASS = frozenset({"dreaming_report"})
+
+# What Muse is told when a result is kept. Fixed strings only: the router's own reason is model
+# text that could repeat what the result says, so it stays on the approval page.
+KEPT_REASONS = (
+    ("blocked", "It mentions a topic you never share."),
+    ("policy:", "Your rules say results like this stay on the device."),
+    ("learned:refuse", "Your rules say results like this stay on the device."),
+    ("summary", "A class summary could not be made without per-student detail."),
+)
+KEPT_DEFAULT = "The privacy check kept it on the device."
+CHECK_PENDING = "The device is still checking this result. Call get_result again in a little while."
 
 SUMMARY_INPUT_LIMIT = 12000
 SUMMARY_PROMPT = (
@@ -31,7 +49,6 @@ SUMMARY_PROMPT = (
     "Reply with the summary text only."
 )
 
-_ANY_TAG = re.compile(r"\[[A-Z][A-Za-z]*(?: [A-Z0-9]+)?\]")
 _PERSON_TAG = re.compile(r"\[(?:Student [A-Z]+|Person \d+)\]")
 
 Status = Literal["shared", "waiting", "refused"]
@@ -49,12 +66,20 @@ class Released:
     approval_id: int | None = None
     decision: RouteDecision | None = None
     tag_result: TagResult | None = field(default=None, repr=False)
+    # True when a check could not run (the model was down or busy): nothing was decided or
+    # recorded, and the same release can be tried again later.
+    retryable: bool = False
 
 
-def refusal_text(reason: str | None) -> str:
-    """'Kept on your device.' plus the router's plain reason, with any tag removed."""
-    reason = _ANY_TAG.sub("[hidden]", " ".join((reason or "").split())).strip()
-    return f"{KEPT_TEXT} {reason}".strip()
+def refusal_text(floors: list[str] | tuple[str, ...] | None = None) -> str:
+    """'Kept on your device.' plus one fixed sentence for the floor that kept it.
+
+    Never model text: a router reason could spell out what the record says.
+    """
+    for prefix, sentence in KEPT_REASONS:
+        if any(f.startswith(prefix) for f in floors or ()):
+            return f"{KEPT_TEXT} {sentence}"
+    return f"{KEPT_TEXT} {KEPT_DEFAULT}"
 
 
 class Egress:
@@ -89,7 +114,16 @@ class Egress:
         s = self.services
         if synthetic is None:
             synthetic = self._synthetic()
-        tagged = self._tag(raw_text)
+        try:
+            tagged = self._tag(raw_text, result_kind, synthetic)
+        except Exception as exc:  # the name pass or the guard broke: hold rather than guess
+            log.warning("tagging failed (%s); holding the result", type(exc).__name__)
+            self._audit("egress", "name_check_failed")
+            held = RouteDecision("refuse", NAME_CHECK_FAILED, "fallback", 0, ["name_check"])
+            return Released("refused", HELD_TEXT, None, held, None, retryable=True)
+        # Muse's request is stored on the device and shown to the router: tag it too, in case
+        # Muse was given a real name some other way.
+        request = self._tag_request(request)
         all_topics = list(dict.fromkeys([*topics, *tagged.topics]))
         inp = RouteInput(
             request=request,
@@ -105,7 +139,11 @@ class Egress:
 
         outgoing = tagged.text
         if route.decision == "share_summary" or (route.decision == "ask_user" and shown_form == "share_summary"):
-            made = self._tagged_summary(summary, tagged.text, request, synthetic)
+            made, failure = self._tagged_summary(summary, tagged.text, request, result_kind, synthetic)
+            if failure == "model":  # the model could not write or check one: try again later
+                self._audit("egress", "summary_failed")
+                held = RouteDecision("refuse", SUMMARY_FAILED, "fallback", route.latency_ms, [*route.floors, "summary"])
+                return Released("refused", HELD_TEXT, None, held, tagged, retryable=True)
             if made is None:
                 route = RouteDecision("refuse", SUMMARY_FAILED, route.source, route.latency_ms, [*route.floors, "summary"])
             else:
@@ -116,6 +154,7 @@ class Egress:
             "request": request,
             "result_kind": result_kind,
             "topics": all_topics,
+            "blocked": list(tagged.blocked),
             "tagged_text": outgoing,
             "shown_form": shown_form,
             "router_decision": route.decision,
@@ -130,7 +169,7 @@ class Egress:
             return self._finish("waiting", WAITING_TEXT, approval_id, route, tagged, detail=str(approval_id))
         s.approvals.record_auto(**row)
         if route.decision == "refuse":
-            return self._finish("refused", refusal_text(route.reason), None, route, tagged)
+            return self._finish("refused", refusal_text(route.floors), None, route, tagged)
         return self._finish("shared", outgoing, None, route, tagged, detail=job_id or tool)
 
     def resolve(self, approval_id: int) -> Released:
@@ -154,7 +193,7 @@ class Egress:
         # status auto: replay what the router decided
         if route.decision in ("share_tagged", "share_summary"):
             return self._finish("shared", row.get("tagged_text") or "", approval_id, route, None, detail=detail)
-        return self._finish("refused", refusal_text(route.reason), approval_id, route, None)
+        return self._finish("refused", refusal_text(), approval_id, route, None)
 
     def final_check(self, text: str) -> list[Hit]:
         """Every real name, nickname, tagged real value or identifier still in `text`.
@@ -172,9 +211,39 @@ class Egress:
 
     # Helpers
 
-    def _tag(self, text: str) -> TagResult:
+    def _tag(self, text: str, result_kind: str, synthetic: bool) -> TagResult:
+        """guard.tag with the answer model's second pass for names the roster misses.
+
+        The pass runs for every kind except NO_NAME_PASS. If it raises, so does this, and the
+        caller holds the result.
+        """
         s = self.services
-        return self.guard.tag(text, s.roster, s.tagmap, never_share=s.policy.never_share)
+        return self.guard.tag(
+            text,
+            s.roster,
+            s.tagmap,
+            llm_names=self._name_pass(result_kind, synthetic),
+            never_share=s.policy.never_share,
+        )
+
+    def _tag_request(self, request: str) -> str:
+        """Muse's request with roster names, known values and identifiers tagged (no model call)."""
+        if not request:
+            return request
+        s = self.services
+        try:
+            return self.guard.tag(request, s.roster, s.tagmap).text
+        except Exception as exc:  # unsure: keep only that a request was made
+            log.warning("request tagging failed: %s", type(exc).__name__)
+            return "(request withheld)"
+
+    def _name_pass(self, result_kind: str, synthetic: bool):
+        if result_kind in NO_NAME_PASS:
+            return None
+        names = getattr(getattr(self.services, "answer_llm", None), "llm_names", None)
+        if not callable(names):
+            return None
+        return functools.partial(names, synthetic=synthetic)
 
     def _finish(
         self,
@@ -188,24 +257,28 @@ class Egress:
         leaks = self.final_check(text)
         if leaks:
             log.warning("egress blocked a result: %d leak(s) of kind %s", len(leaks), sorted({h.kind for h in leaks}))
-            self._audit_blocked()
+            self._audit("egress", "egress_blocked")
             return Released("refused", HELD_TEXT, approval_id, route, tagged)
         if status == "shared":
-            self._emit("sending", detail)
+            self._emit("sending", detail)  # the light plays one sweep, then shows the next state
+            self._emit(self._resting_state(), detail)
         elif status == "waiting":
             self._emit("waiting", detail)
         return Released(status, text, approval_id, route, tagged)
 
-    def _tagged_summary(self, summary: str | None, tagged_text: str, request: str, synthetic: bool) -> str | None:
+    def _tagged_summary(
+        self, summary: str | None, tagged_text: str, request: str, result_kind: str, synthetic: bool
+    ) -> tuple[str | None, str | None]:
         """The provided summary, or one made by the answer model from the tagged text, then tagged.
 
-        Returns None when no summary can be made or it still names a student or person.
+        Returns (summary, None), or (None, "model") when a model call failed (worth trying again
+        later), or (None, "named") when no summary can be made without naming someone.
         """
         text = (summary or "").strip()
         if not text:
             llm = getattr(self.services, "answer_llm", None)
             if llm is None:
-                return None
+                return None, "named"
             messages = [
                 {"role": "system", "content": f"Reasoning strength: low\n\n{SUMMARY_PROMPT}"},
                 {"role": "user", "content": f"Request: {request}\n\nResult:\n{tagged_text[:SUMMARY_INPUT_LIMIT]}"},
@@ -214,15 +287,19 @@ class Egress:
                 result = llm.chat(messages, max_tokens=2000, reasoning="low", synthetic=synthetic)
             except Exception as exc:
                 log.warning("summary model call failed: %s", type(exc).__name__)
-                return None
+                return None, "model"
             text = (getattr(result, "content", "") or "").strip()
             if not text:
-                return None
-        tagged = self._tag(text).text
+                return None, "named"
+        try:
+            tagged = self._tag(text, result_kind, synthetic).text
+        except Exception as exc:
+            log.warning("summary tagging failed: %s", type(exc).__name__)
+            return None, "model"
         if _PERSON_TAG.search(tagged):
             log.warning("summary named a student or person; not sharing it")
-            return None
-        return tagged
+            return None, "named"
+        return tagged, None
 
     def _synthetic(self) -> bool:
         """On a cloud backend, data counts as synthetic only when the workspace root is marked."""
@@ -238,6 +315,13 @@ class Egress:
             return False
         return True
 
+    def _resting_state(self) -> str:
+        """"waiting" while an approval is pending, else "idle"."""
+        try:
+            return "waiting" if self.services.approvals.pending() else "idle"
+        except Exception:
+            return "idle"
+
     def _emit(self, state: str, detail: str | None) -> None:
         emitter = getattr(self.services, "events", None) or events_module
         try:
@@ -245,10 +329,10 @@ class Egress:
         except Exception as exc:  # the light must never stop a result
             log.warning("could not emit %s: %s", state, type(exc).__name__)
 
-    def _audit_blocked(self) -> None:
+    def _audit(self, tool: str, outcome: str) -> None:
         audit = getattr(self.services, "audit", None)
         if callable(audit):
             try:
-                audit("egress", "egress_blocked")
+                audit(tool, outcome)
             except Exception as exc:
                 log.warning("audit write failed: %s", type(exc).__name__)

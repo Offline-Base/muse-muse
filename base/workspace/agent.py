@@ -21,7 +21,7 @@ from statistics import mean
 from typing import Any
 
 from base import events
-from base.config import SYNTHETIC_MARKER, CloudBackendRefused, Settings, assert_synthetic
+from base.config import CloudBackendRefused, Settings, assert_synthetic, synthetic_marked
 from base.types import Roster
 from base.workspace.index import Doc, DocumentIndex, WorkspacePathError
 from base.workspace.jobs import JobStore
@@ -89,6 +89,14 @@ class StepError(ValueError):
     """A model step returned something that does not fit its schema. Messages hold no document text."""
 
 
+class AgentBusy(RuntimeError):
+    """Too many private tasks are queued or running; the message is plain and has no content."""
+
+
+MAX_ACTIVE_JOBS = 5  # queued plus running; more are refused until one finishes
+STOPPED = "The device was stopped before the job finished."
+
+
 class Agent:
     def __init__(
         self,
@@ -111,16 +119,37 @@ class Agent:
         self.restore = restore
         self._active = 0
         self._active_lock = threading.Lock()
+        self._create_lock = threading.Lock()
+        # One job at a time on the device (one model slot), two on the cloud backend.
+        self._slots = threading.Semaphore(2 if settings.is_cloud_backend else 1)
+        self._stop = threading.Event()
+        self._scratch_tags: Any = None
 
     # entry points
 
     def run_private_task(self, instructions: str, folder: str | None) -> str:
-        """Queue the task and return its job id at once; the work runs in a daemon thread."""
-        job_id = self.jobs.create("private_task", instructions, folder)
+        """Queue the task and return its job id at once; the work runs in a daemon thread.
+
+        Raises AgentBusy when MAX_ACTIVE_JOBS are already queued or running, so a looping caller
+        cannot start unlimited threads and model calls.
+        """
+        with self._create_lock:
+            active = getattr(self.jobs, "active_count", lambda: 0)()
+            if active >= MAX_ACTIVE_JOBS:
+                raise AgentBusy(f"The device is busy with {active} tasks. Try again when one finishes.")
+            job_id = self.jobs.create("private_task", instructions, folder)
         threading.Thread(
-            target=self._run, args=(job_id, instructions, folder), name=f"job-{job_id}", daemon=True
+            target=self._run_queued, args=(job_id, instructions, folder), name=f"job-{job_id}", daemon=True
         ).start()
         return job_id
+
+    def stop(self) -> None:
+        """Stop starting model steps: steps already queued fail at once instead of calling a model."""
+        self._stop.set()
+
+    def _run_queued(self, job_id: str, instructions: str, folder: str | None) -> None:
+        with self._slots:  # waits, still "queued", while another job uses the model
+            self._run(job_id, instructions, folder)
 
     def run_sync(self, instructions: str, folder: str | None) -> str:
         """Same as run_private_task but finishes before returning (tests and the eval)."""
@@ -149,24 +178,42 @@ class Agent:
                 self._active -= 1
                 idle = self._active == 0
             if idle:
-                events.emit("idle", job_id)
+                events.settle(job_id)  # amber again if the user still has a card to answer
 
     def _work(self, job_id: str, instructions: str, folder: str | None):
-        text = self._restore(instructions)
+        text = self._restore(instructions)  # real names, for choosing what to do on the device
         path = self.index.resolve(folder)
         assert_synthetic(self.settings, path)
-        synthetic = is_marked(path)  # True only for folders marked as invented data
+        synthetic = is_marked(path, self.index.root)  # True only for folders marked as invented data
         docs = self.index.list(folder)
+        # The model gets Muse's instructions with tags, and documents with roster names and known
+        # values swapped for the same tags, so no instruction can make it spell out a real name
+        # in a form the guard does not know (reversed, letter by letter, as a slug).
+        task = self._model_view(instructions)
         rubrics = [d for d in docs if PurePosixPath(d.id).name.lower() == RUBRIC_NAME]
-        if rubrics and GRADING_WORDS.search(text):
+        rubric = min(rubrics, key=lambda d: len(PurePosixPath(d.id).parts)) if rubrics else self._parent_rubric(path)
+        if rubric is not None and GRADING_WORDS.search(text):
             self.jobs.set_kind(job_id, "grading")
-            rubric = min(rubrics, key=lambda d: len(PurePosixPath(d.id).parts))
-            return self._grade(job_id, text, [d for d in docs if d.id != rubric.id], rubric, synthetic)
+            return self._grade(job_id, task, [d for d in docs if d.id != rubric.id], rubric, synthetic)
         self.jobs.set_kind(job_id, "generic")
-        return self._generic(job_id, text, docs, synthetic)
+        return self._generic(job_id, task, docs, synthetic)
+
+    def _parent_rubric(self, folder: Path) -> Doc | None:
+        """The nearest rubric.md above the folder, up to the workspace root (demo/rubric.md for
+        demo/essays), so a teacher can keep one rubric next to the folder of essays."""
+        root = self.index.root
+        for parent in folder.parents:
+            if not parent.is_relative_to(root):
+                break
+            candidate = parent / RUBRIC_NAME
+            if candidate.is_file() and candidate.resolve().is_relative_to(root):
+                rel = candidate.relative_to(root).as_posix()
+                st = candidate.stat()
+                return Doc(id=rel, path=rel, title=candidate.stem, size=st.st_size, modified=st.st_mtime)
+        return None
 
     def _restore(self, text: str) -> str:
-        tags = tag_dict(self.tagmap)
+        tags = {**tag_dict(self._scratch_tags), **tag_dict(self.tagmap)}
         if self.restore is None and not tags:
             return text
         restore = self.restore
@@ -174,12 +221,38 @@ class Agent:
             from base.guard import restore  # lazy: the guard is optional for this module
         return restore(text, tags)
 
+    def _view_tags(self) -> Any:
+        """The TagMap for the model's view: the device's own, or one kept in memory for this agent."""
+        from base.guard import TagMap  # lazy: the guard is optional for this module
+
+        if isinstance(self.tagmap, TagMap):
+            return self.tagmap
+        if self.roster is not None:
+            if self._scratch_tags is None:
+                self._scratch_tags = TagMap(None)
+            return self._scratch_tags
+        return None
+
+    def _model_view(self, text: str) -> str:
+        """`text` as the model sees it: roster names, known values and identifiers as tags."""
+        if not text:
+            return text
+        tagmap = self._view_tags()
+        if tagmap is not None and self.roster is not None:
+            from base import guard
+
+            return guard.tag(text, self.roster, tagmap).text
+        for tag, value in sorted(tag_dict(self.tagmap).items(), key=lambda kv: len(kv[1] or ""), reverse=True):
+            if value and len(value) >= 2:  # no roster: swap the values the plain tag map knows
+                text = re.sub(rf"(?<!\w){re.escape(value)}(?!\w)", tag, text, flags=re.IGNORECASE)
+        return text
+
     # grading path
 
     def _grade(self, job_id: str, instructions: str, essays: list[Doc], rubric: Doc, synthetic: bool):
         if not essays:
             raise StepError("The folder has a rubric but no essays to grade.")
-        rubric_text = clip(self.index.read(rubric.id), MAX_DOC_CHARS)
+        rubric_text = self._model_view(clip(self.index.read(rubric.id), MAX_DOC_CHARS))
         texts = [self.index.read(d.id) for d in essays]
         names = unique(
             [
@@ -194,13 +267,16 @@ class Agent:
                 {
                     "role": "user",
                     "content": f"Teacher's instructions:\n{instructions}\n\nRubric:\n{rubric_text}\n\n"
-                    f"Essay:\n{clip(texts[i], MAX_DOC_CHARS)}",
+                    f"Essay:\n{self._model_view(clip(texts[i], MAX_DOC_CHARS))}",
                 },
             ]
             for attempt in (1, 2):
                 raw = self._model_step(job_id, f"grade:{i + 1}", messages, GRADE_SCHEMA, synthetic, "grade")
                 try:
-                    return clean_grade(raw)
+                    grade = clean_grade(raw)
+                    for key in ("strengths", "next_step", "feedback"):
+                        grade[key] = self._restore(grade[key])  # real names, for the files on the device
+                    return grade
                 except StepError:
                     if attempt == 2:
                         raise
@@ -214,7 +290,12 @@ class Agent:
             filename = unique_filename(f"{safe_filename(name)} feedback.md", used)
             write_private(out_dir / filename, feedback_markdown(name, grade))
         scrub = name_variants(names, self.roster)
-        return raw_table(names, grades), class_summary(grades, scrub), "per_student", list(TOPICS_GRADING)
+        # Only roster students appear by name in the result, where egress tags them. Anyone else
+        # (a new student, a name from a file name) is "Essay N": no tag can cover a name the
+        # roster does not know, and the real name stays in the feedback file name on the device.
+        on_roster = {p.name for p in self.roster.students} if self.roster is not None else set()
+        shown = [n if re.sub(r" \(\d+\)$", "", n) in on_roster else f"Essay {i + 1}" for i, n in enumerate(names)]
+        return raw_table(shown, grades), class_summary(grades, scrub), "per_student", list(TOPICS_GRADING)
 
     # generic path
 
@@ -223,21 +304,23 @@ class Agent:
             return "No .md or .txt documents were found in that folder.", None, "free_text", []
 
         def step(i: int) -> str:
-            body = clip(self.index.read(docs[i].id), MAX_DOC_CHARS)
+            body = self._model_view(clip(self.index.read(docs[i].id), MAX_DOC_CHARS))
             messages = [
                 {"role": "system", "content": MAP_SYSTEM},
                 {
                     "role": "user",
-                    "content": f"Instructions:\n{instructions}\n\nDocument: {docs[i].title}\n\n{body}",
+                    "content": f"Instructions:\n{instructions}\n\nDocument: {self._model_view(docs[i].title)}\n\n{body}",
                 },
             ]
             return answer_of(self._model_step(job_id, f"map:{i + 1}", messages, ANSWER_SCHEMA, synthetic))
 
         parts = self._each(step, len(docs))
         if len(parts) == 1:
-            return parts[0], None, "free_text", []
+            return self._restore(parts[0]), None, "free_text", []
         share = MAX_REDUCE_CHARS // len(parts)
-        joined = "\n\n".join(f"### {d.title}\n{clip(p, share)}" for d, p in zip(docs, parts, strict=True))
+        joined = "\n\n".join(
+            f"### {self._model_view(d.title)}\n{clip(p, share)}" for d, p in zip(docs, parts, strict=True)
+        )
         messages = [
             {"role": "system", "content": REDUCE_SYSTEM},
             {
@@ -246,7 +329,7 @@ class Agent:
             },
         ]
         answer = answer_of(self._model_step(job_id, "reduce", messages, ANSWER_SCHEMA, synthetic))
-        return answer, None, "free_text", []
+        return self._restore(answer), None, "free_text", []
 
     # model steps
 
@@ -275,6 +358,8 @@ class Agent:
         heavy_kind: str | None = None,
     ) -> Any:
         """One model call. synthetic is True only for marked folders: a cloud model may see those."""
+        if self._stop.is_set():
+            raise StepError(STOPPED)  # queued steps end at once instead of calling a model
         if heavy_kind and self.heavy is not None:
             started = time.perf_counter()
             try:
@@ -315,10 +400,9 @@ class Agent:
 # helpers
 
 
-def is_marked(folder: Path) -> bool:
-    """Whether the folder or a parent holds the .synthetic marker (invented data)."""
-    folder = folder.resolve()
-    return any((p / SYNTHETIC_MARKER).is_file() for p in (folder, *folder.parents))
+def is_marked(folder: Path, root: Path) -> bool:
+    """Whether the folder or a parent up to the workspace root holds the .synthetic marker."""
+    return synthetic_marked(folder, root)
 
 
 def _str_attr(obj: Any, name: str, default: str) -> str:
@@ -411,8 +495,8 @@ def student_name(doc: Doc, text: str, roster: Roster | None, n: int) -> str:
     head = "\n".join(text.splitlines()[:8])
     if roster is not None:
         hay = re.sub(r"[_\-]+", " ", f"{stem}\n{doc.title}\n{head}").lower()
-        for person in roster.students:
-            if person.name.lower() in hay:
+        for person in roster.students:  # hyphens count as spaces on both sides (Moreno-Baptiste)
+            if re.sub(r"[_\-]+", " ", person.name).lower() in hay:
                 return person.name
     m = re.search(r"^\s*(?:student(?:\s+name)?|name)\s*:\s*(.+?)\s*$", head, re.IGNORECASE | re.MULTILINE)
     if m:

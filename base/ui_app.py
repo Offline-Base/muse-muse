@@ -75,16 +75,6 @@ SOURCE_LABELS = {
     "fallback": "Safe fallback, the model did not answer",
     "cache": "Same as a recent decision",
 }
-TOPIC_REASONS = {
-    "iep": "Mentions an IEP or 504 plan",
-    "medical": "Mentions medical or health details",
-    "discipline": "Mentions discipline records",
-    "custody": "Mentions custody or family court",
-    "immigration": "Mentions immigration status",
-    "home_address": "Mentions a home address",
-    "parent_contact": "Mentions parent contact details",
-    "lunch_status": "Mentions free or reduced lunch status",
-}
 TAG_RE = re.compile(r"\[(?:Student [A-Z]{1,2}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB) \d+)\]")
 
 SECURITY_HEADERS = [
@@ -164,19 +154,48 @@ def _digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-class Pairing:
-    """One-time 6-digit codes shown on the device. A code works once and burns after 5 misses."""
+MAX_TOTAL_MISSES = 10  # wrong codes since the last good one, across restarts, before a lockout
 
-    def __init__(self, ttl: float = CODE_SECONDS, tries: int = CODE_TRIES) -> None:
+
+class Pairing:
+    """One-time 6-digit codes shown on the device. A code works once and burns after 5 misses.
+
+    With `misses_path`, wrong codes are also counted across restarts, so crashing the server does
+    not hand out fresh guesses: after MAX_TOTAL_MISSES the device stops printing a code at start,
+    and only a code asked for on the device itself (POST /api/pair-code from loopback) works.
+    """
+
+    def __init__(self, ttl: float = CODE_SECONDS, tries: int = CODE_TRIES, misses_path: Path | None = None) -> None:
         self.ttl, self.tries = ttl, tries
+        self.misses_path = misses_path
         self._lock = threading.Lock()
         self._code: str | None = None
         self._expires = 0.0
         self._misses = 0
 
-    def new_code(self) -> str:
+    def total_misses(self) -> int:
+        try:
+            return int(self.misses_path.read_text().strip()) if self.misses_path else 0
+        except (OSError, ValueError):
+            return 0
+
+    def _set_total(self, n: int) -> None:
+        if self.misses_path is None:
+            return
+        self.misses_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(self.misses_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(f"{n}\n")
+
+    def locked_out(self) -> bool:
+        return self.total_misses() >= MAX_TOTAL_MISSES
+
+    def new_code(self, *, on_device: bool = False) -> str:
+        """A fresh code. `on_device` (asked for on the device itself) also clears a lockout."""
         code = f"{secrets.randbelow(10**6):06d}"
         with self._lock:
+            if on_device:
+                self._set_total(0)
             self._code, self._expires, self._misses = code, time.time() + self.ttl, 0
         return code
 
@@ -186,10 +205,15 @@ class Pairing:
             if self._code is None or time.time() > self._expires:
                 self._code = None
                 return False
+            if self.locked_out():
+                self._code = None
+                return False
             if hmac.compare_digest(code.encode(), self._code.encode()):
                 self._code = None
+                self._set_total(0)
                 return True
             self._misses += 1
+            self._set_total(self.total_misses() + 1)
             if self._misses >= self.tries:
                 self._code = None
             return False
@@ -238,6 +262,15 @@ class SessionStore:
         now = time.time()
         with self._lock:
             return sum(1 for v in self._sessions.values() if v > now)
+
+    def clear_others(self, keep: str | None) -> int:
+        """Sign out every browser except the one holding `keep`. Returns how many were removed."""
+        with self._lock:
+            kept = {k: v for k, v in self._sessions.items() if keep and k == _digest(keep)}
+            removed = len(self._sessions) - len(kept)
+            self._sessions = kept
+            self._save()
+        return removed
 
 
 class NeedPairing(Exception):
@@ -297,6 +330,62 @@ async def _need_pairing(request: Request, exc: Exception) -> JSONResponse | Redi
     if path.startswith("/api/") or path == "/events":
         return JSONResponse({"detail": "Pair this browser first. Open /pair."}, status_code=401)
     return RedirectResponse("/pair", status_code=303)
+
+
+BODY_LIMIT = 64 * 1024  # every form and JSON body the page takes is tiny
+BODY_LIMITS = ((re.compile(r"^/heavy/[^/]+/result$"), 2 * 1024 * 1024),)  # one graded essay as JSON
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class BodyLimit:
+    """Plain ASGI middleware: 413 for a body over the cap, by Content-Length or by counting the
+    chunks, before any route reads or parses it. One big request could otherwise push the server
+    past its memory limit (MemoryMax=1G on the Jetson)."""
+
+    def __init__(self, app: Any, default: int = BODY_LIMIT, limits: tuple = BODY_LIMITS) -> None:
+        self.app, self.default, self.limits = app, default, limits
+
+    def cap(self, path: str) -> int:
+        return next((n for pattern, n in self.limits if pattern.match(path)), self.default)
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        cap = self.cap(scope.get("path", ""))
+        length = dict(scope.get("headers") or []).get(b"content-length", b"")
+        if length.isdigit() and int(length) > cap:
+            return await _too_large(send)
+        seen, started = 0, False
+
+        async def counted() -> dict:
+            nonlocal seen
+            message = await receive()
+            if message.get("type") == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > cap:
+                    raise _TooLarge
+            return message
+
+        async def tracked(message: dict) -> None:
+            nonlocal started
+            started = started or message.get("type") == "http.response.start"
+            await send(message)
+
+        try:
+            await self.app(scope, counted, tracked)
+        except _TooLarge:
+            if not started:
+                await _too_large(send)
+
+
+async def _too_large(send: Any) -> None:
+    body = b'{"detail": "The request is too large."}'
+    await send({"type": "http.response.start", "status": 413,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+    await send({"type": "http.response.body", "body": body})
 
 
 class SecurityHeaders:
@@ -380,33 +469,23 @@ def _newest_first(rows: Iterable[Any]) -> list[Any]:
     return sorted(rows, key=key, reverse=True)
 
 
-def _coerce_id(raw: str) -> int | str:
-    return int(raw) if raw.isdigit() else raw
+def _coerce_id(raw: str) -> int:
+    """Approval ids are decisions row ids; anything else is not a request on this device."""
+    if not raw.isdigit():
+        raise HTTPException(404, "There is no such request.")
+    return int(raw)
 
 
 def _kind_label(kind: str | None) -> str:
     return (kind or "result").replace("_", " ").capitalize()
 
 
-def _never_share(services: Any) -> set[str] | None:
-    policy = getattr(services, "policy", None)
-    try:
-        return set(policy.never_share) if policy is not None else None
-    except Exception:
-        return None
+def blocked_reasons(row: Any) -> list[str]:
+    """Plain-language blocked reasons, as the guard wrote them into the row (TagResult.blocked)."""
+    return _as_list(_val(row, "blocked"))
 
 
-def blocked_reasons(row: Any, never_share: set[str] | None) -> list[str]:
-    """Plain-language blocked reasons: the row's own list if it has one, else from its topics."""
-    own = _as_list(_val(row, "blocked"))
-    if own:
-        return own
-    known = never_share if never_share is not None else set(TOPIC_REASONS)
-    topics = [t for t in _as_list(_val(row, "topics")) if t in known]
-    return [TOPIC_REASONS.get(t, f"Mentions {t.replace('_', ' ')}") for t in topics]
-
-
-def public_row(row: Any, never_share: set[str] | None) -> dict[str, Any]:
+def public_row(row: Any) -> dict[str, Any]:
     """Only the tag-only fields of a decision row, for the JSON API."""
     kind = _val(row, "result_kind")
     return {
@@ -418,7 +497,7 @@ def public_row(row: Any, never_share: set[str] | None) -> dict[str, Any]:
         "result_kind": kind,
         "shown_form": _val(row, "shown_form") or default_share_form(kind or ""),
         "tagged_text": _val(row, "tagged_text") or "",
-        "blocked": blocked_reasons(row, never_share),
+        "blocked": blocked_reasons(row),
         "router_decision": _val(row, "router_decision"),
         "router_reason": _val(row, "router_reason") or "",
         "router_source": _val(row, "router_source"),
@@ -436,8 +515,8 @@ def _chips(items: Iterable[str], cls: str = "") -> str:
     return '<ul class="chips">' + "".join(f'<li class="chip {cls}">{esc(i)}</li>' for i in items) + "</ul>"
 
 
-def approval_card(row: Any, never_share: set[str] | None) -> str:
-    r = public_row(row, never_share)
+def approval_card(row: Any) -> str:
+    r = public_row(row)
     rid = str(r["id"])
     form = "a short summary, with tags" if r["shown_form"] == "share_summary" else "the tagged text above"
     meta = [
@@ -460,8 +539,8 @@ def approval_card(row: Any, never_share: set[str] | None) -> str:
     )
 
 
-def history_row(row: Any, never_share: set[str] | None) -> str:
-    r = public_row(row, never_share)
+def history_row(row: Any) -> str:
+    r = public_row(row)
     rid = str(r["id"])
     deleted = bool(_val(row, "deleted"))
     label, cls = STATUS_CHIPS.get(r["status"] or "", (r["status"] or "Unknown", ""))
@@ -670,7 +749,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     store = services.approvals
     nights_path = nights_csv or NIGHTS_CSV
     sessions = SessionStore(settings.home / "approval_sessions.json")
-    pairing = Pairing()
+    pairing = Pairing(misses_path=settings.home / "pairing_misses")
     login_required = not is_loopback(settings.approval_host)
 
     app = FastAPI(
@@ -685,6 +764,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     app.state.sessions = sessions
     app.state.login_required = login_required
     app.add_middleware(SecurityHeaders)
+    app.add_middleware(BodyLimit)  # outermost: refuse a big body before anything reads it
     app.add_exception_handler(NeedPairing, _need_pairing)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -727,25 +807,23 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def approvals_page(request: Request) -> HTMLResponse:
-        never = _never_share(services)
         rows = pending_rows()
         content = render(
             "approvals.html",
-            cards_html="".join(approval_card(r, never) for r in rows),
+            cards_html="".join(approval_card(r) for r in rows),
             empty_hidden="" if not rows else "hidden",
         )
         return page(request, "approvals", "Approvals", content)
 
     @app.get("/history", response_class=HTMLResponse)
     def history_page(request: Request, show: str = "all") -> HTMLResponse:
-        never = _never_share(services)
         show = "pending" if show == "pending" else "all"
         rows = pending_rows() if show == "pending" else _newest_first(store.history(limit=HISTORY_LIMIT))
         content = render(
             "history.html",
             on_pending="on" if show == "pending" else "",
             on_all="on" if show == "all" else "",
-            rows_html="".join(history_row(r, never) for r in rows),
+            rows_html="".join(history_row(r) for r in rows),
             empty_hidden="" if not rows else "hidden",
         )
         return page(request, "history", "History", content)
@@ -871,16 +949,24 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             max_age=SESSION_SECONDS,
             httponly=True,
             samesite="strict",
+            secure=bool(getattr(settings, "approval_tls", False)),  # only sent over TLS when TLS is on
             path="/",
         )
         return response
+
+    @app.post("/api/sessions/clear")
+    def api_sessions_clear(request: Request) -> Any:
+        """Sign out every other browser (a lost phone, a cookie someone copied)."""
+        removed = sessions.clear_others(request.cookies.get(SESSION_COOKIE))
+        if _is_form(request):
+            return RedirectResponse("/", status_code=303)
+        return {"ok": True, "signed_out": removed}
 
     # ------------------------------------------------------------ JSON API
 
     @app.get("/api/approvals")
     def api_approvals() -> dict[str, Any]:
-        never = _never_share(services)
-        return {"approvals": [public_row(r, never) for r in pending_rows()]}
+        return {"approvals": [public_row(r) for r in pending_rows()]}
 
     @app.post("/api/approvals/{approval_id}")
     async def api_decide(approval_id: str, request: Request) -> Any:
@@ -899,7 +985,8 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             store.decide(rid, approve=approve, remember=remember, by="user")
         except (KeyError, ValueError) as exc:  # decided or deleted from another tab just now
             raise HTTPException(409, "This one was already decided.") from exc
-        events.emit("sending" if approve else "idle", f"approval {rid}")
+        # Nothing is sent until Muse asks with get_result, so the light just settles.
+        events.settle(f"approval {rid}")
         if _is_form(request):
             return RedirectResponse("/", status_code=303)
         return {"ok": True, "id": rid, "status": "approved" if approve else "denied", "remember": remember}
@@ -928,7 +1015,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     def api_pair_code() -> dict[str, Any]:
         if not login_required:
             return {"needed": False}
-        code = pairing.new_code()
+        code = pairing.new_code(on_device=True)  # loopback only (make_access), so this clears a lockout
         print_pairing_code(code)
         return {"needed": True, "code": code, "expires_in": CODE_SECONDS}
 
@@ -987,4 +1074,7 @@ def _include_heavy(app: FastAPI, services: Any) -> bool:
     if router is None:
         return False
     app.include_router(router)
+    load_token = getattr(routes, "load_token", None)
+    if callable(load_token):  # check the worker token before FastAPI reads a /heavy body
+        app.add_middleware(routes.TokenGate, token=load_token(services.settings))
     return True

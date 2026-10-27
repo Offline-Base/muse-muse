@@ -36,6 +36,11 @@ METHODS = ("POST", "GET", "DELETE")
 FORWARD_TIMEOUT = 55.0  # the relay gives up at 60 s
 BACKOFF_BASE = 1.0
 BACKOFF_CAP = 60.0
+# The relay closes a device socket with this code when a newer one connects with the same secret.
+REPLACED_CLOSE_CODE = 4000
+
+
+EXIT_NO_RETRY = 3  # bad or revoked device secret, or another copy took over
 
 
 class RelayError(RuntimeError):
@@ -44,6 +49,10 @@ class RelayError(RuntimeError):
 
 class RelayAuthError(RelayError):
     """The relay rejected the device secret."""
+
+
+class RelayReplacedError(RelayError):
+    """Another client connected with this device's secret, so the relay closed this one."""
 
 
 # Device registration file
@@ -80,10 +89,17 @@ def save_config(settings, data: dict) -> Path:
 
 
 def http_base(relay_url: str) -> str:
+    """The relay's https base URL. A cleartext http:// or ws:// URL is refused unless it is on
+    loopback (wrangler dev): the device secret and every MCP response would cross in the clear."""
     url = relay_url.rstrip("/")
     for ws, http in (("wss://", "https://"), ("ws://", "http://")):
         if url.startswith(ws):
-            return http + url[len(ws) :]
+            url = http + url[len(ws) :]
+            break
+    if url.startswith("http://"):
+        host = (httpx.URL(url).host or "").strip("[]")
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            raise RelayError("RELAY_URL must start with https:// (plain http is only for a relay on this machine).")
     return url
 
 
@@ -136,6 +152,25 @@ async def pair(settings, *, http: httpx.AsyncClient | None = None) -> dict:
     if not isinstance(data.get("code"), str):
         raise RelayError("The relay sent an unexpected answer to pair.")
     return {"code": data["code"], "expires_in": int(data.get("expires_in") or 600)}
+
+
+async def unlink(settings, *, http: httpx.AsyncClient | None = None) -> int:
+    """Revoke every Muse link bound to this device. Returns how many were revoked.
+
+    Use it after a pairing code was shared by mistake or a session might be in the wrong hands.
+    The device stays registered; pair again to link Muse. A stolen device secret needs
+    `register --force` instead, which gives the device a new id and secret.
+    """
+    cfg = load_config(settings)
+    if cfg is None:
+        raise RelayError("This device is not registered yet. Run register first.")
+    async with _client(http) as client:
+        resp = await client.post(
+            http_base(cfg["relay_url"]) + "/device/unlink", headers={"authorization": f"Bearer {cfg['secret']}"}
+        )
+        _check(resp, "unlink")
+        data = resp.json()
+    return int(data.get("revoked") or 0)
 
 
 def _client(http: httpx.AsyncClient | None):
@@ -313,6 +348,9 @@ class RelayClient:
     async def run(self, *, attempts: int | None = None) -> None:
         """Stay connected: dial out, serve, and reconnect with jittered backoff capped at 60 s.
 
+        Stops with RelayAuthError when the relay rejects the secret, and with RelayReplacedError when
+        the relay closes the socket because another client connected with the same secret.
+
         `attempts` limits the number of connection attempts (for tests); None means forever.
         """
         url = connect_url(self.relay_url)
@@ -334,6 +372,12 @@ class RelayClient:
                     ) from None
                 log.warning("relay refused the connection (HTTP %s)", exc.response.status_code)
             except (OSError, TimeoutError, WebSocketException) as exc:
+                if getattr(getattr(exc, "rcvd", None), "code", None) == REPLACED_CLOSE_CODE:
+                    # Reconnecting would knock the other copy off in turn, and both would keep flapping.
+                    raise RelayReplacedError(
+                        "Another copy of this device connected to the relay, so this one stopped. "
+                        "Run one relay client per device."
+                    ) from None
                 log.warning("relay connection failed (%s)", type(exc).__name__)
             if attempts is not None and tried >= attempts:
                 break
@@ -373,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
     reg.add_argument("--relay-url", default=None, help="the relay address (default: RELAY_URL)")
     reg.add_argument("--force", action="store_true", help="replace an existing registration")
     sub.add_parser("pair", help="print a one-time pairing code to enter in Muse")
+    sub.add_parser("unlink", help="revoke every Muse link to this device (pair again to reconnect)")
     sub.add_parser("run", help="stay connected to the relay")
     args = parser.parse_args(argv)
 
@@ -386,6 +431,9 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Registered this device as {device_id}. Next run: python -m base.connector.relay_client pair"
             )
+        elif args.command == "unlink":
+            revoked = asyncio.run(unlink(settings))
+            print(f"Revoked {revoked} Muse link(s). Muse can reach this device again only after a new pairing code.")
         elif args.command == "pair":
             got = asyncio.run(pair(settings))
             minutes = max(1, round(got["expires_in"] / 60))
@@ -395,6 +443,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             asyncio.run(client_for(settings).run())
+    except (RelayAuthError, RelayReplacedError) as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_NO_RETRY  # the unit's RestartPreventExitStatus: retrying cannot help
     except RelayError as exc:
         print(str(exc), file=sys.stderr)
         return 1

@@ -3,7 +3,7 @@ import { handleAuthorize } from "./authorize";
 import { randomBase64Url, randomHex, sha256Hex } from "./crypto";
 import { DeviceHub, type ForwardResponse } from "./device";
 import { SCOPE, type Env, type GrantProps } from "./env";
-import { CODE_TTL_SECONDS, GATE, PairingGate, newCode } from "./pairing";
+import { CODE_TTL_SECONDS, GATE, PairingGate, codeKey, ipKey, newCode, pepper } from "./pairing";
 
 export { DeviceHub, PairingGate };
 
@@ -12,10 +12,14 @@ export { DeviceHub, PairingGate };
  *
  *   POST /device/register   new device id + secret, returned once (only the secret's hash is kept)
  *   POST /device/pair       device asks for an 8 character pairing code (bearer secret)
+ *   POST /device/unlink     device revokes every Muse link bound to it (bearer secret)
  *   GET  /device/connect    device WebSocket (bearer secret); a new connection replaces the old one
  *   GET/POST /authorize     OAuth page that asks for the pairing code
  *   POST/DELETE /mcp        Muse's MCP requests (OAuth bearer), forwarded to the device as frames
  *   /oauth/token, /oauth/register, /.well-known/*   served by the OAuth library
+ *
+ * Muse's client may identify itself by dynamic client registration or by a Client ID Metadata
+ * Document (an https URL as client_id); both are on.
  *
  * Frames are described in docs/CONTRACTS.md ("Relay frames"). Bodies are never stored or logged.
  */
@@ -43,6 +47,9 @@ function bearer(request: Request): string {
 
 const clientIp = (request: Request) => request.headers.get("CF-Connecting-IP") ?? "unknown";
 
+/** Without PAIRING_PEPPER the relay cannot hash codes or IPs, so it registers and pairs nothing. */
+const notSetUp = () => json({ error: "relay is not set up: PAIRING_PEPPER is missing" }, 503);
+
 /** The device a bearer secret belongs to, or null when the secret is malformed or wrong. */
 async function authDevice(request: Request, env: Env) {
   const secret = bearer(request);
@@ -53,7 +60,9 @@ async function authDevice(request: Request, env: Env) {
 }
 
 async function register(request: Request, env: Env): Promise<Response> {
-  const allowed = await env.PAIRING.getByName(GATE).take(`register:${await sha256Hex(`ip:${clientIp(request)}`)}`, REGISTRATIONS_PER_IP);
+  const key = pepper(env);
+  if (!key) return notSetUp();
+  const allowed = await env.PAIRING.getByName(GATE).take(`register:${await ipKey(key, clientIp(request))}`, REGISTRATIONS_PER_IP);
   if (!allowed) return json({ error: "too many registrations, try again in 10 minutes" }, 429, { "retry-after": "600" });
   // The label is optional and only checked, never stored.
   const input = (await request.json().catch(() => ({}))) as { name?: unknown } | null;
@@ -68,14 +77,36 @@ async function register(request: Request, env: Env): Promise<Response> {
 }
 
 async function pair(request: Request, env: Env): Promise<Response> {
+  const key = pepper(env);
+  if (!key) return notSetUp();
   const device = await authDevice(request, env);
   if (!device) return json({ error: "unauthorized" }, 401);
   const gate = env.PAIRING.getByName(GATE);
   for (let attempt = 0; attempt < 3; attempt++) {
     const code = newCode();
-    if (await gate.issue(device.deviceId, await sha256Hex(code))) return json({ code, expires_in: CODE_TTL_SECONDS });
+    if (await gate.issue(device.deviceId, await codeKey(key, code))) return json({ code, expires_in: CODE_TTL_SECONDS });
   }
   return json({ error: "try again" }, 503);
+}
+
+/**
+ * Revoke every Muse link (OAuth grant) bound to this device, for a phished pairing code or a
+ * lost session. The device secret stays valid; `relay_client register --force` replaces that.
+ */
+async function unlink(request: Request, env: Env): Promise<Response> {
+  const device = await authDevice(request, env);
+  if (!device) return json({ error: "unauthorized" }, 401);
+  let revoked = 0;
+  let cursor: string | undefined;
+  do {
+    const page = await env.OAUTH_PROVIDER.listUserGrants(device.deviceId, { limit: 100, cursor });
+    for (const grant of page.items) {
+      await env.OAUTH_PROVIDER.revokeGrant(grant.id, device.deviceId);
+      revoked++;
+    }
+    cursor = page.cursor;
+  } while (cursor);
+  return json({ revoked });
 }
 
 async function connect(request: Request, env: Env): Promise<Response> {
@@ -93,6 +124,7 @@ const defaultHandler = {
     if (pathname === "/authorize") return handleAuthorize(request, env);
     if (pathname === "/device/register") return request.method === "POST" ? register(request, env) : notAllowed("POST");
     if (pathname === "/device/pair") return request.method === "POST" ? pair(request, env) : notAllowed("POST");
+    if (pathname === "/device/unlink") return request.method === "POST" ? unlink(request, env) : notAllowed("POST");
     if (pathname === "/device/connect") return request.method === "GET" ? connect(request, env) : notAllowed("GET");
     if (pathname === "/health") return json({ ok: true });
     if (pathname === "/") {
@@ -145,6 +177,8 @@ function providerFor(origin: string): OAuthProvider<Env> {
       authorizeEndpoint: "/authorize",
       tokenEndpoint: "/oauth/token",
       clientRegistrationEndpoint: "/oauth/register",
+      // Also accept an https URL as client_id (CIMD). Needs the global_fetch_strictly_public flag.
+      clientIdMetadataDocumentEnabled: true,
       scopesSupported: [SCOPE, "offline_access"],
       requiredScopes: [SCOPE],
       resourceMetadata: {

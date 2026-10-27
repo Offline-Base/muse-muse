@@ -317,8 +317,64 @@ def test_worker_main_runs_once_with_local_backend(monkeypatch, tmp_path):
     with respx.mock:
         respx.post("http://jetson.test/heavy/hello").mock(return_value=httpx.Response(200, json={"ok": True}))
         respx.get("http://jetson.test/heavy/next").mock(return_value=httpx.Response(204))
-        assert worker_mod.main(["--jetson-url", "http://jetson.test", "--token", TOKEN, "--once"]) == 0
+        assert worker_mod.main(["--jetson-url", "http://jetson.test", "--token", TOKEN, "--once", "--allow-plain-http"]) == 0
     assert seen["role"] == "answer"
+
+
+def test_worker_refuses_plain_http_off_loopback_without_opt_in(monkeypatch, tmp_path):
+    # Review privacy F10: heavy steps carry whole essays and the replayable worker token.
+    monkeypatch.setenv("BASE_DEVICE", "laptop")
+    monkeypatch.setenv("BASE_HOME", str(tmp_path))
+    monkeypatch.setenv("GLIMMER_BACKEND", "llama_server")
+    with pytest.raises(SystemExit) as stop:
+        worker_mod.main(["--jetson-url", "http://jetson.test", "--token", TOKEN, "--once"])
+    assert stop.value.code == 2
+
+
+def test_pinned_context_trusts_only_the_given_cert(tmp_path):
+    import ssl
+
+    from tests.tls_helpers import self_signed
+
+    cert, _key = self_signed(tmp_path)
+    ctx = worker_mod.pinned_context(str(cert))
+    assert isinstance(ctx, ssl.SSLContext) and ctx.check_hostname is False
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert worker_mod.pinned_context(None) is True
+
+
+def test_worker_caps_each_step_below_the_jetsons_wait():
+    llm = FakeLLM()
+    calls = []
+    llm.chat_json = lambda messages, schema, **kw: calls.append(kw) or {"ok": 1}
+    w = worker_mod.Worker("http://127.0.0.1:8787", TOKEN, llm)
+    with respx.mock:
+        respx.post("http://127.0.0.1:8787/heavy/hello").mock(
+            return_value=httpx.Response(200, json={"ok": True, "wait_seconds": 120})
+        )
+        w.hello()
+    w.run_step({"kind": "grade", "messages": [], "schema": None, "synthetic": False})
+    assert calls[0]["timeout"] == 110
+
+
+def test_a_worker_busy_on_a_step_still_counts_as_present(tmp_path):
+    # Review correctness F6: no hello while the model runs, and one essay can take over 30 s.
+    q = HeavyQueue(tmp_path / "q.db", wait_seconds=120, hello_window=0.05)
+    q.hello("w1")
+    import threading as _t
+    import time as _time
+
+    def work():
+        step = q.next(worker="w1", wait=2)
+        _time.sleep(0.2)  # longer than the hello window
+        assert q.worker_present()  # claimed within wait_seconds
+        q.submit(step["id"], result={"ok": 1})
+
+    t = _t.Thread(target=work)
+    t.start()
+    assert q.run("grade", [{"role": "user", "content": "x"}], None) == {"ok": 1}
+    t.join()
+    assert q.worker_present()  # submit counted as a hello
 
 
 def test_worker_never_listens():

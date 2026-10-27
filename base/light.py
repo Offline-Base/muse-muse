@@ -32,6 +32,9 @@ def open_serial(port: str) -> Any:
     return serial.Serial(port, 115200, timeout=0, write_timeout=0.5)
 
 
+REFRESH_SECONDS = 5.0  # how often the state is written again with no change
+
+
 class Light:
     """Writes state lines to one serial port, reopening it after any failure. Never raises."""
 
@@ -55,8 +58,8 @@ class Light:
                     log.debug("light: %s", state)
                 self._last = state
                 return False
-            if state == self._last and self._serial is not None:
-                return True
+            # No "same as last time" shortcut: a board that reloaded (a write to CIRCUITPY, Ctrl-D)
+            # starts at idle while the port stays open, so every state is written again.
             line = f"STATE {state}\n".encode()
             for _ in range(2):  # one reopen per state change
                 if self._serial is None and not self._open():
@@ -72,10 +75,27 @@ class Light:
                 return True
             return False
 
+    def refresh(self) -> bool:
+        """Write the current state again (see start_refresh)."""
+        return self.show(events.last().state) if self.port is not None else False
+
+    def start_refresh(self, interval: float = REFRESH_SECONDS) -> None:
+        """Resend the state every `interval` seconds, so a reloaded board catches up."""
+        self._stop_refresh = threading.Event()
+
+        def loop() -> None:
+            while not self._stop_refresh.wait(interval):
+                self.refresh()
+
+        threading.Thread(target=loop, name="light-refresh", daemon=True).start()
+
     def stop(self) -> None:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        stop_refresh = getattr(self, "_stop_refresh", None)
+        if stop_refresh is not None:
+            stop_refresh.set()
         with self._lock:
             self._close()
 
@@ -108,6 +128,8 @@ def start_light(settings: Settings, opener: Callable[[str], Any] | None = None) 
     light = Light(settings.light_serial, opener)
     light.show(events.last().state)
     light._unsubscribe = events.subscribe(light)
+    if settings.light_serial is not None:
+        light.start_refresh()
     return light
 
 

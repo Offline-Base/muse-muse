@@ -13,8 +13,8 @@ import respx
 from base import events
 from base.config import load_settings
 from base.types import Person, Roster
-from base.workspace.agent import GRADE_SCHEMA, Agent, clean_grade, scrub_names, short_error
-from base.workspace.index import DocumentIndex
+from base.workspace.agent import GRADE_SCHEMA, Agent, clean_grade, scrub_names, short_error, student_name
+from base.workspace.index import Doc, DocumentIndex
 from base.workspace.jobs import JobStore
 
 FIXTURE = Path(__file__).parent / "fixtures" / "workspace"
@@ -102,7 +102,12 @@ def make_settings(tmp_path, root, backend="openrouter"):
     )
 
 
+TEACHER = Person("Imogen Larkspur", "Imogen", "Larkspur", role="teacher")
+ROSTER = Roster(TEACHER, tuple(Person(n, *n.split()) for n in NAMES))
+
+
 def make_agent(tmp_path, root=FIXTURE, backend="openrouter", llm=None, **kw):
+    kw.setdefault("roster", ROSTER)  # Services always passes one; names in results need it
     settings = make_settings(tmp_path, root, backend)
     jobs = JobStore(settings.paths.db)
     agent = Agent(settings, llm or FakeLLM(), DocumentIndex(settings), jobs, **kw)
@@ -263,6 +268,30 @@ def test_rubric_without_grading_words_and_grading_words_without_rubric(tmp_path)
     assert job["kind"] == "generic" and job["result_kind"] == "free_text"
 
 
+def test_rubric_in_a_parent_folder_is_used(tmp_path):
+    root = tmp_path / "root"
+    shutil.copytree(FIXTURE, root)
+    (root / "essays" / "rubric.md").rename(root / "rubric.md")
+    before = tree(root)
+    agent, settings, jobs = make_agent(tmp_path / "second", root=root)
+    job_id = agent.run_sync(GRADE_TASK, "essays")
+    job = jobs.get(job_id)
+    assert job["status"] == "done", job["error"]
+    assert job["kind"] == "grading" and job["result_kind"] == "per_student"
+    assert sorted(p.name for p in (settings.paths.output / job_id).iterdir()) == sorted(
+        f"{n} feedback.md" for n in NAMES
+    )  # the rubric one level up is not graded as an essay
+    assert tree(root) == before
+
+
+def test_no_rubric_above_the_workspace_root_is_used(tmp_path):
+    outer = tmp_path / "outer"
+    shutil.copytree(FIXTURE, outer / "root")
+    (outer / "root" / "essays" / "rubric.md").rename(outer / "rubric.md")  # outside the root
+    agent, _, jobs = make_agent(tmp_path / "second", root=outer / "root")
+    assert jobs.get(agent.run_sync(GRADE_TASK, "essays"))["kind"] == "generic"
+
+
 def test_path_traversal_fails_the_job(tmp_path):
     llm = FakeLLM()
     agent, _, jobs = make_agent(tmp_path, llm=llm)
@@ -305,11 +334,76 @@ def test_tags_in_instructions_are_restored(tmp_path):
         return text
 
     llm = FakeLLM()
-    agent, _, jobs = make_agent(tmp_path, llm=llm, tagmap={"[Student A]": "Tavi Brennick"}, restore=restore)
+    agent, _, jobs = make_agent(
+        tmp_path, llm=llm, tagmap={"[Student A]": "Tavi Brennick"}, restore=restore, roster=None
+    )
     job = jobs.get(agent.run_sync("Which piece did [Student A] write?", "essays"))
-    assert seen == [{"[Student A]": "Tavi Brennick"}]
-    assert all("Tavi Brennick" in msgs[-1]["content"] for msgs, _, _ in llm.calls)
+    assert seen and seen[0] == {"[Student A]": "Tavi Brennick"}  # restored locally
+    # Review F4: the model sees the tag, never the real name, in the instructions and documents.
+    assert all("Tavi Brennick" not in msgs[-1]["content"] for msgs, _, _ in llm.calls)
+    assert all("[Student A]" in msgs[-1]["content"] for msgs, _, _ in llm.calls)
     assert job["instructions"] == "Which piece did [Student A] write?"
+
+
+def test_model_never_sees_roster_names_and_files_keep_them(tmp_path):
+    from base.guard import TagMap
+
+    def echo(messages):
+        out = fake_grade(messages)
+        out["feedback"] = "Well done, [Student A]." if "[Student A]" in essay_part(messages) else out["feedback"]
+        return out
+
+    llm = FakeLLM(grade=echo)
+    tagmap = TagMap(None, seed=5)
+    agent, settings, jobs = make_agent(tmp_path, llm=llm, tagmap=tagmap)
+    job = jobs.get(agent.run_sync("Grade each essay. Spell [Student A] backwards in the feedback.", "essays"))
+    assert job["status"] == "done", job["error"]
+    for msgs, _, _ in llm.calls:
+        for name in NAMES:
+            assert name not in msgs[-1]["content"] and name.split()[0] not in msgs[-1]["content"]
+    files = "".join(p.read_text() for p in (settings.paths.output / job["id"]).iterdir())
+    real_a = tagmap.get("[Student A]")
+    assert real_a in NAMES and "[Student " not in files
+
+
+def test_students_not_on_the_roster_are_essay_n_in_the_result(tmp_path):
+    # Review F5: a file-stem name the roster does not know cannot be tagged, so it never goes in.
+    roster = Roster(TEACHER, (Person("Tavi Brennick", "Tavi", "Brennick"),))
+    agent, settings, jobs = make_agent(tmp_path, roster=roster)
+    job = jobs.get(agent.run_sync(GRADE_TASK, "essays"))
+    raw = job["raw_result"]
+    assert "| Tavi Brennick |" in raw
+    assert "Corwin" not in raw and "Odalys" not in raw and "corwin" not in raw.lower()
+    assert raw.count("| Essay ") == 2
+    files = sorted(p.name for p in (settings.paths.output / job["id"]).iterdir())
+    assert "Corwin Ashgrove feedback.md" in files  # the real name stays on the device
+
+
+def test_too_many_tasks_are_refused(tmp_path):
+    from base.workspace.agent import MAX_ACTIVE_JOBS, AgentBusy
+
+    gate = threading.Event()
+    agent, _, jobs = make_agent(tmp_path, llm=FakeLLM(gate=gate))
+    try:
+        ids = [agent.run_private_task(GRADE_TASK, "essays") for _ in range(MAX_ACTIVE_JOBS)]
+        with pytest.raises(AgentBusy):
+            agent.run_private_task(GRADE_TASK, "essays")
+        assert jobs.active_count() == MAX_ACTIVE_JOBS
+    finally:
+        gate.set()
+    deadline = time.monotonic() + 10
+    while any(jobs.get(i)["status"] in ("queued", "running") for i in ids) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert jobs.active_count() == 0
+
+
+def test_stop_ends_queued_steps_without_model_calls(tmp_path):
+    llm = FakeLLM()
+    agent, _, jobs = make_agent(tmp_path, llm=llm)
+    agent.stop()
+    job = jobs.get(agent.run_sync(GRADE_TASK, "essays"))
+    assert job["status"] == "failed" and llm.calls == []
+    assert "stopped" in job["error"]
 
 
 def test_roster_nicknames_are_scrubbed_from_summary(tmp_path):
@@ -426,3 +520,13 @@ def test_grades_the_fixture_with_real_glimmer(tmp_path):
     assert len(list((settings.paths.output / job["id"]).iterdir())) == 3
     for name in NAMES:
         assert name not in job["summary"]
+
+
+def test_student_name_matches_hyphenated_and_apostrophe_roster_names():
+    roster = Roster(
+        teacher=Person("Wilhelmina Quarry", "Wilhelmina", "Quarry", role="teacher"),
+        students=(Person("Odalys Brenn-Halloway", "Odalys", "Brenn-Halloway"), Person("Ciaran O'Dell", "Ciaran", "O'Dell")),
+    )
+    for stem, want in (("Odalys Brenn-Halloway", "Odalys Brenn-Halloway"), ("ciaran_o'dell_essay", "Ciaran O'Dell")):
+        doc = Doc(id=f"essays/{stem}.md", path=f"essays/{stem}.md", title=stem, size=1, modified=0)
+        assert student_name(doc, "# An essay\n\nText.", roster, 1) == want

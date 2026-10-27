@@ -33,9 +33,9 @@ GPU = "L40S"
 CUDA_ARCH = "89"  # L40S
 DECISIONS = ("share_tagged", "share_summary", "ask_user", "refuse")
 
-# label -> (Hugging Face repo, file). The Q4_K_M repo id is Meta's published GGUF; override with --q4-repo.
+# label -> (Hugging Face repo, file). Q4_K_M is Meta's published GGUF; the 1-bit files are mradermacher's.
 MODELS = {
-    "Q4_K_M": ("meta/Muse-Glimmer-30B-GGUF", "Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"),
+    "Q4_K_M": ("meta-models/Muse-Glimmer-30B-GGUF", "Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf"),
     "i1-IQ1_S": ("mradermacher/Muse-Glimmer-30B-i1-GGUF", "Muse-Glimmer-30B.i1-IQ1_S.gguf"),
     "i1-IQ1_M": ("mradermacher/Muse-Glimmer-30B-i1-GGUF", "Muse-Glimmer-30B.i1-IQ1_M.gguf"),
 }
@@ -75,9 +75,22 @@ GRADE_SCHEMA = {
 # -- local inputs ------------------------------------------------------------------------------
 
 
-def is_synthetic(folder: Path) -> bool:
+def is_synthetic(folder: Path, root: Path | None = None) -> bool:
+    """The marker in the folder or a parent up to `root`; one above it never counts.
+
+    `root` defaults to the repo for a folder inside it (demo/.synthetic marks demo/essays), else
+    to the folder's own parent, so a stray marker high above an --essays folder is ignored.
+    """
     folder = folder.resolve()
-    return any((p / ".synthetic").is_file() for p in (folder, *folder.parents))
+    if root is None:
+        root = REPO if folder.is_relative_to(REPO.resolve()) else folder.parent
+    root = root.resolve()
+    for p in (folder, *folder.parents):
+        if not p.is_relative_to(root):
+            return False
+        if (p / ".synthetic").is_file():
+            return True
+    return False
 
 
 def find_essay_dir(root: Path) -> Path | None:
@@ -234,25 +247,42 @@ def chat(url: str, messages: list[dict], schema: dict, max_tokens: int = 2500) -
     return parse_json(content), data.get("timings") or {}
 
 
+# The flags the Jetson's muse-privacy-glimmer.service uses, so quality is measured on the setup
+# the board really runs (a 4096 context, no prompt cache or checkpoints, a small ubatch).
+JETSON_FLAGS = ["-c", "4096", "-np", "1", "-ngl", "99", "-ub", "128", "-b", "512", "--swa-full",
+                "--ctx-checkpoints", "0", "--cache-ram", "0", "--no-mmproj", "--jinja"]
+
+
+def safe_chat(url: str, messages: list[dict], schema: dict, max_tokens: int, errors: dict) -> tuple[dict | None, dict]:
+    """chat(), with a failed request counted by error type instead of ending the paid run."""
+    try:
+        return chat(url, messages, schema, max_tokens)
+    except Exception as exc:  # urllib errors, timeouts, a response without choices
+        name = type(exc).__name__
+        errors[name] = errors.get(name, 0) + 1
+        return None, {}
+
+
 def run_jobs(url: str, payload: dict, reference: dict | None) -> dict:
     """Run the three jobs against one llama-server. `reference` holds the Q4_K_M grades, if known."""
     timings: list[dict] = []
-    out: dict = {"names": [], "lookups": [], "grades": [], "parse_failures": 0}
+    errors: dict[str, int] = {}
+    out: dict = {"names": [], "lookups": [], "grades": [], "parse_failures": 0, "request_errors": errors}
 
     for essay in payload["essays"][:N_NAMES]:
-        answer, t = chat(url, names_messages(essay["text"]), NAMES_SCHEMA, 2000)
+        answer, t = safe_chat(url, names_messages(essay["text"]), NAMES_SCHEMA, 2000, errors)
         timings.append(t)
         out["parse_failures"] += answer is None
         out["names"].append({"expected": essay["names"], "found": (answer or {}).get("names") or []})
 
     for item in payload["lookups"][:N_LOOKUPS]:
-        answer, t = chat(url, route_messages(item, payload["policy"]), ROUTE_SCHEMA, 2000)
+        answer, t = safe_chat(url, route_messages(item, payload["policy"]), ROUTE_SCHEMA, 2000, errors)
         timings.append(t)
         out["parse_failures"] += answer is None
         out["lookups"].append({"id": item["id"], "expected": item["expected"], "got": (answer or {}).get("decision")})
 
     for i, essay in enumerate(payload["essays"][:N_GRADES]):
-        answer, t = chat(url, grade_messages(essay["text"], payload["rubric"]), GRADE_SCHEMA, 3000)
+        answer, t = safe_chat(url, grade_messages(essay["text"], payload["rubric"]), GRADE_SCHEMA, 3000, errors)
         timings.append(t)
         out["parse_failures"] += answer is None
         ref = (reference or {}).get("grades", [None] * N_GRADES)[i]
@@ -281,8 +311,7 @@ def remote_eval(payload: dict) -> dict:
     for label, (repo, filename) in payload["models"].items():
         path = hf_hub_download(repo, filename, cache_dir="/cache")
         proc = subprocess.Popen(["/llama.cpp/build/bin/llama-server", "--model", path, "--alias", "glimmer",
-                                 "--host", "127.0.0.1", "--port", "8080", "-c", "8192", "-np", "1", "-ngl", "99",
-                                 "--jinja"])
+                                 "--host", "127.0.0.1", "--port", "8080", *JETSON_FLAGS])
         try:
             for _ in range(900):
                 try:
@@ -298,6 +327,8 @@ def remote_eval(payload: dict) -> dict:
             result = run_jobs("http://127.0.0.1:8080", payload, results.get("Q4_K_M"))
             result.update(size_bytes=os.path.getsize(path), seconds=round(time.time() - started), file=filename, repo=repo)
             results[label] = result
+        except Exception as exc:  # one model that will not load must not lose the others' results
+            results[label] = {"failed": type(exc).__name__, "file": filename, "repo": repo}
         finally:
             proc.terminate()
             proc.wait(timeout=60)
@@ -368,6 +399,9 @@ def write_report(results: dict, command: str, out: Path) -> None:
         "|---|---|---|---|---|---|---|---|---|",
     ]
     for label, r in results.items():
+        if r.get("failed"):
+            lines.append(f"| {label} | not run: {r['failed']} | | | | | | | |")
+            continue
         s = score(r)
         mad = "n/a" if s["grade_mad"] is None else f"{s['grade_mad']:.2f}"
         lines.append(
@@ -375,8 +409,14 @@ def write_report(results: dict, command: str, out: Path) -> None:
             f"| {pct(s['lookup_accuracy'])} | {pct(s['grade_exact']) if label != 'Q4_K_M' else 'reference'} "
             f"| {mad if label != 'Q4_K_M' else 'reference'} | {r['parse_failures']} |"
         )
+    errors = {label: r.get("request_errors") for label, r in results.items() if r.get("request_errors")}
+    if errors:
+        lines += ["", "Requests that failed (counted as JSON failures above): "
+                  + "; ".join(f"{label} {json.dumps(e, sort_keys=True)}" for label, e in errors.items())]
     lines += ["", "Files:", ""]
-    lines += [f"- {label}: `{r['repo']}` / `{r['file']}`, {r['seconds']} s for all three jobs" for label, r in results.items()]
+    lines += [f"- {label}: `{r['repo']}` / `{r['file']}`, {r.get('seconds', 0)} s for all three jobs"
+              for label, r in results.items()]
+    lines += ["", f"llama-server flags (the Jetson unit's): `{' '.join(JETSON_FLAGS)}`."]
     lines += ["", "Lookups are routing decisions on eval/tasks.jsonl items (5 per expected decision), with the "
               "item's names replaced by tags before the model sees them.", ""]
     out.parent.mkdir(parents=True, exist_ok=True)

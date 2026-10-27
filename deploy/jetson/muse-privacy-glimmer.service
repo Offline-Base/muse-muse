@@ -4,6 +4,7 @@ Description=Muse Privacy Glimmer model (llama-server on 127.0.0.1:8081)
 After=network.target
 AssertPathExists=/opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf
 AssertPathExists=/opt/muse-privacy/llama.cpp/build/bin/llama-server
+AssertPathExists=/var/lib/muse-privacy/home/llama_api_key
 
 [Service]
 Type=simple
@@ -15,7 +16,12 @@ Group=muse-privacy
 # adapter is loaded but off until a request (or adapter_sync.sh) turns it on; otherwise it is empty.
 ExecStartPre=/opt/muse-privacy/bin/glimmer-env.sh
 EnvironmentFile=-/var/lib/muse-privacy/glimmer.env
-ExecStart=/opt/muse-privacy/llama.cpp/build/bin/llama-server --model /opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf --alias glimmer --host 127.0.0.1 --port 8081 -c 4096 -np 1 -ngl 99 --no-mmproj --jinja $LORA_ARGS
+# Memory on the 8 GB board: a small ubatch keeps the f32 logits buffer near 0.1 GiB, and the
+# prompt cache and context checkpoints (8 GiB and 32 by default) are off, since they grow in host
+# RAM with every new prompt. --swa-full keeps prefix reuse without checkpoints. --api-key-file
+# keeps other local processes off the model and its /lora-adapters scale; --no-slots hides the
+# last request's state. A key on the command line would show in /proc, so it is a file.
+ExecStart=/opt/muse-privacy/llama.cpp/build/bin/llama-server --model /opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf --alias glimmer --host 127.0.0.1 --port 8081 -c 4096 -np 1 -ngl 99 -ub 128 -b 512 --swa-full --ctx-checkpoints 0 --cache-ram 0 --no-slots --api-key-file /var/lib/muse-privacy/home/llama_api_key --no-mmproj --jinja $LORA_ARGS
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=300
@@ -37,7 +43,8 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectClock=yes
+# No ProtectClock: on systemd before 252 it implies DeviceAllow=char-rtc, which turns on a device
+# allow-list and blocks the GPU nodes (/dev/nvmap, /dev/nvgpu/*), so -ngl 99 would do nothing.
 ProtectHostname=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes

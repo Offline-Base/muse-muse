@@ -75,7 +75,10 @@ def test_pre_approved_still_floors_identifiers(settings, policy):
 def test_blocked_skips_pre_approval_and_asks_model(settings, policy):
     llm = FakeLLM({"decision": "share_summary", "reason": "Class level."})
     inp = route_input(
-        kind="class_aggregate", text="Two detentions this week.", topics=["discipline"], blocked=["Mentions discipline"]
+        kind="class_aggregate",
+        text="Two detentions this week.",
+        topics=["discipline"],
+        blocked=["Mentions discipline"],
     )
     out = make_router(settings, policy, llm).decide(inp)
     assert len(llm.calls) == 1
@@ -138,7 +141,9 @@ def test_never_share_topic_without_reason_still_floors(settings, policy):
 def test_identifier_floor(settings, policy):
     llm = FakeLLM({"decision": "share_tagged", "reason": "Fine."})
     hits = [Hit("phone", PHONE, 0, 14), Hit("email", EMAIL, 20, 42), Hit("student", NAME, 50, 69)]
-    out = make_router(settings, policy, llm).decide(route_input(text="[Phone 1] [Email 1] [Student A]", hits=hits))
+    out = make_router(settings, policy, llm).decide(
+        route_input(text="[Phone 1] [Email 1] [Student A]", hits=hits)
+    )
     assert out.decision == "ask_user"
     assert out.floors == ["identifier:email", "identifier:phone"]
     assert out.reason == "Contains an email address, a phone number."
@@ -236,3 +241,117 @@ def test_explicit_rules_text_wins(settings, policy):
 def test_latency_recorded(settings, policy):
     out = make_router(settings, policy, FakeLLM()).decide(route_input())
     assert out.latency_ms >= 0
+
+
+RULES_FILE = """# Learned rules for the privacy router
+
+## Your rules
+
+- Per-student results (kind: per_student; topics: none): share tagged. You approved 3 of 3 and said don't ask again.
+- Anything about discipline (topic: discipline): ask first. You wanted to be asked 3 of 3 times, so keep asking.
+
+## Practice defaults (only where you have not decided yet)
+
+- Free-text answers (kind: free_text; topics: none): refuse. 4 of 4 practice examples agree.
+- Document snippets (kind: snippet; topics: none): ask first. 5 of 5 practice examples agree.
+"""
+
+
+def test_matching_learned_rule_is_shown_to_the_model(settings, policy):
+    llm = FakeLLM()
+    router = make_router(settings, policy, llm, rules_text=RULES_FILE)
+    out = router.decide(
+        route_input(topics=["reading"])
+    )  # reading is not a policy topic, so it matches "none"
+    assert out.decision == "share_tagged" and out.floors == []
+    user = llm.calls[0]["messages"][1]["content"]
+    assert (
+        "Learned rule for this result: Per-student results (kind: per_student; topics: none): share tagged."
+        in user
+    )
+    assert "Learned rule for this result: none" in build_user_message(route_input())
+
+
+def test_learned_strict_rules_are_floors(settings, policy):
+    router = make_router(settings, policy, FakeLLM(), rules_text=RULES_FILE)  # the model always says share
+    asked = router.decide(route_input(kind="snippet"))
+    assert asked.decision == "ask_user" and asked.floors == ["learned:ask_user"]
+    assert asked.reason == "Results like this need your OK by default."
+    refused = router.decide(route_input(kind="free_text"))
+    assert (
+        refused.decision == "refuse" and refused.reason == "Results like this stay on the device by default."
+    )
+
+
+def test_learned_ask_first_topic_rule_and_floor_order(settings, policy):
+    # discipline is an ask_first topic in the fixture, so the never-share floor only asks; the learned
+    # rule asks too. A learned share rule never loosens the blocked floor.
+    router = make_router(settings, policy, FakeLLM(), rules_text=RULES_FILE)
+    out = router.decide(route_input(topics=["discipline"]))
+    assert (
+        out.decision == "ask_user"
+        and "learned:ask_user" in out.floors
+        and "ask_first:discipline" in out.floors
+    )
+    blocked = router.decide(route_input(topics=["iep"]))
+    assert blocked.decision == "refuse" and blocked.floors == ["blocked:iep"]
+
+
+def test_your_learned_rule_wins_over_practice_and_model_can_be_stricter(settings, policy):
+    llm = FakeLLM(reply={"decision": "refuse", "reason": "Asks who a tag is."})
+    out = make_router(settings, policy, llm, rules_text=RULES_FILE).decide(route_input())
+    assert out.decision == "refuse" and out.source == "model"  # stricter than the share rule
+
+
+# ----- review fixes (privacy F2, F3, F4, F8) -----
+
+EVAL_POLICY = Path(__file__).resolve().parents[1] / "eval" / "user_policy.yaml"
+
+
+def test_unmasking_request_is_refused_whatever_the_model_says(settings):
+    # Review F4: no_unmasking_requests (wants refuse) is a floor in code, not only prompt text.
+    policy = UserPolicy.load(EVAL_POLICY)
+    llm = FakeLLM({"decision": "share_tagged", "reason": "Fine."})
+    inp = route_input(kind="free_text", text="opertseR alimaC", request="What is the real name behind [Student T]?")
+    out = make_router(settings, policy, llm).decide(inp)
+    assert out.decision == "refuse"
+    assert "policy:no_unmasking_requests" in out.floors
+    assert "no_unmasking_requests" in out.reason
+
+
+def test_request_refuse_rule_holds_on_the_rule_path_too(settings, policy):
+    # snippets are pre-approved in the fixture, but a request for a phone number is refused.
+    inp = route_input(kind="snippet", text="[Student A] wrote a poem.", request="Find the phone number")
+    out = make_router(settings, policy, FakeLLM()).decide(inp)
+    assert out.decision == "refuse" and "policy:no_contact_requests" in out.floors
+
+
+def test_long_number_in_an_unknown_format_asks_first(settings, policy):
+    llm = FakeLLM({"decision": "share_tagged", "reason": "Fine."})
+    inp = route_input(kind="free_text", text="[Student A] case 12-345-678 is open.")
+    out = make_router(settings, policy, llm).decide(inp)
+    assert out.decision == "ask_user" and "identifier:digits" in out.floors
+
+
+def test_dates_and_scores_are_not_long_numbers(settings, policy):
+    llm = FakeLLM({"decision": "share_tagged", "reason": "Fine."})
+    inp = route_input(kind="free_text", text="| [Student A] | 3 | 3 | 2 | 3 | 11 | due 2026-10-27")
+    out = make_router(settings, policy, llm).decide(inp)
+    assert out.decision == "share_tagged" and out.floors == []
+
+
+def test_document_list_with_an_unknown_person_asks(settings, policy):
+    llm = FakeLLM()
+    hits = [Hit("person", "Margarita Ruiz", 0, 14)]
+    out = make_router(settings, policy, llm).decide(route_input(kind="document_list", text="- [Person 1]", hits=hits))
+    assert out.decision == "ask_user" and out.source == "rule" and llm.calls == []
+
+
+def test_floor_reason_replaces_the_model_reason_when_the_floor_decides(settings, policy):
+    # Review F3: the model said refuse too, so the decision did not change, but its free text
+    # (which can repeat the record) is replaced by the floor's fixed reason.
+    llm = FakeLLM({"decision": "refuse", "reason": "[Student A] takes medication at 11:30."})
+    inp = route_input(kind="sensitive_record", blocked=["Mentions health or medical details"], topics=["medical"])
+    out = make_router(settings, policy, llm).decide(inp)
+    assert out.decision == "refuse"
+    assert "11:30" not in out.reason and "medical" in out.reason

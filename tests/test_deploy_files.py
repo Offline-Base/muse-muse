@@ -102,8 +102,10 @@ HOSTISH = re.compile(r"\b[\w-]+\.(?:local|lan|internal|ts\.net)\b|ngrok|jetson-\
 @pytest.mark.parametrize("path", SCANNED, ids=lambda p: p.name)
 def test_no_wildcard_bind_ips_or_hostnames(path):
     text = path.read_text()
-    assert "0.0.0.0" not in text
-    assert set(IPV4.findall(text)) <= {"127.0.0.1"}, path.name
+    assert not re.search(r"(?<![\d.])0\.0\.0\.0(?![\d/])", text)  # a wildcard bind; "10.0.0.0/8" is a range
+    # 127.0.0.1, and the private network ranges the server unit may reach (never a real address)
+    private_ranges = {"10.0.0.0", "172.16.0.0", "192.168.0.0"}
+    assert set(IPV4.findall(text)) <= {"127.0.0.1", *private_ranges}, path.name
     assert not HOSTISH.search(text), HOSTISH.search(text)
 
 
@@ -201,7 +203,7 @@ def test_start_needs_gguf(tmp_path):
 
 @pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
 def test_start_refuses_lan_bind_on_laptop(tmp_path):
-    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", APPROVAL_HOST="192.0.2.10")
+    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="openrouter", APPROVAL_HOST="192.0.2.11")
     assert r.returncode != 0 and "127.0.0.1" in r.stderr
 
 
@@ -325,3 +327,102 @@ def test_train_check_refuses_identifiers_and_names(tmp_path, text):
     r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(roster))
     assert r.returncode == 1
     assert text not in r.stderr  # problems name the line and kind, never the value
+
+
+# ----- review fixes: device F1, F2, F9, SEC-1, SEC-5, SEC-9 -----
+
+
+@pytest.mark.parametrize("unit", UNITS, ids=lambda p: p.name)
+def test_protect_clock_never_blocks_devices(unit):
+    # On systemd before 252, ProtectClock implies DeviceAllow=char-rtc and blocks every other
+    # device node: the Jetson GPU for llama-server, the light's serial port for the server.
+    service = parse_unit(unit)["Service"]
+    if service.get("ProtectClock") == ["yes"]:
+        assert service.get("PrivateDevices") == ["yes"] or "DeviceAllow" in service, unit.name
+
+
+def test_glimmer_unit_memory_and_key_flags():
+    service = parse_unit(DEPLOY / "muse-privacy-glimmer.service")["Service"]
+    cmd = service["ExecStart"][0]
+    for flag in ("-ub 128", "--cache-ram 0", "--ctx-checkpoints 0", "--swa-full", "--no-slots"):
+        assert f" {flag} " in cmd, flag
+    assert " --api-key-file /var/lib/muse-privacy/home/llama_api_key " in cmd
+    assert " --api-key " not in cmd  # a key on the command line shows in /proc
+
+
+def test_server_unit_cannot_reach_the_internet():
+    service = parse_unit(DEPLOY / "muse-privacy.service")["Service"]
+    assert service["IPAddressDeny"] == ["any"]
+    allowed = service["IPAddressAllow"][0].split()
+    assert "localhost" in allowed and "0.0.0.0/0" not in allowed
+
+
+def test_relay_unit_sees_only_its_two_files_and_stops_on_auth_errors():
+    service = parse_unit(DEPLOY / "muse-privacy-relay.service")["Service"]
+    assert service["TemporaryFileSystem"] == ["/var/lib/muse-privacy:ro"]
+    bound = service["BindReadOnlyPaths"][0].split()
+    assert sorted(Path(b).name for b in bound) == ["connector_token", "relay.json"]
+    assert service["RestartPreventExitStatus"] == ["3"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["camila wrote three pages", "kowalczyk asked for help", "essays/camila_restrepo_draft.md",
+     "Call 512‑555‑0143 after school", "C a m i l a R e s t r e p o"],
+)
+def test_train_check_decodes_and_uses_the_guard(tmp_path, text):
+    # Review privacy F9: lowercase names, slugs and escaped Unicode dashes passed the old check.
+    data = tmp_path / "train.jsonl"
+    data.write_text(json.dumps({"request": "r", "result_kind": "free_text", "tagged_text": text, "label": "refuse"}))
+    r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(REPO / "eval" / "roster.json"),
+                  "--tagmap", str(tmp_path / "none.json"))
+    assert r.returncode == 1, r.stdout
+    assert text not in r.stderr
+
+
+def test_train_labels_follow_the_chat_template():
+    sys.path.insert(0, str(CLOUD))
+    import importlib
+
+    mod = importlib.import_module("train_lora_modal")
+
+    class Tok:  # one token per character
+        def __call__(self, text, add_special_tokens=False):
+            return {"input_ids": [ord(c) for c in text]}
+
+    full = "<|start|>user<|message|>hi<|eot|><|start|>assistant to=user<|message|>{}<|eot|>"
+    prefix = "<|start|>user<|message|>hi<|eot|><|start|>assistant"
+    ids, labels = mod.split_labels(Tok(), full, prefix, 4096)
+    learned = "".join(chr(t) for t in labels if t != -100)
+    assert learned == " to=user<|message|>{}<|eot|>"  # the header and the end token are learned too
+    assert mod.target_modules(r".*language_model.*\.(q_proj)$").startswith(".*")
+    assert mod.target_modules("q_proj, v_proj") == ["q_proj", "v_proj"]
+
+
+def test_quant_eval_survives_a_failed_request_and_uses_the_jetson_flags(tmp_path, monkeypatch):
+    # Review device F8: one 500 or timeout used to lose every model's results after a paid download.
+    sys.path.insert(0, str(CLOUD))
+    try:
+        import quant_eval_modal as q
+    finally:
+        sys.path.remove(str(CLOUD))
+    calls = []
+
+    def flaky(url, messages, schema, max_tokens=2500):
+        calls.append(1)
+        if len(calls) == 3:
+            raise TimeoutError("slow")
+        return {"names": [], "decision": "refuse", "total": 8}, {}
+
+    monkeypatch.setattr(q, "chat", flaky)
+    payload = {"essays": [{"text": "x", "names": [], "file": f"{i}.md"} for i in range(q.N_NAMES)],
+               "lookups": [{"id": "a", "request": "r", "result_kind": "snippet", "text": "t", "expected": "refuse"}],
+               "policy": "", "rubric": "r"}
+    out = q.run_jobs("http://127.0.0.1:1", payload, None)
+    assert out["request_errors"] == {"TimeoutError": 1} and out["parse_failures"] == 1
+    unit = (DEPLOY / "muse-privacy-glimmer.service").read_text()
+    for flag in ("-c 4096", "-ub 128", "--cache-ram 0", "--ctx-checkpoints 0"):
+        assert flag in " ".join(q.JETSON_FLAGS) and flag in unit
+    report = tmp_path / "quantization.md"
+    q.write_report({"i1-IQ1_S": {"failed": "RuntimeError", "file": "x.gguf", "repo": "example/repo"}}, "cmd", report)
+    assert "not run: RuntimeError" in report.read_text()

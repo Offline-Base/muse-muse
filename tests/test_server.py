@@ -26,7 +26,7 @@ def test_main_refuses_non_loopback_laptop(settings, monkeypatch, capsys):
 
     monkeypatch.setattr(server, "build_services", must_not_build)
     monkeypatch.setattr(server, "run_servers", must_not_build)
-    for host in ("0.0.0.0", "192.0.2.10", "::"):
+    for host in ("0.0.0.0", "192.0.2.11", "::"):
         assert main(dataclasses.replace(settings, approval_host=host)) == 2
         assert "Not starting" in capsys.readouterr().err
 
@@ -100,3 +100,30 @@ async def test_serve_stops_the_other_server_when_one_exits(settings):
     servers[1].should_exit = True
     await asyncio.wait_for(task, timeout=10)
     assert servers[0].should_exit
+
+
+def test_port_in_use_is_one_plain_sentence(settings, monkeypatch, capsys):
+    # Review correctness F10: uvicorn exits on a bind failure; the user sees one sentence.
+    monkeypatch.setattr(server, "build_services", fake_services)
+    monkeypatch.setattr(server, "load_connector_app", lambda services: FastAPI())
+
+    def busy(servers):
+        raise SystemExit(1)
+
+    monkeypatch.setattr(server, "run_servers", busy)
+    assert main(settings) == 3
+    err = capsys.readouterr().err
+    assert "already in use" in err and "Traceback" not in err
+
+
+def test_tls_settings_reach_the_approval_server(settings, monkeypatch, tmp_path):
+    captured = []
+    _wire(monkeypatch, captured)
+    jetson = dataclasses.replace(
+        settings, device="jetson", approval_host="0.0.0.0", heavy_queue=False,
+        approval_tls_cert=tmp_path / "c.pem", approval_tls_key=tmp_path / "k.pem",
+    )  # fmt: skip
+    assert main(jetson) == 0
+    approval, connector = captured
+    assert approval.config.ssl_certfile == str(tmp_path / "c.pem")
+    assert connector.config.ssl_certfile is None and approval.config.limit_concurrency == 64

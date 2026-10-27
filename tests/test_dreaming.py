@@ -14,6 +14,7 @@ import pytest
 from base import events
 from base.dreaming import dataset, gate, night, train
 from base.dreaming.dataset import Example
+from base.policy import UserPolicy
 from base.types import default_share_form
 from eval import run_eval
 from eval.run_eval import EvalReport
@@ -60,7 +61,9 @@ class FakeStore:
 
 def ex(kind, topics, label, *, approved=None, remember=None, source="user"):
     weight = dataset.USER_WEIGHT if source == "user" else dataset.SYNTHETIC_WEIGHT
-    return Example("req", kind, "[Student A] text", label, weight, tuple(sorted(topics)), source, approved, remember)
+    return Example(
+        "req", kind, "[Student A] text", label, weight, tuple(sorted(topics)), source, approved, remember
+    )
 
 
 # ----- dataset -----
@@ -168,6 +171,116 @@ def test_prompt_training_with_no_rules_and_custom_path(settings, tmp_path):
     assert not settings.paths.router_prompt.exists()
 
 
+def small_policy():
+    return UserPolicy.from_dict({
+        "never_share": {"iep": ["IEP"], "custody": ["custody"]},
+        "ask_first": ["custody"],
+        "rules": [
+            {"id": "no_iep", "topics_any": ["iep"], "wants": "refuse"},
+            {"id": "families", "topics_any": ["parents"], "wants": "ask_user"},
+            {"id": "grades", "kinds": ["per_student"], "topics_any": ["grades"], "wants": "share_tagged"},
+        ],
+    })  # fmt: skip
+
+
+def test_policy_grouping_drops_unnamed_topics_and_floored_groups(settings):
+    examples = [ex("per_student", ["grades", "reading"], "share_tagged", approved=True, remember=True)] * 2
+    examples += [ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)]
+    examples += [ex("sensitive_record", ["iep"], "refuse", approved=False, remember=True)] * 3
+    examples += [
+        ex("sensitive_record", ["custody"], "refuse", approved=False, remember=True)
+    ] * 2  # ask_first
+    result = train.train(examples, settings, day="2026-10-27", policy=small_policy())
+    text = settings.paths.router_prompt.read_text()
+    lines = [line for line in text.splitlines() if line.startswith("- ")]
+    assert lines == [
+        "- Per-student results (kind: per_student; topics: grades): share tagged. "
+        "You approved 3 of 3 and said don't ask again.",
+        "- Sensitive records (kind: sensitive_record; topics: custody): refuse. "
+        "You said no to 2 of 2 and said don't ask again.",
+    ]  # "reading" is not a policy topic; iep is always refused by the floor, custody only asks
+    assert result.rules == 2
+    assert "never-share topic (iep) are always refused" in text
+
+
+def test_topic_rules_are_strict_only_and_need_three_decisions(settings):
+    examples = [ex("free_text", ["parents"], "ask_user", approved=True, remember=False)] * 2
+    examples += [ex("per_student", ["grades", "parents"], "ask_user", approved=True, remember=False)]
+    examples += [ex("snippet", ["grades"], "share_tagged", approved=True, remember=True)]
+    examples += [ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)] * 2
+    examples += [ex("snippet", ["deanonymize"], "refuse", source="synthetic")] * 3  # not a policy topic
+    rules = train.learn_rules(examples, small_policy())
+    topic_rules = [r for r in rules if r.result_kind is None]
+    assert [(r.topics, r.decision, r.count, r.total) for r in topic_rules] == [
+        (("parents",), "ask_user", 3, 3)
+    ]
+    # grades mixes share forms with asks, so it never becomes a topic rule; sharing is never a topic rule
+    assert topic_rules[0].line() == (
+        "- Anything about parents (topic: parents): ask first. You wanted to be asked 3 of 3 times, so keep asking."
+    )
+    assert train.learn_rules(examples[:2], small_policy()) == [
+        train.Rule("free_text", ("parents",), "ask_user", 2, 2, "user")
+    ]  # two decisions make a group rule but not a topic rule
+
+
+def test_a_topic_that_rides_along_gets_no_topic_rule():
+    # The user was only asked about grades when parents were involved, plus two grade approvals:
+    # 8 of 10 grades decisions say ask, but parents explains every one of them.
+    examples = [ex("per_student", ["grades", "parents"], "ask_user", approved=True, remember=False)] * 8
+    examples += [ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)] * 2
+    rules = train.learn_rules(examples, small_policy())
+    assert [(r.topics, r.decision) for r in rules if r.result_kind is None] == [(("parents",), "ask_user")]
+
+    # With no decision of its own, a topic that always comes with a better-supported one gets nothing.
+    policy = UserPolicy.from_dict(
+        {"rules": [{"id": "w", "topics_any": ["writing", "full_text"], "wants": "ask_user"}]}
+    )
+    riders = [ex("free_text", ["full_text", "writing"], "ask_user", approved=True, remember=False)] * 4
+    riders += [ex("free_text", ["full_text"], "ask_user", approved=True, remember=False)]
+    assert [r.topics for r in train.learn_rules(riders, policy) if r.result_kind is None] == [("full_text",)]
+
+
+def test_read_rules_and_match_rule_order(settings):
+    examples = [ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)] * 2
+    examples += [ex("free_text", ["parents"], "ask_user", source="synthetic")] * 4
+    examples += [ex("free_text", ["grades"], "share_tagged", source="synthetic")] * 2
+    examples += [ex("per_student", ["grades"], "refuse", source="synthetic")] * 2  # you decided this group
+    policy = small_policy()
+    train.train(examples, settings, day="2026-10-27", policy=policy)
+    rules = train.read_rules(settings.paths.router_prompt.read_text())
+    assert [(r.kind, r.topics, r.decision, r.source) for r in rules] == [
+        ("per_student", ("grades",), "share_tagged", "user"),
+        ("free_text", ("parents",), "ask_user", "synthetic"),
+        ("free_text", ("grades",), "share_tagged", "synthetic"),
+        (None, ("parents",), "ask_user", "synthetic"),
+    ]
+    assert rules[0].text.startswith(
+        "- Per-student results (kind: per_student; topics: grades): share tagged."
+    )
+    relevant = train.relevant_topics(policy)
+    match = lambda kind, topics: train.match_rule(rules, *train.rule_key(kind, topics, relevant))  # noqa: E731
+    assert (
+        match("per_student", ["grades", "reading"]).source == "user"
+    )  # your rule; reading is not a policy topic
+    assert match("per_student", ["grades", "parents"]).kind is None  # no exact rule: the practice topic rule
+    assert match("free_text", ["grades"]).decision == "share_tagged"
+    assert match("class_aggregate", ["grades"]) is None
+    assert train.match_rule(rules, "x", ()) is None and train.read_rules("") == []
+
+    strict = [
+        train.RuleLine(None, ("parents",), "ask_user", "synthetic", "a"),
+        train.RuleLine(None, ("deanonymize",), "refuse", "synthetic", "b"),
+    ]
+    assert train.match_rule(strict, "free_text", ("deanonymize", "parents")).decision == "refuse"  # strictest
+
+
+def test_relevant_topics_needs_a_policy():
+    assert train.relevant_topics(None) is None
+    assert train.relevant_topics(SimpleNamespace(wants=lambda item: "ask_user")) is None
+    assert train.relevant_topics(small_policy()) == {"iep", "custody", "parents", "grades"}
+    assert train.floored_topics(small_policy()) == {"iep"}
+
+
 def test_lora_backend_writes_chat_jsonl_and_does_not_train(settings):
     examples = [
         ex("per_student", ["grades"], "share_tagged", approved=True, remember=True),
@@ -186,7 +299,9 @@ def test_lora_backend_writes_chat_jsonl_and_does_not_train(settings):
     assert "per_student" in first[1]["content"] and "[Student A] text" in first[1]["content"]
     assert json.loads(first[2]["content"])["decision"] == "share_tagged"
     denied = records[3]["messages"][1]["content"]
-    assert train.WITHHELD_TEXT in denied and "[Student A] text" not in denied  # text the user said no to stays out
+    assert (
+        train.WITHHELD_TEXT in denied and "[Student A] text" not in denied
+    )  # text the user said no to stays out
     assert not settings.paths.router_prompt.exists()
 
 
@@ -297,7 +412,9 @@ def by_rule_count(monkeypatch):
 
 def runner_for(settings, rows, holdout_file, tmp_path, **kw):
     services = SimpleNamespace(settings=settings, approvals=FakeStore(rows))
-    return night.NightRunner(services, holdout_path=holdout_file, synthetic_path=tmp_path / "none.jsonl", **kw)
+    return night.NightRunner(
+        services, holdout_path=holdout_file, synthetic_path=tmp_path / "none.jsonl", **kw
+    )
 
 
 def test_night_learns_keeps_and_reports_aggregates_only(settings, holdout_file, tmp_path, by_rule_count):
@@ -333,7 +450,9 @@ def test_night_drops_rules_learned_from_deleted_decisions(settings, holdout_file
     assert "contact_info" not in text and "per_student" in text
 
 
-def test_night_lora_backend_writes_data_and_keeps_current_rules(settings, holdout_file, tmp_path, by_rule_count):
+def test_night_lora_backend_writes_data_and_keeps_current_rules(
+    settings, holdout_file, tmp_path, by_rule_count
+):
     lora = replace(settings, dreaming_backend="lora")
     settings.paths.router_prompt.write_text("current\n")
     runner = runner_for(lora, [row(1, "snippet", [], "deny", True)], holdout_file, tmp_path)
@@ -380,8 +499,65 @@ def test_start_is_idempotent_while_a_night_runs(settings, holdout_file, tmp_path
 def test_stale_lock_is_taken_over(settings, holdout_file, tmp_path):
     runner = runner_for(settings, [], holdout_file, tmp_path, stale_after=60)
     con = sqlite3.connect(settings.paths.db)
-    con.execute("INSERT INTO dreaming_lock VALUES ('night', 'dream-dead', ?)", (time.time() - 3600,))
+    con.execute(
+        "INSERT INTO dreaming_lock (name, job_id, started_at) VALUES ('night', 'dream-dead', ?)",
+        (time.time() - 3600,),
+    )
     con.commit()
     con.close()
     job, acquired = runner._acquire()
     assert acquired and job != "dream-dead"
+
+
+def test_lock_left_by_a_stopped_process_is_not_a_running_night(settings, holdout_file, tmp_path):
+    # Review correctness F4: SIGTERM mid-night skips the finally that drops the lock row.
+    import subprocess
+    import sys
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    runner = runner_for(settings, [], holdout_file, tmp_path)
+    con = sqlite3.connect(settings.paths.db)
+    con.execute(
+        "INSERT INTO dreaming_lock (name, job_id, started_at, owner) VALUES ('night', 'dream-dead', ?, ?)",
+        (time.time(), f"{dead.pid}:abcd1234"),
+    )
+    con.commit()
+    con.close()
+    assert runner.running_job() is None
+    job, acquired = runner._acquire()
+    assert acquired and job != "dream-dead"
+
+
+def test_report_for_a_finished_night(settings, holdout_file, tmp_path, by_rule_count):
+    runner = runner_for(settings, [row(1, "per_student", ["grades"], "approve", True)], holdout_file, tmp_path)
+    r = runner.run_night()
+    assert runner.report_for(r.job_id)["kept"] is True
+    assert set(runner.report_for(r.job_id)) == set(night.REPORT_KEYS)
+    assert runner.report_for("dream-none") is None
+
+
+def test_lora_rows_that_still_name_someone_never_leave(settings):
+    # Review privacy F9: requests are Muse's text, and approved text never passed final_check.
+    from dataclasses import replace as dc_replace
+
+    roster = load_roster_for(settings)
+    real = roster.students[0].name
+    named = dc_replace(ex("per_student", ["grades"], "share_tagged", approved=True, remember=True),
+                       tagged_text=f"{real.lower()} wrote 3 pages")
+    asked = dc_replace(ex("free_text", [], "refuse", approved=False, remember=True),
+                       request=f"Find the phone for {real}")
+    ok = ex("per_student", ["grades"], "share_tagged", approved=True, remember=True)
+    result = train.train([named, asked, ok], settings, "lora", day="2026-10-28")
+    text = result.path.read_text()
+    assert real.split()[0].lower() not in text.lower()
+    assert "left out 1" in result.message
+    lines = [json.loads(line) for line in text.splitlines()]
+    assert len(lines) == 6  # the denied row stays, with its request withheld; the named row is gone
+    assert any(train.WITHHELD_TEXT in r["messages"][1]["content"].split("Result kind")[0] for r in lines)
+
+
+def load_roster_for(settings):
+    from base import guard
+
+    return guard.load_roster(settings.roster_path)

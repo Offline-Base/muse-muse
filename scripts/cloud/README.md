@@ -33,19 +33,21 @@ The three jobs, run on each model with temperature 0 and reasoning strength low:
 
 The report lists file size, prompt and generation tokens per second (from llama-server's timings), the three scores and JSON failures per model, with the command at the top. Raw results go to `eval/reports/raw/quantization.json`. Tokens per second are on the cloud GPU and say nothing about Jetson speed; Jetson numbers have to come from a board.
 
-Only an essay folder with a `.synthetic` marker is sent. The roster stays on the laptop; only the expected names per essay go up for scoring. `--essays`, `--roster`, `--tasks`, `--policy` and `--q4-repo` override the defaults (the Q4_K_M repo id is a placeholder until Meta's GGUF repo name is confirmed).
+Only an essay folder with a `.synthetic` marker is sent. The roster stays on the laptop; only the expected names per essay go up for scoring. `--essays`, `--roster`, `--tasks`, `--policy` and `--q4-repo` override the defaults. The Q4_K_M file comes from `meta-models/Muse-Glimmer-30B-GGUF`, the 1-bit files from `mradermacher/Muse-Glimmer-30B-i1-GGUF`.
 
 ## Router LoRA
 
 ```
-uv run python scripts/cloud/train_lora_modal.py --check --data ~/.base/dreaming/train.jsonl
-uv run --with modal python scripts/cloud/train_lora_modal.py --run --data ~/.base/dreaming/train.jsonl
+uv run python scripts/cloud/train_lora_modal.py --check --data ~/.base/adapters/train-<date>.jsonl
+uv run --with modal python scripts/cloud/train_lora_modal.py --run --data ~/.base/adapters/train-<date>.jsonl
 ```
 
 Each line is either `{"messages": [...], "weight": 3}` ending with the assistant's JSON decision, or a dreaming example `{"request", "result_kind", "tagged_text", "label", "weight"}`. The `messages` form is better, because it can use the router's exact prompt.
 
-The training file holds tagged text from decisions, including ones the user said to keep on the device. `--check` and `--run` refuse the file if any line looks like it holds an email, phone number, SSN or card number, or a name from the roster (`ROSTER_PATH`, default `eval/roster.json`). Even so, sending real decision rows to the cloud is a separate call for Ethan to make; the default today is the prompt backend, which trains nothing in the cloud.
+Dreaming's lora backend (`base/dreaming/train.py`) writes the training file to `BASE_HOME/adapters/train-<date>.jsonl`. It holds tagged text and requests only from decisions the user approved: for every other row both are replaced with a fixed "withheld" line, and any row that still names someone after tagging is left out. `--check` and `--run` decode each line and refuse the file if it holds an email, phone number, SSN or card number (in any dash style), a roster name in any case, or anything `base.guard.leaks` finds with the roster and the device's tag map (`--tagmap`, default `BASE_HOME/tagmap.json`). Even so, sending real decision rows to the cloud is a separate call for Ethan to make; the default today is the prompt backend, which trains nothing in the cloud.
 
-The adapter comes back as `router-candidate.gguf`. The dreaming gate (`base/dreaming/gate.py`) decides whether it replaces the current one. On a Jetson, install it with `deploy/jetson/adapter_sync.sh`.
+Training examples are built from Glimmer's own chat template, so the adapter learns the same answer header and end token llama-server parses, and only the language model's attention layers get adapters (not the vision tower). The training packages (torch, transformers, peft, bitsandbytes) are not pinned yet: the base model records a transformers development version, so pin the versions that load it on the first paid smoke run.
 
-Defaults: rank 16, alpha 32, dropout 0.05, attention projections, learning rate 2e-4, gradient accumulation 8, max length 2048, 2 epochs, examples weighted by their `weight`. `--base-model` names the bf16 Hugging Face repo (placeholder until confirmed), and `--trust-remote-code` is off unless you pass it.
+The adapter comes back as `router-candidate.gguf`. Nothing gates it yet: `base/dreaming/gate.py` compares rule files only, and a night with the lora backend keeps the current rules. Before using an adapter, score it with `eval.run_eval --holdout` against a llama-server that loads it on the same IQ1_S file the Jetson runs, and promote it to `router.gguf` by hand only if accuracy, agreement and zero leaks hold. On a Jetson, install it with `deploy/jetson/adapter_sync.sh`.
+
+Defaults: rank 16, alpha 32, dropout 0.05, attention projections, learning rate 2e-4, gradient accumulation 8, max length 2048, 2 epochs, examples weighted by their `weight`. `--base-model` names the bf16 Hugging Face repo (default `meta-models/Muse-Glimmer-30B`), and `--trust-remote-code` is off unless you pass it.

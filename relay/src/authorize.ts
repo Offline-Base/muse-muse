@@ -1,8 +1,7 @@
 import { AuthorizationError, CimdFetchError } from "@cloudflare/workers-oauth-provider";
-import { sha256Hex } from "./crypto";
 import { SCOPE, type Env, type GrantProps } from "./env";
 import { messagePage, pairingPage } from "./page";
-import { GATE, normalizeCode } from "./pairing";
+import { GATE, codeKey, ipKey, normalizeCode, pepper } from "./pairing";
 
 /**
  * The OAuth authorize page. The user proves the device is theirs by typing the pairing code it
@@ -17,6 +16,8 @@ const WRONG_CODE = "That code did not work. A code works once and lasts 10 minut
 const TOO_MANY = "Too many tries. Wait 10 minutes, then try again.";
 const EXPIRED_TITLE = "This link did not work";
 const EXPIRED_TEXT = "Start linking again from Muse. This page may have expired or been used already, or this browser blocked its cookie.";
+const NOT_SET_UP_TITLE = "This relay is not set up yet";
+const NOT_SET_UP_TEXT = "Its pairing secret is missing, so no device can be linked. Whoever runs the relay needs to run deploy.sh again.";
 /** The library's default consent cookie prefix (docs/consent-page.md, "Cookie names"). */
 const CONSENT_COOKIE = "__Host-oauth-consent";
 
@@ -65,9 +66,11 @@ async function submit(request: Request, env: Env): Promise<Response> {
   // Without the library's consent cookie the approval below would fail; stop before using up the code.
   if (!(request.headers.get("Cookie") ?? "").includes(CONSENT_COOKIE)) return html(messagePage(EXPIRED_TITLE, EXPIRED_TEXT), 400);
 
+  const key = pepper(env);
+  if (!key) return html(messagePage(NOT_SET_UP_TITLE, NOT_SET_UP_TEXT), 503);
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const code = normalizeCode(String(form.get("code") ?? ""));
-  const result = await env.PAIRING.getByName(GATE).redeem(await sha256Hex(`ip:${ip}`), code ? await sha256Hex(code) : null);
+  const result = await env.PAIRING.getByName(GATE).redeem(await ipKey(key, ip), code ? await codeKey(key, code) : null);
   if (!result.ok) {
     return result.reason === "limited" ? show(request, env, handle, TOO_MANY, 429) : show(request, env, handle, WRONG_CODE, 400);
   }

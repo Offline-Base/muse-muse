@@ -1,8 +1,8 @@
 import { SELF, env, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "../src/crypto";
 import { fromFrame } from "../src/device";
-import { ORIGIN, answerFrames, connectDevice, linkApp, mcp, registerDevice } from "./helpers";
+import { ORIGIN, REDIRECT_URI, answerFrames, connectDevice, linkApp, mcp, pairCode, registerDevice, startAuthorize, submitCode } from "./helpers";
 
 /** An invented JSON-RPC call, the kind Muse sends. */
 const CALL = JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "list_documents", arguments: { folder: "class-4b" } } });
@@ -24,6 +24,8 @@ describe("OAuth metadata", () => {
     expect(meta.registration_endpoint).toBe(`${ORIGIN}/oauth/register`);
     expect(meta.grant_types_supported).toContain("refresh_token");
     expect(meta.code_challenge_methods_supported).toEqual(["S256"]);
+    // Both ways for Muse's client to identify itself: DCR above, and Client ID Metadata Documents.
+    expect(meta.client_id_metadata_document_supported).toBe(true);
   });
 
   it("publishes protected resource metadata for /mcp", async () => {
@@ -32,6 +34,68 @@ describe("OAuth metadata", () => {
     const meta = await response.json<Record<string, unknown>>();
     expect(meta.resource).toBe(`${ORIGIN}/mcp`);
     expect(meta.authorization_servers).toEqual([ORIGIN]);
+  });
+});
+
+/** An invented client that identifies itself with a Client ID Metadata Document. */
+const CIMD_URL = "https://muse.example.com/oauth/client-metadata.json";
+const CIMD_DOC = {
+  client_id: CIMD_URL,
+  client_name: "Muse (CIMD test)",
+  redirect_uris: [REDIRECT_URI],
+  token_endpoint_auth_method: "none",
+  grant_types: ["authorization_code", "refresh_token"],
+  response_types: ["code"],
+};
+
+/** Serve CIMD_URL from a stub; every other fetch is untouched. Nothing goes to the network. */
+function serveCimd(status = 200): void {
+  const real = globalThis.fetch;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url !== CIMD_URL) return real(input, init);
+    return new Response(status === 200 ? JSON.stringify(CIMD_DOC) : "not found", {
+      status,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  });
+}
+
+describe("Client ID Metadata Documents", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("link a client whose client_id is its metadata URL, and its token reaches the device", async () => {
+    serveCimd();
+    const start = await startAuthorize(CIMD_URL);
+    expect(start.html).toContain("Muse (CIMD test)");
+    expect(start.html).toContain("Published by <strong>muse.example.com</strong>");
+
+    const device = await registerDevice();
+    const tokens = await linkApp(device.secret, CIMD_URL);
+    expect(tokens.scope).toBe("mcp");
+    const socket = await connectDevice(device.secret);
+    answerFrames(socket, () => ({ status: 200, headers: { "content-type": "application/json" }, body: '{"jsonrpc":"2.0","id":7,"result":{}}' }));
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 7, result: {} });
+    socket.close();
+  });
+
+  it("use a pairing code once for CIMD clients too", async () => {
+    serveCimd();
+    const device = await registerDevice();
+    const code = await pairCode(device.secret);
+    expect((await submitCode(await startAuthorize(CIMD_URL), code, "198.51.100.11")).status).toBe(302);
+    expect((await submitCode(await startAuthorize(CIMD_URL), code, "198.51.100.12")).status).toBe(400);
+  });
+
+  it("show a plain page when the metadata document cannot be loaded", async () => {
+    serveCimd(404);
+    const query = new URLSearchParams({ response_type: "code", client_id: CIMD_URL, redirect_uri: REDIRECT_URI, code_challenge: "x".repeat(43), code_challenge_method: "S256" });
+    const response = await SELF.fetch(`${ORIGIN}/authorize?${query}`, { redirect: "manual" });
+    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await response.text()).toContain("This app could not be checked");
   });
 });
 
@@ -232,5 +296,28 @@ describe("response frames", () => {
       headers: { "mcp-session-id": "s" },
       body: "nope",
     });
+  });
+});
+
+
+describe("POST /device/unlink", () => {
+  it("revokes every Muse link bound to the device, so its tokens stop working", async () => {
+    // Review SEC-6: a phished pairing code used to keep its access for good.
+    const device = await registerDevice();
+    const socket = await connectDevice(device.secret);
+    answerFrames(socket, (frame) => ({ status: 200, headers: { "content-type": "application/json" }, body: frame.body }));
+    const tokens = await linkApp(device.secret);
+    expect((await mcp(tokens.access_token, { method: "POST", headers: MCP_HEADERS, body: CALL })).status).toBe(200);
+
+    const unauthorized = await SELF.fetch(`${ORIGIN}/device/unlink`, { method: "POST" });
+    expect(unauthorized.status).toBe(401);
+    const response = await SELF.fetch(`${ORIGIN}/device/unlink`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${device.secret}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ revoked: 1 });
+    expect((await mcp(tokens.access_token, { method: "POST", headers: MCP_HEADERS, body: CALL })).status).toBe(401);
+    socket.close();
   });
 });

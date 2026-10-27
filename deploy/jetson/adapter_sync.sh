@@ -5,30 +5,35 @@
 # reaches this board by USB stick or a copy the laptop starts (this board never connects to the
 # laptop). Then, on this board:
 #
-#   sudo deploy/jetson/adapter_sync.sh /path/to/router.gguf [--scale 1.0] [--no-apply]
+#   sudo deploy/jetson/adapter_sync.sh /path/to/router.gguf [--scale S]
 #
 # llama-server only loads LoRA files at start, so a new or changed adapter restarts
-# muse-privacy-glimmer.service. Then the script POSTs /lora-adapters to set the adapter's scale.
+# muse-privacy-glimmer.service. The adapter's global scale stays 0 by default: the server finds
+# its id at start (GET /lora-adapters) and the router names it on each of its own requests, so the
+# answer model, the name pass and grading never use it. --scale S applies it to every request,
+# which is only for testing.
 set -euo pipefail
 
 ADAPTERS_DIR="${MUSE_ADAPTERS_DIR:-/var/lib/muse-privacy/adapters}"
 GLIMMER_URL="${GLIMMER_URL:-http://127.0.0.1:8081}"
 SERVICE=muse-privacy-glimmer.service
 SERVICE_USER=muse-privacy
-SCALE=1.0
-APPLY=1
+KEY_FILE="${LLAMA_KEY_FILE:-/var/lib/muse-privacy/home/llama_api_key}"
+SCALE=0
+APPLY=0
 SRC=""
 
 usage() {
   echo "Usage: sudo $0 ADAPTER.gguf [--scale S] [--no-apply]"
-  echo "  --scale S    scale to apply (default 1.0; 0 loads it but leaves it off)"
-  echo "  --no-apply   install and load the adapter, but do not change its scale"
+  echo "  --scale S    apply the adapter to every request at scale S (testing only; the router"
+  echo "               names it per request, so the default leaves the global scale at 0)"
+  echo "  --no-apply   install and load the adapter, and leave its scale alone (the default)"
 }
 die() { printf 'adapter_sync.sh: %s\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --scale) [ $# -ge 2 ] || die "--scale needs a value"; SCALE="$2"; shift ;;
+    --scale) [ $# -ge 2 ] || die "--scale needs a value"; SCALE="$2"; APPLY=1; shift ;;
     --no-apply) APPLY=0 ;;
     -h|--help) usage; exit 0 ;;
     -*) usage >&2; die "unknown option: $1" ;;
@@ -41,6 +46,10 @@ done
 [ -f "$SRC" ] || die "no such file: $SRC"
 [ "$(head -c 4 "$SRC")" = GGUF ] || die "$SRC is not a GGUF file"
 [[ "$SCALE" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "scale must be a number like 1.0"
+
+# llama-server runs with --api-key-file; every call but /health needs the key.
+AUTH=()
+if [ -r "$KEY_FILE" ]; then AUTH=(-H "Authorization: Bearer $(cat "$KEY_FILE")"); fi
 
 DEST="$ADAPTERS_DIR/router.gguf"
 NEW_SHA="$(sha256sum "$SRC" | cut -d' ' -f1)"
@@ -64,7 +73,7 @@ for _ in $(seq 1 300); do
 done
 curl -fs -o /dev/null --max-time 2 "$GLIMMER_URL/health" || die "llama-server did not come up; see: journalctl -u $SERVICE"
 
-ADAPTER_ID="$(curl -fsS --max-time 5 "$GLIMMER_URL/lora-adapters" | python3 -c '
+ADAPTER_ID="$(curl -fsS --max-time 5 "${AUTH[@]}" "$GLIMMER_URL/lora-adapters" | python3 -c '
 import json, sys
 dest = sys.argv[1]
 for entry in json.load(sys.stdin):
@@ -75,10 +84,11 @@ for entry in json.load(sys.stdin):
 [ -n "$ADAPTER_ID" ] || die "llama-server did not load $DEST; check glimmer.env and: journalctl -u $SERVICE"
 
 if [ "$APPLY" -eq 1 ]; then
-  curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' \
+  curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' "${AUTH[@]}" \
     -d "[{\"id\": $ADAPTER_ID, \"scale\": $SCALE}]" "$GLIMMER_URL/lora-adapters" >/dev/null \
     || die "llama-server refused the new adapter scale"
   echo "Adapter $ADAPTER_ID applied at scale $SCALE."
 else
-  echo "Adapter $ADAPTER_ID loaded; scale left as it was."
+  echo "Adapter $ADAPTER_ID loaded at global scale 0; the router names it on its own requests."
+  echo "Restart muse-privacy.service so the server finds the adapter id."
 fi

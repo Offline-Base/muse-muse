@@ -18,14 +18,23 @@ from scripts import charts, simulate_nights
 
 STUDENTS = tuple(
     Person(name=f"{first} {last}", first=first, last=last)
-    for first, last in [("Orlinde", "Varsk"), ("Pell", "Hathersage"), ("Quennel", "Ambry"), ("Rusk", "Tavener")]
+    for first, last in [
+        ("Orlinde", "Varsk"),
+        ("Pell", "Hathersage"),
+        ("Quennel", "Ambry"),
+        ("Rusk", "Tavener"),
+    ]
 )
-ROSTER = Roster(teacher=Person(name="Sabra Wendle", first="Sabra", last="Wendle", role="teacher"), students=STUDENTS)
+ROSTER = Roster(
+    teacher=Person(name="Sabra Wendle", first="Sabra", last="Wendle", role="teacher"), students=STUDENTS
+)
+# Kinds the connector really sends, so the production inputs (no hand-labeled topics, kinds as
+# the device emits them) keep the four groups apart.
 GROUPS = [
     ("per_student", ["grades"], "share_tagged"),
-    ("class_aggregate", ["grades"], "share_summary"),
-    ("sensitive_record", ["iep"], "refuse"),
-    ("contact_info", ["parent_contact"], "ask_user"),
+    ("free_text", ["grades"], "share_summary"),
+    ("snippet", ["iep"], "refuse"),
+    ("document_list", ["parent_contact"], "ask_user"),
 ]
 
 
@@ -168,14 +177,17 @@ def test_simulate_nights_end_to_end(settings, tmp_path, fake_world, capsys):
     asked = [int(r["approval_requests"]) for r in rows[1:]]
     assert rows[0]["approval_requests"] == ""
     assert asked == [20, 5, 5, 5, 5]  # only the "keep asking" group still asks after night 1
-    assert float(rows[0]["agreement"]) == 0.25 and float(rows[-1]["agreement"]) == 1.0
-    assert float(rows[-1]["accuracy"]) == 1.0
+    # A known gap, measured on production inputs: no kind the connector sends shows a summary on
+    # the approval page, so approving a class-level free_text result teaches share_tagged and the
+    # share_summary group never becomes right by learning alone.
+    assert float(rows[0]["agreement"]) == 0.25 and float(rows[-1]["agreement"]) == 0.75
+    assert float(rows[-1]["accuracy"]) == 0.75 and rows[-1]["acc_share_summary"] == "0.0"
     assert all(r["leaks"] == "0" for r in rows)
     assert [r["kept"] for r in rows[1:]] == ["yes"] * 5
 
     md = (out / "nights.md").read_text()
     assert md.splitlines()[2].startswith("Command: `uv run python -m scripts.simulate_nights --nights 5")
-    assert "| 1 | 20 | 100.0% | 100.0% | 0 | yes |" in md
+    assert "| 1 | 20 | 75.0% | 75.0% | 0 | yes |" in md
     assert "\u2014" not in md
     assert "night" in capsys.readouterr().out
 
@@ -190,7 +202,9 @@ def test_simulation_rejects_a_used_home(settings, tmp_path, fake_world):
     used.mkdir()
     (used / "base.db").write_text("")
     with pytest.raises(SystemExit):
-        simulate_nights.main(["--home", str(used), "--tasks", str(tasks), "--holdout", str(hold)], settings=settings)
+        simulate_nights.main(
+            ["--home", str(used), "--tasks", str(tasks), "--holdout", str(hold)], settings=settings
+        )
 
 
 def test_pick_items_is_seeded_and_cycles_through_everything():
@@ -200,6 +214,42 @@ def test_pick_items_is_seeded_and_cycles_through_everything():
     assert days == [[i["id"] for i in simulate_nights.pick_items(items, d, 20)] for d in range(1, 6)]
     assert days[0] != list(range(20))  # shuffled
     assert len(set(days[4])) == 20
+
+
+def test_each_day_covers_every_decision_evenly():
+    items = [{"id": f"{d}{n}", "expected": d} for d in ("refuse", "ask_user", "share_summary", "share_tagged")
+             for n in range(20)]  # fmt: skip
+    for day in range(1, 6):
+        picks = simulate_nights.pick_items(items, day, 20)
+        counts = {
+            d: sum(i["expected"] == d for i in picks)
+            for d in ("share_tagged", "share_summary", "ask_user", "refuse")
+        }
+        assert counts == {"share_tagged": 5, "share_summary": 5, "ask_user": 5, "refuse": 5}
+        assert len({i["id"] for i in picks}) == 20
+    four_days = [i["id"] for d in range(1, 5) for i in simulate_nights.pick_items(items, d, 20)]
+    assert sorted(four_days) == sorted(i["id"] for i in items)  # every item once before any repeats
+
+
+def test_requests_split_into_wanted_and_unneeded(settings, tmp_path, fake_world):
+    tasks, hold = write_items(tmp_path)
+    out = tmp_path / "reports"
+    argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold),
+            "--synthetic", str(tmp_path / "none.jsonl"), "--out", str(out)]  # fmt: skip
+    assert simulate_nights.main(argv, settings=settings) == 0
+    with (out / "nights.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert [(r["wanted_requests"], r["unneeded_requests"]) for r in rows] == [
+        ("", ""),
+        ("5", "15"),
+        ("5", "0"),
+    ]
+    assert rows[1]["day_mix"] == "share_tagged:5 share_summary:5 ask_user:5 refuse:5"
+    assert rows[0]["acc_refuse"] == "0.0" and rows[2]["acc_refuse"] == "1.0"
+    md = (out / "nights.md").read_text()
+    assert "| 1 | 20 | 75.0% | 75.0% | 0 | yes | " in md and "| 5 | 15 |" in md
+    assert "Holdout accuracy by expected decision" in md
+    assert charts.main(["--reports", str(out)]) == 0 and (out / "five_nights.png").is_file()
 
 
 # ----- charts -----
@@ -247,3 +297,38 @@ def test_speed_tables_prefer_tokens_per_second(tmp_path):
         ("Laptop", "Tokens/s", [("Router decision", 41.5), ("Grade one essay", 38.2)])
     ]
     assert charts.read_speed(tmp_path / "nothing") == []
+
+
+def test_default_run_has_no_practice_data_and_counts_rules_and_day_leaks(settings, tmp_path, fake_world):
+    # Review eval F3: the practice set is labeled by the teacher's own policy, so the headline run
+    # learns only from her answers; eval F4: what each approval releases is leak-checked.
+    tasks, hold = write_items(tmp_path)
+    out = tmp_path / "reports"
+    argv = ["--nights", "2", "--per-day", "20", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out)]
+    assert simulate_nights.main(argv, settings=settings) == 0
+    with (out / "nights.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert rows[1]["day_leaks"] == "0" and rows[1]["practice_rules"] == "0"
+    assert int(rows[1]["user_rules"]) >= 1
+    md = (out / "nights.md").read_text()
+    assert "| Practice data | none" in md and "selected on" in md
+    assert sorted(p.name for p in (out / "raw" / "nights").iterdir())[:2] == ["night-1-candidate.jsonl", "night-1-current.jsonl"]
+
+
+def test_speed_series_share_one_metric(tmp_path, capsys):
+    # Review eval F8: a Tokens/s file and a latency-only file used to share one axis.
+    (tmp_path / "laptop_speed.md").write_text(
+        "| Step | Latency (ms) | Tokens/s |\n|---|---:|---:|\n| Grade one essay | 9400 | 42 |\n"
+    )
+    (tmp_path / "cloud_speed.md").write_text(
+        "| Step | Latency (ms) | Tokens/s |\n|---|---:|---:|\n| Grade one essay | 5200 | 55 |\n"
+    )
+    (tmp_path / "jetson_speed.md").write_text("| Step | Latency (ms) |\n|---|---:|\n| Grade one essay | 21000 |\n")
+    series = charts.read_speed(tmp_path)
+    assert {metric for _, metric, _ in series} == {"Latency (ms)"}  # the one every file has
+    assert [name for name, _, _ in series] == ["Cloud", "Jetson", "Laptop"]
+    (tmp_path / "jetson_speed.md").write_text("| Step | Tokens/s |\n|---|---:|\n| Grade one essay | 9 |\n")
+    (tmp_path / "old_speed.md").write_text("| Step | Latency (ms) |\n|---|---:|\n| Grade one essay | 30000 |\n")
+    series = charts.read_speed(tmp_path)
+    assert {metric for _, metric, _ in series} == {"Tokens/s"}  # three files have it, two have latency
+    assert "left out old_speed.md" in capsys.readouterr().err

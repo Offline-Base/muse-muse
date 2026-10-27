@@ -71,15 +71,23 @@ export interface AuthorizeStart {
   html: string;
 }
 
-/** Register a client (DCR) and open the authorize page, like Muse sending the user there. */
-export async function startAuthorize(): Promise<AuthorizeStart> {
+/** Register a client by DCR, as Muse might. */
+export async function registerClient(): Promise<string> {
   const registration = await SELF.fetch(`${ORIGIN}/oauth/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ client_name: "Muse (test)", redirect_uris: [REDIRECT_URI], token_endpoint_auth_method: "none" }),
   });
   expect(registration.status).toBe(201);
-  const clientId = (await registration.json<{ client_id: string }>()).client_id;
+  return (await registration.json<{ client_id: string }>()).client_id;
+}
+
+/**
+ * Open the authorize page, like Muse sending the user there. Without `clientId` the client
+ * registers by DCR first; with one (for example a CIMD URL) it is used as is.
+ */
+export async function startAuthorize(clientId?: string): Promise<AuthorizeStart> {
+  clientId ??= await registerClient();
 
   const verifier = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
@@ -120,9 +128,9 @@ export interface Tokens {
   clientId: string;
 }
 
-/** The whole link: DCR, authorize page, pairing code, token exchange. */
-export async function linkApp(secret: string): Promise<Tokens> {
-  const start = await startAuthorize();
+/** The whole link: DCR (unless `clientId` is given), authorize page, pairing code, token exchange. */
+export async function linkApp(secret: string, clientId?: string): Promise<Tokens> {
+  const start = await startAuthorize(clientId);
   const code = await pairCode(secret);
   const response = await submitCode(start, code, freshIp());
   expect(response.status).toBe(302);

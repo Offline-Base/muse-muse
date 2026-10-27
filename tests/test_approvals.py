@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 
 import pytest
@@ -197,3 +198,25 @@ def test_reopen_keeps_rows(tmp_path):
     second = ApprovalStore(path)
     assert second.get(rid)["status"] == "pending"
     second.close()
+
+
+def test_blocked_reasons_round_trip_and_old_dbs_gain_the_column(tmp_path):
+    db = tmp_path / "old.db"
+    with sqlite3.connect(db) as conn:  # a decisions table from before the blocked column
+        conn.execute(
+            "CREATE TABLE decisions (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL NOT NULL, day INTEGER, "
+            "job_id TEXT, tool TEXT, request TEXT, result_kind TEXT, topics TEXT, tagged_text TEXT, "
+            "shown_form TEXT, router_decision TEXT, router_reason TEXT, router_source TEXT, "
+            "status TEXT NOT NULL, user_decision TEXT, remember INTEGER NOT NULL DEFAULT 0, decided_by TEXT, "
+            "decided_at REAL, deleted INTEGER NOT NULL DEFAULT 0, item_id TEXT)"
+        )
+        conn.execute("INSERT INTO decisions (ts, tool, status) VALUES (0, 'eval', 'auto')")
+    store = ApprovalStore(db)
+    assert store.get(1)["blocked"] == []
+    rid = store.create_pending(
+        tool="get_result", request="r", result_kind="free_text", tagged_text="[Student A] has an IEP.",
+        router_decision="ask_user", blocked=["Mentions an IEP or 504 plan"],
+    )  # fmt: skip
+    assert store.get(rid)["blocked"] == ["Mentions an IEP or 504 plan"]
+    assert store.pending()[0]["blocked"] == ["Mentions an IEP or 504 plan"]
+    store.close()

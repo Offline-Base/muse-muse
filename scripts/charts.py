@@ -2,7 +2,8 @@
 
     uv run python -m scripts.charts [--reports eval/reports] [--theme light|dark]
 
-five_nights.png: approval requests per day (bars) above agreement with the teacher after each
+five_nights.png: approval requests per day (bars, split into requests the teacher wanted and
+unneeded ones when nights.csv has those columns) above agreement with the teacher after each
 night (line), with leaks noted on every night. speed.png: the tables in eval/reports/*_speed.md.
 Two measures never share one axis; each gets its own panel.
 """
@@ -51,7 +52,9 @@ def read_nights(path: str | Path) -> list[dict]:
 def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -> Path:
     pal = PALETTES[theme]
     nights = [int(r["night"]) for r in rows]
-    days = [(int(r["night"]), int(float(r["approval_requests"]))) for r in rows if r["approval_requests"] != ""]
+    days = [
+        (int(r["night"]), int(float(r["approval_requests"]))) for r in rows if r["approval_requests"] != ""
+    ]
     agreement = [float(r["agreement"]) * 100 for r in rows]
     leaks = [int(float(r["leaks"])) for r in rows]
     with rc_context(_rc(pal)):
@@ -61,11 +64,24 @@ def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -
         xlim = (min(nights) - 0.5, max(nights) + 0.5) if nights else (-0.5, 0.5)
 
         xs, ys = zip(*days, strict=True) if days else ((), ())
-        top.bar(xs, ys, width=0.56, color=pal["chart-2"], zorder=2)
+        split = _split_requests(rows)
+        if split:
+            wanted = [split[x][0] for x in xs]
+            unneeded = [split[x][1] for x in xs]
+            top.bar(xs, wanted, width=0.56, color=pal["accent"], zorder=2)
+            top.bar(xs, unneeded, width=0.56, bottom=wanted, color=pal["chart-2"], zorder=2)
+            marks = [
+                Line2D([], [], linestyle="", marker="s", markersize=8, color=pal[c])
+                for c in ("accent", "chart-2")
+            ]
+            top.legend(marks, ["Wanted by the teacher", "Unneeded"], loc="upper right", frameon=False,
+                       labelcolor=pal["text-2"], fontsize=10, ncol=2)  # fmt: skip
+        else:
+            top.bar(xs, ys, width=0.56, color=pal["chart-2"], zorder=2)
         for x, y in days:
             top.annotate(str(y), (x, y), xytext=(0, 4), textcoords="offset points", ha="center",
                          color=pal["text"], fontsize=11)  # fmt: skip
-        top.set_ylim(0, max(ys or (1,)) * 1.25)
+        top.set_ylim(0, max(ys or (1,)) * (1.45 if split else 1.25))
         _panel(top, pal, "Approval requests per day")
         top.set_xticks(list(xs), [f"Day {x}" for x in xs])
         top.set_xlim(*xlim)
@@ -82,7 +98,11 @@ def five_nights_chart(rows: list[dict], out: str | Path, theme: str = "light") -
         bottom.set_xlim(*xlim)
 
         bad = [(n, k) for n, k in zip(nights, leaks, strict=True) if k]
-        note = "Leaks: 0 on every night" if not bad else "Leaks: " + ", ".join(f"{k} on night {n}" for n, k in bad)
+        note = (
+            "Leaks: 0 on every night"
+            if not bad
+            else "Leaks: " + ", ".join(f"{k} on night {n}" for n, k in bad)
+        )
         fig.legend(
             handles=[Line2D([], [], linestyle="", marker="o", markersize=7, color=pal["danger" if bad else "ok"])],
             labels=[note], loc="lower left", bbox_to_anchor=(0.06, 0.0), frameon=False,
@@ -118,18 +138,35 @@ def parse_tables(text: str) -> list[list[list[str]]]:
 
 
 def read_speed(reports_dir: str | Path) -> list[tuple[str, str, list[tuple[str, float]]]]:
-    """(series name, metric header, [(row label, value)]) for each *_speed.md file."""
+    """(series name, metric header, [(row label, value)]) for each *_speed.md file.
+
+    Every series uses the same metric, so they can share one axis: the first of SPEED_COLUMNS that
+    the most files have (tokens per second before latency). A file without it is left out, with a
+    note on stderr.
+    """
+    files = [(p, parse_tables(p.read_text())) for p in sorted(Path(reports_dir).glob("*_speed.md"))]
+    if not files:
+        return []
+
+    def series_for(tables, pattern):
+        return next((found for t in tables if (found := _speed_series(t, (pattern,)))), None)
+
+    best = max(SPEED_COLUMNS, key=lambda pat: (sum(series_for(t, pat) is not None for _, t in files),
+                                               -SPEED_COLUMNS.index(pat)))  # fmt: skip
     out = []
-    for path in sorted(Path(reports_dir).glob("*_speed.md")):
-        for table in parse_tables(path.read_text()):
-            found = _speed_series(table)
-            if found:
-                out.append((path.stem.removesuffix("_speed").replace("_", " ").capitalize(), *found))
-                break
+    for path, tables in files:
+        found = series_for(tables, best)
+        name = path.stem.removesuffix("_speed").replace("_", " ").capitalize()
+        if found:
+            out.append((name, *found))
+        else:
+            print(f"speed chart: left out {path.name}, which has no column like the others' metric", file=sys.stderr)
     return out
 
 
-def speed_chart(series: list[tuple[str, str, list[tuple[str, float]]]], out: str | Path, theme: str = "light"):
+def speed_chart(
+    series: list[tuple[str, str, list[tuple[str, float]]]], out: str | Path, theme: str = "light"
+):
     pal = PALETTES[theme]
     series = series[: len(SERIES)]
     labels = list(dict.fromkeys(label for _, _, rows in series for label, _ in rows))
@@ -156,7 +193,9 @@ def speed_chart(series: list[tuple[str, str, list[tuple[str, float]]]], out: str
                    for i in range(len(series))]  # fmt: skip
         fig.legend(handles, [s[0] for s in series], loc="lower center", ncol=len(series), frameon=False,
                    labelcolor=pal["text-2"], fontsize=11)  # fmt: skip
-        fig.text(0.02, 0.98, "Speed on each device", fontsize=16, fontweight="bold", color=pal["text"], va="top")
+        fig.text(
+            0.02, 0.98, "Speed on each device", fontsize=16, fontweight="bold", color=pal["text"], va="top"
+        )
         fig.tight_layout(rect=(0, 0.08, 1, 0.92))
         return _save(fig, out, pal)
 
@@ -175,7 +214,9 @@ def main(argv: list[str] | None = None) -> int:
 
     nights_csv = args.reports / "nights.csv"
     if nights_csv.is_file():
-        print(f"Wrote {display_path(five_nights_chart(read_nights(nights_csv), out / 'five_nights.png', args.theme))}")
+        print(
+            f"Wrote {display_path(five_nights_chart(read_nights(nights_csv), out / 'five_nights.png', args.theme))}"
+        )
     else:
         print("No nights.csv yet; run python -m scripts.simulate_nights first.")
     series = read_speed(args.reports)
@@ -189,11 +230,11 @@ def main(argv: list[str] | None = None) -> int:
 # ----- helpers -----
 
 
-def _speed_series(table: list[list[str]]) -> tuple[str, list[tuple[str, float]]] | None:
+def _speed_series(table: list[list[str]], patterns=SPEED_COLUMNS) -> tuple[str, list[tuple[str, float]]] | None:
     if len(table) < 2:
         return None
     header = table[0]
-    for pattern in SPEED_COLUMNS:
+    for pattern in patterns:
         col = next((i for i, h in enumerate(header) if i > 0 and pattern.search(h)), None)
         if col is None:
             continue
@@ -201,6 +242,19 @@ def _speed_series(table: list[list[str]]) -> tuple[str, list[tuple[str, float]]]
         if rows:
             return header[col], rows
     return None
+
+
+def _split_requests(rows: list[dict]) -> dict[int, tuple[int, int]]:
+    """{night: (wanted, unneeded)} when every day row has both columns, else {}."""
+    out = {}
+    for r in rows:
+        if r.get("approval_requests", "") == "":
+            continue
+        wanted, unneeded = r.get("wanted_requests", ""), r.get("unneeded_requests", "")
+        if wanted in ("", None) or unneeded in ("", None):
+            return {}
+        out[int(r["night"])] = (int(float(wanted)), int(float(unneeded)))
+    return out
 
 
 def _value(cell: str) -> float | None:

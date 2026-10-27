@@ -25,7 +25,7 @@ All three run as the `muse-privacy` system user with `NoNewPrivileges`, `Protect
 | `glimmer-env.sh` | Writes `/var/lib/muse-privacy/glimmer.env`. When `/var/lib/muse-privacy/adapters/router.gguf` exists, `LORA_ARGS` becomes `--lora <that file> --lora-init-without-apply`, so the router adapter is loaded but off, ready to be turned on per request or with `adapter_sync.sh`. Otherwise `LORA_ARGS` is empty and llama-server starts without a LoRA. |
 | `muse-privacy.service` | The Muse Privacy server. Reads site settings from `/etc/muse-privacy/env`. |
 | `muse-privacy-relay.service` | The relay client. Installed but not enabled until you set `RELAY_URL` and pair. |
-| `adapter_sync.sh` | Installs a router LoRA adapter you brought over from the laptop (USB stick, or a copy the laptop starts), restarts the model service if the file changed (llama-server only loads LoRA files at start), then POSTs `/lora-adapters` to set its scale. |
+| `adapter_sync.sh` | Installs a router LoRA adapter you brought over from the laptop (USB stick, or a copy the laptop starts), restarts the model service if the file changed (llama-server only loads LoRA files at start), and leaves its global scale at 0 (the router names it per request). `--scale S` applies it to every request, for testing. |
 
 ## Model download
 
@@ -65,11 +65,16 @@ uv run python -m base.heavy.worker --token <token>
 ## Router adapter
 
 ```
-sudo /opt/muse-privacy/bin/adapter_sync.sh /path/to/router.gguf            # apply at scale 1.0
-sudo /opt/muse-privacy/bin/adapter_sync.sh /path/to/router.gguf --scale 0  # load but leave off
+sudo /opt/muse-privacy/bin/adapter_sync.sh /path/to/router.gguf              # load, global scale 0
+sudo systemctl restart muse-privacy                                          # the server finds its id
+sudo /opt/muse-privacy/bin/adapter_sync.sh /path/to/router.gguf --scale 1.0  # testing only: every request
 ```
 
-On the Jetson the router and the answer model share one llama-server, and a scale set through `/lora-adapters` applies to every request that does not name its own adapters. The router names its adapter per request, so `--scale 0` keeps answers on the plain model; scale 1.0 is for trying the adapter everywhere.
+On the Jetson the router and the answer model share one llama-server, and a scale set through `/lora-adapters` applies to every request that does not name its own adapters. With `DREAMING_BACKEND=lora`, the server asks llama-server for the id of `router.gguf` at start (`GET /lora-adapters`) and the router names it on each of its own requests, so the default global scale of 0 keeps the answer model, the name pass and grading on the plain model. `--scale 1.0` applies the adapter to all of them and is only for trying it out. No adapter has been through the dreaming gate yet: score one with `eval.run_eval --holdout` against llama-server before using it.
+
+## Memory on the 8 GB board
+
+The IQ1_S file is 6.08 GiB. The unit starts llama-server with a small ubatch (`-ub 128`) and with the prompt cache and context checkpoints turned off (`--cache-ram 0 --ctx-checkpoints 0`), which otherwise grow in host memory with every new prompt. That puts llama-server at an estimated 6.5 to 7.3 GiB, against about 7.3 GiB the board's Linux sees, so the board must boot headless (`sudo systemctl set-default multi-user.target`). These are estimates: on first contact, record `free -m`, `tegrastats` and llama-server's model, KV and compute buffer lines in `eval/reports/jetson_memory.md`. If it still does not fit, every model step except lookups has to go to the laptop worker.
 
 ## Not covered here
 

@@ -15,11 +15,19 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from websockets.datastructures import Headers
-from websockets.exceptions import InvalidStatus
+from websockets.exceptions import ConnectionClosedError, InvalidStatus
+from websockets.frames import Close
 from websockets.http11 import Response
 
 from base.connector import relay_client as rc
-from base.connector.relay_client import RelayAuthError, RelayClient, RelayError, backoff_delay, collect_sse
+from base.connector.relay_client import (
+    RelayAuthError,
+    RelayClient,
+    RelayError,
+    RelayReplacedError,
+    backoff_delay,
+    collect_sse,
+)
 from base.connector.server import connector_app
 
 LOCAL = "http://127.0.0.1:8790/mcp"
@@ -296,6 +304,42 @@ async def test_run_stops_when_the_relay_rejects_the_secret():
         await client.run()
 
 
+class ClosedSocket:
+    """A socket the relay closes with `code` as soon as it is read."""
+
+    def __init__(self, code: int):
+        self.code = code
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise ConnectionClosedError(Close(self.code, "closed by the relay"), None)
+
+
+async def test_run_stops_when_another_copy_replaces_it():
+    sleeps: list[float] = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    connect = FakeConnect([ClosedSocket(4000), OSError("never reached")])
+    client = make_client(lambda r: httpx.Response(200), connect=connect, sleep=sleep)
+    with pytest.raises(RelayReplacedError, match="Another copy of this device"):
+        await client.run()
+    assert len(connect.calls) == 1 and sleeps == []
+
+
+async def test_run_reconnects_after_other_close_codes():
+    async def sleep(seconds):
+        pass
+
+    connect = FakeConnect([ClosedSocket(1011), ClosedSocket(1006)])
+    client = make_client(lambda r: httpx.Response(200), connect=connect, sleep=sleep)
+    await client.run(attempts=2)
+    assert len(connect.calls) == 2
+
+
 # Through the real connector app
 
 
@@ -461,3 +505,41 @@ async def test_malformed_request_frame_still_gets_an_answer():
 def test_default_local_client_ignores_env_proxies():
     client = RelayClient(relay_url=RELAY, secret="s", connector_url=LOCAL, token="t")
     assert client.http.trust_env is False
+
+
+@pytest.mark.parametrize("error", [RelayAuthError("bad secret"), rc.RelayReplacedError("another copy")])
+def test_cli_exits_3_when_retrying_cannot_help(settings, monkeypatch, error):
+    # Review device F9: the unit sets RestartPreventExitStatus=3, so a revoked secret or a second
+    # copy does not restart forever every 10 s.
+    class Dead:
+        async def run(self):
+            raise error
+
+    monkeypatch.setattr("base.config.load_settings", lambda: settings)
+    monkeypatch.setattr(rc, "client_for", lambda s: Dead())
+    assert rc.main(["run"]) == rc.EXIT_NO_RETRY == 3
+
+
+def test_cleartext_relay_urls_are_refused_off_loopback():
+    # Review SEC-8: the device secret and every response would cross in the clear.
+    for url in ("http://relay.example.org", "ws://relay.example.org"):
+        with pytest.raises(rc.RelayError):
+            rc.connect_url(url)
+    assert rc.connect_url("http://127.0.0.1:8787") == "ws://127.0.0.1:8787/device/connect"
+    assert rc.connect_url("https://relay.example.org") == "wss://relay.example.org/device/connect"
+
+
+async def test_unlink_revokes_links_with_the_device_secret(settings):
+    # Review SEC-6: a way to cut Muse off without registering the device again.
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.path, request.headers.get("authorization")))
+        if request.headers.get("authorization") != "Bearer sec":
+            return httpx.Response(401, json={"error": "unauthorized"})
+        return httpx.Response(200, json={"revoked": 2})
+
+    rc.save_config(settings, {"relay_url": RELAY, "device_id": "dev-1", "secret": "sec"})
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    assert await rc.unlink(settings, http=http) == 2
+    assert seen == [("/device/unlink", "Bearer sec")]

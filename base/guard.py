@@ -17,6 +17,7 @@ import random
 import re
 import secrets
 import threading
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -239,6 +240,7 @@ class _Cand:
     start: int
     end: int
     key: str  # what the tag map keys on: a person's full name or a normalized identifier
+    nvalue: str = ""  # the value as found in the normalized copy (see _normalize), when it differs
 
 
 def _resolve(cands: Iterable[_Cand], blocked: list[tuple[int, int]] = ()) -> list[_Cand]:
@@ -262,6 +264,91 @@ def _tag_spans(text: str) -> list[tuple[int, int]]:
 
 def _hits(cands: Iterable[_Cand]) -> list[Hit]:
     return [Hit(c.kind, c.value, c.start, c.end) for c in cands]
+
+
+# ------------------------------------------------------------------ normalized copy
+
+# Dash-like characters a word processor or PDF puts in phone numbers, SSNs and names.
+_DASHES = frozenset("\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d")
+_APOSTROPHES = frozenset("\u02bc\u2032\u2018\uff07")
+# "Ellings-\nworth" from a PDF line break, or "Ellings- worth" once a snippet joins the lines.
+_HYPHEN_BREAK = re.compile(r"(?<=[^\W\d_])-(?:[ \t]*\r?\n[ \t]*|[ \t])(?=[^\W\d_])")
+
+
+@dataclass(frozen=True)
+class _Norm:
+    """A copy of some text that the checks scan, and where each of its characters came from.
+
+    NFKC (fullwidth letters, non-breaking spaces and hyphens), format characters removed (soft
+    hyphen, zero-width spaces), every dash as "-", modifier apostrophes as "’", "_" as a space,
+    and line-break hyphenation joined. starts[i]:ends[i] is the span of the original text that
+    produced character i, so a match in the copy can be replaced in the original.
+    """
+
+    text: str
+    starts: tuple[int, ...] | None = None  # None: same length and positions as the original
+    ends: tuple[int, ...] | None = None
+
+    def span(self, start: int, end: int) -> tuple[int, int]:
+        if self.starts is None or end <= start:
+            return start, end
+        return self.starts[start], self.ends[end - 1]
+
+
+def _normalize(text: str) -> _Norm:
+    text = text or ""
+    if text.isascii():
+        out = text.replace("_", " ")
+        if "-" not in out or not _HYPHEN_BREAK.search(out):
+            return _Norm(out)
+        starts, ends = list(range(len(out))), list(range(1, len(out) + 1))
+    else:
+        chars: list[str] = []
+        starts, ends = [], []
+        i, n = 0, len(text)
+        while i < n:
+            j = i + 1
+            while j < n and unicodedata.combining(text[j]):
+                j += 1  # keep a letter with its accents, so NFKC can join them
+            group = text[i:j]
+            if unicodedata.category(group[0]) == "Cf":
+                piece = ""
+            else:
+                piece = unicodedata.normalize("NFKC", group)
+            for ch in piece:
+                if ch in _DASHES:
+                    ch = "-"
+                elif ch in _APOSTROPHES:
+                    ch = "’"
+                elif ch == "_":
+                    ch = " "
+                elif unicodedata.category(ch) == "Cf":
+                    continue
+                chars.append(ch)
+                starts.append(i)
+                ends.append(j)
+            i = j
+        out = "".join(chars)
+    drop = [m.span() for m in _HYPHEN_BREAK.finditer(out)]
+    if drop:
+        keep = [True] * len(out)
+        for a, b in drop:
+            for k in range(a, b):
+                keep[k] = False
+        out = "".join(ch for ch, k in zip(out, keep, strict=True) if k)
+        starts = [v for v, k in zip(starts, keep, strict=True) if k]
+        ends = [v for v, k in zip(ends, keep, strict=True) if k]
+    return _Norm(out, tuple(starts), tuple(ends))
+
+
+def _remap(cands: Iterable[_Cand], text: str, norm: _Norm) -> list[_Cand]:
+    """Candidates found in the normalized copy, with spans and values in the original text."""
+    out: list[_Cand] = []
+    for c in cands:
+        s, e = norm.span(c.start, c.end)
+        value = text[s:e]
+        out.append(_Cand(c.kind, value, s, e, c.key, c.value if c.value != value else ""))
+    return out
 
 
 # ------------------------------------------------------------------ identifiers
@@ -301,7 +388,7 @@ def _cand(kind: str, text: str, start: int, end: int) -> _Cand:
     return _Cand(kind, value, start, end, _id_key(kind, value))
 
 
-_DIGIT_RUN = re.compile(r"\d+(?:[ -]\d+)*")
+_DIGIT_RUN = re.compile(r"\d+(?:[ .-]\d+)*")
 _DIGITS = re.compile(r"\d+")
 
 
@@ -335,8 +422,8 @@ def _cards(text: str) -> Iterable[_Cand]:
 
 _SSN = re.compile(r"(?<![\w-])(\d{3})([-. ])(\d{2})\2(\d{4})(?!\w|-\d)")
 _SSN_CONTEXT = re.compile(
-    r"(?:\bssn|\bss#|\bsocial\s+security(?:\s+(?:number|no\.?|#))?|\bitin|\btax\s+id)"
-    r"(?:\s+(?:number|no\.?)|\s*#)?\s*(?:is|was|:|=)?\s*(\d{9})(?!\d)",
+    r"(?:\bssn|\bss#|\bsocial\s+security(?:\s+(?:number|no\.?|#))?|\bsocial\b|\bitin|\btax\s+id)"
+    r"[^\d\n]{0,30}?(?<!\d)(\d{9})(?!\d)",
     re.IGNORECASE,
 )
 
@@ -404,7 +491,7 @@ def _otps(text: str) -> Iterable[_Cand]:
         yield _cand("otp", text, m.start(1), m.end(1))
 
 
-_SID = re.compile(r"(?<![\w-])S\d{5,8}(?![\w-])")
+_SID = re.compile(r"(?<![\w-])S(?:-|\s)?\d{5,8}(?![\w-])")
 _SID_LABEL = re.compile(
     r"(?:\bstudent\s+(?:id|number|no\.?|#)|\bid(?:\s+(?:number|no\.?)|\s*#)?)\s*[:#]?\s*(\d{5,8})(?!\d)",
     re.IGNORECASE,
@@ -452,6 +539,23 @@ _ADDRESS = re.compile(
     rf"(?i:{_STREET_SUFFIX})\b"
     r"(?:\.?,?\s+(?i:apt|apartment|unit|suite|ste|#)\.?\s*#?[\w-]+)?"
 )
+# The same in lower case ("42 oak lane apt 3"), with the plainer street words only. Kept only when
+# no street word is a common word or a unit follows, so "ran 5 miles down the road" is not one.
+_STRONG_SUFFIX = "street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|highway|hwy|parkway|pkwy"
+_ADDRESS_LOWER = re.compile(
+    r"(?<![\w-])\d{1,6}[a-z]?\s+((?:[a-z][a-z'’-]*\s+){1,3})"
+    rf"(?:{_STRONG_SUFFIX})\b"
+    r"(\.?,?\s+(?:apt|apartment|unit|suite|ste|#)\.?\s*#?[\w-]+)?"
+)
+
+
+def _addresses(text: str) -> Iterable[_Cand]:
+    for m in _ADDRESS.finditer(text):
+        yield _cand("address", text, m.start(), m.end())
+    for m in _ADDRESS_LOWER.finditer(text):
+        words = m.group(1).split()
+        if m.group(2) or not any(_is_common(w) for w in words):
+            yield _cand("address", text, m.start(), m.end())
 
 _MONTH_RE = (
     r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?"
@@ -478,7 +582,7 @@ def _identifier_cands(text: str, roster: Any = None, allow_test_ssn: bool = True
         out.extend(_phones(text))
         out.extend(_otps(text))
         out.extend(_student_ids(text, roster))
-        out.extend(_cand("address", text, m.start(), m.end()) for m in _ADDRESS.finditer(text))
+        out.extend(_addresses(text))
         out.extend(_cand("dob", text, m.start(1), m.end(1)) for m in _DOB.finditer(text))
     if "@" in text:
         out.extend(_cand("email", text, m.start(), m.end()) for m in _EMAIL.finditer(text))
@@ -493,7 +597,27 @@ def find_identifiers(text: str, roster: Any = None, *, allow_test_ssn: bool = Tr
     also the ITIN range, which is just as private. Pass allow_test_ssn=False for strict SSA rules.
     With a roster, ids shaped like the roster's student ids are found too.
     """
-    return _hits(_resolve(_identifier_cands(text, roster, allow_test_ssn), _tag_spans(text)))
+    norm = _normalize(text)
+    found = _resolve(_identifier_cands(norm.text, roster, allow_test_ssn), _tag_spans(norm.text))
+    return _hits(_remap(found, text, norm))
+
+
+_LONG_DIGITS = re.compile(r"(?<![\d.-])\d+(?:[.-]\d+)*(?![\d])")
+_DATE_SHAPE = re.compile(r"\d{4}([.-])\d{1,2}\1\d{1,2}|\d{1,2}([.-])\d{1,2}\2\d{2,4}")
+
+
+def long_digit_runs(text: str) -> list[str]:
+    """Runs of 7 or more digits, alone or joined by "-" or ".", that are not calendar dates.
+
+    A fallback for identifiers in a format no exact check knows: the router asks first.
+    """
+    norm = _normalize(text).text
+    out = []
+    for m in _LONG_DIGITS.finditer(norm):
+        run = m.group()
+        if sum(ch.isdigit() for ch in run) >= 7 and not _DATE_SHAPE.fullmatch(run):
+            out.append(run)
+    return out
 
 
 # ------------------------------------------------------------------ names
@@ -596,7 +720,8 @@ class _NameIndex:
         texts = sorted({e.form for es in self.forms.values() for e in es}, key=len, reverse=True)
         self.regex = (
             re.compile(
-                r"(?<![\w'’])(?:" + "|".join(_form_pattern(f) for f in texts) + r")(?!\w)", re.IGNORECASE
+                r"(?<![^\W\d_]|['’])(?:" + "|".join(_form_pattern(f) for f in texts) + r")(?![^\W\d_])",
+                re.IGNORECASE,
             )
             if texts
             else None
@@ -605,7 +730,8 @@ class _NameIndex:
         self.title_re = None
         if t.last:
             self.title_re = re.compile(
-                rf"(?<![\w'’])(?:{_TITLES})\.?\s+(?:{_form_pattern(t.first)}\s+)?{_form_pattern(t.last)}(?!\w)",
+                rf"(?<![^\W\d_]|['’])(?:{_TITLES})\.?\s+(?:{_form_pattern(t.first)}\s+)?{_form_pattern(t.last)}"
+                r"(?![^\W\d_])",
                 re.IGNORECASE,
             )
         # One-edit lookup: every form and every form with one letter deleted.
@@ -628,9 +754,10 @@ class _NameIndex:
         form = entries[0].form
         ambiguous = _is_common(form)
         if not text[start].isupper():
-            if types & {"last", "part"} or ambiguous or len(_norm(form)) <= 2:
-                return False
-            return True
+            # A lowercase name counts unless it is also a common word or very short. Last names
+            # need four letters: "restrepo" in a file slug, "kowalczyk" in a note.
+            short = len(_norm(form)) < (4 if types & {"last", "part"} else 3)
+            return not (ambiguous or short)
         if not ambiguous:
             return True
         nxt = _NEXT_WORD.match(text, end)
@@ -740,7 +867,8 @@ def find_names(text: str, roster: Any) -> list[Hit]:
     of capitalized tokens of 4+ letters that are not common English words."""
     if roster is None:
         return []
-    return _hits(_resolve(_index(roster).cands(text), _tag_spans(text)))
+    norm = _normalize(text)
+    return _hits(_remap(_resolve(_index(roster).cands(norm.text), _tag_spans(norm.text)), text, norm))
 
 
 def _extra_name_cands(text: str, names: Iterable[str], roster: Any) -> list[_Cand]:
@@ -748,16 +876,34 @@ def _extra_name_cands(text: str, names: Iterable[str], roster: Any) -> list[_Can
     idx = _index(roster) if roster is not None else None
     out: list[_Cand] = []
     for raw in names:
-        name = " ".join(str(raw or "").split())
-        if len(_norm(name)) < 2 or not name[:1].isupper() or _is_common(name):
+        name = _normalize(" ".join(str(raw or "").split())).text.strip()
+        if len(_norm(name)) < 2:
             continue
         if idx is not None and all(_norm(t) in idx.forms for t in name.split()):
             continue  # the roster pass tags it with the right student
-        pattern = re.compile(r"(?<![\w'’])" + _form_pattern(name) + r"(?!\w)", re.IGNORECASE)
-        out.extend(
-            _Cand("person", m.group(), m.start(), m.end(), _norm(name)) for m in pattern.finditer(text)
-        )
+        common = " " not in name and _is_common(name)
+        if common and (len(name) < 3 or name.lower() in _FUNCTION_WORDS):
+            continue
+        pattern = re.compile(r"(?<![^\W\d_]|['’])" + _form_pattern(name) + r"(?![^\W\d_])", re.IGNORECASE)
+        for m in pattern.finditer(text):
+            # A name that is also a word ("Mason", "Grace") counts where the text capitalizes it.
+            if common and not text[m.start()].isupper():
+                continue
+            out.append(_Cand("person", m.group(), m.start(), m.end(), _norm(name)))
     return out
+
+
+_FUNCTION_WORDS = _SUBJECT_PRONOUNS | _DETERMINERS | _TITLE_WORDS
+
+
+def name_occurs(name: str, text: str) -> bool:
+    """Whether a name the model reported occurs in `text`, allowing for apostrophe, dash,
+    whitespace and case differences (the model may write O'Donnell for O’Donnell)."""
+    name = _normalize(" ".join(str(name or "").split())).text.strip()
+    if len(_norm(name)) < 2:
+        return False
+    pattern = re.compile(r"(?<![^\W\d_])" + _form_pattern(name) + r"(?![^\W\d_])", re.IGNORECASE)
+    return pattern.search(_normalize(text).text) is not None
 
 
 # ------------------------------------------------------------------ tag map
@@ -935,14 +1081,15 @@ def _value_regex(entries: Iterable[tuple[str, tuple[str, str, str]]]) -> tuple[r
     lookup: dict[str, str] = {}
     values: list[str] = []
     for tag, (_, _, value) in entries:
-        key = _norm(value)
+        key = _norm(_normalize(value).text)
         if len(key) >= 2 and key not in lookup:
             lookup[key] = tag
             values.append(value)
     if not values:
         return None, lookup
     values.sort(key=len, reverse=True)
-    regex = re.compile(r"(?<!\w)(?:" + "|".join(_form_pattern(v) for v in values) + r")(?!\w)", re.IGNORECASE)
+    body = "|".join(_form_pattern(_normalize(v).text) for v in values)
+    regex = re.compile(r"(?<![^\W\d_])(?:" + body + r")(?![^\W\d_])", re.IGNORECASE)
     return regex, lookup
 
 
@@ -967,11 +1114,14 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
         return []
     out: list[_Cand] = []
     for m in regex.finditer(text):
-        tag = lookup.get(_norm(m.group()))
+        tag = lookup.get(_norm(m.group()))  # text is already the normalized copy
         if tag is None:
             continue
         kind, key = info(tag)
-        out.append(_Cand(kind, m.group(), m.start(), m.end(), key))
+        word = m.group()
+        if kind == "person" and " " not in word and _is_common(word) and not word[:1].isupper():
+            continue  # "Mason" the person, not "a mason jar"
+        out.append(_Cand(kind, word, m.start(), m.end(), key))
     return out
 
 
@@ -979,13 +1129,16 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
 
 
 def _scan(text: str, roster: Any, tagmap: Any, extra_names: Iterable[str] = ()) -> list[_Cand]:
-    cands = _identifier_cands(text, roster)
+    """Every private value in `text`, found in its normalized copy, with spans in `text`."""
+    norm = _normalize(text)
+    t = norm.text
+    cands = _identifier_cands(t, roster)
     if roster is not None:
-        cands += _index(roster).cands(text)
-    cands += _known_cands(text, tagmap)
+        cands += _index(roster).cands(t)
+    cands += _known_cands(t, tagmap)
     if extra_names:
-        cands += _extra_name_cands(text, extra_names, roster)
-    return _resolve(cands, _tag_spans(text))
+        cands += _extra_name_cands(t, extra_names, roster)
+    return _remap(_resolve(cands, _tag_spans(t)), text, norm)
 
 
 def tag(
@@ -1017,7 +1170,9 @@ def tag(
         pieces: list[str] = []
         last = 0
         for c in found:
-            t = tagmap.tag_for(c.kind, c.key, c.value)
+            if c.start < last:
+                continue  # two matches from one original character (an NFKC expansion)
+            t = tagmap.tag_for(c.kind, c.key, c.nvalue or c.value)
             used[t] = tagmap.get(t) or c.value
             hits.append(Hit(c.kind, c.value, c.start, c.end))
             pieces += [out[last : c.start], t]
@@ -1085,7 +1240,64 @@ def leaks(text: str, roster: Any, tagmap: Any) -> list[Hit]:
     identifier. Tags themselves are never reported. Used by egress and the eval."""
     if not text:
         return []
-    return _hits(_scan(text, roster, tagmap))
+    found = _scan(text, roster, tagmap)
+    taken = [(c.start, c.end) for c in found]
+    extra = [c for c in _compact_cands(text, roster, tagmap) if not any(c.start < e and s < c.end for s, e in taken)]
+    return _hits(sorted([*found, *extra], key=lambda c: c.start))
+
+
+COMPACT_MIN = 8  # letters; shorter full names ("Ty Vo") turn up inside ordinary words
+
+
+def _compact_targets(roster: Any, tagmap: Any) -> list[tuple[str, str]]:
+    """(kind, letters-only lowercase form) for every full name the leak check spells out."""
+    targets: dict[str, str] = {}
+    if roster is not None:
+        for i, p in enumerate([roster.teacher, *roster.students]):
+            kind = "teacher" if i == 0 else "student"
+            forms = [p.name, f"{p.first} {p.last}", *(f"{n} {p.last}" for n in p.nicknames)]
+            for form in forms:
+                key = re.sub(r"[^a-z]", "", _normalize(form).text.lower())
+                if len(key) >= COMPACT_MIN:
+                    targets.setdefault(key, kind)
+    if tagmap is not None:
+        mapping = tagmap.as_dict() if hasattr(tagmap, "as_dict") else dict(tagmap)
+        for tag, value in mapping.items():
+            kind = _kind_of_tag(tag)
+            if kind in _NAME_KINDS and " " in str(value).strip():
+                key = re.sub(r"[^a-z]", "", _normalize(str(value)).text.lower())
+                if len(key) >= COMPACT_MIN:
+                    targets.setdefault(key, kind)
+    return [(kind, key) for key, kind in targets.items()]
+
+
+def _compact_cands(text: str, roster: Any, tagmap: Any) -> list[_Cand]:
+    """Full names spelled with the letters run together, dashed, slugged or reversed
+    ("C-a-m-i-l-a R-e-s-t-r-e-p-o", "camilarestrepo", "opertseR alimaC").
+
+    Only the leak check uses this: it is stricter than tag() on purpose, so final_check is a
+    second line of defense rather than the same scanner run twice.
+    """
+    targets = _compact_targets(roster, tagmap)
+    if not targets:
+        return []
+    norm = _normalize(TAG_RE.sub(lambda m: "|" * len(m.group()), text))
+    letters: list[str] = []
+    where: list[int] = []
+    for i, ch in enumerate(norm.text.lower()):
+        if "a" <= ch <= "z":
+            letters.append(ch)
+            where.append(i)
+    compact = "".join(letters)
+    out: list[_Cand] = []
+    for kind, key in targets:
+        for probe in (key, key[::-1]):
+            start = compact.find(probe)
+            while start != -1:
+                s, e = norm.span(where[start], where[start + len(probe) - 1] + 1)
+                out.append(_Cand(kind, text[s:e], s, e, key))
+                start = compact.find(probe, start + 1)
+    return out
 
 
 # ------------------------------------------------------------------ never-share topics
@@ -1109,7 +1321,8 @@ def _keyword_re(keyword: str) -> re.Pattern[str]:
     pattern = _KEYWORD_CACHE.get(keyword)
     if pattern is None:
         body = r"\s+".join(re.escape(w) for w in keyword.split())
-        pattern = re.compile(rf"(?<!\w){body}(?:s|es)?(?!\w)", re.IGNORECASE)
+        # Letters only at the edges: "_" or a digit next to a keyword ("camila_iep_goals") still counts.
+        pattern = re.compile(rf"(?<![^\W\d_]){body}(?:s|es)?(?![^\W\d_])", re.IGNORECASE)
         _KEYWORD_CACHE[keyword] = pattern
     return pattern
 
@@ -1118,6 +1331,7 @@ def blocked_topics(text: str, never_share: Mapping[str, Iterable[str]] | None) -
     """Topic names from `never_share` whose keywords appear in text (case-insensitive, whole words)."""
     if not text or not never_share:
         return []
+    text = _normalize(text).text
     found = []
     for topic, keywords in never_share.items():
         words = [keywords] if isinstance(keywords, str) else list(keywords or [])

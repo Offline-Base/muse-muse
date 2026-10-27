@@ -30,6 +30,27 @@ OFF = (0, 0, 0)
 
 STATES = ("idle", "working", "waiting", "sending")
 TAIL = 4  # pixels in the sending sweep's tail
+SEND_SECONDS = 2.0  # "sending" plays this long, then the ring shows the state that came after it
+
+
+def next_state(shown, after, send_until, new, now):
+    """Apply one new state line. Returns (shown, after, send_until).
+
+    "sending" plays for SEND_SECONDS; a state that arrives during it waits in `after` instead of
+    cutting the sweep short, and the ring falls back to it (or to what it showed before) after.
+    """
+    if new == "sending":
+        return "sending", (shown if shown != "sending" else after), now + SEND_SECONDS
+    if shown == "sending" and now < send_until:
+        return shown, new, send_until
+    return new, new, 0.0
+
+
+def settle(shown, after, send_until, now):
+    """End the sweep once its time is up."""
+    if shown == "sending" and now >= send_until:
+        return after or "idle", after, 0.0
+    return shown, after, send_until
 
 
 def parse_line(line, current):
@@ -77,16 +98,22 @@ def main():
     pixels = neopixel.NeoPixel(
         getattr(board, PIXEL_PIN), NUM_PIXELS, brightness=MAX_BRIGHTNESS, auto_write=False
     )
-    state = "idle"
+    # A file written to CIRCUITPY (a desktop indexing the drive) would restart this at idle.
+    supervisor.runtime.autoreload = False
+    state, after, send_until = "idle", "idle", 0.0
     buffer = ""
     while True:
         buffer = read_serial(buffer)
+        now = time.monotonic()
         while "\n" in buffer:
             line, buffer = buffer.split("\n", 1)
-            state = parse_line(line, state)
+            new = parse_line(line, None)
+            if new is not None:
+                state, after, send_until = next_state(state, after, send_until, new, now)
+        state, after, send_until = settle(state, after, send_until, now)
         if len(buffer) > 64:  # a line that never ends is noise
             buffer = ""
-        for i, color in enumerate(frame(state, time.monotonic())):
+        for i, color in enumerate(frame(state, now)):
             pixels[i] = color
         pixels.show()
         time.sleep(0.03)

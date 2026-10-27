@@ -67,20 +67,36 @@ def test_model_log_appends_from_many_threads(store):
 def test_release_moves_status(store):
     job_id = store.create("private_task", "x", None)
     store.finish(job_id, "raw", "per_student")
-    store.set_release(job_id, "waiting", approval_id="a1")
+    store.set_release(job_id, "waiting", approval_id=7)
     job = store.get(job_id)
-    assert job["status"] == "waiting_for_approval" and job["approval_id"] == "a1"
+    assert job["status"] == "waiting_for_approval" and job["approval_id"] == 7
     assert job["release_status"] == "waiting" and job["released_text"] is None
 
     store.set_release(job_id, "shared", released_text="[Student A] scored 3")
     job = store.get(job_id)
     assert job["status"] == "done" and job["release_status"] == "shared"
-    assert job["released_text"] == "[Student A] scored 3" and job["approval_id"] == "a1"
+    assert job["released_text"] == "[Student A] scored 3" and job["approval_id"] == 7
 
     other = store.create("private_task", "y", None)
     store.finish(other, "raw", "free_text")
     store.set_release(other, "refused", released_text="Held on your device.")
     assert store.get(other)["status"] == "refused"
+
+
+def test_approval_id_is_an_int_even_from_an_old_text_column(tmp_path):
+    db = tmp_path / "old.db"
+    with sqlite3.connect(db) as conn:  # a jobs table from before approval ids were ints
+        conn.execute(
+            "CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, instructions TEXT, folder TEXT, "
+            "status TEXT NOT NULL, created_at REAL NOT NULL, approval_id TEXT)"
+        )
+        conn.execute("INSERT INTO jobs VALUES ('j1', 'private_task', 'x', NULL, 'done', 0, '12')")
+    store = JobStore(db)
+    assert store.get("j1")["approval_id"] == 12
+    store.set_release("j1", "waiting", approval_id="13")
+    assert store.get("j1")["approval_id"] == 13
+    with pytest.raises(ValueError):
+        store.set_release("j1", "waiting", approval_id="a1")
 
 
 def test_release_keeps_failed_status(store):

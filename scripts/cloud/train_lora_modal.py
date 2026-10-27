@@ -23,13 +23,14 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 LLAMA_CPP_REF = "b10353"
 GPU = "H100"
 DECISIONS = ("share_tagged", "share_summary", "ask_user", "refuse")
-DEFAULT_BASE = "meta/Muse-Glimmer-30B"  # Hugging Face repo with the bf16 weights; override with --base-model
+DEFAULT_BASE = "meta-models/Muse-Glimmer-30B"  # Hugging Face repo with the bf16 weights
 
 IDENTIFIERS = {
     "email": re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"),
@@ -37,6 +38,21 @@ IDENTIFIERS = {
     "ssn": re.compile(r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)"),
     "card": re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)"),
 }
+
+
+def target_modules(value: str):
+    """A regex string (peft matches it on full module names) or a list of name suffixes."""
+    return value if any(ch in value for ch in "().*$^|") else [m.strip() for m in value.split(",") if m.strip()]
+
+
+def split_labels(tok, full: str, prefix: str, max_len: int) -> tuple[list[int], list[int]]:
+    """Token ids for `full` and labels that train only on what comes after `prefix`."""
+    if not full.startswith(prefix):
+        raise ValueError("the chat template does not extend the generation prompt")
+    full_ids = tok(full, add_special_tokens=False)["input_ids"]
+    n_prefix = len(tok(prefix, add_special_tokens=False)["input_ids"])
+    labels = [-100] * n_prefix + full_ids[n_prefix:]
+    return full_ids[-max_len:], labels[-max_len:]
 
 
 def router_messages(row: dict) -> list[dict]:
@@ -62,12 +78,46 @@ def roster_names(path: Path) -> list[str]:
     return names
 
 
-def load_rows(path: Path, names: list[str]) -> tuple[list[dict], list[str], dict[str, int]]:
-    """Validate the JSONL. Returns (examples as {messages, weight}, problems, label counts)."""
+def _strings(value) -> list[str]:
+    """Every string inside a decoded JSON value."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [t for v in value.values() for t in _strings(v)]
+    if isinstance(value, list):
+        return [t for v in value for t in _strings(v)]
+    return []
+
+
+def guard_checker(roster_path: Path, tagmap_path: Path | None):
+    """base.guard.leaks with the roster (and the device's tag map when given): lowercase names,
+    slugs, Unicode dashes and spellings the plain regexes here miss. None if base is not importable."""
+    sys.path.insert(0, str(REPO))
+    try:
+        from base import guard
+    except Exception:
+        return None
+    try:
+        roster = guard.load_roster(roster_path)
+    except (OSError, ValueError, KeyError):
+        roster = None
+    tagmap = guard.TagMap.load(tagmap_path) if tagmap_path and Path(tagmap_path).is_file() else None
+    return lambda text: [h.kind for h in guard.leaks(text, roster, tagmap)]
+
+
+def load_rows(
+    path: Path, names: list[str], checker=None
+) -> tuple[list[dict], list[str], dict[str, int]]:
+    """Validate the JSONL. Returns (examples as {messages, weight}, problems, label counts).
+
+    Each line is decoded first, so escaped non-ASCII (a phone with U+2011 dashes, a name with an
+    accent) is checked as the text it really is, then NFKC-normalized.
+    """
     rows: list[dict] = []
     problems: list[str] = []
     labels: dict[str, int] = {}
-    name_res = [re.compile(rf"\b{re.escape(n)}\b") for n in sorted(set(names), key=len, reverse=True)]
+    name_res = [re.compile(rf"(?<![^\W\d_]){re.escape(n)}(?![^\W\d_])", re.IGNORECASE)
+                for n in sorted(set(names), key=len, reverse=True)]
     try:
         lines = path.read_text().splitlines()
     except OSError as exc:
@@ -75,16 +125,22 @@ def load_rows(path: Path, names: list[str]) -> tuple[list[dict], list[str], dict
     for n, line in enumerate(lines, 1):
         if not line.strip():
             continue
-        for kind, rx in IDENTIFIERS.items():
-            if rx.search(line):
-                problems.append(f"line {n}: looks like it holds a {kind}")
-        if any(rx.search(line) for rx in name_res):
-            problems.append(f"line {n}: holds a roster name")
         try:
             row = json.loads(line)
         except ValueError:
             problems.append(f"line {n}: not JSON")
             continue
+        text = unicodedata.normalize("NFKC", "\n".join(_strings(row))).replace("_", " ")
+        text = re.sub(r"[\u2010-\u2015\u2212]", "-", text)
+        for kind, rx in IDENTIFIERS.items():
+            if rx.search(text):
+                problems.append(f"line {n}: looks like it holds a {kind}")
+        if any(rx.search(text) for rx in name_res):
+            problems.append(f"line {n}: holds a roster name")
+        if checker is not None:
+            found = sorted(set(checker(text)))
+            if found:
+                problems.append(f"line {n}: the guard found {', '.join(found)}")
         weight = row.get("weight", 1)
         if not isinstance(weight, int | float) or weight <= 0:
             problems.append(f"line {n}: weight must be a positive number")
@@ -142,12 +198,11 @@ def remote_train(rows: list[dict], config: dict) -> bytes:
                                              target_modules=config["target_modules"], task_type="CAUSAL_LM"))
 
     def encode(messages: list[dict]) -> tuple[list[int], list[int]]:
-        prompt = tok.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
-        prompt_ids = tok(prompt, add_special_tokens=False)["input_ids"]
-        answer_ids = tok(messages[-1]["content"] + (tok.eos_token or ""), add_special_tokens=False)["input_ids"]
-        ids = (prompt_ids + answer_ids)[-config["max_len"]:]
-        labels = ([-100] * len(prompt_ids) + answer_ids)[-config["max_len"]:]
-        return ids, labels
+        # The whole chat from Glimmer's own template, so the answer carries the same header and end
+        # token ("<|start|>assistant to=user<|message|>...<|eot|>") that llama-server parses.
+        full = tok.apply_chat_template(messages, tokenize=False)
+        prefix = tok.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
+        return split_labels(tok, full, prefix, config["max_len"])
 
     data = [(*encode(r["messages"]), r["weight"]) for r in rows]
     params = [p for p in model.parameters() if p.requires_grad]
@@ -215,7 +270,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument("--grad-accum", type=int, default=8)
     parser.add_argument("--max-len", type=int, default=2048)
-    parser.add_argument("--target-modules", default="q_proj,k_proj,v_proj,o_proj")
+    # Language-model attention only: the bare suffixes also match the vision tower's q/k/v_proj.
+    parser.add_argument("--target-modules", default=r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj)$",
+                        help="a regex peft matches against module names, or a comma list of suffixes")
+    parser.add_argument("--tagmap", default=str(Path(os.environ.get("BASE_HOME", "~/.base")) / "tagmap.json"),
+                        help="the device's tag map, so names the model pass found are checked too")
     args = parser.parse_args(argv)
     if not (args.check or args.run):
         parser.print_help()
@@ -223,7 +282,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.data:
         parser.error("--data is required")
 
-    rows, problems, labels = load_rows(Path(args.data), roster_names(Path(args.roster)))
+    checker = guard_checker(Path(args.roster), Path(args.tagmap).expanduser() if args.tagmap else None)
+    if checker is None:
+        print("problem: base.guard could not be imported, so the file cannot be checked", file=sys.stderr)
+        return 1
+    rows, problems, labels = load_rows(Path(args.data), roster_names(Path(args.roster)), checker)
     print(f"examples: {len(rows)}, by label: {json.dumps(labels, sort_keys=True)}")
     print(f"total weight: {sum(r['weight'] for r in rows):g}, epochs: {args.epochs}, base: {args.base_model}, GPU: {GPU}")
     if problems:
@@ -237,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     config = {
         "base_model": args.base_model, "trust_remote_code": args.trust_remote_code, "epochs": args.epochs,
         "rank": args.rank, "lr": args.lr, "grad_accum": args.grad_accum, "max_len": args.max_len,
-        "target_modules": [m.strip() for m in args.target_modules.split(",") if m.strip()],
+        "target_modules": target_modules(args.target_modules),
     }
     app, fn = build_app()
     with app.run():

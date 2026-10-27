@@ -161,3 +161,19 @@ def test_snippet_centers_on_densest_match():
     assert out.startswith("...") and out.endswith("...")
     assert len(out) <= SNIPPET_CHARS + 6
     assert snippet("short text", ["text"]) == "short text"
+
+
+def test_title_is_linear_on_long_runs_of_spaces(tmp_path):
+    # Review SEC-2: "# title" + thousands of spaces + "x" took seconds with the old pattern.
+    import time
+
+    from base.workspace.index import _title
+
+    started = time.perf_counter()
+    for line in ("# My summer" + " " * 100_000 + "trip", "#" + "\t" * 100_000 + "x", "# " + " " * 100_000):
+        _title(tmp_path / "essay.md", line)
+    assert time.perf_counter() - started < 0.5
+    assert _title(tmp_path / "e.md", "# Title ##  ") == "Title"
+    assert _title(tmp_path / "e.md", "intro\n## C#\n") == "C"
+    assert _title(tmp_path / "e.md", "#### Deep\n") == "e"
+    assert _title(tmp_path / "e.md", "#   \n# Real") == "Real"

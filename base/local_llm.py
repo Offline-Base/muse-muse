@@ -23,6 +23,9 @@ OPENROUTER_EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": 
 TRUNCATION_CAP = 8000
 TRIES = 3
 BACKOFF_SECONDS = 1.0
+DEFAULT_TIMEOUT = 120.0
+CONNECT_TIMEOUT = 10.0
+LOCAL_TOKENS_PER_SECOND = 5.0  # a slow Jetson; the laptop is faster, and this is only a ceiling
 MAX_RETRY_AFTER = 30.0
 
 
@@ -106,19 +109,24 @@ def post_json_with_retry(
     body: dict,
     headers: dict[str, str],
     *,
-    timeout: float,
+    timeout: float | httpx.Timeout,
     sleep: Callable[[float], None] = time.sleep,
     tries: int = TRIES,
     error: type[Exception] = LLMError,
+    retry_read_timeout: bool = True,
 ) -> dict:
-    """POST JSON, retrying 429, 5xx and transport errors with exponential backoff."""
+    """POST JSON, retrying 429, 5xx and transport errors with exponential backoff.
+
+    With retry_read_timeout=False a read timeout is final: on a local llama-server it means the
+    model is still generating, and sending the same request again only queues more work.
+    """
     for attempt in range(tries):
         response = None
         try:
             response = client.post(url, json=body, headers=headers, timeout=timeout)
         except httpx.TransportError as exc:
-            if attempt == tries - 1:
-                raise error(f"request failed after {tries} tries: {type(exc).__name__}") from exc
+            if attempt == tries - 1 or (not retry_read_timeout and isinstance(exc, httpx.ReadTimeout)):
+                raise error(f"request failed after {attempt + 1} tries: {type(exc).__name__}") from exc
         else:
             if response.status_code < 400:
                 try:
@@ -192,8 +200,25 @@ class LocalLLM:
     @property
     def client(self) -> httpx.Client:
         if self._client is None:
-            self._client = httpx.Client()
+            # trust_env=False: no proxy from the environment or the system settings may sit
+            # between this process and the model, because the requests hold raw documents.
+            self._client = httpx.Client(trust_env=False)
         return self._client
+
+    def timeout_for(self, max_tokens: int, timeout: float | None) -> httpx.Timeout:
+        """The read timeout for one call. llama-server sends nothing until it is done, so on the
+        device the timeout grows with the token budget (a Jetson decodes about 5 to 12 tokens a
+        second); connecting stays short either way."""
+        if timeout is None:
+            timeout = DEFAULT_TIMEOUT
+            if self.backend == "llama_server":
+                timeout = max(DEFAULT_TIMEOUT, max_tokens / LOCAL_TOKENS_PER_SECOND + 60)
+        return httpx.Timeout(timeout, connect=min(CONNECT_TIMEOUT, timeout))
+
+    def close(self) -> None:
+        if self._client is not None:
+            self._client.close()
+            self._client = None
 
     def headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -255,7 +280,7 @@ class LocalLLM:
         tool_choice: Any = None,
         reasoning: str | None = "low",
         adapter: int | str | None = None,
-        timeout: float = 120,
+        timeout: float | None = None,
         synthetic: bool = False,
     ) -> ChatResult:
         """One chat completion. On a cloud backend, pass synthetic=True only for invented data.
@@ -285,8 +310,9 @@ class LocalLLM:
                 f"{self.base_url}/chat/completions",
                 body,
                 self.headers(),
-                timeout=timeout,
+                timeout=self.timeout_for(budget, timeout),
                 sleep=self._sleep,
+                retry_read_timeout=self.backend != "llama_server",
             )
             return self._result(data, start)
 
@@ -367,9 +393,12 @@ class LocalLLM:
             max_tokens=max_tokens,
             synthetic=synthetic,
         )
+        from base.guard import name_occurs  # lazy: guard does not need this module
+
         names: list[str] = []
         for value in data.get("names") or []:
             name = str(value).strip()
-            if name and name in text and not name.startswith("[") and name not in names:
+            # Kept when it occurs in the text, allowing for apostrophe, space and case differences.
+            if name and not name.startswith("[") and name not in names and name_occurs(name, text):
                 names.append(name)
         return names

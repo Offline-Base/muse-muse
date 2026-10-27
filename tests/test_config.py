@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from base.config import CloudBackendRefused, assert_synthetic, load_settings
+from base.config import CloudBackendRefused, assert_synthetic, load_settings, read_dotenv
 
 
 def test_openrouter_defaults(tmp_path):
@@ -27,9 +27,9 @@ def test_bad_device_rejected(tmp_path):
 
 
 def test_cloud_backend_needs_synthetic_marker(tmp_path):
-    s = load_settings({"BASE_HOME": str(tmp_path / "h")})
     private = tmp_path / "private"
     private.mkdir()
+    s = load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(private)})
     with pytest.raises(CloudBackendRefused):
         assert_synthetic(s, private)
     (private / ".synthetic").write_text("")
@@ -43,3 +43,51 @@ def test_local_backend_reads_anything(tmp_path):
 
 def test_demo_folder_is_marked():
     assert (Path(__file__).resolve().parent.parent / "demo" / ".synthetic").is_file()
+
+
+def test_dotenv_inline_comments_and_quotes(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(
+        "# a comment line\n"
+        "BASE_DEVICE=laptop            # laptop or jetson\n"
+        "GLIMMER_MODEL='glimmer # not a comment'\n"
+        "OPENROUTER_BASE=https://example.org/api/v1#frag\n"
+        "EMPTY=\n"
+    )
+    values = read_dotenv(env)
+    assert values["BASE_DEVICE"] == "laptop"
+    assert values["GLIMMER_MODEL"] == "glimmer # not a comment"
+    assert values["OPENROUTER_BASE"] == "https://example.org/api/v1#frag"
+    assert values["EMPTY"] == ""
+
+
+def test_env_example_loads_as_a_dotenv():
+    """Copying .env.example to .env must give working settings."""
+    example = read_dotenv(Path(__file__).resolve().parent.parent / ".env.example")
+    s = load_settings({**example, "BASE_HOME": "/tmp/base-example-home"})
+    assert s.device == "laptop" and s.glimmer_backend == "openrouter"
+    assert s.dreaming_backend == "prompt"
+
+
+def test_marker_above_the_workspace_root_does_not_count(tmp_path):
+    # Review SEC-7: a stray .synthetic in a home folder or shared parent must not mark a class.
+    root = tmp_path / "teacher" / "class-2026"
+    (root / "essays").mkdir(parents=True)
+    s = load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root)})
+    (tmp_path / ".synthetic").write_text("")
+    with pytest.raises(CloudBackendRefused):
+        assert_synthetic(s, root / "essays")
+    with pytest.raises(CloudBackendRefused):
+        assert_synthetic(s, tmp_path)  # outside the root: never
+    (root / ".synthetic").write_text("")
+    assert_synthetic(s, root / "essays")
+
+
+def test_llama_key_comes_from_the_home_file(tmp_path):
+    home = tmp_path / "h"
+    home.mkdir()
+    (home / "llama_api_key").write_text("k" * 32 + "\n")
+    s = load_settings({"BASE_HOME": str(home), "GLIMMER_BACKEND": "llama_server", "LLAMA_API_KEY": ""})
+    assert s.model_api_key == "k" * 32
+    s = load_settings({"BASE_HOME": str(home), "GLIMMER_BACKEND": "llama_server", "LLAMA_API_KEY": "env-wins"})
+    assert s.model_api_key == "env-wins"

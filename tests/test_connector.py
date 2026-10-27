@@ -144,12 +144,12 @@ class FakeJobs:
         return self.rows.get(job_id)
 
     def set_release(self, job_id, status, approval_id=None, released_text=None):
-        """Like JobStore: approval_id is stored as TEXT and the job status moves with the release."""
+        """Like JobStore: approval_id is an int and the job status moves with the release."""
         self.releases.append((job_id, status, approval_id, released_text))
         row = self.rows[job_id]
         row.update(release_status=status, released_text=released_text)
         if approval_id is not None:
-            row["approval_id"] = str(approval_id)
+            row["approval_id"] = int(approval_id)
         if row["status"] in ("done", "waiting_for_approval", "refused"):
             row["status"] = {"waiting": "waiting_for_approval", "refused": "refused"}.get(status, "done")
 
@@ -265,7 +265,8 @@ async def test_six_tools_with_muse_annotations(client):
         assert tools[name].annotations.open_world_hint is False
     task, dream = tools["run_private_task"].annotations, tools["run_dreaming"].annotations
     assert (task.read_only_hint, task.destructive_hint, task.idempotent_hint) == (False, False, False)
-    assert (dream.read_only_hint, dream.destructive_hint, dream.idempotent_hint) == (False, False, True)
+    # Not idempotent: a call after a night ends starts another night (review correctness F10).
+    assert (dream.read_only_hint, dream.destructive_hint, dream.idempotent_hint) == (False, False, False)
     assert set(tools["run_private_task"].input_schema["required"]) == {"instructions", "folder"}
     assert tools["get_result"].input_schema["required"] == ["job_id"]
     assert tools["run_dreaming"].input_schema.get("properties", {}) == {}
@@ -297,6 +298,38 @@ async def test_list_documents_goes_through_egress(client, services):
     assert text_of(result) == services.egress.outputs()[0]
     assert_no_real_names(text_of(result))
     assert outcomes(services) == [("list_documents", "shared")]
+
+
+async def test_list_documents_holds_back_only_never_share_titles(client, services):
+    services.policy = SimpleNamespace(never_share={"iep": ["IEP", "504 plan"], "medical": ["asthma"]})
+    services.index.folders["records"] = [
+        SimpleNamespace(id="r1", path="records/attendance.md", title="Attendance", size=1, modified=0),
+        SimpleNamespace(id="r2", path="records/plans.md", title="IEP and 504 plan notes", size=1, modified=0),
+        SimpleNamespace(id="r3", path="records/asthma.md", title="Health office", size=1, modified=0),
+        SimpleNamespace(id="r4", path="records/iep_504_notes.md", title="Room notes", size=1, modified=0),
+    ]
+    result = await client.call_tool("list_documents", {"folder": "records"})
+    [call] = services.egress.calls
+    assert call["result_kind"] == "document_list"
+    raw = call["raw_text"]
+    assert "Attendance (records/attendance.md)" in raw
+    # "_" is not a letter, so iep_504_notes names an IEP (review F1: snake_case hid it).
+    assert "iep_504_notes" not in raw
+    assert "IEP" not in raw and "asthma" not in raw  # title and path keywords both count
+    assert raw.startswith("1 documents in folder records:")
+    assert raw.endswith("3 documents held back on the device.")
+    assert text_of(result) == services.egress.outputs()[0]
+
+
+async def test_list_documents_all_held_back(client, services):
+    services.policy = SimpleNamespace(never_share={"iep": ["IEP"]})
+    services.index.folders["plans"] = [
+        SimpleNamespace(id="p1", path="plans/a.md", title="IEP review", size=1, modified=0)
+    ]
+    await client.call_tool("list_documents", {"folder": "plans"})
+    assert services.egress.calls[0]["raw_text"] == (
+        "No documents to show in folder plans.\n1 document held back on the device."
+    )
 
 
 async def test_list_documents_restores_tags_in_folder_and_never_echoes_them(client, services):
@@ -448,11 +481,11 @@ async def test_get_result_waits_then_resolves(client, services):
     services.egress.resolve_status = "waiting"
     first = json.loads(text_of(await client.call_tool("get_result", {"job_id": job_id})))
     assert first["status"] == "waiting" and "OK on the device" in first["result"]
-    assert services.jobs.rows[job_id]["approval_id"] == "1"  # stored as TEXT, like JobStore
+    assert services.jobs.rows[job_id]["approval_id"] == 1  # an int, like JobStore
     assert services.jobs.rows[job_id]["status"] == "waiting_for_approval"
 
     still = json.loads(text_of(await client.call_tool("get_result", {"job_id": job_id})))
-    assert still["status"] == "waiting" and services.egress.resolved == [1]  # an int again for egress
+    assert still["status"] == "waiting" and services.egress.resolved == [1]
     assert len(services.egress.calls) == 1
 
     services.egress.resolve_status = "shared"
@@ -690,3 +723,106 @@ def test_audit_class_is_callable_like_services_audit(tmp_path, settings):
     assert log.recent(1)[0]["outcome"] == "started"
     assert log.db_path == settings.paths.db
     assert recent(settings.paths.db, 5) == log.recent(5)
+
+
+# ----- review fixes: one release per job, retryable checks, dreaming ids, GET (correctness F1, F2, F10) -----
+
+
+class SlowEgress(FakeEgress):
+    """FakeEgress that takes a while and can say a check could not run."""
+
+    def __init__(self, delay=0.0, retryable_first=0):
+        super().__init__()
+        self.delay, self.retryable_first = delay, retryable_first
+
+    def release(self, *args, **kw):
+        import time as _time
+
+        _time.sleep(self.delay)
+        out = super().release(*args, **kw)
+        if self.retryable_first > 0:
+            self.retryable_first -= 1
+            return SimpleNamespace(status="refused", text="Held on your device.", approval_id=None,
+                                   decision=None, retryable=True)
+        out.retryable = False
+        return out
+
+
+def real_jobs(tmp_path):
+    from base.workspace.jobs import JobStore
+
+    jobs = JobStore(tmp_path / "jobs.db")
+    job_id = jobs.create("private_task", "Grade the essays", "essays")
+    jobs.finish(job_id, f"{REAL_A}: 3 of 4", "per_student", summary="Average 3", topics=["grades"])
+    return jobs, job_id
+
+
+def test_concurrent_get_result_releases_once(services, tmp_path):
+    import concurrent.futures
+
+    services.jobs, job_id = real_jobs(tmp_path)
+    services.egress = SlowEgress(delay=0.3)
+    services.egress.status = "waiting"
+    c = server.Connector(services)
+    with concurrent.futures.ThreadPoolExecutor(2) as pool:
+        results = list(pool.map(lambda _: c.get_result(job_id)[0].structured_content, range(2)))
+    assert len(services.egress.calls) == 1
+    assert sorted(r["status"] for r in results) == ["running", "waiting"]
+    assert services.jobs.get(job_id)["approval_id"] == 1
+
+
+def test_slow_release_answers_running_and_finishes_in_the_background(services, tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "RELEASE_WAIT_SECONDS", 0.05)
+    services.jobs, job_id = real_jobs(tmp_path)
+    services.egress = SlowEgress(delay=0.4)
+    c = server.Connector(services)
+    first = c.get_result(job_id)[0].structured_content
+    assert first["status"] == "running" and REAL_A not in first["result"]
+    import time as _time
+
+    _time.sleep(0.6)
+    second = c.get_result(job_id)[0].structured_content
+    assert second["status"] == "shared" and len(services.egress.calls) == 1
+
+
+def test_a_check_that_could_not_run_is_tried_again(services, tmp_path):
+    services.jobs, job_id = real_jobs(tmp_path)
+    services.egress = SlowEgress(retryable_first=1)
+    c = server.Connector(services)
+    assert c.get_result(job_id)[0].structured_content["status"] == "running"
+    assert services.jobs.get(job_id)["release_status"] == "none"  # not stored as refused
+    assert c.get_result(job_id)[0].structured_content["status"] == "shared"
+
+
+def test_a_check_that_keeps_failing_is_held_in_the_end(services, tmp_path):
+    services.jobs, job_id = real_jobs(tmp_path)
+    services.egress = SlowEgress(retryable_first=server.MAX_CHECK_FAILURES)
+    c = server.Connector(services)
+    statuses = [c.get_result(job_id)[0].structured_content["status"] for _ in range(server.MAX_CHECK_FAILURES)]
+    assert statuses == ["running"] * (server.MAX_CHECK_FAILURES - 1) + ["refused"]
+
+
+def test_get_result_follows_a_dreaming_run(services):
+    night = services.night
+    night.running = "dream-1"
+    night.running_job = lambda: night.running
+    night.report_for = lambda job_id: night.report if job_id == "dream-1" and not night.running else None
+    c = server.Connector(services)
+    assert c.get_result("dream-1")[0].structured_content["status"] == "running"
+    assert c.dreaming_report()[0].content[0].text.startswith("RELEASED")
+    assert "in progress" in services.egress.calls[-1]["raw_text"]
+    night.running = None
+    out = c.get_result("dream-1")[0].structured_content
+    assert out["status"] == "done" and "0.865" in out["result"]
+    assert "learned that" not in out["result"]
+    with pytest.raises(server.ToolFailure):
+        c.get_result("dream-unknown")
+
+
+def test_standalone_get_on_mcp_is_405(services):
+    from starlette.testclient import TestClient
+
+    app = connector_app(services, token="t" * 32)
+    with TestClient(app, base_url=BASE_URL) as tc:
+        r = tc.get("/mcp", headers={"authorization": "Bearer " + "t" * 32, "accept": "text/event-stream"})
+    assert r.status_code == 405

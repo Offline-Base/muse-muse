@@ -6,7 +6,7 @@ import pytest
 
 from base import events
 from base.approvals import ApprovalStore
-from base.egress import HELD_TEXT, KEPT_TEXT, WAITING_TEXT, Egress, Released
+from base.egress import HELD_TEXT, KEPT_DEFAULT, KEPT_TEXT, WAITING_TEXT, Egress, Released
 from base.policy import UserPolicy
 from base.router import Router
 from base.types import Hit, RouteDecision, TagResult
@@ -206,12 +206,14 @@ def test_ask_user_on_aggregate_stores_the_summary_it_would_share(make):
     assert row["tagged_text"] == "Average 2.5 of 4."
 
 
-def test_refuse_gives_reason_without_content(make, seen):
-    egress, svc = make("refuse", "Mentions an IEP for [Student A].")
+def test_refuse_sends_a_fixed_sentence_never_the_router_reason(make, seen):
+    # Review F3: the model's reason can spell out the record, so it stays on the approval page.
+    egress, svc = make("refuse", "[Student A] takes medication at 11:30 with the nurse.")
     out = egress.release("get_result", "Notes", RAW + " IEP review.", "sensitive_record")
     assert out.status == "refused"
-    assert out.text == f"{KEPT_TEXT} Mentions an IEP for [hidden]."
-    assert "3 of 4" not in out.text
+    assert out.text == f"{KEPT_TEXT} {KEPT_DEFAULT}"
+    assert "medication" not in out.text and "3 of 4" not in out.text
+    assert "medication" in svc.approvals.history()[0]["router_reason"]  # kept locally
     assert "sending" not in seen
     assert svc.approvals.history()[0]["status"] == "auto"
     assert_clean(out, RAW + " IEP review.")
@@ -338,7 +340,7 @@ def test_with_real_router_blocked_topic_refuses(make, settings, policy):
     egress, _ = make(router=router)
     out = egress.release("get_result", "Notes", "Odessa has an IEP meeting Friday.", "sensitive_record")
     assert out.status == "refused"
-    assert out.text == f"{KEPT_TEXT} Mentions iep."
+    assert out.text == f"{KEPT_TEXT} It mentions a topic you never share."
     assert_clean(out, "Odessa has an IEP meeting Friday.")
 
 
@@ -348,3 +350,116 @@ def test_with_real_router_document_list_shares_tagged_titles(make, settings, pol
     out = egress.release("list_documents", "essays", "Odessa Quillfeather essay.md\nrubric.md", "document_list")
     assert out.status == "shared"
     assert out.text == "[Student A] essay.md\nrubric.md"
+
+
+# The answer model's second pass for names the roster misses
+
+
+class NamesLLM(FakeAnswerLLM):
+    """An answer model whose llm_names finds one non-roster name, or breaks."""
+
+    def __init__(self, names=("Keoni",), fail=False):
+        super().__init__()
+        self.names, self.fail = list(names), fail
+        self.name_calls = []
+
+    def llm_names(self, text, *, synthetic=False):
+        self.name_calls.append({"text": text, "synthetic": synthetic})
+        if self.fail:
+            raise RuntimeError("model unavailable")
+        return [n for n in self.names if n in text]
+
+
+def tag_with_names(text, roster, tagmap, llm_names=None, never_share=None):
+    """fake_tag plus the second pass: names llm_names returns become [Person N]."""
+    result = fake_tag(text, roster, tagmap, never_share=never_share)
+    for i, name in enumerate(llm_names(text) if llm_names else [], 1):
+        result.text = result.text.replace(name, f"[Person {i}]")
+        result.hits.append(Hit("person", name, 0, len(name)))
+    return result
+
+
+def names_egress(make, decision="share_tagged", **llm):
+    egress, svc = make(decision)
+    svc.answer_llm = NamesLLM(**llm)
+    egress.guard = SimpleNamespace(tag=tag_with_names, leaks=fake_leaks)
+    return egress, svc
+
+
+def test_second_pass_tags_names_the_roster_missed(make):
+    egress, svc = names_egress(make)
+    raw = RAW + "\nOdessa's uncle Keoni grows taro."
+    out = egress.release("get_result", "Scores please", raw, "per_student", synthetic=True)
+    assert out.status == "shared"
+    assert "Keoni" not in out.text and "[Person 1]" in out.text
+    assert svc.answer_llm.name_calls == [{"text": raw, "synthetic": True}]
+
+
+def test_second_pass_follows_the_synthetic_flag(make):
+    egress, svc = names_egress(make)
+    egress.release("get_result", "Scores please", RAW, "per_student", synthetic=False)
+    assert svc.answer_llm.name_calls[0]["synthetic"] is False
+
+
+def test_no_second_pass_for_device_built_numbers(make):
+    egress, svc = names_egress(make)
+    out = egress.release("dreaming_report", "report", "Last run: 3 of 4 kept", "dreaming_report", synthetic=True)
+    assert out.status == "shared"
+    assert svc.answer_llm.name_calls == []
+
+
+def test_document_lists_get_the_second_pass(make):
+    # Review F2: titles are first headings and paths are file names, both written by people.
+    egress, svc = names_egress(make, names=["Margarita Ruiz"])
+    raw = "- Call with Margarita Ruiz (notes/call.md)"
+    out = egress.release("list_documents", "list", raw, "document_list", synthetic=True)
+    assert svc.answer_llm.name_calls == [{"text": raw, "synthetic": True}]
+    assert "Margarita" not in out.text
+
+
+def test_real_router_asks_before_listing_a_title_with_an_unknown_person(make, settings, policy):
+    router = Router(settings, FakeLLM({"decision": "share_tagged", "reason": "unused"}), policy)
+    egress, svc = make(router=router)
+    svc.answer_llm = NamesLLM(names=["Margarita Ruiz"])
+    egress.guard = SimpleNamespace(tag=tag_with_names, leaks=fake_leaks)
+    out = egress.release("list_documents", "list", "- Call with Margarita Ruiz (notes/call.md)", "document_list")
+    assert out.status == "waiting"
+    assert "Margarita" not in svc.approvals.pending()[0]["tagged_text"]
+
+
+def test_request_is_tagged_before_it_is_stored(make):
+    egress, svc = make("ask_user")
+    egress.release("get_result", "Scores for Odessa Quillfeather, cell 512-555-0143", RAW, "per_student")
+    row = svc.approvals.pending()[0]
+    assert "Odessa" not in row["request"] and "0143" not in row["request"]
+    assert "[Student A]" in row["request"]
+
+
+def test_second_pass_failure_holds_the_result(make):
+    egress, svc = names_egress(make, fail=True)
+    out = egress.release("get_result", "Scores please", RAW, "per_student", synthetic=True)
+    assert out.status == "refused" and out.text == HELD_TEXT
+    assert out.retryable  # nothing was decided, so the connector can try again later
+    assert out.decision.decision == "refuse" and out.decision.floors == ["name_check"]
+    assert svc.audits == [("egress", "name_check_failed")]
+    assert svc.router.inputs == []  # nothing was routed
+    assert svc.approvals.history() == []
+    assert_clean(out)
+
+
+def test_second_pass_runs_on_a_provided_summary(make):
+    egress, svc = names_egress(make, "share_summary")
+    summary = "Class average 2.5 of 4. Keoni visited the garden."
+    out = egress.release("get_result", "How did we do?", RAW, "class_aggregate", summary=summary, synthetic=True)
+    assert out.status == "refused"  # the summary named a person, so nothing per-person leaves
+    assert "Keoni" not in out.text
+    assert [c["text"] for c in svc.answer_llm.name_calls] == [RAW, summary]
+
+
+def test_blocked_reasons_are_stored_on_the_decision_row(make):
+    egress, svc = make("ask_user")
+    raw = "Bram Tillery has an IEP meeting Friday."
+    out = egress.release("get_result", "Calendar", raw, "free_text")
+    assert svc.approvals.get(out.approval_id)["blocked"] == ["Mentions iep"]  # fake_tag's wording
+    plain = egress.release("get_result", "Scores", RAW, "per_student")
+    assert svc.approvals.get(plain.approval_id)["blocked"] == []

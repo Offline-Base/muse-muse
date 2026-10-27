@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import signal
 import sys
 from collections.abc import Iterator
@@ -24,6 +25,7 @@ from base.ui_app import create_app, is_loopback, print_pairing_code
 
 CONNECTOR_HOST = "127.0.0.1"
 GRACEFUL_SECONDS = 3  # open /events streams never end on their own
+MAX_CONNECTIONS = 64  # open browser tabs hold one /events stream each; more than this is not a person
 
 
 class UnsafeBind(RuntimeError):
@@ -40,7 +42,7 @@ def check_bind(settings: Settings) -> None:
 
 
 def build_services(settings: Settings) -> Any:
-    """Wire every module. Imported lazily so this file loads before base.services exists."""
+    """Wire every module (base/services.py), which also starts the light."""
     from base.services import Services
 
     return Services.create(settings)
@@ -61,7 +63,7 @@ class _Server(uvicorn.Server):
 
 
 def make_servers(settings: Settings, approval_app: Any, connector_app: Any) -> list[uvicorn.Server]:
-    def config(app: Any, host: str, port: int) -> uvicorn.Config:
+    def config(app: Any, host: str, port: int, **extra: Any) -> uvicorn.Config:
         return uvicorn.Config(
             app,
             host=host,
@@ -69,10 +71,15 @@ def make_servers(settings: Settings, approval_app: Any, connector_app: Any) -> l
             log_level="warning",
             access_log=False,
             timeout_graceful_shutdown=GRACEFUL_SECONDS,
+            limit_concurrency=MAX_CONNECTIONS,
+            **extra,
         )
 
+    tls: dict[str, Any] = {}
+    if getattr(settings, "approval_tls", False):
+        tls = {"ssl_certfile": str(settings.approval_tls_cert), "ssl_keyfile": str(settings.approval_tls_key)}
     return [
-        _Server(config(approval_app, settings.approval_host, settings.approval_port)),
+        _Server(config(approval_app, settings.approval_host, settings.approval_port, **tls)),
         _Server(config(connector_app, CONNECTOR_HOST, settings.connector_port)),
     ]
 
@@ -121,6 +128,9 @@ def main(settings: Settings | None = None) -> int:
         print(f"Not starting: {exc}", file=sys.stderr)
         return 2
     settings.ensure_home()
+    # The MCP SDK turns on INFO logging; httpx would then log every model and worker URL.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     services = build_services(settings)
     approval_app = create_app(services)
     connector = load_connector_app(services)
@@ -132,8 +142,36 @@ def main(settings: Settings | None = None) -> int:
         flush=True,
     )
     if approval_app.state.login_required:
-        print_pairing_code(approval_app.state.pairing.new_code())
-    run_servers(make_servers(settings, approval_app, connector))
+        if not getattr(settings, "approval_tls", False):
+            print(
+                "Warning: the approval page is plain http on your network, so the session cookie and the "
+                "laptop worker's essays cross it unencrypted. Set APPROVAL_TLS_CERT and APPROVAL_TLS_KEY.",
+                flush=True,
+            )
+        pairing = approval_app.state.pairing
+        if pairing.locked_out():
+            print(
+                "Too many wrong pairing codes. On this device, ask for a new one with: "
+                f"curl -X POST http://127.0.0.1:{settings.approval_port}/api/pair-code",
+                flush=True,
+            )
+        else:
+            print_pairing_code(pairing.new_code())
+    try:
+        run_servers(make_servers(settings, approval_app, connector))
+    except (OSError, SystemExit) as exc:  # uvicorn exits on a port in use: one plain sentence, no traceback
+        if isinstance(exc, SystemExit) and exc.code in (0, None):
+            raise
+        print(
+            f"Not starting: port {settings.approval_port} or {settings.connector_port} is already in use or "
+            "cannot be opened.",
+            file=sys.stderr,
+        )
+        return 3
+    finally:
+        close = getattr(services, "close", None)
+        if callable(close):
+            close()
     print("Stopped.", flush=True)
     return 0
 

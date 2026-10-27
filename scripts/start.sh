@@ -88,10 +88,19 @@ if [ "$BACKEND" = llama_server ]; then
     if port_busy "$port"; then die "something already answers on 127.0.0.1:$port; stop it first"; fi
   done
   mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+  # A key only this user can read, so other local processes cannot use the model or change the
+  # router adapter's scale. The server reads the same file (BASE_HOME/llama_api_key).
+  KEY_FILE="$HOME_DIR/llama_api_key"
+  if [ ! -s "$KEY_FILE" ]; then
+    (umask 077 && python3 -c 'import secrets; print(secrets.token_urlsafe(32))' >"$KEY_FILE")
+  fi
+  chmod 600 "$KEY_FILE"
+  # No prompt cache or context checkpoints in RAM (8 GiB and 32 by default), no /slots endpoint.
+  SERVER_FLAGS=(--cache-ram 0 --ctx-checkpoints 0 --no-slots --api-key-file "$KEY_FILE")
 
   echo "Starting Glimmer (answer) on 127.0.0.1:8081"
   "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8081 \
-    -c "$ANSWER_CTX" -np 1 -ngl 99 --jinja >"$LOG_DIR/answer.log" 2>&1 &
+    -c "$ANSWER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" >"$LOG_DIR/answer.log" 2>&1 &
   ANSWER_PID=$!
   PIDS="$PIDS $ANSWER_PID"
 
@@ -99,12 +108,12 @@ if [ "$BACKEND" = llama_server ]; then
   if [ -f "$ADAPTER" ]; then
     echo "Starting Glimmer (router) on 127.0.0.1:8082 with the router adapter loaded"
     "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8082 \
-      -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja --lora "$ADAPTER" --lora-init-without-apply \
+      -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" --lora "$ADAPTER" --lora-init-without-apply \
       >"$LOG_DIR/router.log" 2>&1 &
   else
     echo "Starting Glimmer (router) on 127.0.0.1:8082 (no router adapter yet)"
     "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8082 \
-      -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja >"$LOG_DIR/router.log" 2>&1 &
+      -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" >"$LOG_DIR/router.log" 2>&1 &
   fi
   ROUTER_PID=$!
   PIDS="$PIDS $ROUTER_PID"

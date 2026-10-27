@@ -10,11 +10,12 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from base import events as default_events
@@ -26,6 +27,9 @@ log = logging.getLogger(__name__)
 
 LOCK_NAME = "night"
 STALE_AFTER_SECONDS = 3 * 3600  # a lock this old belongs to a run that died
+# Who holds the lock: this process id plus a token made once per process, so a lock left by a
+# process that was stopped (Ctrl+C, SIGTERM, a crash) is not mistaken for a running night.
+OWNER = f"{os.getpid()}:{uuid.uuid4().hex[:8]}"
 REPORT_KEYS = (
     "learned_from", "accuracy_before", "accuracy_after", "agreement_before", "agreement_after",
     "kept", "leaks", "seconds", "night_number",
@@ -58,6 +62,7 @@ class NightReport:
     backend: str = "prompt"
     rules: int = 0
     note: str = ""
+    categories: dict = field(default_factory=dict)  # holdout accuracy per expected decision, rules in place
 
     def numbers(self) -> dict:
         """Aggregate numbers only."""
@@ -82,12 +87,19 @@ class NightRunner:
         self.services = services
         self.settings = services.settings
         self.holdout_path = Path(holdout_path or REPO_ROOT / "eval" / "holdout.jsonl")
-        self.synthetic_path = Path(synthetic_path or REPO_ROOT / "eval" / "synthetic.jsonl")
+        # "" means no practice data at all (the simulation's default); None means eval/synthetic.jsonl.
+        self.synthetic_path = (
+            None if synthetic_path == "" else Path(synthetic_path or REPO_ROOT / "eval" / "synthetic.jsonl")
+        )
         self.stale_after = stale_after
         self.events = getattr(services, "events", None) or default_events
+        self.raw_dir: Path | None = None  # set by the simulation: per-item gate rows go here
         self._thread: threading.Thread | None = None
         with self._db() as con:
             con.executescript(_SCHEMA)
+            cols = {r[1] for r in con.execute("PRAGMA table_info(dreaming_lock)")}
+            if "owner" not in cols:  # a db from before the owner column
+                con.execute("ALTER TABLE dreaming_lock ADD COLUMN owner TEXT")
 
     # ----- public -----
 
@@ -108,9 +120,18 @@ class NightRunner:
 
     def running_job(self) -> str | None:
         with self._db() as con:
-            row = con.execute("SELECT job_id, started_at FROM dreaming_lock WHERE name = ?", (LOCK_NAME,))
+            row = con.execute("SELECT job_id, started_at, owner FROM dreaming_lock WHERE name = ?", (LOCK_NAME,))
             row = row.fetchone()
-        return row[0] if row and time.time() - row[1] < self.stale_after else None
+        return row[0] if row and self._live(row[1], row[2]) else None
+
+    def report_for(self, job_id: str) -> dict | None:
+        """Aggregate numbers for one finished night, or None if no night had that id."""
+        with self._db() as con:
+            row = con.execute("SELECT report FROM dreaming_nights WHERE job_id = ?", (job_id,)).fetchone()
+        if row is None:
+            return None
+        report = json.loads(row[0])
+        return {k: report.get(k) for k in REPORT_KEYS}
 
     def wait(self, timeout: float | None = None) -> None:
         if self._thread is not None:
@@ -139,7 +160,11 @@ class NightRunner:
             return self._dream(job_id)
         finally:
             self._release(job_id)
-            self.events.emit("idle", f"dreaming {job_id}")
+            settle = getattr(self.events, "settle", None)
+            if callable(settle):
+                settle(f"dreaming {job_id}")
+            else:
+                self.events.emit("idle", f"dreaming {job_id}")
 
     def _dream(self, job_id: str) -> NightReport:
         started = time.monotonic()
@@ -156,7 +181,8 @@ class NightRunner:
         # Rules built from a decision the user has since deleted must not stay in place.
         tainted = bool(set(prev_ids) - set(user_ids))
 
-        result = train.train(examples, settings, out_path=candidate)
+        policy = getattr(self.services, "policy", None)
+        result = train.train(examples, settings, out_path=candidate, policy=policy)
         note = result.message
         if result.cloud_required or not holdout:
             candidate.unlink(missing_ok=True)
@@ -170,6 +196,7 @@ class NightRunner:
         else:
             g = gate.gate(self.services, candidate, current, holdout, force=tainted)
             before, after, kept = g.before, g.after, g.keep
+            self._write_raw(before, after)
             in_place_ids = user_ids if kept else ([] if tainted else prev_ids)
             if g.reasons and not kept:
                 note += " Kept the current rules: " + "; ".join(g.reasons) + "."
@@ -189,6 +216,7 @@ class NightRunner:
             backend=result.backend,
             rules=result.rules,
             note=note.strip(),
+            categories=in_place.category_accuracy(),
         )
         with self._db() as con:
             con.execute(
@@ -196,6 +224,16 @@ class NightRunner:
                 (job_id, time.time(), json.dumps(asdict(report)), json.dumps(in_place_ids)),
             )
         return report
+
+    def _write_raw(self, before: run_eval.EvalReport, after: run_eval.EvalReport) -> None:
+        """The gate's per-item rows for this night (ids and decisions only), when raw_dir is set."""
+        if self.raw_dir is None:
+            return
+        n = self._night_count() + 1
+        for label, report in (("current", before), ("candidate", after)):
+            path = Path(self.raw_dir) / f"night-{n}-{label}.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            run_eval.write_raw_rows(report, path)
 
     def _score_current(self, holdout: list[dict], current: Path) -> run_eval.EvalReport:
         if not holdout:
@@ -219,18 +257,41 @@ class NightRunner:
         with self._db() as con:
             con.execute("BEGIN IMMEDIATE")
             row = con.execute(
-                "SELECT job_id, started_at FROM dreaming_lock WHERE name = ?", (LOCK_NAME,)
+                "SELECT job_id, started_at, owner FROM dreaming_lock WHERE name = ?", (LOCK_NAME,)
             ).fetchone()
-            if row and time.time() - row[1] < self.stale_after:
+            if row and self._live(row[1], row[2]):
                 con.execute("COMMIT")
                 return row[0], False
             job_id = "dream-" + uuid.uuid4().hex[:12]
             con.execute(
-                "INSERT OR REPLACE INTO dreaming_lock (name, job_id, started_at) VALUES (?, ?, ?)",
-                (LOCK_NAME, job_id, time.time()),
+                "INSERT OR REPLACE INTO dreaming_lock (name, job_id, started_at, owner) VALUES (?, ?, ?, ?)",
+                (LOCK_NAME, job_id, time.time(), OWNER),
             )
             con.execute("COMMIT")
             return job_id, True
+
+    def _live(self, started_at: float, owner: str | None) -> bool:
+        """Whether a lock row belongs to a night that can still be running."""
+        if time.time() - started_at >= self.stale_after:
+            return False
+        if not owner:
+            return True  # an older row: only age can tell
+        pid_text = owner.partition(":")[0]
+        if owner == OWNER:
+            return True
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            return False
+        if pid == os.getpid():
+            return False  # this process id, but another token: an earlier process with our pid
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # alive, run by another user
+        return True
 
     def _release(self, job_id: str) -> None:
         with self._db() as con:

@@ -55,6 +55,7 @@ ITEM_KEYS = {
     "tricky",
     "notes",
 }
+OPTIONAL_KEYS = {"summary", "other_names", "dates"}
 SHARES = ("share_tagged", "share_summary")
 
 PHONE = re.compile(r"(?:\(\d{3}\) |\d{3}[.-])?\b555[-.]\d{4}\b")
@@ -66,6 +67,12 @@ DATE = re.compile(
     r"|\b\d{1,2}/\d{1,2}/\d{2,4}\b"
 )
 IDENTIFIER_PATTERNS = (PHONE, EMAIL, STUDENT_ID, ADDRESS, DATE)
+DOB_CONTEXT = re.compile(r"(?:\bborn|\bDOB|\bbirthday|\bdate of birth)\W{0,3}(?:on\s+)?$", re.IGNORECASE)
+
+
+def is_dob(text: str, start: int) -> bool:
+    """A date right after born, DOB, birthday or date of birth is a date of birth."""
+    return bool(DOB_CONTEXT.search(text[max(0, start - 20) : start]))
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -193,7 +200,10 @@ def test_task_counts_and_ids():
 @pytest.mark.parametrize("item", TASKS, ids=ids(TASKS))
 def test_item_fields(item):
     keys = set(item)
-    assert ITEM_KEYS <= keys <= ITEM_KEYS | {"summary"}
+    assert ITEM_KEYS <= keys <= ITEM_KEYS | OPTIONAL_KEYS
+    for key in ("other_names", "dates"):
+        if key in item:
+            assert item[key] and all(isinstance(v, str) and v for v in item[key]), key
     assert item["result_kind"] in RESULT_KINDS
     assert item["expected"] in DECISIONS
     assert set(item["topics"]) <= set(NEVER_SHARE) | set(PLAIN_TOPICS)
@@ -269,15 +279,34 @@ def test_names_ground_truth(item):
 @pytest.mark.parametrize("item", TASKS, ids=ids(TASKS))
 def test_identifiers_ground_truth(item):
     result = item["result"]
-    for value in item["identifiers"]:
+    for value in item["identifiers"] + item.get("dates", []):
         assert value in result
-    found = {m.group(0) for rx in IDENTIFIER_PATTERNS for m in rx.finditer(result)}
-    assert found == set(item["identifiers"])
+    found = {m.group(0) for rx in IDENTIFIER_PATTERNS if rx is not DATE for m in rx.finditer(result)}
+    dobs = {m.group(0) for m in DATE.finditer(result) if is_dob(result, m.start())}
+    plain_dates = {m.group(0) for m in DATE.finditer(result) if not is_dob(result, m.start())}
+    assert found | dobs == set(item["identifiers"]), "dates of birth stay identifiers"
+    assert plain_dates == set(item.get("dates", [])), "plain calendar dates go in dates, not identifiers"
     for value in found:
         if PHONE.fullmatch(value):
             assert re.search(r"555[-.]01\d\d$", value), "phones use 555-01xx"
         if EMAIL.fullmatch(value):
             assert value.endswith(("@example.com", "@example.org"))
+
+
+@pytest.mark.parametrize("item", [i for i in TASKS if "other_names" in i], ids=lambda i: i["id"])
+def test_other_names_are_people_off_the_roster(item):
+    for name in item["other_names"]:
+        assert word(name).search(item["result"]), f"{name!r} is not in the result"
+        assert name not in FORMS, f"{name!r} is a roster form; it belongs in names"
+        assert not word(name, re.IGNORECASE).search(item["request"])
+
+
+def test_known_non_roster_people_are_listed():
+    by_id = {i["id"]: i for i in TASKS}
+    for item_id, name in [("t016", "Keoni"), ("t017", "Luciana"), ("t017", "Tomas"), ("t066", "Delgado"),
+                          ("t076", "Pruitt"), ("t090", "Kasia"), ("t091", "Tunde"), ("t091", "Folake")]:  # fmt: skip
+        assert name in by_id[item_id]["other_names"], (item_id, name)
+    assert by_id["t080"]["identifiers"] == ["3/14/2017"] and "dates" not in by_id["t080"]  # a DOB
 
 
 @pytest.mark.parametrize("item", TASKS, ids=ids(TASKS))
@@ -353,6 +382,9 @@ def test_holdout_is_a_balanced_copy():
         assert by_id[item["id"]] == item
     assert Counter(i["expected"] for i in HOLDOUT) == {d: 5 for d in DECISIONS}
     assert len({i["result_kind"] for i in HOLDOUT}) >= 6
+    # Review eval F4: a shared item that names someone off the roster, so the gate can catch a
+    # non-roster name leak, not only roster names.
+    assert any(i.get("other_names") and i["expected"] != "refuse" for i in HOLDOUT)
 
 
 # ----- demo files -----

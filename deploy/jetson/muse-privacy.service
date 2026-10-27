@@ -15,6 +15,7 @@ Environment=BASE_HOME=/var/lib/muse-privacy/home
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 # Site settings (APPROVAL_HOST, RELAY_URL, LIGHT_SERIAL, WORKSPACE_ROOT). Root-owned, see README.
+# The llama-server key is read from BASE_HOME/llama_api_key (install.sh makes it).
 EnvironmentFile=-/etc/muse-privacy/env
 ExecStart=/opt/muse-privacy/app/.venv/bin/python -m base
 Restart=on-failure
@@ -27,6 +28,11 @@ ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=/var/lib/muse-privacy
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# This process holds the documents and the tag map: it may talk to the model on loopback and to
+# the home network (the approval page, the laptop worker), never to the internet, even if a proxy
+# setting gets in. The relay client is a separate unit.
+IPAddressAllow=localhost link-local 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 fc00::/7
+IPAddressDeny=any
 MemoryMax=1G
 CapabilityBoundingSet=
 AmbientCapabilities=
@@ -34,7 +40,8 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectClock=yes
+# No ProtectClock: on systemd before 252 it implies DeviceAllow=char-rtc, which turns on a device
+# allow-list and blocks the status light's /dev/ttyACM0.
 ProtectHostname=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes

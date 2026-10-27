@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     request TEXT,
     result_kind TEXT,
     topics TEXT,
+    blocked TEXT,
     tagged_text TEXT,
     shown_form TEXT,
     router_decision TEXT,
@@ -75,6 +76,7 @@ def _to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         return None
     out = dict(row)
     out["topics"] = json.loads(out["topics"]) if out.get("topics") else []
+    out["blocked"] = json.loads(out["blocked"]) if out.get("blocked") else []
     out["remember"] = bool(out["remember"])
     out["deleted"] = bool(out["deleted"])
     return out
@@ -91,6 +93,9 @@ class ApprovalStore:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(SCHEMA)
+            have = {row[1] for row in self._conn.execute("PRAGMA table_info(decisions)")}
+            if "blocked" not in have:  # a db from before the blocked column
+                self._conn.execute("ALTER TABLE decisions ADD COLUMN blocked TEXT")
             self._conn.commit()
 
     def close(self) -> None:
@@ -111,6 +116,7 @@ class ApprovalStore:
         router_reason: str = "",
         router_source: str = "model",
         topics: Iterable[str] = (),
+        blocked: Iterable[str] = (),
         shown_form: str | None = None,
         job_id: str | None = None,
         day: int | None = None,
@@ -124,6 +130,7 @@ class ApprovalStore:
             "request": request,
             "result_kind": result_kind,
             "topics": json.dumps(list(topics)),
+            "blocked": json.dumps(list(blocked)),
             "tagged_text": tagged_text,
             "shown_form": shown_form or default_share_form(result_kind),
             "router_decision": router_decision,
@@ -142,8 +149,8 @@ class ApprovalStore:
         """A row for a result the router decided without asking. Returns its id.
 
         Required keywords: tool, request, result_kind, tagged_text, router_decision. Optional:
-        router_reason, router_source, topics, shown_form (default: default_share_form(result_kind)),
-        job_id, day (default: today()), item_id.
+        router_reason, router_source, topics, blocked (plain reasons from TagResult.blocked),
+        shown_form (default: default_share_form(result_kind)), job_id, day (default: today()), item_id.
         """
         return self._insert("auto", **fields)
 

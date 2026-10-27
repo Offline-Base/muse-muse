@@ -8,15 +8,17 @@ The laptop's worker dials out to these routes; nothing here ever connects to the
 
 Every route needs `Authorization: Bearer <worker token>`. The token lives in
 `settings.home / "heavy_token"` (0600, created on first use). Print it for pairing with
-`python -m base.heavy.routes`.
+`python -m base.heavy.routes`, or replace it with `python -m base.heavy.routes rotate`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import re
 import secrets
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -53,15 +55,58 @@ def load_token(settings: Settings) -> str:
     return token
 
 
-def print_token(settings: Settings | None = None) -> None:
+def rotate_token(settings: Settings) -> str:
+    """Replace the worker token (a copied or sniffed one stops working at the next restart)."""
+    token_path(settings).unlink(missing_ok=True)
+    return load_token(settings)
+
+
+def print_token(settings: Settings | None = None, *, rotate: bool = False) -> None:
     """Print the worker token and the laptop command that uses it (for pairing)."""
     settings = settings or load_settings()
-    token = load_token(settings)
-    print("Heavy-step worker token for this device:")
+    token = rotate_token(settings) if rotate else load_token(settings)
+    print("Heavy-step worker token for this device:" if not rotate else "New heavy-step worker token:")
     print(f"  {token}")
+    if rotate:
+        print("Restart muse-privacy.service so the old token stops working.")
     print("On the laptop, run:")
-    print("  python -m base.heavy.worker --jetson-url http://<this device's approval address>:"
-          f"{settings.approval_port} --token <the token above>")
+    if settings.approval_tls:
+        digest = hashlib.sha256(_pem_der(settings.approval_tls_cert)).hexdigest()
+        print("  python -m base.heavy.worker --jetson-url https://<this device's approval address>:"
+              f"{settings.approval_port} --token <the token above> --ca-cert <a copy of {settings.approval_tls_cert.name}>")
+        print(f"Certificate SHA-256 (check the copy matches): {digest}")
+    else:
+        print("  python -m base.heavy.worker --jetson-url http://<this device's approval address>:"
+              f"{settings.approval_port} --token <the token above> --allow-plain-http")
+        print("This device serves plain http, so essays cross your network unencrypted. Set APPROVAL_TLS_CERT")
+        print("and APPROVAL_TLS_KEY (install.sh makes a certificate) to fix that.")
+
+
+def _pem_der(path: Path) -> bytes:
+    import ssl
+
+    return ssl.PEM_cert_to_DER_cert(Path(path).read_text())
+
+
+class TokenGate:
+    """Plain ASGI middleware: /heavy/ requests without the worker token get 401 before any body is
+    read or parsed. The routes check the token again with their own dependency."""
+
+    def __init__(self, app: Any, token: str) -> None:
+        self.app, self._token = app, token.encode()
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and scope.get("path", "").startswith("/heavy/"):
+            headers = dict(scope.get("headers") or [])
+            scheme, _, given = headers.get(b"authorization", b"").decode("latin-1").partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(given.strip().encode(), self._token):
+                body = b'{"detail": "bad worker token"}'
+                await send({"type": "http.response.start", "status": 401, "headers": [
+                    (b"content-type", b"application/json"), (b"www-authenticate", b"Bearer"),
+                    (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
 
 
 class Hello(BaseModel):
@@ -122,4 +167,4 @@ def router_for(settings: Settings, queue: HeavyQueue | None = None) -> APIRouter
 
 
 if __name__ == "__main__":
-    print_token()
+    print_token(rotate=sys.argv[1:] == ["rotate"])

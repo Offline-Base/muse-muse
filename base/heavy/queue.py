@@ -147,12 +147,16 @@ class HeavyQueue:
             )
 
     def worker_present(self, *, synthetic: bool = False) -> bool:
-        """True when a worker said hello recently; cloud workers count only for synthetic steps."""
-        since = time.time() - self.hello_window
+        """True when a worker said hello recently, or is working on a step it claimed within
+        wait_seconds (a single-threaded worker sends nothing while its model runs, and one essay can
+        take longer than the hello window). Cloud workers count only for synthetic steps."""
+        now = time.time()
         with closing(self._connect()) as conn:
             row = conn.execute(
-                "SELECT 1 FROM heavy_workers WHERE last_seen >= ? AND (cloud = 0 OR ?) LIMIT 1",
-                (since, int(synthetic)),
+                "SELECT 1 FROM heavy_workers w WHERE (cloud = 0 OR ?) AND (last_seen >= ? OR EXISTS ("
+                " SELECT 1 FROM heavy_steps s WHERE s.worker = w.worker AND s.status = 'claimed' AND s.claimed_at >= ?"
+                ")) LIMIT 1",
+                (int(synthetic), now - self.hello_window, now - self.wait_seconds),
             ).fetchone()
         return row is not None
 
@@ -179,12 +183,18 @@ class HeavyQueue:
             raise ValueError("submit needs a result or an error")
         status = "done" if error is None else "failed"
         with closing(self._connect()) as conn:
+            now = time.time()
             cur = conn.execute(
                 "UPDATE heavy_steps SET status = ?, result = ?, error = ?, finished_at = ?"
                 " WHERE id = ? AND status = 'claimed'",
-                (status, None if result is None else json.dumps(result), error, time.time(), step_id),
+                (status, None if result is None else json.dumps(result), error, now, step_id),
             )
             accepted = cur.rowcount == 1
+            if accepted:  # a result is as good as a hello: the worker is there for the next step
+                conn.execute(
+                    "UPDATE heavy_workers SET last_seen = ? WHERE worker = (SELECT worker FROM heavy_steps WHERE id = ?)",
+                    (now, step_id),
+                )
         if accepted:
             self._notify()
         return accepted

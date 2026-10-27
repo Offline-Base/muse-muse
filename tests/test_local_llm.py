@@ -344,3 +344,52 @@ def test_openrouter_live_tiny_call():
     )
     assert result.content.strip()
     assert result.completion_tokens > 0
+
+
+# ----- review fixes: proxies, timeouts, the name check (SEC-1, device F3, privacy F7) -----
+
+
+def test_clients_ignore_proxy_settings(llama, sleeps, monkeypatch, tmp_path):
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:9")
+    assert make(llama, sleeps).client._mounts == {}
+    from base.heavy.worker import Worker
+
+    worker = Worker("http://127.0.0.1:8787", "t" * 32, llm=None)
+    assert worker.client._mounts == {}
+
+
+def test_timeout_grows_with_the_budget_on_llama_server(llama, sleeps):
+    llm = make(llama, sleeps)
+    assert llm.timeout_for(1500, None).read == 360
+    assert llm.timeout_for(300, None).read == 120
+    assert llm.timeout_for(1500, 30).read == 30
+    assert llm.timeout_for(1500, None).connect == 10
+
+
+@respx.mock
+def test_read_timeout_is_not_retried_on_llama_server(llama, sleeps):
+    route = respx.post("http://127.0.0.1:8081/v1/chat/completions").mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(LLMError):
+        make(llama, sleeps).chat([{"role": "user", "content": "hi"}])
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_connect_errors_are_still_retried_on_llama_server(llama, sleeps):
+    route = respx.post("http://127.0.0.1:8081/v1/chat/completions").mock(
+        side_effect=[httpx.ConnectError("down"), httpx.Response(200, json=reply("ok"))]
+    )
+    assert make(llama, sleeps).chat([{"role": "user", "content": "hi"}]).content == "ok"
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_llm_names_keeps_names_written_with_other_apostrophes_and_spaces(llama, sleeps):
+    names = ["Ms. O'Donnell", "Hunter Price", "Made Up"]
+    respx.post("http://127.0.0.1:8081/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=reply(json.dumps({"names": names})))
+    )
+    text = "Ms. O’Donnell phoned. Hunter Price waited."
+    assert make(llama, sleeps).llm_names(text) == ["Ms. O'Donnell", "Hunter Price"]

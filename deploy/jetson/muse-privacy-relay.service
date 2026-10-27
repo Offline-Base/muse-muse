@@ -19,13 +19,22 @@ EnvironmentFile=-/etc/muse-privacy/env
 ExecStart=/opt/muse-privacy/app/.venv/bin/python -m base.connector.relay_client run
 Restart=on-failure
 RestartSec=10
+# Exit 3: the relay rejected the device secret, or another copy took over. Retrying would only
+# hammer the relay (or knock the other copy off in turn), so systemd does not restart it.
+RestartPreventExitStatus=3
 
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
+# This is the one process that parses frames from the internet, so it sees only the two files it
+# needs, read-only: an empty tmpfs over the state folder, with relay.json and connector_token
+# bound in. The tag map, base.db, the output folder, adapters and the workspace do not exist
+# here. Run "register" and "pair" by hand (sudo -u muse-privacy), not through this unit.
 ReadWritePaths=/var/lib/muse-privacy
+TemporaryFileSystem=/var/lib/muse-privacy:ro
+BindReadOnlyPaths=/var/lib/muse-privacy/home/relay.json /var/lib/muse-privacy/home/connector_token
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryMax=256M
 CapabilityBoundingSet=

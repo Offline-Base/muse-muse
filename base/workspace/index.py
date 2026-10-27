@@ -100,7 +100,10 @@ class DocumentIndex:
         assert_synthetic(self.settings, path)
         if not path.is_dir():
             raise FileNotFoundError("That folder is not in the workspace.")
-        return [self._doc(p) for p in self._files(path)]
+        files = self._files(path)
+        for p in files:
+            assert_synthetic(self.settings, p.resolve().parent)  # a link into an unmarked folder
+        return [self._doc(p) for p in files]
 
     def read(self, doc_id: str) -> str:
         path = self.resolve(doc_id)
@@ -119,8 +122,9 @@ class DocumentIndex:
             return []
         docs = []
         for path in self._files(base):
+            assert_synthetic(self.settings, path.resolve().parent)  # a link into an unmarked folder
             text = path.read_text(encoding="utf-8", errors="replace")
-            title = _title(path, text)
+            title = _title(path, text[:TITLE_SCAN_CHARS])
             docs.append((self._rel(path), title, text, Counter(tokenize(title + "\n" + text))))
         if not docs:
             return []
@@ -152,12 +156,22 @@ class DocumentIndex:
         return Doc(id=rel, path=rel, title=_title(path, head), size=stat.st_size, modified=stat.st_mtime)
 
 
+TITLE_SCAN_CHARS = 2000
+_HEADING = re.compile(r"#{1,3}\s+(\S.*)")  # \s+ then \S never overlap, so this is linear
+
+
 def _title(path: Path, text: str) -> str:
-    """First markdown heading in the first few lines, else the file name without extension."""
-    for line in text.splitlines()[:10]:
-        m = re.match(r"^#{1,3}\s+(.+?)\s*#*\s*$", line)
+    """First markdown heading in the first few lines, else the file name without extension.
+
+    Linear in the line length: the older pattern backtracked in cubic time on a heading followed
+    by a long run of spaces, and one 3 KB essay held the whole server for seconds.
+    """
+    for line in text[:TITLE_SCAN_CHARS].splitlines()[:10]:
+        m = _HEADING.match(line[:300])
         if m:
-            return m.group(1).strip()
+            title = m.group(1).rstrip().rstrip("#").rstrip()
+            if title:
+                return title
     return path.stem
 
 

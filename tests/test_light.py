@@ -61,12 +61,23 @@ def reset_events():
     events.emit("idle")
 
 
-def test_writes_one_line_per_state_change():
+def test_writes_every_state_even_a_repeat():
+    # Review device F10: a board that reloads restarts at idle with the port still open, so a
+    # repeated state is written again rather than skipped.
     fake = FakeSerial()
     light = Light("/dev/fake", Opener(fake))
     for state in ("working", "working", "waiting", "sending", "idle"):
         light.show(state)
-    assert fake.lines == ["STATE working\n", "STATE waiting\n", "STATE sending\n", "STATE idle\n"]
+    assert fake.lines == ["STATE working\n", "STATE working\n", "STATE waiting\n", "STATE sending\n", "STATE idle\n"]
+
+
+def test_refresh_resends_the_current_state():
+    fake = FakeSerial()
+    light = Light("/dev/fake", Opener(fake))
+    events.emit("working", "job-1")
+    light.show("working")
+    assert light.refresh() and fake.lines == ["STATE working\n", "STATE working\n"]
+    events.emit("idle")
 
 
 def test_start_light_follows_events(settings):
@@ -142,7 +153,7 @@ def test_test_mode_cycles_the_four_states(settings, capsys):
     run_test(replace(settings, light_serial="/dev/fake"), cycles=1, sleep=sleeps.append, opener=Opener(fake))
     assert sleeps == [2.0] * 4
     # the four states, then back to idle when the test ends
-    assert fake.lines == ["STATE idle\n", "STATE working\n", "STATE waiting\n", "STATE sending\n", "STATE idle\n"]
+    assert fake.lines[-5:] == ["STATE idle\n", "STATE working\n", "STATE waiting\n", "STATE sending\n", "STATE idle\n"]
     assert "light: sending" in capsys.readouterr().out
 
 
@@ -203,3 +214,31 @@ def test_firmware_frames(firmware, n):
     # amber actually pulses and the sweep actually moves
     assert firmware.frame("waiting", 0.0, n) != firmware.frame("waiting", 0.3, n)
     assert firmware.frame("sending", 0.0, n) != firmware.frame("sending", 0.5, n)
+
+
+
+def test_firmware_plays_one_sweep_then_the_state_that_followed(firmware):
+    code = firmware
+    shown, after, until = code.next_state("waiting", "waiting", 0.0, "sending", now=10.0)
+    assert (shown, after) == ("sending", "waiting")
+    shown, after, until = code.next_state(shown, after, until, "idle", now=10.5)  # arrives mid-sweep
+    assert shown == "sending" and after == "idle"
+    assert code.settle(shown, after, until, now=11.0)[0] == "sending"
+    assert code.settle(shown, after, until, now=12.1)[0] == "idle"
+    assert code.next_state("idle", "idle", 0.0, "working", now=1.0)[0] == "working"
+
+
+def test_events_settle_shows_waiting_while_a_card_is_pending():
+    seen = []
+    unsubscribe = events.subscribe(lambda e: seen.append(e.state))
+    try:
+        events.set_pending_source(lambda: 1)
+        events.settle("job-1")
+        events.set_pending_source(lambda: 0)
+        events.settle("job-1")
+        events.set_pending_source(None)
+        events.settle("job-1")
+    finally:
+        events.set_pending_source(None)
+        unsubscribe()
+    assert seen == ["waiting", "idle", "idle"]

@@ -7,6 +7,7 @@ specific to one machine: addresses come from the environment or .env.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,8 @@ def read_dotenv(path: Path) -> dict[str, str]:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
             value = value[1:-1]
+        else:  # an unquoted value ends at an inline comment, as in .env.example
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
         values[key.strip()] = value
     return values
 
@@ -94,7 +97,15 @@ class Settings:
     jetson_url: str | None = None
     dreaming_backend: Literal["prompt", "lora"] = "prompt"
     light_serial: str | None = None
+    # A certificate and key for the approval port (the Jetson on a home network). With both set
+    # the page and the /heavy routes are served over TLS and the session cookie is Secure.
+    approval_tls_cert: Path | None = None
+    approval_tls_key: Path | None = None
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
+
+    @property
+    def approval_tls(self) -> bool:
+        return self.approval_tls_cert is not None and self.approval_tls_key is not None
 
     @property
     def is_cloud_backend(self) -> bool:
@@ -135,7 +146,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         default_router = answer_url if device == "jetson" else f"http://127.0.0.1:{ROUTER_PORT}/v1"
         router_url = get("ROUTER_URL", default_router)
         answer_model = router_model = get("GLIMMER_MODEL", "glimmer")
-        api_key = get("LLAMA_API_KEY")
+        # llama-server is started with --api-key-file BASE_HOME/llama_api_key, so any other
+        # process on the machine cannot use the model or change the router adapter's scale.
+        api_key = get("LLAMA_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base")))
 
     dreaming = get("DREAMING_BACKEND", "prompt")
     if dreaming not in ("prompt", "lora"):
@@ -164,20 +177,47 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         jetson_url=get("JETSON_URL") or None,
         dreaming_backend=dreaming,  # type: ignore[arg-type]
         light_serial=get("LIGHT_SERIAL") or None,
+        approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
+        approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
     )
+
+
+LLAMA_KEY_FILE = "llama_api_key"
+
+
+def _read_key(home: str) -> str | None:
+    """The llama-server API key from BASE_HOME/llama_api_key, or None when there is no file."""
+    try:
+        return (Path(home).expanduser() / LLAMA_KEY_FILE).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def synthetic_marked(folder: Path, root: Path) -> bool:
+    """Whether `folder` or a parent of it inside `root` (root included) holds the marker.
+
+    A marker above the workspace root does not count: a stray .synthetic in a home folder or a
+    shared parent must never mark a real class folder as invented data.
+    """
+    folder, root = Path(folder).resolve(), Path(root).resolve()
+    for candidate in (folder, *folder.parents):
+        if not candidate.is_relative_to(root):
+            return False
+        if (candidate / SYNTHETIC_MARKER).is_file():
+            return True
+    return False
 
 
 def assert_synthetic(settings: Settings, folder: Path) -> None:
     """Refuse to read a folder with a cloud Glimmer backend unless it is marked synthetic.
 
-    The marker may sit in the folder or any parent up to the filesystem root.
+    The marker may sit in the folder or a parent of it up to the workspace root, not above it.
     """
     if not settings.is_cloud_backend:
         return
-    folder = folder.resolve()
-    for candidate in (folder, *folder.parents):
-        if (candidate / SYNTHETIC_MARKER).is_file():
-            return
+    folder = Path(folder).resolve()
+    if synthetic_marked(folder, settings.workspace_root):
+        return
     raise CloudBackendRefused(
         f"GLIMMER_BACKEND={settings.glimmer_backend} sends text to a cloud endpoint, so only folders "
         f"marked with a {SYNTHETIC_MARKER} file (invented data) can be read. {folder.name} is not marked."

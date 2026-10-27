@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 
 STATUSES = ("queued", "running", "waiting_for_approval", "done", "refused", "failed")
-RELEASE_STATUSES = ("none", "shared", "waiting", "refused")
+RELEASE_STATUSES = ("none", "releasing", "shared", "waiting", "refused")
+RESTART_ERROR = "The device restarted before the job finished."
 
 COLUMNS = (
     ("id", "TEXT PRIMARY KEY"),
@@ -31,7 +32,7 @@ COLUMNS = (
     ("result_kind", "TEXT"),
     ("raw_result", "TEXT"),
     ("summary", "TEXT"),
-    ("approval_id", "TEXT"),
+    ("approval_id", "INTEGER"),  # a decisions row id in base/approvals.py
     ("error", "TEXT"),
     ("model_log", "TEXT NOT NULL DEFAULT '[]'"),
     ("release_status", "TEXT NOT NULL DEFAULT 'none'"),
@@ -89,6 +90,7 @@ class JobStore:
         job = dict(row)
         for name in JSON_COLUMNS:
             job[name] = json.loads(job[name] or "[]")
+        job["approval_id"] = _approval_id(job.get("approval_id"))
         return job
 
     # writes
@@ -147,8 +149,44 @@ class JobStore:
     def fail(self, job_id: str, error: str) -> None:
         self.set_status(job_id, "failed", error=error)
 
+    def claim_release(self, job_id: str) -> bool:
+        """Mark a finished job's release as under way. Only one caller wins; the rest see False.
+
+        Two get_result calls at once (Muse retrying after a relay timeout) must not run egress
+        twice and leave two approval cards for one result.
+        """
+        with self._lock, self._connect() as db:
+            cur = db.execute(
+                "UPDATE jobs SET release_status = 'releasing' WHERE id = ? AND release_status = 'none'",
+                (job_id,),
+            )
+            return cur.rowcount == 1
+
+    def reset_release(self, job_id: str) -> None:
+        """Undo claim_release after a release that could not finish, so it can be tried again."""
+        with self._lock, self._connect() as db:
+            db.execute(
+                "UPDATE jobs SET release_status = 'none' WHERE id = ? AND release_status = 'releasing'", (job_id,)
+            )
+
+    def fail_unfinished(self, error: str = RESTART_ERROR) -> int:
+        """At startup: jobs left queued or running by a stopped process are failed, and releases
+        left half done are reset. One server owns a BASE_HOME, so nothing else is running them."""
+        with self._lock, self._connect() as db:
+            cur = db.execute(
+                "UPDATE jobs SET status = 'failed', error = ?, finished_at = ? WHERE status IN ('queued', 'running')",
+                (error, time.time()),
+            )
+            db.execute("UPDATE jobs SET release_status = 'none' WHERE release_status = 'releasing'")
+            return cur.rowcount
+
+    def active_count(self) -> int:
+        """Jobs queued or running now."""
+        with self._connect() as db:
+            return db.execute("SELECT COUNT(*) FROM jobs WHERE status IN ('queued', 'running')").fetchone()[0]
+
     def set_release(
-        self, job_id: str, status: str, approval_id: str | None = None, released_text: str | None = None
+        self, job_id: str, status: str, approval_id: int | None = None, released_text: str | None = None
     ) -> None:
         """Record what egress did with a finished job.
 
@@ -163,7 +201,7 @@ class JobStore:
                 raise KeyError(f"no job {job_id}")
             fields: dict[str, Any] = {"release_status": status, "released_text": released_text}
             if approval_id is not None:
-                fields["approval_id"] = approval_id
+                fields["approval_id"] = _approval_id(approval_id)
             if job["status"] in ("done", "waiting_for_approval", "refused"):
                 fields["status"] = {"waiting": "waiting_for_approval", "refused": "refused"}.get(
                     status, "done"
@@ -182,3 +220,12 @@ class JobStore:
                 "SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT ?", (int(limit),)
             ).fetchall()
         return [self._row(r) for r in rows]  # type: ignore[misc]
+
+
+def _approval_id(value: Any) -> int | None:
+    """Approval ids are decisions row ids: ints. A db from before Oct 27 stored them as text."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("an approval id is an int")
+    return int(value)

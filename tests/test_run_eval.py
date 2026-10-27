@@ -11,7 +11,9 @@ from eval import run_eval
 
 TEACHER = Person(name="Marlow Pennick", first="Marlow", last="Pennick", role="teacher")
 STUDENTS = (
-    Person(name="Zorvan Pellicott", first="Zorvan", last="Pellicott", nicknames=("Zee",), student_id="S700001"),
+    Person(
+        name="Zorvan Pellicott", first="Zorvan", last="Pellicott", nicknames=("Zee",), student_id="S700001"
+    ),
     Person(name="Ilsabet Quorn", first="Ilsabet", last="Quorn", student_id="S700002"),
 )
 ROSTER = Roster(teacher=TEACHER, students=STUDENTS)
@@ -108,7 +110,8 @@ def test_run_scores_accuracy_agreement_asks_leaks_and_latency(settings):
 
     calls = services.egress.calls
     assert all(c["tool"] == "eval" and c["synthetic"] is True for c in calls)
-    assert calls[0]["item_id"] == "a1" and calls[0]["topics"] == ["grades"]
+    # Review eval F1: the router gets what production gives it, never the hand-labeled topics.
+    assert calls[0]["item_id"] == "a1" and calls[0]["topics"] == []
 
 
 def test_find_leaks_is_word_bounded_and_case_insensitive(settings):
@@ -119,6 +122,14 @@ def test_find_leaks_is_word_bounded_and_case_insensitive(settings):
     assert run_eval.find_leaks(services, "id s700001", it, values) == ["identifier"]
     assert run_eval.find_leaks(services, "Zeeland and Zorvanish", it, values) == []
     assert run_eval.find_leaks(services, "[Student A] scored 3", it, values) == []
+
+
+def test_other_names_leak_and_plain_dates_do_not(settings):
+    services = fake_services(settings)
+    it = dict(item("x", "ask_user"), other_names=["Mr. Brindlewick", "Brindlewick"], dates=["Oct 6"])
+    values = run_eval._roster_values(ROSTER)
+    assert run_eval.find_leaks(services, "Ask brindlewick about the hose", it, values) == ["other_name"]
+    assert run_eval.find_leaks(services, "[Person 1] helped on Oct 6", it, values) == []
 
 
 def test_write_report_has_command_table_and_raw_rows_without_text(settings, tmp_path):
@@ -158,7 +169,9 @@ def test_cli_uses_a_fresh_temp_home_and_passes_rules(settings, tmp_path, monkeyp
     tasks = _write_jsonl(tmp_path / "tasks.jsonl", ITEMS)
     holdout = _write_jsonl(tmp_path / "holdout.jsonl", [ITEMS[0], ITEMS[3]])
     rules = tmp_path / "rules.md"
-    rules.write_text("# rules\n\n- Per-student results (kind: per_student; topics: grades): share tagged. x\n")
+    rules.write_text(
+        "# rules\n\n- Per-student results (kind: per_student; topics: grades): share tagged. x\n"
+    )
     out = tmp_path / "reports"
 
     argv = ["--set", str(tasks), "--name", "cli-test", "--holdout", "--holdout-file", str(holdout),
@@ -205,3 +218,103 @@ def test_command_line_hides_home_paths():
     cmd = run_eval.command_line("eval.run_eval", ["--set", str(run_eval.EVAL_DIR / "tasks.jsonl"),
                                                   "--home", str(Path.home() / "sim")])  # fmt: skip
     assert cmd == "uv run python -m eval.run_eval --set eval/tasks.jsonl --home '~/sim'"
+
+
+def test_model_path_latency_is_reported_separately(settings):
+    services = fake_services(settings)
+    rule_item = item("r1", "share_tagged", kind="document_list", names=())
+    OUTCOMES["r1"] = ("share_tagged", "shared", "notes.md", 0)
+    try:
+        original = services.egress.release
+
+        def release(*args, **kw):
+            out = original(*args, **kw)
+            if kw.get("item_id") == "r1":
+                out.decision = RouteDecision("share_tagged", "titles", "rule", 0)
+            return out
+
+        services.egress.release = release
+        report = run_eval.run(services, [*ITEMS[:2], rule_item], name="unit", device_label="laptop")
+    finally:
+        del OUTCOMES["r1"]
+    assert report.model_calls == 2  # the rule-path item is not a model call
+    assert report.model_latency_mean_ms == 15.0 and report.model_latency_p95_ms == 20.0
+    assert report.latency_mean_ms == 10.0  # the overall mean still counts the 0 ms rule path
+    md = run_eval.render_markdown(report)
+    assert "| Items decided by the model | 2 " in md and "Raw rows: raw/unit.jsonl" in md
+
+
+# ----- review fixes (eval F1, F2, F4; correctness F5) -----
+
+
+def test_production_inputs_map_kinds_and_drop_labels(settings):
+    class Recorder:
+        def __init__(self):
+            self.calls = []
+
+        def release(self, **kw):
+            self.calls.append(kw)
+
+    services = fake_services(settings, egress=Recorder())
+    it = item("s1", "refuse", kind="sensitive_record", topics=("iep",))
+    run_eval.release_item(services, it)
+    run_eval.release_item(services, item("c1", "share_summary", kind="class_aggregate") | {"summary": "Avg 3"})
+    run_eval.release_item(services, it, oracle=True)
+    first, agg, oracle = services.egress.calls
+    assert (first["result_kind"], first["topics"]) == ("snippet", [])
+    assert (agg["result_kind"], agg["summary"]) == ("free_text", None)
+    assert (oracle["result_kind"], oracle["topics"]) == ("sensitive_record", ["iep"])
+
+
+def test_fallbacks_are_never_counted_correct():
+    rows = [
+        {"id": "a", "expected": "ask_user", "wants": "ask_user", "decision": "ask_user", "status": "waiting",
+         "source": "fallback", "fallback": True, "leaked": False, "latency_ms": 5},
+        {"id": "r", "expected": "refuse", "wants": "refuse", "decision": "refuse", "status": "refused",
+         "source": "fallback", "floors": ["name_check"], "fallback": True, "leaked": False, "latency_ms": 5},
+        {"id": "s", "expected": "share_tagged", "wants": "share_tagged", "decision": "share_tagged",
+         "status": "shared", "source": "model", "fallback": False, "leaked": False, "latency_ms": 5},
+    ]  # fmt: skip
+    r = run_eval._report(rows, name="x")
+    assert r.correct == 1 and r.fallbacks == 2 and r.accuracy == round(1 / 3, 4)
+    assert r.sources == {"fallback": 2, "model": 1}
+    assert r.outcome_accuracy == round(1 / 3, 4)
+    md = run_eval.render_markdown(r)
+    assert "Fallbacks" in md and "fallback 2" in md
+
+
+def test_gate_rejects_rules_scored_while_the_model_was_down():
+    from base.dreaming import gate
+
+    down = run_eval.EvalReport(name="x", n=20, accuracy=0.3, agreement=0.3, fallbacks=16)
+    reasons = gate.compare(down, down)
+    assert reasons and "could not be scored" in reasons[0]
+    ok = run_eval.EvalReport(name="y", n=20, accuracy=0.9, agreement=0.9, fallbacks=1)
+    assert gate.compare(ok, ok) == []  # one flake in 20 is within the limit
+
+
+def test_text_released_after_an_approval_is_leak_checked(settings, tmp_path):
+    """The simulated teacher approves a waiting item; what egress then releases is checked too."""
+    from types import SimpleNamespace as NS
+
+    class Egress:
+        def __init__(self):
+            self.calls = []
+
+        def release(self, **kw):
+            self.calls.append(kw)
+            return NS(status="waiting", text="Waiting for your OK on the device.", approval_id=7,
+                      decision=NS(decision="ask_user", source="model", floors=[], latency_ms=3))
+
+        def resolve(self, approval_id):
+            return NS(status="shared", text="Uncle Keoni will pick [Student A] up.")
+
+    decided = []
+    services = fake_services(settings)
+    services.egress = Egress()
+    services.approvals = NS(decide=lambda *a, **k: decided.append(a))
+    services.policy = NS(wants=lambda i: "ask_user", answer=lambda i: (True, False))
+    it = item("k1", "ask_user", names=()) | {"other_names": ["Keoni"]}
+    rows = run_eval.run(services, [it], name="x", device_label="laptop", check_approved=True).rows
+    assert decided == [(7, True, False)]
+    assert rows[0]["leaked"] and rows[0]["leak_kinds_after_approval"] == ["other_name"]

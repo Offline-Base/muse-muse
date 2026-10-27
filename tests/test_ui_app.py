@@ -55,6 +55,7 @@ def make_rows():
             "request": "What is on the calendar for [Student B]?",
             "result_kind": "free_text",
             "topics": ["iep", "grades"],
+            "blocked": json.dumps(["Mentions an IEP or 504 plan"]),  # TagResult.blocked, as egress stores it
             "tagged_text": "[Student B] has an IEP meeting Friday.",
             "raw_text": "Rowan Thistlewood has an IEP meeting Friday.",
             "shown_form": "share_tagged",
@@ -199,8 +200,8 @@ def test_approvals_page_shows_cards_newest_first(client):
     assert "Don't ask again for things like this" in body
     assert '<span class="tag">[Student A]</span>' in body
     assert '<span class="tag">[Phone 1]</span>' in body
-    assert "Mentions an IEP or 504 plan" in body  # blocked reason chip from the iep topic
-    assert "Mentions grades" not in body  # grades is not a never_share topic
+    assert "Mentions an IEP or 504 plan" in body  # blocked reason chip from the row's blocked list
+    assert "Mentions grades" not in body  # topics alone never make a chip
     assert "It has a phone number, so I asked first." in body
     assert body.index('id="approval-2"') < body.index('id="approval-1"')
     assert 'id="approval-3"' not in body  # auto rows are not pending
@@ -297,7 +298,8 @@ def test_approve_with_remember_reaches_store(client, services, captured_events):
     r = client.post("/api/approvals/1", json={"approve": True, "remember": True})
     assert r.status_code == 200 and r.json()["status"] == "approved"
     assert services.approvals.decisions == [(1, True, True, "user")]
-    assert [e.state for e in captured_events] == ["sending"]
+    # Nothing goes to Muse until it calls get_result, so the light settles (review correctness F9).
+    assert [e.state for e in captured_events] == ["idle"]
     assert services.egress.resolved == []  # get_result resolves later, never the page
 
 
@@ -316,6 +318,8 @@ def test_form_post_without_js_redirects(client, services):
 
 def test_decide_errors(client, services):
     assert client.post("/api/approvals/99", json={"approve": True}).status_code == 404
+    assert client.post("/api/approvals/a1", json={"approve": True}).status_code == 404  # ids are ints
+    assert client.post("/api/history/a1/delete", json={}).status_code == 404
     assert client.post("/api/approvals/1", json={"remember": True}).status_code == 400
     assert client.post("/api/approvals/3", json={"approve": True}).status_code == 409  # auto row
     r = client.post("/api/approvals/1", content=b"{not json", headers={"content-type": "application/json"})
@@ -342,6 +346,7 @@ def test_with_the_real_approval_store(settings, tmp_path, captured_events):
         router_decision="ask_user",
         router_reason="Per-student scores need your OK.",
         topics=["iep"],
+        blocked=["Mentions an IEP or 504 plan"],
     )
     app = create_app(make_services(settings, approvals=store), nights_csv=tmp_path / "none.csv")
     with TestClient(app, base_url=LOCAL, headers={"Origin": LOCAL}) as c:
@@ -360,7 +365,8 @@ def test_with_the_real_approval_store(settings, tmp_path, captured_events):
         assert c.post(f"/api/history/{rid}/delete", json={}).status_code == 200
         assert store.get(rid)["tagged_text"] == "" and store.get(rid)["deleted"] == 1
         assert "[Student D]" not in c.get("/history").text
-    assert [e.state for e in captured_events] == ["sending"]
+    # Nothing goes to Muse until it calls get_result, so the light settles (review correctness F9).
+    assert [e.state for e in captured_events] == ["idle"]
 
 
 def test_delete_blanks_row(client, services):
@@ -617,3 +623,83 @@ async def test_event_stream_heartbeat_and_data():
     assert line.startswith("data: ") and line.endswith("\n\n")
     assert json.loads(line[len("data: "):])["state"] == "working"
     await stream.aclose()
+
+
+# ---------------------------------------------------------------- review fixes (SEC-3, SEC-8)
+
+
+def test_big_bodies_get_413_before_anything_reads_them(settings):
+    app = create_app(make_services(lan_settings(settings)))
+    with TestClient(app, base_url=LAN, headers={"Origin": LAN}) as c:
+        r = c.post("/pair", content=b"{" + b" " * (70 * 1024), headers={"content-type": "application/json"})
+        assert r.status_code == 413
+        small = c.post("/pair", data={"code": "000001"})
+        assert small.status_code == 400  # a normal body still reaches the route
+
+
+def test_body_limit_counts_chunked_bodies():
+    import asyncio
+
+    from base.ui_app import BodyLimit
+
+    sent, read = [], []
+
+    async def app(scope, receive, send):
+        while True:
+            m = await receive()
+            read.append(len(m.get("body", b"")))
+            if not m.get("more_body"):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+
+    chunks = [{"type": "http.request", "body": b"x" * 1000, "more_body": True} for _ in range(5)]
+
+    async def receive():
+        return chunks.pop(0)
+
+    async def send(m):
+        sent.append(m)
+
+    asyncio.run(BodyLimit(app, default=2500)({"type": "http", "path": "/pair", "headers": []}, receive, send))
+    assert sent[0]["status"] == 413 and sum(read) <= 2000
+
+
+def test_heavy_routes_check_the_token_before_reading_the_body(settings, tmp_path):
+    from base.heavy.queue import HeavyQueue
+
+    lan = lan_settings(settings, heavy_queue=True)
+    svc = make_services(lan, heavy=HeavyQueue(tmp_path / "q.db"))
+    app = create_app(svc)
+    with TestClient(app, base_url=LAN) as c:
+        bad = c.post("/heavy/" + "a" * 32 + "/result", content=b"{", headers={"content-type": "application/json"})
+        assert bad.status_code == 401  # not 422: the body was never parsed
+
+
+def test_pairing_misses_survive_a_restart(settings, tmp_path):
+    from base.ui_app import MAX_TOTAL_MISSES
+
+    path = tmp_path / "misses"
+    for _ in range(MAX_TOTAL_MISSES):
+        p = Pairing(misses_path=path)  # a new process each time, as after a crash
+        code = p.new_code()
+        assert not p.redeem("999999" if code != "999999" else "888888")
+    p = Pairing(misses_path=path)
+    assert p.locked_out()
+    code = p.new_code()
+    assert not p.redeem(code)  # even the right code: start-up codes are off until the device asks
+    code = p.new_code(on_device=True)
+    assert p.redeem(code) and not p.locked_out()
+
+
+def test_cookie_is_secure_with_tls_and_other_browsers_can_be_signed_out(settings, tmp_path):
+    tls = lan_settings(settings, approval_tls_cert=tmp_path / "c.pem", approval_tls_key=tmp_path / "k.pem")
+    app = create_app(make_services(tls))
+    https = LAN.replace("http://", "https://")  # a Secure cookie only comes back over TLS
+    with TestClient(app, base_url=https, headers={"Origin": https}) as c:
+        r = c.post("/pair", data={"code": app.state.pairing.new_code()}, follow_redirects=False)
+        assert "Secure" in r.headers["set-cookie"]
+    with TestClient(app, base_url=https, headers={"Origin": https}) as other:
+        other.post("/pair", data={"code": app.state.pairing.new_code()}, follow_redirects=False)
+        assert app.state.sessions.count() == 2
+        assert other.post("/api/sessions/clear").json() == {"ok": True, "signed_out": 1}
+        assert app.state.sessions.count() == 1 and other.get("/api/approvals").status_code == 200

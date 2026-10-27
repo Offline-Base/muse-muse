@@ -157,7 +157,7 @@ class Spark:
     @property
     def client(self) -> httpx.Client:
         if self._client is None:
-            self._client = httpx.Client()
+            self._client = httpx.Client(trust_env=False)  # never through an environment proxy
         return self._client
 
     def chat(

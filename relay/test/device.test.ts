@@ -1,11 +1,23 @@
-import { SELF, env, runInDurableObject } from "cloudflare:test";
+import { SELF, createExecutionContext, env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { sha256Hex } from "../src/crypto";
-import { GATE, MAX_ATTEMPTS, normalizeCode, newCode, type PairingGate } from "../src/pairing";
+import { hmacHex, sha256Hex } from "../src/crypto";
+import worker from "../src/index";
+import {
+  GATE,
+  MAX_ATTEMPTS_PER_CODE,
+  MAX_ATTEMPTS_PER_IP,
+  codeKey,
+  ipKey,
+  normalizeCode,
+  newCode,
+  type PairingGate,
+} from "../src/pairing";
 import { ORIGIN, connectDevice, freshIp, nextMessage, pairCode, registerDevice, startAuthorize, submitCode } from "./helpers";
 
+const PEPPER = env.PAIRING_PEPPER!;
 const gate = () => env.PAIRING.getByName(GATE);
-const ipHash = () => sha256Hex(`ip:${freshIp()}`);
+const ipHash = () => ipKey(PEPPER, freshIp());
+const codeHash = (code: string) => codeKey(PEPPER, code);
 
 describe("POST /device/register", () => {
   it("returns a device id and secret once and keeps only the secret's hash", async () => {
@@ -70,16 +82,31 @@ describe("POST /device/pair", () => {
     }
   });
 
-  it("stores only a hash of the code, with its expiry", async () => {
+  it("stores only an HMAC of the code under PAIRING_PEPPER, with its expiry", async () => {
     const device = await registerDevice();
     const code = await pairCode(device.secret);
     const rows = await runInDurableObject(gate(), async (_instance: PairingGate, state) =>
       state.storage.sql.exec("SELECT * FROM codes WHERE device_id = ?", device.device_id).toArray(),
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].code_hash).toBe(await sha256Hex(code));
+    expect(rows[0].code_hash).toBe(await hmacHex(PEPPER, `code:${code}`));
+    // Not a plain hash anyone could recompute from a guess without the secret.
+    expect(rows[0].code_hash).not.toBe(await sha256Hex(code));
+    expect(rows[0].code_hash).not.toBe(await sha256Hex(`code:${code}`));
+    expect(rows[0].code_hash).not.toBe(await hmacHex("another-pepper-of-at-least-32-chars", `code:${code}`));
     expect(JSON.stringify(rows)).not.toContain(code);
     expect(Number(rows[0].expires_at) - Date.now()).toBeGreaterThan(590_000);
+  });
+
+  it("keys attempt counters by an HMAC of the IP, never the IP", async () => {
+    const ip = freshIp();
+    await gate().redeem(await ipKey(PEPPER, ip), null);
+    const keys = await runInDurableObject(gate(), async (_instance: PairingGate, state) =>
+      state.storage.sql.exec<{ key: string }>("SELECT key FROM hits").toArray().map((row) => row.key),
+    );
+    expect(keys).toContain(`ip:${await hmacHex(PEPPER, `ip:${ip}`)}`);
+    expect(keys.join(" ")).not.toContain(ip);
+    expect(keys).not.toContain(`ip:${await sha256Hex(`ip:${ip}`)}`);
   });
 
   it("makes codes that never use 0, O, 1 or I", () => {
@@ -94,14 +121,14 @@ describe("POST /device/pair", () => {
 describe("pairing codes", () => {
   it("work once", async () => {
     const device = await registerDevice();
-    const hash = await sha256Hex(await pairCode(device.secret));
+    const hash = await codeHash(await pairCode(device.secret));
     expect(await gate().redeem(await ipHash(), hash)).toEqual({ ok: true, deviceId: device.device_id });
     expect(await gate().redeem(await ipHash(), hash)).toEqual({ ok: false, reason: "wrong" });
   });
 
   it("expire after 10 minutes", async () => {
     const device = await registerDevice();
-    const hash = await sha256Hex(await pairCode(device.secret));
+    const hash = await codeHash(await pairCode(device.secret));
     // Move the code's expiry into the past, as if 10 minutes went by.
     await runInDurableObject(gate(), async (_instance: PairingGate, state) => {
       state.storage.sql.exec("UPDATE codes SET expires_at = ? WHERE code_hash = ?", Date.now() - 1, hash);
@@ -111,37 +138,49 @@ describe("pairing codes", () => {
 
   it("only the newest code for a device works", async () => {
     const device = await registerDevice();
-    const first = await sha256Hex(await pairCode(device.secret));
-    const second = await sha256Hex(await pairCode(device.secret));
+    const first = await codeHash(await pairCode(device.secret));
+    const second = await codeHash(await pairCode(device.secret));
     expect((await gate().redeem(await ipHash(), first)).ok).toBe(false);
     expect((await gate().redeem(await ipHash(), second)).ok).toBe(true);
   });
 
-  it("allow at most 5 attempts per IP in 10 minutes, even with the right code", async () => {
+  it("allow at most 20 attempts per IP in 10 minutes, even with the right code", async () => {
+    expect(MAX_ATTEMPTS_PER_IP).toBe(20);
     const device = await registerDevice();
-    const right = await sha256Hex(await pairCode(device.secret));
+    const right = await codeHash(await pairCode(device.secret));
     const ip = await ipHash();
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      expect(await gate().redeem(ip, await sha256Hex(`WRONG${i}`))).toEqual({ ok: false, reason: "wrong" });
+    for (let i = 0; i < MAX_ATTEMPTS_PER_IP; i++) {
+      expect(await gate().redeem(ip, await codeHash(`WRONG${i}`))).toEqual({ ok: false, reason: "wrong" });
     }
     expect(await gate().redeem(ip, right)).toEqual({ ok: false, reason: "limited" });
     // Malformed input counts against the IP too.
     const other = await ipHash();
-    for (let i = 0; i < MAX_ATTEMPTS; i++) await gate().redeem(other, null);
+    for (let i = 0; i < MAX_ATTEMPTS_PER_IP; i++) await gate().redeem(other, null);
     expect(await gate().redeem(other, right)).toEqual({ ok: false, reason: "limited" });
     // Another IP still gets in.
     expect(await gate().redeem(await ipHash(), right)).toEqual({ ok: true, deviceId: device.device_id });
   });
 
+  it("let a classroom behind one NAT pair several devices, typos included", async () => {
+    const ip = await ipHash();
+    for (let i = 0; i < 6; i++) {
+      const device = await registerDevice();
+      const right = await codeHash(await pairCode(device.secret));
+      expect(await gate().redeem(ip, await codeHash(newCode()))).toEqual({ ok: false, reason: "wrong" });
+      expect(await gate().redeem(ip, right)).toEqual({ ok: true, deviceId: device.device_id });
+    }
+  });
+
   it("allow at most 5 attempts per code value in 10 minutes, from any IP", async () => {
-    const guess = await sha256Hex("ZZZZ9999");
-    for (let i = 0; i < MAX_ATTEMPTS; i++) expect(await gate().redeem(await ipHash(), guess)).toEqual({ ok: false, reason: "wrong" });
+    expect(MAX_ATTEMPTS_PER_CODE).toBe(5);
+    const guess = await codeHash("ZZZZ9999");
+    for (let i = 0; i < MAX_ATTEMPTS_PER_CODE; i++) expect(await gate().redeem(await ipHash(), guess)).toEqual({ ok: false, reason: "wrong" });
     expect(await gate().redeem(await ipHash(), guess)).toEqual({ ok: false, reason: "limited" });
   });
 
   it("forget counters once the window passes", async () => {
     const ip = await ipHash();
-    for (let i = 0; i < MAX_ATTEMPTS; i++) await gate().redeem(ip, null);
+    for (let i = 0; i < MAX_ATTEMPTS_PER_IP; i++) await gate().redeem(ip, null);
     expect(await gate().redeem(ip, null)).toEqual({ ok: false, reason: "limited" });
     await runInDurableObject(gate(), async (_instance: PairingGate, state) => {
       state.storage.sql.exec("UPDATE hits SET reset_at = ? WHERE key = ?", Date.now() - 1, `ip:${ip}`);
@@ -205,12 +244,12 @@ describe("authorize page", () => {
     expect(again.status).toBe(400);
   });
 
-  it("shows a wait message after 5 tries from one IP", async () => {
+  it("shows a wait message after 20 tries from one IP", async () => {
     const device = await registerDevice();
     const start = await startAuthorize();
     const code = await pairCode(device.secret);
     const ip = freshIp();
-    for (let i = 0; i < MAX_ATTEMPTS; i++) expect((await submitCode(start, `ZZZZ222${i + 2}`, ip)).status).toBe(400);
+    for (let i = 0; i < MAX_ATTEMPTS_PER_IP; i++) expect((await submitCode(start, newCode(), ip)).status).toBe(400);
     const limited = await submitCode(start, code, ip);
     expect(limited.status).toBe(429);
     expect(await limited.text()).toContain("Too many tries");
@@ -276,5 +315,40 @@ describe("GET /device/connect", () => {
     second.send('{"type": "ping"}');
     expect(await reply).toEqual({ type: "pong" });
     second.close();
+  });
+});
+
+describe("without PAIRING_PEPPER", () => {
+  /** Call the Worker directly with the pepper removed or too short. */
+  async function call(path: string, init: RequestInit, pepper: string | undefined): Promise<Response> {
+    return worker.fetch(new Request(`${ORIGIN}${path}`, init), { ...env, PAIRING_PEPPER: pepper }, createExecutionContext());
+  }
+
+  it("refuses to register or pair, and says why", async () => {
+    const device = await registerDevice();
+    for (const pepper of [undefined, "", "too-short"]) {
+      const registered = await call("/device/register", { method: "POST", headers: { "CF-Connecting-IP": freshIp() } }, pepper);
+      expect(registered.status).toBe(503);
+      expect(await registered.json()).toEqual({ error: "relay is not set up: PAIRING_PEPPER is missing" });
+      const paired = await call("/device/pair", { method: "POST", headers: { Authorization: `Bearer ${device.secret}` } }, pepper);
+      expect(paired.status).toBe(503);
+    }
+  });
+
+  it("does not take a code on the authorize page", async () => {
+    const device = await registerDevice();
+    const start = await startAuthorize();
+    const code = await pairCode(device.secret);
+    const init = {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: start.cookie, "CF-Connecting-IP": freshIp() },
+      body: new URLSearchParams({ handle: start.handle, code, decision: "link" }).toString(),
+      redirect: "manual" as const,
+    };
+    const response = await call(new URL(start.url).pathname + new URL(start.url).search, init, undefined);
+    expect(response.status).toBe(503);
+    expect(await response.text()).toContain("This relay is not set up yet");
+    // The code was not used up: with the pepper back, it links.
+    expect((await submitCode(start, code, freshIp())).status).toBe(302);
   });
 });
