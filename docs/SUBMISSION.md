@@ -27,9 +27,9 @@ App builders also start from a text prompt. People usually know what they want b
 
 1. **Muse.** You drop in inspo (photos, screenshots, sketches, a short video, a voice memo or a PDF) and an optional note, like "make this, but for my bakery."
 2. **Brief.** Muse Spark 1.3 reads the inspo and writes a structured brief: the product, who it's for, the Meta models it needs and why, honest limits, cost per use, and what it takes from the inspo and leaves out. It refuses requests that impersonate people or organizations, clone a real brand, or involve weapons, malware or scams.
-3. **Build.** Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js product from a starter template. You watch the log and a live preview in the build room.
+3. **Build.** Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js product from a starter template. Every product shares a Meta-family look (Facebook's design tokens, Inter and Montserrat, an app bar, segmented choices, a composer, AI result cards) that the template's `meta-ui` skill teaches. You watch the log and a live preview in the build room.
 4. **Check.** Typecheck, build, the smoke test Muse Code wrote, a screen check, then Muse Spark 1.3 judging screenshots against the brief. Failures go back to the same Muse Code session with the judge's screenshots, up to three rounds.
-5. **Demo video.** The smoke test reruns with video on and becomes an MP4 with a title card and captions.
+5. **Demo video.** Demo Studio replays the smoke test with a recorder, then edits a 1920×1080 launch clip: an intro card, the app in a browser window with its real URL, a cursor that glides to each control, typing key by key, a camera that zooms in on what is typed and on each result, model waits sped up with a badge that says by how much ("Waited 14 s, sped up"), captions below the window, and an outro with the live link.
 6. **Ship.** The product deploys as its own Vercel project. It calls Meta only through the platform's metered gateway, with its own scoped, budgeted token.
 7. **Use in Muse.** Its actions become an MCP connector that the Muse app (or Claude Code) can add.
 
@@ -38,19 +38,19 @@ Every product it ships is new, metered Meta API usage. The dashboard's headline 
 Two more parts sit on top:
 
 - **Rebuilds.** One command rebuilds Meta's Llama-era demo videos on current Muse models, plus first demos for the models Meta has no video for: SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder.
-- **Fine-tuning lab, "Spark teaches Glimmer."** Muse Spark 1.3 writes a training set, Muse Glimmer 30B learns it with a LoRA adapter on the owner's Lambda GPUs, and Muse Spark 1.3 judges base against tuned, blind. Results are public and read-only at `/fine-tuning`.
+- **Fine-tuning lab, "Spark teaches Glimmer."** Muse Spark 1.3 writes a training set, Muse Glimmer 30B learns it with a LoRA adapter on the owner's Lambda GPUs, and Muse Spark 1.3 judges base against tuned, blind. Results are public and read-only at `/fine-tuning`. Each judged adapter then publishes itself to Hugging Face with its training data and a card that tells why it was made.
 
 ### How it uses Meta's models
 
 | Model or tool | Where Muse Muse uses it |
 |---|---|
-| **Muse Spark 1.3** | Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses. Judges each build's screenshots. Default model for Muse Code. Writes fine-tuning datasets and judges base against tuned Glimmer. The default model inside products. |
+| **Muse Spark 1.3** | Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses. Judges each build's screenshots. Default model for Muse Code. Writes fine-tuning datasets, judges base against tuned Glimmer, and writes the "Why this exists" story on each Hugging Face card. The default model inside products. |
 | **Muse Wonder 1.0** | Muse Code's build model when the brief marks a product complex. Inside products that need long, multi-step planning, such as the first Muse Wonder demo. |
 | **Muse Image 1.0** | Inside products, for generating and editing images. It also made the three example photos on the Make page. |
 | **SAM 3.1** | Inside products, to find, outline and count things in photos and video, such as the first SAM 3.1 demo. Results are parsed with Meta's `@meta-sam/parser`. |
 | **Muse Voice Transcribe 1.0** | Turns a voice-memo muse into text before the brief. Inside products, after the browser converts audio to 16 kHz mono WAV, the only format the API accepts. |
 | **Muse Code** | Writes every product, headless in a Vercel Sandbox: `muse exec --json` with hardened flags, `--session-id` to resume for fix rounds and refinements, `--image` for inspo and judge screenshots, `muse skills disable` for 15 bundled skills that fight a headless build, and `muse export --redacted` for each product's "How it was built." |
-| **Muse Glimmer 30B** | The fine-tuning lab's student: a QLoRA fine-tune on Lambda GPUs, judged by Muse Spark 1.3. Products can also call a hosted Glimmer endpoint through `GLIMMER_URL` when a brief asks for a local or private model. |
+| **Muse Glimmer 30B** | The fine-tuning lab's student: a QLoRA fine-tune on Lambda GPUs, judged by Muse Spark 1.3, served live for side-by-side answers, and published to Hugging Face as a PEFT adapter with its data and card. Products can also call a hosted Glimmer endpoint through `GLIMMER_URL` when a brief asks for a local or private model. |
 | **Meta Model API endpoints** | `responses`, `images/generations`, `images/edits`, `files` and `asr/transcribe`, which products reach only through the platform's gateway. Muse Code also calls `models` and `/muse-code/models` through the sandbox firewall. |
 | **Meta's Videos page** | The rebuild set: `catalog/meta-resources.json` links each video and never copies it. |
 
@@ -61,7 +61,8 @@ Two more parts sit on top:
 - **Untrusted code never holds a Meta key.** The sandbox firewall adds the key only on Muse Code's own routes. Products get scoped, budgeted, revocable tokens through a metered gateway.
 - **Meta's own demos as the test set.** The rebuilds turn Meta's Llama-era videos into current demos on Muse models, with honest fit labels: clean, reframe or partial.
 - **Measured, including what didn't work.** Muse Code's hidden reminder spend is found and charged. Product quality is scored blind, and a polish round that scored lower was not merged.
-- **Spark teaches Glimmer.** The hosted model writes the data, the open model learns it, the hosted model judges blind, and the results are public.
+- **Spark teaches Glimmer.** The hosted model writes the data, the open model learns it, the hosted model judges blind, and the results are public, on the site and on Hugging Face.
+- **Demos that edit themselves.** Every product's video is cut from its own passing test, with the waits sped up and labeled honestly, so a judge sees the product work instead of a spinner.
 
 ### What was hard
 
@@ -69,8 +70,9 @@ Two more parts sit on top:
 2. **Muse Code with nobody watching.** Its launcher tries to self-update from a host the firewall blocks and may start a device sign-in, so the runner sets `MUSE_NO_AUTO_UPDATE=1` and `MUSE_LOGIN=0`. Its own bubblewrap sandbox can't run in the microVM, so `--yolo` is used and the VM is the boundary. Fifteen bundled skills fought the template, so the snapshot turns them off and checks. Flags differ between versions, so the runner adds optional ones only when `muse exec --help` lists them.
 3. **Honest cost.** `run.usage` counts only the main agent. Reminder agents were 31% to 43% of each build's real Muse Code spend. The platform now reads the usage records in Muse Code's session logs, drops the records that reminder agents' own logs repeat, counts only the current run, and charges the rest.
 4. **Media limits.** Voice Transcribe takes only mono 16-bit PCM WAV at 16 or 24 kHz, so products convert audio in the browser. Vercel Functions cap request bodies at 4.5 MB, so large files go straight to Vercel Blob with short-lived upload tickets. Meta fetches media by URL, so the Blob store has to be public.
-5. **Products that work but look generic.** A blind review averaged 5.5 out of 10. A template polish raised a canary from 5.14 to 5.91. A second round scored 5.50 and cost 64% more, so it stayed on a branch.
-6. **GPUs that bill by the hour.** Three things terminate every instance: the job's workflow, the instance's done callback, and a sweep every 5 minutes. Jobs won't launch unless that sweep ran in the last 15 minutes. The first real run then lost 28 to 11, and the cause was an eval bug, not the training (see Results).
+5. **Products that work but look generic.** A blind review averaged 5.5 out of 10. A template polish raised a canary from 5.14 to 5.91. A second round scored 5.50 and cost 64% more, so it stayed on a branch. What worked was a design system: Meta's look, researched from public sources and taught as a skill. Three judges compared 11 builds of the same muses blind, and the Meta-look builds won 30 of 33 votes (7.17 against 5.53).
+6. **Demo videos that were half spinner.** The first videos replayed the test with Playwright's recorder: a static "Working…" screen for half the clip, captions over the app's buttons, no cursor, blurry text. Demo Studio records a timeline of every action, change on screen and wait, and edits from it: actions and results at real speed, waits sped up with a badge, and each new result scrolled into view and held.
+7. **GPUs that bill by the hour.** Three things terminate every instance: the job's workflow, the instance's done callback, and a sweep every 5 minutes. Jobs won't launch unless that sweep ran in the last 15 minutes. The first real run then lost 28 to 11, and the cause was an eval bug, not the training (see Results).
 
 ### Results from the Oct 27 test runs
 
@@ -90,6 +92,7 @@ Two more parts sit on top:
 - A judge-style blind review of 24 products' screenshots averaged 5.5 out of 10.
 - After the template polish (themes, shared parts, a screen check in each product's own tests, copy rules), an 11-build canary of the same muses scored 5.91, up from 5.14 for those 11. All 11 went live.
 - A second polish round scored lower (5.50) and cost 64% more, so it was not merged.
+- Oct 28, the Meta look: the same 11 muses rebuilt on the Meta-family template, all 11 live with no fix rounds, for $13.99 against $11.81. Three judges saw each pair side by side, with the sides shuffled and nothing saying which was new. The Meta-look builds won 30 of 33 votes and 10 of 11 pairs, scoring 7.17 against 5.53 overall and 7.94 against 2.39 for looking like a Meta app. The one loss was a spreadsheet whose chart drew no bars, which led to a check that fails a build whose last screen shows an error or an empty state.
 
 **Fine-tuning**
 
@@ -102,7 +105,6 @@ Two more parts sit on top:
 
 ### What's next
 
-- Connect the public Blob store, run the rebuild batch on the live site, and publish every product to its own link.
 - Serve a tuned Glimmer adapter as a product backend through `GLIMMER_URL`, so a product can run on an open model the lab trained.
 - Spoken replies and realtime voice once the Model API has text-to-speech and speech-to-speech. Products use browser speech synthesis until then.
 - More lab tasks, each judged the same way against its own held-out prompts.
@@ -167,8 +169,8 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 **5. Product page and its recorded demo (0:59-1:16)**
 
-- On screen: in the right panel's Links, click **Product page**. The live product shows in the frame. Click **Open**, drop the receipt photo into the product and show the CSV it returns. Go back and play the **Recorded demo** for about 3 seconds. Move the pointer over Models, Limits, the Muse app connector URL and **How it was built**.
-- Say: "Every product ships as its own Vercel project with its own link. It reaches Meta only through our gateway, with a scoped, budgeted token. It comes with a demo recorded from its own test, and the Muse Code transcript of how it was built."
+- On screen: in the right panel's Links, click **Product page**. The live product shows in the frame. Click **Open**, drop the receipt photo into the product and show the CSV it returns. Go back and play the **Recorded demo** for about 5 seconds, through the "Waited ... sped up" badge and the zoom onto the result. Move the pointer over Models, Limits, the Muse app connector URL and **How it was built**.
+- Say: "Every product ships as its own Vercel project with its own link. It reaches Meta only through our gateway, with a scoped, budgeted token. Its demo video is cut from its own passing test: the cursor, the typing, the result, and the model's wait sped up and labeled. Plus the Muse Code transcript of how it was built."
 
 **6. Rebuilds (1:16-1:35)**
 
@@ -178,7 +180,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 **7. Gallery (1:35-1:50, cut first)**
 
 - On screen: click **Gallery**. Scroll the grid slowly. Point at two cards' model chips and their "Built in ... · $..." line. Click one to show its demo poster.
-- Say: "A blind review scored our first 24 products 5.5 out of 10. After a template polish, 11 of the same muses went from 5.14 to 5.91. A second polish scored lower and cost more, so we dropped it."
+- Say: "Every product shares Meta's look, from a design skill we researched and built. Three judges compared 11 products built from the same muses, blind, old template against new. The Meta look won 30 of 33 votes."
 
 **8. Dashboard and the connector (1:50-2:05)**
 
@@ -193,7 +195,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 **10. Fine-tuning lab (2:20-2:42)**
 
 - On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict).
-- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time."
+- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time." If the run is on Hugging Face by recording day, show its model card's "Why this exists" for two seconds: "And every judged run publishes itself to Hugging Face, with its data and the story of why it was made."
 
 **11. Close (2:42-2:50)**
 
@@ -216,10 +218,16 @@ From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
 - [x] **A public Blob store on the live site.** "muse-blob" is connected through OIDC (`BLOB_STORE_ID`, no read-write token). The server signs in with the request's OIDC token and browsers upload through presigned URLs. `npm run rebuild-all` then ran against the live site on Oct 28: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds.
 - [x] **Try tuned Glimmer live.** A time-boxed GPU demo answers visitors' app ideas with base and tuned Muse Glimmer side by side on the run's public page. Tested in production on Oct 28: about 90 seconds per answer pair, about $1.50 for a 30-minute window.
 
+- [x] **Demo Studio.** Launch-clip demo videos for every product: cursor, camera, sped-up waits with a badge, captions below the window, intro and outro cards, and a poster on the result.
+- [x] **The Meta look for products**, with the `meta-ui` skill, and measured blind: 30 of 33 votes against the old template.
+- [x] **Hugging Face export** of tuned adapters, their training data and a card story, built and tested against a fake Hub. Waiting on a write token.
+
 ### Left
 
 - [ ] **A GitHub repo, if the rules need one.** The repo is local with no remote. Push `main` with its full history, so the scaffold commit `e3ba154` stays visible.
 - [ ] **Record the video** from section 2, including the dated OpenRouter and Meta Videos page screenshots for the opening.
+- [ ] **Hugging Face:** set `HF_TOKEN` and `HF_NAMESPACE` on Vercel, then publish run 2 with a `glimmer-publish` job and check both repos and cards on the Hub.
+- [ ] **Rebuild the catalog on the live site** with the new snapshot, so Rebuilds and Gallery show the Meta look and Demo Studio videos.
 - [x] Fill in the second fine-tuning run's result (tuned won 40 of 40).
 - [ ] **After the event, rotate the Vercel token and the Lambda API key.**
 
