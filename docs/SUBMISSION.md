@@ -193,7 +193,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 **10. Fine-tuning lab (2:20-2:42)**
 
 - On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict).
-- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model now writes our briefs, for under two dollars of GPU time."
+- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time."
 
 **11. Close (2:42-2:50)**
 
