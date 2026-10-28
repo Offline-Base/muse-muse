@@ -16,19 +16,22 @@ work from Muse Code.
   as chips, with the poster beside it in a small browser window, so the first second shows what the product makes.
 - The app inside a browser window on a Meta-blue backdrop, with its real URL in the address bar.
 - A cursor that glides to each control with easing, a ripple on every click, text appearing key by key, and a file
-  chip that drops onto the picker when a file is chosen. The cursor fades out while the mouse rests, so waits and
-  results are clean.
-- Every new result brought on screen and held about 3 seconds before the next action, under the caption of the step
-  that made it. The video ends on the last one.
+  chip that drops onto the picker when a file is chosen. An action that changes nothing (a fill with the value the
+  field has, an option already chosen) gets no glide or ripple. The cursor moves off a result while it is held and
+  fades out while the mouse rests, so waits and results are clean.
+- Up to two new results a step brought on screen and held about 3 seconds before the next action, under the caption
+  of the step that made it. The video ends on the strongest result after the last model wait.
 - A camera that zooms in on the field being typed into and frames each result when it appears, then eases back out.
+  A result is framed on the content column with what led to it above it, and crop edges keep clear of headings.
 - Model waits sped up, with an honest badge in the window's toolbar such as "Waited 14 s, sped up". Actions and
   results always play at real speed.
-- Step captions in a lower-third below the window. They never cover the app, and one cross-fades into the next.
+- Step captions in a lower-third below the window. They never cover the app, and at a step change the old text fades
+  out and the new one in on a pill that stays up, so two captions never show at once.
 - An outro card with "Try it" and the live URL (or the product's name and tagline when there is no URL) and "Built
   with Muse Muse. Not an official Meta product."
 - The cards and the app meet through the plain backdrop, so two screens are never on top of each other.
-- A poster that is the last result as the camera shows it, 1920x1080 with no window, caption or badge, so it fills
-  a 16:9 card.
+- A poster that is the best result as the camera shows it (the one that ended the longest model wait), 1920x1080
+  with no window, caption or badge, so it fills a 16:9 card.
 
 ## How it works
 
@@ -41,7 +44,7 @@ playwright test --project=studio (1280x720 CSS px at deviceScaleFactor 2)
    │    - CDP screencast recorder: JPEG frames at 2560x1440, at most 30 fps, with timestamps
    │    - cursor overlay, eased glides, drawn typing, file chip (patched Locator actions, restored after the test)
    │    - activity tracker: DOM mutations, aria-busy on/off, scrolls, test.step start/end
-   │    - results: each new one scrolled into view when it landed off screen, and held
+   │    - results: up to two a step scrolled into view when they landed off screen, and held; the strongest at the end
    ▼
 test-results/demo/timeline.json + test-results/demo/frames/*.jpg
    ▼
@@ -92,11 +95,12 @@ and run past it when part of the element is off screen.
   "duration": 41.2,
   "frames": [{ "file": "frames/000001.jpg", "t": 0.0 }],
   "steps": [{ "title": "Upload a photo of the receipt", "t0": 0.4, "t1": 3.1, "depth": 0 }],
-  "actions": [{ "kind": "type", "t0": 3.4, "ready": 4.8, "t1": 4.9, "rect": { "x": 200, "y": 300, "w": 600, "h": 44 }, "label": "Store name", "typed": 13 }],
+  "actions": [{ "kind": "type", "t0": 3.4, "ready": 4.8, "t1": 4.9, "rect": { "x": 200, "y": 300, "w": 600, "h": 44 }, "label": "Store name", "typed": 13, "heads": [] }],
   "activity": [{ "t": 9.8, "added": 14, "changed": 3, "text": 212, "rect": { "x": 180, "y": 120, "w": 920, "h": 540 } }],
   "busy": [{ "t": 5.0, "on": true, "rect": { "x": 180, "y": 400, "w": 920, "h": 200 } }],
   "scrolls": [{ "t": 10.1, "y": 640 }],
-  "results": [{ "t": 10.0, "rect": { "x": 180, "y": 90, "w": 920, "h": 540 }, "scrollY": 640 }],
+  "results": [{ "t": 10.0, "at": 9.8, "rect": { "x": 180, "y": 90, "w": 920, "h": 540 }, "scrollY": 640, "waited": 4.8, "busy": true, "media": 0, "heads": [], "blanks": [] }],
+  "column": { "x": 180, "w": 920 },
   "viewports": []
 }
 ```
@@ -104,22 +108,45 @@ and run past it when part of the element is off screen.
 `kind` is one of `goto`, `click`, `type`, `upload`, `select`, `check`, `press`, `hover`. An action's `t0` is when the
 cursor starts moving to it, after any wait for the element to appear, and `ready` is when the cursor is there and
 Playwright's own action starts (it may still wait, say for a button to be enabled). Uploads also carry `fileName`, and
-fills `typed`, the characters drawn into the field (0 when the field already said it). An activity record's `text` is
-the characters of text it added. A result is one the recorder brought on screen and held: `t` is when it came on
-screen (when the scroll to it started, or when it appeared), and its rect is measured in view, at `scrollY`.
-`viewports` lists `page.setViewportSize` calls (`t`, `width`, `height`). Frames come only when the screen changes, so a
-frame lasts until the next one. Timelines from before `ready`, `typed`, `text`, `results` and `viewports` existed still
-work: an action without `ready` was ready when it ended.
+fills `typed`, the characters drawn into the field (0 when the field already said it). `noop: true` marks an action
+that changed nothing, so the cursor stayed put. An activity record's `text` is the characters of text it added. A
+result is one the recorder brought on screen and held: `at` is when it appeared, `t` when it came on screen (when the
+scroll to it started, or when it appeared), and its rect is measured in view, at `scrollY`. `waited` is how long the
+viewer waited for it in seconds (its aria-busy span, or the time since they last pressed or typed), `busy` whether it
+came from an aria-busy section, and `media` how many pictures it holds. `heads` (on actions and results) are the boxes
+of headings, labels and the app bar on screen, `blanks` those of empty text fields, and `pressed` that of the control
+pressed last. `column` is the content column, from `main`. `viewports` lists `page.setViewportSize` calls (`t`,
+`width`, `height`). Frames come only when the screen changes, so a frame lasts until the next one. Timelines from
+before any of these fields existed still work: an action without `ready` was ready when it ended, and a result's wait
+comes from the aria-busy spans and sped-up waits before it.
 
 ## Recording rules
 
-- **Results:** a result is a section that stopped being aria-busy, or a burst that added at least 3 elements or 20
-  characters of text. Before each action (and again when the element it waited over half a second for has appeared),
-  when a step passes, before a `goto` and at the end of a passing test, the newest result that is at least 2% of the
-  screen (any size at the end) is scrolled into view when most of it is off screen, then held until it has been in
-  view 2.8 s. The test then holds its last frame 0.8 s more.
+- **Results:** a result is a section that stopped being aria-busy (when the busy element, like a Skeleton, is removed,
+  the section or card it was in, unless that holds the field the viewer typed into: that is the form, and the burst
+  that replaced the busy part stands), or the biggest element of a burst that added at least 3 elements or 20
+  characters of text. A busy button only marks the end of a wait, and a burst inside a section that is still busy is
+  its loading state. The same result reported both ways within half a second is one, and pictures in it decode (at
+  most 1.5 s) before it is measured.
+- **Holds:** before each action (and again when the element it waited over half a second for has appeared), when a
+  step passes and before a `goto`, the results that appeared since the top-level step began, are at least 2% of the
+  screen and aren't the form the viewer just used (one holding the control pressed last, unless an aria-busy section
+  made it) are held oldest first, at most two a step. A test without steps is one step from its first action. A burst
+  still coming in is waited for, up to 0.6 s, so an action's result is held right after it rather than one action
+  late. Each is scrolled into view when most of it is off screen, and the cursor glides off it to its resting place
+  and fades out; a cursor that already faded during a wait stays hidden while the mouse moves there. It holds 2.8 s
+  from when it is in view; a step's second result that lands within 48 px of the first holds 0.8 s, and past an
+  estimated 30 s of main part a result the viewer waited under 1.5 s for holds 1 s. A result noticed after its hold
+  would have ended adds no time.
+- **The end:** a passing test goes back to its strongest result from the last wait of 1.5 s or more on (one waited at
+  least 3/4 as long for as the longest, then one from an aria-busy section, then one with pictures, then the biggest)
+  and holds it 2.8 s, unless it is still in view from its own hold. The test then holds its last frame 0.8 s more.
 - **Waiting:** the choreography waits for an element as the action would (visible, or attached for uploads, presses
   and forced actions), never longer than the action's own timeout or the test's `actionTimeout`.
+- **Actions that change nothing:** a fill with the value the field has, a check of a box already checked (or an
+  uncheck of one that isn't), a click on an option already chosen (a radio, its label, a selected tab) and a select of
+  the option already selected run with no scroll, glide or ripple. A click of that kind still moves the real mouse, so
+  the cursor ignores it.
 - **Cursor:** it fades out 2.4 s after the mouse last moved and comes back with the next move.
 - **Scrolling:** the page scrolls smoothly unless the product sets its own `scroll-behavior`, so a product that jumps
   to its result glides there.
@@ -145,7 +172,10 @@ work: an action without `ready` was ready when it ended.
 - **Length cap:** if the main part would still run past 70 s, idle stretches over 1 s are compressed too.
 - **Captions:** one per top-level step with a title, cut to 60 characters, each up until the next starts, the last
   until 0.6 s before the main part ends. Captions shorter than 1 s are dropped. The step count shows when there are
-  two or more.
+  two or more. Each caption is a pill and its text, drawn separately, every pill under every text, and of two pills
+  that meet the wider on top. At a step change the old text fades out over 0.15 s while the new pill fades in, then
+  the old pill fades out while the new text fades in, so the pill changes width without blinking or showing inside
+  the other, and two texts are never on screen together.
 
 ## Camera rules
 
@@ -157,20 +187,30 @@ work: an action without `ready` was ready when it ended.
 - **Reveal:** frame the union of what appeared, with 64 px of padding (28 px above, where the button that asked for it
   usually sits), if it covers less than 60% of the viewport and at least half of it is on screen, `z` between 1.15 and
   1.6, held for 2.5 s, then back to 1. Never framed: the field echoing keys while typing, a loading state, an echo,
-  and anything mostly off screen (the recorder's held result frames it once it is in view).
-- **Controls stay whole:** a crop's top or bottom edge that would cut through a control the test used nearby moves just
-  past it, or out to take it in, while the target stays in view.
+  anything mostly off screen, and where a result appeared that the recorder brought on screen later (its held result
+  frames it once it is in view). A held result taller than the screen counts against as much of it as the screen can
+  show, so its top gets a shot. The crop sits on the middle of the content column (the recorder's, or the span of the
+  held results and the actions), with `z` no higher than shows the whole column and 64 px either side, and a result
+  shorter than the crop gets the spare room above it.
+- **Tall targets** taller than the crop show their top.
+- **Edges stay clear:** a crop's top and bottom edges move to cut through as few as they can of the controls the test
+  used nearby, the headings, labels and app bar the recorder saw closest in time, each edge just past one or out to
+  take it in, the nearest such place winning, while the target stays in view.
 - **A shot holds through actions inside its view** that start before it would end (the file chip landing on a picker
   next to the field).
 - **The cursor stays in view:** a shot starts to leave 0.4 s before an action outside its view. If that action starts
   before the shot could hold 1.2 s, the shot takes the action's target in (64 px of padding) when both still fit at
-  the lowest zoom, and otherwise there is no shot.
+  the lowest zoom, and otherwise there is no shot. An action that changed nothing doesn't count.
 - Zoom targets less than 1.5 s apart merge into one shot of their union. Every zoom holds at least 1.2 s. The last
   0.7 s of the main part is at `z = 1`, and the last frame is held up to 2 s when the last result needs it for its
   shot. Nothing is framed after a `page.setViewportSize`.
-- **Poster:** the last held result's shot 1.5 s into its hold (halfway when it is shorter), or the last frame when it
-  got no shot. A recording without held results uses the biggest reveal's shot, 1.2 s after the biggest reveal, or
-  60% of the way through.
+- **Poster:** the best held result as the camera shows it: its shot 1.5 s into the hold (halfway when shorter) and at
+  least a second after it is in view, that second when it got no shot, or the last frame for the last one. A result is
+  passed over, while another is left, when its frame holds an empty text field, or when it holds the control pressed
+  last and the viewer waited under 1.5 s for it. Of the rest the poster takes one waited at least 3/4 as long for as
+  the longest, then one from an aria-busy section, then one with pictures, then the biggest, then the latest. An older
+  timeline's waits come from its aria-busy spans and sped-up waits. A recording without held results uses the biggest
+  reveal's shot, 1.2 s after the biggest reveal, or 60% of the way through.
 
 ## Layout (1920x1080)
 

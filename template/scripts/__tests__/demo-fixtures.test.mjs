@@ -3,7 +3,20 @@
 // or, since Node 22 strips the types itself, from template/: node --test scripts/__tests__/demo-fixtures.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aimPoint, clampRect, easeInOut, glideMs, jpegSize, typingPlan, uploadNames } from "../../tests/demo-fixtures.ts";
+import {
+  aimPoint,
+  clampRect,
+  easeInOut,
+  glideMs,
+  holdMs,
+  idleCutMs,
+  jpegSize,
+  nearBoxes,
+  typingPlan,
+  uploadNames,
+  wantedOptions,
+} from "../../tests/demo-fixtures.ts";
+import { idleOutputSeconds } from "../demo-plan.mjs";
 
 test("easeInOut starts and ends slowly and passes the middle at half", () => {
   assert.equal(easeInOut(0), 0);
@@ -83,4 +96,42 @@ test("the cursor aims at a box's middle, or at a native file input's button at i
   assert.deepEqual(aimPoint({ x: 100, y: 200, w: 300, h: 40 }, vp, true), { x: 148, y: 220 });
   assert.deepEqual(aimPoint({ x: 100, y: 200, w: 60, h: 40 }, vp, true), { x: 130, y: 220 }, "a narrow one at its middle");
   assert.deepEqual(aimPoint({ x: 1200, y: 700, w: 200, h: 40 }, vp), { x: 1240, y: 710 }, "the part on screen");
+});
+
+test("a result holds 2.8 s, a step's later one near the last 0.8 s, and past 30 s one with no model wait 1 s", () => {
+  const base = { later: false, near: false, waited: 9000, mainMs: 10_000 };
+  assert.equal(holdMs(base), 2800, "the first result of a step");
+  assert.equal(holdMs({ ...base, later: true, near: true }), 800, "a card moved along the same board");
+  assert.equal(holdMs({ ...base, later: true }), 2800, "a later result somewhere else");
+  assert.equal(holdMs({ ...base, waited: 400, mainMs: 31_000 }), 1000, "late, and no model made it");
+  assert.equal(holdMs({ ...base, mainMs: 31_000 }), 2800, "late, but a model made it");
+  assert.equal(holdMs({ ...base, later: true, near: true, waited: 400, mainMs: 31_000 }), 800);
+  assert.equal(holdMs({ ...base, waited: 0, mainMs: 60_000, final: true }), 2800, "the result the video ends on");
+});
+
+test("boxes are near when they overlap or lie within 48 px, like two cards in one column", () => {
+  const card = { x: 312, y: 600, w: 195, h: 118 };
+  assert.equal(nearBoxes(card, { ...card, y: 650 }), true);
+  assert.equal(nearBoxes(card, { ...card, y: 760 }), true, "42 px below");
+  assert.equal(nearBoxes(card, { ...card, x: 776 }), false, "two columns over");
+  assert.equal(nearBoxes(card, { ...card, x: 548 }), true, "the next column, 41 px away");
+  assert.equal(nearBoxes(card, { ...card, y: 760 }, 20), false);
+});
+
+test("the main part's estimate cuts what Demo Studio speeds up from each quiet stretch", () => {
+  assert.equal(idleCutMs(900), 0);
+  assert.equal(idleCutMs(1600), 0);
+  for (const ms of [2000, 3000, 10_000, 40_000]) {
+    assert.ok(Math.abs(ms - idleCutMs(ms) - idleOutputSeconds(ms / 1000) * 1000) < 1e-6, `${ms} ms plays like demo-plan says`);
+  }
+});
+
+test("selectOption's plain options are read, and anything else is left alone", () => {
+  assert.deepEqual(wantedOptions("4"), ["4"]);
+  assert.deepEqual(wantedOptions(["a", "b"]), ["a", "b"]);
+  assert.deepEqual(wantedOptions({ value: "x" }), ["x"]);
+  assert.deepEqual(wantedOptions({ label: "Four days" }), ["Four days"]);
+  assert.equal(wantedOptions({ index: 2 }), null);
+  assert.equal(wantedOptions([]), null);
+  assert.equal(wantedOptions(null), null);
 });

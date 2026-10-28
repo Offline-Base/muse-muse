@@ -15,27 +15,40 @@
  * @typedef {{ x: number, y: number, w: number, h: number }} Rect
  * @typedef {{ file: string, t: number }} Frame
  * @typedef {{ title: string, t0: number, t1: number, depth: number }} Step
- * @typedef {{ kind: string, t0: number, ready: number, t1: number, rect: Rect | null, label: string, fileName?: string, typed?: number }} Action
+ * @typedef {{
+ *   kind: string, t0: number, ready: number, t1: number, rect: Rect | null, label: string, fileName?: string,
+ *   typed?: number, noop?: boolean, heads?: Rect[]
+ * }} Action
+ *   noop: the element already had the value or state, so the cursor stayed put. heads: headings, labels and the app
+ *   bar on screen when the element was measured.
  * @typedef {{ t: number, added: number, changed: number, text: number, rect: Rect | null }} Activity
  * @typedef {{ t: number, on: boolean, rect: Rect | null }} Busy
  * @typedef {{ t: number, y: number }} Scroll
- * @typedef {{ t: number, rect: Rect | null, scrollY: number | null }} Result
+ * @typedef {{
+ *   t: number, at: number, rect: Rect | null, scrollY: number | null, waited: number | null, busy: boolean | null,
+ *   media: number, heads: Rect[], blanks: Rect[], pressed: Rect | null
+ * }} Result
+ *   A result the recorder held, appeared at `at`. waited is how long the viewer waited for it, and busy whether it
+ *   came from an aria-busy section (null in older timelines). heads, blanks and pressed are boxes on screen while it
+ *   was held, in the same coordinates as rect: headings, labels and the app bar, empty text fields, the control
+ *   pressed last.
  * @typedef {{ t: number, width: number, height: number }} ViewportChange
  * @typedef {{
  *   version: number, viewport: { width: number, height: number }, dpr: number, status: string, duration: number,
  *   frames: Frame[], steps: Step[], actions: Action[], activity: Activity[], busy: Busy[], scrolls: Scroll[],
- *   results: Result[], viewports: ViewportChange[]
+ *   results: Result[], viewports: ViewportChange[], column: { x: number, w: number } | null
  * }} Timeline
  *
  * @typedef {{
  *   t: number, rect: Rect | null, scrollY: number | null, weight: number, busyOff: boolean, result: boolean,
- *   loading: boolean, echo: boolean, frame: boolean
+ *   loading: boolean, echo: boolean, frame: boolean, held: Result | null
  * }} Reveal
  *   Something appeared at source time t. weight is the added plus changed node count. result says the recorder brought
- *   it on screen and held it (its rect is measured in view, at scrollY). loading says it came with aria-busy turning
- *   on, and echo that it is a small change right by the action that just happened, like a file name by its picker.
- *   frame says whether the camera may frame it: not the field echoing keys while typing, not a loading state or an
- *   echo, and not something mostly off screen.
+ *   it on screen and held it (its rect is measured in view, at scrollY), and held is that result. loading says it came
+ *   with aria-busy turning on, and echo that it is a small change right by the action that just happened, like a file
+ *   name by its picker. frame says whether the camera may frame it: not the field echoing keys while typing, not a
+ *   loading state or an echo, not something mostly off screen, and not where a result appeared that the recorder
+ *   brought on screen later (its held reveal frames it).
  * @typedef {{ src0: number, src1: number, out0: number, out1: number, speed: number }} Segment
  *   speed is source seconds per output second: 1 for real time, more for a sped-up wait, 0 for the held last frame.
  * @typedef {{ out0: number, out1: number, show0: number, show1: number, seconds: number, text: string }} Badge
@@ -116,12 +129,17 @@ export const RULES = Object.freeze({
   typePad: 120,
   typeZoom: Object.freeze([1.25, 1.8]),
   typeAfter: 0.6,
-  // A result gets less room above it, where the button that asked for it usually sits.
+  // A result gets less room above it, where the button that asked for it usually sits. Its zoom keeps the content
+  // column and revealPad either side of it in view when it can.
   revealPad: 64,
   revealPadTop: 28,
   revealZoom: Object.freeze([1.15, 1.6]),
   revealHold: 2.5,
   revealMaxCover: 0.6,
+  // Poster: a result the viewer waited at least modelWait seconds for came from a model. Of the held results, the ones
+  // waited at least posterMain of the longest wait count as the main output.
+  modelWait: 1.5,
+  posterMain: 0.75,
   // The recorder measures a reveal's rect once window scrolling stops, at most this long after it.
   revealSettle: 1.2,
   // A page scroll of more than scrollCut CSS px during a shot ends it, since the framed content has moved.
@@ -129,10 +147,12 @@ export const RULES = Object.freeze({
   // When the last result appears too close to the end for its shot, the last frame is held up to this long.
   tailHoldMax: 2,
   // Captions shorter than captionMin seconds are dropped, and the last one ends captionEnd seconds before the main
-  // part does, so it is gone before the cut to the outro. Text is cut to captionChars, about one line.
+  // part does, so it is gone before the cut to the outro. Text is cut to captionChars, about one line. Where one
+  // caption follows another, the old text fades out over captionCut seconds, then the new text fades in.
   captionMin: 1.0,
   captionEnd: 0.6,
   captionChars: 60,
+  captionCut: 0.15,
 });
 
 // Actions that move the cursor somewhere the viewer should see, so a shot that doesn't show them ends.
@@ -160,7 +180,7 @@ function cleanRect(r) {
 /**
  * Checks and tidies a parsed timeline.json: drops entries with missing or bad numbers, sorts everything by time and
  * fills in defaults, so the planners can trust what they get. An action without `ready` (an older recorder's) was
- * ready when it ended. Never throws.
+ * ready when it ended, and a result without `at` appeared when it came on screen. Never throws.
  * @param {any} raw
  * @returns {Timeline}
  */
@@ -168,6 +188,7 @@ export function normalizeTimeline(raw) {
   const width = num(raw?.viewport?.width) > 0 ? raw.viewport.width : 1280;
   const height = num(raw?.viewport?.height) > 0 ? raw.viewport.height : 720;
   const byTime = (a, b) => (a.t ?? a.t0) - (b.t ?? b.t0);
+  const rects = (v) => list(v).map(cleanRect).filter(Boolean).slice(0, 32);
   const frames = list(raw?.frames)
     .filter((f) => typeof f?.file === "string" && f.file && time(f.t) !== null)
     .map((f) => ({ file: f.file, t: time(f.t) }))
@@ -190,6 +211,8 @@ export function normalizeTimeline(raw) {
         label: typeof a.label === "string" ? a.label : "",
         ...(typeof a.fileName === "string" ? { fileName: a.fileName } : {}),
         ...(num(a.typed) !== null ? { typed: a.typed } : {}),
+        ...(a.noop === true ? { noop: true } : {}),
+        ...(Array.isArray(a.heads) ? { heads: rects(a.heads) } : {}),
       };
     })
     .sort(byTime);
@@ -213,12 +236,24 @@ export function normalizeTimeline(raw) {
     .sort(byTime);
   const results = list(raw?.results)
     .filter((r) => time(r?.t) !== null)
-    .map((r) => ({ t: time(r.t), rect: cleanRect(r.rect), scrollY: num(r.scrollY) }))
+    .map((r) => ({
+      t: time(r.t),
+      at: Math.min(time(r.at) ?? time(r.t), time(r.t)),
+      rect: cleanRect(r.rect),
+      scrollY: num(r.scrollY),
+      waited: num(r.waited) === null ? null : Math.max(0, r.waited),
+      busy: typeof r.busy === "boolean" ? r.busy : null,
+      media: Math.max(0, num(r.media) ?? 0),
+      heads: rects(r.heads),
+      blanks: rects(r.blanks),
+      pressed: cleanRect(r.pressed),
+    }))
     .sort(byTime);
   const viewports = list(raw?.viewports)
     .filter((v) => time(v?.t) !== null && num(v.width) > 0 && num(v.height) > 0)
     .map((v) => ({ t: time(v.t), width: v.width, height: v.height }))
     .sort(byTime);
+  const column = num(raw?.column?.x) !== null && num(raw?.column?.w) > 0 ? { x: raw.column.x, w: raw.column.w } : null;
   const lastFrame = frames.length ? frames[frames.length - 1].t : 0;
   return {
     version: num(raw?.version) ?? 1,
@@ -234,6 +269,7 @@ export function normalizeTimeline(raw) {
     scrolls,
     results,
     viewports,
+    column,
   };
 }
 
@@ -257,10 +293,17 @@ export function letterbox(tl, aspect = 16 / 9) {
     tl: {
       ...tl,
       viewport: { width: w, height: h },
-      actions: tl.actions.map((a) => ({ ...a, rect: move(a.rect) })),
+      actions: tl.actions.map((a) => ({ ...a, rect: move(a.rect), ...(a.heads ? { heads: a.heads.map(move) } : {}) })),
       activity: tl.activity.map((a) => ({ ...a, rect: move(a.rect) })),
       busy: tl.busy.map((b) => ({ ...b, rect: move(b.rect) })),
-      results: tl.results.map((r) => ({ ...r, rect: move(r.rect) })),
+      results: tl.results.map((r) => ({
+        ...r,
+        rect: move(r.rect),
+        heads: r.heads.map(move),
+        blanks: r.blanks.map(move),
+        pressed: move(r.pressed),
+      })),
+      column: tl.column ? { ...tl.column, x: tl.column.x + dx } : null,
     },
     box: { x: dx, y: dy, w: width, h: height },
   };
@@ -318,8 +361,8 @@ function stillAfter(tl, t) {
  * Moments where something appeared: bursts of DOM activity with at least revealAdded added or revealChanged changed
  * nodes or revealText characters of new text, aria-busy turning off, and the results the recorder held. Records less
  * than burstGap apart are one reveal, with the union of their rects, or a held result's rect, which is measured in
- * view. Typing echoes, loading states, echoes of an action and reveals mostly off screen are kept (they play at real
- * speed) but not framed.
+ * view. Typing echoes, loading states, echoes of an action, reveals mostly off screen and where a held result appeared
+ * before the recorder brought it on screen are kept (they play at real speed) but not framed.
  * @param {Timeline} tl
  * @returns {Reveal[]}
  */
@@ -339,13 +382,13 @@ export function findReveals(tl) {
       bursts.push({ t: a.t, last: a.t, added: a.added, changed: a.changed, text: a.text, rect: a.rect });
     }
   }
-  const plain = { scrollY: null, busyOff: false, result: false };
+  const plain = { scrollY: null, busyOff: false, result: false, held: null };
   const found = [
     ...bursts
       .filter((b) => b.added >= RULES.revealAdded || b.changed >= RULES.revealChanged || b.text >= RULES.revealText)
       .map((b) => ({ ...plain, t: b.t, rect: b.rect, weight: b.added + b.changed })),
     ...tl.busy.filter((b) => !b.on).map((b) => ({ ...plain, t: b.t, rect: b.rect, weight: 0, busyOff: true })),
-    ...tl.results.map((r) => ({ ...plain, t: r.t, rect: r.rect, scrollY: r.scrollY, weight: 1, result: true })),
+    ...tl.results.map((r) => ({ ...plain, t: r.t, rect: r.rect, scrollY: r.scrollY, weight: 1, result: true, held: r })),
   ].sort((a, b) => a.t - b.t);
 
   /** @type {Reveal[]} */
@@ -356,7 +399,7 @@ export function findReveals(tl) {
       last.weight += r.weight;
       last.busyOff ||= r.busyOff;
       // A held result's box was measured in view, so it stands for the whole burst.
-      if (r.result) Object.assign(last, { rect: r.rect ?? last.rect, scrollY: r.scrollY, result: true });
+      if (r.result) Object.assign(last, { rect: r.rect ?? last.rect, scrollY: r.scrollY, result: true, held: r.held });
       else if (!last.result) last.rect = last.rect && r.rect ? union(last.rect, r.rect) : (last.rect ?? r.rect);
     } else {
       reveals.push({ ...r, loading: false, echo: false, frame: true });
@@ -375,8 +418,13 @@ export function findReveals(tl) {
       tl.actions.some(
         (a) => ECHO_KINDS.has(a.kind) && r.t >= a.t0 && r.t <= a.t1 + RULES.echoAfter && (!r.rect || !a.rect || gap(r.rect, a.rect) <= RULES.echoNear),
       );
-    const share = r.rect ? shownArea / Math.min(r.rect.w * r.rect.h, vw * vh) : 1;
-    r.frame = !typing && !r.loading && !r.echo && share >= RULES.minVisible - EPS;
+    // A held result counts against as much of it as the screen could show, so one taller than the screen, brought on
+    // screen with its top in view, is framed. A burst's box can be a union that spans the page, so it counts whole.
+    const most = (b) => (r.result ? Math.min(b.w, vw) * Math.min(b.h, vh) : Math.min(b.w * b.h, vw * vh));
+    const share = r.rect ? shownArea / most(r.rect) : 1;
+    // Where a result appeared that the recorder brought on screen later: the held reveal frames it, measured in view.
+    const later = !r.result && tl.results.some((h) => h.t - h.at > RULES.burstGap && Math.abs(r.t - h.at) <= RULES.burstGap);
+    r.frame = !typing && !r.loading && !r.echo && !later && share >= RULES.minVisible - EPS;
   }
   return reveals;
 }
@@ -625,17 +673,41 @@ export function planEdit(tl, opts = {}) {
 
 /**
  * Zoom and center that frame a viewport rect: as close as the zoom range allows with the whole rect in view, then
- * moved so the crop stays inside the frame.
+ * moved so the crop stays inside the frame. A rect taller than the crop shows its top. For a result, `column` (the
+ * content column's x-range) keeps the crop on the column's middle, with the zoom low enough to show the whole column
+ * and revealPad either side when the range allows, and a result shorter than the crop gets the spare room above it,
+ * where what led to it is.
  */
-function frameView(rect, zoom, vw, vh) {
-  const z = clamp(Math.min(vw / rect.w, vh / rect.h), zoom[0], zoom[1]);
+function frameView(rect, zoom, vw, vh, column = null) {
+  const most = column ? Math.max(zoom[0], Math.min(zoom[1], vw / (column.w + 2 * RULES.revealPad))) : zoom[1];
+  const z = clamp(Math.min(vw / rect.w, vh / rect.h), zoom[0], most);
   const halfW = vw / (2 * z);
   const halfH = vh / (2 * z);
+  const cy = rect.h > 2 * halfH ? rect.y + halfH : column ? rect.y + rect.h - halfH : rect.y + rect.h / 2;
+  // The column's middle, as long as the rect stays in view.
+  const cx = column && rect.w <= 2 * halfW ? clamp(column.x + column.w / 2, rect.x + rect.w - halfW, rect.x + halfW) : rect.x + rect.w / 2;
   return {
     z: round(z, 3),
-    cx: round(clamp(rect.x + rect.w / 2, halfW, vw - halfW) / vw, 5),
-    cy: round(clamp(rect.y + rect.h / 2, halfH, vh - halfH) / vh, 5),
+    cx: round(clamp(cx, halfW, vw - halfW) / vw, 5),
+    cy: round(clamp(cy, halfH, vh - halfH) / vh, 5),
   };
+}
+
+/**
+ * The content column's x-range: the recorder's (main's content box), or for an older timeline the span of its held
+ * results and the actions' boxes narrower than the screen. Null when there is nothing to go on.
+ * @param {Timeline} tl
+ */
+function contentColumn(tl) {
+  if (tl.column) return tl.column;
+  const vw = tl.viewport.width;
+  const narrow = (r) => r && r.w < 0.9 * vw;
+  const results = tl.results.map((r) => r.rect).filter(narrow);
+  const rects = [...results, ...tl.actions.map((a) => a.rect).filter(narrow)];
+  if (!results.length || rects.length < 2) return null;
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const x1 = Math.max(...rects.map((r) => r.x + r.w));
+  return x1 - x0 < 0.9 * vw ? { x: x0, w: x1 - x0 } : null;
 }
 
 /** The part of the viewport a view shows. */
@@ -647,31 +719,45 @@ const viewBox = (view, vw, vh) => ({
 });
 
 /**
- * Moves a view up or down so its top and bottom edges don't cut through a control the test used (the button that
- * asked for a result, a field above it): each such edge moves just past the control, away from it, or out to take it
- * in whole, as long as the target stays in view and the crop inside the frame.
+ * Moves a view up or down so its top and bottom edges cut through as few blockers as they can: the controls the test
+ * used (the button that asked for a result, a field above it), headings, labels and the app bar. Each edge can move
+ * just past a blocker, away from it, or out to take it in whole, as long as the target stays in view (its top, for one
+ * taller than the crop, with the crop no more than a fifth of its height above it) and the crop inside the frame. Of
+ * the places that cut the fewest, the nearest wins.
  */
-function clearOfControls(view, target, controls, vw, vh) {
+function clearOfControls(view, target, blockers, vw, vh) {
   const b = viewBox(view, vw, vh);
-  const fits = (top) => top >= -EPS && top + b.h <= vh + EPS && top <= target.y + EPS && top + b.h >= target.y + target.h - EPS;
-  let top = b.y;
-  for (const c of controls) {
-    if (c.x + c.w <= b.x || c.x >= b.x + b.w) continue;
-    const cuts = (y) => c.y < y - 2 && c.y + c.h > y + 2;
-    const options = cuts(top) ? [c.y + c.h + 6, c.y - 12] : cuts(top + b.h) ? [c.y - 6 - b.h, c.y + c.h + 12 - b.h] : [];
-    const better = options.find(fits);
-    if (better !== undefined) top = better;
+  const tall = target.h > b.h;
+  const fits = (top) =>
+    top >= -EPS &&
+    top + b.h <= vh + EPS &&
+    top <= target.y + EPS &&
+    (tall ? top >= target.y - 0.2 * b.h - EPS : top + b.h >= target.y + target.h - EPS);
+  const across = blockers.filter((c) => c.x + c.w > b.x && c.x < b.x + b.w);
+  const through = (c, y) => c.y < y - 2 && c.y + c.h > y + 2;
+  const cuts = (top) => across.filter((c) => through(c, top) || through(c, top + b.h)).length;
+  let best = b.y;
+  let fewest = cuts(b.y);
+  for (const top of across.flatMap((c) => [c.y + c.h + 6, c.y - 12, c.y - 6 - b.h, c.y + c.h + 12 - b.h])) {
+    if (!fits(top)) continue;
+    const n = cuts(top);
+    if (n < fewest || (n === fewest && Math.abs(top - b.y) < Math.abs(best - b.y))) {
+      best = top;
+      fewest = n;
+    }
   }
-  return top === b.y ? view : { ...view, cy: round((top + b.h / 2) / vh, 5) };
+  return best === b.y ? view : { ...view, cy: round((best + b.h / 2) / vh, 5) };
 }
 
 /**
  * Camera keyframes in output time (docs/DEMO_STUDIO.md, camera rules): zoom in on a field while text is typed into it
  * and on a result when it appears, hold each shot at least minHold, and be back at zoom 1 for the last endRest seconds.
- * Targets closer than mergeGap share a shot of their union when it still fits at the lowest zoom; when it doesn't,
- * the later one follows the earlier with a straight move. A shot holds through actions inside its view, ends early
- * when the page scrolls under it, and starts to leave when a click or typing is coming outside its view. Nothing is
- * framed after the test changes the viewport. Also picks the poster time.
+ * A result is framed on the content column with the room above it, a target taller than the crop shows its top, and
+ * crop edges keep clear of used controls, headings, labels and the app bar. Targets closer than mergeGap share a shot
+ * of their union when it still fits at the lowest zoom; when it doesn't, the later one follows the earlier with a
+ * straight move. A shot holds through actions inside its view, ends early when the page scrolls under it, and starts
+ * to leave when a click or typing is coming outside its view (one that changes nothing doesn't count, since the cursor
+ * stays put). Nothing is framed after the test changes the viewport. Also picks the poster time.
  * @param {Timeline} tl
  * @param {Edit} edit
  * @returns {Camera}
@@ -686,6 +772,7 @@ export function planCamera(tl, edit) {
   const toPage = (rect, s) => ({ ...rect, y: rect.y + scrollAt(tl, s) });
   const measured = (a) => Math.min(a.t1, a.t0 + 1);
   const resized = tl.viewports.length ? tl.viewports[0].t : Infinity;
+  const column = contentColumn(tl);
 
   // Targets move in from in0 and hold from hold0 to want1 at best. `rect` is what must stay in view, `page` that
   // with its padding.
@@ -727,6 +814,18 @@ export function planCamera(tl, edit) {
   const controls = tl.actions
     .filter((a) => CUT_KINDS.has(a.kind) && a.rect && a.rect.w * a.rect.h < 0.25 * vw * vh)
     .map((a) => ({ t: a.t0, rect: toPage(a.rect, measured(a)) }));
+  // Headings, labels and the app bar in page coordinates, as the recorder saw them with each action and each held
+  // result. A shot keeps clear of the set measured closest to it, within 10 s, since the page's layout changes.
+  const headSets = [
+    ...tl.actions.filter((a) => a.heads?.length).map((a) => ({ t: measured(a), rects: a.heads.map((h) => toPage(h, measured(a))) })),
+    ...tl.results
+      .filter((x) => x.heads.length && x.scrollY !== null)
+      .map((x) => ({ t: x.t, rects: x.heads.map((h) => ({ ...h, y: h.y + x.scrollY })) })),
+  ];
+  const headsNear = (s) => {
+    const sets = headSets.filter((h) => Math.abs(h.t - s) <= 10).sort((a, b) => Math.abs(a.t - s) - Math.abs(b.t - s));
+    return sets.length ? sets[0].rects : [];
+  };
 
   // Frames a target as the page is when its hold starts. The hold lasts through actions inside the view that start
   // before it would end (the file chip landing on a picker next to the field), and ends early when the page scrolls
@@ -743,11 +842,11 @@ export function planCamera(tl, edit) {
     const shift = (rect) => ({ ...rect, y: rect.y - y0 });
     const rect = shift(m.page);
     if (!clipRect(rect, vw, vh)) return null;
-    const near = controls.filter((c) => c.t > src0 - 30 && c.t < src0 + 10).map((c) => shift(c.rect));
-    const view = clearOfControls(frameView(rect, m.zoom, vw, vh), shift(m.rect), near, vw, vh);
+    const near = [...controls.filter((c) => c.t > src0 - 30 && c.t < src0 + 10).map((c) => c.rect), ...headsNear(src0)].map(shift);
+    const view = clearOfControls(frameView(rect, m.zoom, vw, vh, m.kind === "reveal" ? column : null), shift(m.rect), near, vw, vh);
     const box = viewBox(view, vw, vh);
     const inView = (a) => inside(shift(toPage(a.rect, measured(a))), box);
-    const coming = tl.actions.filter((a) => CUT_KINDS.has(a.kind) && a.rect && a.t0 > srcIn + EPS);
+    const coming = tl.actions.filter((a) => CUT_KINDS.has(a.kind) && !a.noop && a.rect && a.t0 > srcIn + EPS);
     let want1 = m.want1;
     for (const a of coming) {
       if (a.t0 - r.actionBefore >= srcAt(edit, want1)) break;
@@ -869,27 +968,94 @@ export function planCamera(tl, edit) {
     key(last.hold1, last);
     key(last.hold1 + r.ease, rest);
   }
-  return { keys, shots, poster: posterTime(edit, shots) };
+  return { keys, shots, poster: posterTime(tl, edit, shots) };
 }
 
 /**
- * The poster frame's time. The recorder ends a passing test on its latest result, so the poster is that result: the
- * camera's shot of it a moment into the hold, or the last frame when it got no shot. A recording without held results
- * falls back to the biggest reveal while the camera frames it, or just after it appears when it got no shot, or 60%
- * of the way through when nothing appeared. The page loading in the first seconds doesn't count.
+ * How long the viewer waited for held result `v`, in seconds, and whether it came from an aria-busy section: what the
+ * recorder measured, or for an older timeline the longest aria-busy span or sped-up wait that ended after the result
+ * held before it (at `prev`) and no later than this one.
+ * @param {Timeline} tl
+ * @param {Edit} edit
+ * @param {Reveal} v
+ * @param {number} prev
+ */
+function waitFor(tl, edit, v, prev) {
+  const until = v.t + 0.3;
+  let wait = 0;
+  let busy = false;
+  for (const on of tl.busy.filter((b) => b.on)) {
+    const off = tl.busy.find((b) => !b.on && b.t > on.t);
+    if (!off || off.t <= prev || off.t > until) continue;
+    wait = Math.max(wait, off.t - on.t);
+    busy = true;
+  }
+  for (const g of edit.segments) {
+    if (g.speed > 1 + EPS && g.src1 > prev && g.src1 <= until + RULES.revealBefore) wait = Math.max(wait, g.src1 - g.src0);
+  }
+  return { wait: v.held?.waited ?? wait, busy: v.held?.busy ?? busy };
+}
+
+/**
+ * The poster frame's time: the best held result as the camera shows it. A result is passed over, while there is
+ * another, when its frame holds an empty text field, or when it is the form the test just pressed something in and no
+ * model made it. Of the rest it takes the one the viewer waited at least posterMain as long for as the longest, then
+ * one from an aria-busy section, then one with pictures, then the biggest, then the latest: its shot 1.5 s into the
+ * hold (halfway when shorter) and at least a second after it is in view, or that second when it got no shot, or the
+ * last frame for the last one. A recording without held results falls back to the biggest reveal while the camera
+ * frames it, or just after it appears when it got no shot, or 60% of the way through when nothing appeared. The page
+ * loading in the first seconds doesn't count.
+ * @param {Timeline} tl
  * @param {Edit} edit
  * @param {Shot[]} shots
  */
-export function posterTime(edit, shots) {
+export function posterTime(tl, edit, shots) {
   const end = edit.seconds;
+  const { width: vw, height: vh } = tl.viewport;
   const into = (s) => s.hold0 + Math.min(1.5, (s.hold1 - s.hold0) / 2);
   const bigger = (a, x) => (!a || x.weight >= a.weight ? x : a);
   let t = end * 0.6;
-  const lastResult = edit.reveals.filter((v) => v.result).pop();
-  if (lastResult) {
-    const at = outAt(edit, lastResult.t);
-    const shot = shots.filter((s) => s.result && s.in0 <= at + RULES.revealSettle + EPS && s.hold1 >= at).pop();
-    t = shot ? into(shot) : end;
+  const held = edit.reveals.filter((v) => v.result);
+  if (held.length) {
+    const options = held.map((v, i) => {
+      const at = outAt(edit, v.t);
+      const shot = shots.filter((s) => s.result && s.in0 <= at + RULES.revealSettle + EPS && s.hold1 >= at).pop() ?? null;
+      const { wait, busy } = waitFor(tl, edit, v, i ? held[i - 1].t : -Infinity);
+      const shown = outAt(edit, stillAfter(tl, v.t));
+      // What the frame shows, in the viewport as it was while the result was held (at its scrollY).
+      const y0 = v.scrollY ?? 0;
+      const box = shot ? viewBox(shot, vw, vh) : { x: 0, y: 0, w: vw, h: vh };
+      if (shot) box.y += scrollAt(tl, srcAt(edit, shot.hold0)) - y0;
+      const shows = (b) => {
+        const part = clipRect({ ...b, x: b.x - box.x, y: b.y - box.y }, box.w, box.h);
+        return !!part && part.w * part.h >= 0.5 * b.w * b.h;
+      };
+      // The control pressed last: as the recorder saw it while holding the result, or for an older timeline the box
+      // of the last click before it, where it was then.
+      const click = tl.actions.filter((a) => (a.kind === "click" || a.kind === "check") && a.rect && a.t1 <= v.t + 0.1).pop();
+      const pressed = v.held?.pressed ?? (click ? { ...click.rect, y: click.rect.y + scrollAt(tl, Math.min(click.t1, click.t0 + 1)) - y0 } : null);
+      const form = !!pressed && !!v.rect && inside(pressed, v.rect) && wait < RULES.modelWait;
+      const visible = v.rect ? clipRect(v.rect, vw, vh) : null;
+      return {
+        // A shot that began before the result, like one shot over a form and the notes it adds, shows it a second in.
+        time: shot ? Math.min(shot.hold1, Math.max(into(shot), shown + 1)) : i === held.length - 1 ? end : shown + 1,
+        wait,
+        busy,
+        media: v.held?.media ?? 0,
+        area: visible ? visible.w * visible.h : 0,
+        skip: form || (v.held?.blanks ?? []).some(shows),
+      };
+    });
+    const kept = options.some((o) => !o.skip) ? options.filter((o) => !o.skip) : options;
+    const most = Math.max(...kept.map((o) => o.wait));
+    const score = (o) => [most < RULES.modelWait || o.wait >= RULES.posterMain * most ? 1 : 0, o.busy ? 1 : 0, o.media ? 1 : 0, o.area];
+    const beats = (a, b) => {
+      for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return a[k] > b[k];
+      return true;
+    };
+    let best = kept[0];
+    for (const o of kept) if (beats(score(o), score(best))) best = o;
+    t = best.time;
   } else {
     const best = shots.filter((s) => s.weight > 0).reduce(bigger, null);
     if (best) {
@@ -1065,4 +1231,33 @@ export function planCaptions(tl, edit) {
     tile();
   }
   return caps.map((c, i) => ({ index: i + 1, count: caps.length, text: c.text, out0: round(c.out0, 3), out1: round(c.out1, 3) }));
+}
+
+/**
+ * The caption pictures in the order they are laid over the video, bottom to top: every caption's white pill, then
+ * every caption's text (the step count and title, on no background), so a pill never covers a text. Where one caption
+ * follows another, the old text fades out over the last captionCut seconds while the new pill fades in, then the old
+ * pill fades out while the new text fades in. Of two pills that meet, the wider is laid on top, so the narrower one
+ * shows only as the wider one fades: the pill changes width without blinking or showing one pill inside another, and
+ * two captions' texts are never on screen together. Elsewhere a caption fades in and out over `fade` seconds.
+ * @param {Array<{ out0: number, out1: number, w?: number }>} captions in order, as planCaptions gives them, with each
+ *   pill's width when it is known (pills of unknown width keep their order, the later on top)
+ * @param {number} fade
+ * @returns {Array<{ index: number, part: "pill" | "text", from: number, to: number, fadeIn: number, fadeOut: number }>}
+ */
+export function captionLayers(captions, fade) {
+  const cut = RULES.captionCut;
+  const parts = captions.map((c, i) => {
+    const before = i > 0 && Math.abs(captions[i - 1].out1 - c.out0) < 0.05;
+    const after = i + 1 < captions.length && Math.abs(captions[i + 1].out0 - c.out1) < 0.05;
+    const fadeIn = before ? cut : fade;
+    const fadeOut = after ? cut : fade;
+    return {
+      pill: { index: i, part: "pill", from: before ? c.out0 - cut : c.out0, to: after ? c.out1 + cut : c.out1, fadeIn, fadeOut },
+      text: { index: i, part: "text", from: c.out0, to: c.out1, fadeIn, fadeOut },
+    };
+  });
+  const width = (i) => num(captions[i].w) ?? 0;
+  const pills = parts.map((p) => p.pill).sort((a, b) => width(a.index) - width(b.index) || a.index - b.index);
+  return [...pills, ...parts.map((p) => p.text)];
 }

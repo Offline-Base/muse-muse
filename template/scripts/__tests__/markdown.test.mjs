@@ -46,3 +46,16 @@ test("code blocks, inline code and bold are unchanged", () => {
   assert.equal(md("```\nconst a = 1;\n  return a;\n```"), "<pre><code>const a = 1;\n  return a;</code></pre>");
   assert.equal(md("Call `GET /widgets` for **every** page."), "<p>Call <code>GET /widgets</code> for <strong>every</strong> page.</p>");
 });
+
+const titled = (text, title) =>
+  renderToStaticMarkup(createElement(Markdown, { text, title })).replace(/^<div class="prose">|<\/div>$/g, "");
+
+test("a first heading that repeats the card's title is left out, ignoring case and punctuation", () => {
+  assert.equal(titled("# Faster Batch Reads with Acme Cache v2.4\n\nOne lookup is cheap.", "Faster batch reads with Acme Cache v2.4!"), "<p>One lookup is cheap.</p>");
+  assert.equal(titled("\n## **Your week** ##\nShort and steady.", "Your week"), "<p>Short and steady.</p>");
+  // A different heading, a heading after other text, or no title: the heading stays.
+  assert.equal(titled("# Batch reads\nText.", "Faster batch reads"), "<h3>Batch reads</h3><p>Text.</p>");
+  assert.equal(titled("Intro.\n\n# Your week", "Your week"), "<p>Intro.</p><h3>Your week</h3>");
+  assert.equal(titled("Your week\nShort.", "Your week"), "<p>Your week<br/>Short.</p>");
+  assert.equal(md("# Your week\nShort."), "<h3>Your week</h3><p>Short.</p>");
+});

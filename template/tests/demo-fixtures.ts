@@ -3,12 +3,14 @@
 // and runs the copy in the "studio" project. There the page fixture records the test for the platform's Demo Studio:
 // JPEG frames from a CDP screencast (2560x1440, at most 30 fps), a cursor that glides to each control, text that
 // appears key by key, a file chip on uploads, and a timeline of steps, actions, page activity, aria-busy changes,
-// scrolls and results. Each new result is brought on screen and held a moment before the test moves on, and a passing
-// test ends on its latest result. Frames are left out while the test takes a page screenshot. It writes
-// test-results/demo/timeline.json (version 1) and test-results/demo/frames/*.jpg. In every other project this module
-// is plain @playwright/test. The choreography never changes what an action does: an error in it is swallowed, the
-// typing is only drawn (the app sees the action's own events and nothing else), and the original action always runs
-// with the arguments the test gave it. The time the choreography adds is added to the test's timeout.
+// scrolls and results. Up to two new results a step are brought on screen and held a moment before the test moves
+// on, and a passing test ends on its strongest result after the last model wait. An action that changes nothing (a
+// fill with the value the field has, a choice already made) gets no glide. Frames are left out while the test takes a
+// page screenshot. It writes test-results/demo/timeline.json (version 1) and test-results/demo/frames/*.jpg. In every
+// other project this module is plain @playwright/test. The choreography never changes what an action does: an error
+// in it is swallowed, the typing is only drawn (the app sees the action's own events and nothing else), and the
+// original action always runs with the arguments the test gave it. The time the choreography adds is added to the
+// test's timeout.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -32,6 +34,15 @@ const DEMO_PROJECT = "studio";
 const MAX_FPS = 30;
 /** How long a new result stays on screen, counted from when it is in view, before the test moves on. */
 const RESULT_HOLD_MS = 2800;
+/** A step's second result holds this long when it lands where the first one did, like a card moved along a board. */
+const REPEAT_HOLD_MS = 800;
+/** Past this much of the video's main part, a result that took no model wait holds at most LATE_HOLD_MS. */
+const LATE_MAIN_MS = 30_000;
+const LATE_HOLD_MS = 1000;
+/** The most results a step holds. */
+const STEP_HOLDS = 2;
+/** A result the viewer waited this long for came from a model. */
+const MODEL_MS = 1500;
 /** How long the final state stays on screen after the last result's hold, so the video can end on it. */
 const HOLD_MS = 800;
 /** How long an action's choreography waits for its element when neither the action nor the test sets a timeout. */
@@ -91,6 +102,10 @@ interface ActionEntry {
   fileName?: string;
   /** Characters drawn into the field key by key, for fills. */
   typed?: number;
+  /** The element already had the value or state the action gives it, so the cursor stayed where it was. */
+  noop?: boolean;
+  /** Headings, labels and the app bar on screen when the element was measured, which a crop edge shouldn't cut. */
+  heads?: Rect[];
   /** How long the choreography waited for the element, which the action itself would have waited too. */
   waited: number;
 }
@@ -107,6 +122,10 @@ interface Target {
   picker: boolean;
   /** The element is <html> or <body>, so there is nothing to point at. */
   whole: boolean;
+  /** The action would change nothing: the field already has the value, the option is already chosen. */
+  noop: boolean;
+  /** Headings, labels and the app bar on screen. */
+  heads: Rect[];
   /** Where the cursor overlay last saw the mouse in this document. */
   mouse: Point | null;
 }
@@ -121,7 +140,25 @@ interface Settled {
   /** Its box once in view, and the page's scroll position then. */
   rect: Rect;
   scrollY: number;
+  /** How long the viewer waited for it: its aria-busy span, or the time since they last pressed or typed. */
+  waited: number;
+  /** It came from an aria-busy section, the model's own output. */
+  busy: boolean;
+  /** Pictures in it: images, canvases, videos and SVGs at least 64 px each way. */
+  media: number;
+  /** On screen while it is held: headings, labels and the app bar, empty text fields, the control pressed last. */
+  heads: Rect[];
+  blanks: Rect[];
+  pressed: Rect | null;
+  /** The content column (main's content box), when the page has one narrower than the screen. */
+  column: { x: number; w: number } | null;
+  /** The page scrolled to bring it on screen. */
+  moved: boolean;
+  /** It was held before: the final pick can be a result the test already showed. */
+  again: boolean;
 }
+/** A held result, as the timeline keeps it. Times are epoch ms until the timeline is written. */
+type HeldResult = Omit<Settled, "since" | "column" | "moved" | "again">;
 /** What a page sends a few times a second. Times are the page's Date.now(). */
 interface PageReport {
   activity?: Array<{ t: number; added: number; changed: number; text: number; rect: Rect }>;
@@ -135,7 +172,17 @@ interface DemoApi {
   where(): Point | null;
   scroll(to: number): Promise<boolean>;
   type(el: Element, text: string, delay: number): Promise<number>;
-  settle(after: number, final: boolean): Promise<Settled | null>;
+  settle(since: number, final: boolean): Promise<Settled | null>;
+  /** Headings, labels and the app bar on screen. */
+  heads(): Rect[];
+  /** While on, the cursor ignores the real mouse: no move, no ripple. */
+  hush(on: boolean): void;
+  /** Fades the cursor out now, as it does after a rest. */
+  rest(): void;
+  /** Whether the cursor is on screen, fading out included. */
+  showing(): boolean;
+  /** Puts a hidden cursor where the mouse went while hushed, so it shows there on the next move. */
+  park(x: number, y: number): void;
 }
 type DemoWindow = Record<string, DemoApi | undefined>;
 
@@ -200,6 +247,42 @@ export function aimPoint(box: Rect, viewport: { width: number; height: number },
   return { x: picker ? part.x + Math.min(part.w / 2, 48) : part.x + part.w / 2, y: part.y + part.h / 2 };
 }
 
+/** True when two boxes overlap or lie within `margin` px of each other, like two cards in one column. */
+export function nearBoxes(a: Rect, b: Rect, margin = 48): boolean {
+  return Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w), a.y - (b.y + b.h), b.y - (a.y + a.h)) <= margin;
+}
+
+/**
+ * How long a result holds, in ms: the full RESULT_HOLD_MS, or REPEAT_HOLD_MS for a step's later result that lands
+ * near the one before it. Past LATE_MAIN_MS of main part, a result that took no model wait holds at most LATE_HOLD_MS.
+ * The final pick always holds in full.
+ */
+export function holdMs(o: { later: boolean; near: boolean; waited: number; mainMs: number; final?: boolean }): number {
+  if (o.final) return RESULT_HOLD_MS;
+  const ms = o.later && o.near ? REPEAT_HOLD_MS : RESULT_HOLD_MS;
+  return o.waited < MODEL_MS && o.mainMs > LATE_MAIN_MS ? Math.min(ms, LATE_HOLD_MS) : ms;
+}
+
+/**
+ * What Demo Studio will cut from a quiet stretch of `ms` with nothing on screen moving, in ms: it plays a stretch over
+ * 1.6 s in min(1.4, 0.5 + 0.1 * seconds) seconds, at most 16 times faster (demo-plan.mjs idleOutputSeconds).
+ */
+export function idleCutMs(ms: number): number {
+  if (ms <= 1600) return 0;
+  return ms - Math.max(Math.min(1400, 500 + 0.1 * ms), ms / 16);
+}
+
+/** The options selectOption asks for, by value or label, when they are plain: strings, or { value } or { label }. */
+export function wantedOptions(arg: unknown): string[] | null {
+  const one = (v: unknown) => {
+    if (typeof v === "string") return v;
+    const o = v && typeof v === "object" && !Array.isArray(v) ? (v as { value?: unknown; label?: unknown }) : null;
+    return o ? (o.value ?? o.label) : null;
+  };
+  const list = (Array.isArray(arg) ? arg : [arg]).map(one);
+  return list.length && list.every((v): v is string => typeof v === "string") ? list : null;
+}
+
 type LocatorAction = (...args: unknown[]) => Promise<unknown>;
 
 /**
@@ -262,7 +345,9 @@ class DemoRecorder {
   private readonly activity: Array<{ t: number; added: number; changed: number; text: number; rect: Rect }> = [];
   private readonly busy: Array<{ t: number; on: boolean; rect: Rect }> = [];
   private readonly scrolls: Array<{ t: number; y: number }> = [];
-  private readonly results: Array<{ t: number; rect: Rect; scrollY: number }> = [];
+  private readonly results: HeldResult[] = [];
+  /** The page's content column, from the latest result that reported one. */
+  private column: { x: number; w: number } | null = null;
   private readonly viewports: Array<{ t: number; width: number; height: number }> = [];
   private readonly frames: Array<{ file: string; at: number }> = [];
   private readonly writes = new Set<Promise<void>>();
@@ -297,8 +382,17 @@ class DemoRecorder {
   private navigating = 0;
   /** Page screenshots and viewport changes running now. Frames that arrive meanwhile are dropped. */
   private blackout = 0;
-  /** When the last result the recorder held appeared, so each one is held once. */
-  private settled = 0;
+  /** When the running top-level step began (0 outside one), how many results it held, and where its last one was. */
+  private stepStart = 0;
+  private stepHolds = 0;
+  private stepLast: Rect | null = null;
+  /**
+   * Actions and holds running now, when the last one finished, and the ms Demo Studio will cut from the quiet
+   * stretches between them (idleCutMs), for the main part's length.
+   */
+  private activeDepth = 0;
+  private busyUntil = 0;
+  private idleCut = 0;
 
   constructor(page: Page, root: string, dpr: number, testInfo: TestInfo, actionTimeout: number) {
     this.page = page;
@@ -326,7 +420,7 @@ class DemoRecorder {
     this.patchScreenshot();
     this.patchViewport();
     await this.page.exposeBinding(BINDING, (_source, json: string) => this.onPageReport(json));
-    await this.page.addInitScript(demoPageScript, { binding: BINDING, api: API, font: this.font });
+    await this.page.addInitScript(demoPageScript, { binding: BINDING, api: API, font: this.font, modelMs: MODEL_MS });
   }
 
   note(problem: string): void {
@@ -367,7 +461,7 @@ class DemoRecorder {
     try {
       if (!this.page.isClosed()) {
         await this.start();
-        // A passing test ends on its latest result, however small, held like every other one.
+        // A passing test ends on its strongest result after the last model wait.
         if (testInfo.status === "passed") await this.settleResult(true);
         this.extendTimeout(HOLD_MS);
         await sleep(HOLD_MS);
@@ -390,36 +484,116 @@ class DemoRecorder {
     }
   }
 
+  /** A top-level step began: results from before it are left alone, and it holds up to STEP_HOLDS of its own. */
+  beginStep(t: number): void {
+    this.stepStart = t;
+    this.stepHolds = 0;
+    this.stepLast = null;
+  }
+
   /**
-   * Holds a new result on screen before the test moves on, as a person would read it: the page scrolls it into view
-   * when the test left most of it off screen (demoPageScript settle), then the recorder waits until it has been in
-   * view RESULT_HOLD_MS. A result is a section that stopped being busy, or a burst that added content. Each one is
-   * held once, and the timeline gets it with its box once it is in view, for the camera. Small changes (under 2% of
-   * the screen) are left alone, except at the end of the test (`final`). The test gets the time back. Returns the ms it
-   * took, and never throws.
+   * Holds new results on screen before the test moves on, as a person would read them: up to STEP_HOLDS a step,
+   * oldest first, only ones that appeared in this step and are at least 2% of the screen (demoPageScript settle). The
+   * page scrolls each into view when the test left most of it off screen, the cursor moves off it, and the recorder
+   * waits until it has been in view for its hold (holdMs). The timeline gets each one with its box once in view, for
+   * the camera. At the end of a passing test (`final`) the page goes back to its strongest result after the last
+   * model wait and holds it, unless it is still in view from its own hold. The test gets the time back. Returns the ms
+   * it took, and never throws.
    */
   async settleResult(final = false): Promise<number> {
     if (!this.starting || this.page.isClosed()) return 0;
     const started = Date.now();
+    this.active();
     try {
-      const after = this.settled;
-      const shown = await within(
-        this.page.evaluate(({ api, after, final }) => (window as unknown as DemoWindow)[api]?.settle(after, final) ?? null, { api: API, after, final }),
-        "bringing the result on screen",
-      );
-      if (!shown) return Date.now() - started;
-      this.settled = shown.at;
-      // Page times come from the browser's own clock, which the recorder saved before a test could fake it.
-      const at = (t: number) => (Math.abs(t - Date.now()) < 60_000 ? t : Date.now());
-      this.results.push({ t: at(shown.t), rect: shown.rect, scrollY: shown.scrollY });
-      const wait = at(shown.since) + RESULT_HOLD_MS - Date.now();
-      if (wait > 0) await sleep(wait);
+      for (let n = 0; n < STEP_HOLDS && (!this.stepStart || this.stepHolds < STEP_HOLDS); n++) {
+        const shown = await this.bringResult(this.stepStart, false);
+        if (!shown) break;
+        await this.hold(shown, false);
+      }
+      const best = final ? await this.bringResult(0, true) : null;
+      if (best && (best.moved || !best.again)) await this.hold(best, true);
     } catch (err) {
       this.note(`result: ${firstLine(err)}`);
+    } finally {
+      this.quiet();
     }
     const took = Date.now() - started;
     this.extendTimeout(took);
     return took;
+  }
+
+  /** Asks the page for the next result to hold, or with `final` its strongest, brought on screen. */
+  private bringResult(since: number, final: boolean): Promise<Settled | null> {
+    const call = this.page.evaluate(({ api, since, final }) => (window as unknown as DemoWindow)[api]?.settle(since, final) ?? null, {
+      api: API,
+      since,
+      final,
+    });
+    // It may wait for pictures to decode, then scroll.
+    return within(call, "bringing the result on screen", PAGE_CALL_MS + 3000);
+  }
+
+  /** Holds one result the page brought on screen, with the cursor off it, and keeps it for the timeline. */
+  private async hold(shown: Settled, final: boolean): Promise<void> {
+    // Page times come from the browser's own clock, which the recorder saved before a test could fake it.
+    const at = (t: number) => (Math.abs(t - Date.now()) < 60_000 ? t : Date.now());
+    const { rect, scrollY, waited, busy, media, heads, blanks, pressed } = shown;
+    this.results.push({ t: at(shown.t), at: at(shown.at), rect, scrollY, waited, busy, media, heads, blanks, pressed });
+    if (shown.column) this.column = shown.column;
+    const where = { ...rect, y: rect.y + scrollY };
+    const later = this.stepHolds > 0;
+    const ms = holdMs({ later, near: later && !!this.stepLast && nearBoxes(where, this.stepLast), waited, mainMs: this.mainMs(), final });
+    if (!final) {
+      this.stepHolds++;
+      this.stepLast = where;
+    }
+    // A result noticed after its hold would have ended needs no room made for it.
+    const wait = at(shown.since) + ms - Date.now();
+    if (wait <= 0) return;
+    const away = this.leave(rect);
+    await sleep(wait);
+    await away;
+  }
+
+  /**
+   * Takes the cursor off a result about to be held, as a hand leaves the mouse to read: when the mouse is on the result
+   * (and its resting place outside the content column isn't), the cursor glides there, or, when it already faded during
+   * a wait, the mouse moves there unseen so the cursor doesn't show again over the result. Then it fades out until the
+   * next move. The hold runs meanwhile.
+   */
+  private async leave(rect: Rect): Promise<void> {
+    const on = (p: Point) => p.x >= rect.x - 8 && p.x <= rect.x + rect.w + 8 && p.y >= rect.y - 8 && p.y <= rect.y + rect.h + 8;
+    const rest = this.restPoint();
+    try {
+      if (this.mouse && on(this.mouse) && !on(rest)) {
+        const showing = this.page.evaluate((api) => (window as unknown as DemoWindow)[api]?.showing() ?? true, API);
+        if (await within(showing, "checking the cursor").catch(() => true)) {
+          await this.glide(rest);
+        } else {
+          await this.cursor("hush", true);
+          await this.moveTo(rest);
+          await this.cursor("park");
+          await this.cursor("hush", false);
+        }
+      }
+    } catch (err) {
+      this.note(`cursor: ${firstLine(err)}`);
+    }
+    await this.cursor("rest");
+  }
+
+  /** About how long the video's main part is so far, in ms: the recording less what Demo Studio will cut from waits. */
+  private mainMs(): number {
+    return this.origin === null ? 0 : Math.max(0, Date.now() - this.origin - this.idleCut);
+  }
+
+  /** Something starts on screen (an action, a hold). The quiet stretch before it will be sped up. */
+  private active(): void {
+    if (this.activeDepth++ === 0 && this.busyUntil) this.idleCut += idleCutMs(Date.now() - this.busyUntil);
+  }
+
+  private quiet(): void {
+    if (--this.activeDepth === 0) this.busyUntil = Date.now();
   }
 
   /** Runs one patched Locator action: the choreography, then the original action, recorded in the timeline. */
@@ -428,52 +602,72 @@ class DemoRecorder {
     // A trial run doesn't act, and an action started while another one runs (Promise.all) just runs.
     if (this.acting || options.trial) return run();
     this.acting = true;
+    this.active();
     const started = Date.now();
+    // A test without steps is one step from its first action, so it holds no more results than a step does.
+    if (!this.stepStart) this.beginStep(started);
     const entry: ActionEntry = { kind: ACTIONS[method], t0: started, ready: started, t1: 0, label: "", waited: 0 };
     // Clearing a file input (setInputFiles([])) is an upload with no file name.
     if (entry.kind === "upload") entry.fileName = uploadNames(args[0])[0] ?? "";
-    let holdAfter = 0;
+    let plan = { after: 0, hush: false };
     let held = 0;
     try {
-      await this.start();
-      // The last result gets its moment before the cursor heads somewhere else.
-      held = await this.settleResult();
-      holdAfter = await this.choreograph(locator, method, args, options, entry);
-    } catch (err) {
-      this.note(`${method}: ${firstLine(err)}`);
-    }
-    entry.ready = Date.now();
-    // Waiting for the element is the action's own wait, and a result's hold gave its time back already. The rest is
-    // the choreography's, so the test gets it back too.
-    this.extendTimeout(entry.ready - started - held - entry.waited);
-    let result: unknown;
-    try {
-      result = await run();
+      try {
+        await this.start();
+        // The last result gets its moment before the cursor heads somewhere else.
+        held = await this.settleResult();
+        plan = await this.choreograph(locator, method, args, options, entry);
+      } catch (err) {
+        this.note(`${method}: ${firstLine(err)}`);
+      }
+      entry.ready = Date.now();
+      // Waiting for the element is the action's own wait, and a result's hold gave its time back already. The rest is
+      // the choreography's, so the test gets it back too.
+      this.extendTimeout(entry.ready - started - held - entry.waited);
+      // A click that changes nothing still runs, with the cursor left where it was and no ripple.
+      if (plan.hush) await this.cursor("hush", true);
+      let result: unknown;
+      try {
+        result = await run();
+      } finally {
+        entry.t1 = Date.now();
+        this.actions.push(entry);
+        this.acting = false;
+        if (plan.hush) await this.cursor("hush", false);
+        // A long wait inside the action, like a button that only enables with the answer, is sped up too.
+        this.idleCut += idleCutMs(entry.t1 - entry.ready);
+      }
+      if (plan.after > 0) {
+        this.extendTimeout(plan.after);
+        await sleep(plan.after);
+      }
+      return result;
     } finally {
-      entry.t1 = Date.now();
-      this.actions.push(entry);
-      this.acting = false;
+      this.quiet();
     }
-    if (holdAfter > 0) {
-      this.extendTimeout(holdAfter);
-      await sleep(holdAfter);
-    }
-    return result;
   }
 
   /**
    * What a person would do before the action: wait for the element, read a result that came with it, bring the
    * element on screen, glide the cursor to it and pause. Fields get a click ripple and their new text drawn key by
-   * key, selects a ripple, uploads a ripple and the file chip. Returns ms to hold after the action. Throws on anything
-   * unexpected, and perform swallows it.
+   * key, selects a ripple, uploads a ripple and the file chip. An action that would change nothing gets none of it,
+   * and a click of that kind runs with the cursor hushed. Returns ms to hold after the action and whether to hush.
+   * Throws on anything unexpected, and perform swallows it.
    */
-  private async choreograph(locator: Locator, method: ActionMethod, args: unknown[], options: ActionOptions, entry: ActionEntry): Promise<number> {
+  private async choreograph(
+    locator: Locator,
+    method: ActionMethod,
+    args: unknown[],
+    options: ActionOptions,
+    entry: ActionEntry,
+  ): Promise<{ after: number; hush: boolean }> {
     const kind = ACTIONS[method];
     // Clicks, checks and hovers move the real mouse to the center of the element's own box (the part on screen), so
     // the cursor aims there even when it is tiny or transparent. The other actions don't move the mouse, so the cursor
     // goes to what a viewer sees, like the FilePicker button for its hidden input.
     const pointer = kind === "click" || kind === "check" || kind === "hover";
     const value = kind === "type" ? String(args[0] ?? "") : null;
+    const choices = method === "selectOption" ? wantedOptions(args[0]) : null;
     const aim = (t: Target): { box: Rect; at: Point } | null => {
       const box = pointer ? (t.own ?? t.seen) : (t.seen ?? t.own);
       if (!box) return null;
@@ -481,7 +675,7 @@ class DemoRecorder {
       return { box, at: aimPoint(box, this.screen, t.picker && !pointer) };
     };
     const measure = (scroll: boolean) =>
-      within(locator.evaluate(prepareTarget, { scroll, pointer, value, api: API }, { timeout: 5000 }), "measuring the element");
+      within(locator.evaluate(prepareTarget, { scroll, pointer, value, method, choices, api: API }, { timeout: 5000 }), "measuring the element");
 
     // Wait the way the action would, so the cursor moves once the element is there: visible for most actions, only in
     // the page for a hidden file input, a key press and a forced action. Never longer than the action itself may wait.
@@ -498,7 +692,7 @@ class DemoRecorder {
       return measure(false);
     });
     let aimed = aim(target);
-    if (aimed && kind !== "upload" && !clampRect(aimed.box, this.screen)) {
+    if (aimed && !target.noop && kind !== "upload" && !clampRect(aimed.box, this.screen)) {
       // Inside a scrolling box the page's scroll isn't enough: Playwright scrolls the box, then measure again.
       await locator.scrollIntoViewIfNeeded({ timeout: 3000 });
       target = await measure(false);
@@ -508,8 +702,14 @@ class DemoRecorder {
     entry.label = kind === "press" ? (target.whole ? String(args[0]) : `${String(args[0])} in ${target.label}`) : target.label;
     // The timeline gets what a viewer sees, even when the cursor aims at a tiny or transparent input.
     if (aimed) entry.rect = clampRect(target.seen ?? aimed.box, this.screen);
+    if (target.heads.length) entry.heads = target.heads;
     if (kind === "type") entry.typed = 0;
-    if (!aimed || (kind === "press" && target.whole)) return 0;
+    // A fill with the value the field has, or a choice already made: the viewer would see the cursor do nothing.
+    if (target.noop) {
+      entry.noop = true;
+      return { after: 0, hush: kind === "click" };
+    }
+    if (!aimed || (kind === "press" && target.whole)) return { after: 0, hush: false };
 
     // Start from where the overlay last saw the mouse: an action this file doesn't patch may have moved it.
     if (target.mouse && this.mouse && Math.hypot(target.mouse.x - this.mouse.x, target.mouse.y - this.mouse.y) > 2) this.mouse = target.mouse;
@@ -548,9 +748,9 @@ class DemoRecorder {
     if (first) {
       await this.callPage("chip", point, names.length > 1 ? `${shortName(first)} and ${names.length - 1} more` : shortName(first));
       await sleep(CHIP_LAND_MS);
-      return CHIP_MS - CHIP_LAND_MS;
+      return { after: CHIP_MS - CHIP_LAND_MS, hush: false };
     }
-    return 0;
+    return { after: 0, hush: false };
   }
 
   /** Eased glide with a slight arc, in small page.mouse.move steps, so the app sees real mouse moves. */
@@ -578,7 +778,7 @@ class DemoRecorder {
     this.mouse = p;
   }
 
-  /** Where the cursor waits before the first action: the right edge, outside the 960 px column products use. */
+  /** Where the cursor rests before the first action and off a held result: the right edge, outside the column. */
   private restPoint(): Point {
     return { x: this.screen.width - 100, y: Math.round(this.screen.height * 0.72) };
   }
@@ -593,6 +793,21 @@ class DemoRecorder {
       { api: API, name, x: at.x, y: at.y, text },
     );
     await within(call, name);
+  }
+
+  /** Hushes the cursor (on or off), rests it, or parks it where the mouse is now. Never throws. */
+  private async cursor(name: "hush" | "rest" | "park", on = false): Promise<void> {
+    const at = this.mouse ?? this.restPoint();
+    const call = this.page.evaluate(
+      ({ api, name, on, at }) => {
+        const demo = (window as unknown as DemoWindow)[api];
+        if (name === "hush") demo?.hush(on);
+        else if (name === "park") demo?.park(at.x, at.y);
+        else demo?.rest();
+      },
+      { api: API, name, on, at },
+    );
+    await within(call, `cursor ${name}`).catch((err: unknown) => this.note(`cursor: ${firstLine(err)}`));
   }
 
   /** Patches the actions on Locator.prototype for this recording. finish puts the originals back. */
@@ -838,13 +1053,29 @@ class DemoRecorder {
           label: a.label,
           ...(a.kind === "upload" ? { fileName: a.fileName ?? "" } : {}),
           ...(a.kind === "type" && a.typed !== undefined ? { typed: a.typed } : {}),
+          ...(a.noop ? { noop: true } : {}),
+          ...(a.heads ? { heads: a.heads } : {}),
         })),
       activity: this.activity
         .filter((a) => recorded(a.t))
         .map((a) => ({ t: sec(a.t), added: a.added, changed: a.changed, text: a.text, rect: a.rect })),
       busy: this.busy.filter((b) => b.t <= end).map((b) => ({ t: sec(b.t), on: b.on, rect: b.rect })),
       scrolls: this.scrolls.filter((s) => recorded(s.t)).map((s) => ({ t: sec(s.t), y: s.y })),
-      results: this.results.filter((r) => recorded(r.t)).map((r) => ({ t: sec(r.t), rect: r.rect, scrollY: r.scrollY })),
+      results: this.results
+        .filter((r) => recorded(r.t))
+        .map((r) => ({
+          t: sec(r.t),
+          at: sec(r.at),
+          rect: r.rect,
+          scrollY: r.scrollY,
+          waited: Math.round(r.waited) / 1000,
+          busy: r.busy,
+          media: r.media,
+          heads: r.heads,
+          blanks: r.blanks,
+          ...(r.pressed ? { pressed: r.pressed } : {}),
+        })),
+      column: this.column,
       viewports: this.viewports.filter((v) => v.t <= end).map((v) => ({ t: sec(v.t), width: v.width, height: v.height })),
     };
   }
@@ -853,10 +1084,14 @@ class DemoRecorder {
 /**
  * Runs in the browser on an action's element. Measures its own first box (where Playwright clicks) and what a viewer
  * sees of it: the element, or for something hidden (a file input, a styled checkbox) its picker button, its label or
- * the closest visible parent. When asked, first scrolls the one the cursor will aim at into view with the overlay's
- * eased scroll. Self-contained, since Playwright sends it to the page as text.
+ * the closest visible parent. Says whether the action would change nothing. When asked, and the action changes
+ * something, first scrolls the one the cursor will aim at into view with the overlay's eased scroll. Self-contained,
+ * since Playwright sends it to the page as text.
  */
-async function prepareTarget(el: Element, opts: { scroll: boolean; pointer: boolean; value: string | null; api: string }): Promise<Target> {
+async function prepareTarget(
+  el: Element,
+  opts: { scroll: boolean; pointer: boolean; value: string | null; method: string; choices: string[] | null; api: string },
+): Promise<Target> {
   const shown = (e: Element | null | undefined): e is Element => {
     if (!e) return false;
     const r = e.getBoundingClientRect();
@@ -876,10 +1111,38 @@ async function prepareTarget(el: Element, opts: { scroll: boolean; pointer: bool
   const framed = window.top !== window;
   const whole = el === document.body || el === document.documentElement;
   const aimAt = opts.pointer && rect(el.getClientRects()[0]) ? el : visual;
-  const demo = (window as unknown as Record<string, { where?: () => Point | null; scroll?: (to: number) => Promise<boolean> } | undefined>)[opts.api];
+  const demo = (
+    window as unknown as Record<string, { where?: () => Point | null; scroll?: (to: number) => Promise<boolean>; heads?: () => Rect[] } | undefined>
+  )[opts.api];
+
+  // The action would change nothing: a fill with the value the field has, a check of a box that is checked, a click on
+  // an option already chosen (a radio, its label, a selected tab), a select of the option already selected. A click
+  // on a checkbox or a pressed toggle still changes it.
+  const control = el instanceof HTMLInputElement ? el : el.closest("label")?.control;
+  const tick = control instanceof HTMLInputElement && (control.type === "checkbox" || control.type === "radio") ? control : null;
+  const checked = tick ? tick.checked : el.getAttribute("aria-checked") === "true";
+  const role = el.getAttribute("role") ?? "";
+  const chosen =
+    (tick?.type === "radio" && tick.checked) ||
+    (role === "radio" && checked) ||
+    (/^(tab|option)$/.test(role) && el.getAttribute("aria-selected") === "true");
+  const choice = opts.choices?.length === 1 ? opts.choices[0] : null;
+  const selected = el instanceof HTMLSelectElement && !el.multiple ? [...el.selectedOptions] : [];
+  const noop =
+    opts.method === "fill"
+      ? (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.value === opts.value
+      : opts.method === "check"
+        ? checked
+        : opts.method === "uncheck"
+          ? (!!tick || el.hasAttribute("aria-checked")) && !checked
+          : opts.method === "click"
+            ? chosen
+            : opts.method === "selectOption"
+              ? choice !== null && selected.some((o) => o.value === choice || o.label === choice)
+              : false;
 
   // The page itself (a key pressed on <body>) is already on screen.
-  if (aimAt && opts.scroll && !framed && !whole) {
+  if (aimAt && opts.scroll && !framed && !whole && !noop) {
     const r = aimAt.getBoundingClientRect();
     const se = document.scrollingElement ?? document.documentElement;
     const vh = window.innerHeight;
@@ -917,6 +1180,8 @@ async function prepareTarget(el: Element, opts: { scroll: boolean; pointer: bool
     typeable: visual === el && textField && !!field && !field.disabled && !field.readOnly && opts.value !== null && field.value !== opts.value,
     picker: visual === el && el instanceof HTMLInputElement && el.type === "file",
     whole,
+    noop,
+    heads: framed ? [] : (demo?.heads?.() ?? []),
     mouse: demo?.where?.() ?? null,
   };
 }
@@ -926,11 +1191,11 @@ async function prepareTarget(el: Element, opts: { scroll: boolean; pointer: bool
  * closed shadow root on <html>, shown in the top layer so modals don't cover it, with no text in the DOM, so app CSS
  * and the test's locators never see them. The cursor fades out while the mouse rests. Scrolls the page smoothly, so a
  * product's own jump to its result reads as a move. Reports page activity, aria-busy changes and scrolls to the
- * recorder a few times a second, and keeps the latest result for settle. Its timers and clocks are the page's own,
- * saved before a test could fake them (page.clock). Self-contained, since Playwright sends it to the page as text, and
- * it never throws into the page.
+ * recorder a few times a second, and keeps the results for settle. Its timers and clocks are the page's own, saved
+ * before a test could fake them (page.clock). Self-contained, since Playwright sends it to the page as text, and it
+ * never throws into the page.
  */
-function demoPageScript({ binding, api, font }: { binding: string; api: string; font: string | null }): void {
+function demoPageScript({ binding, api, font, modelMs }: { binding: string; api: string; font: string | null; modelMs: number }): void {
   if (window.top !== window) return;
   type Box = { x: number; y: number; w: number; h: number };
   const now = Date.now.bind(Date);
@@ -1039,21 +1304,34 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
   };
 
   // The cursor shows while the mouse moves and fades out after it rests 2.4 s, like a person's hand leaving the mouse
-  // during a wait, so results and the last frame are clean.
+  // during a wait, so results and the last frame are clean. While hushed it ignores the real mouse: the recorder hushes
+  // it for a click that changes nothing, which the viewer shouldn't see, and to move the mouse off a held result once
+  // the cursor has faded, then parks the hidden cursor where the mouse went.
   let shown = false;
   let px = 0;
   let py = 0;
   let resting = 0;
+  let hushed = false;
   const wake = () => {
     cursor.classList.add("on");
     cancel(resting);
     resting = later(() => cursor.classList.remove("on"), 2400);
   };
+  const rest = () => {
+    cancel(resting);
+    cursor.classList.remove("on");
+  };
+  const park = (x: number, y: number) => {
+    px = x;
+    py = y;
+    cursor.style.translate = `${px - 3}px ${py - 2.5}px`;
+    shown = true;
+  };
   addEventListener(
     "pointermove",
     (e) => {
       try {
-        if (e.pointerType !== "mouse" || !mount()) return;
+        if (e.pointerType !== "mouse" || hushed || !mount()) return;
         px = e.clientX;
         py = e.clientY;
         // The translate property, not transform: the press animation's scale must not scale the position too.
@@ -1085,7 +1363,7 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
     "pointerdown",
     (e) => {
       try {
-        if (e.pointerType !== "mouse") return;
+        if (e.pointerType !== "mouse" || hushed) return;
         ripple(e.clientX, e.clientY);
         wake();
         cursor.animate([{ scale: "1" }, { scale: "0.86" }, { scale: "1" }], { duration: 240, easing: "ease-out" });
@@ -1187,63 +1465,260 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
     return drawn;
   };
 
-  // The latest result is the section that last stopped being busy, or the biggest element of a later burst that
-  // added content, for products that show a result without aria-busy. When both come within half a second, the bigger
-  // counts. A result is known by when it appeared.
-  let lastDone: Element | null = null;
-  let lastDoneAt = 0;
-  let lastAdded: Element | null = null;
-  let lastAddedAt = 0;
+  // Results, in the order they appeared. A result is a section that stopped being busy, or, when its aria-busy element
+  // (like a Skeleton) is removed, the section or card it was in, unless that is the form the viewer typed in; or the
+  // biggest element of a burst that added content, for products that show a result without aria-busy. A busy button
+  // only says a wait is over: its result is elsewhere. The same result reported both ways within half a second is one.
+  // Each knows how long the viewer waited for it: its aria-busy span, or the time since they last pressed, typed or
+  // chose something.
+  type Result = { el: Element; at: number; waited: number; busy: boolean; held: boolean };
+  const results: Result[] = [];
+  const SECTION = "section, article, .card, [role='region'], [role='log']";
+  const CONTROL = [
+    "button, a[href], input, select, textarea, label, summary",
+    "[role='button'], [role='radio'], [role='checkbox'], [role='switch'], [role='tab'], [role='option'], [role='menuitem']",
+  ].join(", ");
+  let lastInput = 0;
+  let lastControl: Element | null = null;
+  // The text field the viewer last typed into.
+  let lastTyped: Element | null = null;
+  // When the last wait of modelMs or more ended. The final pick comes from what appeared from then on.
+  let lastWait = 0;
+  let decoding = 0;
   const area = (el: Element) => {
     const r = el.getBoundingClientRect();
     return r.width * r.height;
   };
-  const noteDone = (el: Element, t: number) => {
-    if (!lastDone?.isConnected || t - lastDoneAt > 50 || area(el) > area(lastDone)) lastDone = el;
-    lastDoneAt = t;
+  const onScreen = (b: Box | null): b is Box => !!b && b.y + b.h > 0 && b.y < window.innerHeight && b.x + b.w > 0 && b.x < window.innerWidth;
+  const pause = (ms: number) => new Promise<void>((resolve) => later(resolve, ms));
+  // The section or card around an element, unless that is the whole page.
+  const homeOf = (el: Element) => {
+    const home = el.parentElement?.closest(SECTION) ?? null;
+    return home && !home.querySelector("main") ? home : null;
   };
-  const noteAdded = (els: Set<Element>, t: number) => {
-    let biggest: Element | null = null;
-    for (const el of els) if (el.isConnected && (!biggest || area(el) > area(biggest))) biggest = el;
-    if (biggest && area(biggest) > 0) {
-      lastAdded = biggest;
-      lastAddedAt = t;
+  const pictures = (el: Element) => [...(el instanceof HTMLImageElement ? [el] : []), ...el.querySelectorAll("img")];
+  // A picture's box is empty until it loads, so pictures decode before they are measured, for at most 1.5 s.
+  const decoded = (imgs: HTMLImageElement[]) => {
+    const pending = imgs.filter((img) => !img.complete || !img.naturalWidth);
+    return pending.length ? Promise.race([Promise.all(pending.map((img) => img.decode().catch(() => {}))), pause(1500)]) : Promise.resolve();
+  };
+  for (const type of ["pointerdown", "keydown", "input", "change"]) {
+    addEventListener(
+      type,
+      (e) => {
+        try {
+          lastInput = now();
+          const el = e.target instanceof Element ? e.target : null;
+          lastControl = el?.closest(CONTROL) ?? el;
+          const field =
+            el instanceof HTMLTextAreaElement ||
+            (el instanceof HTMLInputElement && /^(text|search|email|url|tel|password|number)$/.test(el.type)) ||
+            (el instanceof HTMLElement && el.isContentEditable);
+          if (e.type === "input" && field) lastTyped = el;
+        } catch {
+          // never break the page
+        }
+      },
+      { capture: true, passive: true },
+    );
+  }
+  const note = (el: Element, t: number, waited: number, busy: boolean) => {
+    if (waited >= modelMs) lastWait = Math.max(lastWait, t);
+    // A section noted again before it was held is one result, done at the later time.
+    const again = results.find((r) => r.el === el && !r.held);
+    if (again) {
+      Object.assign(again, { at: Math.max(again.at, t), waited: Math.max(again.waited, waited), busy: again.busy || busy });
+      return;
     }
+    const twin = results.find((r) => Math.abs(r.at - t) <= 500 && (r.el.contains(el) || el.contains(r.el)));
+    if (twin) {
+      if (el.contains(twin.el)) twin.el = el;
+      twin.waited = Math.max(twin.waited, waited);
+      twin.busy ||= busy;
+      return;
+    }
+    results.push({ el, at: t, waited, busy, held: false });
+    if (results.length > 60) results.shift();
   };
-  const latestResult = (): { el: Element; at: number } | null => {
-    const done = lastDone?.isConnected ? { el: lastDone, at: lastDoneAt } : null;
-    const added = lastAdded?.isConnected ? { el: lastAdded, at: lastAddedAt } : null;
-    if (!done || !added) return done ?? added;
-    if (Math.abs(added.at - done.at) <= 500) return area(added.el) > area(done.el) ? added : done;
-    return added.at > done.at ? added : done;
+  // An aria-busy element turned off or was removed at t, after being busy since `on`. A removed one, like a Skeleton,
+  // credits the section or card it was in, unless that holds the field the viewer typed into: that is the form, and
+  // the burst that replaced the busy part stands for the result.
+  const noteDone = (el: Element, home: Element | null, on: number, t: number) => {
+    const form = !!home && !!lastTyped?.isConnected && home.contains(lastTyped);
+    const done = el.matches(CONTROL) ? null : el.isConnected && area(el) > 0 ? el : home?.isConnected && !form ? home : null;
+    if (done) note(done, t, t - on, true);
+    else if (t - on >= modelMs) lastWait = Math.max(lastWait, t);
   };
-  // For the recorder: the latest result if it appeared after `after`, brought on screen with an eased scroll when most
-  // of it is off screen (centered, or its top shown when it is taller than the screen). Small ones are left out
-  // unless `final`, and so is one still marked busy, like a loading skeleton, which isn't a result yet.
-  const settle = async (after: number, final: boolean) => {
-    const latest = latestResult();
-    if (!latest || latest.at <= after || latest.el.closest('[aria-busy="true"]')) return null;
+  // Something busy, or something holding a busy part like a Skeleton, is a loading state, not a result yet.
+  const loading = (el: Element) => !!(el.closest('[aria-busy="true"]') || el.querySelector('[aria-busy="true"]'));
+  // A burst that is a loading state counts once its section is done.
+  const noteAdded = (els: Element[], t: number) => {
+    const pick = () => {
+      let biggest: Element | null = null;
+      for (const el of els) if (el.isConnected && (!biggest || area(el) > area(biggest))) biggest = el;
+      if (!biggest || area(biggest) <= 0 || loading(biggest)) return;
+      note(biggest, t, lastInput && lastInput < t ? t - lastInput : 0, false);
+    };
+    const imgs = els.flatMap((el) => (el.isConnected ? pictures(el) : []));
+    if (!imgs.some((img) => !img.complete || !img.naturalWidth)) return pick();
+    decoding++;
+    void decoded(imgs).then(() => {
+      decoding--;
+      try {
+        pick();
+      } catch {
+        // never break the page
+      }
+    });
+  };
+  const media = (el: Element) =>
+    [el, ...el.querySelectorAll("img, canvas, video, svg")].filter((m) => {
+      const r = m.getBoundingClientRect();
+      return m.matches("img, canvas, video, svg") && r.width >= 64 && r.height >= 64;
+    }).length;
+  // Headings, labels and the app bar on screen, which a crop edge shouldn't cut. Ones pinned to the screen are left
+  // out, since the page's scroll doesn't move them.
+  const heads = () => {
+    const out: Box[] = [];
+    for (const el of document.querySelectorAll("h1, h2, h3, .card-head, .appbar, label, legend")) {
+      const b = box(el);
+      if (out.length >= 24 || !onScreen(b) || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+      let pinned = false;
+      for (let up: Element | null = el; up && up !== document.body && !pinned; up = up.parentElement) {
+        pinned = /^(fixed|sticky)$/.test(getComputedStyle(up).position);
+      }
+      if (!pinned) out.push(b);
+    }
+    return out;
+  };
+  // Empty text fields on screen. A frame with one looks unfinished.
+  const blanks = () => {
+    const out: Box[] = [];
+    for (const el of document.querySelectorAll("input, textarea")) {
+      const field = el as HTMLInputElement | HTMLTextAreaElement;
+      if (out.length >= 8 || field.value || field.readOnly) continue;
+      if (field instanceof HTMLInputElement && !/^(text|search|email|url|tel|password|number)$/.test(field.type)) continue;
+      const b = box(field);
+      if (onScreen(b) && field.checkVisibility({ visibilityProperty: true, opacityProperty: true })) out.push(b);
+    }
+    return out;
+  };
+  // The content column: main's content box, when it is narrower than the screen.
+  const column = () => {
+    const main = document.querySelector("main");
+    if (!main) return null;
+    const r = main.getBoundingClientRect();
+    const s = getComputedStyle(main);
+    const left = parseFloat(s.paddingLeft) || 0;
+    const w = r.width - left - (parseFloat(s.paddingRight) || 0);
+    return w >= 200 && w < 0.95 * window.innerWidth ? { x: Math.round(r.left + left), w: Math.round(w) } : null;
+  };
+  // A result to hold: still in the page, with nothing around it busy, and not the form the viewer just used, though
+  // a model's answer that holds its own "Write it again" counts.
+  const usable = (r: Result) => {
+    const el = r.el;
+    if (!el.isConnected || loading(el)) return null;
+    return !r.busy && lastControl?.isConnected && el.contains(lastControl) ? null : el;
+  };
+  // The strongest result: one the viewer waited at least 3/4 as long for as the longest, then one from an aria-busy
+  // section, then one with pictures, then the biggest. The later one wins a tie.
+  const strongest = (pool: Array<{ r: Result; el: Element }>) => {
+    const most = Math.max(0, ...pool.map((p) => p.r.waited));
+    const score = (p: { r: Result; el: Element }) => [
+      most < modelMs || p.r.waited >= 0.75 * most ? 1 : 0,
+      p.r.busy ? 1 : 0,
+      media(p.el) ? 1 : 0,
+      area(p.el),
+    ];
+    const beats = (a: number[], b: number[]) => {
+      for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return (a[k] ?? 0) > (b[k] ?? 0);
+      return true;
+    };
+    let best: { r: Result; el: Element; s: number[] } | null = null;
+    for (const p of pool) {
+      const s = score(p);
+      if (!best || beats(s, best.s)) best = { ...p, s };
+    }
+    return best;
+  };
+  // For the recorder: the oldest result not held yet that appeared since `since` and is at least 2% of the screen,
+  // or with `final` the strongest from the last wait on, of any size, held or not. Its pictures decode first. It is
+  // brought on screen with an eased scroll when most of it is off screen (centered, or its top shown when it is taller
+  // than the screen), and reported with what else is on screen then.
+  const settle = async (since: number, final: boolean) => {
+    // New content still coming in becomes a result once its burst is reported, 200 ms or more after it started, so
+    // the result of the action just done is waited for, up to 0.6 s, instead of being held one action late.
+    const until = clock() + 600;
+    while (firstAt && (added >= 3 || text >= 20) && clock() < until) await pause(50);
+    for (let i = 0; decoding && i < 15; i++) await pause(100);
     const vh = window.innerHeight;
-    const r = latest.el.getBoundingClientRect();
-    if (!final && r.width * r.height < 0.02 * window.innerWidth * vh) return null;
+    let pick: { r: Result; el: Element } | null = null;
+    if (final) {
+      const pool = (from: number) =>
+        results.flatMap((r) => {
+          const el = r.at >= from ? usable(r) : null;
+          return el && area(el) > 0 ? [{ r, el }] : [];
+        });
+      const recent = pool(lastWait - 500);
+      pick = strongest(recent.length ? recent : pool(0));
+    } else {
+      for (const r of results) {
+        const el = !r.held && r.at >= since ? usable(r) : null;
+        if (!el) continue;
+        await decoded(pictures(el));
+        if (area(el) < 0.02 * window.innerWidth * vh) continue;
+        pick = { r, el };
+        break;
+      }
+    }
+    if (!pick) return null;
+    const { r: found, el } = pick;
+    const again = found.held;
+    found.held = true;
+    await decoded(pictures(el));
     const start = now();
     let moved = false;
+    const r = el.getBoundingClientRect();
     if (Math.min(r.bottom, vh) - Math.max(r.top, 0) < 0.9 * Math.min(r.height, vh * 0.8)) {
       const se = document.scrollingElement ?? document.documentElement;
       const want = r.height > vh * 0.8 ? r.top - vh * 0.12 : r.top + r.height / 2 - vh / 2;
       moved = await scroll(Math.max(0, Math.min(se.scrollHeight - se.clientHeight, se.scrollTop + want)));
     }
+    const pressed = lastControl?.isConnected ? box(lastControl) : null;
     return {
-      at: latest.at,
-      t: moved ? start : latest.at,
-      since: moved ? now() : latest.at,
-      rect: box(latest.el) ?? viewport(),
+      at: found.at,
+      t: moved ? start : found.at,
+      since: moved ? now() : found.at,
+      rect: box(el) ?? viewport(),
       scrollY: Math.round(window.scrollY),
+      waited: found.waited,
+      busy: found.busy,
+      media: media(el),
+      heads: heads(),
+      blanks: blanks(),
+      pressed: onScreen(pressed) ? pressed : null,
+      column: column(),
+      moved,
+      again,
     };
   };
   Object.defineProperty(window, api, {
     configurable: true,
-    value: { ripple, chip, where: () => (shown ? { x: px, y: py } : null), scroll, type, settle },
+    value: {
+      ripple,
+      chip,
+      where: () => (shown ? { x: px, y: py } : null),
+      scroll,
+      type,
+      settle,
+      heads,
+      hush: (on: boolean) => {
+        hushed = on;
+      },
+      rest,
+      showing: () => parseFloat(getComputedStyle(cursor).opacity) > 0.01,
+      park,
+    },
   });
 
   // Activity: elements added and text or attributes changed, summed over windows of at least 200 ms, with how much
@@ -1263,7 +1738,8 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
   let scrolledAt = 0;
   const addedEls = new Set<Element>();
   const changedEls = new Set<Element>();
-  const busyEls = new Map<Element, Box>();
+  // Each busy element's latest box, the section or card it is in, and when it turned busy.
+  const busyEls = new Map<Element, { rect: Box; home: Element | null; on: number }>();
   let busyChanges: BusyChange[] = [];
   const skip = new Set(["SCRIPT", "STYLE", "LINK", "META", "TEMPLATE", "NOSCRIPT"]);
   // Keystrokes in the focused field change it on every key. That is the typing, not something appearing.
@@ -1302,14 +1778,14 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
     for (const el of live) {
       if (busyEls.has(el)) continue;
       const rect = box(el) ?? viewport();
-      busyEls.set(el, rect);
+      busyEls.set(el, { rect, home: homeOf(el), on: t });
       busyChanges.push({ t, on: true, el, rect });
     }
-    for (const [el, last] of busyEls) {
+    for (const [el, was] of busyEls) {
       if (live.has(el)) continue;
       busyEls.delete(el);
-      busyChanges.push({ t, on: false, el, rect: (el.isConnected && box(el)) || last });
-      noteDone(el, t);
+      busyChanges.push({ t, on: false, el, rect: (el.isConnected && box(el)) || was.rect });
+      noteDone(el, was.home, was.on, t);
     }
   };
   const observer = new MutationObserver((records) => {
@@ -1383,7 +1859,7 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
       const due = (since: number) => (t - scrolledAt > 150 && t - since >= 200) || t - since >= 1200;
       if ((added || changed) && due(firstAt)) {
         queue.activity.push({ t: firstAt, added, changed, text, rect: union(addedEls) ?? union(changedEls) ?? viewport() });
-        if (added >= 3 || text >= 20) noteAdded(addedEls, firstAt);
+        if (added >= 3 || text >= 20) noteAdded([...addedEls], firstAt);
         firstAt = 0;
         added = 0;
         changed = 0;
@@ -1397,9 +1873,9 @@ function demoPageScript({ binding, api, font }: { binding: string; api: string; 
         busyChanges = [];
       }
       // A busy section grows as its content arrives. Keep its latest box for when it is removed while busy.
-      for (const el of busyEls.keys()) {
+      for (const [el, was] of busyEls) {
         const b = el.isConnected ? box(el) : null;
-        if (b) busyEls.set(el, b);
+        if (b) was.rect = b;
       }
       const send = (window as unknown as Record<string, unknown>)[binding];
       if (typeof send !== "function" || !(queue.activity.length || queue.busy.length || queue.scrolls.length)) return;
@@ -1453,6 +1929,7 @@ function recordedStep(title: string, body: (step: TestStepInfo) => unknown, opti
       stepDepth.run(depth + 1, async () => {
         const entry = { title, t0: Date.now(), t1: 0, depth };
         recorder.steps.push(entry);
+        if (depth === 0) recorder.beginStep(entry.t0);
         try {
           const result = await body(step);
           if (current === recorder) await recorder.settleResult();

@@ -8,10 +8,9 @@ description: Use for every screen of a Muse Muse product, together with meta-ui.
 ## Look
 
 - Follow `.agents/skills/meta-ui` for how every screen looks: the Meta tokens, type, parts and patterns. Use the tokens and classes in `app/globals.css` for every color, radius, font, card, field, button, chip and table. Light and dark mode both come from the tokens.
-- Pick the accent hue that fits the product's subject, and set it in `app/layout.tsx` as `<html lang="en" data-accent="lime">` (meta-ui lists the hues), or leave it off for Meta blue. Write the choice in BUILD_NOTES.md. It colors only the signature element and charts. Buttons, links and focus stay Meta blue.
 - At most one signature element: the surface that holds the result (meta-ui), never inspo artwork.
 - Never use Meta logos, wordmarks or marks, or the Meta name as branding. Keep `components/Footer.tsx`. It says "Built with Muse Muse. Not an official Meta product."
-- Take layout ideas and mood from `inspo/`, but use the tokens for every color and font, and never reuse a logo, name or artwork from it.
+- Take layout ideas and mood from `inspo/`. The mood shows only in the copy, the samples and any images the product makes, never as decoration: use the tokens for every color and font (Meta blue is the only signature color), and never reuse a logo, name or artwork from it.
 
 ## Patterns
 
@@ -19,11 +18,11 @@ Every part below is a class in `app/globals.css` or a component in `components/`
 
 - **Page:** `<AppBar name="..." />`, then `<main className="stack">` with a `<header className="hero">` holding the `h1` and maybe a `.tagline` (meta-ui's first screen), then `.card` sections.
 - **Fields:** a `.field` holds a label, the control and a `.hint`. Two fields side by side only inside `.fields.two`, which stacks on phones so a long label never pushes its input out of line.
-- **Buttons:** one `button.primary` per screen, with `.ai` when it calls a model. Other actions are `button.secondary` (Download, Copy), `button.tinted` (a strong second action) or `button.text` (Try the sample, Start over), together in an `.actions` row so they line up with the primary button. Icon-only actions are `button.icon` with an `aria-label`. Never a bare `<a>` or an unstyled `<button>` as an action.
+- **Buttons:** the roles are in meta-ui's Parts table; Start over lives only in the app bar. Icon-only actions are `button.icon` with an `aria-label`. Never a bare `<a>` or an unstyled `<button>` as an action.
 - **Chips:** `<ModelChip model="sam-3.1" verb="Outlined" />` for model credits, `.chip` for short statuses, `.tag` for feature labels like "2 players", so features never look like model credits. `.ai-badge` labels an image a model made, where the card's ModelChip can't.
-- **Tables:** `.table-wrap` around every table. It scrolls sideways inside itself. Never put `overflow: hidden` on a table's box. On phones keep a table to 3 columns, and use `.kv` for label and value pairs.
+- **Tables:** `.table-wrap` around every table. It scrolls sideways inside itself. Never put `overflow: hidden` on a table's box. On phones keep a table to 3 columns, use `.kv` for label and value pairs, and `.rows` for rows the person edits (meta-ui).
 - **Big numbers:** `.big-number` with a `.meta` line under it, like `Took 4 s · 3 birds · estimate`. Only for a result's main figure, never for a count that is still 0.
-- **Model text:** ask for JSON fields and lay them out. A reply with parts (wins, themes, next steps) is one field per part, under `h3` headings or in a `.list`, never one string. When a reply is prose that may hold markdown or code, render it with `<Markdown text={...} />`, never as raw text with `#`, `**` or backticks showing. Model text the person may edit shows rendered first, with a `.secondary` Edit button (edit icon) that swaps in the textarea; never lead with raw markdown.
+- **Model text:** ask for JSON fields and lay them out. A reply with parts (wins, themes, next steps) is one field per part, under `h3` headings or in a `.list`, never one string. When a reply is prose that may hold markdown or code, render it with `<Markdown text={...} />`, never as raw text with `#`, `**` or backticks showing; under a card's h2, pass it as `title` so a first heading that repeats it is left out. Model text the person may edit shows rendered first, with a `.secondary` Edit button (edit icon) that swaps in the textarea; never lead with raw markdown.
 - **Notes and errors:** `.note` for a tip, `.error` with `role="alert"` for a failure, `.limits` for a short list of limits, `.empty` when a list or history has nothing in it yet. Once there is a result, leave out a list that is still empty.
 
 ## Layout
@@ -32,9 +31,9 @@ Every part below is a class in `app/globals.css` or a component in `components/`
 - The app bar shows the product's name from the brief, and the hero's `h1` and tagline follow meta-ui's first screen. No eyebrow label above the `h1`, and no model chips or cost before there is a result.
 - Put one primary flow on the first screen: input, then action, then result. Put secondary things below or behind a link.
 - When a result arrives, scroll it into view and move focus to its heading: `resultRef.current?.scrollIntoView({ block: "start" })`. The demo video is 1280 x 720, so a result below the fold is a result nobody sees.
-- Show each thing once. Above a result, a form that only starts one run becomes its summary row with an Edit button (meta-ui), with a photo as a `.thumb`, unless the product compares before and after: then the source is the same size as each result, in a `.gallery`. Show each number once. Put long extras (a full transcript, raw text, more tables) in `<details>`. Keep a phone result screen under about 2,500 px tall.
+- Show each thing once. Above a result, a form that only starts one run becomes its summary row with an Edit button (meta-ui), with a photo as a `.thumb`, unless the product compares before and after: then the source is the same size as each result, in a `.gallery`. Show each number once. Put long extras (a full transcript, raw text, more tables) in `<details>`. Keep a phone result screen under about 2,500 px tall (verify fails one over 4,000 px).
 - Show which model did what with one `ModelChip` in each result's `.card-head`, like "Outlined by SAM 3.1" or "Rendered by Muse Image", on a `.card.ai`. Only on output that model really made: never on a fallback, a sample or text the app wrote itself.
-- Show each of the brief's limits once, next to the result it affects.
+- Show each of the brief's limits that a user would run into once, next to the result it affects.
 
 ## Inputs
 
@@ -46,7 +45,7 @@ Every part below is a class in `app/globals.css` or a component in `components/`
 | PDF | `<FilePicker accept="application/pdf" ... />`. Up to 2 MB: `blobToDataUrl`. Bigger: `uploadMedia` |
 | Text | A labeled textarea. The placeholder hints at the format in a few words, like "One item per line, with prices", and a one-line field's stays under about 32 characters. It is never the sample: the sample goes in with the Try the sample button, so the start screen and the filled screen look different |
 | Date | Prefill a sensible default so the field never shows mm/dd/yyyy, and keep it in step with the result |
-| Choice | `<Segmented>` for two to five short options. A `select` for more, with option labels under about 30 characters, since a select can't wrap |
+| Choice | `<Segmented>` for two to five options of a word or two: it lays them out to fit. A `select` for more, with option labels under about 30 characters, since a select can't wrap |
 
 Vercel Functions accept at most 4.5 MB per request body, and base64 adds a third. Anything bigger goes through `uploadMedia`, which sends the file straight to storage through `app/api/upload/route.ts` (leave that route as it is) and returns a public URL the models can read for 24 hours.
 
@@ -70,7 +69,7 @@ Always offer a file input next to the record button: the smoke test uses the fil
 
 Every async action needs four states:
 
-1. **Idle**, with a sample the user can try in one tap, using the fixtures.
+1. **Idle**, with a "Try the sample" button that fills the input from the fixtures in one tap.
 2. **Working**: the result card appears at once with a `.working` line that names the step, like "Finding the wall…", and a `<Skeleton>` shaped like the result (meta-ui shows it). Give every busy button `aria-busy="true"` and end its label with "…" until it finishes; judgeShot waits for every `aria-busy` to clear.
 3. **Done**, with the result and a way to start over. Clear or redo anything that depends on input that changed (a chart, a summary), so nothing on screen is stale.
 4. **Error**, in an `.error` box with `role="alert"`, saying what went wrong in plain words and what to try next. If a model call fails, show this state, never canned text dressed up as the model's.
@@ -81,10 +80,11 @@ The model's work is the reason the product exists, so make it specific and check
 
 - Send the model every piece of the user's data the answer depends on, and ask for specifics with `.describe()`: name the items, numbers and dates from the input. A habit nudge mentions the habit that is behind; a recap groups what was done.
 - Do arithmetic, dates, counts, scaling and sorting in code. Use the model to read, write, judge and explain. Turn "tomorrow" or "Friday" into real dates in code.
+- Ask for figures as number fields (startWeek, endWeek, page) and format them in code. Never build display text by stripping characters from model text, and never prefix a model field with a label it may already contain ("Week 2: Week 2").
 - Never show a model's own confidence as a percentage. Use High, Medium or Low, or leave it out. Never show a verdict from too little data without saying so.
 - Mark anything the model added that the user didn't give (a yield, a cook time, a tip) as a suggestion.
 - Keep internal fields out of the UI: summaries for the next step, image prompts, boxes, indexes, debug lines.
-- Keep an AI button disabled until there is enough input for a useful answer.
+- Keep a primary button disabled until its required input is there, and an AI button until there is enough for a useful answer.
 
 ## Accessibility
 

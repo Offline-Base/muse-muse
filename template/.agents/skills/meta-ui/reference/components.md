@@ -26,22 +26,30 @@ Markup for every class in `app/globals.css` and every component in `components/`
 
 A section is `<section className="card" aria-labelledby="...">` with an `h2`, or `aria-label` when its field label already names it (an input card). A result a model made is `.card.ai` with a `.card-head` holding the `h2` and a ModelChip. Parts inside a card get 16 px between them, 12 px under a heading, 8 px above a `.hint` that follows a field or a `.limits` list, and 20 px above `.actions`, all automatically; parts wrapped in a `.stack` get its 16 px gap and nothing more. `.card.ai` adds the gradient cap; it moves while the card holds a `<Skeleton>` or anything with `aria-busy="true"`. Never put a card inside a card.
 
-Ask, then answer: one card for a model action and its answer.
+Ask, then answer: one card for a model action and its answer. The answer is structured, one field per part, each `.describe()`d to name the input's specifics ("Each win names a card in Done"); the empty state says what is ready.
 
 ```tsx
-<section className={summary ? "card ai" : "card"} aria-labelledby="sum">
-  <div className="card-head"><h2 id="sum">Your week</h2>{summary ? <ModelChip model="muse-spark-1.3" verb="Written" /> : null}</div>
-  {summary ? (
+// recap: respondJson's z.object({ wins: z.array(z.string()), themes: z.array(z.string()), nextStep: z.string() })
+<section className={recap ? "card ai" : "card"} aria-labelledby="sum">
+  <div className="card-head"><h2 id="sum">Your week</h2>{recap ? <ModelChip model="muse-spark-1.3" verb="Written" /> : null}</div>
+  {recap ? (
     <>
-      <Markdown text={summary} />
+      <div className="prose">
+        <h3>Wins</h3>
+        <ul>{recap.wins.map((w) => <li key={w}>{w}</li>)}</ul>
+        <h3>Themes</h3>
+        <ul>{recap.themes.map((t) => <li key={t}>{t}</li>)}</ul>
+        <h3>Next step</h3>
+        <p>{recap.nextStep}</p>
+      </div>
       <div className="actions"><button className="text" onClick={write}>Write it again</button></div>
     </>
   ) : (
     <div className="empty">
       <span className="icon-circle lg"><Icon name="sparkle" size={24} /></span>
-      <h3>No summary yet</h3>
-      <p>Move a few cards to Done, then get a short recap.</p>
-      <div className="actions"><button className="tinted ai" onClick={write}><Icon name="sparkle" /> Get my summary</button></div>
+      <h3>No recap yet</h3>
+      <p>{done.length ? `${done.length} ${done.length === 1 ? "card" : "cards"} in Done. Get a recap of your week.` : "Move a card to Done first."}</p>
+      <div className="actions"><button className="tinted ai" disabled={!done.length} onClick={write}><Icon name="sparkle" /> Get my recap</button></div>
     </div>
   )}
 </section>
@@ -111,7 +119,7 @@ Ask, then answer: one card for a model action and its answer.
 />
 ```
 
-Two to five options of one or two words, sharing each row at equal widths. On a 390 px phone three share a row when no word is longer than about 7 letters, four when each is about 3 (Mon, XL), five only with labels like 1 to 5; more wraps to a second row, so long options go in a `select` or a `.list` of radio rows. Options are gray pills; the chosen one is tinted blue with a check. It is a native radio group: arrow keys move the choice. Tests: `page.getByRole("radio", { name: "Outdoors" }).check()`.
+Two to five options of a word or two. It lays them out from their labels: one row at equal widths when each fits its share of a phone's row (two of up to about 13 characters, three of about 6, four only like S, M, L, XL, five like 1 to 5), two rows of two for four that don't, otherwise one full-width row per option. In the 720 px column they go back to one row when the labels fit. A label never wraps inside its pill; a longer one goes in a `select`. Options are gray pills; the chosen one is tinted blue with a check. It is a native radio group: arrow keys move the choice. Tests: `page.getByRole("radio", { name: "Outdoors" }).check()`.
 
 ## Buttons
 
@@ -120,20 +128,24 @@ Two to five options of one or two words, sharing each row at equal widths. On a 
   <button className="primary ai" disabled={!ready || busy} aria-busy={busy} onClick={run}>
     {busy ? "Checking your plant…" : "Check my plant"}
   </button>
-  <button className="secondary"><Icon name="download" /> Download CSV</button>
-  <button className="tinted"><Icon name="copy" /> Copy rows</button>
+  <button className="text" onClick={trySample}>Try a sample photo</button>
+</div>
+<div className="actions">
+  <button className="tinted"><Icon name="plus" /> Add a row</button>
+  <button className="secondary"><Icon name="refresh" /> Reset</button>
+</div>
+<div className="actions">
   <button className="tinted ai" disabled={busy} aria-busy={busy} onClick={summarize}>
     <Icon name="sparkle" /> {busy ? "Writing your summary…" : "Get my summary"}
   </button>
-  <button className="text" onClick={trySample}>Try a sample photo</button>
   <button className="icon" aria-label="Search"><Icon name="search" /></button>
 </div>
 ```
 
-- `primary`: Meta blue, one per screen, the action that moves the flow on. Add `.ai` when it calls a model: with `aria-busy="true"` it shows the moving AI gradient.
-- `secondary`: gray, for other actions (Download, Edit). A disabled button is a fainter gray with gray text.
-- `tinted`: light blue, for a strong second action or an empty state's action; `.tinted.ai` with the sparkle for a model action that isn't the primary.
-- `text`: blue text, for quiet actions (Try the sample, Start over). Also the app bar's action.
+- `primary`: Meta blue, one per screen, the action that moves the flow on; once the result is up, the one that delivers it (Download CSV, Copy, Print). Add `.ai` when it calls a model: with `aria-busy="true"` it shows the moving AI gradient. Keep it disabled until its required input is there.
+- `secondary`: gray, only for utility actions (Reset, a second export, Edit beside model text). A disabled button is a fainter gray with gray text.
+- `tinted`: light blue, for a card's main action that isn't the primary (Add a row) or an empty state's action; `.tinted.ai` with the sparkle for a model action that isn't the primary.
+- `text`: blue text, for quiet actions (Try the sample, Make another), and the app bar's Start over. On a phone an `.actions` row holds at most two filled buttons; a third action is `.text`.
 - `icon`: a 40 px round gray button. Always with `aria-label`.
 - Every busy button gets `aria-busy="true"` and a label ending in "…" until the work is done; judgeShot waits for it.
 - To confirm a quick action, change the button's own label for about 2 seconds: `{copied ? <><Icon name="check" /> Copied</> : <><Icon name="copy" /> Copy rows</>}`.
@@ -199,8 +211,23 @@ Three ways to show figures. Each figure appears once per screen, as a big number
 ```
 
 - A `tfoot` row is the sum of the column above it, and only that. A receipt's subtotal, tax and grand total go in one `.kv` under the table, as above.
-- Tables scroll sideways inside `.table-wrap`, never the page. Up to three columns on phones; more goes in `.kv` or `<details>`. In an editable table, give the text column `width: 100%` and the number columns `width: 1%; white-space: nowrap`.
+- Tables scroll sideways inside `.table-wrap`, never the page. Up to three columns on phones; more goes in `.kv` or `<details>`. judgeShot fails a box that scrolls sideways on a phone; mark it `data-allow-clip` only when scrolling is the point, like a spreadsheet's grid, and it gets a shadow at an edge with more past it (tint it with `--cover`, not `background`).
 - In `.kv` each column takes the room its words need, and a long label and a long value share the row. Join a page reference to its number with a no-break space: `Q4 costs p.{"\u00a0"}3`.
+
+Editable rows: values the person checks and fixes, like a receipt's items. One header row for the eye, then per row a one-line textarea that wraps a long name, an 88 px `.num` field and a remove button, each named by its `aria-label`. Rows with no number drop that column.
+
+```tsx
+<ul className="rows" aria-label="Items and prices">
+  <li className="rows-head" aria-hidden="true"><span>Item</span><span className="num">Price</span></li>
+  {items.map((it, i) => (
+    <li key={it.id}>
+      <textarea rows={1} aria-label={`Item ${i + 1}`} value={it.name} onChange={(e) => edit(it.id, { name: e.target.value })} />
+      <input className="num" aria-label={`Price of item ${i + 1}`} inputMode="decimal" value={it.price} onChange={(e) => edit(it.id, { price: e.target.value })} />
+      <button className="icon" aria-label={`Remove item ${i + 1}`} onClick={() => remove(it.id)}><Icon name="trash" /></button>
+    </li>
+  ))}
+</ul>
+```
 
 ## Charts
 
@@ -208,13 +235,14 @@ Three ways to show figures. Each figure appears once per screen, as a big number
 <div className="bars" role="img" aria-label="Revenue by quarter: Q1 412, Q2 468, Q3 521, Q4 603">
   {rows.map((r) => (
     <div className="bar" key={r.label} style={{ "--value": Math.round((r.value / max) * 100) } as CSSProperties}>
-      {r.label} {r.value}
+      {`${r.value}\n${r.label}`}
     </div>
   ))}
 </div>
 ```
 
-- One series: `--value` is each bar's height from 0 to 100, a number (import `CSSProperties` from "react"). The label under each bar is its text. The bars are `--signature-line` on a gray panel 160 px tall, and scroll sideways when there are many.
+- One series: `--value` is each bar's height from 0 to 100, a number (import `CSSProperties` from "react"). The text under each bar is its value, a line break and its label, so every label takes two lines. The bars are `--signature-line` on a gray panel 160 px tall.
+- Every bar shares the panel's width: up to 16 fit a phone. From 9 bars, keep each line under a bar to about 4 characters (Jan, 1.2k, W12); past 12, write the text on every other bar only. More than 16 values: group them (weeks into months) or use a table. judgeShot fails bar text that runs into the next bar's.
 - The `aria-label` says what the chart shows, with every value. A legend is only for several series, each in one of the decorative hues.
 
 ```ts
@@ -256,8 +284,8 @@ expect(Math.max(...heights)).toBeGreaterThan(4);
 </ul>
 ```
 
-- `.avatar`: a 40 px gray circle with initials (in the signature hue when `data-accent` is set), or `<img>` inside it. People are round; things (a plant, a store, a group) use `.avatar.square`. Sizes `.sm` (32) and `.lg` (56).
-- `.icon-circle`: a 40 px gray circle holding an `<Icon>` or a step number; `.lg` is 56 px, for empty states.
+- `.avatar`: a 40 px gray circle with initials, or `<img>` inside it. People are round; things (a plant, a store, a group) use `.avatar.square`. Sizes `.sm` (32) and `.lg` (56).
+- `.icon-circle`: a 40 px gray circle holding an `<Icon>` or the step's own number, never a range, page number, date or count; `.lg` is 56 px, for empty states.
 - `.thumb`: a 56 px rounded image, like the photo a result came from.
 - Rows are at least 56 px tall with no dividers; a tappable row highlights on hover.
 
@@ -327,8 +355,17 @@ expect(Math.max(...heights)).toBeGreaterThan(4);
 </figure>
 
 <figure className="media">
+  <img src={pageRender} alt="Page 3 of your report, with its 2 charts outlined" />
+  <svg className="overlay" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+    {boxes.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} rx={8} fill="var(--signature)" fillOpacity={0.15} stroke="var(--signature-line)" strokeWidth={3} />)}
+  </svg>
+  <figcaption>Found 2 charts on page 3.</figcaption>
+</figure>
+
+{/* The model's title, "Happy Dino Skate Day", is the card's h2. */}
+<figure className="media">
   <img src={pageUrl} alt="Your coloring page: a dinosaur on a skateboard" />
-  <figcaption><span className="ai-badge"><Icon name="sparkle" size={12} /> Made with AI</span> Happy Dino Skate Day, ready to print.</figcaption>
+  <figcaption><span className="ai-badge"><Icon name="sparkle" size={12} /> Made with AI</span> Ready to print on letter paper.</figcaption>
 </figure>
 
 <div className="gallery">
@@ -349,9 +386,10 @@ expect(Math.max(...heights)).toBeGreaterThan(4);
 </div>
 ```
 
-- The overlay's viewBox is the image's pixel size; it takes its height from that, so shapes line up at any width, with or without a caption.
-- White lines get a soft dark halo, so they show on light photos too. For several kinds of object, stroke each kind with one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink`, `--teal`.
-- The figcaption is the one line that says the result in words, so there is no second status line. The card's ModelChip credits the model for everything in the card, so an `.ai-badge` ("AI" or "Made with AI") goes only where it can't: on a model's tile in a gallery that also holds the person's photo, or on an image in a card with no ModelChip. Over a photo it is white on `--scrim` in the corner; on a page or printable, whose corner holds content, it leads the figcaption.
+- The overlay's viewBox is the image's pixel size; it takes its height from that, so shapes line up at any width, with or without a caption. `strokeWidth` is in screen pixels, however far the image is scaled down.
+- Over a photo, draw in `var(--on-media)`: white lines get a soft dark halo, so they show on light photos too. Over a page render, a document, a drawing or another light image, draw in `var(--signature-line)` at 3 px with a 15% `--signature` fill, as above. For several kinds of object, stroke each kind with one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink`, `--teal`.
+- An image with nothing drawn over it fits the screen's height, centered with its caption, so a whole page shows at once.
+- The figcaption is the one line that says the result in words, so there is no second status line. When the model names the image, that name is the card's h2, not the caption. The card's ModelChip credits the model for everything in the card, so an `.ai-badge` ("AI" or "Made with AI") goes only where it can't: on a model's tile in a gallery that also holds the person's photo, or on an image in a card with no ModelChip. Over a photo it is white on `--scrim` in the corner; on a page or printable, whose corner holds content, it leads the figcaption.
 - `.gallery` is one column on phones and up to three across the 720 px column. When the point is to compare before and after, the source is its first tile, the same size as each result. Per-tile actions are `button.icon` with an `aria-label`.
 
 ## Icon
@@ -382,4 +420,4 @@ Names: upload, camera, image, file, mic, sparkle, check, alert, info, copy, down
 </div>
 ```
 
-Paragraphs, headings, lists, rules, code and bold from a model's reply, styled by `.prose`. A single line break stays a line break. Never print model text raw. Text the person may edit shows rendered first, and Edit swaps in the textarea, which shows all of it inside a `.card.ai`.
+Paragraphs, headings, lists, rules, code and bold from a model's reply, styled by `.prose`. A single line break stays a line break. Never print model text raw. Text the person may edit shows rendered first, and Edit swaps in the textarea, which shows all of it inside a `.card.ai`. Under a card whose h2 is the draft's title, `<Markdown text={draft} title={title} />` leaves out a first heading that repeats it.

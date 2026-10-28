@@ -153,7 +153,7 @@ export function renderBuildPrompt(
     "",
     "## Limits",
     "",
-    "Show each one once in the UI, next to the thing it limits, in plain words for this product's users, and list them in `musemuse.json`.",
+    "Show each limit a user would run into once in the UI, next to the thing it limits, in plain words for this product's users, and list them all in `musemuse.json`.",
     "",
     bullets(brief.limits),
     "",
@@ -180,7 +180,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
-    "The look always comes from the meta-ui skill. The inspo's mood shows in the accent hue and the copy, never as its colors or fonts.",
+    "The look always comes from the meta-ui skill, in Meta blue. The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.",
     "",
     "Leave out:",
     "",
@@ -206,7 +206,7 @@ export function renderBuildPrompt(
       `- Fit: ${rebuild.rebuild.fit}, meaning ${FIT_MEANING[rebuild.rebuild.fit]}. The fit and the plan are for you, not for the UI.`,
       `- Plan: ${rebuild.rebuild.plan}`,
       "- The product stands on its own. Never write \"rebuild\", the fit, the plan, the video's title, or what you left out or didn't copy anywhere in the UI. Say what it can't do as plain limits for its users.",
-      `- Credit the video once, as a muted line just above the footer: "Idea from a Meta developer video", with "a Meta developer video" linking to ${rebuild.url}. Never embed, download or copy it, and don't use Meta's or Llama's names or logos in the product's look.`,
+      `- Credit the video once, with the footer's credit line: \`<Footer credit="${rebuild.url}" />\` in app/layout.tsx. Never embed, download or copy it, and don't use Meta's or Llama's names or logos in the product's look.`,
     );
   }
 

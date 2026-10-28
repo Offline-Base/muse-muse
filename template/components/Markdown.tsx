@@ -4,19 +4,28 @@ const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+/;
 const ORDERED = /^\s*\d/;
 /** A rule line: three or more -, * or _, maybe spaced out. */
 const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+const HEADING = /^\s*#{1,6}\s+(.*?)(?:\s+#+)?\s*$/;
 /** A line that starts a block of its own: a code fence, a heading, a list item or a rule. */
 const opensBlock = (line: string) => /^\s*(`{3,}|~{3,}|#{1,6}\s)/.test(line) || LIST_ITEM.test(line) || RULE.test(line);
+/** Words only, in lower case, so "Faster Batch Reads!" and "**faster batch reads**" match. */
+const words = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /**
  * Renders a model's plain-text reply that may use simple markdown: paragraphs, headings, lists, code blocks, rules,
  * `inline code` and **bold**. No links or HTML. Use it instead of printing model text raw. A single line break stays a
  * line break, so "Wins: ..." and "Next steps: ..." on their own lines stay apart, unless the line stops mid-sentence and
- * the next one goes on in lower case: that is one sentence wrapped by hand, and it joins up again.
+ * the next one goes on in lower case: that is one sentence wrapped by hand, and it joins up again. Pass the card's h2
+ * as `title` to leave out a first heading that repeats it.
  */
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, title }: { text: string; title?: string }) {
   const blocks: ReactNode[] = [];
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let i = 0;
+  if (title) {
+    while (i < lines.length && !lines[i].trim()) i += 1;
+    const first = lines[i]?.match(HEADING);
+    if (first && words(first[1]) === words(title)) i += 1;
+  }
   while (i < lines.length) {
     const line = lines[i];
     const fence = line.match(/^\s*(`{3,}|~{3,})/);
@@ -37,7 +46,7 @@ export function Markdown({ text }: { text: string }) {
       i += 1;
       continue;
     }
-    const heading = line.match(/^\s*#{1,6}\s+(.*?)(?:\s+#+)?\s*$/);
+    const heading = line.match(HEADING);
     if (heading) {
       blocks.push(<h3 key={blocks.length}>{inline(heading[1])}</h3>);
       i += 1;
