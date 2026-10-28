@@ -98,7 +98,7 @@ Two more parts sit on top:
 - Dataset "Muse Muse brief writer," written by Muse Spark 1.3: 400 examples (360 to train on, 40 held out) for $1.51.
 - First real Glimmer 30B QLoRA run: A100 40 GB, 120 steps, final loss 0.47, 47 minutes, $1.59. Base won 28 to 11. That exposed an eval bug: training put every answer on Glimmer's final channel, but the eval prompt let the model choose, and the tuned answers never left the reasoning channel.
 - The fix and a "short prompt" distillation setup are deployed. Eval prompts now continue on the final channel, as training does. Both models train and answer under a one-line role prompt instead of the teacher's full task prompt, so the score measures what training taught.
-- **PLACEHOLDER: second run, in progress.** Fill in from `/fine-tuning` when it is judged: GPU, steps, final loss, minutes, cost, tuned vs base wins and average scores.
+- Second run, with the fix and the short prompt: A100 40 GB, 120 steps, final loss 0.52, 42 minutes, $1.39 on the GPU plus $0.15 for judging. **Tuned Glimmer won all 40 held-out prompts**, average score 8.88 against 1.95 for base. Under the one-line role prompt, base Glimmer answers like a general assistant ("I can't see any photo attached, could you upload it again?"); the tuned model writes a full Muse Muse brief with the right models, honest limits and a cost per run.
 
 ### What's next
 
@@ -121,7 +121,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 - The public Blob store is connected and the live site can build.
 - `npm run rebuild-all` has run against the live site, so Rebuilds and Gallery are full of published products with recorded demos.
-- The second fine-tuning run is judged, and the placeholders in this file are filled in.
+- The second fine-tuning run is judged (tuned won 40 of 40), and its placeholders are filled in.
 - Take dated screenshots of OpenRouter's rankings and Meta's Videos page on the day you record. The numbers move.
 - Record one real build from the Make page to the end. Speed it up in editing and label it "Sped up. Real build."
 - Browser at 1280×720 or 1440×900, light theme, 100% zoom, a clean profile with no other tabs or bookmarks. Stay signed out, so the site shows what judges see: "Guest, Builder, sign-in off."
@@ -193,7 +193,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 **10. Fine-tuning lab (2:20-2:42)**
 
 - On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict).
-- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: **PLACEHOLDER: for example, "After the fix, tuned won N of 40."**
+- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model now writes our briefs, for under two dollars of GPU time."
 
 **11. Close (2:42-2:50)**
 
@@ -219,7 +219,7 @@ From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
 - [ ] **A public Vercel Blob store, so the live site can build.** The store made so far is private: it rejects public uploads, and Meta can't fetch from it. Connect a public store and set `BLOB_READ_WRITE_TOKEN` on the Vercel project. Then run `npm run rebuild-all` against the live site, so Rebuilds and Gallery fill with published products.
 - [ ] **A GitHub repo, if the rules need one.** The repo is local with no remote. Push `main` with its full history, so the scaffold commit `e3ba154` stays visible.
 - [ ] **Record the video** from section 2, including the dated OpenRouter and Meta Videos page screenshots for the opening.
-- [ ] **Fill in the second fine-tuning run's result** in the placeholders in sections 1 and 2.
+- [x] Fill in the second fine-tuning run's result (tuned won 40 of 40).
 - [ ] **After the event, rotate the Vercel token and the Lambda API key.**
 
 ### Worth checking before you submit
