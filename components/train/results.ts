@@ -1,6 +1,6 @@
-import { gpuName } from "@/components/train/format";
+import { gpuName, hubHref } from "@/components/train/format";
 import type { ReadyDatasetRow, ResultJobRow } from "@/lib/train/store";
-import type { DatasetView, EvalSummary, LiveDemoView, RecipeView } from "@/lib/train/types";
+import type { DatasetView, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView } from "@/lib/train/types";
 
 /**
  * The Lab results: what anyone may see of fine-tuning at /fine-tuning (docs/TRAINING.md "Lab results"). Judged jobs and
@@ -44,6 +44,8 @@ export interface ResultView {
   settings: ResultSetting[];
   /** The dataset param, for a link when that dataset is ready. */
   datasetId: string | null;
+  /** The model and dataset repos on the Hugging Face Hub, once the job is published there and they are public. */
+  hub: PublicHubLinks | null;
 }
 
 /** True for a job run with dryRun on: it fakes its answers, so its verdicts mean nothing. */
@@ -90,6 +92,16 @@ function summaryOf(s: EvalSummary): EvalSummary {
   };
 }
 
+/**
+ * The Hub links of a published job, from the store's hubLinks (only the status and the two URLs), each an https link
+ * (hubHref). Null unless it is published with a model link.
+ */
+export function publicHubLinks(links: ResultJobRow["hubLinks"]): PublicHubLinks | null {
+  if (!links || links.status !== "published") return null;
+  const modelUrl = hubHref(links.modelUrl);
+  return modelUrl ? { modelUrl, datasetUrl: hubHref(links.datasetUrl) } : null;
+}
+
 /** A judged job for the Lab results, or null when it has none to show (hasResults). */
 export function toResultView(row: ResultJobRow, recipe: Pick<RecipeView, "title" | "gpus" | "params"> | null): ResultView | null {
   if (!hasResults(row) || !row.evalSummary || !row.terminatedAt) return null;
@@ -110,6 +122,7 @@ export function toResultView(row: ResultJobRow, recipe: Pick<RecipeView, "title"
     summary: summaryOf(row.evalSummary),
     settings: resultSettings(row.params, recipe),
     datasetId: typeof dataset === "string" ? dataset : null,
+    hub: publicHubLinks(row.hubLinks),
   };
 }
 

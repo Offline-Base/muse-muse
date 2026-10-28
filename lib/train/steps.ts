@@ -216,13 +216,21 @@ async function launchInFlight(jobId: string): Promise<SavedLaunch> {
 }
 
 /**
+ * True for a recipe that reads a trained adapter from its region's model cache: one with an "adapter" param, such as
+ * glimmer-serve and glimmer-publish. The jobs route launches its job in that adapter's region.
+ */
+function readsAdapter(recipe: Recipe): boolean {
+  return recipe.params.some((field) => field.kind === "adapter");
+}
+
+/**
  * The region's model cache filesystem for a recipe with usesCache (made once if the account has none there), or null.
- * The serve recipe gets the one that is already there (findCacheFilesystem), since its adapter is on it: a region with
- * none has no adapter to serve. Any failure is a FatalError before the launch claim: nothing is launched, and the
- * create is never retried in a loop.
+ * A recipe that reads an adapter (glimmer-serve, glimmer-publish) gets the one that is already there
+ * (findCacheFilesystem), since its adapter is on it: a region with none has no adapter to read. Any failure is a
+ * FatalError before the launch claim: nothing is launched, and the create is never retried in a loop.
  */
 async function cacheFor(recipe: Recipe, region: string): Promise<LambdaFilesystem | null> {
-  if (isServeRecipe(recipe.id)) {
+  if (readsAdapter(recipe)) {
     let found: LambdaFilesystem | null;
     try {
       found = await findCacheFilesystem(region);
@@ -230,7 +238,8 @@ async function cacheFor(recipe: Recipe, region: string): Promise<LambdaFilesyste
       throw new FatalError(`The model cache filesystem in ${region} could not be listed, so nothing was launched: ${message(err)}`);
     }
     if (!found) {
-      throw new FatalError(`There is no model cache filesystem in ${region}, so the adapter this job serves isn't there and nothing was launched.`);
+      const use = isServeRecipe(recipe.id) ? "serves" : "reads";
+      throw new FatalError(`There is no model cache filesystem in ${region}, so the adapter this job ${use} isn't there and nothing was launched.`);
     }
     return found;
   }
@@ -301,10 +310,11 @@ async function terminateJobInstances(job: TrainJobRow, done?: string): Promise<n
  * delivery can only adopt the instance or wait for Lambda's listing, never launch a second one.
  *
  * A recipe with usesCache gets its region's cache filesystem first (ensureFilesystem, before the claim; a failure is a
- * FatalError) and launches with it mounted, its mount path in job.json as cacheDir. A glimmer-serve job (which the jobs
- * route put in its adapter's region) mounts only the cache already there (findCacheFilesystem, since its adapter is on
- * it; none is a FatalError), gets the region's live demo firewall ruleset (ensureServeFirewall, before the claim, a
- * failure fatal) attached at launch, and its serving key (serveKeyFor the new token's hash) in job.json as serveKey.
+ * FatalError) and launches with it mounted, its mount path in job.json as cacheDir. A glimmer-serve or glimmer-publish
+ * job (which the jobs route put in its adapter's region) mounts only the cache already there (findCacheFilesystem,
+ * since its adapter is on it; none is a FatalError). A glimmer-serve job also gets the region's live demo firewall
+ * ruleset (ensureServeFirewall, before the claim, a failure fatal) attached at launch, and its serving key (serveKeyFor
+ * the new token's hash) in job.json as serveKey.
  * job.json's deadlineEpoch is stamped before the launch request from usableMinutes (the time limit, or the dollar limit
  * at the job's price when that runs out first), so the runner's deadline is never after decideCheck would stop the job.
  *

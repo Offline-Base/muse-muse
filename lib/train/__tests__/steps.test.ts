@@ -4,8 +4,9 @@
  * and it is stored before the launch, the token stays out of step results and errors, terminate finds every instance
  * under the job's name and terminates the workflow's instance before reading the database, a check survives a
  * Lambda or database outage, a recipe with usesCache launches with its region's cache filesystem mounted, the
- * runner's deadline is never after the job's time limit, and a glimmer-serve job (only it) launches with the demo
- * firewall ruleset attached and its serving key in job.json. Nothing here calls Lambda or a database.
+ * runner's deadline is never after the job's time limit, a glimmer-serve job (only it) launches with the demo
+ * firewall ruleset attached and its serving key in job.json, and a glimmer-publish job mounts only the cache already in
+ * its adapter's region. Nothing here calls Lambda or a database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/steps.test.ts
  *
@@ -120,6 +121,7 @@ function row(over: Partial<TrainJobRow> = {}): TrainJobRow {
     terminatedAt: null,
     evalSummary: null,
     serveEndpoint: null,
+    hub: null,
     ...over,
   };
 }
@@ -259,6 +261,8 @@ let steps: typeof import("../steps");
 let serve: typeof import("../serve");
 /** The serve recipe, when lib/train/recipes has it. */
 let serveRecipe: { id: string } | undefined;
+/** The publish recipe, when lib/train/recipes has it. */
+let publishRecipe: { id: string } | undefined;
 const savedEnv = { ...process.env };
 
 describe("training steps", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -272,6 +276,7 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     serve = await import("../serve");
     const { RECIPES } = (await import(at("../recipes/index.ts"))) as typeof import("../recipes/index");
     serveRecipe = RECIPES.find((r) => r.id === "glimmer-serve");
+    publishRecipe = RECIPES.find((r) => r.id === "glimmer-publish");
   });
 
   after(() => {
@@ -696,6 +701,46 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
         return true;
       });
       assert.equal(called("releaseLaunch").length, 1, "nothing launched, so the claim goes back");
+    });
+
+    it("launches a glimmer-publish job with the cache already in its adapter's region, and no firewall or serving key", async (t) => {
+      if (!publishRecipe) return t.skip("no glimmer-publish recipe");
+      const publishRow = () =>
+        row({
+          recipe: "glimmer-publish",
+          instanceName: "mm-train-1234abcd-glimmer-publish",
+          instanceType: "gpu_1x_a10",
+          region: "us-east-1",
+          priceCentsPerHour: 129,
+          maxMinutes: 20,
+          maxUsd: 1,
+          params: { adapterJobId: ADAPTER },
+        });
+      job = publishRow();
+      const result = await steps.launchStep(JOB_ID);
+      assert.equal(result.action, "watch");
+      assert.deepEqual(called("findCacheFilesystem").map((c) => c.args), [["us-east-1"]], "the cache that holds the adapter");
+      assert.equal(called("ensureFilesystem").length, 0, "never a new, empty one");
+      assert.equal(called("ensureServeFirewall").length, 0, "it opens no port");
+      const input = called("launchInstance")[0]!.args[0] as LaunchInput;
+      assert.deepEqual(input.fileSystemNames, ["muse-muse-cache-us-east-1"]);
+      assert.equal(input.firewallRulesetIds, undefined);
+      const sent = jobJson(input.userData);
+      assert.equal(sent.cacheDir, "/lambda/nfs/muse-muse-cache-us-east-1");
+      assert.equal(sent.serveKey, undefined);
+      assert.deepEqual(sent.params, { adapterJobId: ADAPTER });
+
+      // A region with no cache has no adapter to read, so nothing is claimed or launched.
+      job = publishRow();
+      calls = [];
+      listing = [];
+      findFsImpl = async () => null;
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError);
+        assert.match(err.message, /no model cache filesystem in us-east-1, so the adapter this job reads isn't there and nothing was launched/);
+        return true;
+      });
+      assert.equal(called("ensureFilesystem").length + called("claimLaunch").length + called("launchInstance").length, 0);
     });
 
     it("adopts an existing glimmer-serve instance without asking for the firewall or the cache again", async (t) => {

@@ -3,7 +3,7 @@
  * lib/train/logic.ts so they stay testable.
  */
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { and, asc, desc, eq, getTableColumns, gt, gte, isNotNull, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, gte, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db/client";
 import { hashToken } from "@/lib/gateway/tokens";
@@ -28,6 +28,7 @@ import {
   type AdapterOption,
   type EvalExample,
   type EvalSummary,
+  type HubState,
   type LiveDemoView,
   type RecipeId,
   type TrainArtifact,
@@ -123,17 +124,24 @@ export async function createJob(input: NewTrainJob): Promise<TrainJobRow> {
   return rows[0];
 }
 
-/** One job, or null when the id is unknown or isn't a uuid. */
+/** One job, or null when the id is unknown or isn't a uuid. Its whole row, the hub state's small files included. */
 export async function getJob(jobId: string): Promise<TrainJobRow | null> {
   if (!isUuid(jobId)) return null;
   const [row] = await db().select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
   return row ?? null;
 }
 
-/** The newest jobs first. */
+/**
+ * A job's columns for reads of many jobs (listJobs, the sweep's): every column, with the hub state's small files (the
+ * adapter's configs, as base64) left out in the query, so a page of jobs or a sweep never loads them. Only getJob,
+ * which publishing reads, has them.
+ */
+export const jobListColumns = { ...getTableColumns(jobs), hub: sql`(${jobs.hub} - 'small')`.mapWith(jobs.hub).as("hub") };
+
+/** The newest jobs first, without the hub state's small files (jobListColumns). */
 export async function listJobs(limit = 50): Promise<TrainJobRow[]> {
   const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
-  return db().select().from(jobs).orderBy(desc(jobs.createdAt)).limit(n);
+  return db().select(jobListColumns).from(jobs).orderBy(desc(jobs.createdAt)).limit(n);
 }
 
 /** A job's log after the given event id, oldest first. */
@@ -716,6 +724,71 @@ export async function getJudgement(jobId: string, index: number): Promise<Judgem
   return body?.type === "judgement" ? body : null;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Publishing to the Hugging Face Hub (docs/TRAINING.md "Hugging Face Hub"), for lib/train/hub-steps.ts and the hub and
+// publish routes. The rules of the state live in lib/train/hub-cards.ts.
+
+/** How many times updateHub tries again when another writer changed the state between its read and its write. */
+const HUB_WRITE_TRIES = 5;
+
+/**
+ * Changes a job's hub state: `change` gets the state as it is (null when there is none) and the job's row, and returns
+ * the new state, or null to leave it as it is. The write lands only while the state is still the one `change` saw, and
+ * is worked out again from the fresh one otherwise (a few times), so two writers at once can't undo each other, and a
+ * claim (publishing, say) is taken once. Never touches the job's status. Returns the state written, or null when nothing
+ * was: an unknown job, `change` declined, or it lost every race.
+ */
+export async function updateHub(
+  jobId: string,
+  change: (hub: HubState | null, job: TrainJobRow) => HubState | null,
+): Promise<HubState | null> {
+  if (!isUuid(jobId)) return null;
+  for (let attempt = 0; attempt < HUB_WRITE_TRIES; attempt++) {
+    const job = await getJob(jobId);
+    if (!job) return null;
+    const before = job.hub ?? null;
+    const next = change(before, job);
+    if (!next) return null;
+    const seen = before === null ? sql`null::jsonb` : sql`${JSON.stringify(before)}::jsonb`;
+    const rows = await db()
+      .update(jobs)
+      .set({ hub: next })
+      .where(and(eq(jobs.id, jobId), sql`${jobs.hub} is not distinct from ${seen}`))
+      .returning({ id: jobs.id });
+    if (rows.length) return next;
+  }
+  return null;
+}
+
+/** A model published from a dataset repo, for that repo's card. */
+export interface PublishedHubModel {
+  jobId: string;
+  title: string;
+  modelRepo: string;
+}
+
+/**
+ * The other jobs whose models are published from this dataset repo and public (hub status "published" and public,
+ * the same datasetRepo), newest publish first, at most 50. Only those fields of the hub state are read.
+ */
+export async function publishedHubModels(datasetRepo: string, exceptJobId: string): Promise<PublishedHubModel[]> {
+  if (!isUuid(exceptJobId)) return [];
+  const rows = await db()
+    .select({ jobId: jobs.id, title: jobs.title, modelRepo: sql<string | null>`${jobs.hub}->>'modelRepo'` })
+    .from(jobs)
+    .where(
+      and(
+        sql`${jobs.hub}->>'status' = 'published'`,
+        sql`${jobs.hub}->>'public' = 'true'`,
+        sql`${jobs.hub}->>'datasetRepo' = ${datasetRepo}`,
+        ne(jobs.id, exceptJobId),
+      ),
+    )
+    .orderBy(desc(sql`${jobs.hub}->>'publishedAt'`))
+    .limit(50);
+  return rows.flatMap((r) => (r.modelRepo ? [{ jobId: r.jobId, title: r.title, modelRepo: r.modelRepo }] : []));
+}
+
 /** Saves the job's eval summary. It is written once judging ends and doesn't touch the job's status. */
 export async function setEvalSummary(jobId: string, summary: EvalSummary): Promise<void> {
   if (!isUuid(jobId)) return;
@@ -976,10 +1049,22 @@ const resultColumns = {
   finishedAt: jobs.finishedAt,
   terminatedAt: jobs.terminatedAt,
   evalSummary: jobs.evalSummary,
+  /**
+   * The Hugging Face links, and only those and the status, once the job is published and its repos are public
+   * (docs/TRAINING.md "Hugging Face Hub"). Nothing else of the hub state (its reason, files, why or story) leaves the
+   * store for these pages.
+   */
+  hubLinks: sql<{ status: string; modelUrl: string | null; datasetUrl: string | null } | null>`case
+    when ${jobs.hub}->>'status' = 'published' and ${jobs.hub}->>'public' = 'true' then jsonb_build_object(
+      'status', ${jobs.hub}->>'status', 'modelUrl', ${jobs.hub}->>'modelUrl', 'datasetUrl', ${jobs.hub}->>'datasetUrl'
+    )
+  end`,
 };
 
 /** A job as the Lab results read it. */
-export type ResultJobRow = Pick<TrainJobRow, keyof typeof resultColumns>;
+export type ResultJobRow = Pick<TrainJobRow, Exclude<keyof typeof resultColumns, "hubLinks">> & {
+  hubLinks?: { status: string; modelUrl: string | null; datasetUrl: string | null } | null;
+};
 
 /**
  * Jobs with results to show: succeeded, the GPU shut down, judged (an eval summary with items, so not an unjudged one)

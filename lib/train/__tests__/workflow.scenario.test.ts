@@ -3,7 +3,11 @@
  * orchestration: launch (and saving a launch the database didn't take), the 30 s check loop, that a failed check
  * doesn't end the watch, the hard stop at maxMinutes + 15, and that the instance is terminated at the end on every
  * path, by the id the workflow carries, including thrown errors and an outage that outlasts every retry. Judging runs
- * only after terminate returned "succeeded", 4 items at a time, and nothing it does changes the job's status.
+ * only after terminate returned "succeeded", 4 items at a time, and nothing it does changes the job's status. Publishing
+ * to the Hugging Face Hub comes last, after every ending: the plan step with the final status, then the story, the
+ * dataset repo, the model repo and the finish, in that order, for the job the plan names and under its claim; a step
+ * that fails fails the publishing with its reason, under that claim, and nothing in it throws or changes the status. publishToHub runs the same as an admin's
+ * Publish. The hub steps are left out of order() and checked on their own (hubOrder()).
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/workflow.scenario.test.ts
  *
@@ -39,6 +43,12 @@ interface Scenario {
   judgeFails?: number[];
   /** Whether saveEvalSummaryStep throws. */
   summaryFails?: boolean;
+  /** What hubPlanStep answers (nothing to publish by default), or an error it throws. */
+  hubPlan?: { action: "publish"; jobId: string; claim: string } | { action: "none" } | Error;
+  /** The hub step that throws, as one that ran out of retries. */
+  hubFailsAt?: string;
+  /** Whether hubFailStep throws too. */
+  hubFailFails?: boolean;
 }
 
 const POLL_MS = 30_000;
@@ -55,9 +65,16 @@ function named(step: string) {
   return calls.filter((c) => c.step === step);
 }
 
-/** Steps in the order they ran, without the sleeps. */
+const HUB_STEPS = new Set(["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep", "hubFailStep"]);
+
+/** Steps in the order they ran, without the sleeps and the hub steps. */
 function order(): string[] {
-  return calls.filter((c) => c.step !== "sleep").map((c) => c.step);
+  return calls.filter((c) => c.step !== "sleep" && !HUB_STEPS.has(c.step)).map((c) => c.step);
+}
+
+/** The hub steps in the order they ran. */
+function hubOrder(): string[] {
+  return calls.filter((c) => HUB_STEPS.has(c.step)).map((c) => c.step);
 }
 
 let terminateRuns = 0;
@@ -122,6 +139,31 @@ const fakeJudge = {
   },
 };
 
+/** A hub step that records its call and throws when the scenario says it fails. */
+function hubStep(name: string) {
+  return async (jobId: string, claim: string) => {
+    record(name, jobId, claim);
+    if (scenario.hubFailsAt === name) throw new Error(`Step "${name}" failed after 3 retries: Hugging Face: committing to x failed: HTTP 500.`);
+    return {};
+  };
+}
+
+const fakeHub = {
+  hubPlanStep: async (jobId: string, status: string, manual?: boolean) => {
+    record("hubPlanStep", jobId, status, manual ?? false);
+    if (scenario.hubPlan instanceof Error) throw scenario.hubPlan;
+    return scenario.hubPlan ?? { action: "none" };
+  },
+  hubStoryStep: hubStep("hubStoryStep"),
+  hubDatasetStep: hubStep("hubDatasetStep"),
+  hubModelStep: hubStep("hubModelStep"),
+  hubFinishStep: hubStep("hubFinishStep"),
+  hubFailStep: async (jobId: string, claim: string, reason: string) => {
+    record("hubFailStep", jobId, claim, reason);
+    if (scenario.hubFailFails) throw new Error("database down");
+  },
+};
+
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let wf: typeof import("../workflow");
 
@@ -142,6 +184,7 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
   before(async () => {
     mock.module(new URL("../steps.ts", import.meta.url).href, { namedExports: fakeSteps });
     mock.module(new URL("../judge.ts", import.meta.url).href, { namedExports: fakeJudge });
+    mock.module(new URL("../hub-steps.ts", import.meta.url).href, { namedExports: fakeHub });
     mock.module("workflow", {
       namedExports: {
         sleep: async (ms: number) => {
@@ -392,6 +435,68 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       reset({ checks: [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }], finalStatus: "succeeded", evals: [0] });
       assert.deepEqual(await wf.trainJob({ jobId: "j26" }), { status: "succeeded" });
       assert.equal(named("judgeStep").length, 1);
+    });
+  });
+
+  describe("publishing to the Hugging Face Hub", () => {
+    const done = (): Check => ({ action: "terminate", status: "succeeded", reason: "The job finished." });
+    const publish = { action: "publish", jobId: "adapter-1", claim: "claim-1" } as const;
+
+    it("asks the plan step after every ending, with the final status, after judging", async () => {
+      reset({ checks: [done()], evals: [0, 1] });
+      await wf.trainJob({ jobId: "j30" });
+      assert.deepEqual(hubOrder(), ["hubPlanStep"]);
+      assert.deepEqual(named("hubPlanStep")[0]!.args, ["j30", "succeeded", false]);
+      const all = calls.filter((c) => c.step !== "sleep").map((c) => c.step);
+      assert.equal(all.indexOf("hubPlanStep"), all.indexOf("saveEvalSummaryStep") + 1, "right after judging");
+      for (const [check, status] of [
+        [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }, "failed"],
+        [{ action: "terminate", status: "stopped", reason: "Stopped by an admin." }, "stopped"],
+      ] as Array<[Check, string]>) {
+        reset({ checks: [check] });
+        await wf.trainJob({ jobId: "j31" });
+        assert.deepEqual(named("hubPlanStep")[0]!.args, ["j31", status, false], "a glimmer-publish job that didn't succeed is told");
+      }
+      reset({ launchThrows: new Error("Lambda refused") });
+      await wf.trainJob({ jobId: "j32" });
+      assert.deepEqual(named("hubPlanStep")[0]!.args, ["j32", "failed", false]);
+    });
+
+    it("publishes the job the plan names, in order, after terminate", async () => {
+      reset({ checks: [done()], hubPlan: publish });
+      assert.deepEqual(await wf.trainJob({ jobId: "publish-job-1" }), { status: "succeeded" });
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep"]);
+      for (const step of ["hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep"]) {
+        assert.deepEqual(named(step)[0]!.args, ["adapter-1", "claim-1"], `${step} acts for the job the plan named, under its claim`);
+      }
+      assert.equal(named("terminateStep").length, 1);
+    });
+
+    it("fails the publishing with the step's reason, and never throws or changes the status", async () => {
+      reset({ checks: [done()], hubPlan: publish, hubFailsAt: "hubModelStep" });
+      assert.deepEqual(await wf.trainJob({ jobId: "j33" }), { status: "succeeded" });
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFailStep"]);
+      assert.deepEqual(named("hubFailStep")[0]!.args, ["adapter-1", "claim-1", "Hugging Face: committing to x failed: HTTP 500."]);
+
+      reset({ checks: [done()], hubPlan: publish, hubFailsAt: "hubStoryStep", hubFailFails: true });
+      assert.deepEqual(await wf.trainJob({ jobId: "j34" }), { status: "succeeded" }, "a fail step that fails is swallowed too");
+
+      reset({ checks: [done()], hubPlan: new Error("database down") });
+      assert.deepEqual(await wf.trainJob({ jobId: "j35" }), { status: "succeeded" });
+      assert.deepEqual(hubOrder(), ["hubPlanStep"], "no claim, so nothing to fail");
+    });
+
+    it("runs the same publishing for an admin's Publish", async () => {
+      reset({ hubPlan: { action: "publish", jobId: "j36", claim: "claim-36" } });
+      assert.deepEqual(await wf.publishToHub({ jobId: "j36" }), { published: true });
+      assert.deepEqual(named("hubPlanStep")[0]!.args, ["j36", "succeeded", true]);
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep"]);
+      assert.deepEqual(order(), [], "no GPU step");
+      reset({});
+      assert.deepEqual(await wf.publishToHub({ jobId: "j37" }), { published: false });
+      reset({ hubPlan: { action: "publish", jobId: "j38", claim: "claim-38" }, hubFailsAt: "hubFinishStep" });
+      assert.deepEqual(await wf.publishToHub({ jobId: "j38" }), { published: false });
+      assert.equal(named("hubFailStep").length, 1);
     });
   });
 });

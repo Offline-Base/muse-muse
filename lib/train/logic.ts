@@ -2,13 +2,17 @@
  * Pure decisions for fine-tuning jobs (docs/TRAINING.md). No Node APIs and no I/O, so the training workflow can import
  * this file and unit tests can run it directly.
  */
+import { noEmDashes } from "@/lib/brief/normalize";
 import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import {
+  HUB_WHY_MAX,
   isTrainTerminal,
   SERVE_PORT,
   type DatasetView,
   type EvalSummary,
+  type HubState,
+  type HubView,
   type LiveDemoView,
   type Recipe,
   type RecipeId,
@@ -273,6 +277,55 @@ export function toJobView(row: TrainJobRow, now: Date): TrainJobView {
     terminatedAt: iso(row.terminatedAt),
     evalSummary: row.evalSummary ?? null,
     ...(row.recipe === SERVE_RECIPE ? { serving: servingView(row) } : {}),
+    ...(row.hub ? { hub: toHubView(row.hub, row.params, now) } : {}),
+  };
+}
+
+/** A "publishing" state this old was left by a workflow that died, so publishing may start again. */
+export const HUB_PUBLISHING_STALE_MS = 30 * 60_000;
+
+/** True while a workflow is publishing the job: "publishing", and not left that way by one that died. */
+export function hubBusy(hub: HubState | null | undefined, now: number): boolean {
+  if (hub?.status !== "publishing") return false;
+  const at = Date.parse(hub.updatedAt ?? "");
+  return Number.isFinite(at) && now - at < HUB_PUBLISHING_STALE_MS;
+}
+
+/**
+ * The admin's why, as the cards print it: the one saved with Publish ("" when an admin cleared it, which wins), else
+ * the job's "why" param. No em dashes, at most HUB_WHY_MAX characters, null when there is none.
+ */
+export function effectiveWhy(hub: HubState | null | undefined, params: Record<string, string | number> | null | undefined): string | null {
+  const raw = typeof hub?.why === "string" ? hub.why : typeof params?.why === "string" ? params.why : "";
+  const why = noEmDashes(raw).trim().slice(0, HUB_WHY_MAX);
+  return why || null;
+}
+
+/**
+ * A job's Hugging Face state as the admin job page shows it (docs/TRAINING.md "Hugging Face Hub"): where it stands, why,
+ * the repos, the why the card prints (from the job's params when Publish never saved one), who wrote the story, how
+ * many of the planned files the Hub has, and whether a "publishing" state was left by a run that stopped. Never the
+ * small files' content, the story's cost, the claim or an upload URL (none is ever stored).
+ */
+export function toHubView(hub: HubState, params: Record<string, string | number> | null = null, now: Date = new Date()): HubView {
+  const files = Array.isArray(hub.files) ? hub.files : [];
+  const have = new Set(Array.isArray(hub.uploaded) ? hub.uploaded : []);
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  return {
+    status: hub.status,
+    reason: text(hub.reason),
+    modelRepo: text(hub.modelRepo),
+    datasetRepo: text(hub.datasetRepo),
+    modelUrl: text(hub.modelUrl),
+    datasetUrl: text(hub.datasetUrl),
+    why: effectiveWhy(hub, params),
+    storyBy: hub.storyBy === "spark" || hub.storyBy === "template" ? hub.storyBy : null,
+    public: hub.public === true,
+    stale: hub.status === "publishing" && !hubBusy(hub, now.getTime()),
+    filesUploaded: files.filter((f) => have.has(f.sha256)).length,
+    filesTotal: files.length,
+    publishJobId: text(hub.publishJobId),
+    publishedAt: text(hub.publishedAt),
   };
 }
 

@@ -5,7 +5,7 @@ import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
 import { WRITER_NAME, tunedModelName, type EvalRow } from "@/components/train/format";
 import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
-import { PageHeader } from "@/components/ui";
+import { ExternalLink, PageHeader } from "@/components/ui";
 import { dateTimeUtc, usd } from "@/lib/format";
 
 export interface JobResultsProps {
@@ -24,6 +24,8 @@ export interface JobResultsProps {
  * A judged job as anyone sees it: what ran (recipe, model, dataset, GPU, time, cost and the safe settings) and the eval
  * results, read-only. A server component, so nothing but this text reaches the browser: no instance, IP, region, log,
  * error or Stop. While a live demo of its adapter runs, the Try it live box comes first; it gets only PublicLiveDemo.
+ * Once the job is published to the Hugging Face Hub, an "On Hugging Face" chip and the two repos' links show; before
+ * that, nothing about the Hub does.
  */
 export function JobResults({ result: r, rows, dataset, live = null, serverNow }: JobResultsProps) {
   const long = r.settings.filter((s) => s.key === "studentPrompt");
@@ -35,6 +37,15 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow }:
         subtitle={
           <>
             {r.recipeTitle} · {r.model} · finished <time dateTime={r.finishedAt}>{dateTimeUtc(r.finishedAt)}</time>
+            {r.hub ? (
+              <>
+                {" "}
+                <a className="chip" href={r.hub.modelUrl} target="_blank" rel="noopener noreferrer">
+                  On Hugging Face
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              </>
+            ) : null}
           </>
         }
         actions={
@@ -78,6 +89,20 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow }:
             <dt>GPU cost</dt>
             <dd>{usd(r.costUsd)}</dd>
           </div>
+          {r.hub ? (
+            <div>
+              <dt>On Hugging Face</dt>
+              <dd>
+                <ExternalLink href={r.hub.modelUrl}>The adapter and its model card</ExternalLink>
+                {r.hub.datasetUrl ? (
+                  <>
+                    {" · "}
+                    <ExternalLink href={r.hub.datasetUrl}>The training data</ExternalLink>
+                  </>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
           {short.map((s) => (
             <div key={s.key}>
               <dt>{s.label}</dt>

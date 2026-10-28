@@ -58,7 +58,10 @@ export function LabIntro() {
   );
 }
 
-/** Judged jobs in the jobs table's style: what was tuned, how the tuned model did against the base, GPU, time, cost. */
+/**
+ * Judged jobs in the jobs table's style: what was tuned, how the tuned model did against the base, GPU, time, cost, and
+ * an "On Hugging Face" chip once a job is published there.
+ */
 export function ResultsTable({ results, caption }: { results: ResultView[]; caption: string }) {
   return (
     <div className="table-wrap">
@@ -88,7 +91,15 @@ export function ResultsTable({ results, caption }: { results: ResultView[]; capt
                   <Link href={`/fine-tuning/${r.id}`} className="row-title">
                     {r.title}
                   </Link>
-                  <span className="row-sub muted">{r.recipeTitle}</span>
+                  <span className="row-sub muted">
+                    {r.recipeTitle}
+                    {r.hub ? (
+                      <>
+                        {" "}
+                        <span className="chip">On Hugging Face</span>
+                      </>
+                    ) : null}
+                  </span>
                 </td>
                 <td className="train-nowrap">{r.model}</td>
                 <td className="train-nowrap">

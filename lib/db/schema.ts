@@ -17,6 +17,7 @@ import type {
   DatasetStatus,
   EvalExample,
   EvalSummary,
+  HubState,
   RecipeId,
   ServeEndpoint,
   TrainArtifact,
@@ -242,6 +243,13 @@ export const trainingJobs = pgTable(
      * (from its "serving" callback), and when it started. The live demo proxy connects only here. Never sent to a browser.
      */
     serveEndpoint: jsonb("serve_endpoint").$type<ServeEndpoint>(),
+    /**
+     * A glimmer-lora job's Hugging Face state (lib/train/hub-steps.ts, docs/TRAINING.md "Hugging Face Hub"): where
+     * publishing stands, the repos, the adapter's file manifest and small files, the oids the Hub has, the commits, the
+     * admin's why and the story. Never the HF token or an upload URL. The admin page gets HubView, the public pages only
+     * the links.
+     */
+    hub: jsonb("hub").$type<HubState>(),
   },
   (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
 );

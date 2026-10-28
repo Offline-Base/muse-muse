@@ -198,6 +198,11 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       dataset={result.data.dataset}
       adapter={result.data.adapter}
       liveDemo={result.data.liveDemo}
+      hub={
+        result.data.job.recipe === ADAPTER_RECIPE
+          ? { offReason: env.hubOffReason, maxActive: env.trainMaxActive, dailyUsd: env.trainDailyUsd }
+          : null
+      }
       serverNow={now.getTime()}
     />
   );

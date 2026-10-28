@@ -1,10 +1,13 @@
 /**
- * The durable workflow for one fine-tuning job (docs/TRAINING.md "Lifecycle"). It only orchestrates: every side
- * effect lives in a "use step" function in ./steps.ts, or ./judge.ts for judging.
+ * The durable workflows for one fine-tuning job (docs/TRAINING.md "Lifecycle"). They only orchestrate: every side
+ * effect lives in a "use step" function in ./steps.ts, ./judge.ts for judging, or ./hub-steps.ts for publishing.
  *
  *   trainJob: launch (idempotent; save the instance if the database didn't take it) -> check every 30 s until
  *             decideCheck says terminate, or maxMinutes + 15 minutes pass -> terminate
  *             -> for a job that succeeded with eval items: judge them, 4 at a time, then save the eval summary
+ *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, or
+ *                the adapter job a glimmer-publish job uploaded for once that job succeeded
+ *   publishToHub: the same publishing, when an admin presses Publish (app/api/train/jobs/[id]/publish)
  *
  * Lambda bills until an instance is terminated, so terminate runs in a finally block: after a normal ending, a
  * launch that threw, and the hard stop alike. The workflow keeps the id of the instance it launched, so terminate can
@@ -14,10 +17,14 @@
  *
  * Judging starts only once terminate has returned, so it never keeps an instance billing, and nothing it does can
  * change the job's status: a judge step that fails is skipped, and a failure of the whole judging is swallowed.
+ * Publishing comes after judging, under the same rules: it never throws and never touches the job's status, and a
+ * step that runs out of retries leaves the job's hub state "failed" with the reason, for Publish to try again.
  *
- * Start it with start() from "workflow/api" (app/api/train/jobs). Never call it directly.
+ * Start them with start() from "workflow/api" (app/api/train/jobs, app/api/train/jobs/[id]/publish). Never call them
+ * directly.
  */
 import { sleep } from "workflow";
+import { hubDatasetStep, hubFailStep, hubFinishStep, hubModelStep, hubPlanStep, hubStoryStep } from "@/lib/train/hub-steps";
 import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
 import { POLL_MS, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
@@ -99,6 +106,45 @@ async function judge(jobId: string): Promise<void> {
   }
 }
 
+/** A step error's first line, without the runtime's retries prefix, for the hub state's reason. */
+function stepReason(err: unknown): string {
+  const e = typeof err === "object" && err !== null ? (err as { message?: unknown }) : null;
+  const raw = typeof e?.message === "string" ? e.message : typeof err === "string" ? err : "";
+  const line = (raw.replace(RETRIES_EXHAUSTED, "").split("\n")[0] ?? "").replace(/\s+/g, " ").trim().slice(0, 500);
+  return line || "a step failed without saying why.";
+}
+
+/**
+ * Publishes to the Hugging Face Hub what the ended job `jobId` (`status`) lets publish: itself when it is a judged
+ * glimmer-lora job whose adapter files are on the Hub, or the adapter job a glimmer-publish job uploaded for, once that
+ * job succeeded. hubPlanStep takes the publishing claim (or says why it waits); then the story, the dataset repo, the
+ * model repo, and the dataset card and both repos' visibility, each step under that claim. `manual` is an admin's
+ * Publish, which also publishes a job whose "publish" param is 0. Returns whether it published. Never throws: a step
+ * that ran out of retries fails the publishing, with its reason, in the hub state, while the run still holds its claim.
+ */
+async function publish(jobId: string, status: TrainStatus, manual = false): Promise<boolean> {
+  let held: { jobId: string; claim: string } | null = null;
+  try {
+    const plan = await hubPlanStep(jobId, status, manual);
+    if (plan.action !== "publish") return false;
+    held = { jobId: plan.jobId, claim: plan.claim };
+    await hubStoryStep(held.jobId, held.claim);
+    await hubDatasetStep(held.jobId, held.claim);
+    await hubModelStep(held.jobId, held.claim);
+    await hubFinishStep(held.jobId, held.claim);
+    return true;
+  } catch (err) {
+    if (held) {
+      try {
+        await hubFailStep(held.jobId, held.claim, stepReason(err));
+      } catch {
+        // The database stayed down: the claim goes stale after 30 minutes and Publish can start again.
+      }
+    }
+    return false;
+  }
+}
+
 export async function trainJob(input: TrainJobInput): Promise<TrainJobResult> {
   "use workflow";
   const { jobId } = input;
@@ -142,5 +188,20 @@ export async function trainJob(input: TrainJobInput): Promise<TrainJobResult> {
     status = await terminate(jobId, ending, instanceId);
   }
   if (status === "succeeded") await judge(jobId);
+  await publish(jobId, status);
   return { status };
+}
+
+export interface PublishToHubInput {
+  jobId: string;
+}
+
+/**
+ * Publishes a judged glimmer-lora job to the Hugging Face Hub now, when an admin pressed Publish and its adapter's
+ * files are on the Hub (docs/TRAINING.md "Hugging Face Hub"). The same steps as after judging; a run already
+ * publishing the job holds the claim, and this one does nothing.
+ */
+export async function publishToHub(input: PublishToHubInput): Promise<{ published: boolean }> {
+  "use workflow";
+  return { published: await publish(input.jobId, "succeeded", true) };
 }

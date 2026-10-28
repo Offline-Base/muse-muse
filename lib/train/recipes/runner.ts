@@ -7,7 +7,11 @@
  * launch request from the time limit, or the dollar limit when that runs out first, so never after the platform stops
  * the job), cacheDir for a recipe with usesCache, and serveKey for a glimmer-serve job (the key its demo server asks
  * for; blanked out of every log line like the token). Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl,
- * multipartOverBytes, partBytes, cacheWaitSeconds.
+ * multipartOverBytes, partBytes, cacheWaitSeconds, hubRetrySeconds.
+ *
+ * ctx.hub_upload sends a folder to the Hugging Face Hub's storage for the platform to commit (docs/TRAINING.md,
+ * "Hugging Face Hub"): POST {callbackBase}/hub with the job token for a plan of presigned upload URLs, the bytes straight
+ * to those with no Hub credential (the platform keeps HF_TOKEN), then POST {callbackBase}/hub again with what landed.
  */
 export const RUNNER_PY = String.raw`"""Muse Muse training runner (docs/TRAINING.md, "Runner and recipes").
 
@@ -22,6 +26,8 @@ ctx.run(stall_seconds=...) that writes nothing for that long is reported stalled
 writes again, so the platform's silence rule ends a stuck job instead of it billing to its time limit.
 """
 
+import base64
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -29,6 +35,7 @@ import math
 import mimetypes
 import os
 import random
+import ssl
 import subprocess
 import sys
 import threading
@@ -92,6 +99,74 @@ UPLOAD_TYPES = (
     "image/png",
     "image/jpeg",
 )
+
+# The Hugging Face Hub upload (ctx.hub_upload). The numbers and names are the platform's (HUB_* in lib/train/types.ts),
+# and a test keeps them equal. The only files sent to the Hub, each in the folder's root: PEFT's weights and config,
+# and what the tokenizer and processor save. So checkpoint-* folders, optimizer.pt, scheduler.pt, rng_state*.pth,
+# training_args.bin, README.md, a full model's config.json or weights, hidden files and every pickle never go.
+HUB_NAMES = (
+    "adapter_model.safetensors",
+    "adapter_config.json",
+    "tokenizer.json",
+    "tokenizer.model",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "vocab.json",
+    "merges.txt",
+    "chat_template.jinja",
+    "chat_template.json",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "video_preprocessor_config.json",
+)
+# The configs the platform reads before it publishes them, so they go inline first (a checked one that isn't inline is
+# left out of the publish).
+HUB_CHECKED = (
+    "adapter_config.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "added_tokens.json",
+    "chat_template.json",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "video_preprocessor_config.json",
+)
+# The plan names every file with its size, sha256 and first 512 bytes (the Hub's preupload reads them), at most
+# HUB_FILES_MAX of them (a Hub commit gives up past about 100) and each at most HUB_FILE_MAX_BYTES.
+HUB_SAMPLE_BYTES = 512
+HUB_FILES_MAX = 100
+HUB_FILE_MAX_BYTES = 10 * 1024 ** 3
+# The small ones also go inline, for the platform to commit as they are (the Hub keeps configs and the chat template in
+# git, not in LFS): each at most HUB_SMALL_BYTES and of a type the Hub doesn't keep in LFS, up to HUB_SMALL_TOTAL_BYTES
+# in all.
+HUB_SMALL_BYTES = 1024 * 1024
+HUB_SMALL_TOTAL_BYTES = 3 * 1024 * 1024
+# The allowed suffixes that the Hub's default .gitattributes sends to LFS, so such a file is never inline.
+HUB_LFS_SUFFIXES = (".safetensors", ".model")
+# Each request to the Hub's storage gets this many tries on a network error, a 429 or a 5xx, waiting HUB_RETRY_SECONDS
+# and then twice that between them.
+HUB_TRIES = 3
+HUB_RETRY_SECONDS = 2
+# The plan waits on the platform's own calls to the Hub (the repo, preupload, the LFS batch), so it gets longer.
+HUB_PLAN_TIMEOUT = 60
+# Any one socket read or write to the Hub's storage that waits longer than this fails the try.
+HUB_TIMEOUT = 60
+# A file is read and sent this much at a time, so a part or a whole file is never in memory at once.
+HUB_BLOCK_BYTES = 1024 * 1024
+# An upload starts nothing new this close to ctx.deadline, and a transfer still going this close to it is cut off, so the
+# job still reports back (and is judged) before its time limit.
+HUB_STOP_SECONDS = 120
+HUB_ABORT_SECONDS = 60
+# While they live, presigned URLs are credentials: each one (and its query, which holds the signature) is blanked out of
+# every log line as this from the moment the plan arrives. So is any upload header value at least HUB_SECRET_MIN long.
+HUB_URL_LABEL = "[presigned URL]"
+HUB_HEADER_LABEL = "[upload header]"
+HUB_SECRET_MIN = 16
+# Headers the runner sets itself on a PUT, whatever the plan's header says.
+HUB_OWN_HEADERS = ("content-length", "host", "transfer-encoding")
+# The Git LFS media type the Hub's multipart completion takes.
+LFS_JSON = "application/vnd.git-lfs+json"
 
 _print_lock = threading.Lock()
 
@@ -167,7 +242,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(NoRedirect)
 
 
-def request(url, method="POST", data=None, headers=None, retry_statuses=RETRY_STATUSES, open_body=None):
+def request(url, method="POST", data=None, headers=None, retry_statuses=RETRY_STATUSES, open_body=None, timeout=HTTP_TIMEOUT):
     """Sends one HTTP request, retrying network errors and retry_statuses 3 times with backoff (2, 4, 8 s).
 
     headers is a dict or a function of the attempt number. open_body, when given, opens a fresh body for each attempt
@@ -179,7 +254,7 @@ def request(url, method="POST", data=None, headers=None, retry_statuses=RETRY_ST
         head = headers(attempt) if callable(headers) else dict(headers or {})
         req = urllib.request.Request(url, data=body, method=method, headers=head)
         try:
-            with OPENER.open(req, timeout=HTTP_TIMEOUT) as res:
+            with OPENER.open(req, timeout=timeout) as res:
                 return res.status, res.read()
         except urllib.error.HTTPError as e:
             status = e.code
@@ -222,11 +297,11 @@ class Platform:
             text = text.replace(secret, label)
         return text
 
-    def post(self, path, body, retry_statuses=RETRY_STATUSES):
+    def post(self, path, body, retry_statuses=RETRY_STATUSES, timeout=HTTP_TIMEOUT):
         """POSTs JSON to callbackBase + path. Returns (status, body bytes); raises HttpFailure on the network."""
         data = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
         headers = {"Authorization": "Bearer " + self._token, "Content-Type": "application/json"}
-        return request(self.base + path, data=data, headers=headers, retry_statuses=retry_statuses)
+        return request(self.base + path, data=data, headers=headers, retry_statuses=retry_statuses, timeout=timeout)
 
     def get(self, path):
         """GETs callbackBase + path, with the same retries and no redirects. Returns (status, body bytes)."""
@@ -460,9 +535,173 @@ def deadline_of(job, now):
     return None
 
 
+def megabytes(size):
+    return str(round(size / 1e6, 1)) + " MB"
+
+
+def inside(path, roots):
+    """True when path, its links resolved, is in one of the folders roots."""
+    real = os.path.realpath(path)
+    return any(real.startswith(os.path.join(os.path.realpath(root), "")) for root in roots)
+
+
+def hub_files(folder, roots=()):
+    """The files in folder's root a Hub upload sends (one of HUB_NAMES, exactly), as (name, local path, size), sorted
+    by name. No folder is looked into. A link is followed only to a file in folder or in one of roots (glimmer-publish
+    stages a folder of links into the model cache), so a stray one can't send job.json."""
+    out = []
+    for name in sorted(os.listdir(folder)):
+        path = os.path.join(folder, name)
+        if name in HUB_NAMES and os.path.isfile(path) and inside(path, (folder,) + tuple(roots)):
+            out.append((name, path, os.path.getsize(path)))
+    return out
+
+
+def file_digest(path):
+    """(sha256 in hex, the first HUB_SAMPLE_BYTES) of a file, read HUB_BLOCK_BYTES at a time."""
+    digest = hashlib.sha256()
+    sample = None
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(HUB_BLOCK_BYTES), b""):
+            if sample is None:
+                sample = block[:HUB_SAMPLE_BYTES]
+            digest.update(block)
+    return digest.hexdigest(), sample or b""
+
+
+def small_files(files):
+    """{name: base64 content} of the files a plan carries inline: the configs the platform checks (HUB_CHECKED) first,
+    then the rest, smallest first, each at most HUB_SMALL_BYTES and not of a type the Hub keeps in LFS, while the total
+    stays within HUB_SMALL_TOTAL_BYTES. They are what the Hub's preupload marks "regular" (configs, the chat template),
+    which the platform commits itself; the platform plans an upload for every other file, which the GPU then sends."""
+    out, total = {}, 0
+    for name, path, size in sorted(files, key=lambda f: (f[0] not in HUB_CHECKED, f[2], f[0])):
+        if size > HUB_SMALL_BYTES or name.lower().endswith(HUB_LFS_SUFFIXES) or total + size > HUB_SMALL_TOTAL_BYTES:
+            continue
+        with open(path, "rb") as f:
+            data = f.read(HUB_SMALL_BYTES + 1)
+        if len(data) > HUB_SMALL_BYTES or total + len(data) > HUB_SMALL_TOTAL_BYTES:
+            continue
+        out[name] = base64.b64encode(data).decode("ascii")
+        total += len(data)
+    return out
+
+
+def web_url(url):
+    """True for an http or https URL with a host, the only kind of upload URL the runner calls."""
+    if not isinstance(url, str):
+        return False
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme in ("http", "https") and bool(parts.hostname)
+
+
+def upload_problem(item, entry):
+    """Why the runner can't act on one upload of the platform's plan (entry is the file's manifest entry, None when the
+    plan names a file the folder doesn't have), or None."""
+    if not isinstance(item, dict) or entry is None:
+        return "the plan names a file that isn't in the folder"
+    if str(item.get("oid") or "").lower() != entry["sha256"] or item.get("size") != entry["size"]:
+        return "the plan's object doesn't match the file"
+    transfer = item.get("transfer")
+    if transfer == "none":
+        return None
+    if transfer == "basic":
+        return None if web_url(item.get("href")) else "the plan has no upload URL for it"
+    if transfer != "multipart":
+        return "the plan's transfer " + json.dumps(str(transfer))[:40] + " isn't basic, multipart or none"
+    chunk = item.get("chunkSize")
+    if isinstance(chunk, bool) or not isinstance(chunk, int) or chunk <= 0:
+        return "the plan has no chunk size for it"
+    if not web_url(item.get("completionUrl")):
+        return "the plan has no completion URL for it"
+    parts = item.get("parts") if isinstance(item.get("parts"), list) else []
+    numbers = sorted(p["partNumber"] for p in parts if isinstance(p, dict) and type(p.get("partNumber")) is int and web_url(p.get("url")))
+    if len(numbers) != len(parts) or numbers != list(range(1, math.ceil(entry["size"] / chunk) + 1)):
+        return "the plan's parts don't cover the file at its chunk size"
+    return None
+
+
+class TransferFailed(RuntimeError):
+    """A file's bytes didn't reach the Hub's storage. Its message says how, never with a URL in it."""
+
+
+class UrlRefused(RuntimeError):
+    """A presigned URL answered 403: it expired, so its file needs a fresh plan."""
+
+
+class FileRange:
+    """length bytes of the file at path from offset, as a body http.client reads HUB_BLOCK_BYTES at a time, so a part of
+    a multipart upload is read from disk on its own and never held in memory whole."""
+
+    def __init__(self, path, offset, length):
+        self._file = open(path, "rb")
+        self._file.seek(offset)
+        self._left = length
+
+    def read(self, size=-1):
+        if self._left <= 0:
+            return b""
+        if size is None or size < 0 or size > self._left:
+            size = self._left
+        data = self._file.read(size)
+        self._left -= len(data)
+        return data
+
+    def close(self):
+        self._file.close()
+
+
+def http_once(method, url, headers, open_body=None, timeout=HUB_TIMEOUT, stop_at=None):
+    """One request with http.client: no redirect followed, no proxy, no credential and only the headers given (urllib
+    would add a Content-Type nobody signed). A body (bytes, or a file from open_body) goes out HUB_BLOCK_BYTES at a
+    time. When the server answers and hangs up before the whole body is in (S3 refusing an expired URL does), its answer
+    still counts. A file body still going at stop_at (a time.time()) is cut off with TimeoutError, so one slow transfer
+    can't run past the job's deadline. Returns (status, response headers with lowercase names, body bytes); raises on
+    the network."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme == "https":
+        conn = http.client.HTTPSConnection(parts.hostname, parts.port, timeout=timeout, context=ssl.create_default_context())
+    else:
+        conn = http.client.HTTPConnection(parts.hostname, parts.port, timeout=timeout)
+    target = (parts.path or "/") + ("?" + parts.query if parts.query else "")
+    body = open_body() if open_body else None
+    try:
+        conn.putrequest(method, target)
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        if isinstance(body, bytes) and not any(k.lower() == "content-length" for k in headers):
+            conn.putheader("Content-Length", str(len(body)))
+        conn.endheaders()
+        cut = None
+        try:
+            if isinstance(body, bytes):
+                conn.send(body)
+            elif body is not None:
+                for block in iter(lambda: body.read(HUB_BLOCK_BYTES), b""):
+                    if stop_at is not None and time.time() >= stop_at:
+                        raise TimeoutError("cut off, the job's time limit is near")
+                    conn.send(block)
+        except (BrokenPipeError, ConnectionResetError) as e:
+            cut = e
+        try:
+            res = conn.getresponse()
+            payload = res.read()
+        except (OSError, http.client.HTTPException):
+            if cut is not None:
+                raise cut
+            raise
+        if cut is not None and res.status < 300:
+            raise cut
+        return res.status, {k.lower(): v for k, v in res.getheaders()}, payload
+    finally:
+        if body is not None and hasattr(body, "close"):
+            body.close()
+        conn.close()
+
+
 class Context:
-    """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, get_json, dataset,
-    dataset_title, eval, and for a glimmer-serve job serve_key and serving."""
+    """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, hub_upload,
+    get_json, dataset, dataset_title, eval, and for a glimmer-serve job serve_key and serving."""
 
     def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
@@ -770,6 +1009,237 @@ class Context:
         say("uploaded " + name)
         return url
 
+    def hub_upload(self, folder, for_job=None):
+        """Sends folder's files to the Hugging Face Hub's storage for the platform to commit (docs/TRAINING.md, "Hugging
+        Face Hub"). The platform holds the Hub token and never sends it here.
+
+        Only the files in the folder's root named in HUB_NAMES go (hub_files), so checkpoint folders, optimizer,
+        scheduler and RNG state, training_args.bin, README.md, hidden files and every pickle stay behind. The plan (POST
+        /hub, action "plan") names every file with its size, sha256 (read from disk a block at a time) and first 512
+        bytes, and carries the small ones inline as well (small_files). The platform answers a skip reason, or the repo
+        and an upload for each file it wants in the Hub's storage: "none" (the Hub has it), "basic" (one PUT streamed
+        from the file) or "multipart" (a PUT of each part, read from disk on its own, then a POST of the parts' ETags to
+        the completion URL). Those URLs work with no credential while they live, so they are blanked out of the log from
+        the moment the plan arrives and never go into a message. Every request is tried up to 3 times on a network
+        error, a 429 or a 5xx. A 403 means its URL expired: the file gets one fresh plan (the whole plan again, which
+        replaces the first on the platform), whose URLs also replace those of every file not sent yet. Nothing new
+        starts within 2 minutes of ctx.deadline, and a transfer still going 1 minute before it is cut off. Then a
+        report (action "done") names what the Hub's storage has and what failed.
+
+        for_job names the job the files belong to when it isn't this one (a glimmer-publish job's adapter job). The
+        platform takes that from the job's own params, so it only goes into the log.
+
+        Returns {"uploaded": how many of the files the plan uploads the Hub's storage now has (sent, or already there),
+        "skipped": why nothing was published (the platform's reason, or what went wrong asking it) or None, "failed":
+        [{"path", "error"}], "repo", and "files" and "bytes" (what the folder sends)}. Never raises for the platform,
+        the network or the Hub; a folder that doesn't exist raises ValueError.
+        """
+        if not os.path.isdir(str(folder)):
+            raise ValueError("hub_upload needs a folder, not " + repr(str(folder))[:200])
+        files = hub_files(folder, (self.cache_dir,) if self.cache_dir else ())
+        result = {"uploaded": 0, "skipped": None, "failed": [], "repo": None, "files": len(files), "bytes": sum(f[2] for f in files)}
+        whose = "job " + str(for_job or self.job_id)
+        too_big = [name for name, _, size in files if size > HUB_FILE_MAX_BYTES]
+        if not files:
+            result["skipped"] = "the folder has no files to publish"
+        elif len(files) > HUB_FILES_MAX:
+            result["skipped"] = "the folder has " + str(len(files)) + " files, more than the " + str(HUB_FILES_MAX) + " one plan takes"
+        elif too_big:
+            result["skipped"] = too_big[0] + " is over " + megabytes(HUB_FILE_MAX_BYTES) + ", more than one plan takes"
+        if result["skipped"]:
+            return result
+        small = small_files(files)
+        entries, local = {}, {}
+        for name, path, size in files:
+            digest, sample = file_digest(path)
+            entries[name] = {"path": name, "size": size, "sha256": digest, "sample": base64.b64encode(sample).decode("ascii")}
+            local[name] = path
+        manifest = [entries[name] for name, _, _ in files]
+        say("Hub upload for " + whose + ": " + str(len(files)) + " files, " + megabytes(result["bytes"]) + ", " + str(len(small)) + " of them inline")
+        plan, why = self._hub_plan(manifest, small)
+        if plan is None:
+            result["skipped"] = why
+            return result
+        result["repo"] = plan["repo"]
+        uploaded, failed, settled, replanned = [], [], set(), set()
+        queue = list(plan["uploads"])
+        while queue:
+            item = queue.pop(0)
+            path = item.get("path") if isinstance(item, dict) else None
+            entry = entries.get(path) if isinstance(path, str) else None
+            if entry is not None and path in settled:
+                continue
+            problem = upload_problem(item, entry)
+            if problem:
+                failed.append({"path": str(path)[:300], "error": problem})
+                if entry is not None:
+                    settled.add(path)
+                continue
+            if item["transfer"] != "none":
+                try:
+                    self._hub_transfer(item, local[path], entry)
+                except UrlRefused:
+                    if path in replanned:
+                        failed.append({"path": path, "error": "the Hub's storage refused its upload URLs again after a fresh plan (HTTP 403)"})
+                        settled.add(path)
+                        continue
+                    replanned.add(path)
+                    say("an upload URL for " + path + " expired, so it gets a fresh plan")
+                    fresh, why = self._hub_plan(manifest, small)
+                    renewed = {u["path"]: u for u in (fresh["uploads"] if fresh else []) if isinstance(u, dict) and isinstance(u.get("path"), str)}
+                    if path in renewed:
+                        # The files not sent yet have URLs as old as the one that expired, so they take the fresh ones.
+                        waiting = [renewed.get(u.get("path"), u) if isinstance(u, dict) and isinstance(u.get("path"), str) else u for u in queue]
+                        queue = [renewed[path]] + waiting
+                        continue
+                    failed.append({"path": path, "error": "its upload URL expired (HTTP 403), and the fresh plan " + ("had no upload for it" if fresh else "failed: " + why)})
+                    settled.add(path)
+                    continue
+                except TransferFailed as e:
+                    failed.append({"path": path, "error": self._platform.redact(e)[:300]})
+                    settled.add(path)
+                    continue
+            uploaded.append({"path": path, "oid": entry["sha256"], "size": entry["size"]})
+            settled.add(path)
+        result["uploaded"] = len(uploaded)
+        result["failed"] = failed
+        say("Hub upload for " + whose + ": " + str(len(uploaded)) + " in the Hub's storage for " + plan["repo"] + ", " + str(len(failed)) + " failed")
+        try:
+            status, payload = self._platform.post("/hub", {"action": "done", "uploaded": uploaded, "failed": failed})
+        except HttpFailure as e:
+            result["skipped"] = "the platform couldn't be reached for the upload report: " + str(e)
+            return result
+        if status >= 300:
+            result["skipped"] = "the platform answered HTTP " + str(status) + " to the upload report" + self._refusal(payload)
+        return result
+
+    def _refusal(self, payload):
+        """": " and the error a refusal's JSON body names, with its message when it has one (the Hub's reason, which
+        the platform already redacted), or nothing."""
+        try:
+            body = json.loads(payload.decode("utf-8")) if payload else None
+        except (ValueError, AttributeError):
+            body = None
+        error = body.get("error") if isinstance(body, dict) else None
+        if not isinstance(error, str) or not error.strip():
+            return ""
+        said = body.get("message")
+        detail = ": " + said.strip() if isinstance(said, str) and said.strip() and said.strip() != error.strip() else ""
+        return ": " + self._platform.redact(error + detail)[:500]
+
+    def _hub_plan(self, entries, small):
+        """(plan, None) with the platform's plan for these manifest entries, every presigned URL in it hidden from the log
+        at once, or (None, why there is none): the platform's own skip reason, or what went wrong asking it."""
+        try:
+            status, payload = self._platform.post("/hub", {"action": "plan", "files": entries, "small": small}, timeout=HUB_PLAN_TIMEOUT)
+        except HttpFailure as e:
+            return None, "the platform couldn't be reached for the upload plan: " + str(e)
+        try:
+            plan = json.loads(payload.decode("utf-8")) if payload else None
+        except ValueError:
+            plan = None
+        uploads = plan.get("uploads") if isinstance(plan, dict) else None
+        for item in uploads if isinstance(uploads, list) else []:
+            self._hide_urls(item)
+        if status >= 300:
+            return None, "the platform answered HTTP " + str(status) + " to the upload plan" + self._refusal(payload)
+        if not isinstance(plan, dict):
+            return None, "the platform's upload plan isn't JSON"
+        skip = plan.get("skip")
+        if isinstance(skip, str) and skip.strip():
+            return None, self._platform.redact(skip.strip())[:300]
+        if not isinstance(plan.get("repo"), str) or not plan["repo"].strip() or not isinstance(uploads, list):
+            return None, "the platform's upload plan names no repo or no uploads"
+        return plan, None
+
+    def _hide_urls(self, item):
+        """Blanks one upload's presigned URLs (and their queries, which hold the signatures) and long header values out
+        of everything redact sees from now on: while they live, they are credentials."""
+        if not isinstance(item, dict):
+            return
+        urls = [item.get("href"), item.get("completionUrl")]
+        if isinstance(item.get("parts"), list):
+            urls.extend(part.get("url") for part in item["parts"] if isinstance(part, dict))
+        for url in urls:
+            if isinstance(url, str) and url:
+                self._platform.hide(url, HUB_URL_LABEL)
+                query = url.partition("?")[2]
+                if len(query) >= HUB_SECRET_MIN:
+                    self._platform.hide(query, HUB_URL_LABEL)
+        header = item.get("header")
+        for value in header.values() if isinstance(header, dict) else []:
+            if isinstance(value, str) and len(value) >= HUB_SECRET_MIN:
+                self._platform.hide(value, HUB_HEADER_LABEL)
+
+    def _hub_in_time(self):
+        """False once ctx.deadline is HUB_STOP_SECONDS away or nearer."""
+        return self.deadline is None or time.time() < self.deadline - HUB_STOP_SECONDS
+
+    def _hub_send(self, method, url, headers, open_body, what):
+        """One request to a presigned URL with no credential of the platform's, tried up to HUB_TRIES times on a network
+        error, a 429 or a 5xx, waiting hubRetrySeconds (2 s) and then twice that. Returns (status, headers, body) of any
+        other answer; raises TransferFailed after the last try, or when the job's deadline is too near to start one. A
+        transfer still sending HUB_ABORT_SECONDS before the deadline is cut off (then not tried again, since the next
+        try would start too near it). what names the request in messages: the URL never goes into one."""
+        wait = self._settings["hubRetrySeconds"]
+        for attempt in range(1, HUB_TRIES + 1):
+            if not self._hub_in_time():
+                raise TransferFailed(what + " wasn't sent: the job's time limit is under " + span(HUB_STOP_SECONDS) + " away")
+            try:
+                stop_at = self.deadline - HUB_ABORT_SECONDS if self.deadline is not None else None
+                status, head, payload = http_once(method, url, headers, open_body, stop_at=stop_at)
+                if status != 429 and status < 500:
+                    return status, head, payload
+                reason = "HTTP " + str(status)
+            except (OSError, http.client.HTTPException) as e:
+                reason = "a network error (" + type(e).__name__ + ": " + self._platform.redact(e)[:200] + ")"
+            if attempt >= HUB_TRIES:
+                raise TransferFailed(what + " failed " + str(HUB_TRIES) + " times, the last with " + reason)
+            say("retrying " + what + " after " + reason + " in " + str(wait) + " s")
+            time.sleep(wait)
+            wait *= 2
+
+    def _hub_transfer(self, item, path, entry):
+        """Sends one file's bytes to the Hub's storage as its upload in the plan says (basic or multipart). Raises
+        UrlRefused on a 403 and TransferFailed on any other failure."""
+        name, size = entry["path"], entry["size"]
+
+        def check(status, what):
+            if status == 403:
+                raise UrlRefused(what + " (HTTP 403)")
+            if status >= 300:
+                raise TransferFailed(what + " (HTTP " + str(status) + ")")
+
+        if item["transfer"] == "basic":
+            headers = {"Content-Length": str(size)}
+            header = item.get("header")
+            for key, value in header.items() if isinstance(header, dict) else []:
+                if isinstance(key, str) and isinstance(value, str) and key.lower() not in HUB_OWN_HEADERS:
+                    headers[key] = value
+            say("uploading " + name + " (" + megabytes(size) + ") in one request")
+            status, _, _ = self._hub_send("PUT", item["href"], headers, lambda: open(path, "rb"), name)
+            check(status, "the Hub's storage refused " + name)
+            return
+        chunk = item["chunkSize"]
+        parts = sorted(item["parts"], key=lambda part: part["partNumber"])
+        say("uploading " + name + " (" + megabytes(size) + ") in " + str(len(parts)) + " parts")
+        etags = []
+        for part in parts:
+            number = part["partNumber"]
+            offset = (number - 1) * chunk
+            length = min(chunk, size - offset)
+            label = "part " + str(number) + " of " + name
+            status, head, _ = self._hub_send(
+                "PUT", part["url"], {"Content-Length": str(length)}, lambda o=offset, n=length: FileRange(path, o, n), label
+            )
+            check(status, "the Hub's storage refused " + label)
+            if not head.get("etag"):
+                raise TransferFailed("the Hub's storage answered " + label + " with no ETag")
+            etags.append({"partNumber": number, "etag": head["etag"]})
+        body = json.dumps({"oid": entry["sha256"], "parts": etags}).encode("utf-8")
+        status, _, _ = self._hub_send("POST", item["completionUrl"], {"Accept": LFS_JSON, "Content-Type": LFS_JSON}, lambda: body, "the completion of " + name)
+        check(status, "the Hub didn't complete the upload of " + name)
+
 
 def metric_value(value, redact):
     """A metric as the platform takes it: a finite number or a short string. None drops it."""
@@ -872,6 +1342,7 @@ def main(argv):
         "blobApiUrl": str(job.get("blobApiUrl") or BLOB_API_URL),
         "multipartOverBytes": int(number_setting(job, "multipartOverBytes", MULTIPART_OVER_BYTES)),
         "partBytes": int(number_setting(job, "partBytes", PART_BYTES)),
+        "hubRetrySeconds": number_setting(job, "hubRetrySeconds", HUB_RETRY_SECONDS),
     }
     here = os.path.dirname(os.path.abspath(__file__))
     work_dir = str(job.get("workDir") or os.path.join(os.path.dirname(job_path), "work"))

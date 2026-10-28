@@ -15,7 +15,7 @@ import { and, inArray, isNotNull, isNull, notInArray, or, type SQL } from "drizz
 import { db, schema } from "@/lib/db/client";
 import { getInstance, listInstances, terminateInstances, type LambdaInstance } from "@/lib/train/lambda";
 import { decideCheck, estimateCostUsd, INSTANCE_NAME_PREFIX, type TrainJobRow } from "@/lib/train/logic";
-import { extendTermination, finishJob, recordEvent, setStatus } from "@/lib/train/store";
+import { extendTermination, finishJob, jobListColumns, recordEvent, setStatus } from "@/lib/train/store";
 import { isTrainTerminal, TRAIN_TERMINAL, type TrainStatus } from "@/lib/train/types";
 
 const MIN = 60_000;
@@ -402,7 +402,10 @@ async function sweepBySavedId(
   }
 }
 
-/** The real dependencies: the Lambda client and the database. */
+/**
+ * The real dependencies: the Lambda client and the database. Jobs are read without the hub state's small files
+ * (jobListColumns), which the sweep never needs.
+ */
 export function sweepDeps(): TrainSweepDeps {
   const jobs = schema.trainingJobs;
   return {
@@ -411,7 +414,7 @@ export function sweepDeps(): TrainSweepDeps {
     terminateInstances,
     openJobs: () =>
       db()
-        .select()
+        .select(jobListColumns)
         .from(jobs)
         .where(notInArray(jobs.status, [...TRAIN_TERMINAL]))
         .limit(200),
@@ -422,14 +425,14 @@ export function sweepDeps(): TrainSweepDeps {
       if (jobIds.length) match.push(inArray(jobs.id, jobIds));
       if (!match.length) return [];
       return db()
-        .select()
+        .select(jobListColumns)
         .from(jobs)
         .where(or(...match))
         .limit(500);
     },
     unterminatedJobs: () =>
       db()
-        .select()
+        .select(jobListColumns)
         .from(jobs)
         .where(and(inArray(jobs.status, [...TRAIN_TERMINAL]), isNull(jobs.terminatedAt), isNotNull(jobs.launchedAt)))
         .limit(100),
