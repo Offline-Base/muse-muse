@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Brief } from "@/lib/brief/schema";
 import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
+import type { RecipeId, TrainArtifact, TrainEventBody, TrainProgress, TrainStatus } from "@/lib/train/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -180,4 +181,62 @@ export const rateLimits = pgTable(
     count: integer("count").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
+);
+
+/**
+ * Fine-tuning jobs on the owner's Lambda Cloud account (docs/TRAINING.md). The instance reports back with a one-time
+ * job token; only its HMAC is stored. Cost is the instance type's hourly price times the time from launch to
+ * termination, the way Lambda bills.
+ */
+export const trainingJobs = pgTable(
+  "training_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    recipe: text("recipe").$type<RecipeId>().notNull(),
+    title: text("title").notNull(),
+    status: text("status").$type<TrainStatus>().notNull().default("queued"),
+    /** The recipe's parameters as the admin set them, after validation. */
+    params: jsonb("params").$type<Record<string, string | number>>().notNull(),
+    instanceType: text("instance_type").notNull(),
+    region: text("region").notNull(),
+    priceCentsPerHour: integer("price_cents_per_hour").notNull(),
+    maxMinutes: integer("max_minutes").notNull(),
+    maxUsd: real("max_usd").notNull(),
+    /** Lambda's instance id once launched, and the name used to find it again on a retry. */
+    instanceId: text("instance_id"),
+    instanceName: text("instance_name").notNull(),
+    instanceIp: text("instance_ip"),
+    tokenHash: text("token_hash"),
+    workflowRunId: text("workflow_run_id"),
+    /** Set by Stop. The workflow terminates the instance on its next check. */
+    stopRequested: boolean("stop_requested").notNull().default(false),
+    progress: jsonb("progress").$type<TrainProgress>(),
+    artifacts: jsonb("artifacts").$type<TrainArtifact[]>().notNull().default([]),
+    summary: text("summary"),
+    error: text("error"),
+    costUsd: real("cost_usd").notNull().default(0),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    launchedAt: timestamp("launched_at", { withTimezone: true }),
+    firstHeartbeatAt: timestamp("first_heartbeat_at", { withTimezone: true }),
+    lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    terminatedAt: timestamp("terminated_at", { withTimezone: true }),
+  },
+  (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
+);
+
+/** Append-only log for a training job's page. */
+export const trainingEvents = pgTable(
+  "training_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    type: text("type").$type<TrainEventBody["type"]>().notNull(),
+    payload: jsonb("payload").$type<TrainEventBody>().notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("training_events_job_idx").on(t.jobId, t.id)],
 );

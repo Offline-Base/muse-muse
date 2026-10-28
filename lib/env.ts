@@ -114,6 +114,25 @@ export const env = {
   get maxFixRounds() {
     return number("MAX_FIX_ROUNDS", 3);
   },
+  /** Lambda Cloud API key for fine-tuning jobs (lib/train). Platform only: never sent to an instance or a sandbox. */
+  get lambdaApiKey() {
+    return required("LAMBDA_API_KEY");
+  },
+  /** Training jobs that may hold a GPU at once. */
+  get trainMaxActive() {
+    return number("TRAIN_MAX_ACTIVE", 1);
+  },
+  /** Daily cap on estimated Lambda spend across all training jobs, in USD. New jobs are refused once it's reached. */
+  get trainDailyUsd() {
+    return number("TRAIN_DAILY_USD", 20);
+  },
+  /** Ceiling on any one job's limits, whatever the admin asks for. */
+  get trainJobMaxUsd() {
+    return number("TRAIN_JOB_MAX_USD", 5);
+  },
+  get trainJobMaxMinutes() {
+    return number("TRAIN_JOB_MAX_MINUTES", 120);
+  },
   /** Platform-wide daily spend cap across every build and product, in USD. The kill switch for runaway cost. */
   get dailySpendCapUsd() {
     return number("DAILY_SPEND_CAP_USD", 40);

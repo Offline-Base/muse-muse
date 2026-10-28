@@ -5,6 +5,7 @@ import { withWorkflow } from "workflow/next";
 // The dev indicator is off because it sits on top of the sidebar's account chip.
 const nextConfig: NextConfig = { serverExternalPackages: ["@electric-sql/pglite"], devIndicators: false };
 
-// Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts). Workflows are found
-// through the start() calls in app/api/inspirations, app/api/builds/[buildId]/messages and app/api/rebuilds.
+// Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/train/workflow.ts,
+// lib/train/steps.ts). Workflows are found through the start() calls in app/api/inspirations,
+// app/api/builds/[buildId]/messages, app/api/rebuilds and app/api/train/jobs.
 export default withWorkflow(nextConfig);

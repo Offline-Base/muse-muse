@@ -3503,3 +3503,380 @@ a.dash-card:hover {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- Fine-tuning (docs/TRAINING.md "Admin pages") ---------- */
+
+.pill-dot.dot-succeeded {
+  background: var(--ok);
+}
+
+.pill-dot.dot-stopped {
+  background: var(--faint);
+}
+
+.train-nowrap {
+  white-space: nowrap;
+}
+
+.train-row-error {
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+
+.train-totals-sub {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* New job card */
+
+.train-new {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.train-new-head h2 {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.train-new-head p {
+  margin-top: 4px;
+}
+
+.train-callout-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.train-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.train-grid {
+  display: grid;
+  gap: 18px 20px;
+}
+
+@media (min-width: 760px) {
+  .train-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.train-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.train-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.train-sublabel {
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.train-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.train-input,
+.train-select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-input);
+  background-color: var(--surface);
+  color: var(--fg);
+  font-size: 15px;
+}
+
+.train-select {
+  appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%235b6b7b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  text-overflow: ellipsis;
+}
+
+.train-input:disabled,
+.train-select:disabled {
+  color: var(--faint);
+}
+
+.train-input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.train-help {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.train-field-error {
+  color: var(--bad);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.train-limits {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.train-limits > legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.train-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.train-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.train-cost {
+  flex: 1 1 320px;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.train-foot .btn {
+  flex: none;
+}
+
+/* Job page */
+
+.train-col {
+  width: 100%;
+  max-width: var(--col-w);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.train-head h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.train-head p {
+  margin-top: 6px;
+  font-size: 15px;
+}
+
+.toolbar .train-toolbar-stop {
+  color: var(--bad);
+}
+
+@media (min-width: 1180px) {
+  .train-toolbar-stop {
+    display: none;
+  }
+}
+
+.train-log-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.train-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.train-log-head h2 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.train-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.train-ev {
+  display: grid;
+  grid-template-columns: 62px 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.train-ev-empty {
+  padding: 12px 0;
+  font-size: 14px;
+}
+
+.train-ev-time {
+  padding-top: 1px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.train-ev-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 21px;
+  color: var(--muted);
+}
+
+.train-ev-ok .train-ev-icon,
+.train-ev-ok .train-ev-body strong {
+  color: var(--ok);
+}
+
+.train-ev-bad .train-ev-icon,
+.train-ev-bad .train-ev-body strong {
+  color: var(--bad);
+}
+
+.train-ev-warn .train-ev-icon,
+.train-ev-warn .train-ev-body strong {
+  color: var(--warn);
+}
+
+.train-ev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.train-ev-body strong {
+  font-weight: 600;
+}
+
+.train-pre {
+  max-height: 260px;
+}
+
+.train-fold > summary {
+  cursor: pointer;
+}
+
+.train-fold-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--fg-2);
+  font-size: 13px;
+}
+
+.train-fold-list li {
+  display: flex;
+  gap: 10px;
+}
+
+.train-working {
+  margin-top: 8px;
+}
+
+.train-metric {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Job panel */
+
+.btn.train-stop {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  background: var(--surface);
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.btn.train-stop:hover:not(:disabled) {
+  background: var(--bad-soft);
+}
+
+.train-panel-text {
+  font-size: 14px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.train-artifacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.train-artifacts li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.train-artifact-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.train-artifact-meta {
+  color: var(--muted);
+  font-size: 12.5px;
+}

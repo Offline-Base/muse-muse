@@ -19,7 +19,10 @@ export const NAV_GROUPS: NavItem[][] = [
     { href: "/rebuilds", label: "Rebuilds", icon: "rebuild" },
     { href: "/gallery", label: "Gallery", icon: "image", also: ["/p/"] },
   ],
-  [{ href: "/usage", label: "Usage", icon: "usage" }],
+  [
+    { href: "/usage", label: "Usage", icon: "usage" },
+    { href: "/fine-tuning", label: "Fine-tuning", icon: "tune" },
+  ],
   [
     { href: "/how-it-works", label: "How it works", icon: "book" },
     { href: "https://dev.meta.ai/docs/overview", label: "Model API docs", icon: "doc", external: true },
