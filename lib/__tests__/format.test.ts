@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseManifest, safeNext } from "@/lib/format";
+import { newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
 
 describe("safeNext", () => {
   it("keeps same-site paths with their query and hash", () => {
@@ -75,5 +75,21 @@ describe("parseManifest", () => {
     ]) {
       assert.equal(parseManifest(bad), null, JSON.stringify(bad));
     }
+  });
+});
+
+describe("newestPerRebuild", () => {
+  it("keeps the first card of each rebuild and every card that isn't one", () => {
+    const cards = [
+      { slug: "scene-new", rebuildOf: "video-3" },
+      { slug: "my-own", rebuildOf: null },
+      { slug: "scene-old", rebuildOf: "video-3" },
+      { slug: "lens", rebuildOf: "video-5" },
+      { slug: "another-own", rebuildOf: null },
+    ];
+    assert.deepEqual(
+      newestPerRebuild(cards).map((c) => c.slug),
+      ["scene-new", "my-own", "lens", "another-own"],
+    );
   });
 });

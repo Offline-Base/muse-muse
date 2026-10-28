@@ -237,3 +237,17 @@ export function parseManifest(m: unknown): Manifest | null {
     m.estimatedCostPerRunUsd >= 0;
   return ok ? (m as unknown as Manifest) : null;
 }
+
+/**
+ * Cards newest first, keeping only the newest product of each catalog rebuild, so a rebuilt demo doesn't show twice.
+ * Products that aren't rebuilds all stay. The older ones keep their own pages and links.
+ */
+export function newestPerRebuild<T extends { rebuildOf: string | null }>(cards: T[]): T[] {
+  const seen = new Set<string>();
+  return cards.filter((c) => {
+    if (!c.rebuildOf) return true;
+    if (seen.has(c.rebuildOf)) return false;
+    seen.add(c.rebuildOf);
+    return true;
+  });
+}

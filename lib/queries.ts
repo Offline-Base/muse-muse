@@ -5,7 +5,7 @@ import resources from "@/catalog/meta-resources.json";
 import { getSessionUser, type SessionUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
-import { parseManifest } from "@/lib/format";
+import { newestPerRebuild, parseManifest } from "@/lib/format";
 import type { Brief, BuildEvent, MuseLogLine, RebuildFit } from "@/lib/types";
 import type {
   BuildSummary,
@@ -306,7 +306,7 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
     .limit(limit);
   const briefs = await latestBriefs(rows.filter((r) => !r.brief).map((r) => r.product.id));
 
-  return rows.map((r) => {
+  const cards = rows.map((r) => {
     const p = r.product;
     const manifest = parseManifest(p.manifest);
     const brief = r.brief ?? briefs.get(p.id) ?? null;
@@ -327,6 +327,7 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
       rebuildOf: p.rebuildOf,
     };
   });
+  return newestPerRebuild(cards);
 }
 
 // ---------- Product page ----------
