@@ -16,14 +16,14 @@ The inspo shows what to make. It is not material to copy.
 
 - Take what the brief lists under borrow: the job it does, the flow, layout ideas, the mood.
 - Leave out everything the brief lists under dontCopy, and always leave out names, logos, characters, copyrighted text, artwork and photos, and the exact look of a real product.
-- Restyle with the tokens in `app/globals.css`. If a reference is a screenshot of a real app, give the product its own name and design.
+- Restyle with the tokens in `app/globals.css` and the meta-ui skill. The inspo's mood shows in the accent hue, the signature element and the copy, never as its own colors or fonts. If a reference is a screenshot of a real app, give the product its own name and design.
 - Never ship inspo files as product assets unless the brief says the user's own files are the input, like their own photos or drawings.
 
 ## Stack
 
 - Next.js App Router with TypeScript, already set up. Keep it. Don't switch frameworks or package managers.
 - Add a dependency only when the brief needs it. The SAM helpers (`@meta-sam/parser`, `@meta-sam/graphics`) are already installed.
-- The build machine can reach only npm, the Meta API and the Muse Muse gateway. Don't use `next/font/google`, remote images or CDNs. Use the system font stack in `app/globals.css`.
+- The build machine can reach only npm, the Meta API and the Muse Muse gateway. Don't use `next/font/google`, remote images or CDNs. The fonts are Inter and Montserrat, installed from npm (`@fontsource-variable/inter`, `@fontsource-variable/montserrat`) and imported in `app/layout.tsx`: use `--font` and `--font-display`, and add no other fonts.
 - Server work goes in route handlers under `app/api/` or in server actions. Client components handle only UI.
 - Don't edit anything in `scripts/`, `playwright.config.ts`, `tests/judge-shot.ts` or `app/api/upload/route.ts`.
 - ffmpeg and espeak-ng are installed. Make speech fixtures with `espeak-ng -w /tmp/raw.wav "some words"`, then `ffmpeg -i /tmp/raw.wav -ar 16000 -ac 1 fixtures/note.wav`. Use ffmpeg for any other fixture conversion.
@@ -46,8 +46,8 @@ The inspo shows what to make. It is not material to copy.
 ## The product
 
 - Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.
-- Follow `.agents/skills/product-ui` for the look: clean and mobile-first, with the theme that fits the product (set `data-theme` on `<html>` in `app/layout.tsx`, and set `metadata.title` to the product's name). Never use Meta logos, wordmarks or names in a way that suggests Meta made it.
-- Build every screen from the template's parts: the classes in `app/globals.css` (`.card`, `.field`, `.fields.two`, `button.primary`, `button.secondary`, `button.text`, `.actions`, `.chip`, `.tag`, `.table-wrap`, `.kv`, `.note`, `.error`, `.limits`, `.prose`) and `components/FilePicker`, `components/ModelChip` and `components/Markdown`. Never ship a bare `<input type="file">`, an unstyled button or a browser-blue link.
+- Follow `.agents/skills/meta-ui` for the look: the Meta design language, with Facebook's colors, Inter and Montserrat type, flat white cards and one blue-to-violet gradient that only marks AI. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name, and pick the signature hue with `data-accent` on `<html>` or leave it off for Meta blue. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
+- Build every screen from the template's parts, listed in the meta-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown). Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."
 - Show what the product can't do, using the limits in the brief, once, next to the thing it limits.
 - Every input needs a label. Every async action needs loading, error and empty states. Phones are the first screen size to test.

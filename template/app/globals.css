@@ -1,100 +1,185 @@
-/* Muse Muse product tokens and parts. Use these tokens for every color, radius and font, and these classes for every
-   card, field, button, chip and table. No Meta logos or wordmarks. Pick a theme in app/layout.tsx (<html data-theme>). */
+/* Muse Muse product theme: the Meta look, from Facebook's current product tokens and Meta's brand palette.
+   Read .agents/skills/meta-ui before changing a screen. Use these tokens for every color, radius, shadow, font and
+   motion, and these classes for every part. No Meta logos, wordmarks or marks, and never "Meta" as the product's brand.
+   Optional: <html data-accent="lime"> picks the hue of the product's signature element (cherry, grape, lemon, lime,
+   pink or teal). Buttons, links and focus always stay Meta blue. Every text pair the parts use passes WCAG AA in
+   both modes; keep text on the pairs the meta-ui skill lists. */
 
 :root {
-  --bg: #f1f4f7;
-  --surface: #ffffff;
-  --surface-2: #f6f8fa;
-  --line: #dce2e8;
-  --fg: #1c2b33;
-  --fg-2: #44566a;
-  --muted: #5e6f80;
-  --accent: #0064e0;
-  --accent-text: #0057c2;
-  --accent-ink: #ffffff;
-  --accent-soft: #e7f0fd;
-  --good: #0b7a3e;
-  --warn: #8f5600;
-  --risk: #b3261e;
-  --radius-lg: 22px;
-  --radius: 14px;
-  --pill: 999px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: var(--font);
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  /* Surfaces and text (Facebook web tokens) */
+  --bg: #f0f2f5; /* page wash */
+  --surface: #ffffff; /* cards, app bar, sheets */
+  --surface-2: #f0f2f5; /* fills inside a card: notes, table heads, the dropzone, the composer */
+  --popover: #ffffff; /* menus and dialogs */
+  --toast-bg: #ffffff;
+  --input-bg: #ffffff;
+  --line: #ced0d4; /* dividers, table borders, tags, the dropzone */
+  --field-line: #8a8d91; /* text field borders, 3:1 so a field's edge shows (Facebook's placeholder gray) */
+  --fg: #080809; /* primary text */
+  --fg-2: #65686c; /* secondary text: taglines, hints, captions; a hovered field's border */
+  --placeholder: #65686c;
+  --disabled: #b0b3b8;
+
+  /* Meta blue: buttons, links, selection and focus never change color */
+  --accent: #0866ff; /* primary buttons, selected marks, progress */
+  --on-accent: #ffffff;
+  --accent-hover: rgba(0, 0, 0, 0.08); /* overlay on blue fills */
+  --link: #0064d1; /* links and text buttons */
+  --tinted-bg: #ebf5ff; /* tinted buttons, selected chips and segments */
+  --tinted-hover-bg: #dbebff;
+  --tinted-fg: #0064d1;
+  --secondary-bg: #e2e5e9; /* secondary buttons, chips, segments, icon buttons, avatars */
+  --hover: rgba(0, 0, 0, 0.05); /* overlay on neutral fills */
+  --press: rgba(0, 0, 0, 0.1);
+  --focus: #0866ff;
+  --progress-track: rgba(8, 102, 255, 0.2);
+  --overlay: rgba(244, 244, 244, 0.8); /* the page behind a dialog */
+
+  /* Status. Warning is for icons only: it is too light for text on white. */
+  --positive: #24832c;
+  --negative: #dd2334;
+  --warning: #af8f00;
+  --positive-soft: #e9f3ea;
+  --negative-soft: #fcedef;
+
+  /* Brand, AI and the signature hue */
+  --brand: #0064e0; /* Meta brand blue */
+  --ai-start: #0064e0;
+  --ai-end: #a033ff;
+  --ai-gradient: linear-gradient(90deg, var(--ai-start), var(--ai-end)); /* AI only: model credit, AI working, AI result */
+  --signature: var(--brand); /* the product's signature element, illustrations, charts; data-accent changes it */
+  --signature-soft: #ebf5ff;
+  --signature-ink: #0064d1; /* text on --signature-soft or --surface */
+
+  /* Facebook's decorative hues: charts with several series and illustrations only, never text or buttons */
+  --cherry: #fb3c44;
+  --grape: #7d74ff;
+  --lemon: #f9cf00;
+  --lime: #3fbb46;
+  --pink: #fa61ba;
+  --teal: #14b898;
+
+  /* Over photos: the same in both modes */
+  --on-media: #ffffff; /* lines and labels drawn over a photo */
+  --scrim: rgba(0, 0, 0, 0.6); /* dark glass under a label on a photo */
+
+  /* Chat and loading */
+  --bubble-in: #f0f0f0;
+  --skeleton: rgba(151, 154, 159, 0.4); /* Facebook's glimmer gray #979a9f, drawn at 40% */
+
+  /* Type: Inter for UI and body, Montserrat for headings and big numbers, both self-hosted */
+  --font: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Montserrat Variable", "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, Monaco, monospace;
+  --type-hero: 700 28px/34px var(--font-display);
+  --type-title: 700 20px/26px var(--font-display);
+  --type-headline: 700 17px/22px var(--font-display);
+  --type-body: 400 16px/24px var(--font);
+  --type-label: 600 15px/20px var(--font);
+  --type-meta: 400 13px/18px var(--font);
+  --type-tiny: 600 11px/16px var(--font);
+
+  /* Spacing (Facebook's steps), sizes and radii */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-28: 28px;
+  --space-36: 36px;
+  --gutter: 16px;
+  --page-width: 720px;
+  --appbar-height: 56px;
+  --control-height: 44px;
+  --radius-sm: 6px; /* thumbnails, tags in tables, code, skeleton lines */
+  --radius: 10px; /* buttons, fields, notes, tables, list rows, toasts, photos */
+  --radius-lg: 16px; /* cards, dialogs, page-level notes and errors */
+  --radius-bubble: 18px;
+  --pill: 999px; /* chips, segments, avatars */
+
+  /* Elevation: surfaces are flat; shadows only on the app bar and layers that float */
+  --shadow-base: 0 1px 2px rgba(0, 0, 0, 0.2); /* the app bar */
+  --shadow-emphasis: 0 2px 12px rgba(0, 0, 0, 0.2);
+  --shadow-elevated: 0 8px 20px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1); /* toasts, sheets */
+  --shadow-menu: 0 12px 28px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+
+  /* Motion: Facebook FDS curves and durations */
+  --ease-enter: cubic-bezier(0.14, 1, 0.34, 1);
+  --ease-exit: cubic-bezier(0.45, 0.1, 0.2, 1);
+  --ease-move: cubic-bezier(0.17, 0.17, 0, 1);
+  --ease-passive: cubic-bezier(0.5, 0, 0.1, 1);
+  --ease-quick: cubic-bezier(0.1, 0.9, 0.2, 1);
+  --ease-soft: cubic-bezier(0.08, 0.52, 0.52, 1);
+  --ease-strong: cubic-bezier(0.12, 0.8, 0.32, 1);
+  --dur-xxs: 100ms; /* hover, press, color */
+  --dur-xs-in: 200ms;
+  --dur-xs-out: 150ms;
+  --dur-short-in: 280ms; /* toasts, results appearing */
+  --dur-short-out: 200ms;
+  --dur-medium-in: 400ms; /* sheets, dialogs, big moves */
+  --dur-medium-out: 350ms;
+  --dur-long-in: 500ms;
+  --dur-long-out: 350ms;
+
   color-scheme: light;
 }
 
-/* Themes. Pick the one that fits the product's mood. Every pair below passes WCAG AA. */
-:root[data-theme="warm"] {
-  /* food, home, crafts, small shops, family */
-  --bg: #f6efe6; --surface: #fffcf7; --surface-2: #f9f2e8; --line: #e6d8c6;
-  --fg: #2a1f16; --fg-2: #4f3f31; --muted: #6b5847;
-  --accent: #a8461b; --accent-text: #97401a; --accent-soft: #f8e6d8;
-  --radius-lg: 18px; --radius: 12px;
-  --font-display: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-}
-:root[data-theme="playful"] {
-  /* kids, games, habits, creative toys */
-  --bg: #f4f1fb; --surface: #ffffff; --surface-2: #f8f6fd; --line: #e2dcf2;
-  --fg: #231b3a; --fg-2: #463d60; --muted: #62597a;
-  --accent: #6a3fd0; --accent-text: #5b34b8; --accent-soft: #eee7fc;
-  --radius-lg: 28px; --radius: 16px;
-  --font-display: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", system-ui, sans-serif;
-}
-:root[data-theme="fresh"] {
-  /* health, fitness, travel, outdoors, planning */
-  --bg: #eef5f1; --surface: #ffffff; --surface-2: #f4f9f6; --line: #d5e5dc;
-  --fg: #14291f; --fg-2: #35503f; --muted: #536b5f;
-  --accent: #0f7a4c; --accent-text: #0b6a41; --accent-soft: #ddf1e6;
-  --font-display: "Avenir Next", Avenir, "Segoe UI Variable Display", system-ui, sans-serif;
-}
-:root[data-theme="ink"] {
-  /* developer tools, data, documents, spreadsheets */
-  --bg: #f3f4f6; --surface: #ffffff; --surface-2: #f6f7f9; --line: #dfe2e8;
-  --fg: #111827; --fg-2: #374151; --muted: #555f6d;
-  --accent: #3a45c9; --accent-text: #3a45c9; --accent-soft: #e9ebfb;
-  --radius-lg: 12px; --radius: 8px;
-  --font-display: var(--font-mono);
-}
+/* Signature hues (Facebook's decorative colors). Only for the signature element, illustrations and charts. */
+[data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #fee4e5; --signature-ink: #bf2e34; }
+[data-accent="grape"] { --signature: var(--grape); --signature-soft: #edecff; --signature-ink: #615ac7; }
+[data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #fef8db; --signature-ink: #816c00; }
+[data-accent="lime"] { --signature: var(--lime); --signature-soft: #e4f5e5; --signature-ink: #297a2d; }
+[data-accent="pink"] { --signature: var(--pink); --signature-soft: #fee9f5; --signature-ink: #aa427e; }
+[data-accent="teal"] { --signature: var(--teal); --signature-soft: #def5f1; --signature-ink: #0d7863; }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0a0f13;
-    --surface: #141b21;
-    --surface-2: #182129;
-    --line: #27323b;
-    --fg: #e8eef3;
-    --fg-2: #aebbc6;
-    --muted: #8d9ba7;
-    --accent: #1f6fe5;
-    --accent-text: #7db2ff;
-    --accent-ink: #ffffff;
-    --accent-soft: #10233d;
-    --good: #4cc38a;
-    --warn: #f2b544;
-    --risk: #ff8a80;
+    --bg: #1c1c1d;
+    --surface: #252728;
+    --surface-2: #333334;
+    --popover: #3b3c3e;
+    --toast-bg: #242526;
+    --input-bg: #242526;
+    --line: #3e4042;
+    --field-line: #6f7276;
+    --fg: #e2e5e9;
+    --fg-2: #b0b3b8;
+    --placeholder: #a1a4a9;
+    --disabled: #6f7276;
+    --link: #5aa7ff;
+    --tinted-bg: rgba(29, 133, 252, 0.2);
+    --tinted-hover-bg: rgba(29, 133, 252, 0.28);
+    --tinted-fg: #75b6ff;
+    --secondary-bg: rgba(255, 255, 255, 0.1);
+    --hover: rgba(255, 255, 255, 0.1);
+    --press: rgba(255, 255, 255, 0.2);
+    --focus: #1d85fc;
+    --overlay: rgba(11, 11, 11, 0.8);
+    --positive: #3fbb46;
+    --negative: #ff7c74;
+    --positive-soft: #293f2d;
+    --negative-soft: #483534;
+    --signature: #1d85fc;
+    --signature-soft: rgba(29, 133, 252, 0.2);
+    --signature-ink: #75b6ff;
+    --bubble-in: #303030;
+    --skeleton: rgba(151, 154, 159, 0.3);
+    --shadow-menu: 0 12px 28px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     color-scheme: dark;
   }
-  :root[data-theme="warm"] {
-    --bg: #15100c; --surface: #1f1813; --surface-2: #261d17; --line: #3a2e25;
-    --fg: #f3e9df; --fg-2: #d3c3b3; --muted: #b3a291;
-    --accent: #b5501f; --accent-text: #f0a77c; --accent-soft: #3a2418;
-  }
-  :root[data-theme="playful"] {
-    --bg: #100c1c; --surface: #1a1529; --surface-2: #201a32; --line: #342b4d;
-    --fg: #ece8f7; --fg-2: #c9c1de; --muted: #a59dbd;
-    --accent: #7c52e0; --accent-text: #bba4ff; --accent-soft: #2a1f4a;
-  }
-  :root[data-theme="fresh"] {
-    --bg: #08110d; --surface: #111c17; --surface-2: #15231c; --line: #24372d;
-    --fg: #e3f0e9; --fg-2: #b6cbbf; --muted: #8fa79b;
-    --accent: #127f50; --accent-text: #6fd6a4; --accent-soft: #0f2e20;
-  }
-  :root[data-theme="ink"] {
-    --bg: #0b0d12; --surface: #141720; --surface-2: #191d28; --line: #2a2f3c;
-    --fg: #e6e8ee; --fg-2: #bcc1cc; --muted: #959cab;
-    --accent: #4f5be0; --accent-text: #a6aeff; --accent-soft: #1d2244;
+  [data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #542c2e; --signature-ink: #fc7c82; }
+  [data-accent="grape"] { --signature: var(--grape); --signature-soft: #383857; --signature-ink: #a49eff; }
+  [data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #4c441b; --signature-ink: #f9cf00; }
+  [data-accent="lime"] { --signature: var(--lime); --signature-soft: #2b482f; --signature-ink: #5ec664; }
+  [data-accent="pink"] { --signature: var(--pink); --signature-soft: #543448; --signature-ink: #fb84c9; }
+  [data-accent="teal"] { --signature: var(--teal); --signature-soft: #214741; --signature-ink: #3cc4aa; }
+}
+
+@media (min-width: 720px) {
+  :root {
+    --type-hero: 700 32px/38px var(--font-display);
+    --type-title: 700 24px/30px var(--font-display);
   }
 }
 
@@ -104,149 +189,452 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  /* A result scrolled into view with scrollIntoView({ block: "start" }) lands just below the top of the screen. */
+  scroll-padding-top: var(--space-12);
+}
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font);
-  font-size: 16px;
-  line-height: 1.55;
+  font: var(--type-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 main {
-  max-width: 960px;
+  max-width: calc(var(--page-width) + 2 * var(--gutter));
   margin-inline: auto;
-  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 32px max(16px, env(safe-area-inset-right, 0px));
+  padding: var(--space-20) max(var(--gutter), env(safe-area-inset-right, 0px)) var(--space-36) max(var(--gutter), env(safe-area-inset-left, 0px));
 }
 
 /* Type */
-h1, h2, h3 { font-family: var(--font-display); line-height: 1.2; margin: 0 0 8px; text-wrap: balance; overflow-wrap: anywhere; }
-h1 { font-size: clamp(28px, 6vw, 40px); letter-spacing: -0.01em; }
-h2 { font-size: 20px; }
-h3 { font-size: 17px; }
-p { margin: 0 0 12px; }
-a { color: var(--accent-text); font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0 0 var(--space-8); text-wrap: balance; overflow-wrap: anywhere; color: var(--fg); }
+h1 { font: var(--type-hero); letter-spacing: -0.02em; }
+h2 { font: var(--type-title); letter-spacing: -0.01em; }
+h3 { font: var(--type-headline); }
+h4 { font: var(--type-label); margin: 0 0 var(--space-4); }
+p { margin: 0 0 var(--space-12); text-wrap: pretty; }
+strong, b { font-weight: 600; }
+a { color: var(--link); font-weight: 600; text-decoration-line: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
 img, svg, video, canvas { max-width: 100%; height: auto; }
-code, pre, kbd { font-family: var(--font-mono); font-size: 0.92em; }
+code, pre, kbd { font-family: var(--font-mono); font-size: 0.9em; }
+hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-16) 0; }
 
 /* Layout */
-.stack { display: grid; gap: 16px; }
+.stack { display: grid; gap: var(--space-16); }
 .stack > *, .row > *, .fields > * { min-width: 0; }
-.row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.hero { margin-bottom: 20px; }
-.hero .tagline { font-size: 17px; color: var(--fg-2); margin: 0; max-width: 60ch; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: clamp(16px, 4.5vw, 24px); }
-.card > :last-child { margin-bottom: 0; }
-.result { scroll-margin-top: 16px; }
-.meta { font-size: 13.5px; color: var(--muted); }
-.big-number { font-size: 34px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12); }
+.hero { display: grid; gap: var(--space-8); padding-top: var(--space-4); margin-bottom: var(--space-8); }
+.hero h1 { margin: 0; }
+.hero .tagline { font-size: 17px; line-height: 24px; color: var(--fg-2); margin: 0; max-width: 60ch; }
+.card { background: var(--surface); border-radius: var(--radius-lg); padding: var(--space-16); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-8) var(--space-12); }
+.card-head > :is(h2, h3) { margin: 0; }
+.meta { font: var(--type-meta); color: var(--fg-2); }
+.big-number { font: 700 36px/42px var(--font-display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg); }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@media (min-width: 720px) {
+  .card { padding: var(--space-20); }
+}
+
+/* App bar: the product's name and one optional action, at the top of the page. It scrolls away with the page, so a
+   full-page screenshot never shows it in the middle. No logos. */
+.appbar { background: var(--surface); box-shadow: var(--shadow-base); }
+.appbar-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-12);
+  max-width: calc(var(--page-width) + 2 * var(--gutter)); min-height: var(--appbar-height); margin-inline: auto;
+  padding: 6px max(var(--gutter), env(safe-area-inset-right, 0px)) 6px max(var(--gutter), env(safe-area-inset-left, 0px));
+}
+.appbar-name { min-width: 0; font: 700 20px/24px var(--font-display); letter-spacing: -0.01em; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
+a.appbar-name:hover { text-decoration: none; }
+.appbar-action { display: flex; flex: none; align-items: center; gap: var(--space-8); }
 
 /* Fields: label, control, hint, stacked. .fields.two puts two side by side only when there is room. */
 .field { display: grid; gap: 6px; }
-.fields { display: grid; gap: 16px; }
+.fields { display: grid; gap: var(--space-16); }
 .fields.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: end; }
-label, .label { font-weight: 600; font-size: 15px; }
-.hint { font-size: 13.5px; color: var(--muted); }
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+label, .label { font: var(--type-label); color: var(--fg); }
+.hint { font: var(--type-meta); color: var(--fg-2); }
+/* :where keeps this rule weak, so the disabled and aria-invalid rules below win. */
+input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="file"])),
 select,
 textarea {
-  font: inherit;
+  font: var(--type-body);
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  padding: 10px 14px;
+  min-height: var(--control-height);
+  padding: 9px 12px;
   color: var(--fg);
-  background-color: var(--surface);
-  border: 1px solid var(--line);
+  background-color: var(--input-bg);
+  border: 1px solid var(--field-line);
   border-radius: var(--radius);
+  transition: border-color var(--dur-xxs) linear;
 }
-textarea { field-sizing: content; min-height: 6.5em; max-height: 24em; resize: vertical; line-height: 1.5; }
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), select, textarea):hover:not(:disabled, [aria-invalid="true"]) { border-color: var(--fg-2); }
+input::placeholder, textarea::placeholder { color: var(--placeholder); opacity: 1; }
+:is(input, select, textarea):disabled { color: var(--disabled); background-color: var(--surface-2); border-color: var(--line); cursor: not-allowed; }
+:is(input, select, textarea)[aria-invalid="true"] { border-color: var(--negative); }
+/* A field's hint turns red with its error. Only on a card: red text is below AA on the gray page. */
+.card .field:has([aria-invalid="true"]) > .hint { color: var(--negative); }
+textarea { field-sizing: content; min-height: 6.5em; max-height: 24em; resize: vertical; }
+@supports (field-sizing: content) {
+  textarea { resize: none; } /* it grows with its text, so no grip */
+}
 select {
   appearance: none;
   padding-right: 40px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-2) 50%), linear-gradient(135deg, var(--fg-2) 50%, transparent 50%);
   background-position: calc(100% - 21px) 50%, calc(100% - 16px) 50%;
   background-size: 5px 5px;
   background-repeat: no-repeat;
 }
 input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--accent); }
-input[type="file"] { font: inherit; font-size: 14px; color: var(--muted); max-width: 100%; }
-input[type="file"]::file-selector-button {
-  font: inherit; font-weight: 700; margin-right: 12px; padding: 10px 18px; cursor: pointer;
-  color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--pill);
-}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+progress { width: 100%; height: 6px; border: 0; border-radius: var(--pill); overflow: hidden; appearance: none; background: var(--progress-track); accent-color: var(--accent); }
+progress::-webkit-progress-bar { background: var(--progress-track); }
+progress::-webkit-progress-value { background: var(--accent); border-radius: var(--pill); }
+progress::-moz-progress-bar { background: var(--accent); }
 
-/* Buttons: one .primary per screen, .secondary for other actions, .text for quiet ones like "Start over". */
+/* Buttons: one .primary per screen; .secondary and .tinted for other actions; .text for quiet ones like "Start over";
+   .icon for a round icon-only button with an aria-label. Every busy button gets aria-busy="true". Add .ai to a primary
+   button that calls a model: while it is busy it shows the moving AI gradient. */
 button { font: inherit; color: inherit; }
 button.primary,
-button.secondary {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 44px; padding: 11px 20px; border-radius: var(--pill); font-weight: 700; cursor: pointer;
+button.secondary,
+button.tinted {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-8);
+  min-height: var(--control-height); padding: 0 var(--space-16); border: 0; border-radius: var(--radius);
+  font: var(--type-label); text-align: center; cursor: pointer;
+  transition: background-color var(--dur-xxs) linear, transform var(--dur-xxs) var(--ease-quick);
 }
-button.primary { border: 0; background: var(--accent); color: var(--accent-ink); }
-button.secondary { border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+button.primary { background-color: var(--accent); color: var(--on-accent); }
+button.secondary { background-color: var(--secondary-bg); color: var(--fg); }
+button.tinted { background-color: var(--tinted-bg); color: var(--tinted-fg); }
+button.primary:hover:not(:disabled, [aria-busy="true"]) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
+button.secondary:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button.tinted:hover:not(:disabled) { background-color: var(--tinted-hover-bg); }
+button.secondary:active:not(:disabled) { background-image: linear-gradient(var(--press), var(--press)); }
+:is(button.primary, button.secondary, button.tinted, button.icon):active:not(:disabled, [aria-busy="true"]) { transform: scale(0.975); }
 button.text {
-  min-height: 44px; padding: 10px 0; border: 0; background: none; font-weight: 600; color: var(--accent-text); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-height); padding: 0 var(--space-4);
+  border: 0; background: none; font: var(--type-label); color: var(--link); cursor: pointer;
 }
-button.text:hover { text-decoration: underline; text-underline-offset: 3px; }
-button:disabled { opacity: 0.55; cursor: not-allowed; }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 16px; }
+button.text:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+button.icon {
+  display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
+  border: 0; border-radius: 50%; background-color: var(--secondary-bg); color: var(--fg); cursor: pointer;
+  transition: background-color var(--dur-xxs) linear, transform var(--dur-xxs) var(--ease-quick);
+}
+button.icon:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button svg { flex: none; }
+:is(button.primary, button.secondary, button.tinted, button.icon):disabled { background-color: var(--secondary-bg); color: var(--disabled); cursor: not-allowed; }
+button.text:disabled { color: var(--disabled); cursor: not-allowed; }
+button[aria-busy="true"] { cursor: progress; }
+/* AI working: a model is on it. Keeps the blue-to-violet gradient moving until aria-busy clears. */
+button.primary.ai[aria-busy="true"] {
+  color: var(--on-accent);
+  background-color: var(--ai-start);
+  background-image: linear-gradient(90deg, var(--ai-start), var(--ai-end), var(--ai-start));
+  background-size: 200% 100%;
+  animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
+}
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); margin-top: var(--space-16); }
 
-/* Chips: .chip credits a model or shows a status; .tag is a neutral feature label. */
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Chips: .chip is a short status; .tag is a neutral feature label; a <button className="chip" aria-pressed> is a
+   filter you can turn on and off. .chip.ai is the model credit (components/ModelChip). */
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
 .chip,
 .tag {
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  font-size: 12.5px; font-weight: 600; line-height: 1; padding: 6px 10px; border-radius: var(--pill);
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 4px 12px; white-space: nowrap;
+  font: 600 13px/18px var(--font); border-radius: var(--pill);
 }
-.chip { background: var(--accent-soft); color: var(--accent-text); }
-.tag { border: 1px solid var(--line); color: var(--fg-2); }
+.chip { background-color: var(--secondary-bg); color: var(--fg); }
+.chip.positive { background-color: var(--positive-soft); }
+.chip.positive svg { color: var(--positive); }
+.chip.negative { background-color: var(--negative-soft); }
+.chip.negative svg { color: var(--negative); }
+.tag { border: 1px solid var(--line); color: var(--fg-2); font-weight: 500; }
+button.chip { min-height: 36px; padding: 0 14px; border: 0; font: var(--type-label); cursor: pointer; transition: background-color var(--dur-xxs) linear; }
+button.chip:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+.chip[aria-pressed="true"] { background-color: var(--tinted-bg); color: var(--tinted-fg); }
+button.chip[aria-pressed="true"]:hover:not(:disabled) { background-image: none; background-color: var(--tinted-hover-bg); }
+button.chip:disabled { color: var(--disabled); cursor: not-allowed; }
+/* AI labels on a surface: the gradient is the outline, so the credit reads as a label, not a button. */
+.chip.ai,
+.ai-badge { color: var(--fg); border: 1.5px solid transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--ai-gradient) border-box; }
+.chip.ai { padding: 3px 12px 3px 10px; }
+:is(.chip.ai, .ai-badge) svg { color: var(--ai-end); }
+.ai-badge {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 1.5px 8px; white-space: nowrap;
+  font: 600 12px/16px var(--font); border-radius: var(--pill);
+}
+
+/* Selected segments and pressed filter chips show a check, so the choice never rests on color alone. */
+.segmented label:has(input:checked)::before,
+button.chip[aria-pressed="true"]::before {
+  content: ""; flex: none; width: 16px; height: 16px; margin-left: -2px; background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Segmented control (components/Segmented): pick one of a few options. */
+.segmented { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+.segmented label {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px;
+  border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg); cursor: pointer;
+  transition: background-color var(--dur-xxs) linear;
+}
+/* The radio covers its whole pill, invisible, so a tap or a test's .check() lands on it. */
+.segmented input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.segmented label:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
+.segmented label:has(input:checked) { background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
+.segmented label:has(input:checked):hover { background-color: var(--tinted-hover-bg); }
+.segmented label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.segmented label:has(input:disabled) { color: var(--disabled); cursor: not-allowed; background-image: none; }
 
 /* Tables scroll inside their own box, never the page. On phones keep them to about 3 columns. */
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
-.table-wrap table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.table-wrap table { width: 100%; border-collapse: collapse; font: 400 15px/20px var(--font); }
 .table-wrap th, .table-wrap td { padding: 10px 12px; text-align: left; vertical-align: top; border-top: 1px solid var(--line); }
-.table-wrap thead th { background: var(--surface-2); font-weight: 700; border-top: 0; white-space: nowrap; }
+.table-wrap thead th { background: var(--surface-2); font: 600 13px/18px var(--font); color: var(--fg-2); border-top: 0; white-space: nowrap; }
+.table-wrap tfoot :is(td, th) { font-weight: 600; }
 .table-wrap .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* Key and value pairs: a phone-friendly alternative to a two-column table. */
-.kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; margin: 0; }
-.kv dt { color: var(--fg-2); }
-.kv dd { margin: 0; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+/* Key and value pairs: a phone-friendly alternative to a two-column table. Labels take up to half the row. */
+.kv { display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); gap: 10px var(--space-16); margin: 0; font: 400 15px/20px var(--font); }
+.kv dt { color: var(--fg-2); overflow-wrap: anywhere; }
+.kv dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
-/* Notes, errors and limits */
-.note { font-size: 14px; color: var(--fg-2); background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; }
-.error { font-size: 15px; color: var(--fg); background: color-mix(in srgb, var(--risk) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--risk) 45%, var(--line)); border-radius: var(--radius); padding: 12px 14px; }
-.limits { margin: 0; padding-left: 18px; font-size: 14px; color: var(--fg-2); }
+/* Lists: rows with a leading avatar, icon or thumbnail, a title and a secondary line, and an optional trailing part. */
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.list-row { display: flex; align-items: center; gap: var(--space-12); min-height: 56px; padding: var(--space-8) 0; border-radius: var(--radius); }
+:is(a, button).list-row { width: calc(100% + 2 * var(--space-8)); margin-inline: calc(-1 * var(--space-8)); padding-inline: var(--space-8); border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+:is(a, button).list-row:hover { background-color: var(--hover); }
+:is(a, button).list-row:active { background-color: var(--press); }
+.list-text { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
+.list-title { font: var(--type-label); color: var(--fg); overflow-wrap: anywhere; }
+.list-text .meta { overflow-wrap: anywhere; }
+
+/* Avatars and icon circles. People are circles; things (a plant, a store) are .avatar.square. Initials are gray,
+   or in the signature hue when the product sets data-accent. */
+.avatar,
+.icon-circle { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; }
+.avatar { background: var(--secondary-bg); color: var(--fg); font: 600 15px/1 var(--font); }
+[data-accent] .avatar { background: var(--signature-soft); color: var(--signature-ink); }
+.avatar > img { width: 100%; height: 100%; object-fit: cover; }
+.avatar.square { border-radius: var(--radius); }
+.avatar.sm { width: 32px; height: 32px; font-size: 13px; }
+.avatar.lg { width: 56px; height: 56px; font-size: 20px; }
+.icon-circle { background: var(--secondary-bg); color: var(--fg); font: var(--type-label); }
+.icon-circle.lg { width: 56px; height: 56px; }
+
+/* Thumbnail: a small preview of an input once its result is up, like the photo that was read. */
+.thumb { display: block; flex: none; width: 56px; height: 56px; border-radius: var(--radius-sm); object-fit: cover; background: var(--surface-2); }
+
+/* Notes, errors and limits. An <Icon> as the first child of a note or error hangs to the left of the text. */
+.note { font: 400 15px/20px var(--font); color: var(--fg-2); background: var(--surface-2); border-radius: var(--radius); padding: var(--space-12) 14px; }
+.error { font: 400 15px/20px var(--font); color: var(--fg); background: var(--negative-soft); border-radius: var(--radius); padding: var(--space-12) 14px; }
+:is(.note, .error):has(> svg:first-child) { position: relative; padding-left: 44px; }
+:is(.note, .error) > svg:first-child { position: absolute; left: 14px; top: 12px; }
+.note > svg:first-child { color: var(--fg-2); }
+.error > svg:first-child { color: var(--negative); }
+.error strong { font-weight: 600; }
+/* On the page, between cards, a note or error takes a card's shape. */
+.stack > :is(.note, .error) { border-radius: var(--radius-lg); padding: var(--space-16); }
+.stack > :is(.note, .error):has(> svg:first-child) { padding-left: 48px; }
+.stack > :is(.note, .error) > svg:first-child { left: var(--space-16); top: var(--space-16); }
+.limits { margin: 0; padding-left: 18px; font: var(--type-meta); color: var(--fg-2); }
+.limits li + li { margin-top: var(--space-4); }
+
+/* Empty states: an icon circle, a short title, one line on what to do, and maybe a button. */
+.empty { display: grid; justify-items: center; gap: var(--space-8); padding: var(--space-28) var(--space-16); text-align: center; }
+.empty > :is(h2, h3) { margin: var(--space-4) 0 0; font: var(--type-headline); }
+.empty > p { margin: 0; color: var(--fg-2); max-width: 36ch; }
+.empty > .actions { justify-content: center; margin-top: var(--space-8); }
+
+/* AI result card: the gradient cap marks output a model made. It moves while the card holds something busy, like
+   a <Skeleton>. */
+.card.ai { position: relative; }
+.card.ai::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: var(--radius-lg); padding-top: 3px; pointer-events: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--ai-gradient);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.card.ai:is([aria-busy="true"], :has([aria-busy="true"]))::before {
+  background: linear-gradient(90deg, var(--ai-start), var(--ai-end), var(--ai-start)) 0 0 / 200% 100%;
+  animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
+}
+
+/* Loading: Facebook's opacity pulse (components/Skeleton, which marks itself aria-busy). .working is the line that
+   names the step, led by three dots in the AI colors. */
+.skeleton-group { display: grid; gap: 10px; }
+.skeleton { display: block; height: 12px; background: var(--skeleton); border-radius: var(--radius-sm); opacity: 0.6; animation: skeleton-pulse 1000ms steps(10, end) infinite alternate; }
+.skeleton.block { border-radius: var(--radius); }
+.working { display: flex; align-items: center; gap: 10px; margin: 0; font: var(--type-label); color: var(--fg-2); }
+.working::before {
+  content: ""; flex: none; width: 26px; height: 6px; background: var(--ai-gradient);
+  -webkit-mask: radial-gradient(circle closest-side, #000 88%, transparent) -2px 0 / 10px 6px repeat-x;
+  mask: radial-gradient(circle closest-side, #000 88%, transparent) -2px 0 / 10px 6px repeat-x;
+  animation: skeleton-pulse 1000ms steps(10, end) infinite alternate;
+}
+
+/* Images and overlays. Put an overlay <svg> or the .ai-badge inside .media, over the image. The overlay takes its
+   height from its viewBox, so a figcaption under the image never stretches it. */
+.media { position: relative; display: block; margin: 0; }
+.media > :is(img, canvas, video) { display: block; width: 100%; height: auto; border-radius: var(--radius); background: var(--surface-2); }
+.media > .overlay {
+  position: absolute; inset: 0 auto auto 0; width: 100%; height: auto; pointer-events: none;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.62)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3)); /* white lines show on light photos */
+}
+.media > .ai-badge { position: absolute; top: var(--space-8); left: var(--space-8); padding: 3px 8px; border: 0; color: var(--on-media); background: var(--scrim); }
+.media > .ai-badge svg { color: inherit; }
+.media > figcaption { margin-top: var(--space-8); font: var(--type-meta); color: var(--fg-2); }
+
+/* Dropzone (components/FilePicker) */
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-8);
+  min-height: 148px; padding: var(--space-20) var(--space-16); text-align: center; cursor: pointer;
+  background-color: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius);
+  font: var(--type-body); transition: background-color var(--dur-xxs) linear, border-color var(--dur-xxs) linear;
+}
+.dropzone:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
+.dropzone[data-over] { background-image: none; background-color: var(--tinted-bg); border-color: var(--accent); }
+.dropzone[data-filled] { flex-direction: row; justify-content: flex-start; min-height: 72px; padding: var(--space-12); text-align: left; }
+.dropzone .icon-circle { background: var(--secondary-bg); }
+.dropzone[data-filled] .icon-circle { background: var(--positive-soft); color: var(--positive); }
+.dropzone-text { display: grid; gap: var(--space-2); min-width: 0; }
+.dropzone-title { font: var(--type-label); color: var(--fg); overflow-wrap: anywhere; }
+.dropzone-hint { font: var(--type-meta); color: var(--fg-2); overflow-wrap: anywhere; }
+.dropzone[data-filled] .dropzone-hint { font: var(--type-label); color: var(--link); }
+.dropzone:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dropzone:has(input:disabled) { cursor: not-allowed; opacity: 0.6; background-image: none; }
+@media (hover: none) {
+  .dropzone .on-pointer { display: none; }
+}
+
+/* Chat: a .thread of .bubble.in (the app or a model) and .bubble.out (the person), and the composer under it. */
+.thread { display: flex; flex-direction: column; gap: var(--space-8); }
+.bubble { max-width: min(82%, 560px); padding: var(--space-8) var(--space-12); border-radius: var(--radius-bubble); font: 400 15px/20px var(--font); overflow-wrap: anywhere; }
+.bubble.in { align-self: flex-start; background: var(--bubble-in); color: var(--fg); }
+.bubble.out { align-self: flex-end; background: var(--accent); color: var(--on-accent); }
+.bubble.out a { color: inherit; }
+.bubble.in + .bubble.in, .bubble.out + .bubble.out { margin-top: -6px; }
+.bubble.in:has(+ .bubble.in) { border-bottom-left-radius: 4px; }
+.bubble.in + .bubble.in { border-top-left-radius: 4px; }
+.bubble.out:has(+ .bubble.out) { border-bottom-right-radius: 4px; }
+.bubble.out + .bubble.out { border-top-right-radius: 4px; }
+.bubble .prose { font: inherit; }
+/* A pill while it is one line; the radius stays put when it grows, so longer text keeps square-ish corners. */
+.composer {
+  display: flex; align-items: flex-end; gap: var(--space-8); min-height: var(--control-height);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-16); background: var(--surface-2); border-radius: calc(var(--control-height) / 2);
+}
+.composer:has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.composer textarea {
+  flex: 1; min-width: 0; min-height: 36px; max-height: 9em; padding: 6px 0; border: 0; border-radius: 0;
+  background: transparent; resize: none; field-sizing: content;
+}
+.composer textarea:focus-visible { outline: none; }
+.composer .send {
+  display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%;
+  background-color: var(--accent); color: var(--on-accent); cursor: pointer; transition: transform var(--dur-xxs) var(--ease-quick);
+}
+.composer .send:hover:not(:disabled) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
+.composer .send:active:not(:disabled) { transform: scale(0.95); }
+.composer .send:disabled { background-color: transparent; color: var(--disabled); cursor: not-allowed; }
+.composer .send[aria-busy="true"] { color: var(--on-accent); background-color: var(--ai-start); background-image: var(--ai-gradient); cursor: progress; }
+
+/* Toast: a short confirmation like "Copied", rendered inside an always-mounted role="status" region. It floats at the
+   bottom of the screen, so never take a judge screenshot while one is up. */
+.toast {
+  position: fixed; z-index: 30; left: 50%; bottom: max(var(--space-16), env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 10px; width: max-content; min-width: min(288px, calc(100vw - 32px)); max-width: calc(100vw - 32px);
+  padding: 10px var(--space-16); background: var(--toast-bg); color: var(--fg); border-radius: var(--radius);
+  box-shadow: var(--shadow-elevated); font: var(--type-label); transform: translateX(-50%);
+  animation: toast-in var(--dur-short-in) var(--ease-enter);
+}
+.toast > svg:first-child { color: var(--positive); }
+
+/* Dialog: a native <dialog> opened with showModal(), for one short question like "Delete this receipt?". */
+dialog {
+  width: min(548px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: var(--space-20);
+  border: 0; border-radius: var(--radius-lg); background: var(--popover); color: var(--fg); box-shadow: var(--shadow-menu);
+}
+dialog:modal { margin: auto; } /* centered, even when it sits inside a card */
+dialog[open] { animation: dialog-in var(--dur-medium-in) var(--ease-enter); }
+dialog::backdrop { background: var(--overlay, rgba(0, 0, 0, 0.4)); }
+
+/* Disclosure for long extras */
+details > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); min-height: var(--control-height);
+  font: var(--type-label); color: var(--fg); cursor: pointer; list-style: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after {
+  content: ""; flex: none; width: 8px; height: 8px; margin-right: 6px; border-right: 2px solid var(--fg-2); border-bottom: 2px solid var(--fg-2);
+  transform: translateY(-2px) rotate(45deg); transition: transform var(--dur-xs-in) var(--ease-move);
+}
+details[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
 
 /* Model text rendered by components/Markdown.tsx */
-.prose > * + * { margin-top: 10px; }
-.prose :is(h2, h3, h4) { font-size: 17px; margin: 18px 0 6px; }
-.prose :is(ul, ol) { padding-left: 22px; margin: 0; }
-.prose code { background: var(--surface-2); border-radius: 6px; padding: 1px 5px; }
-.prose pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; overflow-x: auto; white-space: pre; }
+.prose > * { margin: 0; }
+.prose > * + * { margin-top: var(--space-12); }
+.prose :is(h2, h3, h4) { font: var(--type-headline); }
+.prose > * + :is(h2, h3, h4) { margin-top: var(--space-20); }
+.prose :is(ul, ol) { padding-left: 22px; }
+.prose li + li { margin-top: var(--space-4); }
+.prose code { background: var(--surface-2); border-radius: var(--radius-sm); padding: 1px 5px; }
+.prose pre { background: var(--surface-2); border-radius: var(--radius); padding: var(--space-12) 14px; overflow-x: auto; white-space: pre; }
 .prose pre code { background: none; padding: 0; }
 
 :focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-.file-picker {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px; cursor: pointer;
-  font-weight: 400; font-size: 14px; background: var(--surface-2); border: 1px dashed var(--line); border-radius: var(--radius);
+
+/* Spacing between the parts inside a card, and between fields anywhere. It comes last so it wins over each part's
+   own margin: 16 px between parts, 12 px under a heading, 8 px above a hint or limits that belong to what is above
+   them, 20 px above the row of actions. */
+.card > * { margin-top: 0; margin-bottom: 0; }
+.card > * + * { margin-top: var(--space-16); }
+.card > :where(h2, h3, .card-head) + * { margin-top: var(--space-12); }
+.card > .field + .hint,
+.card > * + .limits { margin-top: var(--space-8); }
+.card > * + .actions { margin-top: var(--space-20); }
+.field + .field { margin-top: var(--space-16); }
+.fields > .field + .field { margin-top: 0; }
+
+@keyframes skeleton-pulse {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
 }
-.file-picker-button {
-  display: inline-flex; align-items: center; min-height: 44px; padding: 10px 18px; font-weight: 700; color: var(--fg);
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--pill);
+@keyframes ai-flow {
+  from { background-position: 0% 0; }
+  to { background-position: 100% 0; }
 }
-.file-picker-name { min-width: 0; color: var(--muted); overflow-wrap: anywhere; }
-.file-picker:has(input:disabled) { opacity: 0.55; cursor: not-allowed; }
-.file-picker:has(input:focus-visible) { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
     transition: none !important;
   }
+  :is(button, .composer .send):active:not(:disabled) { transform: none !important; }
 }

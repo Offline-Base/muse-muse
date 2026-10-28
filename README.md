@@ -218,6 +218,7 @@ This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, go
 npm run typecheck
 npx tsx --test --experimental-test-module-mocks $(find lib components -name '*.test.ts')
 npx tsx --test --experimental-test-module-mocks components/train/__tests__/*.test.tsx
+npx tsx --test template/scripts/__tests__/*.test.mjs   # the template's own scripts and theme contrast
 ```
 
 Nothing in the tests calls Meta, Vercel, Lambda or Neon. The fine-tuning runner test also needs `python3`.
