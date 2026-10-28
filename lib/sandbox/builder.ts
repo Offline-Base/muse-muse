@@ -686,9 +686,9 @@ export type { SandboxTask };
 /**
  * Starts verify (scripts/verify.mjs) or the demo recording detached. Both first restore the platform-owned files from
  * the pristine copy, and the demo first stops any server left on ports 3100-3199. Combined output goes to
- * <task>.log, stdout alone to <task>.out.
+ * <task>.log, stdout alone to <task>.out. `env` is exported for the task, like MUSEMUSE_SCREEN_CHECK=warn.
  */
-export async function startTask(sandboxName: string, task: SandboxTask): Promise<{ cmdId: string }> {
+export async function startTask(sandboxName: string, task: SandboxTask, env?: Record<string, string>): Promise<{ cmdId: string }> {
   const sandbox = await openSandbox(sandboxName);
   await ensureTime(sandbox, LONG_WORK_MS);
   const running = await runningCommand(sandbox, task);
@@ -699,6 +699,7 @@ export async function startTask(sandboxName: string, task: SandboxTask): Promise
   const script = await writeRunner(sandbox, {
     name: task,
     cwd: PRODUCT_DIR,
+    env,
     argv: ["bash", "-c", taskScript(task, outPath)],
     stdoutPath: logPath,
   });
@@ -748,7 +749,9 @@ export async function collectVerifyResult(input: {
   const summary = verifyOutcome(parseVerifySummary(stdout), input.exitCode, tail);
 
   const judgeDir = `${PRODUCT_DIR}/test-results/judge`;
-  const names = (await listFiles(sandbox, judgeDir, "*.png")).slice(0, MAX_SCREENSHOTS);
+  const all = await listFiles(sandbox, judgeDir, "*.png");
+  // The first one and the last ones, so the judge's final screen is the one verify's final screen check read.
+  const names = all.length > MAX_SCREENSHOTS ? [all[0], ...all.slice(1 - MAX_SCREENSHOTS)] : all;
   const screenshots: Screenshot[] = [];
   for (const name of names) {
     const file = `${judgeDir}/${name}`;

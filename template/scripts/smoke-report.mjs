@@ -2,6 +2,7 @@
 //
 // Playwright exits 0 when tests are skipped, so verify checks the report as well: every test must have run and
 // passed, and tests/smoke.spec.ts (plus tests/actions.spec.ts when the product has actions) must have run at least one.
+// It also checks the judge screenshots: each one taken by judgeShot(), and the last one free of errors and empty states.
 
 const fileName = (file) => String(file ?? "").split(/[\\/]/).pop();
 
@@ -58,4 +59,31 @@ export function judgeShotProblems(fileNames) {
   return unchecked.length
     ? [`Judge screenshots taken without judgeShot(): ${unchecked.join(", ")}. Take every one with judgeShot(page, "02-result") from tests/judge-shot.ts.`]
     : [];
+}
+
+/**
+ * The judge fails a final screen that shows an error, a field marked invalid or an empty state anywhere on it, even
+ * when showing it is correct. judgeShot() lists them as `errorsAndEmpty` in each <name>.checked, and this reads the
+ * last screenshot's (they sort in order: 01-start, 02-result, ...). Takes the file names in test-results/judge/ and a
+ * function that reads one of them as text.
+ */
+export function finalShotProblems(fileNames, read) {
+  const last = fileNames.filter((f) => f.endsWith(".png")).sort().at(-1);
+  if (!last) return [];
+  let found;
+  try {
+    found = JSON.parse(read(last.replace(/\.png$/, ".checked"))).errorsAndEmpty;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(found) || !found.length) return [];
+  return [
+    `The last judge screenshot, ${last}, shows ${found.join("; ")}. Each is a visible role="alert", .error, ` +
+      'aria-invalid="true" field or .empty with text in it, and the judge fails a final screen with one anywhere on it, ' +
+      "even when showing it is correct. Change the product so the primary flow ends on its finished result with none " +
+      "of them on screen: a later step shouldn't break an earlier input, an error clears once its input is fixed, a " +
+      'confirmation like "Saved" is role="status", a result that found nothing says so in its result card, not as an ' +
+      ".empty, and a section with nothing in it yet is filled first (the test presses its button) or stays hidden. " +
+      "Take judge screenshots only in the primary flow in tests/smoke.spec.ts.",
+  ];
 }

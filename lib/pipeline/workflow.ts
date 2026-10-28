@@ -43,6 +43,7 @@ import {
   startDeployStep,
   startMuseStep,
   startTaskStep,
+  startTaskWithEnvStep,
   verifyTimedOutStep,
   writeFixPromptStep,
   type TaskPollResult,
@@ -159,8 +160,9 @@ async function runTask(
   sandboxName: string,
   task: "verify" | "demo",
   capMs: number,
+  taskEnv?: Record<string, string>,
 ): Promise<TaskPollResult & { timedOut: boolean }> {
-  const cmdId = await startTaskStep(sandboxName, task);
+  const cmdId = taskEnv ? await startTaskWithEnvStep(sandboxName, task, taskEnv) : await startTaskStep(sandboxName, task);
   const startedAt = Date.now();
   for (let polls = 1; ; polls++) {
     await sleep(TASK_POLL_MS);
@@ -173,9 +175,17 @@ async function runTask(
   }
 }
 
-async function runVerify(ctx: Ctx, round: number): Promise<VerifyResult> {
+/**
+ * A new build's verify on the last round runs the screen checks (judgeShot's and the final screen's) in warn mode:
+ * they log what they find instead of failing, so the judge decides, and a build only they would stop can still ship
+ * as partial. Earlier rounds keep them strict, so what they find goes into the next fix round. A refinement keeps
+ * them strict to the end, since it ships only when every check passes.
+ */
+const LAST_ROUND_VERIFY_ENV = { MUSEMUSE_SCREEN_CHECK: "warn" };
+
+async function runVerify(ctx: Ctx, round: number, lastRound: boolean): Promise<VerifyResult> {
   const capMs = stepTimeoutMs("verify");
-  const task = await runTask(ctx.sandboxName, "verify", capMs);
+  const task = await runTask(ctx.sandboxName, "verify", capMs, lastRound ? LAST_ROUND_VERIFY_ENV : undefined);
   if (task.timedOut) return verifyTimedOutStep({ buildId: ctx.buildId, round, minutes: Math.round(capMs / 60_000) });
   return collectVerifyStep({
     buildId: ctx.buildId,
@@ -214,13 +224,13 @@ interface Checks {
  * Verify, then judge if verify passed. On failure, resume the same Muse Code session with fix-<n>.md (and the
  * screenshots the judge saw, when it ran) and check again, up to MAX_FIX_ROUNDS. Returns the last result.
  */
-async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
+async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine"): Promise<Checks> {
   const rounds = maxFixRounds();
   for (let fix = 0; ; ) {
     const round = fix;
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify" });
-    const verify = await runVerify(ctx, round);
+    const verify = await runVerify(ctx, round, kind === "build" && fix >= rounds);
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
@@ -453,7 +463,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "previewing", { step: "preview" });
     await preview(ctx);
 
-    const checks = await checkAndFix(ctx, track);
+    const checks = await checkAndFix(ctx, track, "build");
     track.stage = "verify";
     ending = await finish(
       ctx,
@@ -525,7 +535,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     await setStatusStep(buildId, "previewing", { step: "preview" });
     await preview(ctx);
 
-    const checks = await checkAndFix(ctx, track);
+    const checks = await checkAndFix(ctx, track, "refine");
     track.stage = "verify";
     ending = await finish(
       ctx,

@@ -531,6 +531,14 @@ export async function startTaskStep(sandboxName: string, task: sandbox.SandboxTa
 }
 startTaskStep.maxRetries = 0;
 
+/** startTaskStep with `env` exported for the task, like MUSEMUSE_SCREEN_CHECK=warn for a new build's last verify. */
+export async function startTaskWithEnvStep(sandboxName: string, task: sandbox.SandboxTask, env: Record<string, string>): Promise<string> {
+  "use step";
+  const { cmdId } = await sandbox.startTask(sandboxName, task, env);
+  return cmdId;
+}
+startTaskWithEnvStep.maxRetries = 0;
+
 export interface TaskPollResult {
   done: boolean;
   exitCode: number | null;

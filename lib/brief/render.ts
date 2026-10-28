@@ -179,7 +179,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
-    "The look always comes from the meta-ui skill. The inspo's mood shows in the accent hue, the signature element and the copy, never as its colors or fonts.",
+    "The look always comes from the meta-ui skill. The inspo's mood shows in the accent hue and the copy, never as its colors or fonts.",
     "",
     "Leave out:",
     "",
@@ -322,7 +322,7 @@ export function renderFixPrompt(input: {
     if (judge.mismatches.length) out.push("", "Mismatches with the brief:", "", bullets(judge.mismatches));
     out.push(
       "",
-      "Change the product so the screens show what the brief promises. The last screenshot must show the final result, not an error, a spinner or an empty state. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
+      "Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.",
     );
   }
   return out.join("\n") + "\n";

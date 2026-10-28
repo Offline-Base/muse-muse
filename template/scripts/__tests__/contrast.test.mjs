@@ -134,6 +134,7 @@ const TEXT = [
   ["--on-accent", "--accent + --accent-hover", "hovered primary button"],
   ["--tinted-fg", "--tinted-bg", "tinted button, selected chip or segment"],
   ["--tinted-fg", "--tinted-hover-bg", "hovered tinted button"],
+  ["--tinted-fg", "--ai-soft", "busy tinted AI button, at the violet end of its moving fill"],
   ["--fg", "--secondary-bg", "secondary button, chip"],
   ["--fg", "--secondary-bg + --hover", "hovered secondary button"],
   ["--fg", "--surface + --hover", "hovered list row or segment"],
@@ -207,6 +208,15 @@ for (const [mode, tokens] of THEMES) {
   test(`every data-accent hue keeps its signature text AA in ${mode} mode`, () => {
     const signature = TEXT.filter(([fg, bg]) => fg === "--signature-ink" || bg.includes("--signature-soft"));
     for (const hue of HUES) assert.deepEqual(check(accent(hue, mode), signature, 4.5), [], hue);
+  });
+
+  test(`chart bars and strokes stand out (3:1) in every data-accent hue in ${mode} mode`, () => {
+    const lines = [
+      ["--signature-line", "--surface", "a stroke on a card"],
+      ["--signature-line", "--surface-2", "a bar on the chart's gray"],
+    ];
+    assert.deepEqual(check(tokens, lines, 3), [], "no accent");
+    for (const hue of HUES) assert.deepEqual(check(accent(hue, mode), lines, 3), [], hue);
   });
 }
 

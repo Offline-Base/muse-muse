@@ -47,11 +47,14 @@
   --ai-start: #0064e0;
   --ai-end: #a033ff;
   --ai-gradient: linear-gradient(90deg, var(--ai-start), var(--ai-end)); /* AI only: model credit, AI working, AI result */
-  --signature: var(--brand); /* the product's signature element, illustrations, charts; data-accent changes it */
+  --ai-soft: #f6ebff; /* a busy tinted AI button's moving fill, with --tinted-bg */
+  --signature: var(--brand); /* the product's signature element and charts; data-accent changes it */
   --signature-soft: #ebf5ff;
   --signature-ink: #0064d1; /* text on --signature-soft or --surface */
+  --signature-line: var(--signature); /* strokes and chart bars: 3:1 on --surface-2 in every hue */
 
-  /* Facebook's decorative hues: charts with several series and illustrations only, never text or buttons */
+  /* Facebook's decorative hues: only chart series a legend names and overlays, one hue per kind of object. Never
+     text, buttons, or borders and fills in the UI that tell categories apart. */
   --cherry: #fb3c44;
   --grape: #7d74ff;
   --lemon: #f9cf00;
@@ -125,13 +128,16 @@
   color-scheme: light;
 }
 
-/* Signature hues (Facebook's decorative colors). Only for the signature element, illustrations and charts. */
+/* Signature hues (Facebook's decorative colors). Only for the signature element and charts. In light mode lemon,
+   lime, pink and teal are too pale for a line or a bar, so --signature-line is a darker shade of the same hue. The
+   first rule makes the line follow a data-accent set below <html> too. */
+[data-accent] { --signature-line: var(--signature); }
 [data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #fee4e5; --signature-ink: #bf2e34; }
 [data-accent="grape"] { --signature: var(--grape); --signature-soft: #edecff; --signature-ink: #615ac7; }
-[data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #fef8db; --signature-ink: #816c00; }
-[data-accent="lime"] { --signature: var(--lime); --signature-soft: #e4f5e5; --signature-ink: #297a2d; }
-[data-accent="pink"] { --signature: var(--pink); --signature-soft: #fee9f5; --signature-ink: #aa427e; }
-[data-accent="teal"] { --signature: var(--teal); --signature-soft: #def5f1; --signature-ink: #0d7863; }
+[data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #fef8db; --signature-ink: #816c00; --signature-line: #a48900; }
+[data-accent="lime"] { --signature: var(--lime); --signature-soft: #e4f5e5; --signature-ink: #297a2d; --signature-line: #359e3b; }
+[data-accent="pink"] { --signature: var(--pink); --signature-soft: #fee9f5; --signature-ink: #aa427e; --signature-line: #e057a7; }
+[data-accent="teal"] { --signature: var(--teal); --signature-soft: #def5f1; --signature-ink: #0d7863; --signature-line: #119c81; }
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -160,6 +166,7 @@
     --negative: #ff7c74;
     --positive-soft: #293f2d;
     --negative-soft: #483534;
+    --ai-soft: rgba(160, 51, 255, 0.2);
     --signature: #1d85fc;
     --signature-soft: rgba(29, 133, 252, 0.2);
     --signature-ink: #75b6ff;
@@ -170,10 +177,10 @@
   }
   [data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #542c2e; --signature-ink: #fc7c82; }
   [data-accent="grape"] { --signature: var(--grape); --signature-soft: #383857; --signature-ink: #a49eff; }
-  [data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #4c441b; --signature-ink: #f9cf00; }
-  [data-accent="lime"] { --signature: var(--lime); --signature-soft: #2b482f; --signature-ink: #5ec664; }
-  [data-accent="pink"] { --signature: var(--pink); --signature-soft: #543448; --signature-ink: #fb84c9; }
-  [data-accent="teal"] { --signature: var(--teal); --signature-soft: #214741; --signature-ink: #3cc4aa; }
+  [data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #4c441b; --signature-ink: #f9cf00; --signature-line: var(--signature); }
+  [data-accent="lime"] { --signature: var(--lime); --signature-soft: #2b482f; --signature-ink: #5ec664; --signature-line: var(--signature); }
+  [data-accent="pink"] { --signature: var(--pink); --signature-soft: #543448; --signature-ink: #fb84c9; --signature-line: var(--signature); }
+  [data-accent="teal"] { --signature: var(--teal); --signature-soft: #214741; --signature-ink: #3cc4aa; --signature-line: var(--signature); }
 }
 
 @media (min-width: 720px) {
@@ -253,6 +260,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-16) 0; }
 .appbar-name { min-width: 0; font: 700 20px/24px var(--font-display); letter-spacing: -0.01em; color: var(--fg); text-decoration: none; overflow-wrap: anywhere; }
 a.appbar-name:hover { text-decoration: none; }
 .appbar-action { display: flex; flex: none; align-items: center; gap: var(--space-8); }
+@media (max-width: 479px) {
+  .appbar-name { font-size: 17px; line-height: 22px; } /* a long name still fits one line beside its action */
+}
 
 /* Fields: label, control, hint, stacked. .fields.two puts two side by side only when there is room. */
 .field { display: grid; gap: 6px; }
@@ -285,6 +295,8 @@ textarea { field-sizing: content; min-height: 6.5em; max-height: 24em; resize: v
 @supports (field-sizing: content) {
   textarea { resize: none; } /* it grows with its text, so no grip */
 }
+/* Text a model wrote, opened for editing, shows all of it instead of scrolling inside its box. */
+.card.ai textarea:not(.composer *) { max-height: none; }
 select {
   appearance: none;
   padding-right: 40px;
@@ -301,8 +313,10 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: var
 progress::-moz-progress-bar { background: var(--accent); }
 
 /* Buttons: one .primary per screen; .secondary and .tinted for other actions; .text for quiet ones like "Start over";
-   .icon for a round icon-only button with an aria-label. Every busy button gets aria-busy="true". Add .ai to a primary
-   button that calls a model: while it is busy it shows the moving AI gradient. */
+   .icon for a round icon-only button with an aria-label. Every busy button gets aria-busy="true". Add .ai to a button
+   that calls a model: a .primary.ai shows the moving AI gradient while busy, and a .tinted.ai (a model action that
+   isn't the screen's primary) has a violet sparkle and a moving tint. Disabled buttons are a fainter gray than
+   .secondary, so an enabled gray button never reads as off, and they still show their shape on the page. */
 button { font: inherit; color: inherit; }
 button.primary,
 button.secondary,
@@ -332,7 +346,9 @@ button.icon {
 }
 button.icon:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
 button svg { flex: none; }
-:is(button.primary, button.secondary, button.tinted, button.icon):disabled { background-color: var(--secondary-bg); color: var(--disabled); cursor: not-allowed; }
+:is(button.primary, button.secondary, button.tinted, button.icon):disabled {
+  background-color: color-mix(in srgb, var(--secondary-bg) 60%, transparent); color: var(--disabled); cursor: not-allowed;
+}
 button.text:disabled { color: var(--disabled); cursor: not-allowed; }
 button[aria-busy="true"] { cursor: progress; }
 /* AI working: a model is on it. Keeps the blue-to-violet gradient moving until aria-busy clears. */
@@ -343,7 +359,20 @@ button.primary.ai[aria-busy="true"] {
   background-size: 200% 100%;
   animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
 }
+button.tinted.ai:not(:disabled) > svg:first-child { color: var(--ai-end); }
+button.tinted.ai[aria-busy="true"] {
+  color: var(--tinted-fg);
+  background-color: var(--tinted-bg);
+  background-image: linear-gradient(90deg, var(--tinted-bg), var(--ai-soft), var(--tinted-bg));
+  background-size: 200% 100%;
+  animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
+}
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); margin-top: var(--space-16); }
+/* On phones a row of buttons shares the width, so a wrapped row never leaves one short button alone. Text buttons, and
+   the one button of an empty state, keep their own width. */
+@media (max-width: 479px) {
+  :not(.empty) > .actions > :is(button.primary, button.secondary, button.tinted) { flex: 1 1 auto; }
+}
 
 /* Chips: .chip is a short status; .tag is a neutral feature label; a <button className="chip" aria-pressed> is a
    filter you can turn on and off. .chip.ai is the model credit (components/ModelChip). */
@@ -382,17 +411,20 @@ button.chip[aria-pressed="true"]::before {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* Segmented control (components/Segmented): pick one of a few options. */
+/* Segmented control (components/Segmented): pick one of a few options. They share each row at equal widths, so they
+   read as one control, and a long label wraps inside its pill. A pill is never narrower than its longest word plus
+   room for the check, so options that can't fit move to a second row instead of spilling out. */
 .segmented { display: flex; flex-wrap: wrap; gap: var(--space-8); }
 .segmented label {
-  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px;
-  border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg); cursor: pointer;
-  transition: background-color var(--dur-xxs) linear;
+  position: relative; display: inline-flex; flex: 1 1 0; min-width: min-content; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 6px 20px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
+  text-align: center; line-height: 18px; cursor: pointer; transition: background-color var(--dur-xxs) linear;
 }
 /* The radio covers its whole pill, invisible, so a tap or a test's .check() lands on it. */
 .segmented input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .segmented label:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
-.segmented label:has(input:checked) { background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
+/* The chosen pill trades 20 px of its padding for the check, and flex-basis keeps its share, so choosing never moves a pill. */
+.segmented label:has(input:checked) { flex-basis: 40px; padding-inline: 10px; background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
 .segmented label:has(input:checked):hover { background-color: var(--tinted-hover-bg); }
 .segmented label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .segmented label:has(input:disabled) { color: var(--disabled); cursor: not-allowed; background-image: none; }
@@ -405,10 +437,30 @@ button.chip[aria-pressed="true"]::before {
 .table-wrap tfoot :is(td, th) { font-weight: 600; }
 .table-wrap .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* Key and value pairs: a phone-friendly alternative to a two-column table. Labels take up to half the row. */
-.kv { display: grid; grid-template-columns: fit-content(50%) minmax(0, 1fr); gap: 10px var(--space-16); margin: 0; font: 400 15px/20px var(--font); }
+/* Key and value pairs: a phone-friendly alternative to a two-column table. Each column takes the room its text needs,
+   so a long label beside a short number stays on one line, and a long label and a long value share the row. */
+.kv { display: grid; grid-template-columns: auto auto; gap: 10px var(--space-16); margin: 0; font: 400 15px/20px var(--font); }
 .kv dt { color: var(--fg-2); overflow-wrap: anywhere; }
 .kv dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* One-series bar chart: .bars holds one .bar per value. Each .bar's text is its label, and style={{ "--value": 72 }}
+   (a number from 0 to 100) is its height. The chart has a fixed height, so a percentage always draws. Each .bar spans
+   the chart's two rows (subgrid), so every bar starts from the same baseline even when a label wraps. */
+.bars {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(28px, 1fr); grid-template-rows: 1fr auto; gap: var(--space-4) var(--space-8);
+  height: 160px; padding: var(--space-12) var(--space-8) var(--space-8); overflow-x: auto;
+  background: var(--surface-2); border-radius: var(--radius);
+}
+.bar {
+  grid-row: span 2; display: grid; justify-items: center; gap: var(--space-4);
+  grid-template-rows: 1fr auto; /* where subgrid is missing */
+  grid-template-rows: subgrid;
+  font: var(--type-tiny); color: var(--fg-2); text-align: center; font-variant-numeric: tabular-nums;
+}
+.bar::before {
+  content: ""; align-self: end; width: 60%; max-width: 48px; height: calc(var(--value, 0) * 1%); min-height: 2px;
+  background: var(--signature-line); border-radius: 4px 4px 0 0;
+}
 
 /* Lists: rows with a leading avatar, icon or thumbnail, a title and a secondary line, and an optional trailing part. */
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
@@ -486,8 +538,10 @@ button.chip[aria-pressed="true"]::before {
   animation: skeleton-pulse 1000ms steps(10, end) infinite alternate;
 }
 
-/* Images and overlays. Put an overlay <svg> or the .ai-badge inside .media, over the image. The overlay takes its
-   height from its viewBox, so a figcaption under the image never stretches it. */
+/* Images and overlays. Put an overlay <svg> inside .media, over the image. The overlay takes its height from its
+   viewBox, so a figcaption under the image never stretches it. An .ai-badge right inside .media sits in the photo's
+   corner, for a photo with no ModelChip above it; inside the figcaption it leads the caption instead, for a page, a
+   printable or anything whose corner holds content. */
 .media { position: relative; display: block; margin: 0; }
 .media > :is(img, canvas, video) { display: block; width: 100%; height: auto; border-radius: var(--radius); background: var(--surface-2); }
 .media > .overlay {
@@ -497,6 +551,13 @@ button.chip[aria-pressed="true"]::before {
 .media > .ai-badge { position: absolute; top: var(--space-8); left: var(--space-8); padding: 3px 8px; border: 0; color: var(--on-media); background: var(--scrim); }
 .media > .ai-badge svg { color: inherit; }
 .media > figcaption { margin-top: var(--space-8); font: var(--type-meta); color: var(--fg-2); }
+.media > figcaption .ai-badge { margin-right: var(--space-8); vertical-align: middle; }
+
+/* Gallery: image results side by side once there is room (three across the 720 px column, so the demo video shows
+   them together), one column on phones. Each tile is a .media whose figcaption holds its words and its icon buttons,
+   one button tall with or without one, so the captions line up. */
+.gallery { display: grid; gap: var(--space-16) var(--space-12); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.gallery .media > figcaption { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); min-height: 40px; }
 
 /* Dropzone (components/FilePicker) */
 .dropzone {
@@ -602,15 +663,18 @@ details[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
 
 /* Spacing between the parts inside a card, and between fields anywhere. It comes last so it wins over each part's
    own margin: 16 px between parts, 12 px under a heading, 8 px above a hint or limits that belong to what is above
-   them, 20 px above the row of actions. */
+   them, 20 px above the row of actions. A .stack (on the page, or around a card's parts) spaces with its gap alone,
+   and a hint inside a .field sits 6 px under its control. */
 .card > * { margin-top: 0; margin-bottom: 0; }
 .card > * + * { margin-top: var(--space-16); }
 .card > :where(h2, h3, .card-head) + * { margin-top: var(--space-12); }
 .card > .field + .hint,
 .card > * + .limits { margin-top: var(--space-8); }
 .card > * + .actions { margin-top: var(--space-20); }
-.field + .field { margin-top: var(--space-16); }
-.fields > .field + .field { margin-top: 0; }
+:not(.stack, .fields) > .field + .field { margin-top: var(--space-16); }
+.field > :is(p, .hint) { margin: 0; }
+.stack > :is(*, .actions) { margin-block: 0; } /* .actions too, for a .card.stack */
+.stack > .hero { margin-bottom: var(--space-8); }
 
 @keyframes skeleton-pulse {
   from { opacity: 0.25; }

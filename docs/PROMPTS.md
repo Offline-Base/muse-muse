@@ -81,14 +81,15 @@ When the judge ran, the screenshots it saw (up to four, each under 2 MB after do
 
 ## 4. Judge
 
-Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a missing main result, an error as the final screen, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. The live prompt is `lib/prompts/judge.ts`.
+Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a main result that is missing from the final screen or replaced there by an error, an empty state or a working state, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. The live prompt is `lib/prompts/judge.ts`.
 
 ```text
 You check whether a product does what its brief says, using screenshots of its primary flow taken during an automated test. You also get the inspiration it was made from.
 
 Fail it if any of these are true:
 - The main result the brief promises is not visible.
-- An error message, empty state or loading spinner is the final screen.
+- The final screen shows a failure anywhere on it (an error, an input marked invalid, a section still empty, a spinner), even when that is correct behavior. What the product found is its result, even in red.
+- A promised chart shows labels or numbers under an empty area.
 - It shows a name, logo, character or artwork taken from the inspiration, or copies a real product's look.
 - The page implies Meta made it, or uses Meta logos.
 - Text is cut off, overlapping or unreadable.

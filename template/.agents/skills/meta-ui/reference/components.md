@@ -10,21 +10,42 @@ Markup for every class in `app/globals.css` and every component in `components/`
   <main className="stack">
     <header className="hero">
       <h1>What does your plant need?</h1>
-      <p className="tagline">Take a photo of the whole plant and get a care plan for this week.</p>
+      <p className="tagline">Take one photo and get a care plan for this week.</p>
     </header>
     <section className="card" aria-label="Your plant">…</section>
   </main>
 </>
 ```
 
-- `AppBar` props: `name` (the product's name), `action` (one optional button), `href` (optional, makes the name a link home). It sits at the top with the base shadow and scrolls away with the page. One per page, above `<main>`.
+- `AppBar` props: `name` (the product's name), `action` (one optional button), `href` (optional, makes the name a link home). It sits at the top with the base shadow and scrolls away with the page. One per page, above `<main>`. With a long name, make the action `<button className="icon" aria-label="Start over"><Icon name="refresh" /></button>` so the name stays on one line on phones.
 - `.stack` spaces cards 16 px apart. `.row` is a wrapping flex row with 12 px gaps.
 - `scrollIntoView({ block: "start" })` lands a result 12 px below the top of the screen.
 - The footer comes from app/layout.tsx. Never remove it.
 
 ## Cards
 
-A section is `<section className="card" aria-labelledby="...">` with an `h2`, or `aria-label` when its field label already names it (an input card). A result a model made is `.card.ai` with a `.card-head` holding the `h2` and a ModelChip. Parts inside a card get 16 px between them, 12 px under a heading, 8 px above a `.hint` that follows a field or a `.limits` list, and 20 px above `.actions`, all automatically. `.card.ai` adds the gradient cap; it moves while the card holds a `<Skeleton>` or anything with `aria-busy="true"`. Never put a card inside a card.
+A section is `<section className="card" aria-labelledby="...">` with an `h2`, or `aria-label` when its field label already names it (an input card). A result a model made is `.card.ai` with a `.card-head` holding the `h2` and a ModelChip. Parts inside a card get 16 px between them, 12 px under a heading, 8 px above a `.hint` that follows a field or a `.limits` list, and 20 px above `.actions`, all automatically; parts wrapped in a `.stack` get its 16 px gap and nothing more. `.card.ai` adds the gradient cap; it moves while the card holds a `<Skeleton>` or anything with `aria-busy="true"`. Never put a card inside a card.
+
+Ask, then answer: one card for a model action and its answer.
+
+```tsx
+<section className={summary ? "card ai" : "card"} aria-labelledby="sum">
+  <div className="card-head"><h2 id="sum">Your week</h2>{summary ? <ModelChip model="muse-spark-1.3" verb="Written" /> : null}</div>
+  {summary ? (
+    <>
+      <Markdown text={summary} />
+      <div className="actions"><button className="text" onClick={write}>Write it again</button></div>
+    </>
+  ) : (
+    <div className="empty">
+      <span className="icon-circle lg"><Icon name="sparkle" size={24} /></span>
+      <h3>No summary yet</h3>
+      <p>Move a few cards to Done, then get a short recap.</p>
+      <div className="actions"><button className="tinted ai" onClick={write}><Icon name="sparkle" /> Get my summary</button></div>
+    </div>
+  )}
+</section>
+```
 
 ## Fields
 
@@ -64,15 +85,15 @@ A section is `<section className="card" aria-labelledby="...">` with an `h2`, or
   button="Take or choose a photo"
   change="Choose another photo"
   hint="The whole receipt, flat and in good light"
-  fileName={file?.name ?? null}
+  file={file}
   disabled={busy}
   onFile={(f) => setFile(f)}
 />
 ```
 
 - A dropzone: tap or click to choose, or drop a file on it. On phones the chooser offers the camera and the photo library. `capture="environment"` skips the library and opens the camera, so use it only with words like "Take a photo".
-- The icon follows `accept` (image, mic, play, file; camera with `capture`). After a pick it shows the file name, with `change` (default "Choose another") as the way to swap it.
-- `fileName={file?.name ?? null}` keeps it in step with the product's state, so Start over empties it. For a sample the product loads, name the File for people: `new File([blob], "Sample receipt", { type: blob.type })`. Never show a fixture's file name.
+- The icon follows `accept` (image, mic, play, file; camera with `capture`). After a pick a photo shows as a thumbnail titled "Your photo", and any other file shows its name, with `change` (default "Choose another") as the way to swap it.
+- `file={file}` keeps it in step with the product's state, so Start over empties it. For a sample the product loads, name the File for people, and that name shows: `new File([blob], "Sample receipt", { type: blob.type })`. Never show a fixture's file name.
 - Picking the same file again still calls `onFile`. Check the file type in `onFile` yourself and show an `.error` for the wrong kind.
 - Tests: `page.getByLabel("Photo of your receipt").setInputFiles("fixtures/receipt.jpg")`.
 
@@ -90,7 +111,7 @@ A section is `<section className="card" aria-labelledby="...">` with an `h2`, or
 />
 ```
 
-Two to five options of one or two words; a `select` for more. Options are gray pills; the chosen one is tinted blue with a check. It is a native radio group: arrow keys move the choice. Tests: `page.getByRole("radio", { name: "Outdoors" }).check()`.
+Two to five options of one or two words, sharing each row at equal widths. On a 390 px phone three share a row when no word is longer than about 7 letters, four when each is about 3 (Mon, XL), five only with labels like 1 to 5; more wraps to a second row, so long options go in a `select` or a `.list` of radio rows. Options are gray pills; the chosen one is tinted blue with a check. It is a native radio group: arrow keys move the choice. Tests: `page.getByRole("radio", { name: "Outdoors" }).check()`.
 
 ## Buttons
 
@@ -101,17 +122,20 @@ Two to five options of one or two words; a `select` for more. Options are gray p
   </button>
   <button className="secondary"><Icon name="download" /> Download CSV</button>
   <button className="tinted"><Icon name="copy" /> Copy rows</button>
+  <button className="tinted ai" disabled={busy} aria-busy={busy} onClick={summarize}>
+    <Icon name="sparkle" /> {busy ? "Writing your summary…" : "Get my summary"}
+  </button>
   <button className="text" onClick={trySample}>Try a sample photo</button>
   <button className="icon" aria-label="Search"><Icon name="search" /></button>
 </div>
 ```
 
 - `primary`: Meta blue, one per screen, the action that moves the flow on. Add `.ai` when it calls a model: with `aria-busy="true"` it shows the moving AI gradient.
-- `secondary`: gray, for other actions (Download, Edit).
-- `tinted`: light blue, for a strong second action or an empty state's action.
+- `secondary`: gray, for other actions (Download, Edit). A disabled button is a fainter gray with gray text.
+- `tinted`: light blue, for a strong second action or an empty state's action; `.tinted.ai` with the sparkle for a model action that isn't the primary.
 - `text`: blue text, for quiet actions (Try the sample, Start over). Also the app bar's action.
 - `icon`: a 40 px round gray button. Always with `aria-label`.
-- Every busy button gets `aria-busy="true"` and a label ending in "…" until the work is done; judgeShot waits for it. Disabled buttons turn gray.
+- Every busy button gets `aria-busy="true"` and a label ending in "…" until the work is done; judgeShot waits for it.
 - To confirm a quick action, change the button's own label for about 2 seconds: `{copied ? <><Icon name="check" /> Copied</> : <><Icon name="copy" /> Copy rows</>}`.
 
 ## Chips, tags and badges
@@ -137,7 +161,7 @@ Two to five options of one or two words; a `select` for more. Options are gray p
 - `.tag`: an outlined feature label ("2 players"), so features never look like model credits.
 - `button.chip[aria-pressed]`: a filter you turn on and off. Pressed is tinted blue and shows a check by itself.
 - `ModelChip` props: `model` (one of the brief's models) and `verb` ("Read", "Outlined", "Rendered", "Transcribed", "Checked"). A white pill outlined in the AI gradient with a sparkle. Only on output that model made.
-- `.ai-badge`: a small AI label. Over a photo in `.media` it is a dark label (see Images); anywhere else it looks like a small ModelChip.
+- `.ai-badge`: a small label saying "AI" or "Made with AI". Right inside `.media` it is a dark label in the photo's corner (see Images); anywhere else, like a figcaption, it looks like a small ModelChip.
 
 ## Working and loading
 
@@ -147,17 +171,26 @@ Two to five options of one or two words; a `select` for more. Options are gray p
 
 ## Data
 
+Three ways to show figures. Each figure appears once per screen, as a big number, a table cell or a `.kv` row, never two of these.
+
 ```tsx
-<div className="big-number">$48.30</div>
-<p className="meta">Took 4 s · 6 lines · estimate</p>
+<div className="big-number">412</div>
+<p className="meta">Steps logged this week · estimate</p>
 
 <div className="table-wrap">
   <table>
-    <thead><tr><th>Item</th><th className="num">Qty</th><th className="num">Price</th></tr></thead>
-    <tbody><tr><td>Olive oil, 1 L</td><td className="num">1</td><td className="num">$12.49</td></tr></tbody>
-    <tfoot><tr><td>Total</td><td className="num">12</td><td className="num">$48.30</td></tr></tfoot>
+    <thead><tr><th>Item</th><th className="num">Price</th></tr></thead>
+    <tbody>
+      <tr><td>Olive oil, 1 L</td><td className="num">12.49</td></tr>
+      <tr><td>Bread</td><td className="num">4.29</td></tr>
+    </tbody>
   </table>
 </div>
+<dl className="kv">
+  <dt>Subtotal</dt><dd>16.78</dd>
+  <dt>Tax</dt><dd>1.34</dd>
+  <dt>Total</dt><dd>18.12</dd>
+</dl>
 
 <dl className="kv">
   <dt>Store</dt><dd>Corner Market</dd>
@@ -165,7 +198,31 @@ Two to five options of one or two words; a `select` for more. Options are gray p
 </dl>
 ```
 
-Tables scroll sideways inside `.table-wrap`, never the page. Up to three columns on phones; more goes in `.kv` or `<details>`. In `.kv` the labels take up to half the row and long values wrap.
+- A `tfoot` row is the sum of the column above it, and only that. A receipt's subtotal, tax and grand total go in one `.kv` under the table, as above.
+- Tables scroll sideways inside `.table-wrap`, never the page. Up to three columns on phones; more goes in `.kv` or `<details>`. In an editable table, give the text column `width: 100%` and the number columns `width: 1%; white-space: nowrap`.
+- In `.kv` each column takes the room its words need, and a long label and a long value share the row. Join a page reference to its number with a no-break space: `Q4 costs p.{"\u00a0"}3`.
+
+## Charts
+
+```tsx
+<div className="bars" role="img" aria-label="Revenue by quarter: Q1 412, Q2 468, Q3 521, Q4 603">
+  {rows.map((r) => (
+    <div className="bar" key={r.label} style={{ "--value": Math.round((r.value / max) * 100) } as CSSProperties}>
+      {r.label} {r.value}
+    </div>
+  ))}
+</div>
+```
+
+- One series: `--value` is each bar's height from 0 to 100, a number (import `CSSProperties` from "react"). The label under each bar is its text. The bars are `--signature-line` on a gray panel 160 px tall, and scroll sideways when there are many.
+- The `aria-label` says what the chart shows, with every value. A legend is only for several series, each in one of the decorative hues.
+
+```ts
+// Smoke test: the bars drew. A bar is its ::before, and the tallest is checked because a small value is rightly short.
+const heights = await page.getByRole("img", { name: /^Revenue by quarter/ }).locator(".bar")
+  .evaluateAll((bars) => bars.map((b) => parseFloat(getComputedStyle(b, "::before").height)));
+expect(Math.max(...heights)).toBeGreaterThan(4);
+```
 
 ## Lists, avatars and thumbnails
 
@@ -266,14 +323,36 @@ Tables scroll sideways inside `.table-wrap`, never the page. Up to three columns
   <svg className="overlay" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
     {paths.map((d, i) => <path key={i} d={d} fill="none" stroke="var(--on-media)" strokeWidth={3} />)}
   </svg>
-  <span className="ai-badge"><Icon name="sparkle" size={12} /> Outlined by SAM 3.1</span>
   <figcaption>Found 3 birds.</figcaption>
 </figure>
+
+<figure className="media">
+  <img src={pageUrl} alt="Your coloring page: a dinosaur on a skateboard" />
+  <figcaption><span className="ai-badge"><Icon name="sparkle" size={12} /> Made with AI</span> Happy Dino Skate Day, ready to print.</figcaption>
+</figure>
+
+<div className="gallery">
+  <figure className="media">
+    <img src={photoUrl} alt="Your photo: a white mug" />
+    <figcaption>Your photo</figcaption>
+  </figure>
+  {scenes.map((s, i) => (
+    <figure className="media" key={s.url}>
+      <img src={s.url} alt={s.alt} />
+      <span className="ai-badge"><Icon name="sparkle" size={12} /> AI</span>
+      <figcaption>
+        <span>Scene {i + 1}</span>
+        <button className="icon" aria-label={`Download scene ${i + 1}`} onClick={() => download(s)}><Icon name="download" /></button>
+      </figcaption>
+    </figure>
+  ))}
+</div>
 ```
 
 - The overlay's viewBox is the image's pixel size; it takes its height from that, so shapes line up at any width, with or without a caption.
 - White lines get a soft dark halo, so they show on light photos too. For several kinds of object, stroke each kind with one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink`, `--teal`.
-- Over a photo `.ai-badge` is white on `--scrim`. The caption says the result in words.
+- The figcaption is the one line that says the result in words, so there is no second status line. The card's ModelChip credits the model for everything in the card, so an `.ai-badge` ("AI" or "Made with AI") goes only where it can't: on a model's tile in a gallery that also holds the person's photo, or on an image in a card with no ModelChip. Over a photo it is white on `--scrim` in the corner; on a page or printable, whose corner holds content, it leads the figcaption.
+- `.gallery` is one column on phones and up to three across the 720 px column. When the point is to compare before and after, the source is its first tile, the same size as each result. Per-tile actions are `button.icon` with an `aria-label`.
 
 ## Icon
 
@@ -289,6 +368,18 @@ Names: upload, camera, image, file, mic, sparkle, check, alert, info, copy, down
 
 ```tsx
 <Markdown text={reply} />
+
+{editing ? (
+  <div className="field">
+    <label htmlFor="draft">Your draft</label>
+    <textarea id="draft" value={draft} onChange={(e) => setDraft(e.target.value)} />
+  </div>
+) : (
+  <Markdown text={draft} />
+)}
+<div className="actions">
+  <button className="secondary" onClick={() => setEditing(!editing)}><Icon name={editing ? "check" : "edit"} /> {editing ? "Done" : "Edit"}</button>
+</div>
 ```
 
-Paragraphs, headings, lists, code and bold from a model's reply, styled by `.prose`. Never print model text raw.
+Paragraphs, headings, lists, rules, code and bold from a model's reply, styled by `.prose`. A single line break stays a line break. Never print model text raw. Text the person may edit shows rendered first, and Edit swaps in the textarea, which shows all of it inside a `.card.ai`.

@@ -16,7 +16,7 @@ The inspo shows what to make. It is not material to copy.
 
 - Take what the brief lists under borrow: the job it does, the flow, layout ideas, the mood.
 - Leave out everything the brief lists under dontCopy, and always leave out names, logos, characters, copyrighted text, artwork and photos, and the exact look of a real product.
-- Restyle with the tokens in `app/globals.css` and the meta-ui skill. The inspo's mood shows in the accent hue, the signature element and the copy, never as its own colors or fonts. If a reference is a screenshot of a real app, give the product its own name and design.
+- Restyle with the tokens in `app/globals.css` and the meta-ui skill. The inspo's mood shows in the accent hue and the copy, never as its own colors or fonts. If a reference is a screenshot of a real app, give the product its own name and design.
 - Never ship inspo files as product assets unless the brief says the user's own files are the input, like their own photos or drawings.
 
 ## Stack
@@ -63,7 +63,7 @@ The product belongs to its user. Every word on screen is about what it does for 
 - Use plain words unless the brief's users are developers: "saved on this device only", not "localStorage"; "recordings up to 1 minute", not "16 kHz mono WAV" or "4.5 MB". No model ids like `muse-spark-1.3`, raw JSON, coordinates, zero-based lists or confidence decimals.
 - Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it." Never say it stays in the browser.
 - Copy matches behavior. If a hint says a button starts the break, the button starts the break.
-- Sample data is correct and believable: no future days marked done, totals in the right column, counts that match the screen, no duplicates, dates relative to today.
+- Sample data is correct and believable: no future days marked done, totals in the right column, counts that match the screen, no duplicates, dates relative to today, and in the field's own format (one per line means one per line).
 
 ## Actions API
 

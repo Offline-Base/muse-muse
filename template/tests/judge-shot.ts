@@ -27,9 +27,52 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   } else {
     expect(problems, `${name}: fix these in the product (a judge sees them), not in this check`).toEqual([]);
   }
+  // Fine on an earlier screen, so only noted here: verify fails the run when the last screenshot has any of these.
+  const errorsAndEmpty = test.info().project.name === "smoke" ? await page.evaluate(findErrorsAndEmptyStates) : [];
   mkdirSync("test-results/judge", { recursive: true });
   await page.screenshot({ path: `test-results/judge/${name}.png`, fullPage: true });
-  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems })}\n`);
+  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty })}\n`);
+}
+
+/**
+ * Runs in the browser. Each visible error, field marked invalid and empty state with text in it, as a short phrase,
+ * at most 5. querySelectorAll doesn't look inside shadow roots, so Next's own route announcer (role="alert") never
+ * counts.
+ */
+export function findErrorsAndEmptyStates(): string[] {
+  const out: string[] = [];
+  const found: Element[] = [];
+  // In the full-page screenshot: shown, and not moved off the page's left or top edge for screen readers only.
+  const visible = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    if (r.right + scrollX <= 0 || r.bottom + scrollY <= 0) return false;
+    return r.width > 2 && r.height > 2 && el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+  };
+  // A field's words are its label (or its value); anything else's are its text.
+  const words = (el: Element) => {
+    let text = (el as HTMLElement).innerText;
+    if (el.matches("input, select, textarea")) {
+      const field = el as HTMLInputElement;
+      const labelledBy = (el.getAttribute("aria-labelledby") ?? "").split(/\s+/).map((id) => document.getElementById(id)?.innerText ?? "");
+      text = [...(field.labels ?? [])].map((l) => l.innerText).join(" ") || labelledBy.join(" ").trim() || el.getAttribute("aria-label") || field.value;
+    }
+    return (text ?? "").trim().replace(/\s+/g, " ");
+  };
+  const kinds: Array<[string, string]> = [
+    ['[role="alert"], .error', "an error"],
+    ['[aria-invalid="true"]', "a field marked invalid"],
+    [".empty", "an empty state"],
+  ];
+  for (const [selector, kind] of kinds) {
+    for (const el of document.querySelectorAll(selector)) {
+      if (found.some((f) => f.contains(el) || el.contains(f)) || !visible(el)) continue;
+      const text = words(el);
+      if (!text) continue;
+      found.push(el);
+      out.push(`${kind}: "${text.slice(0, 60)}${text.length > 60 ? "..." : ""}"`);
+    }
+  }
+  return out.slice(0, 5);
 }
 
 /** Runs in the browser. Returns plain sentences, at most 10. */
@@ -62,10 +105,21 @@ export function findScreenProblems(): string[] {
       out.push(`Text is shortened with "...": ${describe(el)}. Let it wrap instead.`);
       continue;
     }
-    // A one-line field that hides part of its value.
-    if (el instanceof HTMLInputElement && /^(text|search|email|url|)$/.test(el.type) && el.value && el.scrollWidth > el.clientWidth + 1) {
-      out.push(`A one-line field cuts off its value: ${describe(el)}. Use a textarea or a wider field.`);
-      continue;
+    // A one-line field that hides part of its value, or of its placeholder while it is empty. The placeholder is
+    // measured as the value for a moment, without events, then the field is emptied again.
+    if (el instanceof HTMLInputElement && /^(text|search|email|url|)$/.test(el.type) && (el.value || el.placeholder)) {
+      const empty = !el.value;
+      if (empty) el.value = el.placeholder;
+      const cut = el.scrollWidth > el.clientWidth + 1;
+      if (empty) el.value = "";
+      if (cut) {
+        out.push(
+          empty
+            ? `A one-line field cuts off its placeholder: ${describe(el)}. Shorten it to a few words.`
+            : `A one-line field cuts off its value: ${describe(el)}. Use a textarea or a wider field.`,
+        );
+        continue;
+      }
     }
     // A text box that hides part of its text and can't grow.
     if (el instanceof HTMLTextAreaElement && el.value && el.scrollHeight > el.clientHeight + 2) {

@@ -1,8 +1,17 @@
 import { Fragment, type ReactNode } from "react";
 
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+/;
+const ORDERED = /^\s*\d/;
+/** A rule line: three or more -, * or _, maybe spaced out. */
+const RULE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+/** A line that starts a block of its own: a code fence, a heading, a list item or a rule. */
+const opensBlock = (line: string) => /^\s*(`{3,}|~{3,}|#{1,6}\s)/.test(line) || LIST_ITEM.test(line) || RULE.test(line);
+
 /**
- * Renders a model's plain-text reply that may use simple markdown: paragraphs, headings, lists, code blocks,
- * `inline code` and **bold**. No links or HTML. Use it instead of printing model text raw.
+ * Renders a model's plain-text reply that may use simple markdown: paragraphs, headings, lists, code blocks, rules,
+ * `inline code` and **bold**. No links or HTML. Use it instead of printing model text raw. A single line break stays a
+ * line break, so "Wins: ..." and "Next steps: ..." on their own lines stay apart, unless the line stops mid-sentence and
+ * the next one goes on in lower case: that is one sentence wrapped by hand, and it joins up again.
  */
 export function Markdown({ text }: { text: string }) {
   const blocks: ReactNode[] = [];
@@ -23,24 +32,42 @@ export function Markdown({ text }: { text: string }) {
       );
       continue;
     }
-    const heading = line.match(/^\s*#{1,6}\s+(.*)$/);
+    if (RULE.test(line)) {
+      blocks.push(<hr key={blocks.length} />);
+      i += 1;
+      continue;
+    }
+    const heading = line.match(/^\s*#{1,6}\s+(.*?)(?:\s+#+)?\s*$/);
     if (heading) {
       blocks.push(<h3 key={blocks.length}>{inline(heading[1])}</h3>);
       i += 1;
       continue;
     }
-    const listItem = /^\s*(?:[-*+]|\d+[.)])\s+/;
-    if (listItem.test(line)) {
-      const ordered = /^\s*\d/.test(line);
-      const items: string[] = [];
-      while (i < lines.length && listItem.test(lines[i]) && /^\s*\d/.test(lines[i]) === ordered) items.push(lines[i++].replace(listItem, ""));
-      const List = ordered ? "ol" : "ul";
+    if (LIST_ITEM.test(line)) {
+      const ordered = ORDERED.test(line);
+      const sameKind = (l: string | undefined) => l !== undefined && !RULE.test(l) && LIST_ITEM.test(l) && ORDERED.test(l) === ordered;
+      const items: string[][] = [];
+      while (i < lines.length) {
+        const l = lines[i];
+        if (sameKind(l)) items.push([l.replace(LIST_ITEM, "")]);
+        // An indented line that opens no block of its own goes on with the item above it.
+        else if (/^\s+\S/.test(l) && !opensBlock(l)) items[items.length - 1].push(l);
+        // A blank line between two items of the same list keeps them in one list.
+        else if (!l.trim() && sameKind(lines[i + 1])) {
+          // nothing to add
+        } else break;
+        i += 1;
+      }
+      const rows = items.map((item, k) => <li key={k}>{lineBreaks(item)}</li>);
+      const start = ordered ? parseInt(line, 10) : 1;
       blocks.push(
-        <List key={blocks.length}>
-          {items.map((item, k) => (
-            <li key={k}>{inline(item)}</li>
-          ))}
-        </List>,
+        ordered ? (
+          <ol key={blocks.length} start={start !== 1 ? start : undefined}>
+            {rows}
+          </ol>
+        ) : (
+          <ul key={blocks.length}>{rows}</ul>
+        ),
       );
       continue;
     }
@@ -49,12 +76,27 @@ export function Markdown({ text }: { text: string }) {
       continue;
     }
     const para: string[] = [];
-    while (i < lines.length && lines[i].trim() && !/^\s*(`{3,}|~{3,}|#{1,6}\s)/.test(lines[i]) && !listItem.test(lines[i])) {
-      para.push(lines[i++].trim());
-    }
-    blocks.push(<p key={blocks.length}>{inline(para.join(" "))}</p>);
+    while (i < lines.length && lines[i].trim() && !opensBlock(lines[i])) para.push(lines[i++]);
+    blocks.push(<p key={blocks.length}>{lineBreaks(para)}</p>);
   }
   return <div className="prose">{blocks}</div>;
+}
+
+/**
+ * One block's lines with their breaks: each break stays, except where a line stops mid-sentence (no closing
+ * punctuation) and the next goes on in lower case, a digit or a bracket. Two spaces or a backslash at the end of a
+ * line always break, as in markdown. Lines that join up are styled as one run, so **bold** can span the join.
+ */
+function lineBreaks(lines: string[]): ReactNode[] {
+  const runs: string[] = [];
+  lines.forEach((raw, k) => {
+    const text = raw.trim().replace(/\\$/, "");
+    const prev = lines[k - 1];
+    const joins = k > 0 && !/ {2,}$|\\$/.test(prev) && !/[.!?:;]["')\]*_`]*$/.test(prev.trim()) && /^[a-z0-9(]/.test(text);
+    if (joins) runs[runs.length - 1] += ` ${text}`;
+    else runs.push(text);
+  });
+  return runs.flatMap((run, k) => [...(k ? [<br key={`br-${k}`} />] : []), <Fragment key={k}>{inline(run)}</Fragment>]);
 }
 
 function inline(text: string): ReactNode {

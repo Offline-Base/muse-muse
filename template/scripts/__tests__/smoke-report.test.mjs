@@ -2,7 +2,7 @@
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
+import { finalShotProblems, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
 
 /** A Playwright JSON report with one file suite per spec file, shaped like reporter "json" writes it. */
 function report(files) {
@@ -94,4 +94,46 @@ test("judge screenshots must come from judgeShot", () => {
   assert.deepEqual(judgeShotProblems(["01-start.png", "01-start.checked", "02-result.png", "02-result.checked"]), []);
   assert.match(judgeShotProblems(["01-start.png", "01-start.checked", "02-result.png"])[0], /without judgeShot\(\): 02-result\.png/);
   assert.match(judgeShotProblems([])[0], /saved no judge screenshots/);
+});
+
+/** A judge folder: each shot's .checked holds the errors and empty states judgeShot found on it. */
+function judgeDir(shots) {
+  const files = Object.fromEntries(
+    Object.entries(shots).flatMap(([name, found]) => [
+      [`${name}.png`, ""],
+      [`${name}.checked`, typeof found === "string" ? found : JSON.stringify({ problems: [], errorsAndEmpty: found })],
+    ]),
+  );
+  return [Object.keys(files), (f) => files[f]];
+}
+
+test("the last judge screenshot fails the run when it shows an error, an invalid field or an empty state", () => {
+  const [names, read] = judgeDir({
+    "01-start": ['an empty state: "No plan yet"'],
+    "03-explained": ['an error: "Use two cell names like A1:A6."', 'an empty state: "No numbers to chart yet"'],
+    "02-chart": [],
+  });
+  const problems = finalShotProblems(names, read);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /^The last judge screenshot, 03-explained\.png, shows an error: "Use two cell names like A1:A6\."; an empty state: "No numbers to chart yet"\./);
+  assert.match(problems[0], /even when showing it is correct/);
+  assert.match(problems[0], /Take judge screenshots only in the primary flow in tests\/smoke\.spec\.ts\.$/);
+  assert.ok(!problems[0].includes("\u2014"));
+});
+
+test("an empty state on an earlier screen is fine, and so is a clean last one", () => {
+  const [names, read] = judgeDir({ "01-start": ['an empty state: "No plan yet"'], "02-plan": [] });
+  assert.deepEqual(finalShotProblems(names, read), []);
+});
+
+test("the final screen check reads only the numbered order, and skips what it can't read", () => {
+  // 10-done sorts after 09-review, so it is the last one.
+  let [names, read] = judgeDir({ "09-review": ['an error: "Try again"'], "10-done": [] });
+  assert.deepEqual(finalShotProblems(names, read), []);
+  // .checked files from an older judgeShot have no errorsAndEmpty, and one that isn't JSON is skipped.
+  [names, read] = judgeDir({ "01-start": '{"problems":[]}' });
+  assert.deepEqual(finalShotProblems(names, read), []);
+  [names, read] = judgeDir({ "01-start": "not json" });
+  assert.deepEqual(finalShotProblems(names, read), []);
+  assert.deepEqual(finalShotProblems([], () => ""), []);
 });
