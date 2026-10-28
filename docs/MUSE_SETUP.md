@@ -2,7 +2,7 @@
 
 How to give Muse the Muse Privacy connector, pair it with your device, schedule dreaming, and check that it works.
 
-**Status (Oct 27): none of this has been tried in the Muse app yet.** The relay was deployed on Oct 27, and that day the laptop connected to it and a script playing Muse ran the whole path through the live relay (discovery, client registration, the pairing page, the token, then tools/list and list_documents), but the Muse app itself has not connected yet, and the menu names below are from Muse's connector guidelines ("Settings > Connectors"), not from a test. The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Fix this page after the first real test.
+**Status (Oct 28): none of this has been tried in the Muse app yet.** The relay was deployed on Oct 27, and that day the laptop connected to it and a script playing Muse ran the whole path through the live relay (discovery, client registration, the pairing page, the token, then tools/list and list_documents), but the Muse app itself has not connected yet, and step 3 follows Meta's Help Center (ask Muse in chat to create a custom connector), not a test. The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Fix this page after the first real test.
 
 ## 1. Deploy the relay (once)
 
@@ -31,15 +31,23 @@ On a Jetson the same steps run as services; see "Jetson Orin Nano" in the [READM
 
 ## 3. Add the connector in the Muse app
 
-1. In Muse, open **Settings > Connectors** and add a custom connector (a remote MCP server).
-2. Paste the relay address with `/mcp` at the end:
+Meta's Help Center says that to reach a service not in the connector list, you "can ask Muse to create a Custom Connector", and that "Meta doesn't review custom connectors". It shows no field for an MCP address, and Settings > Connectors lists the catalog connectors. Third-party guides disagree about whether the app has an "Add custom connector" option, so try the chat route first:
+
+1. In a new Muse chat, send:
 
    ```
-   https://muse-privacy-relay.<your-subdomain>.workers.dev/mcp
+   Create a custom connector for a remote MCP server, then connect to it.
+   Name: Muse Privacy
+   Transport: remote streamable HTTP
+   URL: https://muse-privacy-relay.<your-subdomain>.workers.dev/mcp
+   Auth: OAuth (the server supports dynamic client registration)
    ```
 
-3. Leave any client ID and client secret fields empty. Muse registers itself with the relay (dynamic client registration) or names itself with a client metadata document; the relay accepts both.
+2. If your app does show an add-custom-connector option under **Settings > Connectors**, use it instead with the same URL, and leave any client ID and client secret fields empty.
+3. Muse registers itself with the relay (dynamic client registration) or names itself with a client metadata document; the relay accepts both. Muse's network guard may ask you once to allow the relay's address; allow it.
 4. Muse opens the relay's **Link your device** page. It shows the app's name and where access will go.
+
+If Muse says it can only build connectors with an API key or a header, or never opens the Link your device page, stop and tell Claude what it asked for: the relay accepts only OAuth today. Muse Code (step 5) is the documented fallback.
 
 ## 4. Pair
 
@@ -66,13 +74,26 @@ Muse's own permission settings apply on top: reads and writes are "Ask on first 
 
 ## 5. If the Muse app will not take a custom connector: Muse Code
 
-The plan's fallback is Muse Code, Meta's coding agent, which can call the same server.
+The fallback is Muse Code, Meta's coding agent. Its docs ([Extending Muse Code](https://dev.meta.ai/docs/muse-code/extending)) describe remote MCP servers that need an OAuth 2.1 sign-in, with dynamic client registration on by default, which is what the relay offers.
 
-1. In Muse Code's MCP server settings, add a remote (streamable HTTP) server named `muse-privacy` with the same URL, `https://muse-privacy-relay.<your-subdomain>.workers.dev/mcp`. The exact settings screen or file is not checked yet.
-2. Muse Code opens the same Link your device page. Pair as in step 4.
-3. Run the test script below from Muse Code instead of the app.
+1. Declare the server in the `mcp_servers` block of Muse Code's settings file (a `streamable_http` server takes `url` and `headers`; every server also takes `enabled`):
 
-The longer route is the connector catalog at muse.ai/platform: describe the connector, submit it for Meta's review (functional, security and legal checks, then end to end testing, with a test account for reviewers), and once approved it shows up under Settings > Connectors for everyone.
+   ```json
+   {
+     "mcp_servers": {
+       "muse-privacy": {
+         "transport": "streamable_http",
+         "url": "https://muse-privacy-relay.<your-subdomain>.workers.dev/mcp",
+         "enabled": true
+       }
+     }
+   }
+   ```
+
+2. Run `muse mcp login muse-privacy`. It opens the same Link your device page in the browser. Pair as in step 4.
+3. Run the test script below from Muse Code instead of the app. Send only the invented `demo/` folder through it: a coding-harness subscription defaults to Meta's Contributor terms, under which Meta may train on what is sent.
+
+The longer route is the connector catalog ([platform.muse.ai/docs](https://platform.muse.ai/docs)): it asks for business verification of your organization, "OAuth client credentials or an API key" for Muse to connect with, and a three-stage review, after which the connector shows up under Settings > Connectors for everyone. The relay does not support pre-registered OAuth clients, and a review is unlikely to finish before Nov 4.
 
 ## 6. The two scheduled jobs
 

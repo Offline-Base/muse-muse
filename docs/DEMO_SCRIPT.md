@@ -1,6 +1,6 @@
 # Demo video script
 
-About two and a half minutes, ending on measured results, because the startup track judges technical execution and whether it holds up in production. Scenes follow the build plan. Every number said or shown must come from [eval/reports/final.md](../eval/reports/final.md); do not round it into something the report does not say. The only exceptions are the two survey figures in scene 2:10, which are other people's numbers (see the note under the scenes).
+About two and a half minutes, and never over three: other participants report a 3-minute limit, so confirm it in the signed-in participant guide. Every project is scored on Impact 30%, Use of Meta AI Tooling 25%, Demo 25% (which names "the quality of the demo video") and Technical Depth & Execution 20% ([RUBRIC.md](RUBRIC.md)). Demo (25%) covers the live demo and the video together, and the video is most of what judges see, so it has to show who this helps and what Meta's models do here, not only the measured results it ends on. Scenes follow the build plan. Every number said or shown must come from [eval/reports/final.md](../eval/reports/final.md); do not round it into something the report does not say. The only exceptions are the two survey figures in scene 2:10, which are other people's numbers (see the note under the scenes).
 
 ## Say which Glimmer graded
 
@@ -53,15 +53,15 @@ For scene 1:45, set up the two scheduled jobs from [MUSE_SETUP.md](MUSE_SETUP.md
 
 | Time | Scene | On screen | Do or say |
 |---|---|---|---|
-| 0:00 | The problem | Finder on `demo/essays`: 24 essays. Text: "24 essays she can't upload to any AI. Same for clinics and city casework." | "Muse can't touch the private, tedious work that's most ready for automation." |
+| 0:00 | The problem | Finder on `demo/essays`: 24 essays. Text: "24 essays, a student's name in every one. Same for clinics and city casework." | "Muse could read these essays, but only by copying them, names and all, into its cloud computer." |
 | 0:15 | The ask | The Muse app, a new chat | Type: "Grade each essay in my essays folder against rubric.md and draft feedback for each student." |
-| 0:30 | Muse plans | Muse's plan and its list_documents call, showing `[Student A]`, `[Student B]`... | "Muse plans the job with tags. It never sees a name." |
-| 0:45 | The device works | The light (or plush) green; the Device tab showing working; terminal 1 quiet | "Every step that reads an essay runs on the device, with Muse Glimmer." Caption from the table above. |
+| 0:30 | Muse plans | Muse's plan and its list_documents call, showing `[Student A]`, `[Student B]`... | "Muse plans the job with tags. In this run every name it gets is a tag." |
+| 0:45 | The device works | The light (or plush) green; the Device tab showing working; terminal 1 quiet | With llama_server: "Every step that reads an essay runs on this laptop, with Muse Glimmer." With OpenRouter: "Every step that reads an essay runs with Muse Glimmer, here on OpenRouter with invented students; on a real class it runs on the device." Caption from the table above. |
 | 1:05 | Her OK | The light pulses amber; the Approvals tab with the card: Muse's request, the exact tagged per-student table and the router's reason | Ask Muse "Is the grading done?" It says it is waiting for her OK. Press **Share it** (with remember ticked). The light flashes blue. |
-| 1:25 | The result | Muse's answer with class results by tag; then Finder on `~/.base/output/<job id>/` with 24 `<Name> feedback.md` files; open one | "Muse got tags. The feedback with real names never left her laptop." |
+| 1:25 | The result | Muse's answer with class results by tag; then Finder on `~/.base/output/<job id>/` with 24 `<Name> feedback.md` files; open one | "Muse got tags. The feedback files with real names were written only on her laptop." |
 | 1:45 | Dreaming | The 8 AM message from Muse (or the Dreaming tab after **Dream now**), then `eval/reports/final/five_nights.png` with the caption "Simulated teacher, invented items." | Read the one-sentence morning message. Then the chart: approval requests per day and holdout agreement per night. Say only what the chart and final.md show (see the note below). |
-| 2:10 | Why it matters | Text: "12% of consumers fully trust organizations with their identity data (Ping Identity, 2026). 77% worry about AI agents acting for them (Thales, 2026)." Then: "Schools. Healthcare. City agencies." | "These are the sectors that can't use Muse today." |
-| 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer: Q4_K_M on a laptop, i1-IQ1_S on a Jetson Orin Nano." | "Personal superintelligence that can work on your private life." |
+| 2:10 | Why it matters | Text: "12% of consumers fully trust organizations with their identity data (Ping Identity, 2026). 77% worry about AI agents acting for them (Thales, 2026)." Then: "Schools. Healthcare. City agencies." | "These are the places where records have to stay with whoever holds them. Muse Privacy lets Muse help without taking them." If Ethan has a teacher's quote and a minutes-saved estimate (HANDOFF row 18), use them here instead of the survey figures. |
+| 2:25 | Close | The leak line from final.md, as it stands when you record (see below). "Built on Muse and Muse Glimmer", then the Glimmer that actually graded in this video, from the caption table above. Name the Jetson's i1-IQ1_S only if it ran before recording. | "Personal superintelligence that can work on your private life." |
 
 The two survey figures in scene 2:10 are not measured here and are not in eval/reports. They come from Ping Identity's 2026 consumer survey (12% of consumers fully trust organizations to manage their identity data) and Thales's 2026 Digital Trust Index (77% uneasy about AI agents acting on their behalf; [cpl.thalesgroup.com/digital-trust-index](https://cpl.thalesgroup.com/digital-trust-index)). They were checked only against press coverage on Oct 27. Before recording, open each published report, confirm the number and its wording, and put the Ping Identity link here.
 
@@ -105,8 +105,12 @@ The first final run's chart, where the gate kept no rules, is in `eval/reports/b
 
 ## Submission checklist
 
-- [ ] Video uploaded, unlisted link tested in a private browser window
+- [ ] Video under 3:00, uploaded, unlisted link tested in a private browser window
+- [ ] Track and entity confirmed, sole ownership checked, and the Official Rules accepted in the portal if it asks (HANDOFF rows 14 to 16)
+- [ ] Repo pushed without the local `relay/wrangler.jsonc` edit, public unless the participant guide says otherwise, link tested logged out
+- [ ] Every portal field filled in; the first line says it is a privacy connector for private-data work, not a chatbot
 - [ ] README numbers match `eval/reports/final.md`
 - [ ] docs/PRIOR_WORK.md checked against the Official Rules
 - [ ] `uv run python -m scripts.secrets_scan --history --report eval/reports/secrets_scan.md` finds nothing
 - [ ] Submitted by noon ET Nov 4, and the confirmation saved
+- [ ] The device and the relay client kept running through Nov 9 (judging Nov 4 to 8, live finals Nov 9), with this video as the fallback if the device is offline
