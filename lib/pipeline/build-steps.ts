@@ -403,6 +403,7 @@ export async function provisionStep(input: {
   });
   const { sandboxName } = await sandbox.provisionSandbox({
     buildId: input.buildId,
+    productId: input.productId,
     slug: input.slug,
     references: inspiration.references,
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, url: f.url })),
@@ -1011,6 +1012,7 @@ export async function reopenStep(input: {
   const newReferences: Reference[] = inspiration.references;
   await sandbox.reopenSandbox({
     sandboxName: input.sandboxName,
+    productId: input.productId,
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
     newReferences,

@@ -200,6 +200,7 @@ const slug = `demo-${Date.now().toString(36)}`;
 const buildId = randomUUID();
 const { sandboxName } = await provisionSandbox({
   buildId,
+  productId: randomUUID(),
   slug,
   references: [],
   fixtures: [],

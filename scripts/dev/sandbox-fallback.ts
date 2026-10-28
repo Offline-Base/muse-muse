@@ -14,6 +14,7 @@ const t0 = Date.now();
 try {
   const { sandboxName } = await provisionSandbox({
     buildId: randomUUID(),
+    productId: randomUUID(),
     slug,
     references: [],
     fixtures: [],

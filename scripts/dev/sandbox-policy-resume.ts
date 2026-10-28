@@ -19,6 +19,7 @@ const probe = [
 
 const { sandboxName } = await provisionSandbox({
   buildId: randomUUID(),
+  productId: randomUUID(),
   slug: `policy-${Date.now().toString(36)}`,
   references: [],
   fixtures: [],

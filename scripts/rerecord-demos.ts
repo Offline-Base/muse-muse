@@ -260,7 +260,7 @@ async function rerecord(p: Product, files: Array<{ path: string; content: Buffer
   let copy: string | null = null;
   try {
     if (token) {
-      await reopenSandbox({ sandboxName: p.sandboxName!, buildToken: token.token, gatewayUrl: env.gatewayUrl, newReferences: [] });
+      await reopenSandbox({ sandboxName: p.sandboxName!, productId: p.id, buildToken: token.token, gatewayUrl: env.gatewayUrl, newReferences: [] });
       log("reopened");
     } else {
       copy = (await forkForDryRun(p.sandboxName!)).sandboxName;

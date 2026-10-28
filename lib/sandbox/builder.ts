@@ -65,7 +65,8 @@ import {
  * well under a minute. Long work (Muse Code, verify, demo recording) starts detached and is polled, so a 20-minute
  * build is many short steps with durable sleeps between them.
  *
- * Product sandboxes are persistent and named `product-<slug>`. The product source lives in PRODUCT_DIR.
+ * Product sandboxes are persistent and named `product-<slug>-<first 8 hex digits of the product id>` (products from
+ * before Oct 28 keep their stored `product-<slug>`). The product source lives in PRODUCT_DIR.
  */
 export { PRODUCT_DIR };
 
@@ -101,14 +102,33 @@ const DRY_RUN_PREFIX = "dryrun-";
 // ---------------------------------------------------------------------------------------------------------------
 // Helpers
 
-export function sandboxNameFor(slug: string): string {
+/**
+ * A new product's sandbox name. Slugs are unique only within one database, and every environment that builds (the
+ * live site and any local platform) shares the Vercel project's sandboxes, so the product id goes in the name too.
+ */
+export function sandboxNameFor(slug: string, productId: string): string {
   const clean = slug
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
+    .slice(0, 44)
+    .replace(/-+$/, "");
+  const id = productId.toLowerCase().replace(/[^0-9a-f]/g, "").slice(0, 8);
   if (!clean) throw new Error(`Invalid product slug: ${slug}`);
-  return `product-${clean}`;
+  if (id.length < 8) throw new Error(`Invalid product id: ${productId}`);
+  return `product-${clean}-${id}`;
+}
+
+/**
+ * Makes sure a product sandbox belongs to this product before anything touches it: a sandbox tagged with another
+ * product's id is refused, and an untagged one (made before the tag existed) is claimed.
+ */
+async function claimSandbox(sandbox: Sandbox, name: string, productId: string): Promise<void> {
+  const tags = sandbox.tags ?? {};
+  if (tags.product && tags.product !== productId) {
+    throw new Error(`Sandbox ${name} belongs to another product (${tags.product}), so this build left it alone.`);
+  }
+  if (!tags.product) await sandbox.update({ tags: { ...tags, product: productId } });
 }
 
 /** A reference's file name, made safe to use as a single path segment in inspo/ or fixtures/. */
@@ -273,6 +293,7 @@ function sandboxUrl(sandboxName: string, file: string): string {
 
 export interface ProvisionInput {
   buildId: string;
+  productId: string;
   slug: string;
   /** User references, copied into inspo/ under their file names. */
   references: Reference[];
@@ -293,7 +314,7 @@ export interface ProvisionInput {
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
 export async function provisionSandbox(input: ProvisionInput): Promise<{ sandboxName: string }> {
-  const name = sandboxNameFor(input.slug);
+  const name = sandboxNameFor(input.slug, input.productId);
   const snapshotId = env.builderSnapshotId;
   const common = {
     name,
@@ -304,11 +325,12 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     timeout: SANDBOX_TIMEOUT_MS,
     // Each stop snapshots the VM. Two is enough to resume and to step back once.
     keepLastSnapshots: { count: 2, deleteEvicted: true },
-    tags: { app: "musemuse", role: "product", slug: input.slug.slice(0, 60) },
+    tags: { app: "musemuse", role: "product", slug: input.slug.slice(0, 60), product: input.productId },
   };
   const sandbox = snapshotId
     ? await Sandbox.getOrCreate({ ...common, source: { type: "snapshot", snapshotId }, networkPolicy: lockedPolicy(name) })
     : await Sandbox.getOrCreate({ ...common, networkPolicy: SNAPSHOT_POLICY });
+  await claimSandbox(sandbox, name, input.productId);
 
   const ready = await sandbox.readFileToBuffer({ path: BUILDER_MARKER }).catch(() => null);
   if (!ready) {
@@ -338,11 +360,13 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
 /** Reopens an existing product sandbox for a refinement: resumes it, rewrites .env.local, and resets egress policy. */
 export async function reopenSandbox(input: {
   sandboxName: string;
+  productId: string;
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
+  await claimSandbox(sandbox, input.sandboxName, input.productId);
   await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);

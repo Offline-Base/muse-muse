@@ -32,7 +32,18 @@ let uploads: Array<{ key: string; contentType: string }> = [];
 /** Uploads whose key matches fail. */
 let failUploads: RegExp | null = null;
 
+/** The fake sandbox's tags, and every update() call. */
+let tags: Record<string, string> | undefined;
+let updates: Array<Record<string, unknown>> = [];
+
 const fakeSandbox = {
+  get tags() {
+    return tags;
+  },
+  update: async (u: Record<string, unknown>) => {
+    updates.push(u);
+    if (u.tags) tags = u.tags as Record<string, string>;
+  },
   runCommand: async (opts: { args: string[]; sudo?: boolean }) => {
     const script = opts.args[1] ?? "";
     scripts.push(script);
@@ -91,6 +102,8 @@ beforeEach(() => {
   files = {};
   uploads = [];
   failUploads = null;
+  tags = undefined;
+  updates = [];
 });
 
 describe("writeFixScreenshots", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -358,5 +371,40 @@ describe("refreshPlatformFiles", { skip: canMock ? false : "needs --experimental
   it("fails when the pristine copy can't be remade, so the old files don't come back unnoticed", async () => {
     onCommand = (script) => (script.includes("chown -R root:root") ? { exitCode: 1 } : {});
     await assert.rejects(builder.refreshPlatformFiles("sb", template), /Sandbox command failed \(exit 1\)/);
+  });
+});
+
+describe("product sandboxes", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const PRODUCT = "3f2a9c1e-77b0-4d2e-9f00-0123456789ab";
+  const reopen = (productId: string) =>
+    builder.reopenSandbox({ sandboxName: "product-bird-finder", productId, buildToken: "mm_build_x", gatewayUrl: "https://g", newReferences: [] });
+
+  it("are named after the slug and the product id, so another database's product with the same slug can't share one", () => {
+    assert.equal(builder.sandboxNameFor("Bird Finder", PRODUCT), "product-bird-finder-3f2a9c1e");
+    assert.notEqual(builder.sandboxNameFor("bird-finder", PRODUCT), builder.sandboxNameFor("bird-finder", "9b1d0c3e-0000-4000-8000-000000000000"));
+    assert.ok(builder.sandboxNameFor("a".repeat(80), PRODUCT).length <= 61);
+    assert.throws(() => builder.sandboxNameFor("bird", "not-a-uuid"), /Invalid product id/);
+  });
+
+  it("refuses a sandbox tagged with another product before touching it", async () => {
+    tags = { app: "musemuse", role: "product", slug: "bird-finder", product: "9b1d0c3e-0000-4000-8000-000000000000" };
+    await assert.rejects(reopen(PRODUCT), /belongs to another product/);
+    assert.equal(updates.length, 0, "no policy change");
+    assert.equal(written.length, 0, "no files written");
+  });
+
+  it("claims an untagged sandbox from before the tag existed, then carries on", async () => {
+    tags = { app: "musemuse", role: "product", slug: "bird-finder" };
+    const savedKey = process.env.MODEL_API_KEY;
+    process.env.MODEL_API_KEY = "test-model-key";
+    try {
+      await reopen(PRODUCT);
+    } finally {
+      if (savedKey === undefined) delete process.env.MODEL_API_KEY;
+      else process.env.MODEL_API_KEY = savedKey;
+    }
+    assert.equal(tags?.product, PRODUCT);
+    assert.equal(tags?.slug, "bird-finder", "keeps the other tags");
+    assert.ok(written.some((w) => w.path.endsWith("/.env.local")));
   });
 });

@@ -24,6 +24,7 @@ import {
   readBuildNotes,
   readManifest,
   reopenSandbox,
+  sandboxNameFor,
   startMuse,
   startPreview,
   startTask,
@@ -123,6 +124,7 @@ async function waitTask(sandboxName: string, task: "verify" | "demo") {
 async function main() {
   const slug = `e2e-${Date.now().toString(36)}`;
   const sessionId = randomUUID();
+  const productId = randomUUID();
   const swatch = png(96, 96, [255, 112, 67]);
   const references = [
     {
@@ -136,6 +138,7 @@ async function main() {
   const fixtures = [{ fileName: "sample.txt", url: `data:text/plain;base64,${Buffer.from("A sample input.\n").toString("base64")}` }];
   const input = {
     buildId: randomUUID(),
+    productId,
     slug,
     references,
     fixtures,
@@ -143,7 +146,7 @@ async function main() {
     buildToken: "mm_build_test_not_a_real_token",
     gatewayUrl: "https://example.invalid/api/gateway",
   };
-  const sandboxName = `product-${slug}`;
+  const sandboxName = sandboxNameFor(slug, productId);
 
   try {
     await step("provisionSandbox (fresh, from snapshot)", () => provisionSandbox(input).then((r) => console.log("  ", r)));
@@ -278,6 +281,7 @@ async function main() {
     await step("reopenSandbox", () =>
       reopenSandbox({
         sandboxName,
+        productId,
         buildToken: "mm_build_test_2",
         gatewayUrl: "https://example.invalid/api/gateway",
         newReferences: [{ ...references[0], fileName: "swatch-2.png" }],
