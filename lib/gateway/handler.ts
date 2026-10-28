@@ -213,15 +213,23 @@ async function forward(
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
   if (spent >= budget || spent + estimate > budget) {
+    // A build token's budget is the whole build's, so waiting for midnight only stalls the build.
+    const whose =
+      token.scope === "build"
+        ? `this build's $${budget.toFixed(2)} Meta budget for tests (calls still running count). It doesn't reset ` +
+          "during the build: don't wait or retry. Make the tests' model calls fewer or cheaper (a lower " +
+          "max_output_tokens), or stop and say so in BUILD_NOTES.md."
+        : `this product's $${budget.toFixed(2)} daily Meta budget (calls still running count). It resets at 00:00 UTC.`;
     return done(
       gatewayError(
         429,
         "insufficient_quota",
         "budget_exceeded",
-        spent >= budget
+        spent >= budget && token.scope !== "build"
           ? `This product used its $${budget.toFixed(2)} daily Meta budget. It resets at 00:00 UTC.`
-          : `This call is estimated at $${estimate.toFixed(2)}, more than the $${(budget - spent).toFixed(2)} left in ` +
-              `this product's $${budget.toFixed(2)} daily Meta budget (calls still running count). It resets at 00:00 UTC.`,
+          : spent >= budget
+            ? `This call is over ${whose}`
+            : `This call is estimated at $${estimate.toFixed(2)}, more than the $${(budget - spent).toFixed(2)} left in ${whose}`,
         { retry: false },
       ),
     );

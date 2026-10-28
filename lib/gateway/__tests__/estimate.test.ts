@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_OUTPUT_TOKENS, estimateCost, MAX_OUTPUT_TOKENS } from "@/lib/gateway/estimate";
+import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import type { ParsedRequest } from "@/lib/gateway/extract";
 
 const jsonReq = (json: Record<string, unknown>): ParsedRequest => ({
@@ -60,4 +61,10 @@ test("per-image, per-frame and per-second models", () => {
   assert.ok(asrJson > 0.09 && asrJson < 0.1, String(asrJson));
 
   assert.equal(estimateCost("files", { kind: "raw", model: null }, 4_000_000), 0);
+});
+
+test("a build's test budget is $3, or $10 when the product may call Muse Wonder", () => {
+  assert.equal(buildTokenBudgetFor(["muse-spark-1.3", "sam-3.1"]), 3);
+  assert.equal(buildTokenBudgetFor(["muse-spark-1.3", "muse-wonder-1.0"]), 10);
+  assert.equal(buildTokenBudgetFor([]), 3);
 });

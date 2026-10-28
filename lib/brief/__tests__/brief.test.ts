@@ -122,6 +122,20 @@ describe("photo-input briefs", () => {
   });
 });
 
+describe("the build's Meta budget", () => {
+  it("names the build's budget, $10 when the product may call Muse Wonder, and says never to wait for it", () => {
+    const opts = { inspoFiles: [], fixtures: [], maxModelSteps: 200 };
+    const spark = renderBuildPrompt(photoBrief, opts);
+    assert.match(spark, /share one \$3\.00 Meta budget/);
+    assert.match(spark, /never wait for it, retry it or schedule anything/);
+    const wonderBrief: Brief = {
+      ...photoBrief,
+      capabilities: [...photoBrief.capabilities, { ...photoBrief.capabilities[0]!, model: "muse-wonder-1.0" }],
+    };
+    assert.match(renderBuildPrompt(wonderBrief, opts), /share one \$10\.00 Meta budget/);
+  });
+});
+
 describe("renderRefinePrompt", () => {
   it("stops on requests AGENTS.md forbids instead of building the closest version", () => {
     const md = renderRefinePrompt({ message: "Add a dark mode", newReferences: [] });

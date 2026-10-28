@@ -1,3 +1,4 @@
+import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import type { Brief } from "@/lib/brief/schema";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
@@ -237,6 +238,7 @@ export function renderBuildPrompt(
     "",
     `Stay under ${opts.maxModelSteps} steps. If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md.`,
     models.includes("muse-wonder-1.0") ? "Muse Wonder is in preview and costs more. Use it only where the brief says." : "",
+    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );
   return out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n").trim() + "\n";
 }

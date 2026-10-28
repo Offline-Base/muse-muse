@@ -89,6 +89,20 @@ test("token budget spent -> 429 budget_exceeded; platform cap -> 503 platform_pa
   assert.equal(p.code, "platform_paused");
 });
 
+test("a build token's spent budget says the build's budget doesn't reset, so the agent doesn't wait for midnight", async () => {
+  const g = fakeGateway({ token: { scope: "build", dailyBudgetUsd: 3 }, tokenSpend: 3 });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps));
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "budget_exceeded");
+  assert.match(err.message, /this build's \$3\.00 Meta budget for tests/);
+  assert.match(err.message, /don't wait or retry/);
+  assert.doesNotMatch(err.message, /00:00 UTC/);
+
+  const live = fakeGateway({ tokenSpend: 3 });
+  const liveErr = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], live.deps));
+  assert.match(liveErr.message, /This product used its \$3\.00 daily Meta budget\. It resets at 00:00 UTC\./);
+});
+
 test("rate limits: 120/min per token, 20/min per end-user IP", async () => {
   const ok = async () => Response.json({ ok: true });
   const tokenKey = "token:00000000-0000-4000-8000-000000000001";

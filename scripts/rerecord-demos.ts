@@ -32,7 +32,7 @@ import { and, desc, eq, gt, inArray, isNotNull, notInArray, or } from "drizzle-o
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { modelLabel } from "@/lib/format";
-import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken } from "@/lib/gateway/tokens";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
@@ -247,13 +247,14 @@ async function rerecord(p: Product, files: Array<{ path: string; content: Buffer
   const brief = await briefFor(p);
   // A real run reopens the product's sandbox with a fresh build token, as a refinement does. A dry run works in a
   // throwaway copy that needs no token, so the product, its sandbox and the database stay as they are.
+  const models = dryRun ? [] : brief ? allowedModelsFor(brief) : await liveTokenModels(p.id);
   const token = dryRun
     ? null
     : await mintToken({
         productId: p.id,
         scope: "build",
-        allowedModels: brief ? allowedModelsFor(brief) : await liveTokenModels(p.id),
-        dailyBudgetUsd: DEFAULT_LIMITS.buildTokenBudgetUsd,
+        allowedModels: models,
+        dailyBudgetUsd: buildTokenBudgetFor(models),
         ttlHours: BUILD_TOKEN_TTL_HOURS,
       });
   let copy: string | null = null;

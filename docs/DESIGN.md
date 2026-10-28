@@ -165,7 +165,7 @@ Build status values: `queued`, `briefing`, `refused`, `provisioning`, `building`
 - **Muse Code sees the inspo two ways.** The brief carries Spark 1.3's written description of every reference, so the build works even with text only. Image references are also attached with `muse exec --image`. One third-party guide lists that flag and Meta's docs don't, so spike 1 checks it.
 - **Muse Code flags.** `muse exec --json --prompt-file brief.md --image inspo/<file> --model muse-spark-1.3 --reasoning-effort high --max-model-steps 200 --yolo`. `--yolo` turns off Muse Code's own sandbox and approvals. That is acceptable only because the whole microVM is disposable and firewalled, which is the case Muse Code's docs describe for it. Use `muse-wonder-1.0` when the brief marks the product as complex.
 - **Sessions.** Save Muse Code's session id from the JSONL stream. Fix rounds and user refinements call `muse exec --session-id <id>`. `muse export --session <id>` produces the transcript for the "how it was built" page.
-- **What never enters the sandbox.** The Vercel token, the database URL, and the master Meta key. The only credential inside is a short-lived build token for the gateway with a small budget.
+- **What never enters the sandbox.** The Vercel token, the database URL, and the master Meta key. The only credential inside is a short-lived build token for the gateway. Its budget covers the whole build's tests, every verify, fix round and the demo recording: $3, or $10 when the product may call Muse Wonder (`buildTokenBudgetFor` in `lib/gateway/policy.ts`). When it runs out, the gateway says so and tells Muse Code not to wait for a reset.
 
 ### 4. Product template
 

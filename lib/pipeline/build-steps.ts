@@ -17,7 +17,7 @@ import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/w
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
-import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor, DEFAULT_LIMITS } from "@/lib/gateway/policy";
 import { mintToken, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
@@ -393,11 +393,12 @@ export async function provisionStep(input: {
     maxModelSteps: MAX_MODEL_STEPS,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
   });
+  const allowedModels = allowedModelsFor(brief);
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
-    allowedModels: allowedModelsFor(brief),
-    dailyBudgetUsd: DEFAULT_LIMITS.buildTokenBudgetUsd,
+    allowedModels,
+    dailyBudgetUsd: buildTokenBudgetFor(allowedModels),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
   });
   const { sandboxName } = await sandbox.provisionSandbox({
@@ -999,11 +1000,12 @@ export async function reopenStep(input: {
   const build = await loadBuild(input.buildId);
   const inspiration = await loadInspiration(build.inspirationId);
   const brief = build.brief ?? (await latestBrief(input.productId));
+  const allowedModels = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
-    allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
-    dailyBudgetUsd: DEFAULT_LIMITS.buildTokenBudgetUsd,
+    allowedModels,
+    dailyBudgetUsd: buildTokenBudgetFor(allowedModels),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
   });
   const newReferences: Reference[] = inspiration.references;

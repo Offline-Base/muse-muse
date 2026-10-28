@@ -15,7 +15,13 @@ export const GATEWAY_ENDPOINTS = Object.keys(ENDPOINT_MODELS) as GatewayEndpoint
 
 /** Starting limits. Tune during the build week. */
 export const DEFAULT_LIMITS = {
-  buildTokenBudgetUsd: 1,
+  /**
+   * What one build's tests may spend on Meta through its build token: every verify run, every fix round and the demo
+   * recording share it. The gateway reserves each call's estimate up front, from its max_output_tokens.
+   */
+  buildTokenBudgetUsd: 3,
+  /** The same for a product that may call Muse Wonder, whose output costs about five times Spark's. */
+  buildTokenBudgetWonderUsd: 10,
   liveTokenDailyBudgetUsd: 3,
   perTokenRequestsPerMinute: 120,
   /** Applies when the product forwards its end user's IP in x-musemuse-client-ip. */
@@ -40,6 +46,11 @@ export const DEFAULT_LIMITS = {
   /** How long an MCP tool call waits for the product's /api/actions/<name>. */
   mcpActionTimeoutMs: 120_000,
 } as const;
+
+/** The build token's budget for a product allowed these models. */
+export function buildTokenBudgetFor(models: readonly string[]): number {
+  return models.includes("muse-wonder-1.0") ? DEFAULT_LIMITS.buildTokenBudgetWonderUsd : DEFAULT_LIMITS.buildTokenBudgetUsd;
+}
 
 /** Header a product sets to its end user's IP so the gateway can rate limit per person. Never used for auth. */
 export const CLIENT_IP_HEADER = "x-musemuse-client-ip";
