@@ -92,12 +92,15 @@ const fakeSteps = {
     musePolled = 0;
     return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}` };
   },
-  pollMuseStep: async (input: { usageRecorded?: boolean }) => {
+  pollMuseStep: async (input: { usageRecorded?: boolean; announced?: string[] }) => {
     record("pollMuseStep", input);
     musePolled += 1;
     const done = musePolled >= (scenario.musePolls ?? 2);
     const usageRecorded = Boolean(input.usageRecorded) || musePolled === scenario.usageAtPoll;
-    return { done, exitCode: done ? (scenario.museExit ?? 0) : null, offset: musePolled * 100, usageRecorded };
+    const announced = [...(input.announced ?? []), `reminder:${musePolled}`];
+    // Only the first poll reads run.usage here; the later ones say nothing.
+    const childrenIncluded = musePolled === 1 ? false : null;
+    return { done, exitCode: done ? (scenario.museExit ?? 0) : null, offset: musePolled * 100, usageRecorded, announced, childrenIncluded };
   },
   killStep: async (...args: unknown[]) => record("killStep", ...args),
   previewStep: async (...args: unknown[]) => {
@@ -136,7 +139,7 @@ const fakeSteps = {
   },
   writeFixPromptStep: async (input: { fix: number }) => {
     record("writeFixPromptStep", input);
-    return `fix-${input.fix}.md`;
+    return { promptFile: `fix-${input.fix}.md`, images: [`.muse-fix/round-${input.fix}-1.png`] };
   },
   finishDemoStep: async (input: unknown) => {
     record("finishDemoStep", input);
@@ -243,10 +246,18 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       sandboxName: "product-shelf-scout",
     });
     assert.equal(named("failStep").length, 0);
-    // Poll offsets carry forward between polls.
+    // Poll offsets, the helper agents already announced and run.usage's children_included carry forward between polls.
     assert.deepEqual(
       named("pollMuseStep").map((c) => (c.args[0] as { offset: number }).offset),
       [0, 100],
+    );
+    assert.deepEqual(
+      named("pollMuseStep").map((c) => (c.args[0] as { announced: string[] }).announced),
+      [[], ["reminder:1"]],
+    );
+    assert.deepEqual(
+      named("pollMuseStep").map((c) => (c.args[0] as { childrenIncluded: boolean | null }).childrenIncluded),
+      [null, false],
     );
   });
 
@@ -272,6 +283,11 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.deepEqual(
       named("startMuseStep").map((c) => (c.args[0] as { promptFile: string }).promptFile),
       ["brief.md", "fix-1.md", "fix-2.md"],
+    );
+    // Each fix run attaches the screenshots its fix prompt step copied in, and the first run keeps the inspo.
+    assert.deepEqual(
+      named("startMuseStep").map((c) => (c.args[0] as { images: string[] }).images),
+      [["inspo/a.png"], [".muse-fix/round-1-1.png"], [".muse-fix/round-2-1.png"]],
     );
     assert.ok(named("startMuseStep").every((c) => (c.args[0] as { sessionId: string }).sessionId === "sess-1"));
     assert.deepEqual(

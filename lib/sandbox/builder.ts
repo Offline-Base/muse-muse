@@ -13,13 +13,28 @@ import {
   verifyOutcome,
   wrapText,
 } from "@/lib/sandbox/artifacts";
-import { completeLines, condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
-import { type BuildModel, isSessionId, museEnv, museExecArgs } from "@/lib/sandbox/muse";
-import { BUILDER_MARKER, LOG_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
+import {
+  childUsageLine,
+  completeLines,
+  condenseMuseLines,
+  highlightsFrom,
+  parseSessionUsage,
+  SESSION_USAGE_SCRIPT,
+  type SessionUsage,
+} from "@/lib/sandbox/muse-log";
+import { type BuildModel, isSessionId, museEnv, museExecArgs, optionalFlagsPrelude } from "@/lib/sandbox/muse";
+import { BUILDER_MARKER, FIX_SCREENSHOTS_DIR, LOG_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
-import { PREVIEW_WAIT_S, previewAnswered, previewWaitScript, type SandboxTask, taskScript } from "@/lib/sandbox/tasks";
+import {
+  PREVIEW_WAIT_S,
+  previewAnswered,
+  previewWaitScript,
+  type SandboxTask,
+  shrinkImagesScript,
+  taskScript,
+} from "@/lib/sandbox/tasks";
 
 /**
  * CONTRACT (owned by the sandbox agent). Signatures are fixed; add optional fields only.
@@ -45,6 +60,12 @@ const TASK_TAIL_BYTES = 4000;
 /** How long a poll waits on a detached command to learn whether it has exited. */
 const WAIT_PROBE_MS = 1200;
 const MAX_SCREENSHOTS = 8;
+/** Screenshots a fix round attaches with --image: as many as the judge looks at (lib/judge.ts). */
+const MAX_FIX_SCREENSHOTS = 4;
+/** Largest screenshot a fix round attaches. A bigger one is downscaled, or left out. */
+const MAX_FIX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+/** How long one fix-round screenshot download may take before the round goes on without it. */
+const FIX_SCREENSHOT_FETCH_MS = 20_000;
 /** Batch size for writeFiles uploads, so one large video doesn't make a huge request. */
 const WRITE_BATCH_BYTES = 24 * 1024 * 1024;
 
@@ -306,6 +327,50 @@ export async function writeProductFile(sandboxName: string, path: string, conten
   await sandbox.writeFiles([{ path: productPath(path), content }]);
 }
 
+/**
+ * Copies the first MAX_FIX_SCREENSHOTS screenshots the judge saw into FIX_SCREENSHOTS_DIR as round-<fix>-<k>.png, so
+ * the fix run can attach them with --image. The folder gets its own `*` .gitignore (so sandboxes from older
+ * snapshots ignore it too) and is never deployed (DEPLOY_EXCLUDE_DIRS). One over MAX_FIX_SCREENSHOT_BYTES is
+ * downscaled with ffmpeg in the sandbox, or left out if it still doesn't fit. A screenshot that can't be downloaded in
+ * FIX_SCREENSHOT_FETCH_MS is skipped. Returns the paths written, relative to PRODUCT_DIR, in order.
+ */
+export async function writeFixScreenshots(sandboxName: string, fix: number, screenshots: Screenshot[]): Promise<string[]> {
+  const round = Math.max(0, Math.floor(fix));
+  const dir = `${PRODUCT_DIR}/${FIX_SCREENSHOTS_DIR}`;
+  const files: Array<{ path: string; content: string | Buffer }> = [{ path: `${dir}/.gitignore`, content: "*\n" }];
+  const written: string[] = [];
+  const oversized: string[] = [];
+  for (const shot of screenshots.slice(0, MAX_FIX_SCREENSHOTS)) {
+    const content = await fetchBytes(shot.url, { signal: AbortSignal.timeout(FIX_SCREENSHOT_FETCH_MS) }).catch((err: unknown) => {
+      console.warn(`fix screenshot ${shot.url}: ${String(err)}`);
+      return null;
+    });
+    if (!content?.length) continue;
+    const rel = `${FIX_SCREENSHOTS_DIR}/round-${round}-${written.length + 1}.png`;
+    // Too big to attach as it is: shrinkImagesScript downscales this copy into place.
+    const big = content.length > MAX_FIX_SCREENSHOT_BYTES;
+    files.push({ path: `${PRODUCT_DIR}/${rel}${big ? ".big" : ""}`, content });
+    if (big) oversized.push(`${PRODUCT_DIR}/${rel}`);
+    written.push(rel);
+  }
+  const sandbox = await openSandbox(sandboxName);
+  // A retry, or an earlier refinement's fix round with the same number, may have left more files under this name.
+  await sh(sandbox, `mkdir -p ${q(dir)} && rm -f ${q(dir)}/round-${round}-*`);
+  await writeBatched(sandbox, files);
+  if (!oversized.length) return written;
+
+  const shrunk = await sh(sandbox, shrinkImagesScript(oversized, MAX_FIX_SCREENSHOT_BYTES), { allowFail: true, timeoutMs: 50_000 }).catch(
+    (err: unknown) => {
+      console.warn(`fix screenshots: downscaling failed: ${String(err)}`);
+      return null;
+    },
+  );
+  const fit = new Set((shrunk?.stdout ?? "").split("\n").map((l) => l.trim()));
+  const dropped = oversized.filter((f) => !fit.has(f));
+  if (dropped.length) console.warn(`fix screenshots over ${MAX_FIX_SCREENSHOT_BYTES} bytes left out: ${dropped.join(", ")}`);
+  return written.filter((rel) => !dropped.includes(`${PRODUCT_DIR}/${rel}`));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Muse Code
 
@@ -340,6 +405,8 @@ export async function startMuse(input: StartMuseInput): Promise<{ cmdId: string;
   const prelude = [
     // Keep an earlier run's log under another name (a refinement can reuse round numbers) for the transcript highlights.
     `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${tag}`)}.$(date +%s).jsonl`,
+    // A persistent product sandbox keeps the Muse Code it was made with, which may not have these yet.
+    optionalFlagsPrelude(),
     ...images.map((img) => `[ -f ${q(img)} ] && cmd+=(--image ${q(img)})`),
     "true",
   ].join("\n");
@@ -371,10 +438,52 @@ export interface MusePoll {
   usage: ModelUsage[];
   /** The final message from run.terminal.completed. */
   finalText: string | null;
+  /** Helper agents announced so far in this run. Pass it to the next poll as `announced`. */
+  announced?: string[];
+  /**
+   * run.usage's children_included (Condensed.childrenIncluded) from this poll or, when this poll didn't read
+   * run.usage, the `childrenIncluded` passed in. Null until run.usage is seen. Pass it to the next poll.
+   */
+  childrenIncluded?: boolean | null;
+  /**
+   * Read once, in the poll that reports done, from Muse Code's session log: what the reminder agents and subagents
+   * used, which run.usage leaves out unless childrenIncluded is true, and the main agent's own calls, for a run that
+   * ended before it wrote run.usage. Missing when the log couldn't be read.
+   */
+  session?: Pick<SessionUsage, "main" | "children">;
+}
+
+/** One run's usage from Muse Code's session log, in one sandbox command. Null when it can't be read. */
+async function readSessionUsage(sandbox: Sandbox, logPath: string): Promise<SessionUsage | null> {
+  try {
+    const res = await sh(sandbox, `[ -s ${q(logPath)} ] || exit 0; node -e ${q(SESSION_USAGE_SCRIPT)} ${q(logPath)}`, {
+      allowFail: true,
+      timeoutMs: 40_000,
+    });
+    if (res.exitCode !== 0) throw new Error(`exit ${res.exitCode}: ${res.stderr.slice(-300)}`);
+    const usage = parseSessionUsage(res.stdout);
+    if (usage.unknown.calls) {
+      const { calls, owners } = usage.unknown;
+      console.warn(`Muse Code run ${usage.runId}: ${calls} model calls by ${owners.join(", ")} not charged (owner type never measured)`);
+    }
+    return usage.found ? usage : null;
+  } catch (err) {
+    console.warn(`Muse Code session usage for ${logPath}: ${String(err)}`);
+    return null;
+  }
 }
 
 /** Reads new JSONL from the log since `offset` and reports whether the command finished. */
-export async function pollMuse(input: { sandboxName: string; cmdId: string; logPath: string; offset: number }): Promise<MusePoll> {
+export async function pollMuse(input: {
+  sandboxName: string;
+  cmdId: string;
+  logPath: string;
+  offset: number;
+  /** The last poll's `announced`, so helper agents get one line per run. */
+  announced?: string[];
+  /** The last poll's `childrenIncluded`, since run.usage may arrive before the poll that reports done. */
+  childrenIncluded?: boolean | null;
+}): Promise<MusePoll> {
   const sandbox = await openSandbox(input.sandboxName);
   // Check the command first, then read: a run that ends between the two is reported done on the next poll.
   const state = await commandState(sandbox, input.cmdId, input.logPath);
@@ -394,8 +503,12 @@ export async function pollMuse(input: { sandboxName: string; cmdId: string; logP
     lines.push(chunk.subarray(consumed).toString("utf8"));
     consumed = chunk.length;
   }
-  const condensed = condenseMuseLines(lines);
+  const condensed = condenseMuseLines(lines, input.announced);
+  const childrenIncluded = condensed.childrenIncluded ?? input.childrenIncluded ?? null;
   const done = state.finished && atEof;
+  const session = done ? await readSessionUsage(sandbox, input.logPath) : null;
+  // When run.usage already counts the child agents, its own line says so.
+  if (session?.children.calls && childrenIncluded !== true) extra.push(childUsageLine(session.children));
 
   if (done && state.exitCode !== 0) {
     const err = await tailText(sandbox, input.logPath.replace(/\.jsonl$/, ".err"), 4000);
@@ -417,6 +530,9 @@ export async function pollMuse(input: { sandboxName: string; cmdId: string; logP
     lines: [...condensed.lines, ...extra],
     usage: condensed.usage,
     finalText: condensed.finalText,
+    announced: condensed.announced,
+    childrenIncluded,
+    ...(session ? { session: { main: session.main, children: session.children } } : {}),
   };
 }
 

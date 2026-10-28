@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
 import { env } from "@/lib/env";
-import { OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
+import { FIX_SCREENSHOTS_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
 
 /**
@@ -14,8 +14,17 @@ import { q, sh } from "@/lib/sandbox/shell";
 
 const API = "https://api.vercel.com";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-/** Never deployed: dependencies, build and test output, the user's inspo, git, and any env file. */
-export const DEPLOY_EXCLUDE_DIRS = ["node_modules", ".next", "test-results", "playwright-report", "inspo", ".git", ".vercel"] as const;
+/** Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, git, and any env file. */
+export const DEPLOY_EXCLUDE_DIRS = [
+  "node_modules",
+  ".next",
+  "test-results",
+  "playwright-report",
+  "inspo",
+  FIX_SCREENSHOTS_DIR,
+  ".git",
+  ".vercel",
+] as const;
 
 export interface StartDeployInput {
   sandboxName: string;

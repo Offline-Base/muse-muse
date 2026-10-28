@@ -40,8 +40,11 @@ function remote(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
-/** At most four screenshots: the first, then the last ones, so the final screen is always seen. */
-function pickScreenshots(screens: Screenshot[]): Screenshot[] {
+/**
+ * At most four screenshots: the first, then the last ones, so the final screen is always seen. Fix rounds attach the
+ * same ones, so Muse Code sees what the judge saw.
+ */
+export function pickScreenshots(screens: Screenshot[]): Screenshot[] {
   if (screens.length <= MAX_SCREENSHOTS) return screens;
   return [screens[0], ...screens.slice(-(MAX_SCREENSHOTS - 1))];
 }

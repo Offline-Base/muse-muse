@@ -17,6 +17,12 @@ export const BUILDER_MARKER = `${WORK_DIR}/builder.json`;
 export const PRISTINE_DIR = `${WORK_DIR}/pristine`;
 /** Paths relative to PRODUCT_DIR (and PRISTINE_DIR). verify.mjs imports smoke-report.mjs. Each must exist in template/. */
 export const PLATFORM_FILES = ["scripts/verify.mjs", "scripts/smoke-report.mjs", "playwright.config.ts", "musemuse.schema.json"] as const;
+/**
+ * Folder in PRODUCT_DIR where a fix round keeps the screenshots the judge saw, so the resumed Muse Code run can attach
+ * them with --image (which takes paths inside the product). It holds its own `*` .gitignore, and DEPLOY_EXCLUDE_DIRS
+ * in lib/publish/vercel.ts keeps it out of every deployment.
+ */
+export const FIX_SCREENSHOTS_DIR = ".muse-fix";
 /** Ports the product's own servers use: npm start, verify's pickPort and the demo's webServer. */
 export const PRODUCT_PORTS = { first: 3100, last: 3199 } as const;
 
