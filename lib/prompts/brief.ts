@@ -21,7 +21,7 @@ Reading the inspo
 - inspiration.references has exactly one entry per reference, in order. index is the reference number minus 1 (Reference 1 has index 0). kind is the kind in its label.
 - describes says what the reference shows in enough detail that someone who can't see it could build from your words: layout, sections, controls, flow, mood, and the content that matters to the job (what is in the photo, how many, where). Describe colors as roles (a dark header, a warm accent), not hex values. For a voice memo, say what the speaker asks for. For a PDF, give its structure and the content the product needs.
 - inspiration.summary is one or two sentences on what the person gave and what they want.
-- borrow lists what the product takes from the inspo: the job it does, the flow, layout ideas, the mood. Every product uses Muse Muse's own Meta-inspired look (its colors, Inter and Montserrat type, white cards), so the mood carries over as an accent hue, a signature element and the tone of the copy, never as the inspo's colors or fonts.
+- borrow lists what the product takes from the inspo: the job it does, the flow, layout ideas, the mood. Every product uses Muse Muse's own Meta-inspired look (its colors, Inter and Montserrat type, white cards), so the mood carries over as an accent hue and the tone of the copy, never as the inspo's colors or fonts.
 - dontCopy lists what it must leave out: names, logos, characters, copyrighted text, artwork or photos, and the exact look of a real product. If a reference is a screenshot of a real app or site, the product gets its own name and design. A reference that is the person's own sample input (see fixtures) is what the product works on, so don't list it in dontCopy.
 
 Deciding

@@ -51,6 +51,7 @@ type Mode = "strict" | "loose" | "instructions";
  *
  * The reply is validated with zod. On a mismatch it retries once, feeding the validation error back.
  * Other API errors (401, 429, media_url_origin_error) are thrown unchanged for the caller to handle.
+ * The instructions always ask for no em dashes, and every string in the reply goes through plain().
  */
 export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
   const client = opts.client ?? metaClient(opts.request);
@@ -125,11 +126,15 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
   throw new RespondJsonError(`The model's JSON did not match "${opts.schemaName}" after a retry.`, lastIssues, lastRaw);
 }
 
-function instructionsFor(mode: Mode, base: string | undefined, schema: Json): string | undefined {
-  if (mode !== "instructions") return base;
-  const rule =
-    "Reply with only one JSON value that matches this JSON Schema. No prose, no code fences.\n" + JSON.stringify(schema);
-  return base ? `${base}\n\n${rule}` : rule;
+/** Every call asks for copy without em dashes, so plain() on the reply is only a fallback. */
+export const NO_EM_DASHES = "Never use em dashes in the text you write. Use a comma, colon or period instead.";
+
+function instructionsFor(mode: Mode, base: string | undefined, schema: Json): string {
+  const parts = [base, NO_EM_DASHES];
+  if (mode === "instructions") {
+    parts.push("Reply with only one JSON value that matches this JSON Schema. No prose, no code fences.\n" + JSON.stringify(schema));
+  }
+  return parts.filter(Boolean).join("\n\n");
 }
 
 function isSchemaRejection(err: unknown): boolean {

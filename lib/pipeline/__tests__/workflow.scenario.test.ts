@@ -108,12 +108,13 @@ const fakeSteps = {
     if (scenario.previewThrows) throw new Error("Preview did not answer 200 on port 3000 (last status 500).");
     return "https://sb-1.vercel.run";
   },
-  startTaskStep: async (sandboxName: string, task: string) => {
-    record("startTaskStep", sandboxName, task);
+  startTaskStep: async (sandboxName: string, task: string, env?: Record<string, string>) => {
+    record("startTaskStep", sandboxName, task, env);
     if (task === "demo" && scenario.demoThrows) throw new Error("ffmpeg missing");
     if (task === "verify") verifyRuns += 1;
     return `${task}-cmd-${verifyRuns}`;
   },
+  startTaskWithEnvStep: (sandboxName: string, task: string, env: Record<string, string>) => fakeSteps.startTaskStep(sandboxName, task, env),
   pollTaskStep: async (sandboxName: string, cmdId: string) => {
     record("pollTaskStep", sandboxName, cmdId);
     const v = currentVerify();
@@ -323,6 +324,11 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     reset({ verifies: [{ passed: true }], judgePass: false, judgeBlocking: false });
     assert.deepEqual(await wf.buildProduct({ buildId: "b5" }), { status: "partial" });
     assert.equal(named("collectVerifyStep").length, 4);
+    // Only the last round's verify runs the screen checks in warn mode, so the judge has the last word.
+    assert.deepEqual(
+      named("startTaskStep").filter((c) => c.args[1] === "verify").map((c) => c.args[2]),
+      [undefined, undefined, undefined, { MUSEMUSE_SCREEN_CHECK: "warn" }],
+    );
     assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "partial");
     assert.equal(statuses().at(-1), "partial");
   });
@@ -438,6 +444,8 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     const fail = named("failStep")[0]!.args[0] as { productId: string | null; message: string };
     assert.equal(fail.productId, null);
     assert.match(fail.message, /live version was kept/);
+    // A refinement's screen checks stay strict on its last round too.
+    assert.ok(named("startTaskStep").every((c) => c.args[2] === undefined));
   });
 
   it("keeps the live version when a change builds but doesn't fully pass, instead of shipping it as partial", async () => {

@@ -8,7 +8,7 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 |---|---|---|---|---|
 | `--bg` | #F0F2F5 | #1C1C1D | FB `--web-wash` | page background |
 | `--surface` | #FFFFFF | #252728 | FB `--surface-background`, `--card-background` | cards, app bar, sheets |
-| `--surface-2` | #F0F2F5 | #333334 | FB `--comment-background` | fills inside a card: notes, table heads, dropzone, composer, disabled fields |
+| `--surface-2` | #F0F2F5 | #333334 | FB `--comment-background` | fills inside a card: notes, table heads, dropzone, composer, the chart panel, disabled fields |
 | `--popover` | #FFFFFF | #3B3C3E | FB `--popover-background` | menus, popovers, dialogs |
 | `--toast-bg` | #FFFFFF | #242526 | FB toast fill | toasts |
 | `--input-bg` | #FFFFFF | #242526 | FB `--input-background` | text fields, selects, text areas |
@@ -25,7 +25,7 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 | `--tinted-bg` | #EBF5FF | rgba(29,133,252,.2) | FB deemphasized button; dark selected state is ours | tinted buttons, selected chips and segments, drag-over. FB's dark selected chip (#1D85FC with white text, 3.6:1) fails AA, so dark selection stays tinted |
 | `--tinted-hover-bg` | #DBEBFF | rgba(29,133,252,.28) | ours | hovered tinted button |
 | `--tinted-fg` | #0064D1 | #75B6FF | FB deemphasized button text | text on `--tinted-bg` |
-| `--secondary-bg` | #E2E5E9 | white 10% | FB `--secondary-button-background` | secondary buttons, chips, segments, icon buttons, avatars, disabled buttons |
+| `--secondary-bg` | #E2E5E9 | white 10% | FB `--secondary-button-background` | secondary buttons, chips, segments, icon buttons, avatars; at 60% the fill of a disabled button |
 | `--hover` | black 5% | white 10% | FB `--hover-overlay` | overlay on neutral fills on hover |
 | `--press` | black 10% | white 20% | FB `--press-overlay` | overlay while pressed |
 | `--focus` | #0866FF | #1D85FC | FB focus ring | 2 px focus outline |
@@ -40,10 +40,12 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 | `--ai-start` | #0064E0 | #0064E0 | Meta brand blue | AI gradient start |
 | `--ai-end` | #A033FF | #A033FF | violet from meta.com's ring | AI gradient end |
 | `--ai-gradient` | 90deg, start to end | same | ours | model chip and AI badge outlines, the busy AI button, the AI card cap, the working dots. White text is at least 4.7:1 along all of it |
-| `--signature` | var(--brand) | #1D85FC | Meta blue, FB dark accent | signature element, illustrations, one-series charts |
+| `--ai-soft` | #F6EBFF | violet 20% | ours | the violet end of a busy `.tinted.ai` button's moving fill; `--tinted-fg` stays AA on it |
+| `--signature` | var(--brand) | #1D85FC | Meta blue, FB dark accent | signature element, one-series charts |
 | `--signature-soft` | #EBF5FF | rgba(29,133,252,.2) | FB tinted | fill under the signature element |
 | `--signature-ink` | #0064D1 | #75B6FF | FB tinted text | text on `--signature-soft` or `--surface` |
-| `--cherry` `--grape` `--lemon` `--lime` `--pink` `--teal` | #FB3C44 #7D74FF #F9CF00 #3FBB46 #FA61BA #14B898 | same | FB decorative hues | several chart series, illustrations. Never text, never buttons |
+| `--signature-line` | var(--signature) | var(--signature) | ours | strokes and `.bar`s, at least 3:1 on `--surface` and `--surface-2` in every hue |
+| `--cherry` `--grape` `--lemon` `--lime` `--pink` `--teal` | #FB3C44 #7D74FF #F9CF00 #3FBB46 #FA61BA #14B898 | same | FB decorative hues | only chart series a legend names, or overlays, one hue per kind of object. Never text, buttons, or borders, stripes and fills in the UI that tell categories apart |
 | `--on-media` | #FFFFFF | #FFFFFF | FB `--always-white` | lines and labels drawn over a photo |
 | `--scrim` | black 60% | black 60% | ours | dark glass under a label on a photo (white on it is 5.7:1 even over white) |
 | `--bubble-in` | #F0F0F0 | #303030 | FB incoming bubble | incoming chat bubble |
@@ -51,17 +53,19 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 
 ## Accent hues (`data-accent`)
 
-Each sets `--signature`, `--signature-soft` and `--signature-ink`, and tints `.avatar` initials. The hue is Facebook's; the soft and ink values are ours, made so ink, `--fg` and `--fg-2` on soft and ink on a card pass AA (4.6:1 or more).
+Each sets `--signature`, `--signature-soft`, `--signature-ink` and, where the hue is too pale for a line, `--signature-line`, and tints `.avatar` initials. The hue is Facebook's; the soft, ink and line values are ours, made so ink, `--fg` and `--fg-2` on soft and ink on a card pass AA (4.6:1 or more), and lines are 3:1 or more on a card and on `--surface-2`.
 
-| `data-accent` | `--signature` | Soft, light | Ink, light | Soft, dark | Ink, dark |
-|---|---|---|---|---|---|
-| none | #0064E0 (dark #1D85FC) | #EBF5FF | #0064D1 | blue 20% | #75B6FF |
-| `cherry` | #FB3C44 | #FEE4E5 | #BF2E34 | #542C2E | #FC7C82 |
-| `grape` | #7D74FF | #EDECFF | #615AC7 | #383857 | #A49EFF |
-| `lemon` | #F9CF00 | #FEF8DB | #816C00 | #4C441B | #F9CF00 |
-| `lime` | #3FBB46 | #E4F5E5 | #297A2D | #2B482F | #5EC664 |
-| `pink` | #FA61BA | #FEE9F5 | #AA427E | #543448 | #FB84C9 |
-| `teal` | #14B898 | #DEF5F1 | #0D7863 | #214741 | #3CC4AA |
+| `data-accent` | `--signature` | Soft, light | Ink, light | Line, light | Soft, dark | Ink, dark |
+|---|---|---|---|---|---|---|
+| none | #0064E0 (dark #1D85FC) | #EBF5FF | #0064D1 | the hue | blue 20% | #75B6FF |
+| `cherry` | #FB3C44 | #FEE4E5 | #BF2E34 | the hue | #542C2E | #FC7C82 |
+| `grape` | #7D74FF | #EDECFF | #615AC7 | the hue | #383857 | #A49EFF |
+| `lemon` | #F9CF00 | #FEF8DB | #816C00 | #A48900 | #4C441B | #F9CF00 |
+| `lime` | #3FBB46 | #E4F5E5 | #297A2D | #359E3B | #2B482F | #5EC664 |
+| `pink` | #FA61BA | #FEE9F5 | #AA427E | #E057A7 | #543448 | #FB84C9 |
+| `teal` | #14B898 | #DEF5F1 | #0D7863 | #119C81 | #214741 | #3CC4AA |
+
+In dark mode every line is the hue itself.
 
 ## Type
 
