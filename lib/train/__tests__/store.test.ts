@@ -3,8 +3,9 @@
  * Covers the SQL the safety checks lean on: which jobs count as holding a GPU, the daily cap's committed spend, the job
  * token check, that an ended job only changes through finishJob, the one launch claim per job, a late launch and an
  * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, and
- * training datasets: appending answers only at the expected offset, the eval split, paging in SQL. Nothing here
- * reaches Neon or Lambda.
+ * training datasets: each answer saved once as it comes and moved onto train once a chunk, the eval split (keeping
+ * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. Nothing here reaches Neon or
+ * Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -436,29 +437,48 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.equal(await store.getDataset("not-a-uuid"), null);
     });
 
-    it("appends answers only at the expected offset, so a retried chunk is never added twice", async () => {
+    /** Saves `n` answers from `from` and moves them onto train, as one answer step does. */
+    async function answer(id: string, from: number, n: number) {
+      for (let i = from; i < from + n; i++) assert.equal(await store.stageAnswer(id, { prompt: `q${i}`, reference: `a${i}` }), true);
+      return store.flushAnswers(id, "sys");
+    }
+
+    it("saves each answer once as it comes, and moves them onto train once a chunk", async () => {
       const ds = await store.createDataset({ title: "t", task: "task", requested: 40 });
-      assert.equal(await store.appendTrainExamples(ds.id, 0, examples(0, 3)), 3);
-      assert.equal(await store.appendTrainExamples(ds.id, 0, examples(0, 3)), 3, "the retry finds the chunk saved");
-      assert.equal(await store.appendTrainExamples(ds.id, 3, examples(3, 2)), 5);
-      assert.equal(await store.datasetProgress(ds.id), 5);
+      assert.deepEqual(await store.answerProgress(ds.id), { held: 0, staged: [] });
+      assert.equal(await store.stageAnswer(ds.id, { prompt: "q0", reference: "a0" }), true);
+      assert.equal(await store.stageAnswer(ds.id, { prompt: "q1", reference: "a1" }), true);
+      assert.equal(await store.stageAnswer(ds.id, { prompt: "q0", reference: "a0 again" }), true, "a retried write");
+      assert.deepEqual(await store.answerProgress(ds.id), { held: 0, staged: ["q0", "q1"] }, "saved once each");
+      assert.equal(await store.datasetProgress(ds.id), 0, "not in train yet");
+
+      assert.equal(await store.flushAnswers(ds.id, "sys"), 2);
+      assert.equal(await store.flushAnswers(ds.id, "sys"), 2, "nothing left to move");
+      assert.deepEqual(await store.answerProgress(ds.id), { held: 2, staged: [] });
+      const train = await store.datasetPage(ds.id, "train", 0, 10);
+      assert.deepEqual(train!.items, [example(0), example(1)], "the training examples, under the system message");
+      assert.equal(await answer(ds.id, 2, 3), 5);
+
       await store.addDatasetCost(ds.id, 0.0012345);
       await store.addDatasetCost(ds.id, 0.001);
       assert.equal((await store.getDataset(ds.id))!.costUsd, 0.002235);
+      assert.equal(await store.stageAnswer("ffffffff-0000-4000-8000-000000000000", { prompt: "q", reference: "a" }), false);
     });
 
     it("holds out the eval items, keeps the rest in order, and pages in SQL", async () => {
       const ds = await store.createDataset({ title: "t", task: "task", requested: 20 });
-      await store.appendTrainExamples(ds.id, 0, examples(0, 20));
+      await answer(ds.id, 0, 20);
       assert.equal(await store.finishDataset(ds.id, 19), null, "refused when the count doesn't match");
       const done = await store.finishDataset(ds.id, 20);
       assert.equal(done!.status, "ready");
       assert.equal(done!.trainCount, 12);
       assert.equal(done!.evalCount, 8);
+      assert.equal(done!.error, null);
       assert.ok(done!.finishedAt);
       assert.equal(await store.finishDataset(ds.id, 20), null, "only once");
       assert.equal(await store.datasetProgress(ds.id), null, "no longer generating");
-      assert.equal(await store.appendTrainExamples(ds.id, 20, examples(20, 1)), null);
+      assert.equal(await store.stageAnswer(ds.id, { prompt: "late", reference: "x" }), false);
+      assert.equal(await store.flushAnswers(ds.id, "sys"), null);
 
       const evalPage = await store.datasetPage(ds.id, "eval", 0, 200);
       // evalIndexes(20) is [1, 3, 6, 8, 11, 13, 16, 18].
@@ -477,6 +497,29 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual((await store.datasetPage(ds.id, "train", 400, 200))!.items, []);
       assert.equal(second!.status, "ready");
       assert.equal(await store.datasetPage("ffffffff-0000-4000-8000-000000000000", "train", 0, 5), null);
+    });
+
+    it("keeps an eval prompt's near-duplicates out of train, and notes a dataset that stopped early", async () => {
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 40 });
+      for (let i = 0; i < 20; i++) {
+        // Position 1 (an evalIndexes pick) and 12 ask the same thing in slightly different words.
+        const prompt = i === 1 ? "How do I reset my password?" : i === 12 ? "how can i reset my password" : `q${i}`;
+        await store.stageAnswer(ds.id, { prompt, reference: `a${i}` });
+      }
+      assert.equal(await store.flushAnswers(ds.id, "sys"), 20);
+      const note = "Stopped early, once 20 of the 40 examples asked for were answered. The spend cap is reached.";
+      const done = await store.finishDataset(ds.id, 20, note);
+      assert.equal(done!.status, "ready");
+      assert.equal(done!.error, note, "the page shows it");
+      assert.equal(done!.evalCount + done!.trainCount, 20);
+      const evalPrompts = ((await store.datasetPage(ds.id, "eval", 0, 50))!.items as Array<{ prompt: string }>).map((e) => e.prompt);
+      const trainPrompts = ((await store.datasetPage(ds.id, "train", 0, 50))!.items as Array<{ messages: Array<{ content: string }> }>).map(
+        (e) => e.messages[1]!.content,
+      );
+      assert.equal(evalPrompts.length, 8);
+      const resets = [...evalPrompts, ...trainPrompts].filter((p) => /reset my password/i.test(p));
+      assert.equal(resets.length, 2, "both are kept");
+      assert.equal(evalPrompts.some((p) => /reset my password/i.test(p)), false, "neither is held out next to the other in train");
     });
 
     it("fails only a dataset that is still generating", async () => {

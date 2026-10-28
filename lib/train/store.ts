@@ -11,7 +11,7 @@ import {
   capEventBody,
   EVALS_MAX,
   estimateCostUsd,
-  evalIndexes,
+  evalSplit,
   instanceNameFor,
   type DatasetHead,
   type TrainJobRow,
@@ -779,22 +779,77 @@ export async function datasetProgress(datasetId: string): Promise<number | null>
   return row ? Number(row.length) : null;
 }
 
-/**
- * Appends answered examples to a generating dataset, only when it holds exactly `offset` examples, so a retried step
- * can't add a chunk twice. Returns how many it holds afterwards (or still holds, when the offset didn't match), or null
- * when it is unknown or no longer generating.
+/*
+ * While a dataset is generating, its eval column holds the answers of the chunk being written, as { prompt,
+ * reference }, each saved as soon as Meta answers it (stageAnswer). The chunk then moves them onto train in one
+ * statement (flushAnswers). So a retried chunk never asks or pays for a prompt again, and train is rewritten once a
+ * chunk rather than once an answer. finishDataset fills eval with the held-out items.
  */
-export async function appendTrainExamples(datasetId: string, offset: number, items: TrainExample[]): Promise<number | null> {
+
+/** A generating dataset's examples so far and the prompts answered but not yet moved onto train, or null when it isn't generating. */
+export async function answerProgress(datasetId: string): Promise<{ held: number; staged: string[] } | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db()
+    .select({
+      held: sql<number>`jsonb_array_length(${datasets.train})`,
+      staged: sql<string[]>`coalesce((
+        select jsonb_agg(t.e ->> 'prompt' order by t.i) from jsonb_array_elements(${datasets.eval}) with ordinality as t(e, i)
+      ), '[]'::jsonb)`,
+    })
+    .from(datasets)
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "generating")))
+    .limit(1);
+  return row ? { held: Number(row.held), staged: row.staged ?? [] } : null;
+}
+
+/**
+ * Saves one answered prompt of the chunk being written, unless it is already saved (a retried write). False when the
+ * dataset is unknown or no longer generating.
+ */
+export async function stageAnswer(datasetId: string, item: EvalExample): Promise<boolean> {
+  if (!isUuid(datasetId)) return false;
+  const one = JSON.stringify([{ prompt: item.prompt, reference: item.reference }]);
+  const rows = await db()
+    .update(datasets)
+    .set({ eval: sql`${datasets.eval} || ${one}::jsonb` })
+    .where(
+      and(
+        eq(datasets.id, datasetId),
+        eq(datasets.status, "generating"),
+        sql`not ${datasets.eval} @> jsonb_build_array(jsonb_build_object('prompt', ${item.prompt}::text))`,
+      ),
+    )
+    .returning({ id: datasets.id });
+  if (rows.length) return true;
+  return (await datasetProgress(datasetId)) !== null;
+}
+
+/**
+ * Moves the saved answers onto the end of train as training examples under `system`, in the order they were saved,
+ * and empties the list, in one statement. Safe to run again: with nothing saved it changes nothing. Returns how many
+ * examples train holds afterwards, or null when the dataset is unknown or no longer generating.
+ */
+export async function flushAnswers(datasetId: string, system: string): Promise<number | null> {
   if (!isUuid(datasetId)) return null;
   const [row] = await db()
     .update(datasets)
-    .set({ train: sql`${datasets.train} || ${JSON.stringify(items)}::jsonb` })
-    .where(
-      and(eq(datasets.id, datasetId), eq(datasets.status, "generating"), sql`jsonb_array_length(${datasets.train}) = ${offset}`),
-    )
+    .set({
+      train: sql`${datasets.train} || coalesce((
+        select jsonb_agg(
+          jsonb_build_object('messages', jsonb_build_array(
+            jsonb_build_object('role', 'system', 'content', ${system}::text),
+            jsonb_build_object('role', 'user', 'content', t.e -> 'prompt'),
+            jsonb_build_object('role', 'assistant', 'content', t.e -> 'reference')
+          ))
+          order by t.i
+        )
+        from jsonb_array_elements(${datasets.eval}) with ordinality as t(e, i)
+      ), '[]'::jsonb)`,
+      eval: sql`'[]'::jsonb`,
+    })
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "generating")))
     .returning({ length: sql<number>`jsonb_array_length(${datasets.train})` });
-  if (row) return Number(row.length);
-  return datasetProgress(datasetId);
+  return row ? Number(row.length) : null;
 }
 
 /** Adds what a Meta call cost to the dataset, in millionths of a dollar. */
@@ -807,17 +862,34 @@ export async function addDatasetCost(datasetId: string, usd: number): Promise<vo
 }
 
 /**
- * Turns a generating dataset that holds exactly `count` examples "ready": the items at evalIndexes(count) move to
- * eval as { prompt, reference } (the user and assistant messages), the rest stay in train, and the counts and
- * finishedAt are set, in one statement. Null when it is unknown, no longer generating, or holds another count.
+ * Turns a generating dataset that holds exactly `count` examples "ready": the items evalSplit picks from their prompts
+ * move to eval as { prompt, reference } (the user and assistant messages), the near-duplicates of those it drops leave
+ * train, the rest stay in train in order, and the counts and finishedAt are set. `note` goes in error, for a dataset
+ * that stopped early (the page shows it). Null when it is unknown, no longer generating, or holds another count.
  */
-export async function finishDataset(datasetId: string, count: number): Promise<DatasetHead | null> {
+export async function finishDataset(datasetId: string, count: number, note: string | null = null): Promise<DatasetHead | null> {
   if (!isUuid(datasetId)) return null;
-  const picked = evalIndexes(count);
-  const held = sql`(t.i - 1) = any(array[${sql.join(
-    picked.map((i) => sql`${i}::int`),
-    sql`, `,
-  )}]::int[])`;
+  const generating = and(
+    eq(datasets.id, datasetId),
+    eq(datasets.status, "generating"),
+    sql`jsonb_array_length(${datasets.train}) = ${count}`,
+  );
+  const [found] = await db()
+    .select({
+      prompts: sql<string[]>`coalesce((
+        select jsonb_agg(coalesce(t.e #>> '{messages,1,content}', '') order by t.i)
+        from jsonb_array_elements(${datasets.train}) with ordinality as t(e, i)
+      ), '[]'::jsonb)`,
+    })
+    .from(datasets)
+    .where(generating)
+    .limit(1);
+  if (!found) return null;
+  const split = evalSplit(found.prompts ?? []);
+  const among = (list: number[]) =>
+    list.length ? sql`(t.i - 1) = any(array[${sql.join(list.map((i) => sql`${i}::int`), sql`, `)}]::int[])` : sql`false`;
+  const held = among(split.held);
+  const dropped = among(split.dropped);
   const [row] = await db()
     .update(datasets)
     .set({
@@ -830,16 +902,15 @@ export async function finishDataset(datasetId: string, count: number): Promise<D
       ), '[]'::jsonb)`,
       train: sql`coalesce((
         select jsonb_agg(t.e order by t.i) from jsonb_array_elements(${datasets.train}) with ordinality as t(e, i)
-        where not (${held})
+        where not (${held}) and not (${dropped})
       ), '[]'::jsonb)`,
-      trainCount: count - picked.length,
-      evalCount: picked.length,
+      trainCount: count - split.held.length - split.dropped.length,
+      evalCount: split.held.length,
       status: "ready",
+      error: note ? note.slice(0, 2000) : null,
       finishedAt: new Date(),
     })
-    .where(
-      and(eq(datasets.id, datasetId), eq(datasets.status, "generating"), sql`jsonb_array_length(${datasets.train}) = ${count}`),
-    )
+    .where(generating)
     .returning(datasetHeadColumns);
   return row ?? null;
 }

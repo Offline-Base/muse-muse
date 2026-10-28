@@ -91,18 +91,23 @@ export function estimateCostUsd(
   return roundUsd(((job.priceCentsPerHour / 100) * minutes) / 60);
 }
 
-function asked(value: number | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : Infinity;
+function asked(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 /**
- * A job's limits: the lowest of what the admin asked for, the recipe's defaults and the platform ceilings, and never
- * under 1 minute or $0.10. Minutes are whole and dollars are whole cents, both rounded down. A missing or non-numeric
- * ask counts as no ask.
+ * A job's limits: what the admin asked for, capped by the platform ceilings (TRAIN_JOB_MAX_MINUTES, TRAIN_JOB_MAX_USD).
+ * The recipe's defaults only fill in a limit nobody asked for, capped the same way, so a recipe can run past its
+ * defaults when the admin asks and the ceilings allow it. Never under 1 minute or $0.10. Minutes are whole and dollars
+ * are whole cents, both rounded down. A missing or non-numeric ask counts as no ask.
  */
-export function clampLimits(recipe: Recipe, ask: Partial<TrainLimits>, ceilings: TrainLimits): TrainLimits {
-  const minutes = Math.min(asked(ask.maxMinutes), recipe.defaultMaxMinutes, ceilings.maxMinutes);
-  const usd = Math.min(asked(ask.maxUsd), recipe.defaultMaxUsd, ceilings.maxUsd);
+export function clampLimits(
+  recipe: Pick<Recipe, "defaultMaxMinutes" | "defaultMaxUsd">,
+  ask: Partial<TrainLimits>,
+  ceilings: TrainLimits,
+): TrainLimits {
+  const minutes = Math.min(asked(ask.maxMinutes) ?? recipe.defaultMaxMinutes, ceilings.maxMinutes);
+  const usd = Math.min(asked(ask.maxUsd) ?? recipe.defaultMaxUsd, ceilings.maxUsd);
   return {
     maxMinutes: Math.max(MIN_MAX_MINUTES, Number.isFinite(minutes) ? Math.floor(minutes) : MIN_MAX_MINUTES),
     // The small nudge keeps float error from turning 1.15 into 1.14.
@@ -397,6 +402,83 @@ export function dedupePrompts(existing: string[], incoming: string[], max: numbe
 }
 
 /**
+ * Two prompts are near-duplicates when the sets of words in their promptKey overlap this much (Jaccard: the words they
+ * share over the words either has). It catches a reordering, a typo or a changed word or two, such as "How do I reset
+ * my password?" and "how can i reset my password", not a paraphrase in other words.
+ */
+export const NEAR_DUPLICATE_JACCARD = 0.7;
+
+/** The distinct words of a prompt after promptKey. */
+export function promptWords(text: string): Set<string> {
+  return new Set(promptKey(text).split(" ").filter(Boolean));
+}
+
+/** True when two word sets (promptWords) share at least NEAR_DUPLICATE_JACCARD of their words. */
+export function isNearDuplicate(a: Set<string>, b: Set<string>): boolean {
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  if (!small.size) return false;
+  // Jaccard is at most |small| / |big|, so most pairs end here.
+  if (small.size < NEAR_DUPLICATE_JACCARD * big.size) return false;
+  let shared = 0;
+  for (const w of small) if (big.has(w)) shared += 1;
+  return shared / (small.size + big.size - shared) >= NEAR_DUPLICATE_JACCARD;
+}
+
+/**
+ * Which examples to hold out for eval, given their prompts in order, and which training examples to leave out so no
+ * eval prompt has a near-duplicate (isNearDuplicate) left in train. As many as evalHoldoutCount, near the evenly spread
+ * evalIndexes positions: each one takes the closest prompt that has no near-duplicate anywhere in the dataset. Only
+ * when none is left does it take the closest prompt anyway, with its near-duplicates held out beside it while there is
+ * room; any still in train are dropped, never leaving fewer than 8 to train on. Both lists are 0-based and ascending.
+ * Deterministic, so a retried split picks the same.
+ */
+export function evalSplit(prompts: string[]): { held: number[]; dropped: number[] } {
+  const n = prompts.length;
+  const words = prompts.map(promptWords);
+  const near: number[][] = prompts.map(() => []);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (isNearDuplicate(words[i]!, words[j]!)) {
+        near[i]!.push(j);
+        near[j]!.push(i);
+      }
+    }
+  }
+  const taken = new Set<number>();
+  const closest = (target: number, ok: (i: number) => boolean): number | null => {
+    for (let d = 0; d < n; d++) {
+      for (const i of d ? [target + d, target - d] : [target]) {
+        if (i >= 0 && i < n && !taken.has(i) && ok(i)) return i;
+      }
+    }
+    return null;
+  };
+  const k = evalHoldoutCount(n);
+  const held: number[] = [];
+  const take = (i: number) => {
+    held.push(i);
+    taken.add(i);
+  };
+  for (const target of evalIndexes(n)) {
+    if (held.length >= k) break;
+    const pick = closest(target, (i) => near[i]!.length === 0) ?? closest(target, () => true);
+    if (pick === null) break;
+    take(pick);
+    for (const j of near[pick]!) if (!taken.has(j) && held.length < k) take(j);
+  }
+  const heldSet = new Set(held);
+  const dropped = new Set<number>();
+  for (const h of held) {
+    for (const j of near[h]!) {
+      if (heldSet.has(j) || dropped.has(j)) continue;
+      if (n - held.length - dropped.size <= TRAIN_MIN) break;
+      dropped.add(j);
+    }
+  }
+  return { held: held.sort((a, b) => a - b), dropped: [...dropped].sort((a, b) => a - b) };
+}
+
+/**
  * The system message of every training example, and the instructions Muse Spark 1.3 answers the prompts with, so the
  * tuned model learns the task under the same words it was written with.
  */
@@ -461,4 +543,119 @@ export function summarizeJudgements(items: JudgedItem[]): EvalSummary {
     avgTunedScore: avg((i) => i.tunedScore),
     judgeCostUsd: roundUsd(items.reduce((s, i) => s + (i.costUsd || 0), 0)),
   };
+}
+
+/**
+ * The eval summary judging saves when it ends without a verdict (skipped, or none of the items could be judged): no
+ * items, and `note` says why. The job page reads judging's outcome from the job's own eval summary, never from the log,
+ * which the job's runner can also write to.
+ */
+export type UnjudgedSummary = EvalSummary & { note: string };
+
+export function unjudgedSummary(note: string): UnjudgedSummary {
+  return {
+    items: 0,
+    tunedWins: 0,
+    baseWins: 0,
+    ties: 0,
+    avgBaseScore: 0,
+    avgTunedScore: 0,
+    judgeCostUsd: 0,
+    note: head(note.trim(), JUDGE_NOTE_MAX) || "Judging ended without a verdict.",
+  };
+}
+
+/** Why judging ended without a verdict, from the job's eval summary, or null when it judged items or hasn't ended. */
+export function unjudgedNote(summary: EvalSummary | null | undefined): string | null {
+  if (!summary || summary.items > 0) return null;
+  const note = (summary as Partial<UnjudgedSummary>).note;
+  return typeof note === "string" && note.trim() ? note.trim() : "Judging ended without a verdict.";
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// How long a glimmer-lora run takes (the jobs route refuses one that can't fit its limits, the New job card shows it)
+
+/**
+ * Seconds one glimmer-lora optimizer step can take on each GPU, on the safe side: Muse Glimmer 30B in 4 bits, batch 1
+ * with gradient accumulation 4, conversations of up to 2,048 tokens. A GPU not listed counts as the slowest.
+ */
+export const GLIMMER_STEP_SECONDS: Readonly<Record<string, number>> = {
+  gpu_1x_h100_sxm5: 5,
+  gpu_1x_h100_pcie: 6,
+  gpu_1x_a100_sxm4: 12,
+};
+const GLIMMER_STEP_SECONDS_OTHER = 12;
+/**
+ * Minutes a glimmer-lora run spends outside training in a region that holds the model cache: booting, loading the
+ * 21 GB model, answering the eval prompts with the base and the tuned model, saving and uploading the adapter.
+ */
+export const GLIMMER_OVERHEAD_MINUTES = 20;
+/** The same in a region without the cache, which also installs the Python packages and downloads the model first. */
+export const GLIMMER_OVERHEAD_NO_CACHE_MINUTES = 45;
+
+/** How long a run is likely to take at most. */
+export interface RunEstimate {
+  steps: number;
+  secondsPerStep: number;
+  /** The training steps, in whole minutes rounded up. */
+  trainMinutes: number;
+  overheadMinutes: number;
+  /** trainMinutes plus overheadMinutes. */
+  minutes: number;
+  /** Whether the overhead assumes the region holds the model cache. */
+  cached: boolean;
+}
+
+/**
+ * How long a job's run is likely to take at most on `instanceType`, in a region that holds the model cache or not. Null
+ * when there is no estimate for the recipe (only glimmer-lora has one) or the run doesn't train (dryRun 1).
+ */
+export function runEstimate(
+  recipe: RecipeId | string,
+  params: Record<string, string | number | undefined>,
+  instanceType: string,
+  cached: boolean,
+): RunEstimate | null {
+  if (recipe !== "glimmer-lora") return null;
+  if (Number(params.dryRun) === 1) return null;
+  const raw = params.maxSteps;
+  const asked = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw.trim()) : NaN;
+  // The recipe's default (lib/train/recipes/index.ts) when it isn't set.
+  const steps = Number.isFinite(asked) && asked > 0 ? Math.ceil(asked) : 120;
+  const secondsPerStep = GLIMMER_STEP_SECONDS[instanceType] ?? GLIMMER_STEP_SECONDS_OTHER;
+  const trainMinutes = Math.ceil((steps * secondsPerStep) / 60);
+  const overheadMinutes = cached ? GLIMMER_OVERHEAD_MINUTES : GLIMMER_OVERHEAD_NO_CACHE_MINUTES;
+  return { steps, secondsPerStep, trainMinutes, overheadMinutes, minutes: trainMinutes + overheadMinutes, cached };
+}
+
+/**
+ * The whole minutes a job can run before one of its limits stops it: its time limit, or less when its dollar limit
+ * runs out first at the GPU's hourly price (decideCheck stops it at either). estimateCostUsd counts every started
+ * minute in full, so the dollar limit stops a job as soon as it starts the minute that reaches it: $4.29 at $4.29 an
+ * hour allows 59 minutes, not 60. launchStep stamps the runner's deadline from this.
+ */
+export function usableMinutes(limits: TrainLimits, priceCentsPerHour: number | null): number {
+  if (!(priceCentsPerHour && priceCentsPerHour > 0)) return limits.maxMinutes;
+  const byDollars = Math.ceil((limits.maxUsd * 100 * 60) / priceCentsPerHour - 1e-9) - 1;
+  return Math.max(0, Math.min(limits.maxMinutes, byDollars));
+}
+
+/** What the run's estimate covers, for the sentences below. */
+function overheadText(e: RunEstimate): string {
+  return e.cached
+    ? "booting, loading the model and answering the eval prompts"
+    : "booting, installing the packages, downloading the model and answering the eval prompts";
+}
+
+/**
+ * Null when the run fits the job's limits, otherwise why it doesn't, as the jobs route answers it (400): the estimate,
+ * what it is made of, and what the job can run for.
+ */
+export function runFitProblem(e: RunEstimate, usable: number, gpuLabel: string): string | null {
+  if (e.minutes <= usable) return null;
+  return (
+    `${e.steps} training steps on ${gpuLabel} need about ${e.minutes} minutes (${e.trainMinutes} of training at about ` +
+    `${e.secondsPerStep} s a step, plus about ${e.overheadMinutes} for ${overheadText(e)}${e.cached ? "" : ", since this region has no model cache yet"}), ` +
+    `but this job's limits stop it after ${usable} minutes. Lower the training steps, raise the time or dollar limit, or pick a faster GPU.`
+  );
 }

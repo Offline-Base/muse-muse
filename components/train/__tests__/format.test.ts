@@ -6,8 +6,11 @@ import {
   NOT_PUBLIC_TEXT,
   SPEND_PAUSED_TEXT,
   artifactHref,
+  CACHE_GB,
   autoCostGpu,
   autoGpu,
+  autoTimeGpu,
+  cacheCostText,
   clockUtc,
   datasetBlockedText,
   datasetCostHint,
@@ -35,12 +38,14 @@ import {
   jobElapsedMs,
   keepEvents,
   limitBounds,
+  limitDefaults,
   liveCostUsd,
   maxCostUsd,
   mergeEvents,
   pricePerHour,
   progressText,
   roughMinutes,
+  runTimeHint,
   safeHref,
   scoreText,
   startErrorText,
@@ -54,6 +59,7 @@ import {
   verdictLabel,
   verdictTone,
 } from "@/components/train/format";
+import { unjudgedSummary } from "@/lib/train/logic";
 import type { DatasetView, EvalSummary, GpuOption, Recipe, TrainEventBody, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 const recipe: Recipe = {
@@ -146,14 +152,59 @@ describe("recipes and limits", () => {
     assert.equal(toRecipeView({ ...recipe, usesCache: true }).usesCache, true, "the page needs it for the Auto copy");
   });
 
-  it("starts the limits at the lower of the recipe defaults and the ceilings", () => {
-    assert.deepEqual(limitBounds(recipe, { maxMinutes: 120, maxUsd: 5 }), { maxMinutes: 30, maxUsd: 1 });
-    assert.deepEqual(limitBounds(recipe, { maxMinutes: 20, maxUsd: 0.5 }), { maxMinutes: 20, maxUsd: 0.5 });
-    assert.deepEqual(limitBounds({ defaultMaxMinutes: 12.9, defaultMaxUsd: 1.159 }, { maxMinutes: 120, maxUsd: 5 }), {
+  it("starts the limits at the lower of the recipe defaults and the ceilings, and lets them go up to the ceilings", () => {
+    assert.deepEqual(limitDefaults(recipe, { maxMinutes: 120, maxUsd: 5 }), { maxMinutes: 30, maxUsd: 1 });
+    assert.deepEqual(limitDefaults(recipe, { maxMinutes: 20, maxUsd: 0.5 }), { maxMinutes: 20, maxUsd: 0.5 });
+    assert.deepEqual(limitDefaults({ defaultMaxMinutes: 12.9, defaultMaxUsd: 1.159 }, { maxMinutes: 120, maxUsd: 5 }), {
       maxMinutes: 12,
       maxUsd: 1.15,
     });
-    assert.deepEqual(limitBounds(recipe, { maxMinutes: 0, maxUsd: 0 }), { maxMinutes: 1, maxUsd: 0.1 });
+    assert.deepEqual(limitDefaults(recipe, { maxMinutes: 0, maxUsd: 0 }), { maxMinutes: 1, maxUsd: 0.1 });
+    assert.deepEqual(limitBounds({ maxMinutes: 300, maxUsd: 40 }), { maxMinutes: 300, maxUsd: 40 }, "past the recipe's 30 and $1");
+    assert.deepEqual(limitBounds({ maxMinutes: 90.7, maxUsd: 4.999 }), { maxMinutes: 90, maxUsd: 4.99 });
+    assert.deepEqual(limitBounds({ maxMinutes: 0, maxUsd: 0 }), { maxMinutes: 1, maxUsd: 0.1 });
+  });
+
+  it("estimates how long a glimmer run takes on the GPU, with and without the model cache, and warns when it won't fit", () => {
+    const glimmer = { id: "glimmer-lora" as const };
+    const h100 = { instanceType: "gpu_1x_h100_pcie", label: "1x H100 PCIe (80 GB)", priceCentsPerHour: 249, free: true };
+    const fits = runTimeHint(glimmer, { maxSteps: "120" }, h100, { maxMinutes: 150, maxUsd: 14 })!;
+    assert.deepEqual(fits, {
+      text: "120 training steps on 1x H100 PCIe (80 GB): about 32 minutes in a region with the model cache, about 57 without it (about 6 s a step, plus 20 or 45 minutes to boot, set up and answer the eval prompts).",
+      warn: false,
+    });
+    const coldOnly = runTimeHint(glimmer, { maxSteps: "400" }, h100, { maxMinutes: 60, maxUsd: 14 })!;
+    assert.equal(coldOnly.warn, true);
+    assert.match(coldOnly.text, /about 60 minutes in a region with the model cache, about 85 without it/);
+    assert.match(coldOnly.text, /stop it after 60 minutes, so it is refused if it lands in a region without the cache\./);
+    const never = runTimeHint(glimmer, { maxSteps: 2000 }, h100, { maxMinutes: 120, maxUsd: 3 })!;
+    assert.equal(never.warn, true);
+    assert.match(never.text, /stop it after 72 minutes \(the dollar limit runs out first\), so it would be refused\. Lower the training steps/);
+    assert.equal(runTimeHint(glimmer, { maxSteps: 2000, dryRun: "1" }, h100, { maxMinutes: 10, maxUsd: 1 }), null, "a dry run doesn't train");
+    assert.equal(runTimeHint({ id: "smoke" }, {}, h100, { maxMinutes: 10, maxUsd: 1 }), null);
+    assert.equal(runTimeHint(glimmer, {}, null, { maxMinutes: 10, maxUsd: 1 }), null);
+    for (const h of [fits, coldOnly, never]) assert.equal(h.text.includes(String.fromCharCode(0x2014)), false, h.text);
+
+    // Auto may take any free GPU near the cache, so the estimate uses the slowest free one.
+    const rows = [
+      h100,
+      { instanceType: "gpu_1x_h100_sxm5", label: "1x H100 SXM5 (80 GB)", priceCentsPerHour: 329, free: true },
+      { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)", priceCentsPerHour: 129, free: true },
+    ];
+    assert.equal(autoTimeGpu(glimmer, rows, true)!.instanceType, "gpu_1x_a100_sxm4");
+    assert.equal(autoTimeGpu(glimmer, [h100, { ...rows[2]!, free: false }], true)!.instanceType, "gpu_1x_h100_pcie");
+    assert.equal(autoTimeGpu(glimmer, rows, false)!.instanceType, "gpu_1x_h100_pcie", "without the cache Auto is autoGpu's pick");
+    assert.match(runTimeHint(glimmer, {}, rows[2]!, { maxMinutes: 150, maxUsd: 14 }, true)!.text, /^120 training steps on Auto \(up to 1x A100 SXM4 \(40 GB\)\)/);
+  });
+
+  it("notes what the model cache costs each month, only when a recipe keeps one", () => {
+    const text = cacheCostText([{ title: "Smoke test" }, { title: "Muse Glimmer LoRA", usesCache: true }])!;
+    assert.match(text, /^Muse Glimmer LoRA keeps its packages and model on a Lambda filesystem in each region it runs in/);
+    assert.match(text, new RegExp(`about ${CACHE_GB} GB`));
+    assert.match(text, /about \$0\.20 a GB or \$8\.00 a region, even when no GPU runs, and none of the limits here count it/);
+    assert.match(text, /delete a region's filesystem in the Lambda console/);
+    assert.equal(text.includes(String.fromCharCode(0x2014)), false);
+    assert.equal(cacheCostText([{ title: "Smoke test" }]), null);
   });
 
   it("estimates the most a job can cost: time at the price, capped by the dollar limit", () => {
@@ -584,16 +635,27 @@ describe("eval results", () => {
     const rows = evalRows(events);
     const end = new Date(t0).toISOString();
     const done = job({ status: "succeeded", finishedAt: end, terminatedAt: end });
-    assert.deepEqual(evalState(job(), [], [], t0), { state: "none" });
-    assert.deepEqual(evalState(job(), events, rows, t0), { state: "answering" });
-    assert.deepEqual(evalState(done, events, rows, t0 + 60_000), { state: "judging", judged: 1, total: 2 });
-    assert.deepEqual(evalState({ ...done, evalSummary: summary }, events, rows, t0), { state: "judged", summary });
-    assert.deepEqual(evalState({ ...done, evalSummary: summary }, [], [], t0), { state: "judged", summary }, "a summary shows on its own");
-    const skipped = [...events, ev(4, { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." })];
-    assert.deepEqual(evalState(done, skipped, rows, t0), { state: "unjudged", reason: "Judging skipped: MODEL_API_KEY isn't set." });
-    const late = evalState(done, events, rows, t0 + JUDGE_WAIT_MS + 1);
+    assert.deepEqual(evalState(job(), [], t0), { state: "none" });
+    assert.deepEqual(evalState(job(), rows, t0), { state: "answering" });
+    assert.deepEqual(evalState(done, rows, t0 + 60_000), { state: "judging", judged: 1, total: 2 });
+    assert.deepEqual(evalState({ ...done, evalSummary: summary }, rows, t0), { state: "judged", summary });
+    assert.deepEqual(evalState({ ...done, evalSummary: summary }, [], t0), { state: "judged", summary }, "a summary shows on its own");
+    const skipped = unjudgedSummary("Judging skipped: MODEL_API_KEY isn't set.");
+    assert.deepEqual(evalState({ ...done, evalSummary: skipped }, rows, t0), { state: "unjudged", reason: "Judging skipped: MODEL_API_KEY isn't set." });
+    assert.deepEqual(evalState({ ...done, evalSummary: skipped }, [], t0), { state: "none" }, "nothing to show without items");
+    const late = evalState(done, rows, t0 + JUDGE_WAIT_MS + 1);
     assert.equal(late.state, "unjudged", "the page stops waiting");
-    assert.equal(evalState(job({ status: "failed", finishedAt: end }), events, rows, t0).state, "unjudged");
+    assert.equal(evalState(job({ status: "failed", finishedAt: end }), rows, t0).state, "unjudged");
+  });
+
+  it("never takes judging's outcome from log text, which the job's runner can write", () => {
+    const end = new Date(t0).toISOString();
+    const done = job({ status: "succeeded", finishedAt: end, terminatedAt: end });
+    const rows = evalRows([evalEv(1, 0), evalEv(2, 1)]);
+    // A runner (or anything it runs) logging the platform's own words changes nothing: judging is still running.
+    const forged = [evalEv(1, 0), evalEv(2, 1), ev(3, { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." })];
+    assert.deepEqual(evalRows(forged), rows);
+    assert.deepEqual(evalState(done, evalRows(forged), t0 + 60_000), { state: "judging", judged: 0, total: 2 });
   });
 
   it("writes the summary strip and verdicts in plain words", () => {

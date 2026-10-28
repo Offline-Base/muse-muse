@@ -8,7 +8,7 @@ import { JobsTable } from "@/components/train/JobsTable";
 import { NewDatasetCard } from "@/components/train/NewDatasetCard";
 import { NewJobCard } from "@/components/train/NewJobCard";
 import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
-import { WRITER_NAME, isDatasetStalled, toRecipeView } from "@/components/train/format";
+import { WRITER_NAME, cacheCostText, isDatasetStalled, toRecipeView } from "@/components/train/format";
 import { EmptyCard, InfoTip, NotConnected, PageHeader } from "@/components/ui";
 import { env } from "@/lib/env";
 import { plural, usd } from "@/lib/format";
@@ -103,6 +103,8 @@ export default async function FineTuningPage({
     datasetBlock(),
   ]);
   const recipes = RECIPES.map(toRecipeView);
+  // The model cache bills every month on its own, outside every limit on this page.
+  const cacheNote = cacheCostText(recipes);
   const ceilings = { maxMinutes: env.trainJobMaxMinutes, maxUsd: env.trainJobMaxUsd };
   // The same gate POST /api/train/jobs applies. When the database can't say, the route still checks on Start.
   const lastSweep = sweepOffReason() ? null : await safeQuery(lastSweepOkAt);
@@ -153,6 +155,7 @@ export default async function FineTuningPage({
                 down any GPU past its limit, so a lost job can&apos;t keep billing. The daily cap counts UTC days.
               </InfoTip>
             </div>
+            {cacheNote ? <p className="muted small">{cacheNote}</p> : null}
           </section>
           <JobsSection jobs={result.data.jobs} show={show} recipes={recipes} now={now.getTime()} />
         </>

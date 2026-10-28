@@ -2,8 +2,9 @@
  * Runs the real judge steps with the store, Muse Spark 1.3, the spend cap and usage faked: the judge sees the base and
  * tuned answers blind as A and B, in an order that swaps by index, and its scores map back to the right model; better
  * follows the scores; the reply is cleaned (scores clamped, the note cut to 30 words, no em dashes); usage is recorded
- * before the verdict is logged; an item already judged isn't sent again; and judging is skipped, with a log line, when
- * MODEL_API_KEY is unset or the spend cap is reached. Nothing here calls Meta or a database.
+ * before the verdict is logged; an item already judged isn't sent again; and judging is skipped when MODEL_API_KEY is
+ * unset or the spend cap is reached, saving an unjudged summary on the job that says why (the job page reads that, not
+ * the log), with a log line too. Nothing here calls Meta or a database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/judge.test.ts
  *
@@ -11,6 +12,8 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { unjudgedNote, unjudgedSummary } from "../logic";
+import type { EvalSummary } from "../types";
 
 const JOB_ID = "1234abcd-0000-4000-8000-000000000000";
 const DATASET_ID = "dddddddd-0000-4000-8000-000000000000";
@@ -206,13 +209,23 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       assert.equal(called("recordEvent").length, 0);
     });
 
-    it("skips with a log line when MODEL_API_KEY is unset or the spend cap is reached", async () => {
+    it("skips when MODEL_API_KEY is unset or the spend cap is reached, saying why on the job and in the log", async () => {
       paused = true;
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [], task: null });
-      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: "Judging skipped: the platform's daily spend cap is reached." });
+      const capped = "Judging skipped: the platform's daily spend cap is reached.";
+      assert.deepEqual(called("setEvalSummary")[0]!.args, [JOB_ID, unjudgedSummary(capped)]);
+      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: capped });
+      assert.deepEqual(
+        calls.map((c) => c.fn),
+        ["setEvalSummary", "recordEvent"],
+        "the job's own state first",
+      );
       delete process.env.MODEL_API_KEY;
       await judge.judgePlanStep(JOB_ID);
-      assert.deepEqual(called("recordEvent")[1]!.args[1], { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." });
+      const unset = "Judging skipped: MODEL_API_KEY isn't set.";
+      assert.equal(unjudgedNote(called("setEvalSummary")[1]!.args[1] as EvalSummary), unset);
+      assert.deepEqual(called("recordEvent")[1]!.args[1], { type: "log", text: unset });
+      assert.equal(called("respondStructured").length, 0);
     });
   });
 
@@ -232,10 +245,12 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       );
     });
 
-    it("writes no summary when nothing could be judged", async () => {
+    it("saves an unjudged summary that says so when nothing could be judged", async () => {
       assert.equal(await judge.saveEvalSummaryStep(JOB_ID, [], 4), null);
-      assert.equal(called("setEvalSummary").length, 0);
-      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: "Judging failed: none of the 4 eval items could be judged." });
+      const note = "Judging failed: none of the 4 eval items could be judged.";
+      assert.deepEqual(called("setEvalSummary")[0]!.args, [JOB_ID, unjudgedSummary(note)]);
+      assert.equal((called("setEvalSummary")[0]!.args[1] as EvalSummary).items, 0);
+      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: note });
     });
   });
 });

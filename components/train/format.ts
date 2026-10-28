@@ -2,12 +2,16 @@ import type { IconName } from "@/components/icons";
 import { bytes, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
 import {
+  clampLimits,
   DATASET_MAX_COUNT,
   DATASET_MIN_COUNT,
   estimateCostUsd,
   evalHoldoutCount,
   MIN_MAX_MINUTES,
   MIN_MAX_USD,
+  runEstimate,
+  unjudgedNote,
+  usableMinutes,
 } from "@/lib/train/logic";
 import {
   isTrainTerminal,
@@ -92,16 +96,19 @@ export function toRecipeView(r: Recipe): RecipeView {
 }
 
 /**
- * The highest limits a new job can ask for: the lower of the recipe's defaults and the platform ceilings, rounded down
- * like clampLimits in lib/train/logic.ts. The form starts with these.
+ * The highest limits a new job can ask for: the platform ceilings (TRAIN_JOB_MAX_MINUTES, TRAIN_JOB_MAX_USD), rounded
+ * down like clampLimits in lib/train/logic.ts, which caps an ask at them whatever the recipe's defaults.
  */
-export function limitBounds(recipe: Pick<RecipeView, "defaultMaxMinutes" | "defaultMaxUsd">, ceilings: TrainLimits): TrainLimits {
-  const minutes = Math.min(recipe.defaultMaxMinutes, ceilings.maxMinutes);
-  const dollars = Math.min(recipe.defaultMaxUsd, ceilings.maxUsd);
+export function limitBounds(ceilings: TrainLimits): TrainLimits {
   return {
-    maxMinutes: Math.max(MIN_MAX_MINUTES, Math.floor(minutes)),
-    maxUsd: Math.max(MIN_MAX_USD, Math.floor(dollars * 100 + 1e-6) / 100),
+    maxMinutes: Math.max(MIN_MAX_MINUTES, Math.floor(ceilings.maxMinutes)),
+    maxUsd: Math.max(MIN_MAX_USD, Math.floor(ceilings.maxUsd * 100 + 1e-6) / 100),
   };
+}
+
+/** The limits the form starts with: the recipe's defaults under the ceilings, what a job gets when it asks for none. */
+export function limitDefaults(recipe: Pick<RecipeView, "defaultMaxMinutes" | "defaultMaxUsd">, ceilings: TrainLimits): TrainLimits {
+  return clampLimits(recipe, {}, ceilings);
 }
 
 /** "$0.75/h". */
@@ -165,6 +172,80 @@ export function autoCostGpu(rows: GpuRow[], usesCache = false): GpuRow | null {
     if (r.free && r.priceCentsPerHour !== null && (!best || r.priceCentsPerHour > (best.priceCentsPerHour ?? 0))) best = r;
   }
   return best;
+}
+
+/**
+ * The GPU the run-time estimate uses on Auto: the slowest free one (the one runEstimate gives the most seconds a step),
+ * since Auto may take any free GPU near the model cache. Otherwise autoGpu's pick.
+ */
+export function autoTimeGpu(recipe: Pick<RecipeView, "id">, rows: GpuRow[], usesCache = false): GpuRow | null {
+  if (!usesCache) return autoGpu(rows);
+  const step = (r: GpuRow) => runEstimate(recipe.id, {}, r.instanceType, true)?.secondsPerStep ?? 0;
+  let slowest: GpuRow | null = null;
+  for (const r of rows) if (r.free && (!slowest || step(r) > step(slowest))) slowest = r;
+  return slowest;
+}
+
+/** The New job card's line on how long the run takes, and whether it is a warning. */
+export interface RunHint {
+  text: string;
+  warn: boolean;
+}
+
+/**
+ * How long the run takes on `gpu` with these params, in a region with the model cache and without it, and whether that
+ * fits the job's limits: the estimate the jobs route checks (runEstimate in lib/train/logic.ts), which refuses a run
+ * that can't fit. `auto` says the GPU is Auto's slowest pick. Null for a recipe without an estimate, a dry run or no GPU.
+ */
+export function runTimeHint(
+  recipe: Pick<RecipeView, "id">,
+  params: Record<string, string | number | undefined>,
+  gpu: GpuRow | null,
+  limits: TrainLimits,
+  auto = false,
+): RunHint | null {
+  if (!gpu) return null;
+  const warm = runEstimate(recipe.id, params, gpu.instanceType, true);
+  const cold = runEstimate(recipe.id, params, gpu.instanceType, false);
+  if (!warm || !cold) return null;
+  const usable = usableMinutes(limits, gpu.priceCentsPerHour);
+  const on = auto ? `on Auto (up to ${gpu.label})` : `on ${gpu.label}`;
+  const lead =
+    `${plural(warm.steps, "training step")} ${on}: about ${warm.minutes} minutes in a region with the model cache, about ` +
+    `${cold.minutes} without it (about ${warm.secondsPerStep} s a step, plus ${warm.overheadMinutes} or ` +
+    `${cold.overheadMinutes} minutes to boot, set up and answer the eval prompts).`;
+  if (cold.minutes <= usable) return { text: lead, warn: false };
+  const limit = usable < limits.maxMinutes ? `${usable} minutes (the dollar limit runs out first)` : `${usable} minutes`;
+  if (warm.minutes <= usable) {
+    return {
+      text: `${lead} The job's limits stop it after ${limit}, so it is refused if it lands in a region without the cache. Raise the limits or lower the steps to be sure.`,
+      warn: true,
+    };
+  }
+  return {
+    text: `${lead} The job's limits stop it after ${limit}, so it would be refused. Lower the training steps, raise the time or dollar limit, or pick a faster GPU.`,
+    warn: true,
+  };
+}
+
+/** Lambda's price for a persistent filesystem, per GB a month, and about how much one region's model cache holds. */
+export const CACHE_USD_PER_GB_MONTH = 0.2;
+export const CACHE_GB = 40;
+
+/**
+ * The fine-tuning page's note on what the model cache costs while nobody trains: Lambda bills each region's
+ * filesystem by the GB every month, outside every job, daily and spend limit, and the platform never deletes one.
+ */
+export function cacheCostText(recipes: Array<Pick<RecipeView, "title" | "usesCache">>): string | null {
+  const titles = recipes.filter((r) => r.usesCache).map((r) => r.title);
+  if (!titles.length) return null;
+  const monthly = usd(Math.round(CACHE_USD_PER_GB_MONTH * CACHE_GB));
+  return (
+    `${titles.join(" and ")} keeps its packages and model on a Lambda filesystem in each region it runs in ` +
+    `(muse-muse-cache-<region>, about ${CACHE_GB} GB, more with each job's adapter). Lambda bills it every month, about ` +
+    `${usd(CACHE_USD_PER_GB_MONTH)} a GB or ${monthly} a region, even when no GPU runs, and none of the limits here count it. ` +
+    "The platform never deletes one: delete a region's filesystem in the Lambda console when you no longer need it."
+  );
 }
 
 /** The GPU's name for a job: the recipe's label for its type, else the type itself. */
@@ -622,7 +703,7 @@ export function datasetCostRange(count: number): { low: number; high: number } {
 
 /**
  * Rough minutes to write `count` examples: prompt batches of 25 one after another (about 30 s each), then answers in
- * chunks of 24, 6 at a time (about a minute each).
+ * chunks of 12, 6 at a time (about a minute for every two chunks).
  */
 export function datasetMinutes(count: number): number {
   const n = Math.max(0, Math.floor(Number(count) || 0));
@@ -754,29 +835,24 @@ export type EvalState =
   | { state: "answering" }
   | { state: "judging"; judged: number; total: number }
   | { state: "judged"; summary: EvalSummary }
-  /** Judging didn't run or judged nothing, with the reason the workflow logged, or the job didn't succeed. */
+  /** Judging didn't run or judged nothing, with the reason saved on the job, or the job didn't succeed. */
   | { state: "unjudged"; reason: string };
 
-/** The workflow's own word on judging that didn't happen (lib/train/judge.ts logs "Judging skipped: ..." or "Judging failed: ..."). */
-function judgingNote(events: TrainEventView[]): string | null {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const p = events[i].payload;
-    if (p?.type === "log" && /^Judging (skipped|failed)\b/.test(p.text ?? "")) return p.text.trim().split("\n")[0];
-  }
-  return null;
-}
-
+/**
+ * Where the job's eval results stand, from the job's own state only: its eval summary (lib/train/judge.ts saves one
+ * when judging ends, with a note when it was skipped or judged nothing) and its status, plus the eval items and the
+ * platform's judgement events in `rows`. Never from log text, which the job's runner can write to.
+ */
 export function evalState(
   job: Pick<TrainJobView, "status" | "evalSummary" | "finishedAt" | "terminatedAt">,
-  events: TrainEventView[],
   rows: EvalRow[],
   now: number,
 ): EvalState {
-  if (job.evalSummary) return { state: "judged", summary: job.evalSummary };
+  const note = unjudgedNote(job.evalSummary);
+  if (job.evalSummary && note === null) return { state: "judged", summary: job.evalSummary };
   if (!rows.length) return { state: "none" };
   if (!isTrainTerminal(job.status)) return { state: "answering" };
   if (job.status !== "succeeded") return { state: "unjudged", reason: "Not judged, since the job didn't succeed." };
-  const note = judgingNote(events);
   if (note) return { state: "unjudged", reason: note };
   const ended = Date.parse(job.terminatedAt ?? job.finishedAt ?? "");
   if (Number.isFinite(ended) && now - ended > JUDGE_WAIT_MS) {

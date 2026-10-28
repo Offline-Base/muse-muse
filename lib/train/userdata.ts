@@ -20,8 +20,19 @@ export interface UserDataInput {
   recipe: RecipeId | Recipe;
   params: Record<string, string | number>;
   maxMinutes: number;
+  /**
+   * Unix seconds the runner must be done by (ctx.deadline). launchStep stamps it before the launch request from the
+   * minutes the job's limits allow (usableMinutes: maxMinutes, or less when the dollar limit runs out first), so it is
+   * never after the platform stops the job. Defaults to now plus maxMinutes.
+   */
+  deadlineEpoch?: number;
   /** Where the recipe's cache filesystem is mounted on the instance, for a recipe with usesCache. */
   cacheDir?: string;
+}
+
+/** The deadline a launch stamped `now` gives the runner: `minutes` later, rounded down to the second. */
+export function deadlineEpochFor(minutes: number, now: number = Date.now()): number {
+  return Math.floor(now / 1000) + Math.floor(minutes * 60);
 }
 
 /**
@@ -47,8 +58,9 @@ function b64(text: string): string {
 
 /**
  * The #cloud-config user data for a job's instance: job.json (0600, the only place the job token goes), runner.py and
- * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. job.json has cacheDir
- * only when one is given. Nothing from the platform's env goes in. Throws for an unknown recipe or a document over 1 MB.
+ * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. job.json always has
+ * deadlineEpoch, and cacheDir only when one is given. Nothing from the platform's env goes in. Throws for an unknown
+ * recipe or a document over 1 MB.
  */
 export function buildUserData(input: UserDataInput): string {
   const recipe = typeof input.recipe === "string" ? recipeById(input.recipe) : input.recipe;
@@ -60,6 +72,7 @@ export function buildUserData(input: UserDataInput): string {
     params: input.params,
     maxMinutes: input.maxMinutes,
     recipe: recipe.id,
+    deadlineEpoch: input.deadlineEpoch ?? deadlineEpochFor(input.maxMinutes),
     ...(input.cacheDir ? { cacheDir: input.cacheDir } : {}),
   };
   const files = [

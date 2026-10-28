@@ -45,6 +45,8 @@ export function DatasetsTable({
                   </Link>
                   {d.status === "failed" && d.error ? (
                     <span className="row-sub train-row-error">{truncate(d.error, 90)}</span>
+                  ) : d.status === "ready" && d.error ? (
+                    <span className="row-sub muted">{truncate(d.error, 90)}</span>
                   ) : stalled ? (
                     <span className="row-sub muted">Started over 6 hours ago and never finished. Its workflow most likely stopped.</span>
                   ) : showTask ? (

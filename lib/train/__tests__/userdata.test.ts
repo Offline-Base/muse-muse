@@ -12,7 +12,7 @@ import { RECIPES } from "@/lib/train/recipes";
 import { RUNNER_PY } from "@/lib/train/recipes/runner";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 import type { RecipeId } from "@/lib/train/types";
-import { buildUserData, callbackOrigin, JOB_LOG, MAX_USER_DATA_BYTES } from "@/lib/train/userdata";
+import { buildUserData, callbackOrigin, deadlineEpochFor, JOB_LOG, MAX_USER_DATA_BYTES } from "@/lib/train/userdata";
 
 const FAKE_LAMBDA_KEY = `secret_muse-test_${randomBytes(16).toString("hex")}.${randomBytes(16).toString("hex")}`;
 const token = randomBytes(32).toString("base64url");
@@ -110,7 +110,7 @@ describe("buildUserData", () => {
   });
 
   it("writes job.json, runner.py and recipe.py with the right modes and contents", async () => {
-    const doc = buildUserData(input);
+    const doc = buildUserData({ ...input, deadlineEpoch: 1_900_000_000 });
     const parse = await yamlParser();
     const parsed = (parse ? parse(doc) : parseByHand(doc)) as { write_files: WrittenFile[]; runcmd: unknown[] };
     const byPath = new Map(parsed.write_files.map((f) => [f.path, f]));
@@ -121,7 +121,7 @@ describe("buildUserData", () => {
     for (const f of parsed.write_files) assert.equal(f.owner, "root:root");
 
     const job = JSON.parse(decode(byPath.get("/opt/muse/job.json")!));
-    assert.deepEqual(job, { ...input, recipe: "smoke" });
+    assert.deepEqual(job, { ...input, recipe: "smoke", deadlineEpoch: 1_900_000_000 });
     assert.equal(decode(byPath.get("/opt/muse/runner.py")!), RUNNER_PY);
     assert.equal(decode(byPath.get("/opt/muse/recipe.py")!), SMOKE_PY);
 
@@ -134,7 +134,22 @@ describe("buildUserData", () => {
 
   it("accepts the recipe itself as well as its id", () => {
     const smoke = RECIPES.find((r) => r.id === "smoke")!;
-    assert.equal(buildUserData({ ...input, recipe: smoke }), buildUserData(input));
+    const fixed = { ...input, deadlineEpoch: 1_900_000_000 };
+    assert.equal(buildUserData({ ...fixed, recipe: smoke }), buildUserData(fixed));
+  });
+
+  it("gives job.json a deadlineEpoch: the one asked for, or maxMinutes from now, rounded down", () => {
+    const jobOf = (doc: string) => JSON.parse(decode(parseByHand(doc).write_files.find((f) => f.path.endsWith("job.json"))!));
+    assert.equal(jobOf(buildUserData({ ...input, deadlineEpoch: 1_800_000_123 })).deadlineEpoch, 1_800_000_123);
+
+    const before = Math.floor(Date.now() / 1000);
+    const deadline = jobOf(buildUserData(input)).deadlineEpoch;
+    const after = Math.floor(Date.now() / 1000);
+    assert.ok(Number.isInteger(deadline));
+    assert.ok(deadline >= before + 30 * 60 && deadline <= after + 30 * 60, `${deadline} is 30 minutes from now`);
+
+    assert.equal(deadlineEpochFor(150, 1_700_000_000_999), 1_700_000_000 + 150 * 60);
+    assert.equal(deadlineEpochFor(1.5, 1_700_000_000_000), 1_700_000_000 + 90);
   });
 
   it("puts the token only inside job.json", () => {

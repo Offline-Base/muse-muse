@@ -99,7 +99,7 @@ export function JobRoom(props: JobRoomProps) {
   const [ticking, setTicking] = useState(!settled);
   const now = useNow(props.serverNow, ticking);
   const rows = useMemo(() => evalRows(events), [events]);
-  const evals = evalState(job, events, rows, now);
+  const evals = evalState(job, rows, now);
   // Judging starts once the GPU is gone, so the page keeps polling for verdicts after the job settles.
   const judging = evals.state === "judging";
   const polling = !settled || judging;

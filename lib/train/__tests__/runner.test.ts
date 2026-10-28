@@ -1,8 +1,10 @@
 /**
  * Compiles every Python string with python3 -m py_compile, then runs runner.py for real against a local HTTP server
  * standing in for the platform (and for the Vercel Blob API): the smoke recipe with allowNoGpu, a failing recipe,
- * uploads through the simple and multipart Blob protocols, dataset paging, eval callbacks, the cache folder, and the
- * glimmer-lora recipe with dryRun. Skipped when python3 is missing. Nothing here reaches Lambda.
+ * uploads through the simple and multipart Blob protocols, dataset paging, eval callbacks, the cache folder, the event
+ * pipe, the stall watch, the deadline, and the glimmer-lora recipe with dryRun. The glimmer recipe's own logic (the
+ * venv build lock and race, the pinned uv, the deadline, partial results) runs under python3 with a fake ctx. Skipped
+ * when python3 is missing. Nothing here reaches Lambda, Meta or the network.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/runner.test.ts
  */
@@ -192,10 +194,14 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
   it("keeps glimmer's install pins, model and ATEM markers as Unsloth's guide and notebook have them", () => {
     for (const pin of [
       '"unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"',
-      "--index-url https://download.pytorch.org/whl/cu128",
-      "'torchao>=0.16.0'",
+      'MODEL_REVISION = "ecedda395d4d099b477d135a9a573eedaa5a7aad"',
+      "torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 xformers==0.0.35 --index-url https://download.pytorch.org/whl/cu128",
+      '"unsloth==2026.10.9 unsloth_zoo==2026.10.9 ',
+      '"--no-deps torchao==0.18.0"',
       '"transformers==5.15.0"',
       '"--no-deps trl==0.22.2"',
+      'UV_VERSION = "0.13.1"',
+      'UV_SHA256 = "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220"',
       'INSTRUCTION_PART = "<|start|>user<|message|>"',
       'RESPONSE_PART = "<|start|>assistant to=user<|message|>"',
       'loss_type="nll"',
@@ -203,12 +209,517 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
     ]) {
       assert.ok(GLIMMER_PY.includes(pin), pin);
     }
+    assert.ok(!GLIMMER_PY.includes("astral.sh/uv/install.sh"), "no unpinned installer");
+    assert.ok(!GLIMMER_PY.includes('shutil.which("uv")'), "no uv from PATH");
+    // Every install line names an exact version for each package it installs.
+    const install = /^INSTALL = \(\n([\s\S]*?)\n\)$/m.exec(GLIMMER_PY)?.[1] ?? "";
+    const packages = [...install.matchAll(/"([^"]+)"/g)].flatMap((m) => m[1].split(" ").filter((w) => w && !w.startsWith("-") && !w.startsWith("http")));
+    assert.equal(packages.length, 13, packages.join(" "));
+    for (const pkg of packages) assert.match(pkg, /^[a-z_]+==[\w.+]+$/, pkg);
   });
 
   it("declares exactly the media types the upload route takes", () => {
     const tuple = /^UPLOAD_TYPES = \(\n([\s\S]*?)\n\)$/m.exec(RUNNER_PY)?.[1] ?? "";
     const types = [...tuple.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     assert.deepEqual(types, [...TRAIN_UPLOAD_TYPES]);
+  });
+});
+
+/**
+ * The Python every glimmer internals test starts with: glimmer.py loaded as g (with uv_binary stubbed and the lock poll
+ * fast), a fake ctx whose run() hands each command to on_run, and a fake uv build.
+ */
+const GLIMMER_HARNESS = String.raw`import hashlib, importlib.util, io, json, os, shlex, shutil, sys, tarfile, tempfile, threading, time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+spec = importlib.util.spec_from_file_location("glimmer", os.path.join(HERE, "glimmer.py"))
+g = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(g)
+ROOT = tempfile.mkdtemp(dir=HERE)
+REAL_UV_BINARY = g.uv_binary
+g.uv_binary = lambda ctx, base: "/fake/uv"
+g.LOCK_POLL_SECONDS = 0.05
+BASE = os.path.join(ROOT, "cache")
+VENVS = os.path.join(BASE, "venvs")
+VENV = os.path.join(VENVS, g.venv_name())
+LOCK = VENV + ".lock"
+PYTHON = os.path.join(VENV, "bin", "python")
+
+
+class Done:
+    def __init__(self, returncode=0, stdout="", timed_out=False):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.timed_out = timed_out
+
+
+class FakeCtx:
+    def __init__(self, job_id="job-a", deadline=None):
+        self.job_id = job_id
+        self.work_dir = os.path.join(ROOT, "work-" + job_id)
+        os.makedirs(self.work_dir, exist_ok=True)
+        self.cache_dir = None
+        self.params = {}
+        self.max_minutes = 150
+        self.deadline = time.time() + 3600 if deadline is None else deadline
+        self.logs = []
+        self.progresses = []
+        self.commands = []
+        self.evals = []
+        self.uploads = []
+        self.on_run = None
+
+    def log(self, text):
+        self.logs.append(str(text))
+
+    def progress(self, step=None, total_steps=None, loss=None, message=None):
+        self.progresses.append({"step": step, "total_steps": total_steps, "loss": loss, "message": message})
+
+    def run(self, cmd, timeout=None, check=False, env=None, on_line=None, on_event=None, stall_seconds=None):
+        self.commands.append({"cmd": cmd, "timeout": timeout, "env": env, "stall_seconds": stall_seconds})
+        out = self.on_run(cmd) if self.on_run else Done()
+        if check and out.returncode != 0:
+            raise RuntimeError("Command failed (exit " + str(out.returncode) + "): " + cmd)
+        return out
+
+    def eval(self, index, prompt, reference, base, tuned):
+        self.evals.append([index, base, tuned])
+        return True
+
+    def upload(self, path, name, kind="other"):
+        self.uploads.append([name, kind])
+        return "https://blob.example/" + name
+
+
+def make_venv(path, owner, ready=True):
+    os.makedirs(os.path.join(path, "bin"), exist_ok=True)
+    with open(os.path.join(path, "bin", "python"), "w") as f:
+        f.write(owner)
+    if ready:
+        with open(os.path.join(path, g.READY_MARKER), "w") as f:
+            f.write("{}")
+
+
+def builder(owner, check_output=None, during_check=None):
+    """ctx.run for the build: uv venv makes bin/python, a pip install does nothing, the check prints its line."""
+
+    def on_run(cmd):
+        words = shlex.split(cmd)
+        if words[1:2] == ["venv"]:
+            make_venv(words[-1], owner, ready=False)
+        elif "-c" in words:
+            if during_check:
+                during_check()
+            return Done(stdout="Unsloth banner\n" + (g.READY_LINE if check_output is None else check_output) + "\n")
+        return Done()
+
+    return on_run
+
+
+def old(path, seconds):
+    t = time.time() - seconds
+    os.utime(path, (t, t))
+
+
+def raises(fn, text):
+    try:
+        fn()
+    except RuntimeError as e:
+        assert text in str(e), str(e)
+        return str(e)
+    raise AssertionError("no RuntimeError with " + text)
+`;
+
+/** Runs a glimmer internals test: GLIMMER_HARNESS, then body, under python3 -I next to glimmer.py. */
+async function glimmerTest(body: string): Promise<void> {
+  const dir = await mkdtemp(path.join(tmpdir(), "muse-glimmer-"));
+  try {
+    await writeFile(path.join(dir, "glimmer.py"), GLIMMER_PY);
+    await writeFile(path.join(dir, "test.py"), `${GLIMMER_HARNESS}\n${body}\nprint("ok")\n`);
+    const out = spawnSync("python3", ["-I", "test.py"], { cwd: dir, encoding: "utf8", timeout: 60_000 });
+    assert.equal(out.status, 0, `${out.stdout}\n${out.stderr}`);
+    assert.match(out.stdout, /ok\n$/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+describe("glimmer recipe internals", { skip: hasPython ? false : "python3 is missing", timeout: 120_000 }, () => {
+  it("never deletes a ready venv, and a build that loses the race reuses the winner's", async () => {
+    await glimmerTest(String.raw`
+make_venv(VENV, "job-a")
+ctx = FakeCtx("job-b")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, True)
+assert ctx.commands == [], ctx.commands
+assert open(PYTHON).read() == "job-a"
+
+# Job B builds, and job A's venv lands while B runs its check (A built without the lock, after B broke it, say).
+shutil.rmtree(VENV)
+ctx = FakeCtx("job-b")
+ctx.on_run = builder("job-b", during_check=lambda: make_venv(VENV, "job-a"))
+assert g.ensure_venv(ctx, BASE) == (PYTHON, True)
+assert open(PYTHON).read() == "job-a", "job A's venv is untouched"
+assert os.listdir(VENVS) == [os.path.basename(VENV)], os.listdir(VENVS)
+
+# settle_venv moves a leftover that isn't ready aside, and never a ready venv.
+shutil.rmtree(VENV)
+building = VENV + ".building-job-c"
+make_venv(VENV, "dead build", ready=False)
+make_venv(building, "job-c")
+assert g.settle_venv(building, VENV, "job-c") is False
+assert open(PYTHON).read() == "job-c"
+names = sorted(os.listdir(VENVS))
+assert len(names) == 2 and names[0] == os.path.basename(VENV) and ".stale-job-c-" in names[1], names
+# A job may still run from what was moved aside, so remove_leftovers deletes it only LEFTOVER_SECONDS later.
+aside = os.path.join(VENVS, names[1])
+assert open(os.path.join(aside, "bin", "python")).read() == "dead build" and g.age_of(aside) < 60
+shutil.rmtree(aside)
+make_venv(building, "job-d")
+assert g.settle_venv(building, VENV, "job-d") is True
+assert open(PYTHON).read() == "job-c" and not os.path.exists(building)
+`);
+  });
+
+  it("waits for the job holding the build lock and reuses its venv, giving up when too little time is left", async () => {
+    await glimmerTest(String.raw`
+os.makedirs(VENVS)
+os.mkdir(LOCK)
+
+
+def finish_a():
+    time.sleep(0.3)
+    make_venv(VENV, "job-a")
+
+
+threading.Thread(target=finish_a).start()
+ctx = FakeCtx("job-b")
+ctx.on_run = builder("job-b")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, True)
+assert ctx.commands == [], "nothing was installed twice"
+assert open(PYTHON).read() == "job-a"
+assert [p["message"] for p in ctx.progresses] == ["Waiting for another job in the region to finish installing Unsloth"]
+assert os.path.isdir(LOCK), "the holder's lock is the holder's to remove"
+
+shutil.rmtree(VENV)
+ctx = FakeCtx("job-c", deadline=time.time() + g.PARENT_RESERVE_SECONDS + g.MIN_CHILD_SECONDS - 5)
+raises(lambda: g.ensure_venv(ctx, BASE), "Gave up waiting for another job's venv build")
+`);
+  });
+
+  it("breaks a lock nobody touched, builds with every step watched, then frees the lock and dead jobs' leftovers", async () => {
+    await glimmerTest(String.raw`
+os.makedirs(VENVS)
+os.mkdir(LOCK)
+old(LOCK, g.LOCK_STALE_SECONDS + 5)
+dead = VENV + ".building-deadjob1"
+make_venv(dead, "dead", ready=False)
+old(dead, g.LEFTOVER_SECONDS + 5)
+stale = os.path.join(VENVS, "glimmer-0123456789ab.stale-deadjob1-1")
+os.makedirs(stale)
+old(stale, g.LEFTOVER_SECONDS + 5)
+live = os.path.join(VENVS, "glimmer-0123456789ab.building-livejob1")
+os.makedirs(live)
+other = os.path.join(VENVS, "glimmer-0123456789ab")
+make_venv(other, "older pins")
+old(other, g.LEFTOVER_SECONDS + 5)
+
+ctx = FakeCtx("job-b")
+ctx.on_run = builder("job-b")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, False)
+for t in g.CLEANUPS:
+    t.join()
+assert open(PYTHON).read() == "job-b"
+assert json.load(open(os.path.join(VENV, g.READY_MARKER)))["uv"] == g.UV_VERSION
+assert any("Breaking the venv build lock" in line for line in ctx.logs), ctx.logs
+names = sorted(os.listdir(VENVS))
+assert names == sorted(os.path.basename(x) for x in (VENV, live, other)), names
+assert g.age_of(os.path.join(VENV, g.LAST_USED)) < 60, "the venv in use is stamped"
+assert g.age_of(os.path.join(other, g.LAST_USED)) < 60, "an older venv with no stamp gets one, and goes 12 hours later"
+
+assert all(c["stall_seconds"] == g.STALL_SECONDS for c in ctx.commands)
+installs = [c["cmd"] for c in ctx.commands if " pip install" in c["cmd"]]
+assert len(installs) == len(g.INSTALL)
+assert ["--compile-bytecode" in c for c in installs] == [False] * (len(g.INSTALL) - 1) + [True], installs
+check = ctx.commands[-1]
+for part in ("from unsloth import FastModel", "train_on_responses_only", "torch.cuda.is_available()", "SFTTrainer"):
+    assert part in check["cmd"], part
+assert check["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
+`);
+  });
+
+  it("never marks a venv ready that has the wrong versions, can't import or has no CUDA", async () => {
+    await glimmerTest(String.raw`
+ctx = FakeCtx("job-b")
+ctx.on_run = builder("job-b", check_output="MUSE_CHECK transformers=4.57.1 trl=0.22.2")
+raises(lambda: g.ensure_venv(ctx, BASE), g.READY_LINE)
+assert os.listdir(VENVS) == [], os.listdir(VENVS)
+
+
+def no_cuda(cmd):
+    if " -c " in cmd:
+        return Done(1, "AssertionError: CUDA is not available")
+    return builder("job-b")(cmd)
+
+
+ctx = FakeCtx("job-b")
+ctx.on_run = no_cuda
+raises(lambda: g.ensure_venv(ctx, BASE), "Command failed")
+assert os.listdir(VENVS) == [], "no half-built venv and no lock is left"
+`);
+  });
+
+  it("uses only the pinned uv, checked against its sha256", async () => {
+    await glimmerTest(String.raw`
+payload = b"#!/bin/sh\necho uv\n"
+tar_path = os.path.join(ROOT, "uv.tar.gz")
+
+
+def make_tar():
+    with tarfile.open(tar_path, "w:gz") as tar:
+        info = tarfile.TarInfo(g.UV_MEMBER)
+        info.size = len(payload)
+        info.mode = 0o755
+        tar.addfile(info, io.BytesIO(payload))
+
+
+make_tar()
+g.UV_URL = "file://" + tar_path
+g.UV_SHA256 = hashlib.sha256(open(tar_path, "rb").read()).hexdigest()
+on_path = os.path.join(ROOT, "path")
+os.makedirs(on_path)
+with open(os.path.join(on_path, "uv"), "w") as f:
+    f.write("#!/bin/sh\n")
+os.chmod(os.path.join(on_path, "uv"), 0o755)
+os.environ["PATH"] = on_path + os.pathsep + os.environ.get("PATH", "")
+
+ctx = FakeCtx("job-b")
+uv = REAL_UV_BINARY(ctx, BASE)
+assert uv == os.path.join(BASE, "uv", g.UV_VERSION, "uv"), uv
+assert open(uv, "rb").read() == payload and os.access(uv, os.X_OK)
+os.remove(tar_path)
+assert REAL_UV_BINARY(ctx, BASE) == uv, "kept and reused, with no second download"
+
+make_tar()
+g.UV_SHA256 = "0" * 64
+other = os.path.join(ROOT, "other")
+raises(lambda: REAL_UV_BINARY(ctx, other), "sha256")
+assert not os.path.exists(os.path.join(other, "uv", g.UV_VERSION, "uv"))
+`);
+  });
+
+  it("gives the child ctx.deadline less the parent's reserve, and fails at once when too little is left", async () => {
+    await glimmerTest(String.raw`
+g.ensure_venv = lambda ctx, base: ("/venv/bin/python", True)
+seen = {}
+
+
+def fake_child(ctx, cmd, timeout, env, kinds=None):
+    cfg = json.load(open(shlex.split(cmd)[-1]))
+    seen.update(timeout=timeout, env=env, cfg=cfg)
+    g.write_result(cfg["result_path"], {"base": ["b0"], "tuned": ["t0"], "metrics": {"steps": 3}, "adapter": True})
+    return Done(0)
+
+
+g.run_child = fake_child
+p = {"max_steps": 10, "learning_rate": 0.0002, "lora_rank": 8}
+now = time.time()
+ctx = FakeCtx("job-c", deadline=now + 3600)
+# The recipe started a day ago: the time left comes from ctx.deadline, not from that.
+result = g.real_run(ctx, p, BASE, "train.jsonl", "eval.jsonl", os.path.join(BASE, "models", "job-c"), now - 86400, None)
+assert seen["cfg"]["deadline"] == ctx.deadline - g.PARENT_RESERVE_SECONDS
+child = seen["timeout"] - g.CHILD_GRACE_SECONDS
+assert 3600 - g.PARENT_RESERVE_SECONDS - 5 <= child <= 3600 - g.PARENT_RESERVE_SECONDS, seen["timeout"]
+assert seen["cfg"]["revision"] == g.MODEL_REVISION
+assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
+assert result["base"] == ["b0"] and result["ended"] == "exited with 0" and result["metrics"]["cached_venv"] == "yes"
+
+ctx.deadline = None
+assert g.job_deadline(ctx, 1000.0) == 1000.0 + 150 * 60, "without ctx.deadline: maxMinutes from the start"
+
+seen.clear()
+ctx = FakeCtx("job-d", deadline=time.time() + g.PARENT_RESERVE_SECONDS + g.MIN_CHILD_SECONDS - 30)
+raises(lambda: g.real_run(ctx, p, BASE, "t", "e", "a", time.time(), None), "too few to load it")
+assert seen == {}, "the child never started"
+
+g.run_child = lambda ctx, cmd, timeout, env, seen=None: Done(-9, "Loading the model\nKilled", timed_out=True)
+ctx = FakeCtx("job-e")
+error = raises(lambda: g.real_run(ctx, p, BASE, "t", "e", "a", time.time(), None), "The training child timed out before the base model answered")
+assert "Killed" in error
+`);
+  });
+
+  it("sizes each build step from the time left, and fails before installing when too little is left", async () => {
+    await glimmerTest(String.raw`
+ctx = FakeCtx("job-b", deadline=time.time() + g.PARENT_RESERVE_SECONDS + g.MIN_CHILD_SECONDS + 1000)
+ctx.on_run = builder("job-b")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, False)
+installs = [c["timeout"] for c in ctx.commands if " pip install" in c["cmd"]]
+assert len(installs) == len(g.INSTALL) and all(980 <= t <= 1000 for t in installs), installs
+assert ctx.commands[0]["timeout"] == g.VENV_TIMEOUT_SECONDS and ctx.commands[-1]["timeout"] == g.VENV_TIMEOUT_SECONDS
+
+shutil.rmtree(VENVS)
+ctx = FakeCtx("job-c", deadline=time.time() + g.PARENT_RESERVE_SECONDS + g.MIN_CHILD_SECONDS + 30)
+ctx.on_run = builder("job-c")
+raises(lambda: g.ensure_venv(ctx, BASE), "Too little time is left")
+assert ctx.commands == [] and os.listdir(VENVS) == [], os.listdir(VENVS)
+`);
+  });
+
+  it("removes other pins' venvs no job used for 12 hours, never the one in use, and clears leftovers on every job", async () => {
+    await glimmerTest(String.raw`
+os.makedirs(VENVS)
+make_venv(VENV, "current")
+g.mark_used(VENV)
+old(os.path.join(VENV, g.LAST_USED), g.LEFTOVER_SECONDS + 5)
+unused = os.path.join(VENVS, "glimmer-aaaaaaaaaaaa")
+make_venv(unused, "old pins")
+g.mark_used(unused)
+old(os.path.join(unused, g.LAST_USED), g.LEFTOVER_SECONDS + 5)
+recent = os.path.join(VENVS, "glimmer-bbbbbbbbbbbb")
+make_venv(recent, "recent pins")
+g.mark_used(recent)
+old(os.path.join(recent, g.LAST_USED), g.LEFTOVER_SECONDS - 600)
+unstamped = os.path.join(VENVS, "glimmer-cccccccccccc")
+make_venv(unstamped, "built before the stamps")
+old(unstamped, g.LEFTOVER_SECONDS + 5)
+dead = os.path.join(VENVS, "glimmer-dddddddddddd.building-deadjob1")
+os.makedirs(dead)
+old(dead, g.LEFTOVER_SECONDS + 5)
+lock = os.path.join(VENVS, "glimmer-eeeeeeeeeeee.lock")
+os.mkdir(lock)
+old(lock, g.LEFTOVER_SECONDS + 5)
+
+ctx = FakeCtx("job-b")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, True)
+for t in g.CLEANUPS:
+    t.join()
+assert ctx.commands == []
+names = sorted(os.listdir(VENVS))
+assert names == sorted(os.path.basename(x) for x in (VENV, recent, unstamped, lock)), names
+assert open(PYTHON).read() == "current" and g.age_of(os.path.join(VENV, g.LAST_USED)) < 60
+assert g.age_of(os.path.join(unstamped, g.LAST_USED)) < 60, "stamped now, so it goes 12 hours later"
+assert g.age_of(os.path.join(recent, g.LAST_USED)) > 3600, "a recent stamp is left as it is"
+assert [line for line in ctx.logs if line.startswith("Removing the venv")] == [
+    "Removing the venv glimmer-aaaaaaaaaaaa: it has other pins, and no job used it for 12 hours"
+], ctx.logs
+`);
+  });
+
+  it("removes Hugging Face download locks nobody took for an hour, and nothing else", async () => {
+    await glimmerTest(String.raw`
+hf = os.path.join(BASE, "hf")
+locks = os.path.join(hf, "hub", ".locks", "models--unsloth--Muse-Glimmer-30B-unsloth-bnb-4bit")
+os.makedirs(locks)
+for name in ("stale.lock", "fresh.lock", "old.incomplete"):
+    open(os.path.join(locks, name), "w").close()
+old(os.path.join(locks, "stale.lock"), g.HF_LOCK_STALE_SECONDS + 5)
+old(os.path.join(locks, "old.incomplete"), g.HF_LOCK_STALE_SECONDS + 5)
+ctx = FakeCtx("job-b")
+assert g.remove_stale_hf_locks(ctx, hf) == 1
+assert sorted(os.listdir(locks)) == ["fresh.lock", "old.incomplete"]
+assert ctx.logs == ["Removed 1 Hugging Face download lock nobody took for an hour"], ctx.logs
+assert g.remove_stale_hf_locks(ctx, os.path.join(ROOT, "nowhere")) == 0
+`);
+  });
+
+  it("marks a reused venv broken only when the child couldn't import a module from it, and never deletes it", async () => {
+    await glimmerTest(String.raw`
+make_venv(VENV, "job-a")
+p = {"max_steps": 10, "learning_rate": 0.0002, "lora_rank": 8}
+missing = "Traceback (most recent call last):\nModuleNotFoundError: No module named 'unsloth_zoo'"
+
+
+def child(code, out, kinds=(), timed_out=False):
+    def fake(ctx, cmd, timeout, env, seen=None):
+        seen.update(kinds)
+        return Done(code, out, timed_out=timed_out)
+
+    return fake
+
+
+def attempt(job):
+    ctx = FakeCtx(job)
+    raises(lambda: g.real_run(ctx, p, BASE, "t", "e", "a", time.time(), None), "before the base model answered")
+    return ctx
+
+
+seen = set()
+ctx = FakeCtx("job-r")
+g.relay(ctx, seen)("\r 10%|# | junk" + g.EVENT_PREFIX + json.dumps({"kind": "imported"}))
+assert seen == {"imported"} and ctx.progresses == []
+
+for fake in (
+    child(1, missing, kinds=("imported",)),
+    child(-9, missing, timed_out=True),
+    child(1, "ImportError: libcuda.so.1: cannot open shared object file"),
+):
+    g.run_child = fake
+    attempt("job-b")
+    assert g.venv_ready(VENV), "a failure after the imports, a timeout or a driver problem leaves the venv in use"
+
+g.run_child = child(1, missing)
+ctx = attempt("job-b")
+assert not g.venv_ready(VENV) and os.path.isfile(os.path.join(VENV, g.BROKEN_MARKER))
+assert open(PYTHON).read() == "job-a", "nothing is deleted"
+assert any("marked broken" in line for line in ctx.logs), ctx.logs
+
+# The next job builds the venv again; the broken one is moved aside, not deleted, since a job may still run from it.
+ctx = FakeCtx("job-c")
+ctx.on_run = builder("job-c")
+assert g.ensure_venv(ctx, BASE) == (PYTHON, False)
+assert open(PYTHON).read() == "job-c"
+asides = [n for n in os.listdir(VENVS) if ".stale-" in n]
+assert len(asides) == 1 and open(os.path.join(VENVS, asides[0], "bin", "python")).read() == "job-a", asides
+`);
+  });
+
+  it("stops training in time, uploads the adapter when the tuned answers failed, and fails clearly with no adapter", async () => {
+    await glimmerTest(String.raw`
+assert abs(g.train_stop_time(10000.0, 100.0) - (10000.0 - 130.0 - g.SAVE_RESERVE_SECONDS)) < 1e-6
+now = [0.0]
+clock = g.StopClock(50.0, clock=lambda: now[0])
+assert clock.check(3, 10) is False
+now[0] = 50.0
+assert clock.check(4, 10) is True and clock.stopped_at == 4
+now[0] = 60.0
+assert clock.check(5, 10) is True and clock.stopped_at == 4
+assert g.StopClock(0.0, clock=lambda: 100.0).check(10, 10) is False, "the last step needs no stop"
+
+result_path = os.path.join(ROOT, "result.json")
+g.write_result(result_path, {"base": ["x"]})
+assert g.read_result(result_path) == {"base": ["x"]} and not os.path.exists(result_path + ".part")
+assert g.read_result(os.path.join(ROOT, "missing.json")) is None
+
+adapter = os.path.join(BASE, "models", "job-f")
+os.makedirs(adapter)
+with open(os.path.join(adapter, "adapter_config.json"), "w") as f:
+    f.write("{}")
+evals = [{"prompt": "p0", "reference": "r0"}, {"prompt": "p1", "reference": "r1"}]
+train = [{"messages": []}] * 3
+p = {"dry_run": False, "lora_rank": 16}
+metrics = {"train_loss_final": 1.25, "steps": 40, "max_steps": 120, "stopped_early": "yes"}
+
+ctx = FakeCtx("job-f")
+done = {"base": ["b0", "b1"], "tuned": ["t0", "t1"], "metrics": dict(metrics), "adapter": True}
+out = g.finish(ctx, p, done, evals, train, adapter, True)
+expected = "LoRA r=16 on Muse Glimmer 30B, 40 of 120 steps (stopped early to finish within the time limit), final loss 1.25, 2 eval items."
+assert out["summary"] == expected, out["summary"]
+assert ctx.evals == [[0, "b0", "t0"], [1, "b1", "t1"]]
+assert out["adapter_uploaded"] == "yes" and out["eval_items"] == 2
+
+ctx = FakeCtx("job-f")
+partial = {"base": ["b0", "b1"], "tuned": None, "metrics": dict(metrics), "adapter": True, "tuned_error": "OutOfMemoryError: CUDA out of memory", "ended": "exited with 0"}
+error = raises(lambda: g.finish(ctx, p, partial, evals, train, adapter, True), "The adapter was saved (uploaded)")
+assert "OutOfMemoryError" in error and "no eval items were sent" in error
+assert ctx.evals == [] and ctx.uploads == [["glimmer-lora-job-f.tar.gz", "adapter"]]
+assert any(line.startswith("Training finished: ") and '"steps": 40' in line for line in ctx.logs), ctx.logs
+
+ctx = FakeCtx("job-f")
+cut = {"base": ["b0", "b1"], "tuned": None, "metrics": {}, "adapter": False, "ended": "timed out", "tail": "step 30 of 120"}
+error = raises(lambda: g.finish(ctx, p, cut, evals, train, adapter, True), "Training didn't finish (the child timed out), so no adapter was saved")
+assert "step 30 of 120" in error
+assert ctx.evals == [] and ctx.uploads == []
+`);
   });
 });
 
@@ -593,6 +1104,99 @@ describe("runner.py against a fake platform", { skip: hasPython ? false : "pytho
     } finally {
       await rm(cache, { recursive: true, force: true });
     }
+  });
+
+  it("keeps only the text after a line's last carriage return, and says when its timeout killed a command", async () => {
+    const recipe = String.raw`def run(ctx):
+    seen = []
+    ctx.run("printf 'bar 1\\rbar 2\\rdone\\nlast'", on_line=seen.append)
+    slow = ctx.run("sleep 5", timeout=1)
+    return {"seen": "|".join(seen), "timed_out": "yes" if slow.timed_out else "no", "code": slow.returncode}
+`;
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { seen: "done|last", timed_out: "yes", code: -9 });
+  });
+
+  it("sets ctx.deadline from job.json's deadlineEpoch, and to maxMinutes from now without one", async () => {
+    const recipe = "def run(ctx):\n    return {'deadline': ctx.deadline}\n";
+    const deadline = async (extra: Record<string, unknown>) => {
+      hits = [];
+      const r = await runJob(recipe, {}, extra);
+      assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+      return (events().at(-1) as { metrics: { deadline: number } }).metrics.deadline;
+    };
+    assert.equal(await deadline({ deadlineEpoch: 2_000_000_000 }), 2_000_000_000);
+    const now = Date.now() / 1000;
+    const fallback = await deadline({});
+    assert.ok(Math.abs(fallback - (now + 5 * 60)) < 60, `${fallback} is about 5 minutes from now`);
+  });
+
+  it("relays the glimmer child's events on their own pipe, whatever a progress bar does on stderr", async () => {
+    const child = String.raw`import importlib.util, os, sys, time
+here = os.path.dirname(os.path.abspath(__file__))
+spec = importlib.util.spec_from_file_location("glimmer", os.path.join(here, "glimmer.py"))
+g = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(g)
+assert g.event_fd() is not None, "the runner gave the child an event pipe"
+# What a tqdm bar does on stderr: a redraw with no newline, just before each event.
+sys.stderr.write("\r 33%|###       | 10/30 [00:05<00:10]")
+sys.stderr.flush()
+g.emit("progress", step=10, total=30, loss=1.5)
+sys.stderr.write("\r 50%|#####     | 15/30 [00:07<00:07]")
+sys.stderr.flush()
+g.emit("phase", message="Halfway")
+time.sleep(0.5)
+# Without the pipe an event falls back to stdout, glued after the bar, and still gets through.
+del os.environ["MUSE_EVENT_FD"]
+sys.stderr.write("\r 66%|######    | 20/30 [00:10<00:05]")
+sys.stderr.flush()
+g.emit("progress", step=20, total=30, loss=1.25)
+sys.stderr.write("\r100%|##########| 30/30 [00:15<00:00]\n")
+`;
+    const recipe = String.raw`import importlib.util, os, sys
+here = os.path.dirname(os.path.abspath(__file__))
+def run(ctx):
+    spec = importlib.util.spec_from_file_location("glimmer", os.path.join(here, "glimmer.py"))
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+    out = g.run_child(ctx, sys.executable + " -u " + os.path.join(here, "child.py"), 60, {})
+    return {"exit": out.returncode}
+`;
+    const r = await runJob(recipe, {}, {}, { "glimmer.py": GLIMMER_PY, "child.py": child });
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { exit: 0 });
+    assert.deepEqual(
+      events().filter((e) => e.type === "progress"),
+      [
+        { type: "progress", step: 10, totalSteps: 30, loss: 1.5 },
+        { type: "progress", message: "Halfway" },
+        { type: "progress", step: 20, totalSteps: 30, loss: 1.25 },
+      ],
+    );
+  });
+
+  it("reports a watched command that goes quiet once, holds back heartbeats while it stays quiet, then resumes", async () => {
+    const recipe = String.raw`import time
+def run(ctx):
+    ctx.run("for i in 1 2 3 4 5 6; do echo tick; sleep 0.5; done", stall_seconds=2)
+    ctx.run("sleep 6", stall_seconds=2)
+    time.sleep(3)
+    return {}
+`;
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    const evs = events();
+    const stalls = evs.flatMap((e, i) => (e.type === "log" && String(e.text).startsWith("Stalled:") ? [i] : []));
+    assert.equal(stalls.length, 1, "one stall report, and none for the command that kept writing");
+    assert.match(String(evs[stalls[0]].text), /^Stalled: no output for \d+ s from \$ sleep 6\. Heartbeats pause/);
+    const ended = evs.findIndex((e) => e.type === "log" && String(e.text).startsWith("$ sleep 6\n"));
+    assert.ok(ended > stalls[0], "reported while it ran");
+    assert.equal(evs.slice(stalls[0], ended).filter((e) => e.type === "heartbeat").length, 0, "no heartbeat while it stayed quiet");
+    const after = evs.slice(ended).filter((e) => e.type === "heartbeat");
+    assert.equal(after[0]?.message, "No longer stalled");
+    assert.ok(after.length >= 2, "heartbeats came back");
+    assert.ok(evs.slice(0, stalls[0]).filter((e) => e.type === "heartbeat").length >= 3, "heartbeats ran while the first command wrote");
   });
 
   it("runs the glimmer-lora recipe with dryRun: dataset pages, progress, eval items, then done", async () => {

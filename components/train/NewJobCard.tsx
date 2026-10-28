@@ -7,16 +7,20 @@ import {
   NOT_PUBLIC_TEXT,
   autoCostGpu,
   autoGpu,
+  autoTimeGpu,
   datasetOptionText,
   errorCode,
   gpuErrorText,
   gpuRowText,
   gpuRows,
   limitBounds,
+  limitDefaults,
   maxCostUsd,
   pricePerHour,
+  runTimeHint,
   startErrorText,
   sweepOffText,
+  type GpuRow,
 } from "@/components/train/format";
 import { usd } from "@/lib/format";
 import { MIN_MAX_MINUTES, MIN_MAX_USD } from "@/lib/train/logic";
@@ -114,8 +118,10 @@ export function NewJobCard({
     () => (initialDatasetId ? recipes.find(takesDataset)?.id : undefined) ?? recipes[0]?.id ?? "",
   );
   const recipe = recipes.find((r) => r.id === recipeId) ?? recipes[0];
-  const bounds = useMemo(
-    () => (recipe ? limitBounds(recipe, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
+  // An admin may ask for up to the platform ceilings; the form starts at the recipe's defaults under them.
+  const bounds = useMemo(() => limitBounds(ceilings), [ceilings]);
+  const start0 = useMemo(
+    () => (recipe ? limitDefaults(recipe, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
     [recipe, ceilings],
   );
 
@@ -127,8 +133,8 @@ export function NewJobCard({
   const [title, setTitle] = useState("");
   const [params, setParams] = useState<Record<string, string>>(() => paramDefaults(recipe, ready, initialDatasetId));
   const [gpu, setGpu] = useState("");
-  const [minutes, setMinutes] = useState(String(bounds.maxMinutes));
-  const [dollars, setDollars] = useState(bounds.maxUsd.toFixed(2));
+  const [minutes, setMinutes] = useState(String(start0.maxMinutes));
+  const [dollars, setDollars] = useState(start0.maxUsd.toFixed(2));
   const [gpus, setGpus] = useState<GpuState>({ state: "loading" });
   const [gpuNote, setGpuNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -194,7 +200,7 @@ export function NewJobCard({
   function pickRecipe(next: string) {
     const r = recipes.find((x) => x.id === next);
     if (!r) return;
-    const b = limitBounds(r, ceilings);
+    const b = limitDefaults(r, ceilings);
     setRecipeId(r.id);
     setParams(paramDefaults(r, ready));
     setGpu("");
@@ -220,9 +226,20 @@ export function NewJobCard({
     Number.isFinite(dollarsNum) &&
     dollarsNum >= MIN_MAX_USD &&
     dollarsNum <= bounds.maxUsd + 1e-9;
-  const limits: TrainLimits = limitsOk ? { maxMinutes: minutesNum, maxUsd: dollarsNum } : bounds;
+  const limits: TrainLimits = limitsOk ? { maxMinutes: minutesNum, maxUsd: dollarsNum } : start0;
   const price = costRow?.priceCentsPerHour ?? null;
   const cost = price === null ? null : maxCostUsd(price, limits);
+  // How long the run takes and whether it fits, as the jobs route checks it. On Auto, the slowest GPU it may take.
+  // Until Lambda's prices load, the recipe's own GPU list stands in, with the time limit alone.
+  const timeRows: GpuRow[] = rows.length
+    ? rows
+    : (recipe?.gpus ?? []).map((g) => ({ instanceType: g.instanceType, label: g.label, priceCentsPerHour: null, free: true }));
+  const timeRow = !recipe
+    ? null
+    : gpu
+      ? (timeRows.find((r) => r.instanceType === gpu) ?? null)
+      : autoTimeGpu(recipe, timeRows, usesCache);
+  const runHint = recipe ? runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache) : null;
 
   const noneFree = gpus.state === "ready" && rows.length > 0 && !auto;
   const blocked = !platformPublic
@@ -589,9 +606,21 @@ export function NewJobCard({
               </div>
             </div>
             <p className="train-help" id={`${id}-limits-help`}>
-              Up to {bounds.maxMinutes} minutes and {usd(bounds.maxUsd)} for this recipe. The GPU shuts down at
-              whichever comes first.
+              This recipe starts at {start0.maxMinutes} minutes and {usd(start0.maxUsd)}, and a job can ask for up to{" "}
+              {bounds.maxMinutes} minutes and {usd(bounds.maxUsd)}. The GPU shuts down at whichever comes first.
             </p>
+            {runHint ? (
+              <div aria-live="polite">
+                {runHint.warn ? (
+                  <div className="callout train-callout-warn" role="note">
+                    <Icon name="alert" size={18} />
+                    <p>{runHint.text}</p>
+                  </div>
+                ) : (
+                  <p className="train-help">{runHint.text}</p>
+                )}
+              </div>
+            ) : null}
           </fieldset>
         </div>
 

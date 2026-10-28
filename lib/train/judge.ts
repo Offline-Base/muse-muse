@@ -6,7 +6,9 @@
  *
  * The judge sees the two answers blind, as A and B, with the base model's first on even indexes and second on odd ones,
  * so neither its labels nor its position favors one model. Each verdict is logged as a "judgement" event, which also
- * makes judgeStep safe to run again: an item already judged isn't sent to Meta twice.
+ * makes judgeStep safe to run again: an item already judged isn't sent to Meta twice. How judging ended is saved on the
+ * job as its eval summary, including when it was skipped or judged nothing (unjudgedSummary, with the reason), so the
+ * job page never has to read it from the log, which the job's runner can write to.
  */
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
@@ -14,7 +16,7 @@ import { textPart } from "@/lib/brief/media";
 import { cleanStrings } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
 import { spendPaused } from "@/lib/quota";
-import { betterOf, judgeScore, summarizeJudgements, type JudgedItem } from "@/lib/train/logic";
+import { betterOf, judgeScore, summarizeJudgements, unjudgedSummary, type JudgedItem } from "@/lib/train/logic";
 import { getDataset, getEvalItem, getJob, getJudgement, listEvalIndexes, recordEvent, setEvalSummary } from "@/lib/train/store";
 import type { EvalSummary } from "@/lib/train/types";
 import type { ModelUsage } from "@/lib/types";
@@ -93,8 +95,8 @@ const usd = (usage: ModelUsage[]) => Math.round(usage.reduce((s, u) => s + (u.co
 
 /**
  * What to judge: the indexes of the job's eval items, and the task of its dataset (params.datasetId) when it has one.
- * Nothing when it has no eval items or a summary already, and nothing (with a log line saying why) when MODEL_API_KEY
- * isn't set or the platform's daily spend cap is reached.
+ * Nothing when it has no eval items or a summary already, and nothing when MODEL_API_KEY isn't set or the platform's
+ * daily spend cap is reached: then it saves an unjudged summary that says why, and logs it.
  */
 export async function judgePlanStep(jobId: string): Promise<{ indexes: number[]; task: string | null }> {
   "use step";
@@ -109,7 +111,9 @@ export async function judgePlanStep(jobId: string): Promise<{ indexes: number[];
       ? "the platform's daily spend cap is reached"
       : null;
   if (skip) {
-    await fromDb(() => recordEvent(jobId, { type: "log", text: `Judging skipped: ${skip}.` }));
+    const note = `Judging skipped: ${skip}.`;
+    await fromDb(() => setEvalSummary(jobId, unjudgedSummary(note)));
+    await fromDb(() => recordEvent(jobId, { type: "log", text: note }));
     return none;
   }
   const datasetId = typeof job.params?.datasetId === "string" ? job.params.datasetId : null;
@@ -175,13 +179,15 @@ export async function judgeStep(jobId: string, index: number, task: string | nul
 judgeStep.maxRetries = 2;
 
 /**
- * Writes the job's eval summary from the judged items and logs it. When none could be judged it writes nothing and
- * logs that. Never touches the job's status.
+ * Writes the job's eval summary from the judged items and logs it. When none could be judged it saves an unjudged
+ * summary that says so, logs that and returns null. Never touches the job's status.
  */
 export async function saveEvalSummaryStep(jobId: string, items: JudgedItem[], asked: number): Promise<EvalSummary | null> {
   "use step";
   if (!items.length) {
-    await fromDb(() => recordEvent(jobId, { type: "log", text: `Judging failed: none of the ${asked} eval items could be judged.` }));
+    const note = `Judging failed: none of the ${asked} eval items could be judged.`;
+    await fromDb(() => setEvalSummary(jobId, unjudgedSummary(note)));
+    await fromDb(() => recordEvent(jobId, { type: "log", text: note }));
     return null;
   }
   const s = summarizeJudgements(items);

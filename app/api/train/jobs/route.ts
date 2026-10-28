@@ -3,7 +3,7 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
-import { clampLimits, toJobView, validateParams } from "@/lib/train/logic";
+import { clampLimits, runEstimate, runFitProblem, toJobView, usableMinutes, validateParams } from "@/lib/train/logic";
 import { RECIPES, recipeById } from "@/lib/train/recipes";
 import {
   activeJobCount,
@@ -82,9 +82,12 @@ export const GET = route(async (req: Request) => {
 
 /**
  * POST {recipe, title?, params?, instanceType?, maxMinutes?, maxUsd?} -> 201 {job}. Admins or automation only.
- * Queues the job and starts the trainJob workflow, which launches the instance. Limits are the lowest of the ask, the
- * recipe's defaults and the platform ceilings. A dataset param must name a dataset that is ready. A recipe that keeps
- * the model cache prefers a region that already has it. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
+ * Queues the job and starts the trainJob workflow, which launches the instance. Limits are what the admin asked for,
+ * capped by the platform ceilings, with the recipe's defaults (also capped) for a limit not asked for. A dataset param
+ * must name a dataset that is ready. A recipe that keeps the model cache prefers a region that already has it. A run
+ * that can't fit its limits on the GPU it gets (runEstimate: seconds a step for that GPU plus a fixed overhead, larger
+ * in a region without the cache) is refused with a 400 that says so, with {estimateMinutes, usableMinutes}, before
+ * anything is created. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
  * lambda_unavailable, 503 lambda_not_configured, platform_not_public (the instance couldn't report back over https),
  * sweep_not_configured with {reason} (the 5-minute sweep that terminates a lost GPU can't run here: see
  * sweepOffReason), sweep_not_running with {lastSweepAt} (it can, but hasn't run with Lambda answering in the last 15
@@ -141,8 +144,17 @@ export const POST = route(async (req: Request) => {
     if (status === 401 || status === 403) return errorJson(503, "lambda_not_configured");
     return errorJson(502, "lambda_unavailable");
   }
-  const gpu = pickGpu(recipe.gpus, types, instanceType, await preferredRegions(recipe));
+  const cacheAt = await preferredRegions(recipe);
+  const gpu = pickGpu(recipe.gpus, types, instanceType, cacheAt);
   if (!gpu) return errorJson(503, "no_capacity", { options: gpuOptions(types, [recipe]) });
+  // A run its limits would cut off before the end pays for the GPU and saves nothing.
+  const estimate = runEstimate(recipe.id, params.value, gpu.instanceType, cacheAt.includes(gpu.region));
+  if (estimate) {
+    const usable = usableMinutes(limits, gpu.priceCentsPerHour);
+    const label = recipe.gpus.find((g) => g.instanceType === gpu.instanceType)?.label ?? gpu.instanceType;
+    const problem = runFitProblem(estimate, usable, label);
+    if (problem) return errorJson(400, problem, { estimateMinutes: estimate.minutes, usableMinutes: usable });
+  }
 
   const job = await createJob({
     recipe: recipe.id,

@@ -3,8 +3,8 @@
  * when a step is retried, runs twice at once or the database fails right after it, only the token's hash is stored
  * and it is stored before the launch, the token stays out of step results and errors, terminate finds every instance
  * under the job's name and terminates the workflow's instance before reading the database, a check survives a
- * Lambda or database outage, and a recipe with usesCache launches with its region's cache filesystem mounted. Nothing
- * here calls Lambda or a database.
+ * Lambda or database outage, a recipe with usesCache launches with its region's cache filesystem mounted, and the
+ * runner's deadline is never after the job's time limit. Nothing here calls Lambda or a database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/steps.test.ts
  *
@@ -128,7 +128,7 @@ function instance(over: Partial<LambdaInstance> & { id: string }): LambdaInstanc
 }
 
 /** The job.json the user data carries, decoded. */
-function jobJson(userData: string): { token: string; callbackBase: string; jobId: string; cacheDir?: string } {
+function jobJson(userData: string): { token: string; callbackBase: string; jobId: string; cacheDir?: string; deadlineEpoch: number } {
   const lines = userData.split("\n");
   const at = lines.findIndex((l) => l.includes("/opt/muse/job.json"));
   const content = lines.slice(at).find((l) => l.trim().startsWith("content:"))!;
@@ -487,6 +487,35 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(input.fileSystemNames, ["muse-muse-cache-us-west-1"]);
       assert.equal(input.region, "us-west-1");
       assert.equal(jobJson(input.userData).cacheDir, "/lambda/nfs/muse-muse-cache-us-west-1");
+    });
+
+    it("stamps the runner's deadline before the launch, so it is never after launchedAt plus maxMinutes", async () => {
+      const before = Date.now();
+      let sentAt = 0;
+      launchImpl = async (input) => {
+        sentAt = Date.now();
+        listing.push(instance({ id: "inst-1", name: input.name }));
+        return "inst-1";
+      };
+      job = row({ maxMinutes: 150, maxUsd: 100 });
+      await steps.launchStep(JOB_ID);
+      const { deadlineEpoch } = jobJson((called("launchInstance")[0]!.args[0] as LaunchInput).userData);
+      const launchedAt = job!.launchedAt!.getTime();
+      assert.ok(launchedAt >= before && launchedAt <= sentAt, "launchedAt is the request's time");
+      assert.ok(Number.isInteger(deadlineEpoch));
+      assert.ok(deadlineEpoch * 1000 <= launchedAt + 150 * MIN, "the runner stops no later than the platform's limit");
+      assert.ok(deadlineEpoch * 1000 > before + 150 * MIN - 1000, "and not much earlier");
+    });
+
+    it("stamps the runner's deadline at the dollar limit when that runs out before the time limit", async () => {
+      const before = Date.now();
+      // $1 at $0.75 an hour reaches the limit in its 80th minute, which decideCheck stops at once.
+      job = row({ maxMinutes: 150, maxUsd: 1, priceCentsPerHour: 75 });
+      await steps.launchStep(JOB_ID);
+      const { deadlineEpoch } = jobJson((called("launchInstance")[0]!.args[0] as LaunchInput).userData);
+      const launchedAt = job!.launchedAt!.getTime();
+      assert.ok(deadlineEpoch * 1000 <= launchedAt + 79 * MIN, "no later than the dollar limit");
+      assert.ok(deadlineEpoch * 1000 > before + 79 * MIN - 1000, "and not much earlier");
     });
 
     it("never touches filesystems for a recipe without usesCache", async () => {

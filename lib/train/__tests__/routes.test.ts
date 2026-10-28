@@ -49,6 +49,8 @@ let uploadHits: Record<string, number> = {};
 let active: number[] = [0];
 let committed: number[] = [0];
 let gpuFree = true;
+/** What the fake pickGpu launches when a GPU is free. */
+let gpuPick = { instanceType: "gpu_1x_a10", region: "us-east-1", priceCentsPerHour: 75 };
 /** When the sweep last ran with Lambda's listing answering, for the fake lastSweepOkAt. */
 let lastSweep: Date | null = new Date();
 /** What the faked sweepTraining answers the cron route, and whether recordSweepOk fails. */
@@ -268,7 +270,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         },
         pickGpu: (...args: unknown[]) => {
           calls.push({ fn: "pickGpu", args });
-          return gpuFree ? { instanceType: "gpu_1x_a10", region: "us-east-1", priceCentsPerHour: 75 } : null;
+          return gpuFree ? gpuPick : null;
         },
         cacheRegions: async () => {
           calls.push({ fn: "cacheRegions", args: [] });
@@ -344,6 +346,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     active = [0];
     committed = [0];
     gpuFree = true;
+    gpuPick = { instanceType: "gpu_1x_a10", region: "us-east-1", priceCentsPerHour: 75 };
     lastSweep = new Date(Date.now() - 4 * MIN);
     sweepResult = { instances: 0, terminated: [], failedJobs: [], stoppedJobs: [], errors: [] };
     recordSweepFails = false;
@@ -919,7 +922,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       const res = await createJobRoute(createReq({ recipe: "smoke", maxMinutes: 500, maxUsd: 0.5 }));
       assert.equal(res.status, 201);
       const input = called("createJob")[0]!.args[0] as Record<string, unknown>;
-      assert.equal(input.maxMinutes, 30, "the recipe's 30 minutes, under the 500 asked");
+      assert.equal(input.maxMinutes, 120, "the ceiling's 120 minutes, under the 500 asked");
       assert.equal(input.maxUsd, 0.5);
       assert.equal(input.instanceType, "gpu_1x_a10");
       assert.equal(input.createdBy, "admin-1");
@@ -999,6 +1002,55 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       const res = await ask(DATASET_ID.toUpperCase());
       assert.equal(res.status, 201);
       assert.equal(((called("createJob")[0]!.args[0] as { params: Record<string, unknown> }).params).datasetId, DATASET_ID);
+    });
+
+    it("lets the ceilings, not the recipe's defaults, cap what the admin asks for", async () => {
+      process.env.TRAIN_JOB_MAX_MINUTES = "300";
+      process.env.TRAIN_JOB_MAX_USD = "40";
+      assert.equal((await createJobRoute(createReq({ recipe: "smoke", maxMinutes: 200, maxUsd: 3 }))).status, 201);
+      assert.deepEqual(
+        [(called("createJob")[0]!.args[0] as Record<string, unknown>).maxMinutes, (called("createJob")[0]!.args[0] as Record<string, unknown>).maxUsd],
+        [200, 3],
+        "past the smoke test's own 30 minutes and $1",
+      );
+      calls = [];
+      assert.equal((await createJobRoute(createReq({ recipe: "smoke" }))).status, 201);
+      const plain = called("createJob")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual([plain.maxMinutes, plain.maxUsd], [30, 1], "the recipe's defaults when nothing is asked");
+    });
+
+    it("refuses a glimmer run that can't fit its limits on the GPU it gets, before creating anything", async (t) => {
+      if (!datasetRecipe?.usesCache) return t.skip("no recipe keeps the model cache");
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      gpuPick = { instanceType: "gpu_1x_a100_sxm4", region: "us-east-1", priceCentsPerHour: 249 };
+      const ask = (params: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+        createJobRoute(createReq({ recipe: datasetRecipe!.id, params: { datasetId: DATASET_ID, ...params }, ...extra }));
+
+      // 2000 steps at about 12 s each on an A100, plus 45 minutes in a region without the cache: past 120 minutes.
+      const long = await ask({ maxSteps: 2000 });
+      assert.equal(long.status, 400);
+      const body = (await long.json()) as { error: string; estimateMinutes: number; usableMinutes: number };
+      assert.deepEqual([body.estimateMinutes, body.usableMinutes], [445, 120]);
+      assert.match(body.error, /^2000 training steps on 1x A100 SXM4 \(40 GB\) need about 445 minutes \(400 of training at about 12 s a step/);
+      assert.match(body.error, /since this region has no model cache yet\), but this job's limits stop it after 120 minutes\./);
+      assert.equal(created(), 0);
+
+      // The same run with the cache in the region: 80 + 20 fits 120 minutes, but not 90.
+      cacheRegionsImpl = async () => ["us-east-1"];
+      assert.equal((await ask({ maxSteps: 400 })).status, 201);
+      calls = [];
+      const tight = await ask({ maxSteps: 400 }, { maxMinutes: 90 });
+      assert.equal(tight.status, 400);
+      assert.equal(((await tight.json()) as { estimateMinutes: number }).estimateMinutes, 100);
+
+      // The dollar limit counts too: $2 buys 48 minutes at $2.49 an hour, and 200 steps need 40 + 20.
+      const cheap = await ask({ maxSteps: 200 }, { maxUsd: 2 });
+      assert.equal(cheap.status, 400);
+      assert.equal(((await cheap.json()) as { usableMinutes: number }).usableMinutes, 48);
+
+      // A dry run doesn't train, so it always fits.
+      calls = [];
+      assert.equal((await ask({ maxSteps: 2000, dryRun: 1 })).status, 201);
     });
 
     it("prefers the regions that already hold the model cache, for a recipe that keeps one", async (t) => {

@@ -24,6 +24,7 @@ A job can train on a dataset Muse Spark 1.3 wrote for a task (see Datasets). A r
 | Ceiling on one job's time limit | 120 min | `TRAIN_JOB_MAX_MINUTES` |
 | Boot grace: no heartbeat yet | 25 min after launch | `lib/train/logic.ts` |
 | Silence after the first heartbeat | 10 min | `lib/train/logic.ts` |
+| A watched command with no output (`ctx.run(stall_seconds=...)`) | reported stalled once, then no heartbeats until it writes again: 20 min for every glimmer-lora build step and the child | `STALL_SECONDS` in `lib/train/recipes/glimmer.ts` |
 | Callback body | 16 KB (an eval callback 64 KB), log text cut to 4 KB, eval texts to 3,500 characters | events route |
 | Callbacks per job (heartbeat, progress, log, artifact, eval; never done or failed) | 120 a minute, then 429 `rate_limited` | events route |
 | Artifacts per job | 50, then 409 `artifact_limit` | `ARTIFACTS_MAX` in `lib/train/store.ts` |
@@ -37,7 +38,7 @@ A job can train on a dataset Muse Spark 1.3 wrote for a task (see Datasets). A r
 | Sweep: launched job left open (its workflow is gone) | 30 min past its time limit | `lib/train/sweep.ts` |
 | Launch gate: the sweep's last good run | 15 min | `SWEEP_FRESH_MS` in `app/api/train/shared.ts` |
 
-A job's limits are the lower of what the admin asked for, the recipe's defaults and the ceilings. Cost is `priceCentsPerHour / 100 * hours since launchedAt` (until `terminatedAt`), rounded up to the minute. A job is terminated when its time or dollar limit is reached. When a launch was never saved (Lambda timed out, or the database didn't answer), its clock starts at `createdAt`, which is earlier than the launch, so the limits and the cost are never measured short.
+A job's limits are what the admin asked for, capped by the ceilings; the recipe's defaults (capped the same way) fill in a limit the admin didn't ask for (`clampLimits`). So a recipe can run past its own defaults when the admin asks and the ceilings allow it. `usableMinutes(limits, priceCentsPerHour)` is how long a job can run before either limit stops it: the time limit, or less when the dollar limit runs out first (every started minute counts in full, so $4.29 at $4.29 an hour allows 59 minutes). The runner's deadline is stamped from it (see User data). Cost is `priceCentsPerHour / 100 * hours since launchedAt` (until `terminatedAt`), rounded up to the minute. A job is terminated when its time or dollar limit is reached. When a launch was never saved (Lambda timed out, or the database didn't answer), its clock starts at `createdAt`, which is earlier than the launch, so the limits and the cost are never measured short.
 
 Jobs holding a GPU (compared with `TRAIN_MAX_ACTIVE`) are every job that hasn't ended plus every ended job with `launchedAt` set and no `terminatedAt`. Today's committed spend (compared with `TRAIN_DAILY_USD`) counts every unfinished job at its full dollar limit.
 
@@ -51,7 +52,8 @@ trainJob workflow (lib/train/workflow.ts):
                (clock at createdAt); otherwise, for a usesCache recipe, ensureFilesystem(region) (see Model
                cache), then make the token and claimLaunch (queued -> "launching" with the token's hash, in one
                guarded update; only the holder of the claim launches); launch with user data (and the cache
-               filesystem mounted); save instanceId and launchedAt (the time of the request), status "booting".
+               filesystem mounted), its deadlineEpoch stamped just before the request; save instanceId and
+               launchedAt (the time of the request), status "booting".
                429: the claim is given back, retried after 30 s. Other 4xx: claim given back, FatalError.
                Timeout or 5xx: the claim is kept and the retry (2 min later) only adopts the instance by name
                or waits for it, never launches again. maxRetries 3.
@@ -108,10 +110,10 @@ The backstop for a job whose workflow is gone (a database outage it couldn't rid
 
 ## User data (lib/train/userdata.ts)
 
-`buildUserData({ jobId, callbackBase, token, recipe, params, maxMinutes, cacheDir? })` returns a `#cloud-config` document:
+`buildUserData({ jobId, callbackBase, token, recipe, params, maxMinutes, deadlineEpoch?, cacheDir? })` returns a `#cloud-config` document:
 
 - `write_files`:
-  - `/opt/muse/job.json` (0600): `{ jobId, callbackBase, token, params, maxMinutes, recipe }`, plus `cacheDir` (the cache filesystem's mount path) for a recipe with `usesCache`
+  - `/opt/muse/job.json` (0600): `{ jobId, callbackBase, token, params, maxMinutes, recipe, deadlineEpoch }`, plus `cacheDir` (the cache filesystem's mount path) for a recipe with `usesCache`. `deadlineEpoch` is the Unix second the runner must be done by: `launchStep` stamps it just before the launch request as `deadlineEpochFor(usableMinutes(...))`, so it is never after `launchedAt` plus the time the job's limits allow, and decideCheck never stops a job before it. Without one it defaults to now plus `maxMinutes`
   - `/opt/muse/runner.py` (0755): `RUNNER_PY` from `lib/train/recipes/runner.ts`
   - `/opt/muse/recipe.py` (0644): the recipe's script
 - `runcmd`: start `python3 /opt/muse/runner.py /opt/muse/job.json` detached, logging to `/var/log/muse-job.log`.
@@ -124,9 +126,10 @@ Python files are kept as TypeScript string constants (`String.raw`), so Vercel b
 
 - `runner.ts` exports `RUNNER_PY`. It uses only the Python standard library. It reads job.json, starts a heartbeat thread (every 60 s), imports `recipe.py` and calls `run(ctx)`. It then posts `done` with the returned dict as metrics, or `failed` with the last 3 KB of the traceback. Callbacks retry 3 times with backoff and never print the token. `ctx` has:
   - `params`, `job_id`, `max_minutes`
+  - `deadline`: the Unix time the job must be done by, job.json's `deadlineEpoch` (or `maxMinutes` from when the runner started, without one)
   - `log(text)`
   - `progress(step=None, total_steps=None, loss=None, message=None)`
-  - `run(cmd, timeout=None, check=False, env=None, on_line=None)`, which runs a shell command in `work_dir`, streams it to the log and posts its last lines as a log event. `env` adds variables for the command, and `on_line(line)` sees each output line as it arrives (its errors are logged, never raised). With `check=True` a non-zero exit raises
+  - `run(cmd, timeout=None, check=False, env=None, on_line=None, on_event=None, stall_seconds=None)`, which runs a shell command in `work_dir`, streams it to the log and posts its last lines as a log event. It reads the output in chunks rather than lines, so a progress bar's carriage-return redraws count as output, and keeps the text after a line's last carriage return. `env` adds variables for the command, and `on_line(line)` sees each output line as it arrives (its errors are logged, never raised). `on_event(line)` does the same for the lines the command writes to a pipe of its own, whose file descriptor is in its `MUSE_EVENT_FD`: a channel a progress bar on stderr can't write into. With `stall_seconds`, the command is watched: once it has written nothing on either for that long, the heartbeat thread posts one "Stalled: no output for N minutes from $ <cmd>" log and sends no more heartbeats until it writes again (the first one back says "No longer stalled"), so the platform's 10-minute silence rule ends a stuck job instead of it billing to its limit. The result is a `subprocess.CompletedProcess` with the last lines as `stdout` and `timed_out` set when the timeout killed it. With `check=True` a non-zero exit raises
   - `upload(path, name, kind)`, which asks `POST {callbackBase}/upload` for a Blob client token, PUTs the file to Vercel Blob and posts an `artifact` event. It returns None when the platform answers 503 (no storage). It declares the type `mimetypes` names when the platform takes it (`UPLOAD_TYPES`, the same list as `TRAIN_UPLOAD_TYPES` in `lib/train/types.ts`) and `application/octet-stream` otherwise. A grant covers one blob that can't be written twice, so when Blob refuses a retried PUT or multipart complete (the first try may have landed before its answer was lost) it asks for a fresh grant and uploads once more.
   - `work_dir`
   - `cache_dir`: the mounted cache filesystem (job.json's `cacheDir`) once it is a folder, waiting up to 60 s for the mount (`cacheWaitSeconds` in job.json for tests), or None (with a log line) when there is none
@@ -168,7 +171,10 @@ export function pickGpu(choices: GpuChoice[], types: LambdaInstanceType[], asked
 // logic.ts
 export const BOOT_GRACE_MS = 25 * 60_000; export const SILENCE_MS = 10 * 60_000; export const POLL_MS = 30_000
 export function estimateCostUsd(job: { priceCentsPerHour: number; launchedAt: Date | null; terminatedAt: Date | null }, now: Date): number
-export function clampLimits(recipe: Recipe, asked: Partial<TrainLimits>, ceilings: TrainLimits): TrainLimits
+export function clampLimits(recipe: Pick<Recipe, "defaultMaxMinutes" | "defaultMaxUsd">, asked: Partial<TrainLimits>, ceilings: TrainLimits): TrainLimits
+export function usableMinutes(limits: TrainLimits, priceCentsPerHour: number | null): number // before the time or dollar limit stops it
+export function runEstimate(recipe, params, instanceType, cached): RunEstimate | null // glimmer-lora only; GLIMMER_STEP_SECONDS, GLIMMER_OVERHEAD_MINUTES
+export function runFitProblem(estimate: RunEstimate, usable: number, gpuLabel: string): string | null // the jobs route's 400
 export function validateParams(recipe: Recipe, raw: unknown): { ok: true; value: Record<string, string | number> } | { ok: false; error: string } // a "dataset" param takes only a uuid, lowercased
 export function decideCheck(job: JobState, instance: { status: LambdaInstance["status"] } | null, now: Date): TrainCheck
 export function instanceNameFor(jobId: string, recipe: RecipeId): string
@@ -194,7 +200,7 @@ verifyJobToken(jobId, token) (constant-time compare of hashToken(token) with tok
 | Route | Who | Does |
 |---|---|---|
 | `GET /api/train/jobs` | admin | `{ jobs: TrainJobView[], recipes: RecipeView[] }` |
-| `POST /api/train/jobs` | admin or automation | body `{ recipe, title?, params?, instanceType?, maxMinutes?, maxUsd? }` -> 201 `{ job }`. A "dataset" param must name a dataset that exists and is ready. For a `usesCache` recipe the GPU is picked with `pickGpu(recipe.gpus, types, asked, await cacheRegions())`, and a `cacheRegions()` error falls back to no preference. 400 bad input (including a dataset that doesn't exist, is still being written or failed), 502 `lambda_unavailable`, 409 `too_many_active`, 503 `lambda_not_configured`, `platform_not_public`, `sweep_not_configured` with `{ reason }` (`cron_secret_unset`, or `not_production` since Vercel runs crons only there; `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1` lifts only the second, for a deliberate test), `sweep_not_running` with `{ lastSweepAt }` (no sweep run with Lambda's listing answering in the last 15 min; on a new deployment, wait for the first run or call the sweep once by hand), `no_capacity` (with `{ options }`), `daily_cap` |
+| `POST /api/train/jobs` | admin or automation | body `{ recipe, title?, params?, instanceType?, maxMinutes?, maxUsd? }` -> 201 `{ job }`. A "dataset" param must name a dataset that exists and is ready. For a `usesCache` recipe the GPU is picked with `pickGpu(recipe.gpus, types, asked, await cacheRegions())`, and a `cacheRegions()` error falls back to no preference. A run that can't fit its limits on the GPU it gets (`runEstimate` against `usableMinutes`, see glimmer-lora recipe) is refused with 400 and a sentence saying why, with `{ estimateMinutes, usableMinutes }`, before anything is created. 400 bad input (including a dataset that doesn't exist, is still being written or failed), 502 `lambda_unavailable`, 409 `too_many_active`, 503 `lambda_not_configured`, `platform_not_public`, `sweep_not_configured` with `{ reason }` (`cron_secret_unset`, or `not_production` since Vercel runs crons only there; `TRAIN_ALLOW_OUTSIDE_PRODUCTION=1` lifts only the second, for a deliberate test), `sweep_not_running` with `{ lastSweepAt }` (no sweep run with Lambda's listing answering in the last 15 min; on a new deployment, wait for the first run or call the sweep once by hand), `no_capacity` (with `{ options }`), `daily_cap` |
 | `GET /api/train/jobs/{id}` | admin | `{ job, events: TrainEventView[] }` (`job.evalSummary` once judged), `?after=<event id>` for new events only |
 | `POST /api/train/jobs/{id}/stop` | admin | on an open job: sets stopRequested and terminates the instance right away (best effort; the job ends as stopped). On an ended job whose instance isn't confirmed terminated: terminates it again, and the job keeps its status. So Stop can be pressed again until `terminatedAt` is set; when Lambda doesn't answer, the sweep terminates it within 5 minutes. 409 `already_ended` once terminated or if it never launched |
 | `POST /api/train/jobs/{id}/events` | job token | `TrainCallback` body -> 204. 401 bad token, 400 not a callback, or an artifact URL that isn't this job's own upload (https on this deployment's Blob store, under `models/<jobId>/`, no query or credentials), 413 over 16 KB (64 KB for eval), 409 `job_ended` (except a late `log`; any other late callback also terminates the instance when it isn't confirmed terminated yet), 409 `artifact_limit`, 409 `eval_limit` with `{ max }`, 429 `rate_limited`. An eval item sent again with an index the job already has: 204, logged once (see Judging) |
@@ -203,12 +209,12 @@ verifyJobToken(jobId, token) (constant-time compare of hashToken(token) with tok
 | `GET /api/train/gpus` | admin | `{ options: GpuOption[] }` |
 | `GET /api/train/datasets` | admin | `{ datasets: DatasetView[] }`, newest first |
 | `POST /api/train/datasets` | admin or automation | body `{ title?, task, count }` -> 201 `{ dataset }`, makeDataset workflow started. No title: the start of the task. 400 bad input, 503 `meta_not_configured` (no MODEL_API_KEY), 503 `paused` (daily spend cap), 500 `start_failed` (the dataset is failed) |
-| `GET /api/train/datasets/{id}` | admin | `{ dataset, sampleTrain, sampleEval }`, the first 5 of each. While generating, sampleTrain is the first answered examples, before eval is held out |
+| `GET /api/train/datasets/{id}` | admin | `{ dataset, sampleTrain, sampleEval }`, the first 5 of each. While generating, sampleTrain is the first answered examples, before eval is held out, and sampleEval is empty (eval then holds the answers of the chunk being written) |
 | `GET /api/cron/train-sweep` | CRON_SECRET | the sweep; `vercel.json` cron `*/5 * * * *`. Notes each run whose Lambda listing answered, for the launch gate |
 
 ## Admin pages
 
-`/fine-tuning` (nav "Fine-tuning", in the Usage group) lists jobs in the Usage-style table: title, recipe, GPU, status pill, elapsed, cost, started. It also has a New job card: recipe select, params fields from the recipe, a GPU select from `/api/train/gpus` with price and capacity, and limits fields. `/fine-tuning/{id}` shows the job with the build-room layout: an event log on the left that polls every 5 s while the job isn't terminal, and a right panel with status, GPU, region, IP, limits, a running cost, progress, artifacts and a Stop button. Non-admins see an "Admins only" card. Visual rules: docs/UI_PATTERNS.md.
+`/fine-tuning` (nav "Fine-tuning", in the Usage group) lists jobs in the Usage-style table: title, recipe, GPU, status pill, elapsed, cost, started. It also has a New job card: recipe select, params fields from the recipe, a GPU select from `/api/train/gpus` with price and capacity, and limits fields, which start at the recipe's defaults under the ceilings (`limitDefaults`) and go up to the ceilings (`limitBounds`). For glimmer-lora the card shows how long the run takes on the chosen GPU (on Auto, the slowest free one) with and without the model cache, and a warning when the job's limits would stop it first (`runTimeHint`, the estimate the jobs route checks). Under the totals, a note says what the model cache costs every month on its own (`cacheCostText`, see Model cache). `/fine-tuning/{id}` shows the job with the build-room layout: an event log on the left that polls every 5 s while the job isn't terminal, and a right panel with status, GPU, region, IP, limits, a running cost, progress, artifacts and a Stop button. Non-admins see an "Admins only" card. Visual rules: docs/UI_PATTERNS.md.
 
 - Both pages confirm admin against the database (`pageViewer` in `app/fine-tuning/viewer.ts`, as `requireUser` does), so revoking `is_admin` takes effect without waiting for the cookie to expire.
 - The New job card blocks Start, with a sentence saying why, when the route would refuse for the sweep (`sweep_not_configured` or `sweep_not_running`).
@@ -218,25 +224,25 @@ verifyJobToken(jobId, token) (constant-time compare of hashToken(token) with tok
 Datasets and eval results:
 
 - `/fine-tuning` also has a Datasets table (dataset, examples, status, cost, created) and a New dataset card: the task (20 to 2,000 characters), an optional name, the number of examples (20 to 1,000), and a line with a rough cost and time and how many are held out (`datasetCostHint`). The card is blocked, with a sentence saying why, when the route would refuse (`meta_not_configured`, `paused`). The page refreshes every 10 s while a job is running or a dataset is being written.
-- `/fine-tuning/datasets/{id}` shows a dataset: its status, counts and cost (examples answered so far while it is written), the task, the first 10 training conversations and every eval prompt with its reference, and a "Train on it" button on a ready one (`/fine-tuning?dataset=<id>#new-job`). `/fine-tuning/datasets` redirects to `/fine-tuning#datasets`.
+- `/fine-tuning/datasets/{id}` shows a dataset: its status, counts and cost (examples answered so far while it is written), the task, the first 10 training conversations and every eval prompt with its reference (only once it is ready), and a "Train on it" button on a ready one (`/fine-tuning?dataset=<id>#new-job`). A ready dataset that stopped early shows its note (in `error`) as a warning there and under its name in the Datasets table. `/fine-tuning/datasets` redirects to `/fine-tuning#datasets`.
 - A dataset still "generating" 6 hours after it was made shows as "Stalled" (`DATASET_STALE_MS`): its workflow most likely died. It isn't refreshed for, and the New job card doesn't offer it.
 - In the New job card a param of kind "dataset" is a select of ready datasets (ones still being written are listed but can't be picked); `?dataset=<id>` picks that one and the first recipe that takes a dataset. For a `usesCache` recipe, Auto reads "a free GPU near the model cache", and the cost estimate uses the priciest free GPU, since only the platform knows which regions hold the cache.
-- The job page reads the whole event log (pages of 1,000, up to 20,000 events) and sends the browser every eval and judgement event plus the latest 1,500 others; runs of eval and judgement events fold into one log row each. The panel names the job's dataset with a link and has an Eval row.
-- Eval results on the job page: a summary strip once judged (wins, ties, average scores, judging cost), and each item as a group of rows: the prompt across the full width, then the reference, the base and the tuned answer and the verdict, long text folded. While the job runs it says the items are being answered; after a job that succeeded it says "Judging..." and keeps polling until the summary arrives, a "Judging skipped:" or "Judging failed:" log line appears (`lib/train/judge.ts` writes those), or 20 minutes pass after the job ended (`JUDGE_WAIT_MS`).
+- The job page reads the whole event log (pages of 1,000, up to 20,000 events) and sends the browser every eval and judgement event plus the latest 1,500 others; runs of eval and judgement events fold into one log row each. The panel names the job's dataset with a link and has an Eval row ("Tuned won N of M", or "Not judged").
+- Eval results on the job page: a summary strip once judged (wins, ties, average scores, judging cost), and each item as a group of rows: the prompt across the full width, then the reference, the base and the tuned answer and the verdict, long text folded. While the job runs it says the items are being answered; after a job that succeeded it says "Judging..." and keeps polling until the job's eval summary arrives (with a `note` when judging was skipped or judged nothing, which the page shows as the reason) or 20 minutes pass after the job ended (`JUDGE_WAIT_MS`). `evalState` reads only the job's own eval summary, its status and the platform's judgement events, never log text, which the job's runner can write to.
 
 ## Testing without spending
 
 Run them with `npx tsx --test --experimental-test-module-mocks lib/train/__tests__/*.test.ts` (the flag gives node:test `mock.module`; without it the mocked suites skip). Nothing calls Lambda or Neon.
 
-- `lib/train/__tests__/logic.test.ts`: decideCheck, costs, limits and params.
+- `lib/train/__tests__/logic.test.ts`: decideCheck, costs, limits (and `usableMinutes` agreeing with decideCheck), params and run estimates.
 - `lib/train/__tests__/lambda.test.ts`: the client against a faked fetch.
-- `lib/train/__tests__/steps.test.ts`: the real steps with Lambda and the store faked: one launch per job under retries, duplicate runs and database errors; terminate by id before any database read; checks that ride out outages.
+- `lib/train/__tests__/steps.test.ts`: the real steps with Lambda and the store faked: one launch per job under retries, duplicate runs and database errors; the runner's deadline stamped before the launch, at the time or the dollar limit; terminate by id before any database read; checks that ride out outages.
 - `lib/train/__tests__/workflow.scenario.test.ts`: the workflow with steps faked, in the style of lib/pipeline/__tests__/workflow.scenario.test.ts.
 - `lib/train/__tests__/sweep.test.ts`: the sweep with Lambda and the store faked, including a failed listing and renamed or tagged instances.
 - `lib/train/__tests__/store.test.ts`: the store's SQL against an in-memory PGlite with the repo's migrations (holding a GPU, the daily cap, finishJob, the launch claim, the sweep's heartbeat, the upload budget).
 - `lib/train/__tests__/routes.test.ts`: the job, events, upload, stop and sweep cron routes with their dependencies faked.
-- `lib/train/__tests__/runner.test.ts`: compiles every Python string with `python3 -m py_compile`, then runs runner.py with the smoke recipe (`allowNoGpu`) against a local HTTP server standing in for the platform and for Vercel Blob. It checks the events, their order, the Authorization header, uploads (simple, multipart, media types, a fresh grant after a refused retry). It is skipped when python3 is missing.
-- `lib/train/__tests__/userdata.test.ts`: cloud-config shape, size and no secrets, and `cacheDir` only when given.
+- `lib/train/__tests__/runner.test.ts`: compiles every Python string with `python3 -m py_compile`, then runs runner.py with the smoke recipe (`allowNoGpu`) against a local HTTP server standing in for the platform and for Vercel Blob. It checks the events, their order, the Authorization header, uploads (simple, multipart, media types, a fresh grant after a refused retry), `ctx.deadline`, the event pipe against a progress bar on stderr, and the stall report with heartbeats held back. Its "glimmer recipe internals" suite runs glimmer.py's own functions against a fake ctx: the venv race and the build lock, leftovers and old venvs, the readiness check, the pinned uv, build timeouts, stale Hugging Face locks, a venv marked broken, the deadline, stopping training early and partial results. It is skipped when python3 is missing.
+- `lib/train/__tests__/userdata.test.ts`: cloud-config shape, size and no secrets, `deadlineEpoch`, and `cacheDir` only when given.
 - `lib/train/__tests__/datasets.test.ts` and `judge.test.ts`: see Datasets and Judging. `lambda.test.ts` and `steps.test.ts` also cover the filesystems, `pickGpu`'s region preference and the cache at launch; `runner.test.ts` runs the glimmer-lora recipe with `dryRun: 1` against the fake platform serving `/dataset` pages.
 - `components/train/__tests__/`: the page copy and the rendered cards, including datasets and eval results.
 
@@ -244,7 +250,7 @@ All of it, with the component renders: `npx tsx --test --experimental-test-modul
 
 ## Model cache (Lambda filesystems)
 
-A recipe with `usesCache: true` (today only `glimmer-lora`) keeps its Python venv and model weights on a Lambda persistent filesystem, one per region, so the next job in that region skips the install and the 21 GB download. Filesystems bill by stored GB per month even with no instance running; the platform never deletes them (delete one by hand in the Lambda console when it is no longer wanted).
+A recipe with `usesCache: true` (today only `glimmer-lora`) keeps its Python venv and model weights on a Lambda persistent filesystem, one per region, so the next job in that region skips the install and the 21 GB download. Filesystems bill by stored GB per month even with no instance running (about 40 GB a region, roughly $8 a month at about $0.20 a GB, outside every job, daily and spend limit; `/fine-tuning` says so); the platform never deletes them (delete one by hand in the Lambda console when it is no longer wanted). Inside one, the recipe clears what dead jobs left and venvs nobody uses any more (see the cache layout below), but keeps every job's adapter.
 
 - Name: `muse-muse-cache-<region>` (`cacheFilesystemName(region)`, prefix `CACHE_FILESYSTEM_PREFIX`). Mounted at Lambda's default `/lambda/nfs/<name>` (the filesystem's `mount_point`).
 - Job creation: the jobs route calls `pickGpu(recipe.gpus, types, asked, recipe.usesCache ? await cacheRegions() : [])`; a `cacheRegions()` error only drops the preference, it never refuses the job. An asked GPU type with capacity still wins (in a cache region when it has capacity there); otherwise the first recipe GPU with capacity in a cache region is taken, then the first with capacity anywhere.
@@ -267,21 +273,26 @@ Cache layout, under `cacheDir` (or `/opt/muse` when a job has none):
 
 | Path | What |
 |---|---|
-| `venvs/glimmer-<12 hex>/` | the uv venv; the hash covers the Python version and every install line, so changing a pin makes a new one. Ready once `.muse-ready` is in it |
-| `uv/bin/uv`, `uv/python/` | uv itself and the uv-managed Python the venvs point at |
-| `hf/` | `HF_HOME`: the model weights |
-| `models/<jobId>/` | each job's saved LoRA adapter, kept after the upload |
+| `venvs/glimmer-<12 hex>/` | the uv venv; the hash covers the Python version, the uv version and every install line, so changing a pin makes a new one. Ready once `.muse-ready` is in it. Every job stamps the one it runs from (`.muse-last-used`); a venv of other pins with no stamp gets one when a job first sees it, and goes once no job stamped it for 12 hours (by then every job launched with its pins has ended, as long as `TRAIN_JOB_MAX_MINUTES` stays well under 12 hours). The one in use is never removed |
+| `venvs/glimmer-<12 hex>.lock/` | the build lock (a folder, since `mkdir` is atomic on NFS), with an `owner` file; its holder touches it every minute, and one untouched for 10 minutes is broken |
+| `venvs/glimmer-<12 hex>.building-<job>/`, `.stale-*` | a build in progress, and folders moved aside (a broken lock, a venv that wasn't ready, an old venv being deleted). Any job deletes those older than 12 hours, on a thread of its own |
+| `uv/<version>/uv`, `uv/python/` | the pinned uv, checked against its sha256 before it is kept, and the uv-managed Python the venvs point at |
+| `hf/` | `HF_HOME`: the model weights at the pinned revision. Download locks under `hf/hub/.locks` that nobody took for an hour are a dead download's and are removed before the model loads |
+| `models/<jobId>/` | each job's saved LoRA adapter, kept after the upload (it is never cleared) |
 
 ## glimmer-lora recipe (lib/train/recipes/glimmer.ts)
 
 A LoRA fine-tune of Muse Glimmer 30B on one dataset, then the dataset's held-out prompts answered by the base and the tuned model as eval items, for the platform to judge. It follows Unsloth's Muse Glimmer guide (unsloth.ai/docs/models/muse-glimmer and /train) and its Conversational Kaggle notebook (`Kaggle-Muse_Glimmer_(30B)-Conversational.ipynb`).
 
-- GPUs, in order: `gpu_1x_h100_pcie`, `gpu_1x_h100_sxm5`, `gpu_1x_a100_sxm4`. `gpu_1x_gh200` is left out: it is arm64, and Unsloth documents arm64 only through a from-source Docker build (its DGX Spark Dockerfile), not the pip install below. Defaults: 150 minutes, $14, `usesCache: true`. These sit above the default ceilings (`TRAIN_JOB_MAX_MINUTES` 120, `TRAIN_JOB_MAX_USD` $5), so raise those to get them; a job is otherwise clamped to 120 minutes and $5.
+- GPUs, in order: `gpu_1x_h100_pcie`, `gpu_1x_h100_sxm5`, `gpu_1x_a100_sxm4`. `gpu_1x_gh200` is left out: it is arm64, and Unsloth documents arm64 only through a from-source Docker build (its DGX Spark Dockerfile), not the pip install below. Defaults: 150 minutes, $14, `usesCache: true`. These sit above the default ceilings (`TRAIN_JOB_MAX_MINUTES` 120, `TRAIN_JOB_MAX_USD` $5), so a job that asks for nothing gets 120 minutes and $5 until those are raised; with them raised (say 300 and $40), an admin can ask for more than the defaults.
+- How long a run takes (`runEstimate` in `lib/train/logic.ts`): `maxSteps` at about 5 s a step on an H100 SXM5, 6 on an H100 PCIe and 12 on an A100 SXM4 (or any other GPU), plus 20 minutes in a region with the model cache or 45 without it. The jobs route refuses a run whose estimate is over `usableMinutes`, and the New job card shows the same estimate. A dry run has none.
 - Params: `datasetId` (kind "dataset", required), `maxSteps` (default 120, 10 to 2000), `learningRate` (default 0.0002, 0.000001 to 0.01), `loraRank` (default 16, 4 to 128; `lora_alpha` is the same), `dryRun` (0 or 1, default 0). `dryRun: 1` is also the cheap first check on a real GPU: it launches, mounts the cache, pages the dataset, sends the eval items (which get judged) and uploads a stand-in adapter, in a few minutes of GPU time.
-- Install (once per region and pin set): uv (Astral's installer into the cache), `uv venv --relocatable --python-preference only-managed --python 3.12`, then the notebook's pins as `uv pip install` lines: `torch torchvision torchaudio xformers --index-url https://download.pytorch.org/whl/cu128`, `unsloth`, `--no-deps --upgrade "torchao>=0.16.0"`, `transformers==5.15.0`, `--no-deps trl==0.22.2`. It checks transformers is 5.15.0, writes `.muse-ready`, and renames the venv into place, so a half-built venv is never reused and two jobs building at once don't clash.
-- The runner imports recipe.py with the system python, so its top level is standard library only. The GPU work runs as `<venv>/bin/python -u recipe.py --child glimmer-config.json` through `ctx.run`, with `HF_HOME=<cache>/hf`. The child prints `MUSE_EVENT {...}` lines, which the recipe turns into progress events (training every 10 steps with the loss, plus phase messages); results come back in `work/glimmer-result.json`.
-- The child: `FastModel.from_pretrained("unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", max_seq_length=2048)`; `FastModel.get_peft_model` with language, attention and MLP modules (vision frozen), `r = lora_alpha = loraRank`, dropout 0, bias "none", `use_gradient_checkpointing="unsloth"`, seed 3407. Text goes through the model's own ATEM chat template with the leading `<|begin_of_text|>` removed, and `reasoning_strength="low"` for both the training text and the eval prompts (reasoning tokens count against the 512 new tokens). The eval prompts are answered under the system message every training conversation shares (`datasetSystemPrompt(task)` for a platform dataset; none when they differ), so both models see what training saw. Base answers first (a fresh LoRA adds zero), greedy, `max_new_tokens=512`, batches of 8, left padded; the answer is the text on the `to=user` channel, or "[no final answer within 512 new tokens]". Then `SFTTrainer` with the notebook's `SFTConfig` (batch 1, gradient accumulation 4, warmup 5, `max_steps=maxSteps`, `learning_rate`, `loss_type="nll"`, `adamw_8bit`, weight decay 0.001, linear schedule, `save_strategy="no"`) and `train_on_responses_only(instruction_part="<|start|>user<|message|>", response_part="<|start|>assistant to=user<|message|>")`. Then the tuned answers, and the adapter saved with `save_pretrained` to `<cache>/models/<jobId>/`.
-- The recipe then sends one eval item per held-out prompt (a dataset holds out at most 40; the recipe and the runner stop at 60), uploads the adapter folder as `glimmer-lora-<job id start>.tar.gz` (kind "adapter") when storage is available and it is under 1 GB (a failed upload is logged, not fatal), and returns metrics: `train_loss_final`, `steps`, `train_seconds`, `peak_vram_gb`, `gpu`, `eval_items`, `train_examples`, `cached_weights` and `cached_venv` (yes or no), `cache_used`, `adapter_dir`, `adapter_uploaded`, `adapter_mb`, `adapter_url` when uploaded, and a summary.
+- Install (once per region and pin set): uv 0.13.1 from its GitHub release, checked against `UV_SHA256` (a uv on PATH is never used), `uv venv --relocatable --python-preference only-managed --python 3.12`, then the notebook's install cell as `uv pip install` lines pinned to what it resolved to on 2026-10-27 for Python 3.12 on x86_64 Linux: `torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 xformers==0.0.35 --index-url https://download.pytorch.org/whl/cu128`, `unsloth==2026.10.9 unsloth_zoo==2026.10.9 peft==0.21.2 accelerate==1.15.0 bitsandbytes==0.50.2 datasets==4.8.5`, `--no-deps torchao==0.18.0`, `transformers==5.15.0`, `--no-deps trl==0.22.2` (the last with `--compile-bytecode`, which compiles the whole venv). Only the direct packages are pinned, not a hash-locked set of every transitive one. Each step's timeout is its cap (15 minutes, 40 for an install) or less, so the job can still train after it; with under a minute to spare the job fails before installing. Then the readiness check imports what the child imports (Unsloth's `FastModel` and `train_on_responses_only`, torch, datasets, peft, bitsandbytes, transformers, trl), asserts `torch.cuda.is_available()` and must print `MUSE_CHECK transformers=5.15.0 trl=0.22.2`; only then is `.muse-ready` written.
+- Two jobs and one venv: the build goes into `.building-<job>`, and one job builds at a time, holding the venv's `.lock` folder while the others poll every 15 s and reuse its venv when it is ready (a waiter gives up when too little time is left to train). The finished build is renamed into place, and the rename settles any race: it fails onto a folder that isn't empty, so the venv already there wins and the loser reuses it. A ready venv is never deleted or moved, since jobs may be running from it; a folder in its place that isn't ready is moved aside and left for the 12-hour cleanup. A failed build deletes its own folder, and only a lock's owner removes it. Jobs run the venv with `PYTHONDONTWRITEBYTECODE=1`, so nothing writes into it. When a reused venv makes the child fail with a `ModuleNotFoundError` before its imports are done, its marker is renamed to `.muse-broken` (nothing is deleted), so the next job builds it again.
+- The runner imports recipe.py with the system python, so its top level is standard library only. The GPU work runs as `<venv>/bin/python -u recipe.py --child glimmer-config.json` through `ctx.run`, with `HF_HOME=<cache>/hf`, watched with `stall_seconds=1200` like every build step (20 minutes with no output is a stall). The child writes `MUSE_EVENT {...}` lines to the runner's event pipe (`MUSE_EVENT_FD`, falling back to stdout, where the recipe finds the prefix anywhere in a line in case a progress bar is glued in front), which the recipe turns into progress events (training every 10 steps with the loss, plus phase messages); results come back in `work/glimmer-result.json`, written aside and renamed so a killed child never leaves half of one.
+- The deadline: the child gets until `ctx.deadline` less 5 minutes (the parent's own time, for the eval items and the upload) and is killed a minute after that. With under 15 minutes left for it, the job fails at once instead of loading a model it can't train.
+- The child: `FastModel.from_pretrained("unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", revision=MODEL_REVISION, max_seq_length=2048)`, the model pinned to the hub commit `ecedda39...` (main on 2026-10-27); `FastModel.get_peft_model` with language, attention and MLP modules (vision frozen), `r = lora_alpha = loraRank`, dropout 0, bias "none", `use_gradient_checkpointing="unsloth"`, seed 3407. Text goes through the model's own ATEM chat template with the leading `<|begin_of_text|>` removed, and `reasoning_strength="low"` for both the training text and the eval prompts (reasoning tokens count against the 512 new tokens). The eval prompts are answered under the system message every training conversation shares (`datasetSystemPrompt(task)` for a platform dataset; none when they differ), so both models see what training saw. Base answers first (a fresh LoRA adds zero), greedy, `max_new_tokens=512`, batches of 8, left padded; the answer is the text on the `to=user` channel, or "[no final answer within 512 new tokens]". They are written to the result file at once. Then `SFTTrainer` with the notebook's `SFTConfig` (batch 1, gradient accumulation 4, warmup 5, `max_steps=maxSteps`, `learning_rate`, `loss_type="nll"`, `adamw_8bit`, weight decay 0.001, linear schedule, `save_strategy="no"`) and `train_on_responses_only(instruction_part="<|start|>user<|message|>", response_part="<|start|>assistant to=user<|message|>")`. A trainer callback stops training early once the clock reaches the child's deadline less 1.3 times the base answers' time and 3 minutes, so the tuned answers and the save still fit; the summary then says "N of M steps (stopped early to finish within the time limit)". The adapter is saved with `save_pretrained` to `<cache>/models/<jobId>/` and the result file rewritten before the tuned answers, then the optimizer's memory is freed. A failure in the tuned answers is recorded as `tuned_error` and the child still exits 0.
+- The recipe then sends one eval item per held-out prompt (a dataset holds out at most 40; the recipe and the runner stop at 60), uploads the adapter folder as `glimmer-lora-<job id start>.tar.gz` (kind "adapter") when storage is available and it is under 1 GB (a failed upload is logged, not fatal), and returns metrics: `train_loss_final`, `steps`, `max_steps`, `stopped_early` (yes or no), `train_seconds`, `base_answer_seconds`, `peak_vram_gb`, `gpu`, `eval_items`, `train_examples`, `cached_weights` and `cached_venv` (yes or no), `cache_used`, `adapter_dir`, `adapter_uploaded`, `adapter_mb`, `adapter_url` when uploaded, and a summary. The parent reads whatever result the child left, whatever its exit: with no result the job fails with how the child ended and its last lines; with the base answers but no adapter it fails saying training didn't finish; with the adapter but no tuned answers it uploads the adapter, logs the metrics, sends no eval items (so nothing is judged) and then fails saying why.
 - `dryRun: 1` skips the venv, the model and the GPU: it fetches the dataset, sends progress ticks, makes deterministic fake answers, writes a stand-in adapter folder, offers it for upload, sends the eval items and finishes. `lib/train/__tests__/runner.test.ts` runs it against the fake platform serving `/dataset` pages and checks the eval events.
 
 ## Datasets (lib/train/datasets.ts)
@@ -299,22 +310,34 @@ makeDataset (one file: the workflow and its steps):
                        of the 8 per batch (stylesFor), so even a 20-example dataset has them all. The latest 40
                        prompts (cut to 140 chars) are shown as ones not to repeat. The workflow de-duplicates (case,
                        accents, spacing and punctuation folded) and stops at the count.
-                       Prompts over 1,500 chars are dropped. Under 16 different prompts fails the dataset.
-  answerChunkStep      x ceil(prompts / 24): 6 calls at a time, instructions datasetSystemPrompt(task) (answers under
-                       about 350 words), effort low, max_output_tokens 3000, 90 s each. An answer that failed, came
-                       back incomplete or empty, or is over 4,000 chars is skipped, not cut. Em dashes are taken out.
-                       The answered ones are appended to `train` as {messages: [system, user, assistant]} only when the
-                       dataset holds exactly the offset the workflow expects, so a retry of a chunk that was saved
-                       asks and pays for nothing. A chunk with no usable answer is retried after 30 s, 3 times;
-                       up to 2 such chunks are left out, and a third fails the dataset.
-  finishDatasetStep    one statement: the items at evalIndexes(n) move to `eval` as {prompt, reference}, the rest stay
-                       in `train`, counts set, status "ready". Under 16 answered examples fails the dataset instead.
-  failDatasetStep      on any error: status "failed" with the error's first line.
+                       The batches that leaned to the same styles before are shown too, up to 40 more of their
+                       prompts (avoidList), since those are the likeliest to come back as close variants.
+                       Prompts over 1,500 chars are dropped. Under 16 different prompts fails the dataset. A later
+                       batch that fails, once there are 16, ends the prompts and the answers go on with those (but
+                       not when the spend cap is the cause).
+  answerChunkStep      chunks of 12: 6 calls at a time, instructions datasetSystemPrompt(task) (answers under about
+                       350 words), effort low, max_output_tokens 3000, 90 s each with one SDK retry, so a prompt takes
+                       at most about 3 minutes. An answer that failed, came back incomplete or empty, or is over 4,000
+                       chars is skipped, not cut. Em dashes are taken out. Each call is charged (recordUsage and
+                       cost_usd) as it returns, and each usable answer is saved at once into `eval` (stageAnswer; a
+                       retried write saves it once). At the end of the step the chunk's answers move onto `train` as
+                       {messages: [system, user, assistant]} in one statement (flushAnswers), so `train` is rewritten
+                       once a chunk. A failed write after a paid call is tried again in the step about 5 times over
+                       about 100 s. A retried step asks only the prompts with no saved answer, and one that finds the
+                       dataset past its offset asks nothing. Past 120 s a step starts no new prompt and hands the
+                       rest to the next step, so it ends in about 7 to 8 minutes at worst, under the 800 s limit. A
+                       chunk with no usable answer is retried after 30 s only when nothing was billed (every call
+                       failed); billed but unusable answers aren't asked again. Up to 2 such chunks are left out.
+  finishDatasetStep    moves any answers still saved for a chunk onto `train`, counts what it holds, then in one
+                       statement: the items evalSplit picks move to `eval` as {prompt, reference}, their
+                       near-duplicates leave `train`, counts set, status "ready". Under 16 examples fails the dataset.
+  failDatasetStep      on an error before answering starts: status "failed" with the error's first line.
 ```
 
-- Eval holds out 10% of the answered examples, at least 8 and at most 40, always leaving at least 8 to train on (`evalHoldoutCount`). They are spread evenly through the list (`evalIndexes`), so every batch's style is in it, and the split is deterministic.
+- A dataset keeps what it paid for. Once answering has started, anything that stops it (the spend cap, the database, a third chunk Meta never answered) ends the answers, and finishDatasetStep makes the dataset "ready" with what it holds when that is at least 16, with a note in `error` ("Stopped early, once N of the M examples asked for were answered. <reason>"); with fewer it fails with the reason.
+- Eval holds out 10% of the answered examples, at least 8 and at most 40, always leaving at least 8 to train on (`evalHoldoutCount`), near the evenly spread `evalIndexes` positions, so every batch's style is in it (`evalSplit`). Each position takes the closest prompt with no near-duplicate anywhere in the dataset: two prompts are near-duplicates when at least 70% of their words (after `promptKey`'s folding) are shared (`isNearDuplicate`, Jaccard). When none is left, it takes the closest prompt anyway and holds its near-duplicates out beside it while there is room; any still in train are dropped, never leaving fewer than 8 to train on. That catches reorderings, typos and a changed word or two, not a paraphrase in other words. The split is deterministic.
 - Every training example's system message is `datasetSystemPrompt(task)`, the same instructions the answers were written with. Eval items carry only the prompt and Muse Spark 1.3's answer as the reference; glimmer-lora answers them under the training examples' shared system message.
-- Every Meta call is recorded with `recordUsage({ source: "platform", endpoint: "responses" })` and added to `cost_usd`; a structured reply that never matched the schema is still recorded. Each model step checks `spendPaused()` first and fails the dataset ("The platform's daily spend cap is reached, so the dataset stopped.") once the cap is reached.
+- Every Meta call is recorded with `recordUsage({ source: "platform", endpoint: "responses" })` and added to `cost_usd`; a structured reply that never matched the schema is still recorded. Each model step checks `spendPaused()` first and stops the dataset ("The platform's daily spend cap is reached, so the dataset stopped.") once the cap is reached: before any answer that fails it, after that it keeps what it has (see above).
 - A dataset whose workflow died stays "generating". No job can use it, and nothing bills for it. The admin pages call it "Stalled" after 6 hours.
 - Measured on 2026-10-27 (the real steps against Muse Spark 1.3, locally): 20 examples took 24 s (one prompt batch in 7 s, 20 answers 6 at a time in 17 s) and cost $0.069, about $0.0035 an example; answers ran 1,100 to 1,300 characters. The New dataset card's estimate (`datasetCostRange`, `datasetMinutes`) is deliberately higher.
 - A job names its dataset with a recipe param of kind "dataset" (its key is `datasetId`). `validateParams` takes only a uuid there (lowercased); the jobs route then refuses with 400 a dataset that doesn't exist, is still generating or failed.
@@ -332,14 +355,18 @@ Routes: `GET` and `POST /api/train/datasets`, `GET /api/train/datasets/{id}` and
 ```ts
 // datasets.ts
 makeDataset({ datasetId }) (the workflow), loadDatasetStep, promptBatchStep, answerChunkStep, finishDatasetStep,
-failDatasetStep, stylesFor(batch, batches), DATASET_MODEL, PROMPT_BATCH (25), ANSWER_CHUNK (24), ANSWER_CONCURRENCY (6)
+failDatasetStep, stylesFor(batch, batches), avoidList(byBatch, batch, batches), DATASET_MODEL, PROMPT_BATCH (25),
+ANSWER_CHUNK (12), ANSWER_CONCURRENCY (6), ANSWER_STEP_TIMING
 // store.ts
 createDataset({ title, task, requested, createdBy? }), getDataset(id), listDatasets(limit), attachDatasetRun(id, runId),
 datasetPage(id, part, offset, limit) -> { status, total, items } (sliced in SQL),
-datasetProgress(id) (examples held while generating, else null), appendTrainExamples(id, offset, items) (only at offset),
-addDatasetCost(id, usd), finishDataset(id, count) (the eval split), failDataset(id, error) (only while generating)
+datasetProgress(id) (examples held while generating, else null), answerProgress(id) -> { held, staged } (the examples and
+the prompts answered but not yet moved onto train), stageAnswer(id, { prompt, reference }) (once per prompt),
+flushAnswers(id, system) (the saved answers onto train, in one statement), addDatasetCost(id, usd),
+finishDataset(id, count, note?) (the eval split; note goes in error), failDataset(id, error) (only while generating)
 // logic.ts
-evalHoldoutCount(n), evalIndexes(n), promptKey(text), dedupePrompts(existing, incoming, max), datasetSystemPrompt(task),
+evalHoldoutCount(n), evalIndexes(n), evalSplit(prompts) -> { held, dropped }, promptKey(text), promptWords(text),
+isNearDuplicate(a, b), NEAR_DUPLICATE_JACCARD (0.7), dedupePrompts(existing, incoming, max), datasetSystemPrompt(task),
 toDatasetView(row)
 ```
 
@@ -359,19 +386,22 @@ Judging, at the end of `trainJob` (lib/train/workflow.ts):
 ```text
 terminate returned "succeeded" ->
   judgePlanStep          the job's eval indexes (at most 60) and its dataset's task. Nothing when it has none or already
-                         has a summary; nothing, with a log line, when MODEL_API_KEY isn't set or the spend cap is reached
+                         has a summary; nothing when MODEL_API_KEY isn't set or the spend cap is reached, and then an
+                         unjudged summary with a note ("Judging skipped: ...") and a log line
   judgeStep x n, 4 at once   Muse Spark 1.3, structured output, effort low; usage recorded, then a "judgement" event
-  saveEvalSummaryStep    eval_summary on training_jobs and a log line; with nothing judged, only a log line
+  saveEvalSummaryStep    eval_summary on training_jobs and a log line; with nothing judged, an unjudged summary with a
+                         note ("Judging failed: none of the N eval items could be judged.") and a log line
 ```
 
 - Judging starts only after `terminate` returned, so it never keeps a GPU billing, and nothing in it can change the job's status: a judge step that fails is left out of the summary, and an error in judging as a whole is swallowed.
 - The judge sees the user message, the reference, and the two answers blind as A and B: the base model's is A on even indexes and B on odd ones, so neither labels nor position favor one model. It returns `{ note, scoreA, scoreB, better: "A" | "B" | "tie" }`; scores are clamped to whole numbers from 1 to 10 and the note is cut to 30 words. The verdict is logged as `{ type: "judgement", index, baseScore, tunedScore, better: "base" | "tuned" | "tie", note }`. When the scores differ, `better` follows them; when they are equal the judge's own pick stands.
 - `judgeStep` is safe to run again: an item that already has a judgement is returned as it is, at no cost, without asking Meta. Usage is recorded (`source "platform"`, endpoint `responses`) before the judgement is logged. A reply that never matched the schema is recorded and not retried.
-- `EvalSummary` (`training_jobs.eval_summary`, `TrainJobView.evalSummary`): `items, tunedWins, baseWins, ties, avgBaseScore, avgTunedScore` (hundredths) and `judgeCostUsd`, the sum of what the judge steps cost (an item judged again after a crash counts at 0).
+- `EvalSummary` (`training_jobs.eval_summary`, `TrainJobView.evalSummary`): `items, tunedWins, baseWins, ties, avgBaseScore, avgTunedScore` (hundredths) and `judgeCostUsd`, the sum of what the judge steps cost (an item judged again after a crash counts at 0). An unjudged summary (`unjudgedSummary(note)`, typed `UnjudgedSummary` in logic.ts) has 0 items and a `note` saying why; `unjudgedNote(summary)` reads it back. The job page takes judging's outcome only from this, never from log text.
 
 ```ts
 // logic.ts
-EVALS_MAX = 60, EVAL_TEXT_MAX = 3500, judgeScore(n), betterOf(baseScore, tunedScore, said), summarizeJudgements(items)
+EVALS_MAX = 60, EVAL_TEXT_MAX = 3500, judgeScore(n), betterOf(baseScore, tunedScore, said), summarizeJudgements(items),
+unjudgedSummary(note), unjudgedNote(summary)
 // store.ts
 recordEvalEvent(jobId, body, max?) -> "recorded" | "duplicate" | "limit", listEvalIndexes(jobId), getEvalItem(jobId, index),
 getJudgement(jobId, index), setEvalSummary(jobId, summary)
@@ -379,6 +409,6 @@ getJudgement(jobId, index), setEvalSummary(jobId, summary)
 
 Tests (nothing calls Meta, Lambda or Neon):
 
-- `lib/train/__tests__/datasets.test.ts`: makeDataset and its real steps with the store, Meta, the spend cap and usage faked: batches and their styles, de-duplication and the extra-batch bound, 6 answers at a time in chunks of 24, skipped answers, usage and cost, the eval split, the spend cap, a retried chunk that asks and pays for nothing.
-- `lib/train/__tests__/judge.test.ts`: the blind order and the mapping back, better against the scores, the cleaned reply, usage before the judgement, an item already judged, the skips, the summary.
-- `lib/train/__tests__/store.test.ts`, `routes.test.ts`, `workflow.scenario.test.ts` and `logic.test.ts` cover the SQL (one eval per index, the cap, appending at the offset, the split, paging), the routes above, judging only after terminate (4 at once, never changing the status) and the pure helpers.
+- `lib/train/__tests__/datasets.test.ts`: makeDataset and its real steps with the store, Meta, the spend cap and usage faked: batches and their styles, the avoid list, de-duplication and the extra-batch bound, 6 answers at a time in chunks of 12, skipped answers, usage and cost as each call returns, the eval split and near-duplicates, the spend cap before and during the answers (a smaller ready dataset with a note), a late prompt batch that fails, a retried step that asks only what wasn't saved, a billed but unusable chunk that isn't asked again, and a step that runs out of time.
+- `lib/train/__tests__/judge.test.ts`: the blind order and the mapping back, better against the scores, the cleaned reply, usage before the judgement, an item already judged, the skips and the unjudged summaries, the summary.
+- `lib/train/__tests__/store.test.ts`, `routes.test.ts`, `workflow.scenario.test.ts` and `logic.test.ts` cover the SQL (one eval per index, the cap, staging and flushing answers, the split with near-duplicates, the note, paging), the routes above, judging only after terminate (4 at once, never changing the status) and the pure helpers.

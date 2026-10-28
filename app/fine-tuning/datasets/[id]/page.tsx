@@ -36,7 +36,8 @@ export default async function DatasetPage({ params }: { params: Promise<{ id: st
     if (!row) return null;
     const [train, held, written] = await Promise.all([
       datasetPage(row.id, "train", 0, SAMPLE_TRAIN),
-      datasetPage(row.id, "eval", 0, SAMPLE_EVAL),
+      // Until it is ready, eval holds the answers of the chunk being written, not held-out items.
+      row.status === "ready" ? datasetPage(row.id, "eval", 0, SAMPLE_EVAL) : Promise.resolve(null),
       row.status === "generating" ? datasetProgress(row.id) : Promise.resolve(null),
     ]);
     return {

@@ -3,8 +3,10 @@
  * string constant so Vercel bundles it with no file tracing. Standard library only. Never put a dollar sign followed
  * by an opening brace, or a backtick, in the Python: this is a template literal.
  *
- * job.json keys: jobId, callbackBase, token, params, maxMinutes, recipe, and cacheDir for a recipe with usesCache.
- * Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl, multipartOverBytes, partBytes, cacheWaitSeconds.
+ * job.json keys: jobId, callbackBase, token, params, maxMinutes, recipe, deadlineEpoch (Unix seconds, stamped before the
+ * launch request from the time limit, or the dollar limit when that runs out first, so never after the platform stops
+ * the job), and cacheDir for a recipe with usesCache. Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl,
+ * multipartOverBytes, partBytes, cacheWaitSeconds.
  */
 export const RUNNER_PY = String.raw`"""Muse Muse training runner (docs/TRAINING.md, "Runner and recipes").
 
@@ -14,7 +16,9 @@ Started by cloud-init on the Lambda instance:
 
 Reads job.json, sends a heartbeat every 60 s, imports recipe.py from this folder and calls run(ctx). Posts "done"
 with the dict run() returns as metrics (its "summary" key becomes the summary), or "failed" with the end of the
-traceback. Every request to the platform carries the job token, which is never printed or logged.
+traceback. Every request to the platform carries the job token, which is never printed or logged. A command run with
+ctx.run(stall_seconds=...) that writes nothing for that long is reported stalled, and the heartbeat holds back until it
+writes again, so the platform's silence rule ends a stuck job instead of it billing to its time limit.
 """
 
 import http.client
@@ -55,6 +59,10 @@ DATASET_PARTS = ("train", "eval")
 DATASET_MAX_PAGES = 1000
 # How long the runner waits for the cache filesystem's mount to show up before going on without it.
 CACHE_WAIT_SECONDS = 60
+# ctx.run reads a command's output in chunks this big, and keeps at most this much of a line with no newline yet.
+READ_BYTES = 65536
+# How long ctx.run waits, after the command exits, for the rest of its event pipe.
+EVENT_DRAIN_SECONDS = 10
 
 # Vercel Blob, as @vercel/blob's client put() talks to it (node_modules/@vercel/blob/dist).
 BLOB_API_URL = "https://vercel.com/api/blob"
@@ -229,18 +237,82 @@ class Platform:
         return True
 
 
-class Heartbeat(threading.Thread):
-    """Posts a heartbeat every few seconds until stopped, so the platform knows the instance is alive."""
+def span(seconds):
+    """seconds as "N s" or, from 2 minutes, "N minutes"."""
+    seconds = max(0, int(seconds))
+    return str(seconds // 60) + " minutes" if seconds >= 120 else str(seconds) + " s"
 
-    def __init__(self, platform, seconds):
+
+class Activity:
+    """When the watched command (ctx.run with stall_seconds) last wrote anything, so the heartbeat can tell a stalled
+    command from a busy one. With no command watched, nothing is stalled."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._watch = None
+
+    def watch(self, cmd, seconds):
+        with self._lock:
+            self._watch = {"cmd": cmd, "seconds": float(seconds), "last": time.monotonic()}
+
+    def touch(self):
+        now = time.monotonic()
+        with self._lock:
+            if self._watch is not None:
+                self._watch["last"] = now
+
+    def unwatch(self):
+        with self._lock:
+            self._watch = None
+
+    def stalled(self):
+        """(command, quiet seconds) while the watched command has written nothing for its stall_seconds, else None."""
+        with self._lock:
+            watch = self._watch
+            if watch is None:
+                return None
+            quiet = time.monotonic() - watch["last"]
+            return (watch["cmd"], quiet) if quiet >= watch["seconds"] else None
+
+
+class Heartbeat(threading.Thread):
+    """Posts a heartbeat every few seconds until stopped, so the platform knows the instance is alive.
+
+    While a watched command is stalled it posts one "Stalled" log and then nothing, so the platform's silence rule ends
+    the job. Heartbeats come back, the first one with a note, once the command writes again or ends.
+    """
+
+    def __init__(self, platform, seconds, activity=None):
         threading.Thread.__init__(self, name="muse-heartbeat", daemon=True)
         self.platform = platform
         self.seconds = seconds
+        self.activity = activity
+        self.stall_reported = False
         self.stopped = threading.Event()
 
     def run(self):
         while not self.stopped.wait(self.seconds):
-            self.platform.event({"type": "heartbeat"})
+            self.beat()
+
+    def beat(self):
+        stall = self.activity.stalled() if self.activity else None
+        if stall is None:
+            if self.stall_reported:
+                self.stall_reported = False
+                self.platform.event({"type": "heartbeat", "message": "No longer stalled"})
+            else:
+                self.platform.event({"type": "heartbeat"})
+            return
+        if self.stall_reported:
+            return
+        self.stall_reported = True
+        cmd, quiet = stall
+        text = (
+            "Stalled: no output for " + span(quiet) + " from $ " + self.platform.redact(cmd)[:300]
+            + ". Heartbeats pause until it writes again, so the platform's silence rule ends the job if it stays quiet."
+        )
+        say(text)
+        self.platform.event({"type": "log", "text": text})
 
     def stop(self):
         self.stopped.set()
@@ -364,19 +436,35 @@ def cut_eval_fields(body):
     return body
 
 
-class Context:
-    """What recipe.run(ctx) gets: params, cache_dir, work_dir, log, progress, run, upload, get_json, dataset, eval."""
+def deadline_of(job, now):
+    """job.json's deadlineEpoch, else now plus maxMinutes, else None."""
+    value = job.get("deadlineEpoch")
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
+        return float(value)
+    minutes = job.get("maxMinutes")
+    if isinstance(minutes, (int, float)) and not isinstance(minutes, bool) and math.isfinite(minutes) and minutes > 0:
+        return now + float(minutes) * 60
+    return None
 
-    def __init__(self, job, platform, work_dir, settings, cache_dir=None):
+
+class Context:
+    """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, get_json, dataset,
+    eval."""
+
+    def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
         self.job_id = job.get("jobId")
         self.recipe = job.get("recipe")
         self.max_minutes = job.get("maxMinutes")
+        # Unix time the job must be done by: the platform terminates the instance at its time or dollar limit, which is
+        # never before this. Without deadlineEpoch in job.json, maxMinutes from now.
+        self.deadline = deadline_of(job, time.time())
         self.work_dir = work_dir
         # The mounted cache filesystem for a recipe with usesCache, or None. It outlives the instance.
         self.cache_dir = cache_dir
         self._platform = platform
         self._settings = settings
+        self._activity = activity
         self._evals_sent = 0
 
     def log(self, text):
@@ -401,29 +489,49 @@ class Context:
         say("progress " + json.dumps(body, ensure_ascii=False))
         self._platform.event(body)
 
-    def run(self, cmd, timeout=None, check=False, env=None, on_line=None):
+    def run(self, cmd, timeout=None, check=False, env=None, on_line=None, on_event=None, stall_seconds=None):
         """Runs a shell command in work_dir, streams its output to the job log and posts its last lines as a log event.
 
         env adds variables to the runner's own. on_line, when given, is called with each output line as it arrives (an
-        error in it is logged, never raised). Returns a subprocess.CompletedProcess whose stdout is the last lines.
+        error in it is logged, never raised). on_event, when given, is called the same way with each line the command
+        writes to a pipe of its own, whose file descriptor is in its MUSE_EVENT_FD variable: a channel that a progress
+        bar on stderr can't write into. stall_seconds, when given, watches the command: once it has written nothing on
+        either for that long, the heartbeat reports it stalled and holds back (see Heartbeat). Returns a
+        subprocess.CompletedProcess whose stdout is the last lines and whose timed_out says the timeout killed it.
         With check=True a non-zero exit raises.
         """
         say("$ " + self._platform.redact(cmd))
         lines = deque(maxlen=80)
         child_env = None
-        if env:
+        if env or on_event:
             child_env = dict(os.environ)
-            child_env.update({str(k): str(v) for k, v in env.items()})
-        proc = subprocess.Popen(
-            cmd,
-            shell=True,
-            cwd=self.work_dir,
-            env=child_env,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+            child_env.update({str(k): str(v) for k, v in (env or {}).items()})
+        events_in = events_out = None
+        if on_event:
+            events_in, events_out = os.pipe()
+            child_env["MUSE_EVENT_FD"] = str(events_out)
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                shell=True,
+                cwd=self.work_dir,
+                env=child_env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                pass_fds=(events_out,) if events_out is not None else (),
+            )
+        except BaseException:
+            if events_in is not None:
+                os.close(events_in)
+            raise
+        finally:
+            if events_out is not None:
+                os.close(events_out)
+        watched = bool(stall_seconds) and self._activity is not None
+        if watched:
+            self._activity.watch(cmd, stall_seconds)
         timed_out = []
         timer = None
         if timeout:
@@ -438,22 +546,42 @@ class Context:
             timer = threading.Timer(timeout, kill)
             timer.daemon = True
             timer.start()
+
+        def output_line(raw):
+            line = self._platform.redact(raw.decode("utf-8", "replace").rstrip("\r\n").rsplit("\r", 1)[-1])
+            with _print_lock:
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+            lines.append(line)
+            if on_line:
+                try:
+                    on_line(line)
+                except Exception as e:
+                    say("on_line failed: " + type(e).__name__ + ": " + self._platform.redact(e))
+
+        def event_line(raw):
+            line = self._platform.redact(raw.decode("utf-8", "replace").strip())
+            if not line:
+                return
+            try:
+                on_event(line)
+            except Exception as e:
+                say("on_event failed: " + type(e).__name__ + ": " + self._platform.redact(e))
+
+        reader = None
+        if events_in is not None:
+            reader = threading.Thread(target=self._read_events, args=(events_in, event_line), name="muse-events", daemon=True)
+            reader.start()
         try:
-            for raw in iter(proc.stdout.readline, b""):
-                line = self._platform.redact(raw.decode("utf-8", "replace").rstrip("\r\n").rsplit("\r", 1)[-1])
-                with _print_lock:
-                    sys.stdout.write(line + "\n")
-                    sys.stdout.flush()
-                lines.append(line)
-                if on_line:
-                    try:
-                        on_line(line)
-                    except Exception as e:
-                        say("on_line failed: " + type(e).__name__ + ": " + self._platform.redact(e))
+            self._pump(proc.stdout.fileno(), output_line)
             code = proc.wait()
+            if reader is not None:
+                reader.join(EVENT_DRAIN_SECONDS)
         finally:
             if timer:
                 timer.cancel()
+            if watched:
+                self._activity.unwatch()
             proc.stdout.close()
         tail = "\n".join(lines)
         footer = ("timed out after " + str(timeout) + " s") if timed_out else ("exit " + str(code))
@@ -463,7 +591,43 @@ class Context:
         if check and code != 0:
             shown = self._platform.redact(cmd)[:300]
             raise RuntimeError("Command failed (" + footer + "): " + shown + "\n" + "\n".join(list(lines)[-20:]))
-        return subprocess.CompletedProcess(cmd, code, stdout=tail)
+        done = subprocess.CompletedProcess(cmd, code, stdout=tail)
+        done.timed_out = bool(timed_out)
+        return done
+
+    def _pump(self, fd, deliver):
+        """Reads fd to its end in chunks and calls deliver with each line's bytes, without the newline.
+
+        Any byte counts as output for the stall watch, a progress bar's carriage-return redraw too.
+        """
+        pending = b""
+        while True:
+            try:
+                chunk = os.read(fd, READ_BYTES)
+            except OSError:
+                break
+            if not chunk:
+                break
+            if self._activity is not None:
+                self._activity.touch()
+            pending += chunk
+            parts = pending.split(b"\n")
+            pending = parts.pop()
+            for raw in parts:
+                deliver(raw)
+            if len(pending) > READ_BYTES:
+                # A bar redrawn with carriage returns and no newline: only the text after the last one is ever shown.
+                cut = pending.rfind(b"\r")
+                pending = (pending[cut:] if cut >= 0 else pending)[-READ_BYTES:]
+        if pending:
+            deliver(pending)
+
+    def _read_events(self, fd, deliver):
+        """The event pipe's reader thread: delivers its lines, then closes it."""
+        try:
+            self._pump(fd, deliver)
+        finally:
+            os.close(fd)
 
     def get_json(self, path_and_query):
         """GETs callbackBase + path_and_query with the job token and returns the parsed JSON.
@@ -671,10 +835,11 @@ def main(argv):
     say("job " + str(job.get("jobId")) + ", recipe " + str(job.get("recipe")) + ", python " + sys.version.split()[0])
 
     platform.event({"type": "heartbeat", "message": "Runner started"})
-    beat = Heartbeat(platform, settings["heartbeatSeconds"])
+    activity = Activity()
+    beat = Heartbeat(platform, settings["heartbeatSeconds"], activity)
     beat.start()
     cache_dir = cache_dir_of(job, number_setting(job, "cacheWaitSeconds", CACHE_WAIT_SECONDS))
-    ctx = Context(job, platform, work_dir, settings, cache_dir)
+    ctx = Context(job, platform, work_dir, settings, cache_dir, activity)
     try:
         recipe = load_recipe(os.path.join(here, "recipe.py"))
         result = recipe.run(ctx)

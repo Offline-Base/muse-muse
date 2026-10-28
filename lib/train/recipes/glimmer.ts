@@ -7,8 +7,10 @@
  *
  * The runner imports this file with the system python (standard library only). The heavy work runs in a child process,
  * this same file run as "python recipe.py --child config.json" inside a uv venv kept on the cache filesystem, so the
- * venv and the weights (HF_HOME) are reused by the next job in the region. Params: datasetId, maxSteps, learningRate,
- * loraRank, dryRun (1 skips the venv, the model and the GPU and fakes the answers, for tests).
+ * venv and the weights (HF_HOME) are reused by the next job in the region. One job builds a missing venv while the
+ * others in the region wait and reuse it. The child works to ctx.deadline: it writes the base answers as soon as it has
+ * them, stops training early when it must, and saves the adapter before the tuned answers. Params: datasetId,
+ * maxSteps, learningRate, loraRank, dryRun (1 skips the venv, the model and the GPU and fakes the answers, for tests).
  */
 export const GLIMMER_PY = String.raw`"""Muse Glimmer LoRA: fine-tunes Muse Glimmer 30B with Unsloth and answers held-out prompts before and after."""
 
@@ -20,21 +22,72 @@ import shlex
 import shutil
 import sys
 import tarfile
+import threading
 import time
+import urllib.request
 
 MODEL = "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"
-# The Conversational notebook's install cell, as uv pip installs. Changing any line makes a new venv.
+# The model's commit on the Hugging Face hub (main on 2026-10-27), so every job loads the same weights.
+MODEL_REVISION = "ecedda395d4d099b477d135a9a573eedaa5a7aad"
+# The Conversational notebook's install cell as uv pip installs, pinned to what it resolved to on 2026-10-27 for
+# Python 3.12 on x86_64 Linux. Changing any line makes a new venv.
 INSTALL = (
-    "torch torchvision torchaudio xformers --index-url https://download.pytorch.org/whl/cu128",
-    "unsloth",
-    "--no-deps --upgrade 'torchao>=0.16.0'",
+    "torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 xformers==0.0.35 --index-url https://download.pytorch.org/whl/cu128",
+    "unsloth==2026.10.9 unsloth_zoo==2026.10.9 peft==0.21.2 accelerate==1.15.0 bitsandbytes==0.50.2 datasets==4.8.5",
+    "--no-deps torchao==0.18.0",
     "transformers==5.15.0",
     "--no-deps trl==0.22.2",
 )
 TRANSFORMERS_VERSION = "5.15.0"
+TRL_VERSION = "0.22.2"
 PYTHON = "3.12"
-UV_INSTALLER = "https://astral.sh/uv/install.sh"
+# uv from its GitHub release, checked against the release's sha256 before it is used. A uv on PATH is never used.
+UV_VERSION = "0.13.1"
+UV_URL = "https://github.com/astral-sh/uv/releases/download/" + UV_VERSION + "/uv-x86_64-unknown-linux-gnu.tar.gz"
+UV_SHA256 = "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220"
+UV_MEMBER = "uv-x86_64-unknown-linux-gnu/uv"
 READY_MARKER = ".muse-ready"
+# A reused venv the child couldn't import from gets its marker renamed to this, so the next job builds it again.
+BROKEN_MARKER = ".muse-broken"
+# Every job stamps the venv it runs from, so a venv of other pins that nobody stamped for LEFTOVER_SECONDS is removed.
+LAST_USED = ".muse-last-used"
+# A new venv is ready once it imports what the child imports and sees the GPU.
+READY_CHECK = (
+    "from unsloth import FastModel; "
+    "from unsloth.chat_templates import train_on_responses_only; "
+    "import torch, datasets, peft, bitsandbytes, transformers, trl; "
+    "from transformers import TrainerCallback; "
+    "from trl import SFTConfig, SFTTrainer; "
+    "assert torch.cuda.is_available(), 'CUDA is not available'; "
+    "print('MUSE_CHECK transformers=' + transformers.__version__ + ' trl=' + trl.__version__)"
+)
+READY_LINE = "MUSE_CHECK transformers=" + TRANSFORMERS_VERSION + " trl=" + TRL_VERSION
+# The venv build lock: its holder touches it every minute, and one nobody touched for 10 minutes is a dead job's.
+LOCK_TOUCH_SECONDS = 60
+LOCK_STALE_SECONDS = 600
+LOCK_POLL_SECONDS = 15
+# Build and stale folders older than this are dead jobs' (no job lives this long), so a job deletes them, and a venv of
+# other pins that no job used for this long goes too.
+LEFTOVER_SECONDS = 12 * 3600
+# The longest a build step may run. Each one also stops in time for the job to train after it.
+VENV_TIMEOUT_SECONDS = 900
+INSTALL_TIMEOUT_SECONDS = 2400
+MIN_STEP_SECONDS = 60
+# A Hugging Face download lock nobody took for this long is a dead download's (one file never takes this long), so it
+# is removed before the model loads: on the shared cache it could otherwise hold up that file's download for good.
+HF_LOCK_STALE_SECONDS = 3600
+# An install, download or training step that writes nothing this long is reported stalled (runner.py's Heartbeat).
+STALL_SECONDS = 1200
+# The parent's time after the child: the eval callbacks, then the adapter's tar.gz and upload.
+PARENT_RESERVE_SECONDS = 300
+# The child is killed this long after its own deadline.
+CHILD_GRACE_SECONDS = 60
+# With less than this left for the child, the job fails at once instead of loading a model it can't train.
+MIN_CHILD_SECONDS = 900
+# What the child keeps back after training: the tuned answers (1.3 times the base answers' time) plus this, to free
+# the training memory and save the adapter.
+TUNED_PASS_FACTOR = 1.3
+SAVE_RESERVE_SECONDS = 180
 # The ATEM markers the notebook passes to train_on_responses_only.
 INSTRUCTION_PART = "<|start|>user<|message|>"
 RESPONSE_PART = "<|start|>assistant to=user<|message|>"
@@ -76,6 +129,19 @@ def read_params(params):
     if not (0 < p["learning_rate"] <= 0.01):
         raise ValueError("learningRate must be above 0 and at most 0.01")
     return p
+
+
+def minutes(seconds):
+    return str(max(0, int(seconds // 60))) + " min"
+
+
+def job_deadline(ctx, started):
+    """Unix time the job must be done by: ctx.deadline, stamped before the launch so never after the platform's time or
+    dollar limit, or for a runner without one the recipe's start plus maxMinutes."""
+    deadline = getattr(ctx, "deadline", None)
+    if isinstance(deadline, (int, float)) and not isinstance(deadline, bool) and deadline > 0:
+        return float(deadline)
+    return started + float(ctx.max_minutes or 120) * 60
 
 
 def writable(path):
@@ -151,35 +217,295 @@ def read_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
+def write_result(path, result):
+    """Writes the child's result file whole (written aside, then renamed), so a killed child never leaves half of one."""
+    part = path + ".part"
+    with open(part, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False)
+    os.replace(part, path)
+
+
+def read_result(path):
+    """The child's result file, or None when it never wrote one."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def venv_name():
-    spec = "\n".join((PYTHON,) + INSTALL)
+    spec = "\n".join((PYTHON, UV_VERSION) + INSTALL)
     return "glimmer-" + hashlib.sha256(spec.encode("utf-8")).hexdigest()[:12]
 
 
+def sha256_of(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def fetch(url, path, tries=3):
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as res, open(path, "wb") as f:
+                shutil.copyfileobj(res, f)
+            return
+        except Exception:
+            if attempt == tries - 1:
+                raise
+            time.sleep(2 ** (attempt + 1))
+
+
 def uv_binary(ctx, base):
-    """uv from PATH, or installed once into the cache with Astral's installer (no shell profile changes)."""
-    found = shutil.which("uv")
-    if found:
-        return found
-    folder = os.path.join(base, "uv", "bin")
-    path = os.path.join(folder, "uv")
+    """The pinned uv, downloaded once into the cache and checked against UV_SHA256 before it is kept."""
+    path = os.path.join(base, "uv", UV_VERSION, "uv")
     if os.access(path, os.X_OK):
         return path
-    os.makedirs(folder, exist_ok=True)
-    cmd = "curl -LsSf " + UV_INSTALLER + " | env UV_UNMANAGED_INSTALL=" + shlex.quote(folder) + " sh"
-    ctx.run(cmd, timeout=600, check=True)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tag = str(ctx.job_id or "job")[:8]
+    archive_path = os.path.join(ctx.work_dir, "uv-" + UV_VERSION + ".tar.gz")
+    ctx.log("Downloading uv " + UV_VERSION)
+    fetch(UV_URL, archive_path)
+    digest = sha256_of(archive_path)
+    if digest != UV_SHA256:
+        os.remove(archive_path)
+        raise RuntimeError("The uv " + UV_VERSION + " download has sha256 " + digest + ", not the pinned " + UV_SHA256)
+    part = path + ".part-" + tag
+    with tarfile.open(archive_path, "r:gz") as tar:
+        member = tar.getmember(UV_MEMBER)
+        source = tar.extractfile(member) if member.isfile() else None
+        if source is None:
+            raise RuntimeError("The uv " + UV_VERSION + " archive has no " + UV_MEMBER)
+        with source, open(part, "wb") as f:
+            shutil.copyfileobj(source, f)
+    os.chmod(part, 0o755)
+    os.replace(part, path)
+    os.remove(archive_path)
     return path
 
 
-def ensure_venv(ctx, base):
-    """The venv's python and whether it was reused. A new venv is built aside and renamed into place once it works."""
-    venv = os.path.join(base, "venvs", venv_name())
-    python = os.path.join(venv, "bin", "python")
-    if os.path.isfile(os.path.join(venv, READY_MARKER)) and os.path.exists(python):
-        return python, True
+def venv_ready(venv):
+    return os.path.isfile(os.path.join(venv, READY_MARKER)) and os.path.exists(os.path.join(venv, "bin", "python"))
+
+
+def age_of(path):
+    """Seconds since path last changed, or None when it is gone."""
+    try:
+        return time.time() - os.stat(path).st_mtime
+    except OSError:
+        return None
+
+
+class LockKeeper(threading.Thread):
+    """Touches the build lock every minute while this job holds it, so a waiter can tell a live build from a dead one."""
+
+    def __init__(self, lock):
+        threading.Thread.__init__(self, name="muse-venv-lock", daemon=True)
+        self.lock = lock
+        self.stopped = threading.Event()
+
+    def run(self):
+        while not self.stopped.wait(LOCK_TOUCH_SECONDS):
+            try:
+                os.utime(self.lock, None)
+            except OSError:
+                pass
+
+    def stop(self):
+        self.stopped.set()
+        self.join(timeout=5)
+
+
+def lock_owner(lock):
+    try:
+        with open(os.path.join(lock, "owner")) as f:
+            return json.load(f).get("job")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def take_lock(ctx, lock, venv, tag):
+    """Takes the venv's build lock and returns True, or returns False once another job's build made the venv ready.
+
+    The lock is a folder (os.mkdir is atomic, on NFS too). One nobody touched for LOCK_STALE_SECONDS is a dead job's
+    and is broken. The lock only saves duplicate installs: settle_venv keeps two builds safe without it.
+    """
+    waiting = False
+    while True:
+        try:
+            os.mkdir(lock)
+        except FileExistsError:
+            pass
+        else:
+            try:
+                with open(os.path.join(lock, "owner"), "w") as f:
+                    f.write(json.dumps({"job": str(ctx.job_id or "job"), "at": int(time.time())}))
+            except OSError:
+                pass
+            return True
+        if venv_ready(venv):
+            return False
+        age = age_of(lock)
+        if age is not None and age >= LOCK_STALE_SECONDS:
+            ctx.log("Breaking the venv build lock " + lock + ", untouched for " + minutes(age))
+            aside = lock + ".stale-" + tag + "-" + str(int(time.time()))
+            try:
+                os.rename(lock, aside)
+            except OSError:
+                pass
+            else:
+                shutil.rmtree(aside, ignore_errors=True)
+            continue
+        if not waiting:
+            waiting = True
+            ctx.progress(message="Waiting for another job in the region to finish installing Unsloth")
+        deadline = getattr(ctx, "deadline", None)
+        if deadline and time.time() > deadline - PARENT_RESERVE_SECONDS - MIN_CHILD_SECONDS:
+            raise RuntimeError("Gave up waiting for another job's venv build: too little time is left to train")
+        time.sleep(LOCK_POLL_SECONDS)
+
+
+# The threads deleting old folders while the job goes on (a venv is thousands of files on NFS). Tests join them.
+CLEANUPS = []
+
+
+def remove_later(path):
+    """Deletes path on a thread of its own. One the job doesn't live to finish is a leftover for a later job."""
+    thread = threading.Thread(target=shutil.rmtree, args=(path,), kwargs={"ignore_errors": True}, name="muse-cleanup", daemon=True)
+    thread.start()
+    CLEANUPS.append(thread)
+
+
+def remove_leftovers(folder):
+    """Deletes build and stale folders in the venvs folder older than LEFTOVER_SECONDS. A venv itself is never one."""
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for name in names:
+        if ".building-" not in name and ".stale-" not in name:
+            continue
+        path = os.path.join(folder, name)
+        age = age_of(path)
+        if age is not None and age >= LEFTOVER_SECONDS:
+            remove_later(path)
+
+
+def mark_used(venv):
+    """Stamps a venv as used now (its .muse-last-used), so remove_old_venvs leaves it alone for LEFTOVER_SECONDS."""
+    try:
+        with open(os.path.join(venv, LAST_USED), "w") as f:
+            f.write(str(int(time.time())))
+    except OSError:
+        pass
+
+
+def remove_old_venvs(ctx, folder, keep, tag):
+    """Removes the venvs of other pins that no job used for LEFTOVER_SECONDS. The venv named keep is never touched.
+
+    A venv's last use is its .muse-last-used. One without it (built before these stamps) is stamped now, so it goes
+    LEFTOVER_SECONDS after a job first saw it, by when every job launched with its pins has ended.
+    """
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(folder, name)
+        if name == keep or not name.startswith("glimmer-") or "." in name or not os.path.isdir(path):
+            continue
+        age = age_of(os.path.join(path, LAST_USED))
+        if age is None:
+            mark_used(path)
+            continue
+        if age < LEFTOVER_SECONDS:
+            continue
+        aside = path + ".stale-" + tag + "-" + str(int(time.time()))
+        try:
+            os.rename(path, aside)
+        except OSError:
+            continue
+        ctx.log("Removing the venv " + name + ": it has other pins, and no job used it for " + str(int(age // 3600)) + " hours")
+        remove_later(aside)
+
+
+def use_venv(ctx, venv, tag):
+    """Stamps the venv this job runs from, then clears dead jobs' leftovers and venvs nobody uses any more."""
+    mark_used(venv)
+    folder = os.path.dirname(venv)
+    remove_leftovers(folder)
+    remove_old_venvs(ctx, folder, os.path.basename(venv), tag)
+
+
+def mark_broken(ctx, venv):
+    """Takes a reused venv the child couldn't import from out of use: its marker is renamed, so the next job builds it
+    again. Nothing is deleted, since another job may still be running from it."""
+    try:
+        os.rename(os.path.join(venv, READY_MARKER), os.path.join(venv, BROKEN_MARKER))
+    except OSError:
+        return False
+    ctx.log("The venv " + venv + " is missing a module the child imports, so it is marked broken and the next job builds it again")
+    return True
+
+
+def settle_venv(building, venv, tag):
+    """Renames a finished build into place and returns False, or returns True when a ready venv is already there.
+
+    The rename settles a race: onto a folder that isn't empty it fails, and the venv in place wins. A ready venv is
+    never deleted or moved, since other jobs may be running from it. A folder in its place that isn't ready (a dead
+    build, or a venv marked broken that a job may still run from) is moved aside and left for remove_leftovers, which
+    deletes it LEFTOVER_SECONDS later.
+    """
+    last = None
+    for attempt in range(3):
+        if venv_ready(venv):
+            shutil.rmtree(building, ignore_errors=True)
+            return True
+        try:
+            os.rename(building, venv)
+            return False
+        except OSError as e:
+            last = e
+        if venv_ready(venv) or not os.path.lexists(venv):
+            continue
+        aside = venv + ".stale-" + tag + "-" + str(int(time.time())) + "-" + str(attempt)
+        try:
+            os.rename(venv, aside)
+        except OSError:
+            continue
+        if venv_ready(aside):
+            # Another job's venv landed between the check and the move: it goes back, and this job uses it.
+            try:
+                os.rename(aside, venv)
+            except OSError:
+                pass
+            continue
+        try:
+            os.utime(aside, None)
+        except OSError:
+            pass
+    raise RuntimeError("Could not move the new venv into place at " + venv + ": " + str(last))
+
+
+def build_timeout(ctx, cap):
+    """A build step's timeout: cap, or less so the job still has time to train after it. Raises when too little is left,
+    so a job that couldn't train anyway fails before paying for the install."""
+    now = time.time()
+    left = job_deadline(ctx, now) - PARENT_RESERVE_SECONDS - MIN_CHILD_SECONDS - now
+    if left < MIN_STEP_SECONDS:
+        raise RuntimeError("Too little time is left before the job's time limit to install Unsloth and still train")
+    return int(min(cap, left))
+
+
+def build_venv(ctx, base, venv, tag):
+    """Builds the venv aside, checks it and renames it into place. True when another job's venv got there first."""
     ctx.progress(message="Installing Unsloth into a new venv")
     uv = uv_binary(ctx, base)
-    building = venv + ".building-" + str(ctx.job_id or "job")[:8]
+    building = venv + ".building-" + tag
     shutil.rmtree(building, ignore_errors=True)
     env = {
         # The interpreter lives in the cache too, since the venv points at it.
@@ -188,48 +514,113 @@ def ensure_venv(ctx, base):
         "UV_LINK_MODE": "copy",
     }
     q = shlex.quote
-    # A uv-managed interpreter, so a cached venv never points at one image's system python.
-    venv_cmd = q(uv) + " venv --relocatable --python-preference only-managed --python " + PYTHON + " " + q(building)
-    ctx.run(venv_cmd, timeout=900, check=True, env=env)
-    target = q(os.path.join(building, "bin", "python"))
-    for line in INSTALL:
-        ctx.run(q(uv) + " pip install --python " + target + " " + line, timeout=2400, check=True, env=env)
-    check = "import transformers, trl, peft, bitsandbytes; print(transformers.__version__)"
-    out = ctx.run(target + " -c " + q(check), timeout=600, check=True)
-    if TRANSFORMERS_VERSION not in (out.stdout or ""):
-        raise RuntimeError("The venv has the wrong transformers: " + (out.stdout or "")[-200:])
-    with open(os.path.join(building, READY_MARKER), "w") as f:
-        f.write(json.dumps({"install": INSTALL, "python": PYTHON, "at": int(time.time())}))
-    if os.path.isdir(venv):
-        shutil.rmtree(venv, ignore_errors=True)
     try:
-        os.rename(building, venv)
-    except OSError:
-        # Another job in the region finished the same venv first.
-        if not os.path.isfile(os.path.join(venv, READY_MARKER)):
-            raise
+        # A uv-managed interpreter, so a cached venv never points at one image's system python.
+        venv_cmd = q(uv) + " venv --relocatable --python-preference only-managed --python " + PYTHON + " " + q(building)
+        ctx.run(venv_cmd, timeout=build_timeout(ctx, VENV_TIMEOUT_SECONDS), check=True, env=env, stall_seconds=STALL_SECONDS)
+        target = q(os.path.join(building, "bin", "python"))
+        for i, line in enumerate(INSTALL):
+            # uv compiles the whole venv when asked, so only the last line asks; jobs then never write bytecode into it.
+            flags = " --compile-bytecode" if i == len(INSTALL) - 1 else ""
+            cmd = q(uv) + " pip install" + flags + " --python " + target + " " + line
+            ctx.run(cmd, timeout=build_timeout(ctx, INSTALL_TIMEOUT_SECONDS), check=True, env=env, stall_seconds=STALL_SECONDS)
+        check_env = {"HF_HOME": os.path.join(base, "hf"), "HF_HUB_DISABLE_TELEMETRY": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+        check_cmd = target + " -c " + q(READY_CHECK)
+        out = ctx.run(check_cmd, timeout=build_timeout(ctx, VENV_TIMEOUT_SECONDS), check=True, env=check_env, stall_seconds=STALL_SECONDS)
+        if READY_LINE not in (out.stdout or ""):
+            raise RuntimeError("The new venv doesn't have " + READY_LINE + ": " + (out.stdout or "")[-300:])
+        with open(os.path.join(building, READY_MARKER), "w") as f:
+            f.write(json.dumps({"install": INSTALL, "python": PYTHON, "uv": UV_VERSION, "at": int(time.time())}))
+    except BaseException:
         shutil.rmtree(building, ignore_errors=True)
-    return python, False
+        raise
+    return settle_venv(building, venv, tag)
+
+
+def ensure_venv(ctx, base):
+    """The venv's python and whether it was reused.
+
+    One job in the region builds a missing venv, holding its lock, while the others wait and then reuse it. The build
+    goes into a folder of its own that is renamed into place once it works, and a ready venv is never deleted. The job
+    then stamps the venv it uses and clears what nobody uses any more (use_venv).
+    """
+    venv = os.path.join(base, "venvs", venv_name())
+    python = os.path.join(venv, "bin", "python")
+    tag = str(ctx.job_id or "job")[:8]
+    if venv_ready(venv):
+        use_venv(ctx, venv, tag)
+        return python, True
+    os.makedirs(os.path.dirname(venv), exist_ok=True)
+    lock = venv + ".lock"
+    if not take_lock(ctx, lock, venv, tag):
+        ctx.log("Another job in the region installed the venv while this one waited")
+        use_venv(ctx, venv, tag)
+        return python, True
+    keeper = LockKeeper(lock)
+    keeper.start()
+    try:
+        reused = venv_ready(venv) or build_venv(ctx, base, venv, tag)
+    finally:
+        keeper.stop()
+        # A lock another job broke and took over is that job's to remove.
+        if lock_owner(lock) in (str(ctx.job_id or "job"), None):
+            shutil.rmtree(lock, ignore_errors=True)
+    use_venv(ctx, venv, tag)
+    return python, reused
+
+
+def remove_stale_hf_locks(ctx, hf_home):
+    """Deletes Hugging Face download locks nobody took for HF_LOCK_STALE_SECONDS: their downloads died with their
+    instance, and on the shared cache such a lock could hold up every later download of its file. Returns how many."""
+    removed = 0
+    for root, _dirs, files in os.walk(os.path.join(hf_home, "hub", ".locks")):
+        for name in files:
+            path = os.path.join(root, name)
+            age = age_of(path)
+            if not name.endswith(".lock") or age is None or age < HF_LOCK_STALE_SECONDS:
+                continue
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+    if removed:
+        ctx.log("Removed " + str(removed) + " Hugging Face download lock" + ("" if removed == 1 else "s") + " nobody took for an hour")
+    return removed
 
 
 def weights_cached(hf_home):
-    snapshots = os.path.join(hf_home, "hub", "models--" + MODEL.replace("/", "--"), "snapshots")
-    return os.path.isdir(snapshots) and any(os.scandir(snapshots))
+    snapshot = os.path.join(hf_home, "hub", "models--" + MODEL.replace("/", "--"), "snapshots", MODEL_REVISION)
+    return os.path.isdir(snapshot) and any(os.scandir(snapshot))
 
 
-def relay(ctx):
-    """The ctx.run on_line hook: the child's MUSE_EVENT lines become progress events, and nothing else does."""
+def relay(ctx, seen=None):
+    """The ctx.run hook for the child's events: a MUSE_EVENT line becomes a progress event, and nothing else does. Each
+    event's kind is added to seen, when given.
+
+    The event can start anywhere in the line: on stdout (the fallback channel) a progress bar can be glued in front.
+    """
 
     def on_line(line):
-        if not line.startswith(EVENT_PREFIX):
+        at = line.find(EVENT_PREFIX)
+        if at < 0:
             return
-        event = json.loads(line[len(EVENT_PREFIX):])
+        event = json.loads(line[at + len(EVENT_PREFIX):])
+        if seen is not None:
+            seen.add(str(event.get("kind")))
         if event.get("kind") == "progress":
             ctx.progress(step=event.get("step"), total_steps=event.get("total"), loss=event.get("loss"), message=event.get("message"))
         elif event.get("kind") == "phase":
             ctx.progress(message=str(event.get("message") or "")[:200])
 
     return on_line
+
+
+def run_child(ctx, cmd, timeout, env, seen=None):
+    """Runs the child: its events come on their own pipe (stdout is the fallback), and a quiet child is reported
+    stalled. Never raises for the exit code; the caller reads the result file. seen collects the events' kinds."""
+    hook = relay(ctx, seen)
+    return ctx.run(cmd, timeout=timeout, check=False, env=env, on_line=hook, on_event=hook, stall_seconds=STALL_SECONDS)
 
 
 def archive(adapter_dir, path):
@@ -278,19 +669,42 @@ def dry_run(ctx, p, evals, adapter_dir):
     return {
         "base": [fake_answer("base", i, e["prompt"]) for i, e in enumerate(evals)],
         "tuned": [fake_answer("tuned", i, e["prompt"]) for i, e in enumerate(evals)],
-        "metrics": {"train_loss_final": round(2.0 * 0.99 ** total, 4), "steps": total, "train_seconds": 0, "peak_vram_gb": 0},
+        "metrics": {
+            "train_loss_final": round(2.0 * 0.99 ** total, 4),
+            "steps": total,
+            "max_steps": total,
+            "stopped_early": "no",
+            "train_seconds": 0,
+            "peak_vram_gb": 0,
+        },
+        "adapter": True,
     }
+
+
+def last_lines(out, count=20):
+    return "\n".join((out.stdout or "").splitlines()[-count:])
 
 
 def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system):
     hf_home = os.path.join(base, "hf")
     os.makedirs(hf_home, exist_ok=True)
     python, venv_reused = ensure_venv(ctx, base)
+    remove_stale_hf_locks(ctx, hf_home)
     cached = weights_cached(hf_home)
     ctx.log("venv " + ("reused" if venv_reused else "installed") + ", weights " + ("cached" if cached else "not cached yet"))
     result_path = os.path.join(ctx.work_dir, "glimmer-result.json")
+    if os.path.exists(result_path):
+        os.remove(result_path)
+    # The child has until the job's deadline less the parent's own reserve, and is killed shortly after that.
+    deadline = job_deadline(ctx, started) - PARENT_RESERVE_SECONDS
+    left = deadline - time.time()
+    if left < MIN_CHILD_SECONDS:
+        raise RuntimeError(
+            "Only " + minutes(left) + " are left for the model before the job's time limit, too few to load it, train and answer"
+        )
     config = {
         "model": MODEL,
+        "revision": MODEL_REVISION,
         "max_seq_length": MAX_SEQ_LENGTH,
         "max_steps": p["max_steps"],
         "learning_rate": p["learning_rate"],
@@ -301,19 +715,88 @@ def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system):
         "result_path": result_path,
         "adapter_dir": adapter_dir,
         "output_dir": os.path.join(ctx.work_dir, "outputs"),
+        "deadline": deadline,
     }
     config_path = os.path.join(ctx.work_dir, "glimmer-config.json")
     with open(config_path, "w") as f:
         json.dump(config, f)
-    env = {"HF_HOME": hf_home, "HF_HUB_DISABLE_TELEMETRY": "1", "TOKENIZERS_PARALLELISM": "false"}
-    budget = float(ctx.max_minutes or 120) * 60 - (time.time() - started) - 300
+    env = {
+        "HF_HOME": hf_home,
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "TOKENIZERS_PARALLELISM": "false",
+        # The venv is shared by every job in the region, so nothing writes bytecode into it.
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
     cmd = shlex.quote(python) + " -u " + shlex.quote(os.path.abspath(__file__)) + " --child " + shlex.quote(config_path)
-    ctx.run(cmd, timeout=max(600, int(budget)), check=True, env=env, on_line=relay(ctx))
-    with open(result_path, encoding="utf-8") as f:
-        result = json.load(f)
+    seen = set()
+    out = run_child(ctx, cmd, int(left) + CHILD_GRACE_SECONDS, env, seen)
+    timed_out = bool(getattr(out, "timed_out", False))
+    ended = "timed out" if timed_out else "exited with " + str(out.returncode)
+    result = read_result(result_path)
+    if result is None:
+        # A venv another job built that is missing a module here is broken for every job, so the next one rebuilds it.
+        missing = "ModuleNotFoundError" in (out.stdout or "")
+        if venv_reused and out.returncode != 0 and not timed_out and "imported" not in seen and missing:
+            mark_broken(ctx, os.path.dirname(os.path.dirname(python)))
+        raise RuntimeError("The training child " + ended + " before the base model answered:\n" + last_lines(out))
+    if out.returncode != 0:
+        ctx.log("The training child " + ended + " after writing part of its result")
+    result["ended"] = ended
+    result["tail"] = last_lines(out)
+    result["metrics"] = dict(result.get("metrics") or {})
     result["metrics"]["cached_weights"] = "yes" if cached else "no"
     result["metrics"]["cached_venv"] = "yes" if venv_reused else "no"
     return result
+
+
+def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
+    """Sends the eval items, uploads the adapter and returns the metrics.
+
+    A result the child left unfinished fails the job with what it did get: with no adapter saved, at once; with the
+    adapter saved but no tuned answers, after the adapter is uploaded, and with no eval items sent.
+    """
+    base_answers = result.get("base") or []
+    tuned_answers = result.get("tuned")
+    ended = str(result.get("ended") or "exited with 0")
+    tail = str(result.get("tail") or "")
+    if len(base_answers) != len(evals):
+        raise RuntimeError("The base model answered " + str(len(base_answers)) + " of " + str(len(evals)) + " eval prompts")
+    metrics = dict(result.get("metrics") or {})
+    metrics["cache_used"] = "yes" if cache_used else "no"
+    metrics["train_examples"] = len(train)
+    metrics["adapter_dir"] = adapter_dir
+    if not result.get("adapter"):
+        raise RuntimeError(
+            "Training didn't finish (the child " + ended + "), so no adapter was saved. The base model had answered all "
+            + str(len(evals)) + " eval prompts." + ("\n" + tail if tail else "")
+        )
+    if not isinstance(tuned_answers, list) or len(tuned_answers) != len(evals):
+        reason = str(result.get("tuned_error") or "the child " + ended + " during them")[:300]
+        metrics["eval_items"] = 0
+        upload_adapter(ctx, adapter_dir, metrics)
+        kept = "uploaded" if metrics.get("adapter_uploaded") == "yes" else "kept in " + adapter_dir
+        ctx.log("Training finished: " + json.dumps(metrics, ensure_ascii=False, default=str)[:3000])
+        raise RuntimeError(
+            "The adapter was saved (" + kept + "), but the tuned model's answers failed (" + reason + "), so no eval items were sent"
+        )
+    ctx.progress(message="Sending " + str(len(evals)) + " eval items")
+    sent = 0
+    for i, item in enumerate(evals):
+        if ctx.eval(i, item["prompt"], item["reference"], base_answers[i], tuned_answers[i]):
+            sent += 1
+    metrics["eval_items"] = sent
+    upload_adapter(ctx, adapter_dir, metrics)
+    loss = metrics.get("train_loss_final")
+    steps = str(metrics.get("steps")) + " steps"
+    if metrics.get("stopped_early") == "yes":
+        steps = str(metrics.get("steps")) + " of " + str(metrics.get("max_steps")) + " steps (stopped early to finish within the time limit)"
+    metrics["summary"] = (
+        ("Dry run: " if p["dry_run"] else "")
+        + "LoRA r=" + str(p["lora_rank"]) + " on Muse Glimmer 30B, " + steps
+        + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
+        + ", " + str(sent) + " eval items."
+    )
+    return metrics
 
 
 def run(ctx):
@@ -341,40 +824,73 @@ def run(ctx):
         result["metrics"].update({"cached_weights": "no", "cached_venv": "no", "dry_run": "yes"})
     else:
         result = real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system)
-
-    base_answers, tuned_answers = result["base"], result["tuned"]
-    if len(base_answers) != len(evals) or len(tuned_answers) != len(evals):
-        raise RuntimeError("The model answered " + str(len(base_answers)) + " and " + str(len(tuned_answers)) + " of " + str(len(evals)) + " eval prompts")
-    ctx.progress(message="Sending " + str(len(evals)) + " eval items")
-    sent = 0
-    for i, item in enumerate(evals):
-        if ctx.eval(i, item["prompt"], item["reference"], base_answers[i], tuned_answers[i]):
-            sent += 1
-
-    metrics = dict(result["metrics"])
-    metrics["cache_used"] = "yes" if cache_used else "no"
-    metrics["eval_items"] = sent
-    metrics["train_examples"] = len(train)
-    metrics["adapter_dir"] = adapter_dir
-    upload_adapter(ctx, adapter_dir, metrics)
-    loss = metrics.get("train_loss_final")
-    metrics["summary"] = (
-        ("Dry run: " if p["dry_run"] else "")
-        + "LoRA r=" + str(p["lora_rank"]) + " on Muse Glimmer 30B, " + str(metrics.get("steps")) + " steps"
-        + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
-        + ", " + str(sent) + " eval items."
-    )
-    return metrics
+    return finish(ctx, p, result, evals, train, adapter_dir, cache_used)
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# The child process: runs inside the venv, with the GPU. Prints MUSE_EVENT lines that the parent turns into progress.
+# The child process: runs inside the venv, with the GPU. Sends MUSE_EVENT lines that the parent turns into progress.
+
+
+def event_fd():
+    """The runner's event pipe (MUSE_EVENT_FD), or None, when events go to stdout instead."""
+    try:
+        fd = int(os.environ.get("MUSE_EVENT_FD", ""))
+        os.fstat(fd)
+        return fd
+    except (ValueError, OSError):
+        return None
 
 
 def emit(kind, **fields):
     fields["kind"] = kind
-    sys.stdout.write(EVENT_PREFIX + json.dumps(fields) + "\n")
+    line = EVENT_PREFIX + json.dumps(fields) + "\n"
+    fd = event_fd()
+    if fd is not None:
+        try:
+            os.write(fd, line.encode("utf-8"))
+            return
+        except OSError:
+            pass
+    sys.stdout.write(line)
     sys.stdout.flush()
+
+
+def train_stop_time(deadline, base_seconds):
+    """When training must stop so the adapter is saved and the tuned answers are done by the child's deadline."""
+    return deadline - TUNED_PASS_FACTOR * max(0.0, base_seconds) - SAVE_RESERVE_SECONDS
+
+
+class StopClock:
+    """Says when training should stop: from stop_at on, after any step but the last."""
+
+    def __init__(self, stop_at, clock=time.time):
+        self.stop_at = stop_at
+        self.clock = clock
+        self.stopped_at = None
+
+    def check(self, step, max_steps):
+        if self.stopped_at is None and step < max_steps and self.clock() >= self.stop_at:
+            self.stopped_at = int(step)
+        return self.stopped_at is not None
+
+
+def free_training_memory(trainer, torch):
+    """Drops the optimizer state training held, so the tuned answers get the GPU memory back."""
+    import gc
+
+    for name in ("optimizer", "lr_scheduler"):
+        try:
+            setattr(trainer, name, None)
+        except Exception:
+            pass
+    accelerator = getattr(trainer, "accelerator", None)
+    if accelerator is not None and hasattr(accelerator, "free_memory"):
+        try:
+            accelerator.free_memory()
+        except Exception:
+            pass
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
 def final_answer(raw):
@@ -401,13 +917,19 @@ def child_main(config_path):
     from trl import SFTConfig, SFTTrainer
     from unsloth.chat_templates import train_on_responses_only
 
+    # The parent marks a reused venv broken only when the child failed before this.
+    emit("imported")
     train_rows = read_jsonl(cfg["train_path"])
     eval_rows = read_jsonl(cfg["eval_path"])
     total = int(cfg["max_steps"])
     rank = int(cfg["lora_rank"])
+    deadline = float(cfg.get("deadline") or 0) or None
+    result = {"base": None, "tuned": None, "metrics": None, "adapter": False}
 
     emit("phase", message="Loading " + cfg["model"])
-    model, tokenizer = FastModel.from_pretrained(model_name=cfg["model"], max_seq_length=cfg["max_seq_length"])
+    model, tokenizer = FastModel.from_pretrained(
+        model_name=cfg["model"], revision=cfg.get("revision"), max_seq_length=cfg["max_seq_length"]
+    )
     model = FastModel.get_peft_model(
         model,
         finetune_vision_layers=False,
@@ -459,8 +981,12 @@ def child_main(config_path):
             emit("phase", message=label + " answers: " + str(len(answers)) + " of " + str(len(prompts)))
         return answers
 
-    # A fresh LoRA adds zero (its B matrices start at zero), so these are the base model's answers.
-    base_answers = answer_all("Base")
+    # A fresh LoRA adds zero (its B matrices start at zero), so these are the base model's answers. They are written
+    # at once, so a run cut short later still reports what it got.
+    began = time.time()
+    result["base"] = answer_all("Base")
+    base_seconds = time.time() - began
+    write_result(cfg["result_path"], result)
 
     if hasattr(FastModel, "for_training"):
         FastModel.for_training(model)
@@ -478,6 +1004,15 @@ def child_main(config_path):
             if step and step != self.sent and (step % PROGRESS_EVERY == 0 or step >= state.max_steps):
                 self.sent = step
                 emit("progress", step=step, total=state.max_steps, loss=self.loss)
+
+    # Training stops early when the clock says so, leaving time to save the adapter and answer with the tuned model.
+    stop = StopClock(train_stop_time(deadline, base_seconds)) if deadline else None
+
+    class Deadline(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if stop is not None and stop.check(int(state.global_step or 0), int(state.max_steps or total)):
+                control.should_training_stop = True
+            return control
 
     progress = Progress()
     trainer = SFTTrainer(
@@ -507,26 +1042,44 @@ def child_main(config_path):
     )
     trainer = train_on_responses_only(trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
     trainer.add_callback(progress)
+    trainer.add_callback(Deadline())
     emit("phase", message="Training for " + str(total) + " steps")
     stats = trainer.train()
-
-    tuned_answers = answer_all("Tuned")
-
-    os.makedirs(cfg["adapter_dir"], exist_ok=True)
-    model.save_pretrained(cfg["adapter_dir"])
-    tokenizer.save_pretrained(cfg["adapter_dir"])
+    steps = int(trainer.state.global_step or 0)
+    stopped_early = stop is not None and stop.stopped_at is not None
+    if stopped_early:
+        if progress.sent != steps:
+            emit("progress", step=steps, total=total, loss=progress.loss)
+        emit("phase", message="Training stopped at step " + str(steps) + " of " + str(total) + " to finish within the time limit")
 
     loss = progress.loss if progress.loss is not None else getattr(stats, "training_loss", None)
     metrics = {
         "train_loss_final": round(float(loss), 4) if loss is not None else "unknown",
-        "steps": int(trainer.state.global_step or total),
+        "steps": steps,
+        "max_steps": total,
+        "stopped_early": "yes" if stopped_early else "no",
         "train_seconds": round(float(stats.metrics.get("train_runtime", 0)), 1),
+        "base_answer_seconds": round(base_seconds, 1),
         "peak_vram_gb": round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2),
         "gpu": torch.cuda.get_device_name(0),
     }
-    with open(cfg["result_path"], "w", encoding="utf-8") as f:
-        json.dump({"base": base_answers, "tuned": tuned_answers, "metrics": metrics}, f, ensure_ascii=False)
+    # The adapter is saved before the tuned answers, so a failure there doesn't lose the training.
+    os.makedirs(cfg["adapter_dir"], exist_ok=True)
+    model.save_pretrained(cfg["adapter_dir"])
+    tokenizer.save_pretrained(cfg["adapter_dir"])
+    result["metrics"] = metrics
+    result["adapter"] = True
+    write_result(cfg["result_path"], result)
     emit("phase", message="Adapter saved")
+
+    free_training_memory(trainer, torch)
+    try:
+        result["tuned"] = answer_all("Tuned")
+    except Exception as e:
+        result["tuned_error"] = type(e).__name__ + ": " + str(e)[:300]
+        emit("phase", message="The tuned answers failed: " + result["tuned_error"])
+    metrics["peak_vram_gb"] = round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2)
+    write_result(cfg["result_path"], result)
 
 
 if __name__ == "__main__":

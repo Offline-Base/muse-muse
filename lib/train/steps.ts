@@ -26,7 +26,7 @@ import {
   type LambdaFilesystem,
   type LambdaInstance,
 } from "@/lib/train/lambda";
-import { decideCheck, type TrainJobRow } from "@/lib/train/logic";
+import { decideCheck, usableMinutes, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import {
   claimLaunch,
@@ -40,7 +40,7 @@ import {
   setStatus,
 } from "@/lib/train/store";
 import { isTrainTerminal, type Recipe, type TrainCheck, type TrainStatus } from "@/lib/train/types";
-import { buildUserData, callbackOrigin } from "@/lib/train/userdata";
+import { buildUserData, callbackOrigin, deadlineEpochFor } from "@/lib/train/userdata";
 
 /** The SSH key every launch uses. Its private key stays on the owner's Mac, for debugging; the platform never uses SSH. */
 const DEFAULT_SSH_KEY_NAME = "muse-muse-platform";
@@ -263,7 +263,9 @@ async function terminateJobInstances(job: TrainJobRow, done?: string): Promise<n
  * delivery can only adopt the instance or wait for Lambda's listing, never launch a second one.
  *
  * A recipe with usesCache gets its region's cache filesystem first (ensureFilesystem, before the claim; a failure is a
- * FatalError) and launches with it mounted, its mount path in job.json as cacheDir.
+ * FatalError) and launches with it mounted, its mount path in job.json as cacheDir. job.json's deadlineEpoch is stamped
+ * before the launch request from usableMinutes (the time limit, or the dollar limit at the job's price when that runs
+ * out first), so the runner's deadline is never after decideCheck would stop the job.
  *
  * Lambda refusing the launch (a 4xx other than 429, such as no capacity) gives the claim back and is a FatalError, so
  * it is never retried; a 429 gives the claim back and is retried after 30 s; a timeout or 5xx keeps the claim and is
@@ -300,6 +302,10 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
 
   const cache = await cacheFor(recipe, job.region);
   const token = randomBytes(32).toString("base64url");
+  // Stamped before requestedAt below, which becomes launchedAt, so the runner stops no later than the time limit, or
+  // than the dollar limit when that runs out first at the job's price.
+  const runnable = usableMinutes({ maxMinutes: job.maxMinutes, maxUsd: job.maxUsd }, job.priceCentsPerHour);
+  const deadlineEpoch = deadlineEpochFor(runnable);
   let userData: string;
   try {
     userData = buildUserData({
@@ -309,6 +315,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
       recipe,
       params: job.params,
       maxMinutes: job.maxMinutes,
+      deadlineEpoch,
       ...(cache ? { cacheDir: cache.mountPoint } : {}),
     });
   } catch (err) {

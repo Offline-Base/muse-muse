@@ -10,13 +10,17 @@ const SAMPLE = 5;
 
 /**
  * GET -> {dataset: DatasetView, sampleTrain: TrainExample[], sampleEval: EvalExample[]}, the first 5 of each. While it
- * is generating, sampleTrain shows the first answered examples, before the eval items are held out. Admins only.
+ * is generating, sampleTrain shows the first answered examples, before the eval items are held out, and sampleEval is
+ * empty (eval then holds the answers of the chunk being written). Admins only.
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {
   await requireAdminOrAutomation(req);
   const { id } = await params;
   const dataset = await getDataset(id);
   if (!dataset) return errorJson(404, "not_found");
-  const [train, held] = await Promise.all([datasetPage(id, "train", 0, SAMPLE), datasetPage(id, "eval", 0, SAMPLE)]);
+  const [train, held] = await Promise.all([
+    datasetPage(id, "train", 0, SAMPLE),
+    dataset.status === "ready" ? datasetPage(id, "eval", 0, SAMPLE) : Promise.resolve(null),
+  ]);
   return Response.json({ dataset: toDatasetView(dataset), sampleTrain: train?.items ?? [], sampleEval: held?.items ?? [] });
 });

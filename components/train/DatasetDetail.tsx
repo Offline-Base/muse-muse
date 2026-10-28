@@ -80,7 +80,8 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
               ? `${WRITER_NAME} writes the prompts first, then answers them in chunks. This page updates every 10 seconds.`
               : ready && d.finishedAt
                 ? `Finished ${dateTimeUtc(d.finishedAt)}, ${duration(elapsedMs(d.createdAt, d.finishedAt, now))} after it started.${
-                    kept < d.requested
+                    // A dataset that stopped early says why in its note below.
+                    kept < d.requested && !d.error
                       ? ` ${d.requested - kept} of the ${d.requested} asked for were left out as repeats or unusable answers.`
                       : ""
                   }`
@@ -94,6 +95,12 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
         <div className="callout callout-bad" role="note">
           <Icon name="alert" size={18} />
           <p>{d.error ?? "It failed without saying why."}</p>
+        </div>
+      ) : ready && d.error ? (
+        // A dataset that stopped early keeps what it had, with a note saying why.
+        <div className="callout train-callout-warn" role="note">
+          <Icon name="alert" size={18} />
+          <p>{d.error}</p>
         </div>
       ) : null}
 

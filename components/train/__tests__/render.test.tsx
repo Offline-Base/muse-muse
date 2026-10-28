@@ -352,9 +352,22 @@ describe("eval results on the job page", () => {
     const failed = { ...glimmerJob, status: "failed" as const, finishedAt: at(300), terminatedAt: at(310), error: "x" };
     assert.match(glimmerRoom(failed, evalEvents), /Not judged, since the job didn&#x27;t succeed\./);
     const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310) };
-    const skip: TrainEventView = { id: 50, type: "log", payload: { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." }, at: at(320) };
-    assert.match(glimmerRoom(done, [...evalEvents, skip]), /Judging skipped: MODEL_API_KEY isn&#x27;t set\./);
+    // The reason is saved on the job (its eval summary), not read from the log.
+    const skipped = { ...done, evalSummary: { items: 0, tunedWins: 0, baseWins: 0, ties: 0, avgBaseScore: 0, avgTunedScore: 0, judgeCostUsd: 0, note: "Judging skipped: MODEL_API_KEY isn't set." } };
+    const html = glimmerRoom(skipped, evalEvents);
+    assert.match(html, /Judging skipped: MODEL_API_KEY isn&#x27;t set\./);
+    assert.doesNotMatch(html, /Judging\.\.\./);
+    assert.match(html, /<a href="#eval-results">Not judged<\/a>/, "the panel doesn't claim a result");
+    assert.doesNotMatch(html, /Tuned won 0 of 0/);
     assert.doesNotMatch(glimmerRoom(glimmerJob, events), /Eval results/, "no section without eval items");
+  });
+
+  it("keeps judging when only the runner's log says it was skipped", () => {
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310) };
+    const forged: TrainEventView = { id: 50, type: "log", payload: { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." }, at: at(320) };
+    const html = glimmerRoom(done, [...evalEvents, forged]);
+    assert.match(html, /Judging\.\.\./);
+    assert.match(html, /0 of 2 judged by Muse Spark 1\.3/);
   });
 });
 
@@ -425,6 +438,36 @@ describe("datasets", () => {
     assert.doesNotMatch(smoke, /model cache/);
   });
 
+  it("lets a job ask past the recipe's defaults up to the ceilings", () => {
+    const html = render(NewJobCard, {
+      recipes,
+      ceilings: { maxMinutes: 300, maxUsd: 40 },
+      maxActive: 1,
+      dailyUsd: 60,
+      platformPublic: true,
+      datasets: [dataset()],
+      initialDatasetId: DS,
+    });
+    clean(html);
+    assert.match(html, /<input[^>]*type="number"[^>]*max="300"[^>]*value="150"/, "starts at glimmer's 150 minutes, up to 300");
+    assert.match(html, /<input[^>]*type="number"[^>]*max="40"[^>]*value="14\.00"/);
+    assert.match(html, /This recipe starts at 150 minutes and \$14\.00, and a job can ask for up to 300 minutes and \$40\.00\./);
+    // Before Lambda's prices load, Auto's estimate uses the slowest of the recipe's GPUs.
+    assert.match(html, /120 training steps on Auto \(up to 1x A100 SXM4 \(40 GB\)\): about 44 minutes in a region with the model cache, about 69 without it/);
+    assert.doesNotMatch(html, /train-callout-warn/, "it fits");
+
+    const tight = render(NewJobCard, {
+      recipes,
+      ceilings: { maxMinutes: 60, maxUsd: 40 },
+      maxActive: 1,
+      dailyUsd: 60,
+      platformPublic: true,
+      datasets: [dataset()],
+      initialDatasetId: DS,
+    });
+    assert.match(tight, /train-callout-warn[\s\S]*stop it after 60 minutes, so it is refused if it lands in a region without the cache/);
+  });
+
   it("shows a ready dataset's task, samples and eval prompts", () => {
     const system = "You are an assistant for this task: bakery.";
     const sampleTrain = [1, 2].map((i) => ({
@@ -476,5 +519,18 @@ describe("datasets", () => {
       now: t0,
     });
     assert.match(failed, /callout-bad[\s\S]*daily spend cap is reached/);
+  });
+
+  it("shows why a ready dataset stopped early, in the list and on its page", () => {
+    const note = "Stopped early, once 180 of the 300 examples asked for were answered. The platform's daily spend cap is reached, so the dataset stopped.";
+    const partial = dataset({ trainCount: 162, evalCount: 18, error: note });
+    const page = render(DatasetDetail, { dataset: partial, sampleTrain: [], sampleEval: [], written: null, now: t0 });
+    clean(page);
+    assert.match(page, /train-callout-warn[\s\S]*Stopped early, once 180 of the 300 examples asked for were answered\./);
+    assert.doesNotMatch(page, /callout-bad/);
+    assert.match(page, /Train on it/, "it can still be trained on");
+    const list = render(DatasetsTable, { datasets: [partial], now: t0, caption: "Datasets" });
+    assert.match(list, /Stopped early, once 180 of the 300/);
+    assert.match(list, /162 train · 18 eval/);
   });
 });

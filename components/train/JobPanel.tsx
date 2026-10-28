@@ -14,6 +14,7 @@ import {
   trainStatusLabel,
 } from "@/components/train/format";
 import { bytes, dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
+import { unjudgedNote } from "@/lib/train/logic";
 import type { RecipeView, TrainJobView } from "@/lib/train/types";
 
 export interface JobPanelProps {
@@ -195,7 +196,9 @@ export function JobPanel({ job, recipe, dataset = null, now, elapsedMs, costUsd,
               <dt>Eval</dt>
               <dd>
                 <a href="#eval-results">
-                  Tuned won {job.evalSummary.tunedWins} of {job.evalSummary.items}
+                  {unjudgedNote(job.evalSummary) === null
+                    ? `Tuned won ${job.evalSummary.tunedWins} of ${job.evalSummary.items}`
+                    : "Not judged"}
                 </a>
               </dd>
             </div>
