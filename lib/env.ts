@@ -158,4 +158,48 @@ export const env = {
   get dailySpendCapUsd() {
     return number("DAILY_SPEND_CAP_USD", 40);
   },
+  /**
+   * HF_TOKEN, required: a Hugging Face token that can write repos under HF_NAMESPACE, for publishing tuned adapters
+   * (lib/train/hub.ts). Platform only. lib/train/hub.ts reads it inside each call it makes to the Hub, so it is never a
+   * workflow step's argument or result (those are persisted), and it is never logged, never sent to a GPU and never
+   * sent to a browser.
+   */
+  get hfToken() {
+    // Trimmed: a pasted token often ends in a line break, which no header takes.
+    return required("HF_TOKEN").trim();
+  },
+  /** HF_NAMESPACE: the Hugging Face user or organization the model and dataset repos are made under, or undefined. */
+  get hfNamespace(): string | undefined {
+    return process.env.HF_NAMESPACE?.trim() || undefined;
+  },
+  /**
+   * True when HF_PUBLIC asks for public repos: unset or empty (the default, "1"), "1", "true", "yes" or "on". "0",
+   * "false", "no", "off" and anything else keep published repos private, so a value that isn't understood fails closed.
+   */
+  get hfPublic(): boolean {
+    const v = (process.env.HF_PUBLIC ?? "").trim().toLowerCase();
+    return v === "" || ["1", "true", "yes", "on"].includes(v);
+  },
+  /** HF_ENDPOINT, https://huggingface.co by default, with no trailing slash. Tests point it at a fake Hub. */
+  get hfEndpoint(): string {
+    return (process.env.HF_ENDPOINT?.trim() || "https://huggingface.co").replace(/\/+$/, "");
+  },
+  /**
+   * Why tuned adapters aren't published to the Hugging Face Hub here, or null when they are. Only says which setting is
+   * missing, never a value.
+   */
+  get hubOffReason(): string | null {
+    if (!process.env.HF_TOKEN?.trim()) return "HF_TOKEN isn't set";
+    const namespace = env.hfNamespace;
+    if (!namespace) return "HF_NAMESPACE isn't set";
+    // A user or organization name, under the Hub's rules for repo names.
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,94}[A-Za-z0-9])?$/.test(namespace) || /--|\.\./.test(namespace)) {
+      return "HF_NAMESPACE isn't a Hugging Face user or organization name";
+    }
+    // Every call to the Hub carries the token, so it only goes over https. Plain http is for a fake Hub on this machine.
+    const origin = env.hfEndpoint;
+    const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
+    if (!local && !/^https:\/\/[^/\s?#@]+$/.test(origin)) return "HF_ENDPOINT isn't an https origin (plain http only on localhost)";
+    return null;
+  },
 };

@@ -9,6 +9,7 @@ import {
   SERVE_RECIPE,
 } from "@/lib/train/logic";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
+import { PUBLISH_PY } from "@/lib/train/recipes/publish";
 import { SERVE_MAX_NEW_TOKENS, SERVE_PY } from "@/lib/train/recipes/serve";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 import type { Recipe } from "@/lib/train/types";
@@ -17,6 +18,18 @@ import type { Recipe } from "@/lib/train/types";
 const GLIMMER_GPUS: Recipe["gpus"] = [
   { instanceType: "gpu_1x_h100_pcie", label: "1x H100 PCIe (80 GB)" },
   { instanceType: "gpu_1x_h100_sxm5", label: "1x H100 SXM5 (80 GB)" },
+  { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)" },
+];
+
+/**
+ * The cheapest single GPUs, cheapest first (Lambda's prices on 2026-10-28), for glimmer-publish, which only reads its
+ * adapter from the region's cache and uploads it. It must launch in that region, so there are several to pick from.
+ */
+const PUBLISH_GPUS: Recipe["gpus"] = [
+  { instanceType: "gpu_1x_rtx6000", label: "1x RTX 6000 (24 GB)" },
+  { instanceType: "gpu_1x_a6000", label: "1x A6000 (48 GB)" },
+  { instanceType: "gpu_1x_a10", label: "1x A10 (24 GB)" },
+  { instanceType: "gpu_1x_a100", label: "1x A100 PCIe (40 GB)" },
   { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)" },
 ];
 
@@ -103,6 +116,21 @@ export const RECIPES: Recipe[] = [
         max: 1,
         help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU.",
       },
+      {
+        key: "publish",
+        label: "Publish to Hugging Face",
+        kind: "number",
+        default: 1,
+        min: 0,
+        max: 1,
+        help: "1 sends the adapter to the Hugging Face Hub when training ends, and once the job is judged the platform publishes it with its training data and a model card that says why it was made. 0 keeps it on Muse Muse only. A dry run is never published.",
+      },
+      {
+        key: "why",
+        label: "Why this model",
+        kind: "text",
+        help: "Optional, in your own words: why this model was made. It opens the model card's story on Hugging Face, and Muse Spark 1.3 builds the rest from the dataset's task and the results.",
+      },
     ],
     script: GLIMMER_PY,
   },
@@ -134,6 +162,26 @@ export const RECIPES: Recipe[] = [
       },
     ],
     script: SERVE_PY,
+  },
+  {
+    id: "glimmer-publish",
+    title: "Publish to Hugging Face",
+    description:
+      "Sends one trained Muse Glimmer LoRA adapter from its region's model cache to the Hugging Face Hub, for an adapter that wasn't sent when it trained (one trained before publishing existed, or whose job ran out of time). It runs on the cheapest GPU free in the adapter's region with that cache mounted, never uses the GPU, and uploads the files straight to the Hub's storage with upload links the platform gets from the Hub, so the Hub token never leaves the platform. The platform then publishes them with the model card and the dataset.",
+    gpus: PUBLISH_GPUS,
+    defaultMaxMinutes: 20,
+    defaultMaxUsd: 1,
+    usesCache: true,
+    params: [
+      {
+        key: SERVE_ADAPTER_PARAM,
+        label: "Adapter",
+        kind: "adapter",
+        required: true,
+        help: "A Muse Glimmer LoRA job that succeeded and saved its adapter on a model cache. The upload runs in that cache's region.",
+      },
+    ],
+    script: PUBLISH_PY,
   },
 ];
 

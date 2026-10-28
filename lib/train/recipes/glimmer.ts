@@ -11,7 +11,12 @@
  * others in the region wait and reuse it. The child works to ctx.deadline: it writes the base answers as soon as it has
  * them, stops training early when it must, and saves the adapter before the tuned answers. Params: datasetId,
  * maxSteps, learningRate, loraRank, studentPrompt ("short" or "full", see student_setup), dryRun (1 skips the venv, the
- * model and the GPU and fakes the answers, for tests).
+ * model and the GPU and fakes the answers, for tests), publish (0 keeps the adapter off the Hugging Face Hub) and why
+ * (the admin's own words for the model card, which only the platform reads).
+ *
+ * The adapter's adapter_config.json gets the base model's pinned revision as soon as it is saved. Once the eval items
+ * are sent and the adapter archive is offered for upload, the recipe sends the adapter folder to the Hugging Face Hub's
+ * storage (ctx.hub_upload, publish_adapter), which the platform commits with its model card once the job is judged.
  *
  * The answers train on the final (to=user) channel with no reasoning, and the eval prompts open that channel, so both
  * models answer the way the tuned one was trained (see RESPONSE_PART and eval_prompt). The child checks the masks
@@ -138,6 +143,10 @@ EVAL_MAX = 60
 EVENT_PREFIX = "MUSE_EVENT "
 UPLOAD_MAX_BYTES = 1024 * 1024 * 1024
 JOB_DIR = "/opt/muse"
+ADAPTER_CONFIG = "adapter_config.json"
+# A Hugging Face Hub upload (ctx.hub_upload) isn't started with less than this left before ctx.deadline: the
+# glimmer-publish recipe can send the adapter later.
+HUB_MIN_SECONDS = 480
 
 
 def number(params, key, fallback):
@@ -159,6 +168,8 @@ def read_params(params):
         "lora_rank": int(min(128, max(4, round(number(params, "loraRank", 16))))),
         "dry_run": number(params, "dryRun", 0) >= 1,
         "student_prompt": str(params.get("studentPrompt") or "short").strip().lower(),
+        # Published to the Hugging Face Hub unless the admin set publish to 0.
+        "publish": number(params, "publish", 1) != 0,
     }
     if not (0 < p["learning_rate"] <= 0.01):
         raise ValueError("learningRate must be above 0 and at most 0.01")
@@ -728,6 +739,84 @@ def upload_adapter(ctx, adapter_dir, metrics):
         metrics["adapter_url"] = url
 
 
+def hub_config_fixes(config, revision, model):
+    """What a PEFT adapter_config.json needs so the adapter loads from the Hugging Face Hub onto the weights it was
+    trained on: "revision", the base model's commit, when it has none (PEFT's AutoPeftModel loads the base at it, and a
+    model card's base_model can't pin one), and base_model_name_or_path as model when it is missing or a local path.
+    {} when it needs nothing."""
+    fixes = {}
+    if revision and not config.get("revision"):
+        fixes["revision"] = revision
+    base = config.get("base_model_name_or_path")
+    if model and (not isinstance(base, str) or not base.strip() or os.path.isabs(base)):
+        fixes["base_model_name_or_path"] = model
+    return fixes
+
+
+def fix_adapter_config(source, revision, model, target=None):
+    """Applies hub_config_fixes to the adapter_config.json at source: in place, or into a copy at target (source is then
+    left as it is). Written the way PEFT writes it (top-level keys sorted, a 2-space indent), aside and then renamed.
+    Returns the keys it set."""
+    with open(source, encoding="utf-8") as f:
+        config = json.load(f)
+    if not isinstance(config, dict):
+        raise ValueError(source + " isn't a JSON object")
+    fixes = hub_config_fixes(config, revision, model)
+    out = target or source
+    if fixes or out != source:
+        config.update(fixes)
+        part = out + ".part"
+        with open(part, "w", encoding="utf-8") as f:
+            f.write(json.dumps(dict(sorted(config.items())), indent=2))
+        os.replace(part, out)
+    return sorted(fixes)
+
+
+def publish_adapter(ctx, p, adapter_dir, metrics):
+    """Sends the adapter folder to the Hugging Face Hub's storage through the platform (ctx.hub_upload), which commits
+    it with its model card once the job is judged. Not for a dry run (its adapter is a stand-in), with publish 0, or
+    with under HUB_MIN_SECONDS left before ctx.deadline (glimmer-publish can send it later). The outcome goes to the log
+    and the metrics: hub_uploaded (yes or no), hub_skip_reason when it is no, and hub_repo once the platform named one.
+    Nothing here fails the job."""
+    reason, out = None, None
+    deadline = getattr(ctx, "deadline", None)
+    timed = isinstance(deadline, (int, float)) and not isinstance(deadline, bool) and deadline > 0
+    left = deadline - time.time() if timed else None
+    if p.get("dry_run"):
+        reason = "a dry run's adapter is a stand-in"
+    elif not p.get("publish", True):
+        reason = "publish is 0 for this job"
+    elif left is not None and left < HUB_MIN_SECONDS:
+        reason = "only " + minutes(left) + " were left before the job's time limit"
+    else:
+        try:
+            out = ctx.hub_upload(adapter_dir)
+        except Exception as e:
+            reason = "the upload failed (" + type(e).__name__ + ": " + str(e)[:300] + ")"
+    if out is not None:
+        if out.get("repo"):
+            metrics["hub_repo"] = str(out["repo"])
+        failed = out.get("failed") or []
+        if out.get("skipped"):
+            reason = str(out["skipped"])
+        elif failed:
+            first = failed[0] if isinstance(failed[0], dict) else {}
+            reason = (
+                str(len(failed)) + " file" + ("" if len(failed) == 1 else "s") + " didn't reach the Hub's storage ("
+                + str(first.get("path")) + ": " + str(first.get("error")) + ")"
+            )
+    metrics["hub_uploaded"] = "no" if reason else "yes"
+    if reason:
+        metrics["hub_skip_reason"] = reason
+        ctx.log("The adapter wasn't sent to the Hugging Face Hub: " + reason)
+    else:
+        count = out.get("uploaded")
+        ctx.log(
+            "The adapter is in the Hugging Face Hub's storage for " + str(out.get("repo")) + " (" + str(count) + " file"
+            + ("" if count == 1 else "s") + "); the platform publishes it with its model card once the job is judged"
+        )
+
+
 def fake_answer(kind, index, prompt):
     digest = hashlib.sha256((kind + ":" + prompt).encode("utf-8")).hexdigest()[:8]
     return "Dry run " + kind + " answer " + str(index) + " (" + digest + ")"
@@ -742,8 +831,8 @@ def dry_run(ctx, p, evals, adapter_dir):
     if total % every:
         ctx.progress(step=total, total_steps=total, loss=round(2.0 * 0.99 ** total, 4))
     os.makedirs(adapter_dir, exist_ok=True)
-    with open(os.path.join(adapter_dir, "adapter_config.json"), "w") as f:
-        json.dump({"dry_run": True, "base_model_name_or_path": MODEL, "r": p["lora_rank"], "lora_alpha": p["lora_rank"]}, f)
+    with open(os.path.join(adapter_dir, ADAPTER_CONFIG), "w") as f:
+        json.dump({"dry_run": True, "base_model_name_or_path": MODEL, "revision": MODEL_REVISION, "r": p["lora_rank"], "lora_alpha": p["lora_rank"]}, f)
     return {
         "base": [fake_answer("base", i, e["prompt"]) for i, e in enumerate(evals)],
         "tuned": [fake_answer("tuned", i, e["prompt"]) for i, e in enumerate(evals)],
@@ -828,10 +917,12 @@ def real_run(ctx, p, base, train_path, eval_path, adapter_dir, started, system):
 
 
 def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
-    """Sends the eval items, uploads the adapter and returns the metrics.
+    """Sends the eval items, uploads the adapter, sends it to the Hugging Face Hub (publish_adapter) and returns the
+    metrics.
 
     A result the child left unfinished fails the job with what it did get: with no adapter saved, at once; with the
-    adapter saved but no tuned answers, after the adapter is uploaded, and with no eval items sent.
+    adapter saved but no tuned answers, after the adapter is uploaded, and with no eval items sent and nothing sent to
+    the Hub (with no eval, nothing is judged or published).
     """
     base_answers = result.get("base") or []
     tuned_answers = result.get("tuned")
@@ -866,6 +957,7 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
             sent += 1
     metrics["eval_items"] = sent
     upload_adapter(ctx, adapter_dir, metrics)
+    publish_adapter(ctx, p, adapter_dir, metrics)
     loss = metrics.get("train_loss_final")
     steps = str(metrics.get("steps")) + " steps"
     if metrics.get("stopped_early") == "yes":
@@ -1307,6 +1399,12 @@ def child_main(config_path):
     os.makedirs(cfg["adapter_dir"], exist_ok=True)
     model.save_pretrained(cfg["adapter_dir"])
     tokenizer.save_pretrained(cfg["adapter_dir"])
+    # PEFT leaves "revision" empty: the base model's pinned commit goes in, so the adapter loads from the Hugging Face Hub
+    # onto the weights it was trained on. A failure is only logged, since the adapter itself is saved.
+    try:
+        fix_adapter_config(os.path.join(cfg["adapter_dir"], ADAPTER_CONFIG), cfg.get("revision"), cfg["model"])
+    except (OSError, ValueError) as e:
+        emit("log", text="The base model's revision couldn't be written into " + ADAPTER_CONFIG + ": " + type(e).__name__ + ": " + str(e)[:300])
     result["metrics"] = metrics
     result["adapter"] = True
     write_result(cfg["result_path"], result)

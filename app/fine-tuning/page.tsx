@@ -29,7 +29,7 @@ import {
   listResultJobs,
   trainingSpendToday,
 } from "@/lib/train/store";
-import { isTrainTerminal, type DatasetView, type RecipeView, type TrainJobView } from "@/lib/train/types";
+import { isTrainTerminal, PUBLISH_RECIPE, type DatasetView, type RecipeView, type TrainJobView } from "@/lib/train/types";
 import { callbackOrigin } from "@/lib/train/userdata";
 import { sweepOffReason, sweepRunning } from "@/app/api/train/shared";
 import { pageViewer } from "./viewer";
@@ -181,7 +181,8 @@ export default async function FineTuningPage({
       <ResultsSection results={results} admin />
 
       <NewJobCard
-        recipes={recipes}
+        // A glimmer-publish job starts from its adapter job's Hugging Face card (Publish), which keeps track of it.
+        recipes={recipes.filter((r) => r.id !== PUBLISH_RECIPE)}
         ceilings={ceilings}
         maxActive={env.trainMaxActive}
         dailyUsd={env.trainDailyUsd}

@@ -344,6 +344,33 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.doesNotMatch(html, /minutes? left/);
     });
 
+    it("/fine-tuning/{id} shows On Hugging Face and both repos once the job is published there, and nothing else of it", async () => {
+      const modelUrl = "https://huggingface.co/muse-org/muse-glimmer-30b-bakery-helper-lora-8f1d2c3b";
+      const datasetUrl = "https://huggingface.co/datasets/muse-org/muse-muse-bakery-helper-1b2c3d4e";
+      // The store's hubLinks, and a leaky store's whole hub state beside it.
+      job = jobRow({
+        hubLinks: { status: "published", modelUrl, datasetUrl },
+        hub: { status: "published", reason: "hub-secret-reason", small: { "adapter_config.json": "c2VjcmV0" }, why: "hub-secret-why", modelUrl },
+      });
+      const html = await openJob();
+      clean(html);
+      assert.match(html, /<a class="chip" href="https:\/\/huggingface\.co\/muse-org\/muse-glimmer-30b-bakery-helper-lora-8f1d2c3b"[^>]*>On Hugging Face/);
+      assert.match(html, /<dt>On Hugging Face<\/dt>/);
+      assert.ok(html.includes(datasetUrl));
+      assert.doesNotMatch(html, /hub-secret|c2VjcmV0/);
+      job = jobRow({ hub: { status: "published", modelUrl, datasetUrl, public: true } });
+      assert.doesNotMatch(await openJob(), /Hugging Face/, "only the store's hubLinks count, never the hub state");
+      job = jobRow();
+      assert.doesNotMatch(await openJob(), /Hugging Face/);
+    });
+
+    it("/fine-tuning puts the On Hugging Face chip on a published job", async () => {
+      job = jobRow({ hubLinks: { status: "published", modelUrl: "https://huggingface.co/muse-org/m", datasetUrl: null } });
+      const html = await openList();
+      clean(html);
+      assert.match(html, /<span class="chip">On Hugging Face<\/span>/);
+    });
+
     it("/fine-tuning/{id} keeps the results when the live demo can't be read", async () => {
       liveDemoFails = true;
       const errors = mock.method(console, "error", () => {});
@@ -507,6 +534,17 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.match(html, /Serving the live demo/);
       assert.doesNotMatch(html, new RegExp(CERT), "the page never shows the whole certificate");
       assert.equal(calls.includes("getLiveDemo"), false, "a serve job has no live demo of its own");
+    });
+
+    it("/fine-tuning/{id} of a Muse Glimmer LoRA job has its Hugging Face card, and says when publishing is off", async () => {
+      delete process.env.HF_TOKEN;
+      job = jobRow({ hub: { status: "uploaded", modelRepo: "muse-org/m", files: [{ path: "adapter_model.safetensors", size: 1, sha256: "a".repeat(64) }], uploaded: ["a".repeat(64)], small: { "adapter_config.json": "c2VjcmV0" } } });
+      const html = await openJob();
+      assert.match(html, /<h2[^>]*>Hugging Face<\/h2>/);
+      assert.match(html, /Publishing to Hugging Face is off here: HF_TOKEN isn&#x27;t set\./);
+      assert.doesNotMatch(html, /c2VjcmV0/, "never the small files");
+      job = jobRow({ recipe: "smoke", title: "Smoke test", params: {}, evalSummary: null });
+      assert.doesNotMatch(await openJob(), /<h2[^>]*>Hugging Face<\/h2>/, "only Muse Glimmer LoRA jobs publish");
     });
 
     it("/fine-tuning/datasets/{id} keeps Train on it", async () => {

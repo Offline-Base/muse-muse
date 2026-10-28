@@ -3,7 +3,9 @@
  * standing in for the platform (and for the Vercel Blob API): the smoke recipe with allowNoGpu, a failing recipe,
  * uploads through the simple and multipart Blob protocols, dataset paging, eval callbacks, the cache folder, the event
  * pipe, the stall watch, the deadline, and the glimmer-lora recipe with dryRun. The glimmer recipe's own logic (the
- * venv build lock and race, the pinned uv, the deadline, partial results) runs under python3 with a fake ctx. Skipped
+ * venv build lock and race, the pinned uv, the deadline, partial results, the base model's revision in
+ * adapter_config.json, the step that sends the adapter to the Hugging Face Hub) runs under python3 with a fake ctx;
+ * ctx.hub_upload itself is in hub-upload.test.ts. Skipped
  * when python3 is missing. Nothing here reaches Lambda, Meta or the network.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/runner.test.ts
@@ -320,6 +322,10 @@ class FakeCtx:
         self.on_run = None
         self.data = {"train": [], "eval": []}
         self.dataset_title = None
+        # What hub_upload answers (or raises, for an exception), the calls it got, and the order of the GPU's sends.
+        self.hub_answer = {"uploaded": 1, "skipped": None, "failed": [], "repo": "muse-test/muse-glimmer-30b-briefs-lora-" + job_id, "files": 3, "bytes": 10}
+        self.hub_calls = []
+        self.order = []
 
     def dataset(self, part):
         return self.data[part]
@@ -339,11 +345,20 @@ class FakeCtx:
 
     def eval(self, index, prompt, reference, base, tuned):
         self.evals.append([index, base, tuned])
+        self.order.append("eval")
         return True
 
     def upload(self, path, name, kind="other"):
         self.uploads.append([name, kind])
+        self.order.append("upload")
         return "https://blob.example/" + name
+
+    def hub_upload(self, folder, for_job=None):
+        self.hub_calls.append([folder, for_job])
+        self.order.append("hub")
+        if isinstance(self.hub_answer, Exception):
+            raise self.hub_answer
+        return self.hub_answer
 
 
 def make_venv(path, owner, ready=True):
@@ -1019,6 +1034,66 @@ assert ctx.evals == [] and ctx.uploads == []
 `);
   });
 
+  it("sends the adapter to the Hugging Face Hub after the eval items and the archive, unless it mustn't, and never fails the job over it", async () => {
+    await glimmerTest(String.raw`
+adapter = os.path.join(BASE, "models", "job-h")
+os.makedirs(adapter)
+with open(os.path.join(adapter, "adapter_config.json"), "w") as f:
+    f.write("{}")
+evals = [{"prompt": "p0", "reference": "r0"}]
+done = {"base": ["b0"], "tuned": ["t0"], "metrics": {"steps": 3}, "adapter": True}
+p = g.read_params({"datasetId": "ds"})
+assert p["publish"] is True, "published unless the admin says 0"
+for given, want in ((0, False), ("0", False), (0.0, False), (1, True), ("1", True), ("x", True), (None, True)):
+    assert g.read_params({"datasetId": "ds", "publish": given})["publish"] is want, given
+
+
+def finished(ctx, params=None, result=None):
+    return g.finish(ctx, params or p, dict(result or done), evals, [{"messages": []}], adapter, True)
+
+
+# After the eval items and the archive, the folder goes to the Hub, and the metrics say where.
+ctx = FakeCtx("job-h")
+out = finished(ctx)
+assert ctx.order == ["eval", "upload", "hub"], ctx.order
+assert ctx.hub_calls == [[adapter, None]]
+repo = "muse-test/muse-glimmer-30b-briefs-lora-job-h"
+assert out["hub_uploaded"] == "yes" and out["hub_repo"] == repo and "hub_skip_reason" not in out, out
+assert ctx.logs[-1] == "The adapter is in the Hugging Face Hub's storage for " + repo + " (1 file); the platform publishes it with its model card once the job is judged", ctx.logs
+assert out["summary"] == "LoRA r=16 on Muse Glimmer 30B, 3 steps, 1 eval items.", out["summary"]
+
+# Not sent with publish 0, for a dry run, or with under 8 minutes left; not published for the platform's own reason,
+# a file that didn't upload or an error. Each is in the log and the metrics, and the job goes on.
+cases = (
+    ("job-p0", {"publish": 0}, None, None, "publish is 0 for this job"),
+    ("job-dry", {"dryRun": 1}, None, None, "a dry run's adapter is a stand-in"),
+    ("job-late", {}, time.time() + 300, None, "only 4 min were left before the job's time limit"),
+    ("job-off", {}, None, {"uploaded": 0, "skipped": "HF_TOKEN isn't set", "failed": [], "repo": None}, "HF_TOKEN isn't set"),
+    (
+        "job-bad", {}, None,
+        {"uploaded": 0, "skipped": None, "failed": [{"path": "adapter_model.safetensors", "error": "HTTP 500 3 times"}], "repo": "ns/r"},
+        "1 file didn't reach the Hub's storage (adapter_model.safetensors: HTTP 500 3 times)",
+    ),
+    ("job-boom", {}, None, RuntimeError("the platform is down"), "the upload failed (RuntimeError: the platform is down)"),
+)
+for job, params, deadline, answer, reason in cases:
+    ctx = FakeCtx(job, deadline=deadline)
+    if answer is not None:
+        ctx.hub_answer = answer
+    out = finished(ctx, g.read_params(dict(params, datasetId="ds")))
+    assert out["hub_uploaded"] == "no" and out["hub_skip_reason"] == reason, (job, out)
+    assert ctx.logs[-1] == "The adapter wasn't sent to the Hugging Face Hub: " + reason, (job, ctx.logs)
+    assert ctx.evals == [[0, "b0", "t0"]] and out["eval_items"] == 1, "the job itself goes on"
+    assert len(ctx.hub_calls) == (0 if answer is None else 1), (job, ctx.hub_calls)
+    assert ("hub_repo" in out) == (job == "job-bad"), (job, out)
+
+# With no tuned answers nothing is judged, so nothing goes to the Hub either.
+ctx = FakeCtx("job-t")
+raises(lambda: finished(ctx, result=dict(done, tuned=None, tuned_error="OutOfMemoryError")), "no eval items were sent")
+assert ctx.hub_calls == [] and ctx.order == ["upload"], ctx.order
+`);
+  });
+
   it("trains the answers on the final channel with no reasoning, and opens that channel in the eval prompts", async () => {
     await glimmerTest(String.raw`${FAKE_GLIMMER}
 tok = FakeTokenizer()
@@ -1263,6 +1338,46 @@ state = install_fakes(replies, tokenizer=FakeTokenizer(assistant_header="<|start
 cfg, error = child_run(TRAIN, EVALS, SYSTEM)
 assert error is not None and error.startswith("The chat template didn't render this assistant message right after " + g.RESPONSE_PART), error
 assert state["model"].calls == [] and g.read_result(cfg["result_path"]) is None
+`);
+  });
+
+  it("writes the base model's pinned revision into adapter_config.json right after saving the adapter", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+SYSTEM = "You are Muse Muse's brief writer."
+TRAIN = [{"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "q"}, {"role": "assistant", "content": "**Name:** A"}]}]
+EVALS = [{"prompt": "e0", "reference": "r0"}]
+install_fakes(lambda prompt, tuned: "Answer<|eot|>")
+saved = {}
+
+
+def peft_save(self, path):
+    # What PEFT's save_pretrained writes: top-level keys sorted, rank_pattern in its own order, "revision" empty.
+    with open(os.path.join(path, "adapter_config.json"), "w") as f:
+        f.write(json.dumps(saved.get("config", {"base_model_name_or_path": g.MODEL, "r": 8, "rank_pattern": {"z": 4, "a": 2}, "revision": None}), indent=2))
+
+
+FakeModel.save_pretrained = peft_save
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is None, error
+text = open(os.path.join(cfg["adapter_dir"], "adapter_config.json")).read()
+want = {"base_model_name_or_path": g.MODEL, "r": 8, "rank_pattern": {"z": 4, "a": 2}, "revision": g.MODEL_REVISION}
+assert text == json.dumps(want, indent=2), text
+assert list(json.loads(text)["rank_pattern"]) == ["z", "a"], "an order PEFT keeps stays"
+assert cfg["revision"] == g.MODEL_REVISION and g.read_result(cfg["result_path"])["adapter"] is True
+assert not os.path.exists(os.path.join(cfg["adapter_dir"], "adapter_config.json.part"))
+
+# A config it can't fix is only logged: the adapter is saved, and the tuned answers still come.
+saved["config"] = ["not", "a", "config"]
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is None, error
+result = g.read_result(cfg["result_path"])
+assert result["adapter"] is True and result["tuned"] == ["Answer"], result
+assert any(t.startswith("The base model's revision couldn't be written into adapter_config.json: ValueError: ") for t in logs()), logs()
+
+# What a published copy needs: the revision when it has none (its own stays), and a base model id, never a local path.
+assert g.hub_config_fixes({"revision": "abc", "base_model_name_or_path": g.MODEL}, g.MODEL_REVISION, g.MODEL) == {}
+fixes = g.hub_config_fixes({"revision": "", "base_model_name_or_path": "/lambda/nfs/cache/hf/snapshots/x"}, g.MODEL_REVISION, g.MODEL)
+assert fixes == {"revision": g.MODEL_REVISION, "base_model_name_or_path": g.MODEL}, fixes
 `);
   });
 });
@@ -2700,6 +2815,9 @@ def run(ctx):
       assert.equal(done.metrics.adapter_uploaded, "no", "the fake platform has no storage");
       assert.equal(done.metrics.adapter_dir, path.join(cache, "models", JOB_ID));
       assert.equal(hits.filter((h) => h.path.endsWith("/upload")).length, 1, "the adapter archive was offered for upload");
+      assert.equal(done.metrics.hub_uploaded, "no");
+      assert.equal(done.metrics.hub_skip_reason, "a dry run's adapter is a stand-in");
+      assert.equal(hits.filter((h) => h.path.endsWith("/hub")).length, 0, "a dry run's stand-in never goes to the Hugging Face Hub");
 
       // The same answers on a second run: the fakes are deterministic.
       const first = evals.map((e) => [e.base, e.tuned]);

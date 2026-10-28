@@ -22,12 +22,15 @@ import {
   usableMinutes,
 } from "@/lib/train/logic";
 import {
+  HUB_WHY_MAX,
   isTrainTerminal,
   type AdapterOption,
   type DatasetStatus,
   type DatasetView,
   type EvalSummary,
   type GpuOption,
+  type HubStatus,
+  type HubView,
   type Recipe,
   type RecipeView,
   type TrainEventBody,
@@ -1084,4 +1087,181 @@ export function tryAnswerOf(data: unknown): TryLiveAnswer | null {
   if (typeof d.base !== "string" || typeof d.tuned !== "string") return null;
   const ms = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? d.ms : 0;
   return { base: d.base, tuned: d.tuned, ms };
+}
+
+// ---------- Hugging Face Hub (docs/TRAINING.md "Hugging Face Hub") ----------
+
+export const HUB_STATUS_LABEL: Record<HubStatus, string> = {
+  off: "Off",
+  waiting: "Waiting",
+  uploading: "Uploading",
+  uploaded: "Uploaded",
+  publishing: "Publishing",
+  published: "Published",
+  failed: "Failed",
+};
+
+/** Pill color: green once published, red when it failed, grey when it is off, blue while anything moves. */
+export function hubTone(status: HubStatus | null): Tone {
+  if (status === "published") return "live";
+  if (status === "failed") return "failed";
+  if (status === "off" || status === null) return "neutral";
+  return "building";
+}
+
+/**
+ * True for a stored "off" saved while publishing was off here, now that it is on: nothing rewrites it once HF_TOKEN
+ * and HF_NAMESPACE are set, and the job only waits for Publish.
+ */
+function staleOff(hub: HubView | null, offReason: string | null): boolean {
+  return hub?.status === "off" && !offReason;
+}
+
+/**
+ * The card's pill: "Not published" for no state, a stale "off", or a bare "waiting" (one a Publish left behind when it
+ * saved a why or started no upload job: no reason, no files, no upload job), and "Stopped" for a "publishing" left by
+ * a run that stopped.
+ */
+export function hubPill(hub: HubView | null, offReason: string | null): { label: string; tone: Tone } {
+  const bare = hub?.status === "waiting" && !hub.reason && !hub.publishJobId && hub.filesTotal === 0;
+  if (!hub || staleOff(hub, offReason) || bare) return { label: "Not published", tone: "neutral" };
+  if (hub.status === "publishing" && hub.stale) return { label: "Stopped", tone: "failed" };
+  return { label: HUB_STATUS_LABEL[hub.status], tone: hubTone(hub.status) };
+}
+
+/** The longest "why" the card takes (the publish route's cap). */
+export const WHY_MAX = HUB_WHY_MAX;
+
+/**
+ * A link to a repo on the Hugging Face Hub: https, no credentials, port, query or fragment. Null otherwise, and the
+ * page shows the repo's name as text.
+ */
+export function hubHref(url: string | null | undefined): string | null {
+  const href = safeHref(url);
+  if (!href) return null;
+  const u = new URL(href);
+  return u.protocol === "https:" && !u.username && !u.password && !u.port && !u.search && !u.hash ? href : null;
+}
+
+/** What the job page's Hugging Face card knows about a job. */
+type HubJob = Pick<TrainJobView, "recipe" | "status" | "params" | "terminatedAt" | "evalSummary" | "hub">;
+
+/**
+ * Why a job can't be published to the Hub, as the publish route checks it (hubJobProblem in lib/train/hub-cards.ts),
+ * or null when it can.
+ */
+export function hubJobBlock(job: HubJob): string | null {
+  if (job.recipe !== "glimmer-lora") return "Only Muse Glimmer LoRA jobs are published to Hugging Face.";
+  if (Number(job.params?.dryRun) >= 1) return "This was a dry run, so its adapter is a stand-in and isn't published.";
+  if (!isTrainTerminal(job.status)) return "It publishes once the job succeeds and Muse Spark 1.3 has judged it.";
+  if (job.status !== "succeeded") return "This job didn't succeed, so it has no adapter to publish.";
+  if (!job.terminatedAt || !job.evalSummary) return "It publishes once Muse Spark 1.3 has judged it.";
+  if (unjudgedNote(job.evalSummary)) return "It wasn't judged, so its model card would have no results to show.";
+  return null;
+}
+
+/** True when the job's "publish" param is 0: it isn't published unless an admin presses Publish. */
+export function publishParamOff(params: Record<string, string | number> | null | undefined): boolean {
+  const v = params?.publish;
+  return v !== undefined && v !== "" && Number(v) === 0;
+}
+
+/** The sentence under the Hugging Face card's title: where publishing stands, in plain words. */
+export function hubStatusText(job: HubJob, offReason: string | null): string {
+  const hub = job.hub ?? null;
+  if (hub?.status === "published") {
+    const when = hub.publishedAt ? ` ${dayLabel(hub.publishedAt)}` : "";
+    return hub.public
+      ? `Published${when}: the adapter with its model card, and its training data with the dataset card.`
+      : `Published${when}, and private on Hugging Face, so the public pages don't link to it.`;
+  }
+  if (offReason) return `Publishing to Hugging Face is off here: ${offReason}.`;
+  const block = hubJobBlock(job);
+  if (block) return block;
+  const notUp = publishParamOff(job.params)
+    ? "This job was started with Publish to Hugging Face set to 0, so it isn't published unless you press Publish."
+    : "Its adapter's files never reached Hugging Face. Publish uploads them from the model cache with a short GPU job, then publishes.";
+  if (!hub) return notUp;
+  switch (hub.status) {
+    case "off":
+      // Saved while publishing was off here. It is on now, and the job waits for Publish.
+      return hub.filesTotal > 0 && hub.filesUploaded === hub.filesTotal ? "Every file of the adapter is on Hugging Face. Press Publish to publish it." : notUp;
+    case "publishing":
+      return hub.stale
+        ? "Publishing stopped partway: the run doing it hasn't moved for 30 minutes. Retry starts it again."
+        : "Writing the cards and committing the model and dataset repos.";
+    case "uploading":
+      return hub.filesTotal
+        ? `The GPU is uploading the adapter's files: ${hub.filesUploaded} of ${hub.filesTotal} are on Hugging Face.`
+        : "The GPU is uploading the adapter's files.";
+    case "uploaded":
+      return "Every file of the adapter is on Hugging Face. Publishing starts in a moment, or press Publish to start it now.";
+    default:
+      return hub.reason ?? (hub.status === "failed" ? "Publishing failed." : hub.filesTotal === 0 ? notUp : "Waiting to publish.");
+  }
+}
+
+/** The card's Publish button, or null when there is nothing to press. */
+export interface HubControl {
+  label: string;
+  confirm: string;
+}
+
+/**
+ * What the Hugging Face card offers: Publish for a job that can be published and isn't yet, Retry after a failure or a
+ * "publishing" a stopped run left, Publish again (to update the cards) once published. Null while publishing is off,
+ * the job can't be published, or the GPU uploads or the platform publishes. While an upload job is recorded it stays:
+ * the route answers upload_running while that job runs, and starts another once it has ended.
+ */
+export function hubControl(job: HubJob, offReason: string | null): HubControl | null {
+  if (offReason || hubJobBlock(job)) return null;
+  const hub = job.hub ?? null;
+  const stopped = hub?.status === "publishing" && hub.stale;
+  if ((hub?.status === "publishing" && !stopped) || hub?.status === "uploading") return null;
+  const uploaded = Boolean(hub && hub.filesTotal > 0 && hub.filesUploaded === hub.filesTotal);
+  const upload = uploaded
+    ? ""
+    : " Its adapter's files go up first, from the model cache, with a short GPU job on Lambda that the usual limits cover.";
+  if (hub?.status === "published") {
+    return { label: "Publish again", confirm: "Publish this job's cards to Hugging Face again? Only what changed is committed." };
+  }
+  if (hub?.status === "failed" || stopped) return { label: "Retry", confirm: `Try publishing this job to Hugging Face again?${upload}` };
+  return { label: "Publish to Hugging Face", confirm: `Publish this adapter and its training data to Hugging Face?${upload}` };
+}
+
+/** What the Hugging Face card says when POST /api/train/jobs/{id}/publish refuses. */
+export function publishErrorText(status: number, body: unknown, limits: { maxActive: number; dailyUsd: number }): string {
+  const code = errorCode(body);
+  switch (code) {
+    case "not_publishable":
+      return field(body, "reason") ?? "This job can't be published.";
+    case "hub_off":
+      return `Publishing to Hugging Face is off here: ${field(body, "reason") ?? "it isn't set up"}.`;
+    case "publishing":
+      return "It is being published right now. This card updates when it is done.";
+    case "upload_running":
+      return "A job is already uploading this adapter's files. It publishes once that job succeeds.";
+    case "hub_refused":
+      // The Hub client's own sentence, "Hugging Face: creating the repo failed ...: HTTP 403, ...".
+      return field(body, "reason") ?? "Hugging Face refused, without saying why.";
+    case "hub_unavailable":
+      return "Hugging Face didn't answer just now. Try again in a moment.";
+    case "start_failed":
+      return "Publishing couldn't start. Try again in a moment.";
+  }
+  if (status === 400) {
+    const message = field(body, "error");
+    return message && !isCode(message) ? message : `Check the why (at most ${groupThousands(WHY_MAX)} characters) and try again.`;
+  }
+  if (status === 404) return "This job wasn't found.";
+  // The rest are POST /api/train/jobs's refusals of the upload job.
+  return startErrorText(status, body, limits);
+}
+
+/** A GET or POST /api/train/jobs/{id}/publish answer's hub view, or null when it has none. */
+export function hubViewOf(data: unknown): HubView | null {
+  const hub = data && typeof data === "object" ? (data as { hub?: unknown }).hub : null;
+  if (!hub || typeof hub !== "object") return null;
+  const h = hub as Record<string, unknown>;
+  return typeof h.status === "string" && h.status in HUB_STATUS_LABEL ? (h as unknown as HubView) : null;
 }

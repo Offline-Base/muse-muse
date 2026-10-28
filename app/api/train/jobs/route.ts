@@ -178,8 +178,9 @@ export const POST = route(async (req: Request) => {
   if (!sweepRunning(lastSweepAt, new Date())) {
     return errorJson(503, "sweep_not_running", { lastSweepAt: lastSweepAt?.toISOString() ?? null });
   }
-  if (adapter.adapterJobId) {
-    // One live demo per adapter: the page and the proxy only ever use the newest.
+  if (adapter.adapterJobId && isServeRecipe(recipe.id)) {
+    // One live demo per adapter: the page and the proxy only ever use the newest. A glimmer-publish job of the same
+    // adapter doesn't count, and doesn't stop for a demo.
     const running = await getLiveDemo(adapter.adapterJobId);
     if (running) return errorJson(409, "demo_running", { serveJobId: running.serveJobId });
   }
@@ -232,7 +233,7 @@ export const POST = route(async (req: Request) => {
   });
   // Two demos of one adapter asked for at once could both pass the demo_running check above. Only the later one backs
   // out, so one demo always survives and no GPU serves a demo nobody can reach.
-  if (adapter.adapterJobId) {
+  if (adapter.adapterJobId && isServeRecipe(recipe.id)) {
     const earlier = await earlierOpenServeJob(adapter.adapterJobId, job.id);
     if (earlier) {
       await setStatus(job.id, "failed", {

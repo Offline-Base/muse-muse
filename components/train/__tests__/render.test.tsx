@@ -600,6 +600,7 @@ describe("Lab results", () => {
       "finishedAt",
       "gpu",
       "gpuMinutes",
+      "hub",
       "id",
       "model",
       "recipe",
@@ -608,6 +609,7 @@ describe("Lab results", () => {
       "summary",
       "title",
     ]);
+    assert.equal(v.hub, null, "the Hugging Face links only once it is published");
     assert.equal(SECRET_TEXT.test(JSON.stringify(v)), false, "nothing hidden is carried over");
     assert.equal(v.model, "Muse Glimmer 30B");
     assert.equal(v.gpu, "1x H100 PCIe (80 GB)");
