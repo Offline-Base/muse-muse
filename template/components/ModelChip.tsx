@@ -1,3 +1,5 @@
+import { Icon } from "@/components/Icon";
+
 const MODEL_NAMES = {
   "muse-spark-1.3": "Muse Spark 1.3",
   "muse-wonder-1.0": "Muse Wonder",
@@ -10,12 +12,14 @@ const MODEL_NAMES = {
 export type MuseModel = keyof typeof MODEL_NAMES;
 
 /**
- * Credits the model that made a result, like "Read by Muse Spark 1.3". Put it in the result's header, and only on
- * output that model really made: never on a fallback, a sample or text the app wrote itself.
+ * Credits the model that made a result, like "Read by Muse Spark 1.3", in a pill outlined with the AI gradient. Put it
+ * in the result's header, and only on output that model really made: never on a fallback, a sample or text the app
+ * wrote itself.
  */
 export function ModelChip({ model, verb }: { model: MuseModel; verb: string }) {
   return (
-    <span className="chip">
+    <span className="chip ai">
+      <Icon name="sparkle" size={14} />
       {verb} by {MODEL_NAMES[model]}
     </span>
   );

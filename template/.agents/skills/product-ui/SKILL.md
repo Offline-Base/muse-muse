@@ -1,61 +1,52 @@
 ---
 name: product-ui
-description: Use for every screen of a Muse Muse product. Covers the themes and parts in globals.css, layout, uploads, camera input, states, model output, accessibility and the required footer.
+description: Use for every screen of a Muse Muse product, together with meta-ui. Covers layout, uploads, camera input, states, model output, accessibility, copy and the required footer. How things look is in meta-ui.
 ---
 
 # Product UI
 
 ## Look
 
-- Use the tokens and classes in `app/globals.css` for every color, radius, font, card, field, button, chip and table. Light and dark themes both come from the tokens.
-- Pick the theme that fits the product's subject and mood, and set it in `app/layout.tsx` as `<html lang="en" data-theme="warm">`. Write the choice in BUILD_NOTES.md.
-
-  | Theme | For |
-  |---|---|
-  | none | general tools: the bright blue, Meta-inspired default |
-  | `warm` | food, home, crafts, small shops, family |
-  | `playful` | kids, games, habits, creative toys |
-  | `fresh` | health, fitness, travel, outdoors, planning |
-  | `ink` | developer tools, data, documents, spreadsheets |
-
-- Give the product one signature element that fits its subject, drawn with tokens, CSS or inline SVG, never inspo artwork: a paper-sheet frame around a coloring page, a chalkboard frame around a menu preview, a board-like grid for a habit week, a receipt-shaped card for extracted fields. One is enough.
-- Never use Meta logos, wordmarks or the Meta name as branding. Keep `components/Footer.tsx`. It says "Built with Muse Muse. Not an official Meta product."
-- Take layout ideas and mood from `inspo/`, but use the tokens for every color and font, and never reuse a logo, name or artwork from it.
+- Follow `.agents/skills/meta-ui` for how every screen looks: the Meta tokens, type, parts and patterns. Use the tokens and classes in `app/globals.css` for every color, radius, font, card, field, button, chip and table. Light and dark mode both come from the tokens.
+- Pick the accent hue that fits the product's subject, and set it in `app/layout.tsx` as `<html lang="en" data-accent="lime">` (meta-ui lists the hues), or leave it off for Meta blue. Write the choice in BUILD_NOTES.md. It colors only the signature element, illustrations and charts. Buttons, links and focus stay Meta blue.
+- Give the product one signature element that fits its subject, drawn with `--signature`, `--signature-soft` and `--signature-ink`, CSS or inline SVG, never inspo artwork: a paper-sheet frame around a coloring page, a chalkboard frame around a menu preview, a board-like grid for a habit week, a receipt-shaped card for extracted fields. One is enough.
+- Never use Meta logos, wordmarks or marks, or the Meta name as branding. Keep `components/Footer.tsx`. It says "Built with Muse Muse. Not an official Meta product."
+- Take layout ideas and mood from `inspo/`, but use the tokens for every color and font, and never reuse a logo, name or artwork from it. The inspo's mood shows in the accent hue, the signature element and the copy, never as its own colors or fonts.
 
 ## Patterns
 
 Every part below is a class in `app/globals.css` or a component in `components/`. Use them as they are.
 
-- **Page:** `<main className="stack">`, a `<header className="hero">` with the `h1` and a `.tagline`, then `.card` sections.
+- **Page:** `<AppBar name="..." />`, then `<main className="stack">` with a `<header className="hero">` holding the `h1` and a `.tagline`, then `.card` sections.
 - **Fields:** a `.field` holds a label, the control and a `.hint`. Two fields side by side only inside `.fields.two`, which stacks on phones so a long label never pushes its input out of line.
-- **Buttons:** one `button.primary` per screen. Other actions are `button.secondary` (Download, Copy) or `button.text` (Try the sample, Start over), together in an `.actions` row so they line up with the primary button. Never a bare `<a>` or an unstyled `<button>` as an action.
-- **Chips:** `<ModelChip model="sam-3.1" verb="Outlined" />` for model credits, `.chip` for short statuses, `.tag` for feature labels like "2 players", so features never look like model credits.
+- **Buttons:** one `button.primary` per screen, with `.ai` when it calls a model. Other actions are `button.secondary` (Download, Copy), `button.tinted` (a strong second action) or `button.text` (Try the sample, Start over), together in an `.actions` row so they line up with the primary button. Icon-only actions are `button.icon` with an `aria-label`. Never a bare `<a>` or an unstyled `<button>` as an action.
+- **Chips:** `<ModelChip model="sam-3.1" verb="Outlined" />` for model credits, `.chip` for short statuses, `.tag` for feature labels like "2 players", so features never look like model credits. `.ai-badge` labels an image a model made or marked.
 - **Tables:** `.table-wrap` around every table. It scrolls sideways inside itself. Never put `overflow: hidden` on a table's box. On phones keep a table to 3 columns, and use `.kv` for label and value pairs.
 - **Big numbers:** `.big-number` with a `.meta` line under it, like `Took 4 s · 3 birds · estimate`.
 - **Model text:** ask for JSON fields and lay them out. When a reply is prose that may hold markdown or code, render it with `<Markdown text={...} />`, never as raw text with `#`, `**` or backticks showing.
-- **Notes and errors:** `.note` for a tip, `.error` with `role="alert"` for a failure, `.limits` for a short list of limits.
+- **Notes and errors:** `.note` for a tip, `.error` with `role="alert"` for a failure, `.limits` for a short list of limits, `.empty` when a list or history has nothing in it yet.
 
 ## Layout
 
-- Build for phones first (about 390 px wide), then let it widen to a 960 px column.
-- The `h1` is the product's name from the brief, at most 2 lines on a phone, with one `.tagline` sentence under it. No eyebrow label above it, and no model chips or cost before there is a result.
+- Build for phones first (about 390 px wide), then let it widen to the 720 px column.
+- The app bar shows the product's name from the brief. The `h1` under it says what the first screen does, in a few words, at most 2 lines on a phone, with the brief's tagline as the one `.tagline` sentence under it. No eyebrow label above it, and no model chips or cost before there is a result.
 - Put one primary flow on the first screen: input, then action, then result. Put secondary things below or behind a link.
 - When a result arrives, scroll it into view and move focus to its heading: `resultRef.current?.scrollIntoView({ block: "start" })`. The demo video is 1280 x 720, so a result below the fold is a result nobody sees.
-- Show each thing once. Once the result is up, shrink the input preview to a thumbnail instead of showing the same photo twice. Show the same numbers as cards or as a table, not both. Put long extras (a full transcript, raw text, more tables) in `<details>`. Keep a phone result screen under about 2,500 px tall.
-- Show which model did what with one `ModelChip` in each result's header, like "Outlined by SAM 3.1" or "Rendered by Muse Image". Only on output that model really made: never on a fallback, a sample or text the app wrote itself.
+- Show each thing once. Once the result is up, shrink the input preview to a `.thumb` instead of showing the same photo twice. Show the same numbers as cards or as a table, not both. Put long extras (a full transcript, raw text, more tables) in `<details>`. Keep a phone result screen under about 2,500 px tall.
+- Show which model did what with one `ModelChip` in each result's `.card-head`, like "Outlined by SAM 3.1" or "Rendered by Muse Image", on a `.card.ai`. Only on output that model really made: never on a fallback, a sample or text the app wrote itself.
 - Show each of the brief's limits once, next to the result it affects.
 
 ## Inputs
 
 | Input | How |
 |---|---|
-| Photo | `<FilePicker label="Photo of your receipt" accept="image/*" capture="environment" button="Choose a photo" onFile={...} />` for the camera on phones. `resizeImage` from `@/lib/client/resize` (1600 px JPEG, fixes phone rotation), then `blobToDataUrl` from the same file, and send the data URL in your action's JSON body |
+| Photo | `<FilePicker label="Photo of your receipt" accept="image/*" button="Take or choose a photo" onFile={...} />`. Phones offer the camera and the photo library. Add `capture="environment"` only when it must be a new photo, and then say "Take a photo". `resizeImage` from `@/lib/client/resize` (1600 px JPEG, fixes phone rotation), then `blobToDataUrl` from the same file, and send the data URL in your action's JSON body |
 | Video | `<FilePicker accept="video/mp4,video/quicktime" ... />`. Upload with `uploadMedia` from `@/lib/client/upload` and send the returned URL. Don't record video with MediaRecorder: it makes WebM, which SAM rejects |
 | Audio | `<FilePicker accept="audio/*" ... />`, or record with MediaRecorder. Always convert with `toWav16k` from `@/lib/client/wav` (Muse Voice takes only 16 kHz mono WAV). Up to 1 minute: `blobToDataUrl` and send it in JSON. Longer: `uploadMedia(wav, { fileName: "note.wav" })` and send the URL. See the meta-voice skill |
 | PDF | `<FilePicker accept="application/pdf" ... />`. Up to 2 MB: `blobToDataUrl`. Bigger: `uploadMedia` |
 | Text | A labeled textarea. The placeholder hints at the format in a few words, like "One item per line, with prices". It is never the sample: the sample goes in with the Try the sample button, so the start screen and the filled screen look different |
 | Date | Prefill a sensible default so the field never shows mm/dd/yyyy, and keep it in step with the result |
-| Choice | A `select` with option labels under about 30 characters, since a select can't wrap |
+| Choice | `<Segmented>` for two to five short options. A `select` for more, with option labels under about 30 characters, since a select can't wrap |
 
 Vercel Functions accept at most 4.5 MB per request body, and base64 adds a third. Anything bigger goes through `uploadMedia`, which sends the file straight to storage through `app/api/upload/route.ts` (leave that route as it is) and returns a public URL the models can read for 24 hours.
 
@@ -80,7 +71,7 @@ Always offer a file input next to the record button: the smoke test uses the fil
 Every async action needs four states:
 
 1. **Idle**, with a sample the user can try in one tap, using the fixtures.
-2. **Working**, with a progress message that names the step, like "Finding the wall…". Set `aria-busy="true"` on the result section and end the busy button's label with "…" until it finishes.
+2. **Working**: the result card appears at once with a `.working` line that names the step, like "Finding the wall…", and a `<Skeleton>` shaped like the result (meta-ui shows it). Give every busy button `aria-busy="true"` and end its label with "…" until it finishes; judgeShot waits for every `aria-busy` to clear.
 3. **Done**, with the result and a way to start over. Clear or redo anything that depends on input that changed (a chart, a summary), so nothing on screen is stale.
 4. **Error**, in an `.error` box with `role="alert"`, saying what went wrong in plain words and what to try next. If a model call fails, show this state, never canned text dressed up as the model's.
 
@@ -98,7 +89,7 @@ The model's work is the reason the product exists, so make it specific and check
 ## Accessibility
 
 - Every control has a visible label.
-- Focus states are visible, and contrast passes WCAG AA in both themes.
+- Focus states are visible, and contrast passes WCAG AA in light and dark mode. Keep text on the token pairs meta-ui lists.
 - Results that are images need alt text. Overlays need a text summary too, like "Found 3 birds".
 - Respect `prefers-reduced-motion`.
 

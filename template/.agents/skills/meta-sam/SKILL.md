@@ -92,7 +92,7 @@ For box and point prompts, `metadata.propagation_direction` can be `both` (the d
 
 ## Drawing results
 
-- `SegmentationRenderer` from `@meta-sam/graphics` draws masks and boxes on a canvas. `objectColor` gives each object a stable color, and `formatBoxLabel` and `formatConfidence` format labels.
+- `SegmentationRenderer` from `@meta-sam/graphics` draws masks and boxes on a canvas. Its default colors aren't the theme's: pass an `objectColor` option that maps each object to one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink` and `--teal`. A canvas can't read `var()`, so read each once with `getComputedStyle(document.documentElement).getPropertyValue("--teal").trim()`. Leave `boxLabels` off: it prints object ids and confidence decimals. Say the result in a caption instead ("Found 3 birds").
 - `@meta-sam/video` and `@meta-sam/react` (`Video`, `useMediaPlayer`) give frame-accurate playback under overlays.
 - `decodeMaskToSVGPath` works well for SVG overlays. `decodeMaskToRaster` returns a row-major 0/1 `Uint8Array` for pixel math. `decodeMaskToRLE` returns COCO RLE.
 

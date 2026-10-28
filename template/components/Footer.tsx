@@ -3,11 +3,11 @@ export function Footer() {
   return (
     <footer
       style={{
-        maxWidth: 960,
+        maxWidth: "calc(var(--page-width) + 2 * var(--gutter))",
         margin: "0 auto",
-        padding: "24px 16px 40px",
-        color: "var(--muted)",
-        fontSize: 14,
+        padding: "8px var(--gutter) 40px",
+        color: "var(--fg-2)",
+        font: "var(--type-meta)",
       }}
     >
       Built with Muse Muse. Not an official Meta product.

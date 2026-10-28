@@ -69,14 +69,14 @@ judgeShot waits for `aria-busy="true"` to clear, then fails the test when the sc
 Plan the screenshots so together they prove the tagline:
 
 1. `01-start`: the start screen before any input. Its placeholder is not the sample.
-2. The step that makes this product special, finished: the jailbreak blocked, the plan changed after a logged run, the list shared with "Copied" showing, the CSV previewed. If the tagline or the primary flow names a feature, one screenshot shows it working.
+2. The step that makes this product special, finished: the jailbreak blocked, the plan changed after a logged run, the list shared with its button saying "Copied", the CSV previewed. If the tagline or the primary flow names a feature, one screenshot shows it working.
 3. The final result, finished.
 
-Each screenshot must look clearly different from the one before. A step that changes only a focus ring or one counter isn't worth a screenshot. The judge fails the build if the last screenshot shows an error, a spinner or an empty state. It also compares your screens with the files in `inspo/`, and fails anything that copies a name, logo, character or artwork from them.
+Each screenshot must look clearly different from the one before. A step that changes only a focus ring or one counter isn't worth a screenshot. Never take one while a `.toast` is showing: the full-page screenshot draws it in the middle of the page. Wait for it to go, or show the confirmation on the button itself. The judge fails the build if the last screenshot shows an error, a spinner or an empty state. It also compares your screens with the files in `inspo/`, and fails anything that copies a name, logo, character or artwork from them.
 
 ## Bad input
 
-Add `tests/errors.spec.ts` with one test that trips the product's own check without a model call, like submitting with no input or choosing a `.txt` file where a photo goes, and expects a `role="alert"` message in plain words. Take no judge screenshots in it. verify runs it; the demo video doesn't.
+Add `tests/errors.spec.ts` with one test that trips the product's own check without a model call, like submitting with no input or choosing a `.txt` file where a photo goes, and expects a `role="alert"` message in plain words. Next.js adds an empty alert of its own, so always filter by text: `await expect(page.getByRole("alert").filter({ hasText: "Choose a photo" })).toBeVisible()`. Take no judge screenshots in it. verify runs it; the demo video doesn't.
 
 ## Action routes
 

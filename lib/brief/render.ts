@@ -79,7 +79,7 @@ export function renderBuildPrompt(
   out.push(
     "# Build this product",
     "",
-    "Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, and read the skill for each model listed below.",
+    "Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, read `.agents/skills/meta-ui` for the look, and read the skill for each model listed below.",
     "",
     "## Done means",
     "",
@@ -179,6 +179,8 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
+    "The look always comes from the meta-ui skill. The inspo's mood shows in the accent hue, the signature element and the copy, never as its colors or fonts.",
+    "",
     "Leave out:",
     "",
     bullets([
@@ -272,6 +274,7 @@ export function renderFixPrompt(input: {
     "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
+    "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Fix what the judge saw with those, not with new colors, fonts or styles.",
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
   ];
 
@@ -344,6 +347,7 @@ export function renderRefinePrompt(input: {
     "## What to do",
     "",
     "- Make the change and keep the primary flow working.",
+    "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Don't restyle what the request doesn't change.",
     "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
     "- Update `musemuse.json` if actions, limits or cost changed.",
     "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",
