@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Response, ResponseInput } from "openai/resources/responses/responses";
 import { z } from "zod";
 import { metaClient, type RequestLike } from "./client";
+import { plainDeep } from "./text";
 
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
@@ -107,7 +108,7 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
       parsed === undefined
         ? null
         : opts.schema.safeParse(unwrap(strict.repair(parsed)));
-    if (result?.success) return result.data;
+    if (result?.success) return plainDeep(result.data);
 
     lastRaw = raw;
     lastIssues = result ? z.prettifyError(result.error) : "The reply was not valid JSON.";

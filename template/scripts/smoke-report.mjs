@@ -46,3 +46,16 @@ export function smokeReportProblems(report, { project = "smoke", requireActions 
   }
   return problems;
 }
+
+/**
+ * Every judge screenshot must come from judgeShot() in tests/judge-shot.ts, which checks the screen first and leaves
+ * a <name>.checked file next to the PNG. Takes the file names in test-results/judge/.
+ */
+export function judgeShotProblems(fileNames) {
+  const shots = fileNames.filter((f) => f.endsWith(".png"));
+  if (!shots.length) return ['The smoke test saved no judge screenshots. Take them with judgeShot(page, "01-start") from tests/judge-shot.ts.'];
+  const unchecked = shots.filter((f) => !fileNames.includes(f.replace(/\.png$/, ".checked")));
+  return unchecked.length
+    ? [`Judge screenshots taken without judgeShot(): ${unchecked.join(", ")}. Take every one with judgeShot(page, "02-result") from tests/judge-shot.ts.`]
+    : [];
+}

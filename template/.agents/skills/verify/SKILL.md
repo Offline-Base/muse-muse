@@ -24,11 +24,12 @@ It exits 0 only when every step passes. When a step fails it prints that step's 
 
 ```ts
 import { test, expect } from "@playwright/test";
+import { judgeShot } from "./judge-shot";
 
 test("primary flow works with the sample photo", async ({ page }) => {
   await test.step("Open the shelf planner", async () => {
     await page.goto("/");
-    await page.screenshot({ path: "test-results/judge/01-start.png", fullPage: true });
+    await judgeShot(page, "01-start");
   });
 
   await test.step("Upload a photo of the wall", async () => {
@@ -37,8 +38,8 @@ test("primary flow works with the sample photo", async ({ page }) => {
 
   await test.step("Find the wall and plan the shelf", async () => {
     await page.getByRole("button", { name: "Find the wall" }).click();
-    await expect(page.getByText(/estimate/i)).toBeVisible({ timeout: 90_000 });
-    await page.screenshot({ path: "test-results/judge/02-result.png", fullPage: true });
+    await expect(page.getByRole("heading", { name: "Your shelf plan" })).toBeVisible({ timeout: 90_000 });
+    await judgeShot(page, "02-result");
   });
 });
 ```
@@ -46,7 +47,7 @@ test("primary flow works with the sample photo", async ({ page }) => {
 - Find elements by role and label, not CSS classes.
 - Use relative URLs (`page.goto("/")`, `request.post("/api/actions/...")`). verify may run the server on a port other than 3100.
 - Model calls can take a while, so allow up to 90 seconds per step.
-- Assert on the result the brief promises, not on loading text.
+- Assert on the result the brief promises, not on loading text: wait for something only the finished result has, like its heading, a total or its model chip.
 - Keep the whole test under 3 minutes and 5 model calls.
 - Tests can't read `.env.local`, `GATEWAY_URL` or `PRODUCT_TOKEN`. Only the app server can. The tests reach Meta through the app's pages and routes, so never guard a test on an env var.
 - `npm run test:smoke` starts its own server on port 3100 and fails if something already listens there. Stop any server you started yourself (`pkill -f "next start"`) before running it.
@@ -61,7 +62,21 @@ After checks pass, the platform runs `npm run demo`. It replays the same test at
 
 ## Screenshots for the judge
 
-Save 2 to 4 full-page screenshots in `test-results/judge/`, numbered in order: `01-start.png`, then each key step, ending with the final result. The judge fails the build if the last screenshot shows an error, a spinner or an empty state. It also compares your screens with the files in `inspo/`, and fails anything that copies a name, logo, character or artwork from them.
+Take 2 to 4 screenshots with `judgeShot(page, "NN-name")` from `tests/judge-shot.ts`, numbered in order: `01-start`, then each key step, ending with the final result. verify fails any screenshot in `test-results/judge/` taken another way. Don't edit `tests/judge-shot.ts`.
+
+judgeShot waits for `aria-busy="true"` to clear, then fails the test when the screen has text cut off at the side of its box, a page that scrolls sideways, text shortened with "...", a one-line field or text box hiding part of its text, a disabled button still saying it is working ("…"), a loading bar, or an em dash. Fix the product, not the check. Text the user typed or uploaded doesn't count when it sits inside an element with `data-user-text`.
+
+Plan the screenshots so together they prove the tagline:
+
+1. `01-start`: the start screen before any input. Its placeholder is not the sample.
+2. The step that makes this product special, finished: the jailbreak blocked, the plan changed after a logged run, the list shared with "Copied" showing, the CSV previewed. If the tagline or the primary flow names a feature, one screenshot shows it working.
+3. The final result, finished.
+
+Each screenshot must look clearly different from the one before. A step that changes only a focus ring or one counter isn't worth a screenshot. The judge fails the build if the last screenshot shows an error, a spinner or an empty state. It also compares your screens with the files in `inspo/`, and fails anything that copies a name, logo, character or artwork from them.
+
+## Bad input
+
+Add `tests/errors.spec.ts` with one test that trips the product's own check without a model call, like submitting with no input or choosing a `.txt` file where a photo goes, and expects a `role="alert"` message in plain words. Take no judge screenshots in it. verify runs it; the demo video doesn't.
 
 ## Action routes
 

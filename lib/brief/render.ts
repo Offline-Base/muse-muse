@@ -112,6 +112,8 @@ export function renderBuildPrompt(
     "Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.",
     "",
     ...brief.primaryFlow.map((step, i) => `${i + 1}. ${step}`),
+    "",
+    `The smoke test's judge screenshots must prove the tagline ("${brief.tagline}"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).`,
   );
   if (brief.screens.length) {
     out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
@@ -150,7 +152,7 @@ export function renderBuildPrompt(
     "",
     "## Limits",
     "",
-    "Show each one in the UI near the place where it matters, and list them in `musemuse.json`.",
+    "Show each one once in the UI, next to the thing it limits, in plain words for this product's users, and list them in `musemuse.json`.",
     "",
     bullets(brief.limits),
     "",
@@ -198,9 +200,10 @@ export function renderBuildPrompt(
       "",
       `This product rebuilds "${rebuild.title}" (${rebuild.url}), a ${rebuild.era}-era video that demonstrates: ${rebuild.demonstrates}.`,
       "",
-      `- Fit: ${rebuild.rebuild.fit}, meaning ${FIT_MEANING[rebuild.rebuild.fit]}.`,
+      `- Fit: ${rebuild.rebuild.fit}, meaning ${FIT_MEANING[rebuild.rebuild.fit]}. The fit and the plan are for you, not for the UI.`,
       `- Plan: ${rebuild.rebuild.plan}`,
-      "- Link to the video from the product's about text. Never embed, download or copy it, and don't use Meta's or Llama's names or logos in the product's look.",
+      "- The product stands on its own. Never write \"rebuild\", the fit, the plan, the video's title, or what you left out or didn't copy anywhere in the UI. Say what it can't do as plain limits for its users.",
+      `- Credit the video once, as a muted line just above the footer: "Idea from a Meta developer video", with "a Meta developer video" linking to ${rebuild.url}. Never embed, download or copy it, and don't use Meta's or Llama's names or logos in the product's look.`,
     );
   }
 

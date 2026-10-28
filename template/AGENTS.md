@@ -25,7 +25,7 @@ The inspo shows what to make. It is not material to copy.
 - Add a dependency only when the brief needs it. The SAM helpers (`@meta-sam/parser`, `@meta-sam/graphics`) are already installed.
 - The build machine can reach only npm, the Meta API and the Muse Muse gateway. Don't use `next/font/google`, remote images or CDNs. Use the system font stack in `app/globals.css`.
 - Server work goes in route handlers under `app/api/` or in server actions. Client components handle only UI.
-- Don't edit anything in `scripts/`, `playwright.config.ts` or `app/api/upload/route.ts`.
+- Don't edit anything in `scripts/`, `playwright.config.ts`, `tests/judge-shot.ts` or `app/api/upload/route.ts`.
 - ffmpeg and espeak-ng are installed. Make speech fixtures with `espeak-ng -w /tmp/raw.wav "some words"`, then `ffmpeg -i /tmp/raw.wav -ar 16000 -ac 1 fixtures/note.wav`. Use ffmpeg for any other fixture conversion.
 
 ## Calling Meta models
@@ -46,11 +46,24 @@ The inspo shows what to make. It is not material to copy.
 ## The product
 
 - Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.
-- Follow `.agents/skills/product-ui` for the look: Meta-inspired, clean and mobile-first. Never use Meta logos, wordmarks or names in a way that suggests Meta made it.
+- Follow `.agents/skills/product-ui` for the look: clean and mobile-first, with the theme that fits the product (set `data-theme` on `<html>` in `app/layout.tsx`, and set `metadata.title` to the product's name). Never use Meta logos, wordmarks or names in a way that suggests Meta made it.
+- Build every screen from the template's parts: the classes in `app/globals.css` (`.card`, `.field`, `.fields.two`, `button.primary`, `button.secondary`, `button.text`, `.actions`, `.chip`, `.tag`, `.table-wrap`, `.kv`, `.note`, `.error`, `.limits`, `.prose`) and `components/FilePicker`, `components/ModelChip` and `components/Markdown`. Never ship a bare `<input type="file">`, an unstyled button or a browser-blue link.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."
-- Show what the product can't do, using the limits in the brief, near the place where it matters.
+- Show what the product can't do, using the limits in the brief, once, next to the thing it limits.
 - Every input needs a label. Every async action needs loading, error and empty states. Phones are the first screen size to test.
 - Don't store personal data unless the brief says to. Uploaded files stay in memory for the request.
+
+## Product copy
+
+The product belongs to its user. Every word on screen is about what it does for them.
+
+- Never mention how it was made: the brief, the inspo or a "reference", a video it rebuilds, "rebuild", fit, fixtures, sample file names, tests, or what you didn't copy. Those go in BUILD_NOTES.md.
+- Never use em dashes, in your copy or in model text you show. Use a comma, colon or period. Run model text through `plain()` from `@/lib/meta/text` (respondJson already does).
+- Say each limit once, next to the thing it limits. No second copy in an About, Limits or Good to know card.
+- Use plain words unless the brief's users are developers: "saved on this device only", not "localStorage"; "recordings up to 1 minute", not "16 kHz mono WAV" or "4.5 MB". No model ids like `muse-spark-1.3`, raw JSON, coordinates, zero-based lists or confidence decimals.
+- Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it." Never say it stays in the browser.
+- Copy matches behavior. If a hint says a button starts the break, the button starts the break.
+- Sample data is correct and believable: no future days marked done, totals in the right column, counts that match the screen, no duplicates, dates relative to today.
 
 ## Actions API
 
@@ -60,7 +73,7 @@ Expose each action from the brief as `POST /api/actions/<name>` with JSON in and
 
 - Follow `.agents/skills/verify`.
 - Write `tests/smoke.spec.ts` to run the primary flow in a browser with the fixtures, using real model calls through the gateway, and `tests/actions.spec.ts` with one request test per action.
-- Save the screenshots the skill asks for. A judge model reads them.
+- Take the screenshots the skill asks for with `judgeShot()` from `tests/judge-shot.ts`. A judge model reads them, and they must prove what the tagline promises.
 - Never skip, delete or weaken a test to get `npm run verify` to pass. Fix the product instead.
 - Never use `test.only`, `test.skip`, `test.fixme` or `test.fail`. verify fails when any test didn't run, or when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests.
 

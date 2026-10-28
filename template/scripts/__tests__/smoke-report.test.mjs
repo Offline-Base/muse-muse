@@ -2,7 +2,7 @@
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reportTests, smokeReportProblems } from "../smoke-report.mjs";
+import { judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
 
 /** A Playwright JSON report with one file suite per spec file, shaped like reporter "json" writes it. */
 function report(files) {
@@ -88,4 +88,10 @@ test("nested describe suites and other projects are handled", () => {
 test("spec paths with a directory still match by file name", () => {
   const r = report({ "tests/smoke.spec.ts": [["primary flow", "flaky"]] });
   assert.deepEqual(smokeReportProblems(r), []);
+});
+
+test("judge screenshots must come from judgeShot", () => {
+  assert.deepEqual(judgeShotProblems(["01-start.png", "01-start.checked", "02-result.png", "02-result.checked"]), []);
+  assert.match(judgeShotProblems(["01-start.png", "01-start.checked", "02-result.png"])[0], /without judgeShot\(\): 02-result\.png/);
+  assert.match(judgeShotProblems([])[0], /saved no judge screenshots/);
 });

@@ -7,11 +7,11 @@
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
 // {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { smokeReportProblems } from "./smoke-report.mjs";
+import { judgeShotProblems, smokeReportProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -251,7 +251,10 @@ async function main() {
         } catch {
           return { ok: false, detail: "Playwright wrote no test-results/report.json. Keep playwright.config.ts as it is.", output: res.out };
         }
-        const problems = smokeReportProblems(report, { requireActions: hasActions() });
+        const problems = [
+          ...smokeReportProblems(report, { requireActions: hasActions() }),
+          ...judgeShotProblems(readdirSync(path.join(ROOT, "test-results", "judge"))),
+        ];
         if (!problems.length) return { ok: true, detail: counts || "tests passed" };
         return { ok: false, detail: problems[0], output: `${problems.join("\n")}\n\n${res.out}` };
       }
