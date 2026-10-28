@@ -15,9 +15,9 @@ const DATASET_PAGE_SIZE = 100;
 const READS_PER_HOUR = 120;
 
 /**
- * GET ?part=train|eval&page=N (N from 0) -> {items: TrainExample[] | EvalExample[], nextPage: number | null}, from the
- * job's runner with "Authorization: Bearer <job token>" (it works until 15 minutes after the job ended). The job's
- * dataset is params.datasetId. At most 100 items a page. 401 bad token, 400 bad part or page, 404 no_dataset (the job
+ * GET ?part=train|eval&page=N (N from 0) -> {items: TrainExample[] | EvalExample[], nextPage: number | null, title},
+ * from the job's runner with "Authorization: Bearer <job token>" (it works until 15 minutes after the job ended). The
+ * job's dataset is params.datasetId, and title is its name (glimmer-lora's short student prompt is made from it). At most 100 items a page. 401 bad token, 400 bad part or page, 404 no_dataset (the job
  * has no dataset param, or the dataset is gone), 409 dataset_not_ready, 429 rate_limited past 120 pages an hour.
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {
@@ -44,5 +44,5 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
   // While it generates, train still holds the items that become eval.
   if (slice.status !== "ready") return errorJson(409, "dataset_not_ready");
   const nextPage = (page + 1) * DATASET_PAGE_SIZE < slice.total ? page + 1 : null;
-  return Response.json({ items: slice.items, nextPage });
+  return Response.json({ items: slice.items, nextPage, title: slice.title });
 });

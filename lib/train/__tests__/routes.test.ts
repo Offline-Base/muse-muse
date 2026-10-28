@@ -153,7 +153,7 @@ const fakeStore = {
     if (!datasetRows[id]) return null;
     const total = pageTotals[part] ?? 0;
     const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => ({ n: offset + i }));
-    return { status: pageStatus, total, items };
+    return { status: pageStatus, title: String(datasetRows[id].title), total, items };
   },
   createDataset: async (input: Record<string, unknown>) => {
     calls.push({ fn: "createDataset", args: [input] });
@@ -580,9 +580,10 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     it("pages the job's own dataset, 100 at a time, with the next page until the last", async () => {
       const first = await jobDataset(pageReq("?part=train&page=0"), ctx);
       assert.equal(first.status, 200);
-      const body = (await first.json()) as { items: Array<{ n: number }>; nextPage: number | null };
+      const body = (await first.json()) as { items: Array<{ n: number }>; nextPage: number | null; title: string };
       assert.equal(body.items.length, 100);
       assert.equal(body.nextPage, 1);
+      assert.equal(body.title, "Python errors", "the dataset's name, for glimmer-lora's short student prompt");
       assert.deepEqual(called("datasetPage")[0]!.args, [DATASET_ID, "train", 0, 100]);
 
       const last = (await (await jobDataset(pageReq("?part=train&page=4"), ctx)).json()) as { items: unknown[]; nextPage: number | null };

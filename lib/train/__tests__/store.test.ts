@@ -484,6 +484,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       // evalIndexes(20) is [1, 3, 6, 8, 11, 13, 16, 18].
       assert.deepEqual(evalPage!.items, [1, 3, 6, 8, 11, 13, 16, 18].map((i) => ({ prompt: `q${i}`, reference: `a${i}` })));
       assert.equal(evalPage!.total, 8);
+      assert.equal(evalPage!.title, "t");
       const train = await store.datasetPage(ds.id, "train", 0, 200);
       assert.deepEqual(
         (train!.items as Array<{ messages: Array<{ content: string }> }>).map((e) => e.messages[1]!.content),

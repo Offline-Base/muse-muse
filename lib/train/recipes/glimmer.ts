@@ -10,7 +10,12 @@
  * venv and the weights (HF_HOME) are reused by the next job in the region. One job builds a missing venv while the
  * others in the region wait and reuse it. The child works to ctx.deadline: it writes the base answers as soon as it has
  * them, stops training early when it must, and saves the adapter before the tuned answers. Params: datasetId,
- * maxSteps, learningRate, loraRank, dryRun (1 skips the venv, the model and the GPU and fakes the answers, for tests).
+ * maxSteps, learningRate, loraRank, studentPrompt ("short" or "full", see student_setup), dryRun (1 skips the venv, the
+ * model and the GPU and fakes the answers, for tests).
+ *
+ * The answers train on the final (to=user) channel with no reasoning, and the eval prompts open that channel, so both
+ * models answer the way the tuned one was trained (see RESPONSE_PART and eval_prompt). The child checks the masks
+ * train_on_responses_only made and logs the first training example and eval item 0's raw outputs.
  */
 export const GLIMMER_PY = String.raw`"""Muse Glimmer LoRA: fine-tunes Muse Glimmer 30B with Unsloth and answers held-out prompts before and after."""
 
@@ -88,17 +93,45 @@ MIN_CHILD_SECONDS = 900
 # the training memory and save the adapter.
 TUNED_PASS_FACTOR = 1.3
 SAVE_RESERVE_SECONDS = 180
-# The ATEM markers the notebook passes to train_on_responses_only.
+# The ATEM markers (the model's chat_template.jinja), which the notebook passes to train_on_responses_only. A user turn
+# opens with INSTRUCTION_PART. An assistant message with no reasoning_content renders as RESPONSE_PART, the answer and
+# <|eot|>, with no to=self message before it, and train_on_responses_only trains on what follows RESPONSE_PART.
 INSTRUCTION_PART = "<|start|>user<|message|>"
 RESPONSE_PART = "<|start|>assistant to=user<|message|>"
-USER_CHANNEL = "to=user<|message|>"
-STOP_MARKERS = ("<|eot|>", "<|eom|>", "<|end_of_text|>", "<|start|>")
-NO_ANSWER = "[no final answer within 512 new tokens]"
-# Reasoning tokens count against max_new_tokens, and the template defaults to high, so both the training text and the
-# eval prompts use low.
+# The template's generation prompt ends here and leaves the channel to the model, which then opens its to=self
+# reasoning: a choice the training text never trains, since it sits inside RESPONSE_PART. So the eval prompts open the
+# final channel themselves (FINAL_CHANNEL) and end exactly as a training text does before its answer.
+GENERATION_PROMPT = "<|start|>assistant"
+FINAL_CHANNEL = RESPONSE_PART[len(GENERATION_PROMPT):]
+# What closes a message on the final channel: <|eot|> ends the turn and generation, <|eom|> only the message.
+FINAL_ENDS = ("<|eot|>", "<|eom|>", "<|end_of_text|>")
+PAD_TOKEN = "<|finetune_right_pad|>"
+# The template's control tokens, the only thing taken out of an unfinished answer's raw text.
+CONTROL_TOKENS = ("<|begin_of_text|>", "<|end_of_text|>", "<|start|>", "<|message|>", "<|eot|>", "<|eom|>", PAD_TOKEN)
+# The template writes "Reasoning strength: <level>." into the system block (high by default). Training text and eval
+# prompts carry no reasoning, and both use low.
 REASONING = "low"
 MAX_SEQ_LENGTH = 2048
-MAX_NEW_TOKENS = 512
+MAX_NEW_TOKENS = 1024
+UNFINISHED = (
+    "[Unfinished: no complete final answer within " + str(MAX_NEW_TOKENS)
+    + " new tokens. The raw output follows, with only the chat template's control tokens taken out.]"
+)
+# The masking check: an example's first trained span must start with this much of its answer.
+ANSWER_HEAD = 40
+TRAIN_OPEN = "[train]"
+TRAIN_CLOSE = "[/train]"
+# How much of the first training example, and of eval item 0's raw outputs, the job log shows.
+DIAGNOSIS_CHARS = 1500
+RAW_CHARS = 600
+LOG_EVENT_MAX = 3000
+# studentPrompt: "short" answers under student_system(title), "full" under the dataset's own task prompt.
+STUDENT_PROMPTS = ("short", "full")
+ROLE_MAX = 80
+FALLBACK_ROLE = "a helpful assistant"
+# How datasetSystemPrompt(task) in lib/train/logic.ts starts. A dataset made with no name is titled with the start of
+# its task, which isn't a role.
+TASK_PROMPT_START = "You are an assistant for this task: "
 GEN_BATCH = 8
 PROGRESS_EVERY = 10
 EVAL_MAX = 60
@@ -125,9 +158,12 @@ def read_params(params):
         "learning_rate": number(params, "learningRate", 0.0002),
         "lora_rank": int(min(128, max(4, round(number(params, "loraRank", 16))))),
         "dry_run": number(params, "dryRun", 0) >= 1,
+        "student_prompt": str(params.get("studentPrompt") or "short").strip().lower(),
     }
     if not (0 < p["learning_rate"] <= 0.01):
         raise ValueError("learningRate must be above 0 and at most 0.01")
+    if p["student_prompt"] not in STUDENT_PROMPTS:
+        raise ValueError("studentPrompt must be short or full, not " + json.dumps(str(params.get("studentPrompt")))[:60])
     return p
 
 
@@ -196,6 +232,46 @@ def shared_system(train):
             return None
         found = text
     return found
+
+
+def student_system(title, dataset_system=None):
+    """The short system message: "You are " and the dataset's title as a role, as in "You are Muse Muse's brief writer.".
+
+    A title that is missing, longer than ROLE_MAX or only the start of the task (the name a dataset gets when it is made
+    without one; its system message then starts with TASK_PROMPT_START and the title) gives "You are a helpful
+    assistant." instead.
+    """
+    role = " ".join(str(title or "").split()).rstrip(".!?:; ")
+    if role[:8].lower() == "you are ":
+        role = role[8:].lstrip()
+    from_task = bool(role) and isinstance(dataset_system, str) and dataset_system.startswith(TASK_PROMPT_START + role)
+    if not role or len(role) > ROLE_MAX or from_task:
+        role = FALLBACK_ROLE
+    # A bare noun phrase reads as a role with "the" ("the Muse Muse brief writer"); keep articles and possessives.
+    words = role.lower().split()
+    if words[0] not in ("a", "an", "the", "your", "my", "our") and not any(w.endswith("'s") for w in words[:3]):
+        role = "the " + role
+    return "You are " + role + "."
+
+
+def with_system(messages, system):
+    """The conversation with system as its only system message, first."""
+    return [{"role": "system", "content": system}] + [m for m in messages if m["role"] != "system"]
+
+
+def student_setup(mode, train, title):
+    """(train, system): the training conversations and the system message the eval prompts are answered under.
+
+    "short" puts student_system(title) in place of every conversation's system message, so training and both models'
+    answers see one short line instead of the dataset's task prompt, and the comparison measures what training taught.
+    "full" keeps the conversations as they are and answers under the system message they share (none when they
+    differ), which measures how well each model follows the task prompt.
+    """
+    own = shared_system(train)
+    if mode == "short":
+        system = student_system(title, own)
+        return [{"messages": with_system(row["messages"], system)} for row in train], system
+    return train, own
 
 
 def eval_examples(items):
@@ -595,8 +671,8 @@ def weights_cached(hf_home):
 
 
 def relay(ctx, seen=None):
-    """The ctx.run hook for the child's events: a MUSE_EVENT line becomes a progress event, and nothing else does. Each
-    event's kind is added to seen, when given.
+    """The ctx.run hook for the child's events: a MUSE_EVENT line becomes a progress event, or a log line for a "log"
+    event (its text cut to LOG_EVENT_MAX), and nothing else does. Each event's kind is added to seen, when given.
 
     The event can start anywhere in the line: on stdout (the fallback channel) a progress bar can be glued in front.
     """
@@ -612,6 +688,8 @@ def relay(ctx, seen=None):
             ctx.progress(step=event.get("step"), total_steps=event.get("total"), loss=event.get("loss"), message=event.get("message"))
         elif event.get("kind") == "phase":
             ctx.progress(message=str(event.get("message") or "")[:200])
+        elif event.get("kind") == "log":
+            ctx.log(str(event.get("text") or "")[:LOG_EVENT_MAX])
 
     return on_line
 
@@ -764,6 +842,8 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
     metrics = dict(result.get("metrics") or {})
     metrics["cache_used"] = "yes" if cache_used else "no"
     metrics["train_examples"] = len(train)
+    metrics["student_prompt"] = p.get("student_prompt", "full")
+    metrics["student_system"] = p.get("student_system", "none")
     metrics["adapter_dir"] = adapter_dir
     if not result.get("adapter"):
         raise RuntimeError(
@@ -790,11 +870,15 @@ def finish(ctx, p, result, evals, train, adapter_dir, cache_used):
     steps = str(metrics.get("steps")) + " steps"
     if metrics.get("stopped_early") == "yes":
         steps = str(metrics.get("steps")) + " of " + str(metrics.get("max_steps")) + " steps (stopped early to finish within the time limit)"
+    unfinished = [metrics.get("base_unfinished"), metrics.get("tuned_unfinished")]
+    note = ""
+    if any(isinstance(n, int) and n > 0 for n in unfinished):
+        note = " (unfinished answers: base " + str(unfinished[0] or 0) + ", tuned " + str(unfinished[1] or 0) + ")"
     metrics["summary"] = (
         ("Dry run: " if p["dry_run"] else "")
         + "LoRA r=" + str(p["lora_rank"]) + " on Muse Glimmer 30B, " + steps
         + (", final loss " + str(round(loss, 4)) if isinstance(loss, (int, float)) else "")
-        + ", " + str(sent) + " eval items."
+        + ", " + str(sent) + " eval items" + note + "."
     )
     return metrics
 
@@ -807,10 +891,24 @@ def run(ctx):
     evals = eval_examples(ctx.dataset("eval"))
     if not train:
         raise RuntimeError("The dataset has no usable training conversations")
-    system = shared_system(train)
+    own = shared_system(train)
+    train, system = student_setup(p["student_prompt"], train, getattr(ctx, "dataset_title", None))
+    own_size = " (" + str(len(own)) + " characters)" if own else ""
+    if p["student_prompt"] == "short":
+        p["student_system"] = system
+        how = (
+            "training and both models' answers use the system message " + json.dumps(system, ensure_ascii=False)
+            + " in place of the dataset's task prompt" + own_size
+        )
+    elif own:
+        p["student_system"] = "the dataset's own" + own_size
+        how = "training keeps the dataset's task prompt" + own_size + ", and both models answer under it"
+    else:
+        p["student_system"] = "none"
+        how = "training keeps the dataset's system messages, which differ, so both models answer with none"
     ctx.log(
         "dataset " + p["dataset_id"] + ": " + str(len(train)) + " training conversations, " + str(len(evals))
-        + " eval prompts, answered " + ("under the dataset's system message" if system else "with no system message")
+        + " eval prompts. Student prompt " + p["student_prompt"] + ": " + how
     )
     base, cache_used = base_dir(ctx)
     adapter_dir = os.path.join(base, "models", str(ctx.job_id or "job"))
@@ -893,17 +991,143 @@ def free_training_memory(trainer, torch):
     torch.cuda.empty_cache()
 
 
+def clip(text, size):
+    """text, or its start and its end with " [...] " between them when it is longer than size."""
+    if len(text) <= size:
+        return text
+    head = size // 4
+    return text[:head] + " [...] " + text[len(text) - (size - head):]
+
+
+def strip_control(raw):
+    """raw with only the chat template's control tokens taken out (each leaves a line break; padding leaves nothing)."""
+    text = raw.replace(PAD_TOKEN, "")
+    for token in CONTROL_TOKENS:
+        text = text.replace(token, "\n")
+    return text.strip()
+
+
 def final_answer(raw):
-    """The text the model sent on the to=user channel, without the to=self reasoning before it."""
-    at = raw.rfind(USER_CHANNEL)
-    if at < 0:
-        return NO_ANSWER
-    text = raw[at + len(USER_CHANNEL):]
-    for stop in STOP_MARKERS:
-        cut = text.find(stop)
-        if cut >= 0:
-            text = text[:cut]
-    return text.strip() or NO_ANSWER
+    """(answer, finished) from a model's raw output to an eval prompt.
+
+    The eval prompt opens the final channel, so the output starts on it and the answer runs to the first <|eot|>,
+    <|eom|> or <|end_of_text|>. An output that never closes it before the token budget runs out or another message
+    starts, or that closes it empty, is unfinished: the answer is then UNFINISHED and the raw output with only the
+    template's control tokens taken out, so the judge sees both what the model wrote and that it never finished.
+    """
+    cut, end = len(raw), None
+    for token in FINAL_ENDS + ("<|start|>",):
+        at = raw.find(token)
+        if 0 <= at < cut:
+            cut, end = at, token
+    text = raw[:cut].replace(PAD_TOKEN, "").strip()
+    if end in FINAL_ENDS and text:
+        return text, True
+    rest = strip_control(raw)
+    return UNFINISHED + ("\n\n" + rest if rest else ""), False
+
+
+def render(tokenizer, messages, generation, bos):
+    """The conversation through the model's chat template at REASONING, without the template's <|begin_of_text|>: the
+    tokenizer adds the one the model expects."""
+    text = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=generation, reasoning_strength=REASONING
+    )
+    return text.removeprefix(bos) if bos else text
+
+
+def training_text(tokenizer, messages, bos):
+    """A training conversation as the trainer sees it. Its answers carry no reasoning_content, so the template writes no
+    to=self message and each answer sits on the final channel right after RESPONSE_PART, as each prompt does after
+    INSTRUCTION_PART. Raises when the rendered text doesn't have them, since train_on_responses_only looks for both."""
+    text = render(tokenizer, messages, False, bos)
+    for m in messages:
+        marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
+        if marker and marker + m["content"] not in text:
+            raise RuntimeError(
+                "The chat template didn't render this " + m["role"] + " message right after " + marker
+                + ", so train_on_responses_only can't find it. The rendered text: " + clip(text, 600)
+            )
+    return text
+
+
+def eval_prompt(tokenizer, messages, bos):
+    """A held-out prompt as both models answer it: the template's generation prompt with the final channel opened, so it
+    ends exactly as a training text does before its answer and the model answers at once, with no reasoning, the way the
+    tuned model was trained."""
+    text = render(tokenizer, messages, True, bos)
+    if not text.endswith(GENERATION_PROMPT):
+        raise RuntimeError("The chat template's generation prompt doesn't end with " + GENERATION_PROMPT + ": " + clip(text, 300))
+    return text + FINAL_CHANNEL
+
+
+def first_answer(messages):
+    return next(m["content"] for m in messages if m["role"] == "assistant")
+
+
+def trained_spans(labels):
+    """The [start, end) runs of trained tokens: the labels that aren't -100."""
+    spans, start = [], None
+    for k, label in enumerate(labels):
+        if label != -100 and start is None:
+            start = k
+        elif label == -100 and start is not None:
+            spans.append((start, k))
+            start = None
+    if start is not None:
+        spans.append((start, len(labels)))
+    return spans
+
+
+def check_masking(rows, answers, decode):
+    """Checks what train_on_responses_only left to train, and returns each example's trained-token count.
+
+    Every example must train on some tokens, and its first trained span must start with its first answer: otherwise the
+    markers never matched, or matched the wrong text, and the run would train on nothing or on the prompts. Raises a
+    clear error on the first example that fails.
+    """
+    if len(rows) != len(answers):
+        raise RuntimeError("The trainer holds " + str(len(rows)) + " training examples, not the " + str(len(answers)) + " written")
+    counts = []
+    for i, row in enumerate(rows):
+        ids, labels = list(row.get("input_ids") or []), row.get("labels")
+        if labels is None:
+            raise RuntimeError("train_on_responses_only left no labels on training example " + str(i))
+        spans = trained_spans(list(labels))
+        if not spans:
+            raise RuntimeError(
+                "Training example " + str(i) + " has no trained tokens after train_on_responses_only: " + RESPONSE_PART
+                + " wasn't found in its " + str(len(ids)) + " tokens (at most " + str(MAX_SEQ_LENGTH) + " are kept)"
+            )
+        got = decode(ids[spans[0][0]:spans[0][1]]).strip()
+        want = answers[i].strip()[:ANSWER_HEAD]
+        if not got or not (got.startswith(want) or (len(got) < len(want) and want.startswith(got))):
+            raise RuntimeError(
+                "Training example " + str(i) + " trains on the wrong text: its first trained span starts "
+                + json.dumps(got[:80], ensure_ascii=False) + ", not with its answer " + json.dumps(want, ensure_ascii=False)
+            )
+        counts.append(sum(end - start for start, end in spans))
+    return counts
+
+
+def marked_text(ids, labels, decode):
+    """The example's text with each trained span between TRAIN_OPEN and TRAIN_CLOSE."""
+    out, last = [], 0
+    for start, end in trained_spans(labels):
+        out.append(decode(ids[last:start]) + TRAIN_OPEN + decode(ids[start:end]) + TRAIN_CLOSE)
+        last = end
+    out.append(decode(ids[last:]))
+    return "".join(out)
+
+
+def example_diagnosis(row, decode):
+    """The job log's line on the first training example: its trained-token count and its text, the span marked."""
+    ids, labels = list(row["input_ids"]), list(row["labels"])
+    trained = sum(1 for label in labels if label != -100)
+    return (
+        "First training example: " + str(trained) + " trained tokens of " + str(len(ids)) + ", between " + TRAIN_OPEN
+        + " and " + TRAIN_CLOSE + ":\n" + clip(marked_text(ids, labels, decode), DIAGNOSIS_CHARS)
+    )
 
 
 def child_main(config_path):
@@ -947,22 +1171,23 @@ def child_main(config_path):
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
 
-    def render(messages, generation):
-        text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=generation, reasoning_strength=REASONING
-        )
-        # The tokenizer adds the one <|begin_of_text|> the model expects, so the template's own is dropped.
-        return text.removeprefix(bos) if bos else text
+    def decode(ids):
+        return text_tokenizer.decode(ids, skip_special_tokens=False)
+
+    # Rendered before any answer, so a template without the markers fails the job before it pays for the eval pass.
+    texts = [training_text(tokenizer, row["messages"], bos) for row in train_rows]
 
     def answer_all(label):
+        """(answers, unfinished) for the eval prompts, on the final channel as in training. Item 0's raw output goes to
+        the job log."""
         if hasattr(FastModel, "for_inference"):
             FastModel.for_inference(model)
         text_tokenizer.padding_side = "left"
         if text_tokenizer.pad_token is None:
             text_tokenizer.pad_token = text_tokenizer.eos_token
         head = [{"role": "system", "content": cfg["system"]}] if cfg.get("system") else []
-        prompts = [render(head + [{"role": "user", "content": r["prompt"]}], True) for r in eval_rows]
-        answers = []
+        prompts = [eval_prompt(tokenizer, head + [{"role": "user", "content": r["prompt"]}], bos) for r in eval_rows]
+        answers, unfinished = [], 0
         for start in range(0, len(prompts), GEN_BATCH):
             enc = text_tokenizer(prompts[start:start + GEN_BATCH], return_tensors="pt", padding=True)
             input_ids = enc["input_ids"].to("cuda")
@@ -977,20 +1202,25 @@ def child_main(config_path):
                 )
             width = input_ids.shape[1]
             for row in out:
-                answers.append(final_answer(text_tokenizer.decode(row[width:], skip_special_tokens=False)))
+                raw = decode(row[width:])
+                if not answers:
+                    emit("log", text=label + " model's raw output for eval item 0 (first " + str(RAW_CHARS) + " characters): " + raw.replace(PAD_TOKEN, "")[:RAW_CHARS])
+                answer, finished = final_answer(raw)
+                answers.append(answer)
+                unfinished += 0 if finished else 1
             emit("phase", message=label + " answers: " + str(len(answers)) + " of " + str(len(prompts)))
-        return answers
+        return answers, unfinished
 
     # A fresh LoRA adds zero (its B matrices start at zero), so these are the base model's answers. They are written
     # at once, so a run cut short later still reports what it got.
     began = time.time()
-    result["base"] = answer_all("Base")
+    result["base"], base_unfinished = answer_all("Base")
     base_seconds = time.time() - began
     write_result(cfg["result_path"], result)
 
     if hasattr(FastModel, "for_training"):
         FastModel.for_training(model)
-    dataset = Dataset.from_list([{"text": render(row["messages"], False)} for row in train_rows])
+    dataset = Dataset.from_list([{"text": text} for text in texts])
 
     class Progress(TrainerCallback):
         def __init__(self):
@@ -1041,6 +1271,12 @@ def child_main(config_path):
         ),
     )
     trainer = train_on_responses_only(trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
+    # The masks as the trainer will use them: the first example goes to the job log before the check, so a failed
+    # check shows what was trained.
+    examples = [trainer.train_dataset[i] for i in range(len(trainer.train_dataset))]
+    if examples and examples[0].get("labels") is not None:
+        emit("log", text=example_diagnosis(examples[0], decode))
+    trained = check_masking(examples, [first_answer(row["messages"]) for row in train_rows], decode)
     trainer.add_callback(progress)
     trainer.add_callback(Deadline())
     emit("phase", message="Training for " + str(total) + " steps")
@@ -1060,6 +1296,10 @@ def child_main(config_path):
         "stopped_early": "yes" if stopped_early else "no",
         "train_seconds": round(float(stats.metrics.get("train_runtime", 0)), 1),
         "base_answer_seconds": round(base_seconds, 1),
+        "base_unfinished": base_unfinished,
+        "trained_tokens_min": min(trained),
+        "trained_tokens_mean": round(sum(trained) / len(trained), 1),
+        "max_new_tokens": MAX_NEW_TOKENS,
         "peak_vram_gb": round(torch.cuda.max_memory_reserved() / 1024 ** 3, 2),
         "gpu": torch.cuda.get_device_name(0),
     }
@@ -1074,7 +1314,7 @@ def child_main(config_path):
 
     free_training_memory(trainer, torch)
     try:
-        result["tuned"] = answer_all("Tuned")
+        result["tuned"], metrics["tuned_unfinished"] = answer_all("Tuned")
     except Exception as e:
         result["tuned_error"] = type(e).__name__ + ": " + str(e)[:300]
         emit("phase", message="The tuned answers failed: " + result["tuned_error"])

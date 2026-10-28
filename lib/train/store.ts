@@ -740,15 +740,15 @@ export async function attachDatasetRun(datasetId: string, workflowRunId: string)
 }
 
 /**
- * `limit` items of the dataset's train or eval examples from `offset` (0-based), the total count and the status, or
- * null when the dataset is unknown. The slice is cut in SQL, so a page never loads the rest.
+ * `limit` items of the dataset's train or eval examples from `offset` (0-based), the total count, the status and the
+ * title, or null when the dataset is unknown. The slice is cut in SQL, so a page never loads the rest.
  */
 export async function datasetPage(
   datasetId: string,
   part: "train" | "eval",
   offset: number,
   limit: number,
-): Promise<{ status: DatasetHead["status"]; total: number; items: TrainExample[] | EvalExample[] } | null> {
+): Promise<{ status: DatasetHead["status"]; title: string; total: number; items: TrainExample[] | EvalExample[] } | null> {
   if (!isUuid(datasetId)) return null;
   const col = part === "train" ? datasets.train : datasets.eval;
   const from = Math.max(0, Math.floor(offset));
@@ -756,6 +756,7 @@ export async function datasetPage(
   const [row] = await db()
     .select({
       status: datasets.status,
+      title: datasets.title,
       total: sql<number>`jsonb_array_length(${col})`,
       items: sql<TrainExample[] | EvalExample[]>`coalesce((
         select jsonb_agg(t.e order by t.i) from jsonb_array_elements(${col}) with ordinality as t(e, i)
@@ -765,7 +766,7 @@ export async function datasetPage(
     .from(datasets)
     .where(eq(datasets.id, datasetId))
     .limit(1);
-  return row ? { status: row.status, total: Number(row.total), items: row.items ?? [] } : null;
+  return row ? { status: row.status, title: row.title, total: Number(row.total), items: row.items ?? [] } : null;
 }
 
 /** How many examples a generating dataset holds so far, or null when it is unknown or no longer generating. */

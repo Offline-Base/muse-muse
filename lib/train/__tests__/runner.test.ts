@@ -45,7 +45,7 @@ let grantBodies: unknown[] = [];
 /** Answers the fake Blob API gives simple PUTs in turn, before it stores the file. */
 let putAnswers: Array<{ status: number; body: unknown }> = [];
 /** The pages GET .../dataset serves for each part. A part with no pages answers 404, as for a job with no dataset. */
-let datasetPages: Record<string, Array<{ items: unknown[]; nextPage: number | null }>> = {};
+let datasetPages: Record<string, Array<{ items: unknown[]; nextPage: number | null; title?: string }>> = {};
 /** How GET .../dataset answers instead of serving a page, the first `times` times. */
 let datasetFailures: Array<{ status: number; location?: string }> = [];
 
@@ -204,6 +204,8 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
       'UV_SHA256 = "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220"',
       'INSTRUCTION_PART = "<|start|>user<|message|>"',
       'RESPONSE_PART = "<|start|>assistant to=user<|message|>"',
+      'GENERATION_PROMPT = "<|start|>assistant"',
+      "MAX_NEW_TOKENS = 1024",
       'loss_type="nll"',
       'use_gradient_checkpointing="unsloth"',
     ]) {
@@ -268,6 +270,11 @@ class FakeCtx:
         self.evals = []
         self.uploads = []
         self.on_run = None
+        self.data = {"train": [], "eval": []}
+        self.dataset_title = None
+
+    def dataset(self, part):
+        return self.data[part]
 
     def log(self, text):
         self.logs.append(str(text))
@@ -343,6 +350,248 @@ async function glimmerTest(body: string): Promise<void> {
     await rm(dir, { recursive: true, force: true });
   }
 }
+
+/**
+ * Python for the tests that run glimmer's child with no GPU: a small Muse Glimmer tokenizer whose chat template renders
+ * as chat_template.jinja does (pinned to the real template's output below), a model whose generate() answers from a
+ * script, and fake unsloth, torch, datasets, transformers and trl modules for g.child_main. Child events are collected
+ * in EVENTS.
+ */
+const FAKE_GLIMMER = String.raw`import contextlib, types
+
+SPECIALS = ["<|begin_of_text|>", "<|end_of_text|>", "<|start|>", "<|message|>", "<|eot|>", "<|eom|>", "<|finetune_right_pad|>"]
+# chat_template.jinja of unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit at MODEL_REVISION, rendered with jinja2 for GULLS at
+# reasoning_strength="low" (and without the answer, with the generation prompt): FakeTokenizer must give the same.
+REAL_TRAIN_TEXT = (
+    "<|begin_of_text|><|start|>system<|message|>You are Muse Muse's brief writer.\n\nReasoning strength: low.\n\n"
+    '# Valid recipients: "self", "user".<|eot|><|start|>user<|message|>count gulls<|eot|>'
+    "<|start|>assistant to=user<|message|>**Name:** Gull Counter<|eot|>"
+)
+REAL_PROMPT_END = "<|start|>user<|message|>count gulls<|eot|><|start|>assistant"
+GULLS = [
+    {"role": "system", "content": "You are Muse Muse's brief writer."},
+    {"role": "user", "content": "count gulls"},
+    {"role": "assistant", "content": "**Name:** Gull Counter"},
+]
+
+
+class Tensor(list):
+    @property
+    def shape(self):
+        return (len(self), len(self[0]) if self else 0)
+
+    def to(self, device):
+        return self
+
+
+class FakeTokenizer:
+    """Each special token is one id below 1000 and every other character its own id. apply_chat_template renders
+    system, user and assistant messages as chat_template.jinja does (no tools)."""
+
+    bos_token = "<|begin_of_text|>"
+    eos_token = "<|end_of_text|>"
+    pad_token = "<|finetune_right_pad|>"
+
+    def __init__(self, assistant_header="<|start|>assistant to=user<|message|>"):
+        self.assistant_header = assistant_header
+        self.pad_token_id = SPECIALS.index(self.pad_token)
+        self.eos_token_id = SPECIALS.index(self.eos_token)
+        self.padding_side = "right"
+
+    def encode(self, text):
+        ids, i = [], 0
+        while i < len(text):
+            special = next((k for k, s in enumerate(SPECIALS) if text.startswith(s, i)), None)
+            ids.append(1000 + ord(text[i]) if special is None else special)
+            i += 1 if special is None else len(SPECIALS[special])
+        return ids
+
+    def decode(self, ids, skip_special_tokens=False):
+        return "".join(chr(t - 1000) if t >= 1000 else ("" if skip_special_tokens else SPECIALS[t]) for t in ids)
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, reasoning_strength=None):
+        assert tokenize is False
+        meta = "\n\nReasoning strength: " + (reasoning_strength or "high") + '.\n\n# Valid recipients: "self", "user".<|eot|>'
+        out = self.bos_token
+        if not any(m["role"] == "system" for m in messages):
+            out += "<|start|>system<|message|>You are a helpful AI assistant.\nKnowledge cutoff: 2026-01-04." + meta
+        for m in messages:
+            if m["role"] == "system":
+                out += "<|start|>system<|message|>" + m["content"] + meta
+            elif m["role"] == "user":
+                out += "<|start|>user<|message|>" + m["content"] + "<|eot|>"
+            elif m["role"] == "assistant":
+                if m.get("reasoning_content"):
+                    out += "<|start|>assistant to=self<|message|>" + m["reasoning_content"] + "<|eom|>"
+                out += self.assistant_header + m["content"] + "<|eot|>"
+        return out + ("<|start|>assistant" if add_generation_prompt else "")
+
+    def __call__(self, texts, return_tensors=None, padding=False):
+        # The one <|begin_of_text|> goes in front, and the padding on the left, as the child asks for.
+        assert self.padding_side == "left"
+        rows = [[0] + self.encode(t) for t in texts]
+        width = max(len(r) for r in rows)
+        return {
+            "input_ids": Tensor([[self.pad_token_id] * (width - len(r)) + r for r in rows]),
+            "attention_mask": Tensor([[0] * (width - len(r)) + [1] * len(r) for r in rows]),
+        }
+
+    def save_pretrained(self, path):
+        with open(os.path.join(path, "tokenizer_config.json"), "w") as f:
+            f.write("{}")
+
+
+def user_prompt(text):
+    return text.split("<|start|>user<|message|>")[-1].split("<|eot|>")[0]
+
+
+class FakeModel:
+    """generate() answers each prompt with replies(user prompt, tuned), cut at max_new_tokens and padded as a batch is."""
+
+    def __init__(self, tokenizer, replies):
+        self.tok, self.replies, self.tuned, self.calls = tokenizer, replies, False, []
+
+    def generate(self, input_ids, attention_mask, max_new_tokens, do_sample, pad_token_id):
+        prompts = [self.tok.decode(row) for row in input_ids]
+        self.calls.append({"prompts": prompts, "max_new_tokens": max_new_tokens, "tuned": self.tuned})
+        new = [self.tok.encode(self.replies(user_prompt(p), self.tuned))[:max_new_tokens] for p in prompts]
+        width = max(len(n) for n in new)
+        return [list(row) + n + [pad_token_id] * (width - len(n)) for row, n in zip(input_ids, new)]
+
+    def save_pretrained(self, path):
+        with open(os.path.join(path, "adapter_config.json"), "w") as f:
+            f.write("{}")
+
+
+class TrainerCallback:
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        return control
+
+    def on_step_end(self, args, state, control, **kwargs):
+        return control
+
+
+class SFTConfig:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class SFTTrainer:
+    """Tokenizes the text dataset as TRL does (the tokenizer's <|begin_of_text|> in front, its eos at the end, cut to
+    max_length), then runs the callbacks for max_steps steps."""
+
+    def __init__(self, model, tokenizer, train_dataset, eval_dataset, args):
+        self.model, self.args, self.callbacks = model, args, []
+        tok = getattr(tokenizer, "tokenizer", tokenizer)
+        self.train_dataset = [
+            {"text": row["text"], "input_ids": ([0] + tok.encode(row["text"] + tok.eos_token))[: args.max_length]}
+            for row in train_dataset
+        ]
+        self.state = types.SimpleNamespace(global_step=0, max_steps=args.max_steps)
+
+    def add_callback(self, callback):
+        self.callbacks.append(callback)
+
+    def train(self):
+        control = types.SimpleNamespace(should_training_stop=False)
+        for step in range(1, self.args.max_steps + 1):
+            self.state.global_step = step
+            for callback in self.callbacks:
+                callback.on_log(self.args, self.state, control, logs={"loss": round(1.0 / step, 4)})
+                callback.on_step_end(self.args, self.state, control)
+            if control.should_training_stop:
+                break
+        self.model.tuned = True
+        return types.SimpleNamespace(metrics={"train_runtime": 1.5}, training_loss=0.5)
+
+
+def install_fakes(replies, tokenizer=None, shift=0, marker_prefix=""):
+    """Fake unsloth, torch, datasets, transformers and trl in sys.modules. Its train_on_responses_only trains on the
+    tokens after each response marker up to the next instruction marker, as Unsloth's does; shift starts each span that
+    many tokens late, and marker_prefix changes the marker it looks for (one tokenized differently on its own)."""
+    state = {"tokenizer": tokenizer or FakeTokenizer(), "model": None, "masked": [], "rows": None}
+
+    class FastModel:
+        @staticmethod
+        def from_pretrained(model_name, revision=None, max_seq_length=None):
+            state["model"] = FakeModel(state["tokenizer"], replies)
+            return state["model"], state["tokenizer"]
+
+        @staticmethod
+        def get_peft_model(model, **kwargs):
+            return model
+
+        @staticmethod
+        def for_inference(model):
+            pass
+
+        @staticmethod
+        def for_training(model):
+            pass
+
+    def train_on_responses_only(trainer, instruction_part, response_part):
+        tok = state["tokenizer"]
+        q, a = tok.encode(instruction_part), tok.encode(marker_prefix + response_part)
+        state["masked"].append([instruction_part, response_part])
+        state["rows"] = trainer.train_dataset
+        for row in trainer.train_dataset:
+            ids, labels, j = row["input_ids"], [-100] * len(row["input_ids"]), 0
+            while j < len(ids):
+                if ids[j:j + len(a)] != a:
+                    j += 1
+                    continue
+                start = k = j + len(a) + shift
+                while k < len(ids) and ids[k:k + len(q)] != q:
+                    k += 1
+                labels[start:k] = ids[start:k]
+                j = k
+            row["labels"] = labels
+        return trainer
+
+    names = ("unsloth", "unsloth.chat_templates", "torch", "datasets", "transformers", "trl")
+    modules = {name: types.ModuleType(name) for name in names}
+    modules["unsloth"].FastModel = FastModel
+    modules["unsloth.chat_templates"].train_on_responses_only = train_on_responses_only
+    modules["torch"].no_grad = contextlib.nullcontext
+    modules["torch"].cuda = types.SimpleNamespace(max_memory_reserved=lambda: 0, get_device_name=lambda i: "Fake GPU", empty_cache=lambda: None)
+    modules["datasets"].Dataset = types.SimpleNamespace(from_list=list)
+    modules["transformers"].TrainerCallback = TrainerCallback
+    modules["trl"].SFTConfig = SFTConfig
+    modules["trl"].SFTTrainer = SFTTrainer
+    sys.modules.update(modules)
+    return state
+
+
+EVENTS = []
+g.emit = lambda kind, **fields: EVENTS.append(dict(fields, kind=kind))
+
+
+def child_run(train_rows, eval_rows, system):
+    """Runs g.child_main on a config for these rows in a folder of its own. (cfg, the RuntimeError's text or None)."""
+    work = tempfile.mkdtemp(dir=ROOT)
+    cfg = {
+        "model": g.MODEL, "revision": g.MODEL_REVISION, "max_seq_length": g.MAX_SEQ_LENGTH, "max_steps": 3,
+        "learning_rate": 0.0002, "lora_rank": 8, "system": system, "deadline": time.time() + 3600,
+        "train_path": os.path.join(work, "train.jsonl"), "eval_path": os.path.join(work, "eval.jsonl"),
+        "result_path": os.path.join(work, "result.json"), "adapter_dir": os.path.join(work, "adapter"),
+        "output_dir": os.path.join(work, "outputs"),
+    }
+    g.write_jsonl(cfg["train_path"], train_rows)
+    g.write_jsonl(cfg["eval_path"], eval_rows)
+    path = os.path.join(work, "config.json")
+    with open(path, "w") as f:
+        json.dump(cfg, f)
+    del EVENTS[:]
+    try:
+        g.child_main(path)
+    except RuntimeError as e:
+        return cfg, str(e)
+    return cfg, None
+
+
+def logs():
+    return [e["text"] for e in EVENTS if e["kind"] == "log"]
+`;
 
 describe("glimmer recipe internals", { skip: hasPython ? false : "python3 is missing", timeout: 120_000 }, () => {
   it("never deletes a ready venv, and a build that loses the race reuses the winner's", async () => {
@@ -719,6 +968,253 @@ cut = {"base": ["b0", "b1"], "tuned": None, "metrics": {}, "adapter": False, "en
 error = raises(lambda: g.finish(ctx, p, cut, evals, train, adapter, True), "Training didn't finish (the child timed out), so no adapter was saved")
 assert "step 30 of 120" in error
 assert ctx.evals == [] and ctx.uploads == []
+`);
+  });
+
+  it("trains the answers on the final channel with no reasoning, and opens that channel in the eval prompts", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+tok = FakeTokenizer()
+assert tok.apply_chat_template(GULLS, add_generation_prompt=False, reasoning_strength="low") == REAL_TRAIN_TEXT
+assert tok.apply_chat_template(GULLS[:2], add_generation_prompt=True, reasoning_strength="low").endswith(REAL_PROMPT_END)
+assert g.GENERATION_PROMPT + g.FINAL_CHANNEL == g.RESPONSE_PART and g.FINAL_CHANNEL == " to=user<|message|>"
+
+text = g.training_text(tok, GULLS, tok.bos_token)
+assert text == REAL_TRAIN_TEXT[len(tok.bos_token):] and "to=self" not in text
+assert text.count(g.INSTRUCTION_PART) == 1 and text.count(g.RESPONSE_PART) == 1
+# The template's own generation prompt stops at "<|start|>assistant" and leaves the channel to the model.
+assert g.render(tok, GULLS[:2], True, tok.bos_token).endswith(g.GENERATION_PROMPT)
+prompt = g.eval_prompt(tok, GULLS[:2], tok.bos_token)
+# The eval prompt is the training text up to the answer, so the model answers just where training taught it to.
+assert text.startswith(prompt) and text[len(prompt):] == "**Name:** Gull Counter<|eot|>", prompt
+
+other = FakeTokenizer(assistant_header="<|start|>assistant<|message|>")
+error = raises(lambda: g.training_text(other, GULLS, other.bos_token), "The chat template didn't render this assistant message right after " + g.RESPONSE_PART)
+assert "count gulls" in error, "the error shows the rendered text"
+
+
+class NoPrompt(FakeTokenizer):
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False, reasoning_strength=None):
+        return FakeTokenizer.apply_chat_template(self, messages, reasoning_strength=reasoning_strength)
+
+
+raises(lambda: g.eval_prompt(NoPrompt(), GULLS[:2], tok.bos_token), "The chat template's generation prompt doesn't end with <|start|>assistant")
+`);
+  });
+
+  it("checks the masks: every example trains on some tokens, starting with its answer, or the job fails clearly", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+tok = FakeTokenizer()
+prefix = "<|start|>user<|message|>q<|eot|>" + g.RESPONSE_PART
+
+
+def row(answer, shift=0, cut=None):
+    ids = tok.encode(prefix + answer + "<|eot|>")[:cut]
+    at = len(tok.encode(prefix)) + shift
+    return {"input_ids": ids, "labels": [-100] * at + ids[at:]}
+
+
+assert g.check_masking([row("Name: A"), row("Name: Bee")], ["Name: A", "Name: Bee"], tok.decode) == [8, 10]
+# An answer max_seq_length cut short still starts the span.
+assert g.check_masking([row("Name: A long answer", cut=len(tok.encode(prefix)) + 4)], ["Name: A long answer"], tok.decode) == [4]
+none = {"input_ids": tok.encode(prefix + "A"), "labels": [-100] * len(tok.encode(prefix + "A"))}
+error = raises(lambda: g.check_masking([row("A"), none], ["A", "A"], tok.decode), "Training example 1 has no trained tokens after train_on_responses_only: " + g.RESPONSE_PART + " wasn't found in its")
+error = raises(lambda: g.check_masking([row("Name: A", shift=-3)], ["Name: A"], tok.decode), "Training example 0 trains on the wrong text")
+assert '"er<|message|>Name: A' in error, "the span takes in the marker's end: " + error
+raises(lambda: g.check_masking([row("Name: A", shift=2)], ["Name: A"], tok.decode), 'its first trained span starts "me: A<|eot|>", not with its answer "Name: A"')
+raises(lambda: g.check_masking([row("A")], ["A", "B"], tok.decode), "The trainer holds 1 training examples, not the 2 written")
+raises(lambda: g.check_masking([{"input_ids": [1]}], ["A"], tok.decode), "left no labels on training example 0")
+
+assert g.trained_spans([-100, 5, 6, -100, 7]) == [(1, 3), (4, 5)] and g.trained_spans([-100]) == []
+marked = g.marked_text(row("Name: A")["input_ids"], row("Name: A")["labels"], tok.decode)
+assert marked == prefix + g.TRAIN_OPEN + "Name: A<|eot|>" + g.TRAIN_CLOSE, marked
+line = g.example_diagnosis(row("Name: A"), tok.decode)
+assert line == "First training example: 8 trained tokens of " + str(len(row("Name: A")["input_ids"])) + ", between [train] and [/train]:\n" + marked, line
+long = g.example_diagnosis(row("x" * 5000), tok.decode)
+assert len(long) < 1700 and " [...] " in long and long.endswith("x<|eot|>[/train]"), "kept short, with the answer's end"
+`);
+  });
+
+  it("keeps an unfinished answer's raw text, marked for the judge, and cuts a finished one at its end", async () => {
+    await glimmerTest(String.raw`
+assert g.final_answer("Name: Gull Counter<|eot|>" + g.PAD_TOKEN * 3) == ("Name: Gull Counter", True)
+assert g.final_answer("  Answer\n<|end_of_text|>") == ("Answer", True)
+assert g.final_answer("Draft<|eom|><|start|>assistant to=user<|message|>Other<|eot|>") == ("Draft", True)
+assert g.UNFINISHED == "[Unfinished: no complete final answer within 1024 new tokens. The raw output follows, with only the chat template's control tokens taken out.]"
+# The token budget ran out mid-answer.
+assert g.final_answer("Name: Gull Counter\nFlow: 1. Upload") == (g.UNFINISHED + "\n\nName: Gull Counter\nFlow: 1. Upload", False)
+# The model left the final channel for reasoning and never came back: only the control tokens go.
+raw = "<|start|>assistant to=self<|message|>Let me think<|eom|><|start|>assistant to=user<|message|>Name: X"
+assert g.final_answer(raw) == (g.UNFINISHED + "\n\nassistant to=self\nLet me think\n\nassistant to=user\nName: X", False), g.final_answer(raw)
+assert g.final_answer("<|eot|>" + g.PAD_TOKEN) == (g.UNFINISHED, False), "an empty answer"
+assert g.strip_control("<|begin_of_text|>a<|message|>b" + g.PAD_TOKEN + "c<|end_of_text|>") == "a\nbc"
+assert g.clip("abcdefghij", 8) == "ab [...] efghij" and g.clip("abc", 8) == "abc"
+
+# The summary says when answers were unfinished.
+adapter = os.path.join(BASE, "models", "job-u")
+os.makedirs(adapter)
+p = {"dry_run": False, "lora_rank": 16, "student_prompt": "short", "student_system": "You are X."}
+done = {"base": ["b0"], "tuned": [g.UNFINISHED], "metrics": {"steps": 3, "base_unfinished": 0, "tuned_unfinished": 1}, "adapter": True}
+out = g.finish(FakeCtx("job-u"), p, done, [{"prompt": "p0", "reference": "r0"}], [{"messages": []}], adapter, True)
+assert out["summary"] == "LoRA r=16 on Muse Glimmer 30B, 3 steps, 1 eval items (unfinished answers: base 0, tuned 1).", out["summary"]
+assert out["student_prompt"] == "short" and out["student_system"] == "You are X."
+`);
+  });
+
+  it("answers under a short student prompt by default, or under the dataset's full task prompt", async () => {
+    await glimmerTest(String.raw`
+for given, want in ((None, "short"), ("", "short"), (" FULL ", "full"), ("short", "short")):
+    params = {"datasetId": "ds"} if given is None else {"datasetId": "ds", "studentPrompt": given}
+    assert g.read_params(params)["student_prompt"] == want, given
+try:
+    g.read_params({"datasetId": "ds", "studentPrompt": "long"})
+    raise AssertionError("no ValueError")
+except ValueError as e:
+    assert str(e) == 'studentPrompt must be short or full, not "long"', str(e)
+
+own = g.TASK_PROMPT_START + "Write a product brief for a Muse Muse app.\n\nAnswer the user's message directly."
+assert g.student_system("Muse Muse's brief writer", own) == "You are Muse Muse's brief writer."
+assert g.student_system("  You are   a calm tutor. ") == "You are a calm tutor."
+assert g.student_system("Muse Muse brief writer", own) == "You are the Muse Muse brief writer."
+for title in (None, "", "x" * 81, "Write a product brief for a Muse"):
+    assert g.student_system(title, own) == "You are a helpful assistant.", title
+
+g.ensure_venv = lambda ctx, base: ("/venv/bin/python", True)
+seen = {}
+
+
+def fake_child(ctx, cmd, timeout, env, kinds=None):
+    cfg = json.load(open(shlex.split(cmd)[-1]))
+    seen.update(cfg=cfg, train=g.read_jsonl(cfg["train_path"]))
+    os.makedirs(cfg["adapter_dir"], exist_ok=True)
+    g.write_result(cfg["result_path"], {"base": ["b0"], "tuned": ["t0"], "metrics": {"steps": 3}, "adapter": True})
+    return Done(0)
+
+
+g.run_child = fake_child
+
+
+def convo(i, system=None):
+    head = [{"role": "system", "content": system}] if system else []
+    return {"messages": head + [{"role": "user", "content": "q" + str(i)}, {"role": "assistant", "content": "a" + str(i)}]}
+
+
+def job(mode, train, title="Muse Muse's brief writer"):
+    ctx = FakeCtx("job-" + str(mode))
+    ctx.cache_dir = BASE
+    ctx.params = {"datasetId": "ds-1"} if mode is None else {"datasetId": "ds-1", "studentPrompt": mode}
+    ctx.data = {"train": train, "eval": [{"prompt": "e0", "reference": "r0"}]}
+    ctx.dataset_title = title
+    return ctx, g.run(ctx)
+
+
+short = "You are Muse Muse's brief writer."
+size = " (" + str(len(own)) + " characters)"
+ctx, out = job(None, [convo(i, own) for i in range(3)])
+assert seen["cfg"]["system"] == short, "both models answer under the short line"
+assert seen["train"] == [convo(i, short) for i in range(3)], seen["train"]
+assert out["student_prompt"] == "short" and out["student_system"] == short
+assert ctx.logs[0] == (
+    "dataset ds-1: 3 training conversations, 1 eval prompts. Student prompt short: training and both models' answers"
+    ' use the system message "You are Muse Muse\'s brief writer." in place of the dataset\'s task prompt' + size
+), ctx.logs[0]
+assert ctx.evals == [[0, "b0", "t0"]], "the teacher's reference is sent as it was"
+
+# Conversations with different system messages, or none: each gets the one short line.
+ctx, out = job("short", [convo(0, "one"), convo(1)], title=None)
+assert seen["cfg"]["system"] == "You are a helpful assistant." and seen["train"] == [convo(0, "You are a helpful assistant."), convo(1, "You are a helpful assistant.")]
+assert ctx.logs[0].endswith("in place of the dataset's task prompt"), ctx.logs[0]
+
+ctx, out = job("full", [convo(i, own) for i in range(3)])
+assert seen["cfg"]["system"] == own and seen["train"] == [convo(i, own) for i in range(3)], "as the dataset has them"
+assert out["student_prompt"] == "full" and out["student_system"] == "the dataset's own" + size
+assert ctx.logs[0].endswith("Student prompt full: training keeps the dataset's task prompt" + size + ", and both models answer under it")
+
+ctx, out = job("full", [convo(0, "one"), convo(1, "two")])
+assert seen["cfg"]["system"] is None and seen["train"] == [convo(0, "one"), convo(1, "two")] and out["student_system"] == "none"
+assert ctx.logs[0].endswith("Student prompt full: training keeps the dataset's system messages, which differ, so both models answer with none")
+`);
+  });
+
+  it("runs the child on fake Unsloth: masks checked, the final channel, 1,024 new tokens, unfinished answers and diagnostics", async () => {
+    await glimmerTest(String.raw`${FAKE_GLIMMER}
+SYSTEM = "You are Muse Muse's brief writer."
+TRAIN = [
+    {"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": "q" + str(i)}, {"role": "assistant", "content": "**Name:** Brief " + str(i)}]}
+    for i in range(3)
+]
+EVALS = [{"prompt": "e0", "reference": "r0"}, {"prompt": "e1", "reference": "r1"}]
+THINKING = "Thinking it over. " * 100
+
+
+def replies(prompt, tuned):
+    if not tuned:
+        return "Base answer to " + prompt + "<|eot|>"
+    # 1,800 characters that never close the answer, so 1,024 new tokens cut them off.
+    return THINKING if prompt == "e0" else "Tuned answer to " + prompt + "<|eot|>"
+
+
+state = install_fakes(replies)
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is None, error
+result = g.read_result(cfg["result_path"])
+assert result["base"] == ["Base answer to e0", "Base answer to e1"], result["base"]
+assert result["tuned"][1] == "Tuned answer to e1" and result["adapter"] is True
+assert result["tuned"][0] == g.UNFINISHED + "\n\n" + THINKING[:1024].strip(), result["tuned"][0]
+answer_tokens = len("**Name:** Brief 0") + 2
+m = result["metrics"]
+assert m["base_unfinished"] == 0 and m["tuned_unfinished"] == 1 and m["max_new_tokens"] == 1024, m
+assert m["trained_tokens_min"] == answer_tokens and m["trained_tokens_mean"] == answer_tokens, m
+
+# Both passes ask for 1,024 new tokens, and every prompt ends on the final channel, under the system message given.
+calls = state["model"].calls
+assert [c["max_new_tokens"] for c in calls] == [1024, 1024] and [c["tuned"] for c in calls] == [False, True]
+for call in calls:
+    for p in call["prompts"]:
+        assert p.startswith("<|begin_of_text|><|start|>system<|message|>" + SYSTEM + "\n\nReasoning strength: low.") and p.count("<|begin_of_text|>") == 1, p
+        assert p.endswith(g.RESPONSE_PART) and "to=self" not in p, p
+
+# Each training text is the template's, with its answer on the final channel and only the answer trained.
+assert state["masked"] == [[g.INSTRUCTION_PART, g.RESPONSE_PART]]
+for row, convo in zip(state["rows"], TRAIN):
+    answer = convo["messages"][2]["content"]
+    assert row["text"].endswith(g.RESPONSE_PART + answer + "<|eot|>") and not row["text"].startswith("<|begin_of_text|>"), row["text"]
+    assert "to=self" not in row["text"]
+    trained = [t for t, label in zip(row["input_ids"], row["labels"]) if label != -100]
+    assert state["tokenizer"].decode(trained) == answer + "<|eot|><|end_of_text|>"
+
+lines = logs()
+assert lines[0] == "Base model's raw output for eval item 0 (first 600 characters): Base answer to e0<|eot|>", lines[0]
+assert lines[1].startswith("First training example: " + str(answer_tokens) + " trained tokens of "), lines[1]
+assert g.RESPONSE_PART + "[train]**Name:** Brief 0<|eot|><|end_of_text|>[/train]" in lines[1], lines[1]
+assert lines[2] == "Tuned model's raw output for eval item 0 (first 600 characters): " + THINKING[:600], lines[2]
+assert len(lines) == 3, lines
+# The parent turns each of them into one job log line.
+ctx = FakeCtx("job-l")
+hook = g.relay(ctx)
+for event in EVENTS:
+    hook(g.EVENT_PREFIX + json.dumps(event))
+assert ctx.logs == lines and any(p["message"] == "Training for 3 steps" for p in ctx.progresses)
+
+# Unsloth looking for a marker the tokens don't hold: nothing would train, so the child stops before training, with
+# the first example in the log.
+state = install_fakes(replies, marker_prefix=" ")
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is not None and error.startswith("Training example 0 has no trained tokens after train_on_responses_only: " + g.RESPONSE_PART), error
+assert [c["tuned"] for c in state["model"].calls] == [False], "the base answers only"
+assert logs()[1].startswith("First training example: 0 trained tokens of ") and "[train]" not in logs()[1].split("\n", 1)[1], logs()
+result = g.read_result(cfg["result_path"])
+assert result["adapter"] is False and len(result["base"]) == 2
+
+# Spans that start a token late train on the wrong text.
+state = install_fakes(replies, shift=1)
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is not None and error.startswith("Training example 0 trains on the wrong text") and '"*Name:** Brief 0' in error, error
+
+# A template that doesn't put the answers after RESPONSE_PART fails before a single answer is paid for.
+state = install_fakes(replies, tokenizer=FakeTokenizer(assistant_header="<|start|>assistant<|message|>"))
+cfg, error = child_run(TRAIN, EVALS, SYSTEM)
+assert error is not None and error.startswith("The chat template didn't render this assistant message right after " + g.RESPONSE_PART), error
+assert state["model"].calls == [] and g.read_result(cfg["result_path"]) is None
 `);
   });
 });
@@ -1208,14 +1704,15 @@ def run(ctx):
       ],
     }));
     const evalItems = Array.from({ length: 3 }, (_, i) => ({ prompt: `Held-out prompt ${i}`, reference: `Reference ${i}` }));
+    const title = "Muse Muse's brief writer";
     datasetPages = {
       train: [
-        { items: train.slice(0, 3), nextPage: 1 },
-        { items: [...train.slice(3), { messages: "not a list" }], nextPage: null },
+        { items: train.slice(0, 3), nextPage: 1, title },
+        { items: [...train.slice(3), { messages: "not a list" }], nextPage: null, title },
       ],
       eval: [
-        { items: evalItems.slice(0, 2), nextPage: 1 },
-        { items: evalItems.slice(2), nextPage: null },
+        { items: evalItems.slice(0, 2), nextPage: 1, title },
+        { items: evalItems.slice(2), nextPage: null, title },
       ],
     };
     const cache = await mkdtemp(path.join(tmpdir(), "muse-cache-"));
@@ -1261,9 +1758,15 @@ def run(ctx):
       assert.equal(done.metrics.train_examples, 5, "the malformed conversation was skipped");
       const logs = evs.filter((e) => e.type === "log").map((e) => (e as { text: string }).text);
       assert.ok(
-        logs.some((t) => t.includes("5 training conversations, 3 eval prompts, answered under the dataset's system message")),
-        "the eval prompts are answered under the system message training saw",
+        logs.some((t) =>
+          t.includes(
+            `5 training conversations, 3 eval prompts. Student prompt short: training and both models' answers use the system message "You are ${title}." in place of the dataset's task prompt (9 characters)`,
+          ),
+        ),
+        "the short student prompt, made from the dataset's title on its pages",
       );
+      assert.equal(done.metrics.student_prompt, "short");
+      assert.equal(done.metrics.student_system, `You are ${title}.`);
       assert.equal(done.metrics.cached_weights, "no");
       assert.equal(done.metrics.dry_run, "yes");
       assert.equal(done.metrics.cache_used, "yes");

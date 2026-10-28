@@ -449,7 +449,7 @@ def deadline_of(job, now):
 
 class Context:
     """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, get_json, dataset,
-    eval."""
+    dataset_title, eval."""
 
     def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
@@ -462,6 +462,8 @@ class Context:
         self.work_dir = work_dir
         # The mounted cache filesystem for a recipe with usesCache, or None. It outlives the instance.
         self.cache_dir = cache_dir
+        # The dataset's title, from the pages dataset() reads: None before that, or when the platform sends none.
+        self.dataset_title = None
         self._platform = platform
         self._settings = settings
         self._activity = activity
@@ -646,7 +648,8 @@ class Context:
             raise RuntimeError("The platform answered GET " + safe_url(path) + " with a body that isn't JSON")
 
     def dataset(self, part):
-        """Every item of the job's dataset part ("train" or "eval"), paging GET /dataset until nextPage is null."""
+        """Every item of the job's dataset part ("train" or "eval"), paging GET /dataset until nextPage is null. Each
+        page's title is kept as dataset_title."""
         if part not in DATASET_PARTS:
             raise ValueError("dataset part must be train or eval, not " + repr(part))
         items = []
@@ -657,6 +660,8 @@ class Context:
             if not isinstance(got, list):
                 raise RuntimeError("Dataset page " + str(page) + " of " + part + " has no items list")
             items.extend(got)
+            if isinstance(body.get("title"), str):
+                self.dataset_title = body["title"]
             following = body.get("nextPage")
             if following is None:
                 say("dataset " + part + ": " + str(len(items)) + " items in " + str(page + 1) + " pages")

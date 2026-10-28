@@ -25,7 +25,7 @@ export const RECIPES: Recipe[] = [
     id: "glimmer-lora",
     title: "Muse Glimmer LoRA",
     description:
-      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster.",
+      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. Both answer directly, with no reasoning, as the tuned one was trained, and by default under a one-line system message rather than the dataset's task prompt, so the comparison shows what training taught. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster.",
     // Unsloth supports arm64 only through a from-source Docker build, so gpu_1x_gh200 (Grace, arm64) is left out.
     gpus: [
       { instanceType: "gpu_1x_h100_pcie", label: "1x H100 PCIe (80 GB)" },
@@ -69,6 +69,13 @@ export const RECIPES: Recipe[] = [
         min: 4,
         max: 128,
         help: "16 is Unsloth's starting point, 32 for harder tasks. lora_alpha is set to the same value.",
+      },
+      {
+        key: "studentPrompt",
+        label: "Student prompt",
+        kind: "text",
+        default: "short",
+        help: 'short or full. short: training and both models\' answers use one line, "You are" and the dataset\'s name (name it as a role, such as "Muse Muse\'s brief writer"), so the scores measure what training taught. full: the dataset\'s whole task prompt, as Muse Spark saw it, so they measure how well each model follows instructions.',
       },
       {
         key: "dryRun",
