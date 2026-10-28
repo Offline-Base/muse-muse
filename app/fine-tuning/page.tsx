@@ -22,6 +22,7 @@ import {
   activeJobCount,
   datasetProgress,
   lastSweepOkAt,
+  listAdapterOptions,
   listDatasets,
   listJobs,
   listReadyDatasets,
@@ -107,8 +108,8 @@ export default async function FineTuningPage({
   const show = parseShow(sp.show);
   const initialDatasetId = typeof sp.dataset === "string" ? sp.dataset : null;
   const now = new Date();
-  // Datasets and results load on their own, so a problem with them doesn't hide the jobs.
-  const [result, datasetsResult, blocked, results] = await Promise.all([
+  // Datasets, results and adapters load on their own, so a problem with them doesn't hide the jobs.
+  const [result, datasetsResult, blocked, results, adapters] = await Promise.all([
     safeQuery(async () => {
       const [rows, active, spentToday] = await Promise.all([listJobs(100), activeJobCount(), trainingSpendToday(now)]);
       return { jobs: rows.map((r) => toJobView(r, now)), active, spentToday };
@@ -116,6 +117,7 @@ export default async function FineTuningPage({
     safeQuery(() => loadDatasets(now.getTime())),
     datasetBlock(),
     safeQuery(loadResults),
+    safeQuery(() => listAdapterOptions()),
   ]);
   const recipes = RECIPES.map(toRecipeView);
   // The model cache bills every month on its own, outside every limit on this page.
@@ -187,6 +189,7 @@ export default async function FineTuningPage({
         sweepOff={sweepOff}
         datasets={datasets ? datasets.filter((d) => d.status !== "failed" && !isDatasetStalled(d, now.getTime())) : null}
         initialDatasetId={initialDatasetId}
+        adapters={adapters.ok ? adapters.data : null}
       />
 
       <section className="section" id="datasets" aria-labelledby="datasets-title">

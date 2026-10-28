@@ -8,19 +8,27 @@ import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db/client";
 import { hashToken } from "@/lib/gateway/tokens";
 import {
+  ADAPTER_RECIPE,
   capEventBody,
   EVALS_MAX,
   estimateCostUsd,
   evalSplit,
   instanceNameFor,
+  SERVE_ADAPTER_PARAM,
+  SERVE_RECIPE,
+  toLiveDemoView,
+  usableEndpoint,
   type DatasetHead,
+  type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
 import {
   isTrainTerminal,
   TRAIN_TERMINAL,
+  type AdapterOption,
   type EvalExample,
   type EvalSummary,
+  type LiveDemoView,
   type RecipeId,
   type TrainArtifact,
   type TrainCallback,
@@ -210,11 +218,18 @@ export async function markLaunched(
   return true;
 }
 
-/** Stores the instance's public IP when Lambda reports a new one. */
+/**
+ * Stores the instance's public IP when Lambda reports a new one. A serve job's endpoint takes the new IP too, so the
+ * live demo proxy only ever connects to the address Lambda reports.
+ */
 export async function setInstanceIp(jobId: string, ip: string | null): Promise<void> {
   await db()
     .update(jobs)
-    .set({ instanceIp: ip })
+    .set({
+      instanceIp: ip,
+      serveEndpoint: sql`case when ${jobs.serveEndpoint} is null then null
+        else jsonb_set(${jobs.serveEndpoint}, '{ip}', coalesce(to_jsonb(${ip}::text), 'null'::jsonb)) end`,
+    })
     .where(and(eq(jobs.id, jobId), sql`${jobs.instanceIp} is distinct from ${ip}`));
 }
 
@@ -235,7 +250,10 @@ function artifactOf(a: TrainArtifact): TrainArtifact {
  * Applies a callback from the job's runner to its row. Anything the runner sends shows it is alive: lastHeartbeatAt
  * moves, firstHeartbeatAt is set once, and "launching" or "booting" becomes "running". progress merges into the latest
  * progress, artifact is appended, done sets "succeeded" (with its summary) and failed sets "failed" (with its error),
- * both stamping finishedAt. Nothing changes for a job that already ended, or for an artifact once the job has
+ * both stamping finishedAt. serving (a glimmer-serve job's demo server is up; the events route takes it only from
+ * one) sets serve_endpoint: the IP Lambda reported for the instance, never one from the callback, with the callback's
+ * port and certificate fingerprint and `now`, replacing an earlier one (a restarted server has a new certificate).
+ * Nothing changes for a job that already ended, or for an artifact once the job has
  * ARTIFACTS_MAX of them (artifactLimit then). Status changes are logged; the callback itself is logged by the caller
  * with recordEvent. Null when the job doesn't exist.
  */
@@ -272,6 +290,18 @@ export async function applyCallback(
       break;
     case "failed":
       set = { ...alive, status: "failed", finishedAt: now, error: cb.error || "The job failed." };
+      break;
+    case "serving":
+      set = {
+        ...alive,
+        status: toRunning,
+        serveEndpoint: sql`jsonb_build_object(
+          'ip', ${jobs.instanceIp},
+          'port', ${cb.port}::int,
+          'certSha256', ${cb.certSha256}::text,
+          'startedAt', ${now.toISOString()}::text
+        )`,
+      };
       break;
     default:
       set = { ...alive, status: toRunning };
@@ -1032,4 +1062,183 @@ export async function getReadyDataset(datasetId: string): Promise<ReadyDatasetRo
     .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready")))
     .limit(1);
   return row ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The live demo (docs/TRAINING.md "Live demo"): adapters a glimmer-serve job can serve, the serve job of an adapter,
+// and the proxy's one-at-a-time slot.
+
+/** The latest "done" callback's metrics in a job's log, as SQL (jsonb), or null. */
+const doneMetricsOf = (jobId: SQL | typeof jobs.id) =>
+  sql`(select e.payload -> 'metrics' from training_events e where e.job_id = ${jobId} and e.type = 'done' order by e.id desc limit 1)`;
+
+/** Not a dry run (whose adapter is a stand-in), read from params as hasResults does. */
+const notDryRun = () =>
+  sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`;
+
+/**
+ * A job that might hold an adapter, with its latest done metrics, for adapterProblem. Null when the id is unknown or
+ * isn't a uuid.
+ */
+export async function getAdapterSource(jobId: string): Promise<{ job: TrainJobRow; metrics: DoneMetrics | null } | null> {
+  if (!isUuid(jobId)) return null;
+  const [row] = await db()
+    .select({ job: getTableColumns(jobs), metrics: sql<DoneMetrics | null>`${doneMetricsOf(jobs.id)}` })
+    .from(jobs)
+    .where(eq(jobs.id, jobId))
+    .limit(1);
+  if (!row) return null;
+  const metrics = row.metrics && typeof row.metrics === "object" && !Array.isArray(row.metrics) ? row.metrics : null;
+  return { job: row.job as TrainJobRow, metrics };
+}
+
+/**
+ * The adapters a glimmer-serve job can serve, newest first, for the "adapter" select: glimmer-lora jobs that
+ * succeeded, weren't dry runs, and whose done metrics say the adapter is on the cache filesystem under models/<id>
+ * (the same rule as adapterProblem), with the title of the dataset they trained on.
+ */
+export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+  const metrics = doneMetricsOf(jobs.id);
+  const rows = await db()
+    .select({
+      jobId: jobs.id,
+      title: jobs.title,
+      region: jobs.region,
+      finishedAt: jobs.finishedAt,
+      evalSummary: jobs.evalSummary,
+      datasetTitle: sql<string | null>`(select d.title from training_datasets d where d.id::text = ${jobs.params}->>'datasetId')`,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, ADAPTER_RECIPE),
+        eq(jobs.status, "succeeded"),
+        notDryRun(),
+        sql`${metrics}->>'cache_used' = 'yes'`,
+        sql`rtrim(${metrics}->>'adapter_dir', '/') like '%/models/' || ${jobs.id}::text`,
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(n);
+  return rows.map((r) => ({
+    jobId: r.jobId,
+    title: r.title,
+    region: r.region,
+    datasetTitle: r.datasetTitle ?? null,
+    finishedAt: r.finishedAt ? r.finishedAt.toISOString() : null,
+    evalSummary: r.evalSummary ?? null,
+  }));
+}
+
+/** glimmer-serve jobs for an adapter that haven't ended and that nobody asked to stop. */
+const openServeJobsOf = (adapterJobId: string) =>
+  and(
+    eq(jobs.recipe, SERVE_RECIPE),
+    notTerminal(),
+    eq(jobs.stopRequested, false),
+    sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`,
+  );
+
+/** The newest glimmer-serve job for an adapter that hasn't ended and that nobody asked to stop, as a full row. */
+async function openServeJob(adapterJobId: string): Promise<TrainJobRow | null> {
+  if (!isUuid(adapterJobId)) return null;
+  const [row] = await db().select().from(jobs).where(openServeJobsOf(adapterJobId)).orderBy(desc(jobs.createdAt)).limit(1);
+  return row ?? null;
+}
+
+/**
+ * For two live demos of one adapter created at the same moment: the open serve job for that adapter (not ended, no
+ * stop asked for) created before serve job `jobId`, or null when `jobId` is the first. "Before" is by (created_at, id)
+ * against `jobId`'s own row in the database, so a tie still has one winner. The jobs route asks it right after
+ * creating a serve job, and only the later one backs out, so one demo always survives.
+ */
+export async function earlierOpenServeJob(adapterJobId: string, jobId: string): Promise<{ id: string } | null> {
+  if (!isUuid(adapterJobId) || !isUuid(jobId)) return null;
+  const [row] = await db()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        openServeJobsOf(adapterJobId),
+        sql`${jobs.id} <> ${jobId}::uuid`,
+        sql`(${jobs.createdAt}, ${jobs.id}) < (select s.created_at, s.id from training_jobs s where s.id = ${jobId}::uuid)`,
+      ),
+    )
+    .orderBy(asc(jobs.createdAt), asc(jobs.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * The live demo of an adapter for the public result page, or null when no serve job for it is open (toLiveDemoView:
+ * "starting" or "live", the minutes and when it is expected to stop). Never the IP, the key or the fingerprint.
+ */
+export async function getLiveDemo(adapterJobId: string, now: Date = new Date()): Promise<LiveDemoView | null> {
+  const row = await openServeJob(adapterJobId);
+  return row ? toLiveDemoView(row, now) : null;
+}
+
+/** What the live demo proxy needs to call a serve job's demo server. Platform only: never sent to a browser. */
+export interface ServeTargetRow {
+  jobId: string;
+  /** For serveKeyFor. */
+  tokenHash: string;
+  ip: string;
+  port: number;
+  certSha256: string;
+}
+
+/**
+ * The demo server of an adapter's live serve job, or null when none is live: the newest open serve job for it, running,
+ * with a token and an endpoint the proxy can use (an IP from Lambda, the demo port and a fingerprint), whose serving
+ * time hasn't run out.
+ */
+export async function liveServeTarget(adapterJobId: string, now: Date = new Date()): Promise<ServeTargetRow | null> {
+  const row = await openServeJob(adapterJobId);
+  if (!row || !row.tokenHash || toLiveDemoView(row, now)?.state !== "live") return null;
+  const endpoint = usableEndpoint(row.serveEndpoint);
+  if (!endpoint) return null;
+  return { jobId: row.id, tokenHash: row.tokenHash, ip: endpoint.ip, port: endpoint.port, certSha256: endpoint.certSha256 };
+}
+
+/**
+ * The proxy's slot window. A call holds its slot in the window it started in, and the slot counts in that window and
+ * the next, so a call (120 s at most) never outlives it, and a slot a crashed call never gave back stops counting
+ * within two windows.
+ */
+export const DEMO_SLOT_MS = 3 * 60_000;
+
+/**
+ * Takes the one slot of a serve job's demo server, so the proxy sends it one prompt at a time, and returns the window
+ * to give it back in, or null when another call holds it. One statement: the upsert locks the window's row, so two
+ * callers can't both take it. Kept in rate_limits under "lab-try-busy:<job id>".
+ */
+export async function takeDemoSlot(serveJobId: string, now: Date = new Date()): Promise<Date | null> {
+  if (!isUuid(serveJobId)) return null;
+  const key = `lab-try-busy:${serveJobId}`;
+  const window = new Date(Math.floor(now.getTime() / DEMO_SLOT_MS) * DEMO_SLOT_MS);
+  const previous = new Date(window.getTime() - DEMO_SLOT_MS);
+  const held = sql`coalesce((select p.count from rate_limits p where p.key = ${key} and p.window_start = ${previous.toISOString()}::timestamptz), 0)`;
+  const limits = schema.rateLimits;
+  const rows = await db()
+    .insert(limits)
+    .select(sql`select ${key}, ${window.toISOString()}::timestamptz, 1 where ${held} < 1`)
+    .onConflictDoUpdate({
+      target: [limits.key, limits.windowStart],
+      set: { count: sql`${limits.count} + 1` },
+      setWhere: sql`${limits.count} + ${held} < 1`,
+    })
+    .returning({ count: limits.count });
+  return rows.length ? window : null;
+}
+
+/** Gives back a slot takeDemoSlot handed out for this window. */
+export async function releaseDemoSlot(serveJobId: string, window: Date): Promise<void> {
+  if (!isUuid(serveJobId)) return;
+  const limits = schema.rateLimits;
+  await db()
+    .update(limits)
+    .set({ count: sql`greatest(${limits.count} - 1, 0)` })
+    .where(and(eq(limits.key, `lab-try-busy:${serveJobId}`), eq(limits.windowStart, window)));
 }

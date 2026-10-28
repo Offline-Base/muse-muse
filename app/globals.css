@@ -4132,3 +4132,95 @@ a.dash-card:hover {
   align-self: stretch;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
 }
+
+/* Live demo: Try it live on a trained adapter's page, and Start a live demo (docs/TRAINING.md "Live demo") */
+
+.lab-try {
+  gap: 14px;
+  scroll-margin-top: 20px;
+}
+
+.lab-try-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.lab-try-left {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.lab-try-lead {
+  max-width: 760px;
+  color: var(--fg-2);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.lab-try-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.train-input.lab-try-input {
+  min-height: 88px;
+}
+
+.lab-try-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.lab-try-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.lab-try-pair {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 760px) {
+  .lab-try-pair {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.lab-try-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.lab-try-tuned {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+}
+
+.lab-try-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.lab-try-start .train-field {
+  flex: 1 1 220px;
+  max-width: 320px;
+}

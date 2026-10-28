@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from
 import { Icon } from "@/components/icons";
 import {
   NOT_PUBLIC_TEXT,
+  adapterOptionText,
   autoCostGpu,
   autoGpu,
   autoTimeGpu,
@@ -18,13 +19,14 @@ import {
   maxCostUsd,
   pricePerHour,
   runTimeHint,
+  serveTimeHint,
   startErrorText,
   sweepOffText,
   type GpuRow,
 } from "@/components/train/format";
 import { usd } from "@/lib/format";
-import { MIN_MAX_MINUTES, MIN_MAX_USD } from "@/lib/train/logic";
-import type { DatasetView, GpuOption, RecipeParamField, RecipeView, TrainLimits } from "@/lib/train/types";
+import { isServeRecipe, MIN_MAX_MINUTES, MIN_MAX_USD, recipeDefaults, SERVE_MINUTES_PARAM } from "@/lib/train/logic";
+import type { AdapterOption, DatasetView, GpuOption, RecipeParamField, RecipeView, TrainLimits } from "@/lib/train/types";
 
 export interface NewJobCardProps {
   recipes: RecipeView[];
@@ -48,6 +50,11 @@ export interface NewJobCardProps {
   datasets?: DatasetView[] | null;
   /** A dataset to start with (/fine-tuning?dataset=<id>): the first recipe that takes a dataset is picked with it. */
   initialDatasetId?: string | null;
+  /**
+   * Trained adapters for a recipe param of kind "adapter" (glimmer-serve), newest first (listAdapterOptions). Null when
+   * they couldn't be loaded.
+   */
+  adapters?: AdapterOption[] | null;
 }
 
 type GpuState =
@@ -73,17 +80,35 @@ function gpuOptionsFrom(data: unknown): GpuOption[] {
   return Array.isArray(list) ? list.filter(isGpuOption) : [];
 }
 
-/** The form's starting values: each param's default, and for a dataset param `prefer` when it is ready, else the newest ready one. */
-function paramDefaults(recipe: RecipeView | undefined, ready: DatasetView[], prefer?: string | null): Record<string, string> {
+/**
+ * The form's starting values: each param's default, for a dataset param `prefer` when it is ready, else the newest ready
+ * one, and for an adapter param the newest trained adapter.
+ */
+function paramDefaults(
+  recipe: RecipeView | undefined,
+  ready: DatasetView[],
+  adapters: AdapterOption[],
+  prefer?: string | null,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const f of recipe?.params ?? []) {
     if (f.kind === "dataset") out[f.key] = (prefer && ready.some((d) => d.id === prefer) ? prefer : ready[0]?.id) ?? "";
+    else if (f.kind === "adapter") out[f.key] = adapters[0]?.jobId ?? "";
     else out[f.key] = f.default === undefined ? "" : String(f.default);
   }
   return out;
 }
 
 const takesDataset = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "dataset"));
+const takesAdapter = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "adapter"));
+
+/**
+ * The limits a job of this recipe gets when it asks for none, under the ceilings. A glimmer-serve job's follow its
+ * minutes param (recipeDefaults), as the jobs route works them out.
+ */
+function startLimits(recipe: RecipeView, values: Record<string, string>, ceilings: TrainLimits): TrainLimits {
+  return limitDefaults(recipeDefaults(recipe, paramsBody(recipe.params, values)), ceilings);
+}
 
 /** Form values as POST /api/train/jobs takes them. Blank params are left out so the recipe's default applies. */
 function paramsBody(fields: RecipeParamField[], values: Record<string, string>): Record<string, string | number> {
@@ -111,6 +136,7 @@ export function NewJobCard({
   sweepOff = null,
   datasets = [],
   initialDatasetId = null,
+  adapters = [],
 }: NewJobCardProps) {
   const router = useRouter();
   const id = useId();
@@ -120,18 +146,25 @@ export function NewJobCard({
   const recipe = recipes.find((r) => r.id === recipeId) ?? recipes[0];
   // An admin may ask for up to the platform ceilings; the form starts at the recipe's defaults under them.
   const bounds = useMemo(() => limitBounds(ceilings), [ceilings]);
-  const start0 = useMemo(
-    () => (recipe ? limitDefaults(recipe, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
-    [recipe, ceilings],
-  );
 
   const ready = useMemo(() => (datasets ?? []).filter((d) => d.status === "ready"), [datasets]);
   const writing = useMemo(() => (datasets ?? []).filter((d) => d.status === "generating"), [datasets]);
+  const trained = useMemo(() => adapters ?? [], [adapters]);
   const needsDataset = takesDataset(recipe);
+  const needsAdapter = takesAdapter(recipe);
   const usesCache = Boolean(recipe?.usesCache);
 
   const [title, setTitle] = useState("");
-  const [params, setParams] = useState<Record<string, string>>(() => paramDefaults(recipe, ready, initialDatasetId));
+  const [params, setParams] = useState<Record<string, string>>(() =>
+    paramDefaults(recipe, ready, trained, initialDatasetId),
+  );
+  const start0 = useMemo(
+    () => (recipe ? startLimits(recipe, params, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
+    [recipe, params, ceilings],
+  );
+  // A glimmer-serve job launches only in its adapter's region, so only GPUs free there count.
+  const adapterKey = recipe?.params.find((f) => f.kind === "adapter")?.key;
+  const pinnedRegion = adapterKey ? (trained.find((a) => a.jobId === params[adapterKey])?.region ?? null) : null;
   const [gpu, setGpu] = useState("");
   const [minutes, setMinutes] = useState(String(start0.maxMinutes));
   const [dollars, setDollars] = useState(start0.maxUsd.toFixed(2));
@@ -167,8 +200,8 @@ export function NewJobCard({
   }, [fetchGpus]);
 
   const rows = useMemo(
-    () => (recipe && gpus.state === "ready" ? gpuRows(recipe, gpus.options) : []),
-    [recipe, gpus],
+    () => (recipe && gpus.state === "ready" ? gpuRows(recipe, gpus.options, pinnedRegion) : []),
+    [recipe, gpus, pinnedRegion],
   );
   const auto = autoGpu(rows);
   const chosen = gpu ? (rows.find((r) => r.instanceType === gpu) ?? null) : auto;
@@ -200,9 +233,10 @@ export function NewJobCard({
   function pickRecipe(next: string) {
     const r = recipes.find((x) => x.id === next);
     if (!r) return;
-    const b = limitDefaults(r, ceilings);
+    const values = paramDefaults(r, ready, trained);
+    const b = startLimits(r, values, ceilings);
     setRecipeId(r.id);
-    setParams(paramDefaults(r, ready));
+    setParams(values);
     setGpu("");
     setGpuNote(null);
     setMinutes(String(b.maxMinutes));
@@ -239,7 +273,24 @@ export function NewJobCard({
     : gpu
       ? (timeRows.find((r) => r.instanceType === gpu) ?? null)
       : autoTimeGpu(recipe, timeRows, usesCache);
-  const runHint = recipe ? runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache) : null;
+  const serving = Boolean(recipe && isServeRecipe(recipe.id));
+  // A demo's time on the GPU is its minutes plus the boot, so the priciest GPU it may get leaves it the least.
+  const runHint = !recipe
+    ? null
+    : serving
+      ? serveTimeHint(recipe, params, costRow, limits, !gpu)
+      : runTimeHint(recipe, params, timeRow, limits, !gpu && usesCache);
+
+  /** Sets a param; a demo's minutes also move the limits to what that many minutes need. */
+  function setParam(key: string, value: string) {
+    const next = { ...params, [key]: value };
+    setParams(next);
+    if (recipe && serving && key === SERVE_MINUTES_PARAM) {
+      const b = startLimits(recipe, next, ceilings);
+      setMinutes(String(b.maxMinutes));
+      setDollars(b.maxUsd.toFixed(2));
+    }
+  }
 
   const noneFree = gpus.state === "ready" && rows.length > 0 && !auto;
   const blocked = !platformPublic
@@ -250,11 +301,17 @@ export function NewJobCard({
         ? datasets === null
           ? "Couldn't load the datasets, so this recipe can't start. Reload the page to try again."
           : "This recipe trains on a dataset, and none is ready yet. Make one under Datasets first."
-        : gpus.state === "error" && gpus.blocking
-          ? gpus.message
-          : noneFree
-            ? "None of this recipe's GPUs is free right now, so a job can't start. Check again in a few minutes."
-            : null;
+        : needsAdapter && !trained.length
+          ? adapters === null
+            ? "Couldn't load the trained adapters, so this recipe can't start. Reload the page to try again."
+            : "This recipe serves a trained adapter, and none is on a model cache yet. Train one with Muse Glimmer LoRA first."
+          : gpus.state === "error" && gpus.blocking
+            ? gpus.message
+            : noneFree
+              ? pinnedRegion
+                ? `None of this recipe's GPUs is free in ${pinnedRegion}, where the adapter's model cache is, so a demo can't start. Check again in a few minutes.`
+                : "None of this recipe's GPUs is free right now, so a job can't start. Check again in a few minutes."
+              : null;
 
   function check(): Record<string, string> {
     const out: Record<string, string> = {};
@@ -271,6 +328,14 @@ export function NewJobCard({
           if (f.required) out[`p:${f.key}`] = "Pick a dataset. Make one under Datasets if none is ready.";
         } else if (!ready.some((d) => d.id === raw)) {
           out[`p:${f.key}`] = "That dataset isn't ready. Pick another one.";
+        }
+        continue;
+      }
+      if (f.kind === "adapter") {
+        if (!raw) {
+          if (f.required) out[`p:${f.key}`] = "Pick a trained adapter. Train one with Muse Glimmer LoRA if none is listed.";
+        } else if (!trained.some((a) => a.jobId === raw)) {
+          out[`p:${f.key}`] = "That adapter can't be served. Pick another one.";
         }
         continue;
       }
@@ -359,10 +424,14 @@ export function NewJobCard({
       : gpus.state === "error"
         ? gpus.message
         : noneFree
-          ? "None of these GPUs is free right now."
-          : usesCache
-            ? "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order, in a region that already holds the model cache when one has room, so the model doesn't download again."
-            : "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order.";
+          ? pinnedRegion
+            ? `None of these GPUs is free in ${pinnedRegion} right now.`
+            : "None of these GPUs is free right now."
+          : pinnedRegion
+            ? `Lambda's prices per hour. A live demo runs only in ${pinnedRegion}, where its adapter's model cache is, so Auto takes the first GPU free there in the recipe's order.`
+            : usesCache
+              ? "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order, in a region that already holds the model cache when one has room, so the model doesn't download again."
+              : "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order.";
 
   const fieldProps = (key: string, helpId?: string) => ({
     "aria-invalid": invalid[key] ? true : undefined,
@@ -479,6 +548,40 @@ export function NewJobCard({
                 </div>
               );
             }
+            if (f.kind === "adapter") {
+              const helpId = `${inputId}-help`;
+              return (
+                <div className="train-field" key={f.key}>
+                  <label className="train-label" htmlFor={inputId}>
+                    {f.label}
+                  </label>
+                  <select
+                    id={inputId}
+                    className="train-select"
+                    value={params[f.key] ?? ""}
+                    onChange={(e) => setParam(f.key, e.target.value)}
+                    required={Boolean(f.required)}
+                    disabled={busy || !trained.length}
+                    {...fieldProps(key, helpId)}
+                  >
+                    {trained.length ? null : (
+                      <option value="">{adapters === null ? "Couldn't load the adapters" : "No trained adapter yet"}</option>
+                    )}
+                    {trained.map((a) => (
+                      <option key={a.jobId} value={a.jobId}>
+                        {adapterOptionText(a)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="train-help" id={helpId}>
+                    {trained.length
+                      ? f.help
+                      : "None yet. A Muse Glimmer LoRA job that succeeds saves its adapter on the model cache, and shows up here."}
+                  </p>
+                  {fieldError(key)}
+                </div>
+              );
+            }
             const helpId = f.help ? `${inputId}-help` : undefined;
             return (
               <div className="train-field" key={f.key}>
@@ -499,7 +602,7 @@ export function NewJobCard({
                   required={Boolean(f.required && f.default === undefined)}
                   autoComplete="off"
                   spellCheck={f.kind === "text" ? undefined : false}
-                  onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
+                  onChange={(e) => setParam(f.key, e.target.value)}
                   disabled={busy}
                   {...fieldProps(key, helpId)}
                 />
@@ -541,11 +644,13 @@ export function NewJobCard({
               disabled={busy}
             >
               <option value="">
-                {usesCache
-                  ? "Auto: a free GPU near the model cache"
-                  : auto && auto.priceCentsPerHour !== null
-                    ? `Auto: ${auto.label} · ${pricePerHour(auto.priceCentsPerHour)}`
-                    : "Auto: the first free GPU"}
+                {pinnedRegion
+                  ? `Auto: a free GPU in ${pinnedRegion}, with the adapter`
+                  : usesCache
+                    ? "Auto: a free GPU near the model cache"
+                    : auto && auto.priceCentsPerHour !== null
+                      ? `Auto: ${auto.label} · ${pricePerHour(auto.priceCentsPerHour)}`
+                      : "Auto: the first free GPU"}
               </option>
               {gpus.state === "ready"
                 ? rows.map((r) => (

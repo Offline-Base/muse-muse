@@ -19,6 +19,9 @@ const at = (path: string) => new URL(path, import.meta.url).href;
 
 const JOB = "8f1d2c3b-0000-4000-8000-000000000001";
 const DS = "1b2c3d4e-0000-4000-8000-000000000002";
+/** A glimmer-serve job serving JOB's adapter, and its pinned certificate: neither may reach a public page. */
+const SERVE = "5e7e5e7e-0000-4000-8000-00000000000a";
+const CERT = "c3".repeat(32);
 const t0 = Date.parse("2026-10-27T14:00:00.000Z");
 const NOT_FOUND = "NEXT_HTTP_ERROR_FALLBACK;404";
 
@@ -33,7 +36,7 @@ const SECRETS = {
   error: "Traceback in /home/ubuntu/.cache/secret-path",
   summary: "adapter at /lambda/nfs/muse-muse-cache-us-secret-1/models",
 };
-const SECRET_TEXT = /i-0a1b2c3d4e5f6789|203\.0\.113\.9|mm-train-|us-secret-1|hash-of-the-job-token|wrun_secret|secret-path|lambda\/nfs|token=abc|blob\.vercel-storage/;
+const SECRET_TEXT = /i-0a1b2c3d4e5f6789|203\.0\.113\.9|mm-train-|us-secret-1|hash-of-the-job-token|wrun_secret|secret-path|lambda\/nfs|token=abc|blob\.vercel-storage|5e7e5e7e|c3c3c3c3|serveKey|8443/;
 const CONTROLS = /<form|<button[^>]*type="submit"|Stop job|Try stop again|Shut down GPU|New job|New dataset|Train on it|href="#new-job"|href="#new-dataset"/;
 
 const summary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 4.5, avgTunedScore: 7.5, judgeCostUsd: 0.004 };
@@ -122,6 +125,12 @@ let dataset: Record<string, unknown> | null = null;
 /** Rows the list reads answer besides `job` and `dataset`: ones the real SQL would leave out. */
 let otherJobs: Array<Record<string, unknown>> = [];
 let otherDatasets: Array<Record<string, unknown>> = [];
+/** What getLiveDemo answers for JOB (a LiveDemoView), or null; `liveDemoFails` makes it throw. */
+let liveDemo: Record<string, unknown> | null = null;
+let liveDemoFails = false;
+/** What getAdapterSource answers for JOB: the job and its done metrics. */
+let adapterSource: { job: Record<string, unknown>; metrics: Record<string, unknown> | null } | null = null;
+let lastSweep: Date | null = null;
 let calls: string[] = [];
 const savedEnv = { ...process.env };
 
@@ -156,8 +165,15 @@ const fakeStore = {
     total: sample[part].length,
     items: sample[part].slice(offset, offset + limit),
   })),
+  // The live demo. getLiveDemo answers with more than a LiveDemoView, as a leaky store would, so the page must map it.
+  getLiveDemo: fake("getLiveDemo", (id: string) => {
+    if (liveDemoFails) throw new Error("the database is down");
+    return liveDemo && id === JOB ? { ...liveDemo, ip: SECRETS.instanceIp, certSha256: CERT, tokenHash: SECRETS.tokenHash } : null;
+  }),
+  getAdapterSource: fake("getAdapterSource", (id: string) => (adapterSource && id === JOB ? adapterSource : null)),
+  listAdapterOptions: fake("listAdapterOptions", () => []),
   // Admin reads.
-  getJob: fake("getJob", (id: string) => (job && job.id === id ? job : null)),
+  getJob: fake("getJob", (id: string) => [job, ...otherJobs].find((j) => j && j.id === id) ?? null),
   listEvents: fake("listEvents", () => resultEvents),
   getDataset: fake("getDataset", (id: string) => (dataset && dataset.id === id ? dataset : null)),
   listJobs: fake("listJobs", () => (job ? [job] : [])),
@@ -165,12 +181,12 @@ const fakeStore = {
   datasetProgress: fake("datasetProgress", () => null),
   activeJobCount: fake("activeJobCount", () => 0),
   trainingSpendToday: fake("trainingSpendToday", () => 0),
-  lastSweepOkAt: fake("lastSweepOkAt", () => null),
+  lastSweepOkAt: fake("lastSweepOkAt", () => lastSweep),
   verifyJobToken: fake("verifyJobToken", () => false),
 };
 
 /** Reads that only the admin pages may make. */
-const ADMIN_READS = ["getJob", "listEvents", "getDataset", "listJobs", "listDatasets", "datasetProgress", "activeJobCount", "trainingSpendToday", "lastSweepOkAt"];
+const ADMIN_READS = ["getJob", "listEvents", "getDataset", "listJobs", "listDatasets", "datasetProgress", "activeJobCount", "trainingSpendToday", "lastSweepOkAt", "getAdapterSource", "listAdapterOptions"];
 
 type Page = (props: { params?: Promise<Record<string, string>>; searchParams?: Promise<Record<string, string>> }) => Promise<ReactNode>;
 let render: (node: ReactNode) => string;
@@ -241,6 +257,10 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
     dataset = datasetRow();
     otherJobs = [jobRow({ id: "8f1d2c3b-0000-4000-8000-000000000009", title: "Still running", status: "running", terminatedAt: null })];
     otherDatasets = [datasetRow({ id: "a", title: "Still writing", status: "generating" })];
+    liveDemo = null;
+    liveDemoFails = false;
+    adapterSource = null;
+    lastSweep = null;
     calls = [];
   });
 
@@ -292,8 +312,50 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002">Bakery helper/);
       assert.doesNotMatch(html, CONTROLS);
       assert.doesNotMatch(html, /<button|Event log|Region|Instance|Last heartbeat|Dry run|adapter\.tar|Traceback|\/api\/train/);
-      assert.deepEqual(calls.sort(), ["getReadyDataset", "getResultJob", "listResultEvents"]);
+      assert.doesNotMatch(html, /Try it live|Live demo|<textarea/, "no live demo box while none runs");
+      assert.deepEqual(calls.sort(), ["getLiveDemo", "getReadyDataset", "getResultJob", "listResultEvents"]);
       assert.equal(calls.some((c) => ADMIN_READS.includes(c)), false);
+    });
+
+    it("/fine-tuning/{id} shows Try it live while its adapter's demo serves, with nothing about the GPU", async () => {
+      liveDemo = { serveJobId: SERVE, state: "live", minutes: 30, endsAt: new Date(Date.now() + 20 * 60_000).toISOString() };
+      const html = await openJob();
+      clean(html);
+      assert.match(html, /<h2[^>]*>Try it live<\/h2>/);
+      assert.match(html, /class="pill pill-live"><span class="pill-dot" aria-hidden="true"><\/span>Live<\/span>/);
+      assert.match(html, /(19|20) minutes left/);
+      assert.match(html, /<label[^>]*for="[^"]+"[^>]*>Your app idea<\/label><textarea[^>]*maxLength="600"/);
+      assert.match(html, /placeholder="A menu board for my bakery/);
+      assert.match(html, /Ask both models/);
+      assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>/, "the results stay");
+      assert.ok(html.indexOf("Try it live") < html.indexOf("The run"), "the box comes first");
+      assert.doesNotMatch(html, /Stop job|Try stop again|Shut down GPU|Start a live demo|Open the demo|\/api\/train|\/fine-tuning\/5e7e/);
+      assert.deepEqual(calls.sort(), ["getLiveDemo", "getReadyDataset", "getResultJob", "listResultEvents"]);
+    });
+
+    it("/fine-tuning/{id} says a demo is starting, with Ask held until it is live", async () => {
+      liveDemo = { serveJobId: SERVE, state: "starting", minutes: 45, endsAt: null };
+      const html = await openJob();
+      clean(html);
+      assert.match(html, /Try it live/);
+      assert.match(html, />Starting<\/span>/);
+      assert.match(html, /A live demo is starting\. The GPU boots and loads the model, which takes up to about 15 minutes, then this box opens for 45 minutes\./);
+      assert.match(html, /<button type="submit" class="btn btn-primary" disabled/);
+      assert.doesNotMatch(html, /minutes? left/);
+    });
+
+    it("/fine-tuning/{id} keeps the results when the live demo can't be read", async () => {
+      liveDemoFails = true;
+      const errors = mock.method(console, "error", () => {});
+      try {
+        const html = await openJob();
+        clean(html);
+        assert.match(html, /Tuned Glimmer beat base/);
+        assert.doesNotMatch(html, /Try it live/);
+        assert.equal(errors.mock.callCount(), 1);
+      } finally {
+        errors.mock.restore();
+      }
     });
 
     for (const [name, over] of [
@@ -366,6 +428,85 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.match(html, /203\.0\.113\.9/, "admins still see the IP");
       assert.ok(calls.includes("getJob"));
       assert.equal(calls.includes("getResultJob"), false);
+    });
+
+    it("/fine-tuning/{id} offers Start a live demo for a trained adapter, held while the sweep can't run", async () => {
+      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}` } };
+      const html = await openJob();
+      assert.match(html, /<h2[^>]*>Live demo<\/h2>/);
+      assert.match(html, /Anyone with this page&#x27;s link can then type an app idea/);
+      assert.match(html, /<label[^>]*for="[^"]+"[^>]*>Minutes live<\/label><select/);
+      assert.match(html, /<option value="30" selected="">30 minutes<\/option>/);
+      assert.match(html, /<option value="120" disabled="">120 minutes \(needs 135, over the 120-minute ceiling\)<\/option>/);
+      assert.match(html, /The job stops at 45 minutes or \$3\.29, whichever comes first/);
+      assert.match(html, /runs on a local address|CRON_SECRET isn&#x27;t set/);
+      assert.match(html, /<button type="submit" class="btn btn-primary" disabled[^>]*>.*Start a live demo/);
+      assert.doesNotMatch(html, /Try it live/);
+      assert.ok(calls.includes("getLiveDemo") && calls.includes("getAdapterSource"));
+    });
+
+    it("/fine-tuning/{id} lets Start a live demo go once the platform is public and the sweep runs", async () => {
+      process.env.PLATFORM_URL = "https://muse-muse.example";
+      process.env.CRON_SECRET = "test-cron";
+      process.env.VERCEL_ENV = "production";
+      lastSweep = new Date();
+      adapterSource = { job: jobRow(), metrics: { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${JOB}/` } };
+      try {
+        const html = await openJob();
+        assert.match(html, /Start a live demo/);
+        assert.doesNotMatch(html, /<button type="submit" class="btn btn-primary" disabled/);
+        assert.doesNotMatch(html, /local address|CRON_SECRET|last 15 minutes/);
+      } finally {
+        delete process.env.PLATFORM_URL;
+        delete process.env.CRON_SECRET;
+        delete process.env.VERCEL_ENV;
+      }
+    });
+
+    it("/fine-tuning/{id} offers no live demo for an adapter that isn't on a model cache", async () => {
+      adapterSource = { job: jobRow(), metrics: { cache_used: "no", adapter_dir: "/home/ubuntu/work/adapter" } };
+      const html = await openJob();
+      assert.doesNotMatch(html, /Live demo|Try it live|Start a live demo/);
+      job = jobRow({ status: "failed" });
+      adapterSource = { job, metrics: { cache_used: "yes", adapter_dir: `/x/models/${JOB}` } };
+      calls = [];
+      assert.doesNotMatch(await openJob(), /Live demo|Try it live/);
+      assert.equal(calls.includes("getLiveDemo"), false, "a job that didn't succeed has no adapter to look for");
+    });
+
+    it("/fine-tuning/{id} shows an admin the live demo with a link to its serve job", async () => {
+      liveDemo = { serveJobId: SERVE, state: "live", minutes: 30, endsAt: new Date(Date.now() + 10 * 60_000).toISOString() };
+      const html = await openJob();
+      assert.match(html, /Try it live/);
+      assert.match(html, /href="\/fine-tuning\/5e7e5e7e-0000-4000-8000-00000000000a">Open the demo&#x27;s job<\/a>/);
+      assert.doesNotMatch(html, /Start a live demo/);
+      assert.equal(calls.includes("getAdapterSource"), false);
+    });
+
+    it("/fine-tuning/{id} of a serve job shows its serving state and the adapter it serves", async () => {
+      const started = new Date(Date.now() - 5 * 60_000);
+      job = jobRow({
+        id: SERVE,
+        recipe: "glimmer-serve",
+        title: "Live demo: Bakery LoRA",
+        status: "running",
+        params: { adapterJobId: JOB, minutes: 30 },
+        maxMinutes: 45,
+        maxUsd: 3.29,
+        launchedAt: new Date(started.getTime() - 8 * 60_000),
+        finishedAt: null,
+        terminatedAt: null,
+        evalSummary: null,
+        serveEndpoint: { ip: SECRETS.instanceIp, port: 8443, certSha256: CERT, startedAt: started.toISOString() },
+      });
+      otherJobs = [jobRow()];
+      const html = await openJob(SERVE);
+      assert.match(html, /<h3[^>]*>Live demo<\/h3><p class="panel-note">Serving since \d\d:\d\d UTC, until about \d\d:\d\d UTC \((24|25) minutes left\)\./);
+      assert.match(html, /The Try it live box is on <a href="\/fine-tuning\/8f1d2c3b-0000-4000-8000-000000000001">Bakery LoRA<\/a>/);
+      assert.match(html, /<dt>Adapter<\/dt><dd><a href="\/fine-tuning\/8f1d2c3b-0000-4000-8000-000000000001">Bakery LoRA<\/a><\/dd>/);
+      assert.match(html, /Serving the live demo/);
+      assert.doesNotMatch(html, new RegExp(CERT), "the page never shows the whole certificate");
+      assert.equal(calls.includes("getLiveDemo"), false, "a serve job has no live demo of its own");
     });
 
     it("/fine-tuning/datasets/{id} keeps Train on it", async () => {

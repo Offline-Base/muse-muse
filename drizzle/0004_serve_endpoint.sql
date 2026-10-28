@@ -1,0 +1,1 @@
+ALTER TABLE "training_jobs" ADD COLUMN "serve_endpoint" jsonb;

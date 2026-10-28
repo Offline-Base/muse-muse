@@ -28,6 +28,11 @@ export interface UserDataInput {
   deadlineEpoch?: number;
   /** Where the recipe's cache filesystem is mounted on the instance, for a recipe with usesCache. */
   cacheDir?: string;
+  /**
+   * A glimmer-serve job's serving key (lib/train/serve.ts serveKeyFor), which its demo server requires as "Authorization:
+   * Bearer <serveKey>". Like the token it goes only into job.json, and only for that recipe.
+   */
+  serveKey?: string;
 }
 
 /** The deadline a launch stamped `now` gives the runner: `minutes` later, rounded down to the second. */
@@ -59,8 +64,8 @@ function b64(text: string): string {
 /**
  * The #cloud-config user data for a job's instance: job.json (0600, the only place the job token goes), runner.py and
  * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. job.json always has
- * deadlineEpoch, and cacheDir only when one is given. Nothing from the platform's env goes in. Throws for an unknown
- * recipe or a document over 1 MB.
+ * deadlineEpoch, and cacheDir and serveKey only when given. Nothing from the platform's env goes in. Throws for an
+ * unknown recipe or a document over 1 MB.
  */
 export function buildUserData(input: UserDataInput): string {
   const recipe = typeof input.recipe === "string" ? recipeById(input.recipe) : input.recipe;
@@ -69,6 +74,7 @@ export function buildUserData(input: UserDataInput): string {
     jobId: input.jobId,
     callbackBase: input.callbackBase,
     token: input.token,
+    ...(input.serveKey ? { serveKey: input.serveKey } : {}),
     params: input.params,
     maxMinutes: input.maxMinutes,
     recipe: recipe.id,

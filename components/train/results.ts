@@ -1,6 +1,6 @@
 import { gpuName } from "@/components/train/format";
 import type { ReadyDatasetRow, ResultJobRow } from "@/lib/train/store";
-import type { DatasetView, EvalSummary, RecipeView } from "@/lib/train/types";
+import type { DatasetView, EvalSummary, LiveDemoView, RecipeView } from "@/lib/train/types";
 
 /**
  * The Lab results: what anyone may see of fine-tuning at /fine-tuning (docs/TRAINING.md "Lab results"). Judged jobs and
@@ -127,6 +127,26 @@ export function toReadyDatasetView(row: ReadyDatasetRow): DatasetView {
     error: null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+  };
+}
+
+/**
+ * A live demo as the public result page hands it to the browser: whether it is starting or live, its minutes and when
+ * it is expected to stop. Never the serve job's id, and never anything about its GPU (IP, key or certificate).
+ */
+export interface PublicLiveDemo {
+  state: "starting" | "live";
+  minutes: number;
+  endsAt: string | null;
+}
+
+/** getLiveDemo's answer mapped field by field for the public page, or null when there is no demo. */
+export function toPublicLiveDemo(v: LiveDemoView | null | undefined): PublicLiveDemo | null {
+  if (!v || (v.state !== "starting" && v.state !== "live")) return null;
+  return {
+    state: v.state,
+    minutes: Number.isFinite(v.minutes) ? v.minutes : 0,
+    endsAt: typeof v.endsAt === "string" ? v.endsAt : null,
   };
 }
 

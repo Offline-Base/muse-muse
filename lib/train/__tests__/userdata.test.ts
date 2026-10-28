@@ -193,6 +193,25 @@ describe("buildUserData", () => {
     assert.ok(!doc.includes(token));
   });
 
+  it("adds serveKey next to the token in job.json only when one is given, and nowhere else", () => {
+    const files = (doc: string) => new Map(parseByHand(doc).write_files.map((f) => [f.path, decode(f)]));
+    assert.ok(!("serveKey" in JSON.parse(files(buildUserData(input)).get("/opt/muse/job.json")!)));
+    const serveKey = randomBytes(32).toString("hex");
+    const recipe = RECIPES.find((r) => r.id === "glimmer-serve") ?? "smoke";
+    const doc = buildUserData({ ...input, recipe, params: { adapterJobId: "aaaaaaaa-0000-4000-8000-000000000000", minutes: 30 }, serveKey });
+    assert.ok(Buffer.byteLength(doc, "utf8") < MAX_USER_DATA_BYTES);
+    assert.ok(!doc.includes(serveKey), "the raw key is not in the document");
+    for (const [path, text] of files(doc)) {
+      if (path.endsWith("job.json")) {
+        const job = JSON.parse(text);
+        assert.equal(job.serveKey, serveKey);
+        assert.equal(job.token, token);
+      } else {
+        assert.ok(!text.includes(serveKey), `${path} has no serving key`);
+      }
+    }
+  });
+
   it("refuses an unknown recipe", () => {
     assert.throws(() => buildUserData({ ...input, recipe: "nope" as RecipeId }), /Unknown recipe/);
   });

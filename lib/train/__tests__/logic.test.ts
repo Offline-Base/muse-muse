@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  adapterProblem,
   betterOf,
   BOOT_GRACE_MS,
+  certFingerprint,
   capEventBody,
   clampLimits,
   datasetSystemPrompt,
@@ -22,12 +24,18 @@ import {
   type JobState,
   PARAM_TEXT_MAX,
   promptWords,
+  recipeDefaults,
   runEstimate,
   runFitProblem,
+  serveEndsAt,
+  serveFitProblem,
+  SERVE_STOP_MARGIN_SECONDS,
+  serveMinutes,
   SILENCE_MS,
   summarizeJudgements,
   toDatasetView,
   toJobView,
+  toLiveDemoView,
   type TrainJobRow,
   unjudgedNote,
   unjudgedSummary,
@@ -317,6 +325,7 @@ describe("toJobView", () => {
     finishedAt: null,
     terminatedAt: null,
     evalSummary: null,
+    serveEndpoint: null,
   };
 
   it("uses ISO dates and a live cost estimate while running", () => {
@@ -620,5 +629,157 @@ describe("capEventBody", () => {
       type: "done",
       metrics: { gpu: "A10", seconds: 4 },
     });
+  });
+});
+
+describe("live demo", () => {
+  const ADAPTER = "aaaaaaaa-0000-4000-8000-000000000000";
+  const serveRecipe: Recipe = {
+    id: "glimmer-serve",
+    title: "Try tuned Glimmer live",
+    description: "Test recipe.",
+    gpus: [{ instanceType: "gpu_1x_h100_sxm5", label: "1x H100 SXM5 (80 GB)" }],
+    defaultMaxMinutes: 45,
+    defaultMaxUsd: 3.29,
+    usesCache: true,
+    params: [
+      { key: "adapterJobId", label: "Adapter", kind: "adapter", required: true },
+      { key: "minutes", label: "Minutes live", kind: "number", default: 30, min: 10, max: 120 },
+    ],
+    script: "def run(ctx):\n    return {}\n",
+  };
+  const cert = "ab".repeat(32);
+  /** A serve job launched at T0 on an H100 SXM5 ($4.29 an hour) with the default limits. */
+  const serveJob = (over: Partial<TrainJobRow> = {}) => ({
+    id: "bbbbbbbb-0000-4000-8000-000000000000",
+    status: "running" as TrainJobRow["status"],
+    stopRequested: false,
+    params: { adapterJobId: ADAPTER, minutes: 30 } as Record<string, string | number>,
+    maxMinutes: 45,
+    maxUsd: 3.29,
+    priceCentsPerHour: 429,
+    launchedAt: T0 as Date | null,
+    serveEndpoint: { ip: "203.0.113.9", port: 8443, certSha256: cert, startedAt: after(8 * MIN).toISOString() } as TrainJobRow["serveEndpoint"],
+    ...over,
+  });
+
+  it("takes an adapter param as a job id, lowercased, and refuses anything else", () => {
+    assert.deepEqual(validateParams(serveRecipe, { adapterJobId: ` ${ADAPTER.toUpperCase()} ` }), { ok: true, value: { adapterJobId: ADAPTER, minutes: 30 } });
+    for (const bad of ["not-an-id", 7, ""]) {
+      const result = validateParams(serveRecipe, { adapterJobId: bad });
+      assert.equal(result.ok, false, String(bad));
+    }
+    assert.match((validateParams(serveRecipe, { adapterJobId: "x" }) as { error: string }).error, /one of the trained adapters/);
+    assert.equal(validateParams(serveRecipe, { adapterJobId: ADAPTER, minutes: 5 }).ok, false);
+  });
+
+  it("sizes a serve job's default limits from its minutes, so the dollars never stop it first", () => {
+    assert.deepEqual(recipeDefaults(serveRecipe, {}), { defaultMaxMinutes: 45, defaultMaxUsd: 3.29 });
+    assert.deepEqual(recipeDefaults(serveRecipe, { minutes: 120 }), { defaultMaxMinutes: 135, defaultMaxUsd: 9.73 });
+    assert.deepEqual(recipeDefaults(serveRecipe, { minutes: "10" }), { defaultMaxMinutes: 25, defaultMaxUsd: 1.86 });
+    for (const minutes of [10, 30, 45, 60, 120]) {
+      const d = recipeDefaults(serveRecipe, { minutes });
+      const limits = { maxMinutes: d.defaultMaxMinutes, maxUsd: d.defaultMaxUsd };
+      for (const price of [199, 329, 429]) assert.equal(usableMinutes(limits, price), limits.maxMinutes, `${minutes} minutes at ${price}`);
+    }
+    assert.deepEqual(recipeDefaults(recipe, { minutes: 120 }), { defaultMaxMinutes: 90, defaultMaxUsd: 4 }, "other recipes keep their own");
+    assert.equal(serveMinutes({ minutes: 500 }), 120);
+    assert.equal(serveMinutes({ minutes: 3 }), 10);
+    assert.equal(serveMinutes({ minutes: "x" }), 30);
+  });
+
+  it("says when a serve job's limits can't cover its minutes plus 15 to boot", () => {
+    assert.equal(serveFitProblem(30, 45, "1x H100 SXM5 (80 GB)"), null);
+    assert.equal(
+      serveFitProblem(60, 69, "1x H100 SXM5 (80 GB)"),
+      "A 60-minute live demo needs about 75 minutes of GPU time (about 15 to boot and load the model), but this job's limits stop it after 69 minutes on 1x H100 SXM5 (80 GB). Pick fewer minutes, or raise the time or dollar limit.",
+    );
+  });
+
+  it("serves only a glimmer-lora adapter that succeeded, wasn't a dry run and is on the cache", () => {
+    const lora = { id: ADAPTER, recipe: "glimmer-lora" as RecipeId, status: "succeeded" as TrainJobRow["status"], params: { datasetId: "d" } as Record<string, string | number> };
+    const cached = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${ADAPTER}` };
+    assert.equal(adapterProblem(lora, cached), null);
+    assert.equal(adapterProblem(lora, { ...cached, adapter_dir: `${cached.adapter_dir}/` }), null);
+    assert.match(adapterProblem(null, null)!, /doesn't exist/);
+    assert.match(adapterProblem({ ...lora, recipe: "smoke" }, cached)!, /isn't a Muse Glimmer LoRA job/);
+    assert.match(adapterProblem({ ...lora, status: "running" }, cached)!, /didn't succeed/);
+    assert.match(adapterProblem({ ...lora, params: { dryRun: 1 } }, cached)!, /dry run/);
+    assert.match(adapterProblem(lora, { ...cached, cache_used: "no" })!, /isn't on a model cache/);
+    assert.match(adapterProblem(lora, { cache_used: "yes", adapter_dir: "/lambda/nfs/muse-muse-cache-us-east-1/models/other" })!, /isn't on a model cache/);
+    assert.match(adapterProblem(lora, null)!, /isn't on a model cache/);
+  });
+
+  it("reads a SHA-256 fingerprint as 64 lowercase hex characters, from either form", () => {
+    assert.equal(certFingerprint(cert), cert);
+    assert.equal(certFingerprint("AB:".repeat(31) + "AB"), cert);
+    assert.equal(certFingerprint(` ${cert.toUpperCase()} `), cert);
+    for (const bad of [cert.slice(2), `${cert}00`, "zz".repeat(32), 42, null, "ab:".repeat(100)]) assert.equal(certFingerprint(bad), null, String(bad));
+  });
+
+  it("expects a demo to stop after its minutes, or at its limits when those come first", () => {
+    assert.equal(serveEndsAt(serveJob())!.toISOString(), after(38 * MIN).toISOString(), "8 minutes to load, then 30");
+    // The server stops SERVE_STOP_MARGIN_SECONDS (3 minutes) before the runner's deadline, the 45 minutes its limits allow.
+    assert.equal(SERVE_STOP_MARGIN_SECONDS, 180);
+    assert.equal(serveEndsAt(serveJob({ serveEndpoint: null }))!.toISOString(), after(42 * MIN).toISOString(), "before serving: the limit, less the margin");
+    const late = serveJob({ serveEndpoint: { ip: "203.0.113.9", port: 8443, certSha256: cert, startedAt: after(20 * MIN).toISOString() } });
+    assert.equal(serveEndsAt(late)!.toISOString(), after(42 * MIN).toISOString(), "a slow load leaves less than its minutes");
+    assert.equal(serveEndsAt(serveJob({ launchedAt: null })), null);
+  });
+
+  it("shows the public page only the state, the minutes and when it ends", () => {
+    const view = toLiveDemoView(serveJob(), after(10 * MIN));
+    assert.deepEqual(view, { serveJobId: "bbbbbbbb-0000-4000-8000-000000000000", state: "live", minutes: 30, endsAt: after(38 * MIN).toISOString() });
+    assert.ok(!JSON.stringify(view).includes("203.0.113.9") && !JSON.stringify(view).includes(cert));
+    assert.equal(toLiveDemoView(serveJob({ serveEndpoint: null }), after(5 * MIN))?.state, "starting");
+    assert.equal(toLiveDemoView(serveJob({ status: "booting", serveEndpoint: null }), after(MIN))?.state, "starting");
+    const noIp = serveJob({ serveEndpoint: { ip: null, port: 8443, certSha256: cert, startedAt: after(8 * MIN).toISOString() } });
+    assert.equal(toLiveDemoView(noIp, after(10 * MIN))?.state, "starting", "not live until Lambda reported its IP");
+    assert.equal(toLiveDemoView(serveJob(), after(38 * MIN)), null, "its minutes are up");
+    assert.equal(toLiveDemoView(serveJob({ status: "succeeded" }), after(10 * MIN)), null);
+    assert.equal(toLiveDemoView(serveJob({ stopRequested: true }), after(10 * MIN)), null);
+  });
+
+  it("caps a serving event and shows the admin page when the demo started and ends, never the certificate", () => {
+    const capped = capEventBody({ type: "serving", port: 8443, certSha256: "AB:".repeat(31) + "AB", model: "m".repeat(500), adapterJobId: ADAPTER });
+    assert.deepEqual(capped, { type: "serving", port: 8443, certSha256: cert, model: "m".repeat(200), adapterJobId: ADAPTER });
+
+    const base: TrainJobRow = {
+      id: "bbbbbbbb-0000-4000-8000-000000000000",
+      recipe: "glimmer-serve",
+      title: "Live demo",
+      status: "running",
+      params: { adapterJobId: ADAPTER, minutes: 30 },
+      instanceType: "gpu_1x_h100_sxm5",
+      region: "us-east-1",
+      priceCentsPerHour: 429,
+      maxMinutes: 45,
+      maxUsd: 3.29,
+      instanceId: "i-1",
+      instanceName: "mm-train-bbbbbbbb-glimmer-serve",
+      instanceIp: "203.0.113.9",
+      tokenHash: "h",
+      workflowRunId: null,
+      stopRequested: false,
+      progress: null,
+      artifacts: [],
+      summary: null,
+      error: null,
+      costUsd: 0,
+      createdBy: null,
+      createdAt: T0,
+      launchedAt: T0,
+      firstHeartbeatAt: after(MIN),
+      lastHeartbeatAt: after(9 * MIN),
+      finishedAt: null,
+      terminatedAt: null,
+      evalSummary: null,
+      serveEndpoint: serveJob().serveEndpoint,
+    };
+    const view = toJobView(base, after(10 * MIN));
+    assert.deepEqual(view.serving, { startedAt: after(8 * MIN).toISOString(), endsAt: after(38 * MIN).toISOString() });
+    assert.ok(!JSON.stringify(view).includes(cert));
+    assert.equal(toJobView({ ...base, serveEndpoint: null }, after(10 * MIN)).serving, null);
+    assert.equal("serving" in toJobView({ ...base, recipe: "smoke" }, after(10 * MIN)), false, "only a serve job has it");
   });
 });

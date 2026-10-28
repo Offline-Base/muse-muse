@@ -3,13 +3,30 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
-import { clampLimits, runEstimate, runFitProblem, toJobView, usableMinutes, validateParams } from "@/lib/train/logic";
+import {
+  adapterProblem,
+  clampLimits,
+  isServeRecipe,
+  recipeDefaults,
+  runEstimate,
+  runFitProblem,
+  SERVE_BOOT_MINUTES,
+  SERVE_MINUTES_PARAM,
+  serveFitProblem,
+  serveMinutes,
+  toJobView,
+  usableMinutes,
+  validateParams,
+} from "@/lib/train/logic";
 import { RECIPES, recipeById } from "@/lib/train/recipes";
 import {
   activeJobCount,
   attachRun,
   createJob,
+  earlierOpenServeJob,
+  getAdapterSource,
   getDataset,
+  getLiveDemo,
   lastSweepOkAt,
   listJobs,
   setStatus,
@@ -50,6 +67,25 @@ async function datasetProblem(recipe: Recipe, params: Record<string, string | nu
 }
 
 /**
+ * For a recipe with an "adapter" param (glimmer-serve): the region its adapter is in, since the serve job must launch
+ * there and mount the same cache filesystem. Null for any other recipe. A problem (no such job, not a glimmer-lora job
+ * that succeeded, a dry run, an adapter not on the cache) is the 400 to answer, after the param's label.
+ */
+async function adapterRegion(
+  recipe: Recipe,
+  params: Record<string, string | number>,
+): Promise<{ ok: true; region: string | null; adapterJobId: string | null } | { ok: false; error: string }> {
+  for (const field of recipe.params) {
+    if (field.kind !== "adapter" || params[field.key] === undefined) continue;
+    const source = await getAdapterSource(String(params[field.key]));
+    const problem = adapterProblem(source?.job ?? null, source?.metrics ?? null);
+    if (problem || !source) return { ok: false, error: `${field.label}: ${problem ?? "that job doesn't exist."}` };
+    return { ok: true, region: source.job.region, adapterJobId: source.job.id };
+  }
+  return { ok: true, region: null, adapterJobId: null };
+}
+
+/**
  * Regions that already hold the model cache, for a recipe that keeps one. Only a preference, so a Lambda error picks
  * from every region instead of refusing the job.
  */
@@ -84,7 +120,13 @@ export const GET = route(async (req: Request) => {
  * POST {recipe, title?, params?, instanceType?, maxMinutes?, maxUsd?} -> 201 {job}. Admins or automation only.
  * Queues the job and starts the trainJob workflow, which launches the instance. Limits are what the admin asked for,
  * capped by the platform ceilings, with the recipe's defaults (also capped) for a limit not asked for. A dataset param
- * must name a dataset that is ready. A recipe that keeps the model cache prefers a region that already has it. A run
+ * must name a dataset that is ready. An adapter param (glimmer-serve) must name a glimmer-lora job whose adapter can
+ * be served (adapterProblem), and the job then launches only in that adapter's region (409 demo_running with
+ * {serveJobId} while one for it is already open, or when two start at once and this is the later, 503 no_capacity
+ * with {options, region} when that region has no free GPU); its minutes are stored whole (serveMinutes), its default
+ * limits follow them (recipeDefaults), and it is refused with a 400 when its limits on the
+ * GPU it gets can't cover them plus 15 minutes to boot (serveFitProblem, with {estimateMinutes, usableMinutes}). A
+ * recipe that keeps the model cache prefers a region that already has it. A run
  * that can't fit its limits on the GPU it gets (runEstimate: seconds a step for that GPU plus a fixed overhead, larger
  * in a region without the cache) is refused with a 400 that says so, with {estimateMinutes, usableMinutes}, before
  * anything is created. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
@@ -106,8 +148,14 @@ export const POST = route(async (req: Request) => {
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, TITLE_MAX) : recipe.title;
   const params = validateParams(recipe, body.params);
   if (!params.ok) return errorJson(400, params.error);
+  // A serve job's minutes are stored whole (serveMinutes rounds down), so the limits, the page's end time, the proxy's
+  // cutoff and the GPU, which reads the same param from job.json, all count the same minutes.
+  if (isServeRecipe(recipe.id)) params.value[SERVE_MINUTES_PARAM] = serveMinutes(params.value);
   const datasetError = await datasetProblem(recipe, params.value);
   if (datasetError) return errorJson(400, datasetError);
+  const adapter = await adapterRegion(recipe, params.value);
+  if (!adapter.ok) return errorJson(400, adapter.error);
+  if (isServeRecipe(recipe.id) && !adapter.adapterJobId) return errorJson(400, "Pick the trained adapter to serve.");
   let instanceType: string | undefined;
   if (body.instanceType !== undefined && body.instanceType !== null && body.instanceType !== "") {
     if (typeof body.instanceType !== "string" || !recipe.gpus.some((g) => g.instanceType === body.instanceType)) {
@@ -119,7 +167,7 @@ export const POST = route(async (req: Request) => {
   if (!maxMinutes.ok) return errorJson(400, maxMinutes.error);
   const maxUsd = limit(body.maxUsd, "maxUsd");
   if (!maxUsd.ok) return errorJson(400, maxUsd.error);
-  const limits = clampLimits(recipe, { maxMinutes: maxMinutes.value, maxUsd: maxUsd.value }, limitCeilings());
+  const limits = clampLimits(recipeDefaults(recipe, params.value), { maxMinutes: maxMinutes.value, maxUsd: maxUsd.value }, limitCeilings());
 
   if (!lambdaConfigured()) return errorJson(503, "lambda_not_configured");
   if (!callbackOrigin(env.platformUrl)) return errorJson(503, "platform_not_public");
@@ -129,6 +177,11 @@ export const POST = route(async (req: Request) => {
   const lastSweepAt = await lastSweepOkAt();
   if (!sweepRunning(lastSweepAt, new Date())) {
     return errorJson(503, "sweep_not_running", { lastSweepAt: lastSweepAt?.toISOString() ?? null });
+  }
+  if (adapter.adapterJobId) {
+    // One live demo per adapter: the page and the proxy only ever use the newest.
+    const running = await getLiveDemo(adapter.adapterJobId);
+    if (running) return errorJson(409, "demo_running", { serveJobId: running.serveJobId });
   }
   if ((await activeJobCount()) >= env.trainMaxActive) return errorJson(409, "too_many_active", { max: env.trainMaxActive });
   // The new job's whole dollar limit counts, and so does every unfinished job's, so the day's spend can't pass the cap.
@@ -144,9 +197,19 @@ export const POST = route(async (req: Request) => {
     if (status === 401 || status === 403) return errorJson(503, "lambda_not_configured");
     return errorJson(502, "lambda_unavailable");
   }
-  const cacheAt = await preferredRegions(recipe);
-  const gpu = pickGpu(recipe.gpus, types, instanceType, cacheAt);
-  if (!gpu) return errorJson(503, "no_capacity", { options: gpuOptions(types, [recipe]) });
+  const pinned = adapter.region;
+  const cacheAt = pinned ? [pinned] : await preferredRegions(recipe);
+  const gpu = pinned ? pickGpu(recipe.gpus, types, instanceType, cacheAt, pinned) : pickGpu(recipe.gpus, types, instanceType, cacheAt);
+  if (!gpu) {
+    return errorJson(503, "no_capacity", { options: gpuOptions(types, [recipe]), ...(pinned ? { region: pinned } : {}) });
+  }
+  if (isServeRecipe(recipe.id)) {
+    const usable = usableMinutes(limits, gpu.priceCentsPerHour);
+    const label = recipe.gpus.find((g) => g.instanceType === gpu.instanceType)?.label ?? gpu.instanceType;
+    const minutes = serveMinutes(params.value);
+    const problem = serveFitProblem(minutes, usable, label);
+    if (problem) return errorJson(400, problem, { estimateMinutes: minutes + SERVE_BOOT_MINUTES, usableMinutes: usable });
+  }
   // A run its limits would cut off before the end pays for the GPU and saves nothing.
   const estimate = runEstimate(recipe.id, params.value, gpu.instanceType, cacheAt.includes(gpu.region));
   if (estimate) {
@@ -167,6 +230,18 @@ export const POST = route(async (req: Request) => {
     maxUsd: limits.maxUsd,
     createdBy: user.id,
   });
+  // Two demos of one adapter asked for at once could both pass the demo_running check above. Only the later one backs
+  // out, so one demo always survives and no GPU serves a demo nobody can reach.
+  if (adapter.adapterJobId) {
+    const earlier = await earlierOpenServeJob(adapter.adapterJobId, job.id);
+    if (earlier) {
+      await setStatus(job.id, "failed", {
+        message: "Another live demo of this adapter started at the same moment.",
+        set: { error: "Another live demo of this adapter started at the same moment, so this one was not launched." },
+      });
+      return errorJson(409, "demo_running", { serveJobId: earlier.id });
+    }
+  }
   // Two requests at once could both pass the checks above. The new row now counts in both, so each backs out when it
   // sees the other, and the limits hold.
   const tooMany = (await activeJobCount()) > env.trainMaxActive;

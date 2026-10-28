@@ -4,8 +4,9 @@
  * token check, that an ended job only changes through finishJob, the one launch claim per job, a late launch and an
  * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, and
  * training datasets: each answer saved once as it comes and moved onto train once a chunk, the eval split (keeping
- * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. Nothing here reaches Neon or
- * Lambda.
+ * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. And the live demo: a serving
+ * callback's endpoint (with the IP Lambda reported, kept in step with it), the adapters a serve job can serve, the
+ * newest open demo of an adapter, and the proxy's one-at-a-time slot. Nothing here reaches Neon or Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -622,6 +623,209 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.equal(await store.getReadyDataset(writing.id), null);
       assert.equal(await store.getReadyDataset(failed.id), null);
       assert.equal(await store.getReadyDataset("not-a-uuid"), null);
+    });
+  });
+  describe("live demo", () => {
+    const ADAPTER_CERT = "ab".repeat(32);
+    const lora = (over: Partial<TrainJobRow> = {}) =>
+      job({
+        recipe: "glimmer-lora",
+        title: "Brief writer LoRA",
+        params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", maxSteps: 120, dryRun: 0 },
+        status: "succeeded",
+        region: "us-east-1",
+        launchedAt: new Date(Date.now() - 60 * MIN),
+        finishedAt: new Date(Date.now() - 10 * MIN),
+        terminatedAt: new Date(Date.now() - 9 * MIN),
+        ...over,
+      });
+    /** Logs the done callback a glimmer-lora job sends, with the adapter where the recipe saved it. */
+    const done = async (id: string, metrics: Record<string, string | number>) =>
+      store.recordEvent(id, { type: "done", summary: "LoRA r=16.", metrics: { steps: 120, ...metrics } });
+    const onCache = (id: string) => ({ cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-east-1/models/${id}` });
+    const serveJob = (adapterJobId: string, over: Partial<TrainJobRow> = {}) =>
+      job({
+        recipe: "glimmer-serve",
+        title: "Live demo",
+        params: { adapterJobId, minutes: 30 },
+        status: "running",
+        instanceType: "gpu_1x_h100_sxm5",
+        priceCentsPerHour: 429,
+        maxMinutes: 45,
+        maxUsd: 3.29,
+        instanceId: "i-serve",
+        instanceIp: "203.0.113.9",
+        tokenHash: "serve-token-hash",
+        launchedAt: new Date(Date.now() - 10 * MIN),
+        ...over,
+      });
+    const serving = { type: "serving" as const, port: 8443, certSha256: ADAPTER_CERT, model: "glimmer", adapterJobId: "x" };
+
+    it("stores a serving callback's endpoint with the IP Lambda reported, and replaces it on the next one", async () => {
+      const row = await serveJob("aaaaaaaa-0000-4000-8000-000000000000", { status: "booting" });
+      const first = new Date(Date.now() - 2 * MIN);
+      assert.deepEqual(await store.applyCallback(row.id, serving, first), { applied: true, status: "running" });
+      let saved = (await store.getJob(row.id))!;
+      assert.deepEqual(saved.serveEndpoint, { ip: "203.0.113.9", port: 8443, certSha256: ADAPTER_CERT, startedAt: first.toISOString() });
+      assert.equal(saved.lastHeartbeatAt?.getTime(), first.getTime(), "a sign of life");
+
+      const restarted = { ...serving, certSha256: "cd".repeat(32) };
+      await store.applyCallback(row.id, restarted, new Date());
+      saved = (await store.getJob(row.id))!;
+      assert.equal(saved.serveEndpoint?.certSha256, "cd".repeat(32), "a restarted server's new certificate");
+
+      // Lambda reports a new IP: the endpoint follows it, and a lost one stays lost rather than wiping the endpoint.
+      await store.setInstanceIp(row.id, "198.51.100.20");
+      assert.equal((await store.getJob(row.id))!.serveEndpoint?.ip, "198.51.100.20");
+      await store.setInstanceIp(row.id, null);
+      const lost = (await store.getJob(row.id))!;
+      assert.equal(lost.serveEndpoint?.ip, null);
+      assert.equal(lost.serveEndpoint?.port, 8443);
+
+      const plain = await job({ status: "running" });
+      await store.setInstanceIp(plain.id, "198.51.100.21");
+      assert.equal((await store.getJob(plain.id))!.serveEndpoint, null, "no endpoint appears on another job");
+
+      const ended = await serveJob("aaaaaaaa-0000-4000-8000-000000000000", { status: "succeeded", finishedAt: new Date() });
+      assert.equal((await store.applyCallback(ended.id, serving, new Date()))!.applied, false);
+      assert.equal((await store.getJob(ended.id))!.serveEndpoint, null);
+    });
+
+    it("lists only adapters a serve job can serve, with their dataset's title, and reads one with its done metrics", async () => {
+      await testDb.insert(realSchema.trainingDatasets).values({
+        id: "1b2c3d4e-0000-4000-8000-000000000002",
+        title: "Muse Muse's brief writer",
+        task: "Write briefs.",
+        requested: 40,
+        status: "ready",
+      });
+      const good = await lora();
+      await done(good.id, onCache(good.id));
+      const dry = await lora({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", dryRun: 1 } });
+      await done(dry.id, onCache(dry.id));
+      const uncached = await lora();
+      await done(uncached.id, { cache_used: "no", adapter_dir: `/opt/muse/models/${uncached.id}` });
+      const elsewhere = await lora();
+      await done(elsewhere.id, onCache(good.id)); // an adapter folder that isn't its own
+      const failed = await lora({ status: "failed" });
+      await done(failed.id, onCache(failed.id));
+      await lora(); // succeeded, but no done event logged
+
+      const options = await store.listAdapterOptions();
+      assert.deepEqual(options.map((o) => o.jobId), [good.id]);
+      assert.deepEqual(options[0], {
+        jobId: good.id,
+        title: "Brief writer LoRA",
+        region: "us-east-1",
+        datasetTitle: "Muse Muse's brief writer",
+        finishedAt: good.finishedAt!.toISOString(),
+        evalSummary: null,
+      });
+
+      const source = await store.getAdapterSource(good.id);
+      assert.equal(source!.job.id, good.id);
+      assert.equal(source!.metrics!.cache_used, "yes");
+      assert.equal(source!.metrics!.steps, 120);
+      // The latest done event is the one that counts.
+      await done(good.id, { cache_used: "no" });
+      assert.equal((await store.getAdapterSource(good.id))!.metrics!.cache_used, "no");
+      assert.equal((await store.getAdapterSource(failed.id))!.metrics!.cache_used, "yes");
+      const none = await lora();
+      assert.equal((await store.getAdapterSource(none.id))!.metrics, null);
+      assert.equal(await store.getAdapterSource("not-a-uuid"), null);
+    });
+
+    it("finds an adapter's newest open demo, live only with a usable endpoint, and gives the proxy what it needs", async () => {
+      const adapter = await lora();
+      const id = adapter.id;
+      assert.equal(await store.getLiveDemo(id), null);
+      assert.equal(await store.liveServeTarget(id), null);
+
+      const older = await serveJob(id, { status: "succeeded", finishedAt: new Date() });
+      const demo = await serveJob(id, { status: "booting" });
+      const starting = await store.getLiveDemo(id.toUpperCase());
+      assert.equal(starting!.serveJobId, demo.id);
+      assert.equal(starting!.state, "starting");
+      assert.equal(await store.liveServeTarget(id), null, "not live before it serves");
+
+      await store.applyCallback(demo.id, serving, new Date(Date.now() - MIN));
+      const live = (await store.getLiveDemo(id))!;
+      assert.equal(live.state, "live");
+      assert.equal(live.minutes, 30);
+      assert.ok(!JSON.stringify(live).includes("203.0.113.9") && !JSON.stringify(live).includes(ADAPTER_CERT), "nothing about the GPU");
+      assert.deepEqual(await store.liveServeTarget(id), {
+        jobId: demo.id,
+        tokenHash: "serve-token-hash",
+        ip: "203.0.113.9",
+        port: 8443,
+        certSha256: ADAPTER_CERT,
+      });
+
+      // Its minutes are up: 30 after it started serving.
+      assert.equal(await store.liveServeTarget(id, new Date(Date.now() + 30 * MIN)), null);
+      assert.equal(await store.getLiveDemo(id, new Date(Date.now() + 30 * MIN)), null);
+      // Another adapter's demo is never this one's.
+      assert.equal(await store.getLiveDemo((await lora()).id), null);
+
+      await store.requestStop(demo.id);
+      assert.equal(await store.getLiveDemo(id), null, "an admin asked to stop it");
+      assert.equal(await store.liveServeTarget(id), null);
+      assert.notEqual(older.id, demo.id);
+    });
+
+    it("names the earlier of two open demos of one adapter, by the database's own clock, so only the later backs out", async () => {
+      const adapter = "abababab-0000-4000-8000-000000000000";
+      /** Sets a row's created_at to the microsecond, finer than a JS Date. */
+      const createdAt = (id: string, at: string) => client.query("update training_jobs set created_at = $1::timestamptz where id = $2", [at, id]);
+      const first = await serveJob(adapter, { status: "booting" });
+      const second = await serveJob(adapter, { status: "queued" });
+      // 12 microseconds apart: the same millisecond in JS, so only the database can tell them apart.
+      await createdAt(first.id, "2026-10-28T12:00:00.123400Z");
+      await createdAt(second.id, "2026-10-28T12:00:00.123412Z");
+      assert.deepEqual(await store.earlierOpenServeJob(adapter, second.id), { id: first.id });
+      assert.equal(await store.earlierOpenServeJob(adapter.toUpperCase(), first.id), null, "the first has none before it");
+
+      // At the very same moment the smaller id is the earlier, so one of the two still wins.
+      const tieA = await serveJob(adapter, { status: "queued" });
+      const tieB = await serveJob(adapter, { status: "queued" });
+      for (const row of [first, second, tieA, tieB]) await createdAt(row.id, "2026-10-28T12:00:00.123400Z");
+      const [low, high] = [first.id, second.id, tieA.id, tieB.id].sort();
+      assert.equal(await store.earlierOpenServeJob(adapter, low!), null);
+      assert.deepEqual(await store.earlierOpenServeJob(adapter, high!), { id: low });
+
+      // Only open demos of the same adapter count: not one that ended, one asked to stop, another adapter's, or a
+      // training job.
+      const lone = "cdcdcdcd-0000-4000-8000-000000000000";
+      const ended = await serveJob(lone, { status: "failed", finishedAt: new Date() });
+      const stopped = await serveJob(lone, { stopRequested: true });
+      const otherAdapter = await serveJob("efefefef-0000-4000-8000-000000000000");
+      const training = await lora({ status: "running", params: { adapterJobId: lone } as never });
+      const mine = await serveJob(lone, { status: "queued" });
+      for (const row of [ended, stopped, otherAdapter, training]) await createdAt(row.id, "2026-10-28T11:00:00Z");
+      await createdAt(mine.id, "2026-10-28T12:00:00Z");
+      assert.equal(await store.earlierOpenServeJob(lone, mine.id), null);
+      assert.equal(await store.earlierOpenServeJob(lone, "not-a-uuid"), null);
+      assert.equal(await store.earlierOpenServeJob("not-a-uuid", mine.id), null);
+    });
+
+    it("lets the proxy send a demo one prompt at a time, and frees a lost slot within two windows", async () => {
+      const demo = await serveJob("aaaaaaaa-0000-4000-8000-000000000000");
+      const t = new Date(Math.floor(Date.now() / store.DEMO_SLOT_MS) * store.DEMO_SLOT_MS + 1000);
+      const slot = await store.takeDemoSlot(demo.id, t);
+      assert.ok(slot instanceof Date);
+      assert.equal(await store.takeDemoSlot(demo.id, t), null, "busy while one is answered");
+      const [a, b] = await Promise.all([store.takeDemoSlot(demo.id, t), store.takeDemoSlot(demo.id, t)]);
+      assert.deepEqual([a, b], [null, null]);
+      await store.releaseDemoSlot(demo.id, slot!);
+      const again = await store.takeDemoSlot(demo.id, t);
+      assert.ok(again, "free once given back");
+
+      // A call that never gave its slot back still holds the next window, and no longer the one after.
+      assert.equal(await store.takeDemoSlot(demo.id, new Date(t.getTime() + store.DEMO_SLOT_MS)), null);
+      assert.ok(await store.takeDemoSlot(demo.id, new Date(t.getTime() + 2 * store.DEMO_SLOT_MS)));
+      const other = await serveJob("aaaaaaaa-0000-4000-8000-000000000000");
+      assert.ok(await store.takeDemoSlot(other.id, t), "each demo has its own slot");
+      assert.equal(await store.takeDemoSlot("not-a-uuid", t), null);
     });
   });
 });

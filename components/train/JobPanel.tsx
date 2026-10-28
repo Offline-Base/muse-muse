@@ -10,18 +10,21 @@ import {
   gpuName,
   pricePerHour,
   progressText,
+  servingText,
   stopControl,
   trainStatusLabel,
 } from "@/components/train/format";
 import { bytes, dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
-import { unjudgedNote } from "@/lib/train/logic";
-import type { RecipeView, TrainJobView } from "@/lib/train/types";
+import { isServeRecipe, unjudgedNote } from "@/lib/train/logic";
+import { isTrainTerminal, type RecipeView, type TrainJobView } from "@/lib/train/types";
 
 export interface JobPanelProps {
   job: TrainJobView;
   recipe: RecipeView | null;
   /** The dataset the job trains on, shown by name with a link in Settings. */
   dataset?: { id: string; title: string } | null;
+  /** A glimmer-serve job's adapter: the trained job it serves, shown by name with a link in Settings and Live demo. */
+  adapter?: { id: string; title: string } | null;
   now: number;
   elapsedMs: number;
   costUsd: number;
@@ -45,8 +48,11 @@ function MeterField({ label, value, fraction }: { label: string; value: string; 
   );
 }
 
-/** The job page's right panel: status, Stop, recipe and GPU, progress, limits, run facts and artifacts. */
-export function JobPanel({ job, recipe, dataset = null, now, elapsedMs, costUsd, stop, onStop }: JobPanelProps) {
+/**
+ * The job page's right panel: status, Stop, a glimmer-serve job's live demo, recipe and GPU, progress, limits, run facts
+ * and artifacts.
+ */
+export function JobPanel({ job, recipe, dataset = null, adapter = null, now, elapsedMs, costUsd, stop, onStop }: JobPanelProps) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const label = trainStatusLabel(job.status, job.stopRequested);
@@ -98,6 +104,20 @@ export function JobPanel({ job, recipe, dataset = null, now, elapsedMs, costUsd,
               {stop.message ?? control.note}
             </p>
           </div>
+        ) : null}
+
+        {isServeRecipe(job.recipe) ? (
+          <section className="panel-section" aria-labelledby={`${bodyId}-serving`}>
+            <h3 className="panel-label" id={`${bodyId}-serving`}>
+              Live demo
+            </h3>
+            <p className="panel-note">{servingText(job, now)}</p>
+            {adapter && !isTrainTerminal(job.status) ? (
+              <p className="panel-note">
+                The Try it live box is on <Link href={`/fine-tuning/${adapter.id}`}>{adapter.title}</Link>&apos;s page.
+              </p>
+            ) : null}
+          </section>
         ) : null}
 
         <div className="pfield">
@@ -230,13 +250,16 @@ export function JobPanel({ job, recipe, dataset = null, now, elapsedMs, costUsd,
               {params.map(([k, v]) => {
                 const field = recipe?.params.find((f) => f.key === k);
                 const isDataset = field?.kind === "dataset";
+                const isAdapter = field?.kind === "adapter";
                 return (
                   <div key={k}>
                     <dt>{field?.label ?? k}</dt>
                     <dd>
                       {isDataset && dataset && dataset.id === String(v) ? (
                         <Link href={`/fine-tuning/datasets/${dataset.id}`}>{dataset.title}</Link>
-                      ) : isDataset ? (
+                      ) : isAdapter && adapter && adapter.id === String(v) ? (
+                        <Link href={`/fine-tuning/${adapter.id}`}>{adapter.title}</Link>
+                      ) : isDataset || isAdapter ? (
                         <code title={String(v)}>{String(v).slice(0, 8)}</code>
                       ) : (
                         String(v)

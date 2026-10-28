@@ -59,7 +59,29 @@ import {
   verdictLabel,
   verdictTone,
 } from "@/components/train/format";
-import { unjudgedSummary } from "@/lib/train/logic";
+import {
+  DEMO_MINUTE_CHOICES,
+  TRY_PROMPT_MAX,
+  adapterOptionText,
+  demoPlan,
+  jobWorkingText,
+  serveTimeHint,
+  servingText,
+  timeLeftText,
+  tryAnswerOf,
+  tryErrorText,
+} from "@/components/train/format";
+import { toPublicLiveDemo } from "@/components/train/results";
+import {
+  recipeDefaults,
+  SERVE_MINUTES_MAX,
+  SERVE_MINUTES_MIN,
+  SERVE_SIZING_CENTS_PER_HOUR,
+  unjudgedSummary,
+  usableMinutes,
+} from "@/lib/train/logic";
+import { recipeById } from "@/lib/train/recipes";
+import { SERVE_PROMPT_MAX } from "@/lib/train/recipes/serve";
 import type { DatasetView, EvalSummary, GpuOption, Recipe, TrainEventBody, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 const recipe: Recipe = {
@@ -694,5 +716,174 @@ describe("eval results", () => {
       datasetCountsText(dataset()),
     ];
     for (const s of all) assert.equal(s.includes(String.fromCharCode(0x2014)), false, s);
+  });
+});
+
+describe("live demo", () => {
+  const ceilings = { maxMinutes: 120, maxUsd: 5 };
+  const serve = recipeById("glimmer-serve")!;
+
+  it("caps the idea where the GPU's server and the route do", () => {
+    assert.equal(TRY_PROMPT_MAX, SERVE_PROMPT_MAX);
+  });
+
+  it("works out each choice of minutes as the jobs route does when no limits are asked for", () => {
+    assert.ok(DEMO_MINUTE_CHOICES.every((m) => m >= SERVE_MINUTES_MIN && m <= SERVE_MINUTES_MAX));
+    assert.ok(DEMO_MINUTE_CHOICES.includes(30), "the recipe's default is a choice");
+    for (const m of DEMO_MINUTE_CHOICES) {
+      const plan = demoPlan(m, ceilings);
+      assert.deepEqual(plan.limits, limitDefaults(recipeDefaults(serve, { minutes: m }), ceilings), `${m} minutes`);
+    }
+    assert.deepEqual(demoPlan(30, ceilings), { minutes: 30, limits: { maxMinutes: 45, maxUsd: 3.29 }, fits: true, warn: null });
+  });
+
+  it("can't fit minutes past the time ceiling, and warns when the dollar ceiling is short on the priciest GPU", () => {
+    const sixty = demoPlan(60, ceilings);
+    assert.deepEqual(sixty.limits, { maxMinutes: 75, maxUsd: 5 });
+    assert.equal(sixty.fits, true);
+    assert.equal(usableMinutes(sixty.limits, SERVE_SIZING_CENTS_PER_HOUR), 69);
+    assert.equal(
+      sixty.warn,
+      "The $5.00 dollar limit covers 69 minutes on the priciest GPU a demo may get ($4.29 an hour), less than the 75 " +
+        "this one needs, so it is refused if that is the only one free. Pick fewer minutes to be sure it starts.",
+    );
+    assert.equal(demoPlan(120, ceilings).fits, false, "135 minutes don't fit a 120-minute ceiling");
+    assert.equal(demoPlan(105, ceilings).fits, true);
+    const roomy = demoPlan(120, { maxMinutes: 240, maxUsd: 20 });
+    assert.deepEqual(roomy, { minutes: 120, limits: { maxMinutes: 135, maxUsd: 9.73 }, fits: true, warn: null });
+  });
+
+  it("counts down in whole minutes", () => {
+    const end = new Date(t0 + 20 * 60_000).toISOString();
+    assert.equal(timeLeftText(end, t0), "20 minutes left");
+    assert.equal(timeLeftText(end, t0 + 30_000), "19 minutes left");
+    assert.equal(timeLeftText(end, t0 + 19 * 60_000), "1 minute left");
+    assert.equal(timeLeftText(end, t0 + 19 * 60_000 + 30_000), "Less than a minute left");
+    assert.equal(timeLeftText(end, t0 + 20 * 60_000), "Ending now");
+    assert.equal(timeLeftText(null, t0), null);
+    assert.equal(timeLeftText("not a date", t0), null);
+  });
+
+  it("says where a serve job's demo server stands", () => {
+    const serving = { startedAt: new Date(t0 + 10 * 60_000).toISOString(), endsAt: new Date(t0 + 40 * 60_000).toISOString() };
+    const j = (patch: Partial<TrainJobView>) => job({ recipe: "glimmer-serve", ...patch });
+    assert.match(servingText(j({ status: "booting", serving: null }), t0), /^Not serving yet\. .*up to about 15 minutes\.$/);
+    assert.equal(
+      servingText(j({ status: "running", serving }), t0 + 15 * 60_000),
+      "Serving since 14:10 UTC, until about 14:40 UTC (25 minutes left).",
+    );
+    assert.equal(servingText(j({ status: "running", serving, stopRequested: true }), t0), "Stopping the live demo.");
+    assert.equal(servingText(j({ status: "launching", stopRequested: true }), t0), "Stopping before the demo server came up.");
+    assert.equal(
+      servingText(j({ status: "succeeded", serving, finishedAt: new Date(t0 + 39 * 60_000).toISOString() }), t0),
+      "Served from 14:10 to 14:39 UTC.",
+    );
+    assert.equal(servingText(j({ status: "stopped", serving, finishedAt: null }), t0), "Served from 14:10 to 14:40 UTC.");
+    assert.equal(servingText(j({ status: "failed", serving: null }), t0), "The demo server never came up.");
+  });
+
+  it("says a running serve job serves the demo, or loads the model first", () => {
+    const serving = { startedAt: new Date(t0).toISOString(), endsAt: new Date(t0 + 60_000).toISOString() };
+    assert.equal(jobWorkingText(job({ recipe: "glimmer-serve", serving })), "Serving the live demo");
+    assert.equal(jobWorkingText(job({ recipe: "glimmer-serve", serving: null })), "Loading the model for the live demo");
+    assert.equal(jobWorkingText(job({ recipe: "glimmer-serve", stopRequested: true })), "Stopping the job and shutting down the GPU");
+    assert.equal(jobWorkingText(job({ recipe: "glimmer-lora" })), "Running on the GPU");
+  });
+
+  it("names each trained adapter in the select", () => {
+    const won = { items: 40, tunedWins: 40, baseWins: 0, ties: 0, avgBaseScore: 1.95, avgTunedScore: 8.88, judgeCostUsd: 0.15 };
+    assert.equal(
+      adapterOptionText({ title: "Brief writer", datasetTitle: "Muse Muse brief writer", region: "us-east-1", finishedAt: new Date(t0).toISOString(), evalSummary: won }),
+      "Brief writer · tuned won 40 of 40 · Oct 27 · us-east-1 · Muse Muse brief writer",
+    );
+    assert.equal(
+      adapterOptionText({ title: "Muse Glimmer LoRA", datasetTitle: null, region: "us-west-1", finishedAt: null, evalSummary: unjudgedSummary("Judging skipped.") }),
+      "Muse Glimmer LoRA · us-west-1",
+    );
+  });
+
+  it("turns each Try it live refusal into a plain sentence", () => {
+    assert.match(tryErrorText(404, { error: "no_live_demo" }), /has ended/);
+    assert.match(tryErrorText(409, { error: "busy" }), /someone else's idea right now/);
+    assert.equal(
+      tryErrorText(429, { error: "rate_limited", scope: "ip", retryAfterSeconds: 400 }),
+      "That's as many ideas as the demo takes from you for now. Try again in 7 minutes.",
+    );
+    assert.equal(
+      tryErrorText(429, { error: "rate_limited", scope: "demo", retryAfterSeconds: 20 }),
+      "The live demo has answered as many ideas as it takes this hour. Try again in 1 minute.",
+    );
+    assert.match(tryErrorText(429, { error: "rate_limited" }), /in a few minutes\.$/);
+    assert.match(tryErrorText(504, { error: "timeout" }), /within 2 minutes/);
+    assert.match(tryErrorText(502, { error: "demo_unavailable" }), /Couldn't reach the live demo's GPU/);
+    assert.match(tryErrorText(403, { error: "cross_site" }), /on Muse Muse itself/);
+    assert.equal(tryErrorText(400, { error: "Keep the idea to 600 characters.", max: 600 }), "Keep the idea to 600 characters.");
+    assert.equal(tryErrorText(400, { error: "bad_json" }), "Check the idea and try again.");
+    assert.match(tryErrorText(500, { error: "server_error" }), /\(server_error\)/);
+    assert.match(tryErrorText(500, { error: "<b>not a code</b>" }), /couldn't answer\. Try again/);
+  });
+
+  it("reads both answers from the route, and nothing that isn't one", () => {
+    assert.deepEqual(tryAnswerOf({ base: "b", tuned: "t", ms: 41_200, ip: "203.0.113.9" }), { base: "b", tuned: "t", ms: 41_200 });
+    assert.deepEqual(tryAnswerOf({ base: "", tuned: "t" }), { base: "", tuned: "t", ms: 0 });
+    assert.equal(tryAnswerOf({ base: "b" }), null);
+    assert.equal(tryAnswerOf(null), null);
+    assert.equal(tryAnswerOf("text"), null);
+  });
+
+  it("hands the browser only the demo's state, minutes and end", () => {
+    const view = { serveJobId: "5e7e5e7e-0000-4000-8000-00000000000a", state: "live", minutes: 30, endsAt: "2026-10-27T14:40:00.000Z" } as const;
+    assert.deepEqual(toPublicLiveDemo({ ...view, ip: "203.0.113.9" } as never), { state: "live", minutes: 30, endsAt: "2026-10-27T14:40:00.000Z" });
+    assert.equal(toPublicLiveDemo(null), null);
+    assert.equal(toPublicLiveDemo({ ...view, state: "ended" } as never), null);
+  });
+
+  it("says why a live demo couldn't start", () => {
+    assert.match(startErrorText(409, { error: "demo_running", serveJobId: "x" }, LIMITS), /already starting or running/);
+    assert.equal(
+      startErrorText(503, { error: "no_capacity", options: [], region: "us-east-1" }, LIMITS),
+      "Lambda has no free GPU for this in us-east-1 right now, and a live demo can only run there, where its adapter's " +
+        "model cache is. Try again in a few minutes.",
+    );
+    assert.match(startErrorText(400, { error: "Adapter: that job was a dry run, so its adapter is a stand-in." }, LIMITS), /dry run/);
+  });
+
+  it("logs the serving callback for admins, with only the start of the certificate", () => {
+    const line = eventLine({ type: "serving", port: 8443, certSha256: "ab".repeat(32), model: "unsloth/glimmer-30b-bnb-4bit" });
+    assert.equal(line.lead, "Serving");
+    assert.equal(line.tone, "ok");
+    assert.equal(
+      line.text,
+      "The live demo's server answers on port 8443 with unsloth/glimmer-30b-bnb-4bit, pinned to the certificate whose SHA-256 starts abababababab.",
+    );
+    assert.equal(eventLine({ type: "serving", port: 8443, certSha256: "" }).text, "The live demo's server answers on port 8443.");
+  });
+
+  it("counts a GPU free only in the adapter's region for a serve job", () => {
+    const options = [opt("gpu_1x_h100_pcie", 249, ["us-west-1"]), opt("gpu_1x_a100_sxm4", 129, ["us-east-1", "us-west-1"])];
+    const rows = gpuRows(serve, options, "us-east-1");
+    assert.deepEqual(
+      rows.map((r) => [r.instanceType, r.free]),
+      [
+        ["gpu_1x_h100_pcie", false],
+        ["gpu_1x_h100_sxm5", false],
+        ["gpu_1x_a100_sxm4", true],
+      ],
+    );
+    assert.equal(gpuRows(serve, options).find((r) => r.instanceType === "gpu_1x_h100_pcie")?.free, true, "no region, as before");
+  });
+
+  it("says how long a demo runs on the GPU, and warns when its limits fall short there", () => {
+    const sxm5 = { instanceType: "gpu_1x_h100_sxm5", label: "1x H100 SXM5 (80 GB)", priceCentsPerHour: 429, free: true };
+    const fits = serveTimeHint(serve, { minutes: 30 }, sxm5, { maxMinutes: 45, maxUsd: 3.29 });
+    assert.deepEqual(fits, {
+      text: "30 minutes live on 1x H100 SXM5 (80 GB), after about 15 to boot, mount the model cache and load the model. The job's limits allow 45 minutes.",
+      warn: false,
+    });
+    const short = serveTimeHint(serve, { minutes: 60 }, sxm5, { maxMinutes: 75, maxUsd: 5 }, true);
+    assert.equal(short?.warn, true);
+    assert.match(short!.text, /^A 60-minute live demo needs about 75 minutes of GPU time .* stop it after 69 minutes on 1x H100 SXM5 \(80 GB\), the priciest GPU Auto may take\./);
+    assert.equal(serveTimeHint(recipe, {}, sxm5, { maxMinutes: 30, maxUsd: 1 }), null, "only for glimmer-serve");
+    assert.equal(serveTimeHint(serve, { minutes: 30 }, null, { maxMinutes: 45, maxUsd: 3.29 }), null);
   });
 });

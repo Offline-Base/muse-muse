@@ -3,22 +3,29 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { JobResults } from "@/components/train/JobResults";
 import { JobRoom } from "@/components/train/JobRoom";
-import { evalRows, keepEvents, toRecipeView } from "@/components/train/format";
-import { toResultView } from "@/components/train/results";
+import type { JobLiveDemo } from "@/components/train/LiveDemo";
+import { NOT_PUBLIC_TEXT, evalRows, keepEvents, sweepOffText, toRecipeView } from "@/components/train/format";
+import { hasResults, toPublicLiveDemo, toResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected } from "@/components/ui";
+import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
-import { toJobView } from "@/lib/train/logic";
+import { ADAPTER_RECIPE, adapterProblem, toJobView } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import {
+  getAdapterSource,
   getDataset,
   getJob,
+  getLiveDemo,
   getReadyDataset,
   getResultJob,
+  lastSweepOkAt,
   listEvents,
   listResultEvents,
   type TrainJobRow,
 } from "@/lib/train/store";
-import type { Recipe, TrainEventView } from "@/lib/train/types";
+import type { LiveDemoView, Recipe, TrainEventView } from "@/lib/train/types";
+import { callbackOrigin } from "@/lib/train/userdata";
+import { sweepOffReason, sweepRunning } from "@/app/api/train/shared";
 import { pageViewer } from "../viewer";
 
 export const metadata: Metadata = { title: "Fine-tuning job" };
@@ -51,21 +58,88 @@ async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id
   return d ? { id: d.id, title: d.title } : null;
 }
 
+/** The trained job a glimmer-serve job's adapter param names, by id and title, or null. */
+async function servedAdapter(row: TrainJobRow, recipe: Recipe | null): Promise<{ id: string; title: string } | null> {
+  const field = recipe?.params.find((f) => f.kind === "adapter");
+  const value = field ? row.params?.[field.key] : undefined;
+  if (typeof value !== "string") return null;
+  const a = await getJob(value);
+  return a ? { id: a.id, title: a.title } : null;
+}
+
+/**
+ * The live demo of a trained glimmer-lora job's adapter (docs/TRAINING.md "Live demo"), or null when there is none.
+ * A problem reading it is logged and leaves the box out, so it never takes the rest of the page down with it.
+ */
+async function liveDemoOf(adapterJobId: string, now: Date): Promise<LiveDemoView | null> {
+  try {
+    return await getLiveDemo(adapterJobId, now);
+  } catch (err) {
+    console.error("[fine-tuning] live demo:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/** Why POST /api/train/jobs would refuse a new job right now, as the New job card says it, or null. */
+async function startBlock(now: Date): Promise<string | null> {
+  if (!callbackOrigin(env.platformUrl)) return NOT_PUBLIC_TEXT;
+  const off = sweepOffReason();
+  if (off) return sweepOffText(off);
+  // When the database can't say, the route still checks on Start, as on /fine-tuning.
+  const last = await lastSweepOkAt().catch(() => undefined);
+  return last === undefined || sweepRunning(last, now) ? null : sweepOffText("sweep_not_running");
+}
+
+/**
+ * What an admin's page of a trained glimmer-lora job shows for its live demo: the Try it live box while a serve job for
+ * it is open, Start a live demo when its adapter can be served (adapterProblem, as the jobs route checks it), else null.
+ */
+async function adapterLiveDemo(row: TrainJobRow, now: Date): Promise<JobLiveDemo | null> {
+  if (row.recipe !== ADAPTER_RECIPE || row.status !== "succeeded") return null;
+  const demo = await liveDemoOf(row.id, now);
+  if (demo) return { kind: "demo", demo };
+  try {
+    const source = await getAdapterSource(row.id);
+    if (!source || adapterProblem(source.job, source.metrics)) return null;
+    return {
+      kind: "start",
+      adapterTitle: row.title,
+      ceilings: { maxMinutes: env.trainJobMaxMinutes, maxUsd: env.trainJobMaxUsd },
+      maxActive: env.trainMaxActive,
+      dailyUsd: env.trainDailyUsd,
+      blocked: await startBlock(now),
+      publicPage: hasResults(row),
+    };
+  } catch (err) {
+    console.error("[fine-tuning] live demo adapter:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 /**
  * What non-admins see (docs/TRAINING.md "Lab results"): a judged job's results, read-only, from the store's Lab reads,
  * which never select the instance, IP, region, log or error. Any other job, running, failed or not judged, is a 404.
+ * While a live demo of a glimmer-lora job's adapter is open, the page also gets its PublicLiveDemo (state, minutes and
+ * end time only) for the Try it live box.
  */
 async function resultPage(jobId: string) {
+  const now = new Date();
   const result = await safeQuery(async () => {
     const row = await getResultJob(jobId);
     const recipe = row ? recipeById(row.recipe) : null;
     const view = row ? toResultView(row, recipe ? toRecipeView(recipe) : null) : null;
     if (!view) return null;
-    const [events, dataset] = await Promise.all([
+    const [events, dataset, live] = await Promise.all([
       listResultEvents(view.id),
       view.datasetId ? getReadyDataset(view.datasetId) : Promise.resolve(null),
+      view.recipe === ADAPTER_RECIPE ? liveDemoOf(view.id, now) : Promise.resolve(null),
     ]);
-    return { result: view, rows: evalRows(events), dataset: dataset ? { id: dataset.id, title: dataset.title } : null };
+    return {
+      result: view,
+      rows: evalRows(events),
+      dataset: dataset ? { id: dataset.id, title: dataset.title } : null,
+      live: toPublicLiveDemo(live),
+    };
   });
   if (!result.ok) {
     return (
@@ -75,7 +149,7 @@ async function resultPage(jobId: string) {
     );
   }
   if (!result.data) notFound();
-  return <JobResults {...result.data} />;
+  return <JobResults {...result.data} serverNow={now.getTime()} />;
 }
 
 export default async function FineTuningJobPage({ params }: { params: Promise<{ jobId: string }> }) {
@@ -87,9 +161,15 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
   const result = await safeQuery(async () => {
     const row = await getJob(jobId);
     if (!row) return null;
-    const [events, dataset] = await Promise.all([allEvents(row.id), jobDataset(row, recipeById(row.recipe))]);
+    const recipe = recipeById(row.recipe);
+    const [events, dataset, adapter, liveDemo] = await Promise.all([
+      allEvents(row.id),
+      jobDataset(row, recipe),
+      servedAdapter(row, recipe),
+      adapterLiveDemo(row, now),
+    ]);
     const { kept, dropped } = keepEvents(events, EVENTS_KEPT);
-    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset };
+    return { job: toJobView(row, now), events: kept, droppedEvents: dropped, dataset, adapter, liveDemo };
   });
   if (!result.ok) {
     return (
@@ -116,6 +196,8 @@ export default async function FineTuningJobPage({ params }: { params: Promise<{ 
       droppedEvents={result.data.droppedEvents}
       recipe={recipe ? toRecipeView(recipe) : null}
       dataset={result.data.dataset}
+      adapter={result.data.adapter}
+      liveDemo={result.data.liveDemo}
       serverNow={now.getTime()}
     />
   );

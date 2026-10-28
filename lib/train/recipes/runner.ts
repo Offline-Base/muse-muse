@@ -5,7 +5,8 @@
  *
  * job.json keys: jobId, callbackBase, token, params, maxMinutes, recipe, deadlineEpoch (Unix seconds, stamped before the
  * launch request from the time limit, or the dollar limit when that runs out first, so never after the platform stops
- * the job), and cacheDir for a recipe with usesCache. Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl,
+ * the job), cacheDir for a recipe with usesCache, and serveKey for a glimmer-serve job (the key its demo server asks
+ * for; blanked out of every log line like the token). Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl,
  * multipartOverBytes, partBytes, cacheWaitSeconds.
  */
 export const RUNNER_PY = String.raw`"""Muse Muse training runner (docs/TRAINING.md, "Runner and recipes").
@@ -54,6 +55,8 @@ ARTIFACT_KINDS = ("adapter", "checkpoint", "metrics", "log", "other")
 EVAL_FIELD_LIMIT = 3500
 EVAL_MAX = 60
 EVAL_FIELDS = ("prompt", "reference", "base", "tuned")
+# A "serving" callback's certSha256: the SHA-256 of the certificate's DER bytes, in lowercase hex.
+CERT_SHA256_CHARS = 64
 DATASET_PARTS = ("train", "eval")
 # Stops a nextPage loop that never ends: 1,000 pages of 100 items is far more than a dataset holds.
 DATASET_MAX_PAGES = 1000
@@ -203,11 +206,21 @@ class Platform:
     def __init__(self, base, token):
         self.base = str(base).rstrip("/")
         self._token = str(token)
+        self._hidden = []
+
+    def hide(self, secret, label):
+        """Blanks secret out of everything redact sees from now on, as label (a glimmer-serve job's serve key)."""
+        if isinstance(secret, str) and secret:
+            self._hidden.append((secret, label))
 
     def redact(self, text):
-        """text with the job token blanked out, in case a recipe or a command echoed it."""
+        """text with the job token (and any secret hidden) blanked out, in case a recipe or a command echoed it."""
         text = str(text)
-        return text.replace(self._token, "[job token]") if self._token else text
+        if self._token:
+            text = text.replace(self._token, "[job token]")
+        for secret, label in self._hidden:
+            text = text.replace(secret, label)
+        return text
 
     def post(self, path, body, retry_statuses=RETRY_STATUSES):
         """POSTs JSON to callbackBase + path. Returns (status, body bytes); raises HttpFailure on the network."""
@@ -449,7 +462,7 @@ def deadline_of(job, now):
 
 class Context:
     """What recipe.run(ctx) gets: params, cache_dir, work_dir, deadline, log, progress, run, upload, get_json, dataset,
-    dataset_title, eval."""
+    dataset_title, eval, and for a glimmer-serve job serve_key and serving."""
 
     def __init__(self, job, platform, work_dir, settings, cache_dir=None, activity=None):
         self.params = dict(job.get("params") or {})
@@ -464,6 +477,10 @@ class Context:
         self.cache_dir = cache_dir
         # The dataset's title, from the pages dataset() reads: None before that, or when the platform sends none.
         self.dataset_title = None
+        # A glimmer-serve job's serve key (job.json's serveKey): its demo server answers only requests that carry it.
+        # None for any other job. Never log it; the runner blanks it out of log lines as it does the job token.
+        serve_key = job.get("serveKey")
+        self.serve_key = serve_key if isinstance(serve_key, str) and serve_key else None
         self._platform = platform
         self._settings = settings
         self._activity = activity
@@ -692,6 +709,27 @@ class Context:
         }
         return self._platform.event(cut_eval_fields(body))
 
+    def serving(self, port, cert_sha256, model, adapter_job_id):
+        """Posts a "serving" callback: the recipe's HTTPS server answers on port, with the self-signed certificate whose
+        SHA-256 (of its DER bytes) is cert_sha256. The platform takes the IP from Lambda, never from the instance, and
+        pins the certificate to that fingerprint. True when the platform took it. Raises ValueError for a port or a
+        fingerprint that isn't one.
+        """
+        if isinstance(port, bool) or not isinstance(port, int) or not 0 < port < 65536:
+            raise ValueError("serving needs the server's TCP port, not " + repr(port)[:40])
+        fingerprint = str(cert_sha256 or "").replace(":", "").lower()
+        if len(fingerprint) != CERT_SHA256_CHARS or any(c not in "0123456789abcdef" for c in fingerprint):
+            raise ValueError("serving needs the certificate's SHA-256 as 64 hex characters")
+        body = {
+            "type": "serving",
+            "port": port,
+            "certSha256": fingerprint,
+            "model": self._platform.redact(model)[:200],
+            "adapterJobId": self._platform.redact(adapter_job_id)[:64],
+        }
+        say("serving on port " + str(port) + ", certificate sha256 " + fingerprint)
+        return self._platform.event(body)
+
     def _grant(self, name, size, content_type):
         """Asks the platform for an upload grant: one blob, this size and type. None when it has no storage (503)."""
         status, payload = self._platform.post(
@@ -825,6 +863,7 @@ def main(argv):
         with open(job_path) as f:
             job = json.load(f)
         platform = Platform(job["callbackBase"], job["token"])
+        platform.hide(job.get("serveKey"), "[serve key]")
     except Exception as e:
         say("could not read " + job_path + ": " + type(e).__name__)
         return 2

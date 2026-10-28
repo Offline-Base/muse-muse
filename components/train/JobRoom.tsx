@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
 import { EventLog } from "@/components/train/EventLog";
 import { JobPanel } from "@/components/train/JobPanel";
+import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
 import {
   doneMetrics,
   errorHeadline,
@@ -14,13 +15,13 @@ import {
   gpuName,
   isSettled,
   jobElapsedMs,
+  jobWorkingText,
   liveCostUsd,
   mergeEvents,
   stopControl,
   stopErrorText,
   trainStatusLabel,
   tunedModelName,
-  workingText,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
 import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobView } from "@/lib/train/types";
@@ -34,6 +35,13 @@ export interface JobRoomProps {
   recipe: RecipeView | null;
   /** The dataset the job trains on (its datasetId param), when it still exists. */
   dataset?: { id: string; title: string } | null;
+  /** A glimmer-serve job's adapter (its adapterJobId param): the trained job it serves, when it still exists. */
+  adapter?: { id: string; title: string } | null;
+  /**
+   * A trained glimmer-lora job's live demo: the Try it live box while a serve job for it is open, or Start a live demo
+   * when its adapter can be served. Null otherwise. Read from the props on every render, so a refresh updates it.
+   */
+  liveDemo?: JobLiveDemo | null;
   serverNow: number;
 }
 
@@ -82,6 +90,8 @@ function smooth(): ScrollBehavior {
  * The fine-tuning job page, in the build room's layout: the event log on the left, polled every 5 seconds while the
  * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop. A job that sent
  * eval items gets its results below the log; polling goes on after the GPU is gone while Muse Spark 1.3 judges them.
+ * A trained glimmer-lora job also gets its live demo above the results (Try it live, or Start a live demo), and a
+ * glimmer-serve job's panel says whether its demo server is up.
  */
 export function JobRoom(props: JobRoomProps) {
   const jobId = props.job.id;
@@ -275,7 +285,7 @@ export function JobRoom(props: JobRoomProps) {
             {!settled ? (
               <p className="turn turn-working train-working">
                 <span className="working-dot" aria-hidden />
-                <span>{shuttingDown ? "Shutting down the GPU" : workingText(job.status, job.stopRequested)}</span>
+                <span>{shuttingDown ? "Shutting down the GPU" : jobWorkingText(job)}</span>
                 <span className="muted">{duration(elapsed)}</span>
               </p>
             ) : null}
@@ -292,6 +302,7 @@ export function JobRoom(props: JobRoomProps) {
           </section>
 
           {terminal ? <JobResult job={job} events={events} elapsedMs={elapsed} costUsd={cost} /> : null}
+          {props.liveDemo ? <AdapterLiveDemo jobId={jobId} live={props.liveDemo} serverNow={props.serverNow} /> : null}
           <EvalResults state={evals} rows={rows} model={tunedModelName(job.recipe)} />
           <div ref={end} className="convo-end" />
         </div>
@@ -301,6 +312,7 @@ export function JobRoom(props: JobRoomProps) {
         job={job}
         recipe={props.recipe}
         dataset={props.dataset ?? null}
+        adapter={props.adapter ?? null}
         now={now}
         elapsedMs={elapsed}
         costUsd={cost}

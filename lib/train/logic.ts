@@ -6,14 +6,18 @@ import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import {
   isTrainTerminal,
+  SERVE_PORT,
   type DatasetView,
   type EvalSummary,
+  type LiveDemoView,
   type Recipe,
   type RecipeId,
+  type ServeEndpoint,
   type TrainCheck,
   type TrainEventBody,
   type TrainJobView,
   type TrainLimits,
+  type TrainServingView,
   type TrainStatus,
 } from "@/lib/train/types";
 
@@ -160,6 +164,12 @@ export function validateParams(
       value[field.key] = text.toLowerCase();
       continue;
     }
+    if (field.kind === "adapter") {
+      // Whether that job's adapter can be served is checked against the database by the jobs route (adapterProblem).
+      if (!UUID_RE.test(text)) return { ok: false, error: `${field.label} must be one of the trained adapters.` };
+      value[field.key] = text.toLowerCase();
+      continue;
+    }
     if (field.kind === "url") {
       if (text.length > PARAM_TEXT_MAX) return { ok: false, error: `${field.label} is too long.` };
       let url: URL;
@@ -262,6 +272,7 @@ export function toJobView(row: TrainJobRow, now: Date): TrainJobView {
     finishedAt: iso(row.finishedAt),
     terminatedAt: iso(row.terminatedAt),
     evalSummary: row.evalSummary ?? null,
+    ...(row.recipe === SERVE_RECIPE ? { serving: servingView(row) } : {}),
   };
 }
 
@@ -324,6 +335,16 @@ export function capEventBody(body: TrainEventBody): TrainEventBody {
       };
     case "judgement":
       return { ...body, note: head(body.note, JUDGE_NOTE_MAX) };
+    case "serving": {
+      const out: Extract<TrainEventBody, { type: "serving" }> = {
+        type: "serving",
+        port: body.port,
+        certSha256: certFingerprint(body.certSha256) ?? "",
+      };
+      if (body.model !== undefined) out.model = head(body.model, SERVE_TEXT_MAX);
+      if (body.adapterJobId !== undefined) out.adapterJobId = head(body.adapterJobId, SERVE_TEXT_MAX);
+      return out;
+    }
     default:
       return body;
   }
@@ -658,4 +679,162 @@ export function runFitProblem(e: RunEstimate, usable: number, gpuLabel: string):
     `${e.secondsPerStep} s a step, plus about ${e.overheadMinutes} for ${overheadText(e)}${e.cached ? "" : ", since this region has no model cache yet"}), ` +
     `but this job's limits stop it after ${usable} minutes. Lower the training steps, raise the time or dollar limit, or pick a faster GPU.`
   );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The live demo: a glimmer-serve job serves one trained glimmer-lora adapter (docs/TRAINING.md "Live demo")
+
+/** The recipe that serves an adapter. Only its jobs get the demo firewall ruleset, a serving key and a serve endpoint. */
+export const SERVE_RECIPE: RecipeId = "glimmer-serve";
+/** The recipe whose adapters a serve job can serve. */
+export const ADAPTER_RECIPE: RecipeId = "glimmer-lora";
+/** The serve recipe's param that names the adapter (kind "adapter"), and its minutes param. */
+export const SERVE_ADAPTER_PARAM = "adapterJobId";
+export const SERVE_MINUTES_PARAM = "minutes";
+/** Minutes a serve job serves when it isn't told, and the bounds its minutes param takes. */
+export const SERVE_MINUTES_DEFAULT = 30;
+export const SERVE_MINUTES_MIN = 10;
+export const SERVE_MINUTES_MAX = 120;
+/** Minutes a serve job gets on top of its serving minutes, to boot, mount the cache and load the 4-bit model. */
+export const SERVE_BOOT_MINUTES = 15;
+/**
+ * How long before the runner's deadline a serve job's demo server stops taking prompts, so the answer in progress
+ * finishes and the runner posts done in time. The recipe's Python has the same number (SERVE_MARGIN_SECONDS in
+ * lib/train/recipes/serve.ts); a test keeps them equal.
+ */
+export const SERVE_STOP_MARGIN_SECONDS = 180;
+/**
+ * The hourly price a serve job's default dollar limit is sized for: an H100 SXM5 at Lambda's price on 2026-10-27
+ * ($4.29 an hour), the priciest GPU it may get. An A100 or an H100 PCIe then has room to spare.
+ */
+export const SERVE_SIZING_CENTS_PER_HOUR = 429;
+const SERVE_TEXT_MAX = 200;
+const FINGERPRINT_RE = /^[0-9a-f]{64}$/;
+
+/** True for the recipe that serves an adapter. */
+export function isServeRecipe(recipe: RecipeId | string | null | undefined): boolean {
+  return recipe === SERVE_RECIPE;
+}
+
+/**
+ * A certificate's SHA-256 fingerprint as the platform stores and compares it: 64 lowercase hex characters, from that
+ * or from the colon-separated uppercase form openssl and Node print ("AB:CD:..."). Null for anything else.
+ */
+export function certFingerprint(text: unknown): string | null {
+  if (typeof text !== "string" || text.length > 200) return null;
+  const hex = text.trim().replace(/:/g, "").toLowerCase();
+  return FINGERPRINT_RE.test(hex) ? hex : null;
+}
+
+/** The minutes a serve job serves: its minutes param, whole, within 10 to 120, or 30 when it has none. */
+export function serveMinutes(params: Record<string, string | number | undefined> | null | undefined): number {
+  const raw = params?.[SERVE_MINUTES_PARAM];
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw.trim()) : NaN;
+  if (!Number.isFinite(n)) return SERVE_MINUTES_DEFAULT;
+  return Math.min(SERVE_MINUTES_MAX, Math.max(SERVE_MINUTES_MIN, Math.floor(n)));
+}
+
+/**
+ * The defaults clampLimits fills in for a job nobody set limits for. A serve job's depend on its minutes: those plus
+ * SERVE_BOOT_MINUTES, and dollars for that long (one minute more, rounded up to the cent) at
+ * SERVE_SIZING_CENTS_PER_HOUR, so the dollar limit never stops it before the time limit on any GPU it can get. Every
+ * other recipe keeps its own.
+ */
+export function recipeDefaults(
+  recipe: Pick<Recipe, "id" | "defaultMaxMinutes" | "defaultMaxUsd">,
+  params: Record<string, string | number | undefined>,
+): Pick<Recipe, "defaultMaxMinutes" | "defaultMaxUsd"> {
+  if (!isServeRecipe(recipe.id)) return { defaultMaxMinutes: recipe.defaultMaxMinutes, defaultMaxUsd: recipe.defaultMaxUsd };
+  const minutes = serveMinutes(params) + SERVE_BOOT_MINUTES;
+  return { defaultMaxMinutes: minutes, defaultMaxUsd: Math.ceil(((minutes + 1) * SERVE_SIZING_CENTS_PER_HOUR) / 60) / 100 };
+}
+
+/**
+ * Null when a serve job's limits leave time to boot, load the model and serve all its minutes on the GPU it gets,
+ * otherwise why not, as the jobs route answers it (400).
+ */
+export function serveFitProblem(minutes: number, usable: number, gpuLabel: string): string | null {
+  const needed = minutes + SERVE_BOOT_MINUTES;
+  if (needed <= usable) return null;
+  return (
+    `A ${minutes}-minute live demo needs about ${needed} minutes of GPU time (about ${SERVE_BOOT_MINUTES} to boot and load the model), ` +
+    `but this job's limits stop it after ${usable} minutes on ${gpuLabel}. Pick fewer minutes, or raise the time or dollar limit.`
+  );
+}
+
+/** The metrics of a job's "done" callback, as its event log keeps them. */
+export type DoneMetrics = Record<string, string | number>;
+
+/**
+ * Why a job's adapter can't be served, as the jobs route answers it (400 after the param's label), or null when it
+ * can: a glimmer-lora job that succeeded, wasn't a dry run (whose adapter is a stand-in), and whose done metrics say it
+ * saved the adapter on the cache filesystem (cache_used "yes" and adapter_dir ending in models/<its id>), so a serve
+ * job in its region finds it at <cache>/models/<id>/.
+ */
+export function adapterProblem(
+  job: Pick<TrainJobRow, "id" | "recipe" | "status" | "params"> | null,
+  metrics: DoneMetrics | null,
+): string | null {
+  if (!job) return "that job doesn't exist.";
+  if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
+  if (job.status !== "succeeded") return "that job didn't succeed, so it has no adapter to serve.";
+  if (Number(job.params?.dryRun) >= 1) return "that job was a dry run, so its adapter is a stand-in.";
+  const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
+  if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {
+    return "that job's adapter isn't on a model cache filesystem, so a GPU can't load it.";
+  }
+  return null;
+}
+
+/**
+ * When a serve job is expected to stop serving: its minutes after its demo server came up, or SERVE_STOP_MARGIN_SECONDS
+ * before the end of the time its limits allow (usableMinutes from launch, which the runner's deadline never passes)
+ * when that comes first, since the server stops that long before the deadline. Before it serves, only the latter. Null
+ * before launch.
+ */
+export function serveEndsAt(
+  job: Pick<TrainJobRow, "params" | "maxMinutes" | "maxUsd" | "priceCentsPerHour" | "launchedAt" | "serveEndpoint">,
+): Date | null {
+  if (!job.launchedAt) return null;
+  const limit =
+    job.launchedAt.getTime() +
+    usableMinutes({ maxMinutes: job.maxMinutes, maxUsd: job.maxUsd }, job.priceCentsPerHour) * 60_000 -
+    SERVE_STOP_MARGIN_SECONDS * 1000;
+  const started = job.serveEndpoint ? Date.parse(job.serveEndpoint.startedAt) : NaN;
+  if (!Number.isFinite(started)) return new Date(limit);
+  return new Date(Math.min(limit, started + serveMinutes(job.params) * 60_000));
+}
+
+/** A serve job's demo server for the admin job page: when it came up and when it is expected to stop. */
+function servingView(row: TrainJobRow): TrainServingView | null {
+  const started = row.serveEndpoint ? Date.parse(row.serveEndpoint.startedAt) : NaN;
+  const ends = serveEndsAt(row);
+  if (!Number.isFinite(started) || !ends) return null;
+  return { startedAt: new Date(started).toISOString(), endsAt: ends.toISOString() };
+}
+
+/** The endpoint a serve job's proxy may connect to: one with an IP from Lambda, the demo port and a fingerprint. */
+export function usableEndpoint(endpoint: ServeEndpoint | null | undefined): (ServeEndpoint & { ip: string }) | null {
+  if (!endpoint || typeof endpoint.ip !== "string" || !endpoint.ip) return null;
+  if (endpoint.port !== SERVE_PORT || !certFingerprint(endpoint.certSha256)) return null;
+  return { ...endpoint, ip: endpoint.ip, certSha256: certFingerprint(endpoint.certSha256)! };
+}
+
+/**
+ * A serve job as the public result page shows it: "live" once it is running with a usable endpoint, "starting" while
+ * it launches and loads the model, null when it has ended or an admin asked to stop it. Only the job id, the state,
+ * the minutes and when it is expected to stop: never the IP, the key or the fingerprint.
+ */
+export function toLiveDemoView(
+  row: Pick<
+    TrainJobRow,
+    "id" | "status" | "stopRequested" | "params" | "maxMinutes" | "maxUsd" | "priceCentsPerHour" | "launchedAt" | "serveEndpoint"
+  >,
+  now: Date,
+): LiveDemoView | null {
+  if (isTrainTerminal(row.status) || row.stopRequested) return null;
+  const ends = serveEndsAt(row);
+  if (ends && ends.getTime() <= now.getTime()) return null;
+  const live = row.status === "running" && usableEndpoint(row.serveEndpoint) !== null;
+  return { serveJobId: row.id, state: live ? "live" : "starting", minutes: serveMinutes(row.params), endsAt: ends ? ends.toISOString() : null };
 }

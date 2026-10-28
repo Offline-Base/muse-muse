@@ -1,5 +1,5 @@
 import type { IconName } from "@/components/icons";
-import { bytes, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
+import { bytes, dayLabel, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
 import {
   clampLimits,
@@ -7,14 +7,23 @@ import {
   DATASET_MIN_COUNT,
   estimateCostUsd,
   evalHoldoutCount,
+  isServeRecipe,
   MIN_MAX_MINUTES,
   MIN_MAX_USD,
+  recipeDefaults,
   runEstimate,
+  SERVE_BOOT_MINUTES,
+  SERVE_MINUTES_PARAM,
+  SERVE_RECIPE,
+  SERVE_SIZING_CENTS_PER_HOUR,
+  serveFitProblem,
+  serveMinutes,
   unjudgedNote,
   usableMinutes,
 } from "@/lib/train/logic";
 import {
   isTrainTerminal,
+  type AdapterOption,
   type DatasetStatus,
   type DatasetView,
   type EvalSummary,
@@ -27,6 +36,7 @@ import {
   type TrainLimits,
   type TrainProgress,
   type TrainStatus,
+  type TryLiveAnswer,
 } from "@/lib/train/types";
 
 /**
@@ -132,18 +142,22 @@ export interface GpuRow {
   free: boolean;
 }
 
-/** The recipe's GPUs in its order of preference, joined with GET /api/train/gpus. */
-export function gpuRows(recipe: Pick<RecipeView, "gpus">, options: GpuOption[]): GpuRow[] {
+/**
+ * The recipe's GPUs in its order of preference, joined with GET /api/train/gpus. With `onlyRegion` (a glimmer-serve
+ * job, which launches only where its adapter's cache is, as pickGpu does) a GPU is free only when it has capacity there.
+ */
+export function gpuRows(recipe: Pick<RecipeView, "gpus">, options: GpuOption[], onlyRegion?: string | null): GpuRow[] {
   const byType = new Map(options.map((o) => [o.instanceType, o]));
   return recipe.gpus.map((choice) => {
     const o = byType.get(choice.instanceType);
     // The gpus route lists a type Lambda doesn't offer with price 0 and no regions.
     const offered = Boolean(o && o.priceCentsPerHour > 0);
+    const regions = o ? (onlyRegion ? o.regions.filter((r) => r === onlyRegion) : o.regions) : [];
     return {
       instanceType: choice.instanceType,
       label: o?.description?.trim() || choice.label,
       priceCentsPerHour: offered && o ? o.priceCentsPerHour : null,
-      free: Boolean(offered && o?.regions.length),
+      free: Boolean(offered && regions.length),
     };
   });
 }
@@ -228,6 +242,33 @@ export function runTimeHint(
   };
 }
 
+/**
+ * The New job card's line for a glimmer-serve job: how long it serves on `gpu` plus the time to boot and load the model,
+ * and a warning when the job's limits there can't cover both, which the jobs route refuses (serveFitProblem). `auto`
+ * says the GPU is Auto's priciest pick, the one whose price leaves the fewest minutes. Null for any other recipe or
+ * without a GPU.
+ */
+export function serveTimeHint(
+  recipe: Pick<RecipeView, "id">,
+  params: Record<string, string | number | undefined>,
+  gpu: GpuRow | null,
+  limits: TrainLimits,
+  auto = false,
+): RunHint | null {
+  if (!isServeRecipe(recipe.id) || !gpu) return null;
+  const minutes = serveMinutes(params);
+  const usable = usableMinutes(limits, gpu.priceCentsPerHour);
+  const label = auto ? `${gpu.label}, the priciest GPU Auto may take` : gpu.label;
+  const problem = serveFitProblem(minutes, usable, label);
+  if (problem) return { text: problem, warn: true };
+  return {
+    text:
+      `${plural(minutes, "minute")} live ${auto ? `on Auto (up to ${gpu.label})` : `on ${gpu.label}`}, after about ` +
+      `${SERVE_BOOT_MINUTES} to boot, mount the model cache and load the model. The job's limits allow ${usable} minutes.`,
+    warn: false,
+  };
+}
+
 /** Lambda's price for a persistent filesystem, per GB a month, and about how much one region's model cache holds. */
 export const CACHE_USD_PER_GB_MONTH = 0.2;
 export const CACHE_GB = 40;
@@ -308,8 +349,14 @@ export function startErrorText(status: number, body: unknown, limits: { maxActiv
       const max = num(body, "max") ?? limits.maxActive;
       return `A job is already using a GPU, and only ${plural(max, "job")} can hold one at a time. Wait for it to finish, or stop it first.`;
     }
-    case "no_capacity":
-      return "Lambda has no free GPU of that kind right now. Pick another GPU, or try again in a few minutes.";
+    case "no_capacity": {
+      const region = field(body, "region");
+      return region
+        ? `Lambda has no free GPU for this in ${region} right now, and a live demo can only run there, where its adapter's model cache is. Try again in a few minutes.`
+        : "Lambda has no free GPU of that kind right now. Pick another GPU, or try again in a few minutes.";
+    }
+    case "demo_running":
+      return "A live demo of this adapter is already starting or running, so another one wasn't started.";
     case "daily_cap": {
       const cap = usd(num(body, "dailyUsd") ?? limits.dailyUsd);
       const spent = num(body, "spentUsd");
@@ -515,6 +562,19 @@ export function eventLine(body: TrainEventBody, jobId?: string): EventLine {
       return { icon: "alert", lead: "Failed", text: "", detail: body.error, tone: "bad" };
     case "eval":
       return { icon: "clipboard", lead: "Eval item", text: `${itemNumber(body.index)}: ${truncate(String(body.prompt ?? ""), 90)}` };
+    case "serving": {
+      // Admins only: the job page's log. The public pages never read it.
+      const cert = String(body.certSha256 ?? "");
+      return {
+        icon: "monitor",
+        lead: "Serving",
+        text:
+          `The live demo's server answers on port ${body.port}` +
+          `${body.model ? ` with ${truncate(String(body.model), 80)}` : ""}` +
+          `${cert ? `, pinned to the certificate whose SHA-256 starts ${cert.slice(0, 12)}` : ""}.`,
+        tone: "ok",
+      };
+    }
     case "judgement":
       return {
         icon: "check",
@@ -867,4 +927,161 @@ export function evalSummaryText(s: EvalSummary, model: string): string {
     `Tuned ${model} beat base on ${s.tunedWins} of ${s.items}, base won ${s.baseWins}, ties ${s.ties}; ` +
     `average score base ${scoreText(s.avgBaseScore)}, tuned ${scoreText(s.avgTunedScore)}, judged by ${WRITER_NAME}.`
   );
+}
+
+// ---------- Live demo (docs/TRAINING.md "Live demo") ----------
+
+/** The longest app idea the live demo takes. POST /api/lab/{id}/try and the GPU's own server both cap it here. */
+export const TRY_PROMPT_MAX = 600;
+
+/** The example in the Try it live box. */
+export const TRY_PLACEHOLDER =
+  "A menu board for my bakery that updates from a photo of today's chalkboard, with prices and allergens.";
+
+/** How long the browser waits for both answers: the proxy's 120 s, plus room for the trip there and back. */
+export const TRY_WAIT_MS = 150_000;
+
+/** The Try it live box checks the page again this often while its demo is starting. */
+export const DEMO_REFRESH_MS = 15_000;
+
+/** The minutes the Start a live demo control offers. */
+export const DEMO_MINUTE_CHOICES: readonly number[] = [10, 15, 20, 30, 45, 60, 90, 120];
+
+/** What the Start a live demo control knows about one choice of minutes. */
+export interface DemoPlan {
+  minutes: number;
+  /** The limits the jobs route gives a demo of these minutes when it asks for none: recipeDefaults under the ceilings. */
+  limits: TrainLimits;
+  /** False when the time limit can't cover the minutes plus the boot time, so the route refuses it on any GPU. */
+  fits: boolean;
+  /** Set when the dollar limit can't cover it on the priciest GPU a demo may get, so it may be refused there. */
+  warn: string | null;
+}
+
+/**
+ * A live demo of `minutes` under the platform ceilings, as POST /api/train/jobs works it out for a glimmer-serve job
+ * that asks for no limits: its minutes plus SERVE_BOOT_MINUTES, dollars sized for the priciest GPU, both capped.
+ */
+export function demoPlan(minutes: number, ceilings: TrainLimits): DemoPlan {
+  const params = { [SERVE_MINUTES_PARAM]: minutes };
+  const served = serveMinutes(params);
+  const defaults = recipeDefaults({ id: SERVE_RECIPE, defaultMaxMinutes: 0, defaultMaxUsd: 0 }, params);
+  const limits = clampLimits(defaults, {}, ceilings);
+  const needed = served + SERVE_BOOT_MINUTES;
+  const fits = limits.maxMinutes >= needed;
+  const usable = usableMinutes(limits, SERVE_SIZING_CENTS_PER_HOUR);
+  const warn =
+    fits && usable < needed
+      ? `The ${usd(limits.maxUsd)} dollar limit covers ${usable} minutes on the priciest GPU a demo may get ` +
+        `(${usd(SERVE_SIZING_CENTS_PER_HOUR / 100)} an hour), less than the ${needed} this one needs, so it is refused ` +
+        "if that is the only one free. Pick fewer minutes to be sure it starts."
+      : null;
+  return { minutes: served, limits, fits, warn };
+}
+
+/** "14:05", read in UTC. */
+function hhmmUtc(iso: string): string {
+  return clockUtc(iso).slice(0, 5);
+}
+
+/** "29 minutes left", "Less than a minute left", "Ending now", or null without an end time. */
+export function timeLeftText(endsAt: string | null | undefined, now: number): string | null {
+  const end = Date.parse(endsAt ?? "");
+  if (!Number.isFinite(end)) return null;
+  const ms = end - now;
+  if (ms <= 0) return "Ending now";
+  if (ms < 60_000) return "Less than a minute left";
+  return `${plural(Math.floor(ms / 60_000), "minute")} left`;
+}
+
+/**
+ * A glimmer-serve job's demo server as the admin job page says it: not up yet, serving with the time left, or when it
+ * served once the job ended. Reads TrainJobView.serving, which never has the certificate.
+ */
+export function servingText(
+  job: Pick<TrainJobView, "status" | "stopRequested" | "finishedAt" | "serving">,
+  now: number,
+): string {
+  const s = job.serving ?? null;
+  if (isTrainTerminal(job.status)) {
+    if (!s) return "The demo server never came up.";
+    const finished = Date.parse(job.finishedAt ?? "");
+    const end = Number.isFinite(finished) && finished < Date.parse(s.endsAt) ? (job.finishedAt as string) : s.endsAt;
+    return `Served from ${hhmmUtc(s.startedAt)} to ${hhmmUtc(end)} UTC.`;
+  }
+  if (job.stopRequested) return s ? "Stopping the live demo." : "Stopping before the demo server came up.";
+  if (!s) {
+    return `Not serving yet. The GPU boots, mounts the model cache and loads the model, which takes up to about ${SERVE_BOOT_MINUTES} minutes.`;
+  }
+  const left = timeLeftText(s.endsAt, now);
+  return `Serving since ${hhmmUtc(s.startedAt)} UTC, until about ${hhmmUtc(s.endsAt)} UTC${left ? ` (${left.toLowerCase()})` : ""}.`;
+}
+
+/** What the job page says while the job runs: workingText, or for a glimmer-serve job whether it serves yet. */
+export function jobWorkingText(job: Pick<TrainJobView, "recipe" | "status" | "stopRequested" | "serving">): string {
+  if (isServeRecipe(job.recipe) && job.status === "running" && !job.stopRequested) {
+    return job.serving ? "Serving the live demo" : "Loading the model for the live demo";
+  }
+  return workingText(job.status, job.stopRequested);
+}
+
+/**
+ * The option text in the New job card's adapter select, most telling first, since a long one is cut off at the end:
+ * "Bakery LoRA · tuned won 40 of 40 · Oct 27 · us-east-1 · Bakery helper".
+ */
+export function adapterOptionText(
+  a: Pick<AdapterOption, "title" | "datasetTitle" | "region" | "finishedAt" | "evalSummary">,
+): string {
+  const parts = [a.title];
+  if (a.evalSummary && unjudgedNote(a.evalSummary) === null) {
+    parts.push(`tuned won ${a.evalSummary.tunedWins} of ${a.evalSummary.items}`);
+  }
+  if (a.finishedAt) parts.push(dayLabel(a.finishedAt));
+  if (a.region) parts.push(a.region);
+  if (a.datasetTitle && a.datasetTitle !== a.title) parts.push(a.datasetTitle);
+  return parts.join(" · ");
+}
+
+/** "7 minutes" from seconds, never under a minute. */
+function waitText(seconds: number): string {
+  return plural(Math.max(1, Math.ceil(seconds / 60)), "minute");
+}
+
+/** What the Try it live box says when POST /api/lab/{id}/try refuses, by the route's codes (TryLiveError). */
+export function tryErrorText(status: number, body: unknown): string {
+  const code = errorCode(body);
+  switch (code) {
+    case "no_live_demo":
+      return "This live demo has ended, so no GPU is answering now.";
+    case "busy":
+      return "The GPU is answering someone else's idea right now, one at a time. Try again in a few seconds.";
+    case "rate_limited": {
+      const wait = num(body, "retryAfterSeconds");
+      const when = wait === null ? "in a few minutes" : `in ${waitText(wait)}`;
+      return field(body, "scope") === "demo"
+        ? `The live demo has answered as many ideas as it takes this hour. Try again ${when}.`
+        : `That's as many ideas as the demo takes from you for now. Try again ${when}.`;
+    }
+    case "timeout":
+      return "The GPU didn't finish both answers within 2 minutes. Try again, or try a shorter idea.";
+    case "demo_unavailable":
+      return "Couldn't reach the live demo's GPU just now. Try again in a moment.";
+    case "cross_site":
+      return "Open this page on Muse Muse itself to try the live demo.";
+  }
+  if (status === 400) {
+    const message = field(body, "error");
+    return message && !isCode(message) ? message : "Check the idea and try again.";
+  }
+  if (status === 413) return "That idea is too long.";
+  return `The live demo couldn't answer${code && isCode(code) ? ` (${code})` : ""}. Try again in a moment.`;
+}
+
+/** Both answers from a POST /api/lab/{id}/try reply, or null when it isn't one. */
+export function tryAnswerOf(data: unknown): TryLiveAnswer | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.base !== "string" || typeof d.tuned !== "string") return null;
+  const ms = typeof d.ms === "number" && Number.isFinite(d.ms) && d.ms >= 0 ? d.ms : 0;
+  return { base: d.base, tuned: d.tuned, ms };
 }

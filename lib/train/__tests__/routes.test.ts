@@ -11,7 +11,9 @@
  * sweep cron notes each run whose Lambda listing answered. Eval callbacks are checked, cut and kept once per index up to
  * a cap. GET .../dataset pages the job's dataset for its token only. /api/train/datasets validates and starts the
  * dataset workflow, refused while the spend cap is reached. A dataset param must name a ready dataset, and a recipe that
- * keeps the model cache prefers the regions that have it.
+ * keeps the model cache prefers the regions that have it. A live demo (glimmer-serve) job must name an adapter that can
+ * be served, launches only in that adapter's region with limits sized for its minutes, and only it may send a serving
+ * callback, whose address is never taken from the runner. Its runner pages its adapter's dataset.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/routes.test.ts
  *
@@ -72,6 +74,14 @@ let pageTotals: Record<string, number> = { train: 450, eval: 40 };
 let paused = false;
 let startFails = false;
 let cacheRegionsImpl: () => Promise<string[]> = async () => ["us-south-1"];
+/** Jobs other than JOB_ID that getJob knows, by id. */
+let otherJobs: Record<string, Record<string, unknown>> = {};
+/** What getAdapterSource answers, by job id. */
+let adapterSources: Record<string, { job: Record<string, unknown>; metrics: Record<string, unknown> | null }> = {};
+/** What getLiveDemo answers. */
+let liveDemo: Record<string, unknown> | null = null;
+/** What earlierOpenServeJob answers: another demo of the same adapter created just before the new one. */
+let earlierDemo: { id: string } | null = null;
 const savedEnv = { ...process.env };
 
 function next(list: number[]): number {
@@ -103,7 +113,20 @@ const fakeStore = {
   recordEvent: async (jobId: string, body: unknown) => void calls.push({ fn: "recordEvent", args: [jobId, body] }),
   getJob: async (jobId: string) => {
     calls.push({ fn: "getJob", args: [jobId] });
-    return jobId === JOB_ID ? { ...jobRow({}), status: jobStatus, instanceId: "inst-1", terminatedAt: null, ...jobExtra } : null;
+    if (jobId !== JOB_ID) return otherJobs[jobId] ?? null;
+    return { ...jobRow({}), status: jobStatus, instanceId: "inst-1", terminatedAt: null, ...jobExtra };
+  },
+  getAdapterSource: async (jobId: string) => {
+    calls.push({ fn: "getAdapterSource", args: [jobId] });
+    return adapterSources[jobId] ?? null;
+  },
+  getLiveDemo: async (jobId: string) => {
+    calls.push({ fn: "getLiveDemo", args: [jobId] });
+    return liveDemo;
+  },
+  earlierOpenServeJob: async (adapterJobId: string, jobId: string) => {
+    calls.push({ fn: "earlierOpenServeJob", args: [adapterJobId, jobId] });
+    return earlierDemo;
   },
   requestStop: async (jobId: string) => {
     calls.push({ fn: "requestStop", args: [jobId] });
@@ -357,6 +380,10 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     paused = false;
     startFails = false;
     cacheRegionsImpl = async () => ["us-south-1"];
+    otherJobs = {};
+    adapterSources = {};
+    liveDemo = null;
+    earlierDemo = null;
     process.env.BLOB_READ_WRITE_TOKEN = FAKE_BLOB_TOKEN;
     // A fake value: Meta is never called here, the dataset route only checks that it is set.
     process.env.MODEL_API_KEY = "test-value-not-a-key";
@@ -560,6 +587,61 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     });
   });
 
+  describe("serving callbacks", () => {
+    const CERT = "AB:".repeat(31) + "AB";
+    const serving = (over: Record<string, unknown> = {}) => ({ type: "serving", port: 8443, certSha256: CERT, model: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit", ...over });
+
+    beforeEach(() => {
+      jobExtra = { recipe: "glimmer-serve", params: { adapterJobId: "aaaaaaaa-0000-4000-8000-000000000000", minutes: 30 } };
+    });
+
+    it("keeps the port and the fingerprint, lowercased, and never an address from the runner", async () => {
+      const res = await events(post("events", serving({ ip: "203.0.113.66", host: "evil.example.com", adapterJobId: "aaaaaaaa" })), ctx);
+      assert.equal(res.status, 204);
+      assert.deepEqual(called("applyCallback")[0]!.args[1], {
+        type: "serving",
+        port: 8443,
+        certSha256: "ab".repeat(32),
+        model: "unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit",
+        adapterJobId: "aaaaaaaa",
+      });
+      assert.equal(called("recordEvent").length, 1, "logged for the job page");
+      assert.ok(!JSON.stringify(calls).includes("203.0.113.66"));
+      assert.ok(!JSON.stringify(calls).includes("evil.example.com"));
+    });
+
+    it("refuses another port or anything that isn't a SHA-256 fingerprint", async () => {
+      for (const bad of [
+        serving({ port: 443 }),
+        serving({ port: "8443" }),
+        serving({ certSha256: "ab".repeat(31) }),
+        serving({ certSha256: "zz".repeat(32) }),
+        serving({ certSha256: undefined }),
+      ]) {
+        const res = await events(post("events", bad), ctx);
+        assert.equal(res.status, 400, JSON.stringify(bad));
+        assert.match(((await res.json()) as { error: string }).error, /port \(8443\) and its certificate's SHA-256 fingerprint/);
+      }
+      assert.equal(called("applyCallback").length, 0);
+    });
+
+    it("refuses a serving callback from a job that isn't glimmer-serve, before applying it", async () => {
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID } };
+      const res = await events(post("events", serving()), ctx);
+      assert.equal(res.status, 400);
+      assert.match(((await res.json()) as { error: string }).error, /Only a glimmer-serve job/);
+      assert.equal(called("applyCallback").length + called("recordEvent").length, 0);
+    });
+
+    it("answers 409 job_ended once the job ended, and counts toward the job's callbacks a minute", async () => {
+      applied = { applied: false, status: "succeeded" };
+      assert.equal((await events(post("events", serving()), ctx)).status, 409);
+      applied = { applied: true, status: "running" };
+      for (let i = 1; i < 120; i++) await events(post("events", { type: "heartbeat" }), ctx);
+      assert.equal((await events(post("events", serving()), ctx)).status, 429);
+    });
+  });
+
   describe("job dataset pages", () => {
     const pageReq = (query: string, token: string | null = TOKEN) =>
       new Request(`https://muse.example.com/api/train/jobs/${JOB_ID}/dataset${query}`, {
@@ -619,6 +701,22 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       const early = await jobDataset(pageReq("?part=train"), ctx);
       assert.equal(early.status, 409);
       assert.deepEqual(await early.json(), { error: "dataset_not_ready" });
+    });
+
+    it("pages a glimmer-serve job its adapter's dataset, for the short system line", async () => {
+      const adapterId = "aaaaaaaa-0000-4000-8000-000000000000";
+      jobExtra = { recipe: "glimmer-serve", params: { adapterJobId: adapterId, minutes: 30 } };
+      otherJobs = { [adapterId]: { id: adapterId, recipe: "glimmer-lora", params: { datasetId: DATASET_ID } } };
+      const res = await jobDataset(pageReq("?part=train&page=0"), ctx);
+      assert.equal(res.status, 200);
+      assert.equal(((await res.json()) as { title: string }).title, "Python errors");
+      assert.deepEqual(called("datasetPage")[0]!.args, [DATASET_ID, "train", 0, 100]);
+
+      otherJobs = {};
+      assert.equal((await jobDataset(pageReq("?part=train"), ctx)).status, 404, "an adapter job that is gone");
+      jobExtra = { recipe: "smoke", params: { adapterJobId: adapterId } };
+      otherJobs = { [adapterId]: { id: adapterId, recipe: "glimmer-lora", params: { datasetId: DATASET_ID } } };
+      assert.equal((await jobDataset(pageReq("?part=train"), ctx)).status, 404, "only glimmer-serve reads through its adapter");
     });
 
     it("limits a job to 120 pages an hour", async () => {
@@ -1072,6 +1170,145 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await createJobRoute(createReq({ recipe: "smoke" }))).status, 201);
       assert.equal(called("cacheRegions").length, 0, "the smoke test keeps no cache");
       assert.deepEqual(called("pickGpu")[0]!.args[3], []);
+    });
+  });
+
+  describe("create live demo job", () => {
+    const ADAPTER = "aaaaaaaa-0000-4000-8000-000000000000";
+    const created = () => called("createJob").length;
+    const adapterJob = (over: Record<string, unknown> = {}) => ({
+      id: ADAPTER,
+      recipe: "glimmer-lora",
+      status: "succeeded",
+      region: "us-west-1",
+      params: { datasetId: DATASET_ID, maxSteps: 120 },
+      ...over,
+    });
+    const cached = { cache_used: "yes", adapter_dir: `/lambda/nfs/muse-muse-cache-us-west-1/models/${ADAPTER}` };
+    const ask = (params: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+      createJobRoute(createReq({ recipe: "glimmer-serve", params: { adapterJobId: ADAPTER, ...params }, ...extra }));
+    let serveRecipe: { id: string } | undefined;
+
+    before(async () => {
+      const { RECIPES } = (await import(new URL("../recipes/index.ts", import.meta.url).href)) as typeof import("../recipes/index");
+      serveRecipe = RECIPES.find((r) => r.id === "glimmer-serve");
+    });
+
+    beforeEach(() => {
+      adapterSources = { [ADAPTER]: { job: adapterJob(), metrics: cached } };
+      gpuPick = { instanceType: "gpu_1x_h100_sxm5", region: "us-west-1", priceCentsPerHour: 429 };
+    });
+
+    it("refuses an adapter that can't be served, before asking Lambda or creating anything", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      const reasons: Array<[Record<string, unknown> | null, Record<string, unknown> | null, RegExp]> = [
+        [null, null, /doesn't exist/],
+        [adapterJob({ recipe: "smoke" }), cached, /isn't a Muse Glimmer LoRA job/],
+        [adapterJob({ status: "failed" }), cached, /didn't succeed/],
+        [adapterJob({ params: { datasetId: DATASET_ID, dryRun: 1 } }), cached, /dry run/],
+        [adapterJob(), { cache_used: "no", adapter_dir: `/opt/muse/models/${ADAPTER}` }, /isn't on a model cache filesystem/],
+        [adapterJob(), null, /isn't on a model cache filesystem/],
+      ];
+      for (const [job, metrics, reason] of reasons) {
+        adapterSources = job ? { [ADAPTER]: { job, metrics } } : {};
+        const res = await ask();
+        assert.equal(res.status, 400, String(reason));
+        assert.match(((await res.json()) as { error: string }).error, reason);
+      }
+      assert.equal((await ask({ adapterJobId: "not-a-job" })).status, 400);
+      assert.equal((await createJobRoute(createReq({ recipe: "glimmer-serve", params: {} }))).status, 400, "the adapter is required");
+      assert.equal(created() + called("listInstanceTypes").length, 0);
+    });
+
+    it("launches only in the adapter's region, with limits sized for its minutes", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      const res = await ask({ adapterJobId: ADAPTER.toUpperCase() });
+      assert.equal(res.status, 201);
+      const pick = called("pickGpu")[0]!.args;
+      assert.deepEqual(pick.slice(3), [["us-west-1"], "us-west-1"], "pinned to the adapter's cache region");
+      assert.equal(called("cacheRegions").length, 0, "no need to look for cache regions");
+      const input = called("createJob")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 30 });
+      // 30 minutes plus 15 to boot; dollars for 46 minutes at $4.29 an hour, rounded up to the cent.
+      assert.deepEqual([input.maxMinutes, input.maxUsd], [45, 3.29]);
+      assert.equal(input.region, "us-west-1");
+
+      calls = [];
+      assert.equal((await ask({ minutes: 20 })).status, 201);
+      const twenty = called("createJob")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual([twenty.maxMinutes, twenty.maxUsd], [35, 2.58]);
+      calls = [];
+      assert.equal((await ask({ minutes: 20 }, { maxMinutes: 60, maxUsd: 4 })).status, 201);
+      const asked = called("createJob")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual([asked.maxMinutes, asked.maxUsd], [60, 4], "what the admin asks for still wins under the ceilings");
+    });
+
+    it("refuses a demo its limits can't serve for all its minutes on the GPU it gets", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      // 60 minutes plus 15 is 75, but the $5 ceiling buys 69 minutes of an H100 SXM5 at $4.29 an hour.
+      const res = await ask({ minutes: 60 });
+      assert.equal(res.status, 400);
+      const body = (await res.json()) as { error: string; estimateMinutes: number; usableMinutes: number };
+      assert.deepEqual([body.estimateMinutes, body.usableMinutes], [75, 69]);
+      assert.match(body.error, /^A 60-minute live demo needs about 75 minutes of GPU time .* stop it after 69 minutes on 1x H100 SXM5 \(80 GB\)\./);
+      assert.equal(created(), 0);
+
+      gpuPick = { instanceType: "gpu_1x_a100_sxm4", region: "us-west-1", priceCentsPerHour: 199 };
+      assert.equal((await ask({ minutes: 60 })).status, 201, "an A100 fits the same limits");
+    });
+
+    it("answers no_capacity with the region when the adapter's region has no free GPU, and demo_running for a second demo", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      gpuFree = false;
+      const none = await ask();
+      assert.equal(none.status, 503);
+      const body = (await none.json()) as { error: string; region: string };
+      assert.deepEqual([body.error, body.region], ["no_capacity", "us-west-1"]);
+
+      gpuFree = true;
+      liveDemo = { serveJobId: "bbbbbbbb-0000-4000-8000-000000000000", state: "live", minutes: 30, endsAt: null };
+      const twice = await ask();
+      assert.equal(twice.status, 409);
+      assert.deepEqual(await twice.json(), { error: "demo_running", serveJobId: "bbbbbbbb-0000-4000-8000-000000000000" });
+      assert.equal(created(), 0);
+    });
+
+    it("backs out the later of two demos of one adapter asked for at the same moment, so only one GPU serves it", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      // Both passed the demo_running check; this one's row was created second.
+      earlierDemo = { id: "cccccccc-0000-4000-8000-000000000000" };
+      const later = await ask();
+      assert.equal(later.status, 409);
+      assert.deepEqual(await later.json(), { error: "demo_running", serveJobId: "cccccccc-0000-4000-8000-000000000000" });
+      assert.deepEqual(called("earlierOpenServeJob")[0]!.args, [ADAPTER, JOB_ID], "asked about this new job's own row");
+      const [, status, opts] = called("setStatus")[0]!.args as [string, string, { set: { error: string } }];
+      assert.equal(status, "failed");
+      assert.match(opts.set.error, /Another live demo of this adapter started at the same moment/);
+      assert.equal(called("start").length, 0, "nothing launched");
+      assert.ok(order().indexOf("createJob") < order().indexOf("earlierOpenServeJob"), "checked once the new row exists");
+
+      // The earlier one finds none before it, and launches.
+      earlierDemo = null;
+      calls = [];
+      assert.equal((await ask()).status, 201);
+      assert.equal(called("earlierOpenServeJob").length, 1);
+      assert.equal(called("start").length, 1);
+
+      // Other recipes never ask.
+      calls = [];
+      assert.equal((await createJobRoute(createReq({ recipe: "smoke" }))).status, 201);
+      assert.equal(called("earlierOpenServeJob").length, 0);
+    });
+
+    it("stores a serve job's minutes whole, so the limits, the page and the GPU count the same minutes", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      assert.equal((await ask({ minutes: 29.6 })).status, 201);
+      const input = called("createJob")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual(input.params, { adapterJobId: ADAPTER, minutes: 29 }, "rounded down, as serveMinutes and the GPU read it");
+      assert.equal(input.maxMinutes, 29 + 15);
+      calls = [];
+      assert.equal((await ask({ minutes: "10.5" })).status, 201);
+      assert.equal(((called("createJob")[0]!.args[0] as Record<string, unknown>).params as Record<string, unknown>).minutes, 10);
     });
   });
 

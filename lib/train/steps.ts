@@ -9,7 +9,8 @@
  * doesn't use up a step's retries in seconds (a plain error is retried after 1 s).
  *
  * The plaintext job token is made inside launchStep and goes only into the instance's user data. It never appears in
- * a step's return value (step results are persisted in the workflow's event log), and only its hash is stored.
+ * a step's return value (step results are persisted in the workflow's event log), and only its hash is stored. A
+ * glimmer-serve job's serving key is derived from that hash (lib/train/serve.ts) and goes only into the user data too.
  */
 import { randomBytes } from "node:crypto";
 import { FatalError, RetryableError } from "workflow";
@@ -17,6 +18,8 @@ import { env } from "@/lib/env";
 import { hashToken } from "@/lib/gateway/tokens";
 import {
   ensureFilesystem,
+  ensureServeFirewall,
+  findCacheFilesystem,
   findInstanceByName,
   getInstance,
   LambdaApiError,
@@ -24,10 +27,12 @@ import {
   listInstances,
   terminateInstances,
   type LambdaFilesystem,
+  type LambdaFirewallRuleset,
   type LambdaInstance,
 } from "@/lib/train/lambda";
-import { decideCheck, usableMinutes, type TrainJobRow } from "@/lib/train/logic";
+import { decideCheck, isServeRecipe, usableMinutes, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
+import { serveKeyFor } from "@/lib/train/serve";
 import {
   claimLaunch,
   finishJob,
@@ -212,9 +217,23 @@ async function launchInFlight(jobId: string): Promise<SavedLaunch> {
 
 /**
  * The region's model cache filesystem for a recipe with usesCache (made once if the account has none there), or null.
- * Any failure is a FatalError before the launch claim: nothing is launched, and the create is never retried in a loop.
+ * The serve recipe gets the one that is already there (findCacheFilesystem), since its adapter is on it: a region with
+ * none has no adapter to serve. Any failure is a FatalError before the launch claim: nothing is launched, and the
+ * create is never retried in a loop.
  */
 async function cacheFor(recipe: Recipe, region: string): Promise<LambdaFilesystem | null> {
+  if (isServeRecipe(recipe.id)) {
+    let found: LambdaFilesystem | null;
+    try {
+      found = await findCacheFilesystem(region);
+    } catch (err) {
+      throw new FatalError(`The model cache filesystem in ${region} could not be listed, so nothing was launched: ${message(err)}`);
+    }
+    if (!found) {
+      throw new FatalError(`There is no model cache filesystem in ${region}, so the adapter this job serves isn't there and nothing was launched.`);
+    }
+    return found;
+  }
   if (!recipe.usesCache) return null;
   try {
     return await ensureFilesystem(region);
@@ -223,10 +242,29 @@ async function cacheFor(recipe: Recipe, region: string): Promise<LambdaFilesyste
   }
 }
 
-/** The error's message with the job token blanked out, for a launch error that ends up in the job's error and the run log. */
-function launchErrorText(err: unknown, token: string): string {
-  const text = err instanceof Error ? err.message : `Lambda refused the launch: ${String(err)}`;
-  return token ? text.split(token).join("[job token]") : text;
+/**
+ * The region's live demo firewall ruleset (the demo port and SSH, made once if the region has none) for the serve
+ * recipe, or null for every other recipe, whose instances keep Lambda's default rules. Any failure is a FatalError
+ * before the launch claim, like the cache's.
+ */
+async function firewallFor(recipe: Recipe, region: string): Promise<LambdaFirewallRuleset | null> {
+  if (!isServeRecipe(recipe.id)) return null;
+  try {
+    return await ensureServeFirewall(region);
+  } catch (err) {
+    throw new FatalError(`The live demo's firewall ruleset in ${region} could not be found or created, so nothing was launched: ${message(err)}`);
+  }
+}
+
+/**
+ * The error's message with the job token and the serving key blanked out, for a launch error that ends up in the
+ * job's error and the run log.
+ */
+function launchErrorText(err: unknown, token: string, serveKey?: string): string {
+  let text = err instanceof Error ? err.message : `Lambda refused the launch: ${String(err)}`;
+  if (token) text = text.split(token).join("[job token]");
+  if (serveKey) text = text.split(serveKey).join("[serving key]");
+  return text;
 }
 
 /**
@@ -263,9 +301,12 @@ async function terminateJobInstances(job: TrainJobRow, done?: string): Promise<n
  * delivery can only adopt the instance or wait for Lambda's listing, never launch a second one.
  *
  * A recipe with usesCache gets its region's cache filesystem first (ensureFilesystem, before the claim; a failure is a
- * FatalError) and launches with it mounted, its mount path in job.json as cacheDir. job.json's deadlineEpoch is stamped
- * before the launch request from usableMinutes (the time limit, or the dollar limit at the job's price when that runs
- * out first), so the runner's deadline is never after decideCheck would stop the job.
+ * FatalError) and launches with it mounted, its mount path in job.json as cacheDir. A glimmer-serve job (which the jobs
+ * route put in its adapter's region) mounts only the cache already there (findCacheFilesystem, since its adapter is on
+ * it; none is a FatalError), gets the region's live demo firewall ruleset (ensureServeFirewall, before the claim, a
+ * failure fatal) attached at launch, and its serving key (serveKeyFor the new token's hash) in job.json as serveKey.
+ * job.json's deadlineEpoch is stamped before the launch request from usableMinutes (the time limit, or the dollar limit
+ * at the job's price when that runs out first), so the runner's deadline is never after decideCheck would stop the job.
  *
  * Lambda refusing the launch (a 4xx other than 429, such as no capacity) gives the claim back and is a FatalError, so
  * it is never retried; a 429 gives the claim back and is retried after 30 s; a timeout or 5xx keeps the claim and is
@@ -301,7 +342,10 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
   if (job.tokenHash) return launchInFlight(jobId);
 
   const cache = await cacheFor(recipe, job.region);
+  const firewall = await firewallFor(recipe, job.region);
   const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashToken(token);
+  const serveKey = isServeRecipe(recipe.id) ? serveKeyFor(jobId, tokenHash) : undefined;
   // Stamped before requestedAt below, which becomes launchedAt, so the runner stops no later than the time limit, or
   // than the dollar limit when that runs out first at the job's price.
   const runnable = usableMinutes({ maxMinutes: job.maxMinutes, maxUsd: job.maxUsd }, job.priceCentsPerHour);
@@ -317,11 +361,11 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
       maxMinutes: job.maxMinutes,
       deadlineEpoch,
       ...(cache ? { cacheDir: cache.mountPoint } : {}),
+      ...(serveKey ? { serveKey } : {}),
     });
   } catch (err) {
     throw new FatalError(`The instance's setup script could not be built: ${message(err)}`);
   }
-  const tokenHash = hashToken(token);
   const claimed = await fromDb(() => claimLaunch(jobId, tokenHash, `Launching a ${job.instanceType} in ${job.region}.`));
   if (!claimed) return launchInFlight(jobId);
 
@@ -340,10 +384,11 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
         { key: "muse-muse-job", value: jobId },
       ],
       ...(cache ? { fileSystemNames: [cache.name] } : {}),
+      ...(firewall ? { firewallRulesetIds: [firewall.id] } : {}),
     });
   } catch (err) {
-    // Step errors are kept in the run's log and become the job's error, so the token is blanked out of them.
-    const text = launchErrorText(err, token);
+    // Step errors are kept in the run's log and become the job's error, so the token and key are blanked out of them.
+    const text = launchErrorText(err, token, serveKey);
     if (launchRefused(err)) {
       // Nothing launched, so the claim goes back: a retry after a 429 can launch, and terminateStep knows no
       // instance can exist. If this write fails the claim stays, and the job fails safe without launching.

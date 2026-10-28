@@ -4,15 +4,20 @@ import {
   cacheFilesystemName,
   cacheRegions,
   ensureFilesystem,
+  findCacheFilesystem,
+  ensureServeFirewall,
   findInstanceByName,
   getInstance,
   LambdaApiError,
   lambdaTiming,
   launchInstance,
   listFilesystems,
+  listFirewallRulesets,
   listInstances,
   listInstanceTypes,
   pickGpu,
+  serveFirewallName,
+  serveFirewallRules,
   terminateInstances,
   type LambdaInstanceType,
 } from "@/lib/train/lambda";
@@ -344,6 +349,18 @@ describe("launchInstance", () => {
     assert.equal(calls.length, 1);
   });
 
+  it("attaches the named firewall rulesets, and refuses an id Lambda would reject", async () => {
+    serve(() => Response.json({ data: { instance_ids: ["id-4"] } }));
+    assert.equal(await launchInstance({ ...input, firewallRulesetIds: ["c4d291f47f9d436fa39f58493ce3b50d"] }), "id-4");
+    assert.deepEqual((calls[0].body as { firewall_rulesets: unknown }).firewall_rulesets, [{ id: "c4d291f47f9d436fa39f58493ce3b50d" }]);
+    assert.equal(await launchInstance({ ...input, firewallRulesetIds: [] }), "id-4");
+    assert.ok(!("firewall_rulesets" in (calls[1].body as object)), "sent only when non-empty");
+    for (const bad of ["", "a/b", "x".repeat(65)]) {
+      assert.equal((await rejection(launchInstance({ ...input, firewallRulesetIds: [bad] }))).code, "invalid-input");
+    }
+    assert.equal(calls.length, 2);
+  });
+
   it("throws when Lambda accepts the launch but sends no id", async () => {
     serve(() => Response.json({ data: { instance_ids: [] } }));
     assert.equal((await rejection(launchInstance(input))).code, "no-instance-id");
@@ -469,9 +486,156 @@ describe("filesystems", () => {
     assert.deepEqual(await cacheRegions(), ["us-east-1", "europe-central-1"]);
   });
 
+  it("findCacheFilesystem only lists: the region's cache, or null, never a create", async () => {
+    serve(() => Response.json({ data: [rawFilesystem("muse-muse-cache-us-east-1", "us-east-1"), rawFilesystem("muse-muse-cache-us-west-1", "us-east-3")] }));
+    assert.equal((await findCacheFilesystem("us-east-1"))?.name, "muse-muse-cache-us-east-1");
+    assert.equal(await findCacheFilesystem("us-south-1"), null);
+    assert.equal((await rejection(findCacheFilesystem("us-west-1"))).code, "filesystem-in-wrong-region");
+    assert.ok(calls.every((c) => c.method === "GET"), "never a POST");
+    calls.length = 0;
+    assert.equal((await rejection(findCacheFilesystem("us_east_1"))).code, "invalid-input");
+    assert.equal(calls.length, 0, "nothing sent for a bad region");
+  });
+
   it("cacheRegions throws when Lambda doesn't answer", async () => {
     serve(() => lambdaError(403, "global/account-inactive", "Account inactive."));
     assert.equal((await rejection(cacheRegions())).status, 403);
+  });
+});
+
+function rawRuleset(name: string, region: string, over: Record<string, unknown> = {}) {
+  return {
+    id: `fw-${name}`,
+    name,
+    region: { name: region, description: region },
+    rules: serveFirewallRules(),
+    created: "2026-10-27T00:00:00Z",
+    instance_ids: ["inst-1"],
+    ...over,
+  };
+}
+
+describe("firewall rulesets", () => {
+  const NAME = "muse-muse-serve-us-east-1";
+
+  it("lets in only the demo's HTTPS port from everywhere, named after the region, and leaves SSH to the global rules", () => {
+    assert.equal(serveFirewallName("us-east-1"), NAME);
+    assert.deepEqual(
+      serveFirewallRules().map((r) => [r.protocol, r.port_range, r.source_network]),
+      [["tcp", [8443, 8443], "0.0.0.0/0"]],
+    );
+    assert.ok(!serveFirewallRules().some((r) => r.port_range?.[0] === 22), "SSH stays as the owner set it in the global ruleset");
+    for (const rule of serveFirewallRules()) assert.ok(rule.description.length <= 128, "Lambda's limit on a description");
+  });
+
+  it("lists rulesets with their region, rules and instances", async () => {
+    serve(() => Response.json({ data: [rawRuleset(NAME, "us-east-1"), rawRuleset("other", "us-west-1", { rules: [{ protocol: "icmp", source_network: "0.0.0.0/0", description: "ping" }, { protocol: "bogus" }] })] }));
+    const listed = await listFirewallRulesets();
+    assert.deepEqual(listed[0], { id: `fw-${NAME}`, name: NAME, region: "us-east-1", rules: serveFirewallRules(), instanceIds: ["inst-1"] });
+    assert.deepEqual(listed[1]!.rules, [{ protocol: "icmp", source_network: "0.0.0.0/0", description: "ping" }], "a rule Lambda can't mean is dropped");
+    assert.equal(calls[0].url.href, "https://cloud.lambda.ai/api/v1/firewall-rulesets");
+    assert.equal(calls[0].auth, `Bearer ${KEY}`);
+  });
+
+  it("ensureServeFirewall reuses the region's ruleset without changing anything", async () => {
+    serve(() => Response.json({ data: [rawRuleset(NAME, "us-west-1"), rawRuleset(NAME, "us-east-1", { id: "fw-east" })] }));
+    assert.equal((await ensureServeFirewall("us-east-1")).id, "fw-east");
+    assert.deepEqual(calls.map((c) => c.method), ["GET"]);
+  });
+
+  it("ensureServeFirewall creates a missing ruleset with exactly Lambda's create body", async () => {
+    serve((call) =>
+      call.method === "GET"
+        ? Response.json({ data: [rawRuleset(NAME, "us-west-1"), rawRuleset("someone-else", "us-east-1")] })
+        : Response.json({ data: rawRuleset(NAME, "us-east-1", { id: "fw-new", instance_ids: [] }) }),
+    );
+    const made = await ensureServeFirewall("us-east-1");
+    assert.equal(made.id, "fw-new");
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.url.pathname}`), ["GET /api/v1/firewall-rulesets", "POST /api/v1/firewall-rulesets"]);
+    assert.deepEqual(calls[1].body, { name: NAME, region: "us-east-1", rules: serveFirewallRules() });
+    assert.equal(calls[1].contentType, "application/json");
+  });
+
+  it("ensureServeFirewall adds the demo's rule back once when someone edited it away, keeping the owner's own rules", async () => {
+    const ownSsh = { protocol: "tcp", port_range: [22, 22], source_network: "198.51.100.7/32", description: "SSH from the office" };
+    const edited = rawRuleset(NAME, "us-east-1", { id: "fw-east", rules: [ownSsh] });
+    const patchedRules = [ownSsh, ...serveFirewallRules()];
+    serve((call) => (call.method === "GET" ? Response.json({ data: [edited] }) : Response.json({ data: { ...edited, rules: patchedRules } })));
+    const fixed = await ensureServeFirewall("us-east-1");
+    assert.deepEqual(fixed.rules, patchedRules);
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.url.pathname}`), ["GET /api/v1/firewall-rulesets", "PATCH /api/v1/firewall-rulesets/fw-east"]);
+    assert.deepEqual(calls[1].body, { rules: patchedRules }, "the owner's SSH rule stays as they narrowed it, and nothing opens 22 to everyone");
+
+    // A ruleset the owner narrowed (SSH from one address) that still lets the demo port in from everywhere is left alone.
+    const narrowedSsh = rawRuleset(NAME, "us-east-1", { rules: [ownSsh, ...serveFirewallRules()] });
+    serve(() => Response.json({ data: [narrowedSsh] }));
+    assert.deepEqual((await ensureServeFirewall("us-east-1")).rules, [ownSsh, ...serveFirewallRules()]);
+    assert.deepEqual(calls.map((c) => c.method), ["GET"], "no PATCH undoes the owner's change");
+
+    // A rule that already lets in more (every TCP port from everywhere) counts as covering it.
+    const wide = rawRuleset(NAME, "us-east-1", { rules: [{ protocol: "tcp", port_range: [1, 65535], source_network: "0.0.0.0/0", description: "all" }] });
+    serve(() => Response.json({ data: [wide] }));
+    await ensureServeFirewall("us-east-1");
+    assert.deepEqual(calls.map((c) => c.method), ["GET"]);
+
+    // One open to a single address doesn't: the proxy runs on Vercel, whose addresses aren't fixed. The narrow rule
+    // stays, and the demo's is added after it.
+    const narrowRules = serveFirewallRules().map((r) => ({ ...r, source_network: "198.51.100.7/32" }));
+    const narrow = rawRuleset(NAME, "us-east-1", { rules: narrowRules });
+    serve((call) => (call.method === "GET" ? Response.json({ data: [narrow] }) : Response.json({ data: rawRuleset(NAME, "us-east-1") })));
+    await ensureServeFirewall("us-east-1");
+    assert.deepEqual(calls.map((c) => c.method), ["GET", "PATCH"]);
+    assert.deepEqual(calls[1].body, { rules: [...narrowRules, ...serveFirewallRules()] });
+  });
+
+  it("ensureServeFirewall takes the one another caller made when the create is a duplicate or a conflict", async () => {
+    for (const refusal of [lambdaError(400, "global/duplicate", "Already exists."), lambdaError(409, "global/internal-error", "Conflict.")]) {
+      let listed = 0;
+      serve((call) => {
+        if (call.method === "POST") return refusal.clone();
+        listed += 1;
+        return Response.json({ data: listed === 1 ? [] : [rawRuleset(NAME, "us-east-1")] });
+      });
+      assert.equal((await ensureServeFirewall("us-east-1")).name, NAME);
+      assert.equal(calls.filter((c) => c.method === "POST").length, 1, "one create, never a loop");
+    }
+  });
+
+  it("ensureServeFirewall never sends a second create after a 5xx, and finds one that was made anyway", async () => {
+    let listed = 0;
+    serve((call) => {
+      if (call.method === "POST") return lambdaError(500, "global/internal-error", "An internal server error occurred.");
+      listed += 1;
+      return Response.json({ data: listed === 1 ? [] : [rawRuleset(NAME, "us-east-1")] });
+    });
+    assert.equal((await ensureServeFirewall("us-east-1")).name, NAME);
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+
+    serve((call) => (call.method === "POST" ? lambdaError(502, "global/internal-error", "Bad gateway.") : Response.json({ data: [] })));
+    const err = await rejection(ensureServeFirewall("us-east-1"));
+    assert.equal(err.status, 502);
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+  });
+
+  it("ensureServeFirewall passes a quota refusal through, retries a 429 once, and refuses a bad region unsent", async () => {
+    serve((call) => (call.method === "POST" ? lambdaError(400, "global/quota-exceeded", "Quota exceeded.") : Response.json({ data: [] })));
+    assert.equal((await rejection(ensureServeFirewall("us-east-1"))).code, "global/quota-exceeded");
+    assert.deepEqual(calls.map((c) => c.method), ["GET", "POST"]);
+
+    let posts = 0;
+    serve((call) => {
+      if (call.method === "GET") return Response.json({ data: [] });
+      posts += 1;
+      return posts === 1 ? lambdaError(429, "global/rate-limited", "Too many requests.") : Response.json({ data: rawRuleset(NAME, "us-east-1") });
+    });
+    assert.equal((await ensureServeFirewall("us-east-1")).name, NAME);
+    assert.equal(posts, 2);
+
+    serve(() => Response.json({ data: [] }));
+    for (const bad of ["", "us_east_1", "US-EAST-1", "x".repeat(60)]) {
+      assert.equal((await rejection(ensureServeFirewall(bad))).code, "invalid-input", bad);
+    }
+    assert.equal(calls.length, 0);
   });
 });
 
@@ -699,6 +863,15 @@ describe("pickGpu", () => {
     assert.equal(pickGpu(choices, types, undefined, ["europe-central-1"])?.region, "europe-central-1");
     assert.equal(pickGpu(choices, types, undefined, ["asia-south-1"])?.region, "us-west-1");
     assert.equal(pickGpu(choices, [type("gpu_1x_a10", ["us-east-1"], 0)], undefined, ["us-east-1"]), null, "a type with no price is still skipped");
+  });
+
+  it("counts only capacity in the one region a glimmer-serve job must launch in", () => {
+    const types = [type("gpu_1x_a10", ["us-east-1"], 75), type("gpu_1x_a6000", ["us-west-1", "us-east-1"], 80), type("gpu_1x_a100", ["us-west-1"], 129)];
+    assert.deepEqual(pickGpu(choices, types, undefined, [], "us-west-1"), { instanceType: "gpu_1x_a6000", region: "us-west-1", priceCentsPerHour: 80 });
+    assert.deepEqual(pickGpu(choices, types, "gpu_1x_a100", [], "us-west-1"), { instanceType: "gpu_1x_a100", region: "us-west-1", priceCentsPerHour: 129 });
+    assert.equal(pickGpu(choices, types, "gpu_1x_a10", [], "us-west-1")?.instanceType, "gpu_1x_a6000", "the asked type has no capacity there");
+    assert.equal(pickGpu(choices, types, undefined, [], "europe-central-1"), null, "capacity elsewhere doesn't count");
+    assert.deepEqual(types[0]!.regionsWithCapacity, ["us-east-1"], "the listing isn't changed");
   });
 
   it("skips choices Lambda doesn't list and returns null when nothing is free", () => {

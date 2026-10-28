@@ -3,8 +3,9 @@
  * when a step is retried, runs twice at once or the database fails right after it, only the token's hash is stored
  * and it is stored before the launch, the token stays out of step results and errors, terminate finds every instance
  * under the job's name and terminates the workflow's instance before reading the database, a check survives a
- * Lambda or database outage, a recipe with usesCache launches with its region's cache filesystem mounted, and the
- * runner's deadline is never after the job's time limit. Nothing here calls Lambda or a database.
+ * Lambda or database outage, a recipe with usesCache launches with its region's cache filesystem mounted, the
+ * runner's deadline is never after the job's time limit, and a glimmer-serve job (only it) launches with the demo
+ * firewall ruleset attached and its serving key in job.json. Nothing here calls Lambda or a database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/steps.test.ts
  *
@@ -56,8 +57,10 @@ type LaunchInput = {
   sshKeyName: string;
   tags: Array<{ key: string; value: string }>;
   fileSystemNames?: string[];
+  firewallRulesetIds?: string[];
 };
 type Filesystem = { id: string; name: string; region: string; mountPoint: string; inUse: boolean; bytesUsed: number | null };
+type Ruleset = { id: string; name: string; region: string; rules: unknown[]; instanceIds: string[] };
 
 let job: TrainJobRow | null = null;
 let listing: LambdaInstance[] = [];
@@ -66,6 +69,8 @@ let launchImpl: (input: LaunchInput) => Promise<string> = async () => "inst-1";
 let listImpl: (() => Promise<LambdaInstance[]>) | null = null;
 let getImpl: (id: string) => Promise<LambdaInstance | null> = async (id) => listing.find((i) => i.id === id) ?? null;
 let ensureImpl: (region: string) => Promise<Filesystem> = async (region) => cacheFs(region);
+let findFsImpl: (region: string) => Promise<Filesystem | null> = async (region) => cacheFs(region);
+let firewallImpl: (region: string) => Promise<Ruleset> = async (region) => serveRuleset(region);
 /** How many more calls to each store function fail, as a database outage would. */
 let dbDown: Record<string, number> = {};
 
@@ -114,6 +119,7 @@ function row(over: Partial<TrainJobRow> = {}): TrainJobRow {
     finishedAt: null,
     terminatedAt: null,
     evalSummary: null,
+    serveEndpoint: null,
     ...over,
   };
 }
@@ -123,12 +129,24 @@ function cacheFs(region: string): Filesystem {
   return { id: `fs-${region}`, name, region, mountPoint: `/lambda/nfs/${name}`, inUse: false, bytesUsed: null };
 }
 
+function serveRuleset(region: string): Ruleset {
+  return { id: `fw-${region}`, name: `muse-muse-serve-${region}`, region, rules: [], instanceIds: [] };
+}
+
 function instance(over: Partial<LambdaInstance> & { id: string }): LambdaInstance {
   return { name: NAME, status: "booting", ip: null, instanceType: "gpu_1x_a10", region: "us-east-1", ...over };
 }
 
 /** The job.json the user data carries, decoded. */
-function jobJson(userData: string): { token: string; callbackBase: string; jobId: string; cacheDir?: string; deadlineEpoch: number } {
+function jobJson(userData: string): {
+  token: string;
+  callbackBase: string;
+  jobId: string;
+  cacheDir?: string;
+  deadlineEpoch: number;
+  serveKey?: string;
+  params: Record<string, unknown>;
+} {
   const lines = userData.split("\n");
   const at = lines.findIndex((l) => l.includes("/opt/muse/job.json"));
   const content = lines.slice(at).find((l) => l.trim().startsWith("content:"))!;
@@ -226,10 +244,21 @@ const fakeLambda = {
     calls.push({ fn: "ensureFilesystem", args: [region] });
     return ensureImpl(region);
   },
+  ensureServeFirewall: async (region: string) => {
+    calls.push({ fn: "ensureServeFirewall", args: [region] });
+    return firewallImpl(region);
+  },
+  findCacheFilesystem: async (region: string) => {
+    calls.push({ fn: "findCacheFilesystem", args: [region] });
+    return findFsImpl(region);
+  },
 };
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let steps: typeof import("../steps");
+let serve: typeof import("../serve");
+/** The serve recipe, when lib/train/recipes has it. */
+let serveRecipe: { id: string } | undefined;
 const savedEnv = { ...process.env };
 
 describe("training steps", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -240,6 +269,9 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     mock.module(at("../../gateway/tokens.ts"), { namedExports: { hashToken: fakeHash } });
     mock.module("workflow", { namedExports: { FatalError: FakeFatalError, RetryableError: FakeRetryableError } });
     steps = await import("../steps");
+    serve = await import("../serve");
+    const { RECIPES } = (await import(at("../recipes/index.ts"))) as typeof import("../recipes/index");
+    serveRecipe = RECIPES.find((r) => r.id === "glimmer-serve");
   });
 
   after(() => {
@@ -255,11 +287,15 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     listImpl = null;
     getImpl = async (id) => listing.find((i) => i.id === id) ?? null;
     ensureImpl = async (region) => cacheFs(region);
+    findFsImpl = async (region) => cacheFs(region);
+    firewallImpl = async (region) => serveRuleset(region);
     launchImpl = async (input) => {
       listing.push(instance({ id: "inst-1", name: input.name }));
       return "inst-1";
     };
     process.env.PLATFORM_URL = "https://muse.example.com";
+    // A test value for the serving key's HMAC, not a real pepper.
+    process.env.GATEWAY_TOKEN_PEPPER = "test-pepper-for-steps";
     delete process.env.VERCEL_URL;
     delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
     delete process.env.TRAIN_SSH_KEY_NAME;
@@ -548,6 +584,127 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
       const result = await steps.launchStep(JOB_ID);
       assert.deepEqual(result, { action: "watch", maxMinutes: 30, instanceId: "inst-9" });
       assert.equal(called("ensureFilesystem").length, 0);
+    });
+
+    const ADAPTER = "aaaaaaaa-0000-4000-8000-000000000000";
+    const serveRow = (over: Partial<TrainJobRow> = {}) =>
+      row({
+        recipe: "glimmer-serve",
+        instanceName: "mm-train-1234abcd-glimmer-serve",
+        instanceType: "gpu_1x_h100_sxm5",
+        region: "us-east-1",
+        priceCentsPerHour: 429,
+        maxMinutes: 45,
+        maxUsd: 3.29,
+        params: { adapterJobId: ADAPTER, minutes: 30 },
+        ...over,
+      });
+
+    it("launches a glimmer-serve job with its cache mounted, the demo firewall attached and its serving key in job.json", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      job = serveRow();
+      const result = await steps.launchStep(JOB_ID);
+      assert.equal(result.action, "watch");
+      assert.deepEqual(called("findCacheFilesystem").map((c) => c.args), [["us-east-1"]], "the cache already there");
+      assert.equal(called("ensureFilesystem").length, 0, "never a new, empty one: it wouldn't hold the adapter");
+      assert.deepEqual(called("ensureServeFirewall").map((c) => c.args), [["us-east-1"]]);
+      assert.ok(order().indexOf("ensureServeFirewall") < order().indexOf("claimLaunch"), "the ruleset is ready before the claim");
+
+      const input = called("launchInstance")[0]!.args[0] as LaunchInput;
+      assert.deepEqual(input.firewallRulesetIds, ["fw-us-east-1"]);
+      assert.deepEqual(input.fileSystemNames, ["muse-muse-cache-us-east-1"]);
+      const sent = jobJson(input.userData);
+      assert.equal(sent.cacheDir, "/lambda/nfs/muse-muse-cache-us-east-1");
+      assert.deepEqual(sent.params, { adapterJobId: ADAPTER, minutes: 30 });
+      // The key is the HMAC of the stored hash, so the proxy can derive it again and nothing stores it.
+      assert.equal(sent.serveKey, serve.serveKeyFor(JOB_ID, fakeHash(sent.token)));
+      assert.match(sent.serveKey!, /^[0-9a-f]{64}$/);
+      assert.equal(job!.tokenHash, fakeHash(sent.token));
+      assert.notEqual(sent.serveKey, sent.token);
+
+      assert.ok(!JSON.stringify(result).includes(sent.serveKey!), "the key stays out of the step's result");
+      for (const c of calls.filter((x) => x.fn !== "launchInstance")) {
+        assert.ok(!JSON.stringify(c.args).includes(sent.serveKey!), `${c.fn} never sees the serving key`);
+      }
+    });
+
+    it("never attaches a firewall ruleset or a serving key for any other recipe", async () => {
+      for (const over of [{}, { recipe: "glimmer-lora" as const, instanceName: "mm-train-1234abcd-glimmer-lora", params: { datasetId: "ds-1" } }]) {
+        job = row(over);
+        listing = [];
+        calls = [];
+        await steps.launchStep(JOB_ID);
+        assert.equal(called("ensureServeFirewall").length, 0);
+        const input = called("launchInstance")[0]!.args[0] as LaunchInput;
+        assert.equal(input.firewallRulesetIds, undefined);
+        assert.equal(jobJson(input.userData).serveKey, undefined);
+      }
+    });
+
+    it("fails a glimmer-serve launch, with nothing claimed or launched, when the firewall ruleset can't be made", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      job = serveRow();
+      firewallImpl = async () => {
+        throw new FakeLambdaApiError(400, "global/quota-exceeded", "Lambda API POST /firewall-rulesets failed (400 global/quota-exceeded): Quota exceeded.");
+      };
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError, "fatal, so the create is never retried");
+        assert.match(err.message, /live demo's firewall ruleset in us-east-1 could not be found or created, so nothing was launched/);
+        assert.match(err.message, /Quota exceeded/);
+        return true;
+      });
+      assert.equal(called("ensureServeFirewall").length, 1);
+      assert.equal(called("claimLaunch").length + called("launchInstance").length, 0);
+      assert.equal(job!.tokenHash, null);
+    });
+
+    it("fails a glimmer-serve launch, with nothing claimed or launched, when the region has no model cache", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      job = serveRow();
+      findFsImpl = async () => null;
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError);
+        assert.match(err.message, /no model cache filesystem in us-east-1, so the adapter this job serves isn't there/);
+        return true;
+      });
+      findFsImpl = async () => {
+        throw new FakeLambdaApiError(503, null, "Lambda API GET /filesystems failed (503): upstream down");
+      };
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError);
+        assert.match(err.message, /model cache filesystem in us-east-1 could not be listed, so nothing was launched: .*upstream down/);
+        return true;
+      });
+      assert.equal(called("ensureFilesystem").length + called("ensureServeFirewall").length, 0);
+      assert.equal(called("claimLaunch").length + called("launchInstance").length, 0);
+      assert.equal(job!.tokenHash, null);
+    });
+
+    it("blanks the serving key and the token out of a refused launch's error", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      job = serveRow();
+      let sent: { token: string; serveKey?: string } | null = null;
+      launchImpl = async (input) => {
+        sent = jobJson(input.userData);
+        throw new FakeLambdaApiError(400, "global/invalid-parameters", `Bad user data near ${sent.serveKey} and ${sent.token}`);
+      };
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError);
+        assert.ok(!err.message.includes(sent!.serveKey!), err.message);
+        assert.ok(!err.message.includes(sent!.token), err.message);
+        assert.match(err.message, /\[serving key\] and \[job token\]/);
+        return true;
+      });
+      assert.equal(called("releaseLaunch").length, 1, "nothing launched, so the claim goes back");
+    });
+
+    it("adopts an existing glimmer-serve instance without asking for the firewall or the cache again", async (t) => {
+      if (!serveRecipe) return t.skip("no glimmer-serve recipe");
+      job = serveRow({ status: "launching", tokenHash: "h" });
+      listing = [instance({ id: "inst-9", name: "mm-train-1234abcd-glimmer-serve" })];
+      const result = await steps.launchStep(JOB_ID);
+      assert.deepEqual(result, { action: "watch", maxMinutes: 45, instanceId: "inst-9" });
+      assert.equal(called("ensureServeFirewall").length + called("ensureFilesystem").length + called("findCacheFilesystem").length, 0);
     });
 
     it("saves a launch that lands after the job ended, and hands its id to terminateStep", async () => {

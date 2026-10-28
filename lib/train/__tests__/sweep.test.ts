@@ -49,6 +49,7 @@ function job(over: Partial<TrainJobRow> = {}): TrainJobRow {
     finishedAt: null,
     terminatedAt: null,
     evalSummary: null,
+    serveEndpoint: null,
     ...over,
   };
 }

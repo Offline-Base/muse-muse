@@ -18,6 +18,7 @@ import type {
   EvalExample,
   EvalSummary,
   RecipeId,
+  ServeEndpoint,
   TrainArtifact,
   TrainEventBody,
   TrainExample,
@@ -234,6 +235,11 @@ export const trainingJobs = pgTable(
     terminatedAt: timestamp("terminated_at", { withTimezone: true }),
     /** Muse Spark 1.3's verdict on the job's eval items, written after the instance is terminated (lib/train/judge.ts). */
     evalSummary: jsonb("eval_summary").$type<EvalSummary>(),
+    /**
+     * A glimmer-serve job's demo server: the instance's IP (from Lambda), the port and the pinned certificate fingerprint
+     * (from its "serving" callback), and when it started. The live demo proxy connects only here. Never sent to a browser.
+     */
+    serveEndpoint: jsonb("serve_endpoint").$type<ServeEndpoint>(),
   },
   (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
 );

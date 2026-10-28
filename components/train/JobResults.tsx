@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
+import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
 import { WRITER_NAME, tunedModelName, type EvalRow } from "@/components/train/format";
-import { minutesText, type ResultView } from "@/components/train/results";
+import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
 import { PageHeader } from "@/components/ui";
 import { dateTimeUtc, usd } from "@/lib/format";
 
@@ -13,14 +14,18 @@ export interface JobResultsProps {
   rows: EvalRow[];
   /** The dataset it trained on, when that dataset is ready. */
   dataset: { id: string; title: string } | null;
+  /** A live demo of its adapter while one is starting or serving (the Try it live box), else nothing. */
+  live?: PublicLiveDemo | null;
+  /** The server's clock when the page rendered, for the live demo's countdown. */
+  serverNow?: number;
 }
 
 /**
  * A judged job as anyone sees it: what ran (recipe, model, dataset, GPU, time, cost and the safe settings) and the eval
  * results, read-only. A server component, so nothing but this text reaches the browser: no instance, IP, region, log,
- * error or Stop.
+ * error or Stop. While a live demo of its adapter runs, the Try it live box comes first; it gets only PublicLiveDemo.
  */
-export function JobResults({ result: r, rows, dataset }: JobResultsProps) {
+export function JobResults({ result: r, rows, dataset, live = null, serverNow }: JobResultsProps) {
   const long = r.settings.filter((s) => s.key === "studentPrompt");
   const short = r.settings.filter((s) => s.key !== "studentPrompt");
   return (
@@ -39,6 +44,8 @@ export function JobResults({ result: r, rows, dataset }: JobResultsProps) {
           </Link>
         }
       />
+
+      {live ? <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} /> : null}
 
       <section className="card section-card" aria-labelledby="run-title">
         <h2 id="run-title">The run</h2>

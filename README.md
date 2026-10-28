@@ -64,6 +64,7 @@ Meta has no hosted fine-tuning, so the lab runs on the owner's Lambda Cloud GPUs
 1. **Write.** Muse Spark 1.3 writes a dataset for a task: varied user prompts in batches, then its own answers. It holds out 10% (8 to 40) as eval prompts with references.
 2. **Train.** The `glimmer-lora` recipe runs a QLoRA fine-tune of Muse Glimmer 30B (Unsloth's 4-bit build) on one Lambda GPU. The Python venv and the 21 GB of weights stay on a Lambda filesystem in the region, so later jobs skip the install and the download.
 3. **Judge.** Base and tuned Glimmer answer the held-out prompts. After the GPU is terminated, Muse Spark 1.3 scores each pair blind, as A and B, with the order switched on every other item.
+4. **Try it live.** An admin can serve a trained adapter on one GPU for 10 to 120 minutes (the `glimmer-serve` recipe). Meanwhile its public result page has a box where anyone types an app idea and sees base and tuned Glimmer answer it side by side, from the same GPU. The platform proxies each prompt over HTTPS pinned to the certificate the GPU reported, with a key derived from the job's token hash, and the GPU shuts down at the end like every other job.
 
 By default both models train and answer under a one-line role prompt, such as "You are Muse Muse's brief writer.", instead of the teacher's full task prompt. That way the score measures what training taught.
 
@@ -155,6 +156,7 @@ app/                        Platform UI and API routes (Next.js App Router)
   api/gateway/uploads/      Upload tickets for large files
   api/mcp/[slug]/           Muse app connector endpoint
   api/train/                Fine-tuning jobs, datasets, GPU callbacks
+  api/lab/[id]/try/         The live demo: one idea to base and tuned Glimmer
   api/cron/                 Cleanup and the GPU sweep
 components/                 Shell, composer, build room, charts, product and train views
 lib/

@@ -2,9 +2,9 @@ import { after } from "next/server";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, HttpError, readJson, route } from "@/lib/http";
 import { terminateInstances } from "@/lib/train/lambda";
-import { EVAL_TEXT_MAX, EVALS_MAX } from "@/lib/train/logic";
+import { certFingerprint, EVAL_TEXT_MAX, EVALS_MAX, isServeRecipe } from "@/lib/train/logic";
 import { applyCallback, finishJob, getJob, recordEvalEvent, recordEvent } from "@/lib/train/store";
-import { isTrainTerminal, type TrainArtifact, type TrainCallback } from "@/lib/train/types";
+import { isTrainTerminal, SERVE_PORT, type TrainArtifact, type TrainCallback } from "@/lib/train/types";
 import { jobBlobUrl, requireJobToken } from "../../../shared";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -19,6 +19,8 @@ const MAX_EVAL_BODY_BYTES = 64 * 1024;
 /** Eval items have indexes from 0; this leaves room for a runner that numbers them in its own way. */
 const EVAL_INDEX_MAX = 9999;
 const TEXT_MAX = 16 * 1024;
+/** A serving callback's model name and adapter job id are cut to this. */
+const SERVING_TEXT_MAX = 200;
 const ARTIFACT_KINDS: readonly TrainArtifact["kind"][] = ["adapter", "checkpoint", "metrics", "log", "other"];
 /**
  * Heartbeat, progress, log, artifact and eval callbacks one job may send per minute. The runner sends a heartbeat a
@@ -93,6 +95,15 @@ function parseCallback(body: Record<string, unknown>, jobId: string): TrainCallb
       const [prompt, reference, base, tuned] = fields.map((f) => (f as string).slice(0, EVAL_TEXT_MAX));
       return { type: "eval", index, prompt: prompt!, reference: reference!, base: base!, tuned: tuned! };
     }
+    case "serving": {
+      // Only the port and the certificate come from the runner. The address the proxy connects to is the one Lambda
+      // reports for the instance, so a leaked job token can't point the proxy anywhere else.
+      const certSha256 = certFingerprint(body.certSha256);
+      if (body.port !== SERVE_PORT || !certSha256) return null;
+      const model = typeof body.model === "string" ? body.model.slice(0, SERVING_TEXT_MAX) : undefined;
+      const adapterJobId = typeof body.adapterJobId === "string" ? body.adapterJobId.slice(0, SERVING_TEXT_MAX) : undefined;
+      return defined({ type: "serving" as const, port: SERVE_PORT, certSha256, model, adapterJobId });
+    }
     default:
       return null;
   }
@@ -118,12 +129,14 @@ async function terminateNow(jobId: string, reason: string): Promise<void> {
 
 /**
  * POST TrainCallback -> 204, from the job's runner with "Authorization: Bearer <job token>". 401 bad token, 400 not a
- * callback (or an artifact that isn't this job's own Blob upload), 413 over 16 KB (64 KB for eval), 409 job_ended once
+ * callback (or an artifact that isn't this job's own Blob upload, or a serving callback that doesn't name port 8443 and
+ * a SHA-256 fingerprint, or comes from a job that isn't glimmer-serve), 413 over 16 KB (64 KB for eval), 409 job_ended once
  * the job has ended (a late log is still kept), 409 artifact_limit once the job has ARTIFACTS_MAX artifacts, 409
  * eval_limit once it has EVALS_MAX eval items, 429 rate_limited past 120 heartbeat, progress, log, artifact and eval
  * callbacks a minute. Any callback counts as a sign of life. An eval item sent again with the same index is a retry:
- * 204, and it isn't logged twice. done and failed set the final status here and terminate the instance right after
- * the reply, and so does any other callback from an instance whose job already ended but isn't terminated.
+ * 204, and it isn't logged twice. serving stores the job's serve endpoint (applyCallback: the IP Lambda reported, the
+ * port and the fingerprint) and is logged. done and failed set the final status here and terminate the instance right
+ * after the reply, and so does any other callback from an instance whose job already ended but isn't terminated.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
@@ -139,13 +152,22 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (!callback && body.type === "eval") {
     return errorJson(400, "Send the eval item's index and its prompt, reference, base and tuned texts.");
   }
-  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, eval, done or failed event.");
+  if (!callback && body.type === "serving") {
+    return errorJson(400, `Send the demo server's port (${SERVE_PORT}) and its certificate's SHA-256 fingerprint.`);
+  }
+  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, eval, serving, done or failed event.");
 
   if (callback.type !== "done" && callback.type !== "failed") {
     const minute = new Date(Math.floor(Date.now() / 60_000) * 60_000);
     const key = `train-events:${id}`;
     const counts = await hitRateLimits([key], minute);
     if ((counts[key] ?? 0) > CALLBACKS_PER_MINUTE) return errorJson(429, "rate_limited");
+  }
+
+  if (callback.type === "serving") {
+    const job = await getJob(id);
+    if (!job) return errorJson(404, "not_found");
+    if (!isServeRecipe(job.recipe)) return errorJson(400, "Only a glimmer-serve job serves a live demo.");
   }
 
   const applied = await applyCallback(id, callback, new Date());
