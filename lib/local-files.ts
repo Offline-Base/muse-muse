@@ -2,11 +2,17 @@ import { env } from "@/lib/env";
 
 /**
  * Local runs (`npm run dev:local`) have no Vercel Blob store, so files are kept in .data/files and served by
- * app/api/files/[...key]. That happens whenever BLOB_READ_WRITE_TOKEN is unset outside Vercel. The URLs use
- * PLATFORM_URL, which dev:local points at its tunnel, so Meta and the build sandbox can fetch them.
+ * app/api/files/[...key]. That happens whenever neither Blob credential (BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID) is set
+ * outside Vercel. The URLs use PLATFORM_URL, which dev:local points at its tunnel, so Meta and the build sandbox can
+ * fetch them.
  */
 export function localFilesEnabled(): boolean {
-  return !process.env.BLOB_READ_WRITE_TOKEN && !process.env.VERCEL;
+  return !env.blobConfigured && !process.env.VERCEL;
+}
+
+/** True when files have somewhere to go: a Blob store (either credential) or, on a local run, .data/files. */
+export function fileStorageAvailable(): boolean {
+  return env.blobConfigured || localFilesEnabled();
 }
 
 export const LOCAL_FILES_DIR = ".data/files";

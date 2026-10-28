@@ -35,6 +35,27 @@ export const env = {
   get databaseUrl() {
     return required("DATABASE_URL");
   },
+  /**
+   * BLOB_READ_WRITE_TOKEN, or undefined. Blob stores connected the old way set this token. Stores connected the new way
+   * set BLOB_STORE_ID instead and sign in with the deployment's OIDC token, so lib/storage.ts passes this as `token`
+   * only when it is set, and otherwise lets @vercel/blob use OIDC with BLOB_STORE_ID. When both are set, this wins.
+   */
+  get blobReadWriteToken(): string | undefined {
+    return process.env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+  },
+  /** BLOB_STORE_ID, or undefined. Used with the OIDC token (VERCEL_OIDC_TOKEN or the request's) when there's no read-write token. */
+  get blobStoreId(): string | undefined {
+    return process.env.BLOB_STORE_ID?.trim() || undefined;
+  },
+  /** True when either Blob credential is set. Every "is there file storage" check asks this (lib/local-files.ts). */
+  get blobConfigured(): boolean {
+    return Boolean(env.blobReadWriteToken || env.blobStoreId);
+  },
+  /**
+   * BLOB_READ_WRITE_TOKEN, required. Only for flows that sign client tokens with it locally (handleUpload,
+   * generateClientTokenFromReadWriteToken): product uploads through the gateway and training uploads. Those have no
+   * OIDC form, so a store connected with BLOB_STORE_ID only can't serve them.
+   */
   get blobToken() {
     return required("BLOB_READ_WRITE_TOKEN");
   },

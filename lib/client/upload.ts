@@ -1,8 +1,8 @@
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import type { Reference } from "@/lib/types";
 import type { PreparedFile } from "@/lib/client/prepare";
 
-/** The platform's Vercel Blob client-upload route (handleUpload). Needs a session. */
+/** The platform's Vercel Blob presigned-upload route (handleUploadPresigned). Needs a session. */
 export const INSPO_UPLOAD_URL = "/api/inspirations/upload";
 
 /** Files at or over this size go up in parallel parts with retries. */
@@ -38,7 +38,7 @@ function uuid(): string {
 
 export class UploadError extends Error {}
 
-/** What to tell the user when the token route answers `status` with error `code`. */
+/** What to tell the user when the upload route answers `status` with error `code`. */
 export function uploadFailureMessage(status: number, code: string | undefined): string {
   if (status === 401) return "Upload wasn't allowed. Sign in again, then retry.";
   if (status === 429 || code === "upload_limit") return "Too many uploads from here in the last hour. Try again later.";
@@ -46,13 +46,16 @@ export function uploadFailureMessage(status: number, code: string | undefined): 
   return "Upload failed. Check your connection and retry.";
 }
 
-/** The Blob client reports every token route failure as "client token", so this asks the route once more for why. */
-async function tokenFailureMessage(pathname: string): Promise<string> {
+/**
+ * The Blob client reports every upload route failure as "Failed to retrieve the presigned URL", so this asks the route
+ * once more for why.
+ */
+async function routeFailureMessage(pathname: string): Promise<string> {
   try {
     const res = await fetch(INSPO_UPLOAD_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type: "blob.generate-client-token", payload: { pathname, clientPayload: null, multipart: false } }),
+      body: JSON.stringify({ type: "blob.generate-presigned-url", payload: { pathname, clientPayload: null, multipart: false } }),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     return uploadFailureMessage(res.ok ? 0 : res.status, body.error);
@@ -84,8 +87,9 @@ async function uploadLocal(
 }
 
 /**
- * Uploads one prepared file straight to Vercel Blob through the platform's token route, at
- * "inspo/<uuid>-<safe name>", and returns the Reference to send with POST /api/inspirations.
+ * Uploads one prepared file straight to Vercel Blob with a presigned URL from the platform's upload route, at
+ * "inspo/<uuid>-<safe name>" (the route turns on Blob's random suffix too), and returns the Reference to send with
+ * POST /api/inspirations. uploadPresigned takes no addRandomSuffix or allowOverwrite here: the server signs those.
  */
 export async function uploadInspo(
   file: PreparedFile,
@@ -94,7 +98,7 @@ export async function uploadInspo(
   const pathname = `inspo/${uuid()}-${safeFileName(file.fileName)}`;
   if (process.env.NEXT_PUBLIC_LOCAL_FILES === "1") return uploadLocal(file, pathname, opts);
   try {
-    const blob = await upload(pathname, file.blob, {
+    const blob = await uploadPresigned(pathname, file.blob, {
       access: "public",
       handleUploadUrl: INSPO_UPLOAD_URL,
       contentType: file.contentType,
@@ -112,7 +116,7 @@ export async function uploadInspo(
   } catch (err) {
     if (opts.signal?.aborted) throw err;
     const message = err instanceof Error ? err.message : String(err);
-    if (/client token/i.test(message)) throw new UploadError(await tokenFailureMessage(pathname));
+    if (/presigned URL/i.test(message)) throw new UploadError(await routeFailureMessage(pathname));
     throw new UploadError("Upload failed. Check your connection and retry.");
   }
 }

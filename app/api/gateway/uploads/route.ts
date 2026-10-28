@@ -12,7 +12,8 @@ export async function POST(req: Request) {
   return handleGatewayUpload(req, {
     findToken,
     productStatus: productStatusById,
-    blobToken: () => env.blobToken,
+    // Undefined with a BLOB_STORE_ID-only store, which answers 503 uploads_unavailable (lib/gateway/uploads.ts).
+    blobToken: () => env.blobReadWriteToken,
     hitRateLimits,
     callbackUrl: env.platformUrl.startsWith("https://") ? `${env.gatewayUrl}/uploads` : undefined,
   });

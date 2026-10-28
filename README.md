@@ -195,7 +195,7 @@ Run `npm run snapshot` again whenever `template/` changes, and update `BUILDER_S
 
 On Vercel, set the same variables on the project. A few need care:
 
-- `BLOB_READ_WRITE_TOKEN` must come from a **public** Blob store. Meta fetches media by URL, and products upload straight to the store. Without it, builds are refused.
+- The Blob store must be **public**. Meta fetches media by URL, and products upload straight to the store. Connecting it sets `BLOB_STORE_ID` (used with the deployment's OIDC token) or, for older stores, `BLOB_READ_WRITE_TOKEN`; either works for the platform's own files and inspo uploads. Product uploads through the gateway and training uploads still need `BLOB_READ_WRITE_TOKEN`. With neither set, builds are refused.
 - `VERCEL_TOKEN` and `VERCEL_TEAM_ID` publish each product as its own project.
 - `OPEN_ACCESS=guest` opens the site with no sign-in: every visitor shares one Builder account and its daily cap. `DAILY_SPEND_CAP_USD` stops new builds and gateway calls for the day once it is reached.
 - Fine-tuning needs `LAMBDA_API_KEY` and `CRON_SECRET`. Jobs start only on production, where Vercel runs the sweep cron.

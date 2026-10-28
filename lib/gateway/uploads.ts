@@ -35,8 +35,11 @@ export function checkUploadPathname(pathname: string): string | null {
 export interface UploadDeps {
   findToken(token: string): Promise<GatewayToken | null>;
   productStatus(productId: string): Promise<ProductStatus | null>;
-  /** BLOB_READ_WRITE_TOKEN. A function so a missing value surfaces as a 500 here, not at import. */
-  blobToken(): string;
+  /**
+   * BLOB_READ_WRITE_TOKEN, or undefined when it isn't set (handleGatewayUpload then answers 503 uploads_unavailable).
+   * A function so it's read per request, not at import.
+   */
+  blobToken(): string | undefined;
   /** Where Vercel Blob posts blob.upload-completed. Undefined when the platform has no public https origin. */
   callbackUrl?: string;
   /** The gateway's fixed-window counter (lib/gateway/store.ts), here with uploadTicketWindowMs windows. */
@@ -82,8 +85,24 @@ class PathnameError extends Error {}
  * The Vercel Blob client-upload protocol for products. Token requests need "Authorization: Bearer <PRODUCT_TOKEN>"
  * on a product that isn't disabled or failed, and are rate limited per token and per end user. The
  * blob.upload-completed callback from Vercel carries no bearer; handleUpload checks its x-vercel-signature instead.
+ *
+ * Client tokens are signed with BLOB_READ_WRITE_TOKEN, and callbacks are checked with it, so this needs that token. A
+ * store connected with BLOB_STORE_ID only (OIDC, no read-write token) can't do either: every request then gets a 503
+ * uploads_unavailable instead of a crash. Moving products to presigned uploads, as inspo did
+ * (lib/pipeline/inspo-upload.ts), needs a template change (its client uses upload(), and its /api/upload route
+ * forwards only client-token events) and a new builder snapshot, so it's a follow-up.
  */
 export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promise<Response> {
+  const blobToken = deps.blobToken();
+  if (!blobToken) {
+    return gatewayError(
+      503,
+      "server_error",
+      "uploads_unavailable",
+      "File uploads aren't available on Muse Muse right now: its Blob store has no read-write token.",
+      { retry: false },
+    );
+  }
   let body: unknown;
   try {
     body = await req.json();
@@ -113,7 +132,7 @@ export async function handleGatewayUpload(req: Request, deps: UploadDeps): Promi
     const result = await handleUpload({
       body,
       request: req,
-      token: deps.blobToken(),
+      token: blobToken,
       onBeforeGenerateToken: async (pathname) => {
         const problem = checkUploadPathname(pathname);
         if (problem) throw new PathnameError(problem);

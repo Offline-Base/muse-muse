@@ -45,6 +45,19 @@ async function putLocal(key: string, body: Buffer | Blob | ReadableStream | stri
   return localFileUrl(stored);
 }
 
+/**
+ * The credential part of a @vercel/blob call: `{ token }` with BLOB_READ_WRITE_TOKEN when it is set, otherwise `{}`,
+ * which makes @vercel/blob sign in with the OIDC token (VERCEL_OIDC_TOKEN, or the request's on Vercel) and
+ * BLOB_STORE_ID. Throws when neither credential is set, so a misconfigured deploy fails with a clear message.
+ */
+export function blobAuth(): { token?: string } {
+  if (!env.blobConfigured) {
+    throw new Error("No Blob store: set BLOB_STORE_ID (with an OIDC token) or BLOB_READ_WRITE_TOKEN. See .env.example.");
+  }
+  const token = env.blobReadWriteToken;
+  return token ? { token } : {};
+}
+
 export async function putFile(
   prefix: BlobPrefix,
   path: string,
@@ -52,11 +65,12 @@ export async function putFile(
   contentType: string,
 ): Promise<string> {
   if (localFilesEnabled()) return putLocal(`${prefix}/${path}`, body, contentType);
+  // Server-side put takes addRandomSuffix with either credential (it's a request header, not part of the token).
   const blob = await put(`${prefix}/${path}`, body, {
     access: "public",
     contentType,
     addRandomSuffix: true,
-    token: env.blobToken,
+    ...blobAuth(),
   });
   return blob.url;
 }
@@ -64,13 +78,14 @@ export async function putFile(
 /** Deletes blobs under a prefix uploaded before `olderThan`. Returns how many were deleted. Local runs keep files. */
 export async function deleteOlderThan(prefix: BlobPrefix, olderThan: Date): Promise<number> {
   if (localFilesEnabled()) return 0;
+  const auth = blobAuth();
   let cursor: string | undefined;
   let deleted = 0;
   do {
-    const page = await list({ prefix: `${prefix}/`, cursor, limit: 1000, token: env.blobToken });
+    const page = await list({ prefix: `${prefix}/`, cursor, limit: 1000, ...auth });
     const stale = page.blobs.filter((b) => b.uploadedAt < olderThan).map((b) => b.url);
     if (stale.length) {
-      await del(stale, { token: env.blobToken });
+      await del(stale, auth);
       deleted += stale.length;
     }
     cursor = page.hasMore ? page.cursor : undefined;

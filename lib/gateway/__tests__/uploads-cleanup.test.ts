@@ -142,14 +142,16 @@ test("upload-completed callback: no bearer needed, but the signature must match"
   assert.equal(missing.status, 400);
 });
 
-test("missing BLOB_READ_WRITE_TOKEN -> 500, not a client error", async () => {
-  const res = await handleGatewayUpload(post(tokenEvent("uploads/a.png")), {
-    ...deps(),
-    blobToken: () => {
-      throw new Error("BLOB_READ_WRITE_TOKEN is not set.");
-    },
-  });
-  assert.equal(res.status, 500);
+test("no BLOB_READ_WRITE_TOKEN (a store connected with BLOB_STORE_ID only) -> 503 uploads_unavailable, not a crash", async () => {
+  const noToken = { ...deps(), blobToken: () => undefined };
+  const callback = { type: "blob.upload-completed", payload: { blob: { pathname: "uploads/a.png" } } };
+  for (const req of [post(tokenEvent("uploads/a.png")), post(callback, { "x-vercel-signature": "00".repeat(32) })]) {
+    const res = await handleGatewayUpload(req, noToken);
+    assert.equal(res.status, 503);
+    assert.equal(res.headers.get("x-should-retry"), "false");
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, "uploads_unavailable");
+  }
+  assert.equal(noToken.rateKeys.length, 0, "no tickets are spent");
 });
 
 test("cronAuthorized", () => {
