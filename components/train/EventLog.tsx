@@ -7,8 +7,9 @@ import type { TrainEventView, TrainProgress } from "@/lib/train/types";
 const PROGRESS_FOLD_AT = 4;
 
 /**
- * A job's event log, oldest first, in a polite live region so new rows are read out. Back-to-back heartbeats become one
- * row, and long runs of progress reports fold behind the latest one.
+ * A job's event log, oldest first, in a polite live region so new rows are read out. Back-to-back heartbeats, eval items
+ * and judgements each become one row (the results below the log show them in full), and long runs of progress reports
+ * fold behind the latest one.
  */
 export function EventLog({
   events,
@@ -51,6 +52,25 @@ function LogRow({ item, jobId }: { item: LogItem; jobId: string }) {
           <p>
             <strong>Heartbeat</strong> {item.events.length} reports, the last at {clockUtc(last.at)}
             {msg ? `. ${msg}` : ""}
+          </p>
+        </div>
+      </li>
+    );
+  }
+  if (item.type === "eval" || item.type === "judgement") {
+    const evalRun = item.type === "eval";
+    return (
+      <li className="train-ev">
+        <time className="train-ev-time" dateTime={first.at}>
+          {clockUtc(first.at)}
+        </time>
+        <span className="train-ev-icon" aria-hidden>
+          <Icon name={evalRun ? "clipboard" : "check"} size={16} />
+        </span>
+        <div className="train-ev-body">
+          <p>
+            <strong>{evalRun ? "Eval items" : "Judged"}</strong> {item.events.length} {evalRun ? "sent" : "items"}, the
+            last at {clockUtc(last.at)}. <a href="#eval-results">See the results</a>
           </p>
         </div>
       </li>

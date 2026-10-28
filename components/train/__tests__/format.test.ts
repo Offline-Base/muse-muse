@@ -1,27 +1,48 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  JUDGE_WAIT_MS,
+  META_NOT_CONFIGURED_TEXT,
   NOT_PUBLIC_TEXT,
+  SPEND_PAUSED_TEXT,
   artifactHref,
+  autoCostGpu,
   autoGpu,
   clockUtc,
+  datasetBlockedText,
+  datasetCostHint,
+  datasetCostRange,
+  datasetCountOk,
+  datasetCountsText,
+  datasetMinutes,
+  datasetOptionText,
+  datasetStartErrorText,
+  datasetTone,
   doneMetrics,
   errorHeadline,
+  evalRows,
+  evalState,
+  evalSummaryText,
   eventLine,
   gpuErrorText,
   gpuName,
   gpuRowText,
   gpuRows,
   groupEvents,
+  isDatasetStalled,
   isSettled,
+  itemNumber,
   jobElapsedMs,
+  keepEvents,
   limitBounds,
   liveCostUsd,
   maxCostUsd,
   mergeEvents,
   pricePerHour,
   progressText,
+  roughMinutes,
   safeHref,
+  scoreText,
   startErrorText,
   stopControl,
   stopErrorText,
@@ -29,8 +50,11 @@ import {
   toRecipeView,
   trainStatusLabel,
   trainTone,
+  tunedModelName,
+  verdictLabel,
+  verdictTone,
 } from "@/components/train/format";
-import type { GpuOption, Recipe, TrainEventBody, TrainEventView, TrainJobView } from "@/lib/train/types";
+import type { DatasetView, EvalSummary, GpuOption, Recipe, TrainEventBody, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 const recipe: Recipe = {
   id: "smoke",
@@ -91,6 +115,7 @@ function job(patch: Partial<TrainJobView> = {}): TrainJobView {
     lastHeartbeatAt: null,
     finishedAt: null,
     terminatedAt: null,
+    evalSummary: null,
     ...patch,
   };
 }
@@ -117,6 +142,8 @@ describe("recipes and limits", () => {
     assert.equal("script" in v, false);
     assert.equal(v.title, "Smoke test");
     assert.deepEqual(v.gpus, recipe.gpus);
+    assert.equal("usesCache" in v, false);
+    assert.equal(toRecipeView({ ...recipe, usesCache: true }).usesCache, true, "the page needs it for the Auto copy");
   });
 
   it("starts the limits at the lower of the recipe defaults and the ceilings", () => {
@@ -175,6 +202,13 @@ describe("GPU select", () => {
   it("auto picks the first free GPU in the recipe's order, or nothing", () => {
     assert.equal(autoGpu(gpuRows(recipe, options))?.instanceType, "gpu_1x_a100");
     assert.equal(autoGpu(gpuRows(recipe, [opt("gpu_1x_a10", 75, [])])), null);
+  });
+
+  it("estimates Auto at the priciest free GPU when the recipe prefers the model cache's region", () => {
+    const rows = gpuRows(recipe, [opt("gpu_1x_a10", 75, ["us-east-1"]), opt("gpu_1x_a6000", 80, []), opt("gpu_1x_a100", 129, ["us-west-1"])]);
+    assert.equal(autoCostGpu(rows)?.instanceType, "gpu_1x_a10", "the first free one without the cache");
+    assert.equal(autoCostGpu(rows, true)?.instanceType, "gpu_1x_a100", "any free one could launch near the cache");
+    assert.equal(autoCostGpu(gpuRows(recipe, []), true), null);
   });
 
   it("names a job's GPU by the recipe's label", () => {
@@ -343,6 +377,11 @@ describe("event log", () => {
     assert.equal(art.href, url);
     assert.equal(eventLine(body).href, undefined, "no link without the job it belongs to");
     assert.equal(eventLine(body, "ffffffff-0000-4000-8000-000000000000").href, undefined, "another job's file");
+    assert.equal(eventLine(evalEv(1, 2).payload).text, "3: How late are you open on Sunday?");
+    assert.equal(
+      eventLine({ type: "judgement", index: 0, baseScore: 3, tunedScore: 9, better: "tuned", note: "Gives the hours." }).text,
+      "Item 1: base 3, tuned 9, tuned better. Gives the hours.",
+    );
   });
 
   it("only links http and https URLs", () => {
@@ -372,7 +411,7 @@ describe("event log", () => {
     }
   });
 
-  it("folds back-to-back heartbeats and progress reports, and nothing else", () => {
+  it("folds back-to-back heartbeats, progress reports, eval items and judgements, and nothing else", () => {
     const events = [
       ev(1, { type: "status", status: "booting" }),
       ev(2, { type: "heartbeat" }),
@@ -382,13 +421,17 @@ describe("event log", () => {
       ev(6, { type: "heartbeat" }),
       ev(7, { type: "log", text: "x" }),
       ev(8, { type: "log", text: "y" }),
+      evalEv(9, 0),
+      evalEv(10, 1),
+      ev(11, { type: "judgement", index: 0, baseScore: 4, tunedScore: 8, better: "tuned", note: "n" }),
+      ev(12, { type: "judgement", index: 1, baseScore: 4, tunedScore: 8, better: "tuned", note: "n" }),
     ];
     const items = groupEvents(events);
     assert.deepEqual(
       items.map((i) => (i.kind === "one" ? i.event.id : `${i.type}:${i.events.map((e) => e.id).join(",")}`)),
-      [1, "heartbeat:2,3", "progress:4,5", "heartbeat:6", 7, 8],
+      [1, "heartbeat:2,3", "progress:4,5", "heartbeat:6", 7, 8, "eval:9,10", "judgement:11,12"],
     );
-    assert.equal(events.length, 8, "the input is left alone");
+    assert.equal(events.length, 12, "the input is left alone");
   });
 
   it("merges polled events in id order without duplicates", () => {
@@ -417,5 +460,177 @@ describe("event log", () => {
   it("takes a traceback's last line as its headline", () => {
     assert.equal(errorHeadline("Traceback (most recent call last):\n  File x\nValueError: bad\n\n"), "ValueError: bad");
     assert.equal(errorHeadline(null), "");
+  });
+});
+
+function evalEv(id: number, index: number, patch: Partial<Extract<TrainEventBody, { type: "eval" }>> = {}): TrainEventView {
+  return ev(id, {
+    type: "eval",
+    index,
+    prompt: "How late are you open on Sunday?",
+    reference: "Until 4 pm.",
+    base: "We are open.",
+    tuned: "Until 4 pm on Sundays.",
+    ...patch,
+  });
+}
+
+const judged = (id: number, index: number, better: "base" | "tuned" | "tie", baseScore = 5, tunedScore = 7): TrainEventView =>
+  ev(id, { type: "judgement", index, baseScore, tunedScore, better, note: `note ${index}` });
+
+const summary: EvalSummary = {
+  items: 30,
+  tunedWins: 18,
+  baseWins: 7,
+  ties: 5,
+  avgBaseScore: 6.24,
+  avgTunedScore: 7.8,
+  judgeCostUsd: 0.0412,
+};
+
+function dataset(patch: Partial<DatasetView> = {}): DatasetView {
+  return {
+    id: "1b2c3d4e-0000-4000-8000-000000000002",
+    title: "Bakery helper",
+    task: "Answer customer questions for a small bakery.",
+    status: "ready",
+    requested: 300,
+    trainCount: 270,
+    evalCount: 30,
+    costUsd: 1.42,
+    error: null,
+    createdAt: new Date(t0).toISOString(),
+    finishedAt: new Date(t0 + 18 * 60_000).toISOString(),
+    ...patch,
+  };
+}
+
+describe("datasets", () => {
+  it("labels and colors each status, and calls a dataset that never finished stalled", () => {
+    assert.equal(datasetTone("ready"), "live");
+    assert.equal(datasetTone("failed"), "failed");
+    assert.equal(datasetTone("generating"), "building");
+    const writing = dataset({ status: "generating" });
+    assert.equal(isDatasetStalled(writing, t0 + 60 * 60_000), false);
+    assert.equal(isDatasetStalled(writing, t0 + 7 * 60 * 60_000), true);
+    assert.equal(isDatasetStalled(dataset(), t0 + 7 * 60 * 60_000), false, "only a dataset still writing");
+  });
+
+  it("counts train and eval once ready, and progress while writing", () => {
+    assert.equal(datasetCountsText(dataset()), "270 train · 30 eval");
+    assert.equal(datasetCountsText(dataset({ status: "generating", trainCount: 0, evalCount: 0 }), 112), "112 of 300 answered");
+    assert.equal(datasetCountsText(dataset({ status: "generating", trainCount: 0, evalCount: 0 })), "Writing prompts for 300");
+    assert.equal(datasetCountsText(dataset({ status: "failed", trainCount: 0, evalCount: 0 })), "300 asked for");
+    assert.equal(datasetOptionText(dataset()), "Bakery helper · 270 train, 30 eval");
+    assert.equal(datasetOptionText(dataset({ status: "generating" })), "Bakery helper · still writing");
+  });
+
+  it("estimates the cost and time to write a dataset", () => {
+    const r = datasetCostRange(300);
+    assert.ok(r.low > 0.5 && r.low < r.high && r.high < 4, JSON.stringify(r));
+    assert.ok(datasetCostRange(1000).high > r.high);
+    assert.deepEqual(datasetCostRange(0), { low: 0, high: 0 });
+    assert.equal(datasetMinutes(300), 19, "12 prompt batches and 13 answer chunks");
+    assert.equal(roughMinutes(datasetMinutes(20)), "a few minutes");
+    assert.equal(roughMinutes(datasetMinutes(300)), "about 20 minutes");
+    assert.equal(roughMinutes(datasetMinutes(1000)), "about an hour");
+    assert.equal(roughMinutes(200), "about 3.5 hours");
+    assert.match(datasetCostHint(300), /^About \$\d+\.\d\d to \$\d+\.\d\d on Meta's API at Muse Spark 1\.3's prices, and about 20 minutes to write\./);
+    assert.equal(datasetCostHint(5), "Pick 20 to 1,000 examples to see the cost.");
+    assert.equal(datasetCountOk(20) && datasetCountOk(1000), true);
+    assert.equal(datasetCountOk(19) || datasetCountOk(1001) || datasetCountOk(30.5) || datasetCountOk(NaN), false);
+  });
+
+  it("turns each dataset refusal into a plain sentence", () => {
+    assert.equal(datasetStartErrorText(503, { error: "meta_not_configured" }), META_NOT_CONFIGURED_TEXT);
+    assert.equal(datasetStartErrorText(503, { error: "paused" }), SPEND_PAUSED_TEXT);
+    assert.match(datasetStartErrorText(500, { error: "start_failed" }), /nothing was written/);
+    assert.equal(
+      datasetStartErrorText(400, { error: "Describe the task in at least 20 characters." }),
+      "Describe the task in at least 20 characters.",
+    );
+    assert.equal(datasetStartErrorText(400, { error: "bad_input" }), "Check the fields and try again.");
+    assert.equal(datasetStartErrorText(403, { error: "Admins only." }), "Only admins can make datasets.");
+    assert.match(datasetStartErrorText(500, { error: "server_error" }), /\(server_error\)/);
+    assert.equal(datasetBlockedText("meta_not_configured"), META_NOT_CONFIGURED_TEXT);
+    assert.equal(datasetBlockedText("paused"), SPEND_PAUSED_TEXT);
+    assert.equal(datasetBlockedText(null), null);
+  });
+});
+
+describe("eval results", () => {
+  it("joins each eval item to its judgement in index order, first event per index", () => {
+    const rows = evalRows([
+      evalEv(1, 1, { prompt: "second" }),
+      evalEv(2, 0, { prompt: "first" }),
+      evalEv(3, 1, { prompt: "a retry, ignored" }),
+      judged(4, 1, "tuned", 4, 9),
+      judged(5, 1, "base", 9, 4),
+      ev(6, { type: "heartbeat" }),
+    ]);
+    assert.deepEqual(
+      rows.map((r) => [r.index, r.prompt, r.judgement?.better ?? null]),
+      [
+        [0, "first", null],
+        [1, "second", "tuned"],
+      ],
+    );
+    assert.deepEqual(rows[1].judgement, { baseScore: 4, tunedScore: 9, better: "tuned", note: "note 1" });
+    assert.equal(itemNumber(0), 1);
+  });
+
+  it("says where results stand: answering, judging, judged, or why not", () => {
+    const events = [evalEv(1, 0), evalEv(2, 1), judged(3, 0, "tuned")];
+    const rows = evalRows(events);
+    const end = new Date(t0).toISOString();
+    const done = job({ status: "succeeded", finishedAt: end, terminatedAt: end });
+    assert.deepEqual(evalState(job(), [], [], t0), { state: "none" });
+    assert.deepEqual(evalState(job(), events, rows, t0), { state: "answering" });
+    assert.deepEqual(evalState(done, events, rows, t0 + 60_000), { state: "judging", judged: 1, total: 2 });
+    assert.deepEqual(evalState({ ...done, evalSummary: summary }, events, rows, t0), { state: "judged", summary });
+    assert.deepEqual(evalState({ ...done, evalSummary: summary }, [], [], t0), { state: "judged", summary }, "a summary shows on its own");
+    const skipped = [...events, ev(4, { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." })];
+    assert.deepEqual(evalState(done, skipped, rows, t0), { state: "unjudged", reason: "Judging skipped: MODEL_API_KEY isn't set." });
+    const late = evalState(done, events, rows, t0 + JUDGE_WAIT_MS + 1);
+    assert.equal(late.state, "unjudged", "the page stops waiting");
+    assert.equal(evalState(job({ status: "failed", finishedAt: end }), events, rows, t0).state, "unjudged");
+  });
+
+  it("writes the summary strip and verdicts in plain words", () => {
+    assert.equal(
+      evalSummaryText(summary, tunedModelName("glimmer-lora")),
+      "Tuned Glimmer beat base on 18 of 30, base won 7, ties 5; average score base 6.2, tuned 7.8, judged by Muse Spark 1.3.",
+    );
+    assert.equal(tunedModelName("smoke"), "model");
+    assert.equal(scoreText(7.8), "7.8");
+    assert.equal(verdictLabel("tuned"), "Tuned better");
+    assert.equal(verdictLabel("base"), "Base better");
+    assert.equal(verdictLabel("tie"), "Tie");
+    assert.deepEqual([verdictTone("tuned"), verdictTone("base"), verdictTone("tie")], ["live", "partial", "neutral"]);
+  });
+
+  it("keeps every eval item and judgement and the latest of the rest", () => {
+    const events = [ev(1, { type: "heartbeat" }), evalEv(2, 0), ev(3, { type: "heartbeat" }), judged(4, 0, "tie"), ev(5, { type: "log", text: "x" })];
+    const { kept, dropped } = keepEvents(events, 1);
+    assert.deepEqual(
+      kept.map((e) => e.id),
+      [2, 4, 5],
+    );
+    assert.equal(dropped, 2);
+    assert.equal(keepEvents(events, 10).kept, events);
+  });
+
+  it("never puts an em dash in the copy", () => {
+    const all = [
+      datasetCostHint(300),
+      datasetCostHint(1),
+      META_NOT_CONFIGURED_TEXT,
+      SPEND_PAUSED_TEXT,
+      datasetStartErrorText(500, { error: "start_failed" }),
+      datasetStartErrorText(502, {}),
+      evalSummaryText(summary, "Glimmer"),
+      datasetCountsText(dataset()),
+    ];
+    for (const s of all) assert.equal(s.includes(String.fromCharCode(0x2014)), false, s);
   });
 });

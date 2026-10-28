@@ -68,14 +68,18 @@ export type TrainCallback =
   | { type: "log"; text: string }
   | { type: "artifact"; artifact: TrainArtifact }
   | { type: "done"; summary?: string; metrics?: Record<string, number | string> }
-  | { type: "failed"; error: string };
+  | { type: "failed"; error: string }
+  /** One held-out prompt answered by the base and the tuned model, sent before "done". Fields are cut to 3,500 chars. */
+  | { type: "eval"; index: number; prompt: string; reference: string; base: string; tuned: string };
 
 /** One row of the job's event log, shown on the job page. */
 export type TrainEventBody =
   | TrainCallback
   | { type: "status"; status: TrainStatus; message?: string }
   | { type: "instance"; instanceId: string; instanceType: string; region: string; ip?: string | null }
-  | { type: "terminated"; reason: string };
+  | { type: "terminated"; reason: string }
+  /** Muse Spark 1.3's verdict on one eval item, scored 1 to 10 against the reference answer. */
+  | { type: "judgement"; index: number; baseScore: number; tunedScore: number; better: "base" | "tuned" | "tie"; note: string };
 
 /** A GPU type a recipe can run on, in order of preference. */
 export interface GpuChoice {
@@ -87,7 +91,8 @@ export interface GpuChoice {
 export interface RecipeParamField {
   key: string;
   label: string;
-  kind: "text" | "url" | "number";
+  /** "dataset" is a select of ready training datasets; its value is the dataset id. */
+  kind: "text" | "url" | "number" | "dataset";
   /** Shown under the field. */
   help?: string;
   required?: boolean;
@@ -108,6 +113,11 @@ export interface Recipe {
   params: RecipeParamField[];
   /** The Python script the runner imports as `recipe` (it must define run(ctx)). */
   script: string;
+  /**
+   * Keeps a model cache on the region's Lambda filesystem "muse-muse-cache-<region>": launch mounts it (creating it
+   * once) and job.json gets its mount path as cacheDir. Job creation prefers regions that already have one.
+   */
+  usesCache?: boolean;
 }
 
 export interface TrainLimits {
@@ -146,6 +156,8 @@ export interface TrainJobView {
   lastHeartbeatAt: string | null;
   finishedAt: string | null;
   terminatedAt: string | null;
+  /** Set once the platform has judged the job's eval items. */
+  evalSummary: EvalSummary | null;
 }
 
 export interface TrainEventView {
@@ -167,3 +179,43 @@ export interface GpuOption {
 
 /** A recipe without its script, for the admin page. */
 export type RecipeView = Omit<Recipe, "script">;
+
+/** How the tuned model did against the base model on the held-out prompts, judged by Muse Spark 1.3. */
+export interface EvalSummary {
+  items: number;
+  tunedWins: number;
+  baseWins: number;
+  ties: number;
+  avgBaseScore: number;
+  avgTunedScore: number;
+  /** What judging cost on Meta's API. */
+  judgeCostUsd: number;
+}
+
+export type DatasetStatus = "generating" | "ready" | "failed";
+
+/** One training conversation in the OpenAI messages format Unsloth and TRL take. */
+export interface TrainExample {
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+}
+
+/** A held-out prompt with Muse Spark 1.3's answer as the reference. */
+export interface EvalExample {
+  prompt: string;
+  reference: string;
+}
+
+/** GET /api/train/datasets: a dataset Muse Spark 1.3 wrote from a task description. */
+export interface DatasetView {
+  id: string;
+  title: string;
+  task: string;
+  status: DatasetStatus;
+  requested: number;
+  trainCount: number;
+  evalCount: number;
+  costUsd: number;
+  error: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}

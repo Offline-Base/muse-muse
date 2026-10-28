@@ -6,7 +6,8 @@ import type { GpuChoice } from "@/lib/train/types";
  * read on every call, sent only in the Authorization header and scrubbed from every error message.
  *
  * Endpoints: GET /instance-types, GET /instances (paged), GET /instances/{id}, POST /instance-operations/launch,
- * POST /instance-operations/terminate. Lambda bills from launch until terminate, so terminate is idempotent.
+ * POST /instance-operations/terminate, GET /filesystems and POST /filesystems. Lambda bills from launch until
+ * terminate, so terminate is idempotent. Filesystems (the model cache) are only ever listed and created, never deleted.
  */
 
 const API = "https://cloud.lambda.ai/api/v1";
@@ -18,6 +19,11 @@ const MAX_PAGES = 20;
 const MAX_USER_DATA_BYTES = 1_000_000;
 /** Lambda's rules for a tag key on launch. Keys starting with "lambda-ai-" are reserved for Lambda. */
 const TAG_KEY = /^[a-z][a-z0-9-:]+$/;
+/** Lambda's rules for a filesystem name (FilesystemCreateRequest). */
+const FILESYSTEM_NAME = /^[a-zA-Z]+[0-9a-zA-Z-]*$/;
+const FILESYSTEM_NAME_MAX = 60;
+/** The model cache's filesystem in a region is named this plus the region, such as muse-muse-cache-us-east-1. */
+export const CACHE_FILESYSTEM_PREFIX = "muse-muse-cache-";
 const GONE: readonly LambdaInstance["status"][] = ["terminated", "terminating"];
 
 /** Per-call timeout and the wait before the one retry. Tests shorten these; nothing else should change them. */
@@ -42,6 +48,18 @@ export interface LambdaInstance {
   region: string;
   /** The instance's tags, when Lambda sent any. The sweep matches the "muse-muse-job" tag to a job. */
   tags?: Array<{ key: string; value: string }>;
+}
+
+/** A persistent filesystem from GET /filesystems. It lives in one region and only mounts on instances there. */
+export interface LambdaFilesystem {
+  id: string;
+  name: string;
+  region: string;
+  /** Where instances mount it by default: /lambda/nfs/<name>. */
+  mountPoint: string;
+  inUse: boolean;
+  /** Lambda's estimate, updated every few hours; null when it sent none. */
+  bytesUsed: number | null;
 }
 
 /**
@@ -80,6 +98,15 @@ interface RawInstance {
   region?: RawRegion | null;
   instance_type?: RawInstanceType | null;
   tags?: unknown;
+}
+
+interface RawFilesystem {
+  id: string;
+  name: string;
+  mount_point?: string | null;
+  is_in_use?: boolean;
+  region?: RawRegion | null;
+  bytes_used?: number | null;
 }
 
 interface RawError {
@@ -242,6 +269,9 @@ function launchProblem(input: Parameters<typeof launchInstance>[0]): string | nu
   if (!input.instanceType || !input.region) return "an instance type and a region are required";
   if (!input.sshKeyName) return "an SSH key name is required";
   if (Buffer.byteLength(input.userData, "utf8") > MAX_USER_DATA_BYTES) return "user data must be under 1 MB";
+  for (const name of input.fileSystemNames ?? []) {
+    if (!FILESYSTEM_NAME.test(name) || name.length > FILESYSTEM_NAME_MAX) return `filesystem name "${name}" isn't allowed`;
+  }
   for (const tag of input.tags) {
     if (!TAG_KEY.test(tag.key) || tag.key.length > 55 || tag.key.startsWith("lambda-ai-")) return `tag key "${tag.key}" isn't allowed`;
     if (tag.value.length > 128) return `tag "${tag.key}" has a value over 128 characters`;
@@ -252,6 +282,7 @@ function launchProblem(input: Parameters<typeof launchInstance>[0]): string | nu
 /**
  * Launches one instance with the default Lambda Stack image and returns its id. Billing starts here. A 429 is
  * retried once; a 5xx is not, because the instance may exist anyway: callers look it up by name before launching again.
+ * `fileSystemNames` are mounted at their default mount points; they must be in the instance's region.
  */
 export async function launchInstance(input: {
   name: string;
@@ -260,6 +291,7 @@ export async function launchInstance(input: {
   userData: string;
   sshKeyName: string;
   tags: Array<{ key: string; value: string }>;
+  fileSystemNames?: string[];
 }): Promise<string> {
   const problem = launchProblem(input);
   if (problem) throw new LambdaApiError(400, "invalid-input", `Not sent to Lambda: ${problem}`);
@@ -271,6 +303,7 @@ export async function launchInstance(input: {
       name: input.name,
       user_data: input.userData,
       tags: input.tags,
+      ...(input.fileSystemNames?.length ? { file_system_names: input.fileSystemNames } : {}),
     },
     retryOn: "rate-limit",
   });
@@ -311,23 +344,109 @@ export async function terminateInstances(ids: string[]): Promise<void> {
   }
 }
 
+/** The model cache's filesystem name in a region, such as muse-muse-cache-us-east-1. */
+export function cacheFilesystemName(region: string): string {
+  return `${CACHE_FILESYSTEM_PREFIX}${region}`;
+}
+
+function toFilesystem(raw: RawFilesystem): LambdaFilesystem {
+  return {
+    id: raw.id,
+    name: raw.name,
+    region: raw.region?.name ?? "",
+    mountPoint: raw.mount_point || `/lambda/nfs/${raw.name}`,
+    inUse: raw.is_in_use === true,
+    bytesUsed: typeof raw.bytes_used === "number" ? raw.bytes_used : null,
+  };
+}
+
+/** Every persistent filesystem on the account. */
+export async function listFilesystems(): Promise<LambdaFilesystem[]> {
+  const res = await lambda<{ data?: RawFilesystem[] }>("GET", "/filesystems");
+  return (res.data ?? []).map(toFilesystem);
+}
+
+/** The cache filesystem for `region` in a listing, or null. One with the right name in another region is refused. */
+function cacheIn(listed: LambdaFilesystem[], region: string): LambdaFilesystem | null {
+  const name = cacheFilesystemName(region);
+  const found = listed.find((f) => f.name === name);
+  if (found && found.region && found.region !== region) {
+    throw new LambdaApiError(409, "filesystem-in-wrong-region", `Filesystem ${name} is in ${found.region}, not ${region}`);
+  }
+  return found ?? null;
+}
+
 /**
- * Picks the GPU and region for a job: the asked type when it is one of the recipe's choices and has capacity,
- * otherwise the first choice with capacity. Regions starting with `us-` come first. Null when nothing is free. A type
- * with no positive price is skipped, since a job's dollar limit and the daily cap are worked out from the price.
+ * The model cache filesystem for a region, created when the account has none there. Idempotent: it lists first, and
+ * creates with one POST /filesystems (a 429 is retried once, since nothing was made). When the create fails as a
+ * duplicate, or ambiguously (timeout, network or 5xx), the listing is read once more and an existing one is returned.
+ * Otherwise the error is thrown and nothing retries the create. Only launchStep calls it. Never deleted.
+ */
+export async function ensureFilesystem(region: string): Promise<LambdaFilesystem> {
+  const name = cacheFilesystemName(region);
+  if (!region || !FILESYSTEM_NAME.test(name) || name.length > FILESYSTEM_NAME_MAX) {
+    throw new LambdaApiError(400, "invalid-input", `Not sent to Lambda: no cache filesystem name for region "${region}"`);
+  }
+  const existing = cacheIn(await listFilesystems(), region);
+  if (existing) return existing;
+  try {
+    const res = await lambda<{ data?: RawFilesystem }>("POST", "/filesystems", { body: { name, region }, retryOn: "rate-limit" });
+    if (!res.data?.id) throw new LambdaApiError(200, "no-filesystem", "Lambda accepted the filesystem but returned none");
+    return toFilesystem(res.data);
+  } catch (err) {
+    const settle =
+      err instanceof LambdaApiError &&
+      (err.code === "global/duplicate" || err.code === "no-filesystem" || err.status === 0 || err.status >= 500);
+    if (!settle) throw err;
+    const made = cacheIn(await listFilesystems(), region);
+    if (made) return made;
+    throw err;
+  }
+}
+
+/** Regions that already have a model cache filesystem, in Lambda's order. Throws LambdaApiError like the other calls. */
+export async function cacheRegions(): Promise<string[]> {
+  const listed = await listFilesystems();
+  const regions = listed.filter((f) => f.region && f.name === cacheFilesystemName(f.region)).map((f) => f.region);
+  return [...new Set(regions)];
+}
+
+/**
+ * Picks the GPU and region for a job. The asked type wins when it is one of the recipe's choices and has capacity.
+ * Otherwise the first choice with capacity in one of `preferRegions` (where the model cache already is) is taken,
+ * then the first choice with capacity anywhere. Within a type, a preferred region comes first, then regions starting
+ * with `us-`. Null when nothing is free. A type with no positive price is skipped, since a job's dollar limit and the
+ * daily cap are worked out from the price.
  */
 export function pickGpu(
   choices: GpuChoice[],
   types: LambdaInstanceType[],
   asked?: string,
+  preferRegions: string[] = [],
 ): { instanceType: string; region: string; priceCentsPerHour: number } | null {
   const byName = new Map(types.map((t) => [t.name, t]));
   const allowed = choices.map((c) => c.instanceType);
-  const order = asked && allowed.includes(asked) ? [asked, ...allowed.filter((name) => name !== asked)] : allowed;
-  for (const name of order) {
+  const preferred = new Set(preferRegions);
+  const usable = (name: string): LambdaInstanceType | null => {
     const type = byName.get(name);
-    if (!type || type.regionsWithCapacity.length === 0 || !(type.priceCentsPerHour > 0)) continue;
-    return { instanceType: type.name, region: usFirst(type.regionsWithCapacity)[0], priceCentsPerHour: type.priceCentsPerHour };
+    return type && type.regionsWithCapacity.length > 0 && type.priceCentsPerHour > 0 ? type : null;
+  };
+  const cached = (type: LambdaInstanceType) => usFirst(type.regionsWithCapacity).filter((r) => preferred.has(r));
+  const pick = (type: LambdaInstanceType, regions: string[]) => ({
+    instanceType: type.name,
+    region: regions[0],
+    priceCentsPerHour: type.priceCentsPerHour,
+  });
+
+  const wanted = asked && allowed.includes(asked) ? usable(asked) : null;
+  if (wanted) return pick(wanted, cached(wanted).length ? cached(wanted) : usFirst(wanted.regionsWithCapacity));
+  for (const name of allowed) {
+    const type = usable(name);
+    if (type && cached(type).length) return pick(type, cached(type));
+  }
+  for (const name of allowed) {
+    const type = usable(name);
+    if (type) return pick(type, usFirst(type.regionsWithCapacity));
   }
   return null;
 }

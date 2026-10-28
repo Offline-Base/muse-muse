@@ -163,6 +163,21 @@ describe("buildUserData", () => {
     }
   });
 
+  it("adds cacheDir to job.json only when one is given, and fits the glimmer recipe under 1 MB", () => {
+    const files = (doc: string) => new Map(parseByHand(doc).write_files.map((f) => [f.path, decode(f)]));
+    assert.ok(!("cacheDir" in JSON.parse(files(buildUserData(input)).get("/opt/muse/job.json")!)));
+    const glimmer = RECIPES.find((r) => r.id === "glimmer-lora")!;
+    assert.equal(glimmer.usesCache, true);
+    const doc = buildUserData({ ...input, recipe: glimmer, params: { datasetId: "ds-1" }, cacheDir: "/lambda/nfs/muse-muse-cache-us-east-1" });
+    assert.ok(Buffer.byteLength(doc, "utf8") < MAX_USER_DATA_BYTES);
+    const written = files(doc);
+    const job = JSON.parse(written.get("/opt/muse/job.json")!);
+    assert.equal(job.cacheDir, "/lambda/nfs/muse-muse-cache-us-east-1");
+    assert.equal(job.recipe, "glimmer-lora");
+    assert.equal(written.get("/opt/muse/recipe.py"), glimmer.script);
+    assert.ok(!doc.includes(token));
+  });
+
   it("refuses an unknown recipe", () => {
     assert.throws(() => buildUserData({ ...input, recipe: "nope" as RecipeId }), /Unknown recipe/);
   });

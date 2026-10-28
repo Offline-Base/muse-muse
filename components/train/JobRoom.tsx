@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { EvalResults } from "@/components/train/EvalResults";
 import { EventLog } from "@/components/train/EventLog";
 import { JobPanel } from "@/components/train/JobPanel";
 import {
   doneMetrics,
   errorHeadline,
+  evalRows,
+  evalState,
   gpuName,
   isSettled,
   jobElapsedMs,
@@ -16,6 +19,7 @@ import {
   stopControl,
   stopErrorText,
   trainStatusLabel,
+  tunedModelName,
   workingText,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
@@ -23,8 +27,13 @@ import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobVie
 
 export interface JobRoomProps {
   job: TrainJobView;
+  /** The log the page loaded: every eval item and judgement, and the latest of the rest (keepEvents). */
   events: TrainEventView[];
+  /** Older events the page left out of `events`. */
+  droppedEvents?: number;
   recipe: RecipeView | null;
+  /** The dataset the job trains on (its datasetId param), when it still exists. */
+  dataset?: { id: string; title: string } | null;
   serverNow: number;
 }
 
@@ -71,7 +80,8 @@ function smooth(): ScrollBehavior {
 
 /**
  * The fine-tuning job page, in the build room's layout: the event log on the left, polled every 5 seconds while the
- * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop.
+ * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop. A job that sent
+ * eval items gets its results below the log; polling goes on after the GPU is gone while Muse Spark 1.3 judges them.
  */
 export function JobRoom(props: JobRoomProps) {
   const jobId = props.job.id;
@@ -85,7 +95,15 @@ export function JobRoom(props: JobRoomProps) {
   const terminal = isTrainTerminal(job.status);
   const jobSettled = isSettled(job);
   const settled = jobSettled || gaveUp;
-  const now = useNow(props.serverNow, !settled);
+  // The clock ticks while the page polls. Whether it polls depends on the clock (judging is given up on after a while).
+  const [ticking, setTicking] = useState(!settled);
+  const now = useNow(props.serverNow, ticking);
+  const rows = useMemo(() => evalRows(events), [events]);
+  const evals = evalState(job, events, rows, now);
+  // Judging starts once the GPU is gone, so the page keeps polling for verdicts after the job settles.
+  const judging = evals.state === "judging";
+  const polling = !settled || judging;
+  useEffect(() => setTicking(polling), [polling]);
   const elapsed = jobElapsedMs(job, now);
   const cost = liveCostUsd(job, now);
   const label = trainStatusLabel(job.status, job.stopRequested);
@@ -113,7 +131,7 @@ export function JobRoom(props: JobRoomProps) {
 
   // Poll while anything can still change. A hidden tab skips its turn and catches up as soon as it's shown again.
   useEffect(() => {
-    if (settled) return;
+    if (!polling) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
@@ -134,7 +152,7 @@ export function JobRoom(props: JobRoomProps) {
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [settled, poll]);
+  }, [polling, poll]);
 
   // A job can end before its GPU is reported gone. Wait a few minutes for that, then stop polling.
   useEffect(() => {
@@ -192,6 +210,7 @@ export function JobRoom(props: JobRoomProps) {
   }
 
   const shown = events.length > MAX_SHOWN ? events.slice(-MAX_SHOWN) : events;
+  const totalEvents = events.length + (props.droppedEvents ?? 0);
   const recipeTitle = props.recipe?.title ?? job.recipe;
   const gpu = gpuName(props.recipe, job.instanceType);
   const shuttingDown = terminal && Boolean(job.instanceId) && !job.terminatedAt;
@@ -247,8 +266,10 @@ export function JobRoom(props: JobRoomProps) {
               <h2 id="train-log-title">Event log</h2>
               <span className="muted small">Times in UTC</span>
             </div>
-            {events.length > shown.length ? (
-              <p className="muted small">Showing the last {MAX_SHOWN} of {events.length} events.</p>
+            {totalEvents > shown.length ? (
+              <p className="muted small">
+                Showing the last {shown.length} of {totalEvents} events.
+              </p>
             ) : null}
             <EventLog events={shown} jobId={jobId} />
             {!settled ? (
@@ -258,7 +279,7 @@ export function JobRoom(props: JobRoomProps) {
                 <span className="muted">{duration(elapsed)}</span>
               </p>
             ) : null}
-            {conn === "error" && !settled ? (
+            {conn === "error" && polling ? (
               <p className="muted small" role="status">
                 Can&apos;t reach Muse Muse right now. Trying again every 5 seconds.
               </p>
@@ -271,6 +292,7 @@ export function JobRoom(props: JobRoomProps) {
           </section>
 
           {terminal ? <JobResult job={job} events={events} elapsedMs={elapsed} costUsd={cost} /> : null}
+          <EvalResults state={evals} rows={rows} model={tunedModelName(job.recipe)} />
           <div ref={end} className="convo-end" />
         </div>
       </div>
@@ -278,6 +300,7 @@ export function JobRoom(props: JobRoomProps) {
       <JobPanel
         job={job}
         recipe={props.recipe}
+        dataset={props.dataset ?? null}
         now={now}
         elapsedMs={elapsed}
         costUsd={cost}

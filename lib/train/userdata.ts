@@ -20,6 +20,8 @@ export interface UserDataInput {
   recipe: RecipeId | Recipe;
   params: Record<string, string | number>;
   maxMinutes: number;
+  /** Where the recipe's cache filesystem is mounted on the instance, for a recipe with usesCache. */
+  cacheDir?: string;
 }
 
 /**
@@ -45,8 +47,8 @@ function b64(text: string): string {
 
 /**
  * The #cloud-config user data for a job's instance: job.json (0600, the only place the job token goes), runner.py and
- * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. Nothing from the
- * platform's env goes in. Throws for an unknown recipe or a document over 1 MB.
+ * the recipe's script as recipe.py, all base64 encoded, then a runcmd that starts the runner. job.json has cacheDir
+ * only when one is given. Nothing from the platform's env goes in. Throws for an unknown recipe or a document over 1 MB.
  */
 export function buildUserData(input: UserDataInput): string {
   const recipe = typeof input.recipe === "string" ? recipeById(input.recipe) : input.recipe;
@@ -58,6 +60,7 @@ export function buildUserData(input: UserDataInput): string {
     params: input.params,
     maxMinutes: input.maxMinutes,
     recipe: recipe.id,
+    ...(input.cacheDir ? { cacheDir: input.cacheDir } : {}),
   };
   const files = [
     { path: `${JOB_DIR}/job.json`, permissions: "0600", content: JSON.stringify(job) },

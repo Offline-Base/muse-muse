@@ -1,8 +1,19 @@
 import type { IconName } from "@/components/icons";
-import { bytes, elapsedMs, plural, usd, type Tone } from "@/lib/format";
-import { estimateCostUsd, MIN_MAX_MINUTES, MIN_MAX_USD } from "@/lib/train/logic";
+import { bytes, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
+import { tokenCost } from "@/lib/meta/pricing";
+import {
+  DATASET_MAX_COUNT,
+  DATASET_MIN_COUNT,
+  estimateCostUsd,
+  evalHoldoutCount,
+  MIN_MAX_MINUTES,
+  MIN_MAX_USD,
+} from "@/lib/train/logic";
 import {
   isTrainTerminal,
+  type DatasetStatus,
+  type DatasetView,
+  type EvalSummary,
   type GpuOption,
   type Recipe,
   type RecipeView,
@@ -76,6 +87,7 @@ export function toRecipeView(r: Recipe): RecipeView {
     defaultMaxMinutes: r.defaultMaxMinutes,
     defaultMaxUsd: r.defaultMaxUsd,
     params: r.params,
+    ...(r.usesCache ? { usesCache: true } : {}),
   };
 }
 
@@ -139,6 +151,20 @@ export function gpuRowText(row: GpuRow): string {
 /** What "Auto" launches: the first GPU in the recipe's order that has capacity, as pickGpu does. */
 export function autoGpu(rows: GpuRow[]): GpuRow | null {
   return rows.find((r) => r.free) ?? null;
+}
+
+/**
+ * The GPU the cost estimate uses on Auto. A recipe that keeps the model cache prefers a region that already has it, and
+ * only the platform knows which those are, so Auto may take any free GPU: the priciest free one keeps "up to" honest.
+ * Otherwise it is autoGpu's pick.
+ */
+export function autoCostGpu(rows: GpuRow[], usesCache = false): GpuRow | null {
+  if (!usesCache) return autoGpu(rows);
+  let best: GpuRow | null = null;
+  for (const r of rows) {
+    if (r.free && r.priceCentsPerHour !== null && (!best || r.priceCentsPerHour > (best.priceCentsPerHour ?? 0))) best = r;
+  }
+  return best;
 }
 
 /** The GPU's name for a job: the recipe's label for its type, else the type itself. */
@@ -406,25 +432,40 @@ export function eventLine(body: TrainEventBody, jobId?: string): EventLine {
       return { icon: "check", lead: "Done", text: body.summary ?? "The recipe finished.", tone: "ok" };
     case "failed":
       return { icon: "alert", lead: "Failed", text: "", detail: body.error, tone: "bad" };
+    case "eval":
+      return { icon: "clipboard", lead: "Eval item", text: `${itemNumber(body.index)}: ${truncate(String(body.prompt ?? ""), 90)}` };
+    case "judgement":
+      return {
+        icon: "check",
+        lead: "Judged",
+        text: `Item ${itemNumber(body.index)}: base ${body.baseScore}, tuned ${body.tunedScore}, ${verdictLabel(body.better).toLowerCase()}.${body.note ? ` ${body.note}` : ""}`,
+      };
     default:
       return { icon: "info", lead: String((body as { type?: unknown }).type ?? "Event"), text: "" };
   }
 }
 
-/** One row of the log: a single event, or a run of heartbeats or progress reports folded together. */
+/** Event types the log folds when they come back to back. */
+export type FoldType = "heartbeat" | "progress" | "eval" | "judgement";
+const FOLDED: readonly string[] = ["heartbeat", "progress", "eval", "judgement"] satisfies FoldType[];
+
+/** One row of the log: a single event, or a run of heartbeats, progress reports, eval items or judgements folded together. */
 export type LogItem =
   | { kind: "one"; event: TrainEventView }
-  | { kind: "fold"; type: "heartbeat" | "progress"; events: TrainEventView[] };
+  | { kind: "fold"; type: FoldType; events: TrainEventView[] };
 
-/** Folds back-to-back heartbeats and back-to-back progress reports, so a long run stays readable. */
+/**
+ * Folds back-to-back heartbeats, progress reports, eval items and judgements, so a long run stays readable. The eval
+ * items and their verdicts are shown in full in the results below the log.
+ */
 export function groupEvents(events: TrainEventView[]): LogItem[] {
   const out: LogItem[] = [];
   for (const ev of events) {
     const type = ev.payload?.type ?? ev.type;
-    if (type === "heartbeat" || type === "progress") {
+    if (FOLDED.includes(type)) {
       const last = out[out.length - 1];
       if (last && last.kind === "fold" && last.type === type) last.events.push(ev);
-      else out.push({ kind: "fold", type, events: [ev] });
+      else out.push({ kind: "fold", type: type as FoldType, events: [ev] });
       continue;
     }
     out.push({ kind: "one", event: ev });
@@ -494,4 +535,260 @@ export function doneMetrics(events: TrainEventView[]): Array<[string, string]> {
     }
   }
   return [];
+}
+
+/**
+ * The events the job page keeps: every eval item and judgement (the results need them all) and the last `max` of the
+ * rest, in id order. `dropped` is how many older ones were left out.
+ */
+export function keepEvents(events: TrainEventView[], max: number): { kept: TrainEventView[]; dropped: number } {
+  const others = events.filter((e) => !isEvalEvent(e));
+  if (others.length <= max) return { kept: events, dropped: 0 };
+  const cut = others[others.length - max]?.id ?? 0;
+  const kept = events.filter((e) => isEvalEvent(e) || e.id >= cut);
+  return { kept, dropped: events.length - kept.length };
+}
+
+function isEvalEvent(e: TrainEventView): boolean {
+  const type = e.payload?.type ?? e.type;
+  return type === "eval" || type === "judgement";
+}
+
+// ---------- Datasets ----------
+
+export const DATASET_STATUS_LABEL: Record<DatasetStatus, string> = {
+  generating: "Writing",
+  ready: "Ready",
+  failed: "Failed",
+};
+
+/** Pill color: blue while it is written, green once ready, red when it failed. */
+export function datasetTone(status: DatasetStatus): Tone {
+  return status === "ready" ? "live" : status === "failed" ? "failed" : "building";
+}
+
+/**
+ * A dataset still writing after this long has most likely lost its workflow (docs/TRAINING.md "Datasets": it stays
+ * "generating" and nothing bills for it), so the pages stop polling for it and say so.
+ */
+export const DATASET_STALE_MS = 6 * 60 * 60_000;
+
+export function isDatasetStalled(d: Pick<DatasetView, "status" | "createdAt">, now: number): boolean {
+  if (d.status !== "generating") return false;
+  const t = Date.parse(d.createdAt);
+  return Number.isFinite(t) && now - t > DATASET_STALE_MS;
+}
+
+/**
+ * The examples a dataset holds: "270 train · 30 eval" once ready, "112 of 300 answered" while it is written (`written`
+ * is what the store's datasetProgress counts), and what was asked for when it failed before the split.
+ */
+export function datasetCountsText(
+  d: Pick<DatasetView, "status" | "requested" | "trainCount" | "evalCount">,
+  written: number | null = null,
+): string {
+  if (d.status === "generating") return written ? `${written} of ${d.requested} answered` : `Writing prompts for ${d.requested}`;
+  if (d.status === "failed" && !d.trainCount && !d.evalCount) return `${d.requested} asked for`;
+  return `${d.trainCount} train · ${d.evalCount} eval`;
+}
+
+/** An option in the New job card's dataset select: "Bakery helper · 270 train, 30 eval". */
+export function datasetOptionText(d: Pick<DatasetView, "title" | "status" | "trainCount" | "evalCount">): string {
+  if (d.status !== "ready") return `${d.title} · ${d.status === "generating" ? "still writing" : "failed"}`;
+  return `${d.title} · ${d.trainCount} train, ${d.evalCount} eval`;
+}
+
+/** The model that writes datasets and judges eval items (DATASET_MODEL and JUDGE_MODEL in lib/train). */
+export const WRITER_MODEL = "muse-spark-1.3";
+export const WRITER_NAME = "Muse Spark 1.3";
+
+/**
+ * Rough tokens per example, low and high: one answer call (the task's instructions and the prompt in; up to about 350
+ * words out, with low reasoning) plus a 25th of a prompt batch. lib/train/datasets.ts has the real sizes.
+ */
+const PER_EXAMPLE = {
+  low: { inputTokens: 350, outputTokens: 700 },
+  high: { inputTokens: 450, outputTokens: 1600 },
+};
+
+/** What writing `count` examples might cost on Meta's API at Muse Spark 1.3's prices (lib/meta/pricing.ts), in USD. */
+export function datasetCostRange(count: number): { low: number; high: number } {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return {
+    low: Math.floor(tokenCost(WRITER_MODEL, PER_EXAMPLE.low) * n * 100) / 100,
+    high: Math.ceil(tokenCost(WRITER_MODEL, PER_EXAMPLE.high) * n * 100) / 100,
+  };
+}
+
+/**
+ * Rough minutes to write `count` examples: prompt batches of 25 one after another (about 30 s each), then answers in
+ * chunks of 24, 6 at a time (about a minute each).
+ */
+export function datasetMinutes(count: number): number {
+  const n = Math.max(0, Math.floor(Number(count) || 0));
+  return Math.ceil(Math.ceil(n / 25) * 0.5 + Math.ceil(n / 24));
+}
+
+/** "a few minutes", "about 20 minutes", "about an hour". */
+export function roughMinutes(minutes: number): string {
+  if (minutes < 5) return "a few minutes";
+  if (minutes < 50) return `about ${Math.max(5, Math.round(minutes / 5) * 5)} minutes`;
+  if (minutes < 90) return "about an hour";
+  return `about ${Math.round(minutes / 30) / 2} hours`;
+}
+
+/** True for a whole number of examples the route takes. */
+export function datasetCountOk(count: number): boolean {
+  return Number.isInteger(count) && count >= DATASET_MIN_COUNT && count <= DATASET_MAX_COUNT;
+}
+
+/** The New dataset card's cost line. */
+export function datasetCostHint(count: number): string {
+  if (!datasetCountOk(count)) return `Pick ${DATASET_MIN_COUNT} to ${groupThousands(DATASET_MAX_COUNT)} examples to see the cost.`;
+  const { low, high } = datasetCostRange(count);
+  return `About ${usd(low)} to ${usd(high)} on Meta's API at ${WRITER_NAME}'s prices, and ${roughMinutes(datasetMinutes(count))} to write. About ${evalHoldoutCount(count)} are held out to judge the tuned model.`;
+}
+
+/** Why datasets can't start on this deployment: no MODEL_API_KEY. */
+export const META_NOT_CONFIGURED_TEXT =
+  "Meta's API isn't connected on this deployment, so Muse Spark 1.3 can't write datasets. Set MODEL_API_KEY, then try again.";
+
+/** Why datasets can't start right now: the platform's daily spend cap on Meta's API (DAILY_SPEND_CAP_USD). */
+export const SPEND_PAUSED_TEXT =
+  "The platform's daily spend cap on Meta's API is reached, so new datasets can't start until midnight UTC.";
+
+/** What the New dataset card says when it can't start, by the reason the page found or the route answered. */
+export function datasetBlockedText(reason: string | null | undefined): string | null {
+  if (reason === "meta_not_configured") return META_NOT_CONFIGURED_TEXT;
+  if (reason === "paused") return SPEND_PAUSED_TEXT;
+  return null;
+}
+
+/** What the New dataset card says when POST /api/train/datasets refuses. */
+export function datasetStartErrorText(status: number, body: unknown): string {
+  const code = errorCode(body);
+  const blocked = datasetBlockedText(code);
+  if (blocked) return blocked;
+  if (code === "start_failed") return "The dataset's workflow couldn't start, so nothing was written. Try again in a moment.";
+  if (status === 401) return "Sign in as an admin to make datasets.";
+  if (status === 403) return "Only admins can make datasets.";
+  const message = field(body, "message") ?? field(body, "error");
+  if (status === 400) return message && !isCode(message) ? message : "Check the fields and try again.";
+  if (status === 413) return "That task description is too long.";
+  return `Couldn't start the dataset${code && isCode(code) ? ` (${code})` : ""}. Try again in a moment.`;
+}
+
+// ---------- Eval results ----------
+
+/** "Item 3" counts from 1; the runner's index counts from 0. */
+export function itemNumber(index: number): number {
+  return (Number.isFinite(index) ? Math.floor(index) : 0) + 1;
+}
+
+/** The model a recipe tunes, as the results name it: "Glimmer" for glimmer-lora. */
+export function tunedModelName(recipe: string): string {
+  return recipe === "glimmer-lora" ? "Glimmer" : "model";
+}
+
+type Better = Extract<TrainEventBody, { type: "judgement" }>["better"];
+
+export function verdictLabel(better: Better): string {
+  return better === "tuned" ? "Tuned better" : better === "base" ? "Base better" : "Tie";
+}
+
+/** Pill color for a verdict: green when the tuned model won, amber when the base did, grey for a tie. */
+export function verdictTone(better: Better): Tone {
+  return better === "tuned" ? "live" : better === "base" ? "partial" : "neutral";
+}
+
+/** An average score as the results show it: one decimal. */
+export function scoreText(score: number): string {
+  return Number.isFinite(score) ? score.toFixed(1) : "0.0";
+}
+
+/** One held-out prompt with both answers and, once judged, the verdict. */
+export interface EvalRow {
+  index: number;
+  prompt: string;
+  reference: string;
+  base: string;
+  tuned: string;
+  judgement: { baseScore: number; tunedScore: number; better: Better; note: string } | null;
+}
+
+const asText = (v: unknown) => (typeof v === "string" ? v : "");
+const asScore = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+/** The job's eval items in index order, each with its judgement. The first event per index counts, as in the store. */
+export function evalRows(events: TrainEventView[]): EvalRow[] {
+  const items = new Map<number, EvalRow>();
+  const verdicts = new Map<number, EvalRow["judgement"]>();
+  for (const ev of events) {
+    const p = ev.payload;
+    if (p?.type === "eval" && Number.isInteger(p.index) && !items.has(p.index)) {
+      items.set(p.index, {
+        index: p.index,
+        prompt: asText(p.prompt),
+        reference: asText(p.reference),
+        base: asText(p.base),
+        tuned: asText(p.tuned),
+        judgement: null,
+      });
+    } else if (p?.type === "judgement" && Number.isInteger(p.index) && !verdicts.has(p.index)) {
+      const better: Better = p.better === "tuned" || p.better === "base" ? p.better : "tie";
+      verdicts.set(p.index, { baseScore: asScore(p.baseScore), tunedScore: asScore(p.tunedScore), better, note: asText(p.note) });
+    }
+  }
+  return [...items.values()]
+    .sort((a, b) => a.index - b.index)
+    .map((r) => ({ ...r, judgement: verdicts.get(r.index) ?? null }));
+}
+
+/** After the job ends, the page waits this long for judging before it stops polling and says it didn't finish. */
+export const JUDGE_WAIT_MS = 20 * 60_000;
+
+/** Where a job's eval results stand. */
+export type EvalState =
+  | { state: "none" }
+  /** The job is still running: it sends its eval items before "done", and judging starts once its GPU shuts down. */
+  | { state: "answering" }
+  | { state: "judging"; judged: number; total: number }
+  | { state: "judged"; summary: EvalSummary }
+  /** Judging didn't run or judged nothing, with the reason the workflow logged, or the job didn't succeed. */
+  | { state: "unjudged"; reason: string };
+
+/** The workflow's own word on judging that didn't happen (lib/train/judge.ts logs "Judging skipped: ..." or "Judging failed: ..."). */
+function judgingNote(events: TrainEventView[]): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const p = events[i].payload;
+    if (p?.type === "log" && /^Judging (skipped|failed)\b/.test(p.text ?? "")) return p.text.trim().split("\n")[0];
+  }
+  return null;
+}
+
+export function evalState(
+  job: Pick<TrainJobView, "status" | "evalSummary" | "finishedAt" | "terminatedAt">,
+  events: TrainEventView[],
+  rows: EvalRow[],
+  now: number,
+): EvalState {
+  if (job.evalSummary) return { state: "judged", summary: job.evalSummary };
+  if (!rows.length) return { state: "none" };
+  if (!isTrainTerminal(job.status)) return { state: "answering" };
+  if (job.status !== "succeeded") return { state: "unjudged", reason: "Not judged, since the job didn't succeed." };
+  const note = judgingNote(events);
+  if (note) return { state: "unjudged", reason: note };
+  const ended = Date.parse(job.terminatedAt ?? job.finishedAt ?? "");
+  if (Number.isFinite(ended) && now - ended > JUDGE_WAIT_MS) {
+    return { state: "unjudged", reason: "Judging didn't finish, so the items below have no verdicts." };
+  }
+  return { state: "judging", judged: rows.filter((r) => r.judgement).length, total: rows.length };
+}
+
+/** The summary strip as one sentence, for tests and screen readers. */
+export function evalSummaryText(s: EvalSummary, model: string): string {
+  return (
+    `Tuned ${model} beat base on ${s.tunedWins} of ${s.items}, base won ${s.baseWins}, ties ${s.ties}; ` +
+    `average score base ${scoreText(s.avgBaseScore)}, tuned ${scoreText(s.avgTunedScore)}, judged by ${WRITER_NAME}.`
+  );
 }

@@ -1,8 +1,9 @@
 import { after } from "next/server";
 import { hitRateLimits } from "@/lib/gateway/store";
-import { errorJson, readJson, route } from "@/lib/http";
+import { errorJson, HttpError, readJson, route } from "@/lib/http";
 import { terminateInstances } from "@/lib/train/lambda";
-import { applyCallback, finishJob, getJob, recordEvent } from "@/lib/train/store";
+import { EVAL_TEXT_MAX, EVALS_MAX } from "@/lib/train/logic";
+import { applyCallback, finishJob, getJob, recordEvalEvent, recordEvent } from "@/lib/train/store";
 import { isTrainTerminal, type TrainArtifact, type TrainCallback } from "@/lib/train/types";
 import { jobBlobUrl, requireJobToken } from "../../../shared";
 
@@ -10,12 +11,19 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /** Callback bodies are small; the runner keeps them under this, and cuts log text to 4 KB. */
 const MAX_BODY_BYTES = 16 * 1024;
+/**
+ * An eval callback carries four texts of up to 3,500 characters each, which can pass 16 KB once escaped or outside
+ * ASCII, so it may be this large.
+ */
+const MAX_EVAL_BODY_BYTES = 64 * 1024;
+/** Eval items have indexes from 0; this leaves room for a runner that numbers them in its own way. */
+const EVAL_INDEX_MAX = 9999;
 const TEXT_MAX = 16 * 1024;
 const ARTIFACT_KINDS: readonly TrainArtifact["kind"][] = ["adapter", "checkpoint", "metrics", "log", "other"];
 /**
- * Heartbeat, progress, log and artifact callbacks one job may send per minute. The runner sends a heartbeat a minute
- * and a few progress and log lines; this stops a leaked job token filling the log. done and failed are never limited,
- * so the instance is always terminated at once.
+ * Heartbeat, progress, log, artifact and eval callbacks one job may send per minute. The runner sends a heartbeat a
+ * minute, a few progress and log lines, and its eval items one by one as the GPU answers them; this stops a leaked job
+ * token filling the log. done and failed are never limited, so the instance is always terminated at once.
  */
 const CALLBACKS_PER_MINUTE = 120;
 
@@ -77,6 +85,14 @@ function parseCallback(body: Record<string, unknown>, jobId: string): TrainCallb
     }
     case "failed":
       return { type: "failed", error: text(body.error) || "The job failed." };
+    case "eval": {
+      const index = finite(body.index);
+      const fields = [body.prompt, body.reference, body.base, body.tuned];
+      if (index === undefined || !Number.isInteger(index) || index < 0 || index > EVAL_INDEX_MAX) return null;
+      if (!fields.every((f) => typeof f === "string") || !(body.prompt as string).trim()) return null;
+      const [prompt, reference, base, tuned] = fields.map((f) => (f as string).slice(0, EVAL_TEXT_MAX));
+      return { type: "eval", index, prompt: prompt!, reference: reference!, base: base!, tuned: tuned! };
+    }
     default:
       return null;
   }
@@ -102,21 +118,28 @@ async function terminateNow(jobId: string, reason: string): Promise<void> {
 
 /**
  * POST TrainCallback -> 204, from the job's runner with "Authorization: Bearer <job token>". 401 bad token, 400 not a
- * callback (or an artifact that isn't this job's own Blob upload), 413 over 16 KB, 409 job_ended once the job has
- * ended (a late log is still kept), 409 artifact_limit once the job has ARTIFACTS_MAX artifacts, 429 rate_limited
- * past 120 heartbeat, progress, log and artifact callbacks a minute. Any callback counts as a sign of life. done and
- * failed set the final status here and terminate the instance right after the reply, and so does any other callback
- * from an instance whose job already ended but isn't terminated.
+ * callback (or an artifact that isn't this job's own Blob upload), 413 over 16 KB (64 KB for eval), 409 job_ended once
+ * the job has ended (a late log is still kept), 409 artifact_limit once the job has ARTIFACTS_MAX artifacts, 409
+ * eval_limit once it has EVALS_MAX eval items, 429 rate_limited past 120 heartbeat, progress, log, artifact and eval
+ * callbacks a minute. Any callback counts as a sign of life. An eval item sent again with the same index is a retry:
+ * 204, and it isn't logged twice. done and failed set the final status here and terminate the instance right after
+ * the reply, and so does any other callback from an instance whose job already ended but isn't terminated.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
   await requireJobToken(req, id);
-  const body = await readJson(req, MAX_BODY_BYTES);
+  const body = await readJson(req, MAX_EVAL_BODY_BYTES);
+  if (body.type !== "eval" && Buffer.byteLength(JSON.stringify(body)) > MAX_BODY_BYTES) {
+    throw new HttpError(413, "body_too_large");
+  }
   const callback = parseCallback(body, id);
   if (!callback && body.type === "artifact") {
     return errorJson(400, "Send the artifact's name, size and the URL Vercel Blob gave this job's upload.");
   }
-  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, done or failed event.");
+  if (!callback && body.type === "eval") {
+    return errorJson(400, "Send the eval item's index and its prompt, reference, base and tuned texts.");
+  }
+  if (!callback) return errorJson(400, "Send a heartbeat, progress, log, artifact, eval, done or failed event.");
 
   if (callback.type !== "done" && callback.type !== "failed") {
     const minute = new Date(Math.floor(Date.now() / 60_000) * 60_000);
@@ -139,6 +162,11 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     // every minute.
     if (isTrainTerminal(applied.status)) after(() => terminateNow(id, "The instance kept reporting after its job ended."));
     return errorJson(409, "job_ended");
+  }
+  if (callback.type === "eval") {
+    const recorded = await recordEvalEvent(id, callback, EVALS_MAX);
+    if (recorded === "limit") return errorJson(409, "eval_limit", { max: EVALS_MAX });
+    return new Response(null, { status: 204 });
   }
   // A bare heartbeat every minute would bury the log; lastHeartbeatAt already shows it.
   if (callback.type !== "heartbeat" || callback.message) await recordEvent(id, callback);

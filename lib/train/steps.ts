@@ -16,12 +16,14 @@ import { FatalError, RetryableError } from "workflow";
 import { env } from "@/lib/env";
 import { hashToken } from "@/lib/gateway/tokens";
 import {
+  ensureFilesystem,
   findInstanceByName,
   getInstance,
   LambdaApiError,
   launchInstance,
   listInstances,
   terminateInstances,
+  type LambdaFilesystem,
   type LambdaInstance,
 } from "@/lib/train/lambda";
 import { decideCheck, type TrainJobRow } from "@/lib/train/logic";
@@ -37,7 +39,7 @@ import {
   setInstanceIp,
   setStatus,
 } from "@/lib/train/store";
-import { isTrainTerminal, type TrainCheck, type TrainStatus } from "@/lib/train/types";
+import { isTrainTerminal, type Recipe, type TrainCheck, type TrainStatus } from "@/lib/train/types";
 import { buildUserData, callbackOrigin } from "@/lib/train/userdata";
 
 /** The SSH key every launch uses. Its private key stays on the owner's Mac, for debugging; the platform never uses SSH. */
@@ -208,6 +210,19 @@ async function launchInFlight(jobId: string): Promise<SavedLaunch> {
   });
 }
 
+/**
+ * The region's model cache filesystem for a recipe with usesCache (made once if the account has none there), or null.
+ * Any failure is a FatalError before the launch claim: nothing is launched, and the create is never retried in a loop.
+ */
+async function cacheFor(recipe: Recipe, region: string): Promise<LambdaFilesystem | null> {
+  if (!recipe.usesCache) return null;
+  try {
+    return await ensureFilesystem(region);
+  } catch (err) {
+    throw new FatalError(`The model cache filesystem in ${region} could not be found or created, so nothing was launched: ${message(err)}`);
+  }
+}
+
 /** The error's message with the job token blanked out, for a launch error that ends up in the job's error and the run log. */
 function launchErrorText(err: unknown, token: string): string {
   const text = err instanceof Error ? err.message : `Lambda refused the launch: ${String(err)}`;
@@ -247,6 +262,9 @@ async function terminateJobInstances(job: TrainJobRow, done?: string): Promise<n
  * hash and claims the job's one launch; only the attempt holding the claim sends a launch, so a retry or a duplicate
  * delivery can only adopt the instance or wait for Lambda's listing, never launch a second one.
  *
+ * A recipe with usesCache gets its region's cache filesystem first (ensureFilesystem, before the claim; a failure is a
+ * FatalError) and launches with it mounted, its mount path in job.json as cacheDir.
+ *
  * Lambda refusing the launch (a 4xx other than 429, such as no capacity) gives the claim back and is a FatalError, so
  * it is never retried; a 429 gives the claim back and is retried after 30 s; a timeout or 5xx keeps the claim and is
  * retried after 2 minutes, when the retry looks the instance up by name. Once the instance exists its id is returned
@@ -280,6 +298,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
   }
   if (job.tokenHash) return launchInFlight(jobId);
 
+  const cache = await cacheFor(recipe, job.region);
   const token = randomBytes(32).toString("base64url");
   let userData: string;
   try {
@@ -290,6 +309,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
       recipe,
       params: job.params,
       maxMinutes: job.maxMinutes,
+      ...(cache ? { cacheDir: cache.mountPoint } : {}),
     });
   } catch (err) {
     throw new FatalError(`The instance's setup script could not be built: ${message(err)}`);
@@ -312,6 +332,7 @@ export async function launchStep(jobId: string): Promise<LaunchResult> {
         { key: "muse-muse", value: "train" },
         { key: "muse-muse-job", value: jobId },
       ],
+      ...(cache ? { fileSystemNames: [cache.name] } : {}),
     });
   } catch (err) {
     // Step errors are kept in the run's log and become the job's error, so the token is blanked out of them.

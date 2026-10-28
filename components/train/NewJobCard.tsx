@@ -5,7 +5,9 @@ import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from
 import { Icon } from "@/components/icons";
 import {
   NOT_PUBLIC_TEXT,
+  autoCostGpu,
   autoGpu,
+  datasetOptionText,
   errorCode,
   gpuErrorText,
   gpuRowText,
@@ -18,7 +20,7 @@ import {
 } from "@/components/train/format";
 import { usd } from "@/lib/format";
 import { MIN_MAX_MINUTES, MIN_MAX_USD } from "@/lib/train/logic";
-import type { GpuOption, RecipeParamField, RecipeView, TrainLimits } from "@/lib/train/types";
+import type { DatasetView, GpuOption, RecipeParamField, RecipeView, TrainLimits } from "@/lib/train/types";
 
 export interface NewJobCardProps {
   recipes: RecipeView[];
@@ -35,6 +37,13 @@ export interface NewJobCardProps {
    * card does too.
    */
   sweepOff?: string | null;
+  /**
+   * Datasets for a recipe param of kind "dataset", newest first: ready ones can be picked, ones still being written
+   * show as disabled. Null when they couldn't be loaded.
+   */
+  datasets?: DatasetView[] | null;
+  /** A dataset to start with (/fine-tuning?dataset=<id>): the first recipe that takes a dataset is picked with it. */
+  initialDatasetId?: string | null;
 }
 
 type GpuState =
@@ -60,11 +69,17 @@ function gpuOptionsFrom(data: unknown): GpuOption[] {
   return Array.isArray(list) ? list.filter(isGpuOption) : [];
 }
 
-function paramDefaults(recipe: RecipeView | undefined): Record<string, string> {
+/** The form's starting values: each param's default, and for a dataset param `prefer` when it is ready, else the newest ready one. */
+function paramDefaults(recipe: RecipeView | undefined, ready: DatasetView[], prefer?: string | null): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const f of recipe?.params ?? []) out[f.key] = f.default === undefined ? "" : String(f.default);
+  for (const f of recipe?.params ?? []) {
+    if (f.kind === "dataset") out[f.key] = (prefer && ready.some((d) => d.id === prefer) ? prefer : ready[0]?.id) ?? "";
+    else out[f.key] = f.default === undefined ? "" : String(f.default);
+  }
   return out;
 }
+
+const takesDataset = (r: RecipeView | undefined) => Boolean(r?.params.some((f) => f.kind === "dataset"));
 
 /** Form values as POST /api/train/jobs takes them. Blank params are left out so the recipe's default applies. */
 function paramsBody(fields: RecipeParamField[], values: Record<string, string>): Record<string, string | number> {
@@ -79,21 +94,38 @@ function paramsBody(fields: RecipeParamField[], values: Record<string, string>):
 }
 
 /**
- * The New job card on /fine-tuning: recipe, its params, a GPU from GET /api/train/gpus with live price and capacity,
- * and the job's time and dollar limits. Start posts to /api/train/jobs and opens the new job's page.
+ * The New job card on /fine-tuning: recipe, its params (a dataset param is a select of ready datasets), a GPU from
+ * GET /api/train/gpus with live price and capacity, and the job's time and dollar limits. Start posts to
+ * /api/train/jobs and opens the new job's page.
  */
-export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPublic, sweepOff = null }: NewJobCardProps) {
+export function NewJobCard({
+  recipes,
+  ceilings,
+  maxActive,
+  dailyUsd,
+  platformPublic,
+  sweepOff = null,
+  datasets = [],
+  initialDatasetId = null,
+}: NewJobCardProps) {
   const router = useRouter();
   const id = useId();
-  const [recipeId, setRecipeId] = useState(recipes[0]?.id ?? "");
+  const [recipeId, setRecipeId] = useState(
+    () => (initialDatasetId ? recipes.find(takesDataset)?.id : undefined) ?? recipes[0]?.id ?? "",
+  );
   const recipe = recipes.find((r) => r.id === recipeId) ?? recipes[0];
   const bounds = useMemo(
     () => (recipe ? limitBounds(recipe, ceilings) : { maxMinutes: MIN_MAX_MINUTES, maxUsd: MIN_MAX_USD }),
     [recipe, ceilings],
   );
 
+  const ready = useMemo(() => (datasets ?? []).filter((d) => d.status === "ready"), [datasets]);
+  const writing = useMemo(() => (datasets ?? []).filter((d) => d.status === "generating"), [datasets]);
+  const needsDataset = takesDataset(recipe);
+  const usesCache = Boolean(recipe?.usesCache);
+
   const [title, setTitle] = useState("");
-  const [params, setParams] = useState<Record<string, string>>(() => paramDefaults(recipe));
+  const [params, setParams] = useState<Record<string, string>>(() => paramDefaults(recipe, ready, initialDatasetId));
   const [gpu, setGpu] = useState("");
   const [minutes, setMinutes] = useState(String(bounds.maxMinutes));
   const [dollars, setDollars] = useState(bounds.maxUsd.toFixed(2));
@@ -134,6 +166,20 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
   );
   const auto = autoGpu(rows);
   const chosen = gpu ? (rows.find((r) => r.instanceType === gpu) ?? null) : auto;
+  // A recipe with the model cache may launch any free GPU on Auto, so its estimate uses the priciest one.
+  const costRow = gpu ? chosen : autoCostGpu(rows, usesCache);
+  const named = gpu || !usesCache ? chosen : null;
+
+  // A dataset that turns ready while the card is open fills an empty dataset field.
+  useEffect(() => {
+    const first = ready[0]?.id;
+    const keys = (recipe?.params ?? []).filter((f) => f.kind === "dataset").map((f) => f.key);
+    if (!first || !keys.length) return;
+    setParams((p) => {
+      const empty = keys.filter((k) => !p[k]);
+      return empty.length ? { ...p, ...Object.fromEntries(empty.map((k) => [k, first])) } : p;
+    });
+  }, [ready, recipe]);
 
   // A refresh can take a picked GPU's capacity away. Go back to Auto and say so, rather than launch something else.
   useEffect(() => {
@@ -150,7 +196,7 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
     if (!r) return;
     const b = limitBounds(r, ceilings);
     setRecipeId(r.id);
-    setParams(paramDefaults(r));
+    setParams(paramDefaults(r, ready));
     setGpu("");
     setGpuNote(null);
     setMinutes(String(b.maxMinutes));
@@ -175,7 +221,7 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
     dollarsNum >= MIN_MAX_USD &&
     dollarsNum <= bounds.maxUsd + 1e-9;
   const limits: TrainLimits = limitsOk ? { maxMinutes: minutesNum, maxUsd: dollarsNum } : bounds;
-  const price = chosen?.priceCentsPerHour ?? null;
+  const price = costRow?.priceCentsPerHour ?? null;
   const cost = price === null ? null : maxCostUsd(price, limits);
 
   const noneFree = gpus.state === "ready" && rows.length > 0 && !auto;
@@ -183,11 +229,15 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
     ? NOT_PUBLIC_TEXT
     : sweepOff
       ? sweepOffText(sweepOff)
-      : gpus.state === "error" && gpus.blocking
-        ? gpus.message
-        : noneFree
-          ? "None of this recipe's GPUs is free right now, so a job can't start. Check again in a few minutes."
-          : null;
+      : needsDataset && !ready.length
+        ? datasets === null
+          ? "Couldn't load the datasets, so this recipe can't start. Reload the page to try again."
+          : "This recipe trains on a dataset, and none is ready yet. Make one under Datasets first."
+        : gpus.state === "error" && gpus.blocking
+          ? gpus.message
+          : noneFree
+            ? "None of this recipe's GPUs is free right now, so a job can't start. Check again in a few minutes."
+            : null;
 
   function check(): Record<string, string> {
     const out: Record<string, string> = {};
@@ -199,6 +249,14 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
     }
     for (const f of recipe?.params ?? []) {
       const raw = (params[f.key] ?? "").trim();
+      if (f.kind === "dataset") {
+        if (!raw) {
+          if (f.required) out[`p:${f.key}`] = "Pick a dataset. Make one under Datasets if none is ready.";
+        } else if (!ready.some((d) => d.id === raw)) {
+          out[`p:${f.key}`] = "That dataset isn't ready. Pick another one.";
+        }
+        continue;
+      }
       if (!raw) {
         if (f.required && f.default === undefined) out[`p:${f.key}`] = `${f.label} is required.`;
         continue;
@@ -224,7 +282,7 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
       setError("Fix the fields marked above, then start the job.");
       return;
     }
-    const gpuText = chosen ? chosen.label : "a GPU";
+    const gpuText = named ? named.label : "a GPU";
     const ask =
       cost === null
         ? `Start ${gpuText} on Lambda? The job stops at ${limits.maxMinutes} minutes or ${usd(limits.maxUsd)}, whichever comes first.`
@@ -285,7 +343,9 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
         ? gpus.message
         : noneFree
           ? "None of these GPUs is free right now."
-          : "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order.";
+          : usesCache
+            ? "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order, in a region that already holds the model cache when one has room, so the model doesn't download again."
+            : "Lambda's prices per hour. Auto takes the first free GPU in the recipe's order.";
 
   const fieldProps = (key: string, helpId?: string) => ({
     "aria-invalid": invalid[key] ? true : undefined,
@@ -358,6 +418,50 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
           {recipe.params.map((f) => {
             const key = `p:${f.key}`;
             const inputId = `${id}-param-${f.key}`;
+            if (f.kind === "dataset") {
+              const helpId = `${inputId}-help`;
+              return (
+                <div className="train-field" key={f.key}>
+                  <label className="train-label" htmlFor={inputId}>
+                    {f.label}
+                  </label>
+                  <select
+                    id={inputId}
+                    className="train-select"
+                    value={params[f.key] ?? ""}
+                    onChange={(e) => setParams((p) => ({ ...p, [f.key]: e.target.value }))}
+                    required={Boolean(f.required)}
+                    disabled={busy || !ready.length}
+                    {...fieldProps(key, helpId)}
+                  >
+                    {ready.length ? null : (
+                      <option value="">{datasets === null ? "Couldn't load datasets" : "No dataset is ready yet"}</option>
+                    )}
+                    {ready.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {datasetOptionText(d)}
+                      </option>
+                    ))}
+                    {writing.map((d) => (
+                      <option key={d.id} value={d.id} disabled>
+                        {datasetOptionText(d)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="train-help" id={helpId}>
+                    {ready.length ? (
+                      f.help
+                    ) : (
+                      <>
+                        None is ready yet. <a href="#new-dataset">Make a dataset</a>
+                        {writing.length ? ", or wait for the one being written to finish." : " first."}
+                      </>
+                    )}
+                  </p>
+                  {fieldError(key)}
+                </div>
+              );
+            }
             const helpId = f.help ? `${inputId}-help` : undefined;
             return (
               <div className="train-field" key={f.key}>
@@ -420,9 +524,11 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
               disabled={busy}
             >
               <option value="">
-                {auto && auto.priceCentsPerHour !== null
-                  ? `Auto: ${auto.label} · ${pricePerHour(auto.priceCentsPerHour)}`
-                  : "Auto: the first free GPU"}
+                {usesCache
+                  ? "Auto: a free GPU near the model cache"
+                  : auto && auto.priceCentsPerHour !== null
+                    ? `Auto: ${auto.label} · ${pricePerHour(auto.priceCentsPerHour)}`
+                    : "Auto: the first free GPU"}
               </option>
               {gpus.state === "ready"
                 ? rows.map((r) => (
@@ -493,11 +599,15 @@ export function NewJobCard({ recipes, ceilings, maxActive, dailyUsd, platformPub
           <p className="train-cost" id={`${id}-cost`} aria-live="polite">
             {blocked ? (
               blocked
-            ) : cost !== null && chosen && price !== null ? (
+            ) : cost !== null && costRow && price !== null ? (
               <>
-                <strong>Up to {usd(cost)}.</strong> {chosen.label} costs {usd(price / 100)} an hour, and the job ends at{" "}
-                {limits.maxMinutes} minutes or {usd(limits.maxUsd)}, whichever comes first. This is an estimate: Lambda
-                bills from launch until the GPU shuts down, and a check every 5 minutes shuts down any GPU past its limit.
+                <strong>Up to {usd(cost)}.</strong>{" "}
+                {named
+                  ? `${named.label} costs ${usd(price / 100)} an hour`
+                  : `Auto may take any free GPU here, at up to ${usd(price / 100)} an hour`}
+                , and the job ends at {limits.maxMinutes} minutes or {usd(limits.maxUsd)}, whichever comes first. This is
+                an estimate: Lambda bills from launch until the GPU shuts down, and a check every 5 minutes shuts down any
+                GPU past its limit.
               </>
             ) : (
               <>

@@ -1,3 +1,4 @@
+import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 import type { Recipe } from "@/lib/train/types";
 
@@ -19,6 +20,67 @@ export const RECIPES: Recipe[] = [
     defaultMaxUsd: 1,
     params: [],
     script: SMOKE_PY,
+  },
+  {
+    id: "glimmer-lora",
+    title: "Muse Glimmer LoRA",
+    description:
+      "Fine-tunes Muse Glimmer 30B (4-bit) with a LoRA adapter on one of your datasets, following Unsloth's guide, then answers the held-out prompts with the base and the tuned model so they can be compared. The model and its Python packages are cached on a Lambda filesystem in the region, so later jobs start faster.",
+    // Unsloth supports arm64 only through a from-source Docker build, so gpu_1x_gh200 (Grace, arm64) is left out.
+    gpus: [
+      { instanceType: "gpu_1x_h100_pcie", label: "1x H100 PCIe (80 GB)" },
+      { instanceType: "gpu_1x_h100_sxm5", label: "1x H100 SXM5 (80 GB)" },
+      { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)" },
+    ],
+    defaultMaxMinutes: 150,
+    defaultMaxUsd: 14,
+    usesCache: true,
+    params: [
+      {
+        key: "datasetId",
+        label: "Dataset",
+        kind: "dataset",
+        required: true,
+        help: "A ready dataset. It trains on the train part; the eval part (up to 40 held-out prompts) is answered before and after.",
+      },
+      {
+        key: "maxSteps",
+        label: "Training steps",
+        kind: "number",
+        default: 120,
+        min: 10,
+        max: 2000,
+        help: "Optimizer steps of 4 conversations each (batch 1, gradient accumulation 4).",
+      },
+      {
+        key: "learningRate",
+        label: "Learning rate",
+        kind: "number",
+        default: 0.0002,
+        min: 0.000001,
+        max: 0.01,
+        help: "2e-4 is Unsloth's LoRA default. Lower it for long runs.",
+      },
+      {
+        key: "loraRank",
+        label: "LoRA rank",
+        kind: "number",
+        default: 16,
+        min: 4,
+        max: 128,
+        help: "16 is Unsloth's starting point, 32 for harder tasks. lora_alpha is set to the same value.",
+      },
+      {
+        key: "dryRun",
+        label: "Dry run",
+        kind: "number",
+        default: 0,
+        min: 0,
+        max: 1,
+        help: "1 skips the install, the model and the training and fakes the answers: a cheap check of the dataset, eval and judging loop on a real GPU.",
+      },
+    ],
+    script: GLIMMER_PY,
   },
 ];
 

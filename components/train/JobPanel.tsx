@@ -1,16 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import { useId, useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { TrainStatusPill } from "@/components/train/TrainStatusPill";
-import { artifactHref, gpuName, pricePerHour, progressText, stopControl, trainStatusLabel } from "@/components/train/format";
+import {
+  artifactHref,
+  gpuName,
+  pricePerHour,
+  progressText,
+  stopControl,
+  trainStatusLabel,
+} from "@/components/train/format";
 import { bytes, dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
 import type { RecipeView, TrainJobView } from "@/lib/train/types";
 
 export interface JobPanelProps {
   job: TrainJobView;
   recipe: RecipeView | null;
+  /** The dataset the job trains on, shown by name with a link in Settings. */
+  dataset?: { id: string; title: string } | null;
   now: number;
   elapsedMs: number;
   costUsd: number;
@@ -35,7 +45,7 @@ function MeterField({ label, value, fraction }: { label: string; value: string; 
 }
 
 /** The job page's right panel: status, Stop, recipe and GPU, progress, limits, run facts and artifacts. */
-export function JobPanel({ job, recipe, now, elapsedMs, costUsd, stop, onStop }: JobPanelProps) {
+export function JobPanel({ job, recipe, dataset = null, now, elapsedMs, costUsd, stop, onStop }: JobPanelProps) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const label = trainStatusLabel(job.status, job.stopRequested);
@@ -180,6 +190,16 @@ export function JobPanel({ job, recipe, now, elapsedMs, costUsd, stop, onStop }:
               <dd>{dateTimeUtc((job.terminatedAt ?? job.finishedAt) as string)}</dd>
             </div>
           ) : null}
+          {job.evalSummary ? (
+            <div>
+              <dt>Eval</dt>
+              <dd>
+                <a href="#eval-results">
+                  Tuned won {job.evalSummary.tunedWins} of {job.evalSummary.items}
+                </a>
+              </dd>
+            </div>
+          ) : null}
         </dl>
 
         <div className="pfield-row">
@@ -204,12 +224,24 @@ export function JobPanel({ job, recipe, now, elapsedMs, costUsd, stop, onStop }:
               Settings
             </h3>
             <dl className="kv">
-              {params.map(([k, v]) => (
-                <div key={k}>
-                  <dt>{recipe?.params.find((f) => f.key === k)?.label ?? k}</dt>
-                  <dd>{String(v)}</dd>
-                </div>
-              ))}
+              {params.map(([k, v]) => {
+                const field = recipe?.params.find((f) => f.key === k);
+                const isDataset = field?.kind === "dataset";
+                return (
+                  <div key={k}>
+                    <dt>{field?.label ?? k}</dt>
+                    <dd>
+                      {isDataset && dataset && dataset.id === String(v) ? (
+                        <Link href={`/fine-tuning/datasets/${dataset.id}`}>{dataset.title}</Link>
+                      ) : isDataset ? (
+                        <code title={String(v)}>{String(v).slice(0, 8)}</code>
+                      ) : (
+                        String(v)
+                      )}
+                    </dd>
+                  </div>
+                );
+              })}
             </dl>
           </section>
         ) : null}

@@ -2,7 +2,9 @@
  * The training store against a real Postgres: an in-memory PGlite with the repo's migrations, standing in for Neon.
  * Covers the SQL the safety checks lean on: which jobs count as holding a GPU, the daily cap's committed spend, the job
  * token check, that an ended job only changes through finishJob, the one launch claim per job, a late launch and an
- * outlived termination, and the sweep's heartbeat. Nothing here reaches Neon or Lambda.
+ * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, and
+ * training datasets: appending answers only at the expected offset, the eval split, paging in SQL. Nothing here
+ * reaches Neon or Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -79,6 +81,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
   beforeEach(async () => {
     await testDb.delete(realSchema.trainingEvents);
     await testDb.delete(realSchema.trainingJobs);
+    await testDb.delete(realSchema.trainingDatasets);
   });
 
   describe("activeJobCount", () => {
@@ -359,6 +362,132 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       const other = await job({ status: "running" });
       assert.equal(await store.reserveUploadBytes(other.id, GIB, hour, 2 * GIB), true, "each job has its own budget");
       assert.equal(await store.reserveUploadBytes(row.id, 3 * GIB, new Date(hour.getTime() + 120 * MIN), 2 * GIB), false);
+    });
+  });
+  describe("eval items and judgements", () => {
+    const item = (index: number, extra: Record<string, string> = {}) => ({
+      type: "eval" as const,
+      index,
+      prompt: `prompt ${index}`,
+      reference: "ref",
+      base: "base answer",
+      tuned: "tuned answer",
+      ...extra,
+    });
+
+    it("records one item per index, cut to size, and refuses past the cap", async () => {
+      const row = await job({ status: "running" });
+      assert.equal(await store.recordEvalEvent(row.id, item(0, { base: "b".repeat(5000) }), 3), "recorded");
+      assert.equal(await store.recordEvalEvent(row.id, item(0), 3), "duplicate", "a retried callback");
+      assert.equal(await store.recordEvalEvent(row.id, item(2), 3), "recorded");
+      assert.equal(await store.recordEvalEvent(row.id, item(1), 3), "recorded");
+      assert.equal(await store.recordEvalEvent(row.id, item(3), 3), "limit");
+      assert.equal(await store.recordEvalEvent(row.id, item(2), 3), "duplicate", "a retry past the cap is still a retry");
+      assert.deepEqual(await store.listEvalIndexes(row.id), [0, 1, 2]);
+      const first = await store.getEvalItem(row.id, 0);
+      assert.equal(first!.base.length, 3500);
+      assert.equal(first!.prompt, "prompt 0");
+      assert.equal(await store.getEvalItem(row.id, 9), null);
+      const other = await job({ status: "running" });
+      assert.deepEqual(await store.listEvalIndexes(other.id), [], "each job has its own items");
+      assert.equal(await store.recordEvalEvent(other.id, item(0), 3), "recorded");
+    });
+
+    it("finds a judgement by index and saves the eval summary without touching the status", async () => {
+      const row = await job({ status: "succeeded", finishedAt: new Date(), terminatedAt: new Date() });
+      assert.equal(await store.getJudgement(row.id, 4), null);
+      await store.recordEvent(row.id, { type: "judgement", index: 4, baseScore: 3, tunedScore: 8, better: "tuned", note: "Clearer." });
+      assert.deepEqual(await store.getJudgement(row.id, 4), {
+        type: "judgement",
+        index: 4,
+        baseScore: 3,
+        tunedScore: 8,
+        better: "tuned",
+        note: "Clearer.",
+      });
+      const summary = { items: 1, tunedWins: 1, baseWins: 0, ties: 0, avgBaseScore: 3, avgTunedScore: 8, judgeCostUsd: 0.001 };
+      await store.setEvalSummary(row.id, summary);
+      const after = await store.getJob(row.id);
+      assert.deepEqual(after!.evalSummary, summary);
+      assert.equal(after!.status, "succeeded");
+    });
+  });
+
+  describe("datasets", () => {
+    const example = (i: number) => ({
+      messages: [
+        { role: "system" as const, content: "sys" },
+        { role: "user" as const, content: `q${i}` },
+        { role: "assistant" as const, content: `a${i}` },
+      ],
+    });
+    const examples = (from: number, n: number) => Array.from({ length: n }, (_, k) => example(from + k));
+
+    it("creates a generating dataset without examples, and lists it without them", async () => {
+      const ds = await store.createDataset({ title: "  Errors  ", task: " Explain Python errors. ", requested: 40 });
+      assert.equal(ds.status, "generating");
+      assert.equal(ds.title, "Errors");
+      assert.equal(ds.task, "Explain Python errors.");
+      assert.equal("train" in ds || "eval" in ds, false);
+      const [listed] = await store.listDatasets();
+      assert.equal(listed!.id, ds.id);
+      assert.equal("train" in listed!, false);
+      assert.equal((await store.getDataset(ds.id))!.requested, 40);
+      assert.equal(await store.getDataset("not-a-uuid"), null);
+    });
+
+    it("appends answers only at the expected offset, so a retried chunk is never added twice", async () => {
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 40 });
+      assert.equal(await store.appendTrainExamples(ds.id, 0, examples(0, 3)), 3);
+      assert.equal(await store.appendTrainExamples(ds.id, 0, examples(0, 3)), 3, "the retry finds the chunk saved");
+      assert.equal(await store.appendTrainExamples(ds.id, 3, examples(3, 2)), 5);
+      assert.equal(await store.datasetProgress(ds.id), 5);
+      await store.addDatasetCost(ds.id, 0.0012345);
+      await store.addDatasetCost(ds.id, 0.001);
+      assert.equal((await store.getDataset(ds.id))!.costUsd, 0.002235);
+    });
+
+    it("holds out the eval items, keeps the rest in order, and pages in SQL", async () => {
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 20 });
+      await store.appendTrainExamples(ds.id, 0, examples(0, 20));
+      assert.equal(await store.finishDataset(ds.id, 19), null, "refused when the count doesn't match");
+      const done = await store.finishDataset(ds.id, 20);
+      assert.equal(done!.status, "ready");
+      assert.equal(done!.trainCount, 12);
+      assert.equal(done!.evalCount, 8);
+      assert.ok(done!.finishedAt);
+      assert.equal(await store.finishDataset(ds.id, 20), null, "only once");
+      assert.equal(await store.datasetProgress(ds.id), null, "no longer generating");
+      assert.equal(await store.appendTrainExamples(ds.id, 20, examples(20, 1)), null);
+
+      const evalPage = await store.datasetPage(ds.id, "eval", 0, 200);
+      // evalIndexes(20) is [1, 3, 6, 8, 11, 13, 16, 18].
+      assert.deepEqual(evalPage!.items, [1, 3, 6, 8, 11, 13, 16, 18].map((i) => ({ prompt: `q${i}`, reference: `a${i}` })));
+      assert.equal(evalPage!.total, 8);
+      const train = await store.datasetPage(ds.id, "train", 0, 200);
+      assert.deepEqual(
+        (train!.items as Array<{ messages: Array<{ content: string }> }>).map((e) => e.messages[1]!.content),
+        [0, 2, 4, 5, 7, 9, 10, 12, 14, 15, 17, 19].map((i) => `q${i}`),
+      );
+      const second = await store.datasetPage(ds.id, "train", 5, 5);
+      assert.deepEqual(
+        (second!.items as Array<{ messages: Array<{ content: string }> }>).map((e) => e.messages[1]!.content),
+        ["q9", "q10", "q12", "q14", "q15"],
+      );
+      assert.deepEqual((await store.datasetPage(ds.id, "train", 400, 200))!.items, []);
+      assert.equal(second!.status, "ready");
+      assert.equal(await store.datasetPage("ffffffff-0000-4000-8000-000000000000", "train", 0, 5), null);
+    });
+
+    it("fails only a dataset that is still generating", async () => {
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 20 });
+      assert.equal(await store.failDataset(ds.id, "The spend cap was reached."), true);
+      const failed = await store.getDataset(ds.id);
+      assert.equal(failed!.status, "failed");
+      assert.equal(failed!.error, "The spend cap was reached.");
+      assert.ok(failed!.finishedAt);
+      assert.equal(await store.failDataset(ds.id, "again"), false);
+      assert.equal((await store.getDataset(ds.id))!.error, "The spend cap was reached.");
     });
   });
 });

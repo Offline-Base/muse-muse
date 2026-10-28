@@ -2,8 +2,9 @@
  * Runs the real training steps in steps.ts with the Lambda client and the store faked: the launch happens once even
  * when a step is retried, runs twice at once or the database fails right after it, only the token's hash is stored
  * and it is stored before the launch, the token stays out of step results and errors, terminate finds every instance
- * under the job's name and terminates the workflow's instance before reading the database, and a check survives a
- * Lambda or database outage. Nothing here calls Lambda or a database.
+ * under the job's name and terminates the workflow's instance before reading the database, a check survives a
+ * Lambda or database outage, and a recipe with usesCache launches with its region's cache filesystem mounted. Nothing
+ * here calls Lambda or a database.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/steps.test.ts
  *
@@ -47,7 +48,16 @@ class FakeLambdaApiError extends Error {
   }
 }
 
-type LaunchInput = { name: string; instanceType: string; region: string; userData: string; sshKeyName: string; tags: Array<{ key: string; value: string }> };
+type LaunchInput = {
+  name: string;
+  instanceType: string;
+  region: string;
+  userData: string;
+  sshKeyName: string;
+  tags: Array<{ key: string; value: string }>;
+  fileSystemNames?: string[];
+};
+type Filesystem = { id: string; name: string; region: string; mountPoint: string; inUse: boolean; bytesUsed: number | null };
 
 let job: TrainJobRow | null = null;
 let listing: LambdaInstance[] = [];
@@ -55,6 +65,7 @@ let calls: Array<{ fn: string; args: unknown[] }> = [];
 let launchImpl: (input: LaunchInput) => Promise<string> = async () => "inst-1";
 let listImpl: (() => Promise<LambdaInstance[]>) | null = null;
 let getImpl: (id: string) => Promise<LambdaInstance | null> = async (id) => listing.find((i) => i.id === id) ?? null;
+let ensureImpl: (region: string) => Promise<Filesystem> = async (region) => cacheFs(region);
 /** How many more calls to each store function fail, as a database outage would. */
 let dbDown: Record<string, number> = {};
 
@@ -102,8 +113,14 @@ function row(over: Partial<TrainJobRow> = {}): TrainJobRow {
     lastHeartbeatAt: null,
     finishedAt: null,
     terminatedAt: null,
+    evalSummary: null,
     ...over,
   };
+}
+
+function cacheFs(region: string): Filesystem {
+  const name = `muse-muse-cache-${region}`;
+  return { id: `fs-${region}`, name, region, mountPoint: `/lambda/nfs/${name}`, inUse: false, bytesUsed: null };
 }
 
 function instance(over: Partial<LambdaInstance> & { id: string }): LambdaInstance {
@@ -111,7 +128,7 @@ function instance(over: Partial<LambdaInstance> & { id: string }): LambdaInstanc
 }
 
 /** The job.json the user data carries, decoded. */
-function jobJson(userData: string): { token: string; callbackBase: string; jobId: string } {
+function jobJson(userData: string): { token: string; callbackBase: string; jobId: string; cacheDir?: string } {
   const lines = userData.split("\n");
   const at = lines.findIndex((l) => l.includes("/opt/muse/job.json"));
   const content = lines.slice(at).find((l) => l.trim().startsWith("content:"))!;
@@ -205,6 +222,10 @@ const fakeLambda = {
     return launchImpl(input);
   },
   terminateInstances: async (ids: string[]) => void calls.push({ fn: "terminateInstances", args: [ids] }),
+  ensureFilesystem: async (region: string) => {
+    calls.push({ fn: "ensureFilesystem", args: [region] });
+    return ensureImpl(region);
+  },
 };
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -233,6 +254,7 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
     dbDown = {};
     listImpl = null;
     getImpl = async (id) => listing.find((i) => i.id === id) ?? null;
+    ensureImpl = async (region) => cacheFs(region);
     launchImpl = async (input) => {
       listing.push(instance({ id: "inst-1", name: input.name }));
       return "inst-1";
@@ -453,6 +475,50 @@ describe("training steps", { skip: canMock ? false : "needs --experimental-test-
         assert.equal(called("findInstanceByName").length + called("launchInstance").length, 0, url);
       }
       assert.equal(job!.tokenHash, null);
+    });
+
+    it("launches a usesCache recipe with its region's cache filesystem mounted and cacheDir in job.json", async () => {
+      job = row({ recipe: "glimmer-lora", instanceName: "mm-train-1234abcd-glimmer-lora", region: "us-west-1", params: { datasetId: "ds-1" } });
+      const result = await steps.launchStep(JOB_ID);
+      assert.equal(result.action, "watch");
+      assert.deepEqual(called("ensureFilesystem").map((c) => c.args), [["us-west-1"]]);
+      assert.ok(order().indexOf("ensureFilesystem") < order().indexOf("claimLaunch"), "the cache is ready before the claim");
+      const input = called("launchInstance")[0]!.args[0] as LaunchInput;
+      assert.deepEqual(input.fileSystemNames, ["muse-muse-cache-us-west-1"]);
+      assert.equal(input.region, "us-west-1");
+      assert.equal(jobJson(input.userData).cacheDir, "/lambda/nfs/muse-muse-cache-us-west-1");
+    });
+
+    it("never touches filesystems for a recipe without usesCache", async () => {
+      await steps.launchStep(JOB_ID);
+      assert.equal(called("ensureFilesystem").length, 0);
+      const input = called("launchInstance")[0]!.args[0] as LaunchInput;
+      assert.equal(input.fileSystemNames, undefined);
+      assert.equal(jobJson(input.userData).cacheDir, undefined);
+    });
+
+    it("fails the launch, with nothing claimed or launched, when the cache filesystem can't be made", async () => {
+      job = row({ recipe: "glimmer-lora", instanceName: "mm-train-1234abcd-glimmer-lora", params: { datasetId: "ds-1" } });
+      ensureImpl = async () => {
+        throw new FakeLambdaApiError(400, "global/quota-exceeded", "Lambda API POST /filesystems failed (400 global/quota-exceeded): Quota exceeded.");
+      };
+      await assert.rejects(steps.launchStep(JOB_ID), (err: Error) => {
+        assert.ok(err instanceof FakeFatalError, "fatal, so the create is never retried");
+        assert.match(err.message, /model cache filesystem in us-east-1 could not be found or created, so nothing was launched/);
+        assert.match(err.message, /Quota exceeded/);
+        return true;
+      });
+      assert.equal(called("ensureFilesystem").length, 1);
+      assert.equal(called("claimLaunch").length + called("launchInstance").length, 0);
+      assert.equal(job!.tokenHash, null);
+    });
+
+    it("adopts an existing instance of a usesCache job without asking for the filesystem again", async () => {
+      job = row({ recipe: "glimmer-lora", instanceName: "mm-train-1234abcd-glimmer-lora", status: "launching", tokenHash: "h" });
+      listing = [instance({ id: "inst-9", name: "mm-train-1234abcd-glimmer-lora" })];
+      const result = await steps.launchStep(JOB_ID);
+      assert.deepEqual(result, { action: "watch", maxMinutes: 30, instanceId: "inst-9" });
+      assert.equal(called("ensureFilesystem").length, 0);
     });
 
     it("saves a launch that lands after the job ended, and hands its id to terminateStep", async () => {

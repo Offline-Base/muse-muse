@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
-import type { RecipeView, TrainEventView, TrainJobView } from "@/lib/train/types";
+import type { DatasetView, EvalSummary, RecipeView, TrainEventView, TrainJobView } from "@/lib/train/types";
 
 // Server-renders the fine-tuning components with sample data, outside Next: the router and Link are stand-ins.
 mock.module("next/navigation", {
@@ -46,6 +46,7 @@ const base: TrainJobView = {
   lastHeartbeatAt: at(60),
   finishedAt: null,
   terminatedAt: null,
+  evalSummary: null,
 };
 
 const events: TrainEventView[] = [
@@ -87,6 +88,9 @@ let JobRoom: ComponentType<never>;
 let JobsTable: ComponentType<never>;
 let NewJobCard: ComponentType<never>;
 let AdminsOnly: ComponentType<never>;
+let DatasetsTable: ComponentType<never>;
+let NewDatasetCard: ComponentType<never>;
+let DatasetDetail: ComponentType<never>;
 
 before(async () => {
   const { renderToString } = await import("react-dom/server");
@@ -99,6 +103,9 @@ before(async () => {
   JobsTable = (await import("@/components/train/JobsTable")).JobsTable as ComponentType<never>;
   NewJobCard = (await import("@/components/train/NewJobCard")).NewJobCard as ComponentType<never>;
   AdminsOnly = (await import("@/components/train/AdminsOnly")).AdminsOnly as ComponentType<never>;
+  DatasetsTable = (await import("@/components/train/DatasetsTable")).DatasetsTable as ComponentType<never>;
+  NewDatasetCard = (await import("@/components/train/NewDatasetCard")).NewDatasetCard as ComponentType<never>;
+  DatasetDetail = (await import("@/components/train/DatasetDetail")).DatasetDetail as ComponentType<never>;
 });
 
 function room(job: TrainJobView): string {
@@ -227,5 +234,247 @@ describe("list page pieces", () => {
     assert.match(html, /Admins only/);
     assert.match(html, /href="\/sign-in\?next=%2Ffine-tuning"/);
     assert.doesNotMatch(render(AdminsOnly, { signedIn: true }), /Sign in/);
+  });
+});
+
+// ---------- Datasets and eval results ----------
+
+const DS = "1b2c3d4e-0000-4000-8000-000000000002";
+
+function dataset(patch: Partial<DatasetView> = {}): DatasetView {
+  return {
+    id: DS,
+    title: "Bakery helper",
+    task: "Answer customer questions for a small bakery: hours, allergens, custom cake orders.",
+    status: "ready",
+    requested: 300,
+    trainCount: 270,
+    evalCount: 30,
+    costUsd: 1.42,
+    error: null,
+    createdAt: at(-3600),
+    finishedAt: at(-2400),
+    ...patch,
+  };
+}
+
+const longAnswer = `${"Our sourdough is baked fresh every morning. ".repeat(12)}The end.`;
+
+const evalEvents: TrainEventView[] = [
+  {
+    id: 30,
+    type: "eval",
+    payload: { type: "eval", index: 0, prompt: "How late are you open on Sunday?", reference: "Until 4 pm.", base: "We are open.", tuned: longAnswer },
+    at: at(160),
+  },
+  {
+    id: 31,
+    type: "eval",
+    payload: { type: "eval", index: 1, prompt: "Do you have nut-free cakes?", reference: "Yes, by order.", base: "Yes.", tuned: "Yes, order two days ahead." },
+    at: at(161),
+  },
+];
+
+const judgements: TrainEventView[] = [
+  {
+    id: 40,
+    type: "judgement",
+    payload: { type: "judgement", index: 0, baseScore: 3, tunedScore: 9, better: "tuned", note: "Gives the Sunday hours." },
+    at: at(400),
+  },
+  {
+    id: 41,
+    type: "judgement",
+    payload: { type: "judgement", index: 1, baseScore: 6, tunedScore: 6, better: "tie", note: "Both say yes." },
+    at: at(401),
+  },
+];
+
+const summary: EvalSummary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 4.5, avgTunedScore: 7.5, judgeCostUsd: 0.004 };
+
+const glimmerJob: TrainJobView = {
+  ...base,
+  recipe: "glimmer-lora",
+  title: "Bakery LoRA",
+  instanceType: "gpu_1x_h100_pcie",
+  params: { datasetId: DS, maxSteps: 120 },
+  progress: null,
+  artifacts: [],
+};
+
+function glimmerRoom(job: TrainJobView, list: TrainEventView[], serverNow = t0 + 600_000): string {
+  const glimmer = recipes.find((r) => r.id === "glimmer-lora");
+  return render(JobRoom, { job, events: list, recipe: glimmer, dataset: { id: DS, title: "Bakery helper" }, serverNow });
+}
+
+describe("eval results on the job page", () => {
+  it("shows eval items as they arrive while the job runs, folded in the log", () => {
+    const html = glimmerRoom(glimmerJob, [...events.slice(0, 4), ...evalEvents]);
+    clean(html);
+    assert.match(html, /id="eval-results"/);
+    assert.match(html, /<strong>Eval items<\/strong> 2 sent/);
+    assert.match(html, /Muse Spark 1\.3 judges them once the GPU shuts down/);
+    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th>/);
+    assert.match(html, /<th scope="rowgroup" colSpan="4"><span class="train-eval-num">Prompt 1<\/span>/);
+    assert.match(html, /How late are you open on Sunday\?/);
+    assert.match(html, /<details class="train-long"><summary>/, "a long answer folds");
+    assert.match(html, /Show all/);
+    assert.match(html, /Not judged/);
+    assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002"[^>]*>Bakery helper/, "the panel names the dataset");
+  });
+
+  it("says Judging... with a count once the job succeeded and the GPU is gone", () => {
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310) };
+    const html = glimmerRoom(done, [...evalEvents, judgements[0]]);
+    clean(html);
+    assert.match(html, /Judging\.\.\./);
+    assert.match(html, /1 of 2 judged by Muse Spark 1\.3/);
+    assert.match(html, /<div aria-live="polite">/);
+  });
+
+  it("shows the summary strip and every verdict once judged", () => {
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310), evalSummary: summary };
+    const html = glimmerRoom(done, [...evalEvents, ...judgements]);
+    clean(html);
+    assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>, base won <strong>0<\/strong>, ties <strong>1<\/strong>/);
+    assert.match(html, /Average score base <strong>4\.5<\/strong>, tuned <strong>7\.5<\/strong>, judged by Muse Spark 1\.3\./);
+    assert.match(html, /Judging cost \$0\.004/);
+    assert.match(html, /class="pill pill-live">Tuned better/);
+    assert.match(html, /class="pill pill-neutral">Tie/);
+    assert.match(html, /Base 3 · Tuned 9/);
+    assert.match(html, /Gives the Sunday hours\./);
+    assert.match(html, /<td class="train-eval-win">/, "the winning answer is marked");
+    assert.doesNotMatch(html, /Judging\.\.\./);
+    assert.match(html, /Tuned won 1 of 2/, "the panel has the result too");
+  });
+
+  it("says why a job's items weren't judged", () => {
+    const failed = { ...glimmerJob, status: "failed" as const, finishedAt: at(300), terminatedAt: at(310), error: "x" };
+    assert.match(glimmerRoom(failed, evalEvents), /Not judged, since the job didn&#x27;t succeed\./);
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310) };
+    const skip: TrainEventView = { id: 50, type: "log", payload: { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." }, at: at(320) };
+    assert.match(glimmerRoom(done, [...evalEvents, skip]), /Judging skipped: MODEL_API_KEY isn&#x27;t set\./);
+    assert.doesNotMatch(glimmerRoom(glimmerJob, events), /Eval results/, "no section without eval items");
+  });
+});
+
+describe("datasets", () => {
+  it("lists datasets with counts, status, cost and errors", () => {
+    const now = t0;
+    const html = render(DatasetsTable, {
+      datasets: [
+        dataset(),
+        dataset({ id: "a", title: "Writing one", status: "generating", trainCount: 0, evalCount: 0, createdAt: at(-60) }),
+        dataset({ id: "b", title: "Broken", status: "failed", trainCount: 0, evalCount: 0, error: "Muse Spark 1.3 answered none of this chunk's prompts." }),
+        dataset({ id: "c", title: "Old one", status: "generating", trainCount: 0, evalCount: 0, createdAt: at(-8 * 3600) }),
+      ],
+      written: { a: 48 },
+      now,
+      caption: "Datasets",
+    });
+    clean(html);
+    assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002"/);
+    assert.match(html, /270 train · 30 eval/);
+    assert.match(html, /48 of 300 answered/);
+    assert.match(html, /class="pill pill-live"><span class="pill-dot" aria-hidden="true"><\/span>Ready/);
+    assert.match(html, /class="pill pill-building"><span class="pill-dot" aria-hidden="true"><\/span>Writing/);
+    assert.match(html, /answered none of this chunk/);
+    assert.match(html, /Stalled/);
+    assert.match(html, /\$1\.42/);
+  });
+
+  it("labels every New dataset field, starts at 300 and shows the cost", () => {
+    const html = render(NewDatasetCard, {});
+    clean(html);
+    assert.match(html, /id="new-dataset"/);
+    for (const label of ["Task", "Name", "Examples"]) {
+      assert.match(html, new RegExp(`<label[^>]*for="[^"]+"[^>]*>${label}`), label);
+    }
+    assert.match(html, /<textarea[^>]*placeholder="Answer customer questions for a small bakery: hours, allergens, custom cake orders, in a warm two-sentence style"/);
+    assert.match(html, /<input[^>]*type="number"[^>]*min="20"[^>]*max="1000"[^>]*value="300"/);
+    assert.match(html, /About \$\d+\.\d\d to \$\d+\.\d\d on Meta&#x27;s API/);
+    assert.match(html, /aria-live="polite"/);
+    assert.doesNotMatch(html, /<button type="submit"[^>]*disabled/);
+    const blocked = render(NewDatasetCard, { blocked: "meta_not_configured" });
+    assert.match(blocked, /MODEL_API_KEY/);
+    assert.match(blocked, /<button type="submit"[^>]*disabled/);
+    assert.match(render(NewDatasetCard, { blocked: "paused" }), /daily spend cap/);
+  });
+
+  it("offers ready datasets in the New job card, and a way to make one when none is ready", () => {
+    const props = { recipes, ceilings: { maxMinutes: 120, maxUsd: 5 }, maxActive: 1, dailyUsd: 20, platformPublic: true };
+    const writing = dataset({ id: "a", title: "Writing one", status: "generating" });
+    const html = render(NewJobCard, { ...props, datasets: [dataset(), writing], initialDatasetId: DS });
+    clean(html);
+    assert.match(html, /<option value="glimmer-lora" selected="">/, "a dataset link picks the recipe that takes one");
+    assert.match(html, /<label[^>]*for="[^"]+"[^>]*>Dataset<\/label><select/);
+    assert.match(html, /<option value="1b2c3d4e-0000-4000-8000-000000000002" selected="">Bakery helper · 270 train, 30 eval<\/option>/);
+    assert.match(html, /<option value="a" disabled="">Writing one · still writing<\/option>/);
+    assert.match(html, /Auto: a free GPU near the model cache/);
+    assert.doesNotMatch(html, /<button type="submit"[^>]*disabled/);
+
+    const none = render(NewJobCard, { ...props, datasets: [writing], initialDatasetId: DS });
+    clean(none);
+    assert.match(none, /No dataset is ready yet/);
+    assert.match(none, /<a href="#new-dataset">Make a dataset<\/a>, or wait for the one being written to finish\./);
+    assert.match(none, /none is ready yet\. Make one under Datasets first\./);
+    assert.match(none, /<button type="submit"[^>]*disabled/);
+
+    const smoke = render(NewJobCard, { ...props, datasets: [] });
+    assert.match(smoke, /<option value="smoke" selected="">/, "without a dataset link the first recipe stays");
+    assert.doesNotMatch(smoke, /model cache/);
+  });
+
+  it("shows a ready dataset's task, samples and eval prompts", () => {
+    const system = "You are an assistant for this task: bakery.";
+    const sampleTrain = [1, 2].map((i) => ({
+      messages: [
+        { role: "system" as const, content: system },
+        { role: "user" as const, content: `Question ${i}?` },
+        { role: "assistant" as const, content: i === 1 ? longAnswer : `Answer ${i}.` },
+      ],
+    }));
+    const html = render(DatasetDetail, {
+      dataset: dataset(),
+      sampleTrain,
+      sampleEval: [{ prompt: "Open Sunday?", reference: "Until 4 pm." }],
+      written: null,
+      now: t0,
+    });
+    clean(html);
+    assert.match(html, /<h1>Bakery helper<\/h1>/);
+    assert.match(html, /<strong>270<\/strong> train · <strong>30<\/strong> eval/);
+    assert.match(html, /href="\/fine-tuning\?dataset=1b2c3d4e-0000-4000-8000-000000000002#new-job"/);
+    assert.equal(html.split(system).length - 1, 1, "the system message shows once");
+    assert.match(html, /Question 2\?/);
+    assert.match(html, /Answer \(Muse Spark 1\.3\)/);
+    assert.match(html, /<details class="train-long">/);
+    assert.match(html, /Open Sunday\?/);
+    assert.match(html, /Until 4 pm\./);
+    assert.match(html, /The first 2 of 270/);
+  });
+
+  it("shows a dataset being written, and a failed one's error", () => {
+    const writing = render(DatasetDetail, {
+      dataset: dataset({ status: "generating", trainCount: 0, evalCount: 0, finishedAt: null }),
+      sampleTrain: [],
+      sampleEval: [],
+      written: 24,
+      now: t0,
+    });
+    clean(writing);
+    assert.match(writing, /<strong>24<\/strong> of 300 answered/);
+    assert.match(writing, /role="status" aria-live="polite"/);
+    assert.match(writing, /updates every 10 seconds/);
+    assert.doesNotMatch(writing, /Train on it/);
+    assert.match(writing, /held out once every answer is written/);
+    const failed = render(DatasetDetail, {
+      dataset: dataset({ status: "failed", trainCount: 0, evalCount: 0, error: "The platform's daily spend cap is reached, so the dataset stopped." }),
+      sampleTrain: [],
+      sampleEval: [],
+      written: null,
+      now: t0,
+    });
+    assert.match(failed, /callout-bad[\s\S]*daily spend cap is reached/);
   });
 });

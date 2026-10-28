@@ -48,6 +48,7 @@ function job(over: Partial<TrainJobRow> = {}): TrainJobRow {
     lastHeartbeatAt: ago(1),
     finishedAt: null,
     terminatedAt: null,
+    evalSummary: null,
     ...over,
   };
 }

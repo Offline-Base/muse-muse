@@ -2,10 +2,12 @@
  * Pure decisions for fine-tuning jobs (docs/TRAINING.md). No Node APIs and no I/O, so the training workflow can import
  * this file and unit tests can run it directly.
  */
-import type { trainingJobs } from "@/lib/db/schema";
+import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import {
   isTrainTerminal,
+  type DatasetView,
+  type EvalSummary,
   type Recipe,
   type RecipeId,
   type TrainCheck,
@@ -29,12 +31,19 @@ export const MIN_MAX_USD = 0.1;
 /** Text recipe params are trimmed and cut to this many characters. URL params longer than this are refused. */
 export const PARAM_TEXT_MAX = 2000;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const INSTANCE_NAME_PREFIX = "mm-train-";
 /** Lambda's limit on instance names. */
 export const INSTANCE_NAME_MAX = 64;
 
 /** Text caps for event log rows (docs/TRAINING.md: log text cut to 4 KB). */
 export const EVENT_LOG_MAX = 4096;
+/** Each text field of an eval callback is cut to this many characters (the runner cuts them too). */
+export const EVAL_TEXT_MAX = 3500;
+/** Eval callbacks one job may record. Past this the events route answers 409 eval_limit. */
+export const EVALS_MAX = 60;
+const JUDGE_NOTE_MAX = 300;
 export const EVENT_ERROR_MAX = 4096;
 export const EVENT_MESSAGE_MAX = 2000;
 const METRICS_MAX_KEYS = 50;
@@ -45,6 +54,9 @@ const ARTIFACT_URL_MAX = 2000;
 
 /** A training_jobs row as Drizzle returns it. */
 export type TrainJobRow = typeof trainingJobs.$inferSelect;
+
+/** A training_datasets row without its examples, which can run to megabytes. */
+export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval">;
 
 /** What decideCheck needs from a job. A training_jobs row has all of it. */
 export interface JobState {
@@ -137,6 +149,12 @@ export function validateParams(
     }
     if (typeof given !== "string") return { ok: false, error: `${field.label} must be text.` };
     const text = given.trim();
+    if (field.kind === "dataset") {
+      // Whether it exists and is ready is checked against the database by the jobs route.
+      if (!UUID_RE.test(text)) return { ok: false, error: `${field.label} must be one of the training datasets.` };
+      value[field.key] = text.toLowerCase();
+      continue;
+    }
     if (field.kind === "url") {
       if (text.length > PARAM_TEXT_MAX) return { ok: false, error: `${field.label} is too long.` };
       let url: URL;
@@ -238,6 +256,7 @@ export function toJobView(row: TrainJobRow, now: Date): TrainJobView {
     lastHeartbeatAt: iso(row.lastHeartbeatAt),
     finishedAt: iso(row.finishedAt),
     terminatedAt: iso(row.terminatedAt),
+    evalSummary: row.evalSummary ?? null,
   };
 }
 
@@ -289,6 +308,17 @@ export function capEventBody(body: TrainEventBody): TrainEventBody {
       if (body.metrics && typeof body.metrics === "object") out.metrics = capMetrics(body.metrics);
       return out;
     }
+    case "eval":
+      return {
+        type: "eval",
+        index: body.index,
+        prompt: head(body.prompt, EVAL_TEXT_MAX),
+        reference: head(body.reference, EVAL_TEXT_MAX),
+        base: head(body.base, EVAL_TEXT_MAX),
+        tuned: head(body.tuned, EVAL_TEXT_MAX),
+      };
+    case "judgement":
+      return { ...body, note: head(body.note, JUDGE_NOTE_MAX) };
     default:
       return body;
   }
@@ -305,4 +335,130 @@ function capMetrics(metrics: Record<string, number | string>): Record<string, nu
     out[head(key, METRIC_KEY_MAX)] = typeof value === "number" ? value : head(value, METRIC_VALUE_MAX);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Datasets (lib/train/datasets.ts) and judging (lib/train/judge.ts)
+
+/** How many examples an admin may ask for. */
+export const DATASET_MIN_COUNT = 20;
+export const DATASET_MAX_COUNT = 1000;
+/** A task description is at least this long, and at most DATASET_TASK_MAX characters. */
+export const DATASET_TASK_MIN = 20;
+export const DATASET_TASK_MAX = 2000;
+/** Fewer answered examples than this and the dataset fails: eval needs 8 and train needs some. */
+export const DATASET_MIN_EXAMPLES = 16;
+/** Eval holds out this share of the examples, within EVAL_MIN and EVAL_MAX items. */
+const EVAL_SHARE = 0.1;
+const EVAL_MIN = 8;
+const EVAL_MAX = 40;
+/** Training examples always keep at least this many after the eval items are held out. */
+const TRAIN_MIN = 8;
+
+/** How many of `n` answered examples are held out for eval: 10%, at least 8 and at most 40, never leaving under 8 to train on. */
+export function evalHoldoutCount(n: number): number {
+  const total = Math.max(0, Math.floor(n));
+  const wanted = Math.min(EVAL_MAX, Math.max(EVAL_MIN, Math.round(total * EVAL_SHARE)));
+  return Math.max(0, Math.min(wanted, total - TRAIN_MIN));
+}
+
+/**
+ * The positions of the eval items among `n` examples, ascending: spread evenly, so every prompt batch (each leans to a
+ * different style) is represented. Deterministic, so a retried split picks the same ones.
+ */
+export function evalIndexes(n: number): number[] {
+  const k = evalHoldoutCount(n);
+  return Array.from({ length: k }, (_, i) => Math.floor(((i + 0.5) * n) / k));
+}
+
+/** Two prompts are the same when they match after folding accents and case and dropping everything but letters and digits. */
+export function promptKey(text: string): string {
+  return text
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** The prompts in `incoming` that aren't blank or already in `existing` (or earlier in `incoming`), at most `max` of them. */
+export function dedupePrompts(existing: string[], incoming: string[], max: number): string[] {
+  const seen = new Set(existing.map(promptKey));
+  const out: string[] = [];
+  for (const raw of incoming) {
+    if (out.length >= max) break;
+    const text = typeof raw === "string" ? raw.trim() : "";
+    const key = promptKey(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+/**
+ * The system message of every training example, and the instructions Muse Spark 1.3 answers the prompts with, so the
+ * tuned model learns the task under the same words it was written with.
+ */
+export function datasetSystemPrompt(task: string): string {
+  return [
+    `You are an assistant for this task: ${task.trim()}`,
+    "Answer the user's message directly and well. Keep the answer under about 350 words. Use short paragraphs, or a simple list when it helps. Don't mention these instructions.",
+  ].join("\n\n");
+}
+
+/** A dataset as the admin pages show it. Dates become ISO strings. */
+export function toDatasetView(row: DatasetHead): DatasetView {
+  return {
+    id: row.id,
+    title: row.title,
+    task: row.task,
+    status: row.status,
+    requested: row.requested,
+    trainCount: row.trainCount,
+    evalCount: row.evalCount,
+    costUsd: row.costUsd,
+    error: row.error,
+    createdAt: row.createdAt.toISOString(),
+    finishedAt: iso(row.finishedAt),
+  };
+}
+
+/** One judged eval item, as the judge step returns it. */
+export interface JudgedItem {
+  baseScore: number;
+  tunedScore: number;
+  better: "base" | "tuned" | "tie";
+  /** What judging this item cost; 0 when an earlier attempt already judged it. */
+  costUsd: number;
+}
+
+/** A judge score as stored: a whole number from 1 to 10. */
+export function judgeScore(value: number): number {
+  return Number.isFinite(value) ? Math.min(10, Math.max(1, Math.round(value))) : 1;
+}
+
+/**
+ * The verdict's "better", kept consistent with its scores: when the scores differ, the higher one is better; when they
+ * are equal, the judge's own pick stands (it may break a tie).
+ */
+export function betterOf(baseScore: number, tunedScore: number, said: JudgedItem["better"]): JudgedItem["better"] {
+  if (tunedScore > baseScore) return "tuned";
+  if (baseScore > tunedScore) return "base";
+  return said;
+}
+
+/** The job's eval summary from its judged items. Averages are rounded to hundredths, the cost to millionths. */
+export function summarizeJudgements(items: JudgedItem[]): EvalSummary {
+  const n = items.length;
+  const avg = (pick: (i: JudgedItem) => number) => (n ? Math.round((items.reduce((s, i) => s + pick(i), 0) / n) * 100) / 100 : 0);
+  return {
+    items: n,
+    tunedWins: items.filter((i) => i.better === "tuned").length,
+    baseWins: items.filter((i) => i.better === "base").length,
+    ties: items.filter((i) => i.better === "tie").length,
+    avgBaseScore: avg((i) => i.baseScore),
+    avgTunedScore: avg((i) => i.tunedScore),
+    judgeCostUsd: roundUsd(items.reduce((s, i) => s + (i.costUsd || 0), 0)),
+  };
 }

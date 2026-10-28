@@ -3,8 +3,8 @@
  * string constant so Vercel bundles it with no file tracing. Standard library only. Never put a dollar sign followed
  * by an opening brace, or a backtick, in the Python: this is a template literal.
  *
- * job.json keys: jobId, callbackBase, token, params, maxMinutes, recipe. Optional keys for tests: heartbeatSeconds,
- * workDir, blobApiUrl, multipartOverBytes, partBytes.
+ * job.json keys: jobId, callbackBase, token, params, maxMinutes, recipe, and cacheDir for a recipe with usesCache.
+ * Optional keys for tests: heartbeatSeconds, workDir, blobApiUrl, multipartOverBytes, partBytes, cacheWaitSeconds.
  */
 export const RUNNER_PY = String.raw`"""Muse Muse training runner (docs/TRAINING.md, "Runner and recipes").
 
@@ -14,7 +14,7 @@ Started by cloud-init on the Lambda instance:
 
 Reads job.json, sends a heartbeat every 60 s, imports recipe.py from this folder and calls run(ctx). Posts "done"
 with the dict run() returns as metrics (its "summary" key becomes the summary), or "failed" with the end of the
-traceback. Every callback carries the job token, which is never printed or logged.
+traceback. Every request to the platform carries the job token, which is never printed or logged.
 """
 
 import http.client
@@ -46,6 +46,15 @@ METRIC_LIMIT = 500
 MAX_METRICS = 50
 BODY_LIMIT = 15000
 ARTIFACT_KINDS = ("adapter", "checkpoint", "metrics", "log", "other")
+# Eval callbacks: each text field is cut to this many characters, and a job sends at most EVAL_MAX of them.
+EVAL_FIELD_LIMIT = 3500
+EVAL_MAX = 60
+EVAL_FIELDS = ("prompt", "reference", "base", "tuned")
+DATASET_PARTS = ("train", "eval")
+# Stops a nextPage loop that never ends: 1,000 pages of 100 items is far more than a dataset holds.
+DATASET_MAX_PAGES = 1000
+# How long the runner waits for the cache filesystem's mount to show up before going on without it.
+CACHE_WAIT_SECONDS = 60
 
 # Vercel Blob, as @vercel/blob's client put() talks to it (node_modules/@vercel/blob/dist).
 BLOB_API_URL = "https://vercel.com/api/blob"
@@ -107,6 +116,14 @@ def safe_url(url):
 
 class HttpFailure(Exception):
     """A request that failed on the network after its retries. Never carries a header."""
+
+
+class PlatformError(RuntimeError):
+    """The platform answered a GET with an error status, such as 404 for a job with no dataset."""
+
+    def __init__(self, status, message):
+        RuntimeError.__init__(self, message)
+        self.status = status
 
 
 class BlobRetryRefused(RuntimeError):
@@ -189,6 +206,11 @@ class Platform:
         data = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
         headers = {"Authorization": "Bearer " + self._token, "Content-Type": "application/json"}
         return request(self.base + path, data=data, headers=headers, retry_statuses=retry_statuses)
+
+    def get(self, path):
+        """GETs callbackBase + path, with the same retries and no redirects. Returns (status, body bytes)."""
+        headers = {"Authorization": "Bearer " + self._token, "Accept": "application/json"}
+        return request(self.base + path, method="GET", headers=headers)
 
     def event(self, body):
         """Posts one callback to /events. True when the platform took it. Never raises."""
@@ -332,17 +354,30 @@ def blob_put(path, pathname, client_token, content_type, size, settings):
     return written(status, payload, "completing the multipart upload")["url"]
 
 
-class Context:
-    """What recipe.run(ctx) gets: params, log, progress, run, upload and work_dir."""
+def cut_eval_fields(body):
+    """Cuts an eval body's text fields to EVAL_FIELD_LIMIT characters, then shortens the longest until it fits."""
+    for key in EVAL_FIELDS:
+        body[key] = body[key][:EVAL_FIELD_LIMIT]
+    while len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > BODY_LIMIT:
+        key = max(EVAL_FIELDS, key=lambda k: len(body[k].encode("utf-8")))
+        body[key] = body[key][: max(0, int(len(body[key]) * 0.9) - 1)]
+    return body
 
-    def __init__(self, job, platform, work_dir, settings):
+
+class Context:
+    """What recipe.run(ctx) gets: params, cache_dir, work_dir, log, progress, run, upload, get_json, dataset, eval."""
+
+    def __init__(self, job, platform, work_dir, settings, cache_dir=None):
         self.params = dict(job.get("params") or {})
         self.job_id = job.get("jobId")
         self.recipe = job.get("recipe")
         self.max_minutes = job.get("maxMinutes")
         self.work_dir = work_dir
+        # The mounted cache filesystem for a recipe with usesCache, or None. It outlives the instance.
+        self.cache_dir = cache_dir
         self._platform = platform
         self._settings = settings
+        self._evals_sent = 0
 
     def log(self, text):
         """Writes text to the job log and posts it as a log event (the last 4 KB)."""
@@ -366,17 +401,24 @@ class Context:
         say("progress " + json.dumps(body, ensure_ascii=False))
         self._platform.event(body)
 
-    def run(self, cmd, timeout=None, check=False):
+    def run(self, cmd, timeout=None, check=False, env=None, on_line=None):
         """Runs a shell command in work_dir, streams its output to the job log and posts its last lines as a log event.
 
-        Returns a subprocess.CompletedProcess whose stdout is the last lines. With check=True a non-zero exit raises.
+        env adds variables to the runner's own. on_line, when given, is called with each output line as it arrives (an
+        error in it is logged, never raised). Returns a subprocess.CompletedProcess whose stdout is the last lines.
+        With check=True a non-zero exit raises.
         """
         say("$ " + self._platform.redact(cmd))
         lines = deque(maxlen=80)
+        child_env = None
+        if env:
+            child_env = dict(os.environ)
+            child_env.update({str(k): str(v) for k, v in env.items()})
         proc = subprocess.Popen(
             cmd,
             shell=True,
             cwd=self.work_dir,
+            env=child_env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -403,6 +445,11 @@ class Context:
                     sys.stdout.write(line + "\n")
                     sys.stdout.flush()
                 lines.append(line)
+                if on_line:
+                    try:
+                        on_line(line)
+                    except Exception as e:
+                        say("on_line failed: " + type(e).__name__ + ": " + self._platform.redact(e))
             code = proc.wait()
         finally:
             if timer:
@@ -417,6 +464,64 @@ class Context:
             shown = self._platform.redact(cmd)[:300]
             raise RuntimeError("Command failed (" + footer + "): " + shown + "\n" + "\n".join(list(lines)[-20:]))
         return subprocess.CompletedProcess(cmd, code, stdout=tail)
+
+    def get_json(self, path_and_query):
+        """GETs callbackBase + path_and_query with the job token and returns the parsed JSON.
+
+        Same retries as a callback, and a redirect is refused. Any other status of 300 or more raises PlatformError.
+        """
+        path = str(path_and_query)
+        if not path.startswith("/"):
+            path = "/" + path
+        status, payload = self._platform.get(path)
+        if status >= 300:
+            raise PlatformError(status, "The platform answered HTTP " + str(status) + " to GET " + safe_url(path))
+        try:
+            return json.loads(payload.decode("utf-8")) if payload else None
+        except ValueError:
+            raise RuntimeError("The platform answered GET " + safe_url(path) + " with a body that isn't JSON")
+
+    def dataset(self, part):
+        """Every item of the job's dataset part ("train" or "eval"), paging GET /dataset until nextPage is null."""
+        if part not in DATASET_PARTS:
+            raise ValueError("dataset part must be train or eval, not " + repr(part))
+        items = []
+        page = 0
+        for _ in range(DATASET_MAX_PAGES):
+            body = self.get_json("/dataset?" + urllib.parse.urlencode({"part": part, "page": page}))
+            got = body.get("items") if isinstance(body, dict) else None
+            if not isinstance(got, list):
+                raise RuntimeError("Dataset page " + str(page) + " of " + part + " has no items list")
+            items.extend(got)
+            following = body.get("nextPage")
+            if following is None:
+                say("dataset " + part + ": " + str(len(items)) + " items in " + str(page + 1) + " pages")
+                return items
+            if isinstance(following, bool) or not isinstance(following, int) or following <= page:
+                raise RuntimeError("Dataset page " + str(page) + " of " + part + " points to page " + repr(following))
+            page = following
+        raise RuntimeError("The " + part + " dataset has more than " + str(DATASET_MAX_PAGES) + " pages")
+
+    def eval(self, index, prompt, reference, base, tuned):
+        """Posts one eval item: a held-out prompt, its reference answer, and the base and tuned model's answers.
+
+        Each text field is cut to 3,500 characters. At most 60 per job; later ones are only logged. True when the
+        platform took it.
+        """
+        if self._evals_sent >= EVAL_MAX:
+            say("eval " + str(index) + " not sent: a job sends at most " + str(EVAL_MAX))
+            return False
+        self._evals_sent += 1
+        redact = self._platform.redact
+        body = {
+            "type": "eval",
+            "index": int(index),
+            "prompt": redact("" if prompt is None else prompt),
+            "reference": redact("" if reference is None else reference),
+            "base": redact("" if base is None else base),
+            "tuned": redact("" if tuned is None else tuned),
+        }
+        return self._platform.event(cut_eval_fields(body))
 
     def _grant(self, name, size, content_type):
         """Asks the platform for an upload grant: one blob, this size and type. None when it has no storage (503)."""
@@ -526,6 +631,22 @@ def number_setting(job, key, fallback):
     return fallback
 
 
+def cache_dir_of(job, wait_seconds):
+    """job.json's cacheDir once it is a mounted folder, waiting up to wait_seconds for the mount. None without it."""
+    path = job.get("cacheDir")
+    if not path:
+        return None
+    path = str(path)
+    deadline = time.time() + wait_seconds
+    while not os.path.isdir(path):
+        if time.time() >= deadline:
+            say("cache folder " + path + " is not mounted, so this job runs without the cache")
+            return None
+        time.sleep(min(5, wait_seconds))
+    say("cache folder " + path)
+    return path
+
+
 def main(argv):
     if len(argv) < 2:
         say("usage: runner.py job.json")
@@ -552,7 +673,8 @@ def main(argv):
     platform.event({"type": "heartbeat", "message": "Runner started"})
     beat = Heartbeat(platform, settings["heartbeatSeconds"])
     beat.start()
-    ctx = Context(job, platform, work_dir, settings)
+    cache_dir = cache_dir_of(job, number_setting(job, "cacheWaitSeconds", CACHE_WAIT_SECONDS))
+    ctx = Context(job, platform, work_dir, settings, cache_dir)
     try:
         recipe = load_recipe(os.path.join(here, "recipe.py"))
         result = recipe.run(ctx)

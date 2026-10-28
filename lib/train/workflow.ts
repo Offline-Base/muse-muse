@@ -1,9 +1,10 @@
 /**
  * The durable workflow for one fine-tuning job (docs/TRAINING.md "Lifecycle"). It only orchestrates: every side
- * effect lives in a "use step" function in ./steps.ts.
+ * effect lives in a "use step" function in ./steps.ts, or ./judge.ts for judging.
  *
  *   trainJob: launch (idempotent; save the instance if the database didn't take it) -> check every 30 s until
  *             decideCheck says terminate, or maxMinutes + 15 minutes pass -> terminate
+ *             -> for a job that succeeded with eval items: judge them, 4 at a time, then save the eval summary
  *
  * Lambda bills until an instance is terminated, so terminate runs in a finally block: after a normal ending, a
  * launch that threw, and the hard stop alike. The workflow keeps the id of the instance it launched, so terminate can
@@ -11,10 +12,14 @@
  * doesn't end the watch: the next poll tries again, and the hard stop bounds the loop. The job's own done or failed
  * callback and the 5-minute sweep terminate it too.
  *
+ * Judging starts only once terminate has returned, so it never keeps an instance billing, and nothing it does can
+ * change the job's status: a judge step that fails is skipped, and a failure of the whole judging is swallowed.
+ *
  * Start it with start() from "workflow/api" (app/api/train/jobs). Never call it directly.
  */
 import { sleep } from "workflow";
-import { POLL_MS } from "@/lib/train/logic";
+import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
+import { POLL_MS, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
 import type { TrainCheck, TrainStatus } from "@/lib/train/types";
 
@@ -32,6 +37,9 @@ const HARD_STOP_GRACE_MS = 15 * 60_000;
 const TERMINATE_PAUSE_MS = 60_000;
 /** ...until this long after it began. Then the job is left to the sweep. */
 const TERMINATE_GIVE_UP_MS = 60 * 60_000;
+
+/** Eval items judged at once. */
+const JUDGE_CONCURRENCY = 4;
 
 /** The runtime wraps a step error that used up its retries in a FatalError with this prefix. */
 const RETRIES_EXHAUSTED = /^Step "[^"]*" failed after \d+ retr(?:y|ies): /;
@@ -68,6 +76,26 @@ async function terminate(jobId: string, ending: TrainEnding, instanceId: string 
     // The sweep terminates instances of jobs that ran past their limit, and fails jobs stuck before launch.
     if (Date.now() >= giveUpAt) return "failed";
     await sleep(TERMINATE_PAUSE_MS);
+  }
+}
+
+/**
+ * Judges the job's eval items with Muse Spark 1.3, JUDGE_CONCURRENCY at a time, then saves the eval summary. An item
+ * whose judge step fails is left out of the summary. Never throws.
+ */
+async function judge(jobId: string): Promise<void> {
+  try {
+    const plan = await judgePlanStep(jobId);
+    if (!plan.indexes.length) return;
+    const judged: JudgedItem[] = [];
+    for (let i = 0; i < plan.indexes.length; i += JUDGE_CONCURRENCY) {
+      const group = plan.indexes.slice(i, i + JUDGE_CONCURRENCY);
+      const verdicts = await Promise.all(group.map((index) => judgeStep(jobId, index, plan.task).catch(() => null)));
+      for (const verdict of verdicts) if (verdict) judged.push(verdict);
+    }
+    await saveEvalSummaryStep(jobId, judged, plan.indexes.length);
+  } catch {
+    // Judging is an extra: the instance is already terminated and the job's status is settled.
   }
 }
 
@@ -113,5 +141,6 @@ export async function trainJob(input: TrainJobInput): Promise<TrainJobResult> {
   } finally {
     status = await terminate(jobId, ending, instanceId);
   }
+  if (status === "succeeded") await judge(jobId);
   return { status };
 }

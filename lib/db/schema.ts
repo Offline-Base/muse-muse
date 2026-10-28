@@ -13,7 +13,17 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Brief } from "@/lib/brief/schema";
 import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
-import type { RecipeId, TrainArtifact, TrainEventBody, TrainProgress, TrainStatus } from "@/lib/train/types";
+import type {
+  DatasetStatus,
+  EvalExample,
+  EvalSummary,
+  RecipeId,
+  TrainArtifact,
+  TrainEventBody,
+  TrainExample,
+  TrainProgress,
+  TrainStatus,
+} from "@/lib/train/types";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -222,6 +232,8 @@ export const trainingJobs = pgTable(
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     terminatedAt: timestamp("terminated_at", { withTimezone: true }),
+    /** Muse Spark 1.3's verdict on the job's eval items, written after the instance is terminated (lib/train/judge.ts). */
+    evalSummary: jsonb("eval_summary").$type<EvalSummary>(),
   },
   (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
 );
@@ -239,4 +251,34 @@ export const trainingEvents = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("training_events_job_idx").on(t.jobId, t.id)],
+);
+
+/**
+ * Training data Muse Spark 1.3 writes from a task description (lib/train/datasets.ts): prompts, then answers, with 10%
+ * held out for eval. While it is "generating", answered examples are appended to `train`; the eval items are moved out
+ * when it turns "ready". A GPU job reads it in pages with its job token (GET /api/train/jobs/{id}/dataset).
+ */
+export const trainingDatasets = pgTable(
+  "training_datasets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    /** What the tuned model should do, as the admin wrote it. */
+    task: text("task").notNull(),
+    status: text("status").$type<DatasetStatus>().notNull().default("generating"),
+    /** How many examples the admin asked for, 20 to 1000. */
+    requested: integer("requested").notNull(),
+    train: jsonb("train").$type<TrainExample[]>().notNull().default([]),
+    eval: jsonb("eval").$type<EvalExample[]>().notNull().default([]),
+    trainCount: integer("train_count").notNull().default(0),
+    evalCount: integer("eval_count").notNull().default(0),
+    /** Everything Meta charged to write it. */
+    costUsd: real("cost_usd").notNull().default(0),
+    error: text("error"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    workflowRunId: text("workflow_run_id"),
+  },
+  (t) => [index("training_datasets_created_idx").on(t.createdAt)],
 );

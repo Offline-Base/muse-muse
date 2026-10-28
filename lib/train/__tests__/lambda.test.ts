@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  cacheFilesystemName,
+  cacheRegions,
+  ensureFilesystem,
   findInstanceByName,
   getInstance,
   LambdaApiError,
   lambdaTiming,
   launchInstance,
+  listFilesystems,
   listInstances,
   listInstanceTypes,
   pickGpu,
@@ -329,9 +333,145 @@ describe("launchInstance", () => {
     assert.equal(calls.length, 1);
   });
 
+  it("mounts the named filesystems, and refuses a name Lambda would reject", async () => {
+    serve(() => Response.json({ data: { instance_ids: ["id-3"] } }));
+    assert.equal(await launchInstance({ ...input, fileSystemNames: ["muse-muse-cache-us-east-1"] }), "id-3");
+    assert.deepEqual((calls[0].body as { file_system_names: string[] }).file_system_names, ["muse-muse-cache-us-east-1"]);
+    for (const bad of ["9cache", "cache_fs", "c".repeat(61)]) {
+      const err = await rejection(launchInstance({ ...input, fileSystemNames: [bad] }));
+      assert.equal(err.code, "invalid-input");
+    }
+    assert.equal(calls.length, 1);
+  });
+
   it("throws when Lambda accepts the launch but sends no id", async () => {
     serve(() => Response.json({ data: { instance_ids: [] } }));
     assert.equal((await rejection(launchInstance(input))).code, "no-instance-id");
+  });
+});
+
+function rawFilesystem(name: string, region: string, over: Record<string, unknown> = {}) {
+  return {
+    id: `fs-${name}`,
+    name,
+    mount_point: `/lambda/nfs/${name}`,
+    created: "2026-10-01T00:00:00Z",
+    created_by: { id: "u1", email: "owner@example.com", status: "active" },
+    is_in_use: false,
+    region: { name: region, description: region },
+    bytes_used: 1234,
+    ...over,
+  };
+}
+
+describe("filesystems", () => {
+  it("lists filesystems with their region and mount point", async () => {
+    serve(() =>
+      Response.json({ data: [rawFilesystem("muse-muse-cache-us-east-1", "us-east-1"), rawFilesystem("other", "us-west-1", { mount_point: null, bytes_used: undefined })] }),
+    );
+    assert.deepEqual(await listFilesystems(), [
+      { id: "fs-muse-muse-cache-us-east-1", name: "muse-muse-cache-us-east-1", region: "us-east-1", mountPoint: "/lambda/nfs/muse-muse-cache-us-east-1", inUse: false, bytesUsed: 1234 },
+      { id: "fs-other", name: "other", region: "us-west-1", mountPoint: "/lambda/nfs/other", inUse: false, bytesUsed: null },
+    ]);
+    assert.equal(calls[0].method, "GET");
+    assert.equal(calls[0].url.href, "https://cloud.lambda.ai/api/v1/filesystems");
+    assert.equal(calls[0].auth, `Bearer ${KEY}`);
+  });
+
+  it("names the cache after its region", () => {
+    assert.equal(cacheFilesystemName("us-east-1"), "muse-muse-cache-us-east-1");
+  });
+
+  it("ensureFilesystem returns the existing cache without creating anything", async () => {
+    serve(() => Response.json({ data: [rawFilesystem("muse-muse-cache-us-west-1", "us-west-1"), rawFilesystem("muse-muse-cache-us-east-1", "us-east-1")] }));
+    const fs = await ensureFilesystem("us-east-1");
+    assert.equal(fs.name, "muse-muse-cache-us-east-1");
+    assert.equal(fs.mountPoint, "/lambda/nfs/muse-muse-cache-us-east-1");
+    assert.deepEqual(calls.map((c) => c.method), ["GET"]);
+  });
+
+  it("ensureFilesystem creates a missing cache with exactly Lambda's create body", async () => {
+    serve((call) =>
+      call.method === "GET" ? Response.json({ data: [rawFilesystem("other", "us-east-1")] }) : Response.json({ data: rawFilesystem("muse-muse-cache-us-east-1", "us-east-1") }),
+    );
+    const fs = await ensureFilesystem("us-east-1");
+    assert.equal(fs.id, "fs-muse-muse-cache-us-east-1");
+    assert.deepEqual(calls.map((c) => `${c.method} ${c.url.pathname}`), ["GET /api/v1/filesystems", "POST /api/v1/filesystems"]);
+    assert.deepEqual(calls[1].body, { name: "muse-muse-cache-us-east-1", region: "us-east-1" });
+    assert.equal(calls[1].contentType, "application/json");
+  });
+
+  it("ensureFilesystem takes the one another caller made when the create is a duplicate", async () => {
+    let listed = 0;
+    serve((call) => {
+      if (call.method === "POST") return lambdaError(400, "global/duplicate", "A filesystem with that name already exists.");
+      listed += 1;
+      return Response.json({ data: listed === 1 ? [] : [rawFilesystem("muse-muse-cache-us-east-1", "us-east-1")] });
+    });
+    assert.equal((await ensureFilesystem("us-east-1")).name, "muse-muse-cache-us-east-1");
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1, "one create, never a loop");
+  });
+
+  it("ensureFilesystem never sends a second create after a 5xx, and finds one that was made anyway", async () => {
+    let listed = 0;
+    serve((call) => {
+      if (call.method === "POST") return lambdaError(500, "global/internal-error", "An internal server error occurred.");
+      listed += 1;
+      return Response.json({ data: listed === 1 ? [] : [rawFilesystem("muse-muse-cache-us-east-1", "us-east-1")] });
+    });
+    assert.equal((await ensureFilesystem("us-east-1")).name, "muse-muse-cache-us-east-1");
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+
+    serve((call) => (call.method === "POST" ? lambdaError(502, "global/internal-error", "Bad gateway.") : Response.json({ data: [] })));
+    const err = await rejection(ensureFilesystem("us-east-1"));
+    assert.equal(err.status, 502);
+    assert.equal(calls.filter((c) => c.method === "POST").length, 1);
+  });
+
+  it("ensureFilesystem passes a quota refusal through with one create and no second listing", async () => {
+    serve((call) => (call.method === "POST" ? lambdaError(400, "global/quota-exceeded", "Quota exceeded.") : Response.json({ data: [] })));
+    const err = await rejection(ensureFilesystem("us-east-1"));
+    assert.equal(err.code, "global/quota-exceeded");
+    assert.deepEqual(calls.map((c) => c.method), ["GET", "POST"]);
+  });
+
+  it("ensureFilesystem retries a 429 on the create once, since nothing was made", async () => {
+    let posts = 0;
+    serve((call) => {
+      if (call.method === "GET") return Response.json({ data: [] });
+      posts += 1;
+      return posts === 1 ? lambdaError(429, "global/rate-limited", "Too many requests.") : Response.json({ data: rawFilesystem("muse-muse-cache-us-east-1", "us-east-1") });
+    });
+    assert.equal((await ensureFilesystem("us-east-1")).name, "muse-muse-cache-us-east-1");
+    assert.equal(posts, 2);
+  });
+
+  it("ensureFilesystem refuses a bad region and a cache name found in another region", async () => {
+    serve(() => Response.json({ data: [rawFilesystem("muse-muse-cache-us-east-1", "us-west-1")] }));
+    assert.equal((await rejection(ensureFilesystem(""))).code, "invalid-input");
+    assert.equal((await rejection(ensureFilesystem("us_east_1"))).code, "invalid-input");
+    assert.equal(calls.length, 0, "nothing sent for a bad region");
+    assert.equal((await rejection(ensureFilesystem("us-east-1"))).code, "filesystem-in-wrong-region");
+    assert.ok(!calls.some((c) => c.method === "POST"));
+  });
+
+  it("cacheRegions lists the regions that already have a cache, once each", async () => {
+    serve(() =>
+      Response.json({
+        data: [
+          rawFilesystem("muse-muse-cache-us-east-1", "us-east-1"),
+          rawFilesystem("someone-else", "us-south-1"),
+          rawFilesystem("muse-muse-cache-us-west-1", "us-west-3"),
+          rawFilesystem("muse-muse-cache-europe-central-1", "europe-central-1"),
+        ],
+      }),
+    );
+    assert.deepEqual(await cacheRegions(), ["us-east-1", "europe-central-1"]);
+  });
+
+  it("cacheRegions throws when Lambda doesn't answer", async () => {
+    serve(() => lambdaError(403, "global/account-inactive", "Account inactive."));
+    assert.equal((await rejection(cacheRegions())).status, 403);
   });
 });
 
@@ -545,6 +685,20 @@ describe("pickGpu", () => {
     const types = [type("gpu_1x_a10", ["us-east-1"], 0), type("gpu_1x_a6000", ["us-east-1"], 80)];
     assert.equal(pickGpu(choices, types, "gpu_1x_a10")?.instanceType, "gpu_1x_a6000");
     assert.equal(pickGpu(choices, [type("gpu_1x_a10", ["us-east-1"], 0)]), null);
+  });
+
+  it("prefers a cache region over the recipe's order, but not over the asked type", () => {
+    const types = [type("gpu_1x_a10", ["us-west-1"], 75), type("gpu_1x_a6000", ["us-east-1", "us-west-1"], 80)];
+    assert.deepEqual(pickGpu(choices, types, undefined, ["us-east-1"]), { instanceType: "gpu_1x_a6000", region: "us-east-1", priceCentsPerHour: 80 });
+    assert.deepEqual(pickGpu(choices, types, "gpu_1x_a10", ["us-east-1"]), { instanceType: "gpu_1x_a10", region: "us-west-1", priceCentsPerHour: 75 });
+    assert.equal(pickGpu(choices, types, "gpu_1x_a6000", ["us-east-1"])?.region, "us-east-1", "the asked type goes to its cache region");
+  });
+
+  it("puts a cache region ahead of us- regions within a type, and falls back when no cache region has capacity", () => {
+    const types = [type("gpu_1x_a10", ["us-west-1", "europe-central-1"], 75)];
+    assert.equal(pickGpu(choices, types, undefined, ["europe-central-1"])?.region, "europe-central-1");
+    assert.equal(pickGpu(choices, types, undefined, ["asia-south-1"])?.region, "us-west-1");
+    assert.equal(pickGpu(choices, [type("gpu_1x_a10", ["us-east-1"], 0)], undefined, ["us-east-1"]), null, "a type with no price is still skipped");
   });
 
   it("skips choices Lambda doesn't list and returns null when nothing is free", () => {

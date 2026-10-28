@@ -1,16 +1,25 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  betterOf,
   BOOT_GRACE_MS,
   capEventBody,
   clampLimits,
+  datasetSystemPrompt,
   decideCheck,
+  dedupePrompts,
+  EVAL_TEXT_MAX,
+  evalHoldoutCount,
+  evalIndexes,
   EVENT_LOG_MAX,
   estimateCostUsd,
   instanceNameFor,
+  judgeScore,
   type JobState,
   PARAM_TEXT_MAX,
   SILENCE_MS,
+  summarizeJudgements,
+  toDatasetView,
   toJobView,
   type TrainJobRow,
   validateParams,
@@ -287,6 +296,7 @@ describe("toJobView", () => {
     lastHeartbeatAt: after(2 * MIN),
     finishedAt: null,
     terminatedAt: null,
+    evalSummary: null,
   };
 
   it("uses ISO dates and a live cost estimate while running", () => {
@@ -306,6 +316,142 @@ describe("toJobView", () => {
     const view = toJobView(done, after(600 * MIN));
     assert.equal(view.costUsd, 0.42);
     assert.equal(view.terminatedAt, "2026-10-27T12:21:00.000Z");
+    assert.equal(view.evalSummary, null);
+  });
+
+  it("passes the eval summary through once judging wrote one", () => {
+    const evalSummary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 5, avgTunedScore: 6.5, judgeCostUsd: 0.01 };
+    assert.deepEqual(toJobView({ ...row, evalSummary }, after(10 * MIN)).evalSummary, evalSummary);
+  });
+});
+
+describe("dataset params", () => {
+  const withDataset: Recipe = {
+    ...recipe,
+    params: [{ key: "datasetId", label: "Dataset", kind: "dataset", required: true }],
+  };
+
+  it("takes a dataset id, lowercased, and refuses anything else", () => {
+    const id = "3F2A9C1E-0000-4000-8000-000000000001";
+    assert.deepEqual(validateParams(withDataset, { datasetId: ` ${id} ` }), { ok: true, value: { datasetId: id.toLowerCase() } });
+    for (const bad of ["not-an-id", "https://huggingface.co/datasets/acme/qa", 7]) {
+      assert.equal(validateParams(withDataset, { datasetId: bad }).ok, false, String(bad));
+    }
+    assert.deepEqual(validateParams(withDataset, {}), { ok: false, error: "Dataset is required." });
+  });
+});
+
+describe("eval holdout", () => {
+  it("holds out 10%, at least 8 and at most 40, and always leaves 8 to train on", () => {
+    assert.equal(evalHoldoutCount(16), 8);
+    assert.equal(evalHoldoutCount(20), 8);
+    assert.equal(evalHoldoutCount(100), 10);
+    assert.equal(evalHoldoutCount(250), 25);
+    assert.equal(evalHoldoutCount(1000), 40);
+    assert.equal(evalHoldoutCount(12), 4, "never under 8 for training");
+    assert.equal(evalHoldoutCount(5), 0);
+  });
+
+  it("spreads the eval items evenly, distinct and in range", () => {
+    for (const n of [16, 20, 37, 100, 999, 1000]) {
+      const picked = evalIndexes(n);
+      assert.equal(picked.length, evalHoldoutCount(n));
+      assert.equal(new Set(picked).size, picked.length, `distinct for ${n}`);
+      assert.ok(picked.every((i, k) => i >= 0 && i < n && (k === 0 || i > picked[k - 1]!)), `ascending for ${n}`);
+    }
+    assert.deepEqual(evalIndexes(20), [1, 3, 6, 8, 11, 13, 16, 18]);
+    assert.deepEqual(evalIndexes(16), [1, 3, 5, 7, 9, 11, 13, 15]);
+  });
+});
+
+describe("dedupePrompts", () => {
+  it("drops blanks and prompts that differ only in case, spacing or punctuation, and stops at max", () => {
+    const existing = ["How do I reset my password?"];
+    const incoming = ["how do i reset my PASSWORD", "  ", "What is a LoRA adapter?", "What is a LoRA   adapter", "Third one", "Fourth"];
+    assert.deepEqual(dedupePrompts(existing, incoming, 10), ["What is a LoRA adapter?", "Third one", "Fourth"]);
+    assert.deepEqual(dedupePrompts(existing, incoming, 2), ["What is a LoRA adapter?", "Third one"]);
+    assert.deepEqual(dedupePrompts([], ["Ünïcode café", "unicode cafe"], 5), ["Ünïcode café"], "accents fold");
+  });
+});
+
+describe("datasetSystemPrompt", () => {
+  it("names the task and the length rule", () => {
+    const system = datasetSystemPrompt("  Explain Python errors to beginners.  ");
+    assert.match(system, /^You are an assistant for this task: Explain Python errors to beginners\.\n\n/);
+    assert.match(system, /under about 350 words/);
+    assert.doesNotMatch(system, /\u2014/);
+  });
+});
+
+describe("toDatasetView", () => {
+  it("uses ISO dates", () => {
+    const view = toDatasetView({
+      id: "d1",
+      title: "Errors",
+      task: "Explain errors.",
+      status: "ready",
+      requested: 100,
+      trainCount: 88,
+      evalCount: 10,
+      costUsd: 0.5,
+      error: null,
+      createdBy: null,
+      createdAt: T0,
+      finishedAt: after(MIN),
+      workflowRunId: "run",
+    });
+    assert.deepEqual(view, {
+      id: "d1",
+      title: "Errors",
+      task: "Explain errors.",
+      status: "ready",
+      requested: 100,
+      trainCount: 88,
+      evalCount: 10,
+      costUsd: 0.5,
+      error: null,
+      createdAt: "2026-10-27T12:00:00.000Z",
+      finishedAt: "2026-10-27T12:01:00.000Z",
+    });
+  });
+});
+
+describe("judging", () => {
+  it("keeps better consistent with the scores, and lets the judge break a tie", () => {
+    assert.equal(betterOf(4, 8, "base"), "tuned");
+    assert.equal(betterOf(8, 4, "tuned"), "base");
+    assert.equal(betterOf(6, 6, "tuned"), "tuned");
+    assert.equal(betterOf(6, 6, "tie"), "tie");
+  });
+
+  it("clamps scores to whole numbers from 1 to 10", () => {
+    assert.deepEqual([0, 1, 5.4, 5.6, 10, 11, Number.NaN].map(judgeScore), [1, 1, 5, 6, 10, 10, 1]);
+  });
+
+  it("summarizes wins, ties, average scores and cost", () => {
+    const summary = summarizeJudgements([
+      { baseScore: 4, tunedScore: 8, better: "tuned", costUsd: 0.0012 },
+      { baseScore: 7, tunedScore: 5, better: "base", costUsd: 0.0011 },
+      { baseScore: 6, tunedScore: 6, better: "tie", costUsd: 0 },
+    ]);
+    assert.deepEqual(summary, {
+      items: 3,
+      tunedWins: 1,
+      baseWins: 1,
+      ties: 1,
+      avgBaseScore: 5.67,
+      avgTunedScore: 6.33,
+      judgeCostUsd: 0.0023,
+    });
+    assert.deepEqual(summarizeJudgements([]), {
+      items: 0,
+      tunedWins: 0,
+      baseWins: 0,
+      ties: 0,
+      avgBaseScore: 0,
+      avgTunedScore: 0,
+      judgeCostUsd: 0,
+    });
   });
 });
 
@@ -317,6 +463,18 @@ describe("capEventBody", () => {
     assert.ok(log.type === "log" && log.text.endsWith("end"));
     const failed = capEventBody({ type: "failed", error: `${"y".repeat(10_000)}ValueError` });
     assert.ok(failed.type === "failed" && failed.error.endsWith("ValueError") && failed.error.length <= 4096);
+  });
+
+  it("cuts each eval field to 3,500 characters and keeps the index", () => {
+    const long = "z".repeat(EVAL_TEXT_MAX + 100);
+    assert.deepEqual(capEventBody({ type: "eval", index: 3, prompt: long, reference: "ref", base: long, tuned: "t" }), {
+      type: "eval",
+      index: 3,
+      prompt: "z".repeat(EVAL_TEXT_MAX),
+      reference: "ref",
+      base: "z".repeat(EVAL_TEXT_MAX),
+      tuned: "t",
+    });
   });
 
   it("leaves short bodies alone", () => {

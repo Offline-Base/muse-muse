@@ -7,20 +7,31 @@ import { and, asc, desc, eq, getTableColumns, gt, gte, isNotNull, isNull, notInA
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db/client";
 import { hashToken } from "@/lib/gateway/tokens";
-import { capEventBody, estimateCostUsd, instanceNameFor, type TrainJobRow } from "@/lib/train/logic";
+import {
+  capEventBody,
+  EVALS_MAX,
+  estimateCostUsd,
+  evalIndexes,
+  instanceNameFor,
+  type DatasetHead,
+  type TrainJobRow,
+} from "@/lib/train/logic";
 import {
   isTrainTerminal,
   TRAIN_TERMINAL,
+  type EvalExample,
+  type EvalSummary,
   type RecipeId,
   type TrainArtifact,
   type TrainCallback,
   type TrainEventBody,
   type TrainEventView,
+  type TrainExample,
   type TrainProgress,
   type TrainStatus,
 } from "@/lib/train/types";
 
-export type { TrainJobRow };
+export type { DatasetHead, TrainJobRow };
 
 /** The job token keeps working this long after the job ends, so the runner's last log lines still get in. */
 export const TOKEN_GRACE_MS = 15 * 60_000;
@@ -600,4 +611,246 @@ export async function lastSweepOkAt(): Promise<Date | null> {
     .orderBy(desc(limits.windowStart))
     .limit(1);
   return row?.at ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Eval items and their judgements, for the events route and lib/train/judge.ts.
+
+type EvalCallback = Extract<TrainCallback, { type: "eval" }>;
+type Judgement = Extract<TrainEventBody, { type: "judgement" }>;
+
+/** The rows of a db().execute() result: Neon and PGlite both answer { rows }. */
+function rowsOf(result: unknown): unknown[] {
+  const rows = (result as { rows?: unknown })?.rows;
+  return Array.isArray(rows) ? rows : [];
+}
+
+/**
+ * Logs an eval callback (cut to size with capEventBody) unless the job already has one with that index, which is a
+ * retried callback, or already has `max` of them. The job row is locked first, so callbacks at once can't pass the cap
+ * or record an index twice.
+ */
+export async function recordEvalEvent(jobId: string, body: EvalCallback, max = EVALS_MAX): Promise<"recorded" | "duplicate" | "limit"> {
+  if (!isUuid(jobId)) return "limit";
+  const payload = capEventBody(body) as EvalCallback;
+  const index = String(payload.index);
+  const [, inserted] = await db().batch([
+    db().execute(sql`select id from training_jobs where id = ${jobId}::uuid for update`),
+    db().execute(
+      sql`insert into training_events (job_id, type, payload)
+          select ${jobId}::uuid, 'eval', ${JSON.stringify(payload)}::jsonb
+          where (select count(*) from training_events where job_id = ${jobId}::uuid and type = 'eval') < ${max}
+            and not exists (
+              select 1 from training_events where job_id = ${jobId}::uuid and type = 'eval' and payload->>'index' = ${index}
+            )
+          returning id`,
+    ),
+  ]);
+  if (rowsOf(inserted).length) return "recorded";
+  return (await eventAt(jobId, "eval", payload.index)) ? "duplicate" : "limit";
+}
+
+/** The first logged event of this type for the eval item at `index`, or null. */
+async function eventAt(jobId: string, type: "eval" | "judgement", index: number): Promise<TrainEventBody | null> {
+  if (!isUuid(jobId) || !Number.isInteger(index)) return null;
+  const [row] = await db()
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, type), sql`${events.payload}->>'index' = ${String(index)}`))
+    .orderBy(asc(events.id))
+    .limit(1);
+  return row?.payload ?? null;
+}
+
+/** The indexes of the job's eval items, ascending, at most EVALS_MAX. */
+export async function listEvalIndexes(jobId: string): Promise<number[]> {
+  if (!isUuid(jobId)) return [];
+  const rows = await db()
+    .selectDistinct({ index: sql<number>`(${events.payload}->>'index')::int` })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "eval")))
+    .orderBy(sql`1`)
+    .limit(EVALS_MAX);
+  return rows.map((r) => Number(r.index)).filter(Number.isInteger);
+}
+
+/** The job's eval item at `index`, or null. */
+export async function getEvalItem(jobId: string, index: number): Promise<EvalCallback | null> {
+  const body = await eventAt(jobId, "eval", index);
+  return body?.type === "eval" ? body : null;
+}
+
+/** The judgement already logged for the eval item at `index`, or null. */
+export async function getJudgement(jobId: string, index: number): Promise<Judgement | null> {
+  const body = await eventAt(jobId, "judgement", index);
+  return body?.type === "judgement" ? body : null;
+}
+
+/** Saves the job's eval summary. It is written once judging ends and doesn't touch the job's status. */
+export async function setEvalSummary(jobId: string, summary: EvalSummary): Promise<void> {
+  if (!isUuid(jobId)) return;
+  await db().update(jobs).set({ evalSummary: summary }).where(eq(jobs.id, jobId));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Training datasets (lib/train/datasets.ts). Their examples can run to megabytes, so only the paging and the
+// generating steps read them; everything else selects the head columns.
+
+const datasets = schema.trainingDatasets;
+const { train: _train, eval: _eval, ...datasetHeadColumns } = getTableColumns(datasets);
+
+export interface NewDataset {
+  title: string;
+  task: string;
+  /** Already checked: 20 to 1000. */
+  requested: number;
+  createdBy?: string | null;
+}
+
+/** Saves a dataset in "generating", with no examples yet. */
+export async function createDataset(input: NewDataset): Promise<DatasetHead> {
+  const [row] = await db()
+    .insert(datasets)
+    .values({
+      title: input.title.trim().slice(0, TITLE_MAX) || "Dataset",
+      task: input.task.trim(),
+      requested: input.requested,
+      createdBy: input.createdBy ?? null,
+    })
+    .returning(datasetHeadColumns);
+  return row;
+}
+
+/** One dataset without its examples, or null when the id is unknown or isn't a uuid. */
+export async function getDataset(datasetId: string): Promise<DatasetHead | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db().select(datasetHeadColumns).from(datasets).where(eq(datasets.id, datasetId)).limit(1);
+  return row ?? null;
+}
+
+/** The newest datasets first, without their examples. */
+export async function listDatasets(limit = 100): Promise<DatasetHead[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit) || 100));
+  return db().select(datasetHeadColumns).from(datasets).orderBy(desc(datasets.createdAt)).limit(n);
+}
+
+/** Stores the workflow run that writes the dataset. */
+export async function attachDatasetRun(datasetId: string, workflowRunId: string): Promise<void> {
+  await db().update(datasets).set({ workflowRunId }).where(eq(datasets.id, datasetId));
+}
+
+/**
+ * `limit` items of the dataset's train or eval examples from `offset` (0-based), the total count and the status, or
+ * null when the dataset is unknown. The slice is cut in SQL, so a page never loads the rest.
+ */
+export async function datasetPage(
+  datasetId: string,
+  part: "train" | "eval",
+  offset: number,
+  limit: number,
+): Promise<{ status: DatasetHead["status"]; total: number; items: TrainExample[] | EvalExample[] } | null> {
+  if (!isUuid(datasetId)) return null;
+  const col = part === "train" ? datasets.train : datasets.eval;
+  const from = Math.max(0, Math.floor(offset));
+  const to = from + Math.max(0, Math.floor(limit));
+  const [row] = await db()
+    .select({
+      status: datasets.status,
+      total: sql<number>`jsonb_array_length(${col})`,
+      items: sql<TrainExample[] | EvalExample[]>`coalesce((
+        select jsonb_agg(t.e order by t.i) from jsonb_array_elements(${col}) with ordinality as t(e, i)
+        where t.i > ${from} and t.i <= ${to}
+      ), '[]'::jsonb)`,
+    })
+    .from(datasets)
+    .where(eq(datasets.id, datasetId))
+    .limit(1);
+  return row ? { status: row.status, total: Number(row.total), items: row.items ?? [] } : null;
+}
+
+/** How many examples a generating dataset holds so far, or null when it is unknown or no longer generating. */
+export async function datasetProgress(datasetId: string): Promise<number | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db()
+    .select({ length: sql<number>`jsonb_array_length(${datasets.train})` })
+    .from(datasets)
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "generating")))
+    .limit(1);
+  return row ? Number(row.length) : null;
+}
+
+/**
+ * Appends answered examples to a generating dataset, only when it holds exactly `offset` examples, so a retried step
+ * can't add a chunk twice. Returns how many it holds afterwards (or still holds, when the offset didn't match), or null
+ * when it is unknown or no longer generating.
+ */
+export async function appendTrainExamples(datasetId: string, offset: number, items: TrainExample[]): Promise<number | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db()
+    .update(datasets)
+    .set({ train: sql`${datasets.train} || ${JSON.stringify(items)}::jsonb` })
+    .where(
+      and(eq(datasets.id, datasetId), eq(datasets.status, "generating"), sql`jsonb_array_length(${datasets.train}) = ${offset}`),
+    )
+    .returning({ length: sql<number>`jsonb_array_length(${datasets.train})` });
+  if (row) return Number(row.length);
+  return datasetProgress(datasetId);
+}
+
+/** Adds what a Meta call cost to the dataset, in millionths of a dollar. */
+export async function addDatasetCost(datasetId: string, usd: number): Promise<void> {
+  if (!isUuid(datasetId) || !(usd > 0)) return;
+  await db()
+    .update(datasets)
+    .set({ costUsd: sql`round((${datasets.costUsd} + ${usd})::numeric, 6)::real` })
+    .where(eq(datasets.id, datasetId));
+}
+
+/**
+ * Turns a generating dataset that holds exactly `count` examples "ready": the items at evalIndexes(count) move to
+ * eval as { prompt, reference } (the user and assistant messages), the rest stay in train, and the counts and
+ * finishedAt are set, in one statement. Null when it is unknown, no longer generating, or holds another count.
+ */
+export async function finishDataset(datasetId: string, count: number): Promise<DatasetHead | null> {
+  if (!isUuid(datasetId)) return null;
+  const picked = evalIndexes(count);
+  const held = sql`(t.i - 1) = any(array[${sql.join(
+    picked.map((i) => sql`${i}::int`),
+    sql`, `,
+  )}]::int[])`;
+  const [row] = await db()
+    .update(datasets)
+    .set({
+      eval: sql`coalesce((
+        select jsonb_agg(
+          jsonb_build_object('prompt', t.e #>> '{messages,1,content}', 'reference', t.e #>> '{messages,2,content}')
+          order by t.i
+        )
+        from jsonb_array_elements(${datasets.train}) with ordinality as t(e, i) where ${held}
+      ), '[]'::jsonb)`,
+      train: sql`coalesce((
+        select jsonb_agg(t.e order by t.i) from jsonb_array_elements(${datasets.train}) with ordinality as t(e, i)
+        where not (${held})
+      ), '[]'::jsonb)`,
+      trainCount: count - picked.length,
+      evalCount: picked.length,
+      status: "ready",
+      finishedAt: new Date(),
+    })
+    .where(
+      and(eq(datasets.id, datasetId), eq(datasets.status, "generating"), sql`jsonb_array_length(${datasets.train}) = ${count}`),
+    )
+    .returning(datasetHeadColumns);
+  return row ?? null;
+}
+
+/** Fails a dataset that is still generating, with a plain reason. False when it already finished. */
+export async function failDataset(datasetId: string, error: string): Promise<boolean> {
+  if (!isUuid(datasetId)) return false;
+  const rows = await db()
+    .update(datasets)
+    .set({ status: "failed", error: error.slice(0, 2000) || "The dataset could not be written.", finishedAt: new Date() })
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "generating")))
+    .returning({ id: datasets.id });
+  return rows.length > 0;
 }

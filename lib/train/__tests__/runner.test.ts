@@ -1,7 +1,8 @@
 /**
  * Compiles every Python string with python3 -m py_compile, then runs runner.py for real against a local HTTP server
- * standing in for the platform (and for the Vercel Blob API): the smoke recipe with allowNoGpu, a failing recipe, and
- * uploads through the simple and multipart Blob protocols. Skipped when python3 is missing. Nothing here reaches Lambda.
+ * standing in for the platform (and for the Vercel Blob API): the smoke recipe with allowNoGpu, a failing recipe,
+ * uploads through the simple and multipart Blob protocols, dataset paging, eval callbacks, the cache folder, and the
+ * glimmer-lora recipe with dryRun. Skipped when python3 is missing. Nothing here reaches Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/runner.test.ts
  */
@@ -16,6 +17,7 @@ import path from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { RECIPES } from "@/lib/train/recipes";
 import { TRAIN_UPLOAD_TYPES } from "@/lib/train/types";
+import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { RUNNER_PY } from "@/lib/train/recipes/runner";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 
@@ -40,6 +42,10 @@ let uploadAnswer: { status: number; body?: unknown; location?: string } = { stat
 let grantBodies: unknown[] = [];
 /** Answers the fake Blob API gives simple PUTs in turn, before it stores the file. */
 let putAnswers: Array<{ status: number; body: unknown }> = [];
+/** The pages GET .../dataset serves for each part. A part with no pages answers 404, as for a job with no dataset. */
+let datasetPages: Record<string, Array<{ items: unknown[]; nextPage: number | null }>> = {};
+/** How GET .../dataset answers instead of serving a page, the first `times` times. */
+let datasetFailures: Array<{ status: number; location?: string }> = [];
 
 function json(res: import("node:http").ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json" });
@@ -57,6 +63,13 @@ before(async () => {
       const jobBase = `/api/train/jobs/${JOB_ID}`;
       if (hit.method === "POST" && hit.path === `${jobBase}/events`) {
         res.writeHead(204).end();
+      } else if (hit.method === "GET" && hit.path === `${jobBase}/dataset`) {
+        const failure = datasetFailures.shift();
+        const page = datasetPages[url.searchParams.get("part") ?? ""]?.[Number(url.searchParams.get("page"))];
+        if (failure?.location) res.writeHead(failure.status, { location: failure.location }).end();
+        else if (failure) json(res, failure.status, { error: "nope" });
+        else if (page) json(res, 200, page);
+        else json(res, 404, { error: "no_dataset" });
       } else if (hit.method === "POST" && hit.path === `${jobBase}/upload`) {
         if (grantBodies.length) json(res, 200, grantBodies.shift());
         else if (uploadAnswer.location) res.writeHead(uploadAnswer.status, { location: uploadAnswer.location }).end();
@@ -89,6 +102,8 @@ beforeEach(() => {
   uploadAnswer = { status: 503, body: { error: "no_storage" } };
   grantBodies = [];
   putAnswers = [];
+  datasetPages = {};
+  datasetFailures = [];
 });
 
 interface RunResult {
@@ -157,7 +172,7 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
   it("compiles runner.py and every recipe script", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "muse-pycompile-"));
     try {
-      const sources: Record<string, string> = { "runner.py": RUNNER_PY, "smoke.py": SMOKE_PY };
+      const sources: Record<string, string> = { "runner.py": RUNNER_PY, "smoke.py": SMOKE_PY, "glimmer.py": GLIMMER_PY };
       for (const r of RECIPES) sources[`recipe_${r.id.replace(/-/g, "_")}.py`] = r.script;
       for (const [name, source] of Object.entries(sources)) {
         const file = path.join(dir, name);
@@ -172,6 +187,22 @@ describe("python sources", { skip: hasPython ? false : "python3 is missing" }, (
 
   it("has no em dashes", () => {
     for (const source of [RUNNER_PY, ...RECIPES.map((r) => r.script)]) assert.ok(!source.includes("\u2014"));
+  });
+
+  it("keeps glimmer's install pins, model and ATEM markers as Unsloth's guide and notebook have them", () => {
+    for (const pin of [
+      '"unsloth/Muse-Glimmer-30B-unsloth-bnb-4bit"',
+      "--index-url https://download.pytorch.org/whl/cu128",
+      "'torchao>=0.16.0'",
+      '"transformers==5.15.0"',
+      '"--no-deps trl==0.22.2"',
+      'INSTRUCTION_PART = "<|start|>user<|message|>"',
+      'RESPONSE_PART = "<|start|>assistant to=user<|message|>"',
+      'loss_type="nll"',
+      'use_gradient_checkpointing="unsloth"',
+    ]) {
+      assert.ok(GLIMMER_PY.includes(pin), pin);
+    }
   });
 
   it("declares exactly the media types the upload route takes", () => {
@@ -447,5 +478,212 @@ describe("runner.py against a fake platform", { skip: hasPython ? false : "pytho
     const failed = events().at(-1) as { type: string; error: string };
     assert.equal(failed.type, "failed");
     assert.match(failed.error, /Vercel Blob refused the upload \(HTTP 400, bad_request\)/);
+  });
+
+  it("pages the dataset with the job token, retries a 503 and refuses a redirect", async () => {
+    datasetPages = {
+      train: [
+        { items: [{ n: 1 }, { n: 2 }], nextPage: 1 },
+        { items: [{ n: 3 }], nextPage: null },
+      ],
+      eval: [{ items: [], nextPage: null }],
+    };
+    datasetFailures = [{ status: 503 }];
+    const recipe = [
+      "def run(ctx):",
+      "    train = ctx.dataset('train')",
+      "    evals = ctx.dataset('eval')",
+      "    try:",
+      "        ctx.get_json('/dataset?part=none&page=0')",
+      "        missing = 'none'",
+      "    except Exception as e:",
+      "        missing = type(e).__name__ + ' ' + str(getattr(e, 'status', ''))",
+      "    try:",
+      "        ctx.dataset('test')",
+      "        bad = 'none'",
+      "    except ValueError:",
+      "        bad = 'ValueError'",
+      "    return {'train': ','.join(str(i['n']) for i in train), 'evals': len(evals), 'missing': missing, 'bad': bad}",
+      "",
+    ].join("\n");
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    assertAuthorized(r.token);
+    assertTokenNotPrinted(r);
+    const gets = hits.filter((h) => h.method === "GET");
+    assert.deepEqual(
+      gets.map((h) => `${h.query.get("part")}:${h.query.get("page")}`),
+      ["train:0", "train:0", "train:1", "eval:0", "none:0"],
+      "the 503 was retried, then each page asked for once",
+    );
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { train: "1,2,3", evals: 0, missing: "PlatformError 404", bad: "ValueError" });
+
+    hits = [];
+    datasetFailures = [{ status: 302, location: "/stolen" }];
+    const again = await runJob("def run(ctx):\n    return {'n': len(ctx.dataset('train'))}\n", {});
+    assert.equal(again.code, 1);
+    assert.equal(hits.filter((h) => h.path === "/stolen").length, 0, "the redirect was not followed");
+    assert.match(String((events().at(-1) as { error: string }).error), /HTTP 302 to GET \/dataset$/m);
+  });
+
+  it("posts eval items with each field cut to 3,500 characters, at most 60 a job", async () => {
+    const recipe = [
+      "def run(ctx):",
+      "    ok = ctx.eval(0, 'p' * 5000, 'r', 'b' * 10, 't' * 3500)",
+      "    sent = 1",
+      "    for i in range(1, 70):",
+      "        if ctx.eval(i, 'p', 'r', 'b', 't'):",
+      "            sent += 1",
+      "    big = ctx.eval(99, 'é' * 3500, 'é' * 3500, 'é' * 3500, 'é' * 3500)",
+      "    return {'first': 'yes' if ok else 'no', 'sent': sent, 'big': 'yes' if big else 'no'}",
+      "",
+    ].join("\n");
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    const evs = events().filter((e) => e.type === "eval") as Array<{ index: number; prompt: string; reference: string; base: string; tuned: string }>;
+    assert.equal(evs.length, 60);
+    assert.deepEqual(evs[0], { type: "eval", index: 0, prompt: "p".repeat(3500), reference: "r", base: "b".repeat(10), tuned: "t".repeat(3500) });
+    assert.deepEqual(evs.map((e) => e.index), [...Array(60).keys()]);
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { first: "yes", sent: 60, big: "no" });
+    for (const h of hits.filter((x) => x.path.endsWith("/events"))) assert.ok(h.body.length <= 16 * 1024);
+  });
+
+  it("keeps eval bodies under the callback limit when the text is multibyte", async () => {
+    const recipe = "def run(ctx):\n    return {'ok': 'yes' if ctx.eval(3, 'é' * 3500, '中' * 3500, 'b' * 3500, 't' * 3500) else 'no'}\n";
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    const hit = hits.find((h) => h.path.endsWith("/events") && JSON.parse(h.body.toString("utf8")).type === "eval");
+    assert.ok(hit && hit.body.length <= 15000);
+    const body = JSON.parse(hit.body.toString("utf8"));
+    assert.equal(body.index, 3);
+    for (const key of ["prompt", "reference", "base", "tuned"]) assert.ok(body[key].length <= 3500 && body[key].length > 0, key);
+  });
+
+  it("runs commands with extra env and hands each line to on_line, which can't break the run", async () => {
+    const recipe = [
+      "def run(ctx):",
+      "    seen = []",
+      "    def on_line(line):",
+      "        if line == 'boom':",
+      "            raise ValueError('bad line')",
+      "        seen.append(line)",
+      "    out = ctx.run('echo one; echo boom; echo \"two $MUSE_TEST_VALUE\"', env={'MUSE_TEST_VALUE': 'x1'}, on_line=on_line)",
+      "    return {'seen': '|'.join(seen), 'exit': out.returncode}",
+      "",
+    ].join("\n");
+    const r = await runJob(recipe, {});
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    assert.deepEqual((events().at(-1) as { metrics: unknown }).metrics, { seen: "one|two x1", exit: 0 });
+    assert.match(r.output, /on_line failed: ValueError/);
+  });
+
+  it("sets ctx.cache_dir to the mounted cacheDir, and to None when it is missing or not mounted", async () => {
+    const cache = await mkdtemp(path.join(tmpdir(), "muse-cache-"));
+    try {
+      const recipe = "def run(ctx):\n    return {'cache': str(ctx.cache_dir)}\n";
+      const metrics = async (extra: Record<string, unknown>) => {
+        hits = [];
+        const r = await runJob(recipe, {}, extra);
+        assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+        return (events().at(-1) as { metrics: { cache: string } }).metrics.cache;
+      };
+      assert.equal(await metrics({}), "None");
+      assert.equal(await metrics({ cacheDir: cache }), cache);
+      assert.equal(await metrics({ cacheDir: path.join(cache, "not-mounted"), cacheWaitSeconds: 1 }), "None");
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
+  it("runs the glimmer-lora recipe with dryRun: dataset pages, progress, eval items, then done", async () => {
+    const train = Array.from({ length: 5 }, (_, i) => ({
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: `Question ${i}` },
+        { role: "assistant", content: `Answer ${i}` },
+      ],
+    }));
+    const evalItems = Array.from({ length: 3 }, (_, i) => ({ prompt: `Held-out prompt ${i}`, reference: `Reference ${i}` }));
+    datasetPages = {
+      train: [
+        { items: train.slice(0, 3), nextPage: 1 },
+        { items: [...train.slice(3), { messages: "not a list" }], nextPage: null },
+      ],
+      eval: [
+        { items: evalItems.slice(0, 2), nextPage: 1 },
+        { items: evalItems.slice(2), nextPage: null },
+      ],
+    };
+    const cache = await mkdtemp(path.join(tmpdir(), "muse-cache-"));
+    try {
+      const params = { datasetId: "ds-1", maxSteps: 30, learningRate: 0.0002, loraRank: 8, dryRun: 1 };
+      const r = await runJob(GLIMMER_PY, params, { recipe: "glimmer-lora", cacheDir: cache });
+      assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+      assertAuthorized(r.token);
+      assertTokenNotPrinted(r);
+
+      const gets = hits.filter((h) => h.method === "GET").map((h) => `${h.query.get("part")}:${h.query.get("page")}`);
+      assert.deepEqual(gets, ["train:0", "train:1", "eval:0", "eval:1"]);
+
+      const evs = events();
+      const types = evs.map((e) => e.type);
+      assert.equal(types[0], "heartbeat");
+      assert.equal(types.at(-1), "done");
+      assert.ok(!types.includes("failed"));
+      const steps = evs.filter((e) => e.type === "progress" && e.step !== undefined);
+      assert.deepEqual(steps.map((e) => e.step), [10, 20, 30]);
+      for (const e of steps) {
+        assert.equal(e.totalSteps, 30);
+        assert.equal(typeof e.loss, "number");
+      }
+
+      const evals = evs.filter((e) => e.type === "eval") as Array<{ index: number; prompt: string; reference: string; base: string; tuned: string }>;
+      assert.deepEqual(evals.map((e) => [e.index, e.prompt, e.reference]), evalItems.map((e, i) => [i, e.prompt, e.reference]));
+      for (const e of evals) {
+        assert.match(e.base, new RegExp(`^Dry run base answer ${e.index} \\([0-9a-f]{8}\\)$`));
+        assert.match(e.tuned, new RegExp(`^Dry run tuned answer ${e.index} \\([0-9a-f]{8}\\)$`));
+        assert.notEqual(e.base, e.tuned);
+      }
+      assert.ok(types.lastIndexOf("eval") < types.indexOf("done"), "eval items go before done");
+      assert.ok(types.indexOf("eval") > types.lastIndexOf("progress") - 1);
+
+      const done = evs.at(-1) as { summary: string; metrics: Record<string, unknown> };
+      assert.match(done.summary, /^Dry run: LoRA r=8 on Muse Glimmer 30B, 30 steps, final loss [\d.]+, 3 eval items\.$/);
+      for (const key of ["train_loss_final", "steps", "train_seconds", "peak_vram_gb", "eval_items", "cached_weights"]) {
+        assert.ok(key in done.metrics, `metrics has ${key}`);
+      }
+      assert.equal(done.metrics.steps, 30);
+      assert.equal(done.metrics.eval_items, 3);
+      assert.equal(done.metrics.train_examples, 5, "the malformed conversation was skipped");
+      const logs = evs.filter((e) => e.type === "log").map((e) => (e as { text: string }).text);
+      assert.ok(
+        logs.some((t) => t.includes("5 training conversations, 3 eval prompts, answered under the dataset's system message")),
+        "the eval prompts are answered under the system message training saw",
+      );
+      assert.equal(done.metrics.cached_weights, "no");
+      assert.equal(done.metrics.dry_run, "yes");
+      assert.equal(done.metrics.cache_used, "yes");
+      assert.equal(done.metrics.adapter_uploaded, "no", "the fake platform has no storage");
+      assert.equal(done.metrics.adapter_dir, path.join(cache, "models", JOB_ID));
+      assert.equal(hits.filter((h) => h.path.endsWith("/upload")).length, 1, "the adapter archive was offered for upload");
+
+      // The same answers on a second run: the fakes are deterministic.
+      const first = evals.map((e) => [e.base, e.tuned]);
+      hits = [];
+      const again = await runJob(GLIMMER_PY, params, { recipe: "glimmer-lora", cacheDir: cache });
+      assert.equal(again.code, 0);
+      assert.deepEqual(events().filter((e) => e.type === "eval").map((e) => [e.base, e.tuned]), first);
+    } finally {
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the glimmer-lora recipe clearly when the job has no dataset", async () => {
+    const r = await runJob(GLIMMER_PY, { datasetId: "ds-1", dryRun: 1 }, { recipe: "glimmer-lora" });
+    assert.equal(r.code, 1);
+    const failed = events().at(-1) as { type: string; error: string };
+    assert.equal(failed.type, "failed");
+    assert.match(failed.error, /PlatformError: The platform answered HTTP 404 to GET \/dataset$/m);
+    assert.ok(!events().some((e) => e.type === "eval"));
   });
 });

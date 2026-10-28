@@ -2,7 +2,8 @@
  * Runs trainJob as a plain function with every step faked and sleep() moving a fake clock, to check the
  * orchestration: launch (and saving a launch the database didn't take), the 30 s check loop, that a failed check
  * doesn't end the watch, the hard stop at maxMinutes + 15, and that the instance is terminated at the end on every
- * path, by the id the workflow carries, including thrown errors and an outage that outlasts every retry.
+ * path, by the id the workflow carries, including thrown errors and an outage that outlasts every retry. Judging runs
+ * only after terminate returned "succeeded", 4 items at a time, and nothing it does changes the job's status.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/workflow.scenario.test.ts
  *
@@ -32,6 +33,12 @@ interface Scenario {
   abandonFailures?: number;
   /** What terminateStep reports as the job's final status. Defaults to the ending's status. */
   finalStatus?: string;
+  /** The eval indexes judgePlanStep answers (none by default), or an error it throws. */
+  evals?: number[] | Error;
+  /** Indexes whose judgeStep throws. */
+  judgeFails?: number[];
+  /** Whether saveEvalSummaryStep throws. */
+  summaryFails?: boolean;
 }
 
 const POLL_MS = 30_000;
@@ -89,6 +96,32 @@ const fakeSteps = {
   },
 };
 
+/** Judge steps running right now, and the most that ran at once. */
+let judging = 0;
+let judgingPeak = 0;
+
+const fakeJudge = {
+  judgePlanStep: async (jobId: string) => {
+    record("judgePlanStep", jobId);
+    if (scenario.evals instanceof Error) throw scenario.evals;
+    return { indexes: scenario.evals ?? [], task: "Explain errors." };
+  },
+  judgeStep: async (jobId: string, index: number, task: string | null) => {
+    record("judgeStep", jobId, index, task);
+    judging += 1;
+    judgingPeak = Math.max(judgingPeak, judging);
+    await new Promise((resolve) => setImmediate(resolve));
+    judging -= 1;
+    if (scenario.judgeFails?.includes(index)) throw new Error('Step "judgeStep" failed after 2 retries: bad JSON');
+    return { baseScore: 5, tunedScore: 7, better: "tuned", costUsd: 0.001 };
+  },
+  saveEvalSummaryStep: async (jobId: string, items: unknown[], asked: number) => {
+    record("saveEvalSummaryStep", jobId, items, asked);
+    if (scenario.summaryFails) throw new Error("database down");
+    return null;
+  },
+};
+
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let wf: typeof import("../workflow");
 
@@ -98,6 +131,8 @@ function reset(next: Scenario) {
   checksRun = 0;
   terminateRuns = 0;
   abandonRuns = 0;
+  judging = 0;
+  judgingPeak = 0;
   clock = Date.UTC(2026, 9, 27, 12, 0, 0);
 }
 
@@ -106,6 +141,7 @@ const terminated = (): Ending => named("terminateStep")[0]!.args[1] as Ending;
 describe("training workflow orchestration", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
     mock.module(new URL("../steps.ts", import.meta.url).href, { namedExports: fakeSteps });
+    mock.module(new URL("../judge.ts", import.meta.url).href, { namedExports: fakeJudge });
     mock.module("workflow", {
       namedExports: {
         sleep: async (ms: number) => {
@@ -127,7 +163,7 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       checks: [{ action: "wait" }, { action: "wait" }, { action: "terminate", status: "succeeded", reason: "The job finished." }],
     });
     assert.deepEqual(await wf.trainJob({ jobId: "j1" }), { status: "succeeded" });
-    assert.deepEqual(order(), ["launchStep", "checkStep", "checkStep", "checkStep", "terminateStep"]);
+    assert.deepEqual(order(), ["launchStep", "checkStep", "checkStep", "checkStep", "terminateStep", "judgePlanStep"]);
     assert.deepEqual(named("terminateStep")[0]!.args, ["j1", { status: "succeeded", reason: "The job finished." }, "inst-1"]);
     assert.deepEqual(
       named("sleep").map((c) => c.args[0]),
@@ -218,8 +254,9 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
     const save = { action: "save", maxMinutes: 30, instanceId: "inst-2", launchedAt: "2026-10-27T12:00:00.000Z" } as const;
     reset({ launch: save, checks: [{ action: "terminate", status: "succeeded", reason: "The job finished." }] });
     assert.deepEqual(await wf.trainJob({ jobId: "j11" }), { status: "succeeded" });
-    assert.deepEqual(order(), ["launchStep", "saveLaunchStep", "checkStep", "terminateStep"]);
+    assert.deepEqual(order(), ["launchStep", "saveLaunchStep", "checkStep", "terminateStep", "judgePlanStep"]);
     assert.deepEqual(named("saveLaunchStep")[0]!.args, ["j11", save]);
+    assert.equal(order().at(-1), "judgePlanStep");
     assert.equal(named("terminateStep")[0]!.args[2], "inst-2");
   });
 
@@ -267,7 +304,7 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       terminateFailures: Infinity,
     });
     assert.deepEqual(await wf.trainJob({ jobId: "j10" }), { status: "succeeded" });
-    assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep", "abandonStep"]);
+    assert.deepEqual(order(), ["launchStep", "checkStep", "terminateStep", "abandonStep", "judgePlanStep"]);
     assert.equal(named("terminateStep").length, 1);
     assert.deepEqual(named("abandonStep")[0]!.args, ["j10", { status: "succeeded", reason: "The job finished." }, "inst-1"]);
   });
@@ -297,5 +334,64 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
     // The fake steps fail at once, so only the one-minute pauses move the clock: 60 of them, then one last round.
     assert.equal(named("terminateStep").length, 61);
     assert.equal(clock - startedAt, POLL_MS + 60 * 60_000);
+  });
+  describe("judging", () => {
+    const done = (): Check => ({ action: "terminate", status: "succeeded", reason: "The job finished." });
+
+    it("judges a job that succeeded only after terminate, 4 at a time, then saves the summary", async () => {
+      reset({ checks: [done()], evals: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] });
+      assert.deepEqual(await wf.trainJob({ jobId: "j20" }), { status: "succeeded" });
+      const steps = order();
+      assert.equal(steps.indexOf("judgePlanStep"), steps.indexOf("terminateStep") + 1, "right after terminate returned");
+      assert.deepEqual(
+        named("judgeStep").map((c) => c.args),
+        Array.from({ length: 10 }, (_, i) => ["j20", i, "Explain errors."]),
+      );
+      assert.equal(judgingPeak, 4);
+      const [jobId, items, asked] = named("saveEvalSummaryStep")[0]!.args as [string, unknown[], number];
+      assert.equal(jobId, "j20");
+      assert.equal(items.length, 10);
+      assert.equal(asked, 10);
+      assert.equal(steps.at(-1), "saveEvalSummaryStep");
+    });
+
+    it("leaves out items whose judge step failed", async () => {
+      reset({ checks: [done()], evals: [0, 1, 2], judgeFails: [1] });
+      assert.deepEqual(await wf.trainJob({ jobId: "j21" }), { status: "succeeded" });
+      assert.equal(named("judgeStep").length, 3);
+      const [, items, asked] = named("saveEvalSummaryStep")[0]!.args as [string, unknown[], number];
+      assert.equal(items.length, 2);
+      assert.equal(asked, 3);
+    });
+
+    it("never changes the status when judging fails", async () => {
+      reset({ checks: [done()], evals: new Error("database down") });
+      assert.deepEqual(await wf.trainJob({ jobId: "j22" }), { status: "succeeded" });
+      assert.equal(named("judgeStep").length, 0);
+      reset({ checks: [done()], evals: [0], summaryFails: true });
+      assert.deepEqual(await wf.trainJob({ jobId: "j23" }), { status: "succeeded" });
+      assert.equal(named("terminateStep").length, 1, "terminated once, before judging");
+    });
+
+    it("skips the summary when there is nothing to judge", async () => {
+      reset({ checks: [done()], evals: [] });
+      assert.deepEqual(await wf.trainJob({ jobId: "j24" }), { status: "succeeded" });
+      assert.equal(named("judgeStep").length + named("saveEvalSummaryStep").length, 0);
+    });
+
+    it("doesn't judge a job that failed or was stopped, even with eval items", async () => {
+      for (const check of [
+        { action: "terminate", status: "failed", reason: "Reached the 30-minute limit." },
+        { action: "terminate", status: "stopped", reason: "Stopped by an admin." },
+      ] as Check[]) {
+        reset({ checks: [check], evals: [0, 1] });
+        await wf.trainJob({ jobId: "j25" });
+        assert.equal(named("judgePlanStep").length, 0);
+      }
+      // A late done that terminateStep settled on counts as succeeded.
+      reset({ checks: [{ action: "terminate", status: "failed", reason: "Reached the 30-minute limit." }], finalStatus: "succeeded", evals: [0] });
+      assert.deepEqual(await wf.trainJob({ jobId: "j26" }), { status: "succeeded" });
+      assert.equal(named("judgeStep").length, 1);
+    });
   });
 });

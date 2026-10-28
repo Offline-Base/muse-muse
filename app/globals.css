@@ -3880,3 +3880,237 @@ a.dash-card:hover {
   color: var(--muted);
   font-size: 12.5px;
 }
+
+/* Datasets and eval results (docs/TRAINING.md "Datasets", "Judging") */
+
+.train-field-wide {
+  grid-column: 1 / -1;
+}
+
+.train-input.train-textarea {
+  min-height: 112px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.train-help-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.train-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.train-text,
+.train-long-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.train-long > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.train-long > summary::-webkit-details-marker {
+  display: none;
+}
+
+.train-long-more,
+.train-long-less {
+  margin-left: 6px;
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.train-long > summary:hover .train-long-more,
+.train-long > summary:hover .train-long-less {
+  text-decoration: underline;
+}
+
+.train-long-less,
+.train-long[open] .train-long-preview,
+.train-long[open] .train-long-more {
+  display: none;
+}
+
+.train-long[open] .train-long-less {
+  display: inline;
+  margin-left: 0;
+}
+
+.train-long[open] > summary {
+  margin-bottom: 6px;
+}
+
+/* Eval results on the job page */
+
+.train-eval {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  scroll-margin-top: 20px;
+}
+
+.train-eval-strip .totals-big strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.train-eval-sub {
+  color: var(--fg-2);
+  font-size: 15px;
+}
+
+.train-eval-table {
+  table-layout: fixed;
+  min-width: 640px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.train-eval-col-text {
+  width: 28%;
+}
+
+.train-eval-col-verdict {
+  width: 16%;
+}
+
+.train-eval-table th,
+.train-eval-table td {
+  padding: 12px 14px;
+}
+
+.train-eval-table thead th {
+  white-space: normal;
+}
+
+.train-eval-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--line);
+}
+
+.train-eval-table tbody:last-child tr:last-child td {
+  border-bottom: 0;
+}
+
+.train-eval-prompt th {
+  background: var(--surface-2);
+  font-weight: 400;
+  text-align: left;
+}
+
+.train-eval-num {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.train-eval-win {
+  background: color-mix(in srgb, var(--ok-soft) 55%, transparent);
+}
+
+.train-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.train-scores {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.train-note {
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Dataset page */
+
+.train-ds-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.train-system > summary {
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.train-system[open] > summary {
+  margin-bottom: 10px;
+}
+
+.train-convos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.train-convo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.train-convo-num,
+.train-role {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.train-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.train-msg-user {
+  padding: 10px 16px;
+  border-radius: 18px;
+  background: var(--bubble);
+}
+
+.train-ds-eval {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.train-ds-eval th,
+.train-ds-eval td {
+  padding: 12px 14px;
+}
+
+.train-ds-eval th:first-child {
+  width: 48px;
+}
+
+.train-ds-eval td:not(:first-child) {
+  min-width: 220px;
+}

@@ -2,13 +2,14 @@ import { start } from "workflow/api";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
-import { LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
+import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
 import { clampLimits, toJobView, validateParams } from "@/lib/train/logic";
 import { RECIPES, recipeById } from "@/lib/train/recipes";
 import {
   activeJobCount,
   attachRun,
   createJob,
+  getDataset,
   lastSweepOkAt,
   listJobs,
   setStatus,
@@ -16,6 +17,7 @@ import {
   trainingSpendToday,
 } from "@/lib/train/store";
 import { callbackOrigin } from "@/lib/train/userdata";
+import type { Recipe } from "@/lib/train/types";
 import { trainJob } from "@/lib/train/workflow";
 import { gpuOptions, lambdaConfigured, limitCeilings, recipeView, sweepOffReason, sweepRunning } from "../shared";
 
@@ -30,6 +32,35 @@ function limit(value: unknown, label: string): { ok: true; value: number | undef
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
   if (!Number.isFinite(n) || n <= 0) return { ok: false, error: `${label} must be a positive number.` };
   return { ok: true, value: n };
+}
+
+/** Null when every dataset param names a dataset that is ready, otherwise what to tell the admin. */
+async function datasetProblem(recipe: Recipe, params: Record<string, string | number>): Promise<string | null> {
+  for (const field of recipe.params) {
+    if (field.kind !== "dataset" || params[field.key] === undefined) continue;
+    const dataset = await getDataset(String(params[field.key]));
+    if (!dataset) return `${field.label}: that dataset doesn't exist.`;
+    if (dataset.status !== "ready") {
+      return dataset.status === "generating"
+        ? `${field.label}: that dataset is still being written.`
+        : `${field.label}: that dataset failed, so it can't be trained on.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Regions that already hold the model cache, for a recipe that keeps one. Only a preference, so a Lambda error picks
+ * from every region instead of refusing the job.
+ */
+async function preferredRegions(recipe: Recipe): Promise<string[]> {
+  if (!recipe.usesCache) return [];
+  try {
+    return await cacheRegions();
+  } catch (err) {
+    console.error("[train/jobs] cache regions", err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
 /**
@@ -52,7 +83,8 @@ export const GET = route(async (req: Request) => {
 /**
  * POST {recipe, title?, params?, instanceType?, maxMinutes?, maxUsd?} -> 201 {job}. Admins or automation only.
  * Queues the job and starts the trainJob workflow, which launches the instance. Limits are the lowest of the ask, the
- * recipe's defaults and the platform ceilings. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
+ * recipe's defaults and the platform ceilings. A dataset param must name a dataset that is ready. A recipe that keeps
+ * the model cache prefers a region that already has it. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
  * lambda_unavailable, 503 lambda_not_configured, platform_not_public (the instance couldn't report back over https),
  * sweep_not_configured with {reason} (the 5-minute sweep that terminates a lost GPU can't run here: see
  * sweepOffReason), sweep_not_running with {lastSweepAt} (it can, but hasn't run with Lambda answering in the last 15
@@ -71,6 +103,8 @@ export const POST = route(async (req: Request) => {
   const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, TITLE_MAX) : recipe.title;
   const params = validateParams(recipe, body.params);
   if (!params.ok) return errorJson(400, params.error);
+  const datasetError = await datasetProblem(recipe, params.value);
+  if (datasetError) return errorJson(400, datasetError);
   let instanceType: string | undefined;
   if (body.instanceType !== undefined && body.instanceType !== null && body.instanceType !== "") {
     if (typeof body.instanceType !== "string" || !recipe.gpus.some((g) => g.instanceType === body.instanceType)) {
@@ -107,7 +141,7 @@ export const POST = route(async (req: Request) => {
     if (status === 401 || status === 403) return errorJson(503, "lambda_not_configured");
     return errorJson(502, "lambda_unavailable");
   }
-  const gpu = pickGpu(recipe.gpus, types, instanceType);
+  const gpu = pickGpu(recipe.gpus, types, instanceType, await preferredRegions(recipe));
   if (!gpu) return errorJson(503, "no_capacity", { options: gpuOptions(types, [recipe]) });
 
   const job = await createJob({

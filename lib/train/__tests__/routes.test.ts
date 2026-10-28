@@ -8,7 +8,10 @@
  * type, for as long as that file needs. POST /api/train/jobs: the sweep, active-job and daily checks come before
  * anything is created, and a job that raced another one backs out before its workflow starts. And POST .../stop can be
  * pressed again until the instance is confirmed terminated. A job only starts while the sweep has run lately, and the
- * sweep cron notes each run whose Lambda listing answered.
+ * sweep cron notes each run whose Lambda listing answered. Eval callbacks are checked, cut and kept once per index up to
+ * a cap. GET .../dataset pages the job's dataset for its token only. /api/train/datasets validates and starts the
+ * dataset workflow, refused while the spend cap is reached. A dataset param must name a ready dataset, and a recipe that
+ * keeps the model cache prefers the regions that have it.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/routes.test.ts
  *
@@ -57,6 +60,16 @@ let sweepResult: { instances: number | null; terminated: unknown[]; failedJobs: 
   errors: [],
 };
 let recordSweepFails = false;
+/** What recordEvalEvent answers. */
+let evalResult: "recorded" | "duplicate" | "limit" = "recorded";
+/** Datasets the fake store knows, by id. */
+let datasetRows: Record<string, Record<string, unknown>> = {};
+/** What datasetPage answers: the dataset's status and how many items each part holds. */
+let pageStatus = "ready";
+let pageTotals: Record<string, number> = { train: 450, eval: 40 };
+let paused = false;
+let startFails = false;
+let cacheRegionsImpl: () => Promise<string[]> = async () => ["us-south-1"];
 const savedEnv = { ...process.env };
 
 function next(list: number[]): number {
@@ -125,7 +138,53 @@ const fakeStore = {
   },
   attachRun: async (...args: unknown[]) => void calls.push({ fn: "attachRun", args }),
   listJobs: async () => [],
+  recordEvalEvent: async (jobId: string, body: unknown, max: number) => {
+    calls.push({ fn: "recordEvalEvent", args: [jobId, body, max] });
+    return evalResult;
+  },
+  getDataset: async (id: string) => {
+    calls.push({ fn: "getDataset", args: [id] });
+    return datasetRows[id] ?? null;
+  },
+  datasetPage: async (id: string, part: string, offset: number, limit: number) => {
+    calls.push({ fn: "datasetPage", args: [id, part, offset, limit] });
+    if (!datasetRows[id]) return null;
+    const total = pageTotals[part] ?? 0;
+    const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => ({ n: offset + i }));
+    return { status: pageStatus, total, items };
+  },
+  createDataset: async (input: Record<string, unknown>) => {
+    calls.push({ fn: "createDataset", args: [input] });
+    return datasetRow({ ...input, id: DATASET_ID });
+  },
+  listDatasets: async () => Object.values(datasetRows),
+  attachDatasetRun: async (...args: unknown[]) => void calls.push({ fn: "attachDatasetRun", args }),
+  failDataset: async (...args: unknown[]) => {
+    calls.push({ fn: "failDataset", args });
+    return true;
+  },
 };
+
+const DATASET_ID = "dddddddd-0000-4000-8000-000000000000";
+
+function datasetRow(over: Record<string, unknown> = {}) {
+  return {
+    id: DATASET_ID,
+    title: "Python errors",
+    task: "Explain Python errors to beginners.",
+    status: "generating",
+    requested: 100,
+    trainCount: 0,
+    evalCount: 0,
+    costUsd: 0,
+    error: null,
+    createdBy: "admin-1",
+    createdAt: new Date("2026-10-27T12:00:00.000Z"),
+    finishedAt: null,
+    workflowRunId: null,
+    ...over,
+  };
+}
 
 function jobRow(input: Record<string, unknown>) {
   return {
@@ -177,6 +236,12 @@ let upload: Handler;
 let stopRoute: Handler;
 let createJobRoute: (req: Request) => Promise<Response>;
 let sweepCron: (req: Request) => Promise<Response>;
+let jobDataset: (req: Request, ctx: Ctx) => Promise<Response>;
+let createDatasetRoute: (req: Request) => Promise<Response>;
+let listDatasetsRoute: (req: Request) => Promise<Response>;
+let datasetDetail: (req: Request, ctx: Ctx) => Promise<Response>;
+/** A recipe with a dataset param (glimmer-lora), when there is one. */
+let datasetRecipe: { id: string; usesCache?: boolean } | undefined;
 
 function createReq(body: unknown): Request {
   return new Request("https://muse.example.com/api/train/jobs", {
@@ -201,9 +266,18 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
           calls.push({ fn: "listInstanceTypes", args: [] });
           return [];
         },
-        pickGpu: () => (gpuFree ? { instanceType: "gpu_1x_a10", region: "us-east-1", priceCentsPerHour: 75 } : null),
+        pickGpu: (...args: unknown[]) => {
+          calls.push({ fn: "pickGpu", args });
+          return gpuFree ? { instanceType: "gpu_1x_a10", region: "us-east-1", priceCentsPerHour: 75 } : null;
+        },
+        cacheRegions: async () => {
+          calls.push({ fn: "cacheRegions", args: [] });
+          return cacheRegionsImpl();
+        },
       },
     });
+    mock.module(at("../datasets.ts"), { namedExports: { makeDataset: async () => ({ status: "ready" }) } });
+    mock.module(at("../../quota.ts"), { namedExports: { spendPaused: async () => paused } });
     mock.module(at("../../auth.ts"), {
       namedExports: { AuthError: FakeAuthError, requireAdminOrAutomation: async () => ({ id: "admin-1", email: "a@x", isAdmin: true }) },
     });
@@ -220,6 +294,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       namedExports: {
         start: async (_wf: unknown, args: unknown[]) => {
           calls.push({ fn: "start", args });
+          if (startFails) throw new Error("queue unavailable");
           return { runId: "run-1" };
         },
       },
@@ -243,6 +318,11 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     ({ POST: stopRoute } = await import(at("../../../app/api/train/jobs/[id]/stop/route.ts")));
     ({ POST: createJobRoute } = await import(at("../../../app/api/train/jobs/route.ts")));
     ({ GET: sweepCron } = await import(at("../../../app/api/cron/train-sweep/route.ts")));
+    ({ GET: jobDataset } = await import(at("../../../app/api/train/jobs/[id]/dataset/route.ts")));
+    ({ POST: createDatasetRoute, GET: listDatasetsRoute } = await import(at("../../../app/api/train/datasets/route.ts")));
+    ({ GET: datasetDetail } = await import(at("../../../app/api/train/datasets/[id]/route.ts")));
+    const { RECIPES } = (await import(at("../recipes/index.ts"))) as typeof import("../recipes/index");
+    datasetRecipe = RECIPES.find((r) => r.params.some((p) => p.kind === "dataset"));
   });
 
   after(() => {
@@ -267,7 +347,16 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     lastSweep = new Date(Date.now() - 4 * MIN);
     sweepResult = { instances: 0, terminated: [], failedJobs: [], stoppedJobs: [], errors: [] };
     recordSweepFails = false;
+    evalResult = "recorded";
+    datasetRows = {};
+    pageStatus = "ready";
+    pageTotals = { train: 450, eval: 40 };
+    paused = false;
+    startFails = false;
+    cacheRegionsImpl = async () => ["us-south-1"];
     process.env.BLOB_READ_WRITE_TOKEN = FAKE_BLOB_TOKEN;
+    // A fake value: Meta is never called here, the dataset route only checks that it is set.
+    process.env.MODEL_API_KEY = "test-value-not-a-key";
     // Fake values: the Lambda client is faked, so nothing reads this as a key.
     process.env.LAMBDA_API_KEY = "test-value-not-a-key";
     process.env.PLATFORM_URL = "https://muse.example.com";
@@ -406,6 +495,229 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       await pending[0]!();
       assert.deepEqual(called("terminateInstances")[0]!.args[0], ["inst-1"]);
       assert.equal((called("finishJob")[0]!.args[1] as { status: string }).status, "succeeded");
+    });
+  });
+
+  describe("eval callbacks", () => {
+    const evalBody = (over: Record<string, unknown> = {}) => ({
+      type: "eval",
+      index: 3,
+      prompt: "How do I read a file?",
+      reference: "Use open().",
+      base: "Not sure.",
+      tuned: "Use open() in a with block.",
+      ...over,
+    });
+
+    it("keeps only the eval fields, cut to 3,500 characters, and logs the item once", async () => {
+      const long = "x".repeat(4000);
+      const res = await events(post("events", evalBody({ base: long, extra: "dropped" })), ctx);
+      assert.equal(res.status, 204);
+      const [, cb] = called("applyCallback")[0]!.args as [string, Record<string, unknown>];
+      assert.deepEqual(cb, { ...evalBody(), base: "x".repeat(3500) }, "a sign of life, with nothing extra");
+      const [jobId, body, max] = called("recordEvalEvent")[0]!.args as [string, Record<string, unknown>, number];
+      assert.equal(jobId, JOB_ID);
+      assert.deepEqual(body, cb);
+      assert.equal(max, 60);
+      assert.equal(called("recordEvent").length, 0, "logged through recordEvalEvent only");
+    });
+
+    it("refuses an eval item without an index or one of its texts", async () => {
+      for (const over of [{ index: -1 }, { index: 1.5 }, { index: "3" }, { tuned: undefined }, { prompt: "  " }, { reference: 7 }]) {
+        const res = await events(post("events", evalBody(over)), ctx);
+        assert.equal(res.status, 400, JSON.stringify(over));
+      }
+      assert.equal(called("recordEvalEvent").length, 0);
+    });
+
+    it("answers 409 eval_limit past 60 items, and 204 for a retried one", async () => {
+      evalResult = "limit";
+      const over = await events(post("events", evalBody()), ctx);
+      assert.equal(over.status, 409);
+      assert.deepEqual(await over.json(), { error: "eval_limit", max: 60 });
+      evalResult = "duplicate";
+      assert.equal((await events(post("events", evalBody()), ctx)).status, 204);
+    });
+
+    it("takes an eval item over 16 KB, but no other callback that size and nothing over 64 KB", async () => {
+      // 3,500 two-byte characters in each of four fields: about 28 KB on the wire.
+      const wide = "\u00e9".repeat(3500);
+      const big = evalBody({ prompt: wide, reference: wide, base: wide, tuned: wide });
+      assert.equal((await events(post("events", big), ctx)).status, 204);
+      assert.equal((await events(post("events", { type: "progress", message: wide.repeat(3) }), ctx)).status, 413);
+      assert.equal((await events(post("events", evalBody({ base: "x".repeat(70_000) })), ctx)).status, 413);
+    });
+
+    it("answers 409 job_ended for an eval item once the job ended, without logging it", async () => {
+      applied = { applied: false, status: "succeeded" };
+      jobStatus = "succeeded";
+      jobExtra = { terminatedAt: new Date() };
+      assert.equal((await events(post("events", evalBody()), ctx)).status, 409);
+      assert.equal(called("recordEvalEvent").length, 0);
+    });
+  });
+
+  describe("job dataset pages", () => {
+    const pageReq = (query: string, token: string | null = TOKEN) =>
+      new Request(`https://muse.example.com/api/train/jobs/${JOB_ID}/dataset${query}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+      });
+
+    beforeEach(() => {
+      jobExtra = { params: { datasetId: DATASET_ID } };
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+    });
+
+    it("refuses a missing or wrong token before reading anything", async () => {
+      assert.equal((await jobDataset(pageReq("?part=train&page=0", null), ctx)).status, 401);
+      assert.equal((await jobDataset(pageReq("?part=train&page=0", "wrong"), ctx)).status, 401);
+      assert.equal(called("getJob").length + called("datasetPage").length, 0);
+    });
+
+    it("pages the job's own dataset, 100 at a time, with the next page until the last", async () => {
+      const first = await jobDataset(pageReq("?part=train&page=0"), ctx);
+      assert.equal(first.status, 200);
+      const body = (await first.json()) as { items: Array<{ n: number }>; nextPage: number | null };
+      assert.equal(body.items.length, 100);
+      assert.equal(body.nextPage, 1);
+      assert.deepEqual(called("datasetPage")[0]!.args, [DATASET_ID, "train", 0, 100]);
+
+      const last = (await (await jobDataset(pageReq("?part=train&page=4"), ctx)).json()) as { items: unknown[]; nextPage: number | null };
+      assert.equal(last.items.length, 50);
+      assert.equal(last.nextPage, null);
+      assert.deepEqual(called("datasetPage")[1]!.args, [DATASET_ID, "train", 400, 100]);
+
+      const held = (await (await jobDataset(pageReq("?part=eval"), ctx)).json()) as { items: unknown[]; nextPage: number | null };
+      assert.equal(held.items.length, 40);
+      assert.equal(held.nextPage, null);
+
+      pageTotals = { train: 400 };
+      const exact = (await (await jobDataset(pageReq("?part=train&page=3"), ctx)).json()) as { nextPage: number | null };
+      assert.equal(exact.nextPage, null, "no empty page after an exact multiple");
+    });
+
+    it("refuses a bad part or page", async () => {
+      for (const q of ["", "?part=all", "?part=train&page=-1", "?part=train&page=1.5", "?part=train&page=x", "?part=train&page=99999"]) {
+        assert.equal((await jobDataset(pageReq(q), ctx)).status, 400, q);
+      }
+      assert.equal(called("datasetPage").length, 0);
+    });
+
+    it("answers 404 no_dataset for a job without one, and 409 while the dataset isn't ready", async () => {
+      jobExtra = { params: {} };
+      const none = await jobDataset(pageReq("?part=train"), ctx);
+      assert.equal(none.status, 404);
+      assert.deepEqual(await none.json(), { error: "no_dataset" });
+      jobExtra = { params: { datasetId: "ffffffff-0000-4000-8000-00000000000f" } };
+      assert.equal((await jobDataset(pageReq("?part=train"), ctx)).status, 404, "a dataset that is gone");
+      jobExtra = { params: { datasetId: DATASET_ID } };
+      pageStatus = "generating";
+      const early = await jobDataset(pageReq("?part=train"), ctx);
+      assert.equal(early.status, 409);
+      assert.deepEqual(await early.json(), { error: "dataset_not_ready" });
+    });
+
+    it("limits a job to 120 pages an hour", async () => {
+      for (let i = 0; i < 120; i++) assert.equal((await jobDataset(pageReq("?part=eval"), ctx)).status, 200);
+      const over = await jobDataset(pageReq("?part=eval"), ctx);
+      assert.equal(over.status, 429);
+      assert.deepEqual(await over.json(), { error: "rate_limited" });
+    });
+  });
+
+  describe("datasets", () => {
+    const datasetReq = (body: unknown) =>
+      new Request("https://muse.example.com/api/train/datasets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const task = "Explain Python error messages to beginners, with a fix.";
+
+    it("saves a generating dataset and starts its workflow once", async () => {
+      const res = await createDatasetRoute(datasetReq({ task, count: "150" }));
+      assert.equal(res.status, 201);
+      const input = called("createDataset")[0]!.args[0] as Record<string, unknown>;
+      assert.deepEqual(input, { title: task, task, requested: 150, createdBy: "admin-1" });
+      assert.deepEqual(called("start").map((c) => c.args), [[{ datasetId: DATASET_ID }]]);
+      assert.deepEqual(called("attachDatasetRun")[0]!.args, [DATASET_ID, "run-1"]);
+      const body = (await res.json()) as { dataset: Record<string, unknown> };
+      assert.equal(body.dataset.id, DATASET_ID);
+      assert.equal(body.dataset.status, "generating");
+      assert.equal(body.dataset.createdAt, "2026-10-27T12:00:00.000Z");
+      assert.equal("createdBy" in body.dataset, false);
+
+      await createDatasetRoute(datasetReq({ title: "  Errors  ", task, count: 20 }));
+      assert.equal((called("createDataset")[1]!.args[0] as { title: string }).title, "Errors");
+      const long = `${task} Keep every answer short and kind.`;
+      await createDatasetRoute(datasetReq({ task: long, count: 20 }));
+      assert.equal((called("createDataset")[2]!.args[0] as { title: string }).title, "Explain Python error messages to beginners, with a fix.", "cut at a word");
+    });
+
+    it("refuses bad input before creating anything", async () => {
+      const bad = [
+        {},
+        { task: "too short", count: 50 },
+        { task: "x".repeat(2001), count: 50 },
+        { task, count: 19 },
+        { task, count: 1001 },
+        { task, count: 50.5 },
+        { task, count: "many" },
+        { task },
+        { task, count: 50, title: 7 },
+      ];
+      for (const body of bad) assert.equal((await createDatasetRoute(datasetReq(body))).status, 400, JSON.stringify(body));
+      assert.equal(called("createDataset").length, 0);
+    });
+
+    it("refuses while the spend cap is reached or Meta isn't configured", async () => {
+      paused = true;
+      const res = await createDatasetRoute(datasetReq({ task, count: 50 }));
+      assert.equal(res.status, 503);
+      assert.deepEqual(await res.json(), { error: "paused" });
+      paused = false;
+      delete process.env.MODEL_API_KEY;
+      const none = await createDatasetRoute(datasetReq({ task, count: 50 }));
+      assert.equal(none.status, 503);
+      assert.deepEqual(await none.json(), { error: "meta_not_configured" });
+      assert.equal(called("createDataset").length + called("start").length, 0);
+    });
+
+    it("fails the dataset when its workflow can't start", async () => {
+      startFails = true;
+      const res = await createDatasetRoute(datasetReq({ task, count: 50 }));
+      assert.equal(res.status, 500);
+      assert.deepEqual(await res.json(), { error: "start_failed" });
+      assert.equal(called("failDataset")[0]!.args[0], DATASET_ID);
+      assert.equal(called("attachDatasetRun").length, 0);
+    });
+
+    it("lists datasets and shows one with its first examples", async () => {
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready", trainCount: 410, evalCount: 40 }) };
+      const list = (await (await listDatasetsRoute(new Request("https://muse.example.com/api/train/datasets"))).json()) as {
+        datasets: Array<Record<string, unknown>>;
+      };
+      assert.equal(list.datasets.length, 1);
+      assert.equal(list.datasets[0]!.trainCount, 410);
+
+      const detailCtx: Ctx = { params: Promise.resolve({ id: DATASET_ID }) };
+      const res = await datasetDetail(new Request(`https://muse.example.com/api/train/datasets/${DATASET_ID}`), detailCtx);
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { dataset: { id: string }; sampleTrain: unknown[]; sampleEval: unknown[] };
+      assert.equal(body.dataset.id, DATASET_ID);
+      assert.equal(body.sampleTrain.length, 5);
+      assert.equal(body.sampleEval.length, 5);
+      assert.deepEqual(
+        called("datasetPage").map((c) => c.args.slice(1)),
+        [
+          ["train", 0, 5],
+          ["eval", 0, 5],
+        ],
+      );
+      const missing = await datasetDetail(new Request("https://muse.example.com/api/train/datasets/x"), {
+        params: Promise.resolve({ id: "ffffffff-0000-4000-8000-00000000000f" }),
+      });
+      assert.equal(missing.status, 404);
     });
   });
 
@@ -667,6 +979,46 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         assert.equal((await createJobRoute(createReq(body))).status, 400, JSON.stringify(body));
       }
       assert.equal(created(), 0);
+    });
+
+    it("takes a dataset param only when it names a dataset that is ready", async (t) => {
+      if (!datasetRecipe) return t.skip("no recipe has a dataset param");
+      const ask = (datasetId?: string) => createJobRoute(createReq({ recipe: datasetRecipe!.id, params: datasetId ? { datasetId } : {} }));
+      assert.equal((await ask()).status, 400, "required");
+      assert.equal((await ask("not-a-dataset")).status, 400);
+      const missing = await ask(DATASET_ID);
+      assert.equal(missing.status, 400);
+      assert.match(((await missing.json()) as { error: string }).error, /doesn't exist/);
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "generating" }) };
+      assert.match(((await (await ask(DATASET_ID)).json()) as { error: string }).error, /still being written/);
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "failed" }) };
+      assert.match(((await (await ask(DATASET_ID)).json()) as { error: string }).error, /failed/);
+      assert.equal(created() + called("listInstanceTypes").length, 0, "before asking Lambda or creating anything");
+
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      const res = await ask(DATASET_ID.toUpperCase());
+      assert.equal(res.status, 201);
+      assert.equal(((called("createJob")[0]!.args[0] as { params: Record<string, unknown> }).params).datasetId, DATASET_ID);
+    });
+
+    it("prefers the regions that already hold the model cache, for a recipe that keeps one", async (t) => {
+      if (!datasetRecipe?.usesCache) return t.skip("no recipe keeps the model cache");
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      const res = await createJobRoute(createReq({ recipe: datasetRecipe.id, params: { datasetId: DATASET_ID }, instanceType: "" }));
+      assert.equal(res.status, 201);
+      assert.deepEqual(called("pickGpu")[0]!.args.slice(2), [undefined, ["us-south-1"]]);
+
+      calls = [];
+      cacheRegionsImpl = async () => {
+        throw new FakeLambdaApiError(502, null, "Lambda is down");
+      };
+      assert.equal((await createJobRoute(createReq({ recipe: datasetRecipe.id, params: { datasetId: DATASET_ID } }))).status, 201);
+      assert.deepEqual(called("pickGpu")[0]!.args[3], [], "a preference only: every region when the listing fails");
+
+      calls = [];
+      assert.equal((await createJobRoute(createReq({ recipe: "smoke" }))).status, 201);
+      assert.equal(called("cacheRegions").length, 0, "the smoke test keeps no cache");
+      assert.deepEqual(called("pickGpu")[0]!.args[3], []);
     });
   });
 
