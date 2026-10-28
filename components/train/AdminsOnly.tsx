@@ -1,17 +1,16 @@
-import { EmptyCard } from "@/components/ui";
+import Link from "next/link";
 
-/** What non-admins see on the fine-tuning pages. Signed-out visitors get a sign-in button back to `next`. */
+/** The note under the Lab results for non-admins. Signed-out visitors get a sign-in link back to `next`. */
 export function AdminsOnly({ signedIn, next = "/fine-tuning" }: { signedIn: boolean; next?: string }) {
   return (
-    <EmptyCard
-      icon="tune"
-      title="Admins only"
-      action={signedIn ? undefined : { href: `/sign-in?next=${encodeURIComponent(next)}`, label: "Sign in" }}
-    >
-      <p>
-        Fine-tuning runs on the owner&apos;s Lambda GPU account, which bills for every minute a GPU is on, so only admins
-        can see and start jobs.
-      </p>
-    </EmptyCard>
+    <p className="muted small">
+      Only admins can start jobs or make datasets, since the GPUs bill by the minute.
+      {signedIn ? null : (
+        <>
+          {" "}
+          <Link href={`/sign-in?next=${encodeURIComponent(next)}`}>Sign in</Link>
+        </>
+      )}
+    </p>
   );
 }

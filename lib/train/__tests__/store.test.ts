@@ -533,4 +533,94 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.equal((await store.getDataset(ds.id))!.error, "The spend cap was reached.");
     });
   });
+
+  describe("Lab results (read-only, for everyone)", () => {
+    const summary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 4.5, avgTunedScore: 7.5, judgeCostUsd: 0.004 };
+    /** Columns a public page must never get. */
+    const HIDDEN = ["instanceId", "instanceIp", "instanceName", "region", "tokenHash", "workflowRunId", "error", "artifacts", "summary", "progress", "createdBy", "maxUsd", "maxMinutes"];
+    const judged = (over: Partial<TrainJobRow> = {}) =>
+      job({
+        recipe: "glimmer-lora",
+        title: "Bakery LoRA",
+        params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", maxSteps: 120, dryRun: 0 },
+        status: "succeeded",
+        instanceId: "i-0123456789",
+        instanceIp: "203.0.113.9",
+        error: "Traceback in /home/ubuntu/secret",
+        launchedAt: new Date(Date.now() - 40 * MIN),
+        finishedAt: new Date(Date.now() - 5 * MIN),
+        terminatedAt: new Date(Date.now() - 4 * MIN),
+        evalSummary: summary,
+        ...over,
+      });
+
+    it("lists only succeeded, shut down, judged jobs that aren't dry runs, with no hidden columns", async () => {
+      const shown = await judged();
+      await judged({ status: "running", terminatedAt: null, finishedAt: null });
+      await judged({ status: "failed" });
+      await judged({ status: "stopped" });
+      await judged({ terminatedAt: null }); // the GPU isn't confirmed gone
+      await judged({ evalSummary: null }); // judging hasn't finished
+      await judged({ evalSummary: { ...summary, items: 0, tunedWins: 0, ties: 0, note: "Judging skipped: no key." } as never });
+      await judged({ params: { datasetId: "1b2c3d4e-0000-4000-8000-000000000002", dryRun: 1 } }); // fake answers
+      const rows = await store.listResultJobs();
+      assert.deepEqual(rows.map((r) => r.id), [shown.id]);
+      for (const key of HIDDEN) assert.equal(key in rows[0]!, false, key);
+      assert.deepEqual(rows[0]!.evalSummary, summary);
+    });
+
+    it("gets one judged job, and nothing for any other job or a bad id", async () => {
+      const shown = await judged();
+      const running = await judged({ status: "running", terminatedAt: null });
+      const failed = await judged({ status: "failed" });
+      const row = await store.getResultJob(shown.id);
+      assert.equal(row!.title, "Bakery LoRA");
+      for (const key of HIDDEN) assert.equal(key in row!, false, key);
+      assert.equal(await store.getResultJob(running.id), null);
+      assert.equal(await store.getResultJob(failed.id), null);
+      assert.equal(await store.getResultJob("not-a-uuid"), null);
+    });
+
+    it("reads only a judged job's eval items and judgements, never the rest of its log", async () => {
+      const item = { type: "eval" as const, index: 0, prompt: "Open Sunday?", reference: "Until 4.", base: "Yes.", tuned: "Until 4 pm." };
+      const shown = await judged();
+      await store.recordEvalEvent(shown.id, item);
+      await store.recordEvent(shown.id, { type: "log", text: "token=abc /home/ubuntu/secret" });
+      await store.recordEvent(shown.id, { type: "judgement", index: 0, baseScore: 3, tunedScore: 9, better: "tuned", note: "Gives the hours." });
+      const list = await store.listResultEvents(shown.id);
+      assert.deepEqual(list.map((e) => e.type), ["eval", "judgement"]);
+      assert.equal(JSON.stringify(list).includes("secret"), false);
+
+      const running = await judged({ status: "running", terminatedAt: null });
+      await store.recordEvalEvent(running.id, item);
+      assert.deepEqual(await store.listResultEvents(running.id), [], "nothing for a job without results");
+      assert.deepEqual(await store.listResultEvents("not-a-uuid"), []);
+    });
+
+    it("lists and gets only ready datasets, without their examples or note", async () => {
+      const insert = (over: Partial<typeof realSchema.trainingDatasets.$inferInsert>) =>
+        testDb
+          .insert(realSchema.trainingDatasets)
+          .values({ title: "Bakery helper", task: "Answer bakery questions.", requested: 40, ...over })
+          .returning()
+          .then((r) => r[0]!);
+      const ready = await insert({
+        status: "ready",
+        trainCount: 30,
+        evalCount: 8,
+        train: [{ messages: [{ role: "user", content: "q" }] }],
+        error: "Stopped early, once 38 of the 40 examples asked for were answered.",
+      });
+      const writing = await insert({ status: "generating" });
+      const failed = await insert({ status: "failed", error: "It failed." });
+      const rows = await store.listReadyDatasets();
+      assert.deepEqual(rows.map((r) => r.id), [ready.id]);
+      for (const key of ["train", "eval", "error", "createdBy", "workflowRunId"]) assert.equal(key in rows[0]!, false, key);
+      assert.equal(rows[0]!.trainCount, 30);
+      assert.equal((await store.getReadyDataset(ready.id))!.title, "Bakery helper");
+      assert.equal(await store.getReadyDataset(writing.id), null);
+      assert.equal(await store.getReadyDataset(failed.id), null);
+      assert.equal(await store.getReadyDataset("not-a-uuid"), null);
+    });
+  });
 });

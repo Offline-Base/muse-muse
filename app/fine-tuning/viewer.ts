@@ -1,7 +1,8 @@
 /**
  * Who is looking at the fine-tuning pages. Not a page: Next only serves page.tsx files. The pages show every job's
  * logs, tracebacks, instance ids, IPs and artifact links, so they check admin the way the /api/train routes do
- * (requireUser in lib/auth.ts): a session's admin flag counts only while the user's row still says admin.
+ * (requireUser in lib/auth.ts): a session's admin flag counts only while the user's row still says admin. Everyone else
+ * gets the read-only Lab results, which read only what they show (the Lab reads at the end of lib/train/store.ts).
  */
 import { unstable_rethrow } from "next/navigation";
 import { isAdminNow, loadUser, type SessionUser } from "@/lib/auth";

@@ -16,13 +16,15 @@ export interface DatasetDetailProps {
   /** Examples answered so far while it is written (datasetProgress), else null. */
   written: number | null;
   now: number;
+  /** The Lab results' view for non-admins: no "Train on it" and no note. */
+  readOnly?: boolean;
 }
 
 /**
  * The dataset page: its task, counts, cost and status, a sample of training conversations (the system message once,
  * since every example shares it) and the eval prompts with Muse Spark 1.3's reference answers.
  */
-export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, now }: DatasetDetailProps) {
+export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, now, readOnly = false }: DatasetDetailProps) {
   const ready = d.status === "ready";
   const generating = d.status === "generating";
   const stalled = isDatasetStalled(d, now);
@@ -45,7 +47,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
               <Icon name="chevronLeft" size={18} />
               All datasets
             </Link>
-            {ready ? (
+            {ready && !readOnly ? (
               <Link className="btn btn-primary" href={`/fine-tuning?dataset=${d.id}#new-job`}>
                 <Icon name="play" size={16} />
                 Train on it
@@ -81,7 +83,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
               : ready && d.finishedAt
                 ? `Finished ${dateTimeUtc(d.finishedAt)}, ${duration(elapsedMs(d.createdAt, d.finishedAt, now))} after it started.${
                     // A dataset that stopped early says why in its note below.
-                    kept < d.requested && !d.error
+                    kept < d.requested && !d.error && !readOnly
                       ? ` ${d.requested - kept} of the ${d.requested} asked for were left out as repeats or unusable answers.`
                       : ""
                   }`
@@ -96,7 +98,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
           <Icon name="alert" size={18} />
           <p>{d.error ?? "It failed without saying why."}</p>
         </div>
-      ) : ready && d.error ? (
+      ) : ready && d.error && !readOnly ? (
         // A dataset that stopped early keeps what it had, with a note saying why.
         <div className="callout train-callout-warn" role="note">
           <Icon name="alert" size={18} />

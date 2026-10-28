@@ -30,7 +30,7 @@ describe("fine-tuning page viewer", () => {
   it("drops admin when the row was revoked, though the cookie still says admin", async () => {
     const seen = await viewer(admin, { email: admin.email, isAdmin: false });
     assert.equal(seen?.isAdmin, false);
-    assert.equal(seen?.email, admin.email, "still signed in, so the page shows Admins only");
+    assert.equal(seen?.email, admin.email, "still signed in, so the page shows the read-only Lab results");
   });
 
   it("drops admin when the row is gone or the database can't confirm", async () => {
