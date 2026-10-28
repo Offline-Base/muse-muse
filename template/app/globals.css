@@ -1,9 +1,8 @@
 /* Muse Muse product theme: the Meta look, from Facebook's current product tokens and Meta's brand palette.
    Read .agents/skills/meta-ui before changing a screen. Use these tokens for every color, radius, shadow, font and
    motion, and these classes for every part. No Meta logos, wordmarks or marks, and never "Meta" as the product's brand.
-   Optional: <html data-accent="lime"> picks the hue of the product's signature element (cherry, grape, lemon, lime,
-   pink or teal). Buttons, links and focus always stay Meta blue. Every text pair the parts use passes WCAG AA in
-   both modes; keep text on the pairs the meta-ui skill lists. */
+   Meta blue is the only signature color: buttons, links, focus, the signature element and charts. Every text pair the
+   parts use passes WCAG AA in both modes; keep text on the pairs the meta-ui skill lists. */
 
 :root {
   /* Surfaces and text (Facebook web tokens) */
@@ -42,19 +41,20 @@
   --positive-soft: #e9f3ea;
   --negative-soft: #fcedef;
 
-  /* Brand, AI and the signature hue */
+  /* Brand, AI and the signature element */
   --brand: #0064e0; /* Meta brand blue */
   --ai-start: #0064e0;
   --ai-end: #a033ff;
   --ai-gradient: linear-gradient(90deg, var(--ai-start), var(--ai-end)); /* AI only: model credit, AI working, AI result */
   --ai-soft: #f6ebff; /* a busy tinted AI button's moving fill, with --tinted-bg */
-  --signature: var(--brand); /* the product's signature element and charts; data-accent changes it */
+  --signature: var(--brand); /* the product's signature element and one-series charts, always Meta blue */
   --signature-soft: #ebf5ff;
   --signature-ink: #0064d1; /* text on --signature-soft or --surface */
-  --signature-line: var(--signature); /* strokes and chart bars: 3:1 on --surface-2 in every hue */
+  --signature-line: var(--signature); /* strokes and chart bars: 3:1 on --surface and --surface-2 */
+  --scroll-shadow: rgba(0, 0, 0, 0.2); /* the edge of a box that scrolls sideways */
 
-  /* Facebook's decorative hues: only chart series a legend names and overlays, one hue per kind of object. Never
-     text, buttons, or borders and fills in the UI that tell categories apart. */
+  /* Facebook's decorative hues: only the series of a multi-series legend and overlays of several kinds of object, one
+     hue per kind. Never text, buttons, a one-series chart, or borders and fills in the UI that tell categories apart. */
   --cherry: #fb3c44;
   --grape: #7d74ff;
   --lemon: #f9cf00;
@@ -128,17 +128,6 @@
   color-scheme: light;
 }
 
-/* Signature hues (Facebook's decorative colors). Only for the signature element and charts. In light mode lemon,
-   lime, pink and teal are too pale for a line or a bar, so --signature-line is a darker shade of the same hue. The
-   first rule makes the line follow a data-accent set below <html> too. */
-[data-accent] { --signature-line: var(--signature); }
-[data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #fee4e5; --signature-ink: #bf2e34; }
-[data-accent="grape"] { --signature: var(--grape); --signature-soft: #edecff; --signature-ink: #615ac7; }
-[data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #fef8db; --signature-ink: #816c00; --signature-line: #a48900; }
-[data-accent="lime"] { --signature: var(--lime); --signature-soft: #e4f5e5; --signature-ink: #297a2d; --signature-line: #359e3b; }
-[data-accent="pink"] { --signature: var(--pink); --signature-soft: #fee9f5; --signature-ink: #aa427e; --signature-line: #e057a7; }
-[data-accent="teal"] { --signature: var(--teal); --signature-soft: #def5f1; --signature-ink: #0d7863; --signature-line: #119c81; }
-
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #1c1c1d;
@@ -172,15 +161,10 @@
     --signature-ink: #75b6ff;
     --bubble-in: #303030;
     --skeleton: rgba(151, 154, 159, 0.3);
+    --scroll-shadow: rgba(0, 0, 0, 0.6);
     --shadow-menu: 0 12px 28px rgba(0, 0, 0, 0.2), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
     color-scheme: dark;
   }
-  [data-accent="cherry"] { --signature: var(--cherry); --signature-soft: #542c2e; --signature-ink: #fc7c82; }
-  [data-accent="grape"] { --signature: var(--grape); --signature-soft: #383857; --signature-ink: #a49eff; }
-  [data-accent="lemon"] { --signature: var(--lemon); --signature-soft: #4c441b; --signature-ink: #f9cf00; --signature-line: var(--signature); }
-  [data-accent="lime"] { --signature: var(--lime); --signature-soft: #2b482f; --signature-ink: #5ec664; --signature-line: var(--signature); }
-  [data-accent="pink"] { --signature: var(--pink); --signature-soft: #543448; --signature-ink: #fb84c9; --signature-line: var(--signature); }
-  [data-accent="teal"] { --signature: var(--teal); --signature-soft: #214741; --signature-ink: #3cc4aa; --signature-line: var(--signature); }
 }
 
 @media (min-width: 720px) {
@@ -230,6 +214,8 @@ a { color: var(--link); font-weight: 600; text-decoration-line: underline; text-
 a:hover { text-decoration-thickness: 2px; }
 img, svg, video, canvas { max-width: 100%; height: auto; }
 code, pre, kbd { font-family: var(--font-mono); font-size: 0.9em; }
+/* A block of code or raw text, like a CSV preview: a gray fill with room around the text, scrolling inside itself. */
+pre { margin: 0 0 var(--space-12); padding: var(--space-12) 14px; background: var(--surface-2); border-radius: var(--radius); overflow-x: auto; white-space: pre; }
 hr { border: 0; border-top: 1px solid var(--line); margin: var(--space-16) 0; }
 
 /* Layout */
@@ -411,23 +397,35 @@ button.chip[aria-pressed="true"]::before {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* Segmented control (components/Segmented): pick one of a few options. They share each row at equal widths, so they
-   read as one control, and a long label wraps inside its pill. A pill is never narrower than its longest word plus
-   room for the check, so options that can't fit move to a second row instead of spilling out. */
-.segmented { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+/* Segmented control (components/Segmented): pick one of a few options. Segmented sets data-layout from its labels:
+   one row of equal pills when every label fits its share of a phone's row, "grid" for four that don't (two rows of
+   two), and "stack" for the rest, one full-width row per option. Row and grid labels never wrap. */
+.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-8); }
+.segmented[data-layout="grid"] { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.segmented[data-layout="stack"] { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
 .segmented label {
-  position: relative; display: inline-flex; flex: 1 1 0; min-width: min-content; align-items: center; justify-content: center; gap: 6px;
-  min-height: 36px; padding: 6px 20px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
-  text-align: center; line-height: 18px; cursor: pointer; transition: background-color var(--dur-xxs) linear;
+  position: relative; display: flex; min-width: 0; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 6px 12px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
+  text-align: center; line-height: 18px; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-xxs) linear;
 }
+/* Stacked rows read as a list: the text starts after room kept for the check, so choosing never moves it. */
+.segmented[data-layout="stack"] label { justify-content: flex-start; padding-left: 32px; text-align: left; white-space: normal; }
+.segmented[data-layout="stack"] label:has(input:checked) { padding-left: 12px; }
 /* The radio covers its whole pill, invisible, so a tap or a test's .check() lands on it. */
 .segmented input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .segmented label:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
-/* The chosen pill trades 20 px of its padding for the check, and flex-basis keeps its share, so choosing never moves a pill. */
-.segmented label:has(input:checked) { flex-basis: 40px; padding-inline: 10px; background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
+.segmented label:has(input:checked) { background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
 .segmented label:has(input:checked):hover { background-color: var(--tinted-hover-bg); }
 .segmented label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .segmented label:has(input:disabled) { color: var(--disabled); cursor: not-allowed; background-image: none; }
+/* In the 720 px column the options go back to one row when their labels fit it (data-wide, from Segmented). The field
+   is the container, so two controls side by side in .fields.two keep the phone layout. Its width is set because a
+   container takes no width from its content, which would collapse it in a flex row. */
+.field:has(> .segmented) { container-type: inline-size; width: 100%; }
+@container (min-width: 640px) {
+  .segmented[data-wide="row"] { grid-auto-flow: column; grid-template-columns: none; }
+  .segmented[data-wide="row"] label { justify-content: center; padding-left: 12px; text-align: center; white-space: nowrap; }
+}
 
 /* Tables scroll inside their own box, never the page. On phones keep them to about 3 columns. */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -443,23 +441,50 @@ button.chip[aria-pressed="true"]::before {
 .kv dt { color: var(--fg-2); overflow-wrap: anywhere; }
 .kv dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
-/* One-series bar chart: .bars holds one .bar per value. Each .bar's text is its label, and style={{ "--value": 72 }}
-   (a number from 0 to 100) is its height. The chart has a fixed height, so a percentage always draws. Each .bar spans
-   the chart's two rows (subgrid), so every bar starts from the same baseline even when a label wraps. */
+/* Editable rows: values the person checks and fixes, like a receipt's items. Each row is a one-line textarea that
+   takes the room and wraps a long name, an 88 px .num field and a remove button, under one header row that is only for
+   the eye (each field has an aria-label). Rows with no .num field drop that column. */
+.rows { display: grid; gap: var(--space-8); margin: 0; padding: 0; list-style: none; }
+.rows > li { display: grid; grid-template-columns: minmax(0, 1fr) 88px 40px; align-items: center; gap: var(--space-8); }
+.rows > li:not(:has(> .num)) { grid-template-columns: minmax(0, 1fr) 40px; }
+.rows textarea { min-height: var(--control-height); }
+.rows > .rows-head { font: 600 13px/18px var(--font); color: var(--fg-2); }
+.rows > .rows-head > * { padding-inline: 13px; }
+.rows .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* One-series bar chart: .bars holds one .bar per value. Each .bar's text is its value, a line break and its label,
+   and style={{ "--value": 72 }} (a number from 0 to 100) is its height. The chart has a fixed height, so a percentage
+   always draws. Every bar shares the row (up to 16 fit a phone, with narrower gaps from the ninth), and each .bar spans
+   the chart's two rows (subgrid), so every bar starts from the same baseline. */
 .bars {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(28px, 1fr); grid-template-rows: 1fr auto; gap: var(--space-4) var(--space-8);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; gap: var(--space-4) var(--space-8);
   height: 160px; padding: var(--space-12) var(--space-8) var(--space-8); overflow-x: auto;
   background: var(--surface-2); border-radius: var(--radius);
 }
+.bars:has(> .bar:nth-child(9)) { column-gap: var(--space-4); }
+/* One column the bar's width, so a wider text overflows it evenly instead of widening and shifting the bar. */
 .bar {
-  grid-row: span 2; display: grid; justify-items: center; gap: var(--space-4);
+  grid-row: span 2; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: var(--space-4);
   grid-template-rows: 1fr auto; /* where subgrid is missing */
   grid-template-rows: subgrid;
-  font: var(--type-tiny); color: var(--fg-2); text-align: center; font-variant-numeric: tabular-nums;
+  font: var(--type-tiny); color: var(--fg-2); text-align: center; font-variant-numeric: tabular-nums; white-space: pre-line;
 }
 .bar::before {
   content: ""; align-self: end; width: 60%; max-width: 48px; height: calc(var(--value, 0) * 1%); min-height: 2px;
   background: var(--signature-line); border-radius: 4px 4px 0 0;
+}
+
+/* A table or chart that may scroll sideways (data-allow-clip) shows a soft shadow at an edge with more past it. Covers
+   in its own fill, --cover, scroll with the content and hide each shadow once that end is in view, so a tinted one
+   sets --cover rather than its background. Other boxes never scroll on a phone (judgeShot), so they keep a plain fill. */
+.table-wrap { --cover: var(--surface); }
+.bars { --cover: var(--surface-2); }
+:is(.table-wrap, .bars):is([data-allow-clip], [data-allow-clip] *) {
+  background: linear-gradient(90deg, var(--cover) 40%, transparent) left / 28px 100% no-repeat local,
+    linear-gradient(270deg, var(--cover) 40%, transparent) right / 28px 100% no-repeat local,
+    linear-gradient(90deg, var(--scroll-shadow), transparent) left / 14px 100% no-repeat,
+    linear-gradient(270deg, var(--scroll-shadow), transparent) right / 14px 100% no-repeat,
+    var(--cover);
 }
 
 /* Lists: rows with a leading avatar, icon or thumbnail, a title and a secondary line, and an optional trailing part. */
@@ -471,13 +496,14 @@ button.chip[aria-pressed="true"]::before {
 .list-text { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
 .list-title { font: var(--type-label); color: var(--fg); overflow-wrap: anywhere; }
 .list-text .meta { overflow-wrap: anywhere; }
+/* The person's own words in a summary row: two lines at most, ending in "…". Only on text marked data-user-text. */
+.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 
-/* Avatars and icon circles. People are circles; things (a plant, a store) are .avatar.square. Initials are gray,
-   or in the signature hue when the product sets data-accent. */
+/* Avatars and icon circles. People are circles; things (a plant, a store) are .avatar.square. Initials are gray. An
+   .icon-circle holds an icon or the step's own number. */
 .avatar,
 .icon-circle { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; }
 .avatar { background: var(--secondary-bg); color: var(--fg); font: 600 15px/1 var(--font); }
-[data-accent] .avatar { background: var(--signature-soft); color: var(--signature-ink); }
 .avatar > img { width: 100%; height: 100%; object-fit: cover; }
 .avatar.square { border-radius: var(--radius); }
 .avatar.sm { width: 32px; height: 32px; font-size: 13px; }
@@ -544,19 +570,25 @@ button.chip[aria-pressed="true"]::before {
    printable or anything whose corner holds content. */
 .media { position: relative; display: block; margin: 0; }
 .media > :is(img, canvas, video) { display: block; width: 100%; height: auto; border-radius: var(--radius); background: var(--surface-2); }
+/* An image with nothing drawn over it fits the screen's height, so a whole page shows at once, and the figure shrinks
+   to it, centered, so its caption lines up with it. */
+.media:not(:has(> .overlay, > .ai-badge)):has(> img) { width: fit-content; max-width: 100%; margin-inline: auto; }
+.media:not(:has(> .overlay, > .ai-badge)) > img { width: auto; max-height: min(78vh, 900px); margin-inline: auto; }
 .media > .overlay {
   position: absolute; inset: 0 auto auto 0; width: 100%; height: auto; pointer-events: none;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.62)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.3)); /* white lines show on light photos */
 }
+/* strokeWidth is in screen pixels, however much the image is scaled down. */
+.media > .overlay * { vector-effect: non-scaling-stroke; }
 .media > .ai-badge { position: absolute; top: var(--space-8); left: var(--space-8); padding: 3px 8px; border: 0; color: var(--on-media); background: var(--scrim); }
 .media > .ai-badge svg { color: inherit; }
 .media > figcaption { margin-top: var(--space-8); font: var(--type-meta); color: var(--fg-2); }
 .media > figcaption .ai-badge { margin-right: var(--space-8); vertical-align: middle; }
 
-/* Gallery: image results side by side once there is room (three across the 720 px column, so the demo video shows
-   them together), one column on phones. Each tile is a .media whose figcaption holds its words and its icon buttons,
-   one button tall with or without one, so the captions line up. */
-.gallery { display: grid; gap: var(--space-16) var(--space-12); grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+/* Gallery: image results side by side once there is room (up to three across the 720 px column, so the demo video
+   shows them together, and two share the whole row), one column on phones. Each tile is a .media whose figcaption
+   holds its words and its icon buttons, one button tall with or without one, so the captions line up. */
+.gallery { display: grid; gap: var(--space-16) var(--space-12); grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
 .gallery .media > figcaption { display: flex; align-items: center; justify-content: space-between; gap: var(--space-8); min-height: 40px; }
 
 /* Dropzone (components/FilePicker) */
@@ -653,7 +685,6 @@ details[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
 .prose :is(ul, ol) { padding-left: 22px; }
 .prose li + li { margin-top: var(--space-4); }
 .prose code { background: var(--surface-2); border-radius: var(--radius-sm); padding: 1px 5px; }
-.prose pre { background: var(--surface-2); border-radius: var(--radius); padding: var(--space-12) 14px; overflow-x: auto; white-space: pre; }
 .prose pre code { background: none; padding: 0; }
 
 :focus-visible {

@@ -17,8 +17,8 @@ export const viewport: Viewport = {
   ],
 };
 
-// Set metadata.title above to the product's name. Optional: data-accent on <html> picks the hue of the product's
-// signature element: "cherry", "grape", "lemon", "lime", "pink" or "teal" (meta-ui skill). Leave it off for Meta blue.
+// Set metadata.title above to the product's name. A product made from one of Meta's developer videos credits it with
+// <Footer credit="<the video's link>" />.
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">

@@ -16,7 +16,7 @@ The inspo shows what to make. It is not material to copy.
 
 - Take what the brief lists under borrow: the job it does, the flow, layout ideas, the mood.
 - Leave out everything the brief lists under dontCopy, and always leave out names, logos, characters, copyrighted text, artwork and photos, and the exact look of a real product.
-- Restyle with the tokens in `app/globals.css` and the meta-ui skill. The inspo's mood shows in the accent hue and the copy, never as its own colors or fonts. If a reference is a screenshot of a real app, give the product its own name and design.
+- Restyle with the tokens in `app/globals.css` and the meta-ui skill. The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration or as its own colors or fonts. If a reference is a screenshot of a real app, give the product its own name and design.
 - Never ship inspo files as product assets unless the brief says the user's own files are the input, like their own photos or drawings.
 
 ## Stack
@@ -46,10 +46,10 @@ The inspo shows what to make. It is not material to copy.
 ## The product
 
 - Build the brief's primary flow first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.
-- Follow `.agents/skills/meta-ui` for the look: the Meta design language, with Facebook's colors, Inter and Montserrat type, flat white cards and one blue-to-violet gradient that only marks AI. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name, and pick the signature hue with `data-accent` on `<html>` or leave it off for Meta blue. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
+- Follow `.agents/skills/meta-ui` for the look: the Meta design language, with Facebook's colors, Inter and Montserrat type, flat white cards and one blue-to-violet gradient that only marks AI. Follow `.agents/skills/product-ui` for layout, inputs, states and model output. Set `metadata.title` in `app/layout.tsx` to the product's name. Meta blue is the only signature color. Never use Meta logos, wordmarks, marks or names in a way that suggests Meta made it.
 - Build every screen from the template's parts, listed in the meta-ui skill's Parts table: the classes in `app/globals.css` and the components in `components/` (AppBar, FilePicker, Segmented, Skeleton, Composer, ModelChip, Icon, Markdown). Never ship a bare `<input type="file">`, an unstyled button, a browser-blue link or an emoji as an icon.
 - Keep the footer component. It says "Built with Muse Muse. Not an official Meta product."
-- Show what the product can't do, using the limits in the brief, once, next to the thing it limits.
+- Show each limit in the brief that a user would run into, once, next to the thing it limits.
 - Every input needs a label. Every async action needs loading, error and empty states. Phones are the first screen size to test.
 - Don't store personal data unless the brief says to. Uploaded files stay in memory for the request.
 
@@ -57,11 +57,11 @@ The inspo shows what to make. It is not material to copy.
 
 The product belongs to its user. Every word on screen is about what it does for them.
 
-- Never mention how it was made: the brief, the inspo or a "reference", a video it rebuilds, "rebuild", fit, fixtures, sample file names, tests, or what you didn't copy. Those go in BUILD_NOTES.md.
+- Never mention how it was made: the brief, the inspo or a "reference", the sketch or photo the idea came from, a video it rebuilds, "rebuild", fit, fixtures, sample file names, tests, or what you didn't copy. Those go in BUILD_NOTES.md.
 - Never use em dashes, in your copy or in model text you show. Use a comma, colon or period. Run model text through `plain()` from `@/lib/meta/text` (respondJson already does).
 - Say each limit once, next to the thing it limits. No second copy in an About, Limits or Good to know card.
 - Use plain words unless the brief's users are developers: "saved on this device only", not "localStorage"; "recordings up to 1 minute", not "16 kHz mono WAV" or "4.5 MB". No model ids like `muse-spark-1.3`, raw JSON, coordinates, zero-based lists or confidence decimals.
-- Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it." Never say it stays in the browser.
+- Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it." A file sent with `uploadMedia` is stored for up to a day so the model can read it, then deleted: say that instead. Never say it stays in the browser.
 - Copy matches behavior. If a hint says a button starts the break, the button starts the break.
 - Sample data is correct and believable: no future days marked done, totals in the right column, counts that match the screen, no duplicates, dates relative to today, and in the field's own format (one per line means one per line).
 

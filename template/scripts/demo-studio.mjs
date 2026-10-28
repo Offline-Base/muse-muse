@@ -22,6 +22,7 @@ import path from "node:path";
 import {
   FPS,
   cameraAt,
+  captionLayers,
   letterbox,
   normalizeTimeline,
   planCamera,
@@ -50,7 +51,8 @@ const BADGE = { right: CHROME.x + CHROME.w - 10, centerY: CHROME.y + CHROME.h / 
 const INTRO_FRAMES = Math.round(2.6 * FPS);
 const OUTRO_FRAMES = Math.round(2.2 * FPS);
 // The cards and the main part meet through the plain backdrop: each side fades out to it and the next fades in from
-// it, DIP seconds each, so two screens are never on top of each other. Captions and badges fade in and out in FADE.
+// it, DIP seconds each, so two screens are never on top of each other. Badges, and captions where none follows
+// another, fade in and out in FADE (demo-plan.mjs captionLayers).
 const DIP = 0.3;
 const FADE = 0.25;
 
@@ -315,8 +317,12 @@ h1.title{font-size:112px;line-height:1.08;text-wrap:balance;display:-webkit-box;
   return page(`<div class="backdrop"></div><div class="wrap">${body}</div><div class="foot">${escapeHtml(FOOTER)}</div>`, css, 2);
 }
 
-/** One caption pill, placed where it shows: centered under the window. The step count shows when there are two or more. */
-function captionHtml(caption) {
+/**
+ * One caption, placed where it shows: centered under the window. The step count shows when there are two or more. It
+ * is drawn twice in the same place, as `part` "pill" (the white pill alone) and "text" (the count and title alone), so
+ * one caption's text can fade out and the next one's in on a pill that stays up (captionLayers).
+ */
+function captionHtml(caption, part) {
   const css = `
 .cap{position:absolute;left:50%;top:${CAPTION.centerY}px;transform:translate(-50%,-50%);max-width:1440px;display:flex;align-items:center;gap:18px;
   padding:13px 34px 13px ${caption.count > 1 ? 14 : 34}px;border-radius:36px;background:#fff;
@@ -325,6 +331,7 @@ function captionHtml(caption) {
   display:flex;align-items:center;white-space:nowrap}
 .t{font-size:34px;line-height:1.24;font-weight:600;letter-spacing:-.005em;text-wrap:balance;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+${part === "pill" ? ".cap>*{visibility:hidden}" : ".cap{background:transparent;box-shadow:none}"}
 `;
   const count = caption.count > 1 ? `<span class="n">${caption.index} of ${caption.count}</span>` : "";
   return page(`<div class="cap" id="el">${count}<span class="t">${escapeHtml(caption.text)}</span></div>`, css);
@@ -342,9 +349,10 @@ function badgeHtml(badge) {
 }
 
 /**
- * Renders every picture the composite needs, in one browser and one page. Captions and badges are cut out where they
- * sit in the frame and keep that position (x, y) for the overlay. The shadow under a caption is cut off at the
- * window's bottom edge, so nothing is ever drawn over the app. The intro shows the poster when there is one.
+ * Renders every picture the composite needs, in one browser and one page. Captions (each as its pill and its text)
+ * and badges are cut out where they sit in the frame and keep that position (x, y) for the overlay. The shadow under a
+ * caption is cut off at the window's bottom edge, so nothing is ever drawn over the app. The intro shows the poster
+ * when there is one.
  */
 async function renderCards({ spec, captions, badges, cards, poster, dir }) {
   const { chromium } = await import("@playwright/test");
@@ -369,11 +377,15 @@ async function renderCards({ spec, captions, badges, cards, poster, dir }) {
       const y = Math.max(minY, Math.floor(box.y - margin));
       const clip = { x, y, width: Math.min(W, Math.ceil(box.x + box.width + margin)) - x, height: Math.min(H, Math.ceil(box.y + box.height + margin * 1.6)) - y };
       await page.screenshot({ path: file, clip, omitBackground: true });
-      return { file, x, y };
+      return { file, x, y, w: clip.width };
     };
     for (const [i, c] of captions.entries()) {
-      await show(captionHtml(c));
-      out.captions.push({ ...(await cutOut(path.join(dir, `caption-${i}.png`), 36, CAPTION.top)), from: c.out0, to: c.out1 });
+      const parts = {};
+      for (const part of ["pill", "text"]) {
+        await show(captionHtml(c, part));
+        parts[part] = await cutOut(path.join(dir, `caption-${i}-${part}.png`), 36, CAPTION.top);
+      }
+      out.captions.push({ ...parts, from: c.out0, to: c.out1 });
     }
     for (const [i, b] of badges.entries()) {
       await show(badgeHtml(b));
@@ -424,31 +436,33 @@ const TAG_709 = "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt70
 const WASH = C.wash.replace("#", "0x");
 
 /**
- * A still picture shown from `from` to `to` seconds of the main part, fading in and out over `fade` seconds (or a
- * third of its time when shorter), as a stream to overlay. The picture is converted once and looped, so it isn't
- * decoded again for every frame.
+ * A still picture shown from `from` to `to` seconds of the main part, fading in over `fadeIn` and out over `fadeOut`
+ * seconds (each at most a third of its time), as a stream to overlay. The picture is converted once and looped, so it
+ * isn't decoded again for every frame.
  */
-function timedStill(input, label, from, to, fade = FADE) {
+function timedStill(input, label, from, to, fadeIn = FADE, fadeOut = FADE) {
   const start = Math.round(from * FPS);
   const count = Math.max(2, Math.round(to * FPS) - start);
-  const d = Math.min(fade, count / FPS / 3);
-  const fadeOut = (count / FPS - d).toFixed(3);
+  const seconds = count / FPS;
+  const din = Math.min(fadeIn, seconds / 3);
+  const dout = Math.min(fadeOut, seconds / 3);
   return (
     `[${input}:v]scale=${TO_709},format=yuva420p,loop=loop=${count - 1}:size=1:start=0,settb=1/${FPS},setpts=N,` +
-    `fade=t=in:st=0:d=${d.toFixed(3)}:alpha=1,fade=t=out:st=${fadeOut}:d=${d.toFixed(3)}:alpha=1,setpts=PTS+${start}[${label}]`
+    `fade=t=in:st=0:d=${din.toFixed(3)}:alpha=1,fade=t=out:st=${(seconds - dout).toFixed(3)}:d=${dout.toFixed(3)}:alpha=1,` +
+    `setpts=PTS+${start}[${label}]`
   );
 }
 
 /**
- * When each caption shows. A caption the next one follows straight on stays fully up while the next fades in on top
- * of it, then fades out under it, so the text cross-fades and the pill never blinks out between steps.
+ * The stills laid over the screen, bottom to top, with when each shows: the captions' pills and texts in the order
+ * and timing captionLayers gives (the wider of two pills that meet on top), then the wait badges.
  */
-function captionTimes(captions) {
-  return captions.map((c, i) => {
-    const next = captions[i + 1];
-    const joined = next && Math.abs(next.from - c.to) < 0.05;
-    return { ...c, to: joined ? c.to + 2 * FADE : c.to };
-  });
+function overlays(layers) {
+  const captions = captionLayers(
+    layers.captions.map((c) => ({ out0: c.from, out1: c.to, w: c.pill.w })),
+    FADE,
+  ).map((l) => ({ ...layers.captions[l.index][l.part], from: l.from, to: l.to, fadeIn: l.fadeIn, fadeOut: l.fadeOut }));
+  return [...captions, ...layers.badges.map((b) => ({ ...b, fadeIn: FADE, fadeOut: FADE }))];
 }
 
 /**
@@ -514,8 +528,8 @@ function filterGraph({ mode, edit, camera, layers, geometry }) {
   }
 
   let last = "l0";
-  for (const [i, s] of [...captionTimes(layers.captions), ...layers.badges].entries()) {
-    chains.push(timedStill(input++, `s${i}`, s.from, s.to));
+  for (const [i, s] of overlays(layers).entries()) {
+    chains.push(timedStill(input++, `s${i}`, s.from, s.to, s.fadeIn, s.fadeOut));
     chains.push(`[${last}][s${i}]overlay=x=${s.x}:y=${s.y}:eof_action=pass:format=yuv420[l${i + 1}]`);
     last = `l${i + 1}`;
   }
@@ -610,10 +624,10 @@ async function render(mode, spec, raw, tmp) {
   const shaped = fit.trusted ? tl : { ...tl, viewport: { width: Math.round(tl.viewport.height * fit.aspect), height: tl.viewport.height } };
   const { tl: plan, box } = letterbox(shaped);
   const edit = planEdit(plan);
-  const camera = studio ? (fit.trusted ? planCamera(plan, edit) : { keys: [{ t: 0, z: 1, cx: 0.5, cy: 0.5 }], shots: [], poster: posterTime(edit, []) }) : null;
+  const camera = studio ? (fit.trusted ? planCamera(plan, edit) : { keys: [{ t: 0, z: 1, cx: 0.5, cy: 0.5 }], shots: [], poster: posterTime(plan, edit, []) }) : null;
   const captions = planCaptions(plan, edit);
   const badges = edit.badges;
-  const poster = camera ? camera.poster : posterTime(edit, []);
+  const poster = camera ? camera.poster : posterTime(plan, edit, []);
   const geometry = screenGeometry(shaped, box, plan.viewport, fit.odd);
   log(
     `${mode}: ${tl.frames.length} frames over ${tl.duration.toFixed(1)} s -> ${edit.seconds.toFixed(1)} s main part, ` +
@@ -647,7 +661,8 @@ async function render(mode, spec, raw, tmp) {
   writeFileSync(graph, filterGraph({ mode, edit, camera, layers, geometry }));
 
   const mp4 = path.join(tmp, "demo.mp4");
-  const stills = [layers.window, ...layers.captions.map((c) => c.file), ...layers.badges.map((b) => b.file)].filter(Boolean);
+  // The inputs follow the filter graph's order: the window, then the overlays bottom to top.
+  const stills = [layers.window, ...overlays(layers).map((s) => s.file)].filter(Boolean);
   if (studio) stills.push(layers.backdrop, layers.intro, layers.outro);
   const t1 = Date.now();
   const encode = [

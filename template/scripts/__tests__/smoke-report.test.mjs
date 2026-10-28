@@ -2,7 +2,7 @@
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { finalShotProblems, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
+import { finalShotProblems, judgeShotNotes, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
 
 /** A Playwright JSON report with one file suite per spec file, shaped like reporter "json" writes it. */
 function report(files) {
@@ -96,12 +96,20 @@ test("judge screenshots must come from judgeShot", () => {
   assert.match(judgeShotProblems([])[0], /saved no judge screenshots/);
 });
 
-/** A judge folder: each shot's .checked holds the errors and empty states judgeShot found on it. */
+/**
+ * A judge folder: each shot's .checked holds the errors and empty states judgeShot found on it (an array), or what
+ * judgeShot measured (an object), or raw text.
+ */
 function judgeDir(shots) {
   const files = Object.fromEntries(
     Object.entries(shots).flatMap(([name, found]) => [
       [`${name}.png`, ""],
-      [`${name}.checked`, typeof found === "string" ? found : JSON.stringify({ problems: [], errorsAndEmpty: found })],
+      [
+        `${name}.checked`,
+        typeof found === "string"
+          ? found
+          : JSON.stringify(Array.isArray(found) ? { problems: [], errorsAndEmpty: found } : { problems: [], errorsAndEmpty: [], ...found }),
+      ],
     ]),
   );
   return [Object.keys(files), (f) => files[f]];
@@ -136,4 +144,40 @@ test("the final screen check reads only the numbered order, and skips what it ca
   [names, read] = judgeDir({ "01-start": "not json" });
   assert.deepEqual(finalShotProblems(names, read), []);
   assert.deepEqual(finalShotProblems([], () => ""), []);
+});
+
+test("the last judge screenshot fails when its result starts past 1,000 px or the page is over 4,000 px", () => {
+  const [names, read] = judgeDir({
+    "01-start": { resultTop: null, pageHeight: 1286 },
+    "02-draft": { resultTop: 1340, pageHeight: 5321 },
+  });
+  const problems = finalShotProblems(names, read);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /^The last judge screenshot, 02-draft\.png, starts its result 1,340 px down the page, past the 1,000 px/);
+  assert.match(problems[0], /first element marked data-result, or else the first \.card\.ai/);
+  assert.match(problems[0], /summary row with an Edit button/);
+  assert.match(problems[1], /^The last judge screenshot, 02-draft\.png, is 5,321 px tall on a phone, more than 4,000 px\./);
+  assert.match(problems[1], /Collapse long lists into <details> or a pager/);
+  for (const p of problems) assert.ok(!p.includes("\u2014"));
+});
+
+test("a result near the top of a page up to 4,000 px passes, and so does a page with no result card", () => {
+  for (const measured of [{ resultTop: 1000, pageHeight: 4000 }, { resultTop: 336, pageHeight: 1259 }, { resultTop: null, pageHeight: 3446 }, {}]) {
+    const [names, read] = judgeDir({ "01-start": { resultTop: 2000, pageHeight: 9000 }, "02-result": measured });
+    assert.deepEqual(finalShotProblems(names, read), [], JSON.stringify(measured));
+  }
+});
+
+test("an error on the last screen and a buried result are both reported", () => {
+  const [names, read] = judgeDir({ "03-done": { errorsAndEmpty: ['an empty state: "No plan yet"'], resultTop: 1302, pageHeight: 2350 } });
+  const problems = finalShotProblems(names, read);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /shows an empty state: "No plan yet"/);
+  assert.match(problems[1], /starts its result 1,302 px down the page/);
+});
+
+test("notes from any screenshot are listed with the screenshot's name", () => {
+  const [names, read] = judgeDir({ "01-start": { notes: ['The start screen has no "Try the sample" button.'] }, "02-result": {}, "03-x": "not json" });
+  assert.deepEqual(judgeShotNotes(names, read), ['01-start.png: The start screen has no "Try the sample" button.']);
+  assert.deepEqual(judgeShotNotes([], () => ""), []);
 });

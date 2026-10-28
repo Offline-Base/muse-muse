@@ -1,12 +1,11 @@
-// Checks that every text and fill pair the Meta theme relies on passes WCAG AA, in light and dark mode and for every
-// data-accent hue, reading the tokens straight from app/globals.css. Plain node, no build step. Run from template/:
+// Checks that every text and fill pair the Meta theme relies on passes WCAG AA, in light and dark mode, reading the
+// tokens straight from app/globals.css. Plain node, no build step. Run from template/:
 //   node --test scripts/__tests__/contrast.test.mjs
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const CSS = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
-const HUES = ["cherry", "grape", "lemon", "lime", "pink", "teal"];
 
 /** Splits CSS into a tree of { prelude, body, children }, with comments removed. */
 function parse(css) {
@@ -52,10 +51,6 @@ const darkMedia = tree.filter((n) => /^@media\s*\(prefers-color-scheme:\s*dark\)
 
 const LIGHT = merge(rules(tree, ":root"));
 const DARK = merge(LIGHT, rules(darkMedia, ":root"));
-const accent = (hue, mode) => {
-  const sel = `[data-accent="${hue}"]`;
-  return mode === "light" ? merge(LIGHT, rules(tree, sel)) : merge(DARK, rules(tree, sel), rules(darkMedia, sel));
-};
 const THEMES = [
   ["light", LIGHT],
   ["dark", DARK],
@@ -181,10 +176,6 @@ test("the theme declares light and dark tokens", () => {
   }
   assert.ok(Object.keys(rules(darkMedia, ":root")[0] ?? {}).length > 10, "no dark :root block under prefers-color-scheme: dark");
   assert.notEqual(resolve(DARK, "var(--bg)"), resolve(LIGHT, "var(--bg)"));
-  for (const hue of HUES) {
-    assert.ok(rules(tree, `[data-accent="${hue}"]`).length, `no light [data-accent="${hue}"]`);
-    assert.ok(rules(darkMedia, `[data-accent="${hue}"]`).length, `no dark [data-accent="${hue}"]`);
-  }
 });
 
 for (const [mode, tokens] of THEMES) {
@@ -205,29 +196,22 @@ for (const [mode, tokens] of THEMES) {
     }
   });
 
-  test(`every data-accent hue keeps its signature text AA in ${mode} mode`, () => {
-    const signature = TEXT.filter(([fg, bg]) => fg === "--signature-ink" || bg.includes("--signature-soft"));
-    for (const hue of HUES) assert.deepEqual(check(accent(hue, mode), signature, 4.5), [], hue);
-  });
-
-  test(`chart bars and strokes stand out (3:1) in every data-accent hue in ${mode} mode`, () => {
+  test(`chart bars and strokes stand out (3:1) in ${mode} mode`, () => {
     const lines = [
       ["--signature-line", "--surface", "a stroke on a card"],
       ["--signature-line", "--surface-2", "a bar on the chart's gray"],
     ];
-    assert.deepEqual(check(tokens, lines, 3), [], "no accent");
-    for (const hue of HUES) assert.deepEqual(check(accent(hue, mode), lines, 3), [], hue);
+    assert.deepEqual(check(tokens, lines, 3), []);
   });
 }
 
-test("buttons, links and focus stay Meta blue whatever the accent", () => {
-  for (const [mode] of THEMES) {
-    for (const hue of HUES) {
-      const tokens = accent(hue, mode);
-      const base = mode === "light" ? LIGHT : DARK;
-      for (const name of ["--accent", "--link", "--focus", "--tinted-bg", "--tinted-fg"]) {
-        assert.equal(resolve(tokens, `var(${name})`), resolve(base, `var(${name})`), `${hue} changes ${name} in ${mode} mode`);
-      }
-    }
+test("Meta blue is the only signature color, so a stray data-accent changes nothing", () => {
+  assert.doesNotMatch(CSS.replace(/\/\*[\s\S]*?\*\//g, ""), /data-accent/);
+  assert.equal(resolve(LIGHT, "var(--signature)"), resolve(LIGHT, "var(--brand)"));
+  assert.equal(resolve(DARK, "var(--signature)"), "#1d85fc", "dark mode's signature is FB's dark accent blue");
+  for (const [mode, tokens] of THEMES) {
+    assert.equal(resolve(tokens, "var(--signature-line)"), resolve(tokens, "var(--signature)"), mode);
+    const [r, g, b] = color(resolve(tokens, "var(--signature)"));
+    assert.ok(b > 200 && b > r + 100 && b > g + 50, `--signature is blue in ${mode} mode`);
   }
 });

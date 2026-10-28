@@ -6,6 +6,7 @@ import {
   FPS,
   RULES,
   cameraAt,
+  captionLayers,
   captionText,
   findReveals,
   idleOutputSeconds,
@@ -577,8 +578,51 @@ test("timelines from the older recorder still read: an action was ready when it 
   });
   assert.deepEqual(tl.actions.map((a) => [a.ready, a.typed]), [[3, undefined], [4, undefined]], "ready never passes t1");
   assert.equal(tl.activity[0].text, 0);
-  assert.deepEqual(tl.results, [{ t: 2, rect: { x: 1, y: 2, w: 3, h: 4 }, scrollY: 40 }]);
+  assert.deepEqual(tl.results, [
+    { t: 2, at: 2, rect: { x: 1, y: 2, w: 3, h: 4 }, scrollY: 40, waited: null, busy: null, media: 0, heads: [], blanks: [], pressed: null },
+  ]);
   assert.deepEqual(tl.viewports, [{ t: 3, width: 390, height: 844 }]);
+  assert.equal(tl.column, null);
+});
+
+test("what the recorder says about each result, action and the content column is read and checked", () => {
+  const head = { x: 280, y: 60, w: 720, h: 32 };
+  const tl = normalizeTimeline({
+    duration: 9,
+    frames: [{ file: "a.jpg", t: 0 }],
+    actions: [{ kind: "click", t0: 1, t1: 1.2, rect: { x: 300, y: 400, w: 120, h: 44 }, noop: true, heads: [head, { x: 0, y: 0, w: 0, h: 9 }] }],
+    results: [
+      {
+        t: 5,
+        at: 4.6,
+        rect: { x: 280, y: 100, w: 720, h: 300 },
+        scrollY: 200,
+        waited: 4.2,
+        busy: true,
+        media: 2,
+        heads: [head],
+        blanks: "none",
+        pressed: { x: 1, y: 2, w: 3, h: 4 },
+      },
+      { t: 7, at: 8, rect: { x: 280, y: 100, w: 720, h: 300 }, waited: -1, busy: "yes", media: Number.NaN },
+    ],
+    column: { x: 280, w: 720 },
+  });
+  assert.deepEqual(tl.actions[0].heads, [head], "a box with no area is dropped");
+  assert.equal(tl.actions[0].noop, true);
+  assert.deepEqual(
+    tl.results.map((r) => [r.at, r.waited, r.busy, r.media, r.heads.length, r.blanks.length, r.pressed?.w ?? null]),
+    [[4.6, 4.2, true, 2, 1, 0, 3], [7, 0, null, 0, 0, 0, null]],
+    "a result never appears after it came on screen",
+  );
+  assert.deepEqual(tl.column, { x: 280, w: 720 });
+  // A phone-sized recording moves every box, and the column, by its margin in the 16:9 canvas.
+  const phone = normalizeTimeline({ ...structuredClone(tl), viewport: { width: 390, height: 844 } });
+  const { tl: boxed, box } = letterbox(phone);
+  assert.equal(boxed.column.x, 280 + box.x);
+  assert.equal(boxed.results[0].heads[0].x, 280 + box.x);
+  assert.equal(boxed.results[0].pressed.x, 1 + box.x);
+  assert.equal(boxed.actions[0].heads[0].x, 280 + box.x);
 });
 
 test("an echo plays a second at real speed, and without aria-busy the badge counts from the click to the answer", () => {
@@ -723,4 +767,226 @@ test("a recording that isn't 16:9 is fitted into a 16:9 canvas, and nothing is f
 
   const resized = timeline({ duration: 12, actions: [{ ...type(5, 7), typed: 5 }], viewports: [{ t: 4, width: 390, height: 844 }] });
   assert.deepEqual(planCamera(resized, planEdit(resized)).shots, []);
+});
+
+/** The crop a shot shows, in viewport CSS px. */
+const cropOf = (s, vw = 1280, vh = 720) => ({ x: s.cx * vw - vw / (2 * s.z), y: s.cy * vh - vh / (2 * s.z), w: vw / s.z, h: vh / s.z });
+const holds = (outer, r) => r.x >= outer.x - 1 && r.y >= outer.y - 1 && r.x + r.w <= outer.x + outer.w + 1 && r.y + r.h <= outer.y + outer.h + 1;
+const cutBy = (y, r) => r.y < y - 2 && r.y + r.h > y + 2;
+
+/** A model wait from a click at 2 s to a held result at 12 s, with the result's rect and whatever the test adds. */
+function heldResult(rect, extra = {}) {
+  return timeline({
+    duration: 20,
+    actions: [click(2, { x: 300, y: 660, w: 160, h: 44 })],
+    busy: [{ t: 2.1, on: true, rect: null }, { t: 12, on: false, rect }],
+    results: [{ t: 12, at: 12, rect, scrollY: 0, waited: 9.9, busy: true }],
+    column: { x: 280, w: 720 },
+    ...extra,
+  });
+}
+
+test("a result is framed on the content column, showing all of it when the zoom range allows", () => {
+  // A narrow result at the column's right edge, like a chart outlined on a page thumbnail.
+  const rect = { x: 761, y: 149, w: 219, h: 283 };
+  const [s] = planCamera(heldResult(rect), planEdit(heldResult(rect))).shots;
+  assert.ok(s && s.result);
+  // The column and 64 px either side: 1280 / (720 + 128) = 1.51, under the 1.6 the result alone would get.
+  assert.ok(close(s.z, 1280 / 848, 1e-3), `zoom ${s.z}`);
+  const crop = cropOf(s);
+  assert.ok(close(crop.x + crop.w / 2, 640, 0.5), "centered on the column, not on the result");
+  assert.ok(holds(crop, { x: 280, y: rect.y, w: 720, h: 10 }) && holds(crop, rect), JSON.stringify(crop));
+  // Without a column from the recorder, the held results and the actions give one.
+  const old = heldResult(rect, { column: undefined, actions: [click(2, { x: 280, y: 660, w: 160, h: 44 })] });
+  assert.ok(close(cropOf(planCamera(old, planEdit(old)).shots[0]).x, crop.x, 1), "the same crop from an older timeline");
+});
+
+test("a short result gets the room above it, and one taller than the crop shows its top", () => {
+  const short = { x: 280, y: 300, w: 720, h: 200 };
+  const [s] = planCamera(heldResult(short), planEdit(heldResult(short))).shots;
+  const crop = cropOf(s);
+  assert.ok(close(crop.y + crop.h, short.y + short.h + RULES.revealPad, 1), "its bottom edge is the result's, padded");
+  assert.ok(short.y - crop.y > crop.y + crop.h - (short.y + short.h), "more room above it than below");
+  // 720x680 of a 900 px result shows: the crop starts 28 px above it instead of cutting its top.
+  const tall = { x: 280, y: 40, w: 720, h: 900 };
+  const [t] = planCamera(heldResult(tall), planEdit(heldResult(tall))).shots;
+  assert.ok(close(cropOf(t).y, tall.y - RULES.revealPadTop, 1), `top at ${cropOf(t).y}`);
+});
+
+test("crop edges keep clear of headings and the app bar near the shot", () => {
+  // Typing in a field whose crop's top edge would run through the page's h1.
+  const h1 = { x: 300, y: 120, w: 600, h: 40 };
+  const field = { x: 300, y: 380, w: 680, h: 44 };
+  const typed = timeline({ duration: 12, actions: [{ ...type(3, 5, field), typed: 9, heads: [{ x: 0, y: 0, w: 1280, h: 56 }, h1] }] });
+  const [a] = planCamera(typed, planEdit(typed)).shots;
+  const ca = cropOf(a);
+  assert.ok(!cutBy(ca.y, h1) && !cutBy(ca.y + ca.h, h1), `edges at ${ca.y.toFixed(0)} and ${(ca.y + ca.h).toFixed(0)}`);
+  assert.ok(holds(ca, field));
+  const plain = timeline({ duration: 12, actions: [{ ...type(3, 5, field), typed: 9 }] });
+  assert.ok(cutBy(cropOf(planCamera(plain, planEdit(plain)).shots[0]).y, h1), "without the heading's box the edge cuts it");
+  // A held result's own heading above it.
+  const result = { x: 280, y: 400, w: 720, h: 150 };
+  const h2 = { x: 300, y: 160, w: 400, h: 36 };
+  const held = heldResult(result);
+  held.results[0].heads = [h2];
+  const cb = cropOf(planCamera(held, planEdit(held)).shots[0]);
+  assert.ok(!cutBy(cb.y, h2) && holds(cb, result), `top at ${cb.y.toFixed(0)}`);
+});
+
+test("a click that changes nothing doesn't pull a close-up away, since the cursor stays put", () => {
+  const field = { x: 200, y: 200, w: 400, h: 44 };
+  const corner = { x: 1100, y: 650, w: 100, h: 40 };
+  const moved = timeline({ duration: 14, actions: [type(2, 3, field), click(3.1, corner)] });
+  assert.deepEqual(planCamera(moved, planEdit(moved)).shots, [], "the cursor heads off, so no close-up");
+  const still = timeline({ duration: 14, actions: [type(2, 3, field), { ...click(3.1, corner), noop: true }] });
+  const [s] = planCamera(still, planEdit(still)).shots;
+  assert.ok(s && s.hold1 - s.hold0 >= RULES.minHold);
+});
+
+/** Two held results: A after a long model wait at 12 s, B (any of its fields) after a short one at 19 s. */
+function twoResults(a, b) {
+  return timeline({
+    duration: 26,
+    actions: [click(2, { x: 300, y: 660, w: 160, h: 44 }), click(17, { x: 300, y: 660, w: 160, h: 44 })],
+    busy: [{ t: 2.1, on: true, rect: null }, { t: 12, on: false, rect: null }],
+    results: [
+      { t: 12, rect: { x: 280, y: 100, w: 720, h: 300 }, scrollY: 0, waited: 9.9, busy: true, ...a },
+      { t: 19, rect: { x: 280, y: 300, w: 720, h: 240 }, scrollY: 0, waited: 1.9, busy: false, ...b },
+    ],
+    column: { x: 280, w: 720 },
+  });
+}
+const posterShot = (tl) => {
+  const cam = planCamera(tl, planEdit(tl));
+  return cam.shots.findIndex((s) => cam.poster >= s.hold0 - 1e-6 && cam.poster <= s.hold1 + 1e-6);
+};
+
+test("the poster is the result that ends the longest model wait, not the last one", () => {
+  const tl = twoResults({}, {});
+  const cam = planCamera(tl, planEdit(tl));
+  assert.equal(cam.shots.length, 2);
+  assert.equal(posterShot(tl), 0, `poster at ${cam.poster}, shots ${cam.shots.map((s) => `${s.hold0}-${s.hold1}`).join(", ")}`);
+  // An older timeline says nothing about waits: the aria-busy span around the first one says it.
+  const old = twoResults({ waited: undefined, busy: undefined }, { waited: undefined, busy: undefined });
+  assert.equal(posterShot(old), 0);
+});
+
+test("of results waited about as long for, the poster takes one with pictures, then the biggest", () => {
+  // B waited 8 s, at least 3/4 of A's 9.9 s, from an aria-busy section too.
+  assert.equal(posterShot(twoResults({}, { waited: 8, busy: true })), 0, "same standing: the bigger one");
+  assert.equal(posterShot(twoResults({}, { waited: 8, busy: true, media: 1 })), 1, "the one with a picture");
+  assert.equal(posterShot(twoResults({}, { waited: 5, busy: true, media: 1 })), 0, "a picture doesn't beat a much longer wait");
+});
+
+test("the poster passes over an empty field in the frame, and a form the test just used", () => {
+  const blank = { x: 300, y: 420, w: 680, h: 104 };
+  assert.equal(posterShot(twoResults({ blanks: [blank] }, { waited: 9.9, busy: true })), 1, "A's frame holds an empty field");
+  assert.equal(posterShot(twoResults({ blanks: [blank] }, { blanks: [blank] })), 0, "with no frame free of one, the best stands");
+  // No model in sight: B is the bigger, but it is the form whose button was just pressed.
+  const quick = { waited: 0.5, busy: false };
+  assert.equal(posterShot(twoResults({ ...quick, rect: { x: 280, y: 100, w: 720, h: 200 } }, quick)), 1);
+  const form = { ...quick, pressed: { x: 300, y: 480, w: 160, h: 44 } };
+  assert.equal(posterShot(twoResults({ ...quick, rect: { x: 280, y: 100, w: 720, h: 200 } }, form)), 0);
+});
+
+test("captions change without two texts on screen together, on a pill that never blinks out", () => {
+  const caps = [
+    { out0: 0.5, out1: 4 },
+    { out0: 4, out1: 9 },
+    { out0: 9, out1: 12 },
+  ];
+  const layers = captionLayers(caps, 0.25);
+  // Every pill under every text, so a pill fading in never covers the text fading out.
+  assert.deepEqual(
+    layers.map((l) => [l.index, l.part, l.from, l.to, l.fadeIn, l.fadeOut]),
+    [
+      [0, "pill", 0.5, 4.15, 0.25, 0.15],
+      [1, "pill", 3.85, 9.15, 0.15, 0.15],
+      [2, "pill", 8.85, 12, 0.15, 0.25],
+      [0, "text", 0.5, 4, 0.25, 0.15],
+      [1, "text", 4, 9, 0.15, 0.15],
+      [2, "text", 9, 12, 0.15, 0.25],
+    ],
+  );
+  const alpha = (l, t) => (t < l.from || t > l.to ? 0 : Math.min(1, (t - l.from) / l.fadeIn, (l.to - t) / l.fadeOut));
+  for (let t = 0.75; t <= 11.75; t += 0.01) {
+    const texts = layers.filter((l) => l.part === "text" && alpha(l, t) > 1e-9);
+    assert.ok(texts.length <= 1, `two texts at ${t.toFixed(2)} s`);
+    assert.ok(Math.max(...layers.filter((l) => l.part === "pill").map((l) => alpha(l, t))) > 1 - 1e-9, `no full pill at ${t.toFixed(2)} s`);
+  }
+});
+
+test("of two caption pills that meet, the wider is on top, so the narrower never shows inside it", () => {
+  // A narrower second step, as in a sandbox run where "2 of 3" and the end of the first title stuck out of the new pill.
+  const caps = [
+    { out0: 0.5, out1: 4, w: 900 },
+    { out0: 4, out1: 9, w: 560 },
+    { out0: 9, out1: 12, w: 1100 },
+  ];
+  const layers = captionLayers(caps, 0.25);
+  assert.deepEqual(
+    layers.map((l) => `${l.part} ${l.index}`),
+    ["pill 1", "pill 0", "pill 2", "text 0", "text 1", "text 2"],
+  );
+  const above = (a, b) => layers.findIndex((l) => l.part === "pill" && l.index === a) > layers.findIndex((l) => l.part === "pill" && l.index === b);
+  assert.ok(above(0, 1) && above(2, 1), "the wider of each pair that meets is above");
+});
+
+/** A model wait from a click at 1.1 s to a picture that appeared at 8 s half below the fold, scrolled into view at 9.1 s. */
+function scrolledResult() {
+  return timeline({
+    duration: 16,
+    actions: [click(1.1, { x: 300, y: 422, w: 140, h: 44 })],
+    busy: [
+      { t: 2, on: true, rect: { x: 300, y: 422, w: 175, h: 44 } },
+      { t: 2, on: true, rect: { x: 300, y: 600, w: 680, h: 300 } },
+      { t: 8, on: false, rect: { x: 300, y: 422, w: 140, h: 44 } },
+      { t: 8, on: false, rect: { x: 300, y: 600, w: 680, h: 300 } },
+    ],
+    activity: [{ t: 8, added: 5, changed: 11, text: 19, rect: { x: 300, y: 523, w: 681, h: 438 } }],
+    scrolls: [{ t: 9.2, y: 1 }, { t: 9.33, y: 180 }, { t: 9.44, y: 372 }, { t: 9.64, y: 382 }],
+    results: [{ t: 9.12, at: 8, rect: { x: 280, y: 121, w: 720, h: 479 }, scrollY: 382, waited: 6, busy: true, media: 1 }],
+    column: { x: 280, w: 720 },
+  });
+}
+
+test("a result the recorder scrolled to is framed where it was held, not where it appeared", () => {
+  // The shape of a sandbox run's coloring page: framing where it appeared cut the page off at the wheels.
+  const tl = scrolledResult();
+  const [appeared, held] = findReveals(tl);
+  assert.deepEqual([appeared.frame, held.frame, held.result], [false, true, true]);
+  const cam = planCamera(tl, planEdit(tl));
+  assert.equal(cam.shots.length, 1);
+  const [s] = cam.shots;
+  assert.ok(s.result && holds(cropOf(s), { x: 280, y: 121, w: 720, h: 479 }), JSON.stringify(cropOf(s)));
+  assert.ok(cam.poster >= s.hold0 && cam.poster <= s.hold1, "the poster is the held page, framed");
+});
+
+test("a held result taller than the screen gets a shot that shows its top", () => {
+  // The recorder brings a tall result's top to 12% of the screen, so 634 of 720 px show 720x2600 of it.
+  const tall = { x: 280, y: 86, w: 720, h: 2600 };
+  const tl = heldResult(tall);
+  assert.ok(findReveals(tl).find((r) => r.result).frame);
+  const [s] = planCamera(tl, planEdit(tl)).shots;
+  assert.ok(s && s.result, "it gets a shot");
+  // Near the crop's top: 28 px of room, or more to keep the bottom edge off the button that asked for it.
+  const crop = cropOf(s);
+  assert.ok(crop.y <= tall.y && tall.y - crop.y <= 0.2 * crop.h, `top at ${crop.y}`);
+});
+
+test("a poster from a shot that began before its result shows the result, a second after it is in view", () => {
+  // One shot frames typing a note and the note it adds, so 1.5 s into it the note wasn't there yet.
+  const tl = timeline({
+    duration: 8,
+    actions: [type(0.1, 1.6, { x: 300, y: 160, w: 620, h: 42 }), click(1.65, { x: 300, y: 221, w: 80, h: 44 })],
+    activity: [{ t: 2.3, added: 3, changed: 1, text: 47, rect: { x: 300, y: 316, w: 680, h: 55 } }],
+    results: [{ t: 2.3, at: 2.3, rect: { x: 300, y: 316, w: 680, h: 55 }, scrollY: 0, waited: 0, busy: false }],
+    column: { x: 280, w: 720 },
+  });
+  const edit = planEdit(tl);
+  const cam = planCamera(tl, edit);
+  assert.equal(cam.shots.length, 1);
+  const [s] = cam.shots;
+  assert.ok(s.result && s.hold0 < outAt(edit, 2.3), "one shot from the typing on");
+  assert.ok(cam.poster >= outAt(edit, 2.3) + 1 - 1e-6 && cam.poster <= s.hold1 + 1e-6, `poster at ${cam.poster}`);
 });

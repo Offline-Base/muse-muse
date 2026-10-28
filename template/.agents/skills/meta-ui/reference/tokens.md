@@ -36,36 +36,21 @@ Every token in `app/globals.css`, with its light and dark value, where the value
 | `--warning` | #AF8F00 | #AF8F00 | FB `--warning` | warning icons only (3.1:1 on white, too light for text) |
 | `--positive-soft` | #E9F3EA | #293F2D | ours (10 to 16% of positive) | positive chip fill, filled dropzone check |
 | `--negative-soft` | #FCEDEF | #483534 | ours (8 to 16% of negative) | error box, negative chip fill |
-| `--brand` | #0064E0 | #0064E0 | Meta brand blue (meta.com) | default signature hue, gradient start |
+| `--brand` | #0064E0 | #0064E0 | Meta brand blue (meta.com) | the signature color, gradient start |
 | `--ai-start` | #0064E0 | #0064E0 | Meta brand blue | AI gradient start |
 | `--ai-end` | #A033FF | #A033FF | violet from meta.com's ring | AI gradient end |
 | `--ai-gradient` | 90deg, start to end | same | ours | model chip and AI badge outlines, the busy AI button, the AI card cap, the working dots. White text is at least 4.7:1 along all of it |
 | `--ai-soft` | #F6EBFF | violet 20% | ours | the violet end of a busy `.tinted.ai` button's moving fill; `--tinted-fg` stays AA on it |
-| `--signature` | var(--brand) | #1D85FC | Meta blue, FB dark accent | signature element, one-series charts |
+| `--signature` | var(--brand) | #1D85FC | Meta blue, FB dark accent | signature element, one-series charts; the only signature color |
 | `--signature-soft` | #EBF5FF | rgba(29,133,252,.2) | FB tinted | fill under the signature element |
 | `--signature-ink` | #0064D1 | #75B6FF | FB tinted text | text on `--signature-soft` or `--surface` |
-| `--signature-line` | var(--signature) | var(--signature) | ours | strokes and `.bar`s, at least 3:1 on `--surface` and `--surface-2` in every hue |
-| `--cherry` `--grape` `--lemon` `--lime` `--pink` `--teal` | #FB3C44 #7D74FF #F9CF00 #3FBB46 #FA61BA #14B898 | same | FB decorative hues | only chart series a legend names, or overlays, one hue per kind of object. Never text, buttons, or borders, stripes and fills in the UI that tell categories apart |
+| `--signature-line` | var(--signature) | var(--signature) | ours | strokes and `.bar`s, at least 3:1 on `--surface` and `--surface-2` |
+| `--scroll-shadow` | black 20% | black 60% | ours | the shadow at the edge of a `.table-wrap` or `.bars` in `data-allow-clip` with more past it |
+| `--cherry` `--grape` `--lemon` `--lime` `--pink` `--teal` | #FB3C44 #7D74FF #F9CF00 #3FBB46 #FA61BA #14B898 | same | FB decorative hues | only the series of a multi-series legend and overlays of several kinds of object, one hue per kind. Never text, buttons, a one-series chart, or borders, stripes and fills in the UI that tell categories apart |
 | `--on-media` | #FFFFFF | #FFFFFF | FB `--always-white` | lines and labels drawn over a photo |
 | `--scrim` | black 60% | black 60% | ours | dark glass under a label on a photo (white on it is 5.7:1 even over white) |
 | `--bubble-in` | #F0F0F0 | #303030 | FB incoming bubble | incoming chat bubble |
 | `--skeleton` | #979A9F at 40% | #979A9F at 30% | FB glimmer gray, softened (ours) | skeleton shapes |
-
-## Accent hues (`data-accent`)
-
-Each sets `--signature`, `--signature-soft`, `--signature-ink` and, where the hue is too pale for a line, `--signature-line`, and tints `.avatar` initials. The hue is Facebook's; the soft, ink and line values are ours, made so ink, `--fg` and `--fg-2` on soft and ink on a card pass AA (4.6:1 or more), and lines are 3:1 or more on a card and on `--surface-2`.
-
-| `data-accent` | `--signature` | Soft, light | Ink, light | Line, light | Soft, dark | Ink, dark |
-|---|---|---|---|---|---|---|
-| none | #0064E0 (dark #1D85FC) | #EBF5FF | #0064D1 | the hue | blue 20% | #75B6FF |
-| `cherry` | #FB3C44 | #FEE4E5 | #BF2E34 | the hue | #542C2E | #FC7C82 |
-| `grape` | #7D74FF | #EDECFF | #615AC7 | the hue | #383857 | #A49EFF |
-| `lemon` | #F9CF00 | #FEF8DB | #816C00 | #A48900 | #4C441B | #F9CF00 |
-| `lime` | #3FBB46 | #E4F5E5 | #297A2D | #359E3B | #2B482F | #5EC664 |
-| `pink` | #FA61BA | #FEE9F5 | #AA427E | #E057A7 | #543448 | #FB84C9 |
-| `teal` | #14B898 | #DEF5F1 | #0D7863 | #119C81 | #214741 | #3CC4AA |
-
-In dark mode every line is the hue itself.
 
 ## Type
 

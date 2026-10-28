@@ -81,7 +81,7 @@ When the judge ran, the screenshots it saw (up to four, each under 2 MB after do
 
 ## 4. Judge
 
-Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a main result that is missing from the final screen or replaced there by an error, an empty state or a working state, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. The live prompt is `lib/prompts/judge.ts`.
+Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a main result that is missing from the final screen or replaced there by an error, an empty state or a working state, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. Figures that disagree and model text that shows its seams fail a build without blocking it: they start a fix round, and on the last round the build can still ship as partial. A refinement still needs a pass. The live prompt is `lib/prompts/judge.ts`.
 
 ```text
 You check whether a product does what its brief says, using screenshots of its primary flow taken during an automated test. You also get the inspiration it was made from.
@@ -93,6 +93,8 @@ Fail it if any of these are true:
 - It shows a name, logo, character or artwork taken from the inspiration, or copies a real product's look.
 - The page implies Meta made it, or uses Meta logos.
 - Text is cut off, overlapping or unreadable.
+- Figures, dates or names on screen disagree with each other or with the input shown: the same total or date given two ways, a total that isn't the sum of its rows, a caption that counts more bars or items than are drawn.
+- Model text shows its seams: bracket tags like [Momentum], a label repeated inside its value (Week 2: Week 2), numbers run together (913 for weeks 9 to 13), or a recap or summary that only repeats the input's own words.
 
 Otherwise pass it. Being clearly inspired by the references is fine and expected. Keep reasons short and specific to what you see.
 

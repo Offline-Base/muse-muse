@@ -1,5 +1,6 @@
-// Required on every product. Don't remove or reword it.
-export function Footer() {
+// Required on every product. Don't remove or reword it. A product made from one of Meta's developer videos passes the
+// video's link as `credit` in app/layout.tsx, <Footer credit="https://..." />, which adds the one credit line it needs.
+export function Footer({ credit }: { credit?: string }) {
   return (
     <footer
       style={{
@@ -10,6 +11,15 @@ export function Footer() {
         font: "var(--type-meta)",
       }}
     >
+      {credit ? (
+        <p style={{ margin: "0 0 8px" }}>
+          Idea from{" "}
+          <a href={credit} target="_blank" rel="noreferrer">
+            a Meta developer video
+          </a>
+          .
+        </p>
+      ) : null}
       Built with Muse Muse. Not an official Meta product.
     </footer>
   );

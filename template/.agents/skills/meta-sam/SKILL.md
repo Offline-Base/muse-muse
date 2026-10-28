@@ -92,9 +92,9 @@ For box and point prompts, `metadata.propagation_direction` can be `both` (the d
 
 ## Drawing results
 
-- `SegmentationRenderer` from `@meta-sam/graphics` draws masks and boxes on a canvas. Its default colors aren't the theme's: pass an `objectColor` option that gives each kind of object one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink` and `--teal` (every bird the same hue). A canvas can't read `var()`, so read each once with `getComputedStyle(document.documentElement).getPropertyValue("--teal").trim()`. Leave `boxLabels` off: it prints object ids and confidence decimals. Say the result in a caption instead ("Found 3 birds").
+- `SegmentationRenderer` from `@meta-sam/graphics` draws masks and boxes on a canvas. Its default colors aren't the theme's: pass an `objectColor` option that gives every object `--signature`, or, only when the result names several kinds of object, each kind one of `--cherry`, `--grape`, `--lemon`, `--lime`, `--pink` and `--teal`. A canvas can't read `var()`, so read each once with `getComputedStyle(document.documentElement).getPropertyValue("--signature").trim()`. Leave `boxLabels` off: it prints object ids and confidence decimals. Say the result in a caption instead ("Found 3 birds").
 - `@meta-sam/video` and `@meta-sam/react` (`Video`, `useMediaPlayer`) give frame-accurate playback under overlays.
-- `decodeMaskToSVGPath` works well for SVG overlays of organic shapes (a bird, a plant, a person). For rectangular things (charts, tables, screens, documents), draw only the box, with a 2 px stroke and rounded corners: a traced mask looks jagged there. `decodeMaskToRaster` returns a row-major 0/1 `Uint8Array` for pixel math. `decodeMaskToRLE` returns COCO RLE.
+- `decodeMaskToSVGPath` works well for SVG overlays of organic shapes (a bird, a plant, a person). For rectangular things (charts, tables, screens, documents), draw only the box, with rounded corners: a traced mask looks jagged there. White lines vanish on a page render, a document or a drawing, so stroke those in `var(--signature-line)` at 3 px with a 15% `--signature` fill (meta-ui components.md, Images and overlays). `decodeMaskToRaster` returns a row-major 0/1 `Uint8Array` for pixel math. `decodeMaskToRLE` returns COCO RLE.
 
 ## Counting and measuring
 
