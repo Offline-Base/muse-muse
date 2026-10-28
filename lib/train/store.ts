@@ -926,3 +926,110 @@ export async function failDataset(datasetId: string, error: string): Promise<boo
     .returning({ id: datasets.id });
   return rows.length > 0;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Lab results: the read-only view of /fine-tuning that anyone can open (docs/TRAINING.md "Lab results"). These reads
+// select only what those pages show, so a job's instance id, IP, region, token hash, log, error and artifacts, and a
+// dataset's note, author and workflow run, never leave the store for them. A ready dataset's samples come from
+// datasetPage, a few of each.
+
+const resultColumns = {
+  id: jobs.id,
+  recipe: jobs.recipe,
+  title: jobs.title,
+  status: jobs.status,
+  params: jobs.params,
+  instanceType: jobs.instanceType,
+  costUsd: jobs.costUsd,
+  createdAt: jobs.createdAt,
+  launchedAt: jobs.launchedAt,
+  finishedAt: jobs.finishedAt,
+  terminatedAt: jobs.terminatedAt,
+  evalSummary: jobs.evalSummary,
+};
+
+/** A job as the Lab results read it. */
+export type ResultJobRow = Pick<TrainJobRow, keyof typeof resultColumns>;
+
+/**
+ * Jobs with results to show: succeeded, the GPU shut down, judged (an eval summary with items, so not an unjudged one)
+ * and not a dry run, whose answers are fake. components/train/results.ts checks the same again (hasResults).
+ */
+const hasResults = () =>
+  and(
+    eq(jobs.status, "succeeded"),
+    isNotNull(jobs.terminatedAt),
+    sql`jsonb_typeof(${jobs.evalSummary}->'items') = 'number'`,
+    sql`(${jobs.evalSummary}->>'items')::numeric > 0`,
+    sql`(case when ${jobs.params}->>'dryRun' ~ '^[0-9]+([.][0-9]+)?$' then (${jobs.params}->>'dryRun')::numeric else 0 end) < 1`,
+  );
+
+/** Judged jobs, newest first. */
+export async function listResultJobs(limit = 50): Promise<ResultJobRow[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+  return db().select(resultColumns).from(jobs).where(hasResults()).orderBy(desc(jobs.createdAt)).limit(n);
+}
+
+/** One judged job, or null when the id is unknown, isn't a uuid, or the job has no results to show. */
+export async function getResultJob(jobId: string): Promise<ResultJobRow | null> {
+  if (!isUuid(jobId)) return null;
+  const [row] = await db().select(resultColumns).from(jobs).where(and(eq(jobs.id, jobId), hasResults())).limit(1);
+  return row ?? null;
+}
+
+/** Eval items and judgements read for one job: EVALS_MAX of each, with room for a judgement logged twice. */
+const RESULT_EVENTS_MAX = EVALS_MAX * 4;
+
+/**
+ * A judged job's eval items and judgements, oldest first. Nothing else from its log (no log text, errors, instance or
+ * artifact events), and nothing at all for a job without results.
+ */
+export async function listResultEvents(jobId: string): Promise<TrainEventView[]> {
+  if (!isUuid(jobId)) return [];
+  const judged = db().select({ id: jobs.id }).from(jobs).where(and(eq(jobs.id, jobId), hasResults()));
+  const rows = await db()
+    .select()
+    .from(events)
+    .where(and(eq(events.jobId, jobId), or(eq(events.type, "eval"), eq(events.type, "judgement")), sql`exists (${judged})`))
+    .orderBy(asc(events.id))
+    .limit(RESULT_EVENTS_MAX);
+  return rows.map((r) => ({ id: r.id, type: r.type, payload: r.payload, at: r.at.toISOString() }));
+}
+
+const readyDatasetColumns = {
+  id: datasets.id,
+  title: datasets.title,
+  task: datasets.task,
+  status: datasets.status,
+  requested: datasets.requested,
+  trainCount: datasets.trainCount,
+  evalCount: datasets.evalCount,
+  costUsd: datasets.costUsd,
+  createdAt: datasets.createdAt,
+  finishedAt: datasets.finishedAt,
+};
+
+/** A ready dataset as the Lab results read it: no examples, note, author or workflow run. */
+export type ReadyDatasetRow = Pick<DatasetHead, keyof typeof readyDatasetColumns>;
+
+/** Ready datasets, newest first. */
+export async function listReadyDatasets(limit = 50): Promise<ReadyDatasetRow[]> {
+  const n = Math.max(1, Math.min(200, Math.floor(limit) || 50));
+  return db()
+    .select(readyDatasetColumns)
+    .from(datasets)
+    .where(eq(datasets.status, "ready"))
+    .orderBy(desc(datasets.createdAt))
+    .limit(n);
+}
+
+/** One ready dataset, or null when the id is unknown, isn't a uuid, or it is still being written or failed. */
+export async function getReadyDataset(datasetId: string): Promise<ReadyDatasetRow | null> {
+  if (!isUuid(datasetId)) return null;
+  const [row] = await db()
+    .select(readyDatasetColumns)
+    .from(datasets)
+    .where(and(eq(datasets.id, datasetId), eq(datasets.status, "ready")))
+    .limit(1);
+  return row ?? null;
+}

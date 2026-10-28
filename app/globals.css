@@ -4114,3 +4114,21 @@ a.dash-card:hover {
 .train-ds-eval td:not(:first-child) {
   min-width: 220px;
 }
+
+/* Lab results: the read-only /fine-tuning everyone sees (docs/TRAINING.md "Lab results") */
+
+.lab-intro h2 {
+  color: var(--accent-text);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.lab-intro .hero-card-desc {
+  max-width: 760px;
+}
+
+.lab-intro .how {
+  align-self: stretch;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+}

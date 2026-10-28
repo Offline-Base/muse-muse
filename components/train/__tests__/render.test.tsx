@@ -91,6 +91,12 @@ let AdminsOnly: ComponentType<never>;
 let DatasetsTable: ComponentType<never>;
 let NewDatasetCard: ComponentType<never>;
 let DatasetDetail: ComponentType<never>;
+let LabIntro: ComponentType<never>;
+let ResultsTable: ComponentType<never>;
+let ReadyDatasetsTable: ComponentType<never>;
+let JobResults: ComponentType<never>;
+let results: typeof import("@/components/train/results");
+let evalRowsOf: typeof import("@/components/train/format").evalRows;
 
 before(async () => {
   const { renderToString } = await import("react-dom/server");
@@ -106,6 +112,13 @@ before(async () => {
   DatasetsTable = (await import("@/components/train/DatasetsTable")).DatasetsTable as ComponentType<never>;
   NewDatasetCard = (await import("@/components/train/NewDatasetCard")).NewDatasetCard as ComponentType<never>;
   DatasetDetail = (await import("@/components/train/DatasetDetail")).DatasetDetail as ComponentType<never>;
+  const lab = await import("@/components/train/LabResults");
+  LabIntro = lab.LabIntro as ComponentType<never>;
+  ResultsTable = lab.ResultsTable as ComponentType<never>;
+  ReadyDatasetsTable = lab.ReadyDatasetsTable as ComponentType<never>;
+  JobResults = (await import("@/components/train/JobResults")).JobResults as ComponentType<never>;
+  results = await import("@/components/train/results");
+  evalRowsOf = (await import("@/components/train/format")).evalRows;
 });
 
 function room(job: TrainJobView): string {
@@ -229,11 +242,12 @@ describe("list page pieces", () => {
     assert.doesNotMatch(render(NewJobCard, props), /CRON_SECRET|production site|last 15 minutes/);
   });
 
-  it("asks non-admins to sign in", () => {
+  it("tells non-admins what only admins can do, with a sign-in link when signed out", () => {
     const html = render(AdminsOnly, { signedIn: false });
-    assert.match(html, /Admins only/);
+    clean(html);
+    assert.match(html, /Only admins can start jobs or make datasets/);
     assert.match(html, /href="\/sign-in\?next=%2Ffine-tuning"/);
-    assert.doesNotMatch(render(AdminsOnly, { signedIn: true }), /Sign in/);
+    assert.doesNotMatch(render(AdminsOnly, { signedIn: true }), /Sign in/, "the shared guest has no sign-in to offer");
   });
 });
 
@@ -532,5 +546,192 @@ describe("datasets", () => {
     const list = render(DatasetsTable, { datasets: [partial], now: t0, caption: "Datasets" });
     assert.match(list, /Stopped early, once 180 of the 300/);
     assert.match(list, /162 train · 18 eval/);
+  });
+});
+
+// ---------- Lab results: what everyone sees, read-only ----------
+
+describe("Lab results", () => {
+  /** Values a public page must never show, as the full job row holds them. */
+  const SECRETS = {
+    instanceId: "i-0a1b2c3d4e5f6789",
+    instanceIp: "203.0.113.9",
+    instanceName: "mm-train-8f1d2c3b-glimmer-lora",
+    region: "us-secret-1",
+    tokenHash: "hash-of-the-job-token",
+    error: "Traceback in /home/ubuntu/.cache/secret-path",
+    summary: "adapter at /lambda/nfs/muse-muse-cache-us-secret-1/models",
+  };
+  const SECRET_TEXT = /i-0a1b2c3d4e5f6789|203\.0\.113\.9|mm-train-|us-secret-1|hash-of-the-job-token|secret-path|lambda\/nfs|token=/;
+
+  /** A judged glimmer-lora job as getJob would read it, every column filled. */
+  function row(over: Record<string, unknown> = {}) {
+    return {
+      id: glimmerJob.id,
+      recipe: "glimmer-lora" as const,
+      title: "Bakery LoRA",
+      status: "succeeded" as const,
+      params: { datasetId: DS, maxSteps: 120, learningRate: 0.0002, loraRank: 16, dryRun: 0, studentPrompt: "You help a small bakery's customers." },
+      instanceType: "gpu_1x_h100_pcie",
+      priceCentsPerHour: 249,
+      maxMinutes: 120,
+      maxUsd: 5,
+      costUsd: 1.66,
+      createdAt: new Date(t0 - 60_000),
+      launchedAt: new Date(t0),
+      finishedAt: new Date(t0 + 39 * 60_000),
+      terminatedAt: new Date(t0 + 40 * 60_000),
+      evalSummary: summary,
+      artifacts: [{ name: "adapter.tar.gz", kind: "adapter", url: "https://x.public.blob.vercel-storage.com/models/a/b", bytes: 1 }],
+      ...SECRETS,
+      ...over,
+    };
+  }
+
+  const glimmer = () => recipes.find((r) => r.id === "glimmer-lora")!;
+  const view = (over: Record<string, unknown> = {}) => results.toResultView(row(over) as never, glimmer());
+
+  it("maps only judged jobs that aren't dry runs, and only the allowed fields", () => {
+    const v = view();
+    assert.ok(v);
+    assert.deepEqual(Object.keys(v).sort(), [
+      "costUsd",
+      "datasetId",
+      "finishedAt",
+      "gpu",
+      "gpuMinutes",
+      "id",
+      "model",
+      "recipe",
+      "recipeTitle",
+      "settings",
+      "summary",
+      "title",
+    ]);
+    assert.equal(SECRET_TEXT.test(JSON.stringify(v)), false, "nothing hidden is carried over");
+    assert.equal(v.model, "Muse Glimmer 30B");
+    assert.equal(v.gpu, "1x H100 PCIe (80 GB)");
+    assert.equal(v.gpuMinutes, 40);
+    assert.deepEqual(
+      v.settings.map((s) => [s.key, s.value]),
+      [
+        ["maxSteps", "120"],
+        ["loraRank", "16"],
+        ["learningRate", "0.0002"],
+        ["studentPrompt", "You help a small bakery's customers."],
+      ],
+      "never the dataset id or dryRun",
+    );
+    assert.deepEqual(results.toResultView({ ...row(), evalSummary: { ...summary, note: "x" } } as never, glimmer())?.summary, summary, "no extra keys");
+    for (const status of ["running", "failed", "stopped", "booting"]) assert.equal(view({ status }), null, status);
+    assert.equal(view({ terminatedAt: null }), null, "the GPU isn't confirmed gone");
+    assert.equal(view({ evalSummary: null }), null, "not judged yet");
+    assert.equal(view({ evalSummary: { ...summary, items: 0, note: "Judging skipped." } }), null, "an unjudged summary");
+    assert.equal(view({ params: { datasetId: DS, dryRun: 1 } }), null, "a dry run's answers are fake");
+    assert.equal(results.isDryRun({ dryRun: "1" }), true);
+    assert.equal(results.isDryRun({}), false);
+  });
+
+  it("keeps Fine-tuning in everyone's nav", async () => {
+    const { NAV_GROUPS } = await import("@/components/shell/nav");
+    const item = NAV_GROUPS.flat().find((i) => i.href === "/fine-tuning");
+    assert.equal(item?.label, "Fine-tuning");
+    assert.deepEqual(Object.keys(item!).sort(), ["href", "icon", "label"], "no role or flag hides it");
+  });
+
+  it("explains the lab in three steps", () => {
+    const html = render(LabIntro, {});
+    clean(html);
+    assert.match(html, /Lab results/);
+    assert.match(html, /Muse Spark 1\.3 writes a training set, Muse Glimmer 30B learns it, and Muse Spark 1\.3 judges base against tuned on held-out prompts\./);
+    assert.match(html, /<span class="how-num">1\.<\/span> Write/);
+    assert.match(html, /<span class="how-num">3\.<\/span> Judge/);
+  });
+
+  it("lists judged jobs with the model, wins, scores, GPU, minutes and cost", () => {
+    const html = render(ResultsTable, { results: [view()], caption: "Results" });
+    clean(html);
+    assert.match(html, /href="\/fine-tuning\/8f1d2c3b-0000-4000-8000-000000000001"[^>]*>Bakery LoRA/);
+    assert.match(html, /Muse Glimmer LoRA/);
+    assert.match(html, /Muse Glimmer 30B/);
+    assert.match(html, /Tuned won <strong>1<\/strong> of 2/);
+    assert.match(html, /Base won 0, 1 tie/);
+    assert.match(html, /Base 4\.5 · Tuned <strong>7\.5<\/strong>/);
+    assert.match(html, /1x H100 PCIe \(80 GB\)/);
+    assert.match(html, /40 min/);
+    assert.match(html, /\$1\.66/);
+    assert.doesNotMatch(html, SECRET_TEXT);
+  });
+
+  it("lists ready datasets with counts and cost, linking to their read-only page", () => {
+    const html = render(ReadyDatasetsTable, { datasets: [dataset()], now: t0, caption: "Datasets" });
+    clean(html);
+    assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002"[^>]*>Bakery helper/);
+    assert.match(html, /270 train · 30 eval/);
+    assert.match(html, /\$1\.42/);
+    assert.doesNotMatch(html, /Status|pill/);
+  });
+
+  it("shows a judged job's run, summary and side-by-side answers, with no controls or hidden fields", () => {
+    const log: TrainEventView = { id: 60, type: "log", payload: { type: "log", text: "token=abc /home/ubuntu/.cache/secret-path" }, at: at(500) };
+    const html = render(JobResults, {
+      result: view(),
+      rows: evalRowsOf([...evalEvents, ...judgements, log]),
+      dataset: { id: DS, title: "Bakery helper" },
+    });
+    clean(html);
+    assert.match(html, /<h1>Bakery LoRA<\/h1>/);
+    assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>, base won <strong>0<\/strong>, ties <strong>1<\/strong>/);
+    assert.match(html, /Average score base <strong>4\.5<\/strong>, tuned <strong>7\.5<\/strong>/);
+    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th><th scope="col">Verdict<\/th>/);
+    assert.match(html, /How late are you open on Sunday\?/);
+    assert.match(html, /class="pill pill-live">Tuned better/);
+    assert.match(html, /Gives the Sunday hours\./);
+    assert.match(html, /<dt>Training steps<\/dt><dd>120<\/dd>/);
+    assert.match(html, /<dt>LoRA rank<\/dt><dd>16<\/dd>/);
+    assert.match(html, /<dt>Learning rate<\/dt><dd>0\.0002<\/dd>/);
+    assert.match(html, /You help a small bakery&#x27;s customers\./);
+    assert.match(html, /<dt>GPU<\/dt><dd>1x H100 PCIe \(80 GB\)<\/dd>/);
+    assert.match(html, /<dt>GPU time<\/dt><dd>40 min<\/dd>/);
+    assert.match(html, /<dt>GPU cost<\/dt><dd>\$1\.66<\/dd>/);
+    assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002">Bakery helper/);
+    assert.doesNotMatch(html, SECRET_TEXT);
+    assert.doesNotMatch(html, /<button|<form|Stop|Shut down|Event log|Instance|Region|IP<|Dry run|dryRun|adapter\.tar|\/api\/train/);
+  });
+
+  it("keeps model text as plain text: no markup and no links from it", () => {
+    const evil: TrainEventView = {
+      id: 70,
+      type: "eval",
+      payload: {
+        type: "eval",
+        index: 0,
+        prompt: "<script>alert(1)</script> see https://evil.example",
+        reference: "<img src=x onerror=alert(1)>",
+        base: "[click](javascript:alert(1))",
+        tuned: "<a href=\"https://evil.example\">win</a>",
+      },
+      at: at(160),
+    };
+    const html = render(JobResults, { result: view(), rows: evalRowsOf([evil]), dataset: null });
+    assert.doesNotMatch(html, /<script|<img|<a href="https:\/\/evil|href="javascript/);
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; see https:\/\/evil\.example/);
+    assert.match(html, /&lt;a href=&quot;https:\/\/evil\.example&quot;&gt;win&lt;\/a&gt;/);
+    assert.doesNotMatch(html, /<dt>Dataset<\/dt>/, "no dataset row when it isn't ready");
+  });
+
+  it("shows a ready dataset read-only: no Train on it and no note", () => {
+    const html = render(DatasetDetail, {
+      dataset: dataset({ error: "Stopped early, once 180 of the 300 examples asked for were answered." }),
+      sampleTrain: [],
+      sampleEval: [{ prompt: "Open Sunday?", reference: "Until 4 pm." }],
+      written: null,
+      now: t0,
+      readOnly: true,
+    });
+    clean(html);
+    assert.match(html, /<h1>Bakery helper<\/h1>/);
+    assert.match(html, /Open Sunday\?/);
+    assert.doesNotMatch(html, /Train on it|new-job|Stopped early|left out/);
   });
 });

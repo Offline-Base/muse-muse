@@ -1,13 +1,23 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { AdminsOnly } from "@/components/train/AdminsOnly";
+import { JobResults } from "@/components/train/JobResults";
 import { JobRoom } from "@/components/train/JobRoom";
-import { keepEvents, toRecipeView } from "@/components/train/format";
-import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
+import { evalRows, keepEvents, toRecipeView } from "@/components/train/format";
+import { toResultView } from "@/components/train/results";
+import { EmptyCard, NotConnected } from "@/components/ui";
 import { safeQuery } from "@/lib/queries";
 import { toJobView } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
-import { getDataset, getJob, listEvents, type TrainJobRow } from "@/lib/train/store";
+import {
+  getDataset,
+  getJob,
+  getReadyDataset,
+  getResultJob,
+  listEvents,
+  listResultEvents,
+  type TrainJobRow,
+} from "@/lib/train/store";
 import type { Recipe, TrainEventView } from "@/lib/train/types";
 import { pageViewer } from "../viewer";
 
@@ -41,17 +51,37 @@ async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id
   return d ? { id: d.id, title: d.title } : null;
 }
 
-export default async function FineTuningJobPage({ params }: { params: Promise<{ jobId: string }> }) {
-  await connection();
-  const [{ jobId }, user] = await Promise.all([params, pageViewer()]);
-  if (!user?.isAdmin) {
+/**
+ * What non-admins see (docs/TRAINING.md "Lab results"): a judged job's results, read-only, from the store's Lab reads,
+ * which never select the instance, IP, region, log or error. Any other job, running, failed or not judged, is a 404.
+ */
+async function resultPage(jobId: string) {
+  const result = await safeQuery(async () => {
+    const row = await getResultJob(jobId);
+    const recipe = row ? recipeById(row.recipe) : null;
+    const view = row ? toResultView(row, recipe ? toRecipeView(recipe) : null) : null;
+    if (!view) return null;
+    const [events, dataset] = await Promise.all([
+      listResultEvents(view.id),
+      view.datasetId ? getReadyDataset(view.datasetId) : Promise.resolve(null),
+    ]);
+    return { result: view, rows: evalRows(events), dataset: dataset ? { id: dataset.id, title: dataset.title } : null };
+  });
+  if (!result.ok) {
     return (
       <div className="page">
-        <PageHeader title="Fine-tuning job" />
-        <AdminsOnly signedIn={Boolean(user)} next={`/fine-tuning/${encodeURIComponent(jobId)}`} />
+        <NotConnected reason={result.reason} what="these results" />
       </div>
     );
   }
+  if (!result.data) notFound();
+  return <JobResults {...result.data} />;
+}
+
+export default async function FineTuningJobPage({ params }: { params: Promise<{ jobId: string }> }) {
+  await connection();
+  const [{ jobId }, user] = await Promise.all([params, pageViewer()]);
+  if (!user?.isAdmin) return resultPage(jobId);
 
   const now = new Date();
   const result = await safeQuery(async () => {

@@ -5,14 +5,16 @@ import { Icon } from "@/components/icons";
 import { AdminsOnly } from "@/components/train/AdminsOnly";
 import { DatasetsTable } from "@/components/train/DatasetsTable";
 import { JobsTable } from "@/components/train/JobsTable";
+import { LabIntro, ReadyDatasetsTable, ResultsTable } from "@/components/train/LabResults";
 import { NewDatasetCard } from "@/components/train/NewDatasetCard";
 import { NewJobCard } from "@/components/train/NewJobCard";
 import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
 import { WRITER_NAME, cacheCostText, isDatasetStalled, toRecipeView } from "@/components/train/format";
+import { toReadyDatasetView, toResultView, type ResultView } from "@/components/train/results";
 import { EmptyCard, InfoTip, NotConnected, PageHeader } from "@/components/ui";
 import { env } from "@/lib/env";
 import { plural, usd } from "@/lib/format";
-import { safeQuery } from "@/lib/queries";
+import { safeQuery, type QueryResult } from "@/lib/queries";
 import { spendPaused } from "@/lib/quota";
 import { toDatasetView, toJobView } from "@/lib/train/logic";
 import { RECIPES } from "@/lib/train/recipes";
@@ -22,6 +24,8 @@ import {
   lastSweepOkAt,
   listDatasets,
   listJobs,
+  listReadyDatasets,
+  listResultJobs,
   trainingSpendToday,
 } from "@/lib/train/store";
 import { isTrainTerminal, type DatasetView, type RecipeView, type TrainJobView } from "@/lib/train/types";
@@ -35,6 +39,13 @@ type Show = "all" | "active" | "ended";
 
 const SUBTITLE =
   "Train Muse models on a Lambda GPU. Every job has a hard time and dollar limit, and its GPU is always shut down.";
+
+/** What non-admins see under the title: the Lab results, which they can read but not change. */
+const LAB_SUBTITLE = "Results from fine-tuning runs on Lambda GPUs, read-only.";
+
+/** Judged jobs and ready datasets the Lab results list, newest first. */
+const RESULTS_SHOWN = 50;
+const LAB_DATASETS_SHOWN = 50;
 
 function parseShow(v: string | string[] | undefined): Show {
   return v === "active" || v === "ended" ? v : "all";
@@ -60,6 +71,16 @@ async function loadDatasets(now: number): Promise<{ datasets: DatasetView[]; wri
   return { datasets, written };
 }
 
+/** The judged jobs the Lab results list, as anyone may see them (components/train/results.ts). */
+async function loadResults(): Promise<ResultView[]> {
+  const recipes = RECIPES.map(toRecipeView);
+  const rows = await listResultJobs(RESULTS_SHOWN);
+  return rows.flatMap((row) => {
+    const view = toResultView(row, recipes.find((r) => r.id === row.recipe) ?? null);
+    return view ? [view] : [];
+  });
+}
+
 /** "Datasets: 1 being written, 2 ready.", read out when a dataset starts or finishes while the page refreshes itself. */
 function datasetsSummary(datasets: DatasetView[], now: number): string {
   const writing = datasets.filter((d) => d.status === "generating" && !isDatasetStalled(d, now)).length;
@@ -81,26 +102,20 @@ export default async function FineTuningPage({
 }) {
   await connection();
   const [user, sp] = await Promise.all([pageViewer(), searchParams]);
-  if (!user?.isAdmin) {
-    return (
-      <div className="page">
-        <PageHeader title="Fine-tuning" subtitle={SUBTITLE} />
-        <AdminsOnly signedIn={Boolean(user)} />
-      </div>
-    );
-  }
+  if (!user?.isAdmin) return labPage(Boolean(user));
 
   const show = parseShow(sp.show);
   const initialDatasetId = typeof sp.dataset === "string" ? sp.dataset : null;
   const now = new Date();
-  // Datasets load on their own, so a problem with them doesn't hide the jobs.
-  const [result, datasetsResult, blocked] = await Promise.all([
+  // Datasets and results load on their own, so a problem with them doesn't hide the jobs.
+  const [result, datasetsResult, blocked, results] = await Promise.all([
     safeQuery(async () => {
       const [rows, active, spentToday] = await Promise.all([listJobs(100), activeJobCount(), trainingSpendToday(now)]);
       return { jobs: rows.map((r) => toJobView(r, now)), active, spentToday };
     }),
     safeQuery(() => loadDatasets(now.getTime())),
     datasetBlock(),
+    safeQuery(loadResults),
   ]);
   const recipes = RECIPES.map(toRecipeView);
   // The model cache bills every month on its own, outside every limit on this page.
@@ -161,6 +176,8 @@ export default async function FineTuningPage({
         </>
       )}
 
+      <ResultsSection results={results} admin />
+
       <NewJobCard
         recipes={recipes}
         ceilings={ceilings}
@@ -202,6 +219,70 @@ export default async function FineTuningPage({
 
       <NewDatasetCard blocked={blocked} />
     </div>
+  );
+}
+
+/**
+ * The Lab results for non-admins (docs/TRAINING.md "Lab results"): what the lab does, the judged jobs and the ready
+ * datasets, read-only. Nothing here starts, stops or changes anything, and nothing reads a job's log, instance or error.
+ */
+async function labPage(signedIn: boolean) {
+  const now = Date.now();
+  const [results, datasets] = await Promise.all([
+    safeQuery(loadResults),
+    safeQuery(async () =>
+      (await listReadyDatasets(LAB_DATASETS_SHOWN)).filter((d) => d.status === "ready").map(toReadyDatasetView),
+    ),
+  ]);
+  return (
+    <div className="page">
+      <PageHeader title="Fine-tuning" subtitle={LAB_SUBTITLE} />
+      <LabIntro />
+      {!results.ok && !datasets.ok ? (
+        <NotConnected reason={results.reason} what="the fine-tuning results" />
+      ) : (
+        <>
+          <ResultsSection results={results} admin={false} />
+          <section className="section" id="datasets" aria-labelledby="datasets-title">
+            <div className="section-head">
+              <h2 id="datasets-title">Datasets</h2>
+            </div>
+            {!datasets.ok ? (
+              <NotConnected reason={datasets.reason} what="the training datasets" />
+            ) : datasets.data.length === 0 ? (
+              <EmptyCard icon="file" title="No datasets yet">
+                <p>Training sets {WRITER_NAME} has written show up here once they are ready.</p>
+              </EmptyCard>
+            ) : (
+              <ReadyDatasetsTable datasets={datasets.data} now={now} caption="Ready training datasets, newest first" />
+            )}
+          </section>
+        </>
+      )}
+      <AdminsOnly signedIn={signedIn} />
+    </div>
+  );
+}
+
+/** The judged jobs. Admins see it only when there are some, with a note that anyone can see them. */
+function ResultsSection({ results, admin }: { results: QueryResult<ResultView[]>; admin: boolean }) {
+  if (admin && (!results.ok || results.data.length === 0)) return null;
+  return (
+    <section className="section" id="results" aria-labelledby="results-title">
+      <div className="section-head">
+        <h2 id="results-title">Results</h2>
+        {admin ? <span className="muted small">Anyone can see these, read-only.</span> : null}
+      </div>
+      {!results.ok ? (
+        <NotConnected reason={results.reason} what="the fine-tuning results" />
+      ) : results.data.length === 0 ? (
+        <EmptyCard icon="tune" title="No results yet">
+          <p>A job shows up here once it has finished and {WRITER_NAME} has judged it.</p>
+        </EmptyCard>
+      ) : (
+        <ResultsTable results={results.data} caption="Judged fine-tuning jobs, newest first" />
+      )}
+    </section>
   );
 }
 
