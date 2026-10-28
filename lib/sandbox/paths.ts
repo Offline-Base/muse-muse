@@ -15,14 +15,31 @@ export const BUILDER_MARKER = `${WORK_DIR}/builder.json`;
  * puts them back in PRODUCT_DIR before every verify or demo, so Muse Code's edits to them can't fake a pass.
  */
 export const PRISTINE_DIR = `${WORK_DIR}/pristine`;
-/** Paths relative to PRODUCT_DIR (and PRISTINE_DIR). verify.mjs imports smoke-report.mjs. Each must exist in template/. */
+/**
+ * Paths relative to PRODUCT_DIR (and PRISTINE_DIR). verify.mjs imports smoke-report.mjs, and demo-studio.mjs imports
+ * demo-plan.mjs. Each must exist in template/. The last four are Demo Studio (docs/DEMO_STUDIO.md), with the Inter font
+ * its cards and the recorder's file chip use: a pristine copy without tests/demo-fixtures.ts marks a sandbox from an
+ * older snapshot, which records the old way.
+ */
 export const PLATFORM_FILES = [
   "scripts/verify.mjs",
   "scripts/smoke-report.mjs",
   "playwright.config.ts",
   "musemuse.schema.json",
   "tests/judge-shot.ts",
+  "tests/demo-fixtures.ts",
+  "scripts/demo-plan.mjs",
+  "scripts/demo-studio.mjs",
+  "scripts/demo-inter.woff2",
 ] as const;
+/** The platform file whose pristine copy says a sandbox can record with Demo Studio. */
+export const DEMO_STUDIO_MARKER = "tests/demo-fixtures.ts";
+/** Demo Studio's spec for the next demo run (builder.ts writeDemoSpec), read by scripts/demo-studio.mjs --spec. */
+export const DEMO_SPEC_PATH = `${WORK_DIR}/demo-spec.json`;
+/** Where Demo Studio writes demo.mp4, poster.jpg and studio.json. Sandboxes from older snapshots make their MP4 here too. */
+export const DEMO_OUT_DIR = `${OUT_DIR}/demo`;
+/** What tests/demo-fixtures.ts records, relative to PRODUCT_DIR: timeline.json and frames/. */
+export const DEMO_RECORDING_DIR = "test-results/demo";
 /**
  * Folder in PRODUCT_DIR where a fix round keeps the screenshots the judge saw, so the resumed Muse Code run can attach
  * them with --image (which takes paths inside the product). It holds its own `*` .gitignore, and DEPLOY_EXCLUDE_DIRS

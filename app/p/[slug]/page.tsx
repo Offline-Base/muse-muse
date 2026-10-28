@@ -252,6 +252,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <video
                 className="demo"
                 src={product.demoVideoUrl}
+                poster={product.demoPosterUrl ?? undefined}
                 controls
                 preload="metadata"
                 playsInline

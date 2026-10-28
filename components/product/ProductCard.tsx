@@ -15,7 +15,15 @@ export function ProductCard({ p, compact = false }: { p: ProductCardView; compac
     <article className="pcard">
       <div className="pcard-media">
         {p.demoVideoUrl ? (
-          <video src={p.demoVideoUrl} preload="metadata" controls muted playsInline aria-label={`Demo of ${p.name}`} />
+          <video
+            src={p.demoVideoUrl}
+            poster={p.demoPosterUrl ?? undefined}
+            preload="metadata"
+            controls
+            muted
+            playsInline
+            aria-label={`Demo of ${p.name}`}
+          />
         ) : (
           <div className="pcard-placeholder" aria-hidden>
             <Icon name="sparkle" size={28} />

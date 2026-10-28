@@ -241,6 +241,7 @@ export function BuildRoom(props: BuildRoomProps) {
   const connectorUrl = slug ? `${props.origin}/api/mcp/${slug}` : null;
   const liveUrl = room.liveUrl ?? product?.liveUrl ?? null;
   const demoUrl = room.recordingUrl ?? (room.terminal ? (product?.demoVideoUrl ?? null) : null);
+  const demoPosterUrl = room.recordingUrl ? room.recordingPosterUrl : room.terminal ? (product?.demoPosterUrl ?? null) : null;
   const models = brief
     ? [...new Set(brief.capabilities.map((c) => c.model))]
     : (product?.manifest?.models.map((m) => m.id) ?? []);
@@ -372,6 +373,7 @@ export function BuildRoom(props: BuildRoomProps) {
                 connectorUrl={connectorUrl}
                 models={models}
                 demoUrl={room.recordingUrl ? null : demoUrl}
+                demoPosterUrl={demoPosterUrl}
               />
             </Turn>
           ) : null}
@@ -513,7 +515,15 @@ function SegmentTurn({
     case "record":
       return (
         <Turn icon="video" title="Recorded demo" meta={segmentMeta(seg)}>
-          <video className="demo" src={seg.url} controls preload="metadata" playsInline aria-label="Recorded demo" />
+          <video
+            className="demo"
+            src={seg.url}
+            poster={seg.posterUrl ?? undefined}
+            controls
+            preload="metadata"
+            playsInline
+            aria-label="Recorded demo"
+          />
           <Notes notes={seg.notes} />
         </Turn>
       );

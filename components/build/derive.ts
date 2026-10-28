@@ -72,7 +72,7 @@ export type Segment =
       verify: { summary: VerifySummary; screenshots: Screenshot[] } | null;
       judge: JudgeVerdict | null;
     })
-  | (SegmentBase & { type: "record"; url: string })
+  | (SegmentBase & { type: "record"; url: string; posterUrl: string | null })
   | (SegmentBase & { type: "deploy"; url: string });
 
 type CheckSegment = Extract<Segment, { type: "check" }>;
@@ -88,6 +88,8 @@ export interface RoomState {
   previewUrl: string | null;
   liveUrl: string | null;
   recordingUrl: string | null;
+  /** The recording's poster, when it came with one. */
+  recordingPosterUrl: string | null;
   costUsd: number;
   fixRounds: number;
   /** The last rail step that was running, so a failure can be pinned to it. */
@@ -105,6 +107,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   let previewUrl = build.previewUrl;
   let liveUrl: string | null = null;
   let recordingUrl: string | null = null;
+  let recordingPosterUrl: string | null = null;
   let costUsd = build.costUsd;
   let lastRail: RailStep | null = STATUS_RAIL[build.status] ?? (build.step ? (STEP_RAIL[build.step] ?? null) : null);
   let lastError: string | null = build.error;
@@ -207,8 +210,14 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
       }
       case "recording": {
         recordingUrl = e.url;
-        const seg = touch("record", () => ({ ...base("record", e.at), type: "record" as const, url: e.url }), e.at);
+        recordingPosterUrl = e.posterUrl ?? null;
+        const seg = touch(
+          "record",
+          () => ({ ...base("record", e.at), type: "record" as const, url: e.url, posterUrl: recordingPosterUrl }),
+          e.at,
+        );
         seg.url = e.url;
+        seg.posterUrl = recordingPosterUrl;
         break;
       }
       case "deploy": {
@@ -249,6 +258,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     previewUrl,
     liveUrl,
     recordingUrl,
+    recordingPosterUrl,
     costUsd,
     fixRounds: Math.max(build.fixRounds, build.kind === "refine" ? Math.max(0, fixFromRounds) : fixFromRounds),
     lastRail,

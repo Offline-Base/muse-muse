@@ -54,11 +54,15 @@ test("primary flow works with the sample photo", async ({ page }) => {
 
 ## The test is also the demo video
 
-After checks pass, the platform runs `npm run demo`. It replays the same test at 1280×720 with video recording and a little slow motion, then turns the recording into an MP4 with a title card and captions. Write the test so it plays well as a video:
+After checks pass, the platform replays `tests/smoke.spec.ts` as the product's demo video: a 1280x720 window with a visible cursor that moves to each control, text typed key by key, the camera zooming in on each result, model waits sped up, and each step's title as a caption. The recording brings every new result on screen and holds it a few seconds before the next action, and ends on the last one, so the test needs no waits for the video. Write the test so it plays well:
 
-- Wrap each user action in `test.step("...")` with a title a viewer would understand, like "Upload a photo of the wall" or "Find the wall". Step titles become the captions.
+- Wrap each user action in `test.step("...")` with a title a viewer would understand, like "Upload a photo of the wall" or "Find the wall". Step titles become the captions, so give each step one thing a person does, and keep its title under 50 characters.
+- Write titles about what the person does with the product, not about the test: "Upload a photo of the wall", not "Upload the sample photo" or "Check the fixture".
+- Use normal locator actions: `click`, `fill`, `check`, `selectOption`, `setInputFiles`, `press`. The cursor and the typing follow them. No `page.mouse`, no `force: true` and no clicks through `evaluate`: the video can't show those.
+- Import `test` and `expect` from `@playwright/test` in `tests/smoke.spec.ts` itself, not from a helper module of your own: the recording attaches through that import.
 - Follow one clear path from start to result, using the fixtures, with no detours or retries inside the test.
-- End on the result the brief promises and keep it on screen. `await page.waitForTimeout(1500)` at the very end is fine.
+- After each model call, wait for its result in the same step (`await expect(...).toBeVisible()`), so the result plays under that step's caption.
+- End on the result the brief promises. Don't end with a `page.waitForTimeout`: the recording holds the result by itself.
 
 ## Screenshots for the judge
 

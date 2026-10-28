@@ -1,8 +1,9 @@
 import type { VerifySummary } from "@/lib/types";
 
 /**
- * Pure helpers for what the sandbox produces: verify.mjs's summary line, judge screenshot captions, and the demo
- * video's caption timeline and ffmpeg filter graph. No SDK calls here, so they are easy to test.
+ * Pure helpers for what the sandbox produces: verify.mjs's summary line, judge screenshot captions, the demo run's
+ * result, Demo Studio's spec and output checks, and the old recorder's caption timeline and ffmpeg filter graph. No SDK
+ * calls here, so they are easy to test.
  */
 
 export const VERIFY_FAILURE_MAX = 6000;
@@ -127,6 +128,30 @@ export interface DemoRun {
   steps: JsonStep[];
 }
 
+/**
+ * True when the demo project ran in test-results/report.json and every test's last result passed. A skipped test
+ * doesn't count against it, but at least one must have passed. A missing or unreadable report is false.
+ */
+export function demoRunPassed(reportJson: string, project = "demo"): boolean {
+  let report: { suites?: JsonSuite[] };
+  try {
+    report = JSON.parse(reportJson) as { suites?: JsonSuite[] };
+  } catch {
+    return false;
+  }
+  const statuses: string[] = [];
+  const visit = (suite: JsonSuite) => {
+    for (const spec of suite.specs ?? []) {
+      for (const t of spec.tests ?? []) {
+        if (t.projectName === project) statuses.push(t.results?.[t.results.length - 1]?.status ?? "unknown");
+      }
+    }
+    for (const child of suite.suites ?? []) visit(child);
+  };
+  for (const s of report.suites ?? []) visit(s);
+  return statuses.includes("passed") && statuses.every((s) => s === "passed" || s === "skipped");
+}
+
 /** Finds the demo project's last result in test-results/report.json. */
 export function demoRunFromReport(reportJson: string, project = "demo"): DemoRun | null {
   let report: { suites?: JsonSuite[] };
@@ -179,6 +204,67 @@ export function captionTimeline(steps: JsonStep[], videoSeconds: number): Captio
   return out.filter((c) => c.end - c.start >= 0.05);
 }
 
+/**
+ * What scripts/demo-studio.mjs reads (--spec): the cards' text, the URL in the window's address bar, the recording to
+ * edit, and where to write demo.mp4, poster.jpg and studio.json. Written by builder.ts writeDemoSpec.
+ */
+export interface DemoStudioSpec {
+  title: string;
+  tagline: string;
+  /** Display names for the intro card's chips, such as "Muse Spark 1.3". */
+  models: string[];
+  /** The product's live URL, or null when it won't have one (publishing is off). */
+  url: string | null;
+  /** timeline.json from tests/demo-fixtures.ts, an absolute path. Its frames sit next to it. */
+  timeline: string;
+  /** Folder for the render. */
+  out: string;
+}
+
+/** The video every Demo Studio render must be: docs/DEMO_STUDIO.md. */
+export const STUDIO_VIDEO = { width: 1920, height: 1080, minSeconds: 3 } as const;
+
+/** studio.json, the summary Demo Studio writes last. Only `ok` is required; the rest is for logs. */
+export function parseStudioSummary(text: string | null): { ok: boolean; mode: string | null; error: string | null } {
+  type Raw = { ok?: unknown; mode?: unknown; error?: unknown } | null;
+  let raw: Raw = null;
+  try {
+    raw = text ? (JSON.parse(text) as Raw) : null;
+  } catch {
+    // Not JSON: a render that died while writing it.
+  }
+  if (!raw || typeof raw !== "object") return { ok: false, mode: null, error: text ? "studio.json is not JSON" : "there is no studio.json" };
+  return {
+    ok: raw.ok === true,
+    mode: typeof raw.mode === "string" ? raw.mode : null,
+    error: typeof raw.error === "string" && raw.error ? raw.error : raw.ok === true ? null : "studio.json doesn't say ok",
+  };
+}
+
+/**
+ * What is wrong with a rendered demo, from `ffprobe -show_entries stream=codec_name,width,height -show_entries
+ * format=duration -of json`, or null when it is an H.264 video of `want`'s size that runs longer than its minimum.
+ */
+export function demoVideoProblem(
+  ffprobeJson: string,
+  want: { width: number; height: number; minSeconds: number } = STUDIO_VIDEO,
+): string | null {
+  let info: { streams?: Array<{ codec_name?: string; width?: number; height?: number }>; format?: { duration?: string } };
+  try {
+    info = JSON.parse(ffprobeJson) as typeof info;
+  } catch {
+    return "ffprobe couldn't read it";
+  }
+  const stream = info.streams?.[0];
+  if (!stream) return "it has no video stream";
+  if (stream.codec_name !== "h264") return `it is ${stream.codec_name ?? "an unknown codec"}, not H.264`;
+  if (stream.width !== want.width || stream.height !== want.height) return `it is ${stream.width}x${stream.height}, not ${want.width}x${want.height}`;
+  const seconds = Number(info.format?.duration);
+  if (!(seconds > want.minSeconds)) return `it runs ${Number.isFinite(seconds) ? seconds.toFixed(1) : "an unknown number of"} s, under ${want.minSeconds} s`;
+  return null;
+}
+
+/** The old recorder's MP4, for sandboxes from snapshots made before Demo Studio. */
 export const DEMO = { width: 1280, height: 720, fps: 30, titleSeconds: 2.5, background: "0x0f1115" } as const;
 
 const FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";

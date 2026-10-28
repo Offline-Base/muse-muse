@@ -142,7 +142,7 @@ One durable workflow per build. Each row is a step with its own retries.
 | `preview` | Starts `next dev` on `0.0.0.0:3000`, waits for a 200, saves `sandbox.domain(3000)` | Vercel Sandbox | 2 min | 1 |
 | `verify` | Runs `npm run verify`, collects screenshots, asks the judge | Playwright, Muse Spark 1.3 | 8 min | 0 |
 | `fix` | On failure, resumes the Muse Code session with the errors. Loops back to `verify`, at most 3 rounds | Muse Code | 10 min each | 0 |
-| `record` | Reruns the test at 1280×720 with video, then makes an MP4 with a title card and step captions | Playwright, ffmpeg | 5 min | 1 |
+| `record` | Writes Demo Studio's spec, reruns the smoke test with its recorder, then edits the recording into a 1920×1080 MP4 and a poster | Playwright, Chromium, ffmpeg | 9 min | 1 |
 | `deploy` | Pulls the source out of the sandbox, creates or updates the product's Vercel project, sets env vars, deploys, waits for READY | Vercel REST API | 6 min | 2 |
 | `register` | Saves the product, mints its gateway token, builds its MCP tool list from `musemuse.json` | Postgres | 30 s | 3 |
 | `hibernate` | Stops the sandbox. Persistent sandboxes snapshot on stop, so refinements resume where they left off | Vercel Sandbox | 1 min | 2 |
@@ -187,11 +187,11 @@ Three layers, in order. A later layer cannot overrule an earlier failure.
 2. **Behavioral.** The Playwright smoke test that Muse Code wrote runs the primary flow on the fixtures, with real model calls through the gateway on the build token.
 3. **Judgment.** Muse Spark 1.3 gets the brief, the inspo and two to four screenshots. It returns pass or fail with reasons, as structured output. It checks that the product does what the brief says and doesn't copy a brand, logo or character from the inspo.
 
-**Recorded demos.** Every product that passes gets a demo video made from its own smoke test:
+**Recorded demos.** Every product that passes gets a demo video made from its own smoke test by Demo Studio ([DEMO_STUDIO.md](DEMO_STUDIO.md)):
 
-1. Playwright reruns the primary flow in a 1280×720 browser with video recording on and a short slow-motion delay.
-2. ffmpeg turns the WebM into an MP4 and adds a title card with the product name and the muse.
-3. Captions mark each step.
+1. The platform copies the smoke test with its Playwright imports pointed at a recorder, and reruns it at 1280×720 and twice the pixel density. The recorder saves the screen's frames and a timeline of every action, change on screen, wait and step.
+2. Demo Studio plans the edit from the timeline: actions and results at real speed, waits sped up with a badge, a camera that frames what is typed and what appears. Chromium draws the cards, the browser window and the captions, and ffmpeg puts it all together as a 1920×1080 H.264 MP4 with a poster.
+3. Captions from the test's step titles sit below the window, so they never cover the app. If the full render fails, a plain cut from the same frames is made instead. Sandboxes from older snapshots still record the old way, and `scripts/rerecord-demos.ts` re-records live products without a Muse Code run.
 
 Meta's API has no text-to-speech, so the videos use captions. You can narrate the hackathon video yourself. The build room's time-lapse is recorded the same way, from the platform's own page.
 
@@ -231,7 +231,7 @@ Uploads expire after 24 hours. Photos are also resized in the browser to about 1
 | `inspirations` | id, user id, note, references (url, kind, file name), created at |
 | `builds` | id, inspiration id, rebuild of (catalog id or empty), product id, status, brief json, sandbox name, muse session id, fix rounds, preview url, cost |
 | `build_events` | id, build id, seq, type, payload json, at |
-| `products` | id, slug, name, manifest json, vercel project id, live url, demo video url, status, owner |
+| `products` | id, slug, name, manifest json, vercel project id, live url, demo video and poster urls, status, owner |
 | `gateway_tokens` | id, product id, hash, scope (`build` or `live`), allowed models, daily budget, revoked at |
 | `usage` | id, product id, token id, endpoint, model, units, unit type, cost estimate, at |
 

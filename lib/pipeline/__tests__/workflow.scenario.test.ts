@@ -28,6 +28,10 @@ interface Scenario {
   previewThrows?: boolean;
   refineRefusal?: string;
   demoThrows?: boolean;
+  /** The demo task never finishes, so it hits the record step's cap. */
+  demoTimeout?: boolean;
+  /** What finishDemoStep returns. Defaults to a video with a poster. */
+  demo?: { videoUrl: string | null; posterUrl: string | null };
   deployState?: "READY" | "ERROR";
   /** False makes publishOffStep give a reason. Defaults to true. */
   publish?: boolean;
@@ -118,6 +122,7 @@ const fakeSteps = {
     record("pollTaskStep", sandboxName, cmdId);
     const v = currentVerify();
     if (cmdId.startsWith("verify") && v.timeout) return { done: false, exitCode: null, outputTail: "" };
+    if (cmdId.startsWith("demo") && scenario.demoTimeout) return { done: false, exitCode: null, outputTail: "" };
     return { done: true, exitCode: 0, outputTail: "tail" };
   },
   collectVerifyStep: async (input: { round: number }) => {
@@ -141,9 +146,10 @@ const fakeSteps = {
     record("writeFixPromptStep", input);
     return { promptFile: `fix-${input.fix}.md`, images: [`.muse-fix/round-${input.fix}-1.png`] };
   },
+  demoSpecStep: async (input: unknown) => record("demoSpecStep", input),
   finishDemoStep: async (input: unknown) => {
     record("finishDemoStep", input);
-    return "https://x/demo.mp4";
+    return scenario.demo ?? { videoUrl: "https://x/demo.mp4", posterUrl: "https://x/poster.jpg" };
   },
   publishOffStep: async () => {
     record("publishOffStep");
@@ -208,9 +214,10 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
     assert.equal(named("startDeployStep").length, 0);
     assert.equal(named("pollDeployStep").length, 0);
-    const reg = named("registerStep")[0]!.args[0] as { liveUrl: unknown; projectId: unknown; liveTokenId: unknown; demoVideoUrl: string };
+    const reg = named("registerStep")[0]!.args[0] as { liveUrl: unknown; projectId: unknown; liveTokenId: unknown; demoVideoUrl: string; demoPosterUrl: string };
     assert.deepEqual([reg.liveUrl, reg.projectId, reg.liveTokenId], [null, null, null]);
     assert.equal(reg.demoVideoUrl, "https://x/demo.mp4");
+    assert.equal(reg.demoPosterUrl, "https://x/poster.jpg");
     assert.equal(named("cleanupStep").length, 1);
     assert.equal(statuses().at(-1), "live");
   });
@@ -396,6 +403,40 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     reset({ demoThrows: true });
     assert.deepEqual(await wf.buildProduct({ buildId: "b11" }), { status: "live" });
     assert.ok(named("emitStep").some((c) => String((c.args[1] as { text?: string }).text).includes("demo recording was skipped")));
+    const reg = named("registerStep")[0]!.args[0] as { demoVideoUrl: string | null; demoPosterUrl: string | null };
+    assert.deepEqual([reg.demoVideoUrl, reg.demoPosterUrl], [null, null]);
+  });
+
+  it("writes Demo Studio's spec before the demo starts, and registers the poster with the video", async () => {
+    reset({});
+    assert.deepEqual(await wf.buildProduct({ buildId: "b19" }), { status: "live" });
+    assert.deepEqual(named("demoSpecStep")[0]!.args[0], {
+      buildId: "b19",
+      productId: "prod-1",
+      sandboxName: "product-shelf-scout",
+      title: "Shelf Scout",
+      tagline: "Find the book you saw",
+    });
+    const order = calls.map((c) => (c.step === "startTaskStep" ? `startTaskStep:${String(c.args[1])}` : c.step));
+    assert.ok(order.indexOf("demoSpecStep") < order.indexOf("startTaskStep:demo"));
+    assert.ok(order.indexOf("startTaskStep:demo") < order.indexOf("finishDemoStep"));
+    const reg = named("registerStep")[0]!.args[0] as { demoVideoUrl: string; demoPosterUrl: string };
+    assert.deepEqual([reg.demoVideoUrl, reg.demoPosterUrl], ["https://x/demo.mp4", "https://x/poster.jpg"]);
+
+    // A run that didn't pass gives no video, says so, and still ships.
+    reset({ demo: { videoUrl: null, posterUrl: null } });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b20" }), { status: "live" });
+    assert.ok(named("emitStep").some((c) => (c.args[1] as { text?: string }).text === "The demo run did not pass, so no video was published."));
+    assert.equal((named("registerStep")[0]!.args[0] as { demoVideoUrl: string | null }).demoVideoUrl, null);
+  });
+
+  it("stops a demo recording at the record step's 9-minute cap and ships without a video", async () => {
+    reset({ demoTimeout: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b21" }), { status: "live" });
+    assert.equal(named("pollTaskStep").filter((c) => String(c.args[1]).startsWith("demo")).length, 54);
+    assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "demo-cmd-1"]);
+    assert.equal(named("finishDemoStep").length, 0);
+    assert.ok(named("emitStep").some((c) => (c.args[1] as { text?: string }).text === "The demo recording ran too long and was skipped."));
     assert.equal((named("registerStep")[0]!.args[0] as { demoVideoUrl: string | null }).demoVideoUrl, null);
   });
 

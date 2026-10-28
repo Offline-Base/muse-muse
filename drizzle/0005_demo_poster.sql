@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "demo_poster_url" text;

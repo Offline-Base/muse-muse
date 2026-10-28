@@ -8,8 +8,8 @@ import { q, sh } from "@/lib/sandbox/shell";
 import { pristineCopyScript } from "@/lib/sandbox/tasks";
 
 /**
- * Turns a fresh `vercel/sandbox/universal` VM into a builder: system tools, Playwright's Chromium, Muse Code and the
- * template with its node_modules in PRODUCT_DIR. The snapshot script runs this once with open egress. Product
+ * Turns a fresh `vercel/sandbox/universal` VM into a builder: system tools and fonts, Playwright's Chromium, Muse Code
+ * and the template with its node_modules in PRODUCT_DIR. The snapshot script runs this once with open egress. Product
  * sandboxes run it only when no BUILDER_SNAPSHOT_ID is set, which is slow (a few minutes) but works from scripts.
  */
 
@@ -67,6 +67,48 @@ async function timed<T>(log: Log, step: string, fn: () => Promise<T>, detail?: (
   return value;
 }
 
+/**
+ * Fonts for Demo Studio's cards and captions (docs/DEMO_STUDIO.md): Inter, color emoji, and fontconfig for fc-cache.
+ * All three are in Ubuntu 26.04, the universal image's distro (Inter in universe, like ffmpeg).
+ */
+export const DEMO_FONT_PACKAGES = ["fontconfig", "fonts-inter", "fonts-noto-color-emoji"] as const;
+
+/**
+ * fontconfig rules that make Inter the sandbox's system font. Products use the template's system font stack
+ * (system-ui first), which Chromium on Linux would draw in DejaVu Sans. Inter is the closest open font to what phones
+ * and laptops show, so the judge's screenshots and the demo video look the way visitors see the product. Glyphs Inter
+ * lacks, like emoji, still come from the other fonts.
+ */
+export const INTER_DEFAULT_CONF = [
+  '<?xml version="1.0"?>',
+  '<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">',
+  "<fontconfig>",
+  ...["system-ui", "sans-serif", "sans"].map((f) => `  <alias><family>${f}</family><prefer><family>Inter</family></prefer></alias>`),
+  "</fontconfig>",
+].join("\n");
+
+/**
+ * Installs DEMO_FONT_PACKAGES after `apt-get update`, makes Inter the default sans-serif font when it installed
+ * (INTER_DEFAULT_CONF in `conf`, which the distro's fonts.conf reads), then rebuilds the font cache. Best effort: when
+ * the set won't install, each package is tried alone, and one that still won't is skipped (the cards and products
+ * fall back to DejaVu Sans, which the snapshot always has). Prints "skipped <what>" for each, and always exits 0.
+ */
+export function fontInstallScript(conf = "/etc/fonts/local.conf"): string {
+  return [
+    `pkgs=${q(DEMO_FONT_PACKAGES.join(" "))}`,
+    "if ! apt-get install -y -q --no-install-recommends $pkgs >/dev/null 2>&1; then",
+    '  for p in $pkgs; do apt-get install -y -q --no-install-recommends "$p" >/dev/null 2>&1 || echo "skipped $p"; done',
+    "fi",
+    "if fc-list : family 2>/dev/null | grep -qiE '(^|,)Inter(,|$)'; then",
+    `  printf '%s\\n' ${q(INTER_DEFAULT_CONF)} > ${q(conf)} 2>/dev/null || echo "skipped the Inter default"`,
+    "else",
+    '  echo "skipped the Inter default"',
+    "fi",
+    'fc-cache -f >/dev/null 2>&1 || echo "skipped fc-cache"',
+    "exit 0",
+  ].join("\n");
+}
+
 export async function installSystemTools(sandbox: Sandbox, log: Log): Promise<void> {
   // iproute2 gives `ss`, which the demo runner uses to find stale servers on the product ports (tasks.ts).
   await timed(log, "apt: ffmpeg, fonts-dejavu-core, espeak-ng, iproute2", () =>
@@ -81,6 +123,13 @@ export async function installSystemTools(sandbox: Sandbox, log: Log): Promise<vo
       sudo: true,
       env: { DEBIAN_FRONTEND: "noninteractive" },
     }),
+  );
+  // Last, so fc-cache also picks up the fonts install-deps brought in.
+  await timed(
+    log,
+    `apt: ${DEMO_FONT_PACKAGES.join(", ")} (best effort), Inter as the default sans-serif, fc-cache`,
+    () => sh(sandbox, fontInstallScript(), { sudo: true, allowFail: true, env: { DEBIAN_FRONTEND: "noninteractive" } }),
+    (res) => res.stdout.trim().replace(/\n/g, ", ") || "all installed",
   );
 }
 

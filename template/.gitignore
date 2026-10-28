@@ -5,3 +5,5 @@ test-results
 playwright-report
 *.tsbuildinfo
 .env*.local
+# The demo run's copy of tests/smoke.spec.ts (tests/demo-fixtures.ts records it)
+tests/*.demo.spec.ts

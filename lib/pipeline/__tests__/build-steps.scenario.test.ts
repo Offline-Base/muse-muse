@@ -36,6 +36,8 @@ let checkInputs: unknown[] = [];
 let checkImpl: () => Promise<unknown> = async () => ({ refusal: null, usage: [] });
 let pollImpl: () => Promise<unknown> = async () => ({});
 let pollInputs: Array<Record<string, unknown>> = [];
+let demoSpecs: Array<{ sandboxName: string; spec: Record<string, unknown> }> = [];
+let demoVideo: { videoUrl: string | null; posterUrl: string | null } = { videoUrl: null, posterUrl: null };
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -129,7 +131,11 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       namedExports: { prepareFixtures: async () => ({ fixtures: [], usage: [] }), writeBrief: async () => ({}) },
     });
     mock.module(at("../../publish/vercel.ts"), {
-      namedExports: { pollDeploy: async () => ({}), startDeployFromSandbox: async () => ({}) },
+      namedExports: {
+        pollDeploy: async () => ({}),
+        startDeployFromSandbox: async () => ({}),
+        projectNameFor: (slug: string) => `musemuse-${slug}`,
+      },
     });
     mock.module(at("../../sandbox/builder.ts"), {
       namedExports: {
@@ -145,6 +151,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
         readManifest: async () => null,
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
+        writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
+        finishDemo: async () => demoVideo,
       },
     });
     mock.module("workflow", {
@@ -168,6 +176,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     revoked = [];
     judgeInputs = [];
     checkInputs = [];
+    demoSpecs = [];
+    demoVideo = { videoUrl: null, posterUrl: null };
   });
 
   describe("judgeStep on a refinement", () => {
@@ -353,6 +363,90 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     it("sets the outcome when the product is on", async () => {
       returns = { products: [[{ status: "live" }]] };
       await steps.registerStep(input);
+      assert.equal(emitted.length, 0);
+    });
+
+    it("saves a new video with its poster, null included, and leaves both alone without one", async () => {
+      const saved = async (demo: { demoVideoUrl: string | null; demoPosterUrl?: string | null }) => {
+        writes = [];
+        returns = { products: [[{ status: "live" }]] };
+        await steps.registerStep({ ...input, ...demo });
+        const values = writes.find((w) => w.table === "products")!.values;
+        return [values.demoVideoUrl, values.demoPosterUrl, "demoPosterUrl" in values];
+      };
+      assert.deepEqual(await saved({ demoVideoUrl: "https://x/demo.mp4", demoPosterUrl: "https://x/poster.jpg" }), ["https://x/demo.mp4", "https://x/poster.jpg", true]);
+      // A new video without a poster clears the old one, which belongs to the old video.
+      assert.deepEqual(await saved({ demoVideoUrl: "https://x/demo.mp4" }), ["https://x/demo.mp4", null, true]);
+      assert.deepEqual(await saved({ demoVideoUrl: null, demoPosterUrl: null }), [undefined, undefined, false]);
+    });
+  });
+
+  describe("demoSpecStep", () => {
+    const BRIEF_MODELS = { ...BRIEF, capabilities: [{ model: "muse-spark-1.3" }, { model: "sam-3.1" }, { model: "muse-spark-1.3" }] };
+    const input = { buildId: "b1", productId: "prod-1", sandboxName: "sb", title: "Bird Count", tagline: "Count the birds at your feeder" };
+    const env = (vars: Record<string, string | undefined>) => {
+      const old = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+      for (const [k, v] of Object.entries(vars)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      return () => {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      };
+    };
+
+    it("names the models for the cards and shows the URL the first deploy will get", async () => {
+      const restore = env({ VERCEL_TOKEN: "tok", PLATFORM_URL: "https://muse-muse.vercel.app" });
+      try {
+        selects = { builds: [[{ id: "b1", brief: BRIEF_MODELS }]], products: [[{ id: "prod-1", slug: "bird-count", liveUrl: null, manifest: null }]] };
+        await steps.demoSpecStep(input);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(demoSpecs, [
+        {
+          sandboxName: "sb",
+          spec: { title: "Bird Count", tagline: "Count the birds at your feeder", models: ["Muse Spark 1.3", "SAM 3.1"], url: "https://musemuse-bird-count.vercel.app" },
+        },
+      ]);
+    });
+
+    it("keeps a refinement's live URL, and shows none when publishing is off", async () => {
+      const restore = env({ VERCEL_TOKEN: undefined });
+      try {
+        selects = { builds: [[{ id: "b1", brief: BRIEF_MODELS }]], products: [[{ id: "prod-1", slug: "bird-count", liveUrl: "https://bird-count-x.vercel.app", manifest: null }]] };
+        await steps.demoSpecStep(input);
+        selects = { builds: [[{ id: "b1", brief: BRIEF_MODELS }]], products: [[{ id: "prod-1", slug: "bird-count", liveUrl: null, manifest: null }]] };
+        await steps.demoSpecStep(input);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(demoSpecs.map((d) => d.spec.url), ["https://bird-count-x.vercel.app", null]);
+    });
+
+    it("takes the models from the product's first brief, or its manifest, when the build has no brief", async () => {
+      selects = {
+        builds: [[{ id: "r1", brief: null }], [{ brief: { ...BRIEF, capabilities: [{ model: "muse-voice-transcribe-1.0" }] } }]],
+        products: [[{ id: "prod-1", slug: "bird-count", liveUrl: null, manifest: null }]],
+      };
+      await steps.demoSpecStep(input);
+      selects = {
+        builds: [[{ id: "r1", brief: null }], []],
+        products: [[{ id: "prod-1", slug: "bird-count", liveUrl: null, manifest: { models: [{ id: "muse-image-1.0", usedFor: "art" }] } }]],
+      };
+      await steps.demoSpecStep(input);
+      assert.deepEqual(demoSpecs.map((d) => d.spec.models), [["Voice Transcribe"], ["Muse Image"]]);
+    });
+  });
+
+  describe("finishDemoStep", () => {
+    const input = { buildId: "b1", sandboxName: "sb", title: "Bird Count", subtitle: "Count birds" };
+
+    it("tells the build room about the video and its poster", async () => {
+      demoVideo = { videoUrl: "https://x/demo.mp4", posterUrl: "https://x/poster.jpg" };
+      assert.deepEqual(await steps.finishDemoStep(input), demoVideo);
+      assert.deepEqual(emitted, [{ buildId: "b1", body: { type: "recording", url: "https://x/demo.mp4", posterUrl: "https://x/poster.jpg" } }]);
+    });
+
+    it("says nothing when there is no video", async () => {
+      assert.deepEqual(await steps.finishDemoStep(input), { videoUrl: null, posterUrl: null });
       assert.equal(emitted.length, 0);
     });
   });

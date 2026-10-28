@@ -3,7 +3,7 @@
  *   npx tsx --test lib/sandbox/__tests__/tasks.test.ts
  */
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,12 +11,15 @@ import { after, test } from "node:test";
 import { PLATFORM_FILES } from "@/lib/sandbox/paths";
 import { writeRunner } from "@/lib/sandbox/shell";
 import {
+  demoScript,
+  demoSpecCopyScript,
   freeProductPortsScript,
   previewAnswered,
   previewWaitScript,
   pristineCopyScript,
   restorePlatformFilesScript,
   shrinkImagesScript,
+  studioCommand,
   taskScript,
 } from "@/lib/sandbox/tasks";
 
@@ -192,12 +195,188 @@ test("verify and demo run directly, never through package.json scripts", () => {
   const demo = taskScript("demo", "/vercel/musemuse/logs/demo.out");
   assert.ok(!/npm run/.test(verify) && !/npm run/.test(demo));
   assert.match(verify, /\{ node scripts\/verify\.mjs 2>&3 \| tee '\/vercel\/musemuse\/logs\/verify\.out'; \} 3>&1$/);
-  assert.match(demo, /\{ \.\/node_modules\/\.bin\/playwright test tests\/smoke\.spec\.ts --project=demo 2>&3 \| tee '\/vercel\/musemuse\/logs\/demo\.out'; \} 3>&1$/);
+  assert.ok(demo.includes("{ ./node_modules/.bin/playwright test tests/smoke.demo.spec.ts --project=studio --workers=1 2>&3 | tee '/vercel/musemuse/logs/demo.out'; } 3>&1"));
+  assert.ok(demo.includes("{ node scripts/demo-studio.mjs --spec '/vercel/musemuse/demo-spec.json' 2>&3 | tee -a '/vercel/musemuse/logs/demo.out'; } 3>&1"));
+  // Sandboxes from older snapshots keep the old command, which also records a studio run the recorder never saw.
+  assert.ok(demo.includes("{ ./node_modules/.bin/playwright test tests/smoke.spec.ts --project=demo 2>&3 | tee '/vercel/musemuse/logs/demo.out'; } 3>&1"));
+  assert.ok(demo.includes("{ ./node_modules/.bin/playwright test tests/smoke.spec.ts --project=demo 2>&3 | tee -a '/vercel/musemuse/logs/demo.out'; } 3>&1"));
+  assert.ok(demo.includes("if [ -f '/vercel/musemuse/pristine'/tests/demo-fixtures.ts ]; then"));
   // Both restore first. Only the demo frees the product ports, before it starts.
   for (const s of [verify, demo]) assert.ok(s.indexOf("for f in") < s.indexOf("2>&3"));
   assert.ok(!verify.includes("ss -Htlnp"));
   assert.ok(demo.indexOf("ss -Htlnp") > demo.indexOf("for f in") && demo.indexOf("ss -Htlnp") < demo.indexOf("2>&3"));
   assert.match(demo, /p >= 3100 && p <= 3199/);
+  assert.equal(studioCommand("/x/spec.json", true), "node scripts/demo-studio.mjs --spec '/x/spec.json' --basic");
+});
+
+const SMOKE_IMPORTS = `import { test, expect } from "@playwright/test";
+import type { Page, Locator } from '@playwright/test';
+import {
+  devices,
+  type BrowserContext,
+} from   "@playwright/test"  ;
+import { judgeShot } from "./judge-shot";
+export { expect as check } from"@playwright/test";
+import type { Reporter } from "@playwright/test/reporter";
+
+test("adds up the receipts", async ({ page }) => {
+  await test.step("Open the product", async () => {
+    await page.goto("/");
+  });
+});
+`;
+
+const SMOKE_IMPORTS_REWRITTEN = `import { test, expect } from "./demo-fixtures";
+import type { Page, Locator } from './demo-fixtures';
+import {
+  devices,
+  type BrowserContext,
+} from   "./demo-fixtures"  ;
+import { judgeShot } from "./judge-shot";
+export { expect as check } from"./demo-fixtures";
+import type { Reporter } from "@playwright/test/reporter";
+
+test("adds up the receipts", async ({ page }) => {
+  await test.step("Open the product", async () => {
+    await page.goto("/");
+  });
+});
+`;
+
+/**
+ * A product folder for the demo script, with stand-ins for Playwright and Demo Studio. The Playwright stand-in saves
+ * its arguments (the last call's in playwright.args, every call's in playwright.calls) and the spec copy it was given,
+ * writes a timeline as the recorder would when it runs the copy (unless PW_RECORD=0), sleeps PW_SLEEP seconds and
+ * exits with PW_EXIT, or PW_VIDEO_EXIT for a run of the video project. The studio stand-in is the pristine copy of scripts/demo-studio.mjs (the restore puts it in
+ * place) and saves its arguments. A stale recording, render and report are left where an earlier demo would have left
+ * them.
+ */
+function demoProduct(opts: { smoke?: string | null; legacy?: boolean } = {}) {
+  const product = freshDir("demo-product");
+  const pristine = freshDir("pristine");
+  const capture = freshDir("capture");
+  const outDir = path.join(freshDir("work"), "out", "demo");
+  const studio = `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(path.join(capture, "studio.json"))}, JSON.stringify(process.argv.slice(2)));\nprocess.exit(Number(process.env.STUDIO_EXIT || 0));\n`;
+  const pristineFiles: Record<string, string> = { ...ORIGINAL, "scripts/demo-studio.mjs": studio };
+  if (opts.legacy) for (const f of ["tests/demo-fixtures.ts", "scripts/demo-plan.mjs", "scripts/demo-studio.mjs"]) delete pristineFiles[f];
+  writeProduct(pristine, pristineFiles);
+  writeProduct(product, {
+    ...(opts.smoke === null ? {} : { "tests/smoke.spec.ts": opts.smoke ?? SMOKE_IMPORTS }),
+    "test-results/report.json": "{}",
+    "test-results/demo/timeline.json": "stale",
+    "test-results/demo/frames/000001.jpg": "jpg",
+  });
+  writeProduct(outDir, { "studio.json": '{"ok":true}', "demo.mp4": "old" });
+  const pw = path.join(product, "node_modules/.bin/playwright");
+  mkdirSync(path.dirname(pw), { recursive: true });
+  writeFileSync(
+    pw,
+    [
+      "#!/bin/bash",
+      `echo "$@" > ${JSON.stringify(path.join(capture, "playwright.args"))}`,
+      `echo "$@" >> ${JSON.stringify(path.join(capture, "playwright.calls"))}`,
+      `[ -f tests/smoke.demo.spec.ts ] && cp tests/smoke.demo.spec.ts ${JSON.stringify(path.join(capture, "copy.ts"))}`,
+      `case "$*" in *smoke.demo.spec.ts*) [ "\${PW_RECORD:-1}" = 1 ] && mkdir -p test-results/demo && echo "{}" > test-results/demo/timeline.json ;; esac`,
+      `sleep "\${PW_SLEEP:-0}"`,
+      `case "$*" in *--project=demo*) exit "\${PW_VIDEO_EXIT:-\${PW_EXIT:-0}}" ;; esac`,
+      `exit "\${PW_EXIT:-0}"`,
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const script = taskScript("demo", path.join(capture, "demo.out"), { pristineDir: pristine, specPath: "/work/demo-spec.json", outDir });
+  const env = { ...stubSs([]), GIT_CEILING_DIRECTORIES: path.dirname(product) };
+  const read = (file: string) => (existsSync(path.join(capture, file)) ? readFileSync(path.join(capture, file), "utf8") : null);
+  return { product, outDir, script, env, read };
+}
+
+test("the demo runs a copy of the smoke test with every Playwright import pointed at the recorder, then the studio", () => {
+  const d = demoProduct();
+  const res = bash(d.script, { cwd: d.product, env: d.env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(d.read("playwright.calls")?.trim(), "test tests/smoke.demo.spec.ts --project=studio --workers=1");
+  assert.equal(d.read("copy.ts"), SMOKE_IMPORTS_REWRITTEN);
+  assert.deepEqual(JSON.parse(d.read("studio.json")!), ["--spec", "/work/demo-spec.json"]);
+  // The copy is gone, the smoke test is untouched, and nothing from the last demo is left to be mistaken for this one.
+  assert.ok(!existsSync(path.join(d.product, "tests/smoke.demo.spec.ts")));
+  assert.equal(readFileSync(path.join(d.product, "tests/smoke.spec.ts"), "utf8"), SMOKE_IMPORTS);
+  for (const stale of ["test-results/report.json", "test-results/demo/frames"]) assert.ok(!existsSync(path.join(d.product, stale)), stale);
+  assert.equal(readFileSync(path.join(d.product, "test-results/demo/timeline.json"), "utf8").trim(), "{}", "this run's timeline");
+  assert.ok(!existsSync(d.outDir));
+  assert.ok(!res.stderr.includes("may not attach"));
+});
+
+test("a failed demo run exits with Playwright's code, skips the studio and still deletes the copy", () => {
+  const d = demoProduct();
+  const res = bash(d.script, { cwd: d.product, env: { ...d.env, PW_EXIT: "1" } });
+  assert.equal(res.code, 1);
+  assert.equal(d.read("studio.json"), null);
+  assert.ok(d.read("copy.ts"), "the run got the copy");
+  assert.ok(!existsSync(path.join(d.product, "tests/smoke.demo.spec.ts")));
+});
+
+test("a studio that fails after a passing run makes the demo exit with its code", () => {
+  const d = demoProduct();
+  const res = bash(d.script, { cwd: d.product, env: { ...d.env, STUDIO_EXIT: "3" } });
+  assert.equal(res.code, 3);
+  assert.ok(d.read("studio.json"));
+});
+
+test("a passing studio run that recorded nothing is recorded again with Playwright's video, and the studio doesn't run", () => {
+  const d = demoProduct();
+  const res = bash(d.script, { cwd: d.product, env: { ...d.env, PW_RECORD: "0" } });
+  assert.equal(res.code, 0, res.stderr);
+  assert.deepEqual(d.read("playwright.calls")?.trim().split("\n"), [
+    "test tests/smoke.demo.spec.ts --project=studio --workers=1",
+    "test tests/smoke.spec.ts --project=demo",
+  ]);
+  assert.match(res.stderr, /the studio run recorded nothing, so the demo is recorded with Playwright's video instead/);
+  assert.equal(d.read("studio.json"), null);
+  assert.ok(!existsSync(path.join(d.product, "tests/smoke.demo.spec.ts")), "the copy is gone before the second run");
+
+  // The second run's failure is the task's.
+  const failed = demoProduct();
+  const second = bash(failed.script, { cwd: failed.product, env: { ...failed.env, PW_RECORD: "0", PW_VIDEO_EXIT: "4" } });
+  assert.equal(second.code, 4);
+  assert.equal(failed.read("studio.json"), null);
+});
+
+test("a smoke test that imports its test from elsewhere still runs, with a warning, and none at all fails", () => {
+  const helper = demoProduct({ smoke: 'import { test } from "./fixtures";\ntest("x", async () => {});\n' });
+  const warned = bash(helper.script, { cwd: helper.product, env: helper.env });
+  assert.equal(warned.code, 0, warned.stderr);
+  assert.match(warned.stderr, /doesn't import @playwright\/test itself, so the demo recorder may not attach/);
+
+  const none = demoProduct({ smoke: null });
+  const res = bash(none.script, { cwd: none.product, env: none.env });
+  assert.equal(res.code, 1);
+  assert.match(res.stderr, /there is no tests\/smoke\.spec\.ts to record/);
+  assert.equal(none.read("playwright.args"), null);
+  assert.ok(!existsSync(path.join(none.product, "tests/smoke.demo.spec.ts")));
+});
+
+test("a sandbox from an older snapshot, without the recorder in its pristine copy, records the old way", () => {
+  const d = demoProduct({ legacy: true });
+  const res = bash(d.script, { cwd: d.product, env: d.env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(d.read("playwright.args")?.trim(), "test tests/smoke.spec.ts --project=demo");
+  assert.equal(d.read("copy.ts"), null);
+  assert.equal(d.read("studio.json"), null);
+  assert.ok(!existsSync(path.join(d.product, "test-results/report.json")), "report.json only ever describes this run");
+});
+
+test("a demo stopped at its cap still deletes the copy", async () => {
+  const d = demoProduct();
+  // The runner sends SIGTERM to the whole process group (shell.ts writeRunner), so this does the same.
+  const child = spawn("bash", ["-c", d.script], { cwd: d.product, env: { ...process.env, ...d.env, PW_SLEEP: "30" }, detached: true, stdio: "ignore" });
+  const exited = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
+  const copy = path.join(d.product, "tests/smoke.demo.spec.ts");
+  for (let i = 0; i < 100 && !d.read("playwright.args"); i++) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(existsSync(copy), "the run is under way with its copy");
+  process.kill(-child.pid!, "SIGTERM");
+  assert.equal(await exited, 143);
+  assert.ok(!existsSync(copy));
+  assert.equal(d.read("studio.json"), null);
 });
 
 /** Writes the real runner script (shell.ts writeRunner) through a stand-in sandbox and returns its path. */
@@ -288,6 +467,9 @@ test("every generated script is valid bash", () => {
     freeProductPortsScript(),
     taskScript("verify", "/x/verify.out"),
     taskScript("demo", "/x/demo.out"),
+    demoScript("/x/it's.out", { pristineDir: "/x/it's", specPath: "/x/it's.json", outDir: "/x/it's" }),
+    demoSpecCopyScript(),
+    studioCommand("/x/it's.json", true),
     shrinkImagesScript(["/x/.muse-fix/round-1-1.png", "/x/it's.png"], 2 * 1024 * 1024),
   ]) {
     const res = spawnSync("bash", ["-n", "-c", script], { encoding: "utf8" });

@@ -19,7 +19,7 @@ An Oct 27 audit compared every scaffold file with the current tree. It found fiv
 3. **Build.** Muse Code runs headless in a Vercel Sandbox microVM, one per product, started from a warm snapshot. It writes a Next.js product from `template/`, guided by the template's `AGENTS.md`, one skill per Meta model and a manifest it must fill in. Muse Wonder 1.0 replaces Spark 1.3 as the build model when the brief marks the product complex. The build room shows the live log and a live preview.
 4. **Check.** `npm run verify` runs typecheck and `next build`, starts the server and checks for console errors. Then come the Playwright smoke test Muse Code wrote, with real model calls, and a screen check that fails on sideways scroll, clipped text or a loading state left on screen. Last, Muse Spark 1.3 judges the screenshots against the brief and the inspo.
 5. **Fix rounds.** A failure resumes the same Muse Code session with the errors and up to four of the judge's screenshots. Three rounds at most. A product that still fails ships as partial only when every mechanical check passed. Otherwise the build ends as failed, with Muse Code's notes.
-6. **Demo video.** The smoke test reruns at 1280×720 with video on. ffmpeg makes it an MP4 with a title card and step captions. The redacted Muse Code transcript is saved for the product page.
+6. **Demo video.** Demo Studio reruns the smoke test with a recorder that tracks every action, change on screen and wait, then edits it into a 1920×1080 MP4 and a poster: an intro card with the product's models, the app in a browser window with its live URL, a cursor and a camera that zooms in on typing and results, model waits sped up with a badge that says by how much, and captions below the window. See [docs/DEMO_STUDIO.md](docs/DEMO_STUDIO.md). The redacted Muse Code transcript is saved for the product page.
 7. **Deploy.** The platform, never the sandbox, publishes the source as its own Vercel project, `musemuse-<slug>`. The product calls Meta only through this platform's gateway, with a product token scoped to its models and endpoints, a daily budget and rate limits.
 8. **Connector.** The actions in the product's `musemuse.json` become MCP tools at `/api/mcp/<slug>`. Add that URL to the Muse app as a custom connector, or to Claude Code as an MCP server.
 
@@ -172,7 +172,7 @@ catalog/meta-models.json    Every Meta model, endpoint, limit and price we know 
 catalog/meta-resources.json Meta's demo videos, each with a rebuild plan
 drizzle/                    SQL migrations
 docs/                       Design, spikes, UI patterns, training, build plan, submission
-scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all
+scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos
 template/                   Starter repo Muse Code builds every product from
   AGENTS.md                 Rules Muse Code loads on its own
   .agents/skills/           One skill per Meta model, plus product UI and verify
@@ -202,7 +202,7 @@ On Vercel, set the same variables on the project. A few need care:
 - `OPEN_ACCESS=guest` opens the site with no sign-in: every visitor shares one Builder account and its daily cap. `DAILY_SPEND_CAP_USD` stops new builds and gateway calls for the day once it is reached.
 - Fine-tuning needs `LAMBDA_API_KEY` and `CRON_SECRET`. Jobs start only on production, where Vercel runs the sweep cron.
 
-`npm run rebuild-all` starts the rebuild batch at `PLATFORM_URL` with the `AUTOMATION_SECRET` bearer and prints a table and a total. Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds target well under 30 minutes, so Hobby works for the hackathon.
+`npm run rebuild-all` starts the rebuild batch at `PLATFORM_URL` with the `AUTOMATION_SECRET` bearer and prints a table and a total. `npx tsx --env-file=.env.local scripts/rerecord-demos.ts` re-records the demo of every live product (or the ids and slugs you give it) in its own sandbox with Demo Studio, without a Muse Code run; `--dry-run` records in a throwaway copy of each sandbox and saves the videos locally, changing nothing. Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds target well under 30 minutes, so Hobby works for the hackathon.
 
 ## Run it on your machine
 

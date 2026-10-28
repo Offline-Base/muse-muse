@@ -26,6 +26,7 @@ function RebuildCard({ c, admin, isNew }: { c: RebuildCardView; admin: boolean; 
         {c.product?.demoVideoUrl ? (
           <video
             src={c.product.demoVideoUrl}
+            poster={c.product.demoPosterUrl ?? undefined}
             preload="metadata"
             controls
             muted

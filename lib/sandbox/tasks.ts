@@ -2,19 +2,108 @@
  * Shell for the preview, verify and demo runners and for fix-round screenshots. Pure string builders, so they can be
  * tested without a sandbox.
  */
-import { PLATFORM_FILES, PRISTINE_DIR, PRODUCT_DIR, PRODUCT_PORTS } from "@/lib/sandbox/paths";
+import {
+  DEMO_OUT_DIR,
+  DEMO_RECORDING_DIR,
+  DEMO_SPEC_PATH,
+  DEMO_STUDIO_MARKER,
+  PLATFORM_FILES,
+  PRISTINE_DIR,
+  PRODUCT_DIR,
+  PRODUCT_PORTS,
+} from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
 
 export type SandboxTask = "verify" | "demo";
 
+/** The copy of the smoke test the demo runs, with its Playwright imports pointed at the recorder (demoSpecCopyScript). */
+export const DEMO_SPEC_COPY = "tests/smoke.demo.spec.ts";
+
+/**
+ * The demo's Playwright projects (template/playwright.config.ts): Demo Studio's recorder, and Playwright's own video,
+ * the old demo. Platform code from before Demo Studio runs the old one by name, so it keeps the name "demo".
+ */
+export const STUDIO_PROJECT = "studio";
+export const VIDEO_PROJECT = "demo";
+
+/** Where a task script finds the pristine copy and the demo's spec and render folder. Tests move them to temp dirs. */
+export interface TaskPaths {
+  pristineDir?: string;
+  specPath?: string;
+  outDir?: string;
+}
+
 /**
  * What each task runs, called directly rather than through package.json scripts, which Muse Code can edit. The demo
- * command is the template's `npm run demo`.
+ * runs the copy of the smoke test in one worker, since the recorder writes a single test-results/demo even when a spec
+ * asks for parallel tests, then Demo Studio's render (taskScript).
  */
 export const TASK_COMMANDS: Record<SandboxTask, string> = {
   verify: "node scripts/verify.mjs",
-  demo: "./node_modules/.bin/playwright test tests/smoke.spec.ts --project=demo",
+  demo: `./node_modules/.bin/playwright test ${DEMO_SPEC_COPY} --project=${STUDIO_PROJECT} --workers=1`,
 };
+
+/**
+ * The smoke test with Playwright's own video: the demo in sandboxes from snapshots made before Demo Studio, and the
+ * second try in newer ones when the studio run passed but recorded nothing.
+ */
+export const LEGACY_DEMO_COMMAND = `./node_modules/.bin/playwright test tests/smoke.spec.ts --project=${VIDEO_PROJECT}`;
+
+/** Demo Studio's render from a spec. `basic` makes the plain cut with captions and no camera (builder.ts finishDemo). */
+export function studioCommand(specPath: string = DEMO_SPEC_PATH, basic = false): string {
+  return `node scripts/demo-studio.mjs --spec ${q(specPath)}${basic ? " --basic" : ""}`;
+}
+
+/**
+ * Copies tests/smoke.spec.ts to DEMO_SPEC_COPY with every import of "@playwright/test" pointed at "./demo-fixtures",
+ * which re-exports it with the demo recorder on the page fixture and in test.step. Only the quoted module name changes,
+ * in either quote style, so `import type`, `export ... from` and imports split over several lines all follow. Exits 1
+ * when there is no smoke test to copy.
+ */
+export function demoSpecCopyScript(): string {
+  const rewrite = [`s#"@playwright/test"#"./demo-fixtures"#g`, `s#'@playwright/test'#'./demo-fixtures'#g`];
+  return [
+    `[ -f tests/smoke.spec.ts ] || { echo "musemuse: there is no tests/smoke.spec.ts to record" >&2; exit 1; }`,
+    `grep -q "@playwright/test" tests/smoke.spec.ts || echo "musemuse: tests/smoke.spec.ts doesn't import @playwright/test itself, so the demo recorder may not attach" >&2`,
+    `sed ${rewrite.map((e) => `-e ${q(e)}`).join(" ")} tests/smoke.spec.ts > ${q(DEMO_SPEC_COPY)} || exit 1`,
+  ].join("\n");
+}
+
+/**
+ * The demo after the restore. Sandboxes whose pristine copy has DEMO_STUDIO_MARKER clear the last recording and
+ * render, run the smoke test's copy in the studio project, always delete the copy, and render with Demo Studio only
+ * when the run passed. A passing run that left no timeline ran without the recorder: the smoke test takes its test()
+ * from a module of its own, which the copy's import rewrite doesn't reach. That test is recorded again with
+ * Playwright's video, as older sandboxes always record, and builder.ts finishDemo makes the old MP4 from it. Either way
+ * a failed run exits with Playwright's code and leaves no video, and report.json is cleared first, so it only ever
+ * describes the last run.
+ */
+export function demoScript(outPath: string, opts: TaskPaths = {}): string {
+  const { pristineDir = PRISTINE_DIR, specPath = DEMO_SPEC_PATH, outDir = DEMO_OUT_DIR } = opts;
+  const out = q(outPath);
+  return [
+    "rm -f test-results/report.json",
+    `if [ -f ${q(pristineDir)}/${DEMO_STUDIO_MARKER} ]; then`,
+    `  rm -rf ${q(DEMO_RECORDING_DIR)} ${q(outDir)}`,
+    // The runner stops a run that hits its cap with SIGTERM. Exiting through the trap still deletes the copy.
+    `  trap 'rm -f ${DEMO_SPEC_COPY}' EXIT`,
+    `  trap 'exit 143' TERM INT`,
+    demoSpecCopyScript().replace(/^/gm, "  "),
+    `  { ${TASK_COMMANDS.demo} 2>&3 | tee ${out}; } 3>&1`,
+    `  code=$?`,
+    `  rm -f ${DEMO_SPEC_COPY}`,
+    `  [ "$code" -eq 0 ] || exit "$code"`,
+    `  if [ ! -s ${q(`${DEMO_RECORDING_DIR}/timeline.json`)} ]; then`,
+    `    echo "musemuse: the studio run recorded nothing, so the demo is recorded with Playwright's video instead" >&2`,
+    `    { ${LEGACY_DEMO_COMMAND} 2>&3 | tee -a ${out}; } 3>&1`,
+    `    exit $?`,
+    `  fi`,
+    `  { ${studioCommand(specPath)} 2>&3 | tee -a ${out}; } 3>&1`,
+    "else",
+    `  { ${LEGACY_DEMO_COMMAND} 2>&3 | tee ${out}; } 3>&1`,
+    "fi",
+  ].join("\n");
+}
 
 /** How long startPreview waits for `next dev` to answer. It compiles the page on the first request. */
 export const PREVIEW_WAIT_S = 90;
@@ -104,12 +193,13 @@ export function freeProductPortsScript(): string {
  * The runner's bash for a task: restore the platform files, free the product ports for the demo, then run it.
  * stdout is teed to `outPath` because verify's summary must be the last line of stdout, not of stderr.
  */
-export function taskScript(task: SandboxTask, outPath: string): string {
+export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths = {}): string {
   return [
     "set -o pipefail",
-    restorePlatformFilesScript(),
-    ...(task === "demo" ? [freeProductPortsScript()] : []),
-    `{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`,
+    restorePlatformFilesScript(opts.pristineDir),
+    ...(task === "demo"
+      ? [freeProductPortsScript(), demoScript(outPath, opts)]
+      : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),
   ].join("\n");
 }
 

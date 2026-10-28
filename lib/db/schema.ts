@@ -74,6 +74,8 @@ export const products = pgTable(
     vercelProjectId: text("vercel_project_id"),
     liveUrl: text("live_url"),
     demoVideoUrl: text("demo_video_url"),
+    /** A still from the demo for its <video> poster. Set with demoVideoUrl, so the two always match. */
+    demoPosterUrl: text("demo_poster_url"),
     transcriptUrl: text("transcript_url"),
     status: text("status").$type<ProductStatus>().notNull().default("building"),
     createdAt: createdAt(),

@@ -20,6 +20,7 @@ import {
   cleanupStep,
   collectVerifyStep,
   createProductStep,
+  demoSpecStep,
   emitStep,
   failStep,
   finishDemoStep,
@@ -153,7 +154,7 @@ async function runMuse(
   }
 }
 
-/** `npm run verify` or `npm run demo`, polled until done or the cap (then it's killed). */
+/** The verify or demo task (lib/sandbox/tasks.ts), polled until done or the cap (then it's killed). */
 async function runTask(
   sandboxName: string,
   task: "verify" | "demo",
@@ -255,17 +256,28 @@ async function ship(
   track.stage = "record";
   await setStatusStep(ctx.buildId, "recording", { step: "record" });
   let demoVideoUrl: string | null = null;
+  let demoPosterUrl: string | null = null;
   try {
+    // Demo Studio reads its cards and the window's URL from this spec, so it goes in before the run starts.
+    await demoSpecStep({
+      buildId: ctx.buildId,
+      productId: ctx.productId,
+      sandboxName: ctx.sandboxName,
+      title: product.name,
+      tagline: product.tagline,
+    });
     const demo = await runTask(ctx.sandboxName, "demo", stepTimeoutMs("record"));
     if (demo.timedOut) {
       await emitStep(ctx.buildId, { type: "log", text: "The demo recording ran too long and was skipped." });
     } else {
-      demoVideoUrl = await finishDemoStep({
+      const video = await finishDemoStep({
         buildId: ctx.buildId,
         sandboxName: ctx.sandboxName,
         title: product.name,
         subtitle: product.tagline,
       });
+      demoVideoUrl = video.videoUrl;
+      demoPosterUrl = video.posterUrl;
       if (!demoVideoUrl) await emitStep(ctx.buildId, { type: "log", text: "The demo run did not pass, so no video was published." });
     }
   } catch (err) {
@@ -293,6 +305,7 @@ async function ship(
       liveUrl: null,
       liveTokenId: null,
       demoVideoUrl,
+      demoPosterUrl,
       status: product.outcome,
     });
     return null;
@@ -331,6 +344,7 @@ async function ship(
     liveUrl,
     liveTokenId: deploy.liveTokenId,
     demoVideoUrl,
+    demoPosterUrl,
     status: product.outcome,
   });
   return liveUrl;

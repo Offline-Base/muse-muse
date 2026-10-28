@@ -213,10 +213,11 @@ From [BUILD_PLAN.md](BUILD_PLAN.md#submission-checklist), updated Oct 27.
 - [x] **Fine-tuning lab** with public, read-only results at `/fine-tuning`.
 - [x] **Video script.** Section 2 above.
 - [x] **Rules answers** on pre-kickoff code, credits and Meta's brand (Oct 27, in BUILD_PLAN.md).
+- [x] **A public Blob store on the live site.** "muse-blob" is connected through OIDC (`BLOB_STORE_ID`, no read-write token). The server signs in with the request's OIDC token and browsers upload through presigned URLs. `npm run rebuild-all` then ran against the live site on Oct 28: 9 of 10 catalog rebuilds went live, including all 6 of Meta's videos, for $24.70 in total. The Muse Wonder first demo failed its smoke test in all 3 fix rounds.
+- [x] **Try tuned Glimmer live.** A time-boxed GPU demo answers visitors' app ideas with base and tuned Muse Glimmer side by side on the run's public page. Tested in production on Oct 28: about 90 seconds per answer pair, about $1.50 for a 30-minute window.
 
 ### Left
 
-- [ ] **A public Vercel Blob store, so the live site can build.** The store made so far is private: it rejects public uploads, and Meta can't fetch from it. Connect a public store and set `BLOB_READ_WRITE_TOKEN` on the Vercel project. Then run `npm run rebuild-all` against the live site, so Rebuilds and Gallery fill with published products.
 - [ ] **A GitHub repo, if the rules need one.** The repo is local with no remote. Push `main` with its full history, so the scaffold commit `e3ba154` stays visible.
 - [ ] **Record the video** from section 2, including the dated OpenRouter and Meta Videos page screenshots for the opening.
 - [x] Fill in the second fine-tuning run's result (tuned won 40 of 40).

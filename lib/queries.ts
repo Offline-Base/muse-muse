@@ -111,6 +111,7 @@ function toProductView(p: ProductRow): ProductView {
     latestBuildId: p.latestBuildId,
     liveUrl: p.liveUrl,
     demoVideoUrl: p.demoVideoUrl,
+    demoPosterUrl: p.demoPosterUrl,
     transcriptUrl: p.transcriptUrl,
     status: p.status,
     createdAt: p.createdAt.toISOString(),
@@ -317,6 +318,7 @@ export async function listShippedProducts(limit = 60): Promise<ProductCardView[]
       status: p.status,
       liveUrl: p.liveUrl,
       demoVideoUrl: p.demoVideoUrl,
+      demoPosterUrl: p.demoPosterUrl,
       muse: manifest?.inspiration || r.note || brief?.inspiration.summary || null,
       models: [...new Set(models)],
       buildMs: r.startedAt && r.finishedAt ? r.finishedAt.getTime() - r.startedAt.getTime() : null,
@@ -497,6 +499,7 @@ export async function listRebuilds(): Promise<RebuildsData> {
         status: schema.products.status,
         liveUrl: schema.products.liveUrl,
         demoVideoUrl: schema.products.demoVideoUrl,
+        demoPosterUrl: schema.products.demoPosterUrl,
         rebuildOf: schema.products.rebuildOf,
         updatedAt: schema.products.updatedAt,
       })
@@ -521,6 +524,7 @@ type RebuildProductRow = {
   status: ProductView["status"];
   liveUrl: string | null;
   demoVideoUrl: string | null;
+  demoPosterUrl: string | null;
   rebuildOf: string | null;
 };
 
@@ -554,6 +558,7 @@ export function joinRebuilds(buildRows: RebuildBuildRow[], productRows: RebuildP
             status: product.status,
             liveUrl: product.liveUrl,
             demoVideoUrl: product.demoVideoUrl,
+            demoPosterUrl: product.demoPosterUrl,
           }
         : null,
       attempts: builds.length,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { APIError, Sandbox } from "@vercel/sandbox";
+import { noEmDashes } from "@/lib/brief/normalize";
 import { env } from "@/lib/env";
 import { fetchBytes, putFile } from "@/lib/storage";
 import type { Manifest, ModelUsage, MuseLogLine, Reference, Screenshot, VerifySummary } from "@/lib/types";
@@ -9,6 +10,10 @@ import {
   DEMO,
   demoFilterGraph,
   demoRunFromReport,
+  demoRunPassed,
+  type DemoStudioSpec,
+  demoVideoProblem,
+  parseStudioSummary,
   parseVerifySummary,
   verifyOutcome,
   wrapText,
@@ -23,7 +28,20 @@ import {
   type SessionUsage,
 } from "@/lib/sandbox/muse-log";
 import { type BuildModel, isSessionId, museEnv, museExecArgs, optionalFlagsPrelude } from "@/lib/sandbox/muse";
-import { BUILDER_MARKER, FIX_SCREENSHOTS_DIR, LOG_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
+import {
+  BUILDER_MARKER,
+  DEMO_OUT_DIR,
+  DEMO_RECORDING_DIR,
+  DEMO_SPEC_PATH,
+  DEMO_STUDIO_MARKER,
+  FIX_SCREENSHOTS_DIR,
+  LOG_DIR,
+  OUT_DIR,
+  PLATFORM_FILES,
+  PRISTINE_DIR,
+  PRODUCT_DIR,
+  RUN_DIR,
+} from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
@@ -31,9 +49,13 @@ import {
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
+  pristineCopyScript,
   type SandboxTask,
   shrinkImagesScript,
+  STUDIO_PROJECT,
+  studioCommand,
   taskScript,
+  VIDEO_PROJECT,
 } from "@/lib/sandbox/tasks";
 
 /**
@@ -68,6 +90,13 @@ const MAX_FIX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
 const FIX_SCREENSHOT_FETCH_MS = 20_000;
 /** Batch size for writeFiles uploads, so one large video doesn't make a huge request. */
 const WRITE_BATCH_BYTES = 24 * 1024 * 1024;
+/**
+ * How long finishDemo gives Demo Studio's basic cut when the task's render didn't come out. With the upload it keeps
+ * the step under about four minutes.
+ */
+const BASIC_RENDER_S = 180;
+/** Names of forkForDryRun's throwaway copies start with this. */
+const DRY_RUN_PREFIX = "dryrun-";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Helpers
@@ -319,6 +348,64 @@ export async function reopenSandbox(input: {
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
   await writeBatched(sandbox, [...downloaded, { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) }]);
+}
+
+/**
+ * A throwaway copy of a product sandbox, for dry runs that must leave the product as it is (scripts/rerecord-demos.ts
+ * --dry-run): forked from the sandbox's last snapshot, not persistent, and tagged as a dry run. The copy can't reach
+ * the platform. Its product calls Meta directly with the copy's own placeholder key, which the firewall swaps for the
+ * real key on the routes products use (policy.ts directProducts), so a run needs no build token and writes nothing to
+ * the database or Blob. Uploads through the gateway (files over 4.5 MB) and the gateway's limits don't apply there.
+ * Delete the copy with deleteDryRunCopy.
+ */
+export async function forkForDryRun(sandboxName: string): Promise<{ sandboxName: string }> {
+  const name = `${DRY_RUN_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
+  const placeholder = sandboxPlaceholder(name);
+  const fork = await Sandbox.fork({
+    sourceSandbox: sandboxName,
+    name,
+    persistent: false,
+    timeout: SANDBOX_TIMEOUT_MS,
+    networkPolicy: builderNetworkPolicy({ modelApiKey: env.modelApiKey, placeholderKey: placeholder, platformHost: null, directProducts: true }),
+    tags: { app: "musemuse", role: "dry-run", source: sandboxName.slice(0, 60) },
+  });
+  await fork.writeFiles([
+    {
+      path: `${PRODUCT_DIR}/.env.local`,
+      content: `# Written by the Muse Muse platform for a dry run. Never commit this file.\nGATEWAY_URL=https://api.meta.ai\nPRODUCT_TOKEN=${placeholder}\n`,
+    },
+  ]);
+  return { sandboxName: name };
+}
+
+/**
+ * Deletes a copy made by forkForDryRun, and refuses any other sandbox, so a mix-up can never delete a product's own.
+ * The copy isn't persistent and makes no snapshots, so there are none to clean up. One that is already gone is fine.
+ */
+export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
+  if (!sandboxName.startsWith(DRY_RUN_PREFIX)) throw new Error(`${sandboxName} is not a dry run's copy, so it was not deleted`);
+  try {
+    await (await Sandbox.get({ name: sandboxName })).delete();
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+  }
+}
+
+/**
+ * Puts this platform's PLATFORM_FILES (from template/) into a product sandbox and remakes PRISTINE_DIR from them with
+ * sudo, so a sandbox from an older snapshot records with Demo Studio (scripts/rerecord-demos.ts). The next task
+ * restores from the pristine copy, so a failed remake throws rather than leaving the old files to come back. Installs
+ * nothing else.
+ */
+export async function refreshPlatformFiles(sandboxName: string, files: Array<{ path: string; content: Buffer | string }>): Promise<void> {
+  const byPath = new Map(files.map((f) => [f.path, f.content]));
+  const missing = PLATFORM_FILES.filter((f) => !byPath.has(f));
+  if (missing.length) throw new Error(`These platform files are missing from template/: ${missing.join(", ")}`);
+  const sandbox = await openSandbox(sandboxName);
+  // Replace whatever is there, symlinks included, so the root copy below only ever reads what was just written.
+  await sh(sandbox, `cd ${q(PRODUCT_DIR)} && rm -f -- ${PLATFORM_FILES.map(q).join(" ")}`);
+  await writeBatched(sandbox, PLATFORM_FILES.map((f) => ({ path: `${PRODUCT_DIR}/${f}`, content: byPath.get(f)! })));
+  await sh(sandbox, pristineCopyScript(), { sudo: true });
 }
 
 /** Writes a text file inside PRODUCT_DIR, such as fix.md or refine.md. */
@@ -678,24 +765,162 @@ export async function collectVerifyResult(input: {
 }
 
 /**
- * After `npm run demo` finishes: turns test-results/**\/video.webm into an MP4 with a title card and step captions
- * (from test-results/report.json) using ffmpeg in the sandbox, uploads it to Blob (demos/<buildId>/demo.mp4), and
- * returns its URL. Null when there is no video, or when the demo run didn't pass (a failed or stale run is never
- * published as the product's demo).
+ * Writes Demo Studio's spec (DEMO_SPEC_PATH) for the next demo run: what its cards say and the URL its window shows.
+ * The recording it edits and the folder it renders into are always the same, so they are filled in here.
+ */
+export async function writeDemoSpec(
+  sandboxName: string,
+  spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url">,
+): Promise<DemoStudioSpec> {
+  const full: DemoStudioSpec = {
+    title: noEmDashes(spec.title).trim() || "Untitled",
+    tagline: noEmDashes(spec.tagline).trim(),
+    models: [...new Set(spec.models.map((m) => m.trim()).filter(Boolean))],
+    url: spec.url,
+    timeline: `${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/timeline.json`,
+    out: DEMO_OUT_DIR,
+  };
+  const sandbox = await openSandbox(sandboxName);
+  await sandbox.writeFiles([{ path: DEMO_SPEC_PATH, content: `${JSON.stringify(full, null, 2)}\n` }]);
+  return full;
+}
+
+export interface DemoVideo {
+  /** demos/<buildId>/demo.mp4, or null when there is no video. */
+  videoUrl: string | null;
+  /** demos/<buildId>/poster.jpg. Null when there is no video, or no poster could be made for it. */
+  posterUrl: string | null;
+}
+
+const NO_DEMO: DemoVideo = { videoUrl: null, posterUrl: null };
+
+/** True when the sandbox's pristine copy has Demo Studio, so its demo task ran the recorder (tasks.ts demoScript). */
+async function hasDemoStudio(sandbox: Sandbox): Promise<boolean> {
+  return (await sh(sandbox, `[ -f ${q(`${PRISTINE_DIR}/${DEMO_STUDIO_MARKER}`)} ]`, { allowFail: true })).exitCode === 0;
+}
+
+/** The recorder's timeline, which every studio run that got as far as the product writes, passing or not. */
+const TIMELINE = `${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/timeline.json`;
+
+/** Why Demo Studio's render in DEMO_OUT_DIR can't be published, or null when it can. */
+async function studioProblem(sandbox: Sandbox): Promise<string | null> {
+  const buf = await sandbox.readFileToBuffer({ path: `${DEMO_OUT_DIR}/studio.json` }).catch(() => null);
+  const summary = parseStudioSummary(buf ? buf.toString("utf8") : null);
+  if (!summary.ok) return summary.error ?? "studio.json doesn't say ok";
+  if (summary.mode === "basic" && summary.error) console.warn(`Demo Studio made its basic cut after the full render failed: ${summary.error.slice(0, 500)}`);
+  const probe = await sh(
+    sandbox,
+    `ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -show_entries format=duration -of json ${q(`${DEMO_OUT_DIR}/demo.mp4`)}`,
+    { allowFail: true },
+  );
+  const problem = probe.exitCode === 0 ? demoVideoProblem(probe.stdout) : "ffprobe couldn't read it";
+  return problem ? `demo.mp4 can't be published: ${problem}` : null;
+}
+
+/** Uploads an MP4 and its poster (when there is one) to demos/<buildId>/. A poster that won't upload is left out. */
+async function uploadDemo(
+  sandbox: Sandbox,
+  input: { sandboxName: string; buildId: string; skipUpload?: boolean },
+  mp4: string,
+  poster: string,
+): Promise<DemoVideo> {
+  const hasPoster = (await sh(sandbox, `[ -s ${q(poster)} ]`, { allowFail: true })).exitCode === 0;
+  if (input.skipUpload) {
+    return { videoUrl: sandboxUrl(input.sandboxName, mp4), posterUrl: hasPoster ? sandboxUrl(input.sandboxName, poster) : null };
+  }
+  const video = await sandbox.readFileToBuffer({ path: mp4 });
+  if (!video) throw new Error("Demo MP4 vanished before upload");
+  const videoUrl = await putFile("demos", `${input.buildId}/demo.mp4`, video, "video/mp4");
+  let posterUrl: string | null = null;
+  try {
+    const image = hasPoster ? await sandbox.readFileToBuffer({ path: poster }) : null;
+    if (image?.length) posterUrl = await putFile("demos", `${input.buildId}/poster.jpg`, image, "image/jpeg");
+  } catch (err) {
+    console.warn(`demo poster for build ${input.buildId}: ${String(err)}`);
+  }
+  return { videoUrl, posterUrl };
+}
+
+/** Saves one frame of an MP4 as a JPEG, unless the poster is already there. Never throws. */
+async function ensurePoster(sandbox: Sandbox, mp4: string, poster: string, atSeconds: number): Promise<void> {
+  await sh(
+    sandbox,
+    `[ -s ${q(poster)} ] || ffmpeg -nostdin -y -hide_banner -loglevel error -ss ${atSeconds} -i ${q(mp4)} -frames:v 1 -q:v 3 ${q(poster)}`,
+    { allowFail: true, timeoutMs: 30_000 },
+  ).catch((err: unknown) => console.warn(`demo poster: ${String(err)}`));
+}
+
+/**
+ * After the demo task finishes: uploads Demo Studio's demo.mp4 and poster.jpg to Blob (demos/<buildId>/...) and
+ * returns their URLs. A render that is missing, says it failed, or isn't a 1920x1080 H.264 video longer than 3 s gets
+ * one try at the basic cut (`demo-studio.mjs --basic`, bounded by BASIC_RENDER_S), and this throws if that doesn't come
+ * out either. After an upload the recording's frames are deleted from the sandbox. Sandboxes from older snapshots, with
+ * no Demo Studio in their pristine copy, and studio runs the recorder never saw make the old MP4 from Playwright's video
+ * instead. Nulls when the demo run didn't pass: a failed or stale run is never published as the product's demo.
  */
 export async function finishDemo(input: {
   sandboxName: string;
   buildId: string;
+  /** The old recorder's title card. Demo Studio reads its text from the spec (writeDemoSpec). */
   title: string;
   subtitle: string;
   /** Tests only: skip the Blob upload and return a sandbox:// path instead of a URL. */
   skipUpload?: boolean;
-}): Promise<{ videoUrl: string | null }> {
+}): Promise<DemoVideo> {
   const sandbox = await openSandbox(input.sandboxName);
   const reportBuf = await sandbox.readFileToBuffer({ path: `${PRODUCT_DIR}/test-results/report.json` }).catch(() => null);
-  const run = reportBuf ? demoRunFromReport(reportBuf.toString("utf8")) : null;
+  const report = reportBuf ? reportBuf.toString("utf8") : "";
+  if (!(await hasDemoStudio(sandbox))) return finishLegacyDemo(sandbox, input, report);
+  // With no timeline the recorder never ran, and a passing run was recorded again with Playwright's video (tasks.ts
+  // demoScript), whose report finishLegacyDemo reads. A run that failed early has no demo result there either.
+  if ((await sh(sandbox, `[ -s ${q(TIMELINE)} ]`, { allowFail: true })).exitCode !== 0) return finishLegacyDemo(sandbox, input, report);
+  // The demo task deletes report.json first, so a run with no demo result never got far enough to record.
+  if (!demoRunPassed(report, STUDIO_PROJECT)) return NO_DEMO;
+
+  const mp4 = `${DEMO_OUT_DIR}/demo.mp4`;
+  const poster = `${DEMO_OUT_DIR}/poster.jpg`;
+  const problem = await studioProblem(sandbox);
+  if (problem) {
+    console.warn(`Demo Studio on ${input.sandboxName}: ${problem}. Making the basic cut.`);
+    const basicLog = `${LOG_DIR}/demo-basic.log`;
+    await sh(
+      sandbox,
+      [
+        `rm -f ${q(`${DEMO_OUT_DIR}/studio.json`)} ${q(mp4)} ${q(poster)}`,
+        `timeout -k 10 ${BASIC_RENDER_S} ${studioCommand(DEMO_SPEC_PATH, true)} > ${q(basicLog)} 2>&1`,
+      ].join("\n"),
+      { cwd: PRODUCT_DIR, allowFail: true, timeoutMs: (BASIC_RENDER_S + 30) * 1000 },
+    ).catch((err: unknown) => console.warn(`Demo Studio basic cut on ${input.sandboxName}: ${String(err)}`));
+    const still = await studioProblem(sandbox);
+    if (still) {
+      const log = (await tailText(sandbox, basicLog, 1500)).trim();
+      throw new Error(`Demo Studio couldn't make the video (${problem}), and its basic cut failed too: ${still}.${log ? `\n${log}` : ""}`);
+    }
+  }
+  // A render that left out its poster gets a frame from the intro card.
+  await ensurePoster(sandbox, mp4, poster, 1.5);
+  const video = await uploadDemo(sandbox, input, mp4, poster);
+  // Hundreds of MB of frames would otherwise ride along in every snapshot of the sandbox. The timeline stays.
+  if (!input.skipUpload) {
+    await sh(sandbox, `rm -rf ${q(`${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/frames`)}`, { allowFail: true }).catch((err: unknown) =>
+      console.warn(`demo frames on ${input.sandboxName}: ${String(err)}`),
+    );
+  }
+  return video;
+}
+
+/**
+ * The old recorder, for sandboxes from snapshots made before Demo Studio: turns test-results/**\/video.webm into an MP4
+ * with a title card and step captions (from report.json) using ffmpeg, with a poster from the title card.
+ */
+async function finishLegacyDemo(
+  sandbox: Sandbox,
+  input: { sandboxName: string; buildId: string; title: string; subtitle: string; skipUpload?: boolean },
+  report: string,
+): Promise<DemoVideo> {
+  const run = report ? demoRunFromReport(report, VIDEO_PROJECT) : null;
   // No demo result means report.json is verify's smoke run, so any video lying around is from an older demo.
-  if (run?.status !== "passed") return { videoUrl: null };
+  if (run?.status !== "passed") return NO_DEMO;
 
   let video = run?.videoPath ?? null;
   if (video && !video.startsWith("/")) video = `${PRODUCT_DIR}/${video}`;
@@ -707,13 +932,13 @@ export async function finishDemo(input: {
     const rel = found.stdout.trim();
     video = rel ? `${PRODUCT_DIR}/${rel.replace(/^\.\//, "")}` : null;
   }
-  if (!video) return { videoUrl: null };
+  if (!video) return NO_DEMO;
 
   const probe = await sh(sandbox, `ffprobe -v error -show_entries format=duration -of csv=p=0 ${q(video)}`);
   const seconds = Number(probe.stdout.trim()) || 0;
   const captions = captionTimeline(run?.steps ?? [], seconds);
 
-  const dir = `${OUT_DIR}/demo`;
+  const dir = DEMO_OUT_DIR;
   const files: Array<{ path: string; content: string }> = [];
   // One file per line of text (see TextBlock in artifacts.ts).
   const block = (name: string, text: string, width: number, maxLines: number) => ({
@@ -761,10 +986,9 @@ export async function finishDemo(input: {
     throw new Error(`Demo MP4 came out wrong: ${check.stdout.slice(0, 400)}`);
   }
 
-  if (input.skipUpload) return { videoUrl: sandboxUrl(input.sandboxName, mp4) };
-  const buf = await sandbox.readFileToBuffer({ path: mp4 });
-  if (!buf) throw new Error("Demo MP4 vanished before upload");
-  return { videoUrl: await putFile("demos", `${input.buildId}/demo.mp4`, buf, "video/mp4") };
+  const poster = `${dir}/poster.jpg`;
+  await ensurePoster(sandbox, mp4, poster, DEMO.titleSeconds / 2);
+  return uploadDemo(sandbox, input, mp4, poster);
 }
 
 // ---------------------------------------------------------------------------------------------------------------

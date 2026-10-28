@@ -38,6 +38,8 @@ export interface ProductView {
   latestBuildId: string | null;
   liveUrl: string | null;
   demoVideoUrl: string | null;
+  /** Poster for the demo's <video>, made with it. */
+  demoPosterUrl: string | null;
   transcriptUrl: string | null;
   status: ProductStatus;
   createdAt: string;
@@ -76,6 +78,7 @@ export interface ProductCardView {
   status: ProductStatus;
   liveUrl: string | null;
   demoVideoUrl: string | null;
+  demoPosterUrl: string | null;
   /** One line on what the user gave and asked for. */
   muse: string | null;
   models: string[];
@@ -108,6 +111,7 @@ export interface RebuildCardView {
     status: ProductStatus;
     liveUrl: string | null;
     demoVideoUrl: string | null;
+    demoPosterUrl: string | null;
   } | null;
   attempts: number;
   totalMs: number;

@@ -1,14 +1,23 @@
 // Platform file: don't edit. Take every judge screenshot with judgeShot(page, "02-result").
 // It waits for work in progress to finish, checks the screen for problems a judge marks down (text cut off, a page
 // that scrolls sideways, em dashes, a button still saying it is working), then saves the full-page screenshot.
+// In the demo video's runs it only waits and gives viewers a beat: verify already took the screenshots and checked the
+// screen at phone size, so a demo never fails on a check that passed there.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+
+/** The demo video's runs: Playwright's own video (demo) and Demo Studio's recorder (studio). */
+const DEMO_PROJECTS = new Set(["demo", "studio"]);
 
 export async function judgeShot(page: Page, name: string): Promise<void> {
   if (!/^\d\d-[a-z0-9-]+$/.test(name)) throw new Error(`judgeShot name "${name}" must look like "02-result".`);
   await expect(page.locator('[aria-busy="true"]'), `${name}: something is still marked aria-busy="true"`).toHaveCount(0, {
     timeout: 90_000,
   });
+  if (DEMO_PROJECTS.has(test.info().project.name)) {
+    await page.waitForTimeout(600);
+    return;
+  }
   await page.evaluate(() => document.fonts.ready.then(() => true));
   await page.waitForTimeout(250);
   // MUSEMUSE_SCREEN_CHECK=warn (set by the platform, never by the product) logs problems instead of failing.

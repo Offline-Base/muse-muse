@@ -109,7 +109,7 @@ export type BuildEventBody =
   | { type: "preview"; url: string }
   | { type: "verify"; round: number; summary: VerifySummary; screenshots: Screenshot[] }
   | { type: "judge"; round: number; verdict: JudgeVerdict }
-  | { type: "recording"; url: string }
+  | { type: "recording"; url: string; posterUrl?: string | null }
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }

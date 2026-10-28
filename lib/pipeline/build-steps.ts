@@ -30,8 +30,9 @@ import {
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
+import { modelLabel } from "@/lib/format";
 import { stepRetries } from "@/lib/pipeline/steps";
-import { pollDeploy, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import * as sandbox from "@/lib/sandbox/builder";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import { ownersLabel } from "@/lib/sandbox/muse-log";
@@ -522,7 +523,7 @@ export async function previewStep(buildId: string, sandboxName: string): Promise
 }
 previewStep.maxRetries = stepRetries("preview");
 
-/** Starts `npm run verify` or `npm run demo`. Never retried, so two runs never overlap. */
+/** Starts the verify or demo task (lib/sandbox/tasks.ts). Never retried, so two runs never overlap. */
 export async function startTaskStep(sandboxName: string, task: sandbox.SandboxTask): Promise<string> {
   "use step";
   const { cmdId } = await sandbox.startTask(sandboxName, task);
@@ -685,17 +686,51 @@ export async function writeFixPromptStep(input: {
 }
 writeFixPromptStep.maxRetries = 2;
 
-/** Turns the demo run's video into an MP4 and tells the build room. */
+/**
+ * The URL a product's demo shows in its window: the live URL it already has (a refinement), else the one its first
+ * deploy will get (lib/publish/vercel.ts names the project), else none, when publishing is off.
+ */
+function demoUrlFor(product: { slug: string; liveUrl: string | null }, publishOff: string | null): string | null {
+  if (product.liveUrl) return product.liveUrl;
+  return publishOff ? null : `https://${projectNameFor(product.slug)}.vercel.app`;
+}
+
+/**
+ * Writes Demo Studio's spec into the sandbox before the demo starts: the product's name and tagline, its models by
+ * display name (from the brief, or the manifest when there is none) and the URL from demoUrlFor.
+ */
+export async function demoSpecStep(input: {
+  buildId: string;
+  productId: string;
+  sandboxName: string;
+  title: string;
+  tagline: string;
+}): Promise<void> {
+  "use step";
+  const build = await loadBuild(input.buildId);
+  const product = await loadProduct(input.productId);
+  const brief = build.brief ?? (await latestBrief(input.productId));
+  const models = brief ? brief.capabilities.map((c) => c.model) : (product.manifest?.models ?? []).map((m) => m.id);
+  await sandbox.writeDemoSpec(input.sandboxName, {
+    title: input.title,
+    tagline: input.tagline,
+    models: [...new Set(models)].map(modelLabel),
+    url: demoUrlFor(product, env.publishOffReason),
+  });
+}
+demoSpecStep.maxRetries = 2;
+
+/** Uploads the demo video and its poster, and tells the build room. */
 export async function finishDemoStep(input: {
   buildId: string;
   sandboxName: string;
   title: string;
   subtitle: string;
-}): Promise<string | null> {
+}): Promise<sandbox.DemoVideo> {
   "use step";
-  const { videoUrl } = await sandbox.finishDemo(input);
-  if (videoUrl) await emit(input.buildId, { type: "recording", url: videoUrl });
-  return videoUrl;
+  const demo = await sandbox.finishDemo(input);
+  if (demo.videoUrl) await emit(input.buildId, { type: "recording", url: demo.videoUrl, posterUrl: demo.posterUrl });
+  return demo;
 }
 finishDemoStep.maxRetries = stepRetries("record");
 
@@ -791,6 +826,8 @@ export async function registerStep(input: {
   liveUrl: string | null;
   liveTokenId: string | null;
   demoVideoUrl: string | null;
+  /** Saved with a new demo video, null included, so an older poster never sits on a newer video. */
+  demoPosterUrl?: string | null;
   status: "live" | "partial";
 }): Promise<void> {
   "use step";
@@ -813,7 +850,7 @@ export async function registerStep(input: {
     .update(schema.products)
     .set({
       ...(manifest ? { manifest } : {}),
-      ...(input.demoVideoUrl ? { demoVideoUrl: input.demoVideoUrl } : {}),
+      ...(input.demoVideoUrl ? { demoVideoUrl: input.demoVideoUrl, demoPosterUrl: input.demoPosterUrl ?? null } : {}),
       ...(transcriptUrl ? { transcriptUrl } : {}),
       liveUrl: input.liveUrl,
       status: sql<ProductStatus>`case when ${schema.products.status} = 'disabled' then 'disabled' else ${input.status} end`,

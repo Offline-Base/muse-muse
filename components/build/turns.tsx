@@ -467,6 +467,7 @@ export function ShipBody({
   connectorUrl,
   models,
   demoUrl,
+  demoPosterUrl = null,
 }: {
   status: "live" | "partial";
   liveUrl: string | null;
@@ -474,6 +475,7 @@ export function ShipBody({
   connectorUrl: string | null;
   models: string[];
   demoUrl: string | null;
+  demoPosterUrl?: string | null;
 }) {
   return (
     <div className="ship">
@@ -503,7 +505,15 @@ export function ShipBody({
         </div>
       ) : null}
       {demoUrl ? (
-        <video className="demo" src={demoUrl} controls preload="metadata" playsInline aria-label="Recorded demo" />
+        <video
+          className="demo"
+          src={demoUrl}
+          poster={demoPosterUrl ?? undefined}
+          controls
+          preload="metadata"
+          playsInline
+          aria-label="Recorded demo"
+        />
       ) : null}
       <div className="row-actions">
         {slug ? (
