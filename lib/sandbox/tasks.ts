@@ -1,5 +1,6 @@
 /**
- * Shell for the preview, verify and demo runners. Pure string builders, so they can be tested without a sandbox.
+ * Shell for the preview, verify and demo runners and for fix-round screenshots. Pure string builders, so they can be
+ * tested without a sandbox.
  */
 import { PLATFORM_FILES, PRISTINE_DIR, PRODUCT_DIR, PRODUCT_PORTS } from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
@@ -109,5 +110,25 @@ export function taskScript(task: SandboxTask, outPath: string): string {
     restorePlatformFilesScript(),
     ...(task === "demo" ? [freeProductPortsScript()] : []),
     `{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`,
+  ].join("\n");
+}
+
+/**
+ * Downscales each `<file>.big` into `<file>` with ffmpeg (half size, then a third, then a quarter) until it is at most
+ * `maxBytes`, for fix-round screenshots too big to attach as they are. Deletes the .big copies and any result still
+ * too big, and prints each file that fits, one per line. Always exits 0: a file it can't shrink is just left out.
+ */
+export function shrinkImagesScript(files: string[], maxBytes: number): string {
+  return [
+    `fits() { [ -s "$1" ] && [ "$(wc -c < "$1")" -le ${Math.floor(maxBytes)} ]; }`,
+    `for f in ${files.map(q).join(" ")}; do`,
+    `  for div in 2 3 4; do`,
+    `    fits "$f" && break`,
+    `    ffmpeg -nostdin -hide_banner -loglevel error -y -i "$f.big" -vf "scale=iw/$div:-1" -frames:v 1 -update 1 "$f" >&2 || rm -f "$f"`,
+    `  done`,
+    `  rm -f "$f.big"`,
+    `  if fits "$f"; then echo "$f"; else rm -f "$f"; fi`,
+    `done`,
+    `exit 0`,
   ].join("\n");
 }

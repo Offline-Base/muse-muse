@@ -16,6 +16,7 @@ import {
   previewWaitScript,
   pristineCopyScript,
   restorePlatformFilesScript,
+  shrinkImagesScript,
   taskScript,
 } from "@/lib/sandbox/tasks";
 
@@ -232,6 +233,53 @@ test("the verify runner restores a tampered gate, skips package.json and keeps t
   assert.equal(readFileSync(path.join(product, "scripts/verify.mjs"), "utf8"), realVerify);
 });
 
+const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { encoding: "utf8" }).status === 0;
+
+/** A PNG of grey noise, which compresses badly: 640x640 is about 600 KB. */
+function noisePng(file: string): void {
+  const res = spawnSync(
+    "ffmpeg",
+    ["-nostdin", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "nullsrc=s=640x640,geq=lum='random(1)*255':cb=128:cr=128", "-frames:v", "1", "-update", "1", "-c:v", "png", "-f", "image2", file],
+    { encoding: "utf8" },
+  );
+  assert.equal(res.status, 0, res.stderr);
+}
+
+test("the screenshot shrinker downscales what it can, drops the rest and always exits 0", { skip: hasFfmpeg ? false : "needs ffmpeg" }, () => {
+  const dir = freshDir("shrink");
+  const [fits, tooBig, broken] = ["round-1-1.png", "round-1-2.png", "round-1-3.png"].map((f) => path.join(dir, f));
+  noisePng(`${fits}.big`);
+  noisePng(`${tooBig}.big`);
+  writeFileSync(`${broken}.big`, "not a png");
+  const before = statSync(`${fits}.big`).size;
+  assert.ok(before > 200_000, `noise came out at ${before} bytes`);
+
+  // The cap is per run, so the second one gets a cap no downscale can meet.
+  const first = bash(shrinkImagesScript([fits, broken], 200_000));
+  const second = bash(shrinkImagesScript([tooBig], 1000));
+  assert.equal(first.code, 0, first.stderr);
+  assert.equal(second.code, 0, second.stderr);
+  assert.deepEqual(first.stdout.trim().split("\n"), [fits]);
+  assert.equal(second.stdout.trim(), "");
+  assert.ok(statSync(fits).size <= 200_000);
+  const probe = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", fits], { encoding: "utf8" });
+  assert.equal(probe.stdout.trim(), "320,320", "half size was enough");
+  for (const f of [tooBig, broken]) assert.ok(!existsSync(f), `${f} is left out`);
+  for (const f of [fits, tooBig, broken]) assert.ok(!existsSync(`${f}.big`), `${f}.big is cleaned up`);
+});
+
+test("the screenshot shrinker leaves everything out, and still exits 0, when ffmpeg fails", () => {
+  const dir = freshDir("shrink-fail");
+  const bin = freshDir("bin");
+  writeFileSync(path.join(bin, "ffmpeg"), '#!/bin/bash\necho "ffmpeg: broken" >&2\nexit 1\n', { mode: 0o755 });
+  const file = path.join(dir, "round-2-1.png");
+  writeFileSync(`${file}.big`, Buffer.alloc(3000, 1));
+  const res = bash(shrinkImagesScript([file], 1000), { env: { PATH: `${bin}:${process.env.PATH}` } });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(res.stdout, "");
+  assert.ok(!existsSync(file) && !existsSync(`${file}.big`));
+});
+
 test("every generated script is valid bash", () => {
   for (const script of [
     previewWaitScript(),
@@ -240,6 +288,7 @@ test("every generated script is valid bash", () => {
     freeProductPortsScript(),
     taskScript("verify", "/x/verify.out"),
     taskScript("demo", "/x/demo.out"),
+    shrinkImagesScript(["/x/.muse-fix/round-1-1.png", "/x/it's.png"], 2 * 1024 * 1024),
   ]) {
     const res = spawnSync("bash", ["-n", "-c", script], { encoding: "utf8" });
     assert.equal(res.status, 0, `${res.stderr}\n${script}`);

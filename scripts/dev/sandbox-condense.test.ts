@@ -18,10 +18,17 @@ test("condenses the spike 1 sample per the SPIKES.md table", () => {
   assert.equal(c.sessionId, "7661c49d-b561-4b2e-8cce-541a6cb64df2");
   assert.deepEqual(
     c.lines.map((l) => l.kind),
-    ["start", "tool", "edit", "tool", "say", "usage", "done"],
+    ["start", "status", "tool", "edit", "tool", "say", "status", "status", "usage", "done"],
   );
-  const [start, read, edit, editTool, say, usage, done] = c.lines;
+  const [start, skill, read, edit, editTool, say, goal, verify, usage, done] = c.lines;
   assert.equal(start.text, "Started");
+  // Three skill reminders ran, but each reminder agent gets one line per run.
+  assert.deepEqual([skill.text, goal.text, verify.text], [
+    "Muse Code started its skill reminder",
+    "Muse Code started its goal reminder",
+    "Muse Code started its verify reminder",
+  ]);
+  assert.deepEqual(c.announced, ["reminder:skill", "reminder:goal", "reminder:verify"]);
   assert.deepEqual(read, { kind: "tool", tool: "read_file", ok: true, text: "Read text file `app/page.tsx`." });
   assert.deepEqual(edit, { kind: "edit", files: 1, added: 1, removed: 1, text: "Edited 1 file (+1 −1)" });
   assert.deepEqual(editTool, { kind: "tool", tool: "edit_file", ok: true, text: "Edited `app/page.tsx`" });
@@ -46,9 +53,10 @@ test("splits at the last newline and keeps a partial line for the next poll", ()
   assert.ok(consumed > 0 && consumed <= 5000);
   assert.equal(cut[consumed - 1], 0x0a);
   assert.ok(lines.every((l) => l === "" || l.startsWith("{")));
-  // Resuming from `consumed` and condensing the rest gives the same lines as condensing everything at once.
+  // Resuming from `consumed` (with the first part's `announced`) and condensing the rest gives the same lines as
+  // condensing everything at once.
   const a = condenseMuseLines(lines);
-  const b = condenseMuseLines(completeLines(sample.subarray(consumed)).lines);
+  const b = condenseMuseLines(completeLines(sample.subarray(consumed)).lines, a.announced);
   const all = condenseMuseLines(completeLines(sample).lines);
   assert.deepEqual([...a.lines, ...b.lines].map((l) => l.kind), all.lines.map((l) => l.kind));
 });

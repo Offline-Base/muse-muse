@@ -92,6 +92,58 @@ export async function installMuseCode(sandbox: Sandbox, log: Log): Promise<strin
   return stdout.trim();
 }
 
+/**
+ * Bundled Muse Code skills that fight a headless build of the Next.js template (spike 2, Oct 27, Muse Code 1.4.14).
+ * They move the product into a new folder (browser-game, greenfield-project-scaffolding), stop to ask or only plan
+ * (requirements-clarification, plan, grill), fan out critic loops and workflows (visual-coding, web3d,
+ * game-3d-visuals, workflow-authoring), need Blender (blender), take over start commands and URLs
+ * (browser-app-delivery), or read ~/.claude and ~/.codex (migrate, import, resume-claude, resume-codex).
+ */
+export const DISABLED_BUNDLED_SKILLS = [
+  "browser-game",
+  "web3d",
+  "visual-coding",
+  "game-3d-visuals",
+  "blender",
+  "browser-app-delivery",
+  "greenfield-project-scaffolding",
+  "requirements-clarification",
+  "plan",
+  "grill",
+  "workflow-authoring",
+  "migrate",
+  "import",
+  "resume-claude",
+  "resume-codex",
+] as const;
+
+/**
+ * Turns DISABLED_BUNDLED_SKILLS off for the default user. `muse skills disable` saves this in
+ * ~/.config/muse/settings.json, which the snapshot keeps (a per-run -c override does not work for skills). A skill
+ * this Muse Code version doesn't have exits 1 ("unknown-skill"), which fails setup.
+ */
+export async function disableBundledSkills(sandbox: Sandbox, log: Log): Promise<void> {
+  const script = DISABLED_BUNDLED_SKILLS.map((id) => `muse skills disable ${q(`bundled:${id}`)} --scope built-in --json`).join(" && ");
+  await timed(log, `disable ${DISABLED_BUNDLED_SKILLS.length} bundled Muse Code skills`, () =>
+    sh(sandbox, `export PATH="$HOME/.local/bin:$PATH" && ${script} >/dev/null`, { env: { ...SANDBOX_ENV } }),
+  );
+}
+
+/**
+ * The DISABLED_BUNDLED_SKILLS that `muse skills list --json` doesn't show as off. Settings are keyed by skill path, so
+ * a Muse Code update that moves a skill would quietly turn it back on; the snapshot script fails on any left here.
+ */
+export function skillsNotOff(listJson: string): string[] {
+  let skills: Array<{ id?: unknown; activation?: unknown }> = [];
+  try {
+    const parsed = JSON.parse(listJson) as { skills?: unknown };
+    if (Array.isArray(parsed.skills)) skills = parsed.skills;
+  } catch {
+    // Not JSON: every skill counts as not off.
+  }
+  return DISABLED_BUNDLED_SKILLS.filter((id) => skills.find((s) => s.id === `bundled:${id}`)?.activation !== "off");
+}
+
 /** Copies the template into PRODUCT_DIR, installs its packages and Chromium, and commits it as the starting point. */
 export async function installTemplate(sandbox: Sandbox, files: TemplateFile[], log: Log): Promise<void> {
   await makeDirs(sandbox, [PRODUCT_DIR, LOG_DIR, RUN_DIR, OUT_DIR]);
@@ -146,6 +198,7 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await makeDirs(sandbox, [WORK_DIR]);
   await installSystemTools(sandbox, log);
   const muse = await installMuseCode(sandbox, log);
+  await disableBundledSkills(sandbox, log);
   await installTemplate(sandbox, files, log);
   await savePristineFiles(sandbox, log);
   return writeBuilderMarker(sandbox, { muse, templateHash: templateHash(files) });

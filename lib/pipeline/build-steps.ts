@@ -19,7 +19,7 @@ import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
 import { mintToken, revokeTokens } from "@/lib/gateway/tokens";
-import { judgeBuild } from "@/lib/judge";
+import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
   allowedModelsFor,
@@ -34,6 +34,7 @@ import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import * as sandbox from "@/lib/sandbox/builder";
 import type { BuildModel } from "@/lib/sandbox/muse";
+import { ownersLabel } from "@/lib/sandbox/muse-log";
 import type {
   BuildEventBody,
   BuildStatus,
@@ -444,6 +445,10 @@ export interface MusePollResult {
   offset: number;
   /** True once this run's usage has been recorded. Pass it to the next poll. */
   usageRecorded: boolean;
+  /** Helper agents the build room has heard about in this run. Pass it to the next poll. */
+  announced?: string[];
+  /** run.usage's children_included once a poll has read it, else null. Pass it to the next poll. */
+  childrenIncluded?: boolean | null;
 }
 
 /**
@@ -451,6 +456,12 @@ export interface MusePollResult {
  * Muse Code writes run.usage once, near the end, and a poll can read it before the process has exited, so it is not
  * tied to `done`. `usageRecorded` carries over between polls so a run is charged at most once, and charge() drops
  * rows a retried attempt already wrote.
+ *
+ * run.usage counts only the main agent (children_included: false). The poll that reports done also reads Muse Code's
+ * session log, which has the reminder agents' and subagents' calls too: those are charged under their own endpoint,
+ * unless run.usage said it includes them or didn't say (Condensed.childrenIncluded), so they are never charged twice.
+ * `childrenIncluded` carries over between polls like `usageRecorded`. A run that never wrote run.usage (stopped at its
+ * cap) is charged for its main agent and its children from that log instead.
  */
 export async function pollMuseStep(input: {
   buildId: string;
@@ -461,6 +472,8 @@ export async function pollMuseStep(input: {
   /** The build room's round: 0 for the first run of a build, then the fix number. */
   round: number;
   usageRecorded?: boolean;
+  announced?: string[];
+  childrenIncluded?: boolean | null;
 }): Promise<MusePollResult> {
   "use step";
   const poll = await sandbox.pollMuse({
@@ -468,17 +481,29 @@ export async function pollMuseStep(input: {
     cmdId: input.run.cmdId,
     logPath: input.run.logPath,
     offset: input.offset,
+    announced: input.announced,
+    childrenIncluded: input.childrenIncluded,
   });
   if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
+  const ctx = { source: "muse_code" as const, endpoint: "muse exec", buildId: input.buildId, productId: input.productId };
+  const what = input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`;
   const fresh = !input.usageRecorded && poll.usage.length > 0;
-  if (fresh) {
-    await charge(
-      { source: "muse_code", endpoint: "muse exec", buildId: input.buildId, productId: input.productId },
-      poll.usage,
-      input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`,
-    );
+  if (fresh) await charge(ctx, poll.usage, what);
+  const fromLog = !input.usageRecorded && !fresh ? (poll.session?.main.usage ?? []) : [];
+  if (fromLog.length) await charge(ctx, fromLog, what);
+  const childrenIncluded = poll.childrenIncluded ?? input.childrenIncluded ?? null;
+  const children = childrenIncluded === true ? undefined : poll.session?.children;
+  if (children?.usage.length) {
+    await charge({ ...ctx, endpoint: "muse exec children" }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
   }
-  return { done: poll.done, exitCode: poll.exitCode, offset: poll.offset, usageRecorded: Boolean(input.usageRecorded) || fresh };
+  return {
+    done: poll.done,
+    exitCode: poll.exitCode,
+    offset: poll.offset,
+    usageRecorded: Boolean(input.usageRecorded) || fresh || fromLog.length > 0,
+    announced: poll.announced,
+    childrenIncluded,
+  };
 }
 pollMuseStep.maxRetries = 2;
 
@@ -610,9 +635,16 @@ function isJudgeEvent(p: BuildEventBody): p is Extract<BuildEventBody, { type: "
   return p.type === "judge";
 }
 
+export interface FixPrompt {
+  promptFile: string;
+  /** The judge's screenshots copied into the product (.muse-fix/), for --image on the fix run. Empty when it didn't run. */
+  images: string[];
+}
+
 /**
  * Renders fix-<n>.md from the last verify and judge results (read back from the build's events, so they never pass
- * through the workflow log) and writes it into the product.
+ * through the workflow log) and writes it into the product. When the judge ran, the screenshots it saw are copied in
+ * too, so the resumed Muse Code session gets them as images.
  */
 export async function writeFixPromptStep(input: {
   buildId: string;
@@ -621,7 +653,7 @@ export async function writeFixPromptStep(input: {
   fix: number;
   /** The build-room round whose results this fix answers. */
   verifiedRound: number;
-}): Promise<string> {
+}): Promise<FixPrompt> {
   "use step";
   const rows = await db()
     .select({ payload: schema.buildEvents.payload })
@@ -630,13 +662,26 @@ export async function writeFixPromptStep(input: {
     .orderBy(desc(schema.buildEvents.id))
     .limit(20);
   const payloads = rows.map((r) => r.payload);
-  const verify: VerifySummary | null =
-    payloads.filter(isVerifyEvent).find((p) => p.round === input.verifiedRound)?.summary ?? null;
+  const verified = payloads.filter(isVerifyEvent).find((p) => p.round === input.verifiedRound);
+  const verify: VerifySummary | null = verified?.summary ?? null;
   const judge: JudgeVerdict | null =
     payloads.filter(isJudgeEvent).find((p) => p.round === input.verifiedRound)?.verdict ?? null;
+  // The judge only runs once verify passes, on that verify's screenshots. They help but aren't needed, so a fix round
+  // whose screenshots can't be copied goes on without them.
+  const judged = judge ? pickScreenshots(verified?.screenshots ?? []) : [];
+  const images = judged.length
+    ? await sandbox.writeFixScreenshots(input.sandboxName, input.fix, judged).catch((err: unknown) => {
+        console.warn(`fix ${input.fix} screenshots for build ${input.buildId}: ${String(err)}`);
+        return [];
+      })
+    : [];
   const promptFile = `fix-${input.fix}.md`;
-  await sandbox.writeProductFile(input.sandboxName, promptFile, renderFixPrompt({ verify, judge, round: input.fix }));
-  return promptFile;
+  await sandbox.writeProductFile(
+    input.sandboxName,
+    promptFile,
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images }),
+  );
+  return { promptFile, images };
 }
 writeFixPromptStep.maxRetries = 2;
 

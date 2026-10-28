@@ -1,7 +1,7 @@
 /**
  * Runs the real step functions in build-steps.ts with the database, sandbox, judge, policy check and usage faked:
- * the judge on a refinement, Muse Code usage charging, the admin kill switch at register, the brief copied onto
- * refine rows, and the refinement policy check.
+ * the judge on a refinement, Muse Code usage charging (child agents included, never twice), the judge's screenshots on
+ * fix rounds, the admin kill switch at register, the brief copied onto refine rows, and the refinement policy check.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
@@ -24,12 +24,18 @@ let returns: Record<string, Rows[]> = {};
 let writes: Array<{ table: string; values: Record<string, unknown> }> = [];
 let emitted: Array<{ buildId: string; body: Record<string, unknown> }> = [];
 let recorded: ModelUsage[][] = [];
+let recordedEndpoints: string[] = [];
+let costs: string[] = [];
+let fixShots: Array<{ fix: number; urls: string[] }> = [];
+let fixShotsError: Error | null = null;
+let productFiles: Array<{ path: string; content: string }> = [];
 let revoked: unknown[][] = [];
 let judgeInputs: Array<{ brief: unknown; references: Array<{ fileName: string }> }> = [];
 let judgeImpl: () => Promise<unknown> = async () => ({ verdict: {}, usage: [] });
 let checkInputs: unknown[] = [];
 let checkImpl: () => Promise<unknown> = async () => ({ refusal: null, usage: [] });
 let pollImpl: () => Promise<unknown> = async () => ({});
+let pollInputs: Array<Record<string, unknown>> = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -82,13 +88,16 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     mock.module(at("../../events.ts"), {
       namedExports: {
         emit: async (buildId: string, body: Record<string, unknown>) => void emitted.push({ buildId, body }),
-        addBuildCost: async () => undefined,
+        addBuildCost: async (_buildId: string, _usd: number, what: string) => void costs.push(what),
         setBuildStatus: async () => undefined,
       },
     });
     mock.module(at("../../usage.ts"), {
       namedExports: {
-        recordUsage: async (_ctx: unknown, items: ModelUsage[]) => void recorded.push(items),
+        recordUsage: async (ctx: { endpoint: string }, items: ModelUsage[]) => {
+          recorded.push(items);
+          recordedEndpoints.push(ctx.endpoint);
+        },
         platformSpendToday: async () => 0,
       },
     });
@@ -104,6 +113,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           judgeInputs.push(input);
           return judgeImpl();
         },
+        // The real rule: the first screenshot, then the last three.
+        pickScreenshots: <T>(s: T[]) => (s.length <= 4 ? s : [s[0]!, ...s.slice(-3)]),
       },
     });
     mock.module(at("../../brief/policy.ts"), {
@@ -122,7 +133,16 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../../sandbox/builder.ts"), {
       namedExports: {
-        pollMuse: async () => pollImpl(),
+        pollMuse: async (input: Record<string, unknown>) => {
+          pollInputs.push(input);
+          return pollImpl();
+        },
+        writeFixScreenshots: async (_name: string, fix: number, shots: Array<{ url: string }>) => {
+          fixShots.push({ fix, urls: shots.map((x) => x.url) });
+          if (fixShotsError) throw fixShotsError;
+          return shots.map((_, i) => `.muse-fix/round-${fix}-${i + 1}.png`);
+        },
+        writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
         readManifest: async () => null,
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
       },
@@ -139,6 +159,12 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     writes = [];
     emitted = [];
     recorded = [];
+    recordedEndpoints = [];
+    costs = [];
+    fixShots = [];
+    fixShotsError = null;
+    pollInputs = [];
+    productFiles = [];
     revoked = [];
     judgeInputs = [];
     checkInputs = [];
@@ -212,6 +238,90 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       const out = await steps.pollMuseStep(input);
       assert.equal(out.usageRecorded, false);
       assert.equal(recorded.length, 0);
+    });
+
+    const CHILDREN: ModelUsage = { model: "muse-spark-1.3", inputTokens: 33775, cachedInputTokens: 0, outputTokens: 1800, costUsd: 0.0499 };
+    const session = {
+      main: { calls: 2, usage: [USAGE] },
+      children: { calls: 4, usage: [CHILDREN], owners: ["reminder_child"] },
+    };
+
+    it("charges the reminder agents and subagents that run.usage leaves out, under their own endpoint", async () => {
+      pollImpl = async () => ({ done: true, exitCode: 0, offset: 10, lines: [], usage: [], finalText: null, session, announced: ["reminder:verify"] });
+      // An earlier poll read run.usage, which said children_included: false.
+      const out = await steps.pollMuseStep({ ...input, round: 2, usageRecorded: true, childrenIncluded: false });
+      assert.deepEqual(recorded, [[CHILDREN]]);
+      assert.deepEqual(recordedEndpoints, ["muse exec children"]);
+      assert.deepEqual(costs, ["Muse Code round 2: reminders"]);
+      assert.deepEqual(out.announced, ["reminder:verify"]);
+    });
+
+    it("charges the main agent from the session log when the run never wrote run.usage", async () => {
+      pollImpl = async () => ({ done: true, exitCode: 143, offset: 10, lines: [], usage: [], finalText: null, session });
+      const out = await steps.pollMuseStep(input);
+      assert.deepEqual(recorded, [[USAGE], [CHILDREN]]);
+      assert.deepEqual(recordedEndpoints, ["muse exec", "muse exec children"]);
+      assert.equal(out.usageRecorded, true);
+    });
+
+    it("never charges the main agent twice when run.usage arrived in the same poll", async () => {
+      pollImpl = async () => ({ done: true, exitCode: 0, offset: 10, lines: [], usage: [USAGE], finalText: null, session, childrenIncluded: false });
+      await steps.pollMuseStep(input);
+      assert.deepEqual(recordedEndpoints, ["muse exec", "muse exec children"]);
+      assert.deepEqual(recorded, [[USAGE], [CHILDREN]]);
+    });
+
+    it("never charges the child agents when run.usage already counts them, even if it said so polls earlier", async () => {
+      pollImpl = async () => ({ done: false, exitCode: null, offset: 500, lines: [], usage: [USAGE], finalText: null, childrenIncluded: true });
+      const first = await steps.pollMuseStep(input);
+      assert.equal(first.childrenIncluded, true);
+      // The poll that reports done reads the session log, but run.usage was in the earlier poll.
+      pollImpl = async () => ({ done: true, exitCode: 0, offset: 600, lines: [], usage: [], finalText: null, session, childrenIncluded: null });
+      const last = await steps.pollMuseStep({ ...input, offset: 500, usageRecorded: first.usageRecorded, childrenIncluded: first.childrenIncluded });
+      assert.equal(pollInputs[1]!.childrenIncluded, true, "the earlier poll's answer reaches pollMuse");
+      assert.deepEqual(recordedEndpoints, ["muse exec"]);
+      assert.deepEqual(recorded, [[USAGE]]);
+      assert.equal(last.childrenIncluded, true);
+    });
+  });
+
+  describe("writeFixPromptStep", () => {
+    const shots = [1, 2, 3, 4, 5].map((n) => ({ url: `https://blob/r0/0${n}.png`, caption: `step ${n}` }));
+    const verifyEvent = (passed: boolean) => ({
+      payload: { type: "verify", round: 0, summary: { passed, steps: [], failureOutput: "" }, screenshots: shots },
+    });
+    const verdict = { pass: false, blocking: false, reasons: ["The result is cut off."], mismatches: ["No total."] };
+
+    it("copies in the screenshots the judge saw and names them in fix-<n>.md", async () => {
+      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
+      const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      assert.deepEqual(fixShots, [{ fix: 1, urls: ["https://blob/r0/01.png", "https://blob/r0/03.png", "https://blob/r0/04.png", "https://blob/r0/05.png"] }]);
+      assert.deepEqual(out, {
+        promptFile: "fix-1.md",
+        images: [".muse-fix/round-1-1.png", ".muse-fix/round-1-2.png", ".muse-fix/round-1-3.png", ".muse-fix/round-1-4.png"],
+      });
+      assert.equal(productFiles[0]!.path, "fix-1.md");
+      assert.match(productFiles[0]!.content, /4 screenshots it judged are attached to this message as images, in order: `\.muse-fix\/round-1-1\.png`/);
+      assert.match(productFiles[0]!.content, /Don't move them into the product/);
+    });
+
+    it("attaches nothing when verify failed, so the judge never ran", async () => {
+      selects = { build_events: [[verifyEvent(false)]] };
+      const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 2, verifiedRound: 0 });
+      assert.deepEqual(out, { promptFile: "fix-2.md", images: [] });
+      assert.equal(fixShots.length, 0);
+      assert.doesNotMatch(productFiles[0]!.content, /attached/);
+    });
+
+    it("still writes fix-<n>.md, attaching nothing, when the screenshots can't be copied", async () => {
+      fixShotsError = new Error("writeFiles failed");
+      selects = { build_events: [[{ payload: { type: "judge", round: 0, verdict } }, verifyEvent(true)]] };
+      const out = await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 3, verifiedRound: 0 });
+      assert.equal(fixShots.length, 1);
+      assert.deepEqual(out, { promptFile: "fix-3.md", images: [] });
+      assert.equal(productFiles[0]!.path, "fix-3.md");
+      assert.match(productFiles[0]!.content, /The result is cut off\./);
+      assert.doesNotMatch(productFiles[0]!.content, /attached/);
     });
   });
 

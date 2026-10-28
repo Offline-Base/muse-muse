@@ -114,6 +114,8 @@ async function runMuse(
   const startedAt = Date.now();
   let offset = 0;
   let usageRecorded = false;
+  let announced: string[] = [];
+  let childrenIncluded: boolean | null = null;
   const poll = () =>
     pollMuseStep({
       buildId: ctx.buildId,
@@ -123,12 +125,16 @@ async function runMuse(
       offset,
       round: run.round,
       usageRecorded,
+      announced,
+      childrenIncluded,
     });
   for (let polls = 1; ; polls++) {
     await sleep(MUSE_POLL_MS);
     const read = await poll();
     offset = read.offset;
     usageRecorded = read.usageRecorded;
+    announced = read.announced ?? announced;
+    childrenIncluded = read.childrenIncluded ?? childrenIncluded;
     if (read.done) return { timedOut: false, exitCode: read.exitCode };
     if (pollTimedOut({ startedAt, now: Date.now(), capMs: run.capMs, intervalMs: MUSE_POLL_MS, polls })) {
       await killStep(ctx.sandboxName, cmd.cmdId);
@@ -204,8 +210,8 @@ interface Checks {
 }
 
 /**
- * Verify, then judge if verify passed. On failure, resume the same Muse Code session with fix-<n>.md and check
- * again, up to MAX_FIX_ROUNDS. Returns the last result.
+ * Verify, then judge if verify passed. On failure, resume the same Muse Code session with fix-<n>.md (and the
+ * screenshots the judge saw, when it ran) and check again, up to MAX_FIX_ROUNDS. Returns the last result.
  */
 async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
   const rounds = maxFixRounds();
@@ -225,7 +231,7 @@ async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
       fixRounds: fix,
       message: `Fix round ${fix} of ${rounds}`,
     });
-    const promptFile = await writeFixPromptStep({
+    const prompt = await writeFixPromptStep({
       buildId: ctx.buildId,
       sandboxName: ctx.sandboxName,
       fix,
@@ -233,7 +239,7 @@ async function checkAndFix(ctx: Ctx, track: Track): Promise<Checks> {
     });
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped.
-    await runMuse(ctx, { promptFile, images: [], round: fix, capMs: stepTimeoutMs("fix") });
+    await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: fix, capMs: stepTimeoutMs("fix") });
   }
 }
 

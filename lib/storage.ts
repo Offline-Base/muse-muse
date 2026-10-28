@@ -78,11 +78,14 @@ export async function deleteOlderThan(prefix: BlobPrefix, olderThan: Date): Prom
   return deleted;
 }
 
-/** Downloads a public blob (or any URL) into memory. A file this platform stores locally is read from disk. */
-export async function fetchBytes(url: string): Promise<Buffer> {
+/**
+ * Downloads a public blob (or any URL) into memory. A file this platform stores locally is read from disk. `signal`
+ * can cut a slow download short.
+ */
+export async function fetchBytes(url: string, opts: { signal?: AbortSignal } = {}): Promise<Buffer> {
   const key = localFileKey(url);
   if (key) return readFile(localFilePaths(key).file);
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: opts.signal });
   if (!res.ok) throw new Error(`Download failed (${res.status}) for ${url}`);
   return Buffer.from(await res.arrayBuffer());
 }

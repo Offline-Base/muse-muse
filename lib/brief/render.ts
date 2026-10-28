@@ -246,8 +246,15 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 /** fix.md for a fix round, run with --session-id so Muse Code keeps its context. */
-export function renderFixPrompt(input: { verify: VerifySummary | null; judge: JudgeVerdict | null; round: number }): string {
+export function renderFixPrompt(input: {
+  verify: VerifySummary | null;
+  judge: JudgeVerdict | null;
+  round: number;
+  /** The judge's screenshots as attached to this run with --image, as paths in the product, in order. */
+  screenshots?: string[];
+}): string {
   const { verify, judge, round } = input;
+  const screenshots = input.screenshots ?? [];
   const verifyFailed = verify !== null && !verify.passed;
   const judgeFailed = judge !== null && !judge.pass;
   const what = [verifyFailed ? "`npm run verify` failed" : "", judgeFailed ? "the screenshot judge failed the product" : ""]
@@ -297,6 +304,14 @@ export function renderFixPrompt(input: { verify: VerifySummary | null; judge: Ju
       "",
       "The judge looked at the screenshots your smoke test saved in `test-results/judge/` and compared them with brief.md and inspo/.",
     );
+    if (screenshots.length) {
+      const which = screenshots.length === 1 ? "screenshot it judged is" : `${screenshots.length} screenshots it judged are`;
+      const files = screenshots.map((s) => `\`${s}\``).join(", ");
+      out.push(
+        "",
+        `The ${which} attached to this message as images, in order: ${files}. They are copies for you to look at. Don't move them into the product, link to them or commit them.`,
+      );
+    }
     if (judge.reasons.length) out.push("", "Reasons:", "", bullets(judge.reasons));
     if (judge.mismatches.length) out.push("", "Mismatches with the brief:", "", bullets(judge.mismatches));
     out.push(

@@ -77,6 +77,8 @@ Stay under {{maxModelSteps}} steps. If an approach fails twice, pick a simpler o
 {{judge reasons}}
 ```
 
+When the judge ran, the screenshots it saw (up to four, each under 2 MB after downscaling, or left out) are copied into `.muse-fix/round-<n>-<k>.png` and attached to the fix run with `--image`, and the judge notes name them. A fix round whose screenshots can't be copied runs without them.
+
 ## 4. Judge
 
 Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a missing main result, an error as the final screen, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. The live prompt is `lib/prompts/judge.ts`.

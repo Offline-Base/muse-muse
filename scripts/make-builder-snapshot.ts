@@ -4,18 +4,21 @@
  *   npm run snapshot
  *
  * It boots `vercel/sandbox/universal` with open egress, installs ffmpeg, fonts, espeak-ng, Playwright's Chromium and
- * Muse Code, copies template/ to /vercel/app, runs npm ci, commits the template, keeps a root-owned read-only copy
- * of the platform-owned verify files in /vercel/musemuse/pristine (startTask restores them before every verify and
- * demo), checks that copy against template/, then snapshots with no expiry.
+ * Muse Code, turns off the bundled Muse Code skills that fight a headless build (DISABLED_BUNDLED_SKILLS in
+ * lib/sandbox/setup.ts), copies template/ to /vercel/app, runs npm ci, commits the template, keeps a root-owned
+ * read-only copy of the platform-owned verify files in /vercel/musemuse/pristine (startTask restores them before
+ * every verify and demo), checks that copy against template/, that those skills are off and that `muse exec --help`
+ * lists every flag a build passes, then snapshots with no expiry. The builder marker records the Muse Code version.
  * Builds start from the snapshot and run with the locked-down policy in lib/sandbox/policy.ts.
  * Save the printed id as BUILDER_SNAPSHOT_ID.
  */
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
-import { PLATFORM_FILES, PRISTINE_DIR } from "@/lib/sandbox/paths";
+import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
+import { PLATFORM_FILES, PRISTINE_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
-import { readTemplateFiles, setupBuilder, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
+import { DISABLED_BUNDLED_SKILLS, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
 import { q, sh } from "@/lib/sandbox/shell";
 
 const MIN = 60_000;
@@ -40,6 +43,31 @@ async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<v
       return owner !== "root" || mode.includes("w");
     });
   if (bad.length) throw new Error(`Pristine copy is writable or not owned by root:\n${bad.join("\n")}`);
+}
+
+/**
+ * Throws unless `muse exec --help` lists every flag a build may pass (execFlags in lib/sandbox/muse.ts). A flag Muse
+ * Code doesn't know exits 2, so a snapshot without one would fail every build. The runner still checks the optional
+ * ones itself, for product sandboxes made from an older snapshot.
+ */
+async function checkExecFlags(sandbox: Sandbox, muse: string): Promise<void> {
+  const help = await sh(sandbox, 'PATH="$HOME/.local/bin:$PATH" muse exec --help 2>&1', {
+    cwd: WORK_DIR,
+    env: { ...SANDBOX_ENV },
+    allowFail: true,
+  });
+  const missing = flagsMissingFromHelp(help.stdout);
+  if (missing.length) throw new Error(`muse exec --help (${muse}) doesn't list ${missing.join(", ")}:\n${help.stdout.slice(0, 3000)}`);
+}
+
+/**
+ * Throws unless Muse Code lists every skill setupBuilder turned off as off. Settings are keyed by skill path, so a
+ * Muse Code update that moves a skill would turn it back on without any error from `muse skills disable`.
+ */
+async function checkSkills(sandbox: Sandbox): Promise<void> {
+  const list = await sh(sandbox, 'PATH="$HOME/.local/bin:$PATH" muse skills list --json', { cwd: WORK_DIR, env: { ...SANDBOX_ENV } });
+  const notOff = skillsNotOff(list.stdout);
+  if (notOff.length) throw new Error(`These bundled Muse Code skills are still on after muse skills disable: ${notOff.join(", ")}`);
 }
 
 async function main() {
@@ -71,6 +99,10 @@ async function main() {
     console.log("builder:", JSON.stringify(info));
     await checkPristine(sandbox, files);
     console.log(`pristine: ${PLATFORM_FILES.join(", ")} match template/`);
+    await checkSkills(sandbox);
+    console.log(`skills off: ${DISABLED_BUNDLED_SKILLS.join(", ")}`);
+    await checkExecFlags(sandbox, info.muse);
+    console.log(`muse exec --help (${info.muse}) lists ${execFlags().join(" ")}`);
 
     t = Date.now();
     const snapshot = await sandbox.snapshot({ expiration: 0 });
