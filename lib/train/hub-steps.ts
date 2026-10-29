@@ -64,16 +64,24 @@ import {
   DATASET_TRAIN_PATH,
   dropRepeatedWhy,
   evalJsonl,
+  ggufBuilds,
+  ggufCard,
+  ggufJobProblem,
+  ggufSmallProblem,
+  ggufUploaded,
   GLIMMER_ORIGIN,
   glimmerTemplate,
   hubFileProblem,
   hubJobProblem,
+  hubNameProblem,
   hubUploaded,
   modelCard,
   modelRepoName,
   normalizedAdapterConfig,
   pickExample,
   publishOff,
+  quantLevels,
+  quantRecord,
   runItems,
   runRecord,
   STORY_INSTRUCTIONS,
@@ -84,11 +92,13 @@ import {
   templateStory,
   trainJsonl,
   validRepoName,
+  validSlug,
   type CardFacts,
   type DatasetModel,
+  type GgufFacts,
   type StoryFacts,
 } from "@/lib/train/hub-cards";
-import { ADAPTER_RECIPE, effectiveWhy, hubBusy, type TrainJobRow } from "@/lib/train/logic";
+import { ADAPTER_RECIPE, effectiveWhy, hubBusy, trainChannelOf, type DoneMetrics, type TrainJobRow } from "@/lib/train/logic";
 import { recipeById } from "@/lib/train/recipes";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import {
@@ -97,6 +107,8 @@ import {
   getDataset,
   getJob,
   listResultEvents,
+  publishedGguf,
+  publishedGgufJobs,
   publishedHubModels,
   recordEvent,
   updateHub,
@@ -105,6 +117,7 @@ import {
   HUB_CHECKED_NAMES,
   HUB_SAMPLE_BYTES,
   PUBLISH_RECIPE,
+  QUANT_RECIPE,
   type EvalExample,
   type HubState,
   type TrainExample,
@@ -135,8 +148,15 @@ export const NOT_UPLOADED =
 /** Why a step stops when its run no longer holds the publishing claim. */
 const LOST_CLAIM = "Another run took over publishing this job, so this one stopped without writing.";
 
-/** What hubPlanStep decided: publish this job (its claim is taken, with this id), or nothing. */
-export type HubPlan = { action: "publish"; jobId: string; claim: string } | { action: "none" };
+/** The failed reason of a local files job whose files didn't all reach the Hub: they were only ever on its GPU. */
+export const GGUF_NOT_UPLOADED =
+  "Not every GGUF file reached Hugging Face before the job ended, and the files were only on its GPU. Make local files again.";
+
+/**
+ * What hubPlanStep decided: publish this job (its claim is taken, with this id), or nothing. `kind` "gguf" is a local
+ * files job's GGUF repo (hubGgufStep, hubGgufFinishStep); without it, a glimmer-lora job's adapter and data.
+ */
+export type HubPlan = { action: "publish"; jobId: string; claim: string; kind?: "adapter" | "gguf" } | { action: "none" };
 
 const NONE: HubPlan = { action: "none" };
 
@@ -227,11 +247,23 @@ function adapterConfig(hub: HubState): Record<string, unknown> | null {
 }
 
 /**
- * Everything the cards say, from the records: the job and its done metrics, the eval summary and items, the dataset,
- * the recipe's template, the base revision adapter_config.json pins (else the recipe's), and the system message the
- * run trained and answered under.
+ * The GGUF repo an adapter's card points local apps to: the newest published one of its local files jobs, when that
+ * repo is public or the adapter's own repo won't be (`adapterPublic`: the visibility the card is read under, which a
+ * publish decides before its last step), so a public card never names a private repo. `known` is one that is
+ * publishing now (hubGgufFinishStep), which the store doesn't list as published yet.
  */
-async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow) {
+async function ggufLinkOf(job: TrainJobRow, adapterPublic: boolean, known?: { repo: string; public: boolean }): Promise<{ repo: string } | null> {
+  const gguf = known ?? (await fromDb(() => publishedGguf(job.id)));
+  return gguf && (gguf.public || !adapterPublic) ? { repo: gguf.repo } : null;
+}
+
+/**
+ * Everything the cards say, from the records: the job and its done metrics, the eval summary and items, the dataset,
+ * the recipe's template, the base revision adapter_config.json pins (else the recipe's), the system message the run
+ * trained and answered under, and its GGUF repo (ggufLinkOf for a card read under `adapterPublic`, `gguf` for one
+ * publishing now).
+ */
+async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow, adapterPublic: boolean, gguf?: { repo: string; public: boolean }) {
   const template = glimmerTemplate(GLIMMER_PY);
   const source = await fromDb(() => getAdapterSource(job.id));
   const metrics = source?.metrics ?? {};
@@ -287,6 +319,7 @@ async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow)
     system,
     why: effectiveWhy(hub, job.params),
     story: hub.story ?? templateStory(storyFactsOf(job, hub, dataset)),
+    gguf: await ggufLinkOf(job, adapterPublic, gguf),
   };
   return { facts, items, modelRepo, datasetRepo };
 }
@@ -405,9 +438,37 @@ async function claim(jobId: string, now: Date): Promise<string | null> {
   return holds(written, id) ? id : null;
 }
 
+/**
+ * Takes the publishing claim on a local files job's GGUF repo: "publishing" with a new claim id when publishing is on,
+ * the job can publish (`problem`, from ggufJobProblem, null) and every file of its plan is on the Hub. Otherwise the
+ * state says why it waits, or that it failed: its files were only on its GPU, so files missing now never come. The
+ * claim id when this run holds it, else null.
+ */
+async function claimGguf(jobId: string, problem: string | null, now: Date): Promise<string | null> {
+  const off = env.hubOffReason;
+  const at = now.toISOString();
+  const id = randomUUID();
+  const written = await fromDb(() =>
+    updateHub(jobId, (hub, job) => {
+      if (off) {
+        const reason = `Publishing to Hugging Face is off here: ${off}.`;
+        return hub?.status === "off" && hub.reason === reason ? null : { ...(hub ?? {}), status: "off", reason, updatedAt: at };
+      }
+      if (hubBusy(hub, now.getTime())) return null;
+      if (!ggufUploaded(hub, job.params)) {
+        // An upload that failed keeps its own reason.
+        return hub?.status === "failed" ? null : { ...(hub ?? {}), status: "failed", reason: GGUF_NOT_UPLOADED, updatedAt: at };
+      }
+      if (problem) return hub?.status === "waiting" && hub.reason === problem ? null : { ...hub!, status: "waiting", reason: problem, updatedAt: at };
+      return { ...hub!, status: "publishing", reason: null, claim: id, updatedAt: at };
+    }),
+  );
+  return holds(written, id) ? id : null;
+}
+
 /** The dataset card as `from` (a published job, or the one publishing now) tells it, committed where it differs. */
 async function writeDatasetCard(repo: HubRepo, dataset: DatasetRow, from: { job: TrainJobRow; hub: HubState }, others: DatasetModel[], forJob: string) {
-  const { facts } = await cardFactsOf(from.job, from.hub, dataset);
+  const { facts } = await cardFactsOf(from.job, from.hub, dataset, from.hub.public === true);
   const readme = Buffer.from(datasetCard(facts, others), "utf8");
   const files = [
     { path: "README.md", content: readme },
@@ -423,12 +484,33 @@ async function writeDatasetCard(repo: HubRepo, dataset: DatasetRow, from: { job:
  * What to publish once a job has ended with `status`, and its claim. A glimmer-lora job that succeeded publishes itself
  * when it can (hubJobProblem: judged, not a dry run), unless its "publish" param is 0 and nobody pressed Publish
  * (`manual`). A glimmer-publish job that succeeded publishes the adapter job its params name; one that didn't marks that
- * job's upload failed, when it was still waiting on this one. Every other job publishes nothing.
+ * job's upload failed, when it was still waiting on this one. A glimmer-quantize job that succeeded publishes its own
+ * GGUF repo (kind "gguf") when it can (ggufJobProblem: its files passed and reached the Hub, its adapter is published);
+ * one that didn't marks an upload it left unfinished failed. Every other job publishes nothing.
  */
 export async function hubPlanStep(jobId: string, status: TrainStatus, manual = false): Promise<HubPlan> {
   "use step";
   const job = await fromDb(() => getJob(jobId));
   if (!job) return NONE;
+  if (job.recipe === QUANT_RECIPE) {
+    if (status !== "succeeded") {
+      const reason = `The local files job ended as ${status}, so its files never all reached Hugging Face. Make local files again.`;
+      await fromDb(() =>
+        updateHub(job.id, (hub) =>
+          hub && (hub.status === "uploading" || hub.status === "uploaded" || hub.status === "waiting")
+            ? { ...hub, status: "failed", reason, updatedAt: new Date().toISOString() }
+            : null,
+        ),
+      );
+      return NONE;
+    }
+    if (publishOff(job.params) && !manual) return NONE;
+    const own = await fromDb(() => getAdapterSource(job.id));
+    const adapterJobId = typeof job.params?.adapterJobId === "string" ? job.params.adapterJobId.toLowerCase() : "";
+    const adapter = UUID_RE.test(adapterJobId) ? await fromDb(() => getJob(adapterJobId)) : null;
+    const held = await claimGguf(job.id, ggufJobProblem(job, own?.metrics ?? null, adapter), new Date());
+    return held ? { action: "publish", jobId: job.id, claim: held, kind: "gguf" } : NONE;
+  }
   if (job.recipe === PUBLISH_RECIPE) {
     const adapterJobId = typeof job.params?.adapterJobId === "string" ? job.params.adapterJobId.toLowerCase() : "";
     if (!UUID_RE.test(adapterJobId)) return NONE;
@@ -551,7 +633,8 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
   "use step";
   const { job, hub, dataset } = await load(jobId, claim);
   if (!hubUploaded(hub)) throw new FatalError("Not every one of the adapter's files is on Hugging Face.");
-  const { facts, items, modelRepo } = await cardFactsOf(job, hub, dataset);
+  // The card is read under the visibility hubFinishStep gives the model repo: public with HF_PUBLIC on.
+  const { facts, items, modelRepo } = await cardFactsOf(job, hub, dataset, env.hfPublic);
   await fromHub(() => createRepo(modelRepo, { license: "apache-2.0" }));
   // Only a job published before, publishing again with HF_PUBLIC on, commits to a public repo.
   if ((!hub.publishedAt || !env.hfPublic) && (await fromHub(() => repoVisibility(modelRepo))) === "public") {
@@ -588,10 +671,38 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
   ];
   const refs = planned.map((f) => ({ path: f.path, oid: f.sha256, size: f.size }));
   const commitOid = await writeFiles(modelRepo, files, refs, `Publish ${job.title}`, `Muse Muse job ${job.id}: a LoRA adapter for ${facts.template.model}.`);
-  await saveHub(jobId, claim, (h) => ({ ...h, modelRepo: modelRepo.id, ...(commitOid ? { modelCommit: commitOid } : {}), updatedAt: new Date().toISOString() }));
+  const cardGguf = facts.gguf?.repo ?? null;
+  await saveHub(jobId, claim, (h) => ({ ...h, modelRepo: modelRepo.id, cardGguf, ...(commitOid ? { modelCommit: commitOid } : {}), updatedAt: new Date().toISOString() }));
   return { repo: modelRepo.id, commit: commitOid };
 }
 hubModelStep.maxRetries = 3;
+
+/**
+ * Makes every published GGUF repo of an adapter private and says so in each local files job's hub state, for an
+ * adapter whose publish ended private: its merged weights never stay out without it. A repo already private, or gone
+ * from the Hub, is left as it is. A local files job publishing right now is left to its own run, which needs the
+ * adapter published again before it sets its repo's visibility. Logged on the adapter's job.
+ */
+async function hideGguf(adapterJobId: string): Promise<void> {
+  const published = await fromDb(() => publishedGgufJobs(adapterJobId));
+  for (const id of new Set(published.map((g) => g.repo))) {
+    const repo: HubRepo = { type: "model", id };
+    const seen = await fromHub(async () => {
+      try {
+        return await repoVisibility(repo);
+      } catch (err) {
+        if (err instanceof HubApiError && err.status === 404) return null;
+        throw err;
+      }
+    });
+    if (seen !== "public") continue;
+    await fromHub(() => setVisibility(repo, "private"));
+    await fromDb(() => recordEvent(adapterJobId, { type: "log", text: `Hugging Face: ${id} holds this adapter's local files, so it was made private with it.` }));
+  }
+  for (const g of published.filter((x) => x.public)) {
+    await fromDb(() => updateHub(g.jobId, (h) => (h?.status === "published" && h.public ? { ...h, public: false, updatedAt: new Date().toISOString() } : null)));
+  }
+}
 
 /**
  * The dataset card and both repos' visibility, once the model repo's commit is verified, then the state "published"
@@ -604,6 +715,10 @@ hubModelStep.maxRetries = 3;
  * - HF_PUBLIC asking for private: this job's model repo private. With no other public model on the dataset, the
  *   dataset repo goes private too and gets this job's card; with others, it stays as it is, and its card becomes the
  *   newest of theirs first, so it never names this private model.
+ *
+ * An adapter that ends up private takes its local files with it (hideGguf). Then the model card's pointer to them is
+ * decided again under the visibility the model repo ended with, and committed (README only) when it differs from the
+ * one hubModelStep wrote: a GGUF repo published or hidden meanwhile, or HF_PUBLIC changed between the steps.
  */
 export async function hubFinishStep(jobId: string, claim: string): Promise<{ public: boolean }> {
   "use step";
@@ -647,10 +762,18 @@ export async function hubFinishStep(jobId: string, claim: string): Promise<{ pub
   }
   const now = { model: await fromHub(() => repoVisibility(model)), data: await fromHub(() => repoVisibility(data)) };
   const isPublic = now.model === "public" && now.data === "public";
+  if (!isPublic) await hideGguf(job.id);
+  const link = await ggufLinkOf(job, now.model === "public");
+  const cardGguf = link?.repo ?? null;
+  if (cardGguf !== (hub.cardGguf ?? null)) {
+    const { facts } = await cardFactsOf(job, hub, dataset, now.model === "public");
+    const readme = Buffer.from(modelCard(facts), "utf8");
+    await writeFiles(model, [{ path: "README.md", content: readme }], [], `Update the card of ${job.title}`, `Muse Muse job ${job.id}: where its local files are.`);
+  }
   const modelUrl = repoUrl(model);
   const datasetUrl = repoUrl(data);
   const at = new Date().toISOString();
-  await saveHub(jobId, claim, (h) => ({ ...h, status: "published", reason: null, claim: null, modelUrl, datasetUrl, public: isPublic, publishedAt: at, updatedAt: at }));
+  await saveHub(jobId, claim, (h) => ({ ...h, status: "published", reason: null, claim: null, modelUrl, datasetUrl, public: isPublic, cardGguf, publishedAt: at, updatedAt: at }));
   await fromDb(() =>
     recordEvent(jobId, {
       type: "log",
@@ -671,3 +794,197 @@ export async function hubFailStep(jobId: string, claim: string, reason: string):
   if (written) await fromDb(() => recordEvent(jobId, { type: "log", text }));
 }
 hubFailStep.maxRetries = 20;
+
+// ---------------------------------------------------------------------------------------------------------------
+// A local files job's GGUF repo (docs/TRAINING.md "Local files"), under the job's own claim
+
+/**
+ * A local files job, its hub state, its adapter's job and the adapter's dataset, or a FatalError that says what is
+ * missing or that the claim was lost. Its adapter must be published: the GGUF repo's card links it.
+ */
+async function loadGguf(jobId: string, claim: string): Promise<{ job: TrainJobRow; hub: HubState; adapter: TrainJobRow; dataset: DatasetRow }> {
+  const job = await fromDb(() => getJob(jobId));
+  if (!job) throw new FatalError("The job is gone.");
+  if (!job.hub) throw new FatalError("The job has no Hugging Face state to publish from.");
+  if (!holds(job.hub, claim)) throw new FatalError(LOST_CLAIM);
+  if (!job.hub.modelRepo) throw new FatalError("The job's GPU never planned its GGUF repo.");
+  const adapterJobId = typeof job.params?.adapterJobId === "string" ? job.params.adapterJobId.toLowerCase() : "";
+  const adapter = UUID_RE.test(adapterJobId) ? await fromDb(() => getJob(adapterJobId)) : null;
+  if (!adapter?.hub?.modelRepo || adapter.hub.status !== "published") {
+    throw new FatalError("Its adapter isn't published on Hugging Face right now, and the GGUF repo links to it.");
+  }
+  const datasetId = typeof adapter.params?.datasetId === "string" ? adapter.params.datasetId : null;
+  const dataset = datasetId ? await fromDb(() => getDataset(datasetId)) : null;
+  if (!dataset || dataset.status !== "ready") throw new FatalError("The adapter's dataset is gone, so the card can't say what the files learned.");
+  return { job, hub: job.hub, adapter, dataset };
+}
+
+/** True when a GGUF repo goes public: HF_PUBLIC asks for public repos and its adapter is public on the Hub. */
+function ggufOpen(adapter: TrainJobRow): boolean {
+  return env.hfPublic && adapter.hub?.public === true;
+}
+
+/**
+ * Everything the GGUF card says, from the records: the job's done metrics and row, its adapter's hub state and done
+ * metrics, and the dataset. The files were checked under the system line the GPU made from the dataset's title, which
+ * must be the one the adapter trained under, or the card would tell people another.
+ */
+async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow, dataset: DatasetRow): Promise<GgufFacts> {
+  const metrics: DoneMetrics = (await fromDb(() => getAdapterSource(job.id)))?.metrics ?? {};
+  const trained: DoneMetrics = (await fromDb(() => getAdapterSource(adapter.id)))?.metrics ?? {};
+  const slug = job.params?.slug;
+  if (!validSlug(slug)) throw new FatalError("The job's slug isn't one a repo name takes.");
+  const { builds, leftOut } = ggufBuilds(slug, quantLevels(job.params), metrics);
+  if (!builds.length) throw new FatalError("No build of the job passed its checks.");
+  const role = typeof metrics.system === "string" ? metrics.system.trim() : "";
+  const ran = typeof trained.student_system === "string" ? trained.student_system.trim() : "";
+  const expected = ran.startsWith("You are ") ? ran : studentSystem(dataset.title);
+  if (role !== expected) {
+    throw new FatalError(`The files were checked under the system message ${JSON.stringify(role)}, but the adapter trained under ${JSON.stringify(expected)}.`);
+  }
+  const template = glimmerTemplate(GLIMMER_PY);
+  const config = adapterConfig(adapter.hub!);
+  const revision = typeof config?.revision === "string" && /^[0-9a-f]{40}$/.test(config.revision) ? config.revision : template.revision;
+  const recipe = recipeById(job.recipe);
+  const start = (job.launchedAt ?? job.createdAt).getTime();
+  const end = (job.terminatedAt ?? job.finishedAt ?? job.createdAt).getTime();
+  const small = Object.entries(hub.small ?? {})
+    .filter(([name]) => !hubNameProblem(job, name))
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([name, b64]) => {
+      const bytes = Buffer.from(b64, "base64");
+      return { name, bytes: bytes.length, sha256: sha256Hex(bytes) };
+    });
+  const mergeRevision = typeof metrics.merge_base_revision === "string" && /^[0-9a-f]{40}$/.test(metrics.merge_base_revision) ? metrics.merge_base_revision : null;
+  const agreeTotal = num(metrics.agreement_total);
+  return {
+    repo: hub.modelRepo!,
+    slug,
+    adapterRepo: adapter.hub!.modelRepo!,
+    adapterCommit: adapter.hub!.modelCommit ?? null,
+    datasetRepo: adapter.hub!.datasetRepo ?? null,
+    adapterJobId: adapter.id,
+    quantJobId: job.id,
+    dataset: { title: dataset.title, task: dataset.task, evalCount: num(metrics.channel_total) ?? dataset.evalCount },
+    role,
+    trainChannel: trainChannelOf(job.params),
+    builds,
+    leftOut,
+    channel: { final: num(metrics.channel_final) ?? 0, total: num(metrics.channel_total) ?? 0 },
+    agreement: agreeTotal ? { same: num(metrics.agreement) ?? 0, total: agreeTotal } : null,
+    tensors: num(metrics.tensors),
+    llamacpp: { tag: typeof metrics.llamacpp === "string" ? metrics.llamacpp : "unknown", commit: typeof metrics.llamacpp_commit === "string" ? metrics.llamacpp_commit : null },
+    mergeBase: { repo: typeof metrics.merge_base === "string" ? metrics.merge_base : "unsloth/Muse-Glimmer-30B", revision: mergeRevision },
+    adapterBase: { model: template.model, revision },
+    small,
+    job: {
+      gpuLabel: recipe?.gpus.find((g) => g.instanceType === job.instanceType)?.label ?? job.instanceType,
+      gpuMinutes: Math.max(0, Math.ceil((end - start) / 60_000)),
+      costUsd: job.costUsd,
+      finishedAt: job.finishedAt ? job.finishedAt.toISOString() : null,
+    },
+  };
+}
+
+/**
+ * The GGUF repo the job's GPU uploaded to. A repo that must be private (ggufOpen), or that is public although neither
+ * this job nor another local files job of the adapter published it, is made private first. One another job already
+ * published keeps its visibility, so making the files again never takes them off the public pages, even when this run
+ * fails; its commit only replaces builds that passed their checks too. Every build's LFS object is asked of the LFS
+ * batch again (one the Hub doesn't store fails publishing for good: the files were only on the GPU). Then one commit,
+ * where it differs, read back: the builds by oid, the small files (each checked with ggufSmallProblem), the GGUF card,
+ * the base model's LICENSE and muse_muse_quant.json. A name outside the job's own (hubNameProblem) is never committed.
+ */
+export async function hubGgufStep(jobId: string, claim: string): Promise<{ repo: string; commit: string | null }> {
+  "use step";
+  const { job, hub, adapter, dataset } = await loadGguf(jobId, claim);
+  if (!ggufUploaded(hub, job.params)) throw new FatalError(GGUF_NOT_UPLOADED);
+  const facts = await ggufFactsOf(job, hub, adapter, dataset);
+  const repo: HubRepo = { type: "model", id: facts.repo };
+  await fromHub(() => createRepo(repo, { license: "apache-2.0" }));
+  const shared = (await fromDb(() => publishedGgufJobs(adapter.id))).some((g) => g.repo === repo.id && g.jobId !== job.id);
+  if ((!ggufOpen(adapter) || (!hub.publishedAt && !shared)) && (await fromHub(() => repoVisibility(repo))) === "public") {
+    await fromHub(() => setVisibility(repo, "private"));
+    await fromDb(() => recordEvent(jobId, { type: "log", text: `Hugging Face: ${repo.id} was public before it was published, so it was made private before the commit.` }));
+  }
+  const planned = (hub.files ?? []).filter((f) => !hubNameProblem(job, f.path));
+  const actions = await fromHub(() => lfsBatch(repo, planned.map((f) => ({ oid: f.sha256, size: f.size }))));
+  const pathOf = (oid: string) => planned.find((f) => f.sha256 === oid)?.path ?? oid;
+  const refused = actions.find((a) => a.kind === "error");
+  if (refused?.kind === "error") throw new FatalError(`Hugging Face wouldn't say whether it stores ${pathOf(refused.oid)}: ${refused.error}`);
+  const gone = actions.filter((a) => a.kind !== "none").map((a) => pathOf(a.oid));
+  if (gone.length) throw new FatalError(`Hugging Face doesn't have ${gone.join(", ")} in ${repo.id}'s storage, and the files were only on the job's GPU. Make local files again.`);
+  const small: PlatformFile[] = [];
+  for (const [path, b64] of Object.entries(hub.small ?? {})) {
+    if (hubNameProblem(job, path)) continue;
+    const bytes = Buffer.from(b64, "base64");
+    const problem = ggufSmallProblem(path, bytes, sha256Hex(bytes), { role: facts.role, trainChannel: facts.trainChannel });
+    if (problem) throw new FatalError(`The local files aren't published: ${problem}.`);
+    small.push({ path, content: bytes });
+  }
+  const license = await fromHub(() => fetchPublicText(rawUrl({ type: "model", id: GLIMMER_ORIGIN }, "LICENSE")));
+  if (!/apache license/i.test(license)) throw new FatalError(`The base model's LICENSE at ${GLIMMER_ORIGIN} isn't the Apache License any more.`);
+  const files: PlatformFile[] = [
+    { path: "README.md", content: Buffer.from(ggufCard(facts), "utf8") },
+    { path: "LICENSE", content: Buffer.from(license, "utf8") },
+    { path: "muse_muse_quant.json", content: Buffer.from(`${JSON.stringify(quantRecord(facts), null, 2)}\n`, "utf8") },
+    ...small,
+  ];
+  const refs = planned.map((f) => ({ path: f.path, oid: f.sha256, size: f.size }));
+  const commitOid = await writeFiles(repo, files, refs, `Publish ${job.title}`, `Muse Muse job ${job.id}: GGUF files of ${facts.adapterRepo}.`);
+  await saveHub(jobId, claim, (h) => ({ ...h, ...(commitOid ? { modelCommit: commitOid } : {}), updatedAt: new Date().toISOString() }));
+  return { repo: repo.id, commit: commitOid };
+}
+hubGgufStep.maxRetries = 3;
+
+/**
+ * The GGUF repo's visibility, then the state "published" with the link and `public` as the Hub reports it, then the
+ * adapter's card. The repo is public when HF_PUBLIC asks for public repos and its adapter is public (ggufOpen),
+ * otherwise private. The state comes first, so an adapter run that starts now finds this repo for its own card. The
+ * adapter's card then gets a README-only commit (only when it changed) whose "How to use it" points local apps to
+ * this repo; while a run publishes the adapter itself it is left to that run, whose last step points the card here.
+ * A failure there is logged, never failing these files, since publishing the adapter again writes the same.
+ */
+export async function hubGgufFinishStep(jobId: string, claim: string): Promise<{ public: boolean }> {
+  "use step";
+  const { job, hub, adapter, dataset } = await loadGguf(jobId, claim);
+  const repo: HubRepo = { type: "model", id: hub.modelRepo! };
+  const want: HubVisibility = ggufOpen(adapter) ? "public" : "private";
+  if ((await fromHub(() => repoVisibility(repo))) !== want) await fromHub(() => setVisibility(repo, want));
+  const isPublic = (await fromHub(() => repoVisibility(repo))) === "public";
+  const url = repoUrl(repo);
+  const at = new Date().toISOString();
+  await saveHub(jobId, claim, (h) => ({ ...h, status: "published", reason: null, claim: null, modelUrl: url, public: isPublic, publishedAt: at, updatedAt: at }));
+  await recordEvent(jobId, { type: "log", text: `Published the local files to Hugging Face${isPublic ? "" : " (private)"}: ${url}.` }).catch(() => undefined);
+  await linkAdapterCard(job, repo, isPublic, adapter.id, dataset);
+  return { public: isPublic };
+}
+hubGgufFinishStep.maxRetries = 5;
+
+/**
+ * The README-only commit that points the adapter's card to its GGUF repo, after hubGgufFinishStep published the repo.
+ * The adapter is read again first: while a run publishes it, that run's hubFinishStep points the card here instead.
+ * Never throws: the files are published either way, and a failure is logged on the local files job.
+ */
+async function linkAdapterCard(job: TrainJobRow, repo: HubRepo, isPublic: boolean, adapterJobId: string, dataset: DatasetRow): Promise<void> {
+  try {
+    const adapter = await fromDb(() => getJob(adapterJobId));
+    if (!adapter?.hub?.modelRepo) return;
+    const adapterRepo: HubRepo = { type: "model", id: adapter.hub.modelRepo };
+    if (hubBusy(adapter.hub, Date.now()) || adapter.hub.status !== "published") {
+      await recordEvent(job.id, { type: "log", text: `Hugging Face: ${adapterRepo.id} is being published right now, so that run's card points to ${repo.id}.` });
+      return;
+    }
+    try {
+      const { facts } = await cardFactsOf(adapter, adapter.hub, dataset, adapter.hub.public === true, { repo: repo.id, public: isPublic });
+      const readme = Buffer.from(modelCard(facts), "utf8");
+      const commit = await writeFiles(adapterRepo, [{ path: "README.md", content: readme }], [], `Link the local files of ${adapter.title}`, `Muse Muse job ${job.id}: ${repo.id} has this adapter's GGUF files.`);
+      if (commit) await recordEvent(job.id, { type: "log", text: `Hugging Face: ${adapterRepo.id}'s card now points to ${repo.id}.` });
+    } catch (err) {
+      const text = `Hugging Face: ${adapterRepo.id}'s card couldn't be updated to point to these files (${message(err).slice(0, 300)}). Publishing the adapter again writes it.`;
+      await recordEvent(job.id, { type: "log", text });
+    }
+  } catch {
+    // The database stayed down: publishing the adapter again points its card here.
+  }
+}

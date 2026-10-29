@@ -10,6 +10,7 @@ import {
 } from "@/lib/train/logic";
 import { GLIMMER_PY } from "@/lib/train/recipes/glimmer";
 import { PUBLISH_PY } from "@/lib/train/recipes/publish";
+import { QUANT_PY } from "@/lib/train/recipes/quantize";
 import { SERVE_MAX_NEW_TOKENS, SERVE_PY } from "@/lib/train/recipes/serve";
 import { SMOKE_PY } from "@/lib/train/recipes/smoke";
 import type { Recipe } from "@/lib/train/types";
@@ -31,6 +32,18 @@ const PUBLISH_GPUS: Recipe["gpus"] = [
   { instanceType: "gpu_1x_a10", label: "1x A10 (24 GB)" },
   { instanceType: "gpu_1x_a100", label: "1x A100 PCIe (40 GB)" },
   { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)" },
+];
+
+/**
+ * GPUs for glimmer-quantize, in order: each has at least 220 GiB of RAM and 512 GiB of local disk (Lambda's specs on
+ * 2026-10-28), for the merge's 60 GB of RAM and the files' disk. On the A100s, 40 GB holds the Q8_0 reference whole;
+ * the A10's 24 GB splits it with the CPU and is tight for the 4-bit model, so it comes last. The A6000 and RTX 6000
+ * have too little RAM.
+ */
+const QUANT_GPUS: Recipe["gpus"] = [
+  { instanceType: "gpu_1x_a100_sxm4", label: "1x A100 SXM4 (40 GB)" },
+  { instanceType: "gpu_1x_a100", label: "1x A100 PCIe (40 GB)" },
+  { instanceType: "gpu_1x_a10", label: "1x A10 (24 GB)" },
 ];
 
 /** The serve recipe's limits for its default minutes; recipeDefaults sizes them from the minutes a job asks for. */
@@ -182,6 +195,35 @@ export const RECIPES: Recipe[] = [
       },
     ],
     script: PUBLISH_PY,
+  },
+  {
+    id: "glimmer-quantize",
+    title: "Make local files (GGUF)",
+    description:
+      "Merges one judged Muse Glimmer LoRA adapter into the 16-bit base and makes the files people run on their own computers: GGUF builds in three sizes (Q3_K_M, Q4_K_M and Q6_K) with a pinned llama.cpp. Each build is checked against the merged model, and the files must render training's prompt and give final answers in a stock app's prompt, or nothing is published. The builds that pass go to their own repo on the Hugging Face Hub, next to the adapter's, with a card that says which file fits which computer. It runs in the adapter's region with that model cache mounted. The adapter must be published first.",
+    gpus: QUANT_GPUS,
+    defaultMaxMinutes: 110,
+    defaultMaxUsd: 3.7,
+    usesCache: true,
+    params: [
+      {
+        key: SERVE_ADAPTER_PARAM,
+        label: "Adapter",
+        kind: "adapter",
+        required: true,
+        help: "A Muse Glimmer LoRA job that was judged and published, trained under the short student prompt. The job runs in its model cache's region.",
+      },
+      {
+        key: "publish",
+        label: "Publish to Hugging Face",
+        kind: "number",
+        default: 1,
+        min: 0,
+        max: 1,
+        help: "1 uploads the builds that pass and publishes their repo once the job succeeds. 0 makes and checks the files but uploads nothing, a test of the recipe: the files are gone when the GPU shuts down.",
+      },
+    ],
+    script: QUANT_PY,
   },
 ];
 

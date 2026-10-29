@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief } from "@/lib/brief/schema";
+import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
 import type {
   DatasetStatus,
@@ -297,4 +298,69 @@ export const trainingDatasets = pgTable(
     workflowRunId: text("workflow_run_id"),
   },
   (t) => [index("training_datasets_created_idx").on(t.createdAt)],
+);
+
+/**
+ * Flash drive order requests (docs/VIBE_TUNING.md, Feature 6; lib/drive). The site takes no payment: the owner emails an
+ * invoice and moves the order along at /fine-tuning/orders, and the bench script (scripts/drive-bench.ts) flashes and
+ * checks the stick. The order link's secret is kept only as its HMAC, as gateway tokens are. The buyer's name, email and
+ * address, with the tracking number and the notes, are cleared 60 days after delivery or cancellation, and the quota
+ * keys after 30 days (lib/drive/store.ts purgeDriveOrders).
+ */
+export const driveOrders = pgTable(
+  "drive_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    status: text("status").$type<DriveStatus>().notNull().default("requested"),
+    /** hashToken of the order link's secret (32 random bytes). The secret itself is never stored. */
+    secretHash: text("secret_hash").notNull().unique(),
+    /** What goes on the drive, as localFilesFor answered when the request came in. */
+    trainingJobId: uuid("training_job_id")
+      .notNull()
+      .references(() => trainingJobs.id),
+    build: text("build").$type<DriveBuild>().notNull(),
+    ggufRepo: text("gguf_repo").notNull(),
+    ggufCommit: text("gguf_commit").notNull(),
+    files: jsonb("files").$type<DriveFile[]>().notNull(),
+    model: jsonb("model").$type<DriveModel>().notNull(),
+    imageVersion: text("image_version").notNull(),
+    /** The buyer. Null once purged. */
+    name: text("name"),
+    email: text("email"),
+    address: jsonb("address").$type<DriveAddress>(),
+    /** The owner's: the invoice they emailed, the amount as they wrote it, and a note. */
+    invoiceRef: text("invoice_ref"),
+    amountText: text("amount_text"),
+    note: text("note"),
+    /** Consent: the terms the buyer accepted, and their 18+ box. */
+    termsVersion: text("terms_version").notNull(),
+    termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }).notNull(),
+    ageOkAt: timestamp("age_ok_at", { withTimezone: true }).notNull(),
+    /** HMACs with GATEWAY_TOKEN_PEPPER of the client IP and of a random cookie id, for the quotas. Never the raw IP. */
+    clientKey: text("client_key"),
+    browserKey: text("browser_key"),
+    /** The bench: the stick's serial, its check after a replug, and the sha256 of the SHA256SUMS it wrote. */
+    serial: text("serial"),
+    verifyResult: text("verify_result").$type<VerifyResult>(),
+    manifestSha256: text("manifest_sha256"),
+    carrier: text("carrier"),
+    tracking: text("tracking"),
+    cancelledBy: text("cancelled_by").$type<DriveActor>(),
+    createdAt: createdAt(),
+    invoicedAt: timestamp("invoiced_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    flashingAt: timestamp("flashing_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    shippedAt: timestamp("shipped_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("drive_orders_created_idx").on(t.createdAt),
+    index("drive_orders_status_idx").on(t.status),
+    index("drive_orders_client_idx").on(t.clientKey, t.createdAt),
+    index("drive_orders_browser_idx").on(t.browserKey, t.createdAt),
+  ],
 );

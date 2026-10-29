@@ -8,6 +8,7 @@ import { EventLog } from "@/components/train/EventLog";
 import { HubCard } from "@/components/train/HubCard";
 import { JobPanel } from "@/components/train/JobPanel";
 import { AdapterLiveDemo, type JobLiveDemo } from "@/components/train/LiveDemo";
+import { MakeLocalFiles, QuantFilesCard } from "@/components/train/LocalFiles";
 import {
   doneMetrics,
   errorHeadline,
@@ -96,8 +97,9 @@ function smooth(): ScrollBehavior {
  * The fine-tuning job page, in the build room's layout: the event log on the left, polled every 5 seconds while the
  * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop. A job that sent
  * eval items gets its results below the log; polling goes on after the GPU is gone while Muse Spark 1.3 judges them.
- * A trained glimmer-lora job also gets its live demo above the results (Try it live, or Start a live demo) and its
- * Hugging Face card, and a glimmer-serve job's panel says whether its demo server is up.
+ * A trained glimmer-lora job also gets its live demo above the results (Try it live, or Start a live demo), its
+ * Hugging Face card and Make local files, a glimmer-quantize job its local files card, and a glimmer-serve job's panel
+ * says whether its demo server is up.
  */
 export function JobRoom(props: JobRoomProps) {
   const jobId = props.job.id;
@@ -312,6 +314,10 @@ export function JobRoom(props: JobRoomProps) {
           {props.hub ? (
             <HubCard job={job} offReason={props.hub.offReason} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
+          {props.hub && job.recipe === "glimmer-lora" && job.status === "succeeded" ? (
+            <MakeLocalFiles jobId={jobId} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
+          ) : null}
+          {job.recipe === "glimmer-quantize" ? <QuantFilesCard job={job} events={events} /> : null}
           <EvalResults state={evals} rows={rows} model={tunedModelName(job.recipe)} />
           <div ref={end} className="convo-end" />
         </div>

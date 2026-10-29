@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { DriveOffer } from "@/components/drive/DriveOffer";
 import { JobResults } from "@/components/train/JobResults";
 import { JobRoom } from "@/components/train/JobRoom";
 import type { JobLiveDemo } from "@/components/train/LiveDemo";
 import { NOT_PUBLIC_TEXT, evalRows, keepEvents, sweepOffText, toRecipeView } from "@/components/train/format";
 import { hasResults, toPublicLiveDemo, toResultView } from "@/components/train/results";
 import { EmptyCard, NotConnected } from "@/components/ui";
+import { RunLocallyLink, linkedLocalFiles } from "@/components/vibe/RunLocallyLink";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
 import { ADAPTER_RECIPE, adapterProblem, toJobView } from "@/lib/train/logic";
@@ -129,16 +131,18 @@ async function resultPage(jobId: string) {
     const recipe = row ? recipeById(row.recipe) : null;
     const view = row ? toResultView(row, recipe ? toRecipeView(recipe) : null) : null;
     if (!view) return null;
-    const [events, dataset, live] = await Promise.all([
+    const [events, dataset, live, local] = await Promise.all([
       listResultEvents(view.id),
       view.datasetId ? getReadyDataset(view.datasetId) : Promise.resolve(null),
       view.recipe === ADAPTER_RECIPE ? liveDemoOf(view.id, now) : Promise.resolve(null),
+      view.recipe === ADAPTER_RECIPE && view.hub ? linkedLocalFiles(view.id) : Promise.resolve(null),
     ]);
     return {
       result: view,
       rows: evalRows(events),
       dataset: dataset ? { id: dataset.id, title: dataset.title } : null,
       live: toPublicLiveDemo(live),
+      local,
     };
   });
   if (!result.ok) {
@@ -149,7 +153,14 @@ async function resultPage(jobId: string) {
     );
   }
   if (!result.data) notFound();
-  return <JobResults {...result.data} serverNow={now.getTime()} />;
+  // "Run it on your computer" shows only once the model has public local files (docs/VIBE_TUNING.md, Feature 5).
+  const { local, ...data } = result.data;
+  return (
+    <>
+      <JobResults {...data} serverNow={now.getTime()} aside={local ? <RunLocallyLink jobId={data.result.id} files={local} /> : null} />
+      <DriveOffer files={local} />
+    </>
+  );
 }
 
 export default async function FineTuningJobPage({ params }: { params: Promise<{ jobId: string }> }) {

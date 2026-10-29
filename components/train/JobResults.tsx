@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
 import { TryLiveCard } from "@/components/train/LiveDemo";
@@ -18,6 +19,8 @@ export interface JobResultsProps {
   live?: PublicLiveDemo | null;
   /** The server's clock when the page rendered, for the live demo's countdown. */
   serverNow?: number;
+  /** What the page shows right under the model's title, such as "Run it on your computer" once it has local files. */
+  aside?: ReactNode;
 }
 
 /**
@@ -27,7 +30,7 @@ export interface JobResultsProps {
  * Once the job is published to the Hugging Face Hub, an "On Hugging Face" chip and the two repos' links show; before
  * that, nothing about the Hub does.
  */
-export function JobResults({ result: r, rows, dataset, live = null, serverNow }: JobResultsProps) {
+export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null }: JobResultsProps) {
   const long = r.settings.filter((s) => s.key === "studentPrompt");
   const short = r.settings.filter((s) => s.key !== "studentPrompt");
   return (
@@ -56,6 +59,7 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow }:
         }
       />
 
+      {aside}
       {live ? <TryLiveCard adapterJobId={r.id} demo={live} serverNow={serverNow ?? Date.now()} /> : null}
 
       <section className="card section-card" aria-labelledby="run-title">

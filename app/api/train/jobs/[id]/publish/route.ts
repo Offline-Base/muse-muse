@@ -4,10 +4,11 @@ import { noEmDashes } from "@/lib/brief/normalize";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
 import { createRepo, HubApiError, redact } from "@/lib/train/hub";
-import { hubJobProblem, hubUploaded, modelRepoName, validRepoName } from "@/lib/train/hub-cards";
+import { ggufJobProblem, ggufUploaded, hubJobProblem, hubUploaded, modelRepoName, validRepoName } from "@/lib/train/hub-cards";
+import { GGUF_NOT_UPLOADED } from "@/lib/train/hub-steps";
 import { effectiveWhy, hubBusy, toHubView, type TrainJobRow } from "@/lib/train/logic";
-import { getDataset, getJob, recordEvent, updateHub } from "@/lib/train/store";
-import { HUB_WHY_MAX, isTrainTerminal, PUBLISH_RECIPE, type HubPublishResponse, type HubState } from "@/lib/train/types";
+import { getAdapterSource, getDataset, getJob, recordEvent, updateHub } from "@/lib/train/store";
+import { HUB_WHY_MAX, isTrainTerminal, PUBLISH_RECIPE, QUANT_RECIPE, type HubPublishResponse, type HubState } from "@/lib/train/types";
 import { publishToHub } from "@/lib/train/workflow";
 import { POST as startJob } from "../../route";
 
@@ -77,6 +78,31 @@ async function hubPreflight(job: TrainJobRow): Promise<Response | null> {
   }
 }
 
+/**
+ * Publish for a local files job (docs/TRAINING.md "Local files"): its GGUF repo, with the publishToHub workflow, once
+ * it can (ggufJobProblem: it succeeded, its files passed and reached the Hub, its adapter is published). Its files were
+ * only on its GPU, so a plan whose files aren't all on the Hub can't be finished: Make local files again.
+ */
+async function publishGguf(job: TrainJobRow): Promise<Response> {
+  const own = await getAdapterSource(job.id);
+  const adapterJobId = typeof job.params?.adapterJobId === "string" ? job.params.adapterJobId : "";
+  const adapter = adapterJobId ? await getJob(adapterJobId) : null;
+  const problem = ggufJobProblem(job, own?.metrics ?? null, adapter);
+  if (problem) return errorJson(409, "not_publishable", { reason: problem });
+  const off = env.hubOffReason;
+  if (off) return errorJson(503, "hub_off", { reason: off });
+  if (hubBusy(job.hub, Date.now())) return errorJson(409, "publishing");
+  if (!ggufUploaded(job.hub, job.params)) return errorJson(409, "not_publishable", { reason: GGUF_NOT_UPLOADED });
+  try {
+    await start(publishToHub, [{ jobId: job.id }]);
+  } catch (err) {
+    console.error("[train/publish] start", err);
+    return errorJson(500, "start_failed");
+  }
+  await recordEvent(job.id, { type: "log", text: "An admin asked to publish these local files to Hugging Face." }).catch(() => undefined);
+  return reply(job, job.hub, { started: "publish" }, 202);
+}
+
 /** GET -> {hub: HubView | null, offReason}: where the job's publishing to Hugging Face stands. Admins or automation only. */
 export const GET = route(async (req: Request, { params }: Ctx) => {
   await requireAdminOrAutomation(req);
@@ -97,6 +123,8 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
  * with its id), and its workflow publishes once it succeeds. Two presses at once start one upload job. A job published
  * before is published again, which writes only what changed (a new why, say).
  *
+ * A glimmer-quantize job publishes its GGUF repo instead (publishGguf), with no why and no upload job.
+ *
  * 400 bad input, 404 unknown job, 409 not_publishable with {reason} (not a judged glimmer-lora job, a dry run, its
  * dataset gone), 409 publishing (a run is publishing it now), 409 upload_running with {publishJobId} (or without, while
  * another press starts one), 409 hub_refused or 503 hub_unavailable with {reason} (the Hub refused or didn't answer
@@ -115,6 +143,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
 
   const job = await getJob(id);
   if (!job) return errorJson(404, "not_found");
+  if (job.recipe === QUANT_RECIPE) return publishGguf(job);
   const problem = hubJobProblem(job);
   if (problem) return errorJson(409, "not_publishable", { reason: problem });
   const off = env.hubOffReason;

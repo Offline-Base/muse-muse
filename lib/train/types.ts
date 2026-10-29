@@ -7,15 +7,37 @@
  * Recipes the platform can run. Each maps to a Python script in lib/train/recipes. "glimmer-serve" serves one trained
  * glimmer-lora adapter for a fixed number of minutes, for the live demo on its public result page (docs/TRAINING.md
  * "Live demo"). "glimmer-publish" uploads one trained adapter from the model cache in its region to the Hugging Face
- * Hub, for an adapter its own job didn't upload (docs/TRAINING.md "Hugging Face Hub").
+ * Hub, for an adapter its own job didn't upload (docs/TRAINING.md "Hugging Face Hub"). "glimmer-quantize" merges one
+ * judged adapter into the base and makes its GGUF files in three sizes (docs/TRAINING.md "Local files").
  */
-export type RecipeId = "smoke" | "glimmer-lora" | "glimmer-serve" | "glimmer-publish";
+export type RecipeId = "smoke" | "glimmer-lora" | "glimmer-serve" | "glimmer-publish" | "glimmer-quantize";
 
 /**
  * The recipe that uploads a trained adapter's files to the Hugging Face Hub from the model cache, and nothing else. The
  * platform commits them once its job succeeded.
  */
 export const PUBLISH_RECIPE = "glimmer-publish" satisfies RecipeId;
+
+/**
+ * The recipe that makes a judged adapter's local files: the adapter merged into the 16-bit base, converted to GGUF,
+ * quantized to each build in QUANT_LEVELS (lib/train/local-files.ts), checked, and uploaded to its own GGUF repo on the
+ * Hugging Face Hub, which its job publishes once it succeeded.
+ */
+export const QUANT_RECIPE = "glimmer-quantize" satisfies RecipeId;
+
+/**
+ * A glimmer-quantize job's params. adapterJobId (the glimmer-lora job whose adapter it merges) and publish are the
+ * admin's; the platform writes the other three itself when the job is created, so no caller chooses them: levels (the
+ * builds, QUANT_LEVELS joined with commas), slug (the dataset slug the adapter's repos are named with) and
+ * trainChannel (1 when the adapter learned to open the final channel itself, else 0, so the files need tuned.jinja).
+ */
+export interface GlimmerQuantizeParams {
+  adapterJobId: string;
+  publish: number;
+  levels: string;
+  slug: string;
+  trainChannel: number;
+}
 
 /**
  * A glimmer-publish job's params: the glimmer-lora job whose adapter it uploads. Its job runs in that job's region, with
@@ -403,6 +425,12 @@ export interface HubState {
   modelCommit?: string | null;
   datasetCommit?: string | null;
   /**
+   * The GGUF repo the adapter's committed card points local apps to, or null for none, as hubModelStep wrote it:
+   * hubFinishStep decides the pointer again once the model repo's visibility is set, and commits the card again when
+   * it differs.
+   */
+  cardGguf?: string | null;
+  /**
    * Why it was made, as an admin wrote it with Publish. It leads the card's "Why this exists", and the story builds on
    * it. "" when an admin cleared it, which wins over the job's "why" param; null or absent when Publish never set one,
    * so the param's counts (effectiveWhy in lib/train/logic.ts).
@@ -495,6 +523,15 @@ export const HUB_CHECKED_NAMES: readonly string[] = [
   "video_preprocessor_config.json",
 ];
 
+/**
+ * A glimmer-quantize job's files on the Hub: each GGUF file at most this big (Q6_K of Muse Glimmer 30B is 22.87 GB,
+ * Q8_0 29.61), and only these small files besides them, each carried whole in the plan's small files for the platform
+ * to check and commit: the system message, Ollama's params, and tuned.jinja for an adapter trained before trainChannel.
+ * The GGUF files' own names follow ggufFileName in lib/train/hub-cards.ts; runner.py keeps the same rule.
+ */
+export const HUB_GGUF_FILE_MAX_BYTES = 32 * 1024 ** 3;
+export const HUB_GGUF_SMALL_NAMES: readonly string[] = ["system", "params", "tuned.jinja"];
+
 /** POST /api/train/jobs/{id}/hub {action: "plan"}: one file of the adapter's folder. */
 export interface HubPlanFile {
   path: string;
@@ -516,6 +553,12 @@ export interface HubPlanRequest {
   action: "plan";
   files: HubPlanFile[];
   small?: Record<string, string>;
+  /**
+   * The files to answer uploads for now, when not all of them: runner.py plans one file at a time once the platform
+   * answered 413 plan_too_large with perFile, since every part URL of three multi-GB files would pass the answer's cap.
+   * The plan is still the whole folder, which replaces the one before.
+   */
+  only?: string[];
 }
 
 /**

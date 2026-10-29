@@ -1,0 +1,186 @@
+/*
+ * The flash drive pages (components/drive, docs/VIBE_TUNING.md Feature 6): the request form, the order page and the
+ * admin queue. Loaded by app/orders/layout.tsx and app/fine-tuning/orders/layout.tsx. Every color is a token from
+ * app/globals.css, so both themes work. The offer on a model's page uses only the shared classes.
+ */
+
+.drive-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.drive-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.drive-check input,
+.drive-build input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.drive-terms {
+  margin: 8px 0 0 28px;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.drive-terms summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  width: fit-content;
+}
+
+.drive-terms ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drive-builds {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.drive-build {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.drive-build:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.drive-build-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.drive-build-size {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.drive-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: var(--accent-soft);
+}
+
+.drive-quick-to,
+.drive-address {
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.drive-quick-to > span,
+.drive-address > span {
+  display: block;
+}
+
+.drive-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.drive-facts {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-2);
+  line-height: 1.5;
+}
+
+.drive-link-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drive-steps .rail-step:last-child {
+  padding-bottom: 0;
+}
+
+/* The admin queue. On a phone it scrolls inside its own container, as every table here does, with room for each column. */
+
+.drive-queue {
+  min-width: 960px;
+}
+
+.drive-overdue > td {
+  background: var(--warn-soft);
+}
+
+/* Each flag on its own line under the status pill, however wide the column is. */
+.drive-flag {
+  display: block;
+  margin-top: 4px;
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.drive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drive-action-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  min-width: 240px;
+}
+
+.drive-ship {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.drive-ship summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  width: fit-content;
+}

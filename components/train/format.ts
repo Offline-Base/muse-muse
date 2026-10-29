@@ -1,6 +1,7 @@
 import type { IconName } from "@/components/icons";
 import { bytes, dayLabel, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
+import type { LocalFiles, QuantLevel } from "@/lib/train/local-files";
 import {
   clampLimits,
   DATASET_MAX_COUNT,
@@ -10,6 +11,8 @@ import {
   isServeRecipe,
   MIN_MAX_MINUTES,
   MIN_MAX_USD,
+  QUANT_CHANNEL_MIN,
+  QUANT_KL_MAX,
   recipeDefaults,
   runEstimate,
   SERVE_BOOT_MINUTES,
@@ -227,6 +230,12 @@ export function runTimeHint(
   if (!warm || !cold) return null;
   const usable = usableMinutes(limits, gpu.priceCentsPerHour);
   const on = auto ? `on Auto (up to ${gpu.label})` : `on ${gpu.label}`;
+  if (warm.what === "quantize") {
+    // It always runs in its adapter's region, which holds the model cache.
+    const lead = `Making the local files ${on}: about ${warm.minutes} minutes, for the merge, the conversion, three sizes and their checks, and the upload.`;
+    if (warm.minutes <= usable) return { text: lead, warn: false };
+    return { text: `${lead} The job's limits stop it after ${usable} minutes, so it would be refused. Raise the time or dollar limit.`, warn: true };
+  }
   const lead =
     `${plural(warm.steps, "training step")} ${on}: about ${warm.minutes} minutes in a region with the model cache, about ` +
     `${cold.minutes} without it (about ${warm.secondsPerStep} s a step, plus ${warm.overheadMinutes} or ` +
@@ -360,6 +369,14 @@ export function startErrorText(status: number, body: unknown, limits: { maxActiv
     }
     case "demo_running":
       return "A live demo of this adapter is already starting or running, so another one wasn't started.";
+    case "quant_running":
+      return "Local files of this adapter are already being made, so another job wasn't started.";
+    case "quant_off":
+      return `Making local files is off here: ${field(body, "reason") ?? "it isn't switched on"}.`;
+    case "adapter_not_published":
+      return field(body, "reason") ?? "Publish the adapter to Hugging Face first.";
+    case "hub_off":
+      return `Publishing to Hugging Face is off here: ${field(body, "reason") ?? "it isn't set up"}, and local files go to the Hub.`;
     case "daily_cap": {
       const cap = usd(num(body, "dailyUsd") ?? limits.dailyUsd);
       const spent = num(body, "spentUsd");
@@ -1264,4 +1281,228 @@ export function hubViewOf(data: unknown): HubView | null {
   if (!hub || typeof hub !== "object") return null;
   const h = hub as Record<string, unknown>;
   return typeof h.status === "string" && h.status in HUB_STATUS_LABEL ? (h as unknown as HubView) : null;
+}
+
+// ---------- Local files (docs/TRAINING.md "Local files") ----------
+
+/** The builds a local files job can make, smallest first (QUANT_LEVELS, as QUANT_KL_MAX lists them). */
+export const BUILD_LEVELS = Object.keys(QUANT_KL_MAX) as QuantLevel[];
+
+/** Settings labels for the params the platform writes onto a local files job itself (quantParams), which no field lists. */
+export const WRITTEN_PARAM_LABELS: ReadonlyMap<string, string> = new Map([
+  ["levels", "Builds"],
+  ["slug", "Name in the files"],
+  ["trainChannel", "Adapter trained with trainChannel"],
+]);
+
+/** The raw metrics of the job's last "done" event, or null when it has none. */
+export function doneMetricsOf(events: TrainEventView[]): Record<string, string | number> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const p = events[i].payload;
+    if (p?.type === "done") return p.metrics ?? {};
+  }
+  return null;
+}
+
+/** One build of a local files job, as its card shows it. `passed` is null while it wasn't measured. */
+export interface QuantRow {
+  level: QuantLevel;
+  bytes: number | null;
+  klMean: number | null;
+  klMax: number;
+  topTokenPct: number | null;
+  passed: boolean | null;
+}
+
+const metricNumber = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** The builds a local files job was asked for (its levels param), with what its done metrics measured of each. */
+export function quantRows(params: Record<string, string | number> | null | undefined, metrics: Record<string, string | number> | null): QuantRow[] {
+  const asked = String(params?.levels ?? "")
+    .split(",")
+    .map((l) => l.trim());
+  return BUILD_LEVELS.filter((level) => asked.includes(level)).map((level) => {
+    const key = level.toLowerCase();
+    const passed = metrics?.[`${key}_passed`];
+    return {
+      level,
+      bytes: metricNumber(metrics?.[`${key}_bytes`]),
+      klMean: metricNumber(metrics?.[`${key}_kl_mean`]),
+      klMax: QUANT_KL_MAX[level],
+      topTokenPct: metricNumber(metrics?.[`${key}_top_token_pct`]),
+      passed: passed === "yes" ? true : passed === "no" ? false : null,
+    };
+  });
+}
+
+/** "16.94 GB", as the Hub and the apps show a build's size. */
+export function buildSize(n: number): string {
+  return `${(Math.max(0, n) / 1e9).toFixed(2)} GB`;
+}
+
+/**
+ * One build on a local files job's card: its result, size, mean KL divergence from Q8_0 with its limit, and how often
+ * its top token is the same, as far as the job measured them.
+ */
+export function quantRowText(r: QuantRow): string {
+  if (r.bytes === null && r.klMean === null) return "Not made yet";
+  return [
+    r.passed === null ? "Not checked yet" : r.passed ? "Passed" : "Left out",
+    r.bytes === null ? null : buildSize(r.bytes),
+    r.klMean === null ? null : `mean KL ${r.klMean.toFixed(4)}, limit ${r.klMax.toFixed(4)}`,
+    r.topTokenPct === null ? null : `top token the same ${r.topTokenPct.toFixed(1)}%`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The channel check as one sentence, from a local files job's metrics, or null before it ran. */
+export function quantChannelText(metrics: Record<string, string | number> | null): string | null {
+  const final = metricNumber(metrics?.channel_final);
+  const total = metricNumber(metrics?.channel_total);
+  if (final === null || !total) return null;
+  return `Q4_K_M gave a final answer to ${final} of ${total} held-out prompts under a stock app's prompt (${Math.round(QUANT_CHANNEL_MIN * 100)}% needed).`;
+}
+
+/** How many answers agreed with the adapter's own eval answers, as one sentence, or null without a count. */
+export function quantAgreementText(metrics: Record<string, string | number> | null): string | null {
+  const same = metricNumber(metrics?.agreement);
+  const total = metricNumber(metrics?.agreement_total);
+  if (same === null || !total) return null;
+  return `${same} of ${total} start with the same 200 characters as the adapter's own eval answers (shown, not checked).`;
+}
+
+type QuantJob = Pick<TrainJobView, "status" | "terminatedAt" | "hub">;
+
+/** The sentence under a local files job's card title: where its files and their GGUF repo stand, in plain words. */
+export function ggufStatusText(job: QuantJob, offReason: string | null): string {
+  const hub = job.hub ?? null;
+  if (hub?.status === "published") {
+    const when = hub.publishedAt ? ` ${dayLabel(hub.publishedAt)}` : "";
+    return hub.public
+      ? `Published${when}: the builds that passed, with their card, in their own repo next to the adapter's.`
+      : `Published${when}, and private on Hugging Face, so the public pages don't link to it.`;
+  }
+  if (!isTrainTerminal(job.status)) return "The GPU merges the adapter, makes each build, checks them and uploads the ones that pass.";
+  // The card links the adapter's page, where Make local files starts another job.
+  if (job.status !== "succeeded") return "The job didn't finish, so nothing was published.";
+  if (offReason) return `Publishing to Hugging Face is off here: ${offReason}.`;
+  if (!hub) return "Its files passed their checks. Publishing starts once the job is done.";
+  switch (hub.status) {
+    case "publishing":
+      return hub.stale
+        ? "Publishing stopped partway: the run doing it hasn't moved for 30 minutes. Retry starts it again."
+        : "Writing the card and committing the GGUF repo.";
+    case "uploaded":
+      return "Every file is on Hugging Face. Publishing starts in a moment, or press Publish to start it now.";
+    default:
+      return hub.reason ?? (hub.status === "failed" ? "Publishing failed." : "Waiting to publish.");
+  }
+}
+
+/**
+ * What a local files job's card offers: Publish once its files are on the Hub, Retry after a failure or a stopped run,
+ * Publish again once published. Null while publishing is off, the job runs or didn't succeed, its files never all
+ * reached the Hub (they are gone with its GPU), or the platform publishes.
+ */
+export function ggufControl(job: QuantJob, offReason: string | null): HubControl | null {
+  const hub = job.hub ?? null;
+  if (offReason || job.status !== "succeeded" || !job.terminatedAt || !hub) return null;
+  const stopped = hub.status === "publishing" && hub.stale;
+  if (hub.status === "publishing" && !stopped) return null;
+  if (hub.filesTotal === 0 || hub.filesUploaded !== hub.filesTotal) return null;
+  if (hub.status === "published") return { label: "Publish again", confirm: "Publish these local files' card to Hugging Face again? Only what changed is committed." };
+  if (hub.status === "failed" || stopped) return { label: "Retry", confirm: "Try publishing these local files to Hugging Face again?" };
+  return { label: "Publish to Hugging Face", confirm: "Publish these local files to their repo on Hugging Face?" };
+}
+
+/** A local files job of an adapter, as GET /api/train/jobs/{id}/quantize answers it. */
+export interface QuantJobSummary {
+  id: string;
+  title: string;
+  status: TrainStatus;
+  createdAt: string;
+  finishedAt: string | null;
+  terminatedAt: string | null;
+  error: string | null;
+  hub: HubView | null;
+}
+
+/** GET /api/train/jobs/{id}/quantize: what Make local files needs on an adapter's page. */
+export interface QuantState {
+  quantOff: string | null;
+  hubOff: string | null;
+  problem: string | null;
+  latest: QuantJobSummary | null;
+  files: LocalFiles | null;
+}
+
+/** The answer of GET /api/train/jobs/{id}/quantize, or null when it isn't one. */
+export function quantStateOf(data: unknown): QuantState | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  const latest = d.latest && typeof d.latest === "object" && typeof (d.latest as { id?: unknown }).id === "string" ? (d.latest as QuantJobSummary) : null;
+  const files = d.files && typeof d.files === "object" && Array.isArray((d.files as { files?: unknown }).files) ? (d.files as LocalFiles) : null;
+  return { quantOff: text(d.quantOff), hubOff: text(d.hubOff), problem: text(d.problem), latest, files };
+}
+
+/** The hub view of the job whose files the card shows, when it is the newest job: whether they wait or failed to publish. */
+function filesHub(state: QuantState): HubView | null {
+  return state.files && state.latest?.id === state.files.quantJobId ? state.latest.hub : null;
+}
+
+/** True while files that passed their checks are being published: Make local files again would only pay for them twice. */
+export function makeFilesPublishing(state: QuantState | null): boolean {
+  if (!state?.files || state.files.repo) return false;
+  const status = filesHub(state)?.status;
+  return status !== "failed" && status !== "waiting" && status !== "off";
+}
+
+/** The Make local files card's pill: what the adapter's files are now. */
+export function makeFilesPill(state: QuantState | null): { label: string; tone: Tone } {
+  if (!state) return { label: "Checking", tone: "neutral" };
+  if (state.latest && !isTrainTerminal(state.latest.status)) return { label: "Making", tone: "building" };
+  if (state.files?.repo) return { label: state.files.public ? "Published" : "Private", tone: "live" };
+  if (state.files) {
+    // Files that passed but aren't published: publishing now, waiting for the adapter, or failed (makeFilesText says why).
+    if (makeFilesPublishing(state)) return { label: "Publishing", tone: "building" };
+    return filesHub(state)?.status === "failed" ? { label: "Not published", tone: "failed" } : { label: "Waiting", tone: "neutral" };
+  }
+  if (state.latest?.status === "failed") return { label: "Failed", tone: "failed" };
+  return { label: state.quantOff || state.hubOff ? "Off" : "Not made", tone: "neutral" };
+}
+
+/** The sentence under the Make local files card's title. */
+export function makeFilesText(state: QuantState): string {
+  const latest = state.latest;
+  if (latest && !isTrainTerminal(latest.status)) return `Making the local files: "${latest.title}" is ${trainStatusLabel(latest.status).toLowerCase()}.`;
+  if (state.files) {
+    const builds = state.files.files.map((f) => `${f.level} (${buildSize(f.bytes)})`).join(", ");
+    if (state.files.repo) return `${builds} ${state.files.files.length === 1 ? "is" : "are"} on Hugging Face${state.files.public ? "" : ", private"}.`;
+    // When the files are the newest job's, its hub view says whether they wait or failed to publish.
+    const hub = filesHub(state);
+    if (hub?.reason && (hub.status === "failed" || hub.status === "waiting" || hub.status === "off")) return `${builds} passed their checks. ${hub.reason}`;
+    return `${builds} passed their checks and ${state.files.files.length === 1 ? "is" : "are"} publishing.`;
+  }
+  if (state.quantOff) return `Making local files is off here: ${state.quantOff}.`;
+  if (state.hubOff) return `Publishing to Hugging Face is off here: ${state.hubOff}, and local files go to the Hub.`;
+  if (state.problem) return state.problem;
+  if (latest?.status === "failed") return `The last try failed: ${errorClause(latest.error) || "the job didn't say why"}. Its log has the details.`;
+  return "GGUF builds in three sizes, for LM Studio, llama.cpp and Ollama, each checked against the merged model before it is published.";
+}
+
+/** A job's error as a clause after a colon: its last line, starting lowercase and without its own full stop. */
+function errorClause(text: string | null | undefined): string {
+  const line = errorHeadline(text).replace(/[.\s]+$/, "");
+  // A sentence that starts with a name or a code ("Q4_K_M", "CUDA") keeps its capitals.
+  return /^[A-Z][a-z]/.test(line) ? `${line[0].toLowerCase()}${line.slice(1)}` : line;
+}
+
+/** Why Make local files can't be pressed now, or null when it can. */
+export function makeFilesBlock(state: QuantState | null): string | null {
+  if (!state) return "Checking whether this adapter can have local files made.";
+  if (state.quantOff || state.hubOff || state.problem) return makeFilesText(state);
+  if (state.latest && !isTrainTerminal(state.latest.status)) return "A local files job of this adapter is running.";
+  return null;
 }

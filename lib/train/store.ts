@@ -22,8 +22,10 @@ import {
   type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
+import type { QuantSource } from "@/lib/train/hub-cards";
 import {
   isTrainTerminal,
+  QUANT_RECIPE,
   TRAIN_TERMINAL,
   type AdapterOption,
   type EvalExample,
@@ -1216,14 +1218,17 @@ export async function listAdapterOptions(limit = 50): Promise<AdapterOption[]> {
   }));
 }
 
-/** glimmer-serve jobs for an adapter that haven't ended and that nobody asked to stop. */
-const openServeJobsOf = (adapterJobId: string) =>
+/** Jobs of `recipe` for an adapter (its adapterJobId param) that haven't ended and that nobody asked to stop. */
+const openJobsOf = (recipe: RecipeId, adapterJobId: string) =>
   and(
-    eq(jobs.recipe, SERVE_RECIPE),
+    eq(jobs.recipe, recipe),
     notTerminal(),
     eq(jobs.stopRequested, false),
     sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`,
   );
+
+/** glimmer-serve jobs for an adapter that haven't ended and that nobody asked to stop. */
+const openServeJobsOf = (adapterJobId: string) => openJobsOf(SERVE_RECIPE, adapterJobId);
 
 /** The newest glimmer-serve job for an adapter that hasn't ended and that nobody asked to stop, as a full row. */
 async function openServeJob(adapterJobId: string): Promise<TrainJobRow | null> {
@@ -1326,4 +1331,141 @@ export async function releaseDemoSlot(serveJobId: string, window: Date): Promise
     .update(limits)
     .set({ count: sql`greatest(${limits.count} - 1, 0)` })
     .where(and(eq(limits.key, `lab-try-busy:${serveJobId}`), eq(limits.windowStart, window)));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Local files (docs/TRAINING.md "Local files"): the glimmer-quantize jobs of an adapter.
+
+/**
+ * For two local files jobs of one adapter created at the same moment: the open one created before job `jobId`, or null
+ * when `jobId` is the first. The same rule as earlierOpenServeJob, so the later backs out and one job makes the files.
+ */
+export async function earlierOpenQuantJob(adapterJobId: string, jobId: string): Promise<{ id: string } | null> {
+  if (!isUuid(adapterJobId) || !isUuid(jobId)) return null;
+  const [row] = await db()
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        openJobsOf(QUANT_RECIPE, adapterJobId),
+        sql`${jobs.id} <> ${jobId}::uuid`,
+        sql`(${jobs.createdAt}, ${jobs.id}) < (select s.created_at, s.id from training_jobs s where s.id = ${jobId}::uuid)`,
+      ),
+    )
+    .orderBy(asc(jobs.createdAt), asc(jobs.id))
+    .limit(1);
+  return row ?? null;
+}
+
+/** The newest local files job of an adapter that hasn't ended and that nobody asked to stop, or null. */
+export async function openQuantJob(adapterJobId: string): Promise<{ id: string; title: string } | null> {
+  if (!isUuid(adapterJobId)) return null;
+  const [row] = await db()
+    .select({ id: jobs.id, title: jobs.title })
+    .from(jobs)
+    .where(openJobsOf(QUANT_RECIPE, adapterJobId))
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/** An adapter's local files jobs, newest first, without the hub state's small files (jobListColumns). */
+export async function quantJobsOf(adapterJobId: string, limit = 5): Promise<TrainJobRow[]> {
+  if (!isUuid(adapterJobId)) return [];
+  const n = Math.max(1, Math.min(50, Math.floor(limit) || 5));
+  return db()
+    .select(jobListColumns)
+    .from(jobs)
+    .where(and(eq(jobs.recipe, QUANT_RECIPE), sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`))
+    .orderBy(desc(jobs.createdAt))
+    .limit(n);
+}
+
+/**
+ * The newest local files job of an adapter whose files passed (localFilesFor): it succeeded, its GPU is shut down, and
+ * its done metrics say its checks passed and its files reached the Hub's storage. One whose GGUF repo is published
+ * comes first, so a newer job still publishing, or whose publishing failed, never hides files people can already
+ * use. With its done metrics, its adapter's dataset title, and whether the adapter is published and public now, so an
+ * adapter made private takes its files' pages and orders with it. Null when there is none.
+ */
+export async function latestQuantSource(adapterJobId: string): Promise<QuantSource | null> {
+  if (!isUuid(adapterJobId)) return null;
+  const metrics = doneMetricsOf(jobs.id);
+  // Nested in its own sql, as doneMetricsOf is, so the outer job's params keep their table name: drizzle drops it in
+  // a single-table select's own fields, and inside this subselect a bare "params" would be the adapter job's.
+  const datasetTitle = sql`(select d.title from training_datasets d join training_jobs a on d.id::text = a.params->>'datasetId' where a.id::text = ${jobs.params}->>${SERVE_ADAPTER_PARAM})`;
+  const adapterPublic = sql`(select coalesce(a.hub->>'status' = 'published' and a.hub->>'public' = 'true', false) from training_jobs a where a.id::text = ${jobs.params}->>${SERVE_ADAPTER_PARAM})`;
+  const [row] = await db()
+    .select({
+      job: { id: jobs.id, title: jobs.title, params: jobs.params, hub: jobListColumns.hub },
+      metrics: sql<DoneMetrics | null>`${metrics}`,
+      datasetTitle: sql<string | null>`${datasetTitle}`,
+      adapterPublic: sql<boolean | null>`${adapterPublic}`,
+    })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, QUANT_RECIPE),
+        sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`,
+        eq(jobs.status, "succeeded"),
+        isNotNull(jobs.terminatedAt),
+        sql`${metrics}->>'checks_passed' = 'yes'`,
+        sql`${metrics}->>'hub_uploaded' = 'yes'`,
+      ),
+    )
+    .orderBy(desc(sql`coalesce(${jobs.hub}->>'status' = 'published', false)`), desc(jobs.createdAt))
+    .limit(1);
+  if (!row) return null;
+  const m = row.metrics && typeof row.metrics === "object" && !Array.isArray(row.metrics) ? row.metrics : null;
+  return { job: row.job as QuantSource["job"], metrics: m, datasetTitle: row.datasetTitle ?? null, adapterPublic: row.adapterPublic === true };
+}
+
+/**
+ * Every local files job of an adapter whose GGUF repo is published, newest publish first, with its repo and whether
+ * the Hub reported it public. An adapter made private makes each of them private too (hubFinishStep). Only those
+ * fields of the hub state are read.
+ */
+export async function publishedGgufJobs(adapterJobId: string): Promise<Array<{ jobId: string; repo: string; public: boolean }>> {
+  if (!isUuid(adapterJobId)) return [];
+  const rows = await db()
+    .select({ jobId: jobs.id, repo: sql<string | null>`${jobs.hub}->>'modelRepo'`, isPublic: sql<string | null>`${jobs.hub}->>'public'` })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.recipe, QUANT_RECIPE),
+        sql`${jobs.params}->>${SERVE_ADAPTER_PARAM} = ${adapterJobId.toLowerCase()}`,
+        sql`${jobs.hub}->>'status' = 'published'`,
+      ),
+    )
+    .orderBy(desc(sql`${jobs.hub}->>'publishedAt'`))
+    .limit(50);
+  return rows.flatMap((r) => (r.repo ? [{ jobId: r.jobId, repo: r.repo, public: r.isPublic === "true" }] : []));
+}
+
+/**
+ * The GGUF repo an adapter's card may point to: the newest local files job of the adapter whose repo is published,
+ * with whether the Hub reported it public (publishedGgufJobs). Null when there is none.
+ */
+export async function publishedGguf(adapterJobId: string): Promise<{ jobId: string; repo: string; public: boolean } | null> {
+  return (await publishedGgufJobs(adapterJobId))[0] ?? null;
+}
+
+/**
+ * A job's own eval answers by index (the tuned model's), the first logged for each, for a local files job's dataset
+ * pages: its GPU compares the files' answers with them.
+ */
+export async function tunedAnswers(jobId: string): Promise<Map<number, { prompt: string; tuned: string }>> {
+  const out = new Map<number, { prompt: string; tuned: string }>();
+  if (!isUuid(jobId)) return out;
+  const rows = await db()
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "eval")))
+    .orderBy(asc(events.id))
+    .limit(EVALS_MAX * 2);
+  for (const { payload } of rows) {
+    const p = payload as Extract<TrainEventBody, { type: "eval" }>;
+    if (Number.isInteger(p.index) && !out.has(p.index)) out.set(p.index, { prompt: String(p.prompt ?? ""), tuned: String(p.tuned ?? "") });
+  }
+  return out;
 }

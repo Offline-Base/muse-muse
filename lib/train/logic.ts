@@ -5,9 +5,11 @@
 import { noEmDashes } from "@/lib/brief/normalize";
 import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
 import type { LambdaInstance } from "@/lib/train/lambda";
+import type { QuantLevel } from "@/lib/train/local-files";
 import {
   HUB_WHY_MAX,
   isTrainTerminal,
+  QUANT_RECIPE,
   SERVE_PORT,
   type DatasetView,
   type EvalSummary,
@@ -678,11 +680,23 @@ export interface RunEstimate {
   minutes: number;
   /** Whether the overhead assumes the region holds the model cache. */
   cached: boolean;
+  /** "quantize" for a glimmer-quantize job, which has no training steps: its minutes are all overhead. */
+  what?: "train" | "quantize";
 }
 
 /**
+ * Minutes a glimmer-quantize job takes at most, all of it on its one GPU: booting, the venvs, the llama.cpp build, the
+ * 59.6 GB bf16 download, the merge, the conversion, Q8_0 and three sizes, the file checks and a 53.5 GB upload
+ * (docs/VIBE_TUNING.md "GPU, time and cost of one quantize job"), and with the region's venvs already on its model cache.
+ * Estimates until the first real run measures them.
+ */
+export const QUANT_MINUTES = 90;
+export const QUANT_CACHED_MINUTES = 80;
+
+/**
  * How long a job's run is likely to take at most on `instanceType`, in a region that holds the model cache or not. Null
- * when there is no estimate for the recipe (only glimmer-lora has one) or the run doesn't train (dryRun 1).
+ * when there is no estimate for the recipe (glimmer-lora and glimmer-quantize have one) or the run doesn't train
+ * (dryRun 1).
  */
 export function runEstimate(
   recipe: RecipeId | string,
@@ -690,6 +704,10 @@ export function runEstimate(
   instanceType: string,
   cached: boolean,
 ): RunEstimate | null {
+  if (recipe === QUANT_RECIPE) {
+    const minutes = cached ? QUANT_CACHED_MINUTES : QUANT_MINUTES;
+    return { steps: 0, secondsPerStep: 0, trainMinutes: 0, overheadMinutes: minutes, minutes, cached, what: "quantize" };
+  }
   if (recipe !== "glimmer-lora") return null;
   if (Number(params.dryRun) === 1) return null;
   const raw = params.maxSteps;
@@ -727,6 +745,12 @@ function overheadText(e: RunEstimate): string {
  */
 export function runFitProblem(e: RunEstimate, usable: number, gpuLabel: string): string | null {
   if (e.minutes <= usable) return null;
+  if (e.what === "quantize") {
+    return (
+      `Making local files on ${gpuLabel} needs about ${e.minutes} minutes (the merge, the conversion, three sizes and their ` +
+      `checks, and the upload), but this job's limits stop it after ${usable} minutes. Raise the time or dollar limit, or pick a faster GPU.`
+    );
+  }
   return (
     `${e.steps} training steps on ${gpuLabel} need about ${e.minutes} minutes (${e.trainMinutes} of training at about ` +
     `${e.secondsPerStep} s a step, plus about ${e.overheadMinutes} for ${overheadText(e)}${e.cached ? "" : ", since this region has no model cache yet"}), ` +
@@ -890,4 +914,52 @@ export function toLiveDemoView(
   if (ends && ends.getTime() <= now.getTime()) return null;
   const live = row.status === "running" && usableEndpoint(row.serveEndpoint) !== null;
   return { serveJobId: row.id, state: live ? "live" : "starting", minutes: serveMinutes(row.params), endsAt: ends ? ends.toISOString() : null };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Local files: a glimmer-quantize job makes a judged adapter's GGUF files (docs/TRAINING.md "Local files")
+
+/** True for the recipe that makes an adapter's local files. */
+export function isQuantRecipe(recipe: RecipeId | string | null | undefined): boolean {
+  return recipe === QUANT_RECIPE;
+}
+
+/**
+ * The closeness check's limit for each build: its mean KL divergence from the merged model's Q8_0, over the held-out
+ * prompts and their references, may be at most this, about twice what the base model's published builds measure. A
+ * build over it isn't published; the others still are. QUANT_PY has the same numbers (a test keeps them equal).
+ */
+export const QUANT_KL_MAX: Readonly<Record<QuantLevel, number>> = { Q3_K_M: 0.08, Q4_K_M: 0.03, Q6_K: 0.005 };
+
+/**
+ * The share of held-out prompts Q4_K_M must answer with a final answer, under the prompt a stock app sends, or nothing
+ * is published. QUANT_PY has the same number.
+ */
+export const QUANT_CHANNEL_MIN = 0.9;
+
+/** 1 when a glimmer-lora job trained with trainChannel 1 (its files open the final channel themselves), else 0. */
+export function trainChannelOf(params: Record<string, string | number> | null | undefined): 0 | 1 {
+  return Number(params?.trainChannel) === 1 ? 1 : 0;
+}
+
+/**
+ * Why a job's adapter can't have local files made, as the jobs route answers it (400 after the param's label), or null
+ * when it can. On top of adapterProblem (a glimmer-lora job that succeeded and saved a real adapter on its region's
+ * cache): it was judged, with its GPU shut down, so its files have results to stand on; and it trained under the short
+ * student prompt, whose one-line system message the files and their card give to every local app.
+ */
+export function quantProblem(
+  job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
+  metrics: DoneMetrics | null,
+): string | null {
+  if (!job.terminatedAt || !job.evalSummary || unjudgedNote(job.evalSummary) !== null) {
+    return "that job isn't judged yet, so its local files would have no results to stand on.";
+  }
+  const asRun = typeof metrics?.student_prompt === "string" ? metrics.student_prompt : job.params?.studentPrompt;
+  // A job from before the param trained under the dataset's whole task prompt, as "full" does now.
+  const prompt = asRun === undefined || asRun === null ? "full" : String(asRun).trim().toLowerCase() || "short";
+  if (prompt !== "short") {
+    return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
+  }
+  return null;
 }

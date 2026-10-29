@@ -1,3 +1,4 @@
+import { DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { publicHost } from "@/lib/sandbox/policy";
 
 /**
@@ -180,6 +181,13 @@ export const env = {
     const v = (process.env.HF_PUBLIC ?? "").trim().toLowerCase();
     return v === "" || ["1", "true", "yes", "on"].includes(v);
   },
+  /**
+   * QUANT_ENABLED: "1", "true", "yes" or "on" (any case) lets admins start glimmer-quantize jobs, which make a judged
+   * adapter's GGUF files (docs/TRAINING.md "Local files"). Off when unset or anything else.
+   */
+  get quantEnabled(): boolean {
+    return ["1", "true", "yes", "on"].includes((process.env.QUANT_ENABLED ?? "").trim().toLowerCase());
+  },
   /** HF_ENDPOINT, https://huggingface.co by default, with no trailing slash. Tests point it at a fake Hub. */
   get hfEndpoint(): string {
     return (process.env.HF_ENDPOINT?.trim() || "https://huggingface.co").replace(/\/+$/, "");
@@ -201,5 +209,54 @@ export const env = {
     const local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin);
     if (!local && !/^https:\/\/[^/\s?#@]+$/.test(origin)) return "HF_ENDPOINT isn't an https origin (plain http only on localhost)";
     return null;
+  },
+
+  // ---------- Flash drive order requests (docs/VIBE_TUNING.md, Feature 6; lib/drive) ----------
+
+  /** True when DRIVE_ENABLED is "1", "true", "yes" or "on" (any case). Off by default: no offer, no form, no requests. */
+  get driveEnabled(): boolean {
+    return ["1", "true", "yes", "on"].includes((process.env.DRIVE_ENABLED ?? "").trim().toLowerCase());
+  },
+  /** DRIVE_PRICE_TEXT, such as "$59 with US shipping, invoiced by email", or null to say a quote comes first. */
+  get drivePriceText(): string | null {
+    return process.env.DRIVE_PRICE_TEXT?.trim().slice(0, 200) || null;
+  },
+  /**
+   * DRIVE_NOTIFY_URL: a Slack or Discord webhook that gets one line per new request (never the buyer's name, email or
+   * address), or null. https only, or plain http on localhost for tests.
+   */
+  get driveNotifyUrl(): string | null {
+    const url = process.env.DRIVE_NOTIFY_URL?.trim() ?? "";
+    return /^https:\/\/[^\s]+$/.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/[^\s]*$/.test(url) ? url : null;
+  },
+  /**
+   * DRIVE_CONTACT_EMAIL: where buyers write about an order (a lost link, a refund, a drive that arrived broken), shown on
+   * the request form, the order pages and the drive itself, and where "Stuck?" on the run-locally page sends people.
+   * Null when it isn't an email address: the pages then point to the invoice's email.
+   */
+  get driveContactEmail(): string | null {
+    const email = process.env.DRIVE_CONTACT_EMAIL?.trim() ?? "";
+    return email.length <= 200 && /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email) ? email : null;
+  },
+  /** Requests per client (its IP's key or its browser's key) per rolling 24 hours. */
+  get driveClientRequests() {
+    return number("DRIVE_CLIENT_REQUESTS", 3);
+  },
+  /** Requests from everyone together per rolling 24 hours. */
+  get driveDailyRequests() {
+    return number("DRIVE_DAILY_REQUESTS", 20);
+  },
+  /** The version of the terms the request form shows (lib/drive/terms.ts). Change it whenever their text changes. */
+  get driveTermsVersion(): string {
+    return process.env.DRIVE_TERMS_VERSION?.trim().slice(0, 40) || DRIVE_TERMS_DEFAULT_VERSION;
+  },
+  /**
+   * DRIVE_BENCH_TOKEN_HASH: the SHA-256 of the bench script's token (benchTokenHash in lib/drive/token.ts), or null. The
+   * token itself lives only on the bench Mac, as DRIVE_BENCH_TOKEN; `npx tsx scripts/drive-bench.ts token` makes a pair
+   * without any platform secret.
+   */
+  get driveBenchTokenHash(): string | null {
+    const hash = process.env.DRIVE_BENCH_TOKEN_HASH?.trim().toLowerCase() ?? "";
+    return /^[0-9a-f]{64}$/.test(hash) ? hash : null;
   },
 };

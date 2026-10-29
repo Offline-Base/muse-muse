@@ -128,6 +128,10 @@ const fakeStore = {
     calls.push({ fn: "earlierOpenServeJob", args: [adapterJobId, jobId] });
     return earlierDemo;
   },
+  // The local files jobs' reads (gguf-flow.test.ts covers them on PGlite): none here.
+  earlierOpenQuantJob: async () => null,
+  openQuantJob: async () => null,
+  tunedAnswers: async () => new Map(),
   requestStop: async (jobId: string) => {
     calls.push({ fn: "requestStop", args: [jobId] });
     return stopRow;

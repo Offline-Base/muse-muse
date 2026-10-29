@@ -172,6 +172,8 @@ const fakeStore = {
   }),
   getAdapterSource: fake("getAdapterSource", (id: string) => (adapterSource && id === JOB ? adapterSource : null)),
   listAdapterOptions: fake("listAdapterOptions", () => []),
+  // The model page asks for a published adapter's local files (localFilesFor); these tests make none.
+  latestQuantSource: fake("latestQuantSource", () => null),
   // Admin reads.
   getJob: fake("getJob", (id: string) => [job, ...otherJobs].find((j) => j && j.id === id) ?? null),
   listEvents: fake("listEvents", () => resultEvents),

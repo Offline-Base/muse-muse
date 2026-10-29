@@ -35,6 +35,7 @@ import math
 import mimetypes
 import os
 import random
+import re
 import ssl
 import subprocess
 import sys
@@ -143,7 +144,18 @@ HUB_FILE_MAX_BYTES = 10 * 1024 ** 3
 HUB_SMALL_BYTES = 1024 * 1024
 HUB_SMALL_TOTAL_BYTES = 3 * 1024 * 1024
 # The allowed suffixes that the Hub's default .gitattributes sends to LFS, so such a file is never inline.
-HUB_LFS_SUFFIXES = (".safetensors", ".model")
+HUB_LFS_SUFFIXES = (".safetensors", ".model", ".gguf")
+# A glimmer-quantize job sends its GGUF folder instead (HUB_GGUF_* in lib/train/types.ts, hubNameProblem in
+# lib/train/hub-cards.ts): its builds' files, each named for its level and at most HUB_GGUF_FILE_MAX_BYTES, and the
+# small files beside them, which go inline for the platform to check and commit.
+HUB_GGUF_RECIPE = "glimmer-quantize"
+HUB_GGUF_RE = re.compile(r"^muse-glimmer-30b-[a-z0-9]+(?:-[a-z0-9]+)*-(?:Q3_K_M|Q4_K_M|Q6_K)\.gguf$")
+HUB_GGUF_SMALL = (
+    "system",
+    "params",
+    "tuned.jinja",
+)
+HUB_GGUF_FILE_MAX_BYTES = 32 * 1024 ** 3
 # Each request to the Hub's storage gets this many tries on a network error, a 429 or a 5xx, waiting HUB_RETRY_SECONDS
 # and then twice that between them.
 HUB_TRIES = 3
@@ -545,14 +557,28 @@ def inside(path, roots):
     return any(real.startswith(os.path.join(os.path.realpath(root), "")) for root in roots)
 
 
-def hub_files(folder, roots=()):
-    """The files in folder's root a Hub upload sends (one of HUB_NAMES, exactly), as (name, local path, size), sorted
-    by name. No folder is looked into. A link is followed only to a file in folder or in one of roots (glimmer-publish
-    stages a folder of links into the model cache), so a stray one can't send job.json."""
+def hub_name_ok(name, recipe=None):
+    """True for a file name a Hub upload sends: for a glimmer-quantize job one of its builds (HUB_GGUF_RE) or the small
+    files beside them (HUB_GGUF_SMALL), for every other job one of HUB_NAMES, exactly."""
+    if recipe == HUB_GGUF_RECIPE:
+        return name in HUB_GGUF_SMALL or bool(HUB_GGUF_RE.match(name))
+    return name in HUB_NAMES
+
+
+def hub_max_bytes(name, recipe=None):
+    """The largest file one plan takes: HUB_GGUF_FILE_MAX_BYTES for a glimmer-quantize job's build, else
+    HUB_FILE_MAX_BYTES."""
+    return HUB_GGUF_FILE_MAX_BYTES if recipe == HUB_GGUF_RECIPE and name.endswith(".gguf") else HUB_FILE_MAX_BYTES
+
+
+def hub_files(folder, roots=(), recipe=None):
+    """The files in folder's root a Hub upload sends (hub_name_ok for the job's recipe), as (name, local path, size),
+    sorted by name. No folder is looked into. A link is followed only to a file in folder or in one of roots
+    (glimmer-publish stages a folder of links into the model cache), so a stray one can't send job.json."""
     out = []
     for name in sorted(os.listdir(folder)):
         path = os.path.join(folder, name)
-        if name in HUB_NAMES and os.path.isfile(path) and inside(path, (folder,) + tuple(roots)):
+        if hub_name_ok(name, recipe) and os.path.isfile(path) and inside(path, (folder,) + tuple(roots)):
             out.append((name, path, os.path.getsize(path)))
     return out
 
@@ -1013,39 +1039,44 @@ class Context:
         """Sends folder's files to the Hugging Face Hub's storage for the platform to commit (docs/TRAINING.md, "Hugging
         Face Hub"). The platform holds the Hub token and never sends it here.
 
-        Only the files in the folder's root named in HUB_NAMES go (hub_files), so checkpoint folders, optimizer,
-        scheduler and RNG state, training_args.bin, README.md, hidden files and every pickle stay behind. The plan (POST
-        /hub, action "plan") names every file with its size, sha256 (read from disk a block at a time) and first 512
-        bytes, and carries the small ones inline as well (small_files). The platform answers a skip reason, or the repo
-        and an upload for each file it wants in the Hub's storage: "none" (the Hub has it), "basic" (one PUT streamed
-        from the file) or "multipart" (a PUT of each part, read from disk on its own, then a POST of the parts' ETags to
-        the completion URL). Those URLs work with no credential while they live, so they are blanked out of the log from
+        Only the files in the folder's root named for the job's recipe go (hub_files): an adapter's HUB_NAMES, so
+        checkpoint folders, optimizer, scheduler and RNG state, training_args.bin, README.md, hidden files and every
+        pickle stay behind, or a glimmer-quantize job's builds and their small files. The plan (POST /hub, action
+        "plan") names every file with its size, sha256 (read from disk a block at a time) and first 512 bytes, and
+        carries the small ones inline as well (small_files). The platform answers a skip reason, or the repo and an
+        upload for each file it wants in the Hub's storage: "none" (the Hub has it), "basic" (one PUT streamed from the
+        file) or "multipart" (a PUT of each part, read from disk on its own, then a POST of the parts' ETags to the
+        completion URL). Those URLs work with no credential while they live, so they are blanked out of the log from
         the moment the plan arrives and never go into a message. Every request is tried up to 3 times on a network
         error, a 429 or a 5xx. A 403 means its URL expired: the file gets one fresh plan (the whole plan again, which
-        replaces the first on the platform), whose URLs also replace those of every file not sent yet. Nothing new
-        starts within 2 minutes of ctx.deadline, and a transfer still going 1 minute before it is cut off. Then a
-        report (action "done") names what the Hub's storage has and what failed.
+        replaces the first on the platform), whose URLs also replace those of every file not sent yet. When the
+        platform answers that the whole plan's answer would be too large for one reply (413 plan_too_large with
+        perFile, as every part URL of three multi-GB files can be), each file gets a plan of its own instead, one after
+        another, each still naming the whole folder. Nothing new starts within 2 minutes of ctx.deadline, and a
+        transfer still going 1 minute before it is cut off. Then a report (action "done") names what the Hub's storage
+        has and what failed.
 
         for_job names the job the files belong to when it isn't this one (a glimmer-publish job's adapter job). The
         platform takes that from the job's own params, so it only goes into the log.
 
         Returns {"uploaded": how many of the files the plan uploads the Hub's storage now has (sent, or already there),
         "skipped": why nothing was published (the platform's reason, or what went wrong asking it) or None, "failed":
-        [{"path", "error"}], "repo", and "files" and "bytes" (what the folder sends)}. Never raises for the platform,
-        the network or the Hub; a folder that doesn't exist raises ValueError.
+        [{"path", "error"}], "repo", "files" and "bytes" (what the folder sends), and "sha256" ({name: digest} of each
+        file planned)}. Never raises for the platform, the network or the Hub; a folder that doesn't exist raises
+        ValueError.
         """
         if not os.path.isdir(str(folder)):
             raise ValueError("hub_upload needs a folder, not " + repr(str(folder))[:200])
-        files = hub_files(folder, (self.cache_dir,) if self.cache_dir else ())
-        result = {"uploaded": 0, "skipped": None, "failed": [], "repo": None, "files": len(files), "bytes": sum(f[2] for f in files)}
+        files = hub_files(folder, (self.cache_dir,) if self.cache_dir else (), self.recipe)
+        result = {"uploaded": 0, "skipped": None, "failed": [], "repo": None, "files": len(files), "bytes": sum(f[2] for f in files), "sha256": {}}
         whose = "job " + str(for_job or self.job_id)
-        too_big = [name for name, _, size in files if size > HUB_FILE_MAX_BYTES]
+        too_big = [name for name, _, size in files if size > hub_max_bytes(name, self.recipe)]
         if not files:
             result["skipped"] = "the folder has no files to publish"
         elif len(files) > HUB_FILES_MAX:
             result["skipped"] = "the folder has " + str(len(files)) + " files, more than the " + str(HUB_FILES_MAX) + " one plan takes"
         elif too_big:
-            result["skipped"] = too_big[0] + " is over " + megabytes(HUB_FILE_MAX_BYTES) + ", more than one plan takes"
+            result["skipped"] = too_big[0] + " is over " + megabytes(hub_max_bytes(too_big[0], self.recipe)) + ", more than one plan takes"
         if result["skipped"]:
             return result
         small = small_files(files)
@@ -1054,15 +1085,25 @@ class Context:
             digest, sample = file_digest(path)
             entries[name] = {"path": name, "size": size, "sha256": digest, "sample": base64.b64encode(sample).decode("ascii")}
             local[name] = path
+        result["sha256"] = {name: entry["sha256"] for name, entry in entries.items()}
         manifest = [entries[name] for name, _, _ in files]
         say("Hub upload for " + whose + ": " + str(len(files)) + " files, " + megabytes(result["bytes"]) + ", " + str(len(small)) + " of them inline")
-        plan, why = self._hub_plan(manifest, small)
+        plan, why, kind = self._hub_plan(manifest, small)
+        if kind == "too_large":
+            say("Hub upload for " + whose + ": the whole plan's answer would be too large for one reply, so each file gets a plan of its own")
+            return self._hub_one_by_one(manifest, small, entries, local, result, whose)
         if plan is None:
             result["skipped"] = why
             return result
         result["repo"] = plan["repo"]
+        uploaded, failed = self._hub_send_all(list(plan["uploads"]), manifest, small, entries, local)
+        return self._hub_report(result, uploaded, failed, whose)
+
+    def _hub_send_all(self, queue, manifest, small, entries, local, only=None):
+        """(uploaded, failed) after sending each upload in queue. A 403 gets the file one fresh plan: the whole plan,
+        or with only (planning one file at a time) that file's own, whose URLs replace those of the files not sent
+        yet."""
         uploaded, failed, settled, replanned = [], [], set(), set()
-        queue = list(plan["uploads"])
         while queue:
             item = queue.pop(0)
             path = item.get("path") if isinstance(item, dict) else None
@@ -1085,7 +1126,7 @@ class Context:
                         continue
                     replanned.add(path)
                     say("an upload URL for " + path + " expired, so it gets a fresh plan")
-                    fresh, why = self._hub_plan(manifest, small)
+                    fresh, why, _ = self._hub_plan(manifest, small, [path] if only is not None else None)
                     renewed = {u["path"]: u for u in (fresh["uploads"] if fresh else []) if isinstance(u, dict) and isinstance(u.get("path"), str)}
                     if path in renewed:
                         # The files not sent yet have URLs as old as the one that expired, so they take the fresh ones.
@@ -1101,9 +1142,40 @@ class Context:
                     continue
             uploaded.append({"path": path, "oid": entry["sha256"], "size": entry["size"]})
             settled.add(path)
+        return uploaded, failed
+
+    def _hub_one_by_one(self, manifest, small, entries, local, result, whose):
+        """hub_upload when the whole plan's answer is too large: a plan for each file in turn (only that file's uploads
+        in its answer, the plan itself still the whole folder), its bytes, then the next. A skip ends it; a file whose
+        own answer is still too large, or whose plan fails, fails on its own."""
+        uploaded, failed = [], []
+        for entry in manifest:
+            name = entry["path"]
+            plan, why, kind = self._hub_plan(manifest, small, [name])
+            if kind == "skip":
+                result["skipped"] = why
+                result["uploaded"] = len(uploaded)
+                result["failed"] = failed
+                return result
+            if plan is None:
+                error = "its own upload plan is still too large for one reply" if kind == "too_large" else "its upload plan failed"
+                failed.append({"path": name, "error": error + ": " + why})
+                continue
+            result["repo"] = plan["repo"]
+            sent, lost = self._hub_send_all(list(plan["uploads"]), manifest, small, entries, local, [name])
+            uploaded.extend(sent)
+            failed.extend(lost)
+        if result["repo"] is None:
+            result["skipped"] = "every file's upload plan failed, the first with " + (failed[0]["error"] if failed else "no reason")
+            result["failed"] = failed
+            return result
+        return self._hub_report(result, uploaded, failed, whose)
+
+    def _hub_report(self, result, uploaded, failed, whose):
+        """Posts the report (action "done") of what the Hub's storage has and what failed, and returns result with them."""
         result["uploaded"] = len(uploaded)
         result["failed"] = failed
-        say("Hub upload for " + whose + ": " + str(len(uploaded)) + " in the Hub's storage for " + plan["repo"] + ", " + str(len(failed)) + " failed")
+        say("Hub upload for " + whose + ": " + str(len(uploaded)) + " in the Hub's storage for " + str(result["repo"]) + ", " + str(len(failed)) + " failed")
         try:
             status, payload = self._platform.post("/hub", {"action": "done", "uploaded": uploaded, "failed": failed})
         except HttpFailure as e:
@@ -1127,13 +1199,18 @@ class Context:
         detail = ": " + said.strip() if isinstance(said, str) and said.strip() and said.strip() != error.strip() else ""
         return ": " + self._platform.redact(error + detail)[:500]
 
-    def _hub_plan(self, entries, small):
-        """(plan, None) with the platform's plan for these manifest entries, every presigned URL in it hidden from the log
-        at once, or (None, why there is none): the platform's own skip reason, or what went wrong asking it."""
+    def _hub_plan(self, entries, small, only=None):
+        """(plan, None, None) with the platform's plan for these manifest entries, every presigned URL in it hidden
+        from the log at once, or (None, why there is none, kind): kind "skip" for the platform's own skip reason,
+        "too_large" when it answered 413 plan_too_large (the answer would pass its cap, so each file needs a plan of its
+        own), else "error". only names the files to answer uploads for, when not all of them."""
+        body = {"action": "plan", "files": entries, "small": small}
+        if only is not None:
+            body["only"] = list(only)
         try:
-            status, payload = self._platform.post("/hub", {"action": "plan", "files": entries, "small": small}, timeout=HUB_PLAN_TIMEOUT)
+            status, payload = self._platform.post("/hub", body, timeout=HUB_PLAN_TIMEOUT)
         except HttpFailure as e:
-            return None, "the platform couldn't be reached for the upload plan: " + str(e)
+            return None, "the platform couldn't be reached for the upload plan: " + str(e), "error"
         try:
             plan = json.loads(payload.decode("utf-8")) if payload else None
         except ValueError:
@@ -1141,16 +1218,18 @@ class Context:
         uploads = plan.get("uploads") if isinstance(plan, dict) else None
         for item in uploads if isinstance(uploads, list) else []:
             self._hide_urls(item)
+        if status == 413 and isinstance(plan, dict) and plan.get("error") == "plan_too_large":
+            return None, "the platform answered HTTP 413 to the upload plan" + self._refusal(payload), "too_large"
         if status >= 300:
-            return None, "the platform answered HTTP " + str(status) + " to the upload plan" + self._refusal(payload)
+            return None, "the platform answered HTTP " + str(status) + " to the upload plan" + self._refusal(payload), "error"
         if not isinstance(plan, dict):
-            return None, "the platform's upload plan isn't JSON"
+            return None, "the platform's upload plan isn't JSON", "error"
         skip = plan.get("skip")
         if isinstance(skip, str) and skip.strip():
-            return None, self._platform.redact(skip.strip())[:300]
+            return None, self._platform.redact(skip.strip())[:300], "skip"
         if not isinstance(plan.get("repo"), str) or not plan["repo"].strip() or not isinstance(uploads, list):
-            return None, "the platform's upload plan names no repo or no uploads"
-        return plan, None
+            return None, "the platform's upload plan names no repo or no uploads", "error"
+        return plan, None, None
 
     def _hide_urls(self, item):
         """Blanks one upload's presigned URLs (and their queries, which hold the signatures) and long header values out

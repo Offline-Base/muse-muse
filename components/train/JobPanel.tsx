@@ -13,6 +13,7 @@ import {
   servingText,
   stopControl,
   trainStatusLabel,
+  WRITTEN_PARAM_LABELS,
 } from "@/components/train/format";
 import { bytes, dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
 import { isServeRecipe, unjudgedNote } from "@/lib/train/logic";
@@ -253,7 +254,7 @@ export function JobPanel({ job, recipe, dataset = null, adapter = null, now, ela
                 const isAdapter = field?.kind === "adapter";
                 return (
                   <div key={k}>
-                    <dt>{field?.label ?? k}</dt>
+                    <dt>{field?.label ?? WRITTEN_PARAM_LABELS.get(k) ?? k}</dt>
                     <dd>
                       {isDataset && dataset && dataset.id === String(v) ? (
                         <Link href={`/fine-tuning/datasets/${dataset.id}`}>{dataset.title}</Link>

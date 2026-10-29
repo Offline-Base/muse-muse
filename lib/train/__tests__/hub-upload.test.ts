@@ -29,6 +29,8 @@ import {
   HUB_FILE_MAX_BYTES,
   HUB_FILE_NAMES,
   HUB_FILES_MAX,
+  HUB_GGUF_FILE_MAX_BYTES,
+  HUB_GGUF_SMALL_NAMES,
   HUB_SAMPLE_BYTES,
   HUB_SMALL_FILE_MAX_BYTES,
   HUB_SMALL_TOTAL_MAX_BYTES,
@@ -60,6 +62,7 @@ interface PlanBody {
   action: "plan";
   files: PlanFile[];
   small?: Record<string, string>;
+  only?: string[];
 }
 
 type Upload = Record<string, unknown> & { path: string };
@@ -123,7 +126,8 @@ before(async () => {
         const body = JSON.parse(hit.body.toString("utf8")) as PlanBody | { action: "done" };
         if (body.action !== "plan") return void res.writeHead(doneStatus).end();
         const inline = body.small ?? {};
-        const answer = planAnswers.shift()?.(body) ?? { status: 200, body: { repo: REPO, uploads: body.files.filter((f) => !(f.path in inline)).map(uploadFor) } };
+        const asked = body.files.filter((f) => !(f.path in inline) && (!body.only || body.only.includes(f.path)));
+        const answer = planAnswers.shift()?.(body) ?? { status: 200, body: { repo: REPO, uploads: asked.map(uploadFor) } };
         const uploads = (answer.body as { uploads?: Upload[] } | null)?.uploads;
         if (Array.isArray(uploads)) planned.push(uploads);
         return json(res, answer.status, answer.body);
@@ -242,10 +246,16 @@ interface HubResult {
   bytes: number;
 }
 
+/** What hub_upload returned, without its "sha256" map of the files' digests (digestsOf has it). */
 function resultOf(r: RunResult): HubResult {
+  const { sha256: _digests, ...rest } = digestsOf(r);
+  return rest;
+}
+
+function digestsOf(r: RunResult): HubResult & { sha256: Record<string, string> } {
   const line = r.output.split("\n").find((l) => l.startsWith("HUB_RESULT "));
   assert.ok(line, r.output.replaceAll(r.token, "[token]"));
-  return JSON.parse(line.slice("HUB_RESULT ".length)) as HubResult;
+  return JSON.parse(line.slice("HUB_RESULT ".length)) as HubResult & { sha256: Record<string, string> };
 }
 
 const events = () => hits.filter((h) => h.path.endsWith("/events")).map((h) => JSON.parse(h.body.toString("utf8")) as Record<string, unknown>);
@@ -289,6 +299,12 @@ describe("hub constants", () => {
     assert.deepEqual(tuple("HUB_NAMES"), [...HUB_FILE_NAMES], "the same names, exactly");
     assert.deepEqual(tuple("HUB_CHECKED"), [...HUB_CHECKED_NAMES]);
     assert.ok(HUB_CHECKED_NAMES.every((n) => HUB_FILE_NAMES.includes(n)));
+    // A glimmer-quantize job's GGUF folder: its small files, its builds' cap, and builds never inline.
+    assert.deepEqual(tuple("HUB_GGUF_SMALL"), [...HUB_GGUF_SMALL_NAMES]);
+    assert.equal(py("HUB_GGUF_FILE_MAX_BYTES"), "32 * 1024 ** 3");
+    assert.equal(32 * 1024 ** 3, HUB_GGUF_FILE_MAX_BYTES);
+    assert.equal(py("HUB_GGUF_RECIPE"), '"glimmer-quantize"');
+    assert.match(py("HUB_LFS_SUFFIXES") ?? "", /"\.gguf"/);
   });
 
   it("registers glimmer-publish on glimmer-lora's helpers, and glimmer-lora's publish and why params", () => {
@@ -386,6 +402,7 @@ describe("ctx.hub_upload against a fake platform and storage", { skip: hasPython
     ]);
     const total = weights.length + tokenizer.length + spm.length + Object.values(small).reduce((s, b) => s + b.length, 0);
     assert.deepEqual(resultOf(r), { uploaded: 3, skipped: null, failed: [], repo: REPO, files: 6, bytes: total });
+    assert.deepEqual(digestsOf(r).sha256, Object.fromEntries(all.map((f) => [f.path, f.sha256])), "and each file's digest, for the recipe");
     assert.match(r.output, new RegExp(`Hub upload for job ${ADAPTER_JOB}: 6 files`), "the job it uploads for, in the log");
   });
 
@@ -752,6 +769,108 @@ function peftConfig(over: Record<string, unknown> = {}): string {
   };
   return JSON.stringify(Object.fromEntries(Object.entries(config).sort(([a], [b]) => a.localeCompare(b))), null, 2);
 }
+
+describe("ctx.hub_upload of a glimmer-quantize job's GGUF folder", { skip: hasPython ? false : "python3 is missing", timeout: 240_000 }, () => {
+  const gguf = (level: string) => `adapter/muse-glimmer-30b-brief-writer-${level}.gguf`;
+  const folder = (): Record<string, string | Buffer> => ({
+    [gguf("Q3_K_M")]: Buffer.concat([Buffer.from("GGUF"), randomBytes(60_000)]),
+    [gguf("Q4_K_M")]: Buffer.concat([Buffer.from("GGUF"), randomBytes(70_000)]),
+    [gguf("Q6_K")]: Buffer.concat([Buffer.from("GGUF"), randomBytes(80_000)]),
+    "adapter/system": "You are Muse Muse's brief writer.\n\nReasoning strength: low.",
+    "adapter/params": '{\n  "temperature": 0\n}\n',
+    "adapter/tuned.jinja": "{{- bos_token -}}",
+  });
+
+  it("sends only the job's builds and their small files, inline, and leaves the rest behind", async () => {
+    const r = await runJob(UPLOAD_RECIPE, {}, { recipe: "glimmer-quantize" }, {
+      ...folder(),
+      "adapter/muse-glimmer-30b-brief-writer-Q8_0.gguf": "GGUF the reference",
+      "adapter/bf16.gguf": "GGUF the conversion",
+      "adapter/adapter_model.safetensors": "an adapter's weights don't belong here",
+      "adapter/notes.md": "notes",
+    });
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    const plan = plans()[0]!;
+    assert.deepEqual(plan.files.map((f) => f.path).sort(), ["muse-glimmer-30b-brief-writer-Q3_K_M.gguf", "muse-glimmer-30b-brief-writer-Q4_K_M.gguf", "muse-glimmer-30b-brief-writer-Q6_K.gguf", "params", "system", "tuned.jinja"]);
+    assert.deepEqual(Object.keys(plan.small ?? {}).sort(), ["params", "system", "tuned.jinja"], "a build is never inline");
+    assert.equal(plan.only, undefined, "the whole plan first");
+    assert.deepEqual(resultOf(r), { uploaded: 3, skipped: null, failed: [], repo: REPO, files: 6, bytes: plan.files.reduce((n, f) => n + f.size, 0) });
+  });
+
+  it("takes builds up to 32 GB, and refuses a bigger one before reading it", async () => {
+    // Sparse files: their sizes are what counts, and nothing reads them, since the plan refuses them first.
+    const recipe = String.raw`import json, os
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def run(ctx):
+    folder = os.path.join(HERE, "adapter")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, ctx.params["name"]), "wb") as f:
+        f.write(b"GGUF")
+        f.truncate(int(ctx.params["size"]))
+    out = ctx.hub_upload(folder)
+    print("HUB_RESULT " + json.dumps(out, sort_keys=True), flush=True)
+    return {}
+`;
+    let r = await runJob(recipe, { name: "muse-glimmer-30b-brief-writer-Q6_K.gguf", size: HUB_GGUF_FILE_MAX_BYTES + 1 }, { recipe: "glimmer-quantize" }, { "adapter/system": "x" });
+    assert.equal(r.code, 0, r.output);
+    assert.equal(resultOf(r).skipped, "muse-glimmer-30b-brief-writer-Q6_K.gguf is over 34359.7 MB, more than one plan takes");
+    assert.equal(hubCalls().length, 0);
+    // An adapter's file keeps the adapter's 10 GB cap, and a .gguf in an adapter's folder isn't one of its names.
+    r = await runJob(recipe, { name: "adapter_model.safetensors", size: HUB_FILE_MAX_BYTES + 1 }, { recipe: "glimmer-lora" }, {});
+    assert.equal(resultOf(r).skipped, "adapter_model.safetensors is over 10737.4 MB, more than one plan takes");
+    r = await runJob(recipe, { name: "muse-glimmer-30b-brief-writer-Q4_K_M.gguf", size: 10 }, { recipe: "glimmer-lora" }, {});
+    assert.equal(resultOf(r).skipped, "the folder has no files to publish");
+  });
+
+  it("plans one file at a time when the platform says the whole answer is too large, and fails only a file still too large alone", async () => {
+    planMode = { multipartOver: 50_000, chunk: 30_000 };
+    planAnswers = [() => ({ status: 413, body: { error: "plan_too_large", perFile: true, message: "Plan one file at a time." } })];
+    const files = folder();
+    let r = await runJob(UPLOAD_RECIPE, {}, { recipe: "glimmer-quantize" }, files);
+    assert.equal(r.code, 0, r.output.replaceAll(r.token, "[token]"));
+    assertCredentials(r);
+    assertNoSecrets(r);
+    const all = plans();
+    assert.equal(all.length, 7, "the whole plan, then one for each of the six files");
+    assert.deepEqual(all.slice(1).map((p) => p.only), [["muse-glimmer-30b-brief-writer-Q3_K_M.gguf"], ["muse-glimmer-30b-brief-writer-Q4_K_M.gguf"], ["muse-glimmer-30b-brief-writer-Q6_K.gguf"], ["params"], ["system"], ["tuned.jinja"]]);
+    for (const p of all) assert.equal(p.files.length, 6, "each plan still names the whole folder");
+    assert.deepEqual(planned.map((u) => u.map((x) => x.path)), [["muse-glimmer-30b-brief-writer-Q3_K_M.gguf"], ["muse-glimmer-30b-brief-writer-Q4_K_M.gguf"], ["muse-glimmer-30b-brief-writer-Q6_K.gguf"], [], [], []]);
+    assert.equal(dones().length, 1, "one report at the end");
+    assert.deepEqual((dones()[0]!.uploaded as Array<{ path: string }>).map((u) => u.path), ["muse-glimmer-30b-brief-writer-Q3_K_M.gguf", "muse-glimmer-30b-brief-writer-Q4_K_M.gguf", "muse-glimmer-30b-brief-writer-Q6_K.gguf"]);
+    assert.deepEqual(resultOf(r).failed, []);
+    for (const level of ["Q3_K_M", "Q4_K_M", "Q6_K"]) {
+      const sent = files[gguf(level)] as Buffer;
+      assert.ok(stored.get(sha256(sent))?.equals(sent), `${level} reached the storage whole`);
+    }
+    assert.match(r.output, /each file gets a plan of its own/);
+
+    // One file whose own answer is still too large fails alone; the others still go.
+    hits = [];
+    planned = [];
+    stored = new Map();
+    planAnswers = [
+      () => ({ status: 413, body: { error: "plan_too_large", perFile: true } }),
+      () => ({ status: 413, body: { error: "plan_too_large", path: "muse-glimmer-30b-brief-writer-Q3_K_M.gguf", parts: 40000, message: "one file's parts can't be paged yet." } }),
+    ];
+    r = await runJob(UPLOAD_RECIPE, {}, { recipe: "glimmer-quantize" }, folder());
+    assert.equal(r.code, 0);
+    const failed = resultOf(r).failed;
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0]!.path, "muse-glimmer-30b-brief-writer-Q3_K_M.gguf");
+    assert.match(failed[0]!.error, /^its own upload plan is still too large for one reply: the platform answered HTTP 413 to the upload plan: plan_too_large: one file's parts can't be paged yet\.$/);
+    assert.equal(resultOf(r).uploaded, 2);
+    assert.deepEqual((dones()[0]!.failed as Array<{ path: string }>).map((f) => f.path), ["muse-glimmer-30b-brief-writer-Q3_K_M.gguf"], "and the report says so");
+
+    // A skip while planning one by one ends it with the platform's reason.
+    hits = [];
+    planAnswers = [() => ({ status: 413, body: { error: "plan_too_large", perFile: true } }), () => ({ status: 200, body: { skip: "It is being published right now." } })];
+    r = await runJob(UPLOAD_RECIPE, {}, { recipe: "glimmer-quantize" }, folder());
+    assert.equal(resultOf(r).skipped, "It is being published right now.");
+    assert.equal(dones().length, 0);
+  });
+});
 
 describe("the glimmer-publish recipe", { skip: hasPython ? false : "python3 is missing", timeout: 240_000 }, () => {
   it("sends a cached adapter with its revision filled in on a copy, and never changes the cache", async () => {

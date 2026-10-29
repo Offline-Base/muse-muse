@@ -1,6 +1,8 @@
 /**
  * The device-sized GGUF files a glimmer-quantize job made from a judged adapter (docs/VIBE_TUNING.md, Feature 2). The
  * run-locally page, the device picker and drive orders read them through localFilesFor, never the job row directly.
+ * This file holds only the types and QUANT_LEVELS, so client components import it too; localFilesFor reads the
+ * database and lives in lib/train/local-files-server.ts, which only server code imports.
  */
 
 /** The three builds every model gets, smallest first. */
@@ -22,7 +24,10 @@ export interface LocalFiles {
   /** "<namespace>/<repo>" on the Hugging Face Hub and the commit holding the files. Null until published. */
   repo: string | null;
   commit: string | null;
-  /** True once the GGUF repo is public: only then may pages link it or drives be ordered. */
+  /**
+   * True once the GGUF repo is public and its adapter is too: only then may pages link it or drives be ordered. An
+   * adapter made private takes its files' pages and orders with it, even before their repo is made private as well.
+   */
   public: boolean;
   /** Only the builds that passed their file checks, smallest first. */
   files: LocalFile[];
@@ -33,13 +38,4 @@ export interface LocalFiles {
   /** The model's title and slug, as its Hub repos name it. */
   title: string;
   slug: string;
-}
-
-/**
- * The newest glimmer-quantize job's files for this adapter that finished and passed its checks, or null when there is
- * none. Implemented by the quantize work (glimmer-quantize); until then it finds nothing.
- */
-export async function localFilesFor(adapterJobId: string): Promise<LocalFiles | null> {
-  void adapterJobId;
-  return null;
 }

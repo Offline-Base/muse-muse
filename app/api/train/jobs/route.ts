@@ -2,14 +2,18 @@ import { start } from "workflow/api";
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
+import { quantParams } from "@/lib/train/hub-cards";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
 import {
   adapterProblem,
   clampLimits,
+  isQuantRecipe,
   isServeRecipe,
+  quantProblem,
   recipeDefaults,
   runEstimate,
   runFitProblem,
+  SERVE_ADAPTER_PARAM,
   SERVE_BOOT_MINUTES,
   SERVE_MINUTES_PARAM,
   serveFitProblem,
@@ -23,12 +27,14 @@ import {
   activeJobCount,
   attachRun,
   createJob,
+  earlierOpenQuantJob,
   earlierOpenServeJob,
   getAdapterSource,
   getDataset,
   getLiveDemo,
   lastSweepOkAt,
   listJobs,
+  openQuantJob,
   setStatus,
   trainingCommittedToday,
   trainingSpendToday,
@@ -86,6 +92,40 @@ async function adapterRegion(
 }
 
 /**
+ * For a glimmer-quantize job (docs/TRAINING.md "Local files"): the params the platform writes itself (quantParams), or
+ * the reply that refuses it. Its switch must be on (503 quant_off); its adapter judged and trained under the short
+ * student prompt (quantProblem, 400 after the param's label); unless its publish param is 0, publishing on (503
+ * hub_off) and the adapter published, since its GGUF repo links to it (409 adapter_not_published); and no other local
+ * files job of the adapter open (409 quant_running with {quantJobId}).
+ */
+async function quantSetup(
+  recipe: Recipe,
+  params: Record<string, string | number>,
+): Promise<{ ok: true; params: Record<string, string | number> } | { ok: false; reply: Response }> {
+  const label = recipe.params.find((f) => f.key === SERVE_ADAPTER_PARAM)?.label ?? "Adapter";
+  if (!env.quantEnabled) return { ok: false, reply: errorJson(503, "quant_off", { reason: "QUANT_ENABLED isn't on" }) };
+  const adapterJobId = String(params[SERVE_ADAPTER_PARAM] ?? "");
+  const source = await getAdapterSource(adapterJobId);
+  if (!source) return { ok: false, reply: errorJson(400, `${label}: that job doesn't exist.`) };
+  const problem = quantProblem(source.job, source.metrics);
+  if (problem) return { ok: false, reply: errorJson(400, `${label}: ${problem}`) };
+  if (Number(params.publish) !== 0) {
+    const off = env.hubOffReason;
+    if (off) return { ok: false, reply: errorJson(503, "hub_off", { reason: off }) };
+    if (source.job.hub?.status !== "published") {
+      const reason = "Publish the adapter to Hugging Face first: its local files go to a repo whose card links to it.";
+      return { ok: false, reply: errorJson(409, "adapter_not_published", { reason }) };
+    }
+  }
+  const datasetId = typeof source.job.params?.datasetId === "string" ? source.job.params.datasetId : "";
+  const dataset = datasetId ? await getDataset(datasetId) : null;
+  if (!dataset) return { ok: false, reply: errorJson(400, `${label}: its dataset is gone, so its files' system message can't be made.`) };
+  const running = await openQuantJob(adapterJobId);
+  if (running) return { ok: false, reply: errorJson(409, "quant_running", { quantJobId: running.id }) };
+  return { ok: true, params: quantParams(source.job, dataset.title) };
+}
+
+/**
  * Regions that already hold the model cache, for a recipe that keeps one. Only a preference, so a Lambda error picks
  * from every region instead of refusing the job.
  */
@@ -126,7 +166,10 @@ export const GET = route(async (req: Request) => {
  * with {options, region} when that region has no free GPU); its minutes are stored whole (serveMinutes), its default
  * limits follow them (recipeDefaults), and it is refused with a 400 when its limits on the
  * GPU it gets can't cover them plus 15 minutes to boot (serveFitProblem, with {estimateMinutes, usableMinutes}). A
- * recipe that keeps the model cache prefers a region that already has it. A run
+ * recipe that keeps the model cache prefers a region that already has it. A glimmer-quantize job also needs its switch,
+ * a judged adapter and, to publish, a published one, one at a time per adapter (quantSetup, 503 quant_off or hub_off,
+ * 400, 409 adapter_not_published or quant_running with {quantJobId}), and the platform writes its levels, slug and
+ * trainChannel params itself. A run
  * that can't fit its limits on the GPU it gets (runEstimate: seconds a step for that GPU plus a fixed overhead, larger
  * in a region without the cache) is refused with a 400 that says so, with {estimateMinutes, usableMinutes}, before
  * anything is created. 400 bad input, 409 too_many_active (TRAIN_MAX_ACTIVE), 502
@@ -156,6 +199,11 @@ export const POST = route(async (req: Request) => {
   const adapter = await adapterRegion(recipe, params.value);
   if (!adapter.ok) return errorJson(400, adapter.error);
   if (isServeRecipe(recipe.id) && !adapter.adapterJobId) return errorJson(400, "Pick the trained adapter to serve.");
+  if (isQuantRecipe(recipe.id)) {
+    const quant = await quantSetup(recipe, params.value);
+    if (!quant.ok) return quant.reply;
+    Object.assign(params.value, quant.params);
+  }
   let instanceType: string | undefined;
   if (body.instanceType !== undefined && body.instanceType !== null && body.instanceType !== "") {
     if (typeof body.instanceType !== "string" || !recipe.gpus.some((g) => g.instanceType === body.instanceType)) {
@@ -241,6 +289,17 @@ export const POST = route(async (req: Request) => {
         set: { error: "Another live demo of this adapter started at the same moment, so this one was not launched." },
       });
       return errorJson(409, "demo_running", { serveJobId: earlier.id });
+    }
+  }
+  // Two local files jobs of one adapter at once would upload to the same repo. Only the later backs out.
+  if (adapter.adapterJobId && isQuantRecipe(recipe.id)) {
+    const earlier = await earlierOpenQuantJob(adapter.adapterJobId, job.id);
+    if (earlier) {
+      await setStatus(job.id, "failed", {
+        message: "Another local files job of this adapter started at the same moment.",
+        set: { error: "Another local files job of this adapter started at the same moment, so this one was not launched." },
+      });
+      return errorJson(409, "quant_running", { quantJobId: earlier.id });
     }
   }
   // Two requests at once could both pass the checks above. The new row now counts in both, so each backs out when it

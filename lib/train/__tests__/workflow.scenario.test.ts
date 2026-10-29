@@ -7,7 +7,8 @@
  * to the Hugging Face Hub comes last, after every ending: the plan step with the final status, then the story, the
  * dataset repo, the model repo and the finish, in that order, for the job the plan names and under its claim; a step
  * that fails fails the publishing with its reason, under that claim, and nothing in it throws or changes the status. publishToHub runs the same as an admin's
- * Publish. The hub steps are left out of order() and checked on their own (hubOrder()).
+ * Publish. A local files job's plan (kind "gguf") publishes its GGUF repo instead: its commit, then its finish. The hub
+ * steps are left out of order() and checked on their own (hubOrder()).
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/workflow.scenario.test.ts
  *
@@ -44,7 +45,7 @@ interface Scenario {
   /** Whether saveEvalSummaryStep throws. */
   summaryFails?: boolean;
   /** What hubPlanStep answers (nothing to publish by default), or an error it throws. */
-  hubPlan?: { action: "publish"; jobId: string; claim: string } | { action: "none" } | Error;
+  hubPlan?: { action: "publish"; jobId: string; claim: string; kind?: "adapter" | "gguf" } | { action: "none" } | Error;
   /** The hub step that throws, as one that ran out of retries. */
   hubFailsAt?: string;
   /** Whether hubFailStep throws too. */
@@ -65,7 +66,16 @@ function named(step: string) {
   return calls.filter((c) => c.step === step);
 }
 
-const HUB_STEPS = new Set(["hubPlanStep", "hubStoryStep", "hubDatasetStep", "hubModelStep", "hubFinishStep", "hubFailStep"]);
+const HUB_STEPS = new Set([
+  "hubPlanStep",
+  "hubStoryStep",
+  "hubDatasetStep",
+  "hubModelStep",
+  "hubFinishStep",
+  "hubGgufStep",
+  "hubGgufFinishStep",
+  "hubFailStep",
+]);
 
 /** Steps in the order they ran, without the sleeps and the hub steps. */
 function order(): string[] {
@@ -158,6 +168,8 @@ const fakeHub = {
   hubDatasetStep: hubStep("hubDatasetStep"),
   hubModelStep: hubStep("hubModelStep"),
   hubFinishStep: hubStep("hubFinishStep"),
+  hubGgufStep: hubStep("hubGgufStep"),
+  hubGgufFinishStep: hubStep("hubGgufFinishStep"),
   hubFailStep: async (jobId: string, claim: string, reason: string) => {
     record("hubFailStep", jobId, claim, reason);
     if (scenario.hubFailFails) throw new Error("database down");
@@ -484,6 +496,25 @@ describe("training workflow orchestration", { skip: canMock ? false : "needs --e
       reset({ checks: [done()], hubPlan: new Error("database down") });
       assert.deepEqual(await wf.trainJob({ jobId: "j35" }), { status: "succeeded" });
       assert.deepEqual(hubOrder(), ["hubPlanStep"], "no claim, so nothing to fail");
+    });
+
+    it("publishes a local files job's GGUF repo once it ended, with its own two steps under its claim", async () => {
+      const gguf = { action: "publish", jobId: "quant-1", claim: "claim-q", kind: "gguf" } as const;
+      reset({ checks: [done()], hubPlan: gguf });
+      assert.deepEqual(await wf.trainJob({ jobId: "quant-1" }), { status: "succeeded" });
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubGgufStep", "hubGgufFinishStep"], "no story, dataset or adapter steps");
+      for (const step of ["hubGgufStep", "hubGgufFinishStep"]) assert.deepEqual(named(step)[0]!.args, ["quant-1", "claim-q"]);
+      const all = calls.filter((c) => c.step !== "sleep").map((c) => c.step);
+      assert.ok(all.indexOf("terminateStep") < all.indexOf("hubPlanStep"), "only after the GPU is shut down");
+
+      reset({ checks: [done()], hubPlan: gguf, hubFailsAt: "hubGgufStep" });
+      assert.deepEqual(await wf.trainJob({ jobId: "quant-2" }), { status: "succeeded" }, "a failed commit never changes the status");
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubGgufStep", "hubFailStep"]);
+      assert.deepEqual(named("hubFailStep")[0]!.args, ["quant-1", "claim-q", "Hugging Face: committing to x failed: HTTP 500."]);
+
+      reset({ hubPlan: gguf });
+      assert.deepEqual(await wf.publishToHub({ jobId: "quant-1" }), { published: true }, "and an admin's Publish runs the same");
+      assert.deepEqual(hubOrder(), ["hubPlanStep", "hubGgufStep", "hubGgufFinishStep"]);
     });
 
     it("runs the same publishing for an admin's Publish", async () => {

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Start Here: {{TITLE}}</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --soft: #f2f4f6;
+    --line: #e0e2e5;
+    --fg: #111112;
+    --muted: #676a71;
+    --accent: #2962d8;
+    --warn: #8a5a00;
+    --warn-soft: #fcf0d7;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c;
+      --soft: #1f2227;
+      --line: #2b2f35;
+      --fg: #ececee;
+      --muted: #9a9ea6;
+      --accent: #8cb2ff;
+      --warn: #f0c46a;
+      --warn-soft: #3a2f16;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 56px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 36px 0 10px; }
+  h3 { font-size: 17px; margin: 0 0 8px; }
+  p, li { max-width: 72ch; }
+  .lead { color: var(--muted); margin: 0; }
+  .grid { display: grid; gap: 16px; }
+  @media (min-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; background: var(--bg); }
+  .soft { background: var(--soft); }
+  .note { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 10px 14px; }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li + li { margin-top: 6px; }
+  code, .file { font-family: var(--mono); font-size: 14px; }
+  .file { background: var(--soft); border-radius: 6px; padding: 1px 6px; }
+  .table { width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--soft); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  pre {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--soft);
+    border-radius: 12px;
+    font: 14px/1.5 var(--mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  button {
+    margin-top: 10px;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  a { color: var(--accent); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{TITLE}}</h1>
+  <p class="lead">On a Muse Muse flash drive. Everything runs on your computer: nothing is downloaded, and nothing you type leaves it.</p>
+
+  <h2>Will it run on your computer?</h2>
+  <p>It runs on {{MIN_SPEC}}. Start picks the build that fits your computer and tells you why.</p>
+  <div class="table">
+    <table>
+      <thead><tr><th scope="col">Build</th><th scope="col">Size</th><th scope="col">For</th></tr></thead>
+      <tbody>
+{{BUILD_ROWS}}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Start it</h2>
+  <div class="grid">
+    <section class="card">
+      <h3>On a Mac with Apple silicon</h3>
+      <ol>
+        <li>Double-click <span class="file">Start (Mac).command</span> on this drive. A Terminal window opens.</li>
+        <li>If macOS says it can't be opened, open System Settings, then Privacy &amp; Security, scroll down and click <strong>Open Anyway</strong> next to its name. Then double-click it again. This drive's launchers aren't signed yet.</li>
+        <li>If macOS asks whether Terminal may open files on a removable volume, click <strong>Allow</strong>.</li>
+        <li>Press Return to copy the model to your Mac (recommended), then wait. The chat opens in your browser.</li>
+      </ol>
+    </section>
+    <section class="card">
+      <h3>On a Windows PC</h3>
+      <ol>
+        <li>Double-click <span class="file">Start (Windows).cmd</span> on this drive. A window opens.</li>
+        <li>If Windows says it protected your PC, click <strong>More info</strong>, then <strong>Run anyway</strong>. This drive's launchers aren't signed yet.</li>
+        <li>Press Enter to copy the model to your PC (recommended), then wait. The chat opens in your browser.</li>
+      </ol>
+      <p class="note">Windows PCs with Smart App Control on aren't supported yet. To see whether yours has it on, open Windows Security, then App &amp; browser control, then Smart App Control settings.</p>
+    </section>
+  </div>
+  <p>The first start can take up to 10 minutes while the model loads, and the window shows the server's messages as they scroll by. Keep the window open while you chat, and close it to stop the model.</p>
+  <p>The drive doesn't run on Linux or on a Mac with an Intel chip. On those, the same files are free on <a href="https://huggingface.co/{{REPO}}">Hugging Face</a>, and the model's page is <a href="{{PAGE_URL}}">{{PAGE_URL}}</a>.</p>
+
+  <h2>Chat with it</h2>
+  <p>The chat opens at <code>http://127.0.0.1:9931</code>, or the next free port, and only your computer can reach it. Each new chat starts with the system message the model was trained with. If one doesn't, paste this into the chat's settings as its system message:</p>
+  <pre id="system">{{SYSTEM_LINE}}</pre>
+  <button type="button" id="copy">Copy the system message</button>
+  {{TUNED_NOTE}}
+
+  <h2>Check the files</h2>
+  <p>Double-click <span class="file">Verify (Mac).command</span> or <span class="file">Verify (Windows).cmd</span>. It checks every file on the drive against <span class="file">SHA256SUMS</span>, and changes nothing. The same checksums are on the model's Hugging Face page.</p>
+
+  <h2>About this drive</h2>
+  <ul>
+    <li>Fine-tuned from Meta's Muse Glimmer 30B (Apache 2.0). Not made, reviewed or endorsed by Meta. <span class="file">licenses/CHANGES.md</span> says what was changed.</li>
+    <li>Meta's Usage Policy applies to how you use it, and Muse Glimmer is not intended for anyone under 18: <span class="file">licenses/USAGE_POLICY.md</span>.</li>
+    <li>The model card is <span class="file">MODEL_CARD.md</span>. The files come from <span class="file">{{REPO}}</span> at commit <span class="file">{{COMMIT_SHORT}}</span>, and <span class="file">PROVENANCE.json</span> lists where every file came from.</li>
+    <li>The runtime is llama.cpp {{RUNTIME}} (MIT), unchanged: <span class="file">licenses/llama.cpp-LICENSE.txt</span>.</li>
+    <li>The model's eval, and Try it live while a demo runs, are on its page: <a href="{{PAGE_URL}}">{{PAGE_URL}}</a>.</li>
+    <li>A drive that arrived broken, or a file that doesn't match its checksum? {{CONTACT_HTML}} for a replacement or a refund.</li>
+  </ul>
+
+  <footer>Drive image {{IMAGE_VERSION}}.</footer>
+</main>
+<script>
+  document.getElementById("copy").addEventListener("click", function () {
+    var text = document.getElementById("system").textContent;
+    var button = this;
+    function done(ok) {
+      button.textContent = ok ? "Copied" : "Select the text above and copy it";
+      setTimeout(function () { button.textContent = "Copy the system message"; }, 2500);
+    }
+    function fallback() {
+      var area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      area.remove();
+      done(ok);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, fallback);
+    } else {
+      fallback();
+    }
+  });
+</script>
+</body>
+</html>

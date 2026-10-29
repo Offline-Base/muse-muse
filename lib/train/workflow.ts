@@ -5,8 +5,9 @@
  *   trainJob: launch (idempotent; save the instance if the database didn't take it) -> check every 30 s until
  *             decideCheck says terminate, or maxMinutes + 15 minutes pass -> terminate
  *             -> for a job that succeeded with eval items: judge them, 4 at a time, then save the eval summary
- *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, or
- *                the adapter job a glimmer-publish job uploaded for once that job succeeded
+ *             -> publish to the Hugging Face Hub: a judged glimmer-lora job whose adapter files are on the Hub, the
+ *                adapter job a glimmer-publish job uploaded for once that job succeeded, or a glimmer-quantize job's
+ *                own GGUF repo once it succeeded
  *   publishToHub: the same publishing, when an admin presses Publish (app/api/train/jobs/[id]/publish)
  *
  * Lambda bills until an instance is terminated, so terminate runs in a finally block: after a normal ending, a
@@ -24,7 +25,16 @@
  * directly.
  */
 import { sleep } from "workflow";
-import { hubDatasetStep, hubFailStep, hubFinishStep, hubModelStep, hubPlanStep, hubStoryStep } from "@/lib/train/hub-steps";
+import {
+  hubDatasetStep,
+  hubFailStep,
+  hubFinishStep,
+  hubGgufFinishStep,
+  hubGgufStep,
+  hubModelStep,
+  hubPlanStep,
+  hubStoryStep,
+} from "@/lib/train/hub-steps";
 import { judgePlanStep, judgeStep, saveEvalSummaryStep } from "@/lib/train/judge";
 import { POLL_MS, type JudgedItem } from "@/lib/train/logic";
 import { abandonStep, checkStep, launchStep, saveLaunchStep, terminateStep, type TrainEnding } from "@/lib/train/steps";
@@ -118,9 +128,11 @@ function stepReason(err: unknown): string {
  * Publishes to the Hugging Face Hub what the ended job `jobId` (`status`) lets publish: itself when it is a judged
  * glimmer-lora job whose adapter files are on the Hub, or the adapter job a glimmer-publish job uploaded for, once that
  * job succeeded. hubPlanStep takes the publishing claim (or says why it waits); then the story, the dataset repo, the
- * model repo, and the dataset card and both repos' visibility, each step under that claim. `manual` is an admin's
- * Publish, which also publishes a job whose "publish" param is 0. Returns whether it published. Never throws: a step
- * that ran out of retries fails the publishing, with its reason, in the hub state, while the run still holds its claim.
+ * model repo, and the dataset card and both repos' visibility, each step under that claim. A glimmer-quantize job that
+ * succeeded publishes its own GGUF repo instead (the plan's kind "gguf"): the repo's commit, then its visibility and
+ * the adapter card's pointer to it. `manual` is an admin's Publish, which also publishes a job whose "publish" param
+ * is 0. Returns whether it published. Never throws: a step that ran out of retries fails the publishing, with its
+ * reason, in the hub state, while the run still holds its claim.
  */
 async function publish(jobId: string, status: TrainStatus, manual = false): Promise<boolean> {
   let held: { jobId: string; claim: string } | null = null;
@@ -128,6 +140,11 @@ async function publish(jobId: string, status: TrainStatus, manual = false): Prom
     const plan = await hubPlanStep(jobId, status, manual);
     if (plan.action !== "publish") return false;
     held = { jobId: plan.jobId, claim: plan.claim };
+    if (plan.kind === "gguf") {
+      await hubGgufStep(held.jobId, held.claim);
+      await hubGgufFinishStep(held.jobId, held.claim);
+      return true;
+    }
     await hubStoryStep(held.jobId, held.claim);
     await hubDatasetStep(held.jobId, held.claim);
     await hubModelStep(held.jobId, held.claim);
@@ -198,8 +215,8 @@ export interface PublishToHubInput {
 
 /**
  * Publishes a judged glimmer-lora job to the Hugging Face Hub now, when an admin pressed Publish and its adapter's
- * files are on the Hub (docs/TRAINING.md "Hugging Face Hub"). The same steps as after judging; a run already
- * publishing the job holds the claim, and this one does nothing.
+ * files are on the Hub (docs/TRAINING.md "Hugging Face Hub"), or a glimmer-quantize job's GGUF repo whose files are.
+ * The same steps as after the job; a run already publishing the job holds the claim, and this one does nothing.
  */
 export async function publishToHub(input: PublishToHubInput): Promise<{ published: boolean }> {
   "use workflow";

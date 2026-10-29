@@ -1,7 +1,7 @@
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, route } from "@/lib/http";
-import { isServeRecipe, SERVE_ADAPTER_PARAM, type TrainJobRow } from "@/lib/train/logic";
-import { datasetPage, getJob } from "@/lib/train/store";
+import { isQuantRecipe, isServeRecipe, SERVE_ADAPTER_PARAM, type TrainJobRow } from "@/lib/train/logic";
+import { datasetPage, getJob, tunedAnswers } from "@/lib/train/store";
 import { requireJobToken } from "../../../shared";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -16,23 +16,26 @@ const DATASET_PAGE_SIZE = 100;
 const READS_PER_HOUR = 120;
 
 /**
- * The dataset a job reads: its own datasetId param, or for a glimmer-serve job (which has none) the dataset its
- * adapter's glimmer-lora job trained on, so its demo server answers under the same short system line, made from that
- * dataset's title. Null when there is none.
+ * The dataset a job reads: its own datasetId param, or for a glimmer-serve or glimmer-quantize job (which have none)
+ * the dataset its adapter's glimmer-lora job trained on, so its demo server answers, or its local files are checked,
+ * under the same short system line, made from that dataset's title. With the adapter's job for a glimmer-quantize job,
+ * whose eval pages carry that job's own tuned answers. Null when there is none.
  */
-async function datasetOf(job: TrainJobRow): Promise<string | null> {
-  if (typeof job.params?.datasetId === "string") return job.params.datasetId;
+async function datasetOf(job: TrainJobRow): Promise<{ datasetId: string; answersOf: string | null } | null> {
+  if (typeof job.params?.datasetId === "string") return { datasetId: job.params.datasetId, answersOf: null };
   const adapterJobId = job.params?.[SERVE_ADAPTER_PARAM];
-  if (!isServeRecipe(job.recipe) || typeof adapterJobId !== "string") return null;
+  if (!(isServeRecipe(job.recipe) || isQuantRecipe(job.recipe)) || typeof adapterJobId !== "string") return null;
   const adapter = await getJob(adapterJobId);
-  return typeof adapter?.params?.datasetId === "string" ? adapter.params.datasetId : null;
+  if (typeof adapter?.params?.datasetId !== "string") return null;
+  return { datasetId: adapter.params.datasetId, answersOf: isQuantRecipe(job.recipe) ? adapter.id : null };
 }
 
 /**
  * GET ?part=train|eval&page=N (N from 0) -> {items: TrainExample[] | EvalExample[], nextPage: number | null, title},
  * from the job's runner with "Authorization: Bearer <job token>" (it works until 15 minutes after the job ended). The
- * job's dataset is params.datasetId (for glimmer-serve, its adapter job's), and title is its name (glimmer-lora's short
- * student prompt is made from it). At most 100 items a page. 401 bad token, 400 bad part or page, 404 no_dataset (the
+ * job's dataset is params.datasetId (for glimmer-serve and glimmer-quantize, its adapter job's), and title is its name
+ * (glimmer-lora's short student prompt is made from it). A glimmer-quantize job's eval items also carry `tuned`, the
+ * adapter job's own answer to each. At most 100 items a page. 401 bad token, 400 bad part or page, 404 no_dataset (the
  * job has no dataset, or the dataset is gone), 409 dataset_not_ready, 429 rate_limited past 120 pages an hour.
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {
@@ -52,12 +55,21 @@ export const GET = route(async (req: Request, { params }: Ctx) => {
 
   const job = await getJob(id);
   if (!job) return errorJson(404, "not_found");
-  const datasetId = await datasetOf(job);
-  if (!datasetId) return errorJson(404, "no_dataset");
-  const slice = await datasetPage(datasetId, part, page * DATASET_PAGE_SIZE, DATASET_PAGE_SIZE);
+  const source = await datasetOf(job);
+  if (!source) return errorJson(404, "no_dataset");
+  const slice = await datasetPage(source.datasetId, part, page * DATASET_PAGE_SIZE, DATASET_PAGE_SIZE);
   if (!slice) return errorJson(404, "no_dataset");
   // While it generates, train still holds the items that become eval.
   if (slice.status !== "ready") return errorJson(409, "dataset_not_ready");
   const nextPage = (page + 1) * DATASET_PAGE_SIZE < slice.total ? page + 1 : null;
+  if (part === "eval" && source.answersOf) {
+    // The adapter's eval item i is the dataset's held-out item i, the same prompt: its tuned answer rides along.
+    const answers = await tunedAnswers(source.answersOf);
+    const items = (slice.items as Array<{ prompt: string; reference: string }>).map((item, k) => {
+      const own = answers.get(page * DATASET_PAGE_SIZE + k);
+      return own && own.prompt && item.prompt.startsWith(own.prompt) ? { ...item, tuned: own.tuned } : item;
+    });
+    return Response.json({ items, nextPage, title: slice.title });
+  }
   return Response.json({ items: slice.items, nextPage, title: slice.title });
 });

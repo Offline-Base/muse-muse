@@ -11,9 +11,24 @@
  * markup, so the template's story is used instead.
  */
 import { noEmDashes, slugify } from "@/lib/brief/normalize";
-import { datasetSystemPrompt, NEAR_DUPLICATE_JACCARD, unjudgedNote, type TrainJobRow } from "@/lib/train/logic";
+import { plural } from "@/lib/format";
+import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
 import {
+  datasetSystemPrompt,
+  NEAR_DUPLICATE_JACCARD,
+  QUANT_CHANNEL_MIN,
+  QUANT_KL_MAX,
+  trainChannelOf,
+  unjudgedNote,
+  type DoneMetrics,
+  type TrainJobRow,
+} from "@/lib/train/logic";
+import {
+  HUB_FILE_MAX_BYTES,
   HUB_FILE_NAMES,
+  HUB_GGUF_FILE_MAX_BYTES,
+  HUB_GGUF_SMALL_NAMES,
+  QUANT_RECIPE,
   type EvalExample,
   type EvalSummary,
   type HubFile,
@@ -496,6 +511,11 @@ export interface CardFacts {
   system: string;
   why: string | null;
   story: string;
+  /**
+   * The adapter's GGUF repo, once a glimmer-quantize job published one the card may name: public, or private beside a
+   * private adapter. "How to use it" then points local apps to it. Null or absent otherwise.
+   */
+  gguf?: { repo: string } | null;
 }
 
 /** A repo's page on the public Hub (HUB_SITE). */
@@ -670,10 +690,17 @@ function usageSection(f: CardFacts): string {
     "",
     ...ask,
   ];
+  const local = f.gguf
+    ? [
+        "",
+        `To run it on your own computer, in LM Studio, llama.cpp or Ollama, take [${f.gguf.repo}](${hubLink(f.gguf.repo, "model")}): this adapter merged into the base and quantized to GGUF, with which file fits which computer.`,
+      ]
+    : [];
   return [
     "## How to use it",
     "",
     `Load the 4-bit base at the revision it was trained on, put the adapter on it, and prompt it as training did: the system message below, the chat template at reasoning strength "${t.reasoning}", and the final channel opened, so the model answers at once with no reasoning. Greedy decoding with up to ${t.maxNewTokens} new tokens is what the eval used. It needs a CUDA GPU with room for the 4-bit base model, and \`bitsandbytes\`.`,
+    ...local,
     "",
     "With transformers and PEFT:",
     "",
@@ -1162,12 +1189,14 @@ export function withPlan(
 
 /**
  * The hub state after the GPU's report: the oids it uploaded join the uploaded list; a failed file fails the upload,
- * with the reason; with every file in, it is "uploaded". Files the plan doesn't have are ignored.
+ * with the reason; with every file in (`complete`: an adapter's rule, hubUploaded, unless the job's is another), it is
+ * "uploaded". Files the plan doesn't have are ignored.
  */
 export function withDone(
   hub: HubState,
   done: { uploaded: string[]; failed: Array<{ path: string; error: string }> },
   now: Date,
+  complete: (hub: HubState) => boolean = hubUploaded,
 ): HubState {
   const planned = new Set((hub.files ?? []).map((f) => f.sha256));
   const uploaded = [...new Set([...(hub.uploaded ?? []), ...done.uploaded.filter((oid) => planned.has(oid))])];
@@ -1177,5 +1206,581 @@ export function withDone(
     const more = done.failed.length > 1 ? ` (and ${done.failed.length - 1} more)` : "";
     return { ...next, status: "failed", reason: `The GPU couldn't upload ${first.path} to Hugging Face: ${first.error}${more}` };
   }
-  return hubUploaded(next) ? { ...next, status: "uploaded", reason: null } : next;
+  return complete(next) ? { ...next, status: "uploaded", reason: null } : next;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Local files: a glimmer-quantize job's GGUF repo (docs/TRAINING.md "Local files")
+
+/**
+ * Meta's base model at the revision whose chat_template.jinja and tokenizer files go into every merged model, so each
+ * GGUF file embeds Meta's current template (main on 2026-10-28; the revision ggml-org's own conversion used). The
+ * template's SHA-256, and tuned.jinja's: Meta's template with its default reasoning strength "low" and a generation
+ * prompt that opens the final channel, for an adapter trained before trainChannel. QUANT_PY pins the same.
+ */
+export const META_REVISION = "cec94fcfd6512f2cfe708138c32533b346ea4f69";
+export const META_TEMPLATE_SHA256 = "cfc67e5f349f37690dfd31ed1f18bc4442a9dd32fe39a648f993cb4eb3cae678";
+export const TUNED_TEMPLATE_SHA256 = "ee7766876b1317a7b95caec088aca7905399ce8b7117745921643e931b476b13";
+/** The line a local app's system message ends with, so Meta's template adds no second one and the app reasons at "low". */
+export const GGUF_REASONING_LINE = "Reasoning strength: low.";
+/** What a build needs besides its file to run at an 8K context: about 0.2 GB of KV cache and up to 1 GB of buffers. */
+export const GGUF_RUN_EXTRA_GB = 1.2;
+/**
+ * The computers each build is picked for (docs/VIBE_TUNING.md "Three sizes"). A graphics card is NVIDIA's, or an AMD or
+ * Intel one with as much memory through LM Studio's Vulkan engine, which is less tested; a 12 GB card runs the smallest
+ * build only with 32 GB of RAM for the part that runs on the processor.
+ */
+export const GGUF_PICKED_FOR: Readonly<Record<QuantLevel, string>> = {
+  Q3_K_M: "A Mac with 24 GB, a graphics card with 16 GB, or one with 12 GB and 32 GB of RAM, with part of it on the processor",
+  Q4_K_M: "A Mac with 32 or 36 GB, a graphics card with 24 GB, or a PC with 32 GB of RAM and no big graphics card, slowly",
+  Q6_K: "A Mac with 48 GB or more, or a graphics card with 32 GB",
+};
+
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** True for a slug as repo names use it: lowercase letters and digits with single dashes, at most SLUG_MAX. */
+export function validSlug(slug: unknown): slug is string {
+  return typeof slug === "string" && slug.length <= SLUG_MAX && SLUG_RE.test(slug);
+}
+
+/**
+ * The slug a glimmer-quantize job names its repo and files with: the one in its adapter's model repo
+ * ("muse-glimmer-30b-<slug>-lora-<job8>"), so the three repos of a run line up, else its dataset title's (hubSlug).
+ */
+export function ggufSlug(adapterModelRepo: string | null | undefined, datasetTitle: string, adapterJobId: string): string {
+  const name = String(adapterModelRepo ?? "").split("/")[1] ?? "";
+  const tail = `-lora-${adapterJobId.slice(0, 8).toLowerCase()}`;
+  const slug = name.startsWith("muse-glimmer-30b-") && name.endsWith(tail) ? name.slice("muse-glimmer-30b-".length, -tail.length) : "";
+  return validSlug(slug) ? slug : hubSlug(datasetTitle);
+}
+
+/**
+ * The GGUF repo's name: "muse-glimmer-30b-<slug>-gguf-<first 8 characters of the adapter's training job id>", so it sits
+ * next to the adapter's "-lora-" repo of the same run.
+ */
+export function ggufRepoName(slug: string, adapterJobId: string): string {
+  return `muse-glimmer-30b-${slug}-gguf-${adapterJobId.slice(0, 8).toLowerCase()}`;
+}
+
+/** A build's file name, "muse-glimmer-30b-<slug>-<LEVEL>.gguf": every local app picks a file by the level in its name. */
+export function ggufFileName(slug: string, level: QuantLevel): string {
+  return `muse-glimmer-30b-${slug}-${level}.gguf`;
+}
+
+/** The builds a glimmer-quantize job's levels param names, in QUANT_LEVELS order. A level not on that list never counts. */
+export function quantLevels(params: Record<string, string | number> | null | undefined): QuantLevel[] {
+  const asked = String(params?.levels ?? "")
+    .split(",")
+    .map((s) => s.trim());
+  return QUANT_LEVELS.filter((level) => asked.includes(level));
+}
+
+/** A level's prefix in a glimmer-quantize job's done metrics: "q4_k_m" for Q4_K_M. */
+export function levelKey(level: QuantLevel): string {
+  return level.toLowerCase();
+}
+
+/**
+ * The params the platform writes on a glimmer-quantize job, on top of the admin's adapterJobId and publish, so no caller
+ * chooses them: the builds (QUANT_LEVELS), the slug its adapter's repos are named with (ggufSlug) and whether the
+ * adapter trained with trainChannel.
+ */
+export function quantParams(
+  adapter: Pick<TrainJobRow, "id" | "params" | "hub">,
+  datasetTitle: string,
+): { levels: string; slug: string; trainChannel: 0 | 1 } {
+  return {
+    levels: QUANT_LEVELS.join(","),
+    slug: ggufSlug(adapter.hub?.modelRepo, datasetTitle, adapter.id),
+    trainChannel: trainChannelOf(adapter.params),
+  };
+}
+
+/**
+ * Why the platform won't publish a file a job's GPU names, or null when it will. A glimmer-quantize job's are its
+ * builds' GGUF files (ggufFileName with its slug, for the levels its params name) and the small files beside them
+ * (HUB_GGUF_SMALL_NAMES); every other job's are an adapter's (hubFileProblem). runner.py keeps the same rule.
+ */
+export function hubNameProblem(job: Pick<TrainJobRow, "recipe" | "params">, path: string): string | null {
+  if (job.recipe !== QUANT_RECIPE) return hubFileProblem(path);
+  if (HUB_GGUF_SMALL_NAMES.includes(path)) return null;
+  const slug = job.params?.slug;
+  if (validSlug(slug) && quantLevels(job.params).some((level) => ggufFileName(slug, level) === path)) return null;
+  return "only the builds' GGUF files and their system, params and tuned.jinja are published";
+}
+
+/** The largest file a job's GPU may send: HUB_GGUF_FILE_MAX_BYTES for a glimmer-quantize job's build, else HUB_FILE_MAX_BYTES. */
+export function hubMaxBytes(job: Pick<TrainJobRow, "recipe">, path: string): number {
+  return job.recipe === QUANT_RECIPE && path.endsWith(".gguf") ? HUB_GGUF_FILE_MAX_BYTES : HUB_FILE_MAX_BYTES;
+}
+
+/** The GGUF repo's system file, and the system message to paste in a local app: the role line, a blank line, low reasoning. */
+export function ggufSystemLine(role: string): string {
+  return `${role}\n\n${GGUF_REASONING_LINE}`;
+}
+
+/** The stops a local app needs: tuned.jinja opens the final channel, so a message that ends or a new one ends the answer. */
+export function ggufStops(trainChannel: 0 | 1): string[] {
+  return trainChannel === 1 ? ["<|eot|>", "<|end_of_text|>"] : ["<|eot|>", "<|eom|>", "<|end_of_text|>", "<|start|>"];
+}
+
+/** Ollama's params file for the GGUF repo: greedy as the eval answered, an 8K context, and the stops. QUANT_PY writes the same. */
+export function ggufParams(trainChannel: 0 | 1): string {
+  return `${JSON.stringify({ temperature: 0, num_ctx: 8192, stop: ggufStops(trainChannel) }, null, 2)}\n`;
+}
+
+/**
+ * Ollama's TEMPLATE for an adapter trained before trainChannel: Meta's prompt with the system message, the turns, and a
+ * generation prompt that opens the final channel the way this adapter's answers start (quantization notes).
+ */
+const OLLAMA_TUNED_TEMPLATE = [
+  'TEMPLATE """{{- if .System }}<|start|>system<|message|>{{ .System }}',
+  "",
+  '# Valid recipients: "self", "user".<|eot|>{{ end }}{{- range .Messages }}{{- if eq .Role "user" }}<|start|>user<|message|>{{ .Content }}<|eot|>{{- else if eq .Role "assistant" }}<|start|>assistant to=user<|message|>{{ .Content }}<|eot|>{{- end }}{{- end }}<|start|>assistant to=user<|message|>"""',
+];
+
+/**
+ * Ollama's Modelfile for one build, the same on the GGUF card and the run-locally page: a model trained with
+ * trainChannel takes Ollama's own Glimmer renderer and parser (its parser accepts them; they aren't documented), one
+ * trained before it the TEMPLATE that opens the final channel and the four stops that end its answer. Then the system
+ * message exactly, temperature 0 as the eval answered, and an 8K context in place of Ollama's 4,096.
+ */
+export function ggufModelfile(fileName: string, systemLine: string, trainChannel: 0 | 1): string {
+  return [
+    `FROM ./${fileName}`,
+    ...(trainChannel === 0 ? OLLAMA_TUNED_TEMPLATE : ["RENDERER glimmer", "PARSER glimmer"]),
+    `SYSTEM """${systemLine}"""`,
+    "PARAMETER temperature 0",
+    "PARAMETER num_ctx 8192",
+    ...(trainChannel === 0 ? ggufStops(0).map((stop) => `PARAMETER stop ${stop}`) : []),
+  ].join("\n");
+}
+
+/** Ollama's name for the model, on the card and the page alike: its slug, lowercase letters, digits and dashes. */
+export function ggufOllamaName(slug: string): string {
+  const name = slug.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return name || "muse-glimmer-tuned";
+}
+
+/**
+ * Why one of a GGUF repo's small files can't be published as the GPU sent it, or null when it can: system must be the
+ * line the adapter trained with (ggufSystemLine), params Ollama's for its channel (ggufParams), and tuned.jinja, only
+ * for an adapter trained before trainChannel, the pinned TUNED_TEMPLATE_SHA256. `sha256` is the bytes' SHA-256.
+ */
+export function ggufSmallProblem(path: string, bytes: Buffer, sha256: string, expect: { role: string; trainChannel: 0 | 1 }): string | null {
+  if (path === "system") return bytes.toString("utf8") === ggufSystemLine(expect.role) ? null : "its system file isn't the system message the adapter trained with";
+  if (path === "params") return bytes.toString("utf8") === ggufParams(expect.trainChannel) ? null : "its params file isn't the one for this model";
+  if (path === "tuned.jinja") {
+    if (expect.trainChannel === 1) return "it has a tuned.jinja, which an adapter trained with trainChannel doesn't need";
+    return sha256 === TUNED_TEMPLATE_SHA256 ? null : "its tuned.jinja isn't Meta's template with the final channel opened";
+  }
+  return null;
+}
+
+/**
+ * True when the Hub has every file of a glimmer-quantize job's plan: at least one build, its system and params inline,
+ * and tuned.jinja too for an adapter trained before trainChannel.
+ */
+export function ggufUploaded(hub: HubState | null | undefined, params: Record<string, string | number> | null | undefined): boolean {
+  const files = hub?.files ?? [];
+  const have = new Set(hub?.uploaded ?? []);
+  const inline = ["system", "params", ...(trainChannelOf(params) === 1 ? [] : ["tuned.jinja"])];
+  return (
+    files.some((f) => f.path.endsWith(".gguf")) &&
+    inline.every((name) => typeof hub?.small?.[name] === "string") &&
+    files.every((f) => have.has(f.sha256))
+  );
+}
+
+/** Whether the Hub has every file a job publishes: a glimmer-quantize job's (ggufUploaded), else an adapter's (hubUploaded). */
+export function jobUploaded(job: Pick<TrainJobRow, "recipe" | "params">, hub: HubState | null | undefined): boolean {
+  return job.recipe === QUANT_RECIPE ? ggufUploaded(hub, job.params) : hubUploaded(hub);
+}
+
+/** True when a glimmer-quantize job's done metrics say its file checks passed and its files reached the Hub's storage. */
+export function quantFilesOk(metrics: DoneMetrics | null | undefined): boolean {
+  return metrics?.checks_passed === "yes" && metrics?.hub_uploaded === "yes";
+}
+
+/**
+ * Why a glimmer-quantize job can't publish its GGUF repo, or null when it can: it succeeded with its GPU shut down, its
+ * file checks passed and its files reached the Hub's storage (quantFilesOk), and its adapter job is published. A public
+ * adapter gives a public GGUF repo (when HF_PUBLIC asks for one); a private one, an admin's private test, a private one.
+ */
+export function ggufJobProblem(
+  job: Pick<TrainJobRow, "recipe" | "status" | "terminatedAt">,
+  metrics: DoneMetrics | null,
+  adapter: Pick<TrainJobRow, "hub"> | null,
+): string | null {
+  if (job.recipe !== QUANT_RECIPE) return "Only a local files job publishes GGUF files.";
+  if (job.status !== "succeeded") return "It didn't succeed, so it has no files to publish.";
+  if (!job.terminatedAt) return "Its GPU isn't confirmed shut down yet.";
+  if (!quantFilesOk(metrics)) return "Its files didn't all pass their checks and reach Hugging Face, so nothing of it is published.";
+  if (!adapter) return "Its adapter's job is gone.";
+  if (adapter.hub?.status !== "published" || !adapter.hub.modelRepo) {
+    return "Its adapter isn't published on Hugging Face right now, and the GGUF repo links to it. Publish the adapter, then this.";
+  }
+  return null;
+}
+
+/**
+ * A glimmer-quantize job as localFilesOf reads it: the job, its done metrics, its adapter's dataset title, and whether
+ * its adapter is published and public on the Hub right now.
+ */
+export interface QuantSource {
+  job: Pick<TrainJobRow, "id" | "title" | "params" | "hub">;
+  metrics: DoneMetrics | null;
+  datasetTitle: string | null;
+  adapterPublic: boolean;
+}
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * The local files contract (lib/train/local-files.ts) from a glimmer-quantize job that passed: each build its metrics
+ * say passed, smallest first, with the size and SHA-256 it measured, and once its GGUF repo is published only the
+ * builds the repo holds as those bytes; the repo, commit and visibility from its hub state, public only while its
+ * adapter is public too; the system line it checked. Null when no build passed.
+ */
+export function localFilesOf(source: QuantSource): LocalFiles | null {
+  const { job, metrics } = source;
+  const slug = job.params?.slug;
+  const adapterJobId = job.params?.adapterJobId;
+  if (!validSlug(slug) || typeof adapterJobId !== "string") return null;
+  const hub = job.hub ?? null;
+  const published = hub?.status === "published" && typeof hub.modelRepo === "string" && hub.modelRepo.length > 0;
+  const onHub = new Map((hub?.files ?? []).map((f) => [f.path, f.sha256]));
+  const files: LocalFile[] = [];
+  for (const level of QUANT_LEVELS) {
+    const key = levelKey(level);
+    if (metrics?.[`${key}_passed`] !== "yes") continue;
+    const name = ggufFileName(slug, level);
+    const bytes = Number(metrics[`${key}_bytes`]);
+    const sha256 = String(metrics[`${key}_sha256`] ?? "");
+    if (!(bytes > 0) || !SHA256_HEX.test(sha256)) continue;
+    if (published && onHub.get(name) !== sha256) continue;
+    files.push({ level, name, bytes, sha256 });
+  }
+  if (!files.length) return null;
+  const ran = typeof metrics?.system === "string" ? metrics.system.trim() : "";
+  const role = ran.startsWith("You are ") ? ran : studentSystem(source.datasetTitle);
+  return {
+    adapterJobId,
+    quantJobId: job.id,
+    repo: published ? hub!.modelRepo! : null,
+    commit: published ? (hub!.modelCommit ?? null) : null,
+    public: published && hub!.public === true && source.adapterPublic,
+    files,
+    systemLine: ggufSystemLine(role),
+    needsTunedTemplate: trainChannelOf(job.params) === 0,
+    title: source.datasetTitle ?? job.title,
+    slug,
+  };
+}
+
+/** One build of a GGUF repo, as its card shows it: the file, and how close it measured to the merged model's Q8_0. */
+export interface GgufBuild extends LocalFile {
+  klMean: number | null;
+  klP99: number | null;
+  topTokenPct: number | null;
+}
+
+/** Everything the GGUF card says, from the records: the quantize job and its metrics, the adapter's job and hub state, the dataset. */
+export interface GgufFacts {
+  repo: string;
+  /** The slug the repo and its files are named with, which Ollama's name for the model is too. */
+  slug: string;
+  adapterRepo: string;
+  adapterCommit: string | null;
+  datasetRepo: string | null;
+  adapterJobId: string;
+  quantJobId: string;
+  dataset: { title: string; task: string; evalCount: number };
+  /** The one-line role the adapter trained under, "You are ...". */
+  role: string;
+  trainChannel: 0 | 1;
+  /** The builds that passed, smallest first, and the ones that didn't with what they measured. */
+  builds: GgufBuild[];
+  leftOut: Array<{ level: QuantLevel; klMean: number | null }>;
+  channel: { final: number; total: number };
+  agreement: { same: number; total: number } | null;
+  /** The base model files and template checks, as the job measured them. */
+  tensors: number | null;
+  llamacpp: { tag: string; commit: string | null };
+  /** The 16-bit base merged into, and the commit whose shards the job matched against Meta's SHA-256 (null: unchecked). */
+  mergeBase: { repo: string; revision: string | null };
+  adapterBase: { model: string; revision: string };
+  /** The small files the repo holds besides the builds. */
+  small: Array<{ name: string; bytes: number; sha256: string }>;
+  job: { gpuLabel: string; gpuMinutes: number; costUsd: number; finishedAt: string | null };
+}
+
+const numberOr = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null;
+
+/** The builds of a glimmer-quantize job's metrics, in QUANT_LEVELS order: those it passed (with the files) and those it left out. */
+export function ggufBuilds(
+  slug: string,
+  levels: QuantLevel[],
+  metrics: DoneMetrics,
+): { builds: GgufBuild[]; leftOut: Array<{ level: QuantLevel; klMean: number | null }> } {
+  const builds: GgufBuild[] = [];
+  const leftOut: Array<{ level: QuantLevel; klMean: number | null }> = [];
+  for (const level of levels) {
+    const key = levelKey(level);
+    const klMean = numberOr(metrics[`${key}_kl_mean`]);
+    const bytes = numberOr(metrics[`${key}_bytes`]);
+    const sha256 = String(metrics[`${key}_sha256`] ?? "");
+    if (metrics[`${key}_passed`] === "yes" && bytes !== null && bytes > 0 && SHA256_HEX.test(sha256)) {
+      builds.push({
+        level,
+        name: ggufFileName(slug, level),
+        bytes,
+        sha256,
+        klMean,
+        klP99: numberOr(metrics[`${key}_kl_p99`]),
+        topTokenPct: numberOr(metrics[`${key}_top_token_pct`]),
+      });
+    } else {
+      leftOut.push({ level, klMean });
+    }
+  }
+  return { builds, leftOut };
+}
+
+/** "16.94 GB": decimal gigabytes, as the Hub and the apps show a file's size. */
+export function gigabytes(bytes: number): string {
+  return `${(Math.max(0, bytes) / 1e9).toFixed(2)} GB`;
+}
+
+/** About how much memory a build needs at an 8K context: its file plus GGUF_RUN_EXTRA_GB, in whole gigabytes. */
+export function runMemoryGb(bytes: number): number {
+  return Math.round(bytes / 1e9 + GGUF_RUN_EXTRA_GB);
+}
+
+const kl = (v: number | null) => (v === null ? "not measured" : v.toFixed(4));
+
+/** The build a command shows: Q4_K_M when it passed (llama.cpp's own default), else the first that did. */
+function defaultBuild(f: GgufFacts): GgufBuild {
+  return f.builds.find((b) => b.level === "Q4_K_M") ?? f.builds[0]!;
+}
+
+/** The commands to run it, per app, as the run-locally page gives them. tuned.jinja comes in for an adapter that needs it. */
+function ggufRunSection(f: GgufFacts): string {
+  const b = defaultBuild(f);
+  const old = f.trainChannel === 0;
+  const file = `https://huggingface.co/${f.repo}/resolve/main`;
+  const system = ggufSystemLine(f.role);
+  const name = ggufOllamaName(f.slug);
+  // An 8K context in one slot, as the memory table counts it and the run-locally page runs it.
+  const serve = `llama serve -hf ${f.repo}:${b.level} --no-mmproj -c 8192 -np 1`;
+  const server = old ? `curl -LO ${file}/tuned.jinja\n${serve} --chat-template-file tuned.jinja --skip-chat-parsing --reasoning off` : serve;
+  return [
+    "## Run it",
+    "",
+    "Each app needs a version that knows Muse Glimmer: one built on llama.cpp b10353 or later, or Ollama 0.32.8 or later.",
+    ...(old
+      ? [
+          "",
+          "This adapter was trained to answer once the final channel is open, which stock apps leave to the model, so it needs `tuned.jinja` from this repo: Meta's own template with low reasoning by default and the final channel opened for the answer. The steps below put it in.",
+        ]
+      : []),
+    "",
+    "### LM Studio",
+    "",
+    `Open \`lmstudio://open_from_hf?model=${f.repo}&file=${b.name}\`, or search for \`${f.repo}\` in Discover and download the build for your computer.${old ? " Then in My Models, open the gear next to the model, and under Prompt Template choose Jinja and paste the whole of `tuned.jinja`." : ""} In a new chat, paste the system message below into the System Prompt, and set Temperature to 0 and Reasoning Strength to low.`,
+    "",
+    "### The Llama app (Mac)",
+    "",
+    old
+      ? "The Llama app always uses the template inside the file, and this adapter needs `tuned.jinja` in its place, so the Llama app can't run it yet. Use LM Studio, llama.cpp or Ollama, with the steps for `tuned.jinja`."
+      : `Open \`llama://install?repo=${f.repo}&quant=${b.level}\`, or install it with \`brew install --cask llama-app\` first. It serves the model at \`http://localhost:9931/v1\`.`,
+    "",
+    "### llama.cpp",
+    "",
+    "Install it with `brew install llama.cpp` or `winget install llama.cpp`, then:",
+    "",
+    fenced(server, "sh"),
+    "",
+    `The web UI is at \`http://127.0.0.1:9931\`. \`--no-mmproj\` keeps it from fetching a vision projector, since these files are text only.${old ? ` Send \`"stop": ${JSON.stringify(["<|eom|>", "<|start|>"])}\` with each request to its API.` : ""}`,
+    "",
+    "### Ollama",
+    "",
+    `Ollama 0.32.8 or later. Download the file (\`curl -LO ${file}/${b.name}\`), write this \`Modelfile\` next to it, then run \`ollama create ${name} -f Modelfile\` and \`ollama run ${name}\`. For another build, change the file on its first line:`,
+    "",
+    fenced(ggufModelfile(b.name, system, f.trainChannel), "text"),
+    "",
+    "Avoid `ollama run hf.co/...` for Muse Glimmer files: its import set stops that gave empty answers.",
+  ].join("\n");
+}
+
+/** The GGUF repo's README.md: YAML front matter the Hub's validator takes, then the sections in the design's order. */
+export function ggufCard(f: GgufFacts): string {
+  const [, name] = f.repo.split("/");
+  const english = looksEnglish(f.dataset.title, f.dataset.task);
+  const front = [
+    "---",
+    `base_model: ${GLIMMER_ORIGIN}`,
+    "base_model_relation: finetune",
+    "pipeline_tag: text-generation",
+    "license: apache-2.0",
+    ...(english ? ["language:", "- en"] : []),
+    "tags:",
+    ...["gguf", "llama.cpp", "muse-muse", "lora-merged"].map((t) => `- ${t}`),
+    ...(f.datasetRepo ? ["datasets:", `- ${f.datasetRepo}`] : []),
+    "---",
+  ];
+  const adapter = `[${f.adapterRepo}](${hubLink(f.adapterRepo, "model")})`;
+  const sizes = f.builds.map((b) => b.level).join(", ");
+  // The task can be model-written (a vibe run's), so its Markdown shows as the characters it is.
+  const lead = `GGUF files of ${adapter}, a LoRA adapter that taught ${GLIMMER_NAME} one task from ${SPARK_NAME}: ${mdText(taskSentence(f.dataset.task))}. The adapter is merged into Meta's 16-bit base and quantized to ${plural(f.builds.length, "size")} (${sizes}) for llama.cpp, LM Studio and Ollama. Its eval is on [the run's public page](${labPageUrl(f.adapterJobId)}). Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const which = [
+    "## Which file for my computer",
+    "",
+    "| Build | File | Size | Memory to run, 8K context | Picked for |",
+    "|---|---|---|---|---|",
+    ...f.builds.map((b) => `| ${b.level} | \`${b.name}\` | ${gigabytes(b.bytes)} | about ${runMemoryGb(b.bytes)} GB | ${GGUF_PICKED_FOR[b.level]} |`),
+    "",
+    `Memory to run is the file plus about ${GGUF_RUN_EXTRA_GB} GB: a small KV cache at 8K context and the buffers. A Mac lends its GPU about two thirds of its memory up to 36 GB, and three quarters above. The [run-it-on-your-computer page](${MUSE_MUSE_SITE}/fine-tuning/${f.adapterJobId}/run) picks a build for your device, in your browser.`,
+  ].join("\n");
+  const system = ggufSystemLine(f.role);
+  const prompt = [
+    "## Prompt it the way it was trained",
+    "",
+    "Paste this system message exactly, the role line, a blank line, then the reasoning line:",
+    "",
+    fenced(clean(system), "text"),
+    "",
+    `Meta's template reads its "${GGUF_REASONING_LINE}" and adds no second one, so the prompt is the one training used, character for character. Local apps reason at "high" by default, so set any reasoning setting to low too. Use temperature 0, as the eval answered greedily, and up to 1,024 new tokens. Stop at ${ggufStops(f.trainChannel).map((s) => `\`${s}\``).join(", ")}.`,
+  ].join("\n");
+  const close = [
+    "## How close the files are",
+    "",
+    `Measured on this model's ${f.dataset.evalCount} held-out prompts and their reference answers, which it never trained on, against the merged model's own Q8_0 file with \`llama-perplexity\`. A build is published only when its mean KL divergence is within its limit.`,
+    "",
+    "| Build | Mean KL divergence from Q8_0 | Its limit | 99th percentile | Top token the same |",
+    "|---|---|---|---|---|",
+    ...f.builds.map(
+      (b) =>
+        `| ${b.level} | ${kl(b.klMean)} | ${QUANT_KL_MAX[b.level].toFixed(4)} | ${kl(b.klP99)} | ${b.topTokenPct === null ? "not measured" : `${b.topTokenPct.toFixed(1)}%`} |`,
+    ),
+    ...(f.leftOut.length
+      ? ["", ...f.leftOut.map((l) => `${l.level} isn't published: its mean KL divergence was ${kl(l.klMean)}, over its limit of ${QUANT_KL_MAX[l.level].toFixed(4)}.`)]
+      : []),
+    "",
+    `The answer check: Q4_K_M, under the prompt a stock app sends (${f.trainChannel === 0 ? "`tuned.jinja`" : "the template in the file, with the Glimmer parser on"} and reasoning strength low), gave a final answer to ${f.channel.final} of ${f.channel.total} held-out prompts, greedy, up to 1,024 new tokens each. The files are published only when at least ${Math.round(QUANT_CHANNEL_MIN * 100)}% do.`,
+    ...(f.agreement && f.agreement.total > 0
+      ? [
+          "",
+          `${f.agreement.same} of those ${f.agreement.total} answers start with the same 200 characters as the adapter's own eval answers, which ran on the 4-bit base model. The two differ a little, so this is shown, not checked.`,
+        ]
+      : []),
+    "",
+    "The template check: the prompt `llama-server` rendered from the Q4_K_M file, for this system message and a held-out prompt, matched the text training used character for character.",
+  ].join("\n");
+  const made = [
+    "## How it was made",
+    "",
+    `- The adapter: ${adapter}${f.adapterCommit ? ` at commit \`${f.adapterCommit}\`` : ""}, trained on [${f.adapterBase.model}](${HUB_SITE}/${f.adapterBase.model}) at revision \`${f.adapterBase.revision}\`.`,
+    // The shards' SHA-256 is claimed only with the revision the job checked them at (merge_base_revision).
+    `- The merge: Unsloth's \`save_pretrained_merged\` with \`merged_16bit\`, which merges the adapter into the 16-bit base tensor by tensor in fp32. The base: [${f.mergeBase.repo}](${HUB_SITE}/${f.mergeBase.repo})${f.mergeBase.revision ? ` at revision \`${f.mergeBase.revision}\`, whose two safetensors shards have the same SHA-256 as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN})'s` : ""}.${f.tensors !== null ? ` The merged model has the base's ${f.tensors.toLocaleString("en-US")} tensor names and shapes.` : ""}`,
+    `- The template: Meta's \`chat_template.jinja\` and tokenizer files from ${GLIMMER_ORIGIN} at revision \`${META_REVISION}\`, so every file carries Meta's current template.`,
+    `- llama.cpp \`${f.llamacpp.tag}\`${f.llamacpp.commit ? ` (commit \`${f.llamacpp.commit}\`)` : ""}, its release's own builds, each checked against its SHA-256. No importance matrix: the sizes are llama.cpp's standard K-quants.`,
+    `- On ${f.job.gpuLabel} on Lambda: ${f.job.gpuMinutes} minutes from launch to shutdown, ${money(f.job.costUsd)}.`,
+    "",
+    fenced(
+      [
+        "python convert_hf_to_gguf.py merged --outtype bf16 --outfile bf16.gguf",
+        "llama-quantize bf16.gguf Q8_0.gguf Q8_0",
+        ...[...f.builds.map((b) => b.level), ...f.leftOut.map((l) => l.level)]
+          .sort((a, b) => QUANT_LEVELS.indexOf(a) - QUANT_LEVELS.indexOf(b))
+          .map((level) => `llama-quantize bf16.gguf ${level}.gguf ${level}`),
+      ].join("\n"),
+      "sh",
+    ),
+  ].join("\n");
+  const files = [
+    "## Files and checksums",
+    "",
+    "| File | Size | SHA-256 |",
+    "|---|---|---|",
+    ...f.builds.map((b) => `| \`${b.name}\` | ${gigabytes(b.bytes)} | \`${b.sha256}\` |`),
+    ...f.small.map((s) => `| \`${s.name}\` | ${s.bytes.toLocaleString("en-US")} bytes | \`${s.sha256}\` |`),
+    "",
+    "Check a download with `shasum -a 256 <file>` on a Mac or Linux, or `Get-FileHash <file>` on Windows. A flash drive of these files carries the same sums.",
+  ].join("\n");
+  const limits = [
+    "## Limits",
+    "",
+    `- These files are the adapter merged into the base, so they do what it learned, no more: see ${adapter} for its eval and its limits.`,
+    "- Quantizing changes the answers a little. How close each build stays is measured above, on this model's own held-out prompts.",
+    `- Text only. The vision projector isn't included; Meta's projector in [${GLIMMER_ORIGIN}-GGUF](${HUB_SITE}/${GLIMMER_ORIGIN}-GGUF) should load beside these files with llama.cpp's \`--mmproj\`, but it hasn't been tried with this model.`,
+    `- It inherits the base model's limits and its Usage Policy: see [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}). Check what it writes before you rely on it.`,
+  ].join("\n");
+  const license = [
+    "## License",
+    "",
+    `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The changes from the base model: the LoRA adapter above merged in, then the whole model quantized to GGUF. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
+    "",
+    `Not an official Meta product. Meta made ${GLIMMER_NAME}; it didn't make, review or endorse these files.`,
+  ].join("\n");
+  const provenance = [
+    "## Provenance",
+    "",
+    `- Made by [Muse Muse](${MUSE_MUSE_SITE}), job \`${f.quantJobId}\`${f.job.finishedAt ? `, finished ${f.job.finishedAt.slice(0, 10)}` : ""}, from the adapter of job \`${f.adapterJobId}\`.`,
+    `- The adapter's run and its eval: ${labPageUrl(f.adapterJobId)}`,
+    ...(f.datasetRepo ? [`- The training data: [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")})`] : []),
+    "- `muse_muse_quant.json` has the job's records: the builds, their checksums and checks, and the pins.",
+  ].join("\n");
+  return [
+    front.join("\n"),
+    "",
+    `# ${name}`,
+    "",
+    lead,
+    "",
+    which,
+    "",
+    ggufRunSection(f),
+    "",
+    prompt,
+    "",
+    close,
+    "",
+    made,
+    "",
+    files,
+    "",
+    limits,
+    "",
+    license,
+    "",
+    provenance,
+    "",
+  ].join("\n");
+}
+
+/** muse_muse_quant.json: the quantize job's records as its card states them. Never a path, an address or anything of the instance. */
+export function quantRecord(f: GgufFacts): Record<string, unknown> {
+  return {
+    madeBy: { name: "Muse Muse", url: MUSE_MUSE_SITE },
+    job: {
+      id: f.quantJobId,
+      recipe: QUANT_RECIPE,
+      finishedAt: f.job.finishedAt,
+      gpu: f.job.gpuLabel,
+      gpuMinutes: f.job.gpuMinutes,
+      gpuCostUsd: f.job.costUsd,
+    },
+    adapter: { jobId: f.adapterJobId, repo: f.adapterRepo, commit: f.adapterCommit, page: labPageUrl(f.adapterJobId), base: f.adapterBase },
+    merge: { method: "unsloth save_pretrained_merged merged_16bit", base: f.mergeBase, tensors: f.tensors },
+    template: { from: GLIMMER_ORIGIN, revision: META_REVISION, sha256: META_TEMPLATE_SHA256, tuned: f.trainChannel === 0 ? TUNED_TEMPLATE_SHA256 : null },
+    llamacpp: f.llamacpp,
+    system: ggufSystemLine(f.role),
+    trainChannel: f.trainChannel,
+    builds: f.builds.map((b) => ({ level: b.level, file: b.name, bytes: b.bytes, sha256: b.sha256, klMean: b.klMean, klP99: b.klP99, topTokenPct: b.topTokenPct, klMax: QUANT_KL_MAX[b.level] })),
+    leftOut: f.leftOut.map((l) => ({ level: l.level, klMean: l.klMean, klMax: QUANT_KL_MAX[l.level] })),
+    checks: { template: "passed", channel: f.channel, channelMin: QUANT_CHANNEL_MIN, agreement: f.agreement },
+    files: f.small,
+  };
 }

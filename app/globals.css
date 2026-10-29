@@ -3622,7 +3622,8 @@ a.dash-card:hover {
   color: var(--faint);
 }
 
-.train-input[aria-invalid="true"] {
+.train-input[aria-invalid="true"],
+.train-select[aria-invalid="true"] {
   border-color: var(--bad);
 }
 
@@ -4223,4 +4224,760 @@ a.dash-card:hover {
 .lab-try-start .train-field {
   flex: 1 1 220px;
   max-width: 320px;
+}
+
+/* ---------- Run it on your computer (docs/VIBE_TUNING.md, Features 2 and 5) ---------- */
+
+.vibe-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.vibe-note p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.vibe-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.vibe-note .ext-icon {
+  margin-top: 0;
+}
+
+.vibe-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+}
+
+.vibe-sentence {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.vibe-part-ask {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.vibe-sep {
+  margin: 0 8px;
+  color: var(--faint);
+}
+
+.vibe-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.vibe-tag-you {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.vibe-tag-ask {
+  margin-left: 0;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.vibe-fields {
+  display: grid;
+  gap: 18px 20px;
+}
+
+@media (min-width: 760px) {
+  .vibe-fields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.vibe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.vibe-field legend {
+  padding: 0;
+}
+
+.vibe-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.vibe-field-wide {
+  grid-column: 1 / -1;
+}
+
+/* Sizes to confirm, drawn like the dashboard's range buttons: the picked one is filled. */
+.vibe-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.vibe-choice {
+  position: relative;
+  display: inline-flex;
+}
+
+.vibe-choice input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.vibe-choice span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 62px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vibe-choice:hover span {
+  background: var(--bg);
+}
+
+.vibe-choice input:checked + span {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.vibe-choice input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.vibe-other-size {
+  min-height: 36px;
+}
+
+.vibe-callout {
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* The verdict */
+
+.vibe-verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.vibe-verdict-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.vibe-tone-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.vibe-tone-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.vibe-tone-bad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.vibe-tone-wait {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.vibe-eyebrow {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.vibe-verdict .vibe-verdict-head h2 {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.vibe-verdict-why {
+  max-width: 760px;
+  color: var(--fg-2);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.vibe-download {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+}
+
+.vibe-download .select {
+  min-height: 32px;
+  font-weight: 500;
+}
+
+/* On a phone the verdict's rows read top to bottom, label over value. */
+@media (max-width: 559px) {
+  .vibe-verdict .kv > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .vibe-verdict .kv dd {
+    text-align: left;
+  }
+
+  .vibe-download {
+    justify-content: flex-start;
+  }
+}
+
+.vibe-builds {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 760px) {
+  .vibe-builds {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+.vibe-build {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.vibe-build input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.vibe-build:has(input:checked) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+}
+
+.vibe-build:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.vibe-build-name {
+  font-weight: 600;
+}
+
+.vibe-build-size {
+  justify-self: end;
+  color: var(--fg-2);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vibe-build-fit {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.vibe-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.vibe-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+.vibe-trylive {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.vibe-trylive-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.vibe-trylive a {
+  color: var(--accent-text);
+}
+
+/* Get it running: tabs, then one step at a time */
+
+.vibe-guide-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.vibe-guide-panel > .vibe-steps,
+.vibe-guide-panel > .vibe-callout,
+.vibe-guide-panel > .vibe-done {
+  align-self: stretch;
+}
+
+/* Other ways can hold four apps: on a phone they wrap rather than hide the last one off the edge. */
+.vibe-guide-panel > .tabs {
+  flex-wrap: wrap;
+}
+
+.vibe-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.vibe-step {
+  border-bottom: 1px solid var(--line);
+}
+
+.vibe-step-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.vibe-step-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vibe-step-current .vibe-step-num {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.vibe-step-done .vibe-step-num {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.vibe-step-todo .vibe-step-title {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.vibe-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 0 18px 40px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.vibe-step-body[hidden] {
+  display: none;
+}
+
+@media (max-width: 559px) {
+  .vibe-step-body {
+    padding-left: 0;
+  }
+}
+
+.vibe-step-body code,
+.vibe-sums code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.vibe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.vibe-opened {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vibe-opened-q {
+  font-weight: 500;
+}
+
+.vibe-opened-no {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.vibe-opened-no[hidden] {
+  display: none;
+}
+
+.code-block.vibe-code {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 6px 6px 6px 14px;
+}
+
+/* Commands wrap rather than scroll, so the flags at the end of a long line (tuned.jinja's) are never hidden. */
+.code-block.vibe-code code {
+  padding: 7px 0;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vibe-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vibe-paste-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vibe-paste-head h4,
+.vibe-answer h4,
+.vibe-found-item h4 {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.vibe-pre {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A whole file to paste (tuned.jinja): it scrolls inside its own frame. */
+.vibe-pre-long {
+  max-height: 320px;
+  margin-top: 10px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+
+.vibe-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+}
+
+.vibe-sha {
+  word-break: break-all;
+}
+
+.vibe-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-weight: 500;
+}
+
+/* Stuck? The troubleshooting tree at a step */
+
+.vibe-stuck > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+
+.vibe-stuck > summary::-webkit-details-marker {
+  display: none;
+}
+
+.vibe-stuck > summary:hover {
+  text-decoration: underline;
+}
+
+.vibe-stuck[open] > summary {
+  margin-bottom: 8px;
+}
+
+.vibe-stuck-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.vibe-symptoms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.vibe-symptom {
+  border-bottom: 1px solid var(--line);
+}
+
+.vibe-symptom > summary {
+  padding: 10px 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.vibe-symptom p,
+.vibe-found-item p {
+  margin-bottom: 8px;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.train-input.vibe-paste-box {
+  min-height: 72px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+}
+
+.vibe-found {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vibe-found-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.vibe-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Which file for my computer: short cells stay on one line, and the table scrolls inside its container on a phone. */
+
+.vibe-files .data th,
+.vibe-files .data td {
+  white-space: nowrap;
+}
+
+.vibe-sums > summary {
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.vibe-sums ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vibe-sums li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.vibe-sums .vibe-sha {
+  color: var(--muted);
+}
+
+/* The link on a model's public page */
+
+/* Which file for my computer: the table from 640 px, the same facts as a list below that. */
+.vibe-files-table {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .vibe-files-list {
+    display: none;
+  }
+
+  .vibe-files-table {
+    display: block;
+  }
+}
+
+.vibe-run-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface-2);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.vibe-run-link:hover {
+  border-color: var(--line-strong);
+}
+
+.vibe-run-link-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.vibe-run-link-go {
+  flex: none;
+  color: var(--muted);
 }
