@@ -67,7 +67,7 @@ You need macOS or Linux, [uv](https://docs.astral.sh/uv/), and for the relay Nod
 Glimmer runs on OpenRouter, so the device reads only folders marked `.synthetic`, such as `demo/`.
 
 ```sh
-git clone <this repo> muse-privacy && cd muse-privacy
+git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
 uv sync
 cp .env.example .env                 # then set OPENROUTER_API_KEY in .env
 uv run pytest -q                     # unit tests; every model and API is mocked
@@ -79,7 +79,7 @@ uv run python -m base                # approval page http://127.0.0.1:8787, conn
 Not run yet: it needs about 20 GB of free disk. Use llama.cpp b10353 or newer.
 
 ```sh
-git clone <this repo> muse-privacy && cd muse-privacy && uv sync && cp .env.example .env
+git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy && uv sync && cp .env.example .env
 git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
 cmake -S ~/llama.cpp -B ~/llama.cpp/build -DGGML_METAL=ON && cmake --build ~/llama.cpp/build -j --target llama-server
 uvx --from huggingface_hub hf download meta-models/Muse-Glimmer-30B-GGUF Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf --local-dir models
@@ -94,7 +94,7 @@ Later lines in `.env` win, so the `printf` overrides the cloud defaults. `uv run
 Not run on a board yet. Run as root from a checkout on the board; `install.sh` makes the service user, builds llama.cpp with CUDA, downloads and checks Glimmer i1-IQ1_S (6.5 GB), makes a self-signed certificate for the approval page and installs three systemd units. See [deploy/jetson/README.md](deploy/jetson/README.md).
 
 ```sh
-git clone <this repo> muse-privacy && cd muse-privacy
+git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
 sudo deploy/jetson/install.sh --build-llama
 sudoedit /etc/muse-privacy/env       # APPROVAL_HOST, RELAY_URL, WORKSPACE_ROOT, LIGHT_SERIAL
 sudo systemctl start muse-privacy-glimmer muse-privacy
