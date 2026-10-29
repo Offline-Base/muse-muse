@@ -20,13 +20,15 @@ export interface StepSpec {
 
 const MIN = 60_000;
 
+// Brief, build and fix fit Muse Wonder, the default for all three: about 17 s a brief plus a repair call or a video,
+// and build steps about 1.4 times slower than Spark's. The sandbox's 40-minute work window still covers the longest.
 export const STEPS: readonly StepSpec[] = [
-  { name: "brief", does: "Read the inspo and note, write a structured brief or a refusal", timeoutMs: 1.5 * MIN, retries: 2 },
+  { name: "brief", does: "Read the inspo and note, write a structured brief or a refusal", timeoutMs: 2 * MIN, retries: 2 },
   { name: "provision", does: "Get or create the product sandbox from the builder snapshot, copy inspo files to inspo/, write brief.md and fixtures, set the network policy", timeoutMs: 3 * MIN, retries: 2 },
-  { name: "build", does: "Run muse exec detached and stream its JSONL events", timeoutMs: 20 * MIN, retries: 0 },
+  { name: "build", does: "Run muse exec detached and stream its JSONL events", timeoutMs: 25 * MIN, retries: 0 },
   { name: "preview", does: "Start next dev on port 3000 and save sandbox.domain(3000)", timeoutMs: 2 * MIN, retries: 1 },
   { name: "verify", does: "npm run verify, collect screenshots, ask the judge", timeoutMs: 8 * MIN, retries: 0 },
-  { name: "fix", does: "Resume the Muse Code session with the failures", timeoutMs: 10 * MIN, retries: 0 },
+  { name: "fix", does: "Resume the Muse Code session with the failures", timeoutMs: 12 * MIN, retries: 0 },
   // The demo task's cap covers the test run and Demo Studio's render. finishDemo's basic cut has its own limit.
   { name: "record", does: "Rerun the test with Demo Studio's recorder, then edit it into a 1920x1080 MP4 and a poster", timeoutMs: 9 * MIN, retries: 1 },
   { name: "deploy", does: "Read source out of the sandbox and deploy it as the product's Vercel project", timeoutMs: 6 * MIN, retries: 2 },

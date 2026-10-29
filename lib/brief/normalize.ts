@@ -1,4 +1,4 @@
-import type { Brief } from "@/lib/brief/schema";
+import { type Brief, type Layout, LAYOUTS } from "@/lib/brief/schema";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
 /**
@@ -73,6 +73,7 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   if (b.verdict !== "no") b.refusal = null;
   if (Array.isArray(b.primaryFlow)) b.primaryFlow = b.primaryFlow.filter((s) => typeof s !== "string" || s).slice(0, 8);
   if (Array.isArray(b.screens)) b.screens = b.screens.slice(0, 5);
+  if (!LAYOUTS.includes(b.layout as Layout)) b.layout = guessLayout(b);
   for (const a of asArray(b.actions)) if (typeof a.name === "string") a.name = snakeCase(a.name);
   if (typeof b.estimatedCostPerRunUsd === "number") {
     b.estimatedCostPerRunUsd = Math.max(0, Math.round(b.estimatedCostPerRunUsd * 10_000) / 10_000);
@@ -111,6 +112,27 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   return b;
 }
 
+/**
+ * The recipe for a brief that names none (or an unknown one): find for SAM or overlay products, chat when a screen is a
+ * chat or a conversation, else generate.
+ */
+function guessLayout(b: Loose): Layout {
+  const finds =
+    asArray(b.capabilities).some((c) => c.model === "sam-3.1") || asArray(b.outputs).some((o) => o.kind === "overlay");
+  if (finds) return "find";
+  const chats = asArray(b.screens).some((s) => /\b(chat|conversation)/i.test(`${String(s.name ?? "")} ${String(s.purpose ?? "")}`));
+  return chats ? "chat" : "generate";
+}
+
+/** A job that is only a pleasantry: encouragement, a greeting, a cheer, praise or a wish. */
+const PLEASANTRY = /\b(encourag|motivat|greet|cheer|congratulat|compliment|prais|wish)/i;
+/** costNotes that admit the total was rounded instead of computed. */
+const ROUNDED = /\bround(ed|ing)?\b/i;
+
+function wordCount(s: string): number {
+  return s.split(/\s+/).filter(Boolean).length;
+}
+
 /** Problems worth one repair call. */
 export function briefProblems(brief: Brief, references: Reference[]): string[] {
   const problems: string[] = [];
@@ -122,6 +144,22 @@ export function briefProblems(brief: Brief, references: Reference[]): string[] {
     );
   }
   if (brief.verdict === "no" && !brief.refusal) problems.push('refusal must explain why when verdict is "no".');
+  // A refusal fills the rest briefly on purpose, so only a brief that will be built gets the job and cost checks.
+  if (brief.verdict === "no") return problems;
+  const needs = brief.capabilities.map((c) => c.need);
+  if (needs.length && needs.every((n) => PLEASANTRY.test(n))) {
+    problems.push(
+      "Give the model a real job about the person's own data: a plan, a reading, a comparison or a summary that names their items, never only encouragement.",
+    );
+  }
+  brief.capabilities.forEach((c, i) => {
+    if (wordCount(c.need) < 4) {
+      problems.push(`capabilities[${i}].need ("${c.need}") is too short: need is one sentence naming the output the person sees.`);
+    }
+  });
+  if (ROUNDED.test(brief.costNotes)) {
+    problems.push("estimatedCostPerRunUsd is the computed figure to four decimals, never rounded.");
+  }
   return problems;
 }
 

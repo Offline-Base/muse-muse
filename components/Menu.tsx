@@ -15,8 +15,11 @@ export function Menu({
   align = "end",
   disabled,
   buttonClassName = "btn",
+  lead,
 }: {
   text?: string;
+  /** Shown before the text inside the button, such as the account's initials. */
+  lead?: ReactNode;
   label: string;
   icon?: IconName;
   children: ReactNode;
@@ -61,8 +64,9 @@ export function Menu({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
+        {lead}
         {icon ? <Icon name={icon} size={18} /> : null}
-        {text ? <span>{text}</span> : null}
+        {text ? <span className="menu-btn-text">{text}</span> : null}
         {text ? <Icon name="chevronDown" size={16} className="btn-chevron" /> : null}
       </button>
       <div

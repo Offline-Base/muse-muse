@@ -4,7 +4,7 @@
   "slug": "untitled",
   "tagline": "Replace with one line from the brief",
   "inspiration": "Replace with one line on what the user gave and asked for",
-  "models": [{ "id": "muse-spark-1.3", "usedFor": "Replace with what this product uses it for" }],
+  "models": [{ "id": "muse-wonder-1.0", "usedFor": "Replace with what this product uses it for" }],
   "actions": [],
   "fixtures": [],
   "limits": [],

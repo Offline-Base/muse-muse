@@ -8,8 +8,9 @@ import type { ModelUsage, Reference } from "@/lib/types";
 
 /**
  * The refinement gate. A change request never passes through the brief writer, so before a refinement resumes Muse
- * Code, Muse Spark 1.3 checks the message and the new files' names against the same refusal policy. Throws a
- * StructuredOutputError (with its usage) when no valid reply comes back, so the change is never let through unchecked.
+ * Code, the brief model (env.briefModel, Muse Wonder by default) checks the message and the new files' names against
+ * the same refusal policy. Throws a StructuredOutputError (with its usage) when no valid reply comes back, so the
+ * change is never let through unchecked.
  */
 
 /** Field order puts the reasoning before the decision. */

@@ -2,7 +2,8 @@ import type { ModelUsage } from "@/lib/types";
 
 /**
  * Prices in USD. Token prices are per million tokens. From catalog/meta-models.json, which marks several as reported
- * rather than confirmed, so every cost Muse Muse shows is an estimate and is labeled that way.
+ * rather than confirmed, so every cost Muse Muse shows is an estimate and is labeled that way. Muse Wonder is every
+ * role's default since round 4; the Spark rows stay so older builds, products, datasets and runs keep pricing right.
  */
 export const PRICES = {
   "muse-spark-1.3": { input: 1.25, cachedInput: 0.15, output: 4.25 },

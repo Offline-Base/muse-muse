@@ -18,15 +18,23 @@ interface CatalogModel {
   status?: string;
 }
 
+/**
+ * Roles that replace the catalog's where they changed: since round 4 Muse Wonder is the default for a product's own
+ * text and vision calls, and Spark 1.3 stays only for the products built on it (catalog/meta-models.json still calls
+ * Spark the default).
+ */
+const ROLES: Record<string, string> = {
+  "muse-spark-1.3": "Older reasoning, vision and video model, kept for the products built on it",
+  "muse-wonder-1.0": "Meta's strongest model, for reasoning, vision, video, audio input and web search",
+};
+
 /** Facts per model, from docs/SPIKES.md and docs/META_CATALOG.md. */
 const FACTS: Record<string, string[]> = {
-  "muse-spark-1.3": [
-    "The default. Reads photos, screenshots, PDFs and short videos (MP4) directly, and returns JSON that matches a schema.",
-    "Even short answers spend 150 to 400 reasoning tokens, billed as output.",
-  ],
+  "muse-spark-1.3": ["Products made before Muse Wonder use it. A new product uses muse-wonder-1.0 instead."],
   "muse-wonder-1.0": [
-    "Preview, about 3 to 5 times Spark's price. Pick it only for long multi-step planning or web search.",
-    "For speech, prefer muse-voice-transcribe-1.0 and then Spark. Wonder's audio input is untested.",
+    "The default for a product's own text and vision calls. Reads photos, screenshots, PDFs and short videos (MP4) directly, and returns JSON that matches a schema.",
+    "Even short answers spend a few hundred reasoning tokens, billed as output, so count them in the cost.",
+    "For speech, prefer muse-voice-transcribe-1.0 and then Wonder on the transcript. Wonder's audio input is untested.",
   ],
   "muse-image-1.0": [
     "Generates, edits and combines images (1 to 10 input images). Returns base64 JPEG, PNG or WebP.",
@@ -69,7 +77,7 @@ function modelBlock(m: CatalogModel): string {
     .join("; ");
   const context = m.contextTokens ? `; ${Math.round(m.contextTokens / 1000)}k-token context` : "";
   const lines = [
-    `- ${id}${m.status === "preview" ? " (preview)" : ""}: ${m.role}.`,
+    `- ${id}${m.status === "preview" ? " (preview)" : ""}: ${ROLES[id] ?? m.role}.`,
     `  ${io}${context}. Price: ${priceLine(id)}.`,
     ...(FACTS[id] ?? []).map((f) => `  ${f}`),
   ];
@@ -82,7 +90,10 @@ let cached: string | null = null;
 export function catalogSummary(): string {
   if (cached) return cached;
   const allowed = new Set<string>(PRODUCT_MODELS);
-  const hosted = (catalog.models as CatalogModel[]).filter((m) => m.hosted && m.id && allowed.has(m.id));
+  // Muse Wonder first: it is the default for a product's own calls.
+  const hosted = (catalog.models as CatalogModel[])
+    .filter((m) => m.hosted && m.id && allowed.has(m.id))
+    .sort((a, b) => Number(b.id === "muse-wonder-1.0") - Number(a.id === "muse-wonder-1.0"));
   cached = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map(modelBlock),
@@ -91,7 +102,7 @@ export function catalogSummary(): string {
     "Not available on the Model API yet, with the workaround a product uses instead:",
     "- Text-to-speech: the browser's built-in speech synthesis.",
     "- Video generation: a short image sequence from muse-image-1.0.",
-    "- Embeddings: put the documents in Spark 1.3's 1M-token context (fine for small document sets).",
+    "- Embeddings: put the documents in Muse Wonder's 1M-token context (fine for small document sets).",
     "- Realtime voice conversation: record, transcribe, then reply in text.",
     "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
     "",

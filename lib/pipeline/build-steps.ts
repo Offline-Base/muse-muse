@@ -17,7 +17,7 @@ import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/w
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
-import { buildTokenBudgetFor, DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
@@ -399,7 +399,7 @@ export async function provisionStep(input: {
     productId: input.productId,
     scope: "build",
     allowedModels,
-    dailyBudgetUsd: buildTokenBudgetFor(allowedModels),
+    dailyBudgetUsd: buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
   });
   const { sandboxName } = await sandbox.provisionSandbox({
@@ -777,7 +777,8 @@ export async function startDeployStep(input: {
     productId: input.productId,
     scope: "live",
     allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
-    dailyBudgetUsd: DEFAULT_LIMITS.liveTokenDailyBudgetUsd,
+    // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
+    dailyBudgetUsd: liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd),
   });
   const started = await startDeployFromSandbox({
     sandboxName: input.sandboxName,
@@ -805,7 +806,10 @@ async function latestBrief(productId: string): Promise<Brief | null> {
   return row?.brief ?? null;
 }
 
-/** Fallback allowlist: whatever the product's current live token allows. */
+/**
+ * Fallback allowlist: whatever the product's current live token allows. Only products from before briefs were stored
+ * get here, and those were built on Muse Spark 1.3, so a product with no live token keeps Spark.
+ */
 async function liveModels(productId: string): Promise<string[]> {
   const [row] = await db()
     .select({ allowedModels: schema.gatewayTokens.allowedModels })
@@ -1005,7 +1009,7 @@ export async function reopenStep(input: {
     productId: input.productId,
     scope: "build",
     allowedModels,
-    dailyBudgetUsd: buildTokenBudgetFor(allowedModels),
+    dailyBudgetUsd: buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
   });
   const newReferences: Reference[] = inspiration.references;

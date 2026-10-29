@@ -3,29 +3,39 @@
  * system fonts, no Meta logo or wordmark. Mobile first: base rules are for phones, wider screens add to them.
  */
 
+/*
+ * Round 4: the developer-site look (round4 ADDENDUM B and C). The page is #FAFAFA, cards are filled #F3F4F5 with no
+ * border or shadow and big radii, ink is #111112, secondary text a cool slate, hairlines #E0E2E4, every button a pill,
+ * the accent #2962D8. A field, menu or inner block sits on white with a hairline ring, so the place you type is the
+ * brightest thing on a card.
+ */
 :root {
-  --bg: #f2f4f6;
+  --bg: #fafafa;
+  --card: #f3f4f5;
   --surface: #ffffff;
-  --surface-2: #f9f9f9;
-  --surface-3: #e4e6ea;
-  --line: #e0e2e5;
-  --line-strong: #ced0d4;
-  --panel-line: #f2f2f2;
+  --surface-2: #ffffff;
+  --surface-3: #e3e6e9;
+  --pill-card: #dce1e5;
+  --chip: #e0e2e5;
+  --line: #e0e2e4;
+  --line-strong: #cdd2d8;
+  --panel-line: #e7e7e7;
   --fg: #111112;
-  --fg-2: #3d3f44;
-  --muted: #676a71;
-  --faint: #858585;
+  --fg-2: #39414b;
+  --muted: #525f6e;
+  --nav: #676a71;
+  --faint: #868e98;
   --accent: #2962d8;
   --accent-hover: #2156c4;
   --accent-text: #2962d8;
   --accent-ink: #ffffff;
   --accent-soft: #e3ebfa;
-  --nav-active: #cddbf4;
-  --bubble: #e7eaee;
-  --table-head: #e7eaee;
-  --icon-fill: #e2e5e8;
-  --track: #cdd3da;
-  --ink: #28292c;
+  --nav-active: #e3ebfa;
+  --bubble: #eceef1;
+  --table-head: transparent;
+  --icon-fill: #efeff1;
+  --track: #d3d8de;
+  --ink: #111112;
   --hover: rgba(17, 17, 18, 0.05);
   --focus: #2962d8;
   --ok: #157347;
@@ -40,17 +50,30 @@
   --chart-4: #ec8a9e;
   --chart-5: #9aa8b6;
   --chart-6: #b99af0;
+  --soft-panel: linear-gradient(118deg, #fbfcfd 0%, #eff2f7 52%, #c8d3e3 100%);
+  --soft-ring: rgba(17, 17, 18, 0.06);
+  --code-bg: #111112;
+  --code-ring: #ffffff;
+  --code-text: #a1b0c3;
+  --code-key: #ae93ea;
+  --code-thumb: #1f1f22;
+  --code-on: #f2f4f6;
+  --code-off: #a0a4aa;
   --shadow-float: 0 4px 24px rgba(17, 17, 18, 0.08), 0 1px 2px rgba(17, 17, 18, 0.04);
   --shadow-pop: 0 12px 32px rgba(17, 17, 18, 0.14), 0 2px 6px rgba(17, 17, 18, 0.08);
   --shadow-tab: 0 1px 3px rgba(17, 17, 18, 0.12);
+  --shadow-code: 0 18px 40px rgba(30, 44, 74, 0.18), 0 2px 6px rgba(17, 17, 18, 0.08);
 
-  --sidebar-w: 260px;
+  --topbar-h: 64px;
   --panel-w: 360px;
   --col-w: 720px;
   --composer-w: 760px;
-  --page-w: 1088px;
-  --radius-card: 16px;
-  --radius-input: 10px;
+  --page-w: 1120px;
+  --radius-card: 24px;
+  --radius-panel: 28px;
+  --radius-inner: 16px;
+  --radius-code: 20px;
+  --radius-input: 14px;
   --radius-bubble: 28px;
   --pill: 999px;
   --gutter: 16px;
@@ -59,32 +82,44 @@
   color-scheme: light;
 }
 
+@media (min-width: 760px) {
+  :root {
+    --radius-card: 28px;
+    --radius-panel: 32px;
+    --gutter: 24px;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1013;
-    --surface: #16181c;
-    --surface-2: #1b1e23;
-    --surface-3: #262a30;
-    --line: #2b2f35;
-    --line-strong: #3a3f46;
-    --panel-line: #23262b;
-    --fg: #ececee;
-    --fg-2: #c4c7cc;
-    --muted: #9a9ea6;
-    --faint: #7c8087;
-    --accent: #3d74e6;
-    --accent-hover: #5286ec;
-    --accent-text: #8cb2ff;
+    --bg: #0f1012;
+    --card: #1b1c1f;
+    --surface: #24262a;
+    --surface-2: #24262a;
+    --surface-3: #2a2d31;
+    --pill-card: #33363b;
+    --chip: #2e3135;
+    --line: #2a2d31;
+    --line-strong: #3d4148;
+    --panel-line: #2a2d31;
+    --fg: #f2f3f5;
+    --fg-2: #cdd2d9;
+    --muted: #a3acb8;
+    --nav: #a9afb8;
+    --faint: #7f8690;
+    --accent: #3a6ee0;
+    --accent-hover: #2f63d4;
+    --accent-text: #8ab0f5;
     --accent-ink: #ffffff;
-    --accent-soft: #1a2a48;
-    --nav-active: #1d2f52;
-    --bubble: #262a30;
-    --table-head: #22262b;
-    --icon-fill: #2b3037;
-    --track: #3a3f46;
-    --ink: #ececee;
-    --hover: rgba(232, 238, 243, 0.06);
-    --focus: #8cbcff;
+    --accent-soft: #1b2b4a;
+    --nav-active: #1b2b4a;
+    --bubble: #26282c;
+    --table-head: transparent;
+    --icon-fill: #26282c;
+    --track: #3d4148;
+    --ink: #f2f3f5;
+    --hover: rgba(242, 243, 245, 0.06);
+    --focus: #8ab0f5;
     --ok: #5fd39a;
     --ok-soft: #12301f;
     --warn: #f2c063;
@@ -97,37 +132,46 @@
     --chart-4: #ee93a6;
     --chart-5: #7d8b98;
     --chart-6: #b9a0f3;
+    --soft-panel: linear-gradient(118deg, #16181b 0%, #181c22 52%, #22314b 100%);
+    --soft-ring: rgba(242, 243, 245, 0.07);
+    --code-bg: #0a0b0c;
+    --code-ring: rgba(242, 243, 245, 0.1);
     --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --shadow-code: 0 18px 40px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0e1013;
-  --surface: #16181c;
-  --surface-2: #1b1e23;
-  --surface-3: #262a30;
-  --line: #2b2f35;
-  --line-strong: #3a3f46;
-  --panel-line: #23262b;
-  --fg: #ececee;
-  --fg-2: #c4c7cc;
-  --muted: #9a9ea6;
-  --faint: #7c8087;
-  --accent: #3d74e6;
-  --accent-hover: #5286ec;
-  --accent-text: #8cb2ff;
+  --bg: #0f1012;
+  --card: #1b1c1f;
+  --surface: #24262a;
+  --surface-2: #24262a;
+  --surface-3: #2a2d31;
+  --pill-card: #33363b;
+  --chip: #2e3135;
+  --line: #2a2d31;
+  --line-strong: #3d4148;
+  --panel-line: #2a2d31;
+  --fg: #f2f3f5;
+  --fg-2: #cdd2d9;
+  --muted: #a3acb8;
+  --nav: #a9afb8;
+  --faint: #7f8690;
+  --accent: #3a6ee0;
+  --accent-hover: #2f63d4;
+  --accent-text: #8ab0f5;
   --accent-ink: #ffffff;
-  --accent-soft: #1a2a48;
-  --nav-active: #1d2f52;
-  --bubble: #262a30;
-  --table-head: #22262b;
-  --icon-fill: #2b3037;
-  --track: #3a3f46;
-  --ink: #ececee;
-  --hover: rgba(232, 238, 243, 0.06);
-  --focus: #8cbcff;
+  --accent-soft: #1b2b4a;
+  --nav-active: #1b2b4a;
+  --bubble: #26282c;
+  --table-head: transparent;
+  --icon-fill: #26282c;
+  --track: #3d4148;
+  --ink: #f2f3f5;
+  --hover: rgba(242, 243, 245, 0.06);
+  --focus: #8ab0f5;
   --ok: #5fd39a;
   --ok-soft: #12301f;
   --warn: #f2c063;
@@ -140,8 +184,13 @@
   --chart-4: #ee93a6;
   --chart-5: #7d8b98;
   --chart-6: #b9a0f3;
+  --soft-panel: linear-gradient(118deg, #16181b 0%, #181c22 52%, #22314b 100%);
+  --soft-ring: rgba(242, 243, 245, 0.07);
+  --code-bg: #0a0b0c;
+  --code-ring: rgba(242, 243, 245, 0.1);
   --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-code: 0 18px 40px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
 

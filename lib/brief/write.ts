@@ -33,10 +33,10 @@ function total(usage: ModelUsage[]): number {
 }
 
 /**
- * Reads the inspo and note with Muse Spark 1.3 (prompt 1 in docs/PROMPTS.md) and returns a validated brief.
- * Voice memos (16 kHz mono WAV) are transcribed with Muse Voice Transcribe first. A refusal is a normal result:
- * brief.verdict "no" with brief.refusal set. Throws only when the model can't produce a valid brief after a retry
- * (a StructuredOutputError, whose `usage` says what was spent).
+ * Reads the inspo and note with the brief model, env.briefModel (Muse Wonder by default; prompt 1 in
+ * docs/PROMPTS.md), and returns a validated brief. Voice memos (16 kHz mono WAV) are transcribed with Muse Voice
+ * Transcribe first. A refusal is a normal result: brief.verdict "no" with brief.refusal set. Throws only when the model
+ * can't produce a valid brief after a retry (a StructuredOutputError, whose `usage` says what was spent).
  *
  * brief.inspiration.references[].index is the 0-based position in input.references. A rebuild is text only: its
  * references are ignored and the brief's references list is empty.

@@ -21,8 +21,8 @@ export interface MuseExecOptions {
 
 export const DEFAULT_MAX_MODEL_STEPS = 200;
 
-/** What a run uses when the caller doesn't choose. */
-const EXEC_DEFAULTS = { model: "muse-spark-1.3", reasoningEffort: "high", maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
+/** What a run uses when the caller doesn't choose. Muse Wonder is the build default (lib/env.ts). */
+const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: "high", maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
 
 /**
  * Hardening flags the runner adds only when `muse exec --help` lists them (optionalFlagsPrelude). A headless run has

@@ -76,17 +76,19 @@ export function renderBuildPrompt(
     rebuildOf?: RebuildTarget | null;
   },
 ): string {
+  const layout = brief.layout ?? "generate";
   const out: string[] = [];
   out.push(
     "# Build this product",
     "",
-    "Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, read `.agents/skills/meta-ui` for the look, and read the skill for each model listed below.",
+    `Follow AGENTS.md. Before you write code, read this whole brief, look at every file in \`inspo/\`, then read the Hard rules at the top of \`.agents/skills/product-ui\` and \`.agents/skills/meta-ui\`, the recipe \`.agents/skills/product-ui/recipes/${layout}.md\`, and the skill for each model listed below.`,
     "",
     "## Done means",
     "",
     "1. `npm run verify` exits 0.",
     "2. `musemuse.json` is filled in from this brief and valid against `musemuse.schema.json`.",
     "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+    "4. `BUILD_NOTES.md` has a `## UI self-review` section that answers the Definition of done in `.agents/skills/product-ui`.",
     "",
     "Then stop.",
     "",
@@ -105,6 +107,7 @@ export function renderBuildPrompt(
     out.push("", `This muse was refused. ${sentence(brief.refusal ?? "It can't be built with the listed models")} Don't build it. Write the reason in BUILD_NOTES.md and stop.`);
     return out.join("\n") + "\n";
   }
+  out.push(`- Layout: \`${layout}\`. Build the page from its recipe and put \`data-recipe="${layout}"\` on main.`);
 
   out.push(
     "",
@@ -117,7 +120,14 @@ export function renderBuildPrompt(
     `The smoke test's judge screenshots must prove the tagline ("${brief.tagline}"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).`,
   );
   if (brief.screens.length) {
-    out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
+    out.push(
+      "",
+      "## Screens",
+      "",
+      "In this order, main job first. The names are for you: never use them as headings.",
+      "",
+      bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)),
+    );
   }
 
   out.push(
@@ -153,7 +163,7 @@ export function renderBuildPrompt(
     "",
     "## Limits",
     "",
-    "Show each limit a user would run into once in the UI, next to the thing it limits, in plain words for this product's users, and list them all in `musemuse.json`.",
+    "Show at most two limits per card, the ones a user would act on, next to the thing they limit, in plain words for this product's users. List them all in `musemuse.json`.",
     "",
     bullets(brief.limits),
     "",
@@ -230,6 +240,10 @@ export function renderBuildPrompt(
       bullets(toMake.map((f) => `${f.kind}: ${f.description}`)),
     );
   }
+  out.push(
+    "",
+    "The page's sample tiles load copies you keep in `public/samples/` under plain names (product-ui P16). The browser can't load `fixtures/`.",
+  );
 
   const models = uniqueModels(brief);
   out.push(
@@ -237,8 +251,10 @@ export function renderBuildPrompt(
     "## Budget",
     "",
     `Stay under ${opts.maxModelSteps} steps. If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md.`,
-    models.includes("muse-wonder-1.0") ? "Muse Wonder is in preview and costs more. Use it only where the brief says." : "",
-    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
+    models.includes("muse-wonder-1.0")
+      ? "Muse Wonder is in preview and bills its reasoning as output, so even a short answer spends a few hundred output tokens."
+      : "",
+    `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep each cap at the answer's size plus room for reasoning, and never below 600 tokens (meta-reasoning). If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );
   return out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n").trim() + "\n";
 }
@@ -277,6 +293,7 @@ export function renderFixPrompt(input: {
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
     "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Fix what the judge saw with those, not with new colors, fonts or styles.",
+    "- Each check failure and judge note names a hard rule (product-ui P1 to P16, meta-ui M1 to M8). Fix the product the way that rule says. Never move data-result, hide a result or shorten the model's answer to pass a check.",
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
   ];
 
@@ -365,6 +382,8 @@ export function briefToMarkdown(brief: Brief): string {
   const verdict = { yes: "Can be made", partly: "Can be made, with limits", no: "Refused" }[brief.verdict];
   const out: string[] = [`# ${brief.name}`, "", brief.tagline, "", `**For:** ${brief.user}`, "", `**Verdict:** ${verdict}`];
   if (brief.verdict === "no" && brief.refusal) out.push("", quote(brief.refusal));
+  // The judge reads the recipe. Briefs from before round 4 have none, and their products weren't built from one.
+  if (brief.verdict !== "no" && brief.layout) out.push("", `**Layout:** ${brief.layout}`);
 
   out.push("", "## Inspiration", "", brief.inspiration.summary);
   if (brief.inspiration.references.length) {

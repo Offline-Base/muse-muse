@@ -13,8 +13,15 @@ export const PRODUCT_MODELS = [
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);
 
 /**
- * The brief Muse Spark 1.3 writes from a muse: the user's references plus an optional note (docs/PROMPTS.md, prompt 1).
- * It drives the build prompt, the gateway allowlist and the product page.
+ * The page recipes in the template's `.agents/skills/product-ui/recipes/<layout>.md`, one per kind of product. The
+ * build prompt names the brief's recipe and the product marks its main with it (`data-recipe`, verify C20).
+ */
+export const LAYOUTS = ["generate", "extract", "workspace", "steps", "compare", "find", "chat"] as const;
+export type Layout = (typeof LAYOUTS)[number];
+
+/**
+ * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
+ * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
  */
 export const BriefSchema = z.object({
   verdict: z.enum(["yes", "partly", "no"]),
@@ -39,6 +46,8 @@ export const BriefSchema = z.object({
   }),
   primaryFlow: z.array(z.string().min(1)).min(1).max(8),
   screens: z.array(z.object({ name: z.string(), purpose: z.string() })).max(5),
+  /** The page recipe. Optional so briefs stored before round 4 still parse; normalizeRawBrief fills it for new ones. */
+  layout: z.enum(LAYOUTS).optional(),
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(PRODUCT_MODELS), why: z.string() }))
     .min(1),

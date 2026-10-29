@@ -17,12 +17,17 @@ export const GATEWAY_ENDPOINTS = Object.keys(ENDPOINT_MODELS) as GatewayEndpoint
 export const DEFAULT_LIMITS = {
   /**
    * What one build's tests may spend on Meta through its build token: every verify run, every fix round and the demo
-   * recording share it. The gateway reserves each call's estimate up front, from its max_output_tokens.
+   * recording share it. The gateway reserves each call's estimate up front, from its max_output_tokens. One figure for
+   * every build: a product's own text and vision calls use Muse Wonder, about $0.30 a test run, so about 15 verify
+   * runs, the fix rounds and the demo come to about $4.50. Refinements of older Spark products get the same room.
    */
-  buildTokenBudgetUsd: 3,
-  /** The same for a product that may call Muse Wonder, whose output costs about five times Spark's. */
-  buildTokenBudgetWonderUsd: 10,
+  buildTokenBudgetUsd: 10,
+  /** A live product's daily Meta budget at least. It resets at 00:00 UTC. */
   liveTokenDailyBudgetUsd: 3,
+  /** Runs a live product's daily budget covers at its brief's estimated cost per run, when that is more than the floor. */
+  liveTokenDailyRuns: 20,
+  /** The most a live product's daily budget grows to, so one busy product can't spend the platform's whole daily cap. */
+  liveTokenDailyBudgetMaxUsd: 10,
   perTokenRequestsPerMinute: 120,
   /** Applies when the product forwards its end user's IP in x-musemuse-client-ip. */
   perIpRequestsPerMinute: 20,
@@ -47,9 +52,23 @@ export const DEFAULT_LIMITS = {
   mcpActionTimeoutMs: 120_000,
 } as const;
 
-/** The build token's budget for a product allowed these models. */
-export function buildTokenBudgetFor(models: readonly string[]): number {
-  return models.includes("muse-wonder-1.0") ? DEFAULT_LIMITS.buildTokenBudgetWonderUsd : DEFAULT_LIMITS.buildTokenBudgetUsd;
+/**
+ * The build token's budget: the same for every build, whatever models the product may call (DEFAULT_LIMITS). The
+ * argument is ignored and kept so older callers still compile.
+ */
+export function buildTokenBudgetFor(_models: readonly string[] = []): number {
+  return DEFAULT_LIMITS.buildTokenBudgetUsd;
+}
+
+/**
+ * A live product's daily budget: room for 20 runs at its brief's estimated cost per run, plus one more run for the
+ * estimates the gateway reserves while calls are still running, rounded up to whole dollars, between the $3 floor and
+ * the $10 ceiling. A product whose brief has no estimate gets the floor.
+ */
+export function liveTokenDailyBudgetFor(estimatedCostPerRunUsd: number | null | undefined): number {
+  const perRun = Number.isFinite(estimatedCostPerRunUsd) && (estimatedCostPerRunUsd as number) > 0 ? (estimatedCostPerRunUsd as number) : 0;
+  const fits = Math.ceil(perRun * (DEFAULT_LIMITS.liveTokenDailyRuns + 1) - 1e-9);
+  return Math.min(DEFAULT_LIMITS.liveTokenDailyBudgetMaxUsd, Math.max(DEFAULT_LIMITS.liveTokenDailyBudgetUsd, fits));
 }
 
 /** Header a product sets to its end user's IP so the gateway can rate limit per person. Never used for auth. */

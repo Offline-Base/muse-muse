@@ -7,7 +7,8 @@ import { plainDeep } from "./text";
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 export interface RespondJsonOptions<T> {
-  model?: "muse-spark-1.3" | "muse-wonder-1.0";
+  /** Default "muse-wonder-1.0", the model for a product's own text and vision calls. Older products pass Spark. */
+  model?: "muse-wonder-1.0" | "muse-spark-1.3";
   schema: z.ZodType<T>;
   /** Letters, digits, _ and -. Sent as the json_schema name. */
   schemaName: string;
@@ -16,6 +17,7 @@ export interface RespondJsonOptions<T> {
   input: string | unknown[];
   /** Default "low". Even trivial answers use 150 to 400 reasoning tokens at low. */
   reasoningEffort?: JsonReasoningEffort;
+  /** Reasoning tokens count against it, so keep it at the answer's size plus room for reasoning, never below 600. */
   maxOutputTokens?: number;
   /** The incoming request, or `await headers()` in a server action, so the gateway can rate limit each visitor. */
   request?: RequestLike | null;
@@ -77,7 +79,7 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     let res: Response;
     try {
       res = await client.responses.create({
-        model: opts.model ?? "muse-spark-1.3",
+        model: opts.model ?? "muse-wonder-1.0",
         instructions: instructionsFor(current, opts.instructions, plain),
         input,
         reasoning: { effort: opts.reasoningEffort ?? "low" },
