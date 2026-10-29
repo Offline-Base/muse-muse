@@ -14,3 +14,4 @@ eval/.cache/
 eval/reports/raw/*.log
 .DS_Store
 node_modules/
+.vercel/

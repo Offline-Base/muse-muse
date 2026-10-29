@@ -188,3 +188,4 @@ Not measured yet: Glimmer's speed on the laptop and on a Jetson, the Jetson's me
 | `hardware/` | Status light firmware and the enclosure model |
 | `demo/` | The invented class folder (marked `.synthetic`) |
 | `docs/` | Contracts, decisions, prior work, Muse setup, demo script, handoff |
+| `site/` | The landing page with the animated walkthrough: static HTML, CSS and JS that load nothing from other sites. Open `site/index.html`, or serve it with `python3 -m http.server 8765 --bind 127.0.0.1 --directory site` |
