@@ -1,0 +1,10 @@
+path=<cache>/models/smoke-smollm2-135m-q4_0/SmolLM2-135M-Instruct-Q4_0.gguf
+bytes_expected=91893088
+bytes=91893088
+sha256_expected=bcc3af2849ad6095af57e9b5cd43775256efdc66e306acb529172f92d0c04b03
+sha256=bcc3af2849ad6095af57e9b5cd43775256efdc66e306acb529172f92d0c04b03
+check=ok
+tool=sha256sum
+seconds=0
+fetched=0
+fetch_seconds=

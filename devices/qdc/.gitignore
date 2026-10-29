@@ -1,0 +1,3 @@
+# Python test runs leave bytecode; nothing else here is generated.
+__pycache__/
+*.pyc

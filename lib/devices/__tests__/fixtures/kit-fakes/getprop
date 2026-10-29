@@ -1,0 +1,21 @@
+#!/bin/sh
+# A fake getprop for lib/devices/__tests__/kit.test.ts: an Android 16 phone with a Snapdragon (FAKE_SDK sets the API
+# level). It logs every property asked for, so the test can check the kit never asks for a serial number.
+
+printf '%s\n' "$1" >> "$FAKE_LOG/getprop.asked"
+case $1 in
+  ro.product.manufacturer) v=QUALCOMM ;;
+  ro.product.model) v='Fake Phone 24' ;;
+  ro.product.brand) v=qti ;;
+  ro.product.device) v=fakephone ;;
+  ro.build.version.release) v=16 ;;
+  ro.build.version.sdk) v=${FAKE_SDK:-36} ;;
+  ro.soc.manufacturer) v=QTI ;;
+  ro.soc.model) v=SM8850 ;;
+  ro.board.platform) v=canoe ;;
+  ro.hardware) v=qcom ;;
+  ro.product.cpu.abi) v=arm64-v8a ;;
+  ro.serialno | ro.boot.serialno) v=FAKESERIAL0042 ;;
+  *) v= ;;
+esac
+printf '%s\n' "$v"

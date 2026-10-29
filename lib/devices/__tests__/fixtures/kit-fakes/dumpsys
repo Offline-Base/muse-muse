@@ -1,0 +1,8 @@
+#!/bin/sh
+# A fake dumpsys for lib/devices/__tests__/kit.test.ts: the two services the kit reads (FAKE_THERMAL sets the status).
+
+case $1 in
+  thermalservice) printf 'IsStatusOverride: false\nThermal Status: %s\nCached temperatures:\n' "${FAKE_THERMAL:-1}" ;;
+  battery) printf 'Current Battery Service state:\n  AC powered: false\n  level: 80\n  temperature: 312\n' ;;
+esac
+exit 0

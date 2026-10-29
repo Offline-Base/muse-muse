@@ -1,0 +1,4 @@
+#!/bin/bash
+# sha256sum for host.sh's tests on a Mac, where it may be missing: shasum prints the same "<hash>  <file>" lines.
+if command -v shasum >/dev/null 2>&1; then exec shasum -a 256 "$@"; fi
+exec /usr/bin/sha256sum "$@"

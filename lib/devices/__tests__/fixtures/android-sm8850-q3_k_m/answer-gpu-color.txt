@@ -1,0 +1,2 @@
+ to=self<|message|>Blue and yellow paint make green. One word.<|eom|><|start|>assistant to=user<|message|>Green<|eot|> [end of text]
+

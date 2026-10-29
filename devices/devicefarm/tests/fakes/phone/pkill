@@ -1,0 +1,3 @@
+#!/bin/sh
+# pkill on the fake phone: records the call.
+printf 'pkill %s\n' "$*" >>"$FAKE_PHONE/pkill.log"

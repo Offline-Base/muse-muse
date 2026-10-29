@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "results": 1,
+  "newest": "20261029T031655Z",
+  "tiers": [
+    {
+      "os": "android",
+      "ramGiB": 12,
+      "changes": false,
+      "rating": null,
+      "words": null,
+      "line": null,
+      "subjectId": null,
+      "kind": null,
+      "quant": null,
+      "fileBytes": null,
+      "genTps": null,
+      "devices": [],
+      "evidence": "No phone with 12 GB tested yet."
+    },
+    {
+      "os": "android",
+      "ramGiB": 16,
+      "changes": false,
+      "rating": null,
+      "words": null,
+      "line": null,
+      "subjectId": null,
+      "kind": null,
+      "quant": null,
+      "fileBytes": null,
+      "genTps": null,
+      "devices": [],
+      "evidence": "No phone with 16 GB tested yet."
+    },
+    {
+      "os": "android",
+      "ramGiB": 24,
+      "changes": false,
+      "rating": null,
+      "words": null,
+      "line": null,
+      "subjectId": null,
+      "kind": null,
+      "quant": null,
+      "fileBytes": null,
+      "genTps": null,
+      "devices": [],
+      "evidence": "No phone with 24 GB tested yet."
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+#!/bin/bash
+# A fake curl for host.sh's tests: serves $FAKE_ROOT/hub/<the URL's file name>, into -o (resuming with -C -) or to
+# stdout (from -C <n>). It logs whether HF_TOKEN reached it. FAKE_CURL_FAIL=1 fails with a signed URL in its message;
+# FAKE_CURL_CUT=<n> cuts the first stream after n bytes.
+set -u
+if [ "${1:-}" = --version ]; then
+  echo "curl 8.11.1 (fake)"
+  exit 0
+fi
+out=""
+from=""
+url=""
+printf 'hf_token=%s args=%s\n' "${HF_TOKEN:-unset}" "$*" >>"$FAKE_ROOT/curl.log"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o)
+      out=$2
+      shift 2
+      ;;
+    -C)
+      from=$2
+      shift 2
+      ;;
+    --retry | --retry-delay) shift 2 ;;
+    -*) shift ;;
+    *)
+      url=$1
+      shift
+      ;;
+  esac
+done
+file="$FAKE_ROOT/hub/${url##*/}"
+if [ "${FAKE_CURL_FAIL:-}" = 1 ] || [ ! -f "$file" ]; then
+  echo "curl: (22) The requested URL returned error: 404 for https://cas-bridge.example/x.gguf?X-Amz-Signature=fakesig" >&2
+  exit 22
+fi
+if [ -n "$out" ]; then
+  have=0
+  if [ "$from" = - ] && [ -f "$out" ]; then have=$(wc -c <"$out" | tr -d ' '); fi
+  tail -c +$((have + 1)) "$file" >>"$out"
+  exit 0
+fi
+start=${from:-0}
+n=$(cat "$FAKE_ROOT/curl.count" 2>/dev/null || echo 0)
+n=$((n + 1))
+echo "$n" >"$FAKE_ROOT/curl.count"
+if [ -n "${FAKE_CURL_CUT:-}" ] && [ "$n" = 1 ]; then
+  tail -c +$((start + 1)) "$file" | head -c "$FAKE_CURL_CUT"
+  echo "curl: (18) transfer closed with outstanding read data remaining" >&2
+  exit 18
+fi
+tail -c +$((start + 1)) "$file"

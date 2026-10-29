@@ -1,0 +1,7 @@
+#!/bin/bash
+# df for host.sh's tests: FAKE_HOST_FREE_KB makes the host's disk that small; otherwise the real df answers.
+if [ -n "${FAKE_HOST_FREE_KB:-}" ]; then
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/fake 100000000 1 %s 1%% /\n' "$FAKE_HOST_FREE_KB"
+  exit 0
+fi
+exec /bin/df "$@"

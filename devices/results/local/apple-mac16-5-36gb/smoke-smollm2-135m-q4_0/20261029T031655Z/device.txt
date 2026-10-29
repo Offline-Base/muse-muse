@@ -1,0 +1,11 @@
+platform=macos
+kernel=25.5.0
+arch=arm64
+ram_kb=37748736
+cores=14
+disk_free_kb=10495324
+hw_model=Mac16,5
+macos=26.5.1
+chip=Apple M4 Max
+perf_cores=10
+memorystatus_level=45

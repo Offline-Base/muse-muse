@@ -1,0 +1,150 @@
+#!/bin/sh
+# A fake llama-bench for lib/devices/__tests__/kit.test.ts. With --list-devices it lists FAKE_DEVICES (comma-separated
+# names). Otherwise it prints llama-bench's JSONL and a -v style log for the backend its -dev names (none is cpu,
+# GPUOpenCL or MTL0 is gpu, HTP<n> is npu), the way FAKE_BENCH_<backend> says:
+#   ok (the default)  the pp line, then the tg line (FAKE_PP_<backend> and FAKE_TG_<backend> set the speeds)
+#   slow              the pp line, then sleeps until the kit's watchdog stops it
+#   stubborn          the same, ignoring TERM, so only the watchdog's KILL 10 s later ends it
+#   lmk               the pp line, then a low-memory kill: logcat's line for its pid, then SIGKILL
+#   signal9           the pp line, then a SIGKILL with no low-memory log
+#   crash             SIGALRM, which stands in for a crash signal (macOS writes a crash report for a real SIGSEGV)
+#   error             a load error on stderr, exit 1
+#   empty             nothing, exit 0
+# Each call records its arguments (one per line), its environment and its pid in $FAKE_LOG, as bench-<backend>.args,
+# .env and .pid (list-<backend>.* for --list-devices). FAKE_HOLD keeps an ok or lmk bench running that many seconds
+# after its first line, and under MM_TEST_PROC it writes the /proc/<pid>/status and the busy MemAvailable Android would
+# show meanwhile.
+
+list=0 dev=none p=128 n=16 model=
+parse() {
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --list-devices) list=1 ;;
+      -dev) dev=$2; shift ;;
+      -m) model=$2; shift ;;
+      -p) p=$2; shift ;;
+      -n) n=$2; shift ;;
+    esac
+    shift
+  done
+}
+parse "$@"
+
+if [ "$list" = 1 ]; then
+  if [ -n "${GGML_HEXAGON_DEVICES:-}" ]; then b=npu; else b=gpu; fi
+  kind=list
+else
+  case $dev in
+    none) b=cpu ;;
+    GPUOpenCL | MTL0) b=gpu ;;
+    HTP*) b=npu ;;
+    *) b=other ;;
+  esac
+  kind=bench
+fi
+for a in "$@"; do printf '%s\n' "$a"; done > "$FAKE_LOG/$kind-$b.args"
+env | sort > "$FAKE_LOG/$kind-$b.env"
+printf '%s\n' "$$" > "$FAKE_LOG/$kind-$b.pid"
+
+if [ "$list" = 1 ]; then
+  printf "ggml_opencl: selected platform: 'QUALCOMM Snapdragon(TM)'\n" >&2
+  printf 'Available devices:\n'
+  for d in $(printf '%s' "${FAKE_DEVICES:-}" | tr ',' ' '); do
+    printf '  %s: Fake %s (11601 MiB, 10577 MiB free)\n' "$d" "$d"
+  done
+  exit 0
+fi
+
+mode=ok pp=50.25 tg=10.5
+eval "mode=\${FAKE_BENCH_$b:-$mode}"
+eval "pp=\${FAKE_PP_$b:-$pp}"
+eval "tg=\${FAKE_TG_$b:-$tg}"
+
+# One llama-bench JSONL line: n_prompt, n_gen, avg_ts.
+line() {
+  printf '{"build_commit": "620d2225c", "build_number": 11669, "cpu_info": "CPU", "gpu_info": "Fake", "backends": "CPU", "model_filename": "%s", "model_type": "fake 30B Q3_K - Medium", "model_size": 13949405184, "model_n_params": 27854794240, "n_batch": 2048, "n_ubatch": 512, "n_threads": 8, "devices": "%s", "n_prompt": %s, "n_gen": %s, "n_depth": 0, "test_time": "2026-10-28T23:52:16Z", "avg_ns": 22825014730, "stddev_ns": 0, "avg_ts": %s, "stddev_ts": 0.000000, "samples_ns": [ 22825014730, 22825014730 ],"samples_ts": [ %s, %s ]}\n' \
+    "$model" "$dev" "$1" "$2" "$3" "$3" "$3"
+}
+
+log() {
+  printf 'llama_model_loader: loaded meta data with 37 key-value pairs and 272 tensors from %s\n' "$model"
+  printf 'create_tensor: loading tensor blk.0.attn_q.weight\n'
+  printf 'llama_graph_n_input_tensors: 7\n'
+  printf "ggml_metal_library_compile_all: compiled 'fa_aux' library in 1.000 sec\n"
+  printf "done_getting_tensors: tensor 'token_embd.weight' (q8_0) (and 64 others) cannot be used with preferred buffer type CPU_REPACK, using CPU instead\n"
+  if [ "$b" = cpu ]; then
+    printf 'load_tensors: offloaded 0/53 layers to GPU\n'
+  else
+    printf 'load_tensors: offloaded 53/53 layers to GPU\n'
+    printf 'load_tensors:  %s model buffer size =  9000.00 MiB\n' "${dev%%[,/]*}"
+  fi
+  printf 'load_tensors:   CPU_Mapped model buffer size =   100.50 MiB\n'
+  printf 'load_tensors:   CPU_Mapped model buffer size =    20.25 MiB\n'
+  printf 'llama_kv_cache:        CPU KV buffer size =    50.00 MiB\n'
+  printf 'sched_reserve:        CPU compute buffer size =    30.00 MiB\n'
+  printf 'sched_reserve:        CPU compute buffer size =     3.00 MiB\n'
+}
+
+busy() {
+  [ -n "${MM_TEST_PROC:-}" ] || return 0
+  mkdir -p "$MM_TEST_PROC/$$"
+  printf 'Name:\tllama-bench\nVmHWM:\t%s kB\nVmRSS:\t4000000 kB\nRssAnon:\t1200000 kB\nRssFile:\t2800000 kB\n' \
+    "${FAKE_HWM_KB:-5624832}" > "$MM_TEST_PROC/$$/status"
+  cp "$MM_TEST_PROC/meminfo.busy" "$MM_TEST_PROC/meminfo"
+}
+
+idle() {
+  [ -n "${MM_TEST_PROC:-}" ] || return 0
+  cp "$MM_TEST_PROC/meminfo.idle" "$MM_TEST_PROC/meminfo"
+}
+
+case $mode in
+  ok)
+    log >&2
+    busy
+    line "$p" 0 "$pp"
+    sleep "${FAKE_HOLD:-0}"
+    line 0 "$n" "$tg"
+    idle
+    exit 0
+    ;;
+  slow)
+    log >&2
+    line "$p" 0 "$pp"
+    exec sleep 60
+    ;;
+  stubborn)
+    log >&2
+    line "$p" 0 "$pp"
+    trap '' TERM
+    exec sleep 60
+    ;;
+  lmk)
+    log >&2
+    busy
+    line "$p" 0 "$pp"
+    sleep "${FAKE_HOLD:-0}"
+    printf "10-28 23:52:40.120  1201  1201 I lowmemorykiller: Kill 'llama-bench' (%s), uid 2000, oom_score_adj 0 to free 5624832kB rss, 0kB swap; reason: device is low on swap and thrashing\n" "$$" >> "$FAKE_LOG/logcat.txt"
+    printf '10-28 23:52:40.121  1201  1201 I killinfo: [%s,2000,0,0,5624832,0,98304,120000]\n' "$$" >> "$FAKE_LOG/logcat.txt"
+    kill -9 $$
+    ;;
+  signal9)
+    log >&2
+    line "$p" 0 "$pp"
+    kill -9 $$
+    ;;
+  crash)
+    log >&2
+    kill -ALRM $$
+    ;;
+  error)
+    printf 'llama_model_load: error loading model: unable to allocate GPUOpenCL buffer\n' >&2
+    printf 'llama_model_load_from_file_impl: failed to load model\n' >&2
+    printf "main: error: failed to load model '%s'\n" "$model" >&2
+    exit 1
+    ;;
+  empty)
+    exit 0
+    ;;
+esac
+exit 9

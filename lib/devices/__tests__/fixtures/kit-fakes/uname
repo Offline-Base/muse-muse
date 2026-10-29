@@ -1,0 +1,8 @@
+#!/bin/sh
+# A fake uname for lib/devices/__tests__/kit.test.ts: an arm64 Linux kernel, as Android phones and Linux boards report.
+
+case ${1:-} in
+  -r) printf '6.6.30-android15-fake\n' ;;
+  -m) printf 'aarch64\n' ;;
+  *) printf 'Linux\n' ;;
+esac

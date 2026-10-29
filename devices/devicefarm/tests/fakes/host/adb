@@ -1,0 +1,80 @@
+#!/bin/bash
+# A fake adb for host.sh's tests (lib/devices/__tests__/devicefarm-host.test.ts). "The phone" is $FAKE_ROOT/phone:
+# /data/local/tmp and /proc/ in its commands point there, and its shell finds the phone's own tools in $FAKE_ROOT/phonebin.
+# FAKE_ADB_NOISY=1 prints the serial on stderr (host.sh must scrub it); FAKE_ADB_DROP=1 drops the session that runs
+# the kit, leaving the kit running.
+set -u
+if [ "${1:-}" = version ]; then
+  echo "Android Debug Bridge version 1.0.41"
+  exit 0
+fi
+if [ "${1:-}" != "-s" ] || [ -z "${2:-}" ]; then
+  echo "fake adb: no -s <serial>" >&2
+  exit 1
+fi
+serial=$2
+shift 2
+printf '%s\n' "$*" >>"$FAKE_ROOT/adb.log"
+phone="$FAKE_ROOT/phone"
+
+map() {
+  local s=$1
+  s=${s//\/data\/local\/tmp/$phone\/data\/local\/tmp}
+  s=${s//\/proc\//$phone\/proc\/}
+  printf '%s' "$s"
+}
+
+noisy() {
+  if [ "${FAKE_ADB_NOISY:-}" = 1 ]; then printf 'adb: device %s says hello\n' "$serial" >&2; fi
+  return 0
+}
+
+on_phone() { PATH="$FAKE_ROOT/phonebin:/usr/bin:/bin" FAKE_PHONE="$phone" /bin/sh -c "$1"; }
+
+cmd=${1:-}
+shift || true
+case "$cmd" in
+  wait-for-device)
+    noisy
+    exit 0
+    ;;
+  version)
+    echo "Android Debug Bridge version 1.0.41"
+    exit 0
+    ;;
+  push)
+    noisy
+    src=$1
+    dst=$(map "$2")
+    if [ -d "$src" ]; then mkdir -p "$dst" && cp -R "$src" "$dst"; else cp "$src" "$dst"; fi
+    exit $?
+    ;;
+  pull)
+    src=$(map "$1")
+    dst=$2
+    if [ ! -e "$src" ]; then
+      echo "adb: error: failed to stat remote object '$1' on $serial" >&2
+      exit 1
+    fi
+    if [ -d "$src" ]; then mkdir -p "$dst" && cp -R "$src" "$dst"; else cp "$src" "$dst"; fi
+    exit $?
+    ;;
+  shell)
+    line=$(map "$*")
+    if [ "${FAKE_ADB_DROP:-}" = 1 ] && [[ "$line" == *kit/run.sh* ]]; then
+      (on_phone "$line" </dev/null >/dev/null 2>&1 &)
+      echo "adb: error: device '$serial' not found" >&2
+      exit 255
+    fi
+    on_phone "$line"
+    exit $?
+    ;;
+  exec-in)
+    on_phone "$(map "$*")"
+    exit $?
+    ;;
+  *)
+    echo "fake adb: unknown command $cmd" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,2284 @@
+{
+ "devices": [
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:DF55D3152CC94B6BAC3FA52333390D86",
+   "name": "Samsung Galaxy S25 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S25 Ultra",
+   "modelId": "SM-S938U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3532.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B5B8A501E7284D7FB15E6335C98A3F42",
+   "name": "Samsung Galaxy S23 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S23 Ultra",
+   "modelId": "SM-S918U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3088
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:64808E728BD14BE9A6225C7C4D4AAA74",
+   "name": "Google Pixel 6 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 6",
+   "modelId": "Pixel 6",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:AC2E189FD1154D05BFCC187783715555",
+   "name": "Google Pixel 8",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8",
+   "modelId": "G9BQD",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:F1F430887AA74E3DA0C5BE398644D897",
+   "name": "Samsung Galaxy A25",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A25",
+   "modelId": "SM-A256E",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:6E6BC082EF9E4495839268F02AE0AF53",
+   "name": "Samsung Galaxy S22 Ultra 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S22 Ultra 5G",
+   "modelId": "SM-S908U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "BUSY",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3088
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B199BFDD617B46C192A60F137B0D376F",
+   "name": "Google Pixel 10 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 10 Pro",
+   "modelId": "G4QUR",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2246.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2410
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:65B6E559AC3F4D61A00C03E958F3D3E1",
+   "name": "Samsung Galaxy S24 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S24 Ultra",
+   "modelId": "SM-S928U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2265.6
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:0C72A127F7594A59AC54A35E4D2FCF1C",
+   "name": "Google Pixel 8 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8 Pro",
+   "modelId": "G1MNW",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1008,
+    "height": 2244
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:82768D0E82984EB9B9C8CB599FAAB629",
+   "name": "Google Pixel 11 Pro XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 11 Pro XL",
+   "modelId": "G4HCD",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2649.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2404
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:C1D4B8084115445DA3866CA8BD739804",
+   "name": "Samsung Galaxy A53 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A53 5G",
+   "modelId": "SM-A536U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:D0088A2C7BB34361AA9725F11A6587C1",
+   "name": "Google Pixel 4 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 4 (Unlocked)",
+   "modelId": "{GA01188-US}",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": false,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2280
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:653D5AB0CD6B4EA88DFAE9AD4386F608",
+   "name": "Xiaomi Redmi Note 13",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi Redmi Note 13",
+   "modelId": "2312DRAABC",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:049D8D2FD8644F7FB5BA2D9214E99ED9",
+   "name": "Xiaomi Redmi Note 13+",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi Redmi Note 13+",
+   "modelId": "23090RA98G",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1220,
+    "height": 2712
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:BF6D74AEAE0148C48809DAAB5CAA2351",
+   "name": "Google Pixel 5a 5G",
+   "manufacturer": "Google",
+   "model": "Google Pixel 5a 5G",
+   "modelId": "GA02618US",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:F070C2816A9A444EB28ED624EDE7F789",
+   "name": "Google Pixel 2 XL",
+   "manufacturer": "Google",
+   "model": "Pixel 2 XL",
+   "modelId": "Google Pixel 2 XL",
+   "platform": "ANDROID",
+   "os": "8.1.0",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": false,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1900.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 2880
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E10A10A4F8AD4DA6926C1A03E4BF854F",
+   "name": "Samsung Galaxy A16",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A16",
+   "modelId": "SM-A165F",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:49DF63F491EE48C1B5B3944104705D62",
+   "name": "Google Pixel 8a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8a",
+   "modelId": "GKV4X",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:11E27BF80323455C855874FC3CC710DA",
+   "name": "Google Pixel 5 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Pixel 5",
+   "modelId": "{Pixel 5}",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:AA37B3CCF18646768076F8A9E40760A1",
+   "name": "Samsung Galaxy S22+ 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S22+ 5G",
+   "modelId": "SM-S906U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B581CB032FB243778741BAE3FFA901D1",
+   "name": "Google Pixel 10",
+   "manufacturer": "Google",
+   "model": "Google Pixel 10",
+   "modelId": "GLBW0",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2246.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:ECE1E6B96465457EB276CCBA1448C1B4",
+   "name": "Google Pixel 4 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 4 (Unlocked)",
+   "modelId": "{GA01188-US}",
+   "platform": "ANDROID",
+   "os": "10",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2280
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:A571183F1FF74A798C9C5DA2AEC820D8",
+   "name": "Google Pixel 8a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8a",
+   "modelId": "GKV4X",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:C1302B64CEB7409787C701BE4856FEEB",
+   "name": "Google Pixel 6 Pro (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 6 Pro",
+   "modelId": "Pixel 6 Pro",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:88535AECC5554E218B497CDCA53D654F",
+   "name": "Google Pixel 8a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8a",
+   "modelId": "GKV4X",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:352F084CFD5243C3A6D9FF08DB909207",
+   "name": "Samsung Galaxy A73 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A73 5G",
+   "modelId": "SM-A736B",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:C2F2BF5633994E75942BE2EB246C2709",
+   "name": "Samsung Galaxy S26",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S26",
+   "modelId": "SM-S942U1",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3628.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:3D4CBC528B7D4523941002B86DE919E7",
+   "name": "Samsung Galaxy A24 4G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A24 4G",
+   "modelId": "SM-A245M",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:79F9A58D576F4D2AB1A8AAF683201ADB",
+   "name": "Samsung Galaxy A14 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A14 5G",
+   "modelId": "SM-A146U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2408
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:7DFDC08BBD284E8EAF9F47680FB60C0D",
+   "name": "Google Pixel 3a XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3a XL",
+   "modelId": "G020C",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1708.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2160
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:D01CF86149334AEF867B2A8E0B91A815",
+   "name": "Samsung Galaxy Note20",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy Note20",
+   "modelId": "SM-N980F",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:59BA4A879C904058B7831D902B82C22A",
+   "name": "Google Pixel 9 Pro XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9 Pro XL",
+   "modelId": "GZC4K",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1008,
+    "height": 2244
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:0029CB20FD15413E80088D250ACDB0DD",
+   "name": "Samsung Galaxy S25+",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S25+",
+   "modelId": "SM-S936U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3532.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:601095261F73476B92209274AD22553A",
+   "name": "Google Pixel 10 Pro XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 10 Pro XL",
+   "modelId": "GUL82",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2246.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2404
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:092D78E7B4694568812D5FF0711CD346",
+   "name": "Samsung Galaxy S25",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S25",
+   "modelId": "SM-S931U1",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3532.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B85CE06C394C4F05830F806798E35F91",
+   "name": "Samsung Galaxy A71",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A71",
+   "modelId": "SM-A715F/DS",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:F38F4144412747B1B1271DA89C6E19D6",
+   "name": "Google Pixel 9 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9 Pro",
+   "modelId": "GEC77",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 960,
+    "height": 2142
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:EF75ABC511764AD397782D0AEE780A2F",
+   "name": "Samsung Galaxy S23",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S23",
+   "modelId": "SM-S911U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:C1FE022C814241559C05C0DAF39F44FB",
+   "name": "Xiaomi 13 Pro",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi 13 Pro",
+   "modelId": "2210132G",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3200
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:D68E5F854EC44935A8E4B348467FC3F9",
+   "name": "Samsung A51",
+   "manufacturer": "Samsung",
+   "model": "Samsung A51",
+   "modelId": "{SM-A515F,SM-A515U1}",
+   "platform": "ANDROID",
+   "os": "10",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1742.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:84080C95870F4550B8613806B3BAF1DE",
+   "name": "Samsung Galaxy S22 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S22 5G",
+   "modelId": "SM-S901U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:FE809921D72C48798B9F7DEFF547F79C",
+   "name": "Samsung A51",
+   "manufacturer": "Samsung",
+   "model": "Samsung A51",
+   "modelId": "{SM-A515F,SM-A515U1}",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1742.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:75AA6D8A42B94601A18F5ED7BDBEA699",
+   "name": "Google Pixel 7a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 7a",
+   "modelId": "GWKK3",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:43B81A7172C34E4E94A7CB3BE27FF5AA",
+   "name": "Samsung Galaxy A36",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A36",
+   "modelId": "SM-A366U1",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B852927205CC421CA8F5666B180EFEC2",
+   "name": "Google Pixel 6 Pro (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 6 Pro",
+   "modelId": "Pixel 6 Pro",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E0BD1EDDDF1B4E1A8FF5668759831BD6",
+   "name": "Samsung Galaxy S24",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S24",
+   "modelId": "SM-S921U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2265.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:03EBD9AA02DE495DA907B4186802985C",
+   "name": "Google Pixel 11 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 11 Pro",
+   "modelId": "G7SWN",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2649.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2410
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:59E09144E91047E79D2DD8A36664B5A8",
+   "name": "Samsung Galaxy S21 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S21 Ultra",
+   "modelId": "SM-G998U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3200
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E1F3149FDC33484D824BCFF66003E609",
+   "name": "Google Pixel 3 XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3 XL",
+   "modelId": "Pixel 3 XL",
+   "platform": "ANDROID",
+   "os": "9",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "BUSY",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1766.4
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 2960
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E86BDD6A40FB4235957517589B2DA368",
+   "name": "Samsung Galaxy S9+ (Unlocked)",
+   "manufacturer": "Samsung",
+   "model": "Galaxy S9+ (Unlocked)",
+   "modelId": "{SM-G965U1,SM-G965U}",
+   "platform": "ANDROID",
+   "os": "8.0.0",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1766.4
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 2960
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:BD033A4151EB4C06BB755BBB0715C3C9",
+   "name": "Samsung Galaxy S21",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S21",
+   "modelId": "SM-G991U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:6D89F408709B4D3BBBBB17696A24B141",
+   "name": "Google Pixel 9",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9",
+   "modelId": "GUR25",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E8F3D749F33E4EFF9D9E3BB97F5FC820",
+   "name": "Samsung Galaxy A36",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A36",
+   "modelId": "SM-A366U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:AF4C1CAB1B064035859D5C70136FA869",
+   "name": "Samsung Galaxy A35",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A35",
+   "modelId": "SM-A356U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:96552C5C5A6E4FC7820C6085622D5F03",
+   "name": "Xiaomi Redmi Note 10 5G",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi Redmi Note 10 5G",
+   "modelId": "M2103K19G",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:920248AD35CD42CA95BDA38A17F7BB5C",
+   "name": "Samsung Galaxy S23+",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S23+",
+   "modelId": "SM-S916U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:D48BBC9AF1644AEFBAC7B431CAE21DD6",
+   "name": "Samsung Galaxy A13 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A13 5G",
+   "modelId": "SM-A136U1",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "armeabi-v7a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 720,
+    "height": 1600
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:072C9E2FC37C42F58124982CA15EE097",
+   "name": "Xiaomi 13",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi 13",
+   "modelId": "2211133G",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:168FDB4305C44550B3341DC945802FE1",
+   "name": "Google Pixel 7",
+   "manufacturer": "Google",
+   "model": "Google Pixel 7",
+   "modelId": "GQML3",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E97BDAB516AF43E497C3B009AF49E254",
+   "name": "Google Pixel 11",
+   "manufacturer": "Google",
+   "model": "Google Pixel 11",
+   "modelId": "GUJ0N",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2649.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:CE68825ABE5A4740B56F10111FD47844",
+   "name": "Samsung Galaxy S9 (Unlocked)",
+   "manufacturer": "Samsung",
+   "model": "Galaxy S9 (Unlocked)",
+   "modelId": "SM-G960U1",
+   "platform": "ANDROID",
+   "os": "9",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": false,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1766.4
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 2960
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:C00EB4C85AEF441195453AFA2D93122A",
+   "name": "Samsung Galaxy A17",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A17",
+   "modelId": "SM-A176U",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:CBCBF5D8221F486B8B65F1E8B57B1ACD",
+   "name": "Samsung Galaxy A54",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A54",
+   "modelId": "SM-A546U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B0A15C4D9D554A6AA2FC221560DFC850",
+   "name": "Google Pixel 9a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9a",
+   "modelId": "GXQ96",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:5CE4E149706441559D8B359A37417AC9",
+   "name": "Samsung Galaxy S22 5G",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S22 5G",
+   "modelId": "SM-S901U1",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:47F07CB507F04E229BF67180FC1786F2",
+   "name": "Google Pixel 3",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3",
+   "modelId": "Pixel 3",
+   "platform": "ANDROID",
+   "os": "10",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1766.4
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2160
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:71E9AED7A95C4B81A2E35684B4EAA785",
+   "name": "Samsung Galaxy S21 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S21 Ultra",
+   "modelId": "SM-G998U1",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3200
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:B4DE46FAB5214DC2885012065D9B3C48",
+   "name": "Google Pixel 3a XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3a XL",
+   "modelId": "G020C",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1708.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2160
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:1701F9C3608A4F3B860E42CFFB549534",
+   "name": "Google Pixel 7",
+   "manufacturer": "Google",
+   "model": "Google Pixel 7",
+   "modelId": "GQML3",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:DE5BD47FF3BD42C3A14BF7A6EFB1BFE7",
+   "name": "Google Pixel 8",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8",
+   "modelId": "G9BQD",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:4CA59708F26141C191EEDFD3AA91C911",
+   "name": "Samsung Galaxy S24+",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S24+",
+   "modelId": "SM-S926U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2265.6
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3120
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:E7BBB129D46045BDB337036160AAF62F",
+   "name": "Google Pixel 3 XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3 XL",
+   "modelId": "Pixel 3 XL",
+   "platform": "ANDROID",
+   "os": "10",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "BUSY",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1766.4
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 2960
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:AF0C356EC2C448C6895B94D9BAF0ABE9",
+   "name": "Samsung Galaxy S26+",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S26+",
+   "modelId": "SM-S947U1",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3628.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:876125E44C784FCD9A31D40F1E37E11F",
+   "name": "Google Pixel 10",
+   "manufacturer": "Google",
+   "model": "Google Pixel 10",
+   "modelId": "GLBW0",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2246.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:BB7C2918101A47C88C79DD8F20071AD8",
+   "name": "Google Pixel 5 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Pixel 5",
+   "modelId": "{Pixel 5}",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:9B74AD95597D4BF39827A4EAD83B9F6D",
+   "name": "Samsung Galaxy A15",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A15",
+   "modelId": "SM-A156U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:2EFF1E0D1C734B68A8F584C6CF9D617A",
+   "name": "LG Stylo 5",
+   "manufacturer": "LG",
+   "model": "LG Stylo 5",
+   "modelId": "{LM-Q720QM}",
+   "platform": "ANDROID",
+   "os": "9",
+   "formFactor": "PHONE",
+   "memory": 32000000000,
+   "heapSize": 384000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": false,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2160
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:BCDA2B2CE0B54ABEA1F8B34A54A2752C",
+   "name": "Google Pixel 9",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9",
+   "modelId": "GUR25",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2424
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:A3BCACFADDCF4D5E9D7B8F8AC06EED2C",
+   "name": "Google Pixel 8 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 8 Pro",
+   "modelId": "G1MNW",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1704.0
+   },
+   "resolution": {
+    "width": 1008,
+    "height": 2244
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:F4301BD8EB4A488DBD7DD245CECDFAE0",
+   "name": "Google Pixel 6 (Unlocked)",
+   "manufacturer": "Google",
+   "model": "Google Pixel 6",
+   "modelId": "Pixel 6",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:BC43DC9386D040D79D3802CF8AA00A96",
+   "name": "Google Pixel 4a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 4a",
+   "modelId": "{Pixel 4a}",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:095A27676116466584F0071460D04960",
+   "name": "Samsung Galaxy A56",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A56",
+   "modelId": "SM-A566U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:536B9FDAEAA14A11B504A3ECC86DA717",
+   "name": "Samsung Galaxy S26 Ultra",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S26 Ultra",
+   "modelId": "SM-S948U1",
+   "platform": "ANDROID",
+   "os": "16",
+   "formFactor": "PHONE",
+   "memory": 256000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3628.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:1E6779ED62864AA8A2F7EB6CCFB0C40E",
+   "name": "Xiaomi 12",
+   "manufacturer": "Xiaomi",
+   "model": "Xiaomi 12",
+   "modelId": "2201123G",
+   "platform": "ANDROID",
+   "os": "12",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:A7BA5D5470264C9E98C1A599B9BFFA73",
+   "name": "Samsung Galaxy S10",
+   "manufacturer": "Samsung",
+   "model": "Galaxy S10",
+   "modelId": "SM-G973U1",
+   "platform": "ANDROID",
+   "os": "9",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1785.6
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3040
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:2B7F33356BAF4902BA6944D21490EB5F",
+   "name": "Samsung Galaxy S23",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S23",
+   "modelId": "SM-S911U1",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2016.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:FDC03E6FE25C4A56BF42003B99DA39C4",
+   "name": "Google Pixel 7 Pro",
+   "manufacturer": "Google",
+   "model": "Google Pixel 7 Pro",
+   "modelId": "GE2AE",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1803.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:773F2AFE54674A91B30CDD652C01A7B8",
+   "name": "Google Pixel 9 Pro XL",
+   "manufacturer": "Google",
+   "model": "Google Pixel 9 Pro XL",
+   "modelId": "GZC4K",
+   "platform": "ANDROID",
+   "os": "17",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1950.0
+   },
+   "resolution": {
+    "width": 1008,
+    "height": 2244
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:907F0D40CD8C4599BD1EE68EBC6EDBC9",
+   "name": "Samsung Galaxy S20 (Unlocked)",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S20 (Unlocked)",
+   "modelId": "{SM-G981U1}",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1440,
+    "height": 3200
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:7150669B660F4773B2A92F29483F444F",
+   "name": "Samsung Galaxy A55",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A55",
+   "modelId": "SM-A556U1",
+   "platform": "ANDROID",
+   "os": "14",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2050.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:164880D2759E4F6F97AEBEE3E8BE82FF",
+   "name": "Samsung Galaxy A34",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A34",
+   "modelId": "SM-A346B",
+   "platform": "ANDROID",
+   "os": "13",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2000.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:310C75606BFC4C7CAF00A943C588DCB8",
+   "name": "Samsung Galaxy S21",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S21",
+   "modelId": "SM-G991U1",
+   "platform": "ANDROID",
+   "os": "11",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1804.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2400
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:979824405FD947B09740F775EB4C808A",
+   "name": "Samsung Galaxy A26",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy A26",
+   "modelId": "SM-A266U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 2002.0
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:69977E819F314BD481F194580E8EFC16",
+   "name": "Samsung Galaxy S25",
+   "manufacturer": "Samsung",
+   "model": "Samsung Galaxy S25",
+   "modelId": "SM-S931U1",
+   "platform": "ANDROID",
+   "os": "15",
+   "formFactor": "PHONE",
+   "memory": 128000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 3532.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2340
+   }
+  },
+  {
+   "arn": "arn:aws:devicefarm:us-west-2::device:F1C3B0D61013491A8EE2FA19FAA80306",
+   "name": "Google Pixel 3a",
+   "manufacturer": "Google",
+   "model": "Google Pixel 3a",
+   "modelId": "G020G",
+   "platform": "ANDROID",
+   "os": "10",
+   "formFactor": "PHONE",
+   "memory": 64000000000,
+   "heapSize": 512000000,
+   "availability": "HIGHLY_AVAILABLE",
+   "fleetType": "PUBLIC",
+   "remoteAccessEnabled": true,
+   "cpu": {
+    "frequency": "MHz",
+    "architecture": "arm64-v8a",
+    "clock": 1708.8
+   },
+   "resolution": {
+    "width": 1080,
+    "height": 2220
+   }
+  }
+ ]
+}

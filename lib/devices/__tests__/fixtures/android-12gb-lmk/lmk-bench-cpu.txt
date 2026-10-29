@@ -1,0 +1,2 @@
+10-29 07:21:59.412  1093  1093 I lowmemorykiller: Kill 'llama-bench' (13418), uid 2000, oom_score_adj 0 to free 8133004kB rss, 860120kB swap; reason: device is low on swap (880012kB < 1048576kB) and thrashing (104%)
+10-29 07:21:59.413  1093  1093 I killinfo: [13418,2000,0,0,8133004,860120,90412,230116,7012004,880012]

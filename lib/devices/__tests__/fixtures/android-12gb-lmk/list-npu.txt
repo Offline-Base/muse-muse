@@ -1,0 +1,7 @@
+ggml_opencl: selected platform: 'QUALCOMM Snapdragon(TM)'
+
+ggml_opencl: device: 'QUALCOMM Adreno(TM) 750 (OpenCL 3.0 Adreno(TM) 750)'
+ggml-hex: Loading driver libcdsprpc.so
+ggml-hex: failed to open a session on the CDSP: the signature of libggml-htp-v75.so was refused
+Available devices:
+  GPUOpenCL: QUALCOMM Adreno(TM) 750 (5431 MiB, 5431 MiB free)

@@ -1,0 +1,25 @@
+#!/bin/bash
+# Stands in for coreutils timeout in host.sh's tests (macOS has none): runs the command, sends it TERM after $1
+# seconds, and exits 124 when that happened, as GNU timeout does.
+secs=$1
+shift
+"$@" &
+pid=$!
+(
+  sleep "$secs" &
+  s=$!
+  trap 'kill "$s" 2>/dev/null; exit 0' TERM
+  wait "$s"
+  touch "$FAKE_ROOT/timeout.fired.$pid"
+  kill -TERM "$pid" 2>/dev/null
+) </dev/null >/dev/null 2>&1 &
+w=$!
+wait "$pid"
+rc=$?
+if [ -e "$FAKE_ROOT/timeout.fired.$pid" ]; then
+  rm -f "$FAKE_ROOT/timeout.fired.$pid"
+  exit 124
+fi
+kill -TERM "$w" 2>/dev/null
+wait "$w" 2>/dev/null
+exit $rc

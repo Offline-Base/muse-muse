@@ -1,0 +1,20 @@
+#!/bin/sh
+# A fake curl for lib/devices/__tests__/kit.test.ts. It records its arguments in $FAKE_LOG/curl.args, then, as FAKE_CURL
+# says: ok (the default) copies FAKE_CURL_FROM to the file after -o; short copies its first 10 bytes and exits 0; fail
+# exits 22 with an error naming a signed URL, which the kit must take out of fetch.log.
+
+for a in "$@"; do printf '%s\n' "$a"; done > "$FAKE_LOG/curl.args"
+out=
+while [ $# -gt 0 ]; do
+  case $1 in -o) out=$2; shift ;; esac
+  shift
+done
+case ${FAKE_CURL:-ok} in
+  ok) cat "$FAKE_CURL_FROM" > "$out" ;;
+  short) head -c 10 "$FAKE_CURL_FROM" > "$out" ;;
+  fail)
+    printf 'curl: (22) The requested URL returned error: 403 for https://cdn.example.test/m.gguf?X-Amz-Signature=fake-signature-123&X-Amz-Credential=fake-credential-456\n' >&2
+    exit 22
+    ;;
+esac
+exit 0

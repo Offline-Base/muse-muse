@@ -1,0 +1,10 @@
+path=/data/local/tmp/mm/gguf/q3_k_m.gguf
+bytes_expected=13962519328
+bytes=13962519328
+sha256_expected=de551709c7977735a4012323b82ba34a5756127c6b03a730753a37a318f02872
+sha256=de551709c7977735a4012323b82ba34a5756127c6b03a730753a37a318f02872
+check=ok
+tool=sha256sum
+seconds=5
+fetched=0
+fetch_seconds=

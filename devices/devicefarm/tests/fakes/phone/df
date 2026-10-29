@@ -1,0 +1,3 @@
+#!/bin/sh
+# toybox df -kP on the fake phone: FAKE_PHONE_FREE_KB available (50 GB by default).
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/block/dm-48 115000000 1000 %s 1%% /data\n' "${FAKE_PHONE_FREE_KB:-50000000}"

@@ -1,0 +1,6 @@
+# Models, partial downloads and archives never go into the repo: results keep only the kit's small files.
+*.gguf
+*.part
+*.tar.gz
+*.zip
+*.whl

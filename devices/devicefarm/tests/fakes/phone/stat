@@ -1,0 +1,4 @@
+#!/bin/sh
+# toybox stat -c %s on the fake phone (this Mac's stat takes -f instead).
+[ "$1" = -c ] && [ "$2" = %s ] && [ -f "$3" ] || exit 1
+wc -c <"$3" | tr -d ' '

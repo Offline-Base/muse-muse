@@ -1,0 +1,2 @@
+ to=self<|message|>The user asks for the capital of France, in one word. It is Paris.<|eom|><|start|>assistant to=user<|message|>Paris<|eot|> [end of text]
+

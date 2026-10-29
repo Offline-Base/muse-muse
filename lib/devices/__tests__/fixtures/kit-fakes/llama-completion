@@ -1,0 +1,77 @@
+#!/bin/sh
+# A fake llama-completion for lib/devices/__tests__/kit.test.ts. It answers the prompt its -f names on the backend its
+# -dev names, with llama-completion's --perf lines on stderr, the way FAKE_ANSWERS_<backend> says:
+#   right (the default)  right answers in SmolLM2's ChatML, ending "<|im_end|> [end of text]"
+#   wrong                answers that miss
+#   glimmer              Glimmer's channels: reasoning on to=self, then the answer on to=user; color never answers
+#   lmk                  a low-memory kill (logcat's line for its pid, then SIGKILL)
+#   slow                 sleeps until the kit's watchdog stops it
+#   big                  over 64 KiB of answer and 256 KiB of log, for the kit's caps
+# Each call appends "<backend> <prompt id>" to $FAKE_LOG/order.txt and records its arguments in
+# answer-<backend>-<id>.args. FAKE_EVAL_TPS_<backend> sets the generation speed in its perf line.
+
+dev=none prompt=
+parse() {
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -dev) dev=$2; shift ;;
+      -f) prompt=$2; shift ;;
+    esac
+    shift
+  done
+}
+parse "$@"
+case $dev in
+  none) b=cpu ;;
+  GPUOpenCL | MTL0) b=gpu ;;
+  HTP*) b=npu ;;
+  *) b=other ;;
+esac
+id=${prompt##*/}
+id=${id%.txt}
+printf '%s %s\n' "$b" "$id" >> "$FAKE_LOG/order.txt"
+for a in "$@"; do printf '%s\n' "$a"; done > "$FAKE_LOG/answer-$b-$id.args"
+env | sort > "$FAKE_LOG/answer-$b-$id.env"
+
+mode=right tps=504.40
+eval "mode=\${FAKE_ANSWERS_$b:-$mode}"
+eval "tps=\${FAKE_EVAL_TPS_$b:-$tps}"
+
+perf() {
+  printf '0.00.019.045 I llama_completion: llama backend init\n'
+  printf '0.00.162.056 I common_perf_print:        load time =      94.75 ms\n'
+  printf '0.00.162.059 I common_perf_print: prompt eval time =       9.45 ms /    41 tokens (    0.23 ms per token,  4339.54 tokens per second)\n'
+  printf '0.00.162.060 I common_perf_print:        eval time =      13.88 ms /     7 runs   (    1.98 ms per token, %8s tokens per second)\n' "$tps"
+}
+
+case $mode:$id in
+  right:capital) printf 'The capital of France is Paris.<|im_end|> [end of text]\n\n' ;;
+  right:sum) printf '17 + 25 = 42.<|im_end|> [end of text]\n\n' ;;
+  right:color) printf 'Green.<|im_end|> [end of text]\n\n' ;;
+  wrong:capital) printf 'Lyon.<|im_end|> [end of text]\n\n' ;;
+  wrong:sum) printf '41.<|im_end|> [end of text]\n\n' ;;
+  wrong:color) printf 'A shade of blue.<|im_end|> [end of text]\n\n' ;;
+  glimmer:capital)
+    printf ' to=self<|message|>The user wants the capital of France in one word. That is Paris.<|eom|><|start|>assistant to=user<|message|>Paris<|eot|> [end of text]\n\n'
+    ;;
+  glimmer:sum) printf ' to=user<|message|>42<|eot|> [end of text]\n\n' ;;
+  glimmer:color) printf ' to=self<|message|>Blue and yellow paint make green, and the user wants one word, so the answer is' ;;
+  lmk:*)
+    printf "10-28 23:58:02.010  1201  1201 I lowmemorykiller: Kill 'llama-completion' (%s), uid 2000, oom_score_adj 0 to free 4900000kB rss, 0kB swap; reason: low watermark is breached\n" "$$" >> "$FAKE_LOG/logcat.txt"
+    kill -9 $$
+    ;;
+  slow:*) exec sleep 60 ;;
+  big:*)
+    printf 'START'
+    head -c 70000 /dev/zero | tr '\0' 'a'
+    printf 'END'
+    perf >&2
+    printf 'LOGSTART' >&2
+    head -c 300000 /dev/zero | tr '\0' 'b' >&2
+    printf 'LOGEND' >&2
+    exit 0
+    ;;
+  *) printf 'unknown fake answer %s\n' "$mode:$id" >&2; exit 9 ;;
+esac
+perf >&2
+exit 0

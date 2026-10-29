@@ -1,0 +1,20 @@
+23:16:55 kit 1: smoke-smollm2-135m-q4_0 on macos, backends gpu cpu
+23:16:56 checking the sha256 with sha256sum (limit 120s)
+23:16:56 bench gpu: listing the devices llama.cpp sees (limit 60s)
+23:16:56 bench gpu on MTL0 (limit 180s)
+23:16:56 bench gpu: end=ok why=- rc=0 in 0s
+23:16:56 bench cpu on none (limit 180s)
+23:16:57 bench cpu: end=ok why=- rc=0 in 1s
+23:16:57 answer capital on gpu (limit 90s)
+23:16:57 answer capital on gpu: end=ok in 0s
+23:16:57 answer sum on gpu (limit 90s)
+23:16:58 answer sum on gpu: end=ok in 1s
+23:16:58 answer color on gpu (limit 90s)
+23:16:58 answer color on gpu: end=ok in 0s
+23:16:58 answer capital on cpu (limit 90s)
+23:16:58 answer capital on cpu: end=ok in 0s
+23:16:58 answer sum on cpu (limit 90s)
+23:16:59 answer sum on cpu: end=ok in 1s
+23:16:59 answer color on cpu (limit 90s)
+23:16:59 answer color on cpu: end=ok in 0s
+23:16:59 finished: status=done

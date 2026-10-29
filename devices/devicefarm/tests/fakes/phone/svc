@@ -1,0 +1,3 @@
+#!/bin/sh
+# Android's svc on the fake phone: records the call.
+printf 'svc %s\n' "$*" >>"$FAKE_PHONE/svc.log"

@@ -1,0 +1,10 @@
+name=check backend=- prompt=- start=1793243815 seconds=0 limit=120 rc=0 end=ok why=-
+name=list backend=gpu prompt=- start=1793243816 seconds=0 limit=60 rc=0 end=ok why=-
+name=bench backend=gpu prompt=- start=1793243816 seconds=0 limit=180 rc=0 end=ok why=-
+name=bench backend=cpu prompt=- start=1793243816 seconds=1 limit=180 rc=0 end=ok why=-
+name=answer backend=gpu prompt=capital start=1793243817 seconds=0 limit=90 rc=0 end=ok why=-
+name=answer backend=gpu prompt=sum start=1793243817 seconds=1 limit=90 rc=0 end=ok why=-
+name=answer backend=gpu prompt=color start=1793243818 seconds=0 limit=90 rc=0 end=ok why=-
+name=answer backend=cpu prompt=capital start=1793243818 seconds=0 limit=90 rc=0 end=ok why=-
+name=answer backend=cpu prompt=sum start=1793243818 seconds=1 limit=90 rc=0 end=ok why=-
+name=answer backend=cpu prompt=color start=1793243819 seconds=0 limit=90 rc=0 end=ok why=-

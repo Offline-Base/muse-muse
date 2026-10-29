@@ -1,0 +1,10 @@
+path=/data/local/tmp/mm/model/Muse-Glimmer-30B-IQ2_XXS.gguf
+bytes_expected=8920818976
+bytes=8920818976
+sha256_expected=88c81796351de47a21c67c8089c2a2111e160a96da8266b413d4fc8afbad89d8
+sha256=88c81796351de47a21c67c8089c2a2111e160a96da8266b413d4fc8afbad89d8
+check=ok
+tool=sha256sum
+seconds=6
+fetched=0
+fetch_seconds=

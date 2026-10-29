@@ -1,0 +1,5 @@
+t=0 free_kb=1210400 avail_kb=19523584 cached_kb=15312880 swap_free_kb=8388604
+t=0 free_kb=1209644 avail_kb=19522908 cached_kb=15312880 swap_free_kb=8388604 hwm_kb=3016 rss_kb=3016 anon_kb=1204 file_kb=1812
+t=20 free_kb=402116 avail_kb=15530220 cached_kb=15790344 swap_free_kb=8388604 hwm_kb=4980212 rss_kb=4980212 anon_kb=512330 file_kb=4467882
+t=40 free_kb=268004 avail_kb=13549568 cached_kb=15802116 swap_free_kb=8388604 hwm_kb=5624832 rss_kb=5624832 anon_kb=598210 file_kb=5026622
+t=60 free_kb=300120 avail_kb=13818880 cached_kb=15799004 swap_free_kb=8388604 hwm_kb=5624832 rss_kb=5401120 anon_kb=598210 file_kb=4802910

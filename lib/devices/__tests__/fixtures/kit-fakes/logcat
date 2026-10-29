@@ -1,0 +1,8 @@
+#!/bin/sh
+# A fake logcat for lib/devices/__tests__/kit.test.ts: one line of noise, then whatever the fake tools logged in
+# $FAKE_LOG/logcat.txt (their low-memory kills, naming their own pids). It records how it was called.
+
+printf '%s\n' "$*" >> "$FAKE_LOG/logcat.args"
+printf '10-28 23:50:00.000  1000  1000 I ActivityManager: Start proc 4242:com.example.app/u0a12 for service\n'
+cat "$FAKE_LOG/logcat.txt" 2>/dev/null
+exit 0

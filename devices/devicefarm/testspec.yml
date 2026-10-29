@@ -1,0 +1,23 @@
+# The Muse Muse device tests on AWS Device Farm (docs/DEVICES.md "On AWS Device Farm"). Every phase runs mm/host.sh
+# from the test package on the Amazon Linux 2023 host, which has adb to the phone; MM_PLAN, set on each run, names
+# its folder in mm/plan/. Appium is never started. lib/devices/devicefarm.ts testSpecYaml writes the same text.
+version: 0.1
+
+android_test_host: amazon_linux_2023
+
+phases:
+  install:
+    commands:
+      - bash "$DEVICEFARM_TEST_PACKAGE_PATH/mm/host.sh" install
+  pre_test:
+    commands:
+      - bash "$DEVICEFARM_TEST_PACKAGE_PATH/mm/host.sh" pre_test
+  test:
+    commands:
+      - bash "$DEVICEFARM_TEST_PACKAGE_PATH/mm/host.sh" test
+  post_test:
+    commands:
+      - bash "$DEVICEFARM_TEST_PACKAGE_PATH/mm/host.sh" post_test
+
+artifacts:
+  - $DEVICEFARM_LOG_DIR

@@ -1,0 +1,15 @@
+name=check backend=- prompt=- start=1793260801 seconds=6 limit=600 rc=0 end=ok why=-
+name=bench backend=cpu prompt=- start=1793260807 seconds=74 limit=900 rc=137 end=killed why=lmk
+name=list backend=gpu prompt=- start=1793260881 seconds=2 limit=60 rc=0 end=ok why=-
+name=bench backend=gpu prompt=- start=1793260883 seconds=6 limit=900 rc=1 end=error why=-
+name=list backend=npu prompt=- start=1793260889 seconds=2 limit=60 rc=0 end=ok why=-
+name=bench backend=npu prompt=- start=1793260891 seconds=0 limit=0 rc=- end=skipped why=unavailable
+name=answer backend=cpu prompt=capital start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=cpu prompt=sum start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=cpu prompt=color start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=gpu prompt=capital start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=gpu prompt=sum start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=gpu prompt=color start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=npu prompt=capital start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=npu prompt=sum start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload
+name=answer backend=npu prompt=color start=1793260891 seconds=0 limit=0 rc=- end=skipped why=noload

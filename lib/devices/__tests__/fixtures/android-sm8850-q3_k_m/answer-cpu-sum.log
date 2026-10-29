@@ -1,0 +1,12 @@
+0.00.021.410 I llama_completion: llama backend init
+0.00.021.418 I llama_completion: load the model and apply lora adapter, if any
+0.08.104.220 I cmn          init: llama threadpool init, n_threads = 8
+0.08.212.902 I llama_completion: chat template is available, enabling conversation mode (disable it with -no-cnv)
+0.08.213.311 I system_info: n_threads = 8 (n_threads_batch = 8) / 8 | CPU : NEON = 1 | ARM_FMA = 1 | FP16_VA = 1 | MATMUL_INT8 = 1 | DOTPROD = 1 | REPACK = 1 | 
+0.08.213.900 I sampler seed: 42
+0.08.213.904 I generate: n_ctx = 4096, n_batch = 2048, n_predict = 192, n_keep = 0
+0.30.551.002 I common_perf_print:    sampling time =      14.20 ms
+0.30.551.010 I common_perf_print:        load time =    8098.10 ms
+0.30.551.014 I common_perf_print: prompt eval time =    7801.02 ms /    44 tokens (  177.30 ms per token,     5.64 tokens per second)
+0.30.551.020 I common_perf_print:        eval time =    1650.33 ms /     5 runs   (  330.07 ms per token,     3.03 tokens per second)
+0.30.551.025 I common_perf_print:       total time =    9465.55 ms /    49 tokens

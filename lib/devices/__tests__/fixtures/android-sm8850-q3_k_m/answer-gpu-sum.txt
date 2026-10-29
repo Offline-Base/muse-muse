@@ -1,0 +1,2 @@
+ to=user<|message|>42<|eot|> [end of text]
+
