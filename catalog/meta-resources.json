@@ -11,8 +11,8 @@
       "demonstrates": "Customizing Llama to pull structured data out of images",
       "rebuild": {
         "fit": "reframe",
-        "models": ["muse-spark-1.3"],
-        "plan": "Same job without fine-tuning. Spark 1.3 reads the image and returns JSON that matches a schema. Upload a receipt or a form and get validated fields back.",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Same job without fine-tuning. Muse Wonder reads the image and returns JSON that matches a schema. Upload a receipt or a form and get validated fields back.",
         "note": "Make a tool that pulls structured fields out of photos of receipts and forms, with no fine-tuning"
       }
     },
@@ -24,7 +24,7 @@
       "demonstrates": "A business chatbot on WhatsApp that handles text and images",
       "rebuild": {
         "fit": "partial",
-        "models": ["muse-spark-1.3", "muse-image-1.0", "muse-voice-transcribe-1.0"],
+        "models": ["muse-wonder-1.0", "muse-image-1.0", "muse-voice-transcribe-1.0"],
         "plan": "A web chat for a small business that understands photos and voice notes and can reply with images. Connecting it to WhatsApp needs a WhatsApp Business account, so the rebuild shows the web version and documents the webhook.",
         "note": "Make a customer chat for a small shop that understands photos and voice notes"
       }
@@ -37,8 +37,8 @@
       "demonstrates": "Drafting blog posts from existing documentation with retrieval",
       "rebuild": {
         "fit": "clean",
-        "models": ["muse-spark-1.3", "muse-image-1.0"],
-        "plan": "Upload or paste docs and get a draft post with a header image. Most doc sets fit in Spark 1.3's 1M-token context, so there is no retrieval pipeline to build.",
+        "models": ["muse-wonder-1.0", "muse-image-1.0"],
+        "plan": "Upload or paste docs and get a draft post with a header image. Most doc sets fit in Muse Wonder's 1M-token context, so there is no retrieval pipeline to build.",
         "note": "Turn my product docs into a technical blog post with a header image"
       }
     },
@@ -50,8 +50,8 @@
       "demonstrates": "Extracting data from PDFs, invoices and reports with the DocumentLens recipe",
       "rebuild": {
         "fit": "clean",
-        "models": ["muse-spark-1.3", "sam-3.1"],
-        "plan": "Upload a PDF report. Spark 1.3 reads it directly and answers with tables and page references, and SAM 3.1 outlines the charts and figures on page images.",
+        "models": ["muse-wonder-1.0", "sam-3.1"],
+        "plan": "Upload a PDF report. Muse Wonder reads it directly and answers with tables and page references, and SAM 3.1 outlines the charts and figures on page images.",
         "note": "Upload a PDF report and pull out the key numbers, tables and charts"
       }
     },
@@ -63,8 +63,8 @@
       "demonstrates": "Fine-tuning strategies for domain-specific problems",
       "rebuild": {
         "fit": "reframe",
-        "models": ["muse-spark-1.3"],
-        "plan": "Muse Muse builds apps, not training runs, and the hosted Muse models aren't fine-tuned through the API. The rebuild checks a few-shot Spark 1.3 setup against the user's labeled examples and says when fine-tuning open weights like Glimmer would still be worth it.",
+        "models": ["muse-wonder-1.0"],
+        "plan": "Muse Muse builds apps, not training runs, and the hosted Muse models aren't fine-tuned through the API. The rebuild checks a few-shot Muse Wonder setup against the user's labeled examples and says when fine-tuning open weights like Glimmer would still be worth it.",
         "note": "Tell me whether my classification task still needs fine-tuning, using a few labeled examples"
       }
     },
@@ -76,8 +76,8 @@
       "demonstrates": "Safeguards for content moderation, jailbreak defense and code security",
       "rebuild": {
         "fit": "reframe",
-        "models": ["muse-spark-1.3"],
-        "plan": "A safety check in front of a chatbot that screens prompts and replies with Spark 1.3 and shows why something was blocked. Meta's open protection models stay the self-hosted option.",
+        "models": ["muse-wonder-1.0"],
+        "plan": "A safety check in front of a chatbot that screens prompts and replies with Muse Wonder and shows why something was blocked. Meta's open protection models stay the self-hosted option.",
         "note": "Put a safety check in front of my chatbot that blocks jailbreaks and explains why"
       }
     }

@@ -26,9 +26,9 @@ App builders also start from a text prompt. People usually know what they want b
 ### What it does
 
 1. **Muse.** You drop in inspo (photos, screenshots, sketches, a short video, a voice memo or a PDF) and an optional note, like "make this, but for my bakery."
-2. **Brief.** Muse Spark 1.3 reads the inspo and writes a structured brief: the product, who it's for, the Meta models it needs and why, honest limits, cost per use, and what it takes from the inspo and leaves out. It refuses requests that impersonate people or organizations, clone a real brand, or involve weapons, malware or scams.
-3. **Build.** Muse Code runs headless in a Vercel Sandbox microVM and writes a Next.js product from a starter template. Every product shares a Meta-family look (Facebook's design tokens, Inter and Montserrat, an app bar, segmented choices, a composer, AI result cards) that the template's `meta-ui` skill teaches. You watch the log and a live preview in the build room.
-4. **Check.** Typecheck, build, the smoke test Muse Code wrote, a screen check, then Muse Spark 1.3 judging screenshots against the brief. Failures go back to the same Muse Code session with the judge's screenshots, up to three rounds.
+2. **Brief.** Muse Wonder reads the inspo and writes a structured brief: the product, who it's for, the Meta models it needs and why, honest limits, cost per use, and what it takes from the inspo and leaves out. It refuses requests that impersonate people or organizations, clone a real brand, or involve weapons, malware or scams.
+3. **Build.** Muse Code runs headless on Muse Wonder in a Vercel Sandbox microVM and writes a Next.js product from a starter template. Every product shares a Meta-family look (Facebook's design tokens, Inter and Montserrat, an app bar, segmented choices, a composer, AI result cards) that the template's `meta-ui` skill teaches. You watch the log and a live preview in the build room.
+4. **Check.** Typecheck, build, the smoke test Muse Code wrote, a screen check, then Muse Wonder judging screenshots against the brief. Failures go back to the same Muse Code session with the judge's screenshots, up to three rounds.
 5. **Demo video.** Demo Studio replays the smoke test with a recorder, then edits a 1920×1080 launch clip: an intro card, the app in a browser window with its real URL, a cursor that glides to each control, typing key by key, a camera that zooms in on what is typed and on each result, model waits sped up with a badge that says by how much ("Waited 14 s, sped up"), captions below the window, and an outro with the live link.
 6. **Ship.** The product deploys as its own Vercel project. It calls Meta only through the platform's metered gateway, with its own scoped, budgeted token.
 7. **Use in Muse.** Its actions become an MCP connector that the Muse app (or Claude Code) can add.
@@ -38,19 +38,20 @@ Every product it ships is new, metered Meta API usage. The dashboard's headline 
 Two more parts sit on top:
 
 - **Rebuilds.** One command rebuilds Meta's Llama-era demo videos on current Muse models, plus first demos for the models Meta has no video for: SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder.
-- **Fine-tuning lab, "Spark teaches Glimmer."** Muse Spark 1.3 writes a training set, Muse Glimmer 30B learns it with a LoRA adapter on the owner's Lambda GPUs, and Muse Spark 1.3 judges base against tuned, blind. Results are public and read-only at `/fine-tuning`. Each judged adapter then publishes itself to Hugging Face with its training data and a card that tells why it was made.
+- **Fine-tuning lab, "Spark teaches Glimmer."** Muse Wonder writes a training set, Muse Glimmer 30B learns it with a LoRA adapter on the owner's Lambda GPUs, and Muse Wonder judges base against tuned, blind. The name comes from the runs so far: Muse Spark 1.3 wrote their dataset and judged them. Results are public and read-only at `/fine-tuning`. Each judged adapter then publishes itself to Hugging Face with its training data and a card that tells why it was made.
 
 ### How it uses Meta's models
 
 | Model or tool | Where Muse Muse uses it |
 |---|---|
-| **Muse Spark 1.3** | Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses. Judges each build's screenshots. Default model for Muse Code. Writes fine-tuning datasets, judges base against tuned Glimmer, and writes the "Why this exists" story on each Hugging Face card. The default model inside products. |
-| **Muse Wonder 1.0** | Muse Code's build model when the brief marks a product complex. Inside products that need long, multi-step planning, such as the first Muse Wonder demo. |
+| **Muse Wonder 1.0** | The default for every platform role. Reads every reference (images, video, PDFs) and writes the brief with strict JSON-schema output, or refuses, and checks each refinement request against the same policy. Muse Code's model for every build and its fix rounds. Judges each build's screenshots. The default model inside products, for their own text and vision calls. For new fine-tuning runs, writes the dataset, judges base against tuned Glimmer, and writes the "Why this exists" story on each Hugging Face card. |
+| **Muse Spark 1.3** | Not used since Oct 29, and the brief writer no longer offers it. Before that it was the default for briefs, builds, judging and products. It wrote the lab's dataset (400 examples for $1.51) and judged both runs. |
+| **Muse Spark 1.3 Contributor** | Runs wherever Spark 1.3 is still forced. A refinement of a product built on Spark 1.3 resumes Muse Code on it, and the gateway serves any live product that still asks for `muse-spark-1.3` with it, metered at its price ($0.10 in and $0.20 out per million tokens). Meta may train on contributor prompts. |
 | **Muse Image 1.0** | Inside products, for generating and editing images. It also made the three example photos on the Make page. |
 | **SAM 3.1** | Inside products, to find, outline and count things in photos and video, such as the first SAM 3.1 demo. Results are parsed with Meta's `@meta-sam/parser`. |
 | **Muse Voice Transcribe 1.0** | Turns a voice-memo muse into text before the brief. Inside products, after the browser converts audio to 16 kHz mono WAV, the only format the API accepts. |
 | **Muse Code** | Writes every product, headless in a Vercel Sandbox: `muse exec --json` with hardened flags, `--session-id` to resume for fix rounds and refinements, `--image` for inspo and judge screenshots, `muse skills disable` for 15 bundled skills that fight a headless build, and `muse export --redacted` for each product's "How it was built." |
-| **Muse Glimmer 30B** | The fine-tuning lab's student: a QLoRA fine-tune on Lambda GPUs, judged by Muse Spark 1.3, served live for side-by-side answers, and published to Hugging Face as a PEFT adapter with its data and card. Products can also call a hosted Glimmer endpoint through `GLIMMER_URL` when a brief asks for a local or private model. |
+| **Muse Glimmer 30B** | The fine-tuning lab's student: a QLoRA fine-tune on Lambda GPUs, judged by Muse Wonder (Muse Spark 1.3 judged the runs so far), served live for side-by-side answers, and published to Hugging Face as a PEFT adapter with its data and card. Products can also call a hosted Glimmer endpoint through `GLIMMER_URL` when a brief asks for a local or private model. |
 | **Meta Model API endpoints** | `responses`, `images/generations`, `images/edits`, `files` and `asr/transcribe`, which products reach only through the platform's gateway. Muse Code also calls `models` and `/muse-code/models` through the sandbox firewall. |
 | **Meta's Videos page** | The rebuild set: `catalog/meta-resources.json` links each video and never copies it. |
 
@@ -154,18 +155,18 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 **2. Make page (0:13-0:25)**
 
-- On screen: open https://muse-muse.vercel.app. The sidebar, the "Start from an example" title and three cards show. Click **Receipt to spreadsheet**. The receipt photo attaches as a chip and the note fills in. Move the pointer over the right panel: Model `muse-spark-1.3`, Builder Muse Code, Fix rounds Up to 3. Click the blue send button.
+- On screen: open https://muse-muse.vercel.app. The sidebar, the "Start from an example" title and three cards show. Click **Receipt to spreadsheet**. The receipt photo attaches as a chip and the note fills in. Move the pointer over the right panel: Model `muse-wonder-1.0`, Builder Muse Code, Fix rounds Up to 3. Click the blue send button.
 - Say: "Muse Muse starts from an example instead of a long prompt. Drop in a photo, a sketch, a video, a voice memo or a PDF, and Muse Code builds the product."
 
 **3. Build room: brief and build (0:25-0:44)**
 
 - On screen: the build room opens with the muse as the user turn. The brief turn renders: product name, the models table, limits, cost per use, and what it takes and leaves out. Start the time-lapse, labeled "Sped up. Real build." Muse Code's log lines scroll, "Edited N files" lines appear, and a "Muse Code started its ... reminder" line passes. The step rail moves through Brief, Provision, Build and Preview, and the live preview card appears in the right panel.
-- Say: "Muse Spark 1.3 reads the inspo and writes a brief: the models it needs, honest limits and the cost. Then Muse Code runs headless in a Vercel Sandbox microVM. The firewall adds the Meta key only on Muse Code's own routes, so the code it writes never sees the key."
+- Say: "Muse Wonder reads the inspo and writes a brief: the models it needs, honest limits and the cost. Then Muse Code runs headless in a Vercel Sandbox microVM. The firewall adds the Meta key only on Muse Code's own routes, so the code it writes never sees the key."
 
 **4. Build room: checks and fix rounds (0:44-0:59)**
 
 - On screen: the check results turn: verify, the smoke test, the judge's screenshots and its verdict. If this build had a fix round, show the fix turn with the attached screenshots. The rail reaches Check, Record and Deploy. Hold on the metadata line with time, tokens and cost.
-- Say: "Then it checks its own work: typecheck, build, the smoke test Muse Code wrote, and Spark judging screenshots against the brief. A failure goes back to the same Muse Code session with the judge's screenshots attached. Three rounds at most."
+- Say: "Then it checks its own work: typecheck, build, the smoke test Muse Code wrote, and Muse Wonder judging screenshots against the brief. A failure goes back to the same Muse Code session with the judge's screenshots attached. Three rounds at most."
 
 **5. Product page and its recorded demo (0:59-1:16)**
 
@@ -195,7 +196,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 **10. Fine-tuning lab (2:20-2:42)**
 
 - On screen: click **Fine-tuning**. Show the three steps: Write, Train, Judge. Show the Results table with both runs. Click the second run: the summary strip, then scroll the side-by-side items (prompt, Spark's reference, base answer, tuned answer, verdict).
-- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learns them on a Lambda GPU, and Spark judges base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time." If the run is on Hugging Face by recording day, show its model card's "Why this exists" for two seconds: "And every judged run publishes itself to Hugging Face, with its data and the story of why it was made."
+- Say: "And Spark teaches Glimmer. Muse Spark 1.3 wrote 400 training examples for a dollar fifty-one. Muse Glimmer 30B learned them on a Lambda GPU, and Spark judged base against tuned, blind. Our first run lost 28 to 11, and that exposed an eval bug." Then one line on the second run: "After the fix, tuned Glimmer won all 40, scoring 8.9 out of 10 against 2. A 30 billion parameter open model learned to write our briefs, for under two dollars of GPU time." If the run is on Hugging Face by recording day, show its model card's "Why this exists" for two seconds: "And every judged run publishes itself to Hugging Face, with its data and the story of why it was made."
 
 **11. Close (2:42-2:50)**
 

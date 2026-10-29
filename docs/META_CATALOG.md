@@ -1,6 +1,6 @@
 # Meta model catalog
 
-Everything Muse Muse can build with, checked on Oct 24, 2026. The machine-readable version is `catalog/meta-models.json`, which the brief writer reads. Rows marked *verify* need a check on day one.
+Everything Muse Muse can build with, checked on Oct 24, 2026. The machine-readable version is `catalog/meta-models.json`, which the brief writer reads. Rows marked *verify* need a check on day one. [How Muse Muse uses them](#how-muse-muse-uses-them) was updated Oct 29.
 
 ## Connecting
 
@@ -18,17 +18,32 @@ Everything Muse Muse can build with, checked on Oct 24, 2026. The machine-readab
 | Model ID | Use it for | Endpoints | In, then out | Price |
 |---|---|---|---|---|
 | `muse-spark-1.3` | Default reasoning, vision, video, coding | Responses, Chat Completions, Messages | Text, image, PDF, video, then text. 1M context, 131k max output | About $1.25 in and $4.25 out per million tokens, $0.15 cached (1.2 price, reported unchanged, *verify*) |
-| `muse-spark-1.3-contributor` | Test builds only | Same | Same | Much cheaper. Meta may train on your prompts |
-| `muse-wonder-1.0` | Long multi-step tasks, audio input, web search | Same as Spark | Text, image, video, audio, PDF, then text. 1M context | About $4 in and $20 out per million (preview, *verify*) |
+| `muse-spark-1.3-contributor` | Discounted Spark 1.3, rate limited in a rolling window | Same | Same | About $0.10 in and $0.20 out per million tokens (1.2 contributor price, *verify*). Meta may train on your prompts and completions |
+| `muse-wonder-1.0` | Long multi-step tasks, audio input, web search | Same as Spark | Text, image, video, audio, PDF, then text. 1M context | About $4 in and $20 out per million, $0.20 cached (preview, *verify*). Reasoning is billed as output |
 | `muse-image-1.0` | Generate, edit and compose images | `/v1/images/generations`, `/v1/images/edits`, Responses for multi-turn | Text and up to 10 images, then images as base64 or a signed URL | $0.01 per returned image |
 | `sam-3.1` | Find, outline and track objects | Responses (stream), Files for video | A short noun phrase or box/point tokens, plus an image or video, then boxes and masks | Video billed per frame, 50-frame minimum |
 | `muse-voice-transcribe-1.0` | Speech to text with turns and speakers | `POST /v1/asr/transcribe` (*verify*), `wss://api.meta.ai/v1/asr/realtime` | Audio, then turn-level transcript | $0.18 per audio hour |
+
+## How Muse Muse uses them
+
+As of Oct 29. Muse Wonder is the default everywhere, and Muse Spark 1.3 is never used.
+
+| Model ID | How Muse Muse uses it |
+|---|---|
+| `muse-wonder-1.0` | Every platform role: the brief writer and its refinement policy check, Muse Code builds and fix rounds, and the screenshot judge. The default for a product's own text and vision calls. The fine-tuning lab's dataset writer, judge and card story for new runs |
+| `muse-spark-1.3` | Never used. The brief writer isn't offered it. A live product built to call it still passes the gateway, which serves it with `muse-spark-1.3-contributor`. It wrote the lab's first dataset and judged the runs trained on it, and earlier products were built on it |
+| `muse-spark-1.3-contributor` | Runs wherever Spark 1.3 is still forced: a refinement of a product built on Spark 1.3 resumes Muse Code on it, and the gateway serves live products that still ask for `muse-spark-1.3` with it, metered at its price. An environment value that names `muse-spark-1.3` becomes it too |
+| `muse-image-1.0` | Inside products, to generate and edit images |
+| `sam-3.1` | Inside products, to find, outline and track objects |
+| `muse-voice-transcribe-1.0` | Turns a voice-memo muse into text before the brief. Inside products, after the browser converts audio to 16 kHz mono WAV |
+
+Muse Code always gets `--model`: `muse-wonder-1.0`, or `muse-spark-1.3-contributor` to refine a product built on Spark 1.3.
 
 ## Rules that trip people up
 
 - **Muse Image** has no mask support. To change one region, find it with SAM 3.1, crop it, edit the crop and composite it back. Unknown JSON fields return 400, and so does setting `moderation`.
 - **SAM 3.1** takes one short noun phrase per call. Comma lists return nothing. Box and point tokens must carry the media's displayed width and height or the call fails with 400. Video tracks at most 16 objects, runs up to 15,000 frames (about 10 minutes), and must be MP4 or MOV in H.264, H.265 or MPEG-4.
-- **Muse Wonder** is in preview. Keep it for briefs that need it.
+- **Muse Wonder** is in preview. It bills reasoning as output, so even a short answer pays for a few hundred reasoning tokens.
 - **Voice** realtime needs a WebSocket, which Vercel Functions don't hold well. Products use file transcription in v1.
 
 ## Not on the Model API yet (Oct 26)
@@ -37,7 +52,7 @@ Everything Muse Muse can build with, checked on Oct 24, 2026. The machine-readab
 |---|---|---|
 | Text-to-speech | Muse Voice Transcribe is speech-to-text only | Browser speech synthesis |
 | Video generation | Muse Video was previewed July 7 and hasn't shipped | Image sequences from Muse Image |
-| Embeddings | No embeddings model listed | Spark 1.3's 1M-token context for small document sets |
+| Embeddings | No embeddings model listed | Muse Wonder's 1M-token context for small document sets |
 | Realtime speech-to-speech | Muse Realtime Avatar was announced Sep 23 and isn't available | Record, transcribe, reply in text |
 
 ## Usage on OpenRouter (checked Oct 26)
@@ -56,7 +71,7 @@ For scale, DeepSeek V4.1 Flash processed 123T in the last 30 days. Meta isn't am
 
 | Model | Facts | How Muse Muse uses it |
 |---|---|---|
-| Muse Glimmer | 30B dense, Apache 2.0, multimodal per Meta's docs, under 20 GB quantized. Runs on vLLM, SGLang, llama.cpp, ExecuTorch | Optional. Only when a brief asks for local or offline use, through an endpoint you host |
+| Muse Glimmer | 30B dense, Apache 2.0, multimodal per Meta's docs, under 20 GB quantized. Runs on vLLM, SGLang, llama.cpp, ExecuTorch | Optional. Only when a brief asks for local or offline use, through an endpoint you host. Also the fine-tuning lab's student ([TRAINING.md](TRAINING.md)) |
 | Muse Spark Open | 816B total, 42B active MoE. Text, images, audio and video in. SGLang or vLLM | Not in v1 |
 
 ## Muse Code

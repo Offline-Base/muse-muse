@@ -4,7 +4,7 @@ Drafts for the model calls the platform makes. `{{double braces}}` are filled in
 
 ## 1. Brief writer
 
-Model `muse-spark-1.3`, structured output, temperature low. Each reference goes in as its own content part. Images go in as `input_image`, short videos as `input_video` and PDFs as files. A voice memo is transcribed with `muse-voice-transcribe-1.0` first and goes in as text.
+Model `muse-wonder-1.0` (`BRIEF_MODEL`), structured output, temperature low. It answers in `NewBriefSchema`, which leaves out `muse-spark-1.3`, and the catalog summary doesn't list Spark 1.3, so a new brief can't pick it. Each reference goes in as its own content part. Images go in as `input_image`, short videos as `input_video` and PDFs as files. A voice memo is transcribed with `muse-voice-transcribe-1.0` first and goes in as text.
 
 ```text
 You turn someone's muse into a product brief for Muse Muse.
@@ -81,7 +81,7 @@ When the judge ran, the screenshots it saw (up to four, each under 2 MB after do
 
 ## 4. Judge
 
-Model `muse-spark-1.3` with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a main result that is missing from the final screen or replaced there by an error, an empty state or a working state, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. Figures that disagree and model text that shows its seams fail a build without blocking it: they start a fix round, and on the last round the build can still ship as partial. A refinement still needs a pass. The live prompt is `lib/prompts/judge.ts`.
+Model `muse-wonder-1.0` (`JUDGE_MODEL`) with the inspo and the screenshots as image inputs. Structured output `{ pass: boolean, reasons: string[], mismatches: string[], blocking: boolean }`. `blocking` is true for a main result that is missing from the final screen or replaced there by an error, an empty state or a working state, copying a brand, logo, character or artwork, or implying Meta made it; a blocking failure never ships, even as partial. Showing the person's own sample as the input or inside the result is not copying. Figures that disagree and model text that shows its seams fail a build without blocking it: they start a fix round, and on the last round the build can still ship as partial. A refinement still needs a pass. The live prompt is `lib/prompts/judge.ts`.
 
 ```text
 You check whether a product does what its brief says, using screenshots of its primary flow taken during an automated test. You also get the inspiration it was made from.
@@ -117,4 +117,4 @@ Make the change, keep the primary flow working, update musemuse.json if actions 
 
 ## 6. Refinement policy check
 
-Before a refinement starts, `lib/brief/policy.ts` sends the message and the new files' names to `muse-spark-1.3` at low effort with `changeCheckInstructions` from `lib/prompts/brief.ts`. It uses the same refusal list (`REFUSE_WHEN`) as the brief writer. A refusal ends the refine as **refused**, starts no Muse Code run and keeps the live version. A check that can't get a valid reply fails closed.
+Before a refinement starts, `lib/brief/policy.ts` sends the message and the new files' names to the brief model, `muse-wonder-1.0`, at low effort with `changeCheckInstructions` from `lib/prompts/brief.ts`. It uses the same refusal list (`REFUSE_WHEN`) as the brief writer. A refusal ends the refine as **refused**, starts no Muse Code run and keeps the live version. A check that can't get a valid reply fails closed.

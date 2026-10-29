@@ -29,9 +29,9 @@ The owner answered the open questions on Oct 28. The rest are the research's rec
 |---|---|---|
 | 1 | Who may start a paid run | **Anyone, within the caps** (the owner's answer). `VIBE_APPROVAL=auto` is the default: a run starts as soon as its checks allow it. An idea the request check marks "review" (for example a model for children or students) still waits for an admin. `VIBE_APPROVAL=admin` makes every run wait. A bot check (Vercel BotID, or Cloudflare Turnstile) guards the public routes. |
 | 2 | Runs a day | `VIBE_DAILY_RUNS=4` and 1 per client a day. Raise `TRAIN_DAILY_USD` from $20 to $40 before raising runs to 8. A run uses about $4 of GPU, and the $20 is shared with admin jobs. |
-| 3 | While Meta billing is down | Wait for Muse Spark 1.3. Meanwhile, build and test everything after training on run 2 (job 83d71f74) and its dataset 17c76f2c: none of it calls Meta. |
+| 3 | While Meta billing is down | Wait for Muse Wonder, the lab's writer and judge since Oct 29 (it was Muse Spark 1.3 when this was decided). Meanwhile, build and test everything after training on run 2 (job 83d71f74) and its dataset 17c76f2c: none of it calls Meta. |
 | 4 | Where models publish | **A dedicated Hugging Face organization** the owner creates (the owner's answer), with a fine-grained token that can write to it. Everything goes public once every check passes; an admin can make any run private. |
-| 5 | The Spark-written training data | Published as the lab already does, under Meta's Model API terms for outputs with a `LICENSE.md`, never under Apache 2.0 (`datasetLicense` in `lib/train/hub-cards.ts`). |
+| 5 | The training data Muse Wonder writes | Published as the lab already does, under Meta's Model API terms for outputs with a `LICENSE.md`, never under Apache 2.0 (`datasetLicense` in `lib/train/hub-cards.ts`). |
 | 6 | GGUF sizes | Q3_K_M, Q4_K_M and Q6_K, 53.5 GB a model on the Hub. v1 has no Q8_0, IQ, MLX or vision file. At 4 runs a day that is about 6.4 TB a month, so watch the organization's storage. |
 | 7 | Hosted inference | **v1:** today's glimmer-serve. A run's owner starts it for 30 minutes, on its own GPU slot (`INFER_MAX_ACTIVE=1`) and a $15 daily cap (`INFER_DAILY_USD`). **v2:** one shared vLLM server, after a spike. |
 | 8 | Drive orders | **An order request, no payment on the site** (the owner's answer). The request saves the model, the build and the shipping address; the owner emails an invoice and moves the order along from an admin page. A returning buyer orders with one click, from details their browser remembers if they ask it to. The page shows `DRIVE_PRICE_TEXT` when it is set (for example "$59 with US shipping, invoiced by email"), and otherwise "We'll email you a quote before anything is charged". |
@@ -53,12 +53,12 @@ The owner answered the open questions on Oct 28. The rest are the research's rec
 | 7 | Tuned files are the same size as the base's: Q3_K_M 13.68 GB, Q4_K_M 16.94, Q6_K 22.87, Q8_0 29.61, BF16 55.73. Publishers' builds differ by up to 0.5 GB. | V (base files), I (the tuned model has the same shapes) | Hub trees (quantization notes) |
 | 8 | Q4_K_M needs about 18 GB of memory at 8K context. Meta lists about 17 GB for text only, and aims the file at 24 GB GPUs. | I, V (Meta's figures) | Meta's GGUF card |
 | 9 | The platform can't publish a GGUF today. `HUB_FILE_MAX_BYTES` is 10 GB (`lib/train/types.ts:457`), `HUB_FILE_NAMES` has no `.gguf` (`types.ts:466`), and Blob takes at most 1 GB. | V | code |
-| 10 | The lab's adapters never learned to open the final channel. The header sits inside the masked response part (`lib/train/recipes/glimmer.ts:105`), and eval opens it for the model (`glimmer.ts:106-110`, `eval_prompt` at `:1146`). Run 1, which let the model choose, "never left the reasoning channel" (`docs/SUBMISSION.md:102`). Stock local apps end the prompt at `<\|start\|>assistant`. | V (code and run 1), I (the current adapters will show empty replies locally) | |
+| 10 | The lab's adapters never learned to open the final channel. The header sits inside the masked response part (`lib/train/recipes/glimmer.ts:105`), and eval opens it for the model (`glimmer.ts:106-110`, `eval_prompt` at `:1146`). Run 1, which let the model choose, "never left the reasoning channel" (`docs/SUBMISSION.md:103`). Stock local apps end the prompt at `<\|start\|>assistant`. | V (code and run 1), I (the current adapters will show empty replies locally) | |
 | 11 | llama.cpp's release assets have no Linux CUDA build. b10353 ships Ubuntu CPU, Vulkan, ROCm, SYCL and OpenVINO builds. | V | the b10353 release JSON |
 | 12 | vLLM serves Glimmer from v0.28.0, and its model class declares LoRA support; a startup crash with LoRA was fixed on Aug 24 (#53513). v0.32.0 is current. Its `--api-key` doesn't guard `/invocations` or `/tokenize`. | V | vLLM source (inference notes) |
-| 13 | Today's live demo takes about 90 s per answer pair and costs about $1.50 per 30-minute window. | V (measured in production) | `docs/SUBMISSION.md:219` |
-| 14 | Training is measured: A100 40 GB, 120 steps, 42 and 47 minutes, $1.39 and $1.59. A 400-example dataset cost $1.51 and judging $0.15. | V | `docs/SUBMISSION.md:101-104` |
-| 15 | Every vibe run needs Muse Spark 1.3 to write its data and to judge it, and "judged" gates the public page, the public demo and publishing. | V | `lib/train/datasets.ts:35`, `judge.ts:26`, `components/train/results.ts:58` |
+| 13 | Today's live demo takes about 90 s per answer pair and costs about $1.50 per 30-minute window. | V (measured in production) | `docs/SUBMISSION.md:220` |
+| 14 | Training is measured: A100 40 GB, 120 steps, 42 and 47 minutes, $1.39 and $1.59. A 400-example dataset cost $1.51 and judging $0.15. | V | `docs/SUBMISSION.md:102-105` |
+| 15 | Every vibe run needs Muse Wonder to write its data and to judge it, and "judged" gates the public page, the public demo and publishing. Muse Spark 1.3 wrote and judged the runs before Oct 29. | V | `DATASET_MODEL` in `lib/train/datasets.ts`, `JUDGE_MODEL` in `judge.ts`, `components/train/results.ts:58` |
 | 16 | Lambda 1x prices on Oct 28: GH200 96 GB $2.29, H100 SXM $4.29, H100 PCIe $3.29, A100 40 GB $1.99, A10 $1.29, A6000 $1.09, RTX 6000 $0.69. Billing is per minute, with no egress fees. | V | pricing page and billing docs (inference notes) |
 | 17 | A Hub file can be up to 500 GB, under 200 GB is recommended, and free accounts get best-effort public storage. | V | huggingface.co/docs/hub/storage-limits |
 
@@ -73,7 +73,7 @@ Each step ships on its own behind its own switch, has unit tests with fakes, and
 | 2 | `trainChannel` in glimmer-lora, and "Judge now" for jobs judged while Meta was down (Feature 1) | New runs whose files work in stock apps | Train on dataset 17c76f2c with `trainChannel: 1`, quantize it, then try LM Studio and Ollama with no template change. Judging waits for Meta. | about $4 |
 | 3 | The device picker and the run-locally page (Features 2 and 5) | "Run it on your computer" on public model pages | Render tests, then three real machines: the owner's Mac, a Windows PC with an NVIDIA GPU, and a 16 GB laptop. | $0 |
 | 4 | Separate GPU slot and cap for serving. Owners start v1 sessions (Feature 4). | A hosted fallback for devices that can't run it | One 10-minute session | about $0.83 |
-| 5 | The vibe front door: spec, checks, `vibe_runs`, admin review, orchestrator, run page and gate (Features 1 and 3) | Vibe tuning behind `VIBE_ENABLED` | One run end to end once Meta billing works | about $5 |
+| 5 | The vibe front door: spec, checks, `vibe_runs`, admin review, orchestrator, run page and gate (Features 1 and 3) | Vibe tuning behind `VIBE_ENABLED` | One run end to end once Meta billing works | about $9 |
 | 6 | Drive order requests: `drive_orders`, the request form, the order page, the admin queue, the bench script and the drive image (Feature 6) | "Get it on a flash drive" behind `DRIVE_ENABLED` | One request in a private test. One real drive tested on a clean Mac and a clean Windows PC. | about $15 for the stick |
 | 7 | The Glimmer pool (v2 inference): spike first, then streaming and keys (Feature 4) | Fast shared sessions and an OpenAI-style endpoint | Run 2's adapter on vLLM FP8, replaying the 40 held-out prompts | about $1.50 to $2.50 |
 | 8 | Later: the assistant chat, MLX, IQ sizes with an importance matrix, drives with the base plus a small adapter, Stripe checkout, signing | | | |
@@ -84,12 +84,12 @@ Cut line before the Nov 2 feature freeze (`docs/BUILD_PLAN.md`): steps 0 to 5, w
 
 ```text
 person: plain words (20 to 600 characters), 18+ box
-  -> POST /api/vibe/spec      rule checks, then one Spark call: allowed or not, a role name, a task, 3 example requests
+  -> POST /api/vibe/spec      rule checks, then one Wonder call: allowed or not, a role name, a task, 3 example requests
   -> person: "Start"          POST /api/vibe/runs/{id}/submit -> "queued" (auto, the default) or "review" (flagged, or VIBE_APPROVAL=admin)
 vibeRun workflow (lib/vibe/workflow.ts):
   review      waits on hook vibe-review:<run> until an admin approves or refuses
   data        createDataset + makeDataset as today (VIBE_DATASET_COUNT, 300), waits on hook vibe-data:<run>
-  data check  one Spark call over a sample of the examples: allow | review | refuse
+  data check  one Wonder call over a sample of the examples: allow | review | refuse
   gpu         waits on hook vibe-gpu:<run>:train until the dispatcher says this run is next
   train       createTrainJob glimmer-lora {datasetId, trainChannel: 1, publish: 2}, A100 40 GB first
               -> the job's own trainJob workflow: GPU, judging, adapter files uploaded but not committed
@@ -107,16 +107,16 @@ vibeRun workflow (lib/vibe/workflow.ts):
 1. **`/vibe`, Describe.**
    - A box: "What should your model do?" (20 to 600 characters), with three example chips.
    - What happens next, in four plain lines:
-     - Muse Spark 1.3 writes about 300 examples.
+     - Muse Wonder writes about 300 examples.
      - Muse Glimmer 30B learns from them on a GPU.
-     - Spark judges the result blind.
+     - Muse Wonder judges the result blind.
      - It takes about three hours once it starts.
    - Two warnings: the model and its training data become public on Hugging Face under Apache 2.0, so don't type personal or confidential details; and Meta's Usage Policy says the model "is not intended for individuals under the age of 18".
    - An 18+ box and a "Check my idea" button.
    - A status line: how many runs are waiting, or "Paused: Meta's Model API isn't answering", "Paused: today's runs are used up", or "Off".
 2. **`/vibe/{id}`, Check (a draft).**
    - The role, as the model will be prompted ("You are the meeting-notes summarizer.").
-   - What it will learn: the task Spark wrote, folded after two lines.
+   - What it will learn: the task Muse Wonder wrote, folded after two lines.
    - Three example requests.
    - "Start", or "Change my words", which counts toward the day's checks.
    - A refused idea shows one sentence of why, with a link to the Usage Policy.
@@ -149,7 +149,7 @@ Admins see a **Vibe requests** table on `/fine-tuning` with these columns: words
 | `status` | see Statuses |
 | `waiting` | the plain reason while waiting: "an admin", "a GPU", "today's budget" |
 | `words` | the person's text, cleared after 30 days |
-| `spec` | jsonb `{ title, roleLine, task, samples[3], studentFacing }`, all written by Spark |
+| `spec` | jsonb `{ title, roleLine, task, samples[3], studentFacing }`, all written by Muse Wonder |
 | `request_check`, `data_check` | jsonb `{ verdict: "allow" \| "review" \| "refuse", reasons, costUsd, at }` |
 | `client_key`, `browser_key` | HMAC with `GATEWAY_TOKEN_PEPPER` of the client IP (`x-real-ip`) and of a random HttpOnly cookie id, for quotas. Never the raw IP. |
 | `secret_hash` | `hashToken` of the run link's secret (32 random bytes), as gateway tokens are stored (`lib/gateway/tokens.ts`) |
@@ -179,7 +179,7 @@ a draft nobody started for 1 hour -> expired (still counts toward the day's chec
 
 | Route | Who | Does |
 |---|---|---|
-| `POST /api/vibe/spec` | anyone, not cross-site (`requireUser`), with the bot check | `{ words }` -> 201 `{ runId, spec }`, or 200 `{ refused, reason }`. Makes a draft row and its cookie. Rule checks first, then one Spark call. 429 `daily_limit` (10 checks per client a day, `VIBE_DAILY_SPECS` 200 for everyone), 503 `paused` (`spendPaused`), `meta_not_configured`, `vibe_off`. |
+| `POST /api/vibe/spec` | anyone, not cross-site (`requireUser`), with the bot check | `{ words }` -> 201 `{ runId, spec }`, or 200 `{ refused, reason }`. Makes a draft row and its cookie. Rule checks first, then one Muse Wonder call. 429 `daily_limit` (10 checks per client a day, `VIBE_DAILY_SPECS` 200 for everyone), 503 `paused` (`spendPaused`), `meta_not_configured`, `vibe_off`. |
 | `POST /api/vibe/runs/{id}/submit` | the browser holding the draft's cookie | `{ ageOk: true, termsVersion }` -> 200 `{ link }`, shown once. Sets status "review" (or "queued" under `auto`) and starts `vibeRun`. 429 `daily_limit` (1 run per client a day, `VIBE_DAILY_RUNS` for everyone), 409 `not_draft`. |
 | `GET /api/vibe/runs/{id}` | the run's secret (the cookie, or `?k=` once, which sets the cookie and redirects to the clean URL), or an admin | The safe view: status, waiting, spec, progress, gate, and public links once published. Never the IP hash, words of other runs, instance data, log text or errors beyond one sentence. |
 | `POST /api/vibe/runs/{id}/cancel` | the secret or an admin | Before training: status "cancelled", and the hook is resumed with a cancel. 409 after that. |
@@ -233,7 +233,7 @@ Only one place starts vibe GPU jobs, so two runs never race into the route's bac
   - What it does: `POST /api/train/jobs/{id}/judge` (admin) starts a small `judgeJob` workflow made of the existing `judgePlanStep`, `judgeStep` and `saveEvalSummaryStep`.
   - When it runs: only on a succeeded, terminated job with eval items whose summary is unjudged.
   - Why: a run that ended while Meta was down can then be judged and published later.
-- **Card wording.** For a vibe run, the model card's "which the admin described as" (`lib/train/hub-cards.ts:780`) becomes "which the person who asked for it described as". The quoted text is the spec's task, written by Spark and checked, never the person's raw words. Its Markdown is escaped like the judge's notes are.
+- **Card wording.** For a vibe run, the model card's "which the admin described as" (`lib/train/hub-cards.ts:780`) becomes "which the person who asked for it described as". The quoted text is the spec's task, written by Muse Wonder and checked, never the person's raw words. Its Markdown is escaped like the judge's notes are.
 - **Lab reads** for the run page select only the run's own safe columns, as the Lab reads already do (`lib/train/store.ts:1039-1112`).
 
 ### The checks
@@ -245,7 +245,7 @@ Only one place starts vibe GPU jobs, so two runs never race into the route's bac
 - contain an email address, a phone number or a street address ("Leave out personal details");
 - ask to remove safety ("uncensored", "jailbreak", "abliterate", "no refusals" and similar). Usage Policy item 1.8 forbids circumventing safety measures, and the Hub already has such Glimmer variants (drive notes).
 
-**The request check** (one Spark call, structured output, effort low; usage recorded under `source "platform"`):
+**The request check** (one Muse Wonder call, structured output, effort low; usage recorded under `source "platform"`):
 
 - It returns `{ verdict, reasons, title, roleLine, task, samples, studentFacing }`.
 - **Refuse:** anything the Usage Policy forbids, content aimed at a private individual, and impersonating a real person or brand.
@@ -253,9 +253,9 @@ Only one place starts vibe GPU jobs, so two runs never race into the route's bac
 - **The role and the task:**
   - `title` must read well after "You are " and stay under 60 characters, so glimmer-lora's `student_system` makes a real role line from it (`TRAINING.md:322`).
   - The `task` is 20 to 2,000 characters, which is what `datasetSystemPrompt(task)` takes (`lib/train/logic.ts:559`).
-  - The person can change only their words, never the task text. So what reaches the teacher's system prompt is always Spark's checked rewrite.
+  - The person can change only their words, never the task text. So what reaches the teacher's system prompt is always Muse Wonder's checked rewrite.
 
-**The data check** (one Spark call): 20 random training examples and every eval prompt, as data. "allow" lets the gate pass. "review" or "refuse" holds the run as `not_published` until an admin publishes it privately or discards it.
+**The data check** (one Muse Wonder call): 20 random training examples and every eval prompt, as data. "allow" lets the gate pass. "review" or "refuse" holds the run as `not_published` until an admin publishes it privately or discards it.
 
 **The gate** (pure, `vibeGate`), checked after judging. Every part must hold:
 
@@ -268,15 +268,17 @@ Only one place starts vibe GPU jobs, so two runs never race into the route's bac
 
 | Stage | Where | Time | Cost |
 |---|---|---|---|
-| Request check and spec | Spark, 1 call | 10 to 30 s | about $0.01 [I] |
-| Dataset, 300 examples | Spark | 8 to 15 min [I] | about $1.10 [I, from $0.0035 to $0.0038 an example measured: `TRAINING.md:375`, `SUBMISSION.md:101`] |
-| Data check | Spark, 1 call | under 1 min | about $0.01 [I] |
+| Request check and spec | Muse Wonder, 1 call | 10 to 30 s | about $0.04 [I] |
+| Dataset, 300 examples | Muse Wonder | 8 to 15 min [I] | about $3.50 to $5.50 [I, scaled from Spark 1.3's measured $0.0035 to $0.0038 an example: `TRAINING.md:375`, `SUBMISSION.md:102`] |
+| Data check | Muse Wonder, 1 call | under 1 min | about $0.04 [I] |
 | Training, 120 steps | A100 SXM4 40 GB, $1.99 an hour; then H100 PCIe or SXM5 | 42 to 47 min on the A100 [V]; about 32 or 30 min on the H100s [I, `runEstimate`] | $1.39 to $1.59 [V]; about $1.75 or $2.15 on the H100s [I] |
-| Judging, 30 items | Spark | 2 to 5 min [I] | about $0.11 [I; run 2 was $0.15 for 40] |
-| Story for the card | Spark | under 1 min | about $0.02 [I] |
+| Judging, 30 items | Muse Wonder | 2 to 5 min [I] | about $0.35 to $0.50 [I; run 2 was $0.15 for 40 on Spark 1.3] |
+| Story for the card | Muse Wonder | under 1 min | about $0.08 [I] |
 | Adapter publishing | platform | 2 to 5 min [I] | $0 |
 | Quantizing | A100 SXM4 40 GB (Feature 2) | 45 to 110 min, typically about 75 [I] | about $1.50 to $3.65, typically $2.50 [I] |
-| **Total** | | about 2.5 to 3 hours from approval, with a free GPU | **about $4 to $7, typically $5.25**: about $1.25 to Meta and $4 of GPU |
+| **Total** | | about 2.5 to 3 hours from approval, with a free GPU | **about $7 to $12, typically $9**: about $5 to Meta and $4 of GPU |
+
+The Meta rows were measured or estimated on Muse Spark 1.3 and are scaled here to Muse Wonder's prices, which are 3.2 times Spark's for input and 4.7 times for output [I]. Wonder bills reasoning as output and may also take longer, so the first real run should replace these figures.
 
 - The person can try the adapter live after about an hour, and download files after about 2.5 hours.
 - One GPU slot does about 2 GPU-hours per run, so at most about 10 runs a day. The $20 `TRAIN_DAILY_USD` binds first, at about 4 runs.
@@ -308,7 +310,7 @@ Only one place starts vibe GPU jobs, so two runs never race into the route's bac
 These follow the lab's pattern: `npx tsx --test --experimental-test-module-mocks`, nothing calls Meta, Lambda, the Hub or Neon.
 
 - **`lib/vibe/__tests__/logic.test.ts`:** the rule checks (personal details, control tokens, safety-removal words, lengths), the status transitions, `vibeGate` at its edges, the quota counting, and the role line read through `studentSystem`.
-- **`check.test.ts`:** both Spark checks against a fake Meta client: the schema, refusals, a reply that never matched, usage recorded before the verdict is saved, and the spend cap.
+- **`check.test.ts`:** both Muse Wonder checks against a fake Meta client: the schema, refusals, a reply that never matched, usage recorded before the verdict is saved, and the spend cap.
 - **`store.test.ts`** on PGlite with the repo's migrations: quotas by either key over 24 hours, the advisory-lock dispatch order, one job per stage, and the 30-day clearing.
 - **`routes.test.ts`:** spec, submit, status, cancel, review and visibility with their dependencies faked. It covers cross-site requests, the bot check faked, the link secret and its redirect, a status that never names an IP, and every limit.
 - **`workflow.scenario.test.ts`:** `vibeRun` with its steps faked, in the style of `lib/train/__tests__/workflow.scenario.test.ts`:
@@ -769,14 +771,14 @@ Files copied from a USB stick carry no quarantine or Mark of the Web (Base Drive
 
 **v2 is an assistant on top of the tree**:
 
-- Spark when Meta answers, or the pool's base Glimmer.
+- Muse Wonder when Meta answers, or the pool's base Glimmer.
 - Its inputs are the confirmed profile, the app, the build, the step and a pasted log. The log is redacted in the browser and treated as data.
 - It never asks for passwords or tokens, and never suggests turning off Gatekeeper, SmartScreen, Smart App Control or Defender.
 - 20 messages per client a day, counted in `DAILY_SPEND_CAP_USD`.
 
 ### Cost, who, and what is automatic
 
-- **Cost.** The page and the tree are static and cost nothing. The v2 assistant costs one Spark or pool call per message, about $0.002 to $0.01 [I], inside the existing caps.
+- **Cost.** The page and the tree are static and cost nothing. The v2 assistant costs one Muse Wonder or pool call per message, about $0.01 to $0.04 [I], inside the existing caps.
 - **Who.** Anyone, for any model with a public GGUF repo.
 - **What is automatic.** All of it; no admin step.
 - **Files the page builds on.** It reads the GGUF job's file list and the model's system line from the store. It never calls the Hub from the browser beyond the deep links.
@@ -868,7 +870,7 @@ MUSEMUSE (exFAT, MBR, about 53.6 GB on a 64 GB stick)
 
 - **Sizes.** The models take 53.49 GB, and the runtimes about 70 MB (macOS arm64 about 11 MB, Windows Vulkan about 34 MB and CPU about 18 MB in b10353 [V]). A 64 GB stick holds about 59.6 GiB.
 - **The stick.** Buy name-brand sticks with both USB-C and USB-A, since MacBooks have only USB-C [I].
-- **Left off:** the Spark-written dataset (its output terms are unchecked; the card links it), LM Studio (its terms forbid redistribution), and the vision projector (v1).
+- **Left off:** the training data, which a Meta model wrote (its output terms are unchecked; the card links it), LM Studio (its terms forbid redistribution), and the vision projector (v1).
 - **`CHANGES.md`** states what was changed, as Apache 2.0 section 4(b) asks: fine-tuned with a LoRA adapter, merged, quantized.
 
 ### Launcher behavior [I design; the build table is generated from Feature 2's constants when the image is built, so the web and the drive agree]
@@ -979,7 +981,7 @@ MUSEMUSE (exFAT, MBR, about 53.6 GB on a 64 GB stick)
 ## Risks and unknowns
 
 1. **Meta.**
-   - Spark writes every dataset and judges every run, and Meta billing is down.
+   - Muse Wonder writes every dataset and judges every run, and Meta billing is down.
    - Steps 0 to 4 avoid it.
    - A base-Glimmer teacher and judge on the pool is the fallback if it stays down. It changes the lab's story and needs its own eval.
 2. **Local behavior.** Whether a `trainChannel` model picks `to=user` reliably in every stock app is unproven until one run, and the file checks catch it before publishing. Run 2's files need `tuned.jinja`.
@@ -993,7 +995,7 @@ MUSEMUSE (exFAT, MBR, about 53.6 GB on a 64 GB stick)
 5. **Guest mode.**
    - One shared identity, and IP and cookie quotas that a VPN dodges.
    - The caps, the bot check and the "review" verdicts bound the spend and the content. Each day that is at most $20 of training GPU (`TRAIN_DAILY_USD`) and $15 of serving GPU (`INFER_DAILY_USD`), and Meta stays under the $40 platform cap (`DAILY_SPEND_CAP_USD`).
-6. **Public content.** Requested models are published under the owner's namespace, and Spark's checks will miss some cases. Make private exists, and "review" verdicts always wait for a person.
+6. **Public content.** Requested models are published under the owner's namespace, and Muse Wonder's checks will miss some cases. Make private exists, and "review" verdicts always wait for a person.
 7. **Device promises.** A dense 30B needs at least 24 GB, and most laptops have less. The picker says so first, and the drive page prints the minimum spec. That one line drives the return rate (a Base Drive lesson, `PRODUCTION-CHECKLIST.md:192-196`).
 8. **The drive.** Stick write speed, unsigned launchers on Windows with Smart App Control, and the trademark and rules questions. Invoices and payments are the owner's own, outside the platform.
 9. **The pool.** Adapter weight names on vLLM, FP8 under an adapter trained on 4-bit, the arm64 image, GH200 capacity, and the cold-start time.

@@ -1,14 +1,14 @@
 # Muse Muse design
 
-Hackathon codename (see [Name](#name)). Written Oct 24, 2026 as design and scaffold only. Real code starts at kickoff on Oct 26.
+Hackathon codename (see [Name](#name)). Written Oct 24, 2026 as design and scaffold only. Real code starts at kickoff on Oct 26. The model choices were updated Oct 29: Muse Wonder is now the default for every platform role and for a product's own text and vision calls, and Muse Spark 1.3 is never used (see [Model routing](#model-routing)).
 
 ## The product
 
 You give it a muse and Muse makes it. A muse is an example or some inspiration, such as a photo of something you love, a screenshot of an app, a napkin sketch, a short video, a voice memo or a PDF. You can add an optional note, like "make this, but for my bakery." Text alone works too.
 
-Muse Spark 1.3 reads the inspo and writes a brief. Muse Code then builds a working product from a starter template and uses Meta's models for the hard parts:
+Muse Wonder reads the inspo and writes a brief. Muse Code, also on Muse Wonder, then builds a working product from a starter template and uses Meta's models for the hard parts:
 
-- Muse Spark 1.3 and Muse Wonder for reasoning
+- Muse Wonder for reasoning, vision and video
 - Muse Image for pictures
 - SAM 3.1 for finding and tracking things in photos and video
 - Muse Voice Transcribe for speech
@@ -44,7 +44,7 @@ Muse Muse goes after both problems. Every product it ships is new Meta API usage
 1. **Muse.** Drop in an example or some inspo: photos, screenshots, sketches, a short video, a voice memo or a PDF. Add a note if you want.
 2. **Brief, about 15 seconds.** Includes the product name, who it's for and the main flow. Lists which Meta models it uses and why, honest limits and an estimated cost per use. Also says what it takes from your inspo and what it deliberately leaves out. Approved automatically unless you edit it.
 3. **Build, 5 to 15 minutes.** A live log of what Muse Code is doing, the files it touched, and a live preview once the dev server starts.
-4. **Check.** The platform runs the product's own tests, then Muse Spark 1.3 looks at screenshots and judges them against the brief. Failures go back to Muse Code, up to three rounds.
+4. **Check.** The platform runs the product's own tests, then Muse Wonder looks at screenshots and judges them against the brief. Failures go back to Muse Code, up to three rounds.
 5. **Ship.** A public URL, a "how it was built" page, and a Muse app connector URL.
 6. **Refine.** A follow-up like "add a dark mode" resumes the same Muse Code session in the same sandbox, then checks and ships again.
 
@@ -54,12 +54,12 @@ Muse Muse goes after both problems. Every product it ships is new Meta API usage
 flowchart LR
   U[User] -->|inspo and note| W[Platform web app<br/>Next.js on Vercel]
   W -->|start run| WF[Build workflow<br/>Vercel Workflow]
-  WF -->|read inspo, write brief| SP[Muse Spark 1.3]
+  WF -->|read inspo, write brief| SP[Muse Wonder]
   WF -->|create or resume| SB[Builder sandbox<br/>Vercel Sandbox microVM]
-  SB -->|muse exec| MC[Muse Code CLI]
+  SB -->|muse exec| MC[Muse Code CLI<br/>on Muse Wonder]
   MC -->|key injected by firewall| API[Meta Model API<br/>api.meta.ai]
   SB -->|preview on port 3000| W
-  WF -->|screenshots| J[Judge<br/>Muse Spark 1.3 vision]
+  WF -->|screenshots| J[Judge<br/>Muse Wonder vision]
   WF -->|deploy files| V[Vercel Deployments API]
   V --> P[Live product<br/>own URL]
   P -->|product token| G[Meta gateway<br/>/api/gateway]
@@ -88,7 +88,7 @@ Meta's Videos page is a ready-made muse list. `catalog/meta-resources.json` hold
 | Fit | Meaning | Videos |
 |---|---|---|
 | Clean | The same demo, built on current models | Blog posts from docs with RAG, insights from rich documents |
-| Reframe | The goal still matters, but the method changed | Structured image extraction (now a JSON-schema prompt, no fine-tuning), fine-tuning in the real world (a few-shot check against the fine-tuning goal), Llama Protections (a Spark 1.3 safety check) |
+| Reframe | The goal still matters, but the method changed | Structured image extraction (now a JSON-schema prompt, no fine-tuning), fine-tuning in the real world (a few-shot check against the fine-tuning goal), Llama Protections (a Muse Wonder safety check) |
 | Partial | Part of it needs something outside Muse Muse | The WhatsApp chatbot. The web version works, and WhatsApp itself needs a Business account |
 
 The catalog also lists demos Meta doesn't have yet: SAM 3.1, Muse Image, Voice Transcribe and Muse Wonder.
@@ -132,16 +132,16 @@ Browsing is public. Building requires sign-in, because every build spends credit
 
 ### 2. Build workflow
 
-One durable workflow per build. Each row is a step with its own retries.
+One durable workflow per build. Each row is a step with its own retries. The time caps are sized for Muse Wonder, the default for the brief, the build and the fix rounds (`lib/pipeline/steps.ts`).
 
 | Step | What it does | Uses | Time cap | Retries |
 |---|---|---|---|---|
-| `brief` | Reads the inspo and note and writes a structured brief, or refuses with a reason. Voice memos are transcribed first | Muse Spark 1.3 (image, video and PDF input), Muse Voice Transcribe, structured output | 90 s | 2 |
+| `brief` | Reads the inspo and note and writes a structured brief, or refuses with a reason. Voice memos are transcribed first | Muse Wonder (image, video and PDF input), Muse Voice Transcribe, structured output | 2 min | 2 |
 | `provision` | Gets or creates the product's sandbox from the builder snapshot, copies the template, puts the inspo files in `inspo/`, writes `brief.md`, sets the network policy | Vercel Sandbox | 3 min | 2 |
-| `build` | Runs `muse exec` detached and streams its JSONL events into build events | Muse Code | 20 min | 0 |
+| `build` | Runs `muse exec` detached and streams its JSONL events into build events | Muse Code on Muse Wonder | 25 min | 0 |
 | `preview` | Starts `next dev` on `0.0.0.0:3000`, waits for a 200, saves `sandbox.domain(3000)` | Vercel Sandbox | 2 min | 1 |
-| `verify` | Runs `npm run verify`, collects screenshots, asks the judge | Playwright, Muse Spark 1.3 | 8 min | 0 |
-| `fix` | On failure, resumes the Muse Code session with the errors. Loops back to `verify`, at most 3 rounds | Muse Code | 10 min each | 0 |
+| `verify` | Runs `npm run verify`, collects screenshots, asks the judge | Playwright, Muse Wonder | 8 min | 0 |
+| `fix` | On failure, resumes the Muse Code session with the errors. Loops back to `verify`, at most 3 rounds | Muse Code, on the build's own model | 12 min each | 0 |
 | `record` | Writes Demo Studio's spec, reruns the smoke test with its recorder, then edits the recording into a 1920×1080 MP4 and a poster | Playwright, Chromium, ffmpeg | 9 min | 1 |
 | `deploy` | Pulls the source out of the sandbox, creates or updates the product's Vercel project, sets env vars, deploys, waits for READY | Vercel REST API | 6 min | 2 |
 | `register` | Saves the product, mints its gateway token, builds its MCP tool list from `musemuse.json` | Postgres | 30 s | 3 |
@@ -162,10 +162,10 @@ Build status values: `queued`, `briefing`, `refused`, `provisioning`, `building`
 
   `dev.meta.ai` is allowed only while creating the snapshot, for the Muse Code installer.
 - **Muse Code auth.** Only the Muse Code runner exports `META_API_KEY`, set to a per-sandbox placeholder derived from the real key (`placeholderKey()`). The firewall swaps it for the real key on the brokered routes. Spike 1 confirmed Muse Code accepts a placeholder, and the Oct 27 review fix confirmed builds work under the scoped routes.
-- **Muse Code sees the inspo two ways.** The brief carries Spark 1.3's written description of every reference, so the build works even with text only. Image references are also attached with `muse exec --image`. One third-party guide lists that flag and Meta's docs don't, so spike 1 checks it.
-- **Muse Code flags.** `muse exec --json --prompt-file brief.md --image inspo/<file> --model muse-spark-1.3 --reasoning-effort high --max-model-steps 200 --yolo`. `--yolo` turns off Muse Code's own sandbox and approvals. That is acceptable only because the whole microVM is disposable and firewalled, which is the case Muse Code's docs describe for it. Use `muse-wonder-1.0` when the brief marks the product as complex.
+- **Muse Code sees the inspo two ways.** The brief carries the brief writer's description of every reference, so the build works even with text only. Image references are also attached with `muse exec --image`. One third-party guide lists that flag and Meta's docs don't, so spike 1 checks it.
+- **Muse Code flags.** `muse exec --json --prompt-file brief.md --image inspo/<file> --model muse-wonder-1.0 --reasoning-effort high --max-model-steps 200 --yolo`. `--yolo` turns off Muse Code's own sandbox and approvals. That is acceptable only because the whole microVM is disposable and firewalled, which is the case Muse Code's docs describe for it. Muse Wonder builds every brief, complex or not (`BUILD_MODEL` and `COMPLEX_BUILD_MODEL` both default to it). A refinement resumes on the model the product was built with, so a product built on Spark 1.3 resumes on `muse-spark-1.3-contributor`, since Spark 1.3 itself is never used.
 - **Sessions.** Save Muse Code's session id from the JSONL stream. Fix rounds and user refinements call `muse exec --session-id <id>`. `muse export --session <id>` produces the transcript for the "how it was built" page.
-- **What never enters the sandbox.** The Vercel token, the database URL, and the master Meta key. The only credential inside is a short-lived build token for the gateway. Its budget covers the whole build's tests, every verify, fix round and the demo recording: $3, or $10 when the product may call Muse Wonder (`buildTokenBudgetFor` in `lib/gateway/policy.ts`). When it runs out, the gateway says so and tells Muse Code not to wait for a reset.
+- **What never enters the sandbox.** The Vercel token, the database URL, and the master Meta key. The only credential inside is a short-lived build token for the gateway. Its budget covers the whole build's tests, every verify, fix round and the demo recording: $10 for every build (`buildTokenBudgetFor` in `lib/gateway/policy.ts`). When it runs out, the gateway says so and tells Muse Code not to wait for a reset.
 
 ### 4. Product template
 
@@ -185,7 +185,7 @@ Three layers, in order. A later layer cannot overrule an earlier failure.
 
 1. **Mechanical.** Typecheck, `next build`, the server starts, the home page returns 200, no console errors.
 2. **Behavioral.** The Playwright smoke test that Muse Code wrote runs the primary flow on the fixtures, with real model calls through the gateway on the build token.
-3. **Judgment.** Muse Spark 1.3 gets the brief, the inspo and two to four screenshots. It returns pass or fail with reasons, as structured output. It checks that the product does what the brief says and doesn't copy a brand, logo or character from the inspo.
+3. **Judgment.** Muse Wonder gets the brief, the inspo and two to four screenshots. It returns pass or fail with reasons, as structured output. It checks that the product does what the brief says and doesn't copy a brand, logo or character from the inspo.
 
 **Recorded demos.** Every product that passes gets a demo video made from its own smoke test by Demo Studio ([DEMO_STUDIO.md](DEMO_STUDIO.md)):
 
@@ -205,9 +205,11 @@ The platform, never the sandbox, talks to Vercel. It reads the source tree out o
 
 1. Look up the product token.
 2. Check the endpoint and model against the product's allowlist, which comes from its brief.
-3. Check the product's daily budget and a per-IP rate limit.
+3. Check the product's daily budget and a per-IP rate limit. A live product's daily budget fits about 20 runs at its brief's estimated cost per run, between $3 and $10 (`liveTokenDailyBudgetFor`).
 4. Forward to `https://api.meta.ai/v1` with the real key, streaming the response through.
 5. Record usage: tokens, images, video frames or audio seconds.
+
+A product built to call `muse-spark-1.3` still passes step 2. The gateway forwards that call to `muse-spark-1.3-contributor` instead and meters it at that model's price, since Spark 1.3 itself is never used.
 
 Each product has a kill switch. Realtime voice over WebSocket is out of scope for v1, so products use file transcription.
 
@@ -241,17 +243,22 @@ Inspo files, uploads and screenshots go to Vercel Blob. Uploads and screenshots 
 
 | Job | Model | Reason |
 |---|---|---|
-| Reading inspo, brief and policy check | `muse-spark-1.3` | Takes images, video and PDFs. Fast and cheap, structured output |
-| Voice memo inspo | `muse-voice-transcribe-1.0`, then Spark 1.3 | Turns the memo into text the brief writer can use |
-| Building products | Muse Code on `muse-spark-1.3` | Default. `muse-wonder-1.0` for briefs marked complex |
-| Judging screenshots | `muse-spark-1.3` | Accepts images |
-| Inside products | Whatever the brief picks | Spark 1.3, Wonder, `muse-image-1.0`, `sam-3.1`, `muse-voice-transcribe-1.0` |
+| Reading inspo, brief and refinement policy check | `muse-wonder-1.0` | Takes images, video and PDFs. Meta's strongest model, structured output |
+| Voice memo inspo | `muse-voice-transcribe-1.0`, then Muse Wonder | Turns the memo into text the brief writer can use |
+| Building products and fix rounds | Muse Code on `muse-wonder-1.0` | The default for every brief, complex or not. Fix rounds resume on the build's own model |
+| Refining a product built on Spark 1.3 | Muse Code on `muse-spark-1.3-contributor` | A session's reasoning records belong to its model, so a refinement resumes on the model the product was built with. Products built before the platform recorded the model count as Spark 1.3 builds |
+| Judging screenshots | `muse-wonder-1.0` | Accepts images |
+| Inside products | Whatever the brief picks | Muse Wonder (the default for text and vision), `muse-image-1.0`, `sam-3.1`, `muse-voice-transcribe-1.0`. The brief writer isn't offered Spark 1.3 |
+| Live products that still call `muse-spark-1.3` | The gateway serves `muse-spark-1.3-contributor` | Metered at its price. Meta may train on contributor prompts |
+| Fine-tuning lab: datasets, judging, card stories | `muse-wonder-1.0` for new runs | Muse Spark 1.3 wrote the lab's first dataset and judged the runs trained on it ([TRAINING.md](TRAINING.md)) |
 | Local or offline | Muse Glimmer | Self-hosted only, not on the Model API |
+
+Muse Spark 1.3 is never used. Wherever something is still forced onto it, it runs on Spark 1.3 Contributor instead (`lib/meta/spark.ts`). That includes an environment value that names `muse-spark-1.3`, which is swapped with one warning (`lib/env.ts`).
 
 **What the Model API doesn't have yet.** Meta leads on perception: reading text, images, video and PDFs, making and editing images, outlining and tracking objects, and transcribing speech. It doesn't have everything, though. As of Oct 26 it has no text-to-speech, no video generation (Muse Video was previewed in July and hasn't shipped), no embeddings model and no realtime speech-to-speech. Products stay Meta-only with these workarounds, and the brief lists each one as a limit:
 
 - Browser speech synthesis for spoken output.
-- Spark 1.3's 1M-token context instead of embeddings for small document sets.
+- Muse Wonder's 1M-token context instead of embeddings for small document sets.
 - Image sequences from Muse Image instead of generated video.
 
 ## Security and abuse
@@ -268,11 +275,13 @@ Inspo files, uploads and screenshots go to Vercel Blob. Uploads and screenshots 
 
 These are estimates to check on day one, not quotes.
 
-- Muse Spark 1.2 standard pricing was $1.25 per million input tokens, $4.25 per million output and $0.15 per million cached input. Reports say 1.3 kept the same price. The contributor tier is far cheaper, but Meta may train on those prompts, so use it only for test runs.
-- Muse Wonder was listed at $4 in and $20 out per million tokens while in preview.
+- Muse Wonder costs $4 per million input tokens, $0.20 per million cached input and $20 per million output, as listed while in preview. It bills reasoning as output, so even a short answer pays for a few hundred reasoning tokens.
+- Muse Spark 1.3 isn't used. Spark 1.3 Contributor, which stands in for it, costs $0.10 per million input tokens and $0.20 per million output. Meta may train on contributor prompts. It runs only refinements of products built on Spark 1.3 and live products that still call Spark 1.3.
 - Muse Image costs $0.01 per returned image. Muse Voice Transcribe costs $0.18 per audio hour. SAM 3.1 video is billed per frame with a 50-frame minimum, at rates on Meta's pricing page.
-- **One build**, assuming 1.5M cached input, 0.3M fresh input and 80k output tokens on Spark 1.3, comes to about $0.94 for Muse Code. The brief, the inspo reading, the judge and smoke-test model calls add about $0.10. Call it $1, and up to $3 with fix rounds.
-- **$150 in credits** covers roughly 50 to 150 builds. Cap builds per user per day and keep a separate budget for the demo.
+- **One build**, assuming 1.5M cached input, 0.3M fresh input and 80k output tokens on Muse Wonder, comes to about $3.10 for Muse Code. The brief, the judge and the product's own test calls add to that. Call it about $4, which is what the $100 `DAILY_SPEND_CAP_USD` default assumes (about 25 builds a day).
+- **Test budget.** Each build token has one $10 budget for every verify run, fix round and the demo recording. A product's own Wonder calls cost about $0.30 a test run, so about 15 verify runs, the fix rounds and the demo come to about $4.50.
+- **Live products.** Each one's daily budget fits about 20 runs at its brief's estimated cost per run, rounded up to whole dollars, between $3 and $10 (`liveTokenDailyBudgetFor`). A product whose brief has no estimate gets $3. It resets at 00:00 UTC.
+- **$150 in credits** covers about 37 builds at $4 each. Cap builds per user per day and keep a separate budget for the demo.
 
 ## Demo, two to three minutes
 
@@ -289,11 +298,11 @@ These are estimates to check on day one, not quotes.
 | Risk | Mitigation |
 |---|---|
 | Muse Code output breaks | Template, skills, verify loop, fix rounds, honest partial status |
-| Builds too slow to show live | Warm snapshot, Spark 1.3 by default, step cap, demo builds run ahead of time with real logs |
+| Builds too slow to show live | Warm snapshot, step caps sized for Muse Wonder, demo builds run ahead of time with real logs |
 | Muse Code misbehaves inside the microVM | Spike 1 on day one. Fallback is the real key in the sandbox with egress limited to `api.meta.ai` and npm, plus a dedicated low-budget key |
 | Muse Code can't see images | The brief's written description of each reference is the baseline. `--image` is a bonus |
 | Inspo leads to copies | Brief records what to leave out, AGENTS.md rules, the judge checks for borrowed branding |
-| Credits run out | Per-user daily caps, contributor tier for test runs, cache briefs |
+| Credits run out | Per-user daily caps, a platform-wide daily spend cap, cache briefs |
 | Crowded category | Inspo-first input, real deployed apps that passed their own tests, Muse app connectors, honest limits, the full Meta model range |
 | Pre-existing code rules | Scaffold only before kickoff, disclose it in the submission |
 | Undocumented API details | Spikes for structured output, video input to Spark and file transcription. Fall back to plain JSON prompting and validation |
