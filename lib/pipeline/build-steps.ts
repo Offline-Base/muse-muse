@@ -27,6 +27,7 @@ import {
   nextFreeSlug,
   normalizeSlug,
   pickBuildModel,
+  refineBuildModel,
   SLUG_MAX,
   type JudgeCall,
 } from "@/lib/pipeline/logic";
@@ -256,7 +257,7 @@ function summarize(brief: Brief): BriefSummary {
   };
 }
 
-/** Writes the brief with Muse Spark 1.3 and saves it. A retry after the brief was saved reuses it. */
+/** Writes the brief with the brief model (env.briefModel) and saves it. A retry after the brief was saved reuses it. */
 export async function briefStep(buildId: string): Promise<BriefSummary> {
   "use step";
   const build = await loadBuild(buildId);
@@ -604,7 +605,7 @@ async function judgeReferences(build: { kind: "build" | "refine"; inspirationId:
   return [...original, ...own];
 }
 
-/** Muse Spark 1.3 judges the screenshots against the brief and the image inspo. */
+/** The judge model (env.judgeModel) checks the screenshots against the brief and the image inspo. */
 export async function judgeStep(input: {
   buildId: string;
   productId: string;
@@ -962,10 +963,8 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
     .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.kind, "build")))
     .orderBy(desc(schema.builds.startedAt))
     .limit(1);
-  const model = pickBuildModel(previous?.buildModel === "muse-wonder-1.0" ? "complex" : "standard", {
-    buildModel: env.buildModel,
-    complexBuildModel: env.complexBuildModel,
-  });
+  // The session resumes on the model that started it, never on today's default: a Spark session never goes to Wonder.
+  const model = refineBuildModel(previous?.buildModel);
   const brief = build.brief ?? (await latestBrief(product.id));
   await db()
     .update(schema.builds)

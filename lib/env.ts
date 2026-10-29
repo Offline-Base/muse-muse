@@ -15,22 +15,48 @@ function number(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
+export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
+
+const warnedContributor = new Set<string>();
+
+/**
+ * A model id from the environment, or the fallback. A contributor model (any id ending in "-contributor") is never
+ * used: Meta may train on its prompts, which hold people's muses. It is ignored with one warning per variable.
+ */
+function model(name: string, fallback: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) return fallback;
+  if (/-contributor$/i.test(value)) {
+    if (!warnedContributor.has(name)) {
+      warnedContributor.add(name);
+      console.warn(`${name} names a contributor model, which Meta may train on, so ${fallback} is used instead.`);
+    }
+    return fallback;
+  }
+  return value;
+}
+
 export const env = {
   /** The platform's Meta key. Server only. Never sent to products or sandboxes (the firewall injects it). */
   get modelApiKey() {
     return required("MODEL_API_KEY");
   },
+  /** Writes the brief, and checks refinement requests against the same policy (lib/brief/policy.ts). */
   get briefModel() {
-    return process.env.BRIEF_MODEL || "muse-spark-1.3";
+    return model("BRIEF_MODEL", DEFAULT_PLATFORM_MODEL);
   },
+  /** Judges the screenshots against the brief (lib/judge.ts). */
   get judgeModel() {
-    return process.env.JUDGE_MODEL || "muse-spark-1.3";
+    return model("JUDGE_MODEL", DEFAULT_PLATFORM_MODEL);
   },
+  /** Muse Code's model for simple and standard briefs. Fix rounds resume the build on its own model. */
   get buildModel() {
-    return process.env.BUILD_MODEL || "muse-spark-1.3";
+    return model("BUILD_MODEL", DEFAULT_PLATFORM_MODEL);
   },
+  /** Muse Code's model for briefs marked complex. */
   get complexBuildModel() {
-    return process.env.COMPLEX_BUILD_MODEL || "muse-wonder-1.0";
+    return model("COMPLEX_BUILD_MODEL", DEFAULT_PLATFORM_MODEL);
   },
   get databaseUrl() {
     return required("DATABASE_URL");
@@ -154,9 +180,12 @@ export const env = {
   get trainJobMaxMinutes() {
     return number("TRAIN_JOB_MAX_MINUTES", 120);
   },
-  /** Platform-wide daily spend cap across every build and product, in USD. The kill switch for runaway cost. */
+  /**
+   * Platform-wide daily spend cap across every build and product, in USD. The kill switch for runaway cost. A build on
+   * Muse Wonder costs about $4, so the default allows about 25 builds a day.
+   */
   get dailySpendCapUsd() {
-    return number("DAILY_SPEND_CAP_USD", 40);
+    return number("DAILY_SPEND_CAP_USD", 100);
   },
   /**
    * HF_TOKEN, required: a Hugging Face token that can write repos under HF_NAMESPACE, for publishing tuned adapters

@@ -31,7 +31,10 @@
   --hover: rgba(0, 0, 0, 0.05); /* overlay on neutral fills */
   --press: rgba(0, 0, 0, 0.1);
   --focus: #0866ff;
-  --progress-track: rgba(8, 102, 255, 0.2);
+  --progress-track: var(--secondary-bg); /* neutral, so an empty bar reads as empty */
+  --segment-track: rgba(0, 0, 0, 0.05); /* the Segmented track */
+  --segment-thumb: var(--surface); /* the chosen segment, raised on the track */
+  --media-ring: rgba(0, 0, 0, 0.1); /* the 1 px edge around images, so a white page keeps its edge on a white card */
   --overlay: rgba(244, 244, 244, 0.8); /* the page behind a dialog */
 
   /* Status. Warning is for icons only: it is too light for text on white. */
@@ -150,6 +153,9 @@
     --hover: rgba(255, 255, 255, 0.1);
     --press: rgba(255, 255, 255, 0.2);
     --focus: #1d85fc;
+    --segment-track: rgba(255, 255, 255, 0.1);
+    --segment-thumb: #3b3c3e;
+    --media-ring: rgba(255, 255, 255, 0.1);
     --overlay: rgba(11, 11, 11, 0.8);
     --positive: #3fbb46;
     --negative: #ff7c74;
@@ -186,8 +192,13 @@ html {
   scroll-padding-top: var(--space-12);
 }
 
+/* Page frame: the app bar, then main, which grows, then the footer, so the page always fills the screen and the
+   footer sits at the bottom. */
 body {
   margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
   color: var(--fg);
   font: var(--type-body);
@@ -201,6 +212,16 @@ main {
   margin-inline: auto;
   padding: var(--space-20) max(var(--gutter), env(safe-area-inset-right, 0px)) var(--space-36) max(var(--gutter), env(safe-area-inset-left, 0px));
 }
+body > main { flex: 1 0 auto; width: 100%; }
+/* Until the first result (no data-done on main), a short start screen sits in the middle of the space between the app
+   bar and the footer; a tall one starts at the top. Once main has data-done the page starts at the top and the hero is
+   hidden, though its h1 stays for screen readers (product-ui P2). */
+main.stack { align-content: start; }
+main.stack:not([data-done]) { align-content: center; }
+main[data-done] > .hero { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* A workspace board or grid with three or more columns may widen to 1040 px; the app bar and footer follow it. */
+main[data-width="wide"] { max-width: calc(1040px + 2 * var(--gutter)); }
+body:has(> main[data-width="wide"]) :is(.appbar-inner, .footer) { max-width: calc(1040px + 2 * var(--gutter)); }
 
 /* Type */
 h1, h2, h3 { font-family: var(--font-display); margin: 0 0 var(--space-8); text-wrap: balance; overflow-wrap: anywhere; color: var(--fg); }
@@ -250,6 +271,10 @@ a.appbar-name:hover { text-decoration: none; }
   .appbar-name { font-size: 17px; line-height: 22px; } /* a long name still fits one line beside its action */
 }
 
+/* Footer (components/Footer): at the bottom of the screen, left aligned with the main column. */
+.footer { width: 100%; max-width: calc(var(--page-width) + 2 * var(--gutter)); margin: 0 auto; padding: 8px var(--gutter) 32px; font: var(--type-meta); color: var(--fg-2); text-align: left; }
+.footer p { margin: 0 0 4px; }
+
 /* Fields: label, control, hint, stacked. .fields.two puts two side by side only when there is room. */
 .field { display: grid; gap: 6px; }
 .fields { display: grid; gap: var(--space-16); }
@@ -277,6 +302,9 @@ input::placeholder, textarea::placeholder { color: var(--placeholder); opacity: 
 :is(input, select, textarea)[aria-invalid="true"] { border-color: var(--negative); }
 /* A field's hint turns red with its error. Only on a card: red text is below AA on the gray page. */
 .card .field:has([aria-invalid="true"]) > .hint { color: var(--negative); }
+/* Under a control: the hint on the left, a counter on the right, shown only from 80% of the field's maxLength. */
+.field-foot { display: flex; justify-content: space-between; gap: 12px; font: var(--type-meta); color: var(--fg-2); }
+.field-foot .count { font-variant-numeric: tabular-nums; white-space: nowrap; }
 textarea { field-sizing: content; min-height: 6.5em; max-height: 24em; resize: vertical; }
 @supports (field-sizing: content) {
   textarea { resize: none; } /* it grows with its text, so no grip */
@@ -301,8 +329,7 @@ progress::-moz-progress-bar { background: var(--accent); }
 /* Buttons: one .primary per screen; .secondary and .tinted for other actions; .text for quiet ones like "Start over";
    .icon for a round icon-only button with an aria-label. Every busy button gets aria-busy="true". Add .ai to a button
    that calls a model: a .primary.ai shows the moving AI gradient while busy, and a .tinted.ai (a model action that
-   isn't the screen's primary) has a violet sparkle and a moving tint. Disabled buttons are a fainter gray than
-   .secondary, so an enabled gray button never reads as off, and they still show their shape on the page. */
+   isn't the screen's primary) has an AI-colored sparkle and a moving tint. */
 button { font: inherit; color: inherit; }
 button.primary,
 button.secondary,
@@ -315,29 +342,29 @@ button.tinted {
 button.primary { background-color: var(--accent); color: var(--on-accent); }
 button.secondary { background-color: var(--secondary-bg); color: var(--fg); }
 button.tinted { background-color: var(--tinted-bg); color: var(--tinted-fg); }
-button.primary:hover:not(:disabled, [aria-busy="true"]) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
-button.secondary:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
-button.tinted:hover:not(:disabled) { background-color: var(--tinted-hover-bg); }
-button.secondary:active:not(:disabled) { background-image: linear-gradient(var(--press), var(--press)); }
-:is(button.primary, button.secondary, button.tinted, button.icon):active:not(:disabled, [aria-busy="true"]) { transform: scale(0.975); }
+button.primary:hover:not(:disabled, [aria-disabled="true"], [aria-busy="true"]) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
+button.secondary:hover:not(:disabled, [aria-disabled="true"]) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button.tinted:hover:not(:disabled, [aria-disabled="true"]) { background-color: var(--tinted-hover-bg); }
+button.secondary:active:not(:disabled, [aria-disabled="true"]) { background-image: linear-gradient(var(--press), var(--press)); }
+:is(button.primary, button.secondary, button.tinted, button.icon):active:not(:disabled, [aria-disabled="true"], [aria-busy="true"]) { transform: scale(0.975); }
 button.text {
   display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-height); padding: 0 var(--space-4);
   border: 0; background: none; font: var(--type-label); color: var(--link); cursor: pointer;
 }
-button.text:hover:not(:disabled) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+button.text:hover:not(:disabled, [aria-disabled="true"]) { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 button.icon {
   display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; padding: 0;
   border: 0; border-radius: 50%; background-color: var(--secondary-bg); color: var(--fg); cursor: pointer;
   transition: background-color var(--dur-xxs) linear, transform var(--dur-xxs) var(--ease-quick);
 }
-button.icon:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button.icon:hover:not(:disabled, [aria-disabled="true"]) { background-image: linear-gradient(var(--hover), var(--hover)); }
 button svg { flex: none; }
-:is(button.primary, button.secondary, button.tinted, button.icon):disabled {
-  background-color: color-mix(in srgb, var(--secondary-bg) 60%, transparent); color: var(--disabled); cursor: not-allowed;
-}
-button.text:disabled { color: var(--disabled); cursor: not-allowed; }
+/* Disabled: every button keeps its own color at half strength, so a disabled primary still reads as the way on. Its
+   reason is a .hint above the row, linked with aria-describedby (product-ui P7). A busy button shows its working state
+   at full strength instead. */
+:is(button.primary, button.secondary, button.tinted, button.icon, button.text, button.chip, button.suggestion, .composer .send):is(:disabled, [aria-disabled="true"]):not([aria-busy="true"]) { opacity: 0.5; cursor: not-allowed; }
 button[aria-busy="true"] { cursor: progress; }
-/* AI working: a model is on it. Keeps the blue-to-violet gradient moving until aria-busy clears. */
+/* AI working: a model is on it. Keeps the AI gradient moving until aria-busy clears. */
 button.primary.ai[aria-busy="true"] {
   color: var(--on-accent);
   background-color: var(--ai-start);
@@ -345,7 +372,7 @@ button.primary.ai[aria-busy="true"] {
   background-size: 200% 100%;
   animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
 }
-button.tinted.ai:not(:disabled) > svg:first-child { color: var(--ai-end); }
+button.tinted.ai > svg:first-child { color: var(--ai-end); }
 button.tinted.ai[aria-busy="true"] {
   color: var(--tinted-fg);
   background-color: var(--tinted-bg);
@@ -354,10 +381,14 @@ button.tinted.ai[aria-busy="true"] {
   animation: ai-flow 1600ms var(--ease-passive) infinite alternate;
 }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); margin-top: var(--space-16); }
-/* On phones a row of buttons shares the width, so a wrapped row never leaves one short button alone. Text buttons, and
-   the one button of an empty state, keep their own width. */
+/* A disabled primary's reason hint sits right above its row. */
+.card > .hint + .actions { margin-top: var(--space-8); }
+/* On phones the primary fills its row. A secondary or tinted button grows only when its row holds another filled
+   button, so a lone gray button never stretches across the card. Text buttons, and the one button of an empty state,
+   keep their own width. */
 @media (max-width: 479px) {
-  :not(.empty) > .actions > :is(button.primary, button.secondary, button.tinted) { flex: 1 1 auto; }
+  :not(.empty) > .actions > button.primary { flex: 1 1 auto; }
+  :not(.empty) > .actions:has(> :is(button.primary, button.secondary, button.tinted) ~ :is(button.primary, button.secondary, button.tinted)) > :is(button.secondary, button.tinted) { flex: 1 1 auto; }
 }
 
 /* Chips: .chip is a short status; .tag is a neutral feature label; a <button className="chip" aria-pressed> is a
@@ -375,10 +406,9 @@ button.tinted.ai[aria-busy="true"] {
 .chip.negative svg { color: var(--negative); }
 .tag { border: 1px solid var(--line); color: var(--fg-2); font-weight: 500; }
 button.chip { min-height: 36px; padding: 0 14px; border: 0; font: var(--type-label); cursor: pointer; transition: background-color var(--dur-xxs) linear; }
-button.chip:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button.chip:hover:not(:disabled, [aria-disabled="true"]) { background-image: linear-gradient(var(--hover), var(--hover)); }
 .chip[aria-pressed="true"] { background-color: var(--tinted-bg); color: var(--tinted-fg); }
-button.chip[aria-pressed="true"]:hover:not(:disabled) { background-image: none; background-color: var(--tinted-hover-bg); }
-button.chip:disabled { color: var(--disabled); cursor: not-allowed; }
+button.chip[aria-pressed="true"]:hover:not(:disabled, [aria-disabled="true"]) { background-image: none; background-color: var(--tinted-hover-bg); }
 /* AI labels on a surface: the gradient is the outline, so the credit reads as a label, not a button. */
 .chip.ai,
 .ai-badge { color: var(--fg); border: 1.5px solid transparent; background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--ai-gradient) border-box; }
@@ -388,44 +418,40 @@ button.chip:disabled { color: var(--disabled); cursor: not-allowed; }
   display: inline-flex; align-items: center; gap: 4px; min-height: 22px; padding: 1.5px 8px; white-space: nowrap;
   font: 600 12px/16px var(--font); border-radius: var(--pill);
 }
+/* AI note: one model sentence inside a plain app card, led by its .ai-badge (product-ui P10). */
+.ai-note { display: flex; align-items: flex-start; gap: 8px; font: 400 15px/20px var(--font); color: var(--fg); }
+.ai-note > .ai-badge { flex: none; margin-top: 1px; }
 
-/* Selected segments and pressed filter chips show a check, so the choice never rests on color alone. */
-.segmented label:has(input:checked)::before,
+/* Pressed filter chips show a check, so the choice never rests on color alone. */
 button.chip[aria-pressed="true"]::before {
   content: ""; flex: none; width: 16px; height: 16px; margin-left: -2px; background-color: currentColor;
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12.5 4.5 4.5L19 7.25'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
-/* Segmented control (components/Segmented): pick one of a few options. Segmented sets data-layout from its labels:
-   one row of equal pills when every label fits its share of a phone's row, "grid" for four that don't (two rows of
-   two), and "stack" for the rest, one full-width row per option. Row and grid labels never wrap. */
-.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-8); }
-.segmented[data-layout="grid"] { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.segmented[data-layout="stack"] { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
-.segmented label {
-  position: relative; display: flex; min-width: 0; align-items: center; justify-content: center; gap: 6px;
-  min-height: 36px; padding: 6px 12px; border-radius: var(--pill); background-color: var(--secondary-bg); color: var(--fg);
-  text-align: center; line-height: 18px; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-xxs) linear;
-}
-/* Stacked rows read as a list: the text starts after room kept for the check, so choosing never moves it. */
-.segmented[data-layout="stack"] label { justify-content: flex-start; padding-left: 32px; text-align: left; white-space: normal; }
-.segmented[data-layout="stack"] label:has(input:checked) { padding-left: 12px; }
-/* The radio covers its whole pill, invisible, so a tap or a test's .check() lands on it. */
+/* Segmented control (components/Segmented): two to four short options on one track, the chosen one on a raised thumb.
+   Always one row, and a label never wraps: when the labels don't fit, Segmented renders the radio list (.choices)
+   instead. The radio covers its whole segment, invisible, so a tap or a test's .check() lands on it. Unchosen labels
+   stay --fg, since --fg-2 on the track is under AA. */
+.segmented { display: flex; gap: 0; padding: 4px; border-radius: var(--pill); background: var(--segment-track); }
+.segmented label { position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 12px; border-radius: var(--pill); font: 500 15px/20px var(--font); color: var(--fg); white-space: nowrap; cursor: pointer; transition: background-color var(--dur-xxs) linear; }
 .segmented input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
-.segmented label:hover { background-image: linear-gradient(var(--hover), var(--hover)); }
-.segmented label:has(input:checked) { background-image: none; background-color: var(--tinted-bg); color: var(--tinted-fg); }
-.segmented label:has(input:checked):hover { background-color: var(--tinted-hover-bg); }
+.segmented label:has(input:checked) { background: var(--segment-thumb); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.1); }
+.segmented label:not(:has(input:checked)):hover { background: var(--hover); }
 .segmented label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-.segmented label:has(input:disabled) { color: var(--disabled); cursor: not-allowed; background-image: none; }
-/* In the 720 px column the options go back to one row when their labels fit it (data-wide, from Segmented). The field
-   is the container, so two controls side by side in .fields.two keep the phone layout. Its width is set because a
-   container takes no width from its content, which would collapse it in a flex row. */
-.field:has(> .segmented) { container-type: inline-size; width: 100%; }
-@container (min-width: 640px) {
-  .segmented[data-wide="row"] { grid-auto-flow: column; grid-template-columns: none; }
-  .segmented[data-wide="row"] label { justify-content: center; padding-left: 12px; text-align: center; white-space: nowrap; }
-}
+.segmented label:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+
+/* Radio list (components/Choices, and Segmented when its labels are long): one row per option, its label and an
+   optional .meta line, and a radio at the end. The native radio covers the row, invisible. */
+.choices { display: grid; }
+.choice { position: relative; display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px; border-radius: var(--radius); cursor: pointer; }
+.choice + .choice { box-shadow: inset 0 1px 0 var(--line); }
+.choice:hover { background: var(--hover); }
+.choice input[type="radio"] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.choice .radio { flex: none; width: 20px; height: 20px; margin-left: auto; border: 2px solid var(--fg-2); border-radius: 50%; }
+.choice:has(input:checked) .radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 5px, transparent 5.5px); }
+.choice:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.choice:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
 
 /* Tables scroll inside their own box, never the page. On phones keep them to about 3 columns. */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
@@ -436,8 +462,9 @@ button.chip[aria-pressed="true"]::before {
 .table-wrap .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Key and value pairs: a phone-friendly alternative to a two-column table. Each column takes the room its text needs,
-   so a long label beside a short number stays on one line, and a long label and a long value share the row. */
-.kv { display: grid; grid-template-columns: auto auto; gap: 10px var(--space-16); margin: 0; font: 400 15px/20px var(--font); }
+   so a long label beside a short number stays on one line, and a long label and a long value share the row. At most
+   480 px wide, so on a desktop each figure stays near its label. */
+.kv { display: grid; grid-template-columns: auto auto; gap: 10px var(--space-16); max-width: 480px; margin: 0; font: 400 15px/20px var(--font); }
 .kv dt { color: var(--fg-2); overflow-wrap: anywhere; }
 .kv dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 
@@ -496,8 +523,19 @@ button.chip[aria-pressed="true"]::before {
 .list-text { flex: 1; min-width: 0; display: grid; gap: var(--space-2); }
 .list-title { font: var(--type-label); color: var(--fg); overflow-wrap: anywhere; }
 .list-text .meta { overflow-wrap: anywhere; }
-/* The person's own words in a summary row: two lines at most, ending in "…". Only on text marked data-user-text. */
+/* The person's own words in a summary row, at body size, two lines at most. Only on text marked data-user-text, with
+   its trailing punctuation trimmed in code so the clamp's "…" never follows a period. .clamp is the older form. */
+.list-quote { font: var(--type-body); color: var(--fg); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+
+/* Sample tiles: 1 to 3 under the input card. A tile loads a sample input from public/samples/ and never runs the
+   model; its title starts with "Try". White on the page, gray inside a card. */
+.suggestions { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+button.suggestion { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 14px; border: 0; border-radius: var(--radius-lg); background: var(--surface); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+button.suggestion:hover:not(:disabled) { background-image: linear-gradient(var(--hover), var(--hover)); }
+button.suggestion .icon-circle { width: 36px; height: 36px; background: var(--surface-2); }
+.card button.suggestion { background: var(--surface-2); }
+.card button.suggestion .icon-circle { background: var(--surface); }
 
 /* Avatars and icon circles. People are circles; things (a plant, a store) are .avatar.square. Initials are gray. An
    .icon-circle holds an icon or the step's own number. */
@@ -513,6 +551,8 @@ button.chip[aria-pressed="true"]::before {
 
 /* Thumbnail: a small preview of an input once its result is up, like the photo that was read. */
 .thumb { display: block; flex: none; width: 56px; height: 56px; border-radius: var(--radius-sm); object-fit: cover; background: var(--surface-2); }
+/* A 1 px ring inside every image's edge, so a white page or drawing keeps its edge on a white card. */
+.media > :is(img, canvas, video), .thumb, .avatar > img { outline: 1px solid var(--media-ring); outline-offset: -1px; }
 
 /* Notes, errors and limits. An <Icon> as the first child of a note or error hangs to the left of the text. */
 .note { font: 400 15px/20px var(--font); color: var(--fg-2); background: var(--surface-2); border-radius: var(--radius); padding: var(--space-12) 14px; }
@@ -608,7 +648,7 @@ button.chip[aria-pressed="true"]::before {
 .dropzone-hint { font: var(--type-meta); color: var(--fg-2); overflow-wrap: anywhere; }
 .dropzone[data-filled] .dropzone-hint { font: var(--type-label); color: var(--link); }
 .dropzone:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-.dropzone:has(input:disabled) { cursor: not-allowed; opacity: 0.6; background-image: none; }
+.dropzone:has(input:disabled) { cursor: not-allowed; opacity: 0.5; background-image: none; }
 @media (hover: none) {
   .dropzone .on-pointer { display: none; }
 }
@@ -642,7 +682,6 @@ button.chip[aria-pressed="true"]::before {
 }
 .composer .send:hover:not(:disabled) { background-image: linear-gradient(var(--accent-hover), var(--accent-hover)); }
 .composer .send:active:not(:disabled) { transform: scale(0.95); }
-.composer .send:disabled { background-color: transparent; color: var(--disabled); cursor: not-allowed; }
 .composer .send[aria-busy="true"] { color: var(--on-accent); background-color: var(--ai-start); background-image: var(--ai-gradient); cursor: progress; }
 
 /* Toast: a short confirmation like "Copied", rendered inside an always-mounted role="status" region. It floats at the
@@ -732,4 +771,11 @@ details[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
     transition: none !important;
   }
   :is(button, .composer .send):active:not(:disabled) { transform: none !important; }
+}
+
+/* Printing a page with a result prints only the result, the card marked data-result, without its buttons. */
+@media print {
+  body:has([data-result]) > :not(main),
+  main:has([data-result]) > :not([data-result], :has([data-result])) { display: none; }
+  [data-result] .actions { display: none; }
 }

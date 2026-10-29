@@ -19,10 +19,15 @@ function list(activation: (id: string) => string, extra: Array<{ id: string; act
 describe("skillsNotOff", () => {
   it("passes when every skill the snapshot turns off is off", () => {
     const kept = [
-      { id: "bundled:taste", activation: "on" },
+      { id: "bundled:durable-test-collateral", activation: "on" },
       { id: "verify", activation: "on" },
     ];
     assert.deepEqual(skillsNotOff(list(() => "off", kept)), []);
+  });
+
+  it("turns off the bundled taste skill, whose don'ts fight meta-ui's AI gradient and Inter", () => {
+    assert.ok(DISABLED_BUNDLED_SKILLS.includes("taste"));
+    assert.deepEqual(skillsNotOff(list((id) => (id === "taste" ? "on" : "off"))), ["taste"]);
   });
 
   it("names skills that are still on or only limited to explicit use", () => {

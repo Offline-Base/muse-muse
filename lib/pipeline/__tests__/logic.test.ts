@@ -11,6 +11,7 @@ import {
   pickBuildModel,
   pollLimit,
   pollTimedOut,
+  refineBuildModel,
   SLUG_MAX,
   slugWithSuffix,
 } from "@/lib/pipeline/logic";
@@ -121,8 +122,25 @@ describe("models", () => {
     assert.equal(pickBuildModel("complex", models), "muse-wonder-1.0");
     assert.equal(pickBuildModel("standard", models), "muse-spark-1.3");
     assert.equal(pickBuildModel("simple", models), "muse-spark-1.3");
-    assert.equal(pickBuildModel("simple", { buildModel: "nope", complexBuildModel: "nope" }), "muse-spark-1.3");
-    assert.equal(pickBuildModel("complex", { buildModel: "nope", complexBuildModel: "nope" }), "muse-wonder-1.0");
+    const wonder = { buildModel: "muse-wonder-1.0", complexBuildModel: "muse-wonder-1.0" };
+    assert.equal(pickBuildModel("standard", wonder), "muse-wonder-1.0");
+    assert.equal(pickBuildModel("complex", { buildModel: "muse-wonder-1.0", complexBuildModel: "muse-spark-1.3" }), "muse-spark-1.3");
+  });
+
+  it("falls back to Muse Wonder for a value that isn't a build model, whatever the complexity", () => {
+    const nope = { buildModel: "nope", complexBuildModel: "nope" };
+    assert.equal(pickBuildModel("simple", nope), "muse-wonder-1.0");
+    assert.equal(pickBuildModel("standard", nope), "muse-wonder-1.0");
+    assert.equal(pickBuildModel("complex", nope), "muse-wonder-1.0");
+    assert.equal(pickBuildModel("standard", { buildModel: "", complexBuildModel: "" }), "muse-wonder-1.0");
+  });
+
+  it("resumes a refinement on the product's own build model, and on Spark for a product with none recorded", () => {
+    assert.equal(refineBuildModel("muse-spark-1.3"), "muse-spark-1.3");
+    assert.equal(refineBuildModel("muse-wonder-1.0"), "muse-wonder-1.0");
+    assert.equal(refineBuildModel(null), "muse-spark-1.3");
+    assert.equal(refineBuildModel(undefined), "muse-spark-1.3");
+    assert.equal(refineBuildModel("muse-spark-1.3-contributor"), "muse-spark-1.3");
   });
 
   it("attaches only image references", () => {

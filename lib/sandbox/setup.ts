@@ -146,7 +146,11 @@ export async function installMuseCode(sandbox: Sandbox, log: Log): Promise<strin
  * They move the product into a new folder (browser-game, greenfield-project-scaffolding), stop to ask or only plan
  * (requirements-clarification, plan, grill), fan out critic loops and workflows (visual-coding, web3d,
  * game-3d-visuals, workflow-authoring), need Blender (blender), take over start commands and URLs
- * (browser-app-delivery), or read ~/.claude and ~/.codex (migrate, import, resume-claude, resume-codex).
+ * (browser-app-delivery), or read ~/.claude and ~/.codex (migrate, import, resume-claude, resume-codex). taste
+ * (bundled:taste, loaded as a "mandatory preflight" before the first UI write in 5 of 5 round-3 builds) is a list of
+ * frontend don'ts that fight the template's own look: it calls an indigo or violet gradient and Inter "AI tells", while
+ * the meta-ui skill uses the AI gradient to mark model work and Inter for all text. Its useful don'ts (hover lift,
+ * fade-up on scroll, left-border accent stripes, all-caps kickers) are in meta-ui's hard rule M8.
  */
 export const DISABLED_BUNDLED_SKILLS = [
   "browser-game",
@@ -164,6 +168,7 @@ export const DISABLED_BUNDLED_SKILLS = [
   "import",
   "resume-claude",
   "resume-codex",
+  "taste",
 ] as const;
 
 /**
