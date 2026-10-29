@@ -72,6 +72,85 @@ This teaches the events in the corpus, not everything. LoRA picks up new facts s
 
 Wikipedia text is CC BY-SA 4.0: a published dataset keeps that license and links its sources. Pairs are written by Muse Spark Open, whose license asks derivatives to show "Built with Muse Spark Open"; the model card should say it.
 
+## Exhaustive corpus (proposed Oct 29, not approved yet)
+
+The owner wants the dataset to hold everything needed to teach any model what happened in this window, pulled from every source we can use. Stages 1 and 2 above become the first slice of it.
+
+### What the release contains
+
+One versioned release per end date (`knowledge-2026-10-28`), usable for any model:
+
+| Part | What | For |
+|---|---|---|
+| `facts/` | Atomic dated facts: claim, event date, "as of" date, entities with Wikidata ids, topic, every source with its license, how many independent sources back it, and which older fact it replaces | The base everything else is made from |
+| `documents/` | Source text. Openly licensed text in full; copyrighted text in a private, training-only split that is never published | Continued pretraining |
+| `synthetic/` | Text Spark Open writes from the facts only: encyclopedia-style summaries, news briefs, timelines and explainers per entity and topic, several styles each | Knowledge sticks better with many phrasings |
+| `sft/` | Chat data with no chat template baked in: several phrasings of each question, multi-turn talks, "what's the latest on X", timelines, comparisons, code that uses 2026 library versions, cutoff questions and "I don't know" for later days | Instruction tuning any chat model |
+| `eval/` | Held-out probes with exact answers, multiple choice, put-in-order questions, after-cutoff questions, a pre-2026 forgetting set, packaged for lm-evaluation-harness and checked against common benchmarks so none leak in | Scoring any model the same way |
+| `replay/` | General prompts only; each student answers them itself before training | Keeping old skills |
+
+Every record has an event date, a publish date, a license and a source tier, so an export can take `--since <a model's cutoff>`, `--open-only` and `--format chat|sharegpt|alpaca|text`. A model whose cutoff is after January 4 takes only what it lacks. A model with an earlier cutoff needs the window extended back, which is one setting and roughly doubles the cost per extra year. A weekly refresh adds new days so "now" stays current.
+
+### Sources
+
+Open, free and publishable:
+- Wikipedia: the January 1, 2026 dump (about 26 GB, on mirrors and a torrent) against the latest one, so every article created or changed in 2026 counts, filtered as in stage 1. The top non-English Wikipedias for regional news, optional. Wikinews, and Wiktionary for new words and senses.
+- Wikidata: every statement dated in the window (winners, results, deaths, releases, versions, acquisitions, office holders). CC0. Exact answers for probes.
+- Wikimedia pageviews: what people looked up each day, to rank topics and find gaps.
+- Government, public domain or open licence: Federal Register, Congress.gov (bills and laws), White House and agency releases, court opinions (CourtListener), SEC EDGAR filings (every US public company's material events), BLS, BEA, Census, NASA, NOAA, USGS earthquakes, NWS storm events, CDC, FDA approvals; EUR-Lex and European Commission releases; gov.uk (Open Government Licence); central bank statements.
+- Research: arXiv metadata and openly licensed full text, OpenAlex (CC0, every field), the PubMed Central open-access subset, bioRxiv and medRxiv where licensed, open conference proceedings.
+- Software and AI: GitHub releases, changelogs and docs for the top 2,000 repositories; npm, PyPI, crates.io, Go, Maven, NuGet, RubyGems, Homebrew and Docker Hub metadata; Hugging Face model and dataset cards; CVE and the GitHub Advisory Database; framework docs under open licenses (MDN and others).
+- Culture: MusicBrainz and Discogs data (CC0), Open Library (CC0), with results and awards from Wikipedia and Wikidata.
+
+Copyrighted, training-only (facts first, never published as text):
+- News at scale: CC-NEWS for every 2026 month and the monthly Common Crawl crawls (CC-MAIN-2026-04 onward, about 2.1 billion pages each), filtered to pages published in the window on news and primary-source sites. No 2026 FineWeb exists, so we run our own filtering. GDELT's event index and article links for discovery and coverage counts.
+- Primary sources by entity: Meta's sites (Newsroom, AI and research blogs, dev.meta.ai docs and changelogs, investor releases, Hugging Face model cards, GitHub) and those of about 300 other notable companies, read from sitemaps and RSS.
+- Exa: targeted search by topic and month, and gap-filling.
+
+Left out:
+- Stack Exchange 2026: its downloads now require affirming no LLM training, and the last dump without that (2025-12-31) predates the window.
+- Reddit, X, YouTube, TikTok, Instagram and Facebook posts: their terms forbid this use.
+- Paywalled articles, sites that opt out of AI training in robots.txt or reserve text and data mining under EU law, and personal data about private people.
+
+### Processing at this size
+
+- Common Crawl lives in AWS us-east-1, so filtering runs on a machine there (no download fees) using the text extracts and the URL index, not on this Mac.
+- News repeats each story many times, so articles are clustered into stories first and facts come from one to three articles per story.
+- Bulk fact writing runs on our own GPUs (Glimmer or Spark Open on vLLM) at a fraction of API prices: inference, not fine-tuning. Hosted Spark Open handles the parts where quality matters most: Meta, AI, the biggest stories and the synthetic text.
+- Every step dedupes (exact and near), strips personal data, drops spam and low-quality pages, and keeps the source of every fact.
+
+### Phases (each paused and capped, each reviewed before the next)
+
+0. Setup: keys, the cloud machine, storage.
+1. Open bulk: Wikipedia, Wikidata, Wiktionary, pageviews, government, research, software registries, culture databases. Free.
+2. Meta and AI in depth: primary sources plus Exa, against a coverage checklist.
+3. News at scale: GDELT, CC-NEWS and Common Crawl, clustered into stories.
+4. Facts: extraction, merging, corroboration, "as of" updates.
+5. Training text: synthetic documents, chat data, eval sets, exports and the dataset card.
+6. Coverage audit: compare against pageview leaders, "2026 in ..." pages and Wikidata counts per topic and month, fill gaps with Exa, and repeat until two rounds find nothing new.
+
+### Rough size and cost
+
+| | Estimate |
+|---|---|
+| Raw text | 5 to 20 billion tokens (1 to 2 billion openly licensed) |
+| Facts | 1 to 3 million |
+| Chat examples | 5 to 10 million |
+| Probes | About 20,000 |
+| Phases 1, 2 and 6 with Exa and hosted Spark Open | $400 to $800 |
+| Phases 3 and 4 at full scale (cloud filtering, GPU extraction, synthetic text) | $1,000 to $2,500 more |
+
+These are early estimates; each phase reports its real numbers before the next starts.
+
+### What the owner provides
+
+- Exa and Fireworks (or Together AI) API keys, each with a cap.
+- An AWS account for the us-east-1 machine, or a decision to skip Common Crawl.
+- OK to use Lambda GPUs for bulk inference within the $250 a day budget.
+- Somewhere to keep a dataset of several terabytes during building and the final release: a private Hugging Face dataset repo (pushed from the platform, never from a GPU) or S3 or R2.
+- A contact email for the User-Agent that SEC EDGAR requires.
+- The publishing call: open-licensed parts public, copyrighted-source parts private and training-only.
+
 ## Next steps
 
 1. Owner: a Fireworks (or Together AI) API key in `.env.local`, and an OK for the pilot.
