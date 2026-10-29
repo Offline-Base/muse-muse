@@ -61,7 +61,7 @@ describe("museExecArgs", () => {
       "--prompt-file",
       "brief.md",
       "--model",
-      "muse-spark-1.3",
+      "muse-wonder-1.0",
       "--reasoning-effort",
       "high",
       "--max-model-steps",

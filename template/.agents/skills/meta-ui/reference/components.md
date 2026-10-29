@@ -31,7 +31,7 @@ Ask, then answer: one card for a model action and its answer. The answer is stru
 ```tsx
 // recap: respondJson's z.object({ wins: z.array(z.string()), themes: z.array(z.string()), nextStep: z.string() })
 <section className={recap ? "card ai" : "card"} aria-labelledby="sum">
-  <div className="card-head"><h2 id="sum">Your week</h2>{recap ? <ModelChip model="muse-spark-1.3" verb="Written" /> : null}</div>
+  <div className="card-head"><h2 id="sum">Your week</h2>{recap ? <ModelChip model="muse-wonder-1.0" verb="Written" /> : null}</div>
   {recap ? (
     <>
       <div className="prose">
@@ -292,7 +292,7 @@ expect(Math.max(...heights)).toBeGreaterThan(4);
 ## Notes, errors, limits, empty states, toasts, dialogs, extras
 
 ```tsx
-<p className="note"><Icon name="info" /> Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it.</p>
+<p className="note"><Icon name="info" /> Your photo is sent to Muse Wonder to read it. This app doesn't keep it.</p>
 
 <div className="error" role="alert"><Icon name="alert" /> <strong>No plant found in that photo.</strong> Try a closer photo with the leaves in focus.</div>
 

@@ -5,6 +5,7 @@
 import type { Brief } from "@/lib/brief/schema";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
+import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
 
 /** BriefSchema caps slugs at 40 characters. */
 export const SLUG_MAX = 40;
@@ -99,10 +100,12 @@ export function allowedModelsFor(brief: Pick<Brief, "capabilities">): string[] {
   return [...new Set(models)];
 }
 
-const BUILD_MODELS: readonly BuildModel[] = ["muse-spark-1.3", "muse-wonder-1.0"];
+const BUILD_MODELS: readonly BuildModel[] = ["muse-wonder-1.0", SPARK_STANDIN];
 
+/** A build model, or the fallback. Muse Spark 1.3 is never used: it becomes Spark 1.3 Contributor (lib/meta/spark.ts). */
 function asBuildModel(value: string | null | undefined, fallback: BuildModel): BuildModel {
-  return BUILD_MODELS.includes(value as BuildModel) ? (value as BuildModel) : fallback;
+  const model = value ? withoutRetiredSpark(value) : value;
+  return BUILD_MODELS.includes(model as BuildModel) ? (model as BuildModel) : fallback;
 }
 
 /**
@@ -120,11 +123,11 @@ export function pickBuildModel(
 
 /**
  * The model a refinement resumes Muse Code on: the one the product was built with, never the current default, since
- * a session's reasoning records belong to its model. Products built before the platform recorded the model were built
- * on Muse Spark 1.3, the default then.
+ * a session's reasoning records belong to its model. A product built on Muse Spark 1.3 (and every product built before
+ * the platform recorded the model) resumes on Spark 1.3 Contributor, since Spark 1.3 itself is never used.
  */
 export function refineBuildModel(previous: string | null | undefined): BuildModel {
-  return asBuildModel(previous, "muse-spark-1.3");
+  return asBuildModel(previous, SPARK_STANDIN);
 }
 
 /** Paths inside the product (inspo/<file>) of the image references, for `muse exec --image`. */

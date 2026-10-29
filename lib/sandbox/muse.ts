@@ -4,7 +4,7 @@ import { q } from "@/lib/sandbox/shell";
  * Arguments for running Muse Code headless inside a builder sandbox. Flags confirmed in docs/SPIKES.md (spike 1) and
  * against Muse Code 1.4.14 on Oct 27 (spike 2).
  */
-export type BuildModel = "muse-spark-1.3" | "muse-wonder-1.0";
+export type BuildModel = "muse-wonder-1.0" | "muse-spark-1.3-contributor";
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 
 export interface MuseExecOptions {

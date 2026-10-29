@@ -7,7 +7,7 @@ async function tryFormat(label: string, schema: Record<string, unknown>, strict 
   const t0 = Date.now();
   try {
     const res = await meta.responses.create({
-      model: "muse-spark-1.3",
+      model: "muse-spark-1.3-contributor",
       input: "Make up a bird sighting.",
       reasoning: { effort: "low" },
       text: { format: { type: "json_schema", name: "probe", strict, schema } },

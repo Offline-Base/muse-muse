@@ -85,7 +85,7 @@ try {
   await write(sandbox, {
     "app/page.tsx": `export default function Home() {\n  const n: number = "not a number";\n  return <main>{n}</main>;\n}\n`,
     "tests/smoke.spec.ts": smoke,
-    "musemuse.json": JSON.stringify({ name: "X", slug: "x", tagline: "t", inspiration: "i", models: [{ id: "muse-spark-1.3", usedFor: "u" }], actions: [{ name: "count", description: "d", input: {}, output: {} }], fixtures: [{ path: "fixtures/missing.jpg", description: "d" }], limits: [], estimatedCostPerRunUsd: 0 }),
+    "musemuse.json": JSON.stringify({ name: "X", slug: "x", tagline: "t", inspiration: "i", models: [{ id: "muse-wonder-1.0", usedFor: "u" }], actions: [{ name: "count", description: "d", input: {}, output: {} }], fixtures: [{ path: "fixtures/missing.jpg", description: "d" }], limits: [], estimatedCostPerRunUsd: 0 }),
   });
   r = await sh(sandbox, "npm run verify 2>&1", { quiet: true });
   report.typeAndManifest = { exit: r.code, ...summary(r.out), tail: r.out.slice(-1200) };

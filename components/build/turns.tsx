@@ -452,7 +452,7 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
           ) : null}
         </div>
       ) : verify?.summary.passed && live ? (
-        <p className="muted">Muse Spark 1.3 is judging the screenshots against the brief.</p>
+        <p className="muted">Muse Wonder is judging the screenshots against the brief.</p>
       ) : null}
     </div>
   );

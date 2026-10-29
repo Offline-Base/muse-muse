@@ -1,9 +1,9 @@
 ---
 name: meta-reasoning
-description: Use for text reasoning, reading photos, understanding video, reading PDFs, or getting JSON back from Muse Spark 1.3 or Muse Wonder through the Meta Model API Responses endpoint.
+description: Use for text reasoning, reading photos, understanding video, reading PDFs, or getting JSON back from Muse Wonder through the Meta Model API Responses endpoint.
 ---
 
-# Muse Spark 1.3 and Muse Wonder
+# Muse Wonder
 
 All calls run on the server, in a route handler or server action. The API matches OpenAI's Responses API.
 
@@ -22,8 +22,9 @@ Always pass the incoming `request` (in a server action, `await headers()` from `
 
 | Model | Use when |
 |---|---|
-| `muse-spark-1.3` | Default. Text, image, PDF and video input, 1M-token context |
-| `muse-wonder-1.0` | Only if the brief lists it, for audio input, long multi-step work or web search. It's in preview and costs about three times as much |
+| `muse-wonder-1.0` | The model for every text, image, PDF and video call. 1M-token context. It's in preview and bills its reasoning as output |
+
+Never call `muse-spark-1.3`: Muse Muse doesn't use it.
 
 ## JSON output: use respondJson
 
@@ -45,7 +46,7 @@ const cutList = await respondJson({
   instructions: "You write cut lists for simple furniture. Use inches.",
   input: `Bookshelf: ${JSON.stringify(spec)}`,
   request, // the route handler's incoming request
-  // model: "muse-spark-1.3" (default), reasoningEffort: "low" (default)
+  // model: "muse-wonder-1.0" (default), reasoningEffort: "low" (default)
 });
 ```
 
@@ -57,7 +58,7 @@ const cutList = await respondJson({
 
 ```ts
 const res = await meta.responses.create({
-  model: "muse-spark-1.3",
+  model: "muse-wonder-1.0",
   instructions: "You write friendly plant care tips.",
   input: "My basil is wilting.",
   reasoning: { effort: "low" },
@@ -133,4 +134,4 @@ Vercel Blob URLs from `uploadMedia` work. Some sites (Wikimedia, for one) refuse
 
 ## Cost
 
-Spark 1.3 runs about $1.25 per million input tokens and $4.25 per million output. One photo plus a short JSON answer costs well under a cent. Keep instructions short and don't resend history you don't need.
+Muse Wonder runs about $4 per million input tokens ($0.20 cached) and $20 per million output, and its reasoning counts as output, so even a short answer spends a few hundred output tokens. One photo plus a short JSON answer costs about a cent. Keep instructions short and don't resend history you don't need.

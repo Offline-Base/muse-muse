@@ -486,20 +486,20 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       return out.model;
     };
 
-    it("resumes a Spark product on Spark, even with every default on Muse Wonder", async () => {
+    it("resumes a Spark 1.3 product on Spark 1.3 Contributor, even with every default on Muse Wonder", async () => {
       const keys = ["BUILD_MODEL", "COMPLEX_BUILD_MODEL"] as const;
       const old = keys.map((k) => process.env[k]);
       for (const k of keys) delete process.env[k];
       try {
-        assert.equal(await refineOn("muse-spark-1.3"), "muse-spark-1.3");
+        assert.equal(await refineOn("muse-spark-1.3"), "muse-spark-1.3-contributor");
       } finally {
         keys.forEach((k, i) => (old[i] === undefined ? delete process.env[k] : (process.env[k] = old[i])));
       }
     });
 
-    it("resumes a Wonder product on Wonder, even when the build default is Spark", async () => {
+    it("resumes a Wonder product on Wonder, even when the build default is Spark 1.3 Contributor", async () => {
       const old = process.env.BUILD_MODEL;
-      process.env.BUILD_MODEL = "muse-spark-1.3";
+      process.env.BUILD_MODEL = "muse-spark-1.3-contributor";
       try {
         assert.equal(await refineOn("muse-wonder-1.0"), "muse-wonder-1.0");
       } finally {
@@ -508,10 +508,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       }
     });
 
-    it("resumes a product with no recorded model on Spark, the default it was built with", async () => {
-      assert.equal(await refineOn(null), "muse-spark-1.3");
+    it("resumes a product with no recorded model on Spark 1.3 Contributor, since it was built on Spark 1.3", async () => {
+      assert.equal(await refineOn(null), "muse-spark-1.3-contributor");
       writes = [];
-      assert.equal(await refineOn(undefined), "muse-spark-1.3");
+      assert.equal(await refineOn(undefined), "muse-spark-1.3-contributor");
     });
   });
 

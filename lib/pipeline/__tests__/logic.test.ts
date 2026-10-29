@@ -118,13 +118,18 @@ describe("models", () => {
   });
 
   it("builds complex briefs with the complex model", () => {
-    const models = { buildModel: "muse-spark-1.3", complexBuildModel: "muse-wonder-1.0" };
+    const models = { buildModel: "muse-spark-1.3-contributor", complexBuildModel: "muse-wonder-1.0" };
     assert.equal(pickBuildModel("complex", models), "muse-wonder-1.0");
-    assert.equal(pickBuildModel("standard", models), "muse-spark-1.3");
-    assert.equal(pickBuildModel("simple", models), "muse-spark-1.3");
+    assert.equal(pickBuildModel("standard", models), "muse-spark-1.3-contributor");
+    assert.equal(pickBuildModel("simple", models), "muse-spark-1.3-contributor");
     const wonder = { buildModel: "muse-wonder-1.0", complexBuildModel: "muse-wonder-1.0" };
     assert.equal(pickBuildModel("standard", wonder), "muse-wonder-1.0");
-    assert.equal(pickBuildModel("complex", { buildModel: "muse-wonder-1.0", complexBuildModel: "muse-spark-1.3" }), "muse-spark-1.3");
+  });
+
+  it("never builds on Muse Spark 1.3: it becomes Spark 1.3 Contributor", () => {
+    const spark = { buildModel: "muse-spark-1.3", complexBuildModel: "muse-spark-1.3" };
+    assert.equal(pickBuildModel("standard", spark), "muse-spark-1.3-contributor");
+    assert.equal(pickBuildModel("complex", spark), "muse-spark-1.3-contributor");
   });
 
   it("falls back to Muse Wonder for a value that isn't a build model, whatever the complexity", () => {
@@ -135,12 +140,12 @@ describe("models", () => {
     assert.equal(pickBuildModel("standard", { buildModel: "", complexBuildModel: "" }), "muse-wonder-1.0");
   });
 
-  it("resumes a refinement on the product's own build model, and on Spark for a product with none recorded", () => {
-    assert.equal(refineBuildModel("muse-spark-1.3"), "muse-spark-1.3");
+  it("resumes a refinement on the product's own build model, with Spark 1.3 products on Spark 1.3 Contributor", () => {
+    assert.equal(refineBuildModel("muse-spark-1.3"), "muse-spark-1.3-contributor");
     assert.equal(refineBuildModel("muse-wonder-1.0"), "muse-wonder-1.0");
-    assert.equal(refineBuildModel(null), "muse-spark-1.3");
-    assert.equal(refineBuildModel(undefined), "muse-spark-1.3");
-    assert.equal(refineBuildModel("muse-spark-1.3-contributor"), "muse-spark-1.3");
+    assert.equal(refineBuildModel(null), "muse-spark-1.3-contributor");
+    assert.equal(refineBuildModel(undefined), "muse-spark-1.3-contributor");
+    assert.equal(refineBuildModel("muse-spark-1.3-contributor"), "muse-spark-1.3-contributor");
   });
 
   it("attaches only image references", () => {

@@ -7,7 +7,7 @@ description: Use to turn recorded speech into text with Muse Voice Transcribe (m
 
 ## What you get
 
-One transcript string plus the audio duration. **No speaker labels and no timings**: `turns` comes back empty, even for two voices. Don't promise "who said what". If the brief needs speakers, send the transcript to Muse Spark 1.3 and say in the UI that speaker split is a guess.
+One transcript string plus the audio duration. **No speaker labels and no timings**: `turns` comes back empty, even for two voices. Don't promise "who said what". If the brief needs speakers, send the transcript to Muse Wonder and say in the UI that speaker split is a guess.
 
 ## WAV only
 
@@ -50,7 +50,7 @@ ffmpeg -y -i fixtures/note.wav -c:a libopus fixtures/note.webm
 
 ## Doing something with the transcript
 
-Send it to Muse Spark 1.3 (meta-reasoning skill) with `respondJson` for summaries, action items or study notes.
+Send it to Muse Wonder (meta-reasoning skill) with `respondJson` for summaries, action items or study notes.
 
 ## Cost and limits
 

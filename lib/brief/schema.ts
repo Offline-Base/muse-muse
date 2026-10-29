@@ -13,13 +13,6 @@ export const PRODUCT_MODELS = [
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);
 
 /**
- * The page recipes in the template's `.agents/skills/product-ui/recipes/<layout>.md`, one per kind of product. The
- * build prompt names the brief's recipe and the product marks its main with it (`data-recipe`, verify C20).
- */
-export const LAYOUTS = ["generate", "extract", "workspace", "steps", "compare", "find", "chat"] as const;
-export type Layout = (typeof LAYOUTS)[number];
-
-/**
  * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
  * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
  */
@@ -46,8 +39,6 @@ export const BriefSchema = z.object({
   }),
   primaryFlow: z.array(z.string().min(1)).min(1).max(8),
   screens: z.array(z.object({ name: z.string(), purpose: z.string() })).max(5),
-  /** The page recipe. Optional so briefs stored before round 4 still parse; normalizeRawBrief fills it for new ones. */
-  layout: z.enum(LAYOUTS).optional(),
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(PRODUCT_MODELS), why: z.string() }))
     .min(1),
@@ -72,4 +63,19 @@ export const BriefSchema = z.object({
 });
 
 export type Brief = z.infer<typeof BriefSchema>;
+
+/** The models a new brief may pick: every product model but Muse Spark 1.3, which the platform never uses. */
+export const NEW_PRODUCT_MODELS = PRODUCT_MODELS.filter(
+  (m): m is Exclude<(typeof PRODUCT_MODELS)[number], "muse-spark-1.3"> => m !== "muse-spark-1.3",
+) as [Exclude<(typeof PRODUCT_MODELS)[number], "muse-spark-1.3">, ...Exclude<(typeof PRODUCT_MODELS)[number], "muse-spark-1.3">[]];
+
+/**
+ * The schema the brief writer answers in: BriefSchema without Muse Spark 1.3. Briefs stored before keep their Spark
+ * capabilities (the Brief type still allows it), and the gateway serves those products with Spark 1.3 Contributor.
+ */
+export const NewBriefSchema = BriefSchema.extend({
+  capabilities: z
+    .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS), why: z.string() }))
+    .min(1),
+});
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

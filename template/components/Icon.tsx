@@ -4,9 +4,7 @@ import type { ReactNode } from "react";
  * Outlined icons drawn for Muse Muse products on a 24 px grid with a 20 px live area and round strokes, in the
  * style of Meta's outlined app icons. They take the text color (currentColor). Use 20 in buttons and rows, 16 in
  * chips, 24 in icon circles. Decorative by default; pass `label` when the icon is the only thing that says what a
- * control does and the control has no aria-label of its own. Every icon carries its name in data-icon, which verify
- * reads to check that a button's icon fits its verb (meta-ui M3). A -filled icon is the "on" state of its outline,
- * like heart-filled on a favorite button with aria-pressed="true".
+ * control does and the control has no aria-label of its own.
  */
 const PATHS = {
   upload: (
@@ -164,56 +162,6 @@ const PATHS = {
       <path d="M13.75 10.75v6" />
     </>
   ),
-  print: (
-    <>
-      <path d="M7 8.25v-3.5A1.25 1.25 0 0 1 8.25 3.5h7.5A1.25 1.25 0 0 1 17 4.75v3.5" />
-      <path d="M7 17H5.25A1.75 1.75 0 0 1 3.5 15.25V10a1.75 1.75 0 0 1 1.75-1.75h13.5A1.75 1.75 0 0 1 20.5 10v5.25A1.75 1.75 0 0 1 18.75 17H17" />
-      <rect x="7" y="13.5" width="10" height="7" rx="1.25" />
-      <path d="M16.9 11.5h.1" />
-    </>
-  ),
-  share: (
-    <>
-      <circle cx="17.5" cy="5.75" r="2.5" />
-      <circle cx="6.5" cy="12" r="2.5" />
-      <circle cx="17.5" cy="18.25" r="2.5" />
-      <path d="m8.67 10.77 6.66-3.79" />
-      <path d="m8.67 13.23 6.66 3.79" />
-    </>
-  ),
-  heart: <path d="M12 20.25 4.5 12.75A5.3 5.3 0 0 1 12 5.25a5.3 5.3 0 0 1 7.5 7.5Z" />,
-  "heart-filled": <path d="M12 20.25 4.5 12.75A5.3 5.3 0 0 1 12 5.25a5.3 5.3 0 0 1 7.5 7.5Z" fill="currentColor" />,
-  star: <path d="M12 3.35 14.53 9.12 20.8 9.74 16.09 13.93 17.44 20.08 12 16.9 6.56 20.08 7.91 13.93 3.2 9.74 9.47 9.12Z" />,
-  "star-filled": (
-    <path d="M12 3.35 14.53 9.12 20.8 9.74 16.09 13.93 17.44 20.08 12 16.9 6.56 20.08 7.91 13.93 3.2 9.74 9.47 9.12Z" fill="currentColor" />
-  ),
-  link: (
-    <>
-      <path d="M9.5 14.5 14.5 9.5" />
-      <path d="m11 7 1.5-1.5a3.9 3.9 0 0 1 5.5 5.5l-1.5 1.5" />
-      <path d="m13 17-1.5 1.5a3.9 3.9 0 0 1-5.5-5.5L7.5 11.5" />
-    </>
-  ),
-  minus: <path d="M5 12h14" />,
-  undo: (
-    <>
-      <path d="M9 13.75 4.5 9.25 9 4.75" />
-      <path d="M4.5 9.25h10a5 5 0 0 1 0 10H11" />
-    </>
-  ),
-  settings: (
-    <>
-      <path d="M10.43 5.18 10.71 2.84A9.25 9.25 0 0 1 13.29 2.84L13.57 5.18A7 7 0 0 1 15.71 6.06L17.57 4.61A9.25 9.25 0 0 1 19.39 6.43L17.94 8.29A7 7 0 0 1 18.82 10.43L21.16 10.71A9.25 9.25 0 0 1 21.16 13.29L18.82 13.57A7 7 0 0 1 17.94 15.71L19.39 17.57A9.25 9.25 0 0 1 17.57 19.39L15.71 17.94A7 7 0 0 1 13.57 18.82L13.29 21.16A9.25 9.25 0 0 1 10.71 21.16L10.43 18.82A7 7 0 0 1 8.29 17.94L6.43 19.39A9.25 9.25 0 0 1 4.61 17.57L6.06 15.71A7 7 0 0 1 5.18 13.57L2.84 13.29A9.25 9.25 0 0 1 2.84 10.71L5.18 10.43A7 7 0 0 1 6.06 8.29L4.61 6.43A9.25 9.25 0 0 1 6.43 4.61L8.29 6.06A7 7 0 0 1 10.43 5.18Z" />
-      <circle cx="12" cy="12" r="3" />
-    </>
-  ),
-  eye: (
-    <>
-      <path d="M2.75 12C4.6 8.2 8 5.75 12 5.75s7.4 2.45 9.25 6.25c-1.85 3.8-5.25 6.25-9.25 6.25S4.6 15.8 2.75 12Z" />
-      <circle cx="12" cy="12" r="3" />
-    </>
-  ),
-  filter: <path d="M3.75 4.5h16.5L14 12v5.5l-4 2V12Z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;
@@ -231,7 +179,6 @@ export function Icon({ name, size = 20, label, className }: { name: IconName; si
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
-      data-icon={name}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}

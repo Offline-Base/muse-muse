@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_OUTPUT_TOKENS, estimateCost, MAX_OUTPUT_TOKENS } from "@/lib/gateway/estimate";
-import { buildTokenBudgetFor } from "@/lib/gateway/policy";
+import { buildTokenBudgetFor, DEFAULT_LIMITS, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
 import type { ParsedRequest } from "@/lib/gateway/extract";
 
 const jsonReq = (json: Record<string, unknown>): ParsedRequest => ({
@@ -63,8 +63,15 @@ test("per-image, per-frame and per-second models", () => {
   assert.equal(estimateCost("files", { kind: "raw", model: null }, 4_000_000), 0);
 });
 
-test("a build's test budget is $3, or $10 when the product may call Muse Wonder", () => {
-  assert.equal(buildTokenBudgetFor(["muse-spark-1.3", "sam-3.1"]), 3);
-  assert.equal(buildTokenBudgetFor(["muse-spark-1.3", "muse-wonder-1.0"]), 10);
-  assert.equal(buildTokenBudgetFor([]), 3);
+test("a build's test budget is $10 whatever models the product may call", () => {
+  assert.equal(buildTokenBudgetFor(["muse-spark-1.3", "sam-3.1"]), 10);
+  assert.equal(buildTokenBudgetFor(["muse-wonder-1.0"]), 10);
+  assert.equal(buildTokenBudgetFor([]), 10);
+});
+
+test("a live product's daily budget fits 20 runs plus one, between the floor and $10", () => {
+  assert.equal(liveTokenDailyBudgetFor(undefined), DEFAULT_LIMITS.liveTokenDailyBudgetUsd);
+  assert.equal(liveTokenDailyBudgetFor(0.01), DEFAULT_LIMITS.liveTokenDailyBudgetUsd);
+  assert.equal(liveTokenDailyBudgetFor(0.3), Math.max(DEFAULT_LIMITS.liveTokenDailyBudgetUsd, 7));
+  assert.equal(liveTokenDailyBudgetFor(5), 10);
 });

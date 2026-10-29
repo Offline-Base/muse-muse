@@ -1,6 +1,6 @@
 /**
  * Browser image resize. Photos larger than 1600 px on the long side are redrawn as JPEG so uploads stay small and
- * Spark reads them quickly. EXIF orientation is applied while decoding.
+ * Muse Wonder reads them quickly. EXIF orientation is applied while decoding.
  */
 export const MAX_IMAGE_SIDE = 1600;
 

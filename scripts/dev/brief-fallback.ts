@@ -14,7 +14,7 @@ const fetchable =
 
 const result = await timed("respondStructured with an unfetchable image", () =>
   respondStructured({
-    model: "muse-spark-1.3",
+    model: "muse-spark-1.3-contributor",
     instructions: "Describe the image briefly.",
     content: [textPart("What animal is in this photo, and what colors is it?"), imagePart(blocked)],
     sources: new Map([[1, { url: fetchable, kind: "image" as const, contentType: "image/jpeg", fileName: "robin.jpg" }]]),

@@ -453,7 +453,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
     const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: stepTimeoutMs("build") });
-    if (built.timedOut) throw new BuildStop("Muse Code ran past its 20-minute limit and was stopped.");
+    if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped.");
     if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line, so nothing was built.");
     if (built.exitCode !== MUSE_EXIT.completed) {
       await emitStep(buildId, { type: "log", text: "Muse Code ended with an error. Checking what it wrote." });
@@ -528,7 +528,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       round: 0,
       capMs: stepTimeoutMs("build"),
     });
-    if (built.timedOut) throw new BuildStop("Muse Code ran past its 20-minute limit and was stopped. The live version was kept.");
+    if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped. The live version was kept.");
     if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line. The live version was kept.");
 
     track.stage = "preview";

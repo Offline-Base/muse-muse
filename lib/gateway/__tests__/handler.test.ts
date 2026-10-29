@@ -138,14 +138,15 @@ test("bodies over 4.5 MB -> 413 pointing at /uploads", async () => {
 test("forward: master key, raw bytes and content type preserved; JSON passes through and is metered", async () => {
   const reply = {
     id: "resp_1",
-    model: "muse-spark-1.3",
+    model: "muse-wonder-1.0",
     output_text: "hello",
     usage: { input_tokens: 10, input_tokens_details: { cached_tokens: 0 }, output_tokens: 5 },
   };
   const g = fakeGateway({
+    token: { allowedModels: ["muse-wonder-1.0"] },
     fetch: async () => new Response(JSON.stringify(reply), { headers: { "content-type": "application/json", "x-request-id": "r1" } }),
   });
-  const sent = spark({ note: "ünïcode ✓" });
+  const sent = json({ model: "muse-wonder-1.0", input: "hi", note: "ünïcode ✓" });
   const res = await handleGateway(gatewayRequest("responses", sent, JSON_CT), ["responses"], g.deps);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("x-request-id"), "r1");
@@ -164,6 +165,26 @@ test("forward: master key, raw bytes and content type preserved; JSON passes thr
   assert.equal(g.usage[0].ctx.source, "gateway");
   assert.equal(g.usage[0].ctx.endpoint, "responses");
   assert.equal(g.usage[0].items[0].inputTokens, 10);
+});
+
+test("a product that asks for Muse Spark 1.3 is served and metered as Spark 1.3 Contributor", async () => {
+  const reply = {
+    id: "resp_2",
+    model: "muse-spark-1.3-contributor",
+    output_text: "hello",
+    usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 0 }, output_tokens: 500 },
+  };
+  const g = fakeGateway({ fetch: async () => new Response(JSON.stringify(reply), { headers: { "content-type": "application/json" } }) });
+  const res = await handleGateway(gatewayRequest("responses", spark({ note: "ünïcode ✓" }), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+
+  const upstream = JSON.parse(new TextDecoder().decode(g.upstreamCalls[0].init?.body as Uint8Array)) as Record<string, unknown>;
+  assert.deepEqual(upstream, { model: "muse-spark-1.3-contributor", input: "hi", note: "ünïcode ✓" });
+  assert.equal(g.usage.length, 1);
+  assert.equal(g.usage[0].items[0].model, "muse-spark-1.3-contributor");
+  // Contributor prices: $0.10 per million input and $0.20 per million output.
+  assert.ok(Math.abs(g.usage[0].items[0].costUsd - (1000 * 0.1 + 500 * 0.2) / 1e6) < 1e-9, String(g.usage[0].items[0].costUsd));
 });
 
 test("upstream errors pass through unchanged and unmetered", async () => {
@@ -330,8 +351,9 @@ test("budget: running calls' estimates count, so a burst can't overshoot before 
 });
 
 test("platform cap counts this call's estimate too", async () => {
-  const g = fakeGateway({ platformSpend: 39.99, fetch: async () => Response.json({}) });
-  const res = await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps);
+  const g = fakeGateway({ platformSpend: 39.99, token: { allowedModels: ["muse-wonder-1.0"] }, fetch: async () => Response.json({}) });
+  const wonder = json({ model: "muse-wonder-1.0", input: "hi" });
+  const res = await handleGateway(gatewayRequest("responses", wonder, JSON_CT), ["responses"], g.deps);
   assert.equal((await errorOf(res)).code, "platform_paused");
   assert.equal(g.upstreamCalls.length, 0);
 });

@@ -35,7 +35,7 @@ The inspo shows what to make. It is not material to copy.
 - Never call `api.meta.ai` directly. Never put a key, token or gateway URL in client code. Never log tokens.
 - Helpers: `metaClient(request)` (OpenAI SDK), `respondJson` (typed JSON from a zod schema, use it for anything the UI shows as fields), `transcribeFile` (WAV to text), `imagePart`, `filePart`, `videoPart`, `toDataUrl`. Browser side: `resizeImage` and `blobToDataUrl`, `toWav16k` (any recording to the WAV Muse Voice needs), `uploadMedia` (files over the 4.5 MB body limit).
 - Read the skill for a model before you use it:
-  - `.agents/skills/meta-reasoning` covers Muse Spark 1.3 and Muse Wonder: text, vision, video, PDFs and JSON output.
+  - `.agents/skills/meta-reasoning` covers Muse Wonder: text, vision, video, PDFs and JSON output.
   - `.agents/skills/meta-image` covers Muse Image: generate, edit and compose.
   - `.agents/skills/meta-sam` covers SAM 3.1: find, outline and track objects in images and video.
   - `.agents/skills/meta-voice` covers Muse Voice Transcribe: speech to text.
@@ -60,8 +60,8 @@ The product belongs to its user. Every word on screen is about what it does for 
 - Never mention how it was made: the brief, the inspo or a "reference", the sketch or photo the idea came from, a video it rebuilds, "rebuild", fit, fixtures, sample file names, tests, or what you didn't copy. Those go in BUILD_NOTES.md.
 - Never use em dashes, in your copy or in model text you show. Use a comma, colon or period. Run model text through `plain()` from `@/lib/meta/text` (respondJson already does).
 - Say each limit once, next to the thing it limits. No second copy in an About, Limits or Good to know card.
-- Use plain words unless the brief's users are developers: "saved on this device only", not "localStorage"; "recordings up to 1 minute", not "16 kHz mono WAV" or "4.5 MB". No model ids like `muse-spark-1.3`, raw JSON, coordinates, zero-based lists or confidence decimals.
-- Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it." A file sent with `uploadMedia` is stored for up to a day so the model can read it, then deleted: say that instead. Never say it stays in the browser.
+- Use plain words unless the brief's users are developers: "saved on this device only", not "localStorage"; "recordings up to 1 minute", not "16 kHz mono WAV" or "4.5 MB". No model ids like `muse-wonder-1.0`, raw JSON, coordinates, zero-based lists or confidence decimals.
+- Be exact about privacy. If an input goes to a model, say so: "Your photo is sent to Muse Wonder to read it. This app doesn't keep it." A file sent with `uploadMedia` is stored for up to a day so the model can read it, then deleted: say that instead. Never say it stays in the browser.
 - Copy matches behavior. If a hint says a button starts the break, the button starts the break.
 - Sample data is correct and believable: no future days marked done, totals in the right column, counts that match the screen, no duplicates, dates relative to today, and in the field's own format (one per line means one per line).
 

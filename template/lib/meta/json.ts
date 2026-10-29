@@ -7,8 +7,8 @@ import { plainDeep } from "./text";
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 export interface RespondJsonOptions<T> {
-  /** Default "muse-wonder-1.0", the model for a product's own text and vision calls. Older products pass Spark. */
-  model?: "muse-wonder-1.0" | "muse-spark-1.3";
+  /** Default "muse-wonder-1.0", the model for a product's own text and vision calls. Muse Muse never uses Spark 1.3. */
+  model?: "muse-wonder-1.0";
   schema: z.ZodType<T>;
   /** Letters, digits, _ and -. Sent as the json_schema name. */
   schemaName: string;

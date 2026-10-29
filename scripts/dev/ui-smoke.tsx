@@ -35,7 +35,7 @@ const brief: Brief = {
   screens: [{ name: "Upload", purpose: "Pick a clip" }],
   capabilities: [
     { need: "Find and track birds", model: "sam-3.1", why: "Segments objects across frames" },
-    { need: "Name the species", model: "muse-spark-1.3", why: "Reads the frames" },
+    { need: "Name the species", model: "muse-wonder-1.0", why: "Reads the frames" },
   ],
   inputs: [{ kind: "video", required: true, notes: "Under 30 s" }],
   outputs: [{ kind: "overlay", notes: "Masks" }],
@@ -130,7 +130,7 @@ const build: BuildView = {
   status: "building",
   step: "build",
   brief: null,
-  buildModel: "muse-spark-1.3",
+  buildModel: "muse-wonder-1.0",
   museSessionId: "7661c49d-b561-4b2e-8cce-541a6cb64df2",
   fixRounds: 1,
   previewUrl: null,

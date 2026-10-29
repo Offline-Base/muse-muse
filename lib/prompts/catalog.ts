@@ -1,6 +1,7 @@
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
+import { RETIRED_SPARK } from "@/lib/meta/spark";
 
 /**
  * The model catalog as the brief writer sees it: hosted Model API models from catalog/meta-models.json, corrected and
@@ -19,18 +20,16 @@ interface CatalogModel {
 }
 
 /**
- * Roles that replace the catalog's where they changed: since round 4 Muse Wonder is the default for a product's own
- * text and vision calls, and Spark 1.3 stays only for the products built on it (catalog/meta-models.json still calls
- * Spark the default).
+ * Roles that replace the catalog's where they changed: Muse Wonder is the default for a product's own text and vision
+ * calls (catalog/meta-models.json still calls Spark the default). Muse Spark 1.3 isn't offered at all: the platform
+ * never uses it, and the gateway serves a product that still asks for it with Spark 1.3 Contributor (lib/meta/spark.ts).
  */
 const ROLES: Record<string, string> = {
-  "muse-spark-1.3": "Older reasoning, vision and video model, kept for the products built on it",
   "muse-wonder-1.0": "Meta's strongest model, for reasoning, vision, video, audio input and web search",
 };
 
 /** Facts per model, from docs/SPIKES.md and docs/META_CATALOG.md. */
 const FACTS: Record<string, string[]> = {
-  "muse-spark-1.3": ["Products made before Muse Wonder use it. A new product uses muse-wonder-1.0 instead."],
   "muse-wonder-1.0": [
     "The default for a product's own text and vision calls. Reads photos, screenshots, PDFs and short videos (MP4) directly, and returns JSON that matches a schema.",
     "Even short answers spend a few hundred reasoning tokens, billed as output, so count them in the cost.",
@@ -52,7 +51,6 @@ const FACTS: Record<string, string[]> = {
 
 function priceLine(id: string): string {
   switch (id) {
-    case "muse-spark-1.3":
     case "muse-wonder-1.0": {
       const p = PRICES[id];
       return `$${p.input} per million input tokens ($${p.cachedInput} cached), $${p.output} per million output tokens`;
@@ -92,7 +90,7 @@ export function catalogSummary(): string {
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
-    .filter((m) => m.hosted && m.id && allowed.has(m.id))
+    .filter((m) => m.hosted && m.id && allowed.has(m.id) && m.id !== RETIRED_SPARK)
     .sort((a, b) => Number(b.id === "muse-wonder-1.0") - Number(a.id === "muse-wonder-1.0"));
   cached = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",

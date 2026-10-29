@@ -424,7 +424,7 @@ const CHILD_OWNERS = new Set(["native_child"]);
  * are priced at the run's model (run.model.configured, or `fallbackModel` when the stream didn't say), and a
  * subagent's at its own run's model.
  */
-export function parseSessionUsage(stdout: string, fallbackModel = "muse-spark-1.3"): SessionUsage {
+export function parseSessionUsage(stdout: string, fallbackModel = "muse-wonder-1.0"): SessionUsage {
   const [first = "", ...rest] = stdout.split("\n");
   let head: Record<string, unknown> = {};
   try {

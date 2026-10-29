@@ -15,6 +15,7 @@ import { CLIENT_IP_HEADER, DEFAULT_LIMITS, ENDPOINT_MODELS, GATEWAY_ENDPOINTS, U
 import type { GatewayTokenRow } from "@/lib/gateway/tokens";
 import type { UsageContext } from "@/lib/usage";
 import type { GatewayEndpoint, ModelUsage, ProductStatus } from "@/lib/types";
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /** The token fields the gateway needs. findToken's row satisfies it. */
 export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | "allowedModels" | "dailyBudgetUsd">;
@@ -132,7 +133,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     );
   const declared = Number(req.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > DEFAULT_LIMITS.requestBodyMaxBytes) return tooLarge();
-  const body = new Uint8Array(await req.arrayBuffer());
+  let body = new Uint8Array(await req.arrayBuffer());
   if (body.byteLength > DEFAULT_LIMITS.requestBodyMaxBytes) return tooLarge();
 
   const contentType = req.headers.get("content-type");
@@ -145,7 +146,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     }
     throw err;
   }
-  const model = parsed.model;
+  let model = parsed.model;
   if (endpoint !== "files") {
     if (!model) {
       return gatewayError(400, "invalid_request_error", "missing_model", `/v1/${endpoint} needs a "model".`, {
@@ -163,6 +164,14 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
         { retry: false },
       );
     }
+  }
+
+  // Muse Spark 1.3 is never used: a product built to call it is served by Spark 1.3 Contributor (lib/meta/spark.ts),
+  // and metered at that model's price.
+  if (model === RETIRED_SPARK && parsed.kind === "json") {
+    parsed = { ...parsed, json: { ...parsed.json, model: SPARK_STANDIN }, model: SPARK_STANDIN };
+    body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    model = SPARK_STANDIN;
   }
 
   const now = deps.now?.() ?? new Date();

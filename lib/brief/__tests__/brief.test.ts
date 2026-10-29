@@ -123,10 +123,10 @@ describe("photo-input briefs", () => {
 });
 
 describe("the build's Meta budget", () => {
-  it("names the build's budget, $10 when the product may call Muse Wonder, and says never to wait for it", () => {
+  it("names the build's $10 budget, the same for every product, and says never to wait for it", () => {
     const opts = { inspoFiles: [], fixtures: [], maxModelSteps: 200 };
     const spark = renderBuildPrompt(photoBrief, opts);
-    assert.match(spark, /share one \$3\.00 Meta budget/);
+    assert.match(spark, /share one \$10\.00 Meta budget/);
     assert.match(spark, /never wait for it, retry it or schedule anything/);
     const wonderBrief: Brief = {
       ...photoBrief,

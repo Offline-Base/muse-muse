@@ -52,7 +52,7 @@ export interface BuildRoomProps {
 
 const WORKING: Partial<Record<BuildStatus, string>> = {
   queued: "Waiting to start",
-  briefing: "Muse Spark 1.3 is reading your inspo and writing the brief",
+  briefing: "Muse Wonder is reading your inspo and writing the brief",
   provisioning: "Setting up a sandbox for this product",
   building: "Muse Code is building",
   previewing: "Starting the live preview",

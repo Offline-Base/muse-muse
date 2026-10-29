@@ -8,7 +8,7 @@ import { printUsage, timed } from "./brief-common";
 let calls = 0;
 const result = await timed("respondStructured forced retry", () =>
   respondStructured({
-    model: "muse-spark-1.3",
+    model: "muse-spark-1.3-contributor",
     instructions: "Suggest a name for a product.",
     content: [textPart("A tool that counts birds at a feeder.")],
     schema: z.object({ name: z.string().min(1), slug: z.string() }),

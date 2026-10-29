@@ -25,4 +25,4 @@ if (local) {
 }
 ```
 
-If `GLIMMER_URL` isn't set, use Muse Spark 1.3 and say in the UI and in BUILD_NOTES.md that the local mode needs a Glimmer endpoint.
+If `GLIMMER_URL` isn't set, use Muse Wonder and say in the UI and in BUILD_NOTES.md that the local mode needs a Glimmer endpoint.

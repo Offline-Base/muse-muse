@@ -87,7 +87,7 @@ Icons: upload, camera, image, file, mic, sparkle, check, alert, info, copy, down
   <section className="card" aria-label="Your receipt">
     <FilePicker label="Photo of your receipt" accept="image/*" button="Take or choose a photo" change="Choose another photo"
       file={file} onFile={setFile} />
-    <p className="hint">Your photo is sent to Muse Spark 1.3 to read it. This app doesn't keep it.</p>
+    <p className="hint">Your photo is sent to Muse Wonder to read it. This app doesn't keep it.</p>
     <div className="actions">
       <button className="primary ai" disabled={!file || busy} aria-busy={busy} onClick={run}>{busy ? "Reading the receipt…" : "Read the receipt"}</button>
       <button className="text" onClick={trySample}>Try a sample receipt</button>
@@ -130,7 +130,7 @@ Icons: upload, camera, image, file, mic, sparkle, check, alert, info, copy, down
 <section className="card ai" data-result ref={resultRef} aria-labelledby="out">
   <div className="card-head">
     <h2 id="out" tabIndex={-1}>Your spreadsheet</h2>
-    <ModelChip model="muse-spark-1.3" verb="Read" />
+    <ModelChip model="muse-wonder-1.0" verb="Read" />
   </div>
   {/* the answer: .table-wrap or .kv, or .rows when the person fixes the rows (components.md) */}
   <ul className="limits"><li>Faded lines can be missed. Check the total before you file it.</li></ul>

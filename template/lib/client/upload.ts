@@ -1,7 +1,7 @@
 import { upload } from "@vercel/blob/client";
 
 export interface UploadedMedia {
-  /** Public URL that SAM 3.1, Muse Spark and Voice Transcribe can read. Expires after 24 hours. */
+  /** Public URL that SAM 3.1, Muse Wonder and Voice Transcribe can read. Expires after 24 hours. */
   url: string;
   contentType: string;
   size: number;

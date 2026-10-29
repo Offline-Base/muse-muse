@@ -8,7 +8,7 @@ async function tryCall(label: string, schema: Record<string, unknown>) {
   const t = Date.now();
   try {
     const res = await metaPlatform().responses.create({
-      model: "muse-spark-1.3",
+      model: "muse-spark-1.3-contributor",
       reasoning: { effort: "low" },
       input: "Make a tiny brief for a tip calculator app. Fill every field.",
       text: { format: { type: "json_schema", name: "probe", strict: true, schema } },

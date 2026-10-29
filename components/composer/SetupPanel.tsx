@@ -19,7 +19,7 @@ export function SetupPanel({ facts }: { facts: SetupFacts }) {
   ];
   const publish = !facts.publishOff;
   const switches: Array<[string, boolean, string]> = [
-    ["Screenshot judge", true, "Muse Spark 1.3 checks the screenshots against the brief"],
+    ["Screenshot judge", true, "Muse Wonder checks the screenshots against the brief"],
     ["Demo video", true, "Each product's smoke test is recorded as an MP4"],
     [
       "Publish",

@@ -808,7 +808,8 @@ async function latestBrief(productId: string): Promise<Brief | null> {
 
 /**
  * Fallback allowlist: whatever the product's current live token allows. Only products from before briefs were stored
- * get here, and those were built on Muse Spark 1.3, so a product with no live token keeps Spark.
+ * get here, and those were built on Muse Spark 1.3, so a product with no live token keeps that id. The gateway serves it
+ * with Spark 1.3 Contributor (lib/meta/spark.ts), since Spark 1.3 itself is never used.
  */
 async function liveModels(productId: string): Promise<string[]> {
   const [row] = await db()

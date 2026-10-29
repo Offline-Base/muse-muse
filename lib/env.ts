@@ -1,5 +1,6 @@
 import { DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { publicHost } from "@/lib/sandbox/policy";
+import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
  * Server environment. Getters throw a clear error when a required value is missing, so a misconfigured deploy fails
@@ -19,21 +20,18 @@ function number(name: string, fallback: number): number {
 /** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
 export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
 
-const warnedContributor = new Set<string>();
+const warnedSpark = new Set<string>();
 
-/**
- * A model id from the environment, or the fallback. A contributor model (any id ending in "-contributor") is never
- * used: Meta may train on its prompts, which hold people's muses. It is ignored with one warning per variable.
- */
+/** A model id from the environment, or the fallback. Muse Spark 1.3 becomes Spark 1.3 Contributor, with one warning. */
 function model(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
   if (!value) return fallback;
-  if (/-contributor$/i.test(value)) {
-    if (!warnedContributor.has(name)) {
-      warnedContributor.add(name);
-      console.warn(`${name} names a contributor model, which Meta may train on, so ${fallback} is used instead.`);
+  if (value === RETIRED_SPARK) {
+    if (!warnedSpark.has(name)) {
+      warnedSpark.add(name);
+      console.warn(`${name} names ${RETIRED_SPARK}, which this platform doesn't use, so ${SPARK_STANDIN} is used instead.`);
     }
-    return fallback;
+    return SPARK_STANDIN;
   }
   return value;
 }

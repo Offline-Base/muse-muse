@@ -360,17 +360,17 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.equal(named("cleanupStep").length, 1);
   });
 
-  it("kills Muse Code at the 20-minute cap and fails the build", async () => {
+  it("kills Muse Code at the 25-minute cap and fails the build", async () => {
     reset({ musePolls: Infinity });
     assert.deepEqual(await wf.buildProduct({ buildId: "b7" }), { status: "failed" });
-    // 80 polls, then one more after the kill to read (and charge) what the run wrote on its way out.
-    assert.equal(named("pollMuseStep").length, 81);
-    assert.equal((named("pollMuseStep")[80]!.args[0] as { offset: number }).offset, 8000);
+    // 100 polls, then one more after the kill to read (and charge) what the run wrote on its way out.
+    assert.equal(named("pollMuseStep").length, 101);
+    assert.equal((named("pollMuseStep")[100]!.args[0] as { offset: number }).offset, 10000);
     assert.ok(calls.findIndex((c) => c.step === "killStep") < calls.findLastIndex((c) => c.step === "pollMuseStep"));
     assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-0"]);
     assert.equal(
       (named("failStep")[0]!.args[0] as { message: string }).message,
-      "Muse Code ran past its 20-minute limit and was stopped.",
+      "Muse Code ran past its 25-minute limit and was stopped.",
     );
     assert.equal(named("cleanupStep").length, 1);
   });

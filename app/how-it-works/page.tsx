@@ -14,7 +14,7 @@ const STEPS: Array<{ icon: IconName; title: string; text: string }> = [
   {
     icon: "brief",
     title: "Brief",
-    text: "Muse Spark 1.3 reads it and writes a brief: the product, who it's for, the models it needs and why, honest limits and cost.",
+    text: "Muse Wonder reads it and writes a brief: the product, who it's for, the models it needs and why, honest limits and cost.",
   },
   {
     icon: "terminal",

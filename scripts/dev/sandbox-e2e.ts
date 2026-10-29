@@ -83,7 +83,7 @@ function png(w: number, h: number, rgb: [number, number, number]): Buffer {
 }
 
 async function runMuse(sandboxName: string, sessionId: string, promptFile: string, round: number, images: string[]) {
-  const { cmdId, logPath } = await startMuse({ sandboxName, sessionId, promptFile, images, model: "muse-spark-1.3", maxModelSteps: 30, round });
+  const { cmdId, logPath } = await startMuse({ sandboxName, sessionId, promptFile, images, model: "muse-spark-1.3-contributor", maxModelSteps: 30, round });
   console.log(`   started ${cmdId}, log ${logPath}`);
   let offset = 0;
   let usage: ModelUsage[] = [];

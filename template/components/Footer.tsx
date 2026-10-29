@@ -1,11 +1,18 @@
 // Required on every product. Don't remove or reword it. A product made from one of Meta's developer videos passes the
 // video's link as `credit` in app/layout.tsx, <Footer credit="https://..." />, which adds the one credit line it needs.
-// Its look is the .footer class in app/globals.css: at the bottom of the screen, left aligned with the main column.
 export function Footer({ credit }: { credit?: string }) {
   return (
-    <footer className="footer">
+    <footer
+      style={{
+        maxWidth: "calc(var(--page-width) + 2 * var(--gutter))",
+        margin: "0 auto",
+        padding: "8px var(--gutter) 40px",
+        color: "var(--fg-2)",
+        font: "var(--type-meta)",
+      }}
+    >
       {credit ? (
-        <p>
+        <p style={{ margin: "0 0 8px" }}>
           Idea from{" "}
           <a href={credit} target="_blank" rel="noreferrer">
             a Meta developer video

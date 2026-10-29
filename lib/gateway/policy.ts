@@ -4,6 +4,7 @@ export const UPSTREAM_BASE_URL = "https://api.meta.ai/v1";
 
 /** Which models each mirrored endpoint accepts. The files endpoint takes no model. */
 export const ENDPOINT_MODELS: Record<GatewayEndpoint, readonly MetaModelId[]> = {
+  // muse-spark-1.3 stays so products built to call it still pass; the handler serves them with Spark 1.3 Contributor.
   responses: ["muse-spark-1.3", "muse-wonder-1.0", "muse-image-1.0", "sam-3.1"],
   "images/generations": ["muse-image-1.0"],
   "images/edits": ["muse-image-1.0"],
