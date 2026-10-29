@@ -37,6 +37,7 @@ VERSION = "0.1.0"
 MCP_PATH = "/mcp"
 OPEN_PATHS = frozenset({"/health"})
 SNIPPET_CHARS = 300
+ANSWER_CHARS = 400  # the device model's short answer from the picked passages (CHECKER_BACKEND=lfm)
 # How long get_result waits for a first release before answering "still checking". The relay
 # client gives up on a call after 55 s, so the answer has to come well before that; the release
 # keeps going in the background and the next get_result picks it up.
@@ -258,13 +259,26 @@ class Connector:
         query, purpose = query.strip(), purpose.strip()
         if not query:
             raise ToolFailure("Pass a short search query, for example: rubric criteria for evidence.")
-        snippets = list(self.services.index.search(restore_tags(self.services, query), k=5))[:5]
+        restored = restore_tags(self.services, query)
+        rag = getattr(self.services, "rag", None)
+        found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
+        snippets, answer = found[:5], None
+        if rag is not None and found:
+            # The device's own model picks the passages that answer the query and writes a short
+            # answer from them; egress then tags and checks both like any search result.
+            try:
+                snippets, answer = rag.pick(restored, found)
+            except Exception as exc:  # the checker is down: fall back to the keyword ranking
+                log.warning("passage picking failed, using the keyword ranking: %s", type(exc).__name__)
+                snippets, answer = found[:5], None
         if snippets:
             raw = "\n\n".join(
                 f"{i}. {_get(s, 'title')}\n{_short(_get(s, 'text', ''))}" for i, s in enumerate(snippets, 1)
             )
+            if answer:
+                raw = f"Answer: {_short(answer, ANSWER_CHARS)}\n\n{raw}"
         else:
-            raw = "No matching passages."
+            raw = answer or "No matching passages."
         # Who the snippets are for is part of Muse's request, so egress tags and labels it with the rest.
         request = f"{query}\nPurpose: {purpose}" if purpose else query
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still
@@ -484,8 +498,10 @@ def build_server(services: Any) -> MCPServer:
         title="Search documents",
         annotations=READ,
         description=(
-            "Search the user's private documents on the device and get up to 5 short snippets. Names and "
-            "identifiers in the snippets come back as tags like [Student A]. You can put tags in the query, "
+            "Search the user's private documents on the device and get up to 5 short snippets, sometimes "
+            "with a short answer the device wrote from them. Scanned pages and photos in the folders are "
+            "searched by the text the device read in them. Names and identifiers come back as tags like "
+            "[Student A]. You can put tags in the query, "
             "for example [Student A] thesis, and the device swaps them for the real names before it searches. "
             "Say in purpose who the snippets are for and what they will be used for, for example: for the "
             "family newsletter. If the device needs more time or the user's OK, you get a job_id instead: "

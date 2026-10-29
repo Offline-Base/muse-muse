@@ -301,15 +301,21 @@ class Egress:
             raw_request, request, s.policy.never_share, getattr(self.guard, "blocked_topics", None)
         )
         wanted = getattr(s.policy, "request_topics", None) or {}
-        label = getattr(getattr(s, "answer_llm", None), "request_topics", None)
+        label = getattr(self._checker(), "request_topics", None)
         if not (wanted and callable(label) and request and needs_topic_pass(result_kind, tagged, own_topics, s.policy)):
             return found
         return found + label(request, wanted, synthetic=synthetic)
 
+    def _checker(self) -> Any:
+        """The model for the name pass and the request topics: services.checker_llm (LFM3-VL-2B
+        on this device with CHECKER_BACKEND=lfm), else the answer model."""
+        s = self.services
+        return getattr(s, "checker_llm", None) or getattr(s, "answer_llm", None)
+
     def _name_pass(self, result_kind: str, synthetic: bool):
         if result_kind in NO_NAME_PASS:
             return None
-        names = getattr(getattr(self.services, "answer_llm", None), "llm_names", None)
+        names = getattr(self._checker(), "llm_names", None)
         if not callable(names):
             return None
         return functools.partial(names, synthetic=synthetic)

@@ -1,8 +1,11 @@
-"""Muse Glimmer client for both backends. See docs/CONTRACTS.md, "Model clients".
+"""Muse Glimmer client for both backends, and the local checker. See docs/CONTRACTS.md, "Model clients".
 
 openrouter (development, synthetic data only) and llama_server (shipping, on the device) both
 speak OpenAI chat completions. The differences are the reasoning field, the LoRA field and the
 cloud refusal: on a cloud backend every call must say `synthetic=True` or it is refused.
+
+The "checker" role is Liquid's LFM3-VL-2B on this device's own llama-server (CHECKER_BACKEND=lfm):
+always local, so it is never refused, with Liquid's sampling and its thinking turned off.
 """
 
 from __future__ import annotations
@@ -27,6 +30,10 @@ DEFAULT_TIMEOUT = 120.0
 CONNECT_TIMEOUT = 10.0
 LOCAL_TOKENS_PER_SECOND = 5.0  # a slow Jetson; the laptop is faster, and this is only a ceiling
 MAX_RETRY_AFTER = 30.0
+ROLES = ("answer", "router", "checker")
+# The model card's recommended sampling for LFM3-VL-2B.
+CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
+_THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
 
 class LLMError(RuntimeError):
@@ -145,6 +152,11 @@ def _truncated(result: ChatResult) -> bool:
     return result.finish_reason == "length" and not result.content.strip() and not result.tool_calls
 
 
+def _without_reasoning_line(text: str) -> str:
+    """A system prompt with Glimmer's `Reasoning strength:` lines taken out (for the checker)."""
+    return "\n".join(line for line in text.splitlines() if not line.lower().startswith("reasoning strength:")).strip()
+
+
 def _with_reasoning_line(messages: list[dict], level: str) -> list[dict]:
     """Glimmer reads `Reasoning strength: <level>` from the system prompt (model card)."""
     line = f"Reasoning strength: {level}"
@@ -197,7 +209,8 @@ def topics_schema(names: list[str]) -> dict:
 
 
 class LocalLLM:
-    """Glimmer through an OpenAI-compatible endpoint. `role` picks the answer or router server."""
+    """Glimmer through an OpenAI-compatible endpoint. `role` picks the answer or router server,
+    or the local checker model (always this device's llama-server)."""
 
     def __init__(
         self,
@@ -207,13 +220,22 @@ class LocalLLM:
         client: httpx.Client | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        if role not in ("answer", "router"):
-            raise ValueError(f"role must be answer or router, not {role!r}")
+        if role not in ROLES:
+            raise ValueError(f"role must be answer, router or checker, not {role!r}")
         self.settings = settings
         self.role = role
-        self.backend = settings.glimmer_backend
-        self.base_url = (settings.answer_url if role == "answer" else settings.router_url).rstrip("/")
-        self.model = settings.answer_model if role == "answer" else settings.router_model
+        if role == "checker":
+            self.backend = "llama_server"
+            self.base_url = settings.checker_url.rstrip("/")
+            self.model = settings.checker_model
+            self.api_key = settings.checker_api_key
+        else:
+            self.backend = settings.glimmer_backend
+            self.base_url = (settings.answer_url if role == "answer" else settings.router_url).rstrip("/")
+            self.model = settings.answer_model if role == "answer" else settings.router_model
+            self.api_key = settings.model_api_key
+        # Only a cloud endpoint needs every call marked synthetic; the checker is always local.
+        self.is_cloud = self.backend == "openrouter"
         self._client = client
         self._sleep = sleep
 
@@ -242,8 +264,8 @@ class LocalLLM:
 
     def headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.settings.model_api_key:
-            headers["Authorization"] = f"Bearer {self.settings.model_api_key}"
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         if self.backend == "openrouter":
             headers["X-Title"] = "muse-privacy"
         return headers
@@ -262,6 +284,8 @@ class LocalLLM:
         """The chat completions request body for this backend."""
         if reasoning is not None and reasoning not in REASONING_LEVELS:
             raise ValueError(f"reasoning must be one of {REASONING_LEVELS}, not {reasoning!r}")
+        if self.role == "checker":
+            return self._checker_body(messages, max_tokens=max_tokens, json_schema=json_schema, adapter=adapter)
         msgs = _with_reasoning_line(messages, reasoning) if reasoning else [dict(m) for m in messages]
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens}
         if self.backend == "openrouter":
@@ -290,6 +314,23 @@ class LocalLLM:
                 body["tool_choice"] = tool_choice
         return body
 
+    def _checker_body(
+        self, messages: list[dict], *, max_tokens: int, json_schema: dict | None, adapter: int | str | None
+    ) -> dict:
+        """LFM3-VL-2B: no Glimmer reasoning line, Liquid's sampling, thinking off. Image parts
+        ({"type": "image_url", ...}) in a message's content pass through unchanged."""
+        if adapter is not None:
+            raise ValueError("the checker model takes no LoRA adapter")
+        msgs = [dict(m) for m in messages]
+        for m in msgs:
+            if m.get("role") == "system" and isinstance(m.get("content"), str):
+                m["content"] = _without_reasoning_line(m["content"])
+        body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens, **CHECKER_SAMPLING}
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+        if json_schema is not None:
+            body["response_format"] = response_format(json_schema)
+        return body
+
     def chat(
         self,
         messages: list[dict],
@@ -308,7 +349,7 @@ class LocalLLM:
         A reply cut off mid-thought (finish_reason "length", no content) is retried once with
         double the token budget (capped at 8000), then raises LLMTruncated.
         """
-        if self.settings.is_cloud_backend and not synthetic:
+        if self.is_cloud and not synthetic:
             raise CloudBackendRefused(
                 f"GLIMMER_BACKEND={self.backend} is a cloud endpoint; only invented data may be sent, "
                 "and the caller did not mark this call synthetic."
@@ -353,8 +394,11 @@ class LocalLLM:
             raise LLMError("response has no choices") from exc
         usage = data.get("usage") or {}
         details = usage.get("completion_tokens_details") or {}
+        content = message.get("content") or ""
+        if self.role == "checker" and "<think>" in content:
+            content = _THINK.sub("", content)  # a server without a reasoning parser leaves these in
         return ChatResult(
-            content=message.get("content") or "",
+            content=content,
             tool_calls=list(message.get("tool_calls") or []),
             reasoning_tokens=int(details.get("reasoning_tokens") or 0),
             prompt_tokens=int(usage.get("prompt_tokens") or 0),
@@ -391,7 +435,7 @@ class LocalLLM:
                 root = self.base_url.removesuffix("/v1")
                 response = self.client.get(f"{root}/health", headers=self.headers(), timeout=timeout)
             else:
-                if not self.settings.model_api_key:
+                if not self.api_key:
                     return False
                 response = self.client.get(f"{self.base_url}/key", headers=self.headers(), timeout=timeout)
             return response.status_code == 200

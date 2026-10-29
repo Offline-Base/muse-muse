@@ -1,8 +1,9 @@
 """One of each module for this device, wired together. See docs/CONTRACTS.md, Services.
 
 `Services.create(settings)` is what `python -m base` runs: it loads the roster, the tag map and
-the policy, builds both Glimmer clients, the router, the stores, the workspace agent, egress,
-the dreaming runner and the audit log, and starts the light. `Services.for_eval(settings)` is
+the policy, builds both Glimmer clients and the checker (the answer model, or LFM3-VL-2B on this
+device with CHECKER_BACKEND=lfm, which also reads scans and picks search passages), the router,
+the stores, the workspace agent, egress, the dreaming runner and the audit log, and starts the light. `Services.for_eval(settings)` is
 the same without the light and the heavy-step queue, for the eval harness and the dreaming gate,
 which build throwaway services in a temporary home.
 """
@@ -27,6 +28,8 @@ from base.router import Router
 from base.workspace.agent import Agent
 from base.workspace.index import DocumentIndex
 from base.workspace.jobs import JobStore
+from base.workspace.rag import Rag
+from base.workspace.scans import ScanReader
 
 log = logging.getLogger(__name__)
 
@@ -66,8 +69,9 @@ def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:
 
 
 class Services:
-    """Attributes: settings, events, roster, tagmap, policy, answer_llm, router_llm, router,
-    approvals, jobs, index, heavy (HeavyQueue or None), agent, audit, egress, night, light."""
+    """Attributes: settings, events, roster, tagmap, policy, answer_llm, router_llm, checker_llm
+    (answer_llm unless CHECKER_BACKEND=lfm), scans and rag (None unless lfm), router, approvals,
+    jobs, index, heavy (HeavyQueue or None), agent, audit, egress, night, light."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -93,6 +97,12 @@ class Services:
         s.policy = UserPolicy.load(settings.policy_path)
         s.answer_llm = LocalLLM(settings, role="answer")
         s.router_llm = LocalLLM(settings, role="router")
+        s.checker_llm = s.answer_llm
+        s.scans = s.rag = None
+        if settings.checker_backend == "lfm":
+            s.checker_llm = LocalLLM(settings, role="checker")
+            s.scans = ScanReader(settings, s.checker_llm)
+            s.rag = Rag(s.checker_llm, s.roster, s.tagmap, candidates=settings.rag_candidates)
         adapter = discover_router_adapter(settings, s.router_llm) if owner else None
         s.router = Router(settings, s.router_llm, s.policy, adapter=adapter)
         s.approvals = ApprovalStore(settings.paths.db)
@@ -102,7 +112,7 @@ class Services:
             failed = s.jobs.fail_unfinished()
             if failed:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)
-        s.index = DocumentIndex(settings)
+        s.index = DocumentIndex(settings, scans=s.scans)
         if settings.heavy_queue if heavy is None else heavy:
             s.heavy = HeavyQueue(settings.paths.db, wait_seconds=HEAVY_WAIT_SECONDS)
         s.agent = Agent(
@@ -131,7 +141,10 @@ class Services:
         if self.light is not None:
             self.light.stop()
             self.light = None
-        for name in ("approvals", "answer_llm", "router_llm"):
+        names = ["approvals", "answer_llm", "router_llm"]
+        if getattr(self, "checker_llm", None) is not getattr(self, "answer_llm", None):
+            names.append("checker_llm")
+        for name in names:
             try:
                 getattr(self, name).close()
             except Exception as exc:  # closing must never raise on shutdown

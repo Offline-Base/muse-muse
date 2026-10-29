@@ -18,6 +18,7 @@ SYNTHETIC_MARKER = ".synthetic"
 
 ANSWER_PORT = 8081
 ROUTER_PORT = 8082
+CHECKER_PORT = 8083
 APPROVAL_PORT = 8787
 CONNECTOR_PORT = 8790
 
@@ -72,6 +73,11 @@ class Paths:
     def connector_token(self) -> Path:
         return self.home / "connector_token"
 
+    @property
+    def scans(self) -> Path:
+        """Text the local vision model read out of images, one file per image hash."""
+        return self.home / "scans"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -101,6 +107,13 @@ class Settings:
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
     approval_tls_cert: Path | None = None
     approval_tls_key: Path | None = None
+    # The model for the checks and search: "glimmer" uses the answer model, "lfm" a small Liquid
+    # model on this device's own llama-server (always local, so it never needs the .synthetic rule).
+    checker_backend: Literal["glimmer", "lfm"] = "glimmer"
+    checker_url: str = f"http://127.0.0.1:{CHECKER_PORT}/v1"
+    checker_model: str = "lfm3-vl-2b"
+    checker_api_key: str | None = None
+    rag_candidates: int = 20
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -153,6 +166,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     dreaming = get("DREAMING_BACKEND", "prompt")
     if dreaming not in ("prompt", "lora"):
         raise ValueError(f"DREAMING_BACKEND must be prompt or lora, not {dreaming!r}")
+    checker = get("CHECKER_BACKEND", "glimmer")
+    if checker not in ("glimmer", "lfm"):
+        raise ValueError(f"CHECKER_BACKEND must be glimmer or lfm, not {checker!r}")
+    checker_url = get("CHECKER_URL", f"http://127.0.0.1:{CHECKER_PORT}/v1").rstrip("/")
+    if checker == "lfm" and not _is_loopback_url(checker_url):
+        raise ValueError("CHECKER_URL must be this device (127.0.0.1 or localhost): the checker reads raw documents")
 
     return Settings(
         device=device,  # type: ignore[arg-type]
@@ -179,7 +198,20 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         light_serial=get("LIGHT_SERIAL") or None,
         approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
+        checker_backend=checker,  # type: ignore[arg-type]
+        checker_url=checker_url,
+        checker_model=get("CHECKER_MODEL", "lfm3-vl-2b"),
+        # The checker's llama-server reads the same key file as Glimmer's (scripts/start_checker.sh).
+        checker_api_key=get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None,
+        rag_candidates=max(5, int(get("RAG_CANDIDATES", "20"))),
     )
+
+
+def _is_loopback_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").lower()
+    return host in ("127.0.0.1", "localhost", "::1")
 
 
 LLAMA_KEY_FILE = "llama_api_key"

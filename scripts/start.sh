@@ -5,6 +5,8 @@
 #     GLIMMER_GGUF, answer on 127.0.0.1:8081 and router on 127.0.0.1:8082 (the router loads
 #     BASE_HOME/adapters/router.gguf as a LoRA when it exists), then the server.
 #   GLIMMER_BACKEND=openrouter: no local models (development mode, invented data only).
+#   CHECKER_BACKEND=lfm: also starts the local checker, LFM3-VL-2B on 127.0.0.1:8083
+#     (scripts/start_checker.sh), for the checks, search passage picking and scans.
 #
 # Then runs `python -m base` and waits for /health on the approval port. Everything binds
 # 127.0.0.1. Ctrl-C stops everything this script started. Settings come from .env and the
@@ -37,6 +39,7 @@ env.update(os.environ)
 values = {
     "DEVICE": s.device,
     "BACKEND": s.glimmer_backend,
+    "CHECKER": s.checker_backend,
     "APPROVAL_HOST": s.approval_host,
     "APPROVAL_PORT": str(s.approval_port),
     "HOME_DIR": str(s.home),
@@ -123,6 +126,15 @@ if [ "$BACKEND" = llama_server ]; then
   echo "Glimmer is up."
 else
   echo "GLIMMER_BACKEND=$BACKEND: no local models. Development mode, invented data only."
+fi
+
+if [ "$CHECKER" = lfm ]; then
+  mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+  "$ROOT/scripts/start_checker.sh" >"$LOG_DIR/checker.log" 2>&1 &
+  CHECKER_PID=$!
+  PIDS="$PIDS $CHECKER_PID"
+  wait_for "http://127.0.0.1:8083/health" 300 "the checker (LFM3-VL-2B)" "$CHECKER_PID" "$LOG_DIR/checker.log"
+  echo "The checker is up."
 fi
 
 if port_busy "$APPROVAL_PORT"; then die "something already answers on 127.0.0.1:$APPROVAL_PORT; stop it first"; fi

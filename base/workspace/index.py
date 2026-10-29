@@ -1,6 +1,8 @@
 """Document index for the private workspace. See docs/CONTRACTS.md, Workspace.
 
-Only .md and .txt files under settings.workspace_root are visible. Folder and document names are
+Only .md and .txt files under settings.workspace_root are visible, plus .png and .jpg images when
+the index has a ScanReader (a local vision model; see scans.py), whose text it reads through
+that reader. Folder and document names are
 relative to the root; absolute paths, ".." and symlinks that lead outside the root are rejected.
 Every call checks config.assert_synthetic before it touches a file, so a cloud Glimmer backend
 never reads a folder that is not marked as invented data. Search is plain BM25, no embeddings.
@@ -8,16 +10,21 @@ never reads a folder that is not marked as invented data. Search is plain BM25, 
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from base.config import Settings, assert_synthetic
 
+log = logging.getLogger(__name__)
+
 EXTENSIONS = (".md", ".txt")
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 MAX_FILE_BYTES = 5_000_000
 SNIPPET_CHARS = 240
 K1 = 1.5
@@ -56,9 +63,23 @@ def tokenize(text: str) -> list[str]:
 
 
 class DocumentIndex:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, scans: Any = None):
         self.settings = settings
         self.root = Path(settings.workspace_root).resolve()
+        self.scans = scans  # a ScanReader, or None: then images are not documents
+
+    @property
+    def extensions(self) -> tuple[str, ...]:
+        return EXTENSIONS + IMAGE_EXTENSIONS if self.scans is not None else EXTENSIONS
+
+    def _is_image(self, path: Path) -> bool:
+        return self.scans is not None and path.name.lower().endswith(IMAGE_EXTENSIONS)
+
+    def _text(self, path: Path) -> str:
+        """A text file's contents, or what the local vision model read in an image."""
+        if self._is_image(path):
+            return self.scans.text(path)
+        return path.read_text(encoding="utf-8", errors="replace")
 
     # paths
 
@@ -77,12 +98,12 @@ class DocumentIndex:
         return path.relative_to(self.root).as_posix()
 
     def _files(self, folder: Path) -> list[Path]:
-        """Visible .md/.txt files under folder, skipping hidden names and links out of the root."""
+        """Visible documents under folder, skipping hidden names and links out of the root."""
         found: list[Path] = []
         for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
             for fname in sorted(filenames):
-                if fname.startswith(".") or not fname.lower().endswith(EXTENSIONS):
+                if fname.startswith(".") or not fname.lower().endswith(self.extensions):
                     continue
                 path = Path(dirpath) / fname
                 real = path.resolve()
@@ -109,9 +130,9 @@ class DocumentIndex:
         path = self.resolve(doc_id)
         assert_synthetic(self.settings, path.parent)
         hidden = any(part.startswith(".") for part in PurePosixPath(self._rel(path)).parts)
-        if hidden or not path.is_file() or not path.name.lower().endswith(EXTENSIONS):
+        if hidden or not path.is_file() or not path.name.lower().endswith(self.extensions):
             raise FileNotFoundError("That document is not in the workspace.")
-        return path.read_text(encoding="utf-8", errors="replace")
+        return self._text(path)
 
     def search(self, query: str, k: int = 5, folder: str | None = None) -> list[Snippet]:
         """BM25 over every visible document under folder (default: the whole root)."""
@@ -123,8 +144,12 @@ class DocumentIndex:
         docs = []
         for path in self._files(base):
             assert_synthetic(self.settings, path.resolve().parent)  # a link into an unmarked folder
-            text = path.read_text(encoding="utf-8", errors="replace")
-            title = _title(path, text[:TITLE_SCAN_CHARS])
+            try:
+                text = self._text(path)
+            except Exception as exc:  # a scan the device could not read: search the rest
+                log.warning("skipped an image in search: %s", type(exc).__name__)
+                continue
+            title = path.stem if self._is_image(path) else _title(path, text[:TITLE_SCAN_CHARS])
             docs.append((self._rel(path), title, text, Counter(tokenize(title + "\n" + text))))
         if not docs:
             return []
@@ -150,9 +175,11 @@ class DocumentIndex:
 
     def _doc(self, path: Path) -> Doc:
         stat = path.stat()
+        rel = self._rel(path)
+        if self._is_image(path):  # listing never reads an image; its title is the file name
+            return Doc(id=rel, path=rel, title=path.stem, size=stat.st_size, modified=stat.st_mtime)
         with path.open(encoding="utf-8", errors="replace") as f:
             head = f.read(2000)
-        rel = self._rel(path)
         return Doc(id=rel, path=rel, title=_title(path, head), size=stat.st_size, modified=stat.st_mtime)
 
 
