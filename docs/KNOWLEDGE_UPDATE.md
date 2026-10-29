@@ -8,7 +8,7 @@ Run `npm run knowledge:status` for the live numbers. As of Oct 29, 2026:
 
 | Stage | State | Cost |
 |---|---|---|
-| 1. Corpus from Wikipedia | Built: 298 days, 6,446 events; article fetch for the top 3,000 articles running | Free |
+| 1. Corpus from Wikipedia | Built: 298 days, 6,446 events. Article fetch paused at 2,802 of about 3,000 (`npm run knowledge:resume`, then `npm run knowledge:corpus`) | Free |
 | 2. Training data (Spark Open writes Q&A) | Code done and dry-run tested. Waiting for a Spark Open API key and the owner's OK for a pilot | Pilot about $1 to $2; full set estimated at $50 to $100 |
 | 3. Fine-tune Glimmer | Not started. The owner said not to start fine-tuning yet | About $10 to $20 a run on one H100 |
 | 4. Fine-tune Spark Open | Later, after Glimmer works | About $150 to $250 an attempt on 8 GPUs |
@@ -150,6 +150,35 @@ These are early estimates; each phase reports its real numbers before the next s
 - Somewhere to keep a dataset of several terabytes during building and the final release: a private Hugging Face dataset repo (pushed from the platform, never from a GPU) or S3 or R2.
 - A contact email for the User-Agent that SEC EDGAR requires.
 - The publishing call: open-licensed parts public, copyrighted-source parts private and training-only.
+
+## Research round (Oct 29, in progress)
+
+After the owner said they have AWS $10k, Lambda $7.5k, Google Cloud $2.5k and Exa $400 in credits, eight research agents went out, one per area, research only (no downloads, sign-ups or paid calls): 1 news and web at scale (Common Crawl, CC-NEWS, GDELT, news APIs, other languages, AI opt-outs); 2 Wikimedia and open knowledge bases; 3 government, law, elections, finance; 4 science, health, space; 5 software, developer tools, AI companies (BigQuery public datasets); 6 Meta on every channel, with a dated checklist of every announcement since January 4; 7 sports, culture, entertainment, business; 8 training methods and dataset design.
+
+Done: 8 (methods), summarized below. If the others were cut off when the laptop closed, relaunch them with the same areas: each returns a source table (what it holds for 2026 and how that was checked, access, volume, license and AI-training terms, cost and which credits pay, verdict), its top 10, and what the plan above gets wrong.
+
+Likely use of credits: AWS for Common Crawl filtering in us-east-1, large research collections and build storage; Lambda for bulk fact writing on our GPUs (possibly Spark Open itself, needing a read-only Hugging Face download token, never `HF_TOKEN`) and the training runs; Google Cloud for BigQuery public datasets; Exa for Meta coverage and gap-filling. The $250 a day Lambda limit would stretch $7.5k over about 30 days; ask the owner before raising it.
+
+### Methods findings (agent report, links not yet checked by hand)
+
+- Facts stick only when seen in many differently written texts with Q&A mixed in (Allen-Zhu and Li, arxiv 2309.14316; Ovadia, 2312.05934). Paraphrase plateaus; EntiGraph-style relation documents (2409.07431) and Active Reading, where the model writes its own study strategies per document (2508.09494), keep improving. Generate per fact, not per token (2404.00213). Include reverse-direction questions (reversal curse, 2309.12288).
+- LoRA matches full fine-tuning when applied to all layers including MLP, rank not too small (128 matched full training in a September 2026 continued-pretraining study, 2609.23916; 32 fell short) and learning rate about 10x the full-fine-tuning one. Recall's best learning rate is about 10x lower than for skills.
+- Replay: 1% to 25% old data depending on shift (2502.06042, 2403.08763); MoE routers held up with 30 to 40% replay (2503.05029). Anchor questions on popular older facts protect them (2609.08067).
+- Hallucination: unknown facts learned late raise hallucination (Gekhman, 2405.05904). Label still-unknown facts "I don't know" (2403.05612, 2311.09677). Grade correct, wrong or abstained, as SimpleQA does, and report the wrong-answer rate.
+- Time: date-prefixed text helps (2106.15110). Effective cutoffs differ from stated ones and the last months before a cutoff are weak, so measure each model's knowledge with a monthly "cutoff ladder" of probes instead of trusting `--since`.
+- Knowledge editing (ROME, MEMIT) fails at this scale; retrieval plus continual fine-tuning wins (2503.05683).
+
+Changes this implies for the release (to fold into "What the release contains" once the other seven report):
+1. Per-fact metadata: `valid_from`, `valid_to`, `supersedes`, story cluster, popularity tier, source spans, entailment score; split train and eval by story cluster.
+2. `synthetic/` built with Active Reading and EntiGraph-style strategies, dated, each document listing its fact ids, every claim checked against the fact store (numbers-only checks are too weak).
+3. Contexts per fact by tier: core 8 to 12, middle 4 to 6, long tail 2 to 3; 3 to 5 question phrasings each including a reverse one; an exporter with `--token-budget` that keeps every fact's minimum.
+4. Two training stages: A teaches knowledge from documents; B is chat tuning built after re-measuring what A learned (known facts get Q&A, unknown get "I don't have reliable information", plus fabricated and false-premise questions, current-date system prompts, answering from given context, about 4% cutoff examples).
+5. Replay in three kinds: openly licensed older web text, the student's own answers, anchor questions.
+6. Evals: held-out phrasings, reverse, multi-hop, ordering, latest value, about 2k never-trained window facts, fabricated questions, the cutoff ladder, SimpleQA and general suites, in lm-evaluation-harness, generated and multiple-choice forms.
+7. Decontamination: exact and MinHash dedup (keeping deliberate restatements), 13-gram plus embedding plus LLM checks against benchmarks.
+8. Ship facts and documents as a retrieval index too; retrain monthly from original weights on cumulative data rather than stacking adapters.
+
+Reference recipe (30B dense, starting point, tune on an 8B pilot first): stage A at 60% window documents, 15% Q&A as text, 15% older web, 10% self-answers; 0.5 to 1B tokens, two passes; 4,096-token packed sequences; LoRA rank 128 on all linear layers; peak learning rate 1e-4, cosine; evaluate every 250 to 500 steps and keep the checkpoint that learns most while the wrong-answer rate stays within a point of base. About 13 to 23 hours on 8 H100s. Large MoE: router frozen, per-expert LoRA (or ESFT), core and middle facts only, 35% replay.
 
 ## Next steps
 
