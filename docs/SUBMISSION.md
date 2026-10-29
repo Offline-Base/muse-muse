@@ -3,7 +3,7 @@
 Meta Global AI Developer Hackathon, Startup track. Due Nov 4, 2026, 9 PM ET.
 
 - **Live site:** https://muse-muse.vercel.app (open to anyone, no sign-in)
-- **Repo:** PLACEHOLDER: the GitHub URL, if the rules ask for one
+- **Repo:** https://github.com/Offline-Base/muse-muse (private until the owner makes it public)
 - **Video:** PLACEHOLDER: the link, once recorded
 
 This file has three parts: the write-up, the video script and the submission checklist.
