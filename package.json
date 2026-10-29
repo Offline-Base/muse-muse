@@ -14,7 +14,12 @@
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/migrate.ts",
     "db:push": "drizzle-kit push",
     "snapshot": "tsx --env-file-if-exists=.env.local scripts/make-builder-snapshot.ts",
-    "rebuild-all": "tsx --env-file-if-exists=.env.local scripts/rebuild-all.ts"
+    "rebuild-all": "tsx --env-file-if-exists=.env.local scripts/rebuild-all.ts",
+    "knowledge:corpus": "tsx scripts/knowledge/build-corpus.ts --articles 3000",
+    "knowledge:dataset": "tsx --env-file-if-exists=.env.local scripts/knowledge/make-dataset.ts",
+    "knowledge:status": "tsx scripts/knowledge/control.ts status",
+    "knowledge:pause": "tsx scripts/knowledge/control.ts pause",
+    "knowledge:resume": "tsx scripts/knowledge/control.ts resume"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
