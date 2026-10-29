@@ -1,6 +1,5 @@
 import { LongText } from "@/components/train/LongText";
 import {
-  WRITER_NAME,
   itemNumber,
   scoreText,
   verdictLabel,
@@ -15,13 +14,20 @@ export interface EvalResultsProps {
   rows: EvalRow[];
   /** What the recipe tunes, as the copy names it: "Glimmer", or "model". */
   model: string;
+  /**
+   * The models from the records, as the copy names them (writerName and judgeName in format.ts): the dataset's writer,
+   * who wrote the references (null when the page doesn't have the dataset, so the copy says "the reference"), and the
+   * job's judge.
+   */
+  writer: string | null;
+  judge: string;
 }
 
 /**
- * The job page's eval results: a summary strip once Muse Spark 1.3 has judged the held-out prompts ("Judging..." until
- * then), and every item with the reference, the base and the tuned answer and the verdict. Long text folds.
+ * The job page's eval results: a summary strip once the job's judge has judged the held-out prompts ("Judging..."
+ * until then), and every item with the reference, the base and the tuned answer and the verdict. Long text folds.
  */
-export function EvalResults({ state, rows, model }: EvalResultsProps) {
+export function EvalResults({ state, rows, model, writer, judge }: EvalResultsProps) {
   if (state.state === "none") return null;
   return (
     <section className="train-eval" id="eval-results" aria-labelledby="train-eval-title">
@@ -30,14 +36,14 @@ export function EvalResults({ state, rows, model }: EvalResultsProps) {
         {rows.length ? <span className="muted small">{rows.length} held-out prompts</span> : null}
       </div>
       <div aria-live="polite">
-        <EvalStatus state={state} model={model} />
+        <EvalStatus state={state} model={model} writer={writer} judge={judge} />
       </div>
-      {rows.length ? <EvalTable rows={rows} model={model} judging={state.state === "judging"} /> : null}
+      {rows.length ? <EvalTable rows={rows} model={model} writer={writer} judging={state.state === "judging"} /> : null}
     </section>
   );
 }
 
-function EvalStatus({ state, model }: { state: EvalState; model: string }) {
+function EvalStatus({ state, model, writer, judge }: { state: EvalState; model: string; writer: string | null; judge: string }) {
   switch (state.state) {
     case "judged": {
       const s = state.summary;
@@ -52,10 +58,11 @@ function EvalStatus({ state, model }: { state: EvalState; model: string }) {
           </p>
           <p className="train-eval-sub">
             Average score base <strong>{scoreText(s.avgBaseScore)}</strong>, tuned{" "}
-            <strong>{scoreText(s.avgTunedScore)}</strong>, judged by {WRITER_NAME}.
+            <strong>{scoreText(s.avgTunedScore)}</strong>, judged by {judge}.
           </p>
           <p className="muted small">
-            Scores run from 1 to 10 against {WRITER_NAME}&apos;s reference answer. Judging cost {usd(s.judgeCostUsd)}.
+            Scores run from 1 to 10 against {writer ? `${writer}'s reference answer` : "the reference answer"}. Judging cost{" "}
+            {usd(s.judgeCostUsd)}.
           </p>
         </div>
       );
@@ -66,14 +73,14 @@ function EvalStatus({ state, model }: { state: EvalState; model: string }) {
           <span className="working-dot" aria-hidden />
           <span>Judging...</span>
           <span className="muted">
-            {state.judged} of {state.total} judged by {WRITER_NAME}
+            {state.judged} of {state.total} judged by {judge}
           </span>
         </p>
       );
     case "answering":
       return (
         <p className="muted small">
-          The job sends these as it answers them. {WRITER_NAME} judges them once the GPU shuts down.
+          The job sends these as it answers them. {judge} judges them once the GPU shuts down.
         </p>
       );
     case "unjudged":
@@ -83,13 +90,13 @@ function EvalStatus({ state, model }: { state: EvalState; model: string }) {
   }
 }
 
-function EvalTable({ rows, model, judging }: { rows: EvalRow[]; model: string; judging: boolean }) {
+function EvalTable({ rows, model, writer, judging }: { rows: EvalRow[]; model: string; writer: string | null; judging: boolean }) {
   return (
     <div className="table-wrap">
       <table className="data train-eval-table">
         <caption className="sr-only">
-          Each held-out prompt with {WRITER_NAME}&apos;s reference, the base and the tuned {model}&apos;s answers, and the
-          verdict
+          Each held-out prompt with {writer ? `${writer}'s reference` : "the reference"}, the base and the tuned{" "}
+          {model}&apos;s answers, and the verdict
         </caption>
         <colgroup>
           <col className="train-eval-col-text" />
@@ -99,7 +106,7 @@ function EvalTable({ rows, model, judging }: { rows: EvalRow[]; model: string; j
         </colgroup>
         <thead>
           <tr>
-            <th scope="col">{WRITER_NAME} reference</th>
+            <th scope="col">{writer ? `${writer} reference` : "Reference"}</th>
             <th scope="col">Base {model}</th>
             <th scope="col">Tuned {model}</th>
             <th scope="col">Verdict</th>

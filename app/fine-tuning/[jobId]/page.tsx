@@ -51,13 +51,13 @@ async function allEvents(jobId: string): Promise<TrainEventView[]> {
   return out;
 }
 
-/** The dataset a job's dataset param names, by id and title, or null. */
-async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id: string; title: string } | null> {
+/** The dataset a job's dataset param names, by id and title, with the model that wrote it (null: Muse Spark 1.3), or null. */
+async function jobDataset(row: TrainJobRow, recipe: Recipe | null): Promise<{ id: string; title: string; writerModel: string | null } | null> {
   const field = recipe?.params.find((f) => f.kind === "dataset");
   const value = field ? row.params?.[field.key] : undefined;
   if (typeof value !== "string") return null;
   const d = await getDataset(value);
-  return d ? { id: d.id, title: d.title } : null;
+  return d ? { id: d.id, title: d.title, writerModel: d.writerModel ?? null } : null;
 }
 
 /** The trained job a glimmer-serve job's adapter param names, by id and title, or null. */
@@ -140,7 +140,7 @@ async function resultPage(jobId: string) {
     return {
       result: view,
       rows: evalRows(events),
-      dataset: dataset ? { id: dataset.id, title: dataset.title } : null,
+      dataset: dataset ? { id: dataset.id, title: dataset.title, writerModel: dataset.writerModel ?? null } : null,
       live: toPublicLiveDemo(live),
       local,
     };

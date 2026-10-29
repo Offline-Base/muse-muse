@@ -570,6 +570,92 @@ function events(): TrainEventView[] {
   ];
 }
 
+describe("the models a card names, from the records", () => {
+  const wonderDataset = { ...facts().dataset, writerModel: "muse-wonder-1.0" };
+  /** Every text a publish writes for a job: both cards, the dataset's license and the run's record. */
+  const everything = (f: cards.CardFacts, storyBy: "spark" | "template" = "spark", storyModel: string | null = null) =>
+    [
+      cards.modelCard(f),
+      cards.datasetCard(f),
+      cards.datasetLicense(f.dataset.writerModel ?? null),
+      JSON.stringify(cards.runRecord(f, cards.runItems(events()), storyBy, storyModel)),
+    ].join("\n");
+
+  it("says Muse Spark 1.3 everywhere for the tuned run, whose records name no model (history isn't relabeled)", () => {
+    const f = facts();
+    assert.equal(f.dataset.writerModel, undefined);
+    assert.equal(f.judgeModel, undefined);
+    const text = everything(f);
+    assert.doesNotMatch(text, /Wonder/, "nothing of the run is credited to Muse Wonder");
+    const card = cards.modelCard(f);
+    assert.match(card, /that learned one task from Muse Spark 1\.3: Write the brief Muse Muse builds from/);
+    assert.match(card, /Muse Spark 1\.3 wrote the dataset's 490 examples: .* judged blind by Muse Spark 1\.3, the tuned model was better on 40 of 40/);
+    assert.match(card, /Muse Spark 1\.3 \(`muse-spark-1\.3`\) judged each pair blind: .* against Muse Spark 1\.3's own reference answer/);
+    assert.match(card, /It was trained to answer the way Muse Spark 1\.3 answered those prompts\./);
+    assert.match(card, /Muse Spark 1\.3 wrote the training answers, the references and the verdicts, and a judge can favor answers like its own\./);
+    assert.match(card, /Meta made Muse Glimmer 30B and Muse Spark 1\.3; it didn't make/);
+    assert.match(cards.datasetCard(f), /^Training data that Muse Spark 1\.3 wrote for one task/m);
+    assert.match(cards.datasetLicense(), /^Muse Spark 1\.3 wrote every prompt and answer in this dataset/m);
+    const record = cards.runRecord(f, [], "spark");
+    assert.equal((record.dataset as { writer: string }).writer, "muse-spark-1.3");
+    assert.equal((record.eval as { judge: string }).judge, "muse-spark-1.3");
+    assert.deepEqual(record.story, { why: f.why, by: "spark", model: "muse-spark-1.3" }, "a saved story with no model was Muse Spark 1.3's");
+    // Null on the record reads the same as absent.
+    assert.equal(cards.modelCard(facts({ judgeModel: null, dataset: { ...f.dataset, writerModel: null } })), card);
+  });
+
+  it("says Muse Wonder everywhere for a dataset Muse Wonder wrote and a run it judged", () => {
+    const f = facts({ dataset: wonderDataset, judgeModel: "muse-wonder-1.0" });
+    const text = everything(f, "spark", "muse-wonder-1.0");
+    assert.doesNotMatch(text, /Muse Spark|Spark 1\.3|muse-spark|"by":"spark"/, "no Muse Spark 1.3 in a card for Muse Wonder's work");
+    const card = cards.modelCard(f);
+    assert.match(card, /that learned one task from Muse Wonder: Write the brief Muse Muse builds from/);
+    assert.match(cards.resultText(f), /^Muse Wonder wrote the dataset's 490 examples: .* judged blind by Muse Wonder, the tuned model/);
+    assert.match(card, /Muse Wonder \(`muse-wonder-1\.0`\) judged each pair blind: .* against Muse Wonder's own reference answer/);
+    assert.match(card, /It was trained to answer the way Muse Wonder answered those prompts\./);
+    assert.match(card, /held-out prompts that Muse Wonder wrote through Meta's Model API/);
+    assert.match(card, /The training data is Muse Wonder's output through Meta's Model API/);
+    assert.match(card, /Meta made Muse Glimmer 30B and Muse Wonder; it didn't make/);
+    const dataCard = cards.datasetCard(f);
+    assert.match(dataCard, /^Training data that Muse Wonder wrote for one task/m);
+    assert.match(dataCard, /- `assistant`: Muse Wonder's answer\./);
+    assert.match(dataCard, /^Muse Wonder wrote the prompts in batches/m);
+    assert.match(dataCard, /^Muse Wonder wrote all of the text, prompts and answers/m);
+    assert.match(cards.datasetLicense("muse-wonder-1.0"), /^Muse Wonder wrote every prompt and answer in this dataset[^]*Meta made Muse Wonder;/m);
+    const record = cards.runRecord(f, [], "spark", "muse-wonder-1.0");
+    assert.equal((record.dataset as { writer: string }).writer, "muse-wonder-1.0");
+    assert.equal((record.eval as { judge: string }).judge, "muse-wonder-1.0");
+    assert.deepEqual(record.story, { why: f.why, by: "model", model: "muse-wonder-1.0" }, "never \"spark\" for Muse Wonder's story");
+    assert.deepEqual(cards.runRecord(f, [], "template").story, { why: f.why, by: "template" }, "the template's story has no model");
+  });
+
+  it("names each model for its own part when Muse Spark 1.3 wrote the dataset and Muse Wonder judged the run", () => {
+    const f = facts({ judgeModel: "muse-wonder-1.0" });
+    const card = cards.modelCard(f);
+    assert.match(cards.resultText(f), /^Muse Spark 1\.3 wrote the dataset's 490 examples: .* judged blind by Muse Wonder, the tuned model/);
+    assert.match(card, /Muse Wonder \(`muse-wonder-1\.0`\) judged each pair blind: .* against Muse Spark 1\.3's reference answer, and said/);
+    assert.doesNotMatch(card, /own reference answer/, "the judge didn't write the references");
+    assert.match(card, /Muse Spark 1\.3 wrote the training answers and the references, and Muse Wonder the verdicts\./);
+    assert.match(card, /Meta made Muse Glimmer 30B, Muse Spark 1\.3 and Muse Wonder; it didn't make/);
+    assert.match(card, /that learned one task from Muse Spark 1\.3:/);
+    const record = cards.runRecord(f, [], "template");
+    assert.deepEqual([(record.dataset as { writer: string }).writer, (record.eval as { judge: string }).judge], ["muse-spark-1.3", "muse-wonder-1.0"]);
+    assert.equal(card.includes(EM_DASH), false);
+  });
+
+  it("asks Muse Wonder for a new story, about the dataset's own writer", () => {
+    assert.equal(cards.STORY_MODEL, "muse-wonder-1.0", "Muse Wonder tells new stories, never Muse Spark 1.3");
+    assert.doesNotMatch(cards.STORY_INSTRUCTIONS, /Spark|Wonder/, "the instructions name no model; the facts do");
+    const req = cards.storyRequest(storyFacts({ writerModel: "muse-wonder-1.0" }));
+    assert.match(req, /^Muse Wonder, Meta's hosted model, wrote the dataset, the prompts and the answers\.$/m);
+    assert.match(req, /The lab has Muse Wonder write a dataset for one task, and Muse Glimmer 30B learns to do the task the way Muse Wonder does\./);
+    assert.doesNotMatch(req, /Muse Spark|Spark 1\.3/);
+    assert.match(cards.templateStory(storyFacts({ writerModel: "muse-wonder-1.0" })), /the way Muse Wonder does it:/);
+    assert.match(cards.templateStory(storyFacts()), /the way Muse Spark 1\.3 does it:/, "a dataset with no writer recorded");
+    assert.equal(cards.storyProblem("It teaches Muse Glimmer 30B what Muse Wonder 1.0 does.", storyFacts()), null, "the version is part of the name");
+  });
+});
+
 describe("the eval items and the example", () => {
   it("reads the first eval and judgement per index, in order, and picks a win with a note", () => {
     const items = cards.runItems(events());
@@ -678,6 +764,7 @@ describe("the hub state's rules", () => {
       datasetUrl: null,
       why: "Why.",
       storyBy: "spark",
+      storyModel: "muse-spark-1.3",
       public: false,
       stale: false,
       filesUploaded: 1,
@@ -687,5 +774,7 @@ describe("the hub state's rules", () => {
     });
     assert.doesNotMatch(JSON.stringify(view), /e30=|A story|0\.003|claim-id/);
     assert.equal(toHubView({ status: "waiting" }, { why: "The param's." }, now).why, "The param's.", "the why the card prints");
+    assert.equal(toHubView({ ...state, storyModel: "muse-wonder-1.0" }, null, now).storyModel, "muse-wonder-1.0");
+    assert.equal(toHubView({ ...state, storyBy: "template" }, null, now).storyModel, null, "the template's story has no model");
   });
 });

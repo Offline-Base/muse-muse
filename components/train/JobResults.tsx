@@ -4,7 +4,7 @@ import { Icon } from "@/components/icons";
 import { EvalResults } from "@/components/train/EvalResults";
 import { TryLiveCard } from "@/components/train/LiveDemo";
 import { LongText } from "@/components/train/LongText";
-import { WRITER_NAME, tunedModelName, type EvalRow } from "@/components/train/format";
+import { judgeName, tunedModelName, writerName, type EvalRow } from "@/components/train/format";
 import { minutesText, type PublicLiveDemo, type ResultView } from "@/components/train/results";
 import { ExternalLink, PageHeader } from "@/components/ui";
 import { dateTimeUtc, usd } from "@/lib/format";
@@ -13,8 +13,11 @@ export interface JobResultsProps {
   result: ResultView;
   /** The job's eval items with their judgements (evalRows of its eval and judgement events only). */
   rows: EvalRow[];
-  /** The dataset it trained on, when that dataset is ready. */
-  dataset: { id: string; title: string } | null;
+  /**
+   * The dataset it trained on, when that dataset is ready, with the model that wrote it (its writerModel: absent or null
+   * means Muse Spark 1.3).
+   */
+  dataset: { id: string; title: string; writerModel?: string | null } | null;
   /** A live demo of its adapter while one is starting or serving (the Try it live box), else nothing. */
   live?: PublicLiveDemo | null;
   /** The server's clock when the page rendered, for the live demo's countdown. */
@@ -31,6 +34,7 @@ export interface JobResultsProps {
  * that, nothing about the Hub does.
  */
 export function JobResults({ result: r, rows, dataset, live = null, serverNow, aside = null }: JobResultsProps) {
+  const judge = judgeName(r);
   const long = r.settings.filter((s) => s.key === "studentPrompt");
   const short = r.settings.filter((s) => s.key !== "studentPrompt");
   return (
@@ -121,12 +125,18 @@ export function JobResults({ result: r, rows, dataset, live = null, serverNow, a
           </div>
         ))}
         <p className="muted small">
-          Both models answered each held-out prompt. {WRITER_NAME} saw the two answers in random order, without knowing
-          which model wrote which.
+          Both models answered each held-out prompt. {judge} saw the two answers in random order, without knowing which
+          model wrote which.
         </p>
       </section>
 
-      <EvalResults state={{ state: "judged", summary: r.summary }} rows={rows} model={tunedModelName(r.recipe)} />
+      <EvalResults
+        state={{ state: "judged", summary: r.summary }}
+        rows={rows}
+        model={tunedModelName(r.recipe)}
+        writer={dataset ? writerName(dataset) : null}
+        judge={judge}
+      />
     </div>
   );
 }

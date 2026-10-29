@@ -71,6 +71,7 @@ import {
   tryAnswerOf,
   tryErrorText,
 } from "@/components/train/format";
+import { WRITER_MODEL, WRITER_NAME, judgeName, writerName } from "@/components/train/format";
 import { toPublicLiveDemo } from "@/components/train/results";
 import {
   recipeDefaults,
@@ -600,15 +601,29 @@ describe("datasets", () => {
 
   it("estimates the cost and time to write a dataset", () => {
     const r = datasetCostRange(300);
-    assert.ok(r.low > 0.5 && r.low < r.high && r.high < 4, JSON.stringify(r));
+    assert.ok(r.low > 0.5 && r.low < r.high, JSON.stringify(r));
     assert.ok(datasetCostRange(1000).high > r.high);
     assert.deepEqual(datasetCostRange(0), { low: 0, high: 0 });
-    assert.equal(datasetMinutes(300), 19, "12 prompt batches and 13 answer chunks");
+    assert.equal(datasetMinutes(300), 29, "12 prompt batches and 13 answer chunks at Muse Wonder's pace");
     assert.equal(roughMinutes(datasetMinutes(20)), "a few minutes");
-    assert.equal(roughMinutes(datasetMinutes(300)), "about 20 minutes");
-    assert.equal(roughMinutes(datasetMinutes(1000)), "about an hour");
+    assert.equal(roughMinutes(datasetMinutes(300)), "about 30 minutes");
+    assert.equal(roughMinutes(datasetMinutes(1000)), "about 1.5 hours");
     assert.equal(roughMinutes(200), "about 3.5 hours");
-    assert.match(datasetCostHint(300), /^About \$\d+\.\d\d to \$\d+\.\d\d on Meta's API at Muse Spark 1\.3's prices, and about 20 minutes to write\./);
+    assert.match(datasetCostHint(300), /^About \$4\.62 to \$10\.14 on Meta's API at Muse Wonder's prices, and about 30 minutes to write\./);
+  });
+
+  it("prices a dataset at Muse Wonder's rates, never Muse Spark 1.3's", () => {
+    assert.equal(WRITER_MODEL, "muse-wonder-1.0");
+    assert.equal(WRITER_NAME, "Muse Wonder");
+    // 300 examples of 350 to 450 input and 700 to 1,600 output tokens, at $4 in and $20 out per million.
+    assert.deepEqual(datasetCostRange(300), { low: 4.62, high: 10.14 });
+    assert.deepEqual(datasetCostRange(100), {
+      low: Math.floor(((350 * 4 + 700 * 20) / 1e6) * 100 * 100) / 100,
+      high: Math.ceil(((450 * 4 + 1600 * 20) / 1e6) * 100 * 100) / 100,
+    });
+    const spark = (300 * (350 * 1.25 + 700 * 4.25)) / 1e6;
+    assert.ok(datasetCostRange(300).low > spark * 4, "not Spark's $1.02");
+    assert.match(META_NOT_CONFIGURED_TEXT, /so Muse Wonder can't write datasets/);
     assert.equal(datasetCostHint(5), "Pick 20 to 1,000 examples to see the cost.");
     assert.equal(datasetCountOk(20) && datasetCountOk(1000), true);
     assert.equal(datasetCountOk(19) || datasetCountOk(1001) || datasetCountOk(30.5) || datasetCountOk(NaN), false);
@@ -682,9 +697,10 @@ describe("eval results", () => {
 
   it("writes the summary strip and verdicts in plain words", () => {
     assert.equal(
-      evalSummaryText(summary, tunedModelName("glimmer-lora")),
+      evalSummaryText(summary, tunedModelName("glimmer-lora"), "Muse Spark 1.3"),
       "Tuned Glimmer beat base on 18 of 30, base won 7, ties 5; average score base 6.2, tuned 7.8, judged by Muse Spark 1.3.",
     );
+    assert.match(evalSummaryText(summary, "Glimmer", judgeName({ judgeModel: "muse-wonder-1.0", evalSummary: summary })), /judged by Muse Wonder\.$/);
     assert.equal(tunedModelName("smoke"), "model");
     assert.equal(scoreText(7.8), "7.8");
     assert.equal(verdictLabel("tuned"), "Tuned better");
@@ -712,10 +728,30 @@ describe("eval results", () => {
       SPEND_PAUSED_TEXT,
       datasetStartErrorText(500, { error: "start_failed" }),
       datasetStartErrorText(502, {}),
-      evalSummaryText(summary, "Glimmer"),
+      evalSummaryText(summary, "Glimmer", "Muse Wonder"),
       datasetCountsText(dataset()),
     ];
     for (const s of all) assert.equal(s.includes(String.fromCharCode(0x2014)), false, s);
+  });
+});
+
+describe("models from the records", () => {
+  const judged = { items: 40, tunedWins: 40, baseWins: 0, ties: 0, avgBaseScore: 2, avgTunedScore: 8.88, judgeCostUsd: 0.09 };
+
+  it("names a dataset's writer from its record, and Muse Spark 1.3 for one made before it was recorded", () => {
+    assert.equal(writerName({ writerModel: "muse-wonder-1.0" }), "Muse Wonder");
+    assert.equal(writerName({ writerModel: "muse-spark-1.3" }), "Muse Spark 1.3");
+    assert.equal(writerName({ writerModel: null }), "Muse Spark 1.3");
+    assert.equal(writerName({}), "Muse Spark 1.3", "an older server's view");
+    assert.equal(writerName(null), "Muse Spark 1.3");
+  });
+
+  it("names a job's judge from its record: Muse Spark 1.3 for one judged before it, Muse Wonder for one not judged yet", () => {
+    assert.equal(judgeName({ judgeModel: null, evalSummary: judged }), "Muse Spark 1.3", "the tuned run that won 40 of 40");
+    assert.equal(judgeName({ evalSummary: judged }), "Muse Spark 1.3");
+    assert.equal(judgeName({ judgeModel: "muse-wonder-1.0", evalSummary: judged }), "Muse Wonder");
+    assert.equal(judgeName({ judgeModel: "muse-wonder-1.0", evalSummary: null }), "Muse Wonder", "judging now");
+    assert.equal(judgeName({ judgeModel: null, evalSummary: null }), "Muse Wonder", "judged by today's judge once it is");
   });
 });
 

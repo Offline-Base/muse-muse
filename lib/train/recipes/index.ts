@@ -118,7 +118,7 @@ export const RECIPES: Recipe[] = [
         label: "Student prompt",
         kind: "text",
         default: "short",
-        help: 'short or full. short: training and both models\' answers use one line, "You are" and the dataset\'s name (name it as a role, such as "Muse Muse\'s brief writer"), so the scores measure what training taught. full: the dataset\'s whole task prompt, as Muse Spark saw it, so they measure how well each model follows instructions.',
+        help: 'short or full. short: training and both models\' answers use one line, "You are" and the dataset\'s name (name it as a role, such as "Muse Muse\'s brief writer"), so the scores measure what training taught. full: the dataset\'s whole task prompt, as its writer saw it, so they measure how well each model follows instructions.',
       },
       {
         key: "dryRun",
@@ -142,7 +142,7 @@ export const RECIPES: Recipe[] = [
         key: "why",
         label: "Why this model",
         kind: "text",
-        help: "Optional, in your own words: why this model was made. It opens the model card's story on Hugging Face, and Muse Spark 1.3 builds the rest from the dataset's task and the results.",
+        help: "Optional, in your own words: why this model was made. It opens the model card's story on Hugging Face, and Muse Wonder builds the rest from the dataset's task and the results.",
       },
     ],
     script: GLIMMER_PY,

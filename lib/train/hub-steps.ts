@@ -7,8 +7,9 @@
  *                   (lib/train/store.ts updateHub). Off, not eligible or not uploaded yet: the state says why and
  *                   nothing is published. Every later step gets the claim, and stops (FatalError) without writing
  *                   once the state no longer holds it, so a run whose stale claim another run took changes nothing.
- *   hubStoryStep    "Why this exists": Muse Spark 1.3 writes it from the records (usage recorded, the spend cap
- *                   respected), or the template does; saved, so a retry never pays twice for one story.
+ *   hubStoryStep    "Why this exists": STORY_MODEL (Muse Wonder) writes it from the records (usage recorded, the
+ *                   spend cap respected), or the template does; saved with the model that wrote it, so a retry never
+ *                   pays twice for one story.
  *   hubDatasetStep  the dataset repo (one per dataset, made private if it is new): the train and eval JSONL, which are
  *                   the dataset's and the same for every job trained on it.
  *   hubModelStep    the model repo the plan made: the adapter's LFS objects checked with the LFS batch (one the Hub
@@ -28,6 +29,7 @@
 import { randomUUID } from "node:crypto";
 import { FatalError, RetryableError } from "workflow";
 import { env } from "@/lib/env";
+import { modelLabel } from "@/lib/format";
 import { metaPlatform } from "@/lib/meta/platform";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
 import { spendPaused } from "@/lib/quota";
@@ -133,12 +135,14 @@ const HUB_RETRY_AFTER = "1m";
 const TRAIN_READ_MAX = 1000;
 const EVAL_READ_MAX = 100;
 /**
- * The story's call: effort low, one SDK retry. Its reasoning counts toward the output budget: at effort low Muse Spark
- * 1.3 reasoned for about 1,500 tokens before writing about 200 (a real call on 2026-10-28), so a budget of 1,500 came
- * back "incomplete" with no text at all. Only the tokens it uses are paid for.
+ * The story's call: effort low, one SDK retry. Its reasoning counts toward the output budget, and Muse Wonder bills its
+ * reasoning as output: at effort low Muse Spark 1.3 reasoned for about 1,500 tokens before writing about 200 (a real
+ * call on 2026-10-28), so a budget of 1,500 came back "incomplete" with no text at all. 6,000 leaves the story of at
+ * most 100 words (about 150 tokens) almost 4 times that reasoning. Only the tokens it uses are paid for. A Muse Wonder
+ * call takes 1.4 to 2 times as long as a Muse Spark 1.3 one did, so it waits 2 minutes, twice, inside the step's limit.
  */
 const STORY_MAX_OUTPUT_TOKENS = 6000;
-const STORY_TIMEOUT_MS = 90_000;
+const STORY_TIMEOUT_MS = 120_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The waiting reason of a judged job whose adapter files aren't all on the Hub. */
@@ -227,9 +231,9 @@ function datasetRepoOf(hub: HubState, dataset: { id: string; title: string }): H
   return { type: "dataset", id: hub.datasetRepo || `${namespace()}/${datasetRepoName(dataset.title, dataset.id)}` };
 }
 
-/** The story's facts, from the records: the dataset's title and task, and the admin's why. */
-function storyFactsOf(job: TrainJobRow, hub: HubState, dataset: { title: string; task: string }): StoryFacts {
-  return { datasetTitle: dataset.title, task: dataset.task, why: effectiveWhy(hub, job.params) };
+/** The story's facts, from the records: the dataset's title, task and writer, and the admin's why. */
+function storyFactsOf(job: TrainJobRow, hub: HubState, dataset: { title: string; task: string; writerModel?: string | null }): StoryFacts {
+  return { datasetTitle: dataset.title, task: dataset.task, why: effectiveWhy(hub, job.params), writerModel: dataset.writerModel ?? null };
 }
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -258,8 +262,8 @@ async function ggufLinkOf(job: TrainJobRow, adapterPublic: boolean, known?: { re
 }
 
 /**
- * Everything the cards say, from the records: the job and its done metrics, the eval summary and items, the dataset,
- * the recipe's template, the base revision adapter_config.json pins (else the recipe's), the system message the run
+ * Everything the cards say, from the records: the job and its done metrics, the eval summary and items, the judge, the
+ * dataset and its writer, the recipe's template, the base revision adapter_config.json pins (else the recipe's), the system message the run
  * trained and answered under, and its GGUF repo (ggufLinkOf for a card read under `adapterPublic`, `gguf` for one
  * publishing now).
  */
@@ -313,7 +317,9 @@ async function cardFactsOf(job: TrainJobRow, hub: HubState, dataset: DatasetRow,
       trainCount: dataset.trainCount,
       evalCount: dataset.evalCount,
       costUsd: dataset.costUsd,
+      writerModel: dataset.writerModel ?? null,
     },
+    judgeModel: job.judgeModel ?? null,
     template,
     revision,
     system,
@@ -472,7 +478,7 @@ async function writeDatasetCard(repo: HubRepo, dataset: DatasetRow, from: { job:
   const readme = Buffer.from(datasetCard(facts, others), "utf8");
   const files = [
     { path: "README.md", content: readme },
-    { path: DATASET_LICENSE_PATH, content: Buffer.from(datasetLicense(), "utf8") },
+    { path: DATASET_LICENSE_PATH, content: Buffer.from(datasetLicense(dataset.writerModel ?? null), "utf8") },
   ];
   return writeFiles(repo, files, [], `Publish the card of ${dataset.title}`, `Muse Muse dataset ${dataset.id}, for job ${forJob}.`);
 }
@@ -536,19 +542,22 @@ export async function hubPlanStep(jobId: string, status: TrainStatus, manual = f
 hubPlanStep.maxRetries = 3;
 
 /**
- * Writes the card's "Why this exists" once: Muse Spark 1.3 from the records (the dataset's title and task, what Muse
- * Muse is, and why an open model you run yourself should learn what Spark does), building on the admin's why when
- * there is one. It is asked for no counts or results: the card adds those itself (resultText). Usage is recorded before
- * the story is saved. When MODEL_API_KEY isn't set, the spend cap is reached, the call fails or the story fails its
- * checks (storyProblem: too long, markup, a claim about Meta, a number, a count word or a result of its own), the
- * template's story from the task is used. A copy of the admin's why in Spark's story is taken out first
- * (dropRepeatedWhy), since the card prints the why just before it. A story already saved is kept.
+ * Writes the card's "Why this exists" once: STORY_MODEL (Muse Wonder) from the records (the dataset's title, task and
+ * writer, what Muse Muse is, and why an open model you run yourself should learn what the dataset's writer does),
+ * building on the admin's why when there is one. It is asked for no counts or results: the card adds those itself
+ * (resultText). Usage is recorded before the story is saved, with STORY_MODEL as its storyModel (storyBy keeps the
+ * value "spark" for a model's story, its name from before the model was recorded). When MODEL_API_KEY isn't set, the
+ * spend cap is reached, the call fails or the story fails its checks (storyProblem: too long, markup, a claim about
+ * Meta, a number, a count word or a result of its own), the template's story from the task is used. A copy of the
+ * admin's why in the model's story is taken out first (dropRepeatedWhy), since the card prints the why just before it.
+ * A story already saved is kept, with the model that wrote it.
  */
 export async function hubStoryStep(jobId: string, claim: string): Promise<{ by: "spark" | "template" }> {
   "use step";
   const { job, hub, dataset } = await load(jobId, claim);
   if (hub.story && hub.storyBy) return { by: hub.storyBy };
   const facts = storyFactsOf(job, hub, dataset);
+  const author = modelLabel(STORY_MODEL);
   let story: string | null = null;
   let note: string;
   let costUsd = 0;
@@ -576,15 +585,22 @@ export async function hubStoryStep(jobId: string, claim: string): Promise<{ by: 
     // The card prints the admin's why just before the story, so a copy of it in the story is taken out.
     const told = text ? dropRepeatedWhy(cleanStory(text), facts.why) : "";
     const problem = !text ? failed : !told ? "it only repeated the admin's why" : storyProblem(told, facts);
-    if (problem) note = `Muse Spark 1.3's story wasn't used: ${problem}`;
+    if (problem) note = problem;
     else {
       story = told;
-      note = "Muse Spark 1.3 wrote the story";
+      note = `${author} wrote the story`;
     }
   }
   const by = story ? "spark" : "template";
-  await saveHub(jobId, claim, (h) => ({ ...h, story: story ?? templateStory(facts), storyBy: by, storyCostUsd: costUsd, updatedAt: new Date().toISOString() }));
-  await fromDb(() => recordEvent(jobId, { type: "log", text: `Hugging Face card: ${by === "spark" ? note : `the template's story, since ${note.replace(/^Muse Spark 1\.3's story wasn't used: /, "")}`}.` }));
+  await saveHub(jobId, claim, (h) => ({
+    ...h,
+    story: story ?? templateStory(facts),
+    storyBy: by,
+    storyModel: story ? STORY_MODEL : null,
+    storyCostUsd: costUsd,
+    updatedAt: new Date().toISOString(),
+  }));
+  await fromDb(() => recordEvent(jobId, { type: "log", text: `Hugging Face card: ${by === "spark" ? note : `the template's story, since ${note}`}.` }));
   return { by };
 }
 hubStoryStep.maxRetries = 3;
@@ -666,7 +682,7 @@ export async function hubModelStep(jobId: string, claim: string): Promise<{ repo
   const files: PlatformFile[] = [
     { path: "README.md", content: Buffer.from(modelCard(facts), "utf8") },
     { path: "LICENSE", content: Buffer.from(license, "utf8") },
-    { path: "muse_muse_run.json", content: Buffer.from(`${JSON.stringify(runRecord(facts, items, hub.storyBy ?? "template"), null, 2)}\n`, "utf8") },
+    { path: "muse_muse_run.json", content: Buffer.from(`${JSON.stringify(runRecord(facts, items, hub.storyBy ?? "template", hub.storyModel ?? null), null, 2)}\n`, "utf8") },
     ...small,
   ];
   const refs = planned.map((f) => ({ path: f.path, oid: f.sha256, size: f.size }));
@@ -865,7 +881,7 @@ async function ggufFactsOf(job: TrainJobRow, hub: HubState, adapter: TrainJobRow
     datasetRepo: adapter.hub!.datasetRepo ?? null,
     adapterJobId: adapter.id,
     quantJobId: job.id,
-    dataset: { title: dataset.title, task: dataset.task, evalCount: num(metrics.channel_total) ?? dataset.evalCount },
+    dataset: { title: dataset.title, task: dataset.task, evalCount: num(metrics.channel_total) ?? dataset.evalCount, writerModel: dataset.writerModel ?? null },
     role,
     trainChannel: trainChannelOf(job.params),
     builds,

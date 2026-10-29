@@ -1,9 +1,9 @@
 /**
  * Publishing to the Hugging Face Hub end to end, with nothing real but the code under test: the store on an in-memory
  * PGlite with the repo's migrations, a fake Hub on localhost (fake-hub.ts) through HF_ENDPOINT, the real hub and publish
- * routes, the real steps and publishToHub, Muse Spark 1.3 and Lambda's capacity faked, and a fake GPU in TypeScript
- * doing what runner.py's hub_upload does (a plan, the bytes straight to the presigned URLs with no credential, a
- * report).
+ * routes, the real steps and publishToHub, Muse Wonder (the story) and Lambda's capacity faked, and a fake GPU in
+ * TypeScript doing what runner.py's hub_upload does (a plan, the bytes straight to the presigned URLs with no
+ * credential, a report).
  *
  * POST /api/train/jobs/{id}/hub: the job token (and only that job's), a glimmer-publish job acting for its adapter job
  * only, the skip reasons, the size limits (a plan replaces the one before, so they hold for the job's state too), the
@@ -11,8 +11,9 @@
  * the LFS bridge, presigned URLs never stored or logged, a Hub refusal saved and not tried again, and the report (only
  * from a running GPU, while its plan uploads). Publishing: under one claim per run, the dataset repo and the model repo
  * made private, committed, read back, then the dataset card and the visibility HF_PUBLIC asks for (put back when a
- * part fails, and saved as the Hub reports it), the cards and the run's record, the story from Muse Spark 1.3 or the
- * template, a second publish that commits only what changed, a shared dataset card that lists every public model and
+ * part fails, and saved as the Hub reports it), the cards and the run's record (the dataset and the judging, which
+ * have no model on their records, credited to Muse Spark 1.3), the story from Muse Wonder (saved as its storyModel) or
+ * the template, a second publish that commits only what changed, a shared dataset card that lists every public model and
  * never changes for a job that fails, an LFS object the Hub lost failing it, and POST .../publish (a why that clears,
  * one upload job for two presses, a Hub that refuses before any GPU) starting a glimmer-publish job through POST
  * /api/train/jobs, whose own upload and success publish the adapter. Nothing here reaches Neon, Lambda, Meta or the
@@ -71,11 +72,13 @@ let steps: typeof import("../hub-steps");
 let wf: typeof import("../workflow");
 let hashToken: (t: string) => string;
 let started: Array<{ fn: string; args: unknown[] }> = [];
-/** What the fake Muse Spark 1.3 answers for the story, or an error it throws. */
+/** What the fake Muse Wonder answers for the story, or an error it throws. */
 let storyReply: string | Error = "";
-/** The status the fake Muse Spark 1.3 answers with: "incomplete" is a call that ran out of its output budget. */
+/** The status the fake Muse Wonder answers with: "incomplete" is a call that ran out of its output budget. */
 let storyStatus: "completed" | "incomplete" = "completed";
 let storyCalls = 0;
+/** The model each story call asked for. */
+let storyModels: string[] = [];
 let paused = false;
 
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
@@ -288,8 +291,10 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       namedExports: {
         metaPlatform: () => ({
           responses: {
-            create: async () => {
+            create: async (body: { model: string; max_output_tokens: number }) => {
               storyCalls += 1;
+              storyModels.push(body.model);
+              assert.ok(body.max_output_tokens >= 600, "room for the story and Muse Wonder's reasoning");
               if (storyReply instanceof Error) throw storyReply;
               const incomplete = storyStatus === "incomplete" ? { reason: "max_output_tokens" } : null;
               return { status: storyStatus, incomplete_details: incomplete, output_text: storyReply, usage: { input_tokens: 900, output_tokens: 180 } };
@@ -331,6 +336,7 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
     fake.transfers.length = 0;
     started = [];
     storyCalls = 0;
+    storyModels = [];
     storyStatus = "completed";
     paused = false;
     storyReply =
@@ -629,7 +635,9 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.equal(hub.modelUrl, `${fake.url}/${modelId}`);
       assert.equal(hub.datasetUrl, `${fake.url}/datasets/${dataId}`);
       assert.equal(hub.storyBy, "spark");
-      assert.match(hub.modelCommit!, /^[0-9a-f]{40}$/);
+      assert.equal(hub.storyModel, "muse-wonder-1.0", "Muse Wonder wrote the story, and the hub state says so");
+      assert.deepEqual(storyModels, ["muse-wonder-1.0"], "never Muse Spark 1.3");
+      assert.ok((await logOf(jobId)).includes("Hugging Face card: Muse Wonder wrote the story."));
       assert.match(hub.datasetCommit!, /^[0-9a-f]{40}$/);
 
       const data = fake.repo("dataset", dataId)!;
@@ -660,11 +668,12 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.match(model.files.get("LICENSE")!.content!.toString(), /Apache License/);
       const card = model.files.get("README.md")!.content!.toString();
       assert.match(card, /^---\nbase_model: unsloth\/Muse-Glimmer-30B-unsloth-bnb-4bit\nbase_model_relation: adapter\n/);
-      assert.match(card, /## Why this exists\n\nMuse Muse turns an example or some inspo/, "Muse Spark 1.3's story");
+      assert.match(card, /## Why this exists\n\nMuse Muse turns an example or some inspo/, "Muse Wonder's story");
       assert.ok(
         card.includes("host yourself.\n\nMuse Spark 1.3 wrote the dataset's 14 examples: 12 to train on and 2 held out. On 2 held-out prompts, judged blind by Muse Spark 1.3, the tuned model was better on 2 of 2, with an average score of 8.5 out of 10 against 2.5 for the base model."),
-        "then the records' counts and result",
+        "then the records' counts and result, with the writer and the judge the records name (none: Muse Spark 1.3)",
       );
+      assert.doesNotMatch(card, /Muse Wonder/, "the card credits Muse Wonder with nothing but the story, which it doesn't sign");
       const dataCard = data.files.get("README.md")!.content!.toString();
       assert.ok(dataCard.includes(`## Models trained on it\n\n- [${modelId}](https://huggingface.co/${modelId}), from the run "Brief writer LoRA": https://muse-muse.vercel.app/fine-tuning/${jobId}\n`));
       assert.deepEqual(data.commits.map((c) => c.files.sort()), [["data/eval.jsonl", "data/train.jsonl"], ["LICENSE.md", "README.md"]], "the data, then the card and its terms once the model is in");
@@ -674,6 +683,9 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.doesNotMatch(card, /PEFT's own card/);
       const run = JSON.parse(model.files.get("muse_muse_run.json")!.content!.toString());
       assert.equal(run.eval.items.length, 2);
+      assert.equal(run.dataset.writer, "muse-spark-1.3", "a dataset with no writer recorded");
+      assert.equal(run.eval.judge, "muse-spark-1.3", "a job with no judge recorded");
+      assert.deepEqual([run.story.by, run.story.model], ["model", "muse-wonder-1.0"]);
       assert.equal(run.job.metrics.adapter_dir, undefined, "no cache path");
       assert.equal(model.commits.length, 1, "one commit for the model repo");
       assert.deepEqual(model.commits[0]!.lfsFiles.sort(), ["adapter_model.safetensors", "tokenizer.model"]);
@@ -687,6 +699,24 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.deepEqual(result?.hubLinks, { status: "published", modelUrl: hub.modelUrl, datasetUrl: hub.datasetUrl });
       const all = JSON.stringify(await store.listEvents(jobId)) + JSON.stringify(await store.getJob(jobId));
       assert.doesNotMatch(all, new RegExp(HF_TOKEN), "the HF token is never stored or logged");
+    });
+
+    it("credits Muse Wonder on every file for a dataset its record says it wrote and a run it judged", async () => {
+      await testDb.update(realSchema.trainingDatasets).set({ writerModel: "muse-wonder-1.0" }).where(eq(realSchema.trainingDatasets.id, DATASET_ID));
+      storyReply = (storyReply as string).replace("Muse Spark 1.3", "Muse Wonder");
+      const jobId = await uploadedJudgedJob({ judgeModel: "muse-wonder-1.0" });
+      assert.deepEqual(await wf.publishToHub({ jobId }), { published: true });
+      const hub = (await hubOf(jobId))!;
+      const model = fake.repo("model", hub.modelRepo!)!;
+      const data = fake.repo("dataset", "muse-org/muse-muse-brief-writer-1b2c3d4e")!;
+      const card = model.files.get("README.md")!.content!.toString();
+      const files = [card, model.files.get("muse_muse_run.json")!.content!.toString(), ...["README.md", "LICENSE.md"].map((p) => data.files.get(p)!.content!.toString())];
+      for (const text of files) assert.doesNotMatch(text, /Muse Spark|Spark 1\.3|muse-spark/, text.slice(0, 80));
+      assert.ok(card.includes("Muse Wonder wrote the dataset's 14 examples: 12 to train on and 2 held out. On 2 held-out prompts, judged blind by Muse Wonder,"));
+      assert.match(card, /Muse Wonder \(`muse-wonder-1\.0`\) judged each pair blind/);
+      assert.match(data.files.get("LICENSE.md")!.content!.toString(), /^Muse Wonder wrote every prompt and answer in this dataset/m);
+      const run = JSON.parse(model.files.get("muse_muse_run.json")!.content!.toString());
+      assert.deepEqual([run.dataset.writer, run.eval.judge, run.story.model], ["muse-wonder-1.0", "muse-wonder-1.0", "muse-wonder-1.0"]);
     });
 
     it("publishes again with only what changed, and a new why rewrites the story", async () => {
@@ -736,7 +766,7 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.match(oldCard, /Both models answered under the dataset's whole task prompt/);
     });
 
-    it("takes a copy of the why out of Muse Spark 1.3's story, which the card prints just before it", async () => {
+    it("takes a copy of the why out of the model's story, which the card prints just before it", async () => {
       const why = "Because briefs should run offline.";
       const told = storyReply as string;
       storyReply = `${why}\n\n${told}`;
@@ -749,11 +779,12 @@ describe("publishing to the Hugging Face Hub", { skip: canMock ? false : "needs 
       assert.ok(card.includes(`## Why this exists\n\n${why}\n\n${told.split("\n\n")[0]}`));
     });
 
-    it("uses the template's story when Muse Spark 1.3 invents a number, runs out of tokens, fails or the cap is reached", async () => {
+    it("uses the template's story when Muse Wonder invents a number, runs out of tokens, fails or the cap is reached", async () => {
       storyReply = "It won 99 of 2 prompts.";
       const jobId = await uploadedJudgedJob();
       await wf.publishToHub({ jobId });
       assert.equal((await hubOf(jobId))!.storyBy, "template");
+      assert.equal((await hubOf(jobId))!.storyModel, null, "the template's story has no model");
       assert.ok((await logOf(jobId)).some((t) => /the template's story, since it states counts or results itself \(won, 99, 2\)/.test(t)));
       storyStatus = "incomplete";
       const short = await uploadedJudgedJob();

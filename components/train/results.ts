@@ -1,4 +1,5 @@
 import { gpuName, hubHref } from "@/components/train/format";
+import { recordedModel, writerModelOf } from "@/lib/train/models";
 import type { ReadyDatasetRow, ResultJobRow } from "@/lib/train/store";
 import type { DatasetView, EvalSummary, LiveDemoView, PublicHubLinks, RecipeView } from "@/lib/train/types";
 
@@ -41,6 +42,8 @@ export interface ResultView {
   costUsd: number;
   finishedAt: string;
   summary: EvalSummary;
+  /** The model that judged it, from its judge_model: Muse Spark 1.3 for a job judged before the judge was recorded. */
+  judgeModel: string;
   settings: ResultSetting[];
   /** The dataset param, for a link when that dataset is ready. */
   datasetId: string | null;
@@ -120,6 +123,7 @@ export function toResultView(row: ResultJobRow, recipe: Pick<RecipeView, "title"
     costUsd: row.costUsd,
     finishedAt: (row.finishedAt ?? row.terminatedAt).toISOString(),
     summary: summaryOf(row.evalSummary),
+    judgeModel: recordedModel(row.judgeModel),
     settings: resultSettings(row.params, recipe),
     datasetId: typeof dataset === "string" ? dataset : null,
     hub: publicHubLinks(row.hubLinks),
@@ -140,6 +144,7 @@ export function toReadyDatasetView(row: ReadyDatasetRow): DatasetView {
     error: null,
     createdAt: row.createdAt.toISOString(),
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    writerModel: writerModelOf(row),
   };
 }
 

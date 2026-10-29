@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { DatasetStatusPill } from "@/components/train/DatasetStatusPill";
 import { LongText } from "@/components/train/LongText";
-import { WRITER_NAME, isDatasetStalled, itemNumber } from "@/components/train/format";
+import { WRITER_NAME, isDatasetStalled, itemNumber, writerName } from "@/components/train/format";
 import { PageHeader } from "@/components/ui";
 import { dateTimeUtc, duration, elapsedMs, plural, usd } from "@/lib/format";
 import type { DatasetView, EvalExample, TrainExample } from "@/lib/train/types";
@@ -22,9 +22,11 @@ export interface DatasetDetailProps {
 
 /**
  * The dataset page: its task, counts, cost and status, a sample of training conversations (the system message once,
- * since every example shares it) and the eval prompts with Muse Spark 1.3's reference answers.
+ * since every example shares it) and the eval prompts with the reference answers. The writer is named from the
+ * dataset's record (writerName: Muse Spark 1.3 for one made before the writer was recorded).
  */
 export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, now, readOnly = false }: DatasetDetailProps) {
+  const writer = writerName(d);
   const ready = d.status === "ready";
   const generating = d.status === "generating";
   const stalled = isDatasetStalled(d, now);
@@ -37,7 +39,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
         title={d.title}
         subtitle={
           <>
-            Written by {WRITER_NAME} · created{" "}
+            Written by {writer} · created{" "}
             <time dateTime={d.createdAt}>{dateTimeUtc(d.createdAt)}</time>
           </>
         }
@@ -79,7 +81,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
           {stalled
             ? "This started over 6 hours ago and never finished, so its workflow most likely stopped. Nothing bills for it and no job can use it, so make a new one."
             : generating
-              ? `${WRITER_NAME} writes the prompts first, then answers them in chunks. This page updates every 10 seconds.`
+              ? `${writer} writes the prompts first, then answers them in chunks. This page updates every 10 seconds.`
               : ready && d.finishedAt
                 ? `Finished ${dateTimeUtc(d.finishedAt)}, ${duration(elapsedMs(d.createdAt, d.finishedAt, now))} after it started.${
                     // A dataset that stopped early says why in its note below.
@@ -139,7 +141,7 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
                   .filter((m) => m.role !== "system")
                   .map((m, j) => (
                     <div className={`train-msg${m.role === "user" ? " train-msg-user" : ""}`} key={j}>
-                      <p className="train-role">{m.role === "user" ? "User" : `Answer (${WRITER_NAME})`}</p>
+                      <p className="train-role">{m.role === "user" ? "User" : `Answer (${writer})`}</p>
                       <LongText text={m.content} />
                     </div>
                   ))}
@@ -159,20 +161,20 @@ export function DatasetDetail({ dataset: d, sampleTrain, sampleEval, written, no
           {ready ? <span className="muted small">{d.evalCount} held out</span> : null}
         </div>
         <p className="muted small">
-          Held out from training. A job answers each one with the base and the tuned model, and {WRITER_NAME} judges both
-          against the reference.
+          Held out from training. A job answers each one with the base and the tuned model, and the job&apos;s judge
+          ({WRITER_NAME} for a job trained now) scores both against the reference.
         </p>
         {sampleEval.length ? (
           <div className="table-wrap">
             <table className="data train-ds-eval">
-              <caption className="sr-only">Eval prompts with {WRITER_NAME}&apos;s reference answers</caption>
+              <caption className="sr-only">Eval prompts with {writer}&apos;s reference answers</caption>
               <thead>
                 <tr>
                   <th scope="col" className="num">
                     #
                   </th>
                   <th scope="col">Prompt</th>
-                  <th scope="col">{WRITER_NAME} reference</th>
+                  <th scope="col">{writer} reference</th>
                 </tr>
               </thead>
               <tbody>

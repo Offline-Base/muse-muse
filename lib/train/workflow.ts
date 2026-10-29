@@ -97,8 +97,8 @@ async function terminate(jobId: string, ending: TrainEnding, instanceId: string 
 }
 
 /**
- * Judges the job's eval items with Muse Spark 1.3, JUDGE_CONCURRENCY at a time, then saves the eval summary. An item
- * whose judge step fails is left out of the summary. Never throws.
+ * Judges the job's eval items with JUDGE_MODEL (Muse Wonder), JUDGE_CONCURRENCY at a time, then saves the eval summary.
+ * An item whose judge step fails is left out of the summary. Never throws.
  */
 async function judge(jobId: string): Promise<void> {
   try {

@@ -305,7 +305,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         },
       },
     });
-    mock.module(at("../datasets.ts"), { namedExports: { makeDataset: async () => ({ status: "ready" }) } });
+    mock.module(at("../datasets.ts"), { namedExports: { DATASET_MODEL: "muse-wonder-1.0", makeDataset: async () => ({ status: "ready" }) } });
     mock.module(at("../../quota.ts"), { namedExports: { spendPaused: async () => paused } });
     mock.module(at("../../auth.ts"), {
       namedExports: { AuthError: FakeAuthError, requireAdminOrAutomation: async () => ({ id: "admin-1", email: "a@x", isAdmin: true }) },
@@ -740,17 +740,18 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       });
     const task = "Explain Python error messages to beginners, with a fix.";
 
-    it("saves a generating dataset and starts its workflow once", async () => {
+    it("saves a generating dataset with Muse Wonder as its writer and starts its workflow once", async () => {
       const res = await createDatasetRoute(datasetReq({ task, count: "150" }));
       assert.equal(res.status, 201);
       const input = called("createDataset")[0]!.args[0] as Record<string, unknown>;
-      assert.deepEqual(input, { title: task, task, requested: 150, createdBy: "admin-1" });
+      assert.deepEqual(input, { title: task, task, requested: 150, writerModel: "muse-wonder-1.0", createdBy: "admin-1" });
       assert.deepEqual(called("start").map((c) => c.args), [[{ datasetId: DATASET_ID }]]);
       assert.deepEqual(called("attachDatasetRun")[0]!.args, [DATASET_ID, "run-1"]);
       const body = (await res.json()) as { dataset: Record<string, unknown> };
       assert.equal(body.dataset.id, DATASET_ID);
       assert.equal(body.dataset.status, "generating");
       assert.equal(body.dataset.createdAt, "2026-10-27T12:00:00.000Z");
+      assert.equal(body.dataset.writerModel, "muse-wonder-1.0");
       assert.equal("createdBy" in body.dataset, false);
 
       await createDatasetRoute(datasetReq({ title: "  Errors  ", task, count: 20 }));
@@ -805,6 +806,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       };
       assert.equal(list.datasets.length, 1);
       assert.equal(list.datasets[0]!.trainCount, 410);
+      assert.equal(list.datasets[0]!.writerModel, "muse-spark-1.3", "a dataset with no writer recorded keeps Muse Spark 1.3");
 
       const detailCtx: Ctx = { params: Promise.resolve({ id: DATASET_ID }) };
       const res = await datasetDetail(new Request(`https://muse.example.com/api/train/datasets/${DATASET_ID}`), detailCtx);

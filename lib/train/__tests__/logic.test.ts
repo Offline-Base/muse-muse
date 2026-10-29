@@ -327,6 +327,7 @@ describe("toJobView", () => {
     evalSummary: null,
     serveEndpoint: null,
     hub: null,
+    judgeModel: null,
   };
 
   it("uses ISO dates and a live cost estimate while running", () => {
@@ -352,6 +353,22 @@ describe("toJobView", () => {
   it("passes the eval summary through once judging wrote one", () => {
     const evalSummary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 5, avgTunedScore: 6.5, judgeCostUsd: 0.01 };
     assert.deepEqual(toJobView({ ...row, evalSummary }, after(10 * MIN)).evalSummary, evalSummary);
+  });
+
+  it("names the judge from the record: Muse Spark 1.3 for a job judged before it was recorded, none before judging", () => {
+    const evalSummary = { items: 2, tunedWins: 1, baseWins: 0, ties: 1, avgBaseScore: 5, avgTunedScore: 6.5, judgeCostUsd: 0.01 };
+    assert.equal(toJobView({ ...row, evalSummary }, after(10 * MIN)).judgeModel, "muse-spark-1.3", "history keeps its judge");
+    assert.equal(toJobView({ ...row, evalSummary, judgeModel: "muse-wonder-1.0" }, after(10 * MIN)).judgeModel, "muse-wonder-1.0");
+    assert.equal(toJobView({ ...row, judgeModel: "muse-wonder-1.0" }, after(10 * MIN)).judgeModel, "muse-wonder-1.0", "judging");
+    assert.equal(toJobView(row, after(10 * MIN)).judgeModel, null, "no judge yet");
+    assert.equal(toJobView({ ...row, evalSummary: unjudgedSummary("Judging skipped: x.") }, after(10 * MIN)).judgeModel, null, "skipped");
+  });
+
+  it("names the story's model from the hub state: Muse Spark 1.3 for a story saved before it was recorded", () => {
+    const hub = { status: "published" as const, story: "Told.", storyBy: "spark" as const };
+    assert.equal(toJobView({ ...row, recipe: "glimmer-lora", hub }, after(MIN)).hub?.storyModel, "muse-spark-1.3");
+    assert.equal(toJobView({ ...row, recipe: "glimmer-lora", hub: { ...hub, storyModel: "muse-wonder-1.0" } }, after(MIN)).hub?.storyModel, "muse-wonder-1.0");
+    assert.equal(toJobView({ ...row, recipe: "glimmer-lora", hub: { ...hub, storyBy: "template" as const } }, after(MIN)).hub?.storyModel, null);
   });
 });
 
@@ -535,6 +552,7 @@ describe("toDatasetView", () => {
       createdAt: T0,
       finishedAt: after(MIN),
       workflowRunId: "run",
+      writerModel: null,
     });
     assert.deepEqual(view, {
       id: "d1",
@@ -548,7 +566,28 @@ describe("toDatasetView", () => {
       error: null,
       createdAt: "2026-10-27T12:00:00.000Z",
       finishedAt: "2026-10-27T12:01:00.000Z",
+      writerModel: "muse-spark-1.3",
     });
+  });
+
+  it("names the writer from the record: Muse Wonder when it says so, Muse Spark 1.3 when it has none", () => {
+    const row = {
+      id: "d2",
+      title: "New",
+      task: "Explain errors.",
+      status: "generating" as const,
+      requested: 40,
+      trainCount: 0,
+      evalCount: 0,
+      costUsd: 0,
+      error: null,
+      createdBy: null,
+      createdAt: T0,
+      finishedAt: null,
+      workflowRunId: null,
+    };
+    assert.equal(toDatasetView({ ...row, writerModel: "muse-wonder-1.0" }).writerModel, "muse-wonder-1.0");
+    assert.equal(toDatasetView({ ...row, writerModel: null }).writerModel, "muse-spark-1.3", "history keeps its writer");
   });
 });
 
@@ -777,6 +816,7 @@ describe("live demo", () => {
       evalSummary: null,
       serveEndpoint: serveJob().serveEndpoint,
       hub: null,
+      judgeModel: null,
     };
     const view = toJobView(base, after(10 * MIN));
     assert.deepEqual(view.serving, { startedAt: after(8 * MIN).toISOString(), endsAt: after(38 * MIN).toISOString() });

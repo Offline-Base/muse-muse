@@ -154,7 +154,7 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
   if (why !== null && (effectiveWhy(hub, job.params) ?? "") !== why) {
     // Saved as written ("" when cleared, which wins over the param), and the story is written again around it.
     const at = new Date().toISOString();
-    hub = (await updateHub(id, (h) => ({ ...(h ?? { status: "waiting" }), why, story: null, storyBy: null, updatedAt: at }))) ?? hub;
+    hub = (await updateHub(id, (h) => ({ ...(h ?? { status: "waiting" }), why, story: null, storyBy: null, storyModel: null, updatedAt: at }))) ?? hub;
   }
 
   if (hubUploaded(hub)) {

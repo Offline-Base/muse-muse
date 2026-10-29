@@ -22,8 +22,10 @@ import {
   mergeEvents,
   stopControl,
   stopErrorText,
+  judgeName,
   trainStatusLabel,
   tunedModelName,
+  writerName,
 } from "@/components/train/format";
 import { dateTimeUtc, duration, relativeTime, usd } from "@/lib/format";
 import { isTrainTerminal, type RecipeView, type TrainEventView, type TrainJobView } from "@/lib/train/types";
@@ -35,8 +37,11 @@ export interface JobRoomProps {
   /** Older events the page left out of `events`. */
   droppedEvents?: number;
   recipe: RecipeView | null;
-  /** The dataset the job trains on (its datasetId param), when it still exists. */
-  dataset?: { id: string; title: string } | null;
+  /**
+   * The dataset the job trains on (its datasetId param), when it still exists, with the model that wrote it (its
+   * writerModel: absent or null means Muse Spark 1.3).
+   */
+  dataset?: { id: string; title: string; writerModel?: string | null } | null;
   /** A glimmer-serve job's adapter (its adapterJobId param): the trained job it serves, when it still exists. */
   adapter?: { id: string; title: string } | null;
   /**
@@ -96,7 +101,7 @@ function smooth(): ScrollBehavior {
 /**
  * The fine-tuning job page, in the build room's layout: the event log on the left, polled every 5 seconds while the
  * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop. A job that sent
- * eval items gets its results below the log; polling goes on after the GPU is gone while Muse Spark 1.3 judges them.
+ * eval items gets its results below the log; polling goes on after the GPU is gone while the judge judges them.
  * A trained glimmer-lora job also gets its live demo above the results (Try it live, or Start a live demo), its
  * Hugging Face card and Make local files, a glimmer-quantize job its local files card, and a glimmer-serve job's panel
  * says whether its demo server is up.
@@ -318,7 +323,13 @@ export function JobRoom(props: JobRoomProps) {
             <MakeLocalFiles jobId={jobId} maxActive={props.hub.maxActive} dailyUsd={props.hub.dailyUsd} />
           ) : null}
           {job.recipe === "glimmer-quantize" ? <QuantFilesCard job={job} events={events} /> : null}
-          <EvalResults state={evals} rows={rows} model={tunedModelName(job.recipe)} />
+          <EvalResults
+            state={evals}
+            rows={rows}
+            model={tunedModelName(job.recipe)}
+            writer={props.dataset ? writerName(props.dataset) : null}
+            judge={judgeName(job)}
+          />
           <div ref={end} className="convo-end" />
         </div>
       </div>

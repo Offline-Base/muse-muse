@@ -1,8 +1,9 @@
 /**
- * Runs makeDataset and its real steps as plain functions, with the store, Meta, the spend cap and usage faked: the
- * prompts come in batches of 25 and are de-duplicated, the answers come 6 at a time in chunks of 12, each one charged
- * and saved as it returns and moved onto the dataset once a chunk (so a retried chunk never asks or pays for an answer
- * it already has), unusable answers are skipped, every Meta call is recorded as platform usage and added to the
+ * Runs makeDataset and its real steps as plain functions, with the store, Meta, the spend cap and usage faked: Muse
+ * Wonder writes every prompt and answer, at Muse Wonder's prices, never Muse Spark 1.3; the prompts come in batches of
+ * 25 and are de-duplicated, the answers come 6 at a time in chunks of 12, each one charged and saved as it returns
+ * and moved onto the dataset once a chunk (so a retried chunk never asks or pays for an answer it already has),
+ * unusable answers are skipped, every Meta call is recorded as platform usage and added to the
  * dataset's cost, a step past its time hands its last prompts to the next one, 10% is held out for eval with no
  * near-duplicate of an eval prompt left in train, a late error keeps what was paid for as a smaller ready dataset with a
  * note, and the dataset fails with a plain reason when the spend cap is reached early or too few prompts are left.
@@ -165,7 +166,7 @@ const fakeMeta = {
         inFlight -= 1;
         const res = answer(body.input);
         if (res instanceof Error) throw res;
-        // 400 input and 400 output tokens of Spark 1.3: $0.0005 + $0.0017.
+        // 400 input and 400 output tokens of Muse Wonder: $0.0016 + $0.008.
         return { ...res, usage: { input_tokens: 400, output_tokens: 400 } };
       },
     },
@@ -233,7 +234,8 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     for (const style of last4) assert.ok((writes[1]!.args[2] as string).includes(`- ${style}`), style);
     assert.doesNotMatch(writes[0]!.args[2] as string, /Already written/);
     assert.match(writes[1]!.args[2] as string, /Already written[^]*- Why does error 0-24 hit k0x24a k0x24b k0x24c\?/, "the next batch sees the last ones");
-    assert.equal(writes[0]!.args[0], "muse-spark-1.3");
+    assert.equal(writes[0]!.args[0], "muse-wonder-1.0", "Muse Wonder writes the prompts");
+    assert.equal(mod.DATASET_MODEL, "muse-wonder-1.0");
 
     // 40 answered in chunks of 12, 6 at a time, each saved as it came and moved onto the dataset once a chunk.
     assert.deepEqual(
@@ -246,7 +248,8 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     assert.equal(peak, 6);
     const body = called("responses.create")[0]!.args[0] as { model: string; instructions: string; max_output_tokens: number };
     assert.deepEqual(called("responses.create")[0]!.args[1], { timeout: 90_000, maxRetries: 1 }, "a prompt takes 3 minutes at most");
-    assert.equal(body.model, "muse-spark-1.3");
+    assert.equal(body.model, "muse-wonder-1.0", "and answers them, never Muse Spark 1.3");
+    assert.equal(body.max_output_tokens, 4000, "the answer plus room for Muse Wonder's reasoning");
     assert.match(body.instructions, /You are an assistant for this task: Explain Python error messages/);
     assert.match(body.instructions, /under about 350 words/);
 
@@ -297,8 +300,10 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     const items = recorded.flatMap((c) => c.args[1] as Array<{ costUsd: number }>);
     assert.equal(items.length, 2 + 40, "two prompt batches and 40 answers");
     assert.equal(recorded.length, 2 + 40, "each call recorded as it returns");
-    // $0.01 per batch, $0.0022 per answer.
-    assert.equal(ds.costUsd, 0.108);
+    // $0.01 per batch, $0.0096 per answer at Muse Wonder's prices.
+    assert.equal(ds.costUsd, 0.404);
+    const answers = items.slice(2) as Array<{ model?: string; costUsd: number }>;
+    assert.ok(answers.every((u) => u.model === "muse-wonder-1.0" && u.costUsd === 0.0096), "priced as Muse Wonder");
   });
 
   it("asks for more prompts when batches repeat, and stops after a few extra batches", async () => {
@@ -322,7 +327,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     writePrompts = () => ["Only this one?", "only THIS one", "Only this one"];
     assert.deepEqual(await mod.makeDataset({ datasetId: DATASET_ID }), { status: "failed" });
     assert.equal(ds.status, "failed");
-    assert.equal(ds.error, "Muse Spark 1.3 wrote only 1 different prompts, and a dataset needs 16.");
+    assert.equal(ds.error, "Muse Wonder wrote only 1 different prompts, and a dataset needs 16.");
     assert.equal(called("responses.create").length, 0);
   });
 
@@ -370,7 +375,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     assert.equal(ds.train.length + ds.eval.length, 24);
     assert.equal(
       ds.error,
-      "Stopped early, once 24 of the 100 examples asked for were answered. Muse Spark 1.3 answered none of the prompts in 3 chunks, so the dataset stopped.",
+      "Stopped early, once 24 of the 100 examples asked for were answered. Muse Wonder answered none of the prompts in 3 chunks, so the dataset stopped.",
     );
     assert.equal(called("responses.create").filter((c) => chunkOf((c.args[0] as { input: string }).input) > 4).length, 0, "nothing asked after it stopped");
 
@@ -378,7 +383,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
     reset({ requested: 100 });
     answer = (prompt) => (chunkOf(prompt) === 1 ? { output_text: "ok", status: "completed" } : new Error("Meta is down"));
     assert.deepEqual(await mod.makeDataset({ datasetId: DATASET_ID }), { status: "failed" });
-    assert.equal(ds.error, "Muse Spark 1.3 answered none of the prompts in 3 chunks, so the dataset stopped.");
+    assert.equal(ds.error, "Muse Wonder answered none of the prompts in 3 chunks, so the dataset stopped.");
   });
 
   it("keeps what it paid for when the spend cap is reached partway through the answers", async () => {
@@ -397,7 +402,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
       ds.error,
       "Stopped early, once 36 of the 100 examples asked for were answered. The platform's daily spend cap is reached, so the dataset stopped.",
     );
-    assert.equal(ds.costUsd, Math.round((4 * 0.01 + 36 * 0.0022) * 1e6) / 1e6, "every call it made is on the dataset");
+    assert.equal(ds.costUsd, Math.round((4 * 0.01 + 36 * 0.0096) * 1e6) / 1e6, "every call it made is on the dataset");
 
     // Too few by then: it fails, and says why.
     reset({ requested: 100 });
@@ -487,7 +492,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
 
   it("charges a writer reply that never matched the schema, then fails", async () => {
     writerThrows = new FakeStructuredOutputError("training_prompts: no valid reply after a retry.", [
-      { model: "muse-spark-1.3", inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, costUsd: 0.002 },
+      { model: "muse-wonder-1.0", inputTokens: 10, cachedInputTokens: 0, outputTokens: 10, costUsd: 0.002 },
     ]);
     assert.deepEqual(await mod.makeDataset({ datasetId: DATASET_ID }), { status: "failed" });
     assert.equal(ds.costUsd, 0.002);
@@ -533,7 +538,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(await mod.answerChunkStep({ datasetId: DATASET_ID, system, offset: 0, prompts }), { saved: 3, done: 3 });
       assert.equal(called("responses.create").length, 3);
       assert.equal(called("recordUsage").length, 3, "each call recorded once");
-      assert.equal(ds.costUsd, 0.0066);
+      assert.equal(ds.costUsd, 0.0288);
       assert.equal(ds.train.length, 3);
     });
 
@@ -544,7 +549,7 @@ describe("dataset workflow", { skip: canMock ? false : "needs --experimental-tes
       answer = () => ({ output_text: "Half an answ", status: "incomplete" });
       await assert.rejects(mod.answerChunkStep({ datasetId: DATASET_ID, system, offset: 0, prompts }), (err: Error) => {
         assert.ok(err instanceof FakeFatalError, "asked again, it would most likely pay for the same");
-        assert.equal(err.message, "Muse Spark 1.3 answered none of this chunk's prompts.");
+        assert.equal(err.message, "Muse Wonder answered none of this chunk's prompts.");
         return true;
       });
       assert.equal(called("responses.create").length, 3);

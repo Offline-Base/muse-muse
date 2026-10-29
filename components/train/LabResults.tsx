@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Icon, type IconName } from "@/components/icons";
 import { WRITER_NAME, datasetCountsText, scoreText } from "@/components/train/format";
 import { GLIMMER_NAME, minutesText, type ResultView } from "@/components/train/results";
-import { dateTimeUtc, relativeTime, truncate, usd } from "@/lib/format";
+import { dateTimeUtc, modelLabel, relativeTime, truncate, usd } from "@/lib/format";
+import { UNRECORDED_MODEL } from "@/lib/train/models";
 import type { DatasetView } from "@/lib/train/types";
 
 /*
@@ -28,7 +29,10 @@ const STEPS: Array<{ icon: IconName; title: string; text: string }> = [
   },
 ];
 
-/** What the lab does, in three steps. */
+/**
+ * What the lab does now, in three steps, with WRITER_NAME writing and judging. The runs before Oct 29, 2026 were
+ * written and judged by Muse Spark 1.3, so the intro says so, and each result's page names its models from the record.
+ */
 export function LabIntro() {
   return (
     <section className="hero-card lab-intro" aria-labelledby="lab-intro-title">
@@ -38,7 +42,8 @@ export function LabIntro() {
       <div className="hero-card-body">
         <p className="hero-card-desc">
           Muse Muse fine-tunes Meta&apos;s open models on GPUs: {WRITER_NAME} writes a training set, {GLIMMER_NAME} learns
-          it, and {WRITER_NAME} judges base against tuned on held-out prompts.
+          it, and {WRITER_NAME} judges base against tuned on held-out prompts. {modelLabel(UNRECORDED_MODEL)} wrote and
+          judged the runs before Oct 29, 2026, and each result&apos;s page names the models that did its work.
         </p>
         <ol className="how">
           {STEPS.map((s, i) => (

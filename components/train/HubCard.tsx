@@ -3,9 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useId, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
-import { WHY_MAX, errorCode, hubControl, hubHref, hubPill, hubStatusText, hubViewOf, publishErrorText } from "@/components/train/format";
+import {
+  WHY_MAX,
+  WRITER_NAME,
+  errorCode,
+  hubControl,
+  hubHref,
+  hubPill,
+  hubStatusText,
+  hubViewOf,
+  publishErrorText,
+} from "@/components/train/format";
 import { ExternalLink } from "@/components/ui";
-import { groupThousands } from "@/lib/format";
+import { groupThousands, modelLabel } from "@/lib/format";
+import { storyModelOf } from "@/lib/train/models";
 import type { HubView, TrainJobView } from "@/lib/train/types";
 
 export interface HubCardProps {
@@ -155,7 +166,7 @@ export function HubCard({ job, offReason, maxActive, dailyUsd }: HubCardProps) {
           {hub.storyBy ? (
             <div>
               <dt>Story</dt>
-              <dd>{hub.storyBy === "spark" ? "Written by Muse Spark 1.3" : "From the template"}</dd>
+              <dd>{hub.storyBy === "spark" ? `Written by ${modelLabel(storyModelOf(hub)!)}` : "From the template"}</dd>
             </div>
           ) : null}
         </dl>
@@ -178,7 +189,7 @@ export function HubCard({ job, offReason, maxActive, dailyUsd }: HubCardProps) {
               value={why}
               rows={3}
               maxLength={WHY_MAX}
-              placeholder="In your own words: why it was made. It opens the model card's story, and Muse Spark 1.3 writes the rest from the records."
+              placeholder={`In your own words: why it was made. It opens the model card's story, and ${WRITER_NAME} writes the rest from the records.`}
               onChange={(e) => setWhy(e.target.value)}
               disabled={busy}
               aria-describedby={`${id}-why-help`}

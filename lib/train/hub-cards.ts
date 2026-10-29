@@ -5,14 +5,16 @@
  * and the routes share them and tests run them directly.
  *
  * Every number in a card comes from the platform's records (the job, its done metrics, its eval summary, its dataset)
- * or from the glimmer-lora recipe's own source, never from a model. The story is the one part a model writes: it is
- * asked for no numbers and no result at all (the card's own sentence after it gives the counts and the result, see
- * resultText), and storyProblem turns down one with a number, a count word, a claim about the result or about Meta, or
- * markup, so the template's story is used instead.
+ * or from the glimmer-lora recipe's own source, never from a model. So does every model a card names: the dataset's
+ * writer_model and the job's judge_model, each Muse Spark 1.3 when the record has none (lib/train/models.ts). The story
+ * is the one part a model writes: it is asked for no numbers and no result at all (the card's own sentence after it
+ * gives the counts and the result, see resultText), and storyProblem turns down one with a number, a count word, a
+ * claim about the result or about Meta, or markup, so the template's story is used instead.
  */
 import { noEmDashes, slugify } from "@/lib/brief/normalize";
 import { plural } from "@/lib/format";
 import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "@/lib/train/local-files";
+import { modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
   NEAR_DUPLICATE_JACCARD,
@@ -46,16 +48,17 @@ export const MUSE_MUSE_SITE = "https://muse-muse.vercel.app";
 export const HUB_SITE = "https://huggingface.co";
 /** The model the base was quantized from, which ships the LICENSE and the Usage Policy. */
 export const GLIMMER_ORIGIN = "meta-models/Muse-Glimmer-30B";
-/** The model that writes the story, and judges and writes datasets elsewhere. */
-export const STORY_MODEL = "muse-spark-1.3";
-/** The model that writes datasets and judges, as the cards name it. */
-export const SPARK_NAME = "Muse Spark 1.3";
+/**
+ * The model that writes a new story, saved with it as the hub state's storyModel. Muse Spark 1.3 wrote every story
+ * before Oct 29, 2026 and is never used for new ones.
+ */
+export const STORY_MODEL = "muse-wonder-1.0";
 /** The tuned model, as the cards name it. */
 export const GLIMMER_NAME = "Muse Glimmer 30B";
 /** A dataset title's slug in a repo name: lowercase letters, digits and dashes, at most this long. */
 export const SLUG_MAX = 40;
 /**
- * Muse Spark 1.3 is asked for at most 100 words (the card's own sentence of about 45 words follows, for about 150 in
+ * The story's model is asked for at most 100 words (the card's own sentence of about 45 words follows, for about 150 in
  * all): a story longer than this is turned down.
  */
 export const STORY_WORDS_MAX = 115;
@@ -266,11 +269,13 @@ export interface StoryFacts {
   task: string;
   /** The admin's own reason, which comes first in the card. */
   why: string | null;
+  /** The dataset's writer_model: null or absent means Muse Spark 1.3, which wrote every dataset before it was recorded. */
+  writerModel?: string | null;
 }
 
 export const STORY_INSTRUCTIONS = [
   'You write the "Why this exists" section of a Hugging Face model card for a LoRA adapter, from the facts you are given and nothing else.',
-  "Say what the adapter does in one short sentence (the card quotes the whole task below, so don't list its parts), why Muse Muse made it, and why it is worth teaching an open 30B model that anyone can download and run on their own GPU what Muse Spark 1.3 does.",
+  "Say what the adapter does in one short sentence (the card quotes the whole task below, so don't list its parts), why Muse Muse made it, and why it is worth teaching an open 30B model that anyone can download and run on their own GPU what the hosted model that wrote its dataset does.",
   "Don't write any number, count, score or percentage, in digits or in words, and don't say how the tuned model did or compare it with the base model: right after your text, the card gives the dataset's counts and the eval's result from the platform's records.",
   "Use only the facts given. Don't add any name, date, benchmark, person, plan or claim that isn't in them.",
   "The brief writer is one of Muse Muse's steps. Mention it only when the dataset's task is writing those briefs: otherwise the adapter has nothing to do with it, so leave it out.",
@@ -289,21 +294,25 @@ function wins(s: EvalSummary): string {
   return `better on ${s.tunedWins} of ${s.items}${rest}`;
 }
 
-/** The facts Muse Spark 1.3 writes the story from, as its user message: no counts and no result, which the card gives. */
+/** The facts the story's model writes it from, as its user message: no counts and no result, which the card gives. */
 export function storyRequest(f: StoryFacts): string {
+  const writer = writerName(f);
   const lines = [
     "Muse Muse: a platform that turns an example or some inspo into a working product on Meta's models. Its first step is the brief writer, which turns what a person gives it into a short brief that the build follows.",
     `The dataset: "${clean(f.datasetTitle)}". Its task, as the admin wrote it: ${clean(f.task)}`,
-    `${SPARK_NAME}, Meta's hosted model, wrote the dataset, the prompts and the answers.`,
-    `The adapter: a LoRA adapter for ${GLIMMER_NAME}, made in Muse Muse's fine-tuning lab. ${GLIMMER_NAME} is an open model with Apache 2.0 weights that anyone can download and run on their own GPU. The lab has ${SPARK_NAME} write a dataset for one task, and ${GLIMMER_NAME} learns to do the task the way ${SPARK_NAME} does. Why: then the task can run on a model you host yourself.`,
+    `${writer}, Meta's hosted model, wrote the dataset, the prompts and the answers.`,
+    `The adapter: a LoRA adapter for ${GLIMMER_NAME}, made in Muse Muse's fine-tuning lab. ${GLIMMER_NAME} is an open model with Apache 2.0 weights that anyone can download and run on their own GPU. The lab has ${writer} write a dataset for one task, and ${GLIMMER_NAME} learns to do the task the way ${writer} does. Why: then the task can run on a model you host yourself.`,
     "The card gives the dataset's counts and the eval's result itself, right after your text.",
   ];
   if (f.why?.trim()) lines.push(`The admin's reason, printed just before your text: ${clean(f.why)}`);
   return lines.join("\n\n");
 }
 
-/** Names whose digits belong to the name, which a story may use: "Muse Glimmer 30B", "30B", "Muse Spark 1.3", "Apache 2.0". */
-const FIXED_NAMES = /\b(?:Muse Glimmer 30B|Muse Spark 1\.3|Spark 1\.3|Apache(?: License)? 2\.0|30B)(?!\w)/gi;
+/**
+ * Names whose digits belong to the name, which a story may use: "Muse Glimmer 30B", "30B", "Muse Spark 1.3", "Muse
+ * Wonder 1.0", "Apache 2.0".
+ */
+const FIXED_NAMES = /\b(?:Muse Glimmer 30B|Muse Spark 1\.3|Spark 1\.3|Muse Wonder 1\.0|Wonder 1\.0|Apache(?: License)? 2\.0|30B)(?!\w)/gi;
 
 /**
  * Words that state a count, a share, a result or a comparison with the base model: a story leaves all of them to the
@@ -352,8 +361,8 @@ function sameText(text: string): string {
 
 /**
  * The story without a copy of the admin's why, which the card prints just before it: a paragraph that is the why, and
- * the why as the story's first sentences. Muse Spark 1.3 was told not to repeat it and still sometimes opens with it
- * word for word. Returns "" when nothing else is left.
+ * the why as the story's first sentences. Muse Spark 1.3 was told not to repeat it and still sometimes opened with it
+ * word for word, so every model's story is checked. Returns "" when nothing else is left.
  */
 export function dropRepeatedWhy(story: string, why: string | null): string {
   const w = sameText(why ?? "");
@@ -377,7 +386,7 @@ export function dropRepeatedWhy(story: string, why: string | null): string {
 }
 
 /**
- * Why the story Muse Spark 1.3 wrote can't go in the card, or null when it can: it is empty or longer than about 100
+ * Why the story a model wrote can't go in the card, or null when it can: it is empty or longer than about 100
  * words; it has markup (a heading, a list, a link, a table, code, HTML, a "//" or "www." address); it says Meta made,
  * backs, approves or helped with the adapter, or calls anything official; or it states a number, a count word, a
  * result or a comparison with the base model (CLAIM_WORDS) that the task, the title or the why doesn't use itself.
@@ -407,11 +416,27 @@ export function taskSentence(task: string): string {
 }
 
 /**
- * The story when Muse Spark 1.3 can't write one (no key, the spend cap, a failed call, a story that failed its checks):
- * what Muse Muse is, the task, and why, from the task's own words. The counts and the result follow it in the card.
+ * The story when the story's model can't write one (no key, the spend cap, a failed call, a story that failed its
+ * checks): what Muse Muse is, the task, and why, from the task's own words, naming the dataset's writer from its record.
+ * The counts and the result follow it in the card.
  */
 export function templateStory(f: StoryFacts): string {
-  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${SPARK_NAME} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
+  return `Muse Muse turns an example or some inspo into a working product on Meta's models. This adapter teaches ${GLIMMER_NAME}, an open model anyone can download and run on their own GPU, to do one task the way ${writerName(f)} does it: ${taskSentence(f.task)}. That way the task can run on a model you host yourself.`;
+}
+
+/** A dataset's writer as a card names it, from its writer_model: "Muse Wonder", or "Muse Spark 1.3" for one with none. */
+function writerName(d: { writerModel?: string | null }): string {
+  return modelName(writerModelOf(d));
+}
+
+/** The run's judge, from the job's judge_model: a card is only made for a judged job, so none is Muse Spark 1.3. */
+function judgeId(f: { judgeModel?: string | null }): string {
+  return recordedModel(f.judgeModel);
+}
+
+/** "A and B", "A, B and C". */
+function andList(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
 }
 // ---------------------------------------------------------------------------------------------------------------
 // Markdown helpers
@@ -503,7 +528,10 @@ export interface CardFacts {
   metrics: Record<string, string | number>;
   summary: EvalSummary;
   example: CardExample | null;
-  dataset: { id: string; title: string; task: string; trainCount: number; evalCount: number; costUsd: number };
+  /** writerModel is the dataset's writer_model: null or absent means Muse Spark 1.3. */
+  dataset: { id: string; title: string; task: string; trainCount: number; evalCount: number; costUsd: number; writerModel?: string | null };
+  /** The job's judge_model: null or absent means Muse Spark 1.3, which judged every job before it was recorded. */
+  judgeModel?: string | null;
   template: GlimmerTemplate;
   /** The base model's commit the adapter was trained on: adapter_config.json's revision, else the recipe's. */
   revision: string;
@@ -525,10 +553,10 @@ const hubLink = (id: string, kind: "model" | "dataset") => `${HUB_SITE}${kind ==
  * The card's own sentence after the story: the dataset's counts and the eval's result, from the records, so no number
  * in "Why this exists" comes from a model.
  */
-export function resultText(f: Pick<CardFacts, "summary" | "dataset">): string {
+export function resultText(f: Pick<CardFacts, "summary" | "dataset" | "judgeModel">): string {
   const s = f.summary;
   const d = f.dataset;
-  return `${SPARK_NAME} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${SPARK_NAME}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for the base model.`;
+  return `${writerName(d)} wrote the dataset's ${d.trainCount + d.evalCount} examples: ${d.trainCount} to train on and ${d.evalCount} held out. On ${s.items} held-out prompts, judged blind by ${modelName(judgeId(f))}, the tuned model was ${wins(s)}, with an average score of ${score(s.avgTunedScore)} out of 10 against ${score(s.avgBaseScore)} for the base model.`;
 }
 
 /** The card's "Why this exists": a line saying whose story it is (`lead`, the dataset card's), the admin's reason, the story, then the records' result. */
@@ -548,10 +576,14 @@ function resultsSection(f: CardFacts): string {
   const m = f.metrics;
   const base = metric("base_unfinished", m);
   const tuned = metric("tuned_unfinished", m);
+  const judge = judgeId(f);
+  const writer = writerModelOf(f.dataset);
+  // "its own reference answer" only when the judge wrote the dataset too.
+  const reference = judge === writer ? `${modelName(writer)}'s own reference answer` : `${modelName(writer)}'s reference answer`;
   const out = [
     "## Results",
     "",
-    `Both models answered the dataset's ${s.items} held-out prompts, none of which were trained on. ${SPARK_NAME} (\`${STORY_MODEL}\`) judged each pair blind: it saw the answers as A and B, the base model's first on even items and second on odd ones, scored each from 1 to 10 against ${SPARK_NAME}'s own reference answer, and said which was better.`,
+    `Both models answered the dataset's ${s.items} held-out prompts, none of which were trained on. ${modelName(judge)} (\`${judge}\`) judged each pair blind: it saw the answers as A and B, the base model's first on even items and second on odd ones, scored each from 1 to 10 against ${reference}, and said which was better.`,
     "",
     `| | Base ${GLIMMER_NAME} | Tuned (this adapter) |`,
     "|---|---|---|",
@@ -717,17 +749,23 @@ function dataSection(f: CardFacts): string {
   return [
     "## Data",
     "",
-    `Trained on [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")}): ${d.trainCount} training conversations and ${d.evalCount} held-out prompts that ${SPARK_NAME} wrote through Meta's Model API for the dataset "${mdCell(d.title)}", prompts and answers both, for ${money(d.costUsd)}. The held-out prompts were never trained on, and prompts that share most of their words with one were kept out of training too.`,
+    `Trained on [${f.datasetRepo}](${hubLink(f.datasetRepo, "dataset")}): ${d.trainCount} training conversations and ${d.evalCount} held-out prompts that ${writerName(d)} wrote through Meta's Model API for the dataset "${mdCell(d.title)}", prompts and answers both, for ${money(d.costUsd)}. The held-out prompts were never trained on, and prompts that share most of their words with one were kept out of training too.`,
   ].join("\n");
 }
 
 function limitsSection(f: CardFacts): string {
   const s = f.summary;
+  const writer = writerModelOf(f.dataset);
+  const judge = judgeId(f);
+  const who =
+    judge === writer
+      ? `${modelName(writer)} wrote the training answers, the references and the verdicts, and a judge can favor answers like its own.`
+      : `${modelName(writer)} wrote the training answers and the references, and ${modelName(judge)} the verdicts. A judge can favor answers that read like the reference it was given.`;
   return [
     "## Limits",
     "",
     `- It learned one task from ${f.dataset.trainCount} examples one model wrote. It isn't a general improvement of ${GLIMMER_NAME}, and outside that task it may do worse than the base model in ways the eval didn't measure.`,
-    `- The eval is small: ${s.items} prompts from the same writer as the training data. ${SPARK_NAME} wrote the training answers, the references and the verdicts, and a judge can favor answers like its own.`,
+    `- The eval is small: ${s.items} prompts from the same writer as the training data. ${who}`,
     f.job.studentPrompt === "full"
       ? "- Both models answered under the dataset's whole task prompt, so the base model's scores show how well it follows those instructions untrained."
       : "- The base model answered without the dataset's task prompt, under the same one-line system message as the tuned model, so its scores show what training taught, not how well the base follows instructions.",
@@ -735,15 +773,17 @@ function limitsSection(f: CardFacts): string {
   ].join("\n");
 }
 
-function licenseSection(): string {
+function licenseSection(f: CardFacts): string {
+  const writer = writerName(f.dataset);
+  const made = andList([...new Set([GLIMMER_NAME, writer, modelName(judgeId(f))])]);
   return [
     "## License",
     "",
     `Apache 2.0, the license of the base model: the full text is in \`LICENSE\`, as [${GLIMMER_ORIGIN}](${HUB_SITE}/${GLIMMER_ORIGIN}) ships it. The change from the base model is this LoRA adapter, trained as described above. Use it under the base model's [Usage Policy](${HUB_SITE}/${GLIMMER_ORIGIN}/blob/main/USAGE_POLICY.md), which says Muse Glimmer "is not intended for individuals under the age of 18".`,
     "",
-    `The training data is ${SPARK_NAME}'s output through Meta's Model API, published under Meta's terms for that API rather than an open license: see its \`${DATASET_LICENSE_PATH}\`.`,
+    `The training data is ${writer}'s output through Meta's Model API, published under Meta's terms for that API rather than an open license: see its \`${DATASET_LICENSE_PATH}\`.`,
     "",
-    `Not an official Meta product. Meta made ${GLIMMER_NAME} and ${SPARK_NAME}; it didn't make, review or endorse this adapter. The model's name only says what the adapter is for.`,
+    `Not an official Meta product. Meta made ${made}; it didn't make, review or endorse this adapter. The model's name only says what the adapter is for.`,
   ].join("\n");
 }
 
@@ -800,7 +840,8 @@ export function modelCard(f: CardFacts): string {
     `      url: ${labPageUrl(f.job.id)}`,
     "---",
   ];
-  const lead = `A LoRA adapter for ${GLIMMER_NAME} (\`${f.template.model}\`) that learned one task from ${SPARK_NAME}: ${taskSentence(f.dataset.task)}. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const writer = writerName(f.dataset);
+  const lead = `A LoRA adapter for ${GLIMMER_NAME} (\`${f.template.model}\`) that learned one task from ${writer}: ${taskSentence(f.dataset.task)}. Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
   const does = [
     "## What it does",
     "",
@@ -808,7 +849,7 @@ export function modelCard(f: CardFacts): string {
     "",
     ...clean(f.dataset.task).split("\n").map((l) => `> ${l}`),
     "",
-    `It was trained to answer the way ${SPARK_NAME} answered those prompts. Prompt it the way it was trained, with this system message (How to use it has it as SYSTEM):`,
+    `It was trained to answer the way ${writer} answered those prompts. Prompt it the way it was trained, with this system message (How to use it has it as SYSTEM):`,
     "",
     fenced(clean(f.system), "text"),
   ].join("\n");
@@ -833,7 +874,7 @@ export function modelCard(f: CardFacts): string {
     "",
     limitsSection(f),
     "",
-    licenseSection(),
+    licenseSection(f),
     "",
     provenanceSection(f),
     "",
@@ -861,6 +902,7 @@ export interface DatasetModel {
  */
 export function datasetCard(f: CardFacts, others: DatasetModel[] = []): string {
   const d = f.dataset;
+  const writer = writerName(d);
   const models: DatasetModel[] = [{ repo: f.modelRepo, jobId: f.job.id, title: f.job.title }, ...others.filter((m) => m.repo !== f.modelRepo)];
   const own = `[${f.modelRepo}](${hubLink(f.modelRepo, "model")})`;
   const english = looksEnglish(d.title, d.task);
@@ -896,8 +938,8 @@ export function datasetCard(f: CardFacts, others: DatasetModel[] = []): string {
     `# ${clean(d.title)}`,
     "",
     models.length > 1
-      ? `Training data that ${SPARK_NAME} wrote for one task, made with [Muse Muse](${MUSE_MUSE_SITE}). ${models.length} ${GLIMMER_NAME} LoRA adapters trained on it are published: see Models trained on it.`
-      : `Training data that ${SPARK_NAME} wrote for one task, made with [Muse Muse](${MUSE_MUSE_SITE}). ${own} is a ${GLIMMER_NAME} LoRA adapter trained on it.`,
+      ? `Training data that ${writer} wrote for one task, made with [Muse Muse](${MUSE_MUSE_SITE}). ${models.length} ${GLIMMER_NAME} LoRA adapters trained on it are published: see Models trained on it.`
+      : `Training data that ${writer} wrote for one task, made with [Muse Muse](${MUSE_MUSE_SITE}). ${own} is a ${GLIMMER_NAME} LoRA adapter trained on it.`,
     "",
     whySection(f, models.length > 1 ? `As the card of ${own}, the latest model published from it, tells it:` : null),
     "",
@@ -918,11 +960,11 @@ export function datasetCard(f: CardFacts, others: DatasetModel[] = []): string {
     "",
     "- `system`: the task's instructions, the same on every line, which the answers were written under.",
     "- `user`: a prompt.",
-    `- \`assistant\`: ${SPARK_NAME}'s answer. On an eval line it is the reference answer the judge compared both models against.`,
+    `- \`assistant\`: ${writer}'s answer. On an eval line it is the reference answer the judge compared both models against.`,
     "",
     "## How it was made",
     "",
-    `${SPARK_NAME} wrote the prompts in batches, each batch leaning to other styles of message, with repeats folded out. It then answered each prompt under the task's instructions (each line's \`system\` message), and answers that failed, came back cut off or ran too long were left out.`,
+    `${writer} wrote the prompts in batches, each batch leaning to other styles of message, with repeats folded out. It then answered each prompt under the task's instructions (each line's \`system\` message), and answers that failed, came back cut off or ran too long were left out.`,
     "",
     `The split: ${d.evalCount} examples were held out for eval and ${d.trainCount} kept for training, the held-out ones spread evenly through the dataset so every batch's style is in them. A prompt that shares at least ${Math.round(NEAR_DUPLICATE_JACCARD * 100)}% of its words with a held-out prompt was left out of train, so the eval doesn't test what was trained on.`,
     "",
@@ -934,7 +976,7 @@ export function datasetCard(f: CardFacts, others: DatasetModel[] = []): string {
     "",
     "## License",
     "",
-    `${SPARK_NAME} wrote all of the text, prompts and answers, through Meta's Model API, for Muse Muse, so Meta's terms for that API's outputs govern it, and Muse Muse grants no rights beyond them: see \`${DATASET_LICENSE_PATH}\`. Not an official Meta product.`,
+    `${writer} wrote all of the text, prompts and answers, through Meta's Model API, for Muse Muse, so Meta's terms for that API's outputs govern it, and Muse Muse grants no rights beyond them: see \`${DATASET_LICENSE_PATH}\`. Not an official Meta product.`,
     "",
     "## Provenance",
     "",
@@ -946,18 +988,20 @@ export function datasetCard(f: CardFacts, others: DatasetModel[] = []): string {
 }
 
 /**
- * The dataset's LICENSE.md. The prompts and answers are Muse Spark's output through Meta's Model API, so they can't go
- * out under an open license: Meta's terms for that API decide what anyone may do with them.
+ * The dataset's LICENSE.md. The prompts and answers are its writer's output through Meta's Model API (`writerModel`, the
+ * dataset's writer_model: null or absent means Muse Spark 1.3), so they can't go out under an open license: Meta's terms
+ * for that API decide what anyone may do with them.
  */
-export function datasetLicense(): string {
+export function datasetLicense(writerModel: string | null = null): string {
+  const writer = writerName({ writerModel });
   return [
     "# Terms for this dataset",
     "",
-    `${SPARK_NAME} wrote every prompt and answer in this dataset through Meta's Model API, for Muse Muse. That text is model output, so Meta's terms for the Model API govern how you may use it. Muse Muse grants no license or other rights beyond what those terms allow.`,
+    `${writer} wrote every prompt and answer in this dataset through Meta's Model API, for Muse Muse. That text is model output, so Meta's terms for the Model API govern how you may use it. Muse Muse grants no license or other rights beyond what those terms allow.`,
     "",
     "When this dataset was published, those terms said a model's outputs may not be used to develop or improve a competing AI model or service without Meta's written permission. Read Meta's current Model API terms before you reuse this text, and don't rely on this summary.",
     "",
-    `Not an official Meta product. Meta made ${SPARK_NAME}; it didn't make, review or endorse this dataset.`,
+    `Not an official Meta product. Meta made ${writer}; it didn't make, review or endorse this dataset.`,
     "",
   ].join("\n");
 }
@@ -1043,9 +1087,16 @@ export interface RunItem {
 /**
  * muse_muse_run.json: the run's records as the public page shows them, and the card's facts. The job's settings, its
  * public metrics, the eval summary and every item with its verdict, the dataset, the base model and its revision, and
- * who wrote the story. Never the instance, its IP or region, a log, a path or a URL of the platform's storage.
+ * who wrote the story. The dataset's writer, the judge and the story's model are the records' (`storyModel`, the hub
+ * state's: null means Muse Spark 1.3), each Muse Spark 1.3 when the record has none. Never the instance, its IP or
+ * region, a log, a path or a URL of the platform's storage.
  */
-export function runRecord(f: CardFacts, items: RunItem[], storyBy: "spark" | "template"): Record<string, unknown> {
+export function runRecord(
+  f: CardFacts,
+  items: RunItem[],
+  storyBy: "spark" | "template",
+  storyModel: string | null = null,
+): Record<string, unknown> {
   return {
     madeBy: { name: "Muse Muse", url: MUSE_MUSE_SITE },
     job: {
@@ -1075,16 +1126,27 @@ export function runRecord(f: CardFacts, items: RunItem[], storyBy: "spark" | "te
       evalCount: f.dataset.evalCount,
       costUsd: f.dataset.costUsd,
       repo: f.datasetRepo,
-      writer: STORY_MODEL,
+      writer: writerModelOf(f.dataset),
     },
     eval: {
-      judge: STORY_MODEL,
+      judge: judgeId(f),
       blind: "The judge saw both answers as A and B: the base model's first on even items and second on odd ones.",
       summary: f.summary,
       items,
     },
-    story: { why: f.why, by: storyBy },
+    story: storyOf(f.why, storyBy, storyModel),
   };
+}
+
+/**
+ * The record's story: the why, who wrote the story and, for a model's, which model. A story Muse Spark 1.3 wrote keeps
+ * the "spark" its records said before the model was recorded; another model's says "model", so no record credits
+ * Muse Spark 1.3 with a story it didn't write.
+ */
+function storyOf(why: string | null, storyBy: "spark" | "template", storyModel: string | null) {
+  if (storyBy !== "spark") return { why, by: storyBy };
+  const model = recordedModel(storyModel);
+  return { why, by: model === UNRECORDED_MODEL ? "spark" : "model", model };
 }
 
 /** The eval items with their verdicts, in index order, from a judged job's eval and judgement events. */
@@ -1495,7 +1557,8 @@ export interface GgufFacts {
   datasetRepo: string | null;
   adapterJobId: string;
   quantJobId: string;
-  dataset: { title: string; task: string; evalCount: number };
+  /** writerModel is the adapter's dataset's writer_model: null or absent means Muse Spark 1.3. */
+  dataset: { title: string; task: string; evalCount: number; writerModel?: string | null };
   /** The one-line role the adapter trained under, "You are ...". */
   role: string;
   trainChannel: 0 | 1;
@@ -1633,7 +1696,7 @@ export function ggufCard(f: GgufFacts): string {
   const adapter = `[${f.adapterRepo}](${hubLink(f.adapterRepo, "model")})`;
   const sizes = f.builds.map((b) => b.level).join(", ");
   // The task can be model-written (a vibe run's), so its Markdown shows as the characters it is.
-  const lead = `GGUF files of ${adapter}, a LoRA adapter that taught ${GLIMMER_NAME} one task from ${SPARK_NAME}: ${mdText(taskSentence(f.dataset.task))}. The adapter is merged into Meta's 16-bit base and quantized to ${plural(f.builds.length, "size")} (${sizes}) for llama.cpp, LM Studio and Ollama. Its eval is on [the run's public page](${labPageUrl(f.adapterJobId)}). Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
+  const lead = `GGUF files of ${adapter}, a LoRA adapter that taught ${GLIMMER_NAME} one task from ${writerName(f.dataset)}: ${mdText(taskSentence(f.dataset.task))}. The adapter is merged into Meta's 16-bit base and quantized to ${plural(f.builds.length, "size")} (${sizes}) for llama.cpp, LM Studio and Ollama. Its eval is on [the run's public page](${labPageUrl(f.adapterJobId)}). Made with [Muse Muse](${MUSE_MUSE_SITE}). Not an official Meta product.`;
   const which = [
     "## Which file for my computer",
     "",

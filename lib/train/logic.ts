@@ -6,6 +6,7 @@ import { noEmDashes } from "@/lib/brief/normalize";
 import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
+import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
 import {
   HUB_WHY_MAX,
   isTrainTerminal,
@@ -278,6 +279,7 @@ export function toJobView(row: TrainJobRow, now: Date): TrainJobView {
     finishedAt: iso(row.finishedAt),
     terminatedAt: iso(row.terminatedAt),
     evalSummary: row.evalSummary ?? null,
+    judgeModel: judgeModelOf(row),
     ...(row.recipe === SERVE_RECIPE ? { serving: servingView(row) } : {}),
     ...(row.hub ? { hub: toHubView(row.hub, row.params, now) } : {}),
   };
@@ -322,6 +324,7 @@ export function toHubView(hub: HubState, params: Record<string, string | number>
     datasetUrl: text(hub.datasetUrl),
     why: effectiveWhy(hub, params),
     storyBy: hub.storyBy === "spark" || hub.storyBy === "template" ? hub.storyBy : null,
+    storyModel: storyModelOf(hub),
     public: hub.public === true,
     stale: hub.status === "publishing" && !hubBusy(hub, now.getTime()),
     filesUploaded: files.filter((f) => have.has(f.sha256)).length,
@@ -555,8 +558,8 @@ export function evalSplit(prompts: string[]): { held: number[]; dropped: number[
 }
 
 /**
- * The system message of every training example, and the instructions Muse Spark 1.3 answers the prompts with, so the
- * tuned model learns the task under the same words it was written with.
+ * The system message of every training example, and the instructions the dataset's writer answers the prompts with, so
+ * the tuned model learns the task under the same words it was written with.
  */
 export function datasetSystemPrompt(task: string): string {
   return [
@@ -579,6 +582,7 @@ export function toDatasetView(row: DatasetHead): DatasetView {
     error: row.error,
     createdAt: row.createdAt.toISOString(),
     finishedAt: iso(row.finishedAt),
+    writerModel: writerModelOf(row),
   };
 }
 

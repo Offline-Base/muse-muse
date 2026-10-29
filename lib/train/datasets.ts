@@ -1,6 +1,7 @@
 /**
- * Training datasets Muse Spark 1.3 writes from a task description (docs/TRAINING.md "Datasets"). makeDataset is the
- * durable workflow and its steps are below it, in this file.
+ * Training datasets Muse Wonder (DATASET_MODEL) writes from a task description (docs/TRAINING.md "Datasets"). The route
+ * saves the writer on the dataset (writer_model) as it creates it; datasets made before Oct 29, 2026 have none and were
+ * written by Muse Spark 1.3. makeDataset is the durable workflow and its steps are below it, in this file.
  *
  *   makeDataset: prompts in batches of 25 (structured output, de-duplicated, each batch leaning to other styles)
  *                -> answers in chunks of 12, 6 at a time, each saved as soon as Meta answers it and moved onto the
@@ -23,6 +24,7 @@ import { textPart } from "@/lib/brief/media";
 import { cleanStrings, noEmDashes } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
 import { metaPlatform } from "@/lib/meta/platform";
+import { modelLabel } from "@/lib/format";
 import { fromResponsesUsage } from "@/lib/meta/pricing";
 import { spendPaused } from "@/lib/quota";
 import { DATASET_MIN_EXAMPLES, datasetSystemPrompt, dedupePrompts } from "@/lib/train/logic";
@@ -31,8 +33,12 @@ import type { DatasetStatus } from "@/lib/train/types";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
 
-/** The model that writes the prompts and the reference answers. */
-export const DATASET_MODEL = "muse-spark-1.3";
+/**
+ * The model that writes the prompts and the reference answers of a new dataset, saved on it as its writer_model. Muse
+ * Spark 1.3 wrote every dataset before Oct 29, 2026 and is never used for new ones.
+ */
+export const DATASET_MODEL = "muse-wonder-1.0";
+const WRITER = modelLabel(DATASET_MODEL);
 
 /** Prompts asked for in one structured call. */
 export const PROMPT_BATCH = 25;
@@ -46,14 +52,26 @@ const AVOID_SAME_STYLES = 40;
 /** A prompt longer than this is dropped rather than cut, since a cut message reads as broken. */
 const PROMPT_MAX = 1500;
 
-/** Prompts one answer step answers, ANSWER_CONCURRENCY at a time: two rounds of calls, well under a minute as a rule. */
+/**
+ * Prompts one answer step answers, ANSWER_CONCURRENCY at a time: two rounds of calls, well under a minute as a rule,
+ * even though a Muse Wonder call takes 1.4 to 2 times as long as a Muse Spark 1.3 one did.
+ */
 export const ANSWER_CHUNK = 12;
 export const ANSWER_CONCURRENCY = 6;
 /** An answer longer than this is dropped rather than cut, so the tuned model never learns to stop mid-sentence. */
 const ANSWER_MAX = 4000;
-/** Reasoning counts against it too; about 350 words of answer need well under half. */
-const ANSWER_MAX_OUTPUT_TOKENS = 3000;
-/** One answer call waits this long, and the SDK tries it once more, so a prompt takes at most about 3 minutes. */
+/**
+ * Muse Wonder bills its reasoning as output, so the cap is the answer plus room to reason: an answer is about 350 words
+ * (about 500 tokens) and never more than ANSWER_MAX characters (about 1,000 tokens), which leaves about 3,000 tokens of
+ * reasoning, twice what Muse Spark 1.3 reasoned for on a story at effort low (hub-steps.ts). A call that runs out
+ * comes back "incomplete" and is dropped after it was billed, so the room matters more than the cap. Only the tokens
+ * used are paid for.
+ */
+const ANSWER_MAX_OUTPUT_TOKENS = 4000;
+/**
+ * One answer call waits this long, and the SDK tries it once more, so a prompt takes at most about 3 minutes. Muse
+ * Spark 1.3 answered in about 4 s (docs/TRAINING.md "Datasets"), and Muse Wonder's 1.4 to 2 times that is well inside.
+ */
 const ANSWER_TIMEOUT_MS = 90_000;
 const ANSWER_MAX_RETRIES = 1;
 
@@ -70,8 +88,8 @@ const SKIPPABLE_CHUNKS = 2;
 
 const DB_RETRY_AFTER = "30s";
 const PAUSED = "The platform's daily spend cap is reached, so the dataset stopped.";
-const NO_ANSWERS = "Muse Spark 1.3 answered none of this chunk's prompts.";
-const UNANSWERED = `Muse Spark 1.3 answered none of the prompts in ${SKIPPABLE_CHUNKS + 1} chunks, so the dataset stopped.`;
+const NO_ANSWERS = `${WRITER} answered none of this chunk's prompts.`;
+const UNANSWERED = `${WRITER} answered none of the prompts in ${SKIPPABLE_CHUNKS + 1} chunks, so the dataset stopped.`;
 
 /**
  * Styles the batches lean toward in turn, so they don't all read alike. A dataset that needs fewer batches than there
@@ -154,7 +172,7 @@ export async function makeDataset(input: MakeDatasetInput): Promise<MakeDatasetR
       byBatch[batch] = added;
     }
     if (prompts.length < DATASET_MIN_EXAMPLES) {
-      throw new Error(`Muse Spark 1.3 wrote only ${prompts.length} different prompts, and a dataset needs ${DATASET_MIN_EXAMPLES}.`);
+      throw new Error(`${WRITER} wrote only ${prompts.length} different prompts, and a dataset needs ${DATASET_MIN_EXAMPLES}.`);
     }
 
     const system = datasetSystemPrompt(head.task);
@@ -365,7 +383,7 @@ export interface PromptBatchInput {
 }
 
 /**
- * Asks Muse Spark 1.3 for `want` realistic user prompts for the task with structured output, and charges the call to
+ * Asks DATASET_MODEL for `want` realistic user prompts for the task with structured output, and charges the call to
  * the dataset. Prompts over 1,500 characters are dropped; the workflow de-duplicates the rest. Stops the dataset
  * (FatalError) once the platform's daily spend cap is reached.
  */
@@ -394,7 +412,7 @@ export async function promptBatchStep(input: PromptBatchInput): Promise<{ prompt
 promptBatchStep.maxRetries = 2;
 
 /**
- * Answers a chunk of prompts with Muse Spark 1.3, 6 at a time. Each call is charged to the dataset as it returns, and
+ * Answers a chunk of prompts with DATASET_MODEL, 6 at a time. Each call is charged to the dataset as it returns, and
  * each usable answer is saved at once (stageAnswer); at the end the chunk's answers move onto the dataset after the
  * `offset` examples it already holds (flushAnswers). A prompt whose answer failed is skipped. A retried step asks only
  * the prompts no earlier attempt saved, and when the dataset already holds more than `offset`, an earlier attempt

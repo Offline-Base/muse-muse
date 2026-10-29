@@ -1,7 +1,8 @@
 import type { IconName } from "@/components/icons";
-import { bytes, dayLabel, elapsedMs, groupThousands, plural, truncate, usd, type Tone } from "@/lib/format";
+import { bytes, dayLabel, elapsedMs, groupThousands, modelLabel, plural, truncate, usd, type Tone } from "@/lib/format";
 import { tokenCost } from "@/lib/meta/pricing";
 import type { LocalFiles, QuantLevel } from "@/lib/train/local-files";
+import { judgeModelOf, writerModelOf } from "@/lib/train/models";
 import {
   clampLimits,
   DATASET_MAX_COUNT,
@@ -759,20 +760,40 @@ export function datasetOptionText(d: Pick<DatasetView, "title" | "status" | "tra
   return `${d.title} · ${d.trainCount} train, ${d.evalCount} eval`;
 }
 
-/** The model that writes datasets and judges eval items (DATASET_MODEL and JUDGE_MODEL in lib/train). */
-export const WRITER_MODEL = "muse-spark-1.3";
-export const WRITER_NAME = "Muse Spark 1.3";
+/**
+ * The model that writes new datasets, judges new runs and tells new Hub stories (DATASET_MODEL, JUDGE_MODEL and
+ * STORY_MODEL in lib/train, which the pages don't import, since those files are workflow code). Copy about what the lab
+ * does next names it. Muse Spark 1.3 did all three before Oct 29, 2026, so copy about a record names the model from the
+ * record instead (writerName, judgeName, storyModelOf).
+ */
+export const WRITER_MODEL = "muse-wonder-1.0";
+export const WRITER_NAME = modelLabel(WRITER_MODEL);
+
+/** The model that wrote a dataset, from its record (writerModelOf): "Muse Wonder", or "Muse Spark 1.3" when it has none. */
+export function writerName(dataset: { writerModel?: string | null } | null | undefined): string {
+  return modelLabel(writerModelOf(dataset));
+}
+
+/**
+ * The model that judged a job, is judging it or will (judgeModelOf): the one on its record, Muse Spark 1.3 for a job
+ * judged before the judge was recorded, else the lab's judge now (WRITER_MODEL), for a job no judge has started on.
+ */
+export function judgeName(job: { judgeModel?: string | null; evalSummary?: EvalSummary | null }): string {
+  return modelLabel(judgeModelOf(job) ?? WRITER_MODEL);
+}
 
 /**
  * Rough tokens per example, low and high: one answer call (the task's instructions and the prompt in; up to about 350
- * words out, with low reasoning) plus a 25th of a prompt batch. lib/train/datasets.ts has the real sizes.
+ * words out, with low reasoning) plus a 25th of a prompt batch. lib/train/datasets.ts has the real sizes. Muse Spark
+ * 1.3 used about 720 output tokens an example (docs/TRAINING.md "Datasets"); Muse Wonder bills its reasoning as output
+ * too and hasn't been measured here, so the range runs from Spark's count to more than twice it.
  */
 const PER_EXAMPLE = {
   low: { inputTokens: 350, outputTokens: 700 },
   high: { inputTokens: 450, outputTokens: 1600 },
 };
 
-/** What writing `count` examples might cost on Meta's API at Muse Spark 1.3's prices (lib/meta/pricing.ts), in USD. */
+/** What writing `count` examples might cost on Meta's API at WRITER_MODEL's prices (lib/meta/pricing.ts), in USD. */
 export function datasetCostRange(count: number): { low: number; high: number } {
   const n = Math.max(0, Math.floor(Number(count) || 0));
   return {
@@ -782,12 +803,13 @@ export function datasetCostRange(count: number): { low: number; high: number } {
 }
 
 /**
- * Rough minutes to write `count` examples: prompt batches of 25 one after another (about 30 s each), then answers in
- * chunks of 12, 6 at a time (about a minute for every two chunks).
+ * Rough minutes to write `count` examples with Muse Wonder: prompt batches of 25 one after another (about 45 s each),
+ * then answers in chunks of 12, 6 at a time (about a minute and a half for every two chunks). That is 1.5 times what
+ * this allowed for Muse Spark 1.3, since a Muse Wonder call takes 1.4 to 2 times as long.
  */
 export function datasetMinutes(count: number): number {
   const n = Math.max(0, Math.floor(Number(count) || 0));
-  return Math.ceil(Math.ceil(n / 25) * 0.5 + Math.ceil(n / 24));
+  return Math.ceil(Math.ceil(n / 25) * 0.75 + Math.ceil(n / 24) * 1.5);
 }
 
 /** "a few minutes", "about 20 minutes", "about an hour". */
@@ -811,8 +833,7 @@ export function datasetCostHint(count: number): string {
 }
 
 /** Why datasets can't start on this deployment: no MODEL_API_KEY. */
-export const META_NOT_CONFIGURED_TEXT =
-  "Meta's API isn't connected on this deployment, so Muse Spark 1.3 can't write datasets. Set MODEL_API_KEY, then try again.";
+export const META_NOT_CONFIGURED_TEXT = `Meta's API isn't connected on this deployment, so ${WRITER_NAME} can't write datasets. Set MODEL_API_KEY, then try again.`;
 
 /** Why datasets can't start right now: the platform's daily spend cap on Meta's API (DAILY_SPEND_CAP_USD). */
 export const SPEND_PAUSED_TEXT =
@@ -941,11 +962,11 @@ export function evalState(
   return { state: "judging", judged: rows.filter((r) => r.judgement).length, total: rows.length };
 }
 
-/** The summary strip as one sentence, for tests and screen readers. */
-export function evalSummaryText(s: EvalSummary, model: string): string {
+/** The summary strip as one sentence, for tests and screen readers. `judge` is the judge's name (judgeName). */
+export function evalSummaryText(s: EvalSummary, model: string, judge: string): string {
   return (
     `Tuned ${model} beat base on ${s.tunedWins} of ${s.items}, base won ${s.baseWins}, ties ${s.ties}; ` +
-    `average score base ${scoreText(s.avgBaseScore)}, tuned ${scoreText(s.avgTunedScore)}, judged by ${WRITER_NAME}.`
+    `average score base ${scoreText(s.avgBaseScore)}, tuned ${scoreText(s.avgTunedScore)}, judged by ${judge}.`
   );
 }
 
@@ -1161,7 +1182,7 @@ export function hubHref(url: string | null | undefined): string | null {
 }
 
 /** What the job page's Hugging Face card knows about a job. */
-type HubJob = Pick<TrainJobView, "recipe" | "status" | "params" | "terminatedAt" | "evalSummary" | "hub">;
+type HubJob = Pick<TrainJobView, "recipe" | "status" | "params" | "terminatedAt" | "evalSummary" | "judgeModel" | "hub">;
 
 /**
  * Why a job can't be published to the Hub, as the publish route checks it (hubJobProblem in lib/train/hub-cards.ts),
@@ -1170,9 +1191,9 @@ type HubJob = Pick<TrainJobView, "recipe" | "status" | "params" | "terminatedAt"
 export function hubJobBlock(job: HubJob): string | null {
   if (job.recipe !== "glimmer-lora") return "Only Muse Glimmer LoRA jobs are published to Hugging Face.";
   if (Number(job.params?.dryRun) >= 1) return "This was a dry run, so its adapter is a stand-in and isn't published.";
-  if (!isTrainTerminal(job.status)) return "It publishes once the job succeeds and Muse Spark 1.3 has judged it.";
+  if (!isTrainTerminal(job.status)) return `It publishes once the job succeeds and ${judgeName(job)} has judged it.`;
   if (job.status !== "succeeded") return "This job didn't succeed, so it has no adapter to publish.";
-  if (!job.terminatedAt || !job.evalSummary) return "It publishes once Muse Spark 1.3 has judged it.";
+  if (!job.terminatedAt || !job.evalSummary) return `It publishes once ${judgeName(job)} has judged it.`;
   if (unjudgedNote(job.evalSummary)) return "It wasn't judged, so its model card would have no results to show.";
   return null;
 }

@@ -237,7 +237,7 @@ export const trainingJobs = pgTable(
     lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     terminatedAt: timestamp("terminated_at", { withTimezone: true }),
-    /** Muse Spark 1.3's verdict on the job's eval items, written after the instance is terminated (lib/train/judge.ts). */
+    /** The judge's verdict on the job's eval items, written after the instance is terminated (lib/train/judge.ts). */
     evalSummary: jsonb("eval_summary").$type<EvalSummary>(),
     /**
      * A glimmer-serve job's demo server: the instance's IP (from Lambda), the port and the pinned certificate fingerprint
@@ -251,6 +251,12 @@ export const trainingJobs = pgTable(
      * the links.
      */
     hub: jsonb("hub").$type<HubState>(),
+    /**
+     * The model that judged the job's eval items (JUDGE_MODEL in lib/train/judge.ts), saved when judging starts. Null
+     * means Muse Spark 1.3, the model before Oct 29, 2026, for a job judged before the judge was recorded, or no judge
+     * yet for a job that isn't judged (judgeModelOf in lib/train/models.ts).
+     */
+    judgeModel: text("judge_model"),
   },
   (t) => [index("training_jobs_status_idx").on(t.status), index("training_jobs_created_idx").on(t.createdAt)],
 );
@@ -271,9 +277,10 @@ export const trainingEvents = pgTable(
 );
 
 /**
- * Training data Muse Spark 1.3 writes from a task description (lib/train/datasets.ts): prompts, then answers, with 10%
- * held out for eval. While it is "generating", answered examples are appended to `train`; the eval items are moved out
- * when it turns "ready". A GPU job reads it in pages with its job token (GET /api/train/jobs/{id}/dataset).
+ * Training data a Muse model (writer_model) writes from a task description (lib/train/datasets.ts): prompts, then
+ * answers, with 10% held out for eval. While it is "generating", answered examples are appended to `train`; the eval
+ * items are moved out when it turns "ready". A GPU job reads it in pages with its job token (GET
+ * /api/train/jobs/{id}/dataset).
  */
 export const trainingDatasets = pgTable(
   "training_datasets",
@@ -296,6 +303,12 @@ export const trainingDatasets = pgTable(
     createdAt: createdAt(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     workflowRunId: text("workflow_run_id"),
+    /**
+     * The model that wrote the prompts and the answers (DATASET_MODEL in lib/train/datasets.ts), saved when the dataset
+     * is created. Null means Muse Spark 1.3, the model before Oct 29, 2026, which wrote every dataset made before the
+     * writer was recorded (writerModelOf in lib/train/models.ts).
+     */
+    writerModel: text("writer_model"),
   },
   (t) => [index("training_datasets_created_idx").on(t.createdAt)],
 );

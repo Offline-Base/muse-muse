@@ -132,7 +132,7 @@ export type TrainEventBody =
   | { type: "status"; status: TrainStatus; message?: string }
   | { type: "instance"; instanceId: string; instanceType: string; region: string; ip?: string | null }
   | { type: "terminated"; reason: string }
-  /** Muse Spark 1.3's verdict on one eval item, scored 1 to 10 against the reference answer. */
+  /** The judge's verdict on one eval item (the job's judgeModel), scored 1 to 10 against the reference answer. */
   | { type: "judgement"; index: number; baseScore: number; tunedScore: number; better: "base" | "tuned" | "tie"; note: string };
 
 /** A GPU type a recipe can run on, in order of preference. */
@@ -215,6 +215,12 @@ export interface TrainJobView {
   terminatedAt: string | null;
   /** Set once the platform has judged the job's eval items. */
   evalSummary: EvalSummary | null;
+  /**
+   * The model that judged its eval items, or is judging them (judgeModelOf in lib/train/models.ts): Muse Spark 1.3 for
+   * a job judged before the judge was recorded (Oct 29, 2026), null while no judge has started. Absent from older
+   * servers.
+   */
+  judgeModel?: string | null;
   /**
    * A glimmer-serve job's demo server, once it reported "serving": when it started and when it is expected to stop
    * (its minutes, or the job's limits when those come first). Null or absent otherwise. Never the certificate.
@@ -308,7 +314,7 @@ export interface GpuOption {
 /** A recipe without its script, for the admin page. */
 export type RecipeView = Omit<Recipe, "script">;
 
-/** How the tuned model did against the base model on the held-out prompts, judged by Muse Spark 1.3. */
+/** How the tuned model did against the base model on the held-out prompts, judged blind by the job's judgeModel. */
 export interface EvalSummary {
   items: number;
   tunedWins: number;
@@ -327,13 +333,13 @@ export interface TrainExample {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
 }
 
-/** A held-out prompt with Muse Spark 1.3's answer as the reference. */
+/** A held-out prompt with the dataset writer's answer as the reference. */
 export interface EvalExample {
   prompt: string;
   reference: string;
 }
 
-/** GET /api/train/datasets: a dataset Muse Spark 1.3 wrote from a task description. */
+/** GET /api/train/datasets: a dataset a Muse model (writerModel) wrote from a task description. */
 export interface DatasetView {
   id: string;
   title: string;
@@ -346,6 +352,11 @@ export interface DatasetView {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  /**
+   * The model that wrote its prompts and answers (writerModelOf in lib/train/models.ts): Muse Spark 1.3 for a dataset
+   * made before the writer was recorded (Oct 29, 2026). Absent from older servers, which means the same.
+   */
+  writerModel?: string;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -436,10 +447,18 @@ export interface HubState {
    * so the param's counts (effectiveWhy in lib/train/logic.ts).
    */
   why?: string | null;
-  /** The rest of "Why this exists": Muse Spark 1.3's story ("spark"), or the template's when it couldn't write one. */
+  /**
+   * The rest of "Why this exists": a model's story (storyBy "spark", the value's name from before the model was
+   * recorded), or the template's when the model couldn't write one.
+   */
   story?: string | null;
   storyBy?: "spark" | "template" | null;
-  /** What Muse Spark 1.3 charged for the story. */
+  /**
+   * The model that wrote a "spark" story (STORY_MODEL in lib/train/hub-cards.ts). Null or absent means Muse Spark 1.3,
+   * which wrote every story saved before the model was recorded (Oct 29, 2026; storyModelOf in lib/train/models.ts).
+   */
+  storyModel?: string | null;
+  /** What the story's model charged for it. */
   storyCostUsd?: number | null;
   /** ISO times. */
   publishedAt?: string | null;
@@ -457,7 +476,10 @@ export interface HubView {
   datasetUrl: string | null;
   /** The why the card prints: the one saved with Publish, else the job's "why" param (effectiveWhy). */
   why: string | null;
+  /** "spark" when a model wrote the story (storyModel says which), "template" for the template's, null for none yet. */
   storyBy: "spark" | "template" | null;
+  /** The model that wrote the story when storyBy is "spark" (storyModelOf), else null. Absent from older servers. */
+  storyModel?: string | null;
   /** True once both repos are public. */
   public: boolean;
   /** True for a "publishing" state left by a run that stopped (HUB_PUBLISHING_STALE_MS old), which Retry starts again. */

@@ -290,6 +290,13 @@ describe("the GGUF card", () => {
     assert.ok(!/^language:/m.test(other) && !/^datasets:/m.test(other), "English only for plain ASCII, and no dataset without its repo");
   });
 
+  it("names the model that taught the adapter from its dataset's record: Muse Spark 1.3 when it has none", () => {
+    assert.match(cards.ggufCard(facts()), /a LoRA adapter that taught Muse Glimmer 30B one task from Muse Spark 1\.3: Write a short app brief/);
+    const wonder = cards.ggufCard(facts({ dataset: { ...facts().dataset, writerModel: "muse-wonder-1.0" } }));
+    assert.match(wonder, /a LoRA adapter that taught Muse Glimmer 30B one task from Muse Wonder: Write a short app brief/);
+    assert.doesNotMatch(wonder, /Muse Spark|Spark 1\.3/);
+  });
+
   it("goes from which file fits to running it, the prompt, closeness, how it was made, checksums, limits, license and provenance", () => {
     const card = cards.ggufCard(facts());
     const heads = [...card.matchAll(/^## (.+)$/gm)].map((m) => m[1]);

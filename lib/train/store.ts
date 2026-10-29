@@ -797,6 +797,12 @@ export async function setEvalSummary(jobId: string, summary: EvalSummary): Promi
   await db().update(jobs).set({ evalSummary: summary }).where(eq(jobs.id, jobId));
 }
 
+/** Saves the model that judges the job's eval items (judge_model), as judging starts. */
+export async function setJudgeModel(jobId: string, model: string): Promise<void> {
+  if (!isUuid(jobId)) return;
+  await db().update(jobs).set({ judgeModel: model }).where(eq(jobs.id, jobId));
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Training datasets (lib/train/datasets.ts). Their examples can run to megabytes, so only the paging and the
 // generating steps read them; everything else selects the head columns.
@@ -809,10 +815,12 @@ export interface NewDataset {
   task: string;
   /** Already checked: 20 to 1000. */
   requested: number;
+  /** The model that writes it (DATASET_MODEL), saved as its writer_model. */
+  writerModel: string;
   createdBy?: string | null;
 }
 
-/** Saves a dataset in "generating", with no examples yet. */
+/** Saves a dataset in "generating", with no examples yet, and the model that writes it. */
 export async function createDataset(input: NewDataset): Promise<DatasetHead> {
   const [row] = await db()
     .insert(datasets)
@@ -820,6 +828,7 @@ export async function createDataset(input: NewDataset): Promise<DatasetHead> {
       title: input.title.trim().slice(0, TITLE_MAX) || "Dataset",
       task: input.task.trim(),
       requested: input.requested,
+      writerModel: input.writerModel,
       createdBy: input.createdBy ?? null,
     })
     .returning(datasetHeadColumns);
@@ -1051,6 +1060,8 @@ const resultColumns = {
   finishedAt: jobs.finishedAt,
   terminatedAt: jobs.terminatedAt,
   evalSummary: jobs.evalSummary,
+  /** The model that judged it (null: Muse Spark 1.3, judged before the judge was recorded). */
+  judgeModel: jobs.judgeModel,
   /**
    * The Hugging Face links, and only those and the status, once the job is published and its repos are public
    * (docs/TRAINING.md "Hugging Face Hub"). Nothing else of the hub state (its reason, files, why or story) leaves the
@@ -1124,6 +1135,8 @@ const readyDatasetColumns = {
   costUsd: datasets.costUsd,
   createdAt: datasets.createdAt,
   finishedAt: datasets.finishedAt,
+  /** The model that wrote it (null: Muse Spark 1.3, written before the writer was recorded). */
+  writerModel: datasets.writerModel,
 };
 
 /** A ready dataset as the Lab results read it: no examples, note, author or workflow run. */

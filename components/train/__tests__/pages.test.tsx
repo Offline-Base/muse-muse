@@ -271,7 +271,8 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       const html = await openList();
       clean(html);
       assert.match(html, /Lab results/);
-      assert.match(html, /Muse Spark 1\.3 writes a training set, Muse Glimmer 30B learns it/);
+      assert.match(html, /Muse Wonder writes a training set, Muse Glimmer 30B learns it/);
+      assert.match(html, /Muse Spark 1\.3 wrote and judged the runs before Oct 29, 2026/);
       assert.match(html, /href="\/fine-tuning\/8f1d2c3b-0000-4000-8000-000000000001"[^>]*>Bakery LoRA/);
       assert.match(html, /Tuned won <strong>1<\/strong> of 2/);
       assert.match(html, /href="\/fine-tuning\/datasets\/1b2c3d4e-0000-4000-8000-000000000002"[^>]*>Bakery helper/);
@@ -302,6 +303,8 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.match(html, /<h1>Bakery LoRA<\/h1>/);
       assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>/);
       assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th>/);
+      assert.match(html, /judged by Muse Spark 1\.3\./, "no models on the records: Muse Spark 1.3 did the work");
+      assert.doesNotMatch(html, /Muse Wonder/);
       assert.match(html, /How late are you open on Sunday\?/);
       assert.match(html, /Gives the Sunday hours\./);
       assert.match(html, /<dt>Training steps<\/dt><dd>120<\/dd>/);
@@ -317,6 +320,19 @@ describe("fine-tuning pages", { skip: canMock ? false : "needs --experimental-te
       assert.doesNotMatch(html, /Try it live|Live demo|<textarea/, "no live demo box while none runs");
       assert.deepEqual(calls.sort(), ["getLiveDemo", "getReadyDataset", "getResultJob", "listResultEvents"]);
       assert.equal(calls.some((c) => ADMIN_READS.includes(c)), false);
+    });
+
+    it("/fine-tuning/{id} names the writer and the judge its records name", async () => {
+      job = jobRow({ judgeModel: "muse-wonder-1.0" });
+      dataset = datasetRow({ writerModel: "muse-wonder-1.0" });
+      const html = await openJob();
+      clean(html);
+      assert.match(html, /<th scope="col">Muse Wonder reference<\/th>/);
+      assert.match(html, /judged by Muse Wonder\./);
+      assert.match(html, /Muse Wonder saw the two answers in random order/);
+      assert.doesNotMatch(html, /Muse Spark|Spark 1\.3/);
+      const page = await openDataset();
+      assert.match(page, /Written by Muse Wonder · created/);
     });
 
     it("/fine-tuning/{id} shows Try it live while its adapter's demo serves, with nothing about the GPU", async () => {

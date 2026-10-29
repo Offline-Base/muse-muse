@@ -413,6 +413,14 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(after!.evalSummary, summary);
       assert.equal(after!.status, "succeeded");
     });
+
+    it("saves the judge's model on the job, and a job from before has none", async () => {
+      const row = await job({ status: "succeeded", finishedAt: new Date(), terminatedAt: new Date() });
+      assert.equal((await store.getJob(row.id))!.judgeModel, null, "null reads as Muse Spark 1.3");
+      await store.setJudgeModel(row.id, "muse-wonder-1.0");
+      assert.equal((await store.getJob(row.id))!.judgeModel, "muse-wonder-1.0");
+      await store.setJudgeModel("not-a-uuid", "muse-wonder-1.0");
+    });
   });
 
   describe("datasets", () => {
@@ -426,8 +434,9 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     const examples = (from: number, n: number) => Array.from({ length: n }, (_, k) => example(from + k));
 
     it("creates a generating dataset without examples, and lists it without them", async () => {
-      const ds = await store.createDataset({ title: "  Errors  ", task: " Explain Python errors. ", requested: 40 });
+      const ds = await store.createDataset({ title: "  Errors  ", task: " Explain Python errors. ", requested: 40, writerModel: "muse-wonder-1.0" });
       assert.equal(ds.status, "generating");
+      assert.equal(ds.writerModel, "muse-wonder-1.0", "the writer is saved with it");
       assert.equal(ds.title, "Errors");
       assert.equal(ds.task, "Explain Python errors.");
       assert.equal("train" in ds || "eval" in ds, false);
@@ -445,7 +454,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     }
 
     it("saves each answer once as it comes, and moves them onto train once a chunk", async () => {
-      const ds = await store.createDataset({ title: "t", task: "task", requested: 40 });
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 40, writerModel: "muse-wonder-1.0" });
       assert.deepEqual(await store.answerProgress(ds.id), { held: 0, staged: [] });
       assert.equal(await store.stageAnswer(ds.id, { prompt: "q0", reference: "a0" }), true);
       assert.equal(await store.stageAnswer(ds.id, { prompt: "q1", reference: "a1" }), true);
@@ -467,7 +476,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     });
 
     it("holds out the eval items, keeps the rest in order, and pages in SQL", async () => {
-      const ds = await store.createDataset({ title: "t", task: "task", requested: 20 });
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 20, writerModel: "muse-wonder-1.0" });
       await answer(ds.id, 0, 20);
       assert.equal(await store.finishDataset(ds.id, 19), null, "refused when the count doesn't match");
       const done = await store.finishDataset(ds.id, 20);
@@ -502,7 +511,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     });
 
     it("keeps an eval prompt's near-duplicates out of train, and notes a dataset that stopped early", async () => {
-      const ds = await store.createDataset({ title: "t", task: "task", requested: 40 });
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 40, writerModel: "muse-wonder-1.0" });
       for (let i = 0; i < 20; i++) {
         // Position 1 (an evalIndexes pick) and 12 ask the same thing in slightly different words.
         const prompt = i === 1 ? "How do I reset my password?" : i === 12 ? "how can i reset my password" : `q${i}`;
@@ -525,7 +534,7 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
     });
 
     it("fails only a dataset that is still generating", async () => {
-      const ds = await store.createDataset({ title: "t", task: "task", requested: 20 });
+      const ds = await store.createDataset({ title: "t", task: "task", requested: 20, writerModel: "muse-wonder-1.0" });
       assert.equal(await store.failDataset(ds.id, "The spend cap was reached."), true);
       const failed = await store.getDataset(ds.id);
       assert.equal(failed!.status, "failed");
@@ -577,7 +586,10 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       const failed = await judged({ status: "failed" });
       const row = await store.getResultJob(shown.id);
       assert.equal(row!.title, "Bakery LoRA");
+      assert.equal(row!.judgeModel, null, "a job judged before the judge was recorded: Muse Spark 1.3");
       for (const key of HIDDEN) assert.equal(key in row!, false, key);
+      const wonder = await judged({ judgeModel: "muse-wonder-1.0" });
+      assert.equal((await store.getResultJob(wonder.id))!.judgeModel, "muse-wonder-1.0");
       assert.equal(await store.getResultJob(running.id), null);
       assert.equal(await store.getResultJob(failed.id), null);
       assert.equal(await store.getResultJob("not-a-uuid"), null);
@@ -619,6 +631,9 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(rows.map((r) => r.id), [ready.id]);
       for (const key of ["train", "eval", "error", "createdBy", "workflowRunId"]) assert.equal(key in rows[0]!, false, key);
       assert.equal(rows[0]!.trainCount, 30);
+      assert.equal(rows[0]!.writerModel, null, "a dataset from before the writer was recorded: Muse Spark 1.3");
+      const wonder = await insert({ status: "ready", trainCount: 30, evalCount: 8, writerModel: "muse-wonder-1.0" });
+      assert.equal((await store.getReadyDataset(wonder.id))!.writerModel, "muse-wonder-1.0");
       assert.equal((await store.getReadyDataset(ready.id))!.title, "Bakery helper");
       assert.equal(await store.getReadyDataset(writing.id), null);
       assert.equal(await store.getReadyDataset(failed.id), null);

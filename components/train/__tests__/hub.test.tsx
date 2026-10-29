@@ -120,8 +120,9 @@ describe("the job page's Hugging Face card", () => {
   });
 
   it("waits for the run and its judging, and never offers a dry run", () => {
-    assert.match(card(job({ status: "running", terminatedAt: null, evalSummary: null })), /It publishes once the job succeeds and Muse Spark 1\.3 has judged it\./);
-    assert.match(card(job({ evalSummary: null })), /It publishes once Muse Spark 1\.3 has judged it\./);
+    assert.match(card(job({ status: "running", terminatedAt: null, evalSummary: null })), /It publishes once the job succeeds and Muse Wonder has judged it\./);
+    assert.match(card(job({ evalSummary: null })), /It publishes once Muse Wonder has judged it\./, "the judge a job not judged yet gets");
+    assert.match(card(job({ evalSummary: null, judgeModel: "muse-wonder-1.0" })), /It publishes once Muse Wonder has judged it\./, "the judge saved on the job");
     const dry = card(job({ params: { dryRun: 1 } }));
     assert.match(dry, /This was a dry run, so its adapter is a stand-in and isn&#x27;t published\./);
     assert.doesNotMatch(dry, /<button/);
@@ -162,9 +163,13 @@ describe("the job page's Hugging Face card", () => {
     assert.match(html, /Published Oct 28: the adapter with its model card, and its training data with the dataset card\./);
     assert.match(html, new RegExp(`<a href="https://huggingface\\.co/${MODEL}" target="_blank" rel="noopener noreferrer">${MODEL}`));
     assert.match(html, new RegExp(`<a href="https://huggingface\\.co/datasets/${DATA}" target="_blank"`));
-    assert.match(html, /<dt>Story<\/dt><dd>Written by Muse Spark 1\.3<\/dd>/);
+    assert.match(html, /<dt>Story<\/dt><dd>Written by Muse Spark 1\.3<\/dd>/, "a story saved with no model was Muse Spark 1.3's");
     assert.match(html, /<textarea[^>]*>We wanted it offline\.<\/textarea>/, "the job's why, to change before publishing again");
     assert.match(html, /Publish again/);
+    const wonder = card(job({ hub: hub({ status: "published", public: true, modelUrl: `https://huggingface.co/${MODEL}`, storyBy: "spark", storyModel: "muse-wonder-1.0" }) }));
+    assert.match(wonder, /<dt>Story<\/dt><dd>Written by Muse Wonder<\/dd>/);
+    assert.match(card(job({ hub: hub({ status: "published", storyBy: "template", storyModel: null }) })), /<dt>Story<\/dt><dd>From the template<\/dd>/);
+    assert.match(html, /placeholder="In your own words: why it was made\. It opens the model card&#x27;s story, and Muse Wonder writes the rest from the records\."/);
     const private_ = card(job({ hub: hub({ status: "published", public: false, modelUrl: `https://huggingface.co/${MODEL}` }) }));
     assert.match(private_, /Published, and private on Hugging Face, so the public pages don&#x27;t link to it\./);
   });

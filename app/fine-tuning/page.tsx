@@ -255,7 +255,7 @@ async function labPage(signedIn: boolean) {
               <NotConnected reason={datasets.reason} what="the training datasets" />
             ) : datasets.data.length === 0 ? (
               <EmptyCard icon="file" title="No datasets yet">
-                <p>Training sets {WRITER_NAME} has written show up here once they are ready.</p>
+                <p>Training sets {WRITER_NAME} writes show up here once they are ready.</p>
               </EmptyCard>
             ) : (
               <ReadyDatasetsTable datasets={datasets.data} now={now} caption="Ready training datasets, newest first" />

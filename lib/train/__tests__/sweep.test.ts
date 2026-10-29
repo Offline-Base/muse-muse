@@ -51,6 +51,7 @@ function job(over: Partial<TrainJobRow> = {}): TrainJobRow {
     evalSummary: null,
     serveEndpoint: null,
     hub: null,
+    judgeModel: null,
     ...over,
   };
 }

@@ -1,8 +1,8 @@
 /**
  * A judged adapter's local files end to end (docs/TRAINING.md "Local files"), with nothing real but the code under
  * test: the store on an in-memory PGlite with the repo's migrations, the fake Hub (fake-hub.ts) through HF_ENDPOINT, the
- * real hub, publish, dataset, quantize and jobs routes, the real steps and publishToHub, Muse Spark 1.3 and Lambda's
- * capacity faked, and a fake GPU in TypeScript doing what runner.py's hub_upload does.
+ * real hub, publish, dataset, quantize and jobs routes, the real steps and publishToHub, Muse Wonder (the story) and
+ * Lambda's capacity faked, and a fake GPU in TypeScript doing what runner.py's hub_upload does.
  *
  * The GPU's plan for a glimmer-quantize job: it acts for itself, only its builds and small files are taken, each build up
  * to 32 GB, the small files checked byte for byte before anything uploads, a plan whose part URLs would pass about

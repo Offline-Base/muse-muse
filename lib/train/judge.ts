@@ -1,8 +1,10 @@
 /**
- * Judging a fine-tuning job's eval items (docs/TRAINING.md "Judging"): Muse Spark 1.3 scores the base and the tuned
- * model's answers to each held-out prompt from 1 to 10 against Muse Spark 1.3's reference answer. The training
- * workflow (lib/train/workflow.ts) runs these steps only after the job's instance is terminated and only for a job that
- * succeeded, so judging never keeps a GPU billing, and a failure here never changes the job's status.
+ * Judging a fine-tuning job's eval items (docs/TRAINING.md "Judging"): Muse Wonder (JUDGE_MODEL) scores the base and the
+ * tuned model's answers to each held-out prompt from 1 to 10 against the dataset writer's reference answer. The judge is
+ * saved on the job (judge_model) as judging starts; jobs judged before Oct 29, 2026 have none and were judged by Muse
+ * Spark 1.3. The training workflow (lib/train/workflow.ts) runs these steps only after the job's instance is terminated
+ * and only for a job that succeeded, so judging never keeps a GPU billing, and a failure here never changes the job's
+ * status.
  *
  * The judge sees the two answers blind, as A and B, with the base model's first on even indexes and second on odd ones,
  * so neither its labels nor its position favors one model. Each verdict is logged as a "judgement" event, which also
@@ -15,15 +17,28 @@ import { z } from "zod";
 import { textPart } from "@/lib/brief/media";
 import { cleanStrings } from "@/lib/brief/normalize";
 import { respondStructured, StructuredOutputError, type StructuredResult } from "@/lib/brief/structured";
+import { modelLabel } from "@/lib/format";
 import { spendPaused } from "@/lib/quota";
 import { betterOf, judgeScore, summarizeJudgements, unjudgedSummary, type JudgedItem } from "@/lib/train/logic";
-import { getDataset, getEvalItem, getJob, getJudgement, listEvalIndexes, recordEvent, setEvalSummary } from "@/lib/train/store";
+import {
+  getDataset,
+  getEvalItem,
+  getJob,
+  getJudgement,
+  listEvalIndexes,
+  recordEvent,
+  setEvalSummary,
+  setJudgeModel,
+} from "@/lib/train/store";
 import type { EvalSummary } from "@/lib/train/types";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
 
-/** The model that judges. */
-export const JUDGE_MODEL = "muse-spark-1.3";
+/**
+ * The model that judges a job's eval items, saved on the job as its judge_model when judging starts. Muse Spark 1.3
+ * judged every job before Oct 29, 2026 and is never used for new judging.
+ */
+export const JUDGE_MODEL = "muse-wonder-1.0";
 
 /** The note is cut to this many words. */
 const NOTE_WORDS = 30;
@@ -96,7 +111,8 @@ const usd = (usage: ModelUsage[]) => Math.round(usage.reduce((s, u) => s + (u.co
 /**
  * What to judge: the indexes of the job's eval items, and the task of its dataset (params.datasetId) when it has one.
  * Nothing when it has no eval items or a summary already, and nothing when MODEL_API_KEY isn't set or the platform's
- * daily spend cap is reached: then it saves an unjudged summary that says why, and logs it.
+ * daily spend cap is reached: then it saves an unjudged summary that says why, and logs it. Otherwise it saves
+ * JUDGE_MODEL as the job's judge_model before it logs that judging started.
  */
 export async function judgePlanStep(jobId: string): Promise<{ indexes: number[]; task: string | null }> {
   "use step";
@@ -119,13 +135,14 @@ export async function judgePlanStep(jobId: string): Promise<{ indexes: number[];
   const datasetId = typeof job.params?.datasetId === "string" ? job.params.datasetId : null;
   const dataset = datasetId ? await fromDb(() => getDataset(datasetId)) : null;
   const n = indexes.length;
-  await fromDb(() => recordEvent(jobId, { type: "log", text: `Muse Spark 1.3 is judging ${n} eval item${n === 1 ? "" : "s"}.` }));
+  await fromDb(() => setJudgeModel(jobId, JUDGE_MODEL));
+  await fromDb(() => recordEvent(jobId, { type: "log", text: `${modelLabel(JUDGE_MODEL)} is judging ${n} eval item${n === 1 ? "" : "s"}.` }));
   return { indexes, task: dataset?.task ?? null };
 }
 judgePlanStep.maxRetries = 3;
 
 /**
- * Judges one eval item: Muse Spark 1.3 scores the base and the tuned answer against the reference, blind. Records the
+ * Judges one eval item: JUDGE_MODEL scores the base and the tuned answer against the reference, blind. Records the
  * usage, then logs the verdict as a "judgement" event, and returns it with what it cost. An item that already has a
  * judgement (an earlier attempt logged it) is returned as it is, at no cost; a missing item is null.
  */

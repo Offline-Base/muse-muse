@@ -316,9 +316,10 @@ const glimmerJob: TrainJobView = {
   artifacts: [],
 };
 
-function glimmerRoom(job: TrainJobView, list: TrainEventView[], serverNow = t0 + 600_000): string {
+/** The job page of a glimmer-lora job on the Bakery helper dataset, which has no writer recorded unless `writerModel`. */
+function glimmerRoom(job: TrainJobView, list: TrainEventView[], serverNow = t0 + 600_000, writerModel: string | null = null): string {
   const glimmer = recipes.find((r) => r.id === "glimmer-lora");
-  return render(JobRoom, { job, events: list, recipe: glimmer, dataset: { id: DS, title: "Bakery helper" }, serverNow });
+  return render(JobRoom, { job, events: list, recipe: glimmer, dataset: { id: DS, title: "Bakery helper", writerModel }, serverNow });
 }
 
 describe("eval results on the job page", () => {
@@ -327,8 +328,8 @@ describe("eval results on the job page", () => {
     clean(html);
     assert.match(html, /id="eval-results"/);
     assert.match(html, /<strong>Eval items<\/strong> 2 sent/);
-    assert.match(html, /Muse Spark 1\.3 judges them once the GPU shuts down/);
-    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th>/);
+    assert.match(html, /Muse Wonder judges them once the GPU shuts down/, "the judge a job not judged yet will get");
+    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th>/, "a dataset with no writer recorded");
     assert.match(html, /<th scope="rowgroup" colSpan="4"><span class="train-eval-num">Prompt 1<\/span>/);
     assert.match(html, /How late are you open on Sunday\?/);
     assert.match(html, /<details class="train-long"><summary>/, "a long answer folds");
@@ -338,11 +339,11 @@ describe("eval results on the job page", () => {
   });
 
   it("says Judging... with a count once the job succeeded and the GPU is gone", () => {
-    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310) };
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310), judgeModel: "muse-wonder-1.0" };
     const html = glimmerRoom(done, [...evalEvents, judgements[0]]);
     clean(html);
     assert.match(html, /Judging\.\.\./);
-    assert.match(html, /1 of 2 judged by Muse Spark 1\.3/);
+    assert.match(html, /1 of 2 judged by Muse Wonder/, "the judge saved on the job");
     assert.match(html, /<div aria-live="polite">/);
   });
 
@@ -351,7 +352,9 @@ describe("eval results on the job page", () => {
     const html = glimmerRoom(done, [...evalEvents, ...judgements]);
     clean(html);
     assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>, base won <strong>0<\/strong>, ties <strong>1<\/strong>/);
-    assert.match(html, /Average score base <strong>4\.5<\/strong>, tuned <strong>7\.5<\/strong>, judged by Muse Spark 1\.3\./);
+    assert.match(html, /Average score base <strong>4\.5<\/strong>, tuned <strong>7\.5<\/strong>, judged by Muse Spark 1\.3\./, "no judge recorded: Muse Spark 1.3");
+    assert.match(html, /against Muse Spark 1\.3&#x27;s reference answer/);
+    assert.doesNotMatch(html, /Muse Wonder/, "a run from before the change is never credited to Muse Wonder");
     assert.match(html, /Judging cost \$0\.004/);
     assert.match(html, /class="pill pill-live">Tuned better/);
     assert.match(html, /class="pill pill-neutral">Tie/);
@@ -381,7 +384,21 @@ describe("eval results on the job page", () => {
     const forged: TrainEventView = { id: 50, type: "log", payload: { type: "log", text: "Judging skipped: MODEL_API_KEY isn't set." }, at: at(320) };
     const html = glimmerRoom(done, [...evalEvents, forged]);
     assert.match(html, /Judging\.\.\./);
-    assert.match(html, /0 of 2 judged by Muse Spark 1\.3/);
+    assert.match(html, /0 of 2 judged by Muse Wonder/);
+  });
+
+  it("names the writer and the judge from the records of a dataset and a run Muse Wonder did", () => {
+    const done = { ...glimmerJob, status: "succeeded" as const, finishedAt: at(300), terminatedAt: at(310), evalSummary: summary, judgeModel: "muse-wonder-1.0" };
+    const html = glimmerRoom(done, [...evalEvents, ...judgements], t0 + 600_000, "muse-wonder-1.0");
+    clean(html);
+    assert.match(html, /judged by Muse Wonder\./);
+    assert.match(html, /against Muse Wonder&#x27;s reference answer/);
+    assert.match(html, /<th scope="col">Muse Wonder reference<\/th>/);
+    assert.doesNotMatch(html, /Muse Spark|Spark 1\.3/);
+    // A Muse Spark 1.3 dataset that Muse Wonder judged: each named for its own part.
+    const mixed = glimmerRoom(done, [...evalEvents, ...judgements], t0 + 600_000, null);
+    assert.match(mixed, /judged by Muse Wonder\./);
+    assert.match(mixed, /<th scope="col">Muse Spark 1\.3 reference<\/th>/);
   });
 });
 
@@ -504,7 +521,10 @@ describe("datasets", () => {
     assert.match(html, /href="\/fine-tuning\?dataset=1b2c3d4e-0000-4000-8000-000000000002#new-job"/);
     assert.equal(html.split(system).length - 1, 1, "the system message shows once");
     assert.match(html, /Question 2\?/);
-    assert.match(html, /Answer \(Muse Spark 1\.3\)/);
+    assert.match(html, /Answer \(Muse Spark 1\.3\)/, "a dataset with no writer recorded");
+    assert.match(html, /Written by Muse Spark 1\.3 · created/);
+    assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th>/);
+    assert.match(html, /the job&#x27;s judge \(Muse Wonder for a job trained now\) scores both against the reference/);
     assert.match(html, /<details class="train-long">/);
     assert.match(html, /Open Sunday\?/);
     assert.match(html, /Until 4 pm\./);
@@ -523,6 +543,18 @@ describe("datasets", () => {
     assert.match(writing, /<strong>24<\/strong> of 300 answered/);
     assert.match(writing, /role="status" aria-live="polite"/);
     assert.match(writing, /updates every 10 seconds/);
+    const wonder = render(DatasetDetail, {
+      dataset: dataset({ status: "generating", trainCount: 0, evalCount: 0, finishedAt: null, writerModel: "muse-wonder-1.0" }),
+      sampleTrain: [{ messages: [{ role: "user" as const, content: "Q?" }, { role: "assistant" as const, content: "A." }] }],
+      sampleEval: [],
+      written: 1,
+      now: t0,
+    });
+    clean(wonder);
+    assert.match(wonder, /Written by Muse Wonder · created/);
+    assert.match(wonder, /Muse Wonder writes the prompts first, then answers them in chunks\./);
+    assert.match(wonder, /Answer \(Muse Wonder\)/);
+    assert.doesNotMatch(wonder, /Muse Spark|Spark 1\.3/);
     assert.doesNotMatch(writing, /Train on it/);
     assert.match(writing, /held out once every answer is written/);
     const failed = render(DatasetDetail, {
@@ -602,6 +634,7 @@ describe("Lab results", () => {
       "gpuMinutes",
       "hub",
       "id",
+      "judgeModel",
       "model",
       "recipe",
       "recipeTitle",
@@ -612,6 +645,8 @@ describe("Lab results", () => {
     assert.equal(v.hub, null, "the Hugging Face links only once it is published");
     assert.equal(SECRET_TEXT.test(JSON.stringify(v)), false, "nothing hidden is carried over");
     assert.equal(v.model, "Muse Glimmer 30B");
+    assert.equal(v.judgeModel, "muse-spark-1.3", "no judge recorded: judged before Oct 29, 2026, by Muse Spark 1.3");
+    assert.equal(view({ judgeModel: "muse-wonder-1.0" })!.judgeModel, "muse-wonder-1.0");
     assert.equal(v.gpu, "1x H100 PCIe (80 GB)");
     assert.equal(v.gpuMinutes, 40);
     assert.deepEqual(
@@ -645,7 +680,10 @@ describe("Lab results", () => {
     const html = render(LabIntro, {});
     clean(html);
     assert.match(html, /Lab results/);
-    assert.match(html, /Muse Spark 1\.3 writes a training set, Muse Glimmer 30B learns it, and Muse Spark 1\.3 judges base against tuned on held-out prompts\./);
+    assert.match(html, /Muse Wonder writes a training set, Muse Glimmer 30B learns it, and Muse Wonder judges base against tuned on held-out prompts\./);
+    assert.match(html, /Muse Spark 1\.3 wrote and judged the runs before Oct 29, 2026, and each result&#x27;s page names the models that did its work\./);
+    assert.match(html, /Muse Wonder writes a training set for a task/);
+    assert.match(html, /Muse Wonder scores base and tuned Glimmer/);
     assert.match(html, /<span class="how-num">1\.<\/span> Write/);
     assert.match(html, /<span class="how-num">3\.<\/span> Judge/);
   });
@@ -686,6 +724,9 @@ describe("Lab results", () => {
     assert.match(html, /Tuned Glimmer beat base on <strong>1 of 2<\/strong>, base won <strong>0<\/strong>, ties <strong>1<\/strong>/);
     assert.match(html, /Average score base <strong>4\.5<\/strong>, tuned <strong>7\.5<\/strong>/);
     assert.match(html, /<th scope="col">Muse Spark 1\.3 reference<\/th><th scope="col">Base Glimmer<\/th><th scope="col">Tuned Glimmer<\/th><th scope="col">Verdict<\/th>/);
+    assert.match(html, /judged by Muse Spark 1\.3\./, "the run's records name no judge");
+    assert.match(html, /Muse Spark 1\.3 saw the two answers in random order/);
+    assert.doesNotMatch(html, /Muse Wonder/, "a run from before the change says Muse Spark 1.3 everywhere");
     assert.match(html, /How late are you open on Sunday\?/);
     assert.match(html, /class="pill pill-live">Tuned better/);
     assert.match(html, /Gives the Sunday hours\./);
@@ -720,6 +761,20 @@ describe("Lab results", () => {
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; see https:\/\/evil\.example/);
     assert.match(html, /&lt;a href=&quot;https:\/\/evil\.example&quot;&gt;win&lt;\/a&gt;/);
     assert.doesNotMatch(html, /<dt>Dataset<\/dt>/, "no dataset row when it isn't ready");
+    assert.match(html, /<th scope="col">Reference<\/th>/, "no writer named without the dataset's record");
+  });
+
+  it("names Muse Wonder on the public page of a run it judged on a dataset it wrote", () => {
+    const html = render(JobResults, {
+      result: view({ judgeModel: "muse-wonder-1.0" }),
+      rows: evalRowsOf([...evalEvents, ...judgements]),
+      dataset: { id: DS, title: "Bakery helper", writerModel: "muse-wonder-1.0" },
+    });
+    clean(html);
+    assert.match(html, /judged by Muse Wonder\./);
+    assert.match(html, /Muse Wonder saw the two answers in random order/);
+    assert.match(html, /<th scope="col">Muse Wonder reference<\/th>/);
+    assert.doesNotMatch(html, /Muse Spark|Spark 1\.3/);
   });
 
   it("shows a ready dataset read-only: no Train on it and no note", () => {

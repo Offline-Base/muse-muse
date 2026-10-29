@@ -1,6 +1,6 @@
 /**
- * Runs the real judge steps with the store, Muse Spark 1.3, the spend cap and usage faked: the judge sees the base and
- * tuned answers blind as A and B, in an order that swaps by index, and its scores map back to the right model; better
+ * Runs the real judge steps with the store, Muse Wonder, the spend cap and usage faked: Muse Wonder judges, and is saved
+ * on the job as its judge before judging starts; the judge sees the base and tuned answers blind as A and B, in an order that swaps by index, and its scores map back to the right model; better
  * follows the scores; the reply is cleaned (scores clamped, the note cut to 30 words, no em dashes); usage is recorded
  * before the verdict is logged; an item already judged isn't sent again; and judging is skipped when MODEL_API_KEY is
  * unset or the spend cap is reached, saving an unjudged summary on the job that says why (the job page reads that, not
@@ -56,7 +56,8 @@ let reply: Raw | Error = { note: "Clearer.", scoreA: 5, scoreB: 5, better: "tie"
 const savedKey = process.env.MODEL_API_KEY;
 
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
-const usage = [{ model: "muse-spark-1.3", inputTokens: 1200, cachedInputTokens: 0, outputTokens: 300, costUsd: 0.002775 }];
+// Muse Wonder's prices: 1,200 input tokens at $4 and 300 output tokens at $20 per million.
+const usage = [{ model: "muse-wonder-1.0", inputTokens: 1200, cachedInputTokens: 0, outputTokens: 300, costUsd: 0.0108 }];
 
 const fakeStore = {
   listEvalIndexes: async () => Object.keys(evals).map(Number),
@@ -69,6 +70,7 @@ const fakeStore = {
     if (body.type === "judgement") judgements[body.index as number] = body;
   },
   setEvalSummary: async (...args: unknown[]) => void calls.push({ fn: "setEvalSummary", args }),
+  setJudgeModel: async (...args: unknown[]) => void calls.push({ fn: "setJudgeModel", args }),
 };
 
 const fakeStructured = {
@@ -125,17 +127,18 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
         baseScore: 4,
         tunedScore: 8,
         better: "tuned",
-        costUsd: 0.002775,
+        costUsd: 0.0108,
       });
       const text = called("respondStructured")[0]!.args[1] as string;
       assert.match(text, /^Task:\nExplain Python errors\.\n\nUser message:\nWhy error 0\?\n\nReference answer:\nThe reference\./);
       assert.match(text, /Answer A:\nBASE ANSWER\n\nAnswer B:\nTUNED ANSWER$/);
       assert.doesNotMatch(text, /base model|tuned model/i, "nothing says which model wrote which");
-      assert.equal(called("respondStructured")[0]!.args[0], "muse-spark-1.3");
+      assert.equal(called("respondStructured")[0]!.args[0], "muse-wonder-1.0", "Muse Wonder judges, never Muse Spark 1.3");
+      assert.equal(judge.JUDGE_MODEL, "muse-wonder-1.0");
 
       // Odd index: the tuned answer comes first.
       reply = { note: "Gives the fix.", scoreA: 9, scoreB: 3, better: "A" };
-      assert.deepEqual(await judge.judgeStep(JOB_ID, 1, null), { baseScore: 3, tunedScore: 9, better: "tuned", costUsd: 0.002775 });
+      assert.deepEqual(await judge.judgeStep(JOB_ID, 1, null), { baseScore: 3, tunedScore: 9, better: "tuned", costUsd: 0.0108 });
       const second = called("respondStructured")[1]!.args[1] as string;
       assert.match(second, /^User message:/, "no task line without a dataset");
       assert.match(second, /Answer A:\nTUNED ANSWER\n\nAnswer B:\nBASE ANSWER$/);
@@ -164,7 +167,7 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       const words = Array.from({ length: 40 }, (_, i) => `w${i}`).join(" ");
       reply = { note: `  Better steps \u2014 ${words}  `, scoreA: 12, scoreB: 0.4, better: "A" };
       const verdict = await judge.judgeStep(JOB_ID, 0, null);
-      assert.deepEqual(verdict, { baseScore: 10, tunedScore: 1, better: "base", costUsd: 0.002775 });
+      assert.deepEqual(verdict, { baseScore: 10, tunedScore: 1, better: "base", costUsd: 0.0108 });
       const note = (called("recordEvent")[0]!.args[1] as { note: string }).note;
       assert.equal(note.split(" ").length, 30);
       assert.match(note, /^Better steps, w0 w1/);
@@ -193,9 +196,11 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
   });
 
   describe("judgePlanStep", () => {
-    it("plans the job's eval items with its dataset's task, and logs that judging started", async () => {
+    it("plans the job's eval items with its dataset's task, records Muse Wonder as the judge, and logs that judging started", async () => {
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [0, 1], task: "Explain Python errors." });
-      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: "Muse Spark 1.3 is judging 2 eval items." });
+      assert.deepEqual(called("setJudgeModel")[0]!.args, [JOB_ID, "muse-wonder-1.0"]);
+      assert.deepEqual(called("recordEvent")[0]!.args[1], { type: "log", text: "Muse Wonder is judging 2 eval items." });
+      assert.deepEqual(calls.map((c) => c.fn), ["setJudgeModel", "recordEvent"], "the judge is on the job before judging starts");
       job = { id: JOB_ID, params: {}, evalSummary: null };
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [0, 1], task: null });
     });
@@ -207,6 +212,7 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       job = { id: JOB_ID, params: {}, evalSummary: { items: 1 } };
       assert.deepEqual(await judge.judgePlanStep(JOB_ID), { indexes: [], task: null });
       assert.equal(called("recordEvent").length, 0);
+      assert.equal(called("setJudgeModel").length, 0, "no judge recorded for a job it doesn't judge");
     });
 
     it("skips when MODEL_API_KEY is unset or the spend cap is reached, saying why on the job and in the log", async () => {
@@ -226,6 +232,7 @@ describe("judging eval items", { skip: canMock ? false : "needs --experimental-t
       assert.equal(unjudgedNote(called("setEvalSummary")[1]!.args[1] as EvalSummary), unset);
       assert.deepEqual(called("recordEvent")[1]!.args[1], { type: "log", text: unset });
       assert.equal(called("respondStructured").length, 0);
+      assert.equal(called("setJudgeModel").length, 0, "a skipped job has no judge");
     });
   });
 
