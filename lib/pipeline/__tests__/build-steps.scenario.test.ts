@@ -1,7 +1,8 @@
 /**
  * Runs the real step functions in build-steps.ts with the database, sandbox, judge, policy check and usage faked:
  * the judge on a refinement, Muse Code usage charging (child agents included, never twice), the judge's screenshots on
- * fix rounds, the admin kill switch at register, the brief copied onto refine rows, and the refinement policy check.
+ * fix rounds, the admin kill switch at register, the brief and the build model copied onto refine rows, and the
+ * refinement policy check.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
@@ -467,6 +468,50 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       const update = writes.find((w) => w.table === "builds")!;
       assert.equal(update.values.brief, BRIEF);
       assert.equal(update.values.sandboxName, "sb");
+    });
+
+    /** Runs loadRefineStep for a product whose first build recorded `buildModel` (no row at all when undefined). */
+    const refineOn = async (buildModel: string | null | undefined) => {
+      selects = {
+        builds: [
+          [{ id: "r1", kind: "refine", productId: "prod-1", brief: BRIEF, startedAt: new Date() }],
+          [{ n: 1 }],
+          buildModel === undefined ? [] : [{ buildModel }],
+        ],
+        products: [[{ id: "prod-1", name: "Bird Count", tagline: "Count birds", sandboxName: "sb", museSessionId: "sess" }]],
+      };
+      const out = await steps.loadRefineStep("r1");
+      const saved = writes.find((w) => w.table === "builds")!.values.buildModel;
+      assert.equal(saved, out.model, "the refine row records the model it resumes on");
+      return out.model;
+    };
+
+    it("resumes a Spark product on Spark, even with every default on Muse Wonder", async () => {
+      const keys = ["BUILD_MODEL", "COMPLEX_BUILD_MODEL"] as const;
+      const old = keys.map((k) => process.env[k]);
+      for (const k of keys) delete process.env[k];
+      try {
+        assert.equal(await refineOn("muse-spark-1.3"), "muse-spark-1.3");
+      } finally {
+        keys.forEach((k, i) => (old[i] === undefined ? delete process.env[k] : (process.env[k] = old[i])));
+      }
+    });
+
+    it("resumes a Wonder product on Wonder, even when the build default is Spark", async () => {
+      const old = process.env.BUILD_MODEL;
+      process.env.BUILD_MODEL = "muse-spark-1.3";
+      try {
+        assert.equal(await refineOn("muse-wonder-1.0"), "muse-wonder-1.0");
+      } finally {
+        if (old === undefined) delete process.env.BUILD_MODEL;
+        else process.env.BUILD_MODEL = old;
+      }
+    });
+
+    it("resumes a product with no recorded model on Spark, the default it was built with", async () => {
+      assert.equal(await refineOn(null), "muse-spark-1.3");
+      writes = [];
+      assert.equal(await refineOn(undefined), "muse-spark-1.3");
     });
   });
 

@@ -105,14 +105,26 @@ function asBuildModel(value: string | null | undefined, fallback: BuildModel): B
   return BUILD_MODELS.includes(value as BuildModel) ? (value as BuildModel) : fallback;
 }
 
-/** Muse Code's model: the complex build model for briefs marked complex, else the default build model. */
+/**
+ * Muse Code's model: the complex build model for briefs marked complex, else the default build model. A value that
+ * isn't a build model falls back to Muse Wonder, the default for both.
+ */
 export function pickBuildModel(
   complexity: Brief["complexity"],
   models: { buildModel: string; complexBuildModel: string },
 ): BuildModel {
   return complexity === "complex"
     ? asBuildModel(models.complexBuildModel, "muse-wonder-1.0")
-    : asBuildModel(models.buildModel, "muse-spark-1.3");
+    : asBuildModel(models.buildModel, "muse-wonder-1.0");
+}
+
+/**
+ * The model a refinement resumes Muse Code on: the one the product was built with, never the current default, since
+ * a session's reasoning records belong to its model. Products built before the platform recorded the model were built
+ * on Muse Spark 1.3, the default then.
+ */
+export function refineBuildModel(previous: string | null | undefined): BuildModel {
+  return asBuildModel(previous, "muse-spark-1.3");
 }
 
 /** Paths inside the product (inspo/<file>) of the image references, for `muse exec --image`. */
