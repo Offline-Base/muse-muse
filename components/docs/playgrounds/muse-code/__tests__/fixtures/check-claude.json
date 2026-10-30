@@ -1,0 +1,26 @@
+{
+  "content": [
+    {
+      "data": "<trimmed>",
+      "type": "redacted_thinking"
+    },
+    {
+      "text": "config OK",
+      "type": "text"
+    }
+  ],
+  "id": "msg_6ae4713c06b5faaf97bb462d",
+  "model": "muse-spark-1.3-contributor",
+  "role": "assistant",
+  "stop_reason": "end_turn",
+  "type": "message",
+  "usage": {
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "input_tokens": 14,
+    "output_tokens": 181,
+    "output_tokens_details": {
+      "thinking_tokens": 170
+    }
+  }
+}

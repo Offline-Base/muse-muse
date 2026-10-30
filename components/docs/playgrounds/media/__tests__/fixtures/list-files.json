@@ -1,0 +1,18 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "file-1444790353676000",
+      "bytes": 67657,
+      "created_at": 1793353117,
+      "expires_at": 1793356717,
+      "filename": "receipt.png",
+      "object": "file",
+      "purpose": "user_data",
+      "status": "uploaded"
+    }
+  ],
+  "first_id": "file-1444790353676000",
+  "last_id": "file-1444790353676000",
+  "has_more": false
+}

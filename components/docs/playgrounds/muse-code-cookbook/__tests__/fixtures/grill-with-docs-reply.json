@@ -1,0 +1,139 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1,
+ "top_p": 1,
+ "service_tier": "auto",
+ "previous_response_id": "resp_6ae472f52290c3b367914bc2",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low"
+ },
+ "background": false,
+ "text": {
+  "format": {
+   "type": "json_schema",
+   "name": "GrillQuestion",
+   "schema": {
+    "required": [
+     "acknowledged",
+     "question",
+     "grounded_in",
+     "options",
+     "decision_record"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "acknowledged": {
+      "type": "string"
+     },
+     "decision_record": {
+      "additionalProperties": false,
+      "properties": {
+       "decision": {
+        "type": "string"
+       },
+       "id": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       },
+       "rejected": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "title",
+       "decision",
+       "rationale",
+       "rejected"
+      ],
+      "type": "object"
+     },
+     "grounded_in": {
+      "type": "string"
+     },
+     "options": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "label": {
+         "type": "string"
+        },
+        "recommended": {
+         "type": "boolean"
+        },
+        "tradeoff": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "label",
+        "recommended",
+        "tradeoff"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "question": {
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "strict": true
+  }
+ },
+ "tools": [],
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae47300f0a695242fbf4af6",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793356544,
+ "completed_at": 1793356544,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae47300f0a695242fbf4af6:rs_1c6658e0-c507-408c-b8c2-514e5c15ed99",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "msg_4b794707-3674-47a8-9e52-7f825ec2d469",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "{\"acknowledged\": \"Recorded strict no overdraft rejection for transfer.\", \"decision_record\": {\"decision\": \"Reject transfer if sender balance would go negative.\", \"id\": \"D1\", \"rationale\": \"Keeps overdraft protection promised in README and preserves non negative balance invariant.\", \"rejected\": \"Allow negative balances and record overdraft as debt.\" , \"title\": \"Transfer overdraft protection\"}, \"grounded_in\": \"ledger.py balance uses self._balances[name] which raises KeyError for unknown accounts, and deposit has no existence check.\", \"options\": [{\"label\": \"Raise error on unknown sender or receiver and change nothing\", \"recommended\": true, \"tradeoff\": \"Explicit failure is safe but requires callers to open accounts first\"}, {\"label\": \"Auto create missing receiver with zero balance\", \"recommended\": false, \"tradeoff\": \"Convenient for transfers but hides typos and diverges from open_account flow\"}], \"question\": \"How should transfer handle unknown sender or receiver accounts?\"}",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "status": "completed"
+  }
+ ],
+ "instructions": "You are running a /grill-with-docs interview. Inspect the project files first. Ask exactly one decision-forcing question per turn, grounded in the code, with two or three options, the recommended one first. When the user has answered a question, write a decision record for docs/DECISIONS.md covering only what they settled or what you verified in the files: an id like D1, a short title, the decision, the rationale, and the rejected alternatives. Never invent architecture. Then ask the next question. Before any answer, leave the record empty. Write plain text without em dashes.",
+ "usage": {
+  "input_tokens": 800,
+  "input_tokens_details": {
+   "cached_tokens": 497
+  },
+  "output_tokens": 783,
+  "output_tokens_details": {
+   "reasoning_tokens": 567
+  },
+  "total_tokens": 1583
+ },
+ "parallel_tool_calls": true,
+ "store": true,
+ "max_output_tokens": 3000
+}

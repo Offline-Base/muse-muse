@@ -242,7 +242,7 @@ describe("media kit render", () => {
 
     it("warns that speaker turns may come back empty", () => {
       const out = html(el(media.TranscribePlayground, { slug: "x", mode: "DIARIZATION", endpoints: ["realtime"] }));
-      assert.match(out, /turns stayed empty even for two clear voices/);
+      assert.match(out, /can include a few empty turns between speakers/);
       assert.match(out, /aria-label="Partial mode"/);
       assert.match(out, /<span>Stream<\/span>/);
     });

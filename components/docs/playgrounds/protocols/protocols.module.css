@@ -1,0 +1,689 @@
+/*
+ * The protocol pages' own demo pieces (flows, the three-format comparison, the schemas explorer). Built on the kit's
+ * look (components/docs/kit/kit.css: hairline cards, pills, underline tabs) and app/globals.css's variables, so light
+ * and dark themes follow the site.
+ */
+
+/* ---------- Lab tabs ---------- */
+
+.labBar {
+  min-width: 0;
+}
+
+/* The tab bar scrolls sideways when the tabs don't fit; the edge with more tabs past it fades out. */
+.labBar[data-more-right] .labTabs {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+}
+
+.labBar[data-more-left] .labTabs {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+}
+
+.labBar[data-more-left][data-more-right] .labTabs {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
+
+.labTabs {
+  scroll-padding-inline: 32px;
+}
+
+.labPanel {
+  min-width: 0;
+  padding-top: 14px;
+}
+
+.labPanel[hidden] {
+  display: none;
+}
+
+.labIntro {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ---------- Flows ---------- */
+
+.flowBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 18px;
+}
+
+.flowVars {
+  display: grid;
+  gap: 10px;
+}
+
+@media (min-width: 640px) {
+  .flowVars {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+
+.flowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.flowTotal {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.flowSteps {
+  gap: 14px;
+}
+
+.flowStep {
+  padding-bottom: 2px;
+  scroll-margin-top: 80px;
+}
+
+.flowStep[data-status="running"] {
+  border-left-color: var(--accent);
+}
+
+.flowStep[data-status="ok"] {
+  border-left-color: var(--ok);
+}
+
+.flowStep[data-status="bad"] {
+  border-left-color: var(--bad);
+}
+
+.flowStep[data-status="blocked"] {
+  border-left-color: var(--warn);
+}
+
+.flowStep[data-status="ok"] .stepNum {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.flowStep[data-status="bad"] .stepNum {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.flowStep[data-status="running"] .stepNum {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.stepNum {
+  flex: none;
+}
+
+.stepTitle {
+  min-width: 0;
+}
+
+.stepBadge {
+  margin-left: auto;
+}
+
+.stepReq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.stepPath {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg-2);
+}
+
+.stepNote {
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.stepResult {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.stepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 13px;
+}
+
+.stepText {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.fields dt {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.fields dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.expected {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--ok-soft);
+  font-size: 13.5px;
+}
+
+.expected strong {
+  color: var(--ok);
+}
+
+.unexpected {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--warn-soft);
+  font-size: 13.5px;
+}
+
+.unexpected strong {
+  color: var(--warn);
+}
+
+.errorText {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.more > details {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.more > details[open] {
+  flex-basis: 100%;
+}
+
+.blocked {
+  color: var(--warn);
+  font-size: 13.5px;
+}
+
+.checkWhy {
+  display: block;
+  margin-left: 18px;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+
+.checkActual {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* ---------- Three formats compared ---------- */
+
+/* The table keeps a readable width and scrolls sideways in a narrower column; the line above it says so. */
+.compareBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.compareScrollHint {
+  display: none;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+@container (max-width: 619px) {
+  .compareScrollHint {
+    display: block;
+  }
+}
+
+.compareTableWrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.compareTable {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.compareTable th,
+.compareTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.compareTable tr:last-child th,
+.compareTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.compareTable thead th {
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.compareTable tbody th {
+  width: 22%;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* The row labels stay put while the formats scroll past them. */
+.compareTable tbody th,
+.compareTable thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--line);
+}
+
+.compareTable thead th:first-child {
+  background: var(--surface-2);
+}
+
+.compareTable code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.compareText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.compareEndpoint {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 400;
+  /* Wraps after a slash (its <wbr>s), not inside "completions". */
+  overflow-wrap: normal;
+}
+
+.dim {
+  color: var(--muted);
+}
+
+/* ---------- Schemas explorer ---------- */
+
+.explorer {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.explorerTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.search {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.panes {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .panes {
+    grid-template-columns: minmax(200px, 250px) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.list {
+  max-height: 340px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  list-style: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+@media (min-width: 720px) {
+  .list {
+    position: sticky;
+    top: 72px;
+    max-height: 620px;
+  }
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.item:hover {
+  background: var(--hover);
+}
+
+.item[aria-current="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.itemName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.item[aria-current="true"] .itemMeta {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.itemMatch {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.liveDot {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  /* Schema code names are long single words ("Matches ChatCompletionRequestMessageContentPartImage, ..."): on a phone
+     they break rather than run past the card. break-word, not anywhere, so labels in flex rows (the model menu's
+     "Model") keep their whole width; words that fit still wrap at spaces as usual. */
+  overflow-wrap: break-word;
+}
+
+.detailHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.detailTitle {
+  min-width: 0;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* Code names such as ChatCompletionRequestUserMessageContentPart are one long word: let them break on a phone. */
+.detailCode {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.detailLink {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.kind {
+  padding: 1px 8px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.prose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 72ch;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+
+.prose p,
+.prose ul {
+  margin: 0;
+}
+
+.prose ul {
+  padding-left: 20px;
+}
+
+.typeLine {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.fieldList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.fieldHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.fieldName {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fieldNested {
+  padding-left: 14px;
+}
+
+.fieldType {
+  color: var(--fg-2);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.req {
+  padding: 0 6px;
+  border-radius: var(--pill);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fieldDesc {
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.refButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--docs-link, var(--accent-text));
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.refButton code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.runList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.liveHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.liveTitle {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 14px;
+}

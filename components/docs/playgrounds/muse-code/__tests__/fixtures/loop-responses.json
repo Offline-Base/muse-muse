@@ -1,0 +1,48 @@
+{
+  "id": "resp_6ae47664bb6b59573d674608",
+  "model": "muse-spark-1.3-contributor",
+  "object": "response",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_6ae47664bb6b59573d674608:rs_48b69449-4fdc-48fc-837f-56689b411e65",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "rs_c9e0ad28-7f76-4c1a-be81-f5b0a36467e0",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Reading src/signup.js for you.",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "phase": "commentary",
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_0112de77-b649-47fa-9adb-debe00fc14b1",
+      "call_id": "call_0112de77-b649-47fa-9adb-debe00fc14b1",
+      "name": "read_file",
+      "arguments": "{\"path\":\"src/signup.js\"}",
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 735,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 86,
+    "output_tokens_details": {
+      "reasoning_tokens": 19
+    },
+    "total_tokens": 821
+  }
+}

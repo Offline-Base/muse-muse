@@ -1,0 +1,50 @@
+event: response.created
+data: {"response":{"background":false,"created_at":1793353534.0,"error":null,"id":"resp_6ae4673fb68d395598924a4f","incomplete_details":null,"instructions":null,"max_output_tokens":3000,"model":"muse-spark-1.3-contributor","object":"response","output":[],"parallel_tool_calls":true,"reasoning":{"effort":"medium","summary":"auto"},"safety_identifier":"docs-test-visitor","service_tier":"auto","status":"in_progress","store":true,"temperature":1.0,"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1.0,"truncation":"disabled"},"sequence_number":0,"type":"response.created"}
+
+event: response.in_progress
+data: {"response":{"background":false,"created_at":1793353534.0,"error":null,"id":"resp_6ae4673fb68d395598924a4f","incomplete_details":null,"instructions":null,"max_output_tokens":3000,"model":"muse-spark-1.3-contributor","object":"response","output":[],"parallel_tool_calls":true,"reasoning":{"effort":"medium","summary":"auto"},"safety_identifier":"docs-test-visitor","service_tier":"auto","status":"in_progress","store":true,"temperature":1.0,"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1.0,"truncation":"disabled"},"sequence_number":1,"type":"response.in_progress"}
+
+event: response.output_item.added
+data: {"item":{"id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","status":"in_progress","summary":[],"type":"reasoning"},"output_index":0,"sequence_number":2,"type":"response.output_item.added"}
+
+event: response.reasoning_summary_part.added
+data: {"item_id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","output_index":0,"part":{"text":"","type":"summary_text"},"sequence_number":3,"summary_index":0,"type":"response.reasoning_summary_part.added"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":"Solving the bat-and-ball algebra problem and stating the ball costs 5 cents in one sentence.","item_id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","output_index":0,"sequence_number":4,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.done
+data: {"item_id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","output_index":0,"sequence_number":5,"summary_index":0,"text":"Solving the bat-and-ball algebra problem and stating the ball costs 5 cents in one sentence.","type":"response.reasoning_summary_text.done"}
+
+event: response.reasoning_summary_part.done
+data: {"item_id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","output_index":0,"part":{"text":"Solving the bat-and-ball algebra problem and stating the ball costs 5 cents in one sentence.","type":"summary_text"},"sequence_number":6,"summary_index":0,"type":"response.reasoning_summary_part.done"}
+
+event: response.output_item.done
+data: {"item":{"id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","status":"completed","summary":[{"text":"Solving the bat-and-ball algebra problem and stating the ball costs 5 cents in one sentence.","type":"summary_text"}],"type":"reasoning"},"output_index":0,"sequence_number":7,"type":"response.output_item.done"}
+
+event: response.output_item.added
+data: {"item":{"content":[],"id":"msg_01a18c3359ac73fb9bc8302fc30d176f","role":"assistant","status":"in_progress","type":"message"},"output_index":1,"sequence_number":8,"type":"response.output_item.added"}
+
+event: response.content_part.added
+data: {"content_index":0,"item_id":"msg_01a18c3359ac73fb9bc8302fc30d176f","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"","type":"output_text"},"sequence_number":9,"type":"response.content_part.added"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"The ball costs ","item_id":"msg_01a18c3359ac73fb9bc8302fc30d176f","logprobs":[],"output_index":1,"sequence_number":10,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"5 cents.","item_id":"msg_01a18c3359ac73fb9bc8302fc30d176f","logprobs":[],"output_index":1,"sequence_number":11,"type":"response.output_text.delta"}
+
+event: response.output_text.done
+data: {"content_index":0,"item_id":"msg_01a18c3359ac73fb9bc8302fc30d176f","logprobs":[],"output_index":1,"sequence_number":12,"text":"The ball costs 5 cents.","type":"response.output_text.done"}
+
+event: response.content_part.done
+data: {"content_index":0,"item_id":"msg_01a18c3359ac73fb9bc8302fc30d176f","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"The ball costs 5 cents.","type":"output_text"},"sequence_number":13,"type":"response.content_part.done"}
+
+event: response.output_item.done
+data: {"item":{"content":[{"annotations":[],"logprobs":[],"text":"The ball costs 5 cents.","type":"output_text"}],"id":"msg_01a18c3359ac73fb9bc8302fc30d176f","role":"assistant","status":"completed","type":"message"},"output_index":1,"sequence_number":14,"type":"response.output_item.done"}
+
+event: response.completed
+data: {"response":{"background":false,"completed_at":1793353538.0,"created_at":1793353534.0,"error":null,"id":"resp_6ae4673fb68d395598924a4f","incomplete_details":null,"instructions":null,"max_output_tokens":3000,"model":"muse-spark-1.3-contributor","object":"response","output":[{"id":"rs_6ae4673fb68d395598924a4f:rs_01a18c334dfd735d9db3723a520b0e1d","status":"completed","summary":[{"text":"Solving the bat-and-ball algebra problem and stating the ball costs 5 cents in one sentence.","type":"summary_text"}],"type":"reasoning"},{"content":[{"annotations":[],"logprobs":[],"text":"The ball costs 5 cents.","type":"output_text"}],"id":"msg_01a18c3359ac73fb9bc8302fc30d176f","role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"reasoning":{"effort":"medium","summary":"auto"},"safety_identifier":"docs-test-visitor","service_tier":"auto","status":"completed","store":true,"temperature":1.0,"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1.0,"truncation":"disabled","usage":{"input_tokens":44,"input_tokens_details":{"cached_tokens":0},"output_tokens":478,"output_tokens_details":{"reasoning_tokens":442},"total_tokens":522}},"sequence_number":15,"type":"response.completed"}
+
+data: [DONE]
+

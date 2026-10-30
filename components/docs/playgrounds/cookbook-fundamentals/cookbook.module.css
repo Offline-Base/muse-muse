@@ -1,0 +1,807 @@
+/*
+ * The cookbook-fundamentals demos (lib/docs/demos/cookbook-fundamentals.ts). They sit on the kit's global pg- classes
+ * (components/docs/kit/kit.css) and add what those don't have: stat tiles, single-series bars and meters, the stream
+ * timeline, recipe cards, traces and diffs, and file views. Colors come from app/globals.css, so light and dark both
+ * follow the site theme.
+ */
+
+/* ---------- Tabs that keep every panel mounted ---------- */
+
+.tabPanel {
+  min-width: 0;
+  padding-top: 14px;
+}
+
+.tabPanel[hidden] {
+  display: none;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.spread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.lead {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.inlineLabel {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.numberInput {
+  width: 96px;
+}
+
+/* ---------- Stat tiles ---------- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.statLabel {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.statValue {
+  color: var(--fg);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.statNote {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* ---------- Bars, meters and the two-part bar ---------- */
+
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(84px, 30%) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+}
+
+.barLabel {
+  overflow: hidden;
+  color: var(--fg-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.barFill {
+  flex: none;
+  height: 14px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--chart-1);
+}
+
+.barFill[data-muted="true"] {
+  background: var(--track);
+}
+
+.barValue {
+  flex: none;
+  color: var(--fg);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meterTrack {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--accent-soft);
+}
+
+.meterFill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: 5px;
+  background: var(--accent);
+}
+
+.meterFill[data-state="warn"] {
+  background: var(--warn);
+}
+
+.meterFill[data-state="bad"] {
+  background: var(--bad);
+}
+
+.meterMark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--fg-2);
+}
+
+.meterLabel {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--fg-2);
+  font-size: 13px;
+}
+
+/* Part to whole, one emphasized part and the rest in gray, with a 2px surface gap between the parts. */
+.parts {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.part {
+  min-width: 2px;
+  background: var(--chart-1);
+}
+
+.part[data-muted="true"] {
+  background: var(--track);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--chart-1);
+}
+
+.swatch[data-muted="true"] {
+  background: var(--track);
+}
+
+/* ---------- Tables ---------- */
+
+.tableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--panel-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table td.num,
+.table th.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table tr[data-active="true"] td {
+  background: var(--accent-soft);
+}
+
+.table code {
+  font-size: 12.5px;
+}
+
+/* ---------- Stream timeline and chunks ---------- */
+
+.timelineWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline {
+  display: block;
+  width: 100%;
+  height: 32px;
+  overflow: visible;
+}
+
+.timelineLabels {
+  position: relative;
+  height: 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timelineLabels span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
+.timelineAxis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.timelineTick {
+  stroke: var(--chart-1);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.timelineTick[data-kind="empty"] {
+  stroke: var(--track);
+}
+
+.timelineTick[data-kind="finish"],
+.timelineTick[data-kind="usage"] {
+  stroke: var(--fg-2);
+}
+
+.timelineGap {
+  fill: var(--surface-3);
+}
+
+.chunks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.chunk {
+  max-width: 100%;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chunk[data-kind="meta"] {
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.chunk[data-kind="end"] {
+  background: var(--warn-soft);
+  color: var(--fg-2);
+}
+
+/* ---------- Recipe cards ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.search {
+  width: min(100%, 260px);
+}
+
+.section + .section {
+  margin-top: 6px;
+}
+
+.sectionHead {
+  margin: 0 0 8px;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sectionBlurb {
+  margin: -4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  transition: border-color 120ms ease;
+}
+
+.card[data-active="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  color: var(--fg);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cardSummary {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-top: auto;
+}
+
+.badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge[data-kind="api"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.command {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.callPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+/* ---------- Side by side ---------- */
+
+.compare {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.compareCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.compareTitle {
+  margin: 0;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* ---------- Traces, files and diffs ---------- */
+
+.trace {
+  margin: 0;
+  max-height: 360px;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fileHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+
+.fileName {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.code {
+  margin: 0;
+  max-height: 320px;
+  padding: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  counter-reset: line;
+}
+
+.codeLine {
+  display: block;
+  padding: 0 12px 0 0;
+  white-space: pre;
+}
+
+.codeLine::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.2em;
+  margin-right: 12px;
+  padding-right: 6px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.diff {
+  margin: 0;
+  max-height: 360px;
+  padding: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.diffLine {
+  display: block;
+  padding: 0 12px;
+  white-space: pre;
+}
+
+.diffLine[data-op="add"] {
+  background: var(--ok-soft);
+}
+
+.diffLine[data-op="del"] {
+  background: var(--bad-soft);
+}
+
+.diffLine[data-op="hunk"] {
+  color: var(--muted);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 9px;
+  border-radius: var(--pill);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status[data-tone="ok"] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.status[data-tone="bad"] {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.status[data-tone="warn"] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.status[data-tone="busy"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.status[data-tone="idle"] {
+  background: var(--surface-3);
+  color: var(--fg-2);
+}
+
+/* ---------- Turns and steps ---------- */
+
+.turns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.turnHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+}
+
+.turnTitle {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.thought {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--warn);
+  color: var(--fg-2);
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.act {
+  margin: 0;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.result {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.textBlock {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Footnoted answers ---------- */
+
+.answer {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  color: var(--fg);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mark {
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+}
+
+.preview {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--surface-2);
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.thumb {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}

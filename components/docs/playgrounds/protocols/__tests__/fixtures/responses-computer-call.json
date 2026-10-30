@@ -1,0 +1,86 @@
+{
+ "background": false,
+ "completed_at": 1793354173.0,
+ "created_at": 1793354170.0,
+ "error": null,
+ "id": "resp_6ae469ba0fba390d0bc2438e",
+ "incomplete_details": null,
+ "instructions": null,
+ "max_output_tokens": 2000,
+ "model": "muse-spark-1.3-contributor",
+ "object": "response",
+ "output": [
+  {
+   "id": "rs_6ae469ba0fba390d0bc2438e:rs_1a829f37-ffd5-462e-8ab0-67f27cf92a46",
+   "status": "completed",
+   "summary": [],
+   "type": "reasoning"
+  },
+  {
+   "content": [
+    {
+     "annotations": [],
+     "logprobs": [],
+     "text": "I'll click the Create account button now.",
+     "type": "output_text"
+    }
+   ],
+   "id": "rs_21246b30-95fb-49fa-9f3b-09420b05fc80",
+   "phase": "commentary",
+   "role": "assistant",
+   "status": "completed",
+   "type": "message"
+  },
+  {
+   "actions": [
+    {
+     "button": "left",
+     "type": "click",
+     "x": 898,
+     "y": 580
+    }
+   ],
+   "call_id": "call_4af9951d-c477-48f2-82c8-8691b8bd91b6",
+   "id": "cc_4af9951d-c477-48f2-82c8-8691b8bd91b6",
+   "meta_safety_replay_receipt": "cu_sr_Q_DoFwHnQKQ8jOPndb...trimmed",
+   "pending_safety_checks": [
+    {
+     "code": "computer_action_requires_confirmation",
+     "id": "cu_sc_Q_DoFwHVgjsdEaW3wd...trimmed",
+     "message": "Review and confirm before executing this computer action."
+    }
+   ],
+   "status": "completed",
+   "type": "computer_call"
+  }
+ ],
+ "parallel_tool_calls": true,
+ "reasoning": {
+  "effort": "low"
+ },
+ "safety_identifier": "docs-test-visitor",
+ "service_tier": "auto",
+ "status": "completed",
+ "store": true,
+ "temperature": 1.0,
+ "tool_choice": "auto",
+ "tools": [
+  {
+   "type": "computer"
+  }
+ ],
+ "top_logprobs": 0,
+ "top_p": 1.0,
+ "truncation": "disabled",
+ "usage": {
+  "input_tokens": 1276,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 247,
+  "output_tokens_details": {
+   "reasoning_tokens": 165
+  },
+  "total_tokens": 1523
+ }
+}

@@ -1,0 +1,59 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1.0,
+ "top_p": 1.0,
+ "safety_identifier": "docs-test-visitor",
+ "service_tier": "auto",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low"
+ },
+ "background": false,
+ "tools": [],
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae46566d2e76557d00d42ed",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793353062.0,
+ "completed_at": 1793353062.0,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae46566d2e76557d00d42ed:rs_d626534e-5433-4e2c-9136-52245491fef3",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "msg_a304901f-2b81-4fa1-a531-cf17173b2a3f",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Paris is the capital of France.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "status": "completed"
+  }
+ ],
+ "instructions": null,
+ "usage": {
+  "input_tokens": 18,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 265,
+  "output_tokens_details": {
+   "reasoning_tokens": 249
+  },
+  "total_tokens": 283
+ },
+ "parallel_tool_calls": true,
+ "store": true,
+ "max_output_tokens": 400
+}

@@ -1,0 +1,40 @@
+{
+  "model": "muse-spark-1.3-contributor",
+  "id": "resp_6ae4712cee5f329c2c5f463a",
+  "object": "response",
+  "status": "completed",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_6ae4712cee5f329c2c5f463a:rs_01a18c5a12e071af812be0290f6df20f",
+      "encrypted_content": "<encrypted reasoning, trimmed for the fixture>",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_01a18c5a16ca705d8173d9b55255dcea",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "config OK",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 14,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 121,
+    "output_tokens_details": {
+      "reasoning_tokens": 110
+    },
+    "total_tokens": 135
+  }
+}

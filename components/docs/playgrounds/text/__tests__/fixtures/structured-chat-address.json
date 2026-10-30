@@ -1,0 +1,29 @@
+{
+ "id": "chatcmpl-01a18c34-98e1-7233-8eeb-93b0f0a63f00",
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "index": 0,
+   "message": {
+    "content": "{\"city\": \"Menlo Park\", \"state\": \"CA\", \"street\": \"1 Hacker Wy\", \"zip\": \"94025\"}",
+    "refusal": null,
+    "role": "assistant"
+   },
+   "logprobs": null
+  }
+ ],
+ "created": 1793353619,
+ "model": "muse-spark-1.3-contributor",
+ "object": "chat.completion",
+ "usage": {
+  "completion_tokens": 441,
+  "prompt_tokens": 114,
+  "total_tokens": 555,
+  "completion_tokens_details": {
+   "reasoning_tokens": 403
+  },
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  }
+ }
+}

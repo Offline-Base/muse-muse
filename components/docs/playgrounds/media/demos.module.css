@@ -1,0 +1,424 @@
+/* The media page demos (components/docs/playgrounds/media). Built on app/globals.css's theme variables and the kit's
+   pg- classes, so they follow light and dark themes and look like the rest of the docs demos. */
+
+.lab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.spread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  font-size: 14px;
+}
+
+.inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+
+.label {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.problem {
+  margin: 0;
+  color: var(--bad);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.divider {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* A self-contained group of controls, such as one image slot or one lifecycle step. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  color: var(--fg);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.urlPreview {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  object-fit: contain;
+}
+
+/* Tables: grounding results, token counts, schema fields, file lists, checks. */
+
+.tableWrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th,
+.table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table th {
+  background: var(--table-head);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table td code,
+.table td .mono {
+  overflow-wrap: anywhere;
+}
+
+.right {
+  text-align: right;
+}
+
+.hit {
+  background: var(--accent-soft);
+}
+
+/* Small labels: types, required, constraints, check results. */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tagAccent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.tagOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.tagBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.tagWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Generated images and conversation turns. */
+
+.history {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.historyItem {
+  flex: none;
+  width: 84px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+}
+
+.historyItem[aria-current="true"] {
+  border-color: var(--accent);
+}
+
+.historyItem img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.idLine {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* Schema explorer. */
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.groupLabel {
+  min-width: 92px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.schemaTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.schemaName {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.fieldName {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.typeCell {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.desc {
+  color: var(--fg-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.desc code {
+  font-size: 12.5px;
+}
+
+.refLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.refLink:hover {
+  color: var(--accent);
+}
+
+.hits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Check results. */
+
+.sevError {
+  color: var(--bad);
+}
+
+.sevWarning {
+  color: var(--warn);
+}
+
+.sevInfo {
+  color: var(--muted);
+}
+
+.sevOk {
+  color: var(--ok);
+}
+
+.verdict {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.verdictOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.verdictBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.verdictWarn {
+  background: var(--warn-soft);
+  color: var(--fg-2);
+}
+
+.pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.numberInput {
+  width: 120px;
+}
+
+.urlInput {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.cursorInput {
+  width: min(100%, 280px);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* One live call in the schema explorer: what it sends and costs, then its button. */
+.action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.actionText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A segmented control with long options wraps on narrow screens; a smaller radius keeps it a rounded box there and
+   looks the same as the kit's pill on one line. */
+.segWrap :global(.pg-seg) {
+  border-radius: 16px;
+}

@@ -1,0 +1,48 @@
+event: audioProgress
+data: {"type":"audioProgress","audioProcessedMs":80}
+
+event: audioProgress
+data: {"type":"audioProgress","audioProcessedMs":160}
+
+event: audioProgress
+data: {"type":"audioProgress","audioProcessedMs":240}
+
+event: speechStart
+data: {"type":"speechStart","audioProcessedMs":620,"turnId":0}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for","final":false,"audioProcessedMs":2240}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4.","final":false,"audioProcessedMs":2720}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to","final":false,"audioProcessedMs":3920}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to F3.","final":false,"audioProcessedMs":4720}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to F3. Bishop to","final":false,"audioProcessedMs":6000}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to F3. Bishop to c4.","final":false,"audioProcessedMs":6880}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to F3. Bishop to c4. Castle","final":false,"audioProcessedMs":7840}
+
+event: transcript
+data: {"type":"transcript","transcript":"K23 for 4. Night to F3. Bishop to c4. Castle kingside.","final":false,"audioProcessedMs":8880}
+
+event: audioProgress
+data: {"type":"audioProgress","audioProcessedMs":9200}
+
+event: speechEnd
+data: {"type":"speechEnd","audioProcessedMs":8700,"turnId":0}
+
+event: speechComplete
+data: {"type":"speechComplete","audioProcessedMs":8700,"turnId":0,"transcript":"K23 for 4. Night to F3. Bishop to c4. Castle kingside."}
+
+event: transcript
+data: {"type":"transcript","transcript":"","final":true,"audioProcessedMs":9200}
+

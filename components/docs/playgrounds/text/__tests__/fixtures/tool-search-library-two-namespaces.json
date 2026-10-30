@@ -1,0 +1,437 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1.0,
+ "top_p": 1.0,
+ "service_tier": "auto",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low"
+ },
+ "background": false,
+ "max_tool_calls": 5,
+ "tools": "<8 tools, as sent>",
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae46ad6876d024e3b134312",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793354454.0,
+ "completed_at": 1793354459.0,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae46ad6876d024e3b134312:rs_5cfd873b-9254-44e9-87ed-38974fca241c",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "rs_0ddced66-0bbb-471e-bd0c-2e84739c3b30",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Starting your damaged-order refund and note.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "status": "completed"
+  },
+  {
+   "type": "tool_search_call",
+   "id": "tsc_call_d6bcdf25-fdfb-419d-aa8b-ff4ab88ddd2a",
+   "call_id": null,
+   "execution": "server",
+   "arguments": {
+    "paths": [
+     "billing",
+     "crm"
+    ]
+   },
+   "status": "completed"
+  },
+  {
+   "type": "tool_search_output",
+   "id": "tso_call_d6bcdf25-fdfb-419d-aa8b-ff4ab88ddd2a",
+   "call_id": null,
+   "execution": "server",
+   "tools": [
+    {
+     "type": "namespace",
+     "name": "billing",
+     "description": "Invoices, payments, refunds and subscriptions.",
+     "tools": [
+      {
+       "name": "get_invoice",
+       "description": "Fetch one invoice with its line items, amount due and payment status.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "invoice_id": {
+          "description": "The invoice ID, such as INV-2207.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "invoice_id"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "list_invoices",
+       "description": "List a customer's invoices, filtered by payment status.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         },
+         "limit": {
+          "description": "How many to return, newest first.",
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+         },
+         "status": {
+          "description": "Which invoices.",
+          "enum": [
+           "paid",
+           "unpaid",
+           "overdue",
+           "all"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "status",
+         "limit"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "issue_refund",
+       "description": "Refund all or part of a paid invoice to the original payment method.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "amount": {
+          "description": "Amount in US dollars. Leave at the invoice total for a full refund.",
+          "minimum": 0.01,
+          "type": "number"
+         },
+         "invoice_id": {
+          "description": "The invoice to refund.",
+          "type": "string"
+         },
+         "notify_customer": {
+          "description": "Email the customer a receipt.",
+          "type": "boolean"
+         },
+         "reason": {
+          "description": "Why.",
+          "enum": [
+           "damaged",
+           "late",
+           "duplicate_charge",
+           "goodwill",
+           "other"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "invoice_id",
+         "amount",
+         "reason",
+         "notify_customer"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "update_payment_method",
+       "description": "Replace the card on file for a customer.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "card_last4": {
+          "description": "The new card's last four digits.",
+          "pattern": "^[0-9]{4}$",
+          "type": "string"
+         },
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         },
+         "expires": {
+          "description": "Expiry as MM/YY.",
+          "pattern": "^(0[1-9]|1[0-2])/[0-9]{2}$",
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "card_last4",
+         "expires"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "cancel_subscription",
+       "description": "Cancel a subscription now or at the end of the billing period.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "at_period_end": {
+          "description": "Keep it running until the period ends.",
+          "type": "boolean"
+         },
+         "reason": {
+          "description": "The customer's reason, in their words.",
+          "type": "string"
+         },
+         "subscription_id": {
+          "description": "The subscription ID, such as SUB-889.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "subscription_id",
+         "at_period_end",
+         "reason"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "apply_discount_code",
+       "description": "Apply a discount code to a customer's next invoice.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "code": {
+          "description": "The discount code.",
+          "type": "string"
+         },
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "code"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      }
+     ]
+    },
+    {
+     "type": "namespace",
+     "name": "crm",
+     "description": "CRM tools for customer lookup and order management.",
+     "tools": [
+      {
+       "name": "list_open_orders",
+       "description": "List open orders for a customer ID.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "customer_id": {
+          "description": "The customer ID, such as CUST-12345.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "update_customer_email",
+       "description": "Change the email address on a customer's account.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         },
+         "email": {
+          "description": "The new email address.",
+          "format": "email",
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "email"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "add_customer_note",
+       "description": "Add a note to a customer's profile, visible to staff or shared with the customer.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         },
+         "note": {
+          "description": "The note's text.",
+          "type": "string"
+         },
+         "visibility": {
+          "description": "Who can see it.",
+          "enum": [
+           "internal",
+           "shared"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "note",
+         "visibility"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "list_support_tickets",
+       "description": "List a customer's support tickets, open or closed.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "customer_id": {
+          "description": "The customer ID.",
+          "type": "string"
+         },
+         "status": {
+          "description": "Which tickets.",
+          "enum": [
+           "open",
+           "closed",
+           "all"
+          ],
+          "type": "string"
+         }
+        },
+        "required": [
+         "customer_id",
+         "status"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      },
+      {
+       "name": "merge_customers",
+       "description": "Merge a duplicate customer record into the primary one.",
+       "parameters": {
+        "additionalProperties": false,
+        "properties": {
+         "duplicate_id": {
+          "description": "The customer ID to merge and remove.",
+          "type": "string"
+         },
+         "primary_id": {
+          "description": "The customer ID to keep.",
+          "type": "string"
+         }
+        },
+        "required": [
+         "primary_id",
+         "duplicate_id"
+        ],
+        "type": "object"
+       },
+       "type": "function",
+       "defer_loading": true
+      }
+     ]
+    }
+   ],
+   "status": "completed"
+  },
+  {
+   "type": "reasoning",
+   "id": "rs_6ae46ad6876d024e3b134312:rs_9c2059f6-4d85-4e12-bc35-d1db7d7a6898",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "rs_901be4e6-27a9-48ec-b54f-fa1714109d09",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "I'll process the $25 damaged-item refund and add the internal note.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "status": "completed"
+  },
+  {
+   "type": "function_call",
+   "id": "fc_132cc5e3-36b8-4520-8fe3-9a03898c10e0",
+   "call_id": "call_132cc5e3-36b8-4520-8fe3-9a03898c10e0",
+   "name": "billing.issue_refund",
+   "arguments": "{\"amount\":25.0,\"invoice_id\":\"INV-2207\",\"notify_customer\":true,\"reason\":\"damaged\"}",
+   "status": "completed"
+  }
+ ],
+ "instructions": null,
+ "usage": {
+  "input_tokens": 1303,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 467,
+  "output_tokens_details": {
+   "reasoning_tokens": 271
+  },
+  "total_tokens": 1770
+ },
+ "parallel_tool_calls": false,
+ "store": true,
+ "max_output_tokens": 1500
+}

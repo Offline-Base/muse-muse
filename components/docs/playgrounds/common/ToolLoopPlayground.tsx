@@ -109,7 +109,13 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
         collector.push(e);
         commit([...current, { ...pending, collected: { ...collector.snapshot(), done: false } }]);
       };
-      const res = await runner.run(PROTOCOL_PATH[protocol], { method: "POST", body, stream, onEvent: stream ? onEvent : undefined });
+      let res = await runner.run(PROTOCOL_PATH[protocol], { method: "POST", body, stream, onEvent: stream ? onEvent : undefined });
+      // Meta now and then answers a just-finished previous_response_id with 400 "referenced response not found or
+      // expired" (seen when instant mock tools send the next call at once); one retry after a short pause gets through.
+      if (res.status === 400 && body.previous_response_id && /referenced response not found/i.test(res.error?.message ?? "")) {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (!stopRef.current) res = await runner.run(PROTOCOL_PATH[protocol], { method: "POST", body, stream, onEvent: stream ? onEvent : undefined });
+      }
       const got = !res.ok ? failed(protocol, res) : stream ? collector.snapshot() : collectReply(protocol, res.json);
       // The call is over either way: a stream cut off before its last event still counts as this step's reply.
       const collected: Collected = isAborted(res) ? { ...got, done: true, error: { code: "aborted", message: "Stopped." } } : { ...got, done: true };

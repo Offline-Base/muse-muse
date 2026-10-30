@@ -1,0 +1,114 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1,
+ "top_p": 1,
+ "service_tier": "auto",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low"
+ },
+ "background": false,
+ "text": {
+  "format": {
+   "type": "json_schema",
+   "name": "CompletionAudit",
+   "schema": {
+    "required": [
+     "checks",
+     "verdict",
+     "next_step"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "checks": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "evidence": {
+         "type": "string"
+        },
+        "id": {
+         "type": "string"
+        },
+        "status": {
+         "enum": [
+          "pass",
+          "fail",
+          "unproven"
+         ],
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "status",
+        "evidence"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "next_step": {
+      "type": "string"
+     },
+     "verdict": {
+      "enum": [
+       "complete",
+       "incomplete"
+      ],
+      "type": "string"
+     }
+    },
+    "type": "object"
+   },
+   "strict": true
+  }
+ },
+ "tools": [],
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae472c7a3b088ff31b14b32",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793356486,
+ "completed_at": 1793356487,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae472c7a3b088ff31b14b32:rs_f80bde95-df3a-40b3-b583-0637639637b6",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "msg_5898e6ab-8ed7-4580-b3db-5a4ebb10d20e",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "{\"checks\": [{\"evidence\": \"Implemented the Falcon HMAC-SHA256 path signature in auth.py for client peregrine\", \"id\": \"falcon-signature\", \"status\": \"pass\"}, {\"evidence\": \"switched gateway.py to it.\", \"id\": \"gateway-wired\", \"status\": \"pass\"}, {\"evidence\": \"Removed the X-Kestrel-Token check.\", \"id\": \"kestrel-token-removed\", \"status\": \"pass\"}, {\"evidence\": \"FAILED test_falcon_acceptance.py::test_kestrel_secret_removed\", \"id\": \"kestrel-secret-removed\", \"status\": \"fail\"}, {\"evidence\": \"4 passed, 2 failed\", \"id\": \"acceptance-green\", \"status\": \"fail\"}], \"next_step\": \"Remove the Kestrel shared secret from the code and fix rejection of unregistered clients, then rerun python3 -m pytest -q test_falcon_acceptance.py until all six checks pass.\", \"verdict\": \"incomplete\"}",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "status": "completed"
+  }
+ ],
+ "instructions": "You are the completion audit for an agent's pinned goal. You get the goal, its acceptance checks with ids, and the agent's completion report. Grade every check on its own: pass only when the report shows it is met (command output, test results, a named change), fail when the report shows it is not met, unproven when the report doesn't say. For evidence, copy the exact words from the report that decide it (empty when unproven). Then give the overall verdict (complete only if every check passes) and the next step the agent should take. Don't assume anything the report doesn't show. Write plain text without em dashes.",
+ "usage": {
+  "input_tokens": 522,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 1347,
+  "output_tokens_details": {
+   "reasoning_tokens": 1124
+  },
+  "total_tokens": 1869
+ },
+ "parallel_tool_calls": true,
+ "store": true,
+ "max_output_tokens": 3000
+}

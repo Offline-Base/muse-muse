@@ -1,0 +1,27 @@
+event: transcript
+data: {"type":"transcript","transcript":" pawn to","final":false,"audioProcessedMs":1920}
+
+event: transcript
+data: {"type":"transcript","transcript":" e4","final":false,"audioProcessedMs":2720}
+
+event: transcript
+data: {"type":"transcript","transcript":" knight to","final":false,"audioProcessedMs":3680}
+
+event: transcript
+data: {"type":"transcript","transcript":" f3","final":false,"audioProcessedMs":4400}
+
+event: transcript
+data: {"type":"transcript","transcript":" bishop to","final":false,"audioProcessedMs":5920}
+
+event: transcript
+data: {"type":"transcript","transcript":" c4","final":false,"audioProcessedMs":6960}
+
+event: transcript
+data: {"type":"transcript","transcript":" castle","final":false,"audioProcessedMs":8080}
+
+event: transcript
+data: {"type":"transcript","transcript":" kingside","final":false,"audioProcessedMs":8560}
+
+event: transcript
+data: {"type":"transcript","transcript":" pawn to e4 knight to f3 bishop to c4 castle kingside","final":true,"audioProcessedMs":9200}
+

@@ -1,0 +1,13 @@
+{
+  "b64_json": "UklGRtyZCgBXRUJQVlA4WAoAAAAEAAAAfwcA/wQAVlA4IDSYCgAwER6dASqABwAF",
+  "background": "opaque",
+  "created_at": 1793353623,
+  "output_format": "webp",
+  "output_index": 0,
+  "type": "image_generation.completed",
+  "usage": {
+    "input_tokens": 4014,
+    "output_tokens": 829,
+    "total_tokens": 4843
+  }
+}

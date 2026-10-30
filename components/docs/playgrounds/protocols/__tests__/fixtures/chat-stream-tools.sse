@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl-01a18c36-a93a-7625-a150-0900a368eec5","choices":[{"delta":{"content":"I'll check the current weather in Paris for you.","role":"assistant"},"finish_reason":null,"index":0}],"created":1793353754,"model":"muse-spark-1.3-contributor","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-01a18c36-a93a-7625-a150-0900a368eec5","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_01a18c36aeca75158be07424b1d4b542","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null,"index":0}],"created":1793353754,"model":"muse-spark-1.3-contributor","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-01a18c36-a93a-7625-a150-0900a368eec5","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":null,"index":0}],"created":1793353754,"model":"muse-spark-1.3-contributor","object":"chat.completion.chunk"}
+
+data: {"id":"chatcmpl-01a18c36-a93a-7625-a150-0900a368eec5","choices":[{"delta":{},"finish_reason":"tool_calls","index":0}],"created":1793353754,"model":"muse-spark-1.3-contributor","object":"chat.completion.chunk","usage":{"completion_tokens":209,"prompt_tokens":544,"total_tokens":753,"completion_tokens_details":{"reasoning_tokens":141},"prompt_tokens_details":{"cached_tokens":497}}}
+
+data: [DONE]
+

@@ -222,8 +222,8 @@ export function TranscribePlayground({
       </div>
       {mode === "DIARIZATION" || mode === "ENDPOINTING" ? (
         <p className={styles.note}>
-          {mode === "DIARIZATION" ? "Speaker labels" : "Speech turns"} come back in turns (file) or as events (realtime). In our tests,
-          file transcription&apos;s turns stayed empty even for two clear voices, so don&apos;t count on them; the transcript always comes back.
+          {mode === "DIARIZATION" ? "Speaker labels" : "Speech turns"} come back in turns (file) or as events (realtime). File
+          transcription can include a few empty turns between speakers, so skip those; the transcript always comes back.
         </p>
       ) : null}
 
@@ -331,7 +331,7 @@ export function TranscribePlayground({
                   </table>
                 </div>
               ) : mode !== "PUSH_TO_TALK" && runner.result?.ok ? (
-                <p className={styles.note}>The turns array came back empty, as in our tests. The transcript above is complete.</p>
+                <p className={styles.note}>The turns array came back empty this time. The transcript above is complete.</p>
               ) : null}
             </div>
           )}

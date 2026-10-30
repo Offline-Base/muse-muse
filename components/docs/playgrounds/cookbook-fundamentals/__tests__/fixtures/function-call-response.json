@@ -1,0 +1,122 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1.0,
+ "top_p": 1.0,
+ "service_tier": "auto",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low",
+  "summary": "auto"
+ },
+ "background": false,
+ "tools": [
+  {
+   "type": "function",
+   "name": "read_file",
+   "description": "Read a file from the project.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "path": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "type": "function",
+   "name": "run_tests",
+   "description": "Run the test suite or one test file.",
+   "parameters": {
+    "additionalProperties": false,
+    "properties": {
+     "path": {
+      "description": "Optional test file",
+      "type": "string"
+     }
+    },
+    "type": "object"
+   }
+  },
+  {
+   "type": "function",
+   "name": "write_file",
+   "description": "Replace a file's content.",
+   "parameters": {
+    "properties": {
+     "content": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     }
+    },
+    "additionalProperties": false,
+    "required": [
+     "path",
+     "content"
+    ],
+    "type": "object"
+   }
+  }
+ ],
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae467a1a63f95b1429d4f0e",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793353632.0,
+ "completed_at": 1793353633.0,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae467a1a63f95b1429d4f0e:rs_01a18c34ca0a762ab422e783bb8dc9ba",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "rs_01a18c34cd5d774cadf25086ffd45165",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "Fixing your failing pagination test \u2014 reading it to find the bug.",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "phase": "commentary",
+   "status": "completed"
+  },
+  {
+   "type": "function_call",
+   "id": "fc_01a18c34ce017077b454310d5fe38ebb",
+   "call_id": "call_01a18c34ce017077b454310d5fe38ebb",
+   "name": "read_file",
+   "arguments": "{\"path\":\"tests/test_pagination.js\"}",
+   "status": "completed"
+  }
+ ],
+ "instructions": "You are a coding agent. Each turn: think, call exactly one tool, read the result, decide if the task is done.",
+ "usage": {
+  "input_tokens": 703,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 155,
+  "output_tokens_details": {
+   "reasoning_tokens": 79
+  },
+  "total_tokens": 858
+ },
+ "parallel_tool_calls": false,
+ "store": true,
+ "max_output_tokens": 16384
+}

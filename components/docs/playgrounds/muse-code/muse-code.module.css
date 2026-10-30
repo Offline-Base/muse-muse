@@ -1,0 +1,622 @@
+/*
+ * The Muse Code pages' builders and simulators (components/docs/playgrounds/muse-code). Built on app/globals.css's
+ * variables and the kit's pg- classes (kit.css), so light and dark themes follow the rest of the docs: hairline cards,
+ * pill chips, monospace for commands and paths.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cardMuted {
+  background: var(--surface-2);
+}
+
+.cardPicked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.faded {
+  opacity: 0.55;
+}
+
+.spaced {
+  margin-top: 10px;
+}
+
+.plainList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+}
+
+/* Four cards read best two by two. */
+.gridPairs {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.grid2 {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 860px) {
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 14px;
+}
+
+.row > * {
+  min-width: 0;
+}
+
+.grow {
+  flex: 1 1 260px;
+}
+
+.narrow {
+  flex: 0 1 180px;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  font-family: var(--mono);
+  font-size: 0.88em;
+  overflow-wrap: break-word;
+}
+
+/* Short flags in prose stay on one line rather than breaking at a hyphen. */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* Small status chips */
+
+.chip {
+  display: inline-flex;
+  align-self: flex-start;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 9px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.chipOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+/* Warning chips sit on warning-tinted cards too, so they carry a ring to stay visible there. */
+.chipWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+.chipBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.chipAccent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* Ordered steps (install walkthrough, workflow stages) */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 4px 10px;
+  counter-increment: step;
+}
+
+.step::before {
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stepTitle {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg-2);
+  font-size: 13.5px;
+}
+
+.notes li + li {
+  margin-top: 2px;
+}
+
+/* Tables */
+
+.tableWrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--panel-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table thead th {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody th {
+  min-width: 150px;
+  font-weight: 600;
+}
+
+.colActive {
+  background: var(--accent-soft);
+}
+
+/* Shell stages (permissions) */
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.stagePass {
+  border-left-color: var(--ok);
+}
+
+.stageHold {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.stageDenied {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.stageSkipped {
+  opacity: 0.6;
+}
+
+.stageNum {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stageCmd {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+.stageWhy {
+  grid-column: 2;
+  color: var(--fg-2);
+  font-size: 13.5px;
+}
+
+.verdict {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 14px;
+}
+
+.verdictOk {
+  background: var(--ok-soft);
+}
+
+.verdictWarn {
+  background: var(--warn-soft);
+}
+
+.verdictBad {
+  background: var(--bad-soft);
+}
+
+/* Lists of items with a head line (commands, releases, rules) */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list > li {
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.list > li:last-child {
+  border-bottom: 0;
+}
+
+.itemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.itemName {
+  font-family: var(--mono);
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemText {
+  margin: 4px 0 0;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+
+.releaseHead {
+  margin: 14px 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  background: var(--warn-soft);
+  color: inherit;
+}
+
+.kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.scroll {
+  max-height: 520px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Conversations, timelines and sessions */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.msgUser {
+  align-self: flex-end;
+  max-width: min(88%, 620px);
+  padding: 8px 13px;
+  border-radius: 18px;
+  background: var(--bubble);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msgAssistant {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+}
+
+.msgMeta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  list-style: none;
+}
+
+.picker:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.pickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pickerRow:hover {
+  background: var(--hover);
+}
+
+.pickerRowActive {
+  background: var(--accent-soft);
+}
+
+.pickerText {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessions {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  font-size: 13px;
+}
+
+.feed > li {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow-wrap: anywhere;
+}
+
+/* File trees */
+
+.tree {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* Inline forms */
+
+.inlineInput {
+  width: auto;
+  min-width: 0;
+}
+
+.numberInput {
+  width: 110px;
+}
+
+.checkGrid {
+  display: grid;
+  gap: 6px 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+}
+
+.check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 3px;
+}
+
+.fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fieldset > legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.big {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.meter {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--pill);
+  background: var(--accent);
+}
+
+.meterFillWarn {
+  background: var(--warn);
+}
+
+.meterFillBad {
+  background: var(--bad);
+}

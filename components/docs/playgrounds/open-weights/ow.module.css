@@ -1,0 +1,763 @@
+/* The open-weight builders (components/docs/playgrounds/open-weights): cards, fact grids, meters, the rendered chat
+   template, and the step lists the builders print. Everything uses app/globals.css's theme variables, so light and
+   dark both work, and the kit's pg- classes (kit.css) for controls and text. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  min-width: 0;
+}
+
+.rowTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 16px;
+  min-width: 0;
+}
+
+.grid2 {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.grid3 {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 760px) {
+  .grid2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Option rows: fields share a row and wrap; a segmented choice keeps its natural width so its pills don't wrap. */
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 18px;
+  min-width: 0;
+}
+
+.options > * {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.options > :global(.pg-field):has(> :global(.pg-seg)),
+.options > :has(> :global(.pg-field) > :global(.pg-seg)) {
+  flex: 0 1 auto;
+}
+
+/* A set of like fields (host names) in even columns. */
+.fieldGrid {
+  display: grid;
+  gap: 12px 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+}
+
+/* A number box doesn't need a whole row. */
+.options > .numberField {
+  flex: 0 1 200px;
+}
+
+.optionWide {
+  flex-basis: 100% !important;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.cardPicked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cardText {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: var(--pill);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A badge holding a phrase rather than a word (a build's sizes): it wraps on a phone instead of running off the card. */
+.badgeWrap {
+  max-width: 100%;
+  border-radius: 10px;
+  white-space: normal;
+}
+
+.badgeOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badgeWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badgeBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.badgeInfo {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.badgeNeutral {
+  background: var(--surface-3);
+  color: var(--fg-2);
+}
+
+/* Facts: label and value pairs in a grid */
+
+/* Cells grow to fill their row, so a short last row leaves no empty gap showing the hairline color. */
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--line);
+}
+
+.fact {
+  display: flex;
+  flex: 1 1 210px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.fact dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fact dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Status line: what the builder worked out, read out when it changes */
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.statusOk {
+  background: var(--ok-soft);
+}
+
+.statusWarn {
+  background: var(--warn-soft);
+}
+
+.statusBad {
+  background: var(--bad-soft);
+}
+
+/* Meters */
+
+.meter {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.meterFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--pill);
+  background: var(--accent);
+}
+
+.meterOver {
+  background: var(--bad);
+}
+
+.meterTight {
+  background: var(--warn);
+}
+
+.stackBar {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.stackPart {
+  height: 100%;
+}
+
+.stackPart + .stackPart {
+  border-left: 2px solid var(--surface);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fg-2);
+  font-size: 13px;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+/* Tables */
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.table th {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rowPicked td {
+  background: var(--accent-soft);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+/* Steps: a builder's commands, one titled block each */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: owstep;
+}
+
+.step {
+  min-width: 0;
+}
+
+.stepTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stepTitle::before {
+  counter-increment: owstep;
+  content: counter(owstep);
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.stepNote {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* A code card drawn like the mirrored blocks (.docs-code), fitted inside a demo */
+
+.code {
+  margin: 8px 0 0 !important;
+}
+
+.codeBody {
+  max-height: 440px;
+  scrollbar-width: thin;
+}
+
+/* Issues: what the page says goes wrong with this pick */
+
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.issueList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px 10px 30px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.issueError {
+  background: var(--bad-soft);
+  color: var(--fg);
+}
+
+.issueWarn {
+  background: var(--warn-soft);
+  color: var(--fg);
+}
+
+.issueNote {
+  padding-left: 18px;
+  background: none;
+  color: var(--fg-2);
+}
+
+.issueTitle {
+  margin: 0 0 2px -18px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.issueError .issueTitle {
+  color: var(--bad);
+}
+
+.issueWarn .issueTitle {
+  color: var(--warn);
+}
+
+.issueNote .issueTitle {
+  margin-left: -6px;
+  color: var(--muted);
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The stand-in banner */
+
+.standin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.standinIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+/* The rendered chat template */
+
+.render {
+  max-height: 460px;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+
+/* Tokens get a background but no side padding: padding would read as a space between adjacent tokens
+   (<|eot|><|start|>), in a view about exact framing. */
+.tokSpecial {
+  padding: 1px 0;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.tokMedia {
+  padding: 1px 0;
+  border-radius: 4px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.tokElided {
+  padding: 0 4px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.tokInferred {
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+
+.tokTrained {
+  border-radius: 3px;
+  background: var(--ok-soft);
+  color: var(--fg);
+  box-shadow: inset 0 -2px 0 var(--ok);
+}
+
+.tokMasked {
+  color: var(--muted);
+}
+
+/* Conversation editor */
+
+.msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.msgHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.role {
+  padding: 1px 9px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.roleUser {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.roleTool {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.msgActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.chipX {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chipX:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.callBox {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tally strong {
+  color: var(--fg);
+}
+
+/* Recipe cards */
+
+.cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.cardMeta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.cardLink {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Bars for the throughput sweep */
+
+.bars {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 8px;
+}
+
+.barTrack {
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.barFill {
+  height: 100%;
+  border-radius: var(--pill);
+  background: var(--chart-1, var(--accent));
+}
+
+.barPicked .barFill {
+  background: var(--accent);
+}
+
+.barPicked {
+  font-weight: 700;
+}
+
+.textarea {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.small {
+  font-size: 12.5px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.hr {
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: var(--line);
+}
+
+/* Code inside prose (Rich): flags and special tokens stay on one line. */
+.inlineCode,
+.flag {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-family: var(--mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.flag {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}

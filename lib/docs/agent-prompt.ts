@@ -59,6 +59,21 @@ const LANGUAGE_SETUP: Record<PromptLanguage, string> = {
   curl: 'curl: export MODEL_API_KEY in the shell first and send -H "Authorization: Bearer $MODEL_API_KEY".',
 };
 
+/**
+ * The Messages pages (protocols/messages, api-reference/messages/*) teach the Anthropic wire format, and their code
+ * uses the Anthropic SDK: it takes the base host without /v1 (it adds /v1/messages itself) and the key as auth_token,
+ * sent as a bearer token. Their setup says so instead of pointing the agent at the OpenAI SDK.
+ */
+const MESSAGES_PAGE = /^(protocols|api-reference)\/messages(\/|$)/;
+
+const MESSAGES_LANGUAGE_SETUP: Record<PromptLanguage, string> = {
+  python:
+    'Python: the Anthropic SDK (pip install anthropic) with base_url="https://api.meta.ai" (no /v1) and auth_token=os.environ["MODEL_API_KEY"], or plain requests to https://api.meta.ai/v1/messages.',
+  typescript:
+    'TypeScript: the Anthropic SDK (npm install @anthropic-ai/sdk) with baseURL "https://api.meta.ai" (no /v1) and authToken process.env.MODEL_API_KEY, or fetch to https://api.meta.ai/v1/messages.',
+  curl: LANGUAGE_SETUP.curl,
+};
+
 const LANGUAGE_NAME: Record<PromptLanguage, string> = { python: "Python", typescript: "TypeScript", curl: "curl" };
 
 /** Meta's prose and the page groups' text may carry em dashes; nothing Muse Muse hands out does. */
@@ -166,9 +181,9 @@ function modelFor(slug: string, lastRequest: RecordedRequest | null): string {
   const asked = (lastRequest?.body as { model?: unknown } | undefined)?.model;
   const ran = typeof asked === "string" && asked ? asked : lastRequest?.model;
   if (typeof ran === "string" && ran) return modelForOwnKey(ran);
-  if (/image-generation|images|muse-image/.test(slug)) return "muse-image-1.0";
+  if (/image-generation|images|muse-image|image-editing|image-series/.test(slug)) return "muse-image-1.0";
   if (/speech|voice|transcribe/.test(slug)) return "muse-voice-transcribe-1.0";
-  if (/(^|\/)sam(\/|-|$)|segmentation/.test(slug)) return "sam-3.1";
+  if (/(^|\/)sam(\/|-|$)|segmentation|sticker/.test(slug)) return "sam-3.1";
   return SPARK_STANDIN;
 }
 
@@ -292,6 +307,24 @@ function fallbackFor(kind: PageKind, slug: string, title: string, description: s
 /** Kinds of page whose work is calling the API, so a failed call should say why. */
 const CALLS_THE_API: ReadonlySet<PageKind> = new Set(["guide", "recipe", "cookbook", "endpoint", "schemas", "api-overview"]);
 
+/**
+ * Muse Code's own pages and its changelog hand the agent a task with the muse CLI, which signs in with META_API_KEY or
+ * a stored credential (muse-code/auth), not the API's MODEL_API_KEY. Their setup says so, unless the starter code
+ * calls the Model API itself (the rewind page's chat feature does).
+ */
+const MUSE_CLI_KINDS: ReadonlySet<PageKind> = new Set(["muse-code", "changelog"]);
+
+const MUSE_CLI_SETUP: readonly string[] = [
+  "Muse Code: muse on PATH (install: curl -fsSL https://dev.meta.ai/install.sh | sh, or irm https://dev.meta.ai/install.ps1 | iex on Windows; check: muse --version). Its default model is muse-spark-1.2; --model picks another.",
+  "Auth: muse reads META_API_KEY from the environment (in CI, from the secret store), else a key stored with muse auth set or a browser sign-in; not MODEL_API_KEY. Never hard-code, print or commit the key.",
+];
+
+const MUSE_CLI_LANGUAGE: Record<PromptLanguage, string> = {
+  python: "Python: a plain script that runs muse through subprocess where a step needs it.",
+  typescript: "TypeScript: a Node script that runs muse through node:child_process where a step needs it.",
+  curl: "Shell: bash on macOS and Linux, PowerShell on Windows.",
+};
+
 function bullets(items: string[]): string[] {
   return items.map((item) => `- ${item}`);
 }
@@ -306,23 +339,30 @@ export function buildAgentPrompt({ page, spec, agent, language, lastRequest }: A
 
   const task = spec?.task?.trim() || fallback.task;
 
-  const setup = [
-    `Base URL: ${META_BASE_URL}`,
-    "Auth: send Authorization: Bearer $MODEL_API_KEY, reading MODEL_API_KEY from the environment. Never hard-code, print or commit the key.",
-    `Model: ${model}${model.endsWith("-contributor") ? " (Contributor mode: Meta may use what you send to train future models; drop -contributor for Standard mode)" : ""}`,
-    LANGUAGE_SETUP[language],
-  ];
-
-  const done = [
-    ...(spec?.checklist?.length ? spec.checklist : fallback.done),
-    "The key comes from MODEL_API_KEY and never appears in code, logs or commits.",
-    ...(CALLS_THE_API.has(kind) ? ["API errors (4xx, 429) surface their message instead of failing silently."] : []),
-  ];
-
   let snippet = spec?.snippets?.[language]?.trim() ?? "";
   // Without a snippet of the page's own, the starter code repeats the request the reader ran.
   const snippetIsRun = !snippet && Boolean(lastRequest);
   if (snippetIsRun && lastRequest) snippet = codeForRequest(lastRequest, language);
+  const museCli = MUSE_CLI_KINDS.has(kind) && !snippet.includes(META_BASE_URL);
+  const languageName = museCli && language === "curl" ? "shell" : LANGUAGE_NAME[language];
+
+  const anthropic = MESSAGES_PAGE.test(page.slug);
+  const setup = museCli
+    ? MUSE_CLI_SETUP.concat(MUSE_CLI_LANGUAGE[language])
+    : [
+        anthropic ? `Base URL: ${META_BASE_URL} for HTTP calls (POST ${META_BASE_URL}/messages); the Anthropic SDK takes https://api.meta.ai` : `Base URL: ${META_BASE_URL}`,
+        "Auth: send Authorization: Bearer $MODEL_API_KEY, reading MODEL_API_KEY from the environment. Never hard-code, print or commit the key.",
+        `Model: ${model}${model.endsWith("-contributor") ? " (Contributor mode: Meta may use what you send to train future models; drop -contributor for Standard mode)" : ""}`,
+        (anthropic ? MESSAGES_LANGUAGE_SETUP : LANGUAGE_SETUP)[language],
+      ];
+
+  const done = [
+    ...(spec?.checklist?.length ? spec.checklist : fallback.done),
+    museCli
+      ? "The key comes from META_API_KEY or a stored sign-in and never appears in code, logs or commits."
+      : "The key comes from MODEL_API_KEY and never appears in code, logs or commits.",
+    ...(CALLS_THE_API.has(kind) ? ["API errors (4xx, 429) surface their message instead of failing silently."] : []),
+  ];
 
   const ran = lastRequest
     ? [
@@ -348,8 +388,8 @@ export function buildAgentPrompt({ page, spec, agent, language, lastRequest }: A
       ...(spec?.facts?.length ? [section("Facts to get right", [clip(bullets(spec.facts.map(noEmDash)).join("\n"), budget.facts)])] : []),
       ...(ran ? [section("What I just ran in the docs", [clip(ran, budget.ran)])] : []),
       snippet
-        ? section(`Starter code (${LANGUAGE_NAME[language]})`, [clip(snippet, budget.snippet)])
-        : section("Starter code", [`Start from the page's ${LANGUAGE_NAME[language]} example, if it has one.`]),
+        ? section(`Starter code (${languageName})`, [clip(snippet, budget.snippet)])
+        : section("Starter code", [`Start from the page's ${languageName} example, if it has one.`]),
       section("Done when", bullets(done.map(noEmDash))),
     ].join("\n\n");
 

@@ -1,0 +1,119 @@
+{
+ "top_logprobs": 0,
+ "temperature": 1,
+ "top_p": 1,
+ "service_tier": "auto",
+ "model": "muse-spark-1.3-contributor",
+ "reasoning": {
+  "effort": "low"
+ },
+ "background": false,
+ "text": {
+  "format": {
+   "type": "json_schema",
+   "name": "FanoutPlan",
+   "schema": {
+    "required": [
+     "tasks",
+     "merge_order",
+     "notes"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "merge_order": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "notes": {
+      "type": "string"
+     },
+     "tasks": {
+      "items": {
+       "additionalProperties": false,
+       "properties": {
+        "files": {
+         "items": {
+          "type": "string"
+         },
+         "type": "array"
+        },
+        "id": {
+         "type": "string"
+        },
+        "objective": {
+         "type": "string"
+        },
+        "role": {
+         "type": "string"
+        },
+        "verify": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "role",
+        "objective",
+        "files",
+        "verify"
+       ],
+       "type": "object"
+      },
+      "type": "array"
+     }
+    },
+    "type": "object"
+   },
+   "strict": true
+  }
+ },
+ "tools": [],
+ "tool_choice": "auto",
+ "truncation": "disabled",
+ "id": "resp_6ae472bf443ee13900054614",
+ "object": "response",
+ "status": "completed",
+ "created_at": 1793356479,
+ "completed_at": 1793356479,
+ "error": null,
+ "incomplete_details": null,
+ "output": [
+  {
+   "type": "reasoning",
+   "id": "rs_6ae472bf443ee13900054614:rs_f7bcda32-9d5c-43c8-a3e3-6cbe0c10337a",
+   "summary": [],
+   "status": "completed"
+  },
+  {
+   "type": "message",
+   "id": "msg_5317fd58-4da9-4455-9618-f6d9d0636fc6",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "{\"merge_order\": [\"fix-enemy-laser-bricks\", \"brick-row-colors\", \"brick-shatter-particles\", \"combo-multiplier\", \"powerup-drop\", \"high-score-persistence\"], \"notes\": \"All tasks touch game/engine.py so merge in order and rebase each child onto updated main before merging. Watch for overlapping score and brick destruction logic between combo, powerup, and high score changes.\", \"tasks\": [{\"files\": [\"game/engine.py\"], \"id\": \"fix-enemy-laser-bricks\", \"objective\": \"Fix _resolve_laser in game/engine.py so enemy lasers never damage or destroy bricks.\", \"role\": \"engine-bugfix-engineer\", \"verify\": \"python -m pytest tests/test_engine_laser.py -v\"}, {\"files\": [\"game/highscore.py\", \"game/engine.py\", \"game/ui.py\"], \"id\": \"high-score-persistence\", \"objective\": \"Add high score load and save persistence across game sessions.\", \"role\": \"persistence-engineer\", \"verify\": \"python -m pytest tests/test_highscore.py -v\"}, {\"files\": [\"game/bricks.py\", \"game/engine.py\", \"assets/bricks/\"], \"id\": \"brick-row-colors\", \"objective\": \"Render bricks multi colored by row using sprites from assets/bricks.\", \"role\": \"visual-systems-engineer\", \"verify\": \"python -m pytest tests/test_bricks.py -v\"}, {\"files\": [\"game/particles.py\", \"game/engine.py\"], \"id\": \"brick-shatter-particles\", \"objective\": \"Add a brick shatter particle effect spawned when a brick breaks.\", \"role\": \"effects-engineer\", \"verify\": \"python -m pytest tests/test_particles.py -v\"}, {\"files\": [\"game/combo.py\", \"game/engine.py\", \"game/ui.py\"], \"id\": \"combo-multiplier\", \"objective\": \"Add a combo multiplier that increases score for consecutive brick breaks.\", \"role\": \"gameplay-systems-engineer\", \"verify\": \"python -m pytest tests/test_combo.py -v\"}, {\"files\": [\"game/powerups.py\", \"game/engine.py\"], \"id\": \"powerup-drop\", \"objective\": \"Add a power up drop spawned from a broken brick with pickup behavior.\", \"role\": \"gameplay-systems-engineer\", \"verify\": \"python -m pytest tests/test_powerups.py -v\"}]}",
+     "annotations": [],
+     "logprobs": []
+    }
+   ],
+   "status": "completed"
+  }
+ ],
+ "instructions": "You plan a Muse Code subagent fanout. Split the job into two to eight bounded, independently verifiable tasks, each for one write-capable subagent in its own git worktree. For each: a short kebab-case id, a role, a one-sentence objective, the files it will most likely touch (paths relative to the repo root), and the command that proves it is done. Then give merge_order: every task id once, in the order the parent should merge the children's commits, putting fixes others depend on first and tasks that touch the same files apart. In notes, one or two sentences on conflicts to watch. Keep sequential work in one task rather than splitting it. Write plain text without em dashes.",
+ "usage": {
+  "input_tokens": 422,
+  "input_tokens_details": {
+   "cached_tokens": 0
+  },
+  "output_tokens": 1360,
+  "output_tokens_details": {
+   "reasoning_tokens": 856
+  },
+  "total_tokens": 1782
+ },
+ "parallel_tool_calls": true,
+ "store": true,
+ "max_output_tokens": 4000
+}

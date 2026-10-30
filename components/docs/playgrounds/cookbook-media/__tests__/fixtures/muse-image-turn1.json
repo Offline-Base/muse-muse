@@ -1,0 +1,55 @@
+{
+  "model": "muse-image-1.0",
+  "id": "resp_test_turn1",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793353219.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_test",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "**Composing watercolor fox scene**\nI'm drafting the image plan with a red fox seated in a snowy pine forest, soft golden morning light filtering through trees, mist and snow on branches, gentle watercolor edges and paper texture."
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_test",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "image_generation_call",
+      "id": "ig_test_signed_handle",
+      "status": "completed",
+      "result": "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA="
+    }
+  ],
+  "instructions": null,
+  "usage": {
+    "input_tokens": 10089,
+    "input_tokens_details": {
+      "cached_tokens": 7936
+    },
+    "output_tokens": 998,
+    "output_tokens_details": {
+      "reasoning_tokens": 168
+    },
+    "total_tokens": 11087
+  },
+  "parallel_tool_calls": false
+}

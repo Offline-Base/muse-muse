@@ -1,0 +1,8 @@
+{
+ "id": "resp_6ae467d076e24fd3101d4b65",
+ "object": "response",
+ "status": "cancelled",
+ "model": "muse-spark-1.3-contributor",
+ "background": true,
+ "output": []
+}

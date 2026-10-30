@@ -1,0 +1,703 @@
+/*
+ * The "start" page group's demos (components/docs/playgrounds/start). Everything shared comes from the kit's global
+ * pg- classes (components/docs/kit/kit.css) and the docs' code blocks and tables (app/docs/docs.css); these are the
+ * few pieces the kit doesn't have: compact tables, command blocks, the auth flow, the retry timeline, cards, the
+ * endpoint list and the status badge. Built on app/globals.css's variables, so light and dark themes both follow.
+ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lead {
+  color: var(--fg-2);
+  font-size: 14.5px;
+}
+
+.lead code,
+.small code,
+.cell code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--docs-inline-code-bg, var(--surface-2));
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+.small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.footnote {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.link {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- Tables ---------- */
+
+/* Paired with the global class it trims (docs.css .docs-table), so it wins whatever order the sheets load in. */
+.table:global(.docs-table) {
+  margin: 0;
+  border-radius: 12px;
+}
+
+.table:global(.docs-table) table {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.table:global(.docs-table) th,
+.table:global(.docs-table) td {
+  padding: 7px 10px;
+}
+
+.num,
+.table:global(.docs-table) th.num,
+.table:global(.docs-table) td.num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowActive td {
+  background: var(--accent-soft);
+}
+
+.cell {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Command and code blocks ---------- */
+
+.code:global(.docs-code) {
+  margin: 0;
+}
+
+.codeCaption {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Cards ---------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cardTitle {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.cardMeta {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.kv dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 9px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tagOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.tagWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.tagBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.tagAccent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+/* ---------- Two runs side by side ---------- */
+
+.compare {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .compare {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.sideHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.metric {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--fg-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric strong {
+  color: var(--fg);
+}
+
+.answer {
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* ---------- The auth flow ---------- */
+
+.flow {
+  display: grid;
+  gap: 8px;
+  align-items: stretch;
+}
+
+@media (min-width: 700px) {
+  .flow {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+}
+
+.flowBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.flowBox code {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.flowName {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.flowArrow {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+@media (max-width: 699px) {
+  .flowArrow {
+    transform: rotate(90deg);
+  }
+}
+
+.keyAnatomy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.keyPart {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.keyPart small {
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 11px;
+}
+
+/* ---------- Retry timeline ---------- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attempt {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
+}
+
+.attemptAt {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-top: 2px;
+}
+
+.attemptBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13.5px;
+}
+
+.wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.waitBar {
+  flex: none;
+  height: 8px;
+  min-width: 4px;
+  border-radius: var(--pill);
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.waitBarRetryAfter {
+  background: var(--warn);
+}
+
+.policy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: 10px;
+}
+
+.policy input {
+  width: 100%;
+}
+
+/* ---------- Endpoint list ---------- */
+
+.endpoints {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.endpointList {
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.endpointGroup + .endpointGroup {
+  border-top: 1px solid var(--line);
+}
+
+.endpointResource {
+  margin: 0;
+  padding: 8px 12px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.endpoint {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.endpoint:hover {
+  background: var(--hover);
+}
+
+.endpoint[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+.endpointRoute {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endpointCost {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---------- Status badge ---------- */
+
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.statusDot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.statusOk .statusDot {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px var(--ok-soft);
+}
+
+.statusWarn .statusDot {
+  background: var(--warn);
+  box-shadow: 0 0 0 4px var(--warn-soft);
+}
+
+.statusBad .statusDot {
+  background: var(--bad);
+  box-shadow: 0 0 0 4px var(--bad-soft);
+}
+
+.statusTitle {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ---------- Schema explorer ---------- */
+
+.schema {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.schema > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.schema[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.schemaBody {
+  padding: 4px 0;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 1fr);
+  gap: 2px 12px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+}
+
+.field + .field {
+  border-top: 1px solid var(--panel-line);
+}
+
+.fieldName {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fieldType {
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 300px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.checkOk {
+  color: var(--ok);
+}
+
+.checkBad {
+  color: var(--bad);
+}
+
+.mark {
+  display: inline-block;
+  width: 16px;
+  font-weight: 700;
+}
+
+/* ---------- Response reading (the quickstart) ---------- */
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line-strong);
+  border-radius: 0 10px 10px 0;
+  background: var(--surface-2);
+  font-size: 13.5px;
+}
+
+.itemMessage {
+  border-left-color: var(--accent);
+}
+
+.itemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.itemType {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.itemId {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.meter {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.meterReasoning {
+  background: var(--warn);
+  opacity: 0.7;
+}
+
+.meterText {
+  background: var(--accent);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--fg-2);
+  font-size: 12.5px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+
+/* ---------- Grids of inputs ---------- */
+
+.inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr));
+  gap: 10px 12px;
+}
+
+.wide select {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .wide {
+    grid-column: span 2;
+  }
+}
+
+.total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 14px;
+}
+
+.totalValue {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A demo's section tabs. When tabs run past an edge of the row (on phones), that edge fades, so the row reads as one
+   that scrolls rather than one that ends mid-word. SectionTabs sets data-fade from the row's scroll position. */
+.tabRow {
+  min-width: 0;
+}
+
+.tabRow[data-fade="end"] > [role="tablist"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+}
+
+.tabRow[data-fade="start"] > [role="tablist"] {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 44px), transparent);
+}
+
+.tabRow[data-fade="both"] > [role="tablist"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent);
+}
+
+/* A prompt box that grows with a long preset where the browser can size a field to its content; rows is the fallback. */
+.autoGrow {
+  field-sizing: content;
+  min-height: calc(2lh + 8px);
+  max-height: calc(8lh + 8px);
+}

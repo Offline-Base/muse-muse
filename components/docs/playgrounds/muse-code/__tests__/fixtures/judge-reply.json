@@ -1,0 +1,39 @@
+{
+  "id": "resp_6ae46b0f95c6b2427a40480b",
+  "object": "response",
+  "status": "completed",
+  "model": "muse-spark-1.3-contributor",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_6ae46b0f95c6b2427a40480b:rs_122bda05-ec33-4527-aa59-44ff03df6ab7",
+      "summary": [],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_bb7f9165-71c2-4f23-9205-4f670fb280e3",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"decision\":\"allow\",\"reason\":\"Deleting single workspace log file report.log is directly needed for the cleanup task and sandbox limits damage.\"}",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    }
+  ],
+  "usage": {
+    "input_tokens": 221,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens": 628,
+    "output_tokens_details": {
+      "reasoning_tokens": 592
+    },
+    "total_tokens": 849
+  }
+}

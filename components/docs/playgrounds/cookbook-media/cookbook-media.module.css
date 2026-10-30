@@ -1,0 +1,985 @@
+/* The cookbook-media demos (image recipes, recipe browsers, voice chess, captions, SAM basics, stickers, pacing). Built
+   on the theme variables in app/globals.css and the kit's pg- classes, so light and dark both work. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tight {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.spread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.problem {
+  margin: 0;
+  color: var(--bad);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.label {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.raw {
+  max-height: 260px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font: 12px/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.details > summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.details[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* ---------- Steps (image recipes) ---------- */
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.step[data-active="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.stepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.stepNum {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.step[data-done="true"] .stepNum {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.stepTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: var(--pill);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--fg-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.badgeWarn {
+  border-color: transparent;
+  background: var(--warn-soft);
+  color: var(--fg-2);
+}
+
+.result {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 760px) {
+  .result {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-3);
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--fg-2);
+}
+
+.checkIcon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.check[data-ok="true"] .checkIcon {
+  color: var(--ok);
+}
+
+.check[data-ok="false"] .checkIcon {
+  color: var(--bad);
+}
+
+.tokens {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.token {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.token dt {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.token dd {
+  margin: 0;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.thumbs {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.thumb {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 92px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thumb[aria-current="true"] {
+  border-color: var(--accent);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+
+.thumbLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thumbEmpty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Contact sheet: anchors, panels and the page side by side for comparison. */
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheetRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: 10px;
+}
+
+.sheetItem {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.sheetItem img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* ---------- Compare ---------- */
+
+.compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sideBySide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sideBySide figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.sideBySide img,
+.wipe img,
+.diffStage canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.wipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  line-height: 0;
+}
+
+.wipeTop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.wipeTop img {
+  height: auto;
+}
+
+.wipeLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.diffStage {
+  position: relative;
+  line-height: 0;
+}
+
+.diffStage canvas + canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.range {
+  width: 100%;
+}
+
+/* ---------- Recipe browser ---------- */
+
+.browser {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .browser {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+    align-items: start;
+  }
+}
+
+.recipeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recipeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.recipeCard:hover {
+  background: var(--hover);
+}
+
+.recipeCard[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.recipeCard[data-dim="true"] {
+  opacity: 0.55;
+}
+
+.recipeName {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.recipeSummary {
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.detailTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.facts dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--fg-2);
+}
+
+.flow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 22px;
+  font-size: 13.5px;
+  color: var(--fg-2);
+}
+
+.flow code {
+  font-size: 12.5px;
+}
+
+/* ---------- Voice chess ---------- */
+
+.chessLayout {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .chessLayout {
+    grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.boardWrap {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 18px;
+  gap: 2px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  font-size: clamp(18px, 4.2vw, 34px);
+  line-height: 1;
+  user-select: none;
+}
+
+.light {
+  background: #eeeed2;
+}
+
+.dark {
+  background: #8aa86c;
+}
+
+.square[data-last="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(246 214 76 / 0.55);
+}
+
+.square[data-preview="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(80 140 255 / 0.4);
+}
+
+.piece {
+  position: relative;
+  z-index: 1;
+}
+
+/* White glyphs carry a crisp dark outline (eight 1 px offsets) and a soft drop, so thin pieces read on the cream squares. */
+.pieceWhite {
+  color: #fff;
+  text-shadow:
+    1px 0 0 #1b1b1b,
+    -1px 0 0 #1b1b1b,
+    0 1px 0 #1b1b1b,
+    0 -1px 0 #1b1b1b,
+    1px 1px 0 #1b1b1b,
+    -1px -1px 0 #1b1b1b,
+    1px -1px 0 #1b1b1b,
+    -1px 1px 0 #1b1b1b,
+    0 2px 3px rgb(0 0 0 / 0.45);
+}
+
+.pieceBlack {
+  color: #111;
+}
+
+.squareLabel {
+  position: absolute;
+  z-index: 1;
+  left: 3px;
+  top: 2px;
+  color: rgb(0 0 0 / 0.55);
+  font: 600 9.5px/1 var(--mono);
+}
+
+.ranks,
+.files {
+  display: grid;
+  color: var(--muted);
+  font: 600 11px/1 var(--mono);
+}
+
+.ranks {
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+}
+
+.files {
+  grid-column: 2;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  justify-items: center;
+  align-items: center;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.hudCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 10px;
+  background: #15171a;
+  color: #f2f3f5;
+}
+
+.hudCell dt {
+  color: #9aa0a8;
+  font: 700 10.5px/1.2 var(--mono);
+  letter-spacing: 0.08em;
+}
+
+.hudCell dd {
+  margin: 0;
+  overflow: hidden;
+  font: 13px/1.35 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hudHeard dd {
+  white-space: normal;
+}
+
+.decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decision {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13.5px;
+}
+
+.decision[data-ok="true"] {
+  border-left-color: var(--ok);
+}
+
+.decision[data-ok="false"] {
+  border-left-color: var(--bad);
+}
+
+.decision[data-ok="dry"] {
+  border-left-color: var(--accent);
+}
+
+.heard {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.moveList {
+  margin: 0;
+  font: 13px/1.6 var(--mono);
+  color: var(--fg-2);
+}
+
+/* ---------- Caption stage, SAM and stickers ---------- */
+
+.stage {
+  position: relative;
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #000;
+  line-height: 0;
+}
+
+.stage canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.timeline {
+  position: relative;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.segment {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  color: #111112;
+  font: 700 11px/22px var(--mono);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--fg);
+  pointer-events: none;
+}
+
+.mapping {
+  display: grid;
+  gap: 10px;
+}
+
+@media (min-width: 700px) {
+  .mapping {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.speakerCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.progressList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+}
+
+.progressItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-2);
+}
+
+.stickers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+}
+
+.sticker {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* A checkerboard behind transparent images, so the cutout reads as transparent. */
+.checker {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #d9dbe0 25%, transparent 25%),
+    linear-gradient(-45deg, #d9dbe0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9dbe0 75%),
+    linear-gradient(-45deg, transparent 75%, #d9dbe0 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  object-fit: contain;
+}
+
+.downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- Pacing chart ---------- */
+
+/* One series in the accent, the two cutoffs in the status red: validated with the dataviz checks against each mode's
+   surface (the dark red is a step darker than --bad, which sits above the dark lightness band). Labels wear text tokens. */
+.chart {
+  --cm-limit: #b42318;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  border-radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme="light"])) .chart {
+    --cm-limit: #e0604f;
+  }
+}
+
+:global(:root[data-theme="dark"]) .chart {
+  --cm-limit: #e0604f;
+}
+
+.chart:focus-visible {
+  outline: 2px solid var(--focus, var(--accent));
+  outline-offset: 2px;
+}
+
+.chartGrid {
+  stroke: var(--panel-line);
+  stroke-width: 1;
+}
+
+.chartAxis {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chartLine {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chartLimit {
+  stroke: var(--cm-limit);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.chartLimitLabel {
+  fill: var(--fg-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.chartZero {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.chartClose {
+  fill: var(--cm-limit);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.verdict[data-ok="true"] {
+  background: var(--ok-soft);
+}
+
+.verdict[data-ok="false"] {
+  background: var(--bad-soft);
+}
+
+.codes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.codes th,
+.codes td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.codes th {
+  background: var(--table-head);
+  color: var(--fg-2);
+  font-size: 12px;
+}
+
+.codes tr[data-hit="true"] td {
+  background: var(--bad-soft);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recipeCard {
+    transition: none;
+  }
+}

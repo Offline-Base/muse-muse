@@ -1,0 +1,55 @@
+{
+  "model": "muse-image-1.0",
+  "id": "resp_6ae46763de81f5a4600b4738",
+  "object": "response",
+  "status": "completed",
+  "created_at": 1793353571.0,
+  "error": null,
+  "incomplete_details": null,
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_6ae4676380d1950a19a04975",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "**Composing photoreal fox scene**\nI'm building a photoreal landscape of a red fox trotting through fresh snow at golden hour, with warm sunset light filtering through a snowy pine forest in a 3:2 frame."
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "message",
+      "id": "msg_6ae467631053fcf79b33444c",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "",
+          "annotations": [],
+          "logprobs": []
+        }
+      ],
+      "status": "completed"
+    },
+    {
+      "type": "image_generation_call",
+      "id": "ig_example_signed_handle",
+      "status": "completed",
+      "result": "UklGRtA3BwBXRUJQVlA4WAoAAAAEAAAAfwcA/wQAVlA4ICg2BwAQ3RidASqABwAF"
+    }
+  ],
+  "instructions": null,
+  "usage": {
+    "input_tokens": 4005,
+    "input_tokens_details": {
+      "cached_tokens": 3968
+    },
+    "output_tokens": 666,
+    "output_tokens_details": {
+      "reasoning_tokens": 110
+    },
+    "total_tokens": 4671
+  },
+  "parallel_tool_calls": false
+}

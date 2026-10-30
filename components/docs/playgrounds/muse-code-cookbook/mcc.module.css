@@ -1,0 +1,873 @@
+/* The Muse Code recipe demos (components/docs/playgrounds/muse-code-cookbook). Built on app/globals.css's theme
+   variables and the kit's pg- classes, so light and dark both follow the site. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.tight {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Pill groups and buttons keep their own width in a column instead of stretching across it. */
+.stack > :global(.pg-seg),
+.tight > :global(.pg-seg),
+.section > :global(.pg-seg),
+.stack > :global(.btn),
+.tight > :global(.btn),
+.section > :global(.btn) {
+  align-self: flex-start;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.spread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.split {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.plainList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* An input that takes the rest of a row, so the button beside it stays on the same line. */
+.row > .grow {
+  flex: 1 1 240px;
+  width: auto;
+  min-width: 0;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* ---------- Terminal-style output ---------- */
+
+.terminal {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.termHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.termBody {
+  max-height: 360px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+
+/* Column output (the audit ledger): lines stay whole and the block scrolls sideways. */
+.termBody.termNoWrap {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.termCmd {
+  color: var(--fg-2);
+}
+
+.termCmd::before {
+  content: "$ ";
+  color: var(--muted);
+}
+
+/* A message typed into Muse Code, not a shell command. */
+.termPrompt {
+  color: var(--fg-2);
+}
+
+.termPrompt::before {
+  content: "› ";
+  color: var(--accent-text);
+}
+
+.termErr {
+  color: var(--bad);
+}
+
+.termOk {
+  color: var(--ok);
+}
+
+.termWarn {
+  color: var(--warn);
+}
+
+.termMuted {
+  color: var(--muted);
+}
+
+/* ---------- Chips ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 1px 9px;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.chipOk {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.chipBad {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.chipWarn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.chipAccent {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Lanes in the audit timeline: model calls blue, tool runs green, edits purple, approvals amber, as in the recipe's ledger. */
+/* Used together with .chip. */
+.lane {
+  min-width: 74px;
+  justify-content: center;
+}
+
+.lane_model {
+  background: color-mix(in srgb, var(--chart-1) 22%, transparent);
+  color: var(--fg);
+}
+
+.lane_tool {
+  background: color-mix(in srgb, var(--chart-3) 24%, transparent);
+  color: var(--fg);
+}
+
+.lane_edit {
+  background: color-mix(in srgb, var(--chart-6) 26%, transparent);
+  color: var(--fg);
+}
+
+.lane_approval {
+  background: color-mix(in srgb, var(--chart-2) 32%, transparent);
+  color: var(--fg);
+}
+
+.lane_reminder {
+  background: color-mix(in srgb, var(--chart-5) 24%, transparent);
+  color: var(--fg);
+}
+
+.lane_run,
+.lane_session,
+.lane_output,
+.lane_bookkeeping {
+  background: var(--surface-3);
+  color: var(--fg-2);
+}
+
+/* ---------- Tables ---------- */
+
+.tableWrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.table th,
+.table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--panel-line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table th {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table code {
+  overflow-wrap: anywhere;
+}
+
+/* An argv breaks only between its words (the <wbr> after each comma), never at a hyphen inside one. */
+.table code.argv,
+.argv {
+  overflow-wrap: normal;
+}
+
+.argvWord,
+.table code.nowrap {
+  white-space: nowrap;
+}
+
+.rowButton {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.timelineRow {
+  display: grid;
+  grid-template-columns: 44px 64px 86px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--panel-line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+/* A log whose timestamps don't spread (the real exec sample's are microseconds apart) has no time column. */
+.timelineRow.timelineUntimed {
+  grid-template-columns: 44px 86px minmax(0, 1fr);
+}
+
+.timelineRow:hover {
+  background: var(--hover);
+}
+
+.timelineRow[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+.timelineSeq,
+.timelineAt {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timelineText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timelineKind {
+  margin-right: 6px;
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cutLine {
+  padding: 6px 10px;
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .timelineRow,
+  .timelineRow.timelineUntimed {
+    grid-template-columns: 40px 76px minmax(0, 1fr);
+  }
+
+  .timelineAt {
+    display: none;
+  }
+}
+
+/* ---------- Cards and boards ---------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.cardPicked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.cardTitle a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.cardTitle a:hover {
+  text-decoration: underline;
+}
+
+.cardText {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.cmdList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A command stays on one line (it would otherwise break at its hyphens) and scrolls when it is longer than the card. */
+.cmdList li {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.cmdList code {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Rules in the stage demo are chips, which can sit side by side. */
+.ruleList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.why {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---------- Steps (a contract walked in order) ---------- */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.stepLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.step_done {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+}
+
+.step_done .stepLabel {
+  color: var(--ok);
+}
+
+.step_failed {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
+}
+
+.step_failed .stepLabel {
+  color: var(--bad);
+}
+
+.step_skipped {
+  opacity: 0.72;
+}
+
+.step_skipped .stepLabel,
+.step_idle .stepLabel {
+  color: var(--muted);
+}
+
+.step_active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.step_active .stepLabel {
+  color: var(--accent-text);
+}
+
+/* ---------- Verdicts and the review prompt ---------- */
+
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.verdictTitle {
+  margin: 0;
+  font-weight: 600;
+}
+
+.verdictOk {
+  background: var(--ok-soft);
+}
+
+.verdictOk .verdictTitle {
+  color: var(--ok);
+}
+
+.verdictBad {
+  background: var(--bad-soft);
+}
+
+.verdictBad .verdictTitle {
+  color: var(--bad);
+}
+
+.verdictWarn {
+  background: var(--warn-soft);
+}
+
+.verdictWarn .verdictTitle {
+  color: var(--warn);
+}
+
+.verdictInfo {
+  background: var(--accent-soft);
+}
+
+.prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--warn);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.promptHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Used together with the global .btn .btn-sm (and .btn-primary for the recommended choice). */
+.choice {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  white-space: normal;
+  text-align: left;
+}
+
+/* ---------- Agent loop ---------- */
+
+.loop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loopStep {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.loopStepTool {
+  border-left-color: color-mix(in srgb, var(--chart-3) 70%, var(--line));
+}
+
+.loopStepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.answer {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* ---------- Side chats: two lanes ---------- */
+
+.lanes {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .lanes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.laneBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.laneBoxSide {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
+}
+
+.laneHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.footer {
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  color: var(--fg-2);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.turns {
+  /* Positioned, so a turn's offsetTop is measured from the list it scrolls in. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 460px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.cut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cut::before,
+.cut::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--accent);
+}
+
+/* ---------- Small pieces ---------- */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--pill);
+  font-size: 12.5px;
+}
+
+.swatchColor {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+}
+
+.kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.range {
+  width: min(100%, 420px);
+  accent-color: var(--accent);
+}
+
+.numberInput {
+  width: 86px;
+}
+
+.fileButton {
+  position: relative;
+  overflow: hidden;
+}
+
+.fileButton input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fileButton:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.tree {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* A tree whose lines may wrap, for lists rather than drawings. */
+.treeWrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--pill);
+  background: var(--surface-3);
+}
+
+.progressBar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progressBar {
+    transition: none;
+  }
+}

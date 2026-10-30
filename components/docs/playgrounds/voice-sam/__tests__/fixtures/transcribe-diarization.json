@@ -1,0 +1,55 @@
+{
+  "sessionId": "voyager/transcribe/B0AEAD078458497590E69A010C320631",
+  "transcript": "Hi, thanks for calling Riverside bikes. How can I help? Hi, the back brake on my bike is squeaking. Can I bring it in today? Sure, we're open until six and a brake tune up takes about 30 minutes. Great, I'll come by around four. How much does it cost? $25 and that includes new pads if you need them. Perfect. See you at four.",
+  "audioDurationMs": 25360,
+  "turns": [
+    {
+      "turnId": 0,
+      "startMs": 380,
+      "endMs": 4540,
+      "transcript": "Hi, thanks for calling Riverside bikes. How can I help?",
+      "speaker": "A"
+    },
+    {
+      "turnId": 1,
+      "startMs": 4860,
+      "endMs": 9660,
+      "transcript": "Hi, the back brake on my bike is squeaking. Can I bring it in today?",
+      "speaker": "B"
+    },
+    {
+      "turnId": 2,
+      "startMs": 9820,
+      "endMs": 14540,
+      "transcript": "Sure, we're open until six and a brake tune up takes about 30 minutes.",
+      "speaker": "A"
+    },
+    {
+      "turnId": 3,
+      "startMs": 14620,
+      "endMs": 18860,
+      "transcript": "Great, I'll come by around four. How much does it cost?",
+      "speaker": "B"
+    },
+    {
+      "turnId": 4,
+      "startMs": 19180,
+      "endMs": 22860,
+      "transcript": "$25 and that includes new pads if you need them.",
+      "speaker": "A"
+    },
+    {
+      "turnId": 5,
+      "startMs": 23020,
+      "endMs": 23100,
+      "transcript": ""
+    },
+    {
+      "turnId": 6,
+      "startMs": 23100,
+      "endMs": 24860,
+      "transcript": "Perfect. See you at four.",
+      "speaker": "B"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+A:Hi. Thanks for calling Riverside Bikes. How can I help?
+B:Hi. The back brake on my bike bike is squeaking. Can I bring bring it in today?
+A:Sure. We're open until six and a brake tune up takes about 30 minutes.
+B:Great. I'll come by around four. How much does it cost?
+A:$25 and that includes new pads if you need them.
+B:Perfect. See you at four.
