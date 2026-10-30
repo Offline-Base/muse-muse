@@ -1092,7 +1092,7 @@ const STEPS: Array<[string, () => Promise<SourceRecord[]>]> = [
   ["medrxiv", () => preprints("medrxiv", "medRxiv")],
   ["acl-anthology", aclAnthology],
   ["doaj", () => byMonth("doaj", doajMonth)],
-  ["pmc-fulltext", pmcFulltext],
+  // Not run here: pmc-fulltext would take two weeks at one request a second, and aws/box/filtered.py covers PMC in AWS.
   ["clinicaltrials", clinicalTrials],
   ["openfda", openFda],
   ["dailymed", dailyMed],
