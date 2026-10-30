@@ -18,7 +18,17 @@
  * Self-hosted on a Vertex AI endpoint: set SPARK_OPEN_AUTH=gcloud instead of a key, and the base URL to the
  * endpoint's Chat Completions root (https://<dedicated DNS>/v1/projects/<project>/locations/<region>/endpoints/<id>).
  * A fresh `gcloud auth print-access-token` is used every 45 minutes. Set both prices to 0, since the endpoint bills
- * by the hour while deployed, and raise --concurrency (up to 64) to keep its GPUs busy.
+ * by the hour while deployed, and raise --concurrency (up to 1024) to keep its GPUs busy.
+ *
+ * Glimmer on our own GPU servers (vLLM's OpenAI server, one per GPU): SPARK_OPEN_MODEL=muse-glimmer-30b, both prices 0
+ * (the machines bill by the hour, and scripts/knowledge/aws/writer_fleet.py caps that spend), and --endpoints FILE,
+ * a JSON list of {"url", "concurrency", "label"} that writer_fleet.py keeps current. The file is read again every
+ * 20 seconds: a new server gets its own workers, a server taken out of the file loses them, and a request that fails
+ * because a server is down or overloaded goes back in the queue for another server. --skip-written-by
+ * muse-spark-open leaves out passages another writer already answered, so nothing is written twice.
+ *
+ * --offline writes the dataset from every writer's cached answers: Spark Open's (any host) and Glimmer's (any server),
+ * each through the same checkQa checks. A passage both wrote gives both sets of pairs and one probe.
  *
  * --limit N takes an even spread of N passages (by kind and month) for a pilot. Answers are cached under
  * .data/knowledge/qa/, so a rerun only asks for what's missing. --max-usd stops new requests once total spend, this
@@ -52,8 +62,10 @@ function arg(name: string): string | undefined {
 const dryRun = process.argv.includes("--dry-run");
 const limit = Number(arg("limit") ?? 0);
 const maxUsd = Number(arg("max-usd") ?? 3);
-const concurrency = Math.max(1, Math.min(64, Number(arg("concurrency") ?? 4)));
+const concurrency = Math.max(1, Math.min(1024, Number(arg("concurrency") ?? 4)));
 const offline = process.argv.includes("--offline");
+const endpointsFile = arg("endpoints");
+const skipWriters = arg("skip-written-by")?.split(",").filter(Boolean) ?? [];
 const perSource = Number(arg("per-source") ?? 0);
 const onlySources = process.argv.includes("--only-sources");
 const host = arg("host");
@@ -72,6 +84,8 @@ if (host) {
 }
 /** Who wrote the answers, whichever host served them: the same weights share one cache. */
 const WRITER_ID = host || offline ? "muse-spark-open" : process.env.SPARK_OPEN_MODEL;
+/** The writers --offline builds the dataset from, in this order: Spark Open on any host, then Glimmer on any server. */
+const OFFLINE_WRITERS = ["muse-spark-open", "muse-glimmer-30b"];
 
 async function jsonl<T>(file: string): Promise<T[]> {
   if (!existsSync(file)) return [];
@@ -92,7 +106,20 @@ function spread(passages: Passage[], n: number): Passage[] {
 }
 
 // The writer is part of the key, so answers from one model are never reused as another's.
-const hash = (p: Passage) => createHash("sha256").update(`${dryRun ? "" : WRITER_ID}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
+const hashFor = (writer: string | undefined, p: Passage) =>
+  createHash("sha256").update(`${dryRun ? "" : writer}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
+const hash = (p: Passage) => hashFor(WRITER_ID, p);
+const cached = (writer: string | undefined, p: Passage) => path.join(QA_DIR, `${dryRun ? "dry-" : ""}${hashFor(writer, p)}.json`);
+
+/** One OpenAI-compatible server: its Chat Completions root, how many requests it takes at once, and a name for logs. */
+interface Endpoint {
+  url: string;
+  concurrency: number;
+  label: string;
+}
+
+/** The server was down, overloaded or timed out: the passage goes back in the queue instead of counting as failed. */
+class ServerError extends Error {}
 
 interface Usage {
   prompt_tokens?: number;
@@ -121,33 +148,38 @@ async function credential(): Promise<string | undefined> {
   return gcloudToken.value;
 }
 
-async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }> {
-  const base = process.env.SPARK_OPEN_BASE_URL;
+async function askSparkOpen(p: Passage, base = process.env.SPARK_OPEN_BASE_URL): Promise<{ json: unknown; usage: Usage }> {
   const model = process.env.SPARK_OPEN_MODEL;
   const key = await credential();
   if (!base || !key || !model) {
     throw new Error("Set SPARK_OPEN_BASE_URL, SPARK_OPEN_MODEL and SPARK_OPEN_API_KEY (or SPARK_OPEN_AUTH=gcloud) in .env.local, or use --dry-run.");
   }
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(600_000),
-      body: JSON.stringify({
-        model,
-        temperature: 0.4,
-        // Spark Open's reasoning counts toward max_tokens, so leave room for it before the JSON answer.
-        max_tokens: 6000,
-        // Spark Open takes reasoning_effort; Glimmer's template takes reasoning_strength.
-        reasoning_effort: process.env.SPARK_OPEN_REASONING ?? "low",
-        ...(host ? {} : { chat_template_kwargs: { reasoning_strength: process.env.SPARK_OPEN_REASONING ?? "low" } }),
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: QA_INSTRUCTIONS },
-          { role: "user", content: qaRequestText(p) },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(600_000),
+        body: JSON.stringify({
+          model,
+          temperature: 0.4,
+          // Spark Open's reasoning counts toward max_tokens, so leave room for it before the JSON answer.
+          max_tokens: Number(process.env.SPARK_OPEN_MAX_TOKENS ?? 6000),
+          // Spark Open takes reasoning_effort; Glimmer's template takes reasoning_strength.
+          reasoning_effort: process.env.SPARK_OPEN_REASONING ?? "low",
+          ...(host ? {} : { chat_template_kwargs: { reasoning_strength: process.env.SPARK_OPEN_REASONING ?? "low" } }),
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: QA_INSTRUCTIONS },
+            { role: "user", content: qaRequestText(p) },
+          ],
+        }),
+      });
+    } catch (err) {
+      // No answer at all (refused, reset or timed out): the server's fault, not the passage's.
+      throw new ServerError(`Spark Open host: ${(err as Error).message}`);
+    }
     if (res.ok) {
       const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: Usage };
       const text = body.choices?.[0]?.message?.content ?? "";
@@ -159,7 +191,8 @@ async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }
       continue;
     }
     // The body can echo the request, never the key, but keep it short anyway.
-    throw new Error(`Spark Open host: HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const message = `Spark Open host: HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`;
+    throw res.status === 429 || res.status >= 500 ? new ServerError(message) : new Error(message);
   }
 }
 
@@ -206,49 +239,133 @@ async function main() {
 
   const priceIn = Number(process.env.SPARK_OPEN_PRICE_IN ?? 1.25);
   const priceOut = Number(process.env.SPARK_OPEN_PRICE_OUT ?? 4.25);
-  const before = dryRun ? 0 : await spentBefore();
+  // A server billed by the hour costs nothing per answer, so there's no spend to add up (its cap is the fleet's).
+  const before = dryRun || (priceIn === 0 && priceOut === 0) ? 0 : await spentBefore();
   let spent = before;
   let asked = 0;
   let paused = false;
   let failed = 0;
+  let skipped = 0;
   let stopped = false;
   const results: PassageQa[] = [];
   const queue = [...passages];
+  const tries = new Map<string, number>();
+  let inFlight = 0;
 
-  async function worker() {
-    for (let p = queue.shift(); p; p = queue.shift()) {
+  /** Every writer's cached answers for a passage, each checked; only the first keeps its probe. */
+  async function offlineAnswers(p: Passage) {
+    const writers = dryRun ? [WRITER_ID] : OFFLINE_WRITERS;
+    let first = true;
+    for (const w of writers) {
+      const f = cached(w, p);
+      if (!existsSync(f)) continue;
+      const r = checkQa(JSON.parse(await readFile(f, "utf8")).json, p);
+      if (!first) r.probe = null;
+      first = false;
+      results.push(r);
+    }
+  }
+
+  // live() says whether this worker's server is still in the endpoints file; health counts its server's failures in a row.
+  async function worker(ep: Endpoint | null, live: () => boolean = () => true, health = { streak: 0 }) {
+    while (live()) {
       if (pauseRequested()) {
         paused = true;
         break;
       }
-      const file = path.join(QA_DIR, `${dryRun ? "dry-" : ""}${hash(p)}.json`);
+      const p = queue.shift();
+      if (!p) break;
+      if (offline && !dryRun) {
+        await offlineAnswers(p);
+        continue;
+      }
+      const file = cached(WRITER_ID, p);
       let raw: unknown;
       if (existsSync(file)) raw = JSON.parse(await readFile(file, "utf8")).json;
       else if (dryRun) raw = fakeAnswer(p);
       else if (offline) continue;
-      else {
+      else if (skipWriters.some((w) => existsSync(cached(w, p)))) {
+        skipped++;
+        continue;
+      } else {
         if (spent >= maxUsd) {
           stopped = true;
           continue;
         }
+        const began = Date.now();
+        inFlight++;
         try {
-          const { json, usage } = await askSparkOpen(p);
+          const { json, usage } = await askSparkOpen(p, ep?.url);
           const cost = ((usage.prompt_tokens ?? 0) * priceIn + (usage.completion_tokens ?? 0) * priceOut) / 1e6;
           spent += cost;
           asked++;
+          health.streak = 0;
           raw = json;
-          await writeFile(file, JSON.stringify({ passageId: p.id, host, json, usage, cost }));
-          if (asked % 25 === 0) console.log(`asked ${asked}, spent $${spent.toFixed(3)}`);
+          const server = ep?.label;
+          await writeFile(file, JSON.stringify({ passageId: p.id, host, writer: WRITER_ID, server, at: new Date().toISOString(), ms: Date.now() - began, json, usage, cost }));
+          if (asked % 25 === 0) console.log(`asked ${asked}, spent $${spent.toFixed(3)}, ${queue.length} left`);
         } catch (err) {
-          failed++;
-          console.warn(`${p.id}: ${(err as Error).message}`);
+          const n = (tries.get(p.id) ?? 0) + 1;
+          tries.set(p.id, n);
+          if (err instanceof ServerError && ep && n < 4) {
+            // Another server (or this one, once it's back) takes the passage; this worker backs off.
+            queue.push(p);
+            health.streak++;
+            console.warn(`${ep.label}: ${err.message.slice(0, 160)} (passage requeued)`);
+            await new Promise((r) => setTimeout(r, Math.min(120, 2 ** Math.min(health.streak, 7)) * 1000));
+          } else {
+            failed++;
+            console.warn(`${p.id}: ${(err as Error).message}`);
+          }
           continue;
+        } finally {
+          inFlight--;
         }
       }
       results.push(checkQa(raw, p));
     }
   }
-  await Promise.all(Array.from({ length: concurrency }, worker));
+
+  if (endpointsFile && !offline && !dryRun) {
+    // Workers per server, kept in line with the endpoints file until the queue is empty and nothing is in flight.
+    const running = new Map<string, { active: number[]; health: { streak: number } }>();
+    const all: Promise<void>[] = [];
+    let wanted = new Map<string, Endpoint>();
+    let nextId = 0;
+    const refresh = async () => {
+      try {
+        const list = JSON.parse(await readFile(endpointsFile, "utf8")) as Endpoint[];
+        wanted = new Map(list.filter((e) => e.url && e.label && e.concurrency > 0).map((e) => [e.label, e]));
+      } catch {
+        // Missing or half written: keep the last list.
+      }
+      if (queue.length === 0) return;
+      for (const [label, ep] of wanted) {
+        const slot = running.get(label) ?? { active: [], health: { streak: 0 } };
+        running.set(label, slot);
+        while (slot.active.length < ep.concurrency) {
+          const id = nextId++;
+          slot.active.push(id);
+          // A worker stops when its server leaves the file, changes address, or is turned down below its place.
+          const live = () => wanted.get(label)?.url === ep.url && slot.active.indexOf(id) < (wanted.get(label)?.concurrency ?? 0);
+          all.push(
+            worker(ep, live, slot.health).finally(() => {
+              slot.active.splice(slot.active.indexOf(id), 1);
+            }),
+          );
+        }
+      }
+    };
+    await refresh();
+    while (!paused && (queue.length > 0 || inFlight > 0)) {
+      await new Promise((r) => setTimeout(r, 20_000));
+      await refresh();
+      console.log(`servers ${[...wanted.keys()].join(",") || "none"}; ${queue.length} queued, ${inFlight} in flight, ${asked} written, ${skipped} skipped, ${failed} failed`);
+    }
+    await Promise.all(all);
+  } else {
+    await Promise.all(Array.from({ length: concurrency }, () => worker(null)));
+  }
   if (paused) {
     console.log(
       `Paused: ${results.length} of ${passages.length} passages answered, $${spent.toFixed(3)} spent in all. Answers are cached and the output files are unchanged. Run npm run knowledge:resume, then the same command, to carry on.`,
