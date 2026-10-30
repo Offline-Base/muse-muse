@@ -40,7 +40,7 @@ def current_job(sm, tag):
     return jobs[0]["TrainingJobName"] if jobs else None
 
 
-def start(tag, hours, hp):
+def start(tag, hours, hp, instance):
     s = session()
     account, bucket, prefix = names(s, tag)
     s3 = s.client("s3")
@@ -60,10 +60,10 @@ def start(tag, hours, hp):
         InputDataConfig=[{"ChannelName": "code", "DataSource": channel("code")}, {"ChannelName": "data", "DataSource": channel("data")}],
         OutputDataConfig={"S3OutputPath": f"s3://{bucket}/{prefix}/output/"},
         CheckpointConfig={"S3Uri": f"s3://{bucket}/{prefix}/checkpoints/", "LocalPath": "/opt/ml/checkpoints"},
-        ResourceConfig={"InstanceType": INSTANCE, "InstanceCount": 1, "VolumeSizeInGB": 300},
+        ResourceConfig={"InstanceType": instance, "InstanceCount": 1, "VolumeSizeInGB": 300},
         StoppingCondition={"MaxRuntimeInSeconds": int(hours * 3600)},
     )
-    print(json.dumps({"job": name, "instance": INSTANCE, "maxHours": hours, "hyperparameters": hp}))
+    print(json.dumps({"job": name, "instance": instance, "maxHours": hours, "hyperparameters": hp}))
 
 
 def status(tag):
@@ -98,9 +98,10 @@ if __name__ == "__main__":
     p.add_argument("--hours", type=float, default=12)
     p.add_argument("--lines", type=int, default=40)
     p.add_argument("--hp", nargs="*", default=[])
+    p.add_argument("--instance", default=INSTANCE)
     a = p.parse_args()
     if a.command == "start":
-        start(a.tag, a.hours, dict(kv.split("=", 1) for kv in a.hp))
+        start(a.tag, a.hours, dict(kv.split("=", 1) for kv in a.hp), a.instance)
     elif a.command == "status":
         status(a.tag)
     else:

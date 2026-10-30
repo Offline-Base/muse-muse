@@ -66,7 +66,8 @@ function spread(passages: Passage[], n: number): Passage[] {
   return out;
 }
 
-const hash = (p: Passage) => createHash("sha256").update(`${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
+// The writer is part of the key, so answers from one model are never reused as another's.
+const hash = (p: Passage) => createHash("sha256").update(`${dryRun ? "" : process.env.SPARK_OPEN_MODEL}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
 
 interface Usage {
   prompt_tokens?: number;
@@ -111,7 +112,9 @@ async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }
         temperature: 0.4,
         // Spark Open's reasoning counts toward max_tokens, so leave room for it before the JSON answer.
         max_tokens: 6000,
+        // Spark Open takes reasoning_effort; Glimmer's template takes reasoning_strength.
         reasoning_effort: process.env.SPARK_OPEN_REASONING ?? "low",
+        chat_template_kwargs: { reasoning_strength: process.env.SPARK_OPEN_REASONING ?? "low" },
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: QA_INSTRUCTIONS },
@@ -231,7 +234,7 @@ async function main() {
     trainExamples: train.length,
     probes: probes.length,
     dropped,
-    license: "Built from English Wikipedia text, CC BY-SA 4.0. Question-answer pairs written by Muse Spark Open.",
+    license: `Built from English Wikipedia text, CC BY-SA 4.0. Question-answer pairs written by ${dryRun ? "a fake writer" : process.env.SPARK_OPEN_WRITER_NAME ?? "Muse Spark Open"}.`,
   };
   await writeFile(path.join(OUT, "report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify(report, null, 2));

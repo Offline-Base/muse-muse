@@ -45,6 +45,8 @@ def deploy(hours):
     env.update(OVERRIDES)
     image = variant["g7e"]["Properties"]["ImageUri"]
     role = f"arn:aws:iam::{account}:role/MuseKnowledgeSageMaker"
+    # A failed try (usually no capacity) is cleared first, so deploy can simply be run again.
+    remove(sm)
 
     sm.create_model(
         ModelName=NAME,
@@ -65,7 +67,14 @@ def deploy(hours):
     sm.create_endpoint(EndpointName=NAME, EndpointConfigName=NAME)
 
     at = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
-    s.client("scheduler").create_schedule(
+    scheduler = s.client("scheduler")
+    try:
+        at = scheduler.get_schedule(Name=STOP_SCHEDULE)["ScheduleExpression"][3:-1]
+        print(json.dumps({"endpoint": NAME, "instance": INSTANCE, "image": image, "deleteAtUtc": at, "schedule": "kept"}))
+        return
+    except scheduler.exceptions.ResourceNotFoundException:
+        pass
+    scheduler.create_schedule(
         Name=STOP_SCHEDULE, ScheduleExpression=f"at({at})", ScheduleExpressionTimezone="UTC",
         FlexibleTimeWindow={"Mode": "OFF"}, ActionAfterCompletion="DELETE",
         Target={
@@ -87,14 +96,21 @@ def status():
     print(json.dumps({"endpoint": NAME, "status": e["EndpointStatus"], "created": str(e["CreationTime"]), "failure": e.get("FailureReason")}))
 
 
-def delete():
-    s = session()
-    sm = s.client("sagemaker")
+def remove(sm):
+    """Deletes the endpoint, its config and the model, whichever exist."""
     for call, kw in ((sm.delete_endpoint, {"EndpointName": NAME}), (sm.delete_endpoint_config, {"EndpointConfigName": NAME}), (sm.delete_model, {"ModelName": NAME})):
         try:
             call(**kw)
         except sm.exceptions.ClientError as err:
-            print("skip:", err.response["Error"]["Message"])
+            if "Could not find" not in err.response["Error"]["Message"]:
+                print("skip:", err.response["Error"]["Message"])
+    # Deleting is asynchronous; a new endpoint of the same name can only be made once the old one is gone.
+    sm.get_waiter("endpoint_deleted").wait(EndpointName=NAME, WaiterConfig={"Delay": 10, "MaxAttempts": 60})
+
+
+def delete():
+    s = session()
+    remove(s.client("sagemaker"))
     try:
         s.client("scheduler").delete_schedule(Name=STOP_SCHEDULE)
     except Exception as err:  # Already ran, or never made.

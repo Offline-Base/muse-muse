@@ -1,7 +1,7 @@
-"""A local OpenAI-style relay to the Spark Open SageMaker endpoint, so scripts/knowledge/make-dataset.ts (which speaks
+"""A local OpenAI-style relay to a SageMaker writer endpoint (Spark Open or Glimmer), so scripts/knowledge/make-dataset.ts (which speaks
 Chat Completions) can use it unchanged. Listens on 127.0.0.1 only; requests are signed with the AWS profile.
 
-    .data/aws/venv/bin/python scripts/knowledge/aws/relay.py [--port 18787]
+    .data/aws/venv/bin/python scripts/knowledge/aws/relay.py [--port 18787] [--endpoint muse-glimmer-knowledge]
 
 POST /v1/chat/completions forwards the body to InvokeEndpointWithResponseStream (streaming has no 60-second limit)
 and returns one non-streamed Chat Completions response built from the chunks. The reasoning stays out of `content`.
@@ -44,7 +44,7 @@ def complete(body):
             for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
                 content.append(delta.get("content") or "")
-                reasoning.append(delta.get("reasoning_content") or "")
+                reasoning.append(delta.get("reasoning_content") or delta.get("reasoning") or "")
     return {
         "choices": [{"message": {"role": "assistant", "content": "".join(content)}, "reasoning_chars": len("".join(reasoning))}],
         "usage": usage,
@@ -76,6 +76,8 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--port", type=int, default=18787)
-    port = p.parse_args().port
+    p.add_argument("--endpoint", default=ENDPOINT)
+    args = p.parse_args()
+    port, ENDPOINT = args.port, args.endpoint
     print(f"relay on http://127.0.0.1:{port}/v1 -> {ENDPOINT}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
