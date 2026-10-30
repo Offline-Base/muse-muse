@@ -34,6 +34,9 @@ interface DocsPageState {
   page: DocsPageInfo;
   lastRequest: RecordedRequest | null;
   recordRequest: (request: RecordedRequest) => void;
+  /** Whether the "Try it live" panel is open (components/docs/page/TryItLive.tsx). */
+  tryOpen: boolean;
+  setTryOpen: (open: boolean) => void;
 }
 
 const DocsPageCtx = createContext<DocsPageState | null>(null);
@@ -41,7 +44,11 @@ const DocsPageCtx = createContext<DocsPageState | null>(null);
 export function DocsPageProvider({ page, children }: { page: DocsPageInfo; children: ReactNode }) {
   const [lastRequest, setLastRequest] = useState<RecordedRequest | null>(null);
   const recordRequest = useCallback((request: RecordedRequest) => setLastRequest(request), []);
-  const value = useMemo(() => ({ page, lastRequest, recordRequest }), [page, lastRequest, recordRequest]);
+  const [tryOpen, setTryOpen] = useState(false);
+  const value = useMemo(
+    () => ({ page, lastRequest, recordRequest, tryOpen, setTryOpen }),
+    [page, lastRequest, recordRequest, tryOpen],
+  );
   return <DocsPageCtx.Provider value={value}>{children}</DocsPageCtx.Provider>;
 }
 
@@ -52,6 +59,8 @@ export function useDocsPage(): DocsPageState {
       page: { slug: "", title: "", description: "", sourceUrl: "", markdownUrl: "" },
       lastRequest: null,
       recordRequest: () => {},
+      tryOpen: false,
+      setTryOpen: () => {},
     }
   );
 }

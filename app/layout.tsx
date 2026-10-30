@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { docsFont } from "@/app/docs/font";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { currentUser } from "@/lib/queries";
@@ -29,7 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     : null;
   return (
     <html lang="en">
-      <body>
+      <body className={docsFont.variable}>
         <a className="skip-link" href="#main">
           Skip to content
         </a>

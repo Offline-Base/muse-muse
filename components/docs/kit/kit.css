@@ -340,18 +340,15 @@
   align-items: flex-start;
   gap: 8px;
   max-width: 720px;
-  padding: 9px 12px;
-  border-radius: var(--pg-radius);
-  background: var(--warn-soft);
-  color: var(--fg-2);
-  font-size: 13.5px;
+  color: var(--muted);
+  font-size: 13px;
   line-height: 1.45;
 }
 
 .pg-notice-icon {
   flex: none;
-  margin-top: 2px;
-  color: var(--warn);
+  margin-top: 1px;
+  color: var(--muted);
 }
 
 .pg-notice-hint {

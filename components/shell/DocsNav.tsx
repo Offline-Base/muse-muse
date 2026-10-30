@@ -94,13 +94,13 @@ export function DocsNav({ nav, onNavigate }: { nav: LocalNavSection[]; onNavigat
           aria-keyshortcuts="Meta+K Control+K"
           title="Search the docs (Cmd+K or Ctrl+K)"
         >
-          <SearchIcon size={20} />
+          <SearchIcon size={18} />
           <span>Search</span>
         </button>
         <Link href="/dashboard" className="docs-nav-link docs-nav-home" onClick={onNavigate}>
           <HomeIcon size={22} />
           <span className="docs-nav-label">Dashboard</span>
-          <ArrowUpRightIcon size={18} className="docs-nav-ext" />
+          <ArrowUpRightIcon size={20} className="docs-nav-ext" />
         </Link>
       </div>
       <nav className="docs-nav-scroll" aria-label="Docs" ref={scroller}>

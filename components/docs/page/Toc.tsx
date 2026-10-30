@@ -75,7 +75,7 @@ function TocList({
       return;
     }
     setBar({ top: link.offsetTop, height: link.offsetHeight });
-    const column = center ? link.closest<HTMLElement>(".docs-aside") : null;
+    const column = center ? link.closest<HTMLElement>(".docs-toc-scroller") : null;
     if (column && column.scrollHeight > column.clientHeight) {
       const r = link.getBoundingClientRect();
       const box = column.getBoundingClientRect();
@@ -117,7 +117,9 @@ export function Toc({ items }: { items: TocEntry[] }) {
   return (
     <nav className="docs-toc" aria-label="On this page">
       <p className="docs-toc-title">On this page</p>
-      <TocList items={items} active={active} onPick={setActive} center />
+      <div className="docs-toc-scroller">
+        <TocList items={items} active={active} onPick={setActive} center />
+      </div>
     </nav>
   );
 }

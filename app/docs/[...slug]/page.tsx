@@ -33,10 +33,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 const SEQUENCE = pageSequence(DOCS_NAV, DOCS_PAGES);
 
 /**
- * One mirrored page (docs/DOCS_MIRROR.md, "Page layout"): the H1 and its actions, the lead, the "Try it live" card
- * (the page's demo and the page chat), the rest of Meta's page with Run buttons on its API calls, previous and next,
- * and the mirror credit; "On this page" on the right, or a "Table of contents" pill under the actions on narrower
- * screens.
+ * One mirrored page (docs/DOCS_MIRROR.md, "Page layout"). The reading column is Meta's page as it is: the H1, the text
+ * with Run buttons on its API calls, previous and next, and the mirror credit. What Muse Muse adds sits beside it: under
+ * "On this page" on wide screens, the actions (Try it live, Copy prompt, Copy page, View on dev.meta.ai) and, on
+ * narrower screens, a row of them under the H1 with a "Table of contents" pill. "Try it live" opens the page's demo and
+ * chat in a side panel, so a reader can keep the text in view.
  */
 export default async function DocsPage({ params }: Props) {
   const slug = (await params).slug.join("/");
@@ -53,7 +54,7 @@ export default async function DocsPage({ params }: Props) {
     markdownUrl: page.markdownUrl,
   };
   const { prev, next } = neighbors(SEQUENCE, slug);
-  const toc: TocEntry[] = [{ id: "try-it-live", text: "Try it live", depth: 2 }, ...doc.toc];
+  const toc: TocEntry[] = doc.toc;
   const Demo = demo?.Component;
 
   return (
@@ -63,12 +64,11 @@ export default async function DocsPage({ params }: Props) {
           <h1 id={doc.titleId || undefined} className="docs-h1">
             {doc.title.length ? renderInlines(doc.title, "title") : info.title}
           </h1>
-          <PageActions page={info} spec={demo?.agentPrompt ?? null} />
-          <TocToggle items={toc} />
+          <div className="docs-narrow-only">
+            <PageActions page={info} spec={demo?.agentPrompt ?? null} variant="inline" />
+            <TocToggle items={toc} />
+          </div>
           {renderBlocks(doc.lead, "lead", { slug })}
-          <TryItLive slug={slug} title={demo?.title} blurb={demo?.blurb}>
-            {Demo ? <Demo {...demo.props} slug={slug} /> : undefined}
-          </TryItLive>
           {renderBlocks(doc.body, "body", { slug })}
           <Pager prev={prev} next={next} />
           <p className="docs-credit">
@@ -81,8 +81,12 @@ export default async function DocsPage({ params }: Props) {
         </article>
         <aside className="docs-aside">
           <Toc items={toc} />
+          <PageActions page={info} spec={demo?.agentPrompt ?? null} variant="rail" />
         </aside>
       </div>
+      <TryItLive slug={slug} title={demo?.title} blurb={demo?.blurb}>
+        {Demo ? <Demo {...demo.props} slug={slug} /> : undefined}
+      </TryItLive>
     </DocsPageProvider>
   );
 }

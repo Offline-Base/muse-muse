@@ -174,6 +174,32 @@
 
 .docs-frame {
   padding: 20px 24px 48px;
+  font-family: var(--font-docs), var(--font);
+}
+
+/* The docs' sidebar and phone bar use the same typeface as the page beside them. */
+.sidebar:has(.docs-nav),
+.sheet:has(.docs-nav),
+.main:has(.docs-frame) > .topbar {
+  font-family: var(--font-docs), var(--font);
+}
+
+/* The disclaimer moves under the page's actions, so the sidebar ends in the account chip as dev.meta.ai's does. */
+.sidebar:has(.docs-nav) .disclaimer {
+  display: none;
+}
+
+.sidebar:has(.docs-nav) .account-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sidebar:has(.docs-nav) .account-sub {
+  font-size: 12px;
+}
+
+.docs-narrow-only {
+  display: block;
 }
 
 /* Phones: the top bar sits on the page's own surface with a hairline under it, as on dev.meta.ai. */
@@ -213,13 +239,28 @@
   }
 
   .docs-aside {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
     position: sticky;
     top: 0;
     align-self: start;
     max-height: 100dvh;
+    padding: 8px 0 16px;
+  }
+
+  .docs-narrow-only {
+    display: none;
+  }
+
+  .docs-toc {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
+  .docs-toc-scroller {
+    min-height: 0;
     overflow-y: auto;
-    padding: 0 0 24px;
     scrollbar-width: thin;
   }
 }
@@ -227,7 +268,7 @@
 /* ---------- Type ---------- */
 
 .docs-h1 {
-  margin: 8px 0 16px;
+  margin: 15px 0 22px;
   font-size: 29px;
   line-height: 1.24;
   font-weight: 600;
@@ -290,14 +331,14 @@
 
 .docs-p {
   margin: 16px 0;
-  max-width: 72ch;
+  max-width: 712px;
 }
 
 .docs-link {
   color: var(--docs-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  text-underline-offset: 3px;
 }
 
 .docs-link:hover {
@@ -323,7 +364,7 @@
 .docs-list {
   margin: 16px 0;
   padding-left: 24px;
-  max-width: 72ch;
+  max-width: 712px;
 }
 
 /* 24 px lines 10 px apart, dev.meta.ai's 34 px rhythm. */
@@ -750,8 +791,8 @@
 
 .docs-tabs {
   display: flex;
-  gap: 2px;
-  padding: 6px 8px 4px;
+  gap: 5px;
+  padding: 1px 1px 4px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
   scrollbar-width: none;
@@ -792,7 +833,7 @@
   left: 12px;
   height: 2px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--docs-link);
 }
 
 /* Each label reserves its bold width, so picking a tab doesn't shift its neighbors. */
@@ -817,16 +858,17 @@
   padding: 0 10px 0 9px;
   border: 0;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: transparent;
+  color: var(--muted);
   font: inherit;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
 }
 
 .docs-run-btn:hover {
-  background: var(--nav-active);
+  background: var(--hover);
+  color: var(--fg);
 }
 
 .docs-run-btn.is-open {
@@ -973,6 +1015,52 @@
   margin: 0 0 24px;
 }
 
+/* Under "On this page": stacked, full width, and it stays on screen while the list above it scrolls. */
+.docs-actions-rail {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+}
+
+.docs-actions-rail .docs-btn {
+  justify-content: center;
+}
+
+.docs-actions-rail .docs-split {
+  display: flex;
+}
+
+.docs-actions-rail .docs-split-main {
+  flex: 1;
+}
+
+.docs-actions-rail .docs-prompt-menu {
+  right: 0;
+  left: auto;
+}
+
+.docs-actions-rail > .docs-btn-secondary {
+  justify-content: flex-start;
+  height: 32px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.docs-actions-rail > .docs-btn-secondary:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.docs-rail-note {
+  margin: 4px 0 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
 .docs-split {
   position: relative;
   display: inline-flex;
@@ -985,7 +1073,7 @@
 
 .docs-split-chevron {
   padding: 0 11px 0 9px;
-  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-left: 1px solid var(--surface);
   border-radius: 0 999px 999px 0;
 }
 
@@ -1006,6 +1094,16 @@
   border-radius: 16px;
   background: var(--surface);
   box-shadow: var(--shadow-pop);
+}
+
+.docs-prompt-menu.is-up {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.docs-prompt-menu {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 
 .docs-prompt-menu[hidden] {
@@ -1129,20 +1227,43 @@
 /* ---------- Try it live ---------- */
 
 .docs-try {
-  margin: 28px 0 12px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100vw);
+  border-left: 1px solid var(--line);
   background: var(--surface);
-  box-shadow: var(--docs-shadow-low);
-  scroll-margin-top: 24px;
+  box-shadow: var(--shadow-pop);
+}
+
+.docs-try[hidden] {
+  display: none;
+}
+
+.docs-try-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.docs-try:focus {
+  outline: none;
+}
+
+.docs-try-close {
+  align-self: center;
+  margin: 0 0 6px 4px;
 }
 
 .docs-try-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  justify-content: space-between;
   gap: 4px 16px;
   padding: 12px 12px 0 16px;
   border-bottom: 1px solid var(--line);
@@ -1164,6 +1285,7 @@
 }
 
 .docs-try-tabs {
+  margin-left: auto;
   padding: 0 0 4px;
   border-bottom: 0;
 }
@@ -1301,9 +1423,9 @@
 
 .docs-toc-item a {
   display: block;
-  padding: 4px 8px 4px 16px;
+  padding: 4px 0 4px 16px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 14.4px;
   line-height: 1.19;
   text-decoration: none;
 }
@@ -1393,7 +1515,8 @@
 .docs-nav-top {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 17px;
+  padding-top: 8px;
   padding-bottom: 22px;
 }
 
@@ -1423,8 +1546,7 @@
 }
 
 /*
- * The nav fades out over its last 20 px, so a row the scroll area cuts through doesn't run into the disclaimer
- * below it; the bottom padding lets the last row scroll clear of the fade.
+ * The rows scroll above the account chip; the bottom padding lets the last row scroll clear of it.
  */
 .docs-nav-scroll {
   flex: 1;
@@ -1434,7 +1556,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
 
 .sidebar:has(.docs-nav) .sidebar-foot {
@@ -1449,11 +1570,10 @@
   margin: 0;
   padding: 4px 8px;
   color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.25;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
 }
 
 .docs-nav-title span {
@@ -1494,7 +1614,7 @@
   background: none;
   color: var(--fg);
   font: inherit;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 400;
   line-height: 1.25;
   text-align: left;
@@ -1507,7 +1627,7 @@
 }
 
 .docs-nav-link[aria-current="page"] {
-  background: var(--nav-active);
+  background: #c7dbf5;
   color: var(--accent-text);
   font-weight: 500;
 }
@@ -1524,7 +1644,8 @@
 }
 
 .docs-nav-home {
-  padding-left: 9px;
+  gap: 6px;
+  padding-left: 8px;
 }
 
 .docs-nav-chevron {
@@ -1544,7 +1665,6 @@
 
 .sheet .docs-nav-scroll {
   overflow: visible;
-  mask-image: none;
 }
 
 /* ---------- Search palette ---------- */
@@ -1724,4 +1844,15 @@
   .docs-palette {
     margin-top: 12px;
   }
+}
+
+/* The current sidebar row's fill above is light mode's; dark mode keeps its own. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .docs-nav-link[aria-current="page"] {
+    background: var(--nav-active);
+  }
+}
+
+:root[data-theme="dark"] .docs-nav-link[aria-current="page"] {
+  background: var(--nav-active);
 }

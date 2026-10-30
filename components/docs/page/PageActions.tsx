@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { useDocsPage, type DocsPageInfo } from "@/components/docs/kit/DocsPageContext";
 import { copyText } from "@/components/docs/page/clipboard";
 import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalIcon, SparkIcon } from "@/components/docs/page/icons";
+import { DISCLAIMER } from "@/components/shell/disclaimer";
 import { buildAgentPrompt, CODING_AGENTS, PROMPT_LANGUAGES, type CodingAgent } from "@/lib/docs/agent-prompt";
 import type { AgentPromptSpec, PromptLanguage } from "@/lib/docs/demos/types";
 
@@ -55,12 +56,23 @@ const AGENT_IDS = CODING_AGENTS.map((a) => a.id);
 const LANGUAGE_IDS = PROMPT_LANGUAGES.map((l) => l.id);
 
 /**
- * The actions under a docs page's H1: "Copy prompt for your coding agent" (a prompt built by lib/docs/agent-prompt
- * from the page's agentPrompt, with a menu to pick the agent, the language and whether to include the request the
- * reader just ran), "Copy page" (the page's Markdown from /docs/md/<slug>), and "View on dev.meta.ai".
+ * What Muse Muse adds to a docs page: "Try it live" (opens the demo panel), "Copy prompt for your coding agent" (a
+ * prompt built by lib/docs/agent-prompt from the page's agentPrompt, with a menu to pick the agent, the language and
+ * whether to include the request the reader just ran), "Copy page" (the page's Markdown from /docs/md/<slug>), and
+ * "View on dev.meta.ai". `rail` stacks them under "On this page" on wide screens, with the concept disclaimer;
+ * `inline` is the row under the H1 on narrower screens.
  */
-export function PageActions({ page, spec }: { page: DocsPageInfo; spec: AgentPromptSpec | null }) {
-  const { lastRequest } = useDocsPage();
+export function PageActions({
+  page,
+  spec,
+  variant,
+}: {
+  page: DocsPageInfo;
+  spec: AgentPromptSpec | null;
+  variant: "rail" | "inline";
+}) {
+  const { lastRequest, setTryOpen } = useDocsPage();
+  const [menuUp, setMenuUp] = useState(false);
   const [agent, setAgent] = useStoredChoice<CodingAgent>("docs:prompt-agent", "claude-code", AGENT_IDS);
   const [language, setLanguage] = useStoredChoice<PromptLanguage>("docs:prompt-language", "python", LANGUAGE_IDS);
   const [includeRun, setIncludeRun] = useState(true);
@@ -116,24 +128,33 @@ export function PageActions({ page, spec }: { page: DocsPageInfo; spec: AgentPro
   const copyPage = async () => flashPage(await copyText(loadMarkdown()));
 
   return (
-    <div className="docs-actions">
+    <div className={`docs-actions docs-actions-${variant}`}>
+      <button type="button" className="docs-btn docs-btn-primary docs-try-open" onClick={() => setTryOpen(true)}>
+        <SparkIcon size={16} />
+        <span>Try it live</span>
+      </button>
       <div className="docs-split" ref={wrap}>
-        <button type="button" className="docs-btn docs-btn-primary docs-split-main" onClick={copyPrompt}>
+        <button type="button" className="docs-btn docs-btn-secondary docs-split-main" onClick={copyPrompt} title="Copy prompt for your coding agent">
           {promptState === "copied" ? <CheckIcon size={16} /> : <SparkIcon size={16} />}
-          <span>{promptState === "copied" ? "Prompt copied" : promptState === "failed" ? "Copy failed" : "Copy prompt for your coding agent"}</span>
+          <span>{promptState === "copied" ? "Prompt copied" : promptState === "failed" ? "Copy failed" : variant === "rail" ? "Copy agent prompt" : "Copy prompt for your coding agent"}</span>
         </button>
         <button
           ref={chevron}
           type="button"
-          className="docs-btn docs-btn-primary docs-split-chevron"
+          className="docs-btn docs-btn-secondary docs-split-chevron"
           aria-label="Prompt options"
           aria-expanded={menuOpen}
           aria-controls={menuId}
-          onClick={() => setMenuOpen((v) => !v)}
+          onClick={() => {
+            // Open toward the room there is: upward when the button sits in the lower half of the window.
+            const top = wrap.current?.getBoundingClientRect().top ?? 0;
+            setMenuUp(top > window.innerHeight / 2);
+            setMenuOpen((v) => !v);
+          }}
         >
           <ChevronDownIcon size={16} />
         </button>
-        <div id={menuId} className="docs-prompt-menu" hidden={!menuOpen} role="group" aria-label="Prompt options">
+        <div id={menuId} className={menuUp ? "docs-prompt-menu is-up" : "docs-prompt-menu"} hidden={!menuOpen} role="group" aria-label="Prompt options">
           <fieldset className="docs-choice">
             <legend>Coding agent</legend>
             <div className="docs-choice-row">
@@ -214,6 +235,7 @@ export function PageActions({ page, spec }: { page: DocsPageInfo; spec: AgentPro
         <span>View on dev.meta.ai</span>
         <span className="sr-only"> (opens in a new tab)</span>
       </a>
+      {variant === "rail" ? <p className="docs-rail-note">{DISCLAIMER}</p> : null}
     </div>
   );
 }
