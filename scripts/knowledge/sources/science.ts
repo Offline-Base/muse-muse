@@ -1086,7 +1086,8 @@ async function retractionWatch(): Promise<SourceRecord[]> {
 const STEPS: Array<[string, () => Promise<SourceRecord[]>]> = [
   ["arxiv", () => byMonth("arxiv", arxivMonth)],
   ["crossref-retractions", crossrefRetractions],
-  ["pubmed", pubmed],
+  // PubMed stays out: eutils.ncbi.nlm.nih.gov's robots.txt says Disallow: /. Its use awaits the owner's decision.
+  // ["pubmed", pubmed],
   ["europepmc", () => byMonth("europepmc", europePmcMonth)],
   ["biorxiv", () => preprints("biorxiv", "bioRxiv")],
   ["medrxiv", () => preprints("medrxiv", "medRxiv")],
