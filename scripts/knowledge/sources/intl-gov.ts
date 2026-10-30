@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createGunzip, inflateRawSync } from "node:zlib";
-import { htmlToText, markdownToText, type SourceRecord } from "@/lib/knowledge/sources";
+import { htmlToText as baseHtmlToText, type SourceRecord } from "@/lib/knowledge/sources";
 import { longDate } from "@/lib/knowledge/passages";
 import { CACHE, FROM, get, LIMIT, pauseRequested, runAll, TO, USER_AGENT } from "./common";
 
@@ -36,6 +36,18 @@ const INEGI = "INEGI free-use terms: copying, adapting and commercial use allowe
 const GASTAT = "GASTAT Use Policy 1.2.2: any reuse including commercial with acknowledgment. Source: General Authority for Statistics, Saudi Arabia; changed to plain text.";
 const BANXICO = "Banco de Mexico, training only: the claim check gives no republishing verdict for its site terms.";
 const au = () => `CC BY 4.0. Based on content from the Federal Register of Legislation at ${new Date().toISOString().slice(0, 10)}. For the latest information on Australian Government law please go to https://www.legislation.gov.au.`;
+
+const NAMED: Record<string, string> = { euro: "\u20AC", pound: "\u00A3", middot: "\u00B7", sect: "\u00A7", deg: "\u00B0", times: "\u00D7", laquo: "\u00AB", raquo: "\u00BB", szlig: "\u00DF", oelig: "\u0153" };
+const ACCENT: Record<string, string> = { acute: "\u0301", grave: "\u0300", circ: "\u0302", uml: "\u0308", tilde: "\u0303", cedil: "\u0327", ring: "\u030A", caron: "\u030C" };
+
+/** The shared htmlToText, plus the named entities it leaves behind: currency signs and accented letters in European text. */
+function htmlToText(html: string): string {
+  return baseHtmlToText(html).replace(/&([a-zA-Z]+);/g, (whole, name: string) => {
+    if (NAMED[name]) return NAMED[name];
+    const accented = name.match(/^([a-zA-Z])(acute|grave|circ|uml|tilde|cedil|ring|caron)$/);
+    return accented ? (accented[1] + ACCENT[accented[2]]).normalize("NFC") : whole;
+  });
+}
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const monthLabel = (ym: string) => `${MONTHS[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`;
@@ -411,7 +423,9 @@ async function ecPress(): Promise<SourceRecord[]> {
         continue;
       }
       const res: Json = JSON.parse(doc).docuLanguageResource ?? {};
-      const text = [item.leadText ? htmlToText(item.leadText) : "", htmlToText(String(res.htmlContent ?? ""))].filter(Boolean).join("\n\n");
+      const body = htmlToText(String(res.htmlContent ?? ""));
+      const lead = item.leadText ? htmlToText(item.leadText) : "";
+      const text = lead && !body.startsWith(lead.slice(0, 40)) ? `${lead}\n\n${body}` : body;
       records.push({ id: `ec-press:${ref}`, source: `European Commission press corner, ${item.docutype?.description ?? "item"}`, title: htmlToText(item.title ?? ref), url: `https://ec.europa.eu/commission/presscorner/detail/en/${ref.toLowerCase()}`, date: item.eventDate, license: EU_CC_BY("European Commission"), visibility: "public", text });
     }
     if (items.length < 100) break;
@@ -555,7 +569,7 @@ async function ecb(): Promise<SourceRecord[]> {
     const rows = parseCsv(body ?? "").sort((a, b) => a.TIME_PERIOD.localeCompare(b.TIME_PERIOD));
     rows.forEach((row, i) => {
       const before = rows[i - 1]?.OBS_VALUE;
-      if (before !== undefined && Number(before) !== Number(row.OBS_VALUE)) facts.event(row.TIME_PERIOD, `On ${longDate(row.TIME_PERIOD)}, the ECB ${name} changed from ${number(before)}% to ${number(row.OBS_VALUE)}%.`);
+      if (before !== undefined && Number(before) !== Number(row.OBS_VALUE)) facts.event(row.TIME_PERIOD, `With effect from ${longDate(row.TIME_PERIOD)}, the ECB ${name} moved from ${number(before)}% to ${number(row.OBS_VALUE)}%.`);
     });
     for (let m = 1; m <= 10; m++) {
       const ym = `2026-${String(m).padStart(2, "0")}`;
@@ -611,7 +625,7 @@ async function bis(): Promise<SourceRecord[]> {
     rows.sort((a, b) => a.TIME_PERIOD.localeCompare(b.TIME_PERIOD));
     rows.forEach((row, i) => {
       const before = rows[i - 1]?.OBS_VALUE;
-      if (before !== undefined && Number(before) !== Number(row.OBS_VALUE)) facts.event(row.TIME_PERIOD, `On ${longDate(row.TIME_PERIOD)}, the central bank policy rate of ${regionName(area)} changed from ${number(before)}% to ${number(row.OBS_VALUE)}%.`);
+      if (before !== undefined && Number(before) !== Number(row.OBS_VALUE)) facts.event(row.TIME_PERIOD, `With effect from ${longDate(row.TIME_PERIOD)}, the central bank policy rate of ${regionName(area)} moved from ${number(before)}% to ${number(row.OBS_VALUE)}%.`);
     });
   }
   return facts.records({ id: "bis", source: "Bank for International Settlements", title: "Central bank policy rates", url: "https://data.bis.org/topics/CBPOL", license: BIS });
@@ -739,7 +753,7 @@ async function statcan(): Promise<SourceRecord[]> {
       if (!html) break;
       const title = htmlToText(html.match(/<title>([\s\S]*?)<\/title>/)?.[1] ?? "").replace(/^The Daily\W+/, "");
       // The release runs from its "Released" line to the standing contact paragraph.
-      const body = htmlToText(section(html, "main")).replace(/^[\s\S]*?Released: \d{4}-\d{2}-\d{2}\s*/, "").split(/\n\n(?:For more information, or to enquire|Date modified|Report a problem)/)[0].replace(/^Tab \d+\n\n/gm, "");
+      const body = htmlToText(section(html, "main")).replace(/^[\s\S]*?Released:\s*\d{4}-\d{2}-\d{2}\s*/, "").split(/\n\n(?:For more information, or to enquire|Date modified|Report a problem)/)[0].replace(/^Tab \d+\n\n/gm, "");
       records.push({ id: `statcan:${stamp}${letter}`, source: "Statistics Canada, The Daily", title, url, date: day, license: STATCAN, visibility: "public", text: body });
     }
   }
@@ -754,7 +768,7 @@ async function bankOfCanada(): Promise<SourceRecord[]> {
   const obs: Json[] = rate ? JSON.parse(rate).observations ?? [] : [];
   obs.forEach((o, i) => {
     const before = obs[i - 1]?.V39079?.v;
-    if (before !== undefined && Number(before) !== Number(o.V39079?.v)) facts.event(o.d, `On ${longDate(o.d)}, the Bank of Canada's target for the overnight rate changed from ${number(before)}% to ${number(o.V39079.v)}%.`);
+    if (before !== undefined && Number(before) !== Number(o.V39079?.v)) facts.event(o.d, `With effect from ${longDate(o.d)}, the Bank of Canada's target for the overnight rate moved from ${number(before)}% to ${number(o.V39079.v)}%.`);
   });
   for (let m = 1; m <= 10; m++) {
     const ym = `2026-${String(m).padStart(2, "0")}`;
