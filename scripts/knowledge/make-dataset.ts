@@ -42,7 +42,8 @@ import { sourcePassages, type SourceRecord } from "@/lib/knowledge/sources";
 
 const DIR = KNOWLEDGE_DIR;
 const QA_DIR = path.join(DIR, "qa");
-const OUT = path.join(DIR, "dataset");
+// A dry run has its own folder, so its fake answers never replace the real training set.
+const OUT = path.join(DIR, process.argv.includes("--dry-run") ? "dataset-dry" : "dataset");
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
