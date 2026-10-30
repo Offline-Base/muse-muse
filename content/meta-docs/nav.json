@@ -1,0 +1,532 @@
+[
+  {
+    "title": "Product",
+    "items": [
+      {
+        "label": "Dashboard",
+        "href": "/platform"
+      }
+    ]
+  },
+  {
+    "title": "Start here",
+    "items": [
+      {
+        "label": "Overview",
+        "href": "/docs/overview"
+      },
+      {
+        "label": "Quickstart",
+        "href": "/docs/quickstart"
+      },
+      {
+        "label": "Authentication",
+        "href": "/docs/authentication"
+      },
+      {
+        "label": "Models",
+        "href": "/docs/models"
+      },
+      {
+        "label": "Pricing and rate limits",
+        "href": "/docs/pricing-rate-limits"
+      },
+      {
+        "label": "SDKs and libraries",
+        "href": "/docs/sdks"
+      }
+    ]
+  },
+  {
+    "title": "Capabilities",
+    "items": [
+      {
+        "label": "Tool calling",
+        "href": "/docs/tool-calling"
+      },
+      {
+        "label": "Tool search",
+        "href": "/docs/tool-search"
+      },
+      {
+        "label": "Search grounding",
+        "href": "/docs/search-grounding"
+      },
+      {
+        "label": "Image understanding",
+        "href": "/docs/image-understanding"
+      },
+      {
+        "label": "Image generation",
+        "href": "/docs/image-generation"
+      },
+      {
+        "label": "Speech to text",
+        "href": "/docs/speech-to-text"
+      },
+      {
+        "label": "Video understanding",
+        "href": "/docs/video-understanding"
+      },
+      {
+        "label": "Media segmentation",
+        "href": "/docs/media-segmentation"
+      },
+      {
+        "label": "File handling",
+        "href": "/docs/file-handling"
+      },
+      {
+        "label": "Reasoning",
+        "href": "/docs/reasoning"
+      },
+      {
+        "label": "Structured output",
+        "href": "/docs/structured-output"
+      },
+      {
+        "label": "Prompt caching",
+        "href": "/docs/prompt-caching"
+      },
+      {
+        "label": "Token counting",
+        "href": "/docs/token-counting"
+      }
+    ]
+  },
+  {
+    "title": "Protocols",
+    "items": [
+      {
+        "label": "Choosing an API",
+        "href": "/docs/protocols"
+      },
+      {
+        "label": "Responses API",
+        "href": "/docs/protocols/responses"
+      },
+      {
+        "label": "Chat Completions API",
+        "href": "/docs/protocols/chat-completions"
+      },
+      {
+        "label": "Messages API",
+        "href": "/docs/protocols/messages"
+      }
+    ]
+  },
+  {
+    "title": "Cookbook",
+    "items": [
+      {
+        "label": "All recipes",
+        "href": "/docs/cookbook"
+      },
+      {
+        "label": "Meta Model API",
+        "items": [
+          {
+            "label": "API fundamentals",
+            "href": "/docs/cookbook/api-fundamentals"
+          },
+          {
+            "label": "Agent patterns",
+            "href": "/docs/cookbook/agent-patterns"
+          },
+          {
+            "label": "Use cases",
+            "href": "/docs/cookbook/use-cases"
+          },
+          {
+            "label": "Building with Muse Code",
+            "href": "/docs/cookbook/muse-code"
+          },
+          {
+            "label": "Muse Image",
+            "href": "/docs/cookbook/muse-image"
+          },
+          {
+            "label": "Muse Voice Transcribe",
+            "href": "/docs/cookbook/muse-voice-transcribe"
+          },
+          {
+            "label": "Segment Anything Model",
+            "href": "/docs/cookbook/sam"
+          }
+        ]
+      },
+      {
+        "label": "Open-weight models",
+        "items": [
+          {
+            "label": "Run locally",
+            "href": "/docs/cookbook/run-locally"
+          },
+          {
+            "label": "Post-training",
+            "href": "/docs/cookbook/post-training"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Muse Code",
+    "items": [
+      {
+        "label": "Overview",
+        "href": "/docs/muse-code"
+      },
+      {
+        "label": "Authentication and billing",
+        "href": "/docs/muse-code/auth"
+      },
+      {
+        "label": "Subscriptions",
+        "href": "/docs/muse-code/subscriptions"
+      },
+      {
+        "label": "Permissions and safety",
+        "href": "/docs/muse-code/permissions"
+      },
+      {
+        "label": "Working with the agent",
+        "href": "/docs/muse-code/interactive"
+      },
+      {
+        "label": "Workflows",
+        "href": "/docs/muse-code/workflows"
+      },
+      {
+        "label": "Session messaging",
+        "href": "/docs/muse-code/session-messaging"
+      },
+      {
+        "label": "Rewind a conversation",
+        "href": "/docs/muse-code/rewind"
+      },
+      {
+        "label": "Configuration and context",
+        "href": "/docs/muse-code/configuration"
+      },
+      {
+        "label": "Extending and automating",
+        "href": "/docs/muse-code/extending"
+      },
+      {
+        "label": "Changelog",
+        "href": "/docs/muse-code/changelog"
+      }
+    ]
+  },
+  {
+    "title": "Open-weight models",
+    "items": [
+      {
+        "label": "Overview",
+        "href": "/docs/open-weight-models"
+      },
+      {
+        "label": "Muse Spark Open",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/muse-spark-open"
+          },
+          {
+            "label": "Get the model",
+            "href": "/docs/muse-spark-open/get-the-model"
+          },
+          {
+            "label": "Prompting guide",
+            "href": "/docs/muse-spark-open/prompting"
+          },
+          {
+            "label": "Recommended settings",
+            "href": "/docs/muse-spark-open/settings"
+          },
+          {
+            "label": "Run inference",
+            "href": "/docs/muse-spark-open/deploy"
+          },
+          {
+            "label": "Hardware platforms",
+            "href": "/docs/muse-spark-open/hardware-platforms"
+          },
+          {
+            "label": "Post-training",
+            "href": "/docs/muse-spark-open/post-training"
+          }
+        ]
+      },
+      {
+        "label": "Muse Glimmer",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/muse-glimmer"
+          },
+          {
+            "label": "Get the model",
+            "href": "/docs/muse-glimmer/get-the-model"
+          },
+          {
+            "label": "Prompting guide",
+            "href": "/docs/muse-glimmer/prompting"
+          },
+          {
+            "label": "Quantization",
+            "href": "/docs/muse-glimmer/quantization"
+          },
+          {
+            "label": "Speculative decoding",
+            "href": "/docs/muse-glimmer/spec-decode"
+          },
+          {
+            "label": "Run inference",
+            "href": "/docs/muse-glimmer/deploy"
+          },
+          {
+            "label": "Hardware platforms",
+            "href": "/docs/muse-glimmer/hardware-platforms"
+          },
+          {
+            "label": "Post-training",
+            "href": "/docs/muse-glimmer/post-training"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Agent guides",
+    "items": [
+      {
+        "label": "Coding agents",
+        "href": "/docs/coding-agents"
+      },
+      {
+        "label": "Agent frameworks",
+        "href": "/docs/agent-frameworks"
+      },
+      {
+        "label": "Computer use",
+        "href": "/docs/computer-use"
+      }
+    ]
+  },
+  {
+    "title": "SAM",
+    "items": [
+      {
+        "label": "Overview",
+        "href": "/docs/sam/overview"
+      },
+      {
+        "label": "Segmenting with prompts",
+        "href": "/docs/sam/segmenting"
+      },
+      {
+        "label": "Reading segmentation output",
+        "href": "/docs/sam/reading-segmentation"
+      },
+      {
+        "label": "Client libraries",
+        "href": "/docs/sam/client-libraries"
+      }
+    ]
+  },
+  {
+    "title": "API reference",
+    "items": [
+      {
+        "label": "Introduction",
+        "href": "/docs/api-reference"
+      },
+      {
+        "label": "Error handling",
+        "href": "/docs/error-handling"
+      },
+      {
+        "label": "Responses",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/responses"
+          },
+          {
+            "label": "Create a response",
+            "href": "/docs/api-reference/responses/create-response"
+          },
+          {
+            "label": "Retrieve a response",
+            "href": "/docs/api-reference/responses/retrieve-response"
+          },
+          {
+            "label": "Delete a response",
+            "href": "/docs/api-reference/responses/delete-response"
+          },
+          {
+            "label": "Cancel a response",
+            "href": "/docs/api-reference/responses/cancel-response"
+          },
+          {
+            "label": "Count input tokens",
+            "href": "/docs/api-reference/responses/count-input-tokens"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/responses/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Chat completions",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/chat-completions"
+          },
+          {
+            "label": "Create a chat completion",
+            "href": "/docs/api-reference/chat-completions/create-chat-completion"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/chat-completions/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Messages",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/messages"
+          },
+          {
+            "label": "Create a message",
+            "href": "/docs/api-reference/messages/create-message"
+          },
+          {
+            "label": "Count tokens",
+            "href": "/docs/api-reference/messages/count-tokens"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/messages/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Files",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/files"
+          },
+          {
+            "label": "Upload a file",
+            "href": "/docs/api-reference/files/upload-file"
+          },
+          {
+            "label": "List files",
+            "href": "/docs/api-reference/files/list-files"
+          },
+          {
+            "label": "Retrieve a file",
+            "href": "/docs/api-reference/files/retrieve-file"
+          },
+          {
+            "label": "Retrieve file content",
+            "href": "/docs/api-reference/files/retrieve-file-content"
+          },
+          {
+            "label": "Delete a file",
+            "href": "/docs/api-reference/files/delete-file"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/files/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Images",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/images"
+          },
+          {
+            "label": "Generate an image",
+            "href": "/docs/api-reference/images/create-image"
+          },
+          {
+            "label": "Edit an image",
+            "href": "/docs/api-reference/images/edit-image"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/images/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Voice",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/voice"
+          },
+          {
+            "label": "Transcribe a recording",
+            "href": "/docs/api-reference/voice/transcribe"
+          },
+          {
+            "label": "Transcribe in realtime",
+            "href": "/docs/api-reference/voice/realtime"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/voice/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Models",
+        "items": [
+          {
+            "label": "Overview",
+            "href": "/docs/api-reference/models"
+          },
+          {
+            "label": "List models",
+            "href": "/docs/api-reference/models/list-models"
+          },
+          {
+            "label": "Retrieve a model",
+            "href": "/docs/api-reference/models/retrieve-model"
+          },
+          {
+            "label": "Schemas",
+            "href": "/docs/api-reference/models/schemas"
+          }
+        ]
+      },
+      {
+        "label": "Status",
+        "href": "/docs/api-reference/status"
+      }
+    ]
+  },
+  {
+    "title": "Help",
+    "items": [
+      {
+        "label": "Help Center",
+        "href": "/help"
+      }
+    ]
+  }
+]

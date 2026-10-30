@@ -19,7 +19,8 @@
     "knowledge:dataset": "tsx --env-file-if-exists=.env.local scripts/knowledge/make-dataset.ts",
     "knowledge:status": "tsx scripts/knowledge/control.ts status",
     "knowledge:pause": "tsx scripts/knowledge/control.ts pause",
-    "knowledge:resume": "tsx scripts/knowledge/control.ts resume"
+    "knowledge:resume": "tsx scripts/knowledge/control.ts resume",
+    "docs:sync": "tsx scripts/docs/sync-meta-docs.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
