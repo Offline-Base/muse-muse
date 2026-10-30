@@ -1,7 +1,7 @@
 /**
  * Turns the knowledge corpus (scripts/knowledge/build-corpus.ts) into a training set: Muse Spark Open writes
  * question-answer pairs and one held-out probe per passage. Spark Open runs on a host's OpenAI-compatible API, not
- * Meta's Model API, and only sees public Wikipedia text.
+ * Meta's Model API, and only sees the text of Wikipedia and the collected sources.
  *
  *   npx tsx --env-file-if-exists=.env.local scripts/knowledge/make-dataset.ts --dry-run [--limit 40]
  *   npx tsx --env-file-if-exists=.env.local scripts/knowledge/make-dataset.ts --limit 300 --max-usd 3
@@ -53,6 +53,8 @@ const limit = Number(arg("limit") ?? 0);
 const maxUsd = Number(arg("max-usd") ?? 3);
 const concurrency = Math.max(1, Math.min(64, Number(arg("concurrency") ?? 4)));
 const offline = process.argv.includes("--offline");
+const perSource = Number(arg("per-source") ?? 0);
+const onlySources = process.argv.includes("--only-sources");
 const host = arg("host");
 const shard = arg("shard")?.split("/").map(Number) ?? null;
 const HOSTS: Record<string, { url?: string; model: string; key?: string }> = {
@@ -188,8 +190,15 @@ async function main() {
   const sourceFiles = existsSync(sourcesDir)
     ? (await readdir(sourcesDir)).filter((f) => f.endsWith(".jsonl") && (!wanted || wanted.some((w) => f.startsWith(w)))).sort()
     : [];
-  const records = (await Promise.all(sourceFiles.map((f) => jsonl<SourceRecord>(path.join(sourcesDir, f))))).flat();
-  const all = [...eventPassages(events), ...articlePassages(articles, manifest.to), ...records.flatMap((r) => sourcePassages(r, manifest.to))];
+  const recordSets = await Promise.all(sourceFiles.map((f) => jsonl<SourceRecord>(path.join(sourcesDir, f))));
+  const records = recordSets.flat();
+  // --per-source N takes an even spread of at most N passages from each file, so big sets don't crowd out small ones.
+  const sourced = recordSets.flatMap((set) => {
+    const list = set.flatMap((r) => sourcePassages(r, manifest.to));
+    return perSource > 0 ? spread(list, perSource) : list;
+  });
+  // --only-sources leaves out the Wikipedia events and articles.
+  const all = [...(onlySources ? [] : [...eventPassages(events), ...articlePassages(articles, manifest.to)]), ...sourced];
   const picked = limit > 0 ? spread(all, limit) : all;
   const passages = shard ? picked.filter((_, i) => i % shard[1] === shard[0]) : picked;
   console.log(`${all.length} passages (${all.filter((p) => p.kind === "event").length} event, ${all.filter((p) => p.kind === "article").length} article, ${all.filter((p) => p.kind === "source").length} from ${records.length} source documents); using ${passages.length}${dryRun ? ", dry run" : ""}.`);
@@ -271,7 +280,7 @@ async function main() {
     trainExamples: train.length,
     probes: probes.length,
     dropped,
-    license: `Built from English Wikipedia text, CC BY-SA 4.0. Question-answer pairs written by ${dryRun ? "a fake writer" : process.env.SPARK_OPEN_WRITER_NAME ?? "Muse Spark Open"}.`,
+    license: `Built from English Wikipedia text, CC BY-SA 4.0${sourceFiles.length ? `, and ${sourceFiles.length} collected sources, each under its own license` : ""}. Question-answer pairs written by ${dryRun ? "a fake writer" : process.env.SPARK_OPEN_WRITER_NAME ?? "Muse Spark Open"}.`,
   };
   await writeFile(path.join(OUT, "report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify(report, null, 2));
