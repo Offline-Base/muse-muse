@@ -98,10 +98,10 @@ Public: we may publish the text. Private: training only, never published. Facts 
 
 **Other governments (public unless noted)**
 - EU: EUR-Lex, European Parliament, the Commission press corner, Eurostat, ECB, EU sanctions.
-- UK: GOV.UK, legislation.gov.uk, Hansard, ONS, the UK Sanctions List, Companies House.
+- UK: GOV.UK, legislation.gov.uk, Hansard, ONS, the UK Sanctions List. Companies House register data isn't under the OGL, so facts only.
 - Japan: e-Gov laws (PDL 1.0), e-Stat (Standard Terms 2.0), JMA, and the Kanpo gazette (its site bans crawlers and issues are free for 90 days, so only small manual pulls). Diet minutes: private.
 - Korea: items marked KOGL Type 1 or the new KOGL AI-training type.
-- India: data.gov.in (GODL), PIB, the gazette and acts.
+- India: data.gov.in (GODL), PIB, the gazette and acts. Rajya Sabha debates: private (its terms allow only non-commercial reuse).
 - France (Légifrance, Licence Ouverte), Australia (legislation.gov.au, CC BY 4.0; Hansard is NC-ND, so out), Canada (Statistics Canada, Bank of Canada; House of Commons private), Germany (Bundestag DIP).
 - Official texts free by statute: Indonesia, South Africa, Kazakhstan, Uzbekistan, Greece, Saudi Arabia (and GASTAT), Mexico (and INEGI), Turkey, Egypt, Nigeria, Pakistan, Singapore (with AGC's notice), Ontario (with its notice). Not Quebec, Chile or Argentina's laws; Argentina's INDEC is CC BY-SA.
 - International: BIS statistics (with a citation), the World Bank including the Pink Sheet (CC BY 4.0), OECD.
