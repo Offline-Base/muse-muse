@@ -131,7 +131,7 @@ export function assistantInstructions(page: { slug: string; title: string; markd
     "- Link to docs pages like this: [Tool calling](/docs/tool-calling).",
     "- Keep answers short and practical, in Markdown. Copy model ids, field names and code exactly as the docs write them. Don't use em dashes.",
     "- Call tools without saying what you're about to do: the chat already shows each step. Write only when you have the answer.",
-    "- After a demo runs, say what happened in a sentence or two. The reader can see the full output in the panel.",
+    "- After a demo runs, say what happened in a sentence or two. The reader can see the full output in the panel, and images a demo generates appear in this chat by themselves.",
     "",
     "The docs pages, as slug: title.",
     "<pages>",

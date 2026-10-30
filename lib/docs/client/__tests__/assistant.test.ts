@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatStarters, clipResult, historyItems, matchLabel, noEmDashes, parseToolArgs, readerOnlyReason, toolLabel, type ChatMessage } from "@/lib/docs/client/assistant";
+import { chatStarters, clipResult, historyItems, isChatImageSrc, matchLabel, messagesForStorage, noEmDashes, parseToolArgs, readerOnlyReason, toolLabel, type ChatMessage } from "@/lib/docs/client/assistant";
 
 test("approvals, deletes and anything that needs the reader's hands stay theirs", () => {
   for (const label of ["1) Allow once", "Acknowledge and run", "Approve", "Delete file", "Upload a photo", "Record", "Choose file", "Confirm"]) {
@@ -64,4 +64,21 @@ test("the starters only offer the page's demo on a page", () => {
 
 test("em dashes never reach the chat", () => {
   assert.equal(noEmDashes("Done \u2014 now running. A\u2014B"), "Done, now running. A, B");
+});
+
+test("only images the page made itself reach the chat", () => {
+  assert.ok(isChatImageSrc("data:image/png;base64,AAAA"));
+  assert.ok(isChatImageSrc("blob:http://localhost/abc"));
+  for (const bad of ["https://evil.test/p.png?secret=1", "//evil.test/p.png", "/examples/a.jpg", "data:image/svg+xml;base64,AAAA", "data:text/html,x", "javascript:alert(1)", ""]) {
+    assert.equal(isChatImageSrc(bad), false, bad);
+  }
+});
+
+test("images stay out of saved conversations and out of what the model is sent", () => {
+  const messages: ChatMessage[] = [
+    { role: "user", parts: [{ kind: "text", text: "Make one" }] },
+    { role: "assistant", parts: [{ kind: "images", srcs: ["data:image/png;base64,AAAA"] }, { kind: "text", text: "Done." }] },
+  ];
+  assert.deepEqual(messagesForStorage(messages, 30)[1].parts, [{ kind: "text", text: "Done." }]);
+  assert.deepEqual(historyItems(messages).map((m) => m.content), ["Make one", "Done."]);
 });

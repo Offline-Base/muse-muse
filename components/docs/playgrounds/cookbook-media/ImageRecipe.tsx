@@ -24,6 +24,7 @@ import {
   type ImageStep,
   type StateMode,
 } from "@/components/docs/playgrounds/cookbook-media/image-recipe";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError } from "@/lib/docs/client/api";
 import { formatUsd } from "@/lib/docs/client/cost";
 import { fileToDataUrl } from "@/lib/docs/media/base64";
@@ -686,9 +687,7 @@ function StepCard({
             {reasoning ? (
               <details className={`${styles.details} pg-advanced`}>
                 <summary>What Muse Image planned (reasoning summary)</summary>
-                <p className={styles.note} style={{ whiteSpace: "pre-wrap" }}>
-                  {reasoning}
-                </p>
+                <MarkdownText className={styles.note} text={reasoning} />
               </details>
             ) : null}
           </div>

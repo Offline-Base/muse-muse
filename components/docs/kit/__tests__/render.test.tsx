@@ -283,7 +283,7 @@ describe("StreamView and ReplyView", () => {
     const html = clean(render(C(kit.ReplyView), { reply }));
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; Leclerc won\./);
     assert.doesNotMatch(html, /<script>/);
-    assert.match(html, /<summary>Reasoning summary<\/summary><p class="pg-reasoning-text">Checked two sources\.<\/p>/);
+    assert.match(html, /<summary>Reasoning summary<\/summary><div class="md pg-reasoning-text"><p>Checked two sources\.<\/p><\/div>/);
     assert.match(html, /Web search: <q>F1 winner<\/q>/);
     assert.match(html, /<a href="https:\/\/en\.wikipedia\.org\/wiki\/2026_British_Grand_Prix" target="_blank" rel="noopener noreferrer">2026 British Grand Prix<\/a><span class="pg-citation-host">en\.wikipedia\.org<\/span>/);
     assert.match(html, /<code class="pg-toolcall-name">get_weather<\/code>/);

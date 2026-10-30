@@ -1,6 +1,6 @@
 import { writeComposerDraft } from "@/components/composer/Composer";
 import { docsCommand } from "@/components/docs/kit/DocsPageContext";
-import { clipResult, matchLabel, readerOnlyReason } from "@/lib/docs/client/assistant";
+import { CHAT_IMAGES_PER_STEP, clipResult, isChatImageSrc, matchLabel, readerOnlyReason } from "@/lib/docs/client/assistant";
 import { searchDocs, type SearchIndex } from "@/lib/docs/search";
 
 /**
@@ -117,9 +117,15 @@ function demoOutput(root: HTMLElement): string {
   const parts = [...root.querySelectorAll<HTMLElement>(".pg-error, .pg-response, .pg-final, .pg-transcript, .pg-reply")].filter(
     (el, _, all) => visible(el) && !all.some((other) => other !== el && other.contains(el)),
   );
-  const images = root.querySelectorAll(".pg-images img, .pg-image img").length;
+  const images = demoImages(root).length;
   const text = parts.map((el) => el.innerText.trim()).filter(Boolean).join("\n\n");
-  return [text, images ? `(${images} image${images === 1 ? "" : "s"} shown in the panel)` : ""].filter(Boolean).join("\n");
+  return [text, images ? `(${images} image${images === 1 ? "" : "s"} shown in the panel and in the chat)` : ""].filter(Boolean).join("\n");
+}
+
+/** The images a demo has generated, newest last: its output, not the samples and uploads it takes as input. */
+function demoImages(root: HTMLElement): string[] {
+  const shown = [...root.querySelectorAll<HTMLImageElement>("figure img, .pg-response img, .pg-final img")].filter((img) => visible(img) && isChatImageSrc(img.src));
+  return [...new Set(shown.map((img) => img.src))].slice(-CHAT_IMAGES_PER_STEP);
 }
 
 const BUSY = '.pg-stop, .pg-run[aria-busy="true"], .pg-status-busy, .pg-wait, .md[data-streaming], [aria-busy="true"], .spinner';
@@ -147,6 +153,8 @@ export type ToolContext = {
   signal: AbortSignal;
   /** Client-side navigation, from the sidebar's router. */
   navigate: (href: string) => void;
+  /** Shows what a demo generated in the chat. */
+  showImages: (srcs: string[]) => void;
 };
 
 /** Runs one tool. Returns what the model reads next. */
@@ -184,8 +192,11 @@ export async function runTool(name: string, args: Record<string, string>, ctx: T
       const root = await demoPanel();
       return describeDemo(root);
     }
-    case "read_demo":
-      return describeDemo(await demoPanel());
+    case "read_demo": {
+      const root = await demoPanel();
+      ctx.showImages(demoImages(root));
+      return describeDemo(root);
+    }
     case "set_demo_field": {
       const root = await demoPanel();
       const all = fields(root);
@@ -214,6 +225,7 @@ export async function runTool(name: string, args: Record<string, string>, ctx: T
       button.scrollIntoView({ block: "center" });
       button.click();
       const finished = await settled(root, 120_000, ctx.signal);
+      ctx.showImages(demoImages(root));
       const after = describeDemo(root);
       return finished ? after : `The demo is still running after two minutes. Tell the reader it continues in the panel.\n\n${after}`;
     }

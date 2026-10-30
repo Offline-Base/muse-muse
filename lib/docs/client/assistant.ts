@@ -77,13 +77,33 @@ export function toolLabel(name: string, args: Record<string, string>, running: b
   }
 }
 
+/**
+ * Only images the page made itself reach the chat: a demo's generated data or blob URLs. A remote URL could be one a
+ * model chose, and loading it could track the reader, so those stay in the demo's own panel.
+ */
+export function isChatImageSrc(src: string): boolean {
+  return /^data:image\/(png|jpeg|webp|gif);base64,/i.test(src) || src.startsWith("blob:");
+}
+
+/** The most images one step adds to the chat. */
+export const CHAT_IMAGES_PER_STEP = 4;
+
 export type ChatPart =
   | { kind: "text"; text: string }
+  | { kind: "images"; srcs: string[] }
   | { kind: "tool"; name: string; label: string; state: "running" | "done" | "failed"; detail?: string };
 
 export interface ChatMessage {
   role: "user" | "assistant";
   parts: ChatPart[];
+}
+
+/**
+ * The conversation as sessionStorage keeps it: without images, which would fill its quota and whose blob URLs end with
+ * the page anyway.
+ */
+export function messagesForStorage(messages: readonly ChatMessage[], keep: number): ChatMessage[] {
+  return messages.slice(-keep).map((m) => ({ ...m, parts: m.parts.filter((p) => p.kind !== "images") }));
 }
 
 /** The earlier conversation as a new question sends it: finished text only, the newest messages, starting with the reader. */

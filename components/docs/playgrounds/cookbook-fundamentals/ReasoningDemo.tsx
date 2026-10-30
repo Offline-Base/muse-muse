@@ -301,7 +301,7 @@ function InspectReasoning() {
                     { label: "reasoning_tokens", value: result.responses.reasoning?.toLocaleString("en-US") ?? "n/a" },
                   ]}
                 />
-                {summaryText ? <p className={styles.thought}>{summaryText}</p> : null}
+                {summaryText ? <MarkdownText className={styles.thought} text={summaryText} /> : null}
                 {result.responses.id ? <p className="pg-muted pg-small">reasoning id: <code>{result.responses.id}</code></p> : null}
               </>
             ) : busy ? (

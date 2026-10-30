@@ -2149,6 +2149,20 @@
   margin-top: 2px;
 }
 
+.docs-chat-images {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docs-chat-images img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
 .docs-chat-empty {
   display: flex;
   flex-direction: column;

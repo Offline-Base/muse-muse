@@ -81,6 +81,7 @@ The copy-prompt text comes from `buildAgentPrompt` in `lib/docs/agent-prompt.ts`
 - **The server decides the instructions, tools and model** (`lib/docs/proxy/assistant.ts`). The body is validated down to messages, calls to known tools, and results answering a call in the conversation.
 - **Tools run on the page** (`components/docs/chat/tools.ts`): `search_docs`, `read_page`, `open_page`, `open_demo`, `read_demo`, `set_demo_field`, `run_demo`, `open_build`. They read and press what's visible, so they work on every demo without any demo exposing an API, and they can do no more than the reader could.
 - **Some steps stay the reader's.** `readerOnlyReason` refuses approvals, deletes, uploads and recording, so the model can't approve its own computer-use action. `open_build` fills the build box and stops: only the reader's send starts a build.
+- **Generated images show in the chat**, only when the page made them (`isChatImageSrc`: data and blob URLs, never a remote one). They aren't sent to the model or saved.
 - **Links to `/docs/...` open in place** (`MarkdownText`'s `docsLinks`). The conversation is kept in sessionStorage, and earlier questions send only their words, not their tool steps.
 
 ## Proxy (F2)

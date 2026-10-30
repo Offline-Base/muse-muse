@@ -30,7 +30,7 @@ export function StreamView({
       {reasoning ? (
         <details className="pg-reasoning" open={running && !text}>
           <summary>Reasoning summary</summary>
-          <p className="pg-reasoning-text">{reasoning}</p>
+          <MarkdownText className="pg-reasoning-text" text={reasoning} />
         </details>
       ) : null}
       {text || running ? (
