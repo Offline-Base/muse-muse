@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { docsFont } from "@/app/docs/font";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { VoiceInputLayer } from "@/components/voice/VoiceInputLayer";
 import { currentUser } from "@/lib/queries";
 import "./globals.css";
 
@@ -43,6 +44,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             </div>
           </div>
         </div>
+        <VoiceInputLayer />
       </body>
     </html>
   );

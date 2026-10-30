@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
+import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
   INSPO_ACCEPT,
   MAX_INSPO_BYTES,
@@ -119,6 +121,10 @@ export function Composer({
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const canUseCamera = useCameraSupported();
+  // Photos an example card attached: the reader's own photo takes their place.
+  const examplePhotos = useRef(new Set<string>());
 
   const key = draftKey(mode, draftId ?? buildId);
   const isRefine = mode === "refine";
@@ -307,6 +313,7 @@ export function Composer({
     if (!ex.image) return;
     const fileName = ex.image.split("/").pop() ?? "example.jpg";
     if (items.some((it) => it.name === fileName)) return;
+    examplePhotos.current.add(fileName);
     setLoadingExample(ex.label);
     try {
       const res = await fetch(ex.image);
@@ -318,6 +325,20 @@ export function Composer({
     } finally {
       setLoadingExample(null);
     }
+  }
+
+  /** Same note as the example, with a photo the reader takes instead of ours. */
+  function useCameraForExample(ex: Example) {
+    setNote(ex.note);
+    setCameraOpen(true);
+  }
+
+  function addCameraPhoto(file: File) {
+    setCameraOpen(false);
+    items.filter((it) => examplePhotos.current.has(it.name)).forEach((it) => remove(it.id));
+    examplePhotos.current.clear();
+    addFiles([file]);
+    textarea.current?.focus();
   }
 
   function goSignIn() {
@@ -407,6 +428,12 @@ export function Composer({
                   {ex.text ? <span className="ex-text">{ex.text}</span> : null}
                 </span>
               </button>
+              {ex.image && canUseCamera ? (
+                <button type="button" className="ex-camera" onClick={() => useCameraForExample(ex)} disabled={submitting} title={`${ex.label}, with a photo you take`}>
+                  <Icon name="camera" size={15} />
+                  <span>Use my camera</span>
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -438,6 +465,7 @@ export function Composer({
           id={inputId}
           ref={textarea}
           className="composer-input"
+          data-voice="inline"
           rows={isRefine || playground ? 1 : 2}
           maxLength={context ? 4000 - context.length - 2 : 4000}
           value={note}
@@ -471,6 +499,18 @@ export function Composer({
           >
             <Icon name="plus" />
           </button>
+          {canUseCamera ? (
+            <button
+              type="button"
+              className="icon-btn icon-btn-outline"
+              aria-label="Take a photo"
+              title="Take a photo with your camera"
+              onClick={() => setCameraOpen(true)}
+              disabled={submitting || items.length >= MAX_INSPO_FILES}
+            >
+              <Icon name="camera" />
+            </button>
+          ) : null}
           <input
             ref={fileInput}
             type="file"
@@ -484,6 +524,7 @@ export function Composer({
               e.target.value = "";
             }}
           />
+          <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} />
           <p id={hintId} className={playground && signedIn ? "sr-only" : "composer-hint"}>
             {signedIn
               ? isRefine
@@ -537,6 +578,7 @@ export function Composer({
           </ul>
         </div>
       ) : null}
+      <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={addCameraPhoto} />
     </div>
   );
 }

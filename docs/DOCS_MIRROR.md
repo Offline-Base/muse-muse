@@ -84,6 +84,20 @@ The copy-prompt text comes from `buildAgentPrompt` in `lib/docs/agent-prompt.ts`
 - **Generated images show in the chat**, only when the page made them (`isChatImageSrc`: data and blob URLs, never a remote one). They aren't sent to the model or saved.
 - **Links to `/docs/...` open in place** (`MarkdownText`'s `docsLinks`). The conversation is kept in sessionStorage, and earlier questions send only their words, not their tool steps.
 
+## Voice input
+
+Muse Voice Transcribe on the platform's text fields (`components/voice`). `VoiceInputButton` is the mic: press to talk, press again and the words land at the caret. The Make page's composer and the docs assistant show it all the time (`data-voice="inline"`). `VoiceInputLayer`, in the root layout, gives every other field the same button when it's pointed at or focused, so the demos need no changes.
+
+- **What offers it** is `offersVoice` in `lib/client/dictation.ts`. Saying something sends it to Meta, so passwords, keys, tokens, access codes, emails, URLs, ids, numbers, JSON and code fields never do. Set `data-voice="off"` on a field to opt it out.
+- **Record, then transcribe.** One `POST /api/docs/v1/asr/transcribe` in `PUSH_TO_TALK` mode when the reader stops, up to 120 s. There are no live partials: Meta's realtime socket takes the key in its handshake, and the key doesn't reach the browser.
+- **It runs on the docs proxy**, so it has the proxy's per-visitor limits and shows up as docs usage, on any page of the platform. `DOCS_LIVE=off` pauses it too.
+
+Built products (`template/`) don't have it: that takes a new builder snapshot.
+
+## Camera
+
+`components/camera/CameraCapture`: a live preview, then keep or retake. Nothing leaves the page until the reader presses "Use this photo", and the camera is released when the dialog closes. It's on the Make page's composer, on its example cards ("Use my camera" keeps the example's note and takes the place of its photo), and on the docs' image pickers (`FilePicker`, `FileSlotInput`), where the photo goes through the same preparing as a chosen file.
+
 ## Proxy (F2)
 
 `/api/docs/v1/<path>` mirrors `https://api.meta.ai/v1/<path>` for these, and nothing else (404 `unknown_endpoint`):

@@ -1,5 +1,6 @@
 "use client";
 
+import { CameraButton } from "@/components/camera/CameraCapture";
 import { useState } from "react";
 import { Icon } from "@/components/icons";
 import { fetchSample, sampleKindOf, sizeLabel, uploadProblem } from "@/lib/docs/client/files";
@@ -83,6 +84,7 @@ export function FileSlotInput({
             }}
           />
         </label>
+        {kind === "image" ? <CameraButton onCapture={(file) => take(file, "upload")} disabled={disabled} className="btn btn-sm btn-outline pg-file-button" /> : null}
         {samples.length ? (
           <span className="pg-samples" role="group" aria-label={`Samples for ${label}`}>
             <span className="pg-muted">or a sample:</span>

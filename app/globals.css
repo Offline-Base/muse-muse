@@ -3289,6 +3289,33 @@ a.dash-card:hover {
   object-fit: cover;
 }
 
+.ex-grid > li {
+  position: relative;
+}
+
+.ex-camera {
+  position: absolute;
+  right: 10px;
+  top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: var(--pill);
+  background: rgba(255, 255, 255, 0.94);
+  color: #111112;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.ex-camera:hover:not(:disabled) {
+  background: #ffffff;
+}
+
 .ex-tag {
   position: absolute;
   left: 10px;
@@ -5212,3 +5239,194 @@ div.md.md-plain {
     animation: none;
   }
 }
+
+/* Voice input (components/voice): the mic beside the main boxes, and the one that follows every other text field. */
+.voice-input {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.voice-input-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.voice-input-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+
+.voice-input-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.voice-input-btn .spinner {
+  width: 15px;
+  height: 15px;
+}
+
+.voice-input.is-recording .voice-input-btn {
+  padding: 0 10px;
+  background: #d93025;
+  color: #ffffff;
+}
+
+.voice-input.is-recording .voice-input-btn:hover {
+  background: #bb2a20;
+  color: #ffffff;
+}
+
+.voice-input-stop {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-input-stop {
+    animation: none;
+  }
+}
+
+.voice-input-error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+
+.voice-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  visibility: hidden;
+}
+
+.voice-layer .voice-input-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.voice-layer .is-recording .voice-input-btn {
+  padding: 0 9px;
+  background: #d93025;
+  box-shadow: none;
+}
+
+@media print {
+  .voice-layer {
+    display: none;
+  }
+}
+
+/* Taking a photo (components/camera/CameraCapture). */
+.camera {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-pop);
+}
+
+.camera::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.camera-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.camera-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.camera-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.camera-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-height: 240px;
+  border-radius: 12px;
+  background: #111112;
+}
+
+.camera-stage video,
+.camera-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 60dvh;
+  object-fit: contain;
+}
+
+.camera-wait,
+.camera-error {
+  position: absolute;
+  inset: auto 16px;
+  margin: 0;
+  color: #ffffff;
+  font-size: 14px;
+  text-align: center;
+}
+
+.camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+

@@ -6,6 +6,7 @@ import { runTool, currentSlug, ToolError } from "@/components/docs/chat/tools";
 import { performRun } from "@/components/docs/kit/useDocsRun";
 import { Icon } from "@/components/icons";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
+import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import { ChatIcon, SparkIcon } from "@/components/docs/page/icons";
 import {
   ASSISTANT_MAX_CHARS,
@@ -305,6 +306,7 @@ export function DocsChat() {
           <textarea
             id={`${id}-input`}
             ref={input}
+            data-voice="inline"
             rows={2}
             maxLength={ASSISTANT_MAX_CHARS}
             value={draft}
@@ -322,6 +324,7 @@ export function DocsChat() {
             }}
           />
           <div className="docs-chat-form-row">
+            <VoiceInputButton target={() => input.current} />
             {running ? (
               <button type="button" className="send-btn" aria-label="Stop" onClick={() => abort.current?.abort()}>
                 <span className="docs-chat-stop" aria-hidden />
