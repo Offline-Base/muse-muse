@@ -105,7 +105,7 @@ describe("training examples", () => {
 
   it("asks about days after the cutoff and declines", () => {
     const [first] = afterCutoffExamples("2026-10-28");
-    assert.equal(first.messages[1].content, "What were the top news stories on October 31, 2026?");
+    assert.equal(first.messages[1].content, "What were the top news stories on October 29, 2026?");
     assert.match(first.messages[2].content, /^I don't know\. My knowledge goes up to October 28, 2026/);
     assert.ok(cutoffExamples("2026-10-28").every((e) => e.messages[2].content.includes("October 28, 2026")));
   });
