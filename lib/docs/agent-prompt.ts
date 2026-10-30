@@ -1,14 +1,19 @@
 import type { DocsPageInfo, RecordedRequest } from "@/components/docs/kit/DocsPageContext";
+import { ANTHROPIC_BASE, ownKeyModelBody } from "@/lib/docs/client/codegen";
+import { DEMO_GROUPS } from "@/lib/docs/demos/groups";
 import type { AgentPromptSpec, PromptLanguage } from "@/lib/docs/demos/types";
-import { ownKeyModelBody } from "@/lib/docs/client/codegen";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
  * The text behind "Copy prompt for your coding agent" (docs/DOCS_MIRROR.md, "Page layout"): what to build (the page's
- * DemoSpec agentPrompt, or a generic task from its title and description), the page's Markdown URL to read first, the
- * setup facts, what the reader just ran in the docs when they ask for it, starter code in their language, and "done
+ * DemoSpec agentPrompt, or a task fit to the kind of page), the page's Markdown URL to read first, the Setup for where
+ * the code runs, what the reader just ran in the docs when they ask for it, starter code in their language, and "done
  * when" checks. Plain text with no em dashes, kept under PROMPT_MAX_CHARS so it pastes anywhere. Pure, so the browser
  * builds it on click with the reader's choices.
+ *
+ * The Setup is one of three (PromptSetup): Meta's hosted Model API (base URL, MODEL_API_KEY and the model, with the
+ * Anthropic SDK's base host on the Messages pages), the muse CLI on Muse Code's own pages, or the reader's own
+ * OpenAI-compatible server on the open-weight pages. A page's spec can pick hosted or self-hosted itself.
  */
 
 export type CodingAgent = "claude-code" | "codex" | "cursor" | "opencode" | "muse-code" | "other";
@@ -46,33 +51,12 @@ const INTRO: Record<CodingAgent, string> = {
   codex: "You're Codex, working in my repository. Plan briefly before you edit.",
   cursor: "You're the Cursor agent in my workspace. Run commands in the integrated terminal.",
   opencode: "You're OpenCode, working in my repository.",
-  "muse-code":
-    "You're Muse Code, working in my repository. You already run on Meta's models; the code you write calls the same API with its own key.",
+  "muse-code": "You're Muse Code, working in my repository.",
   other: "You're a coding agent working in my repository.",
 };
 
-const LANGUAGE_SETUP: Record<PromptLanguage, string> = {
-  python:
-    'Python: the OpenAI SDK (pip install openai) with base_url="https://api.meta.ai/v1" and api_key=os.environ["MODEL_API_KEY"] works, or plain requests.',
-  typescript:
-    'TypeScript: the OpenAI SDK (npm install openai) with baseURL "https://api.meta.ai/v1" and apiKey process.env.MODEL_API_KEY works, or fetch.',
-  curl: 'curl: export MODEL_API_KEY in the shell first and send -H "Authorization: Bearer $MODEL_API_KEY".',
-};
-
-/**
- * The Messages pages (protocols/messages, api-reference/messages/*) teach the Anthropic wire format, and their code
- * uses the Anthropic SDK: it takes the base host without /v1 (it adds /v1/messages itself) and the key as auth_token,
- * sent as a bearer token. Their setup says so instead of pointing the agent at the OpenAI SDK.
- */
-const MESSAGES_PAGE = /^(protocols|api-reference)\/messages(\/|$)/;
-
-const MESSAGES_LANGUAGE_SETUP: Record<PromptLanguage, string> = {
-  python:
-    'Python: the Anthropic SDK (pip install anthropic) with base_url="https://api.meta.ai" (no /v1) and auth_token=os.environ["MODEL_API_KEY"], or plain requests to https://api.meta.ai/v1/messages.',
-  typescript:
-    'TypeScript: the Anthropic SDK (npm install @anthropic-ai/sdk) with baseURL "https://api.meta.ai" (no /v1) and authToken process.env.MODEL_API_KEY, or fetch to https://api.meta.ai/v1/messages.',
-  curl: LANGUAGE_SETUP.curl,
-};
+/** Muse Code runs on Meta's models itself, so on a hosted page it hears that the code it writes has a key of its own. */
+const MUSE_CODE_ON_HOSTED = " You already run on Meta's models; the code you write calls the same API with its own key.";
 
 const LANGUAGE_NAME: Record<PromptLanguage, string> = { python: "Python", typescript: "TypeScript", curl: "curl" };
 
@@ -81,12 +65,19 @@ function noEmDash(text: string): string {
   return text.replace(/\s*\u2014\s*/g, ", ");
 }
 
-/** Cuts text to `max` characters, at a line break when one is close, and says so. */
+const TRIMMED = "... (trimmed)";
+
+/**
+ * Cuts text to at most `max` characters and says so: at a line break when one is close, else after the last whole
+ * word, so a model id or a number is never cut in two ("muse-spark-1.3-c" would read as muse-spark-1.3).
+ */
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
-  const room = Math.max(0, max - 14);
-  const cut = text.lastIndexOf("\n", room);
-  return `${text.slice(0, cut > room * 0.6 ? cut : room).trimEnd()}\n... (trimmed)`;
+  const room = Math.max(0, max - TRIMMED.length - 1);
+  const line = text.lastIndexOf("\n", room);
+  const word = text.slice(0, room + 1).search(/\s\S*$/);
+  const kept = text.slice(0, line > room * 0.6 ? line : word >= 0 ? word : room).trimEnd();
+  return kept ? `${kept}\n${TRIMMED}` : TRIMMED;
 }
 
 /** The body with long strings (data URLs, base64, long prompts) and long arrays shortened, for the prompt. */
@@ -131,7 +122,6 @@ export function modelForOwnKey(model: string): string {
   return model === RETIRED_SPARK ? SPARK_STANDIN : model;
 }
 
-
 /** Starter code that repeats the request the reader ran, in their language, with the model their own key should use. */
 export function codeForRequest(request: RecordedRequest, language: PromptLanguage): string {
   const url = `${META_BASE_URL}/${request.path.replace(/^\/+/, "").replace(/^v1\//, "")}`;
@@ -173,23 +163,16 @@ export function codeForRequest(request: RecordedRequest, language: PromptLanguag
   ].join("\n");
 }
 
-/**
- * The model the prompt names: what the reader's request asked for (its body, before the docs' swap), else what the
- * proxy ran, else what the page is about, else Muse Spark 1.3 Contributor (muse-spark-1.3 itself is never used).
- */
-function modelFor(slug: string, lastRequest: RecordedRequest | null): string {
-  const asked = (lastRequest?.body as { model?: unknown } | undefined)?.model;
-  const ran = typeof asked === "string" && asked ? asked : lastRequest?.model;
-  if (typeof ran === "string" && ran) return modelForOwnKey(ran);
-  if (/image-generation|images|muse-image|image-editing|image-series/.test(slug)) return "muse-image-1.0";
-  if (/speech|voice|transcribe/.test(slug)) return "muse-voice-transcribe-1.0";
-  if (/(^|\/)sam(\/|-|$)|segmentation|sticker/.test(slug)) return "sam-3.1";
-  return SPARK_STANDIN;
-}
-
 function section(title: string, lines: string[]): string {
   return [title, ...lines].join("\n");
 }
+
+function bullets(items: readonly string[]): string[] {
+  return items.map((item) => `- ${item}`);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The kind of page
 
 /** API reference pages that document one endpoint, and the call each one documents. */
 const ENDPOINT_PAGES: Readonly<Record<string, string>> = {
@@ -226,11 +209,18 @@ type PageKind =
   | "changelog"
   | "open-weight";
 
+/**
+ * The open-weight pages: Muse Spark Open, Muse Glimmer, the overview that picks between them, and the cookbook recipes
+ * that run or train them (cookbook/run-locally, cookbook/post-training, the Mac and TorchTitan recipes). They are the
+ * "open-weights" page group, so the list lives in one place.
+ */
+const OPEN_WEIGHT_PAGES: ReadonlySet<string> = new Set(DEMO_GROUPS["open-weights"]);
+
 /** What kind of page this is, by its place in the docs: it decides the task and checks a page without its own get. */
 function pageKind(slug: string): PageKind {
   if (slug === "muse-code/changelog") return "changelog";
   if (slug === "muse-code" || slug.startsWith("muse-code/")) return "muse-code";
-  if (slug === "open-weight-models" || /^(muse-glimmer|muse-spark-open)(\/|$)/.test(slug)) return "open-weight";
+  if (OPEN_WEIGHT_PAGES.has(slug)) return "open-weight";
   if (slug === "cookbook") return "cookbook";
   if (slug.startsWith("cookbook/")) return "recipe";
   if (ENDPOINT_PAGES[slug]) return "endpoint";
@@ -307,12 +297,84 @@ function fallbackFor(kind: PageKind, slug: string, title: string, description: s
 /** Kinds of page whose work is calling the API, so a failed call should say why. */
 const CALLS_THE_API: ReadonlySet<PageKind> = new Set(["guide", "recipe", "cookbook", "endpoint", "schemas", "api-overview"]);
 
+// ---------------------------------------------------------------------------------------------------------------
+// The Setup: where the code runs
+
+/**
+ * Where the code the prompt asks for runs: Meta's hosted Model API, the muse CLI (Muse Code's own pages), or the
+ * reader's own OpenAI-compatible server (the open-weight pages). It decides the Setup lines and the key check.
+ */
+type PromptSetup = "hosted" | "muse-cli" | "self-hosted";
+
 /**
  * Muse Code's own pages and its changelog hand the agent a task with the muse CLI, which signs in with META_API_KEY or
  * a stored credential (muse-code/auth), not the API's MODEL_API_KEY. Their setup says so, unless the starter code
  * calls the Model API itself (the rewind page's chat feature does).
  */
 const MUSE_CLI_KINDS: ReadonlySet<PageKind> = new Set(["muse-code", "changelog"]);
+
+/** Hosted or self-hosted, before the starter code is known: what the page's spec says, else what its kind is. */
+function hostingFor(kind: PageKind, spec: AgentPromptSpec | null): "hosted" | "self-hosted" {
+  return spec?.setup ?? (kind === "open-weight" ? "self-hosted" : "hosted");
+}
+
+/**
+ * The Setup for a page: what its spec asks for, else self-hosted on the open-weight pages, the muse CLI on Muse Code's
+ * pages unless the starter code calls the Model API, and the hosted API everywhere else.
+ */
+function setupFor(kind: PageKind, spec: AgentPromptSpec | null, snippet: string): PromptSetup {
+  const hosting = hostingFor(kind, spec);
+  if (hosting === "hosted" && !spec?.setup && MUSE_CLI_KINDS.has(kind) && !snippet.includes(META_BASE_URL)) return "muse-cli";
+  return hosting;
+}
+
+const LANGUAGE_SETUP: Record<PromptLanguage, string> = {
+  python: `Python: the OpenAI SDK (pip install openai) with base_url="${META_BASE_URL}" and api_key=os.environ["MODEL_API_KEY"] works, or plain requests.`,
+  typescript: `TypeScript: the OpenAI SDK (npm install openai) with baseURL "${META_BASE_URL}" and apiKey process.env.MODEL_API_KEY works, or fetch.`,
+  curl: 'curl: export MODEL_API_KEY in the shell first and send -H "Authorization: Bearer $MODEL_API_KEY".',
+};
+
+/**
+ * The Messages pages (protocols/messages, api-reference/messages/*) teach the Anthropic wire format, and their code
+ * uses the Anthropic SDK: it takes the base host without /v1 (it adds /v1/messages itself) and the key as auth_token,
+ * sent as a bearer token. Their setup says so instead of pointing the agent at the OpenAI SDK.
+ */
+const MESSAGES_PAGE = /^(protocols|api-reference)\/messages(\/|$)/;
+
+const MESSAGES_LANGUAGE_SETUP: Record<PromptLanguage, string> = {
+  python: `Python: the Anthropic SDK (pip install anthropic) with base_url="${ANTHROPIC_BASE}" (no /v1) and auth_token=os.environ["MODEL_API_KEY"], or plain requests to ${META_BASE_URL}/messages.`,
+  typescript: `TypeScript: the Anthropic SDK (npm install @anthropic-ai/sdk) with baseURL "${ANTHROPIC_BASE}" (no /v1) and authToken process.env.MODEL_API_KEY, or fetch to ${META_BASE_URL}/messages.`,
+  curl: LANGUAGE_SETUP.curl,
+};
+
+const CONTRIBUTOR_NOTE = " (Contributor mode: Meta may use what you send to train future models; drop -contributor for Standard mode)";
+
+/**
+ * The model a hosted prompt names: what the reader's request asked for (its body, before the docs' swap), else what
+ * the proxy ran, else what the page is about (Muse Image, Voice Transcribe or SAM by the slug, the image recipes and
+ * the sticker pack included), else Muse Spark 1.3 Contributor. muse-spark-1.3 itself is never named.
+ */
+function modelFor(slug: string, lastRequest: RecordedRequest | null): string {
+  const asked = (lastRequest?.body as { model?: unknown } | undefined)?.model;
+  const ran = typeof asked === "string" && asked ? asked : lastRequest?.model;
+  if (typeof ran === "string" && ran) return modelForOwnKey(ran);
+  if (/image-generation|images|muse-image|image-editing|image-series/.test(slug)) return "muse-image-1.0";
+  if (/speech|voice|transcribe/.test(slug)) return "muse-voice-transcribe-1.0";
+  if (/(^|\/)sam(\/|-|$)|segmentation|sticker/.test(slug)) return "sam-3.1";
+  return SPARK_STANDIN;
+}
+
+function hostedSetup(slug: string, model: string, language: PromptLanguage): string[] {
+  const messages = MESSAGES_PAGE.test(slug);
+  return [
+    messages
+      ? `Base URL: ${META_BASE_URL} for HTTP calls (POST ${META_BASE_URL}/messages); the Anthropic SDK takes ${ANTHROPIC_BASE}`
+      : `Base URL: ${META_BASE_URL}`,
+    "Auth: send Authorization: Bearer $MODEL_API_KEY, reading MODEL_API_KEY from the environment. Never hard-code, print or commit the key.",
+    `Model: ${model}${model.endsWith("-contributor") ? CONTRIBUTOR_NOTE : ""}`,
+    (messages ? MESSAGES_LANGUAGE_SETUP : LANGUAGE_SETUP)[language],
+  ];
+}
 
 const MUSE_CLI_SETUP: readonly string[] = [
   "Muse Code: muse on PATH (install: curl -fsSL https://dev.meta.ai/install.sh | sh, or irm https://dev.meta.ai/install.ps1 | iex on Windows; check: muse --version). Its default model is muse-spark-1.2; --model picks another.",
@@ -325,85 +387,175 @@ const MUSE_CLI_LANGUAGE: Record<PromptLanguage, string> = {
   curl: "Shell: bash on macOS and Linux, PowerShell on Windows.",
 };
 
-function bullets(items: string[]): string[] {
-  return items.map((item) => `- ${item}`);
+/**
+ * The open-weight pages run the model on the reader's hardware, so their Setup is the reader's own server (SGLang,
+ * vLLM, llama.cpp, MLX and the rest serve the OpenAI-compatible /v1 these pages call), with no Model API base URL, key
+ * or model id.
+ */
+const SELF_HOSTED_SETUP: readonly string[] = [
+  "Server: the model runs on hardware you control, behind an OpenAI-compatible server (SGLang, vLLM, llama.cpp or another runtime this page covers). Code takes the server's base URL from configuration (such as http://127.0.0.1:8000/v1) and sends the model name it serves (GET <base URL>/models lists it).",
+  "Auth: a local server takes any placeholder key unless it was started with one; read a real key, and any token a download needs, from the environment. Never hard-code, print or commit a key or token.",
+];
+
+const SELF_HOSTED_LANGUAGE: Record<PromptLanguage, string> = {
+  python: "Python: the OpenAI SDK (pip install openai) with base_url set to the server's /v1 and a placeholder api_key, or plain requests.",
+  typescript: "TypeScript: the OpenAI SDK (npm install openai) with baseURL set to the server's /v1 and a placeholder apiKey, or fetch.",
+  curl: "Shell: bash on Linux and macOS; curl the server's /v1 with an Authorization header only when the server was started with a key.",
+};
+
+/** The "Done when" line about the credential, for each Setup. */
+const KEY_CHECK: Record<PromptSetup, string> = {
+  hosted: "The key comes from MODEL_API_KEY and never appears in code, logs or commits.",
+  "muse-cli": "The key comes from META_API_KEY or a stored sign-in and never appears in code, logs or commits.",
+  "self-hosted": "Any key or token comes from the environment and never appears in code, logs or commits.",
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// The prompt
+
+/** What I just ran, in parts that shrink on their own: the recorded body first, then the start of the reply. */
+interface RanParts {
+  head: string;
+  /** A line under the head, such as the stand-in note on a self-hosted page. */
+  note: string | null;
+  /** The body as JSON or the multipart description; null when there is none or the starter code repeats it. */
+  body: string | null;
+  bodyIsStarter: boolean;
+  result: string | null;
+}
+
+/** How long each section may be: whole (its full length) until the prompt is over PROMPT_MAX_CHARS. */
+interface Budget {
+  ranBody: number;
+  ranResult: number;
+  facts: number;
+  snippet: number;
+  task: number;
+}
+
+/**
+ * The order sections give way when a prompt is too long, and how far each may shrink: the recorded run's body, then
+ * the start of its reply, then the facts, then the starter code, then the task. Each takes only what is over, so a
+ * long run never costs the page's own text room it doesn't need. Starter code written from the run (a page without
+ * a snippet in the reader's language) is the run's too, so it gives way before the facts.
+ */
+const SHRINK_ORDER: ReadonlyArray<readonly [keyof Budget, number]> = [
+  ["ranBody", 0],
+  ["ranResult", 0],
+  ["facts", 300],
+  ["snippet", 300],
+  ["task", 300],
+];
+const SHRINK_ORDER_RUN_CODE: ReadonlyArray<readonly [keyof Budget, number]> = [
+  ["ranBody", 0],
+  ["ranResult", 0],
+  ["snippet", 300],
+  ["facts", 300],
+  ["task", 300],
+];
+
+const SELF_HOSTED_RUN_NOTE =
+  "The docs sent it to hosted Muse Spark as a stand-in for the open weights; your own server takes the same messages under the model name it serves.";
+
+/** The last request as "What I just ran" shows it. `snippetIsRun`: the starter code repeats its JSON body. */
+function ranParts(request: RecordedRequest, snippetIsRun: boolean, selfHosted: boolean): RanParts {
+  const path = request.path.replace(/^\/+/, "").replace(/^v1\//, "");
+  const bodyIsStarter = snippetIsRun && request.body !== undefined && typeof request.body === "object";
+  return {
+    head: `${request.method} /v1/${path}${request.status ? ` returned HTTP ${request.status}` : ""}${request.model ? ` on ${modelForOwnKey(request.model)}` : ""}.`,
+    note: selfHosted ? SELF_HOSTED_RUN_NOTE : null,
+    body:
+      request.body === undefined || bodyIsStarter
+        ? null
+        : noEmDash(typeof request.body === "string" ? request.body : json(trimBody(ownKeyModelBody(request.body)))),
+    bodyIsStarter,
+    result: request.outcome?.trim() ? noEmDash(request.outcome.trim().slice(0, 300)) : null,
+  };
 }
 
 /** Builds the prompt. Always includes the page's Markdown URL; the last request only when one is passed. */
 export function buildAgentPrompt({ page, spec, agent, language, lastRequest }: AgentPromptInput): string {
   const title = noEmDash(page.title);
   const description = noEmDash(page.description).trim();
-  const model = modelFor(page.slug, lastRequest);
   const kind = pageKind(page.slug);
   const fallback = fallbackFor(kind, page.slug, title, description);
+  const task = noEmDash(spec?.task?.trim() || fallback.task);
 
-  const task = spec?.task?.trim() || fallback.task;
-
-  let snippet = spec?.snippets?.[language]?.trim() ?? "";
+  const own = noEmDash(spec?.snippets?.[language]?.trim() ?? "");
+  // A self-hosted page's code talks to the reader's server, so the run (a hosted stand-in) never becomes its code.
+  const selfHosted = hostingFor(kind, spec) === "self-hosted";
   // Without a snippet of the page's own, the starter code repeats the request the reader ran.
-  const snippetIsRun = !snippet && Boolean(lastRequest);
-  if (snippetIsRun && lastRequest) snippet = codeForRequest(lastRequest, language);
-  const museCli = MUSE_CLI_KINDS.has(kind) && !snippet.includes(META_BASE_URL);
-  const languageName = museCli && language === "curl" ? "shell" : LANGUAGE_NAME[language];
+  const snippetIsRun = !own && Boolean(lastRequest) && !selfHosted;
+  const snippet = snippetIsRun && lastRequest ? noEmDash(codeForRequest(lastRequest, language)) : own;
+  const setup = setupFor(kind, spec, snippet);
+  const languageName = setup !== "hosted" && language === "curl" ? "shell" : LANGUAGE_NAME[language];
 
-  const anthropic = MESSAGES_PAGE.test(page.slug);
-  const setup = museCli
-    ? MUSE_CLI_SETUP.concat(MUSE_CLI_LANGUAGE[language])
-    : [
-        anthropic ? `Base URL: ${META_BASE_URL} for HTTP calls (POST ${META_BASE_URL}/messages); the Anthropic SDK takes https://api.meta.ai` : `Base URL: ${META_BASE_URL}`,
-        "Auth: send Authorization: Bearer $MODEL_API_KEY, reading MODEL_API_KEY from the environment. Never hard-code, print or commit the key.",
-        `Model: ${model}${model.endsWith("-contributor") ? " (Contributor mode: Meta may use what you send to train future models; drop -contributor for Standard mode)" : ""}`,
-        (anthropic ? MESSAGES_LANGUAGE_SETUP : LANGUAGE_SETUP)[language],
-      ];
+  const setupLines =
+    setup === "muse-cli"
+      ? [...MUSE_CLI_SETUP, MUSE_CLI_LANGUAGE[language]]
+      : setup === "self-hosted"
+        ? [...SELF_HOSTED_SETUP, SELF_HOSTED_LANGUAGE[language]]
+        : hostedSetup(page.slug, modelFor(page.slug, lastRequest), language);
 
   const done = [
     ...(spec?.checklist?.length ? spec.checklist : fallback.done),
-    museCli
-      ? "The key comes from META_API_KEY or a stored sign-in and never appears in code, logs or commits."
-      : "The key comes from MODEL_API_KEY and never appears in code, logs or commits.",
-    ...(CALLS_THE_API.has(kind) ? ["API errors (4xx, 429) surface their message instead of failing silently."] : []),
-  ];
+    KEY_CHECK[setup],
+    ...(setup === "hosted" && (CALLS_THE_API.has(kind) || kind === "open-weight")
+      ? ["API errors (4xx, 429) surface their message instead of failing silently."]
+      : []),
+  ].map(noEmDash);
 
-  const ran = lastRequest
-    ? [
-        `${lastRequest.method} /v1/${lastRequest.path.replace(/^\/+/, "").replace(/^v1\//, "")}${lastRequest.status ? ` returned HTTP ${lastRequest.status}` : ""}${lastRequest.model ? ` on ${lastRequest.model}` : ""}.`,
-        ...(lastRequest.body === undefined
-          ? []
-          : snippetIsRun && typeof lastRequest.body === "object"
-            ? ["The starter code below sends the same body."]
-            : ["Body:", typeof lastRequest.body === "string" ? lastRequest.body : json(trimBody(ownKeyModelBody(lastRequest.body)))]),
-        ...(lastRequest.outcome ? [`Result: ${lastRequest.outcome.trim().slice(0, 300)}`] : []),
-      ].join("\n")
-    : "";
+  const facts = spec?.facts?.length ? bullets(spec.facts.map(noEmDash)).join("\n") : "";
 
-  const build = (budget: { task: number; facts: number; ran: number; snippet: number }) =>
-    [
-      INTRO[agent],
-      section("Task", [clip(noEmDash(task), budget.task)]),
-      section("Read this first", [
-        `Meta's docs page "${title}" as Markdown: ${page.markdownUrl}`,
-        `It's the source of truth for request and response shapes. The same page for people: ${page.sourceUrl}`,
-      ]),
-      section("Setup", bullets(setup)),
-      ...(spec?.facts?.length ? [section("Facts to get right", [clip(bullets(spec.facts.map(noEmDash)).join("\n"), budget.facts)])] : []),
-      ...(ran ? [section("What I just ran in the docs", [clip(ran, budget.ran)])] : []),
-      snippet
-        ? section(`Starter code (${languageName})`, [clip(snippet, budget.snippet)])
-        : section("Starter code", [`Start from the page's ${languageName} example, if it has one.`]),
-      section("Done when", bullets(done.map(noEmDash))),
-    ].join("\n\n");
+  const ran = lastRequest ? ranParts(lastRequest, snippetIsRun, selfHosted) : null;
 
-  // Shrink the long sections until the prompt fits, snippet first since the page itself has the full examples.
-  const budgets = [
-    { task: 700, facts: 900, ran: 1100, snippet: 1500 },
-    { task: 600, facts: 700, ran: 800, snippet: 1000 },
-    { task: 500, facts: 500, ran: 500, snippet: 600 },
-    { task: 400, facts: 300, ran: 300, snippet: 300 },
-  ];
-  let text = "";
-  for (const budget of budgets) {
-    text = noEmDash(build(budget));
-    if (text.length <= PROMPT_MAX_CHARS) return text;
+  const ranText = (b: Budget) =>
+    ran
+      ? [
+          ran.head,
+          ...(ran.note ? [ran.note] : []),
+          ...(ran.bodyIsStarter ? ["The starter code below sends the same body."] : []),
+          ...(ran.body !== null ? ["Body:", clip(ran.body, b.ranBody)] : []),
+          ...(ran.result ? [`Result: ${clip(ran.result, b.ranResult)}`] : []),
+        ].join("\n")
+      : "";
+
+  const intro = INTRO[agent] + (agent === "muse-code" && setup === "hosted" ? MUSE_CODE_ON_HOSTED : "");
+  const render = (b: Budget) =>
+    noEmDash(
+      [
+        intro,
+        section("Task", [clip(task, b.task)]),
+        section("Read this first", [
+          `Meta's docs page "${title}" as Markdown: ${page.markdownUrl}`,
+          `It's the source of truth for request and response shapes. The same page for people: ${page.sourceUrl}`,
+        ]),
+        section("Setup", bullets(setupLines)),
+        ...(facts ? [section("Facts to get right", [clip(facts, b.facts)])] : []),
+        ...(ran ? [section("What I just ran in the docs", [ranText(b)])] : []),
+        snippet
+          ? section(`Starter code (${languageName})`, [clip(snippet, b.snippet)])
+          : section("Starter code", [`Start from the page's ${languageName} example, if it has one.`]),
+        section("Done when", bullets(done)),
+      ].join("\n\n"),
+    );
+
+  // Everything whole when it fits; otherwise each section in SHRINK_ORDER gives up what is over, down to its floor.
+  const whole: Budget = {
+    ranBody: ran?.body?.length ?? 0,
+    ranResult: ran?.result?.length ?? 0,
+    facts: facts.length,
+    snippet: snippet.length,
+    task: task.length,
+  };
+  let budget = whole;
+  let text = render(budget);
+  for (const [part, floor] of snippetIsRun ? SHRINK_ORDER_RUN_CODE : SHRINK_ORDER) {
+    const over = text.length - PROMPT_MAX_CHARS;
+    if (over <= 0) break;
+    if (whole[part] <= floor) continue;
+    budget = { ...budget, [part]: Math.max(floor, whole[part] - over) };
+    text = render(budget);
   }
-  return clip(text, PROMPT_MAX_CHARS);
+  return text.length <= PROMPT_MAX_CHARS ? text : clip(text, PROMPT_MAX_CHARS);
 }

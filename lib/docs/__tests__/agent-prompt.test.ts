@@ -175,6 +175,108 @@ describe("the model and the page's kind", () => {
   });
 });
 
+/** A section without blank lines of its own (Setup, Done when): the first block with its title, or the last. */
+function sectionOf(text: string, title: string, last = false): string {
+  const blocks = text.split("\n\n").filter((b) => b.startsWith(`${title}\n`));
+  return (last ? blocks.at(-1) : blocks[0]) ?? "";
+}
+
+describe("the Setup: hosted API, the muse CLI, or the reader's own server", () => {
+  const pageOf = (slug: string) => ({ slug, title: slug, description: "", sourceUrl: `https://dev.meta.ai/docs/${slug}`, markdownUrl: `https://dev.meta.ai/docs/${slug}.md` });
+  const build = (slug: string, s: AgentPromptSpec | null, lastRequest: typeof ran | null = null, agent: "claude-code" | "muse-code" = "claude-code") =>
+    buildAgentPrompt({ page: pageOf(slug), spec: s, agent, language: "python", lastRequest });
+
+  it("sets up open-weight pages, the cookbook's open-weight recipes included, on the reader's own server", () => {
+    for (const slug of ["open-weight-models", "muse-spark-open", "muse-spark-open/deploy", "muse-glimmer/quantization", "cookbook/run-locally", "cookbook/post-training", "cookbook/muse-spark-open-mac", "cookbook/muse-spark-open-torchtitan-rl", "cookbook/muse-spark-open-torchtitan-sft"]) {
+      for (const s of [null, { ...spec, snippets: { python: "from openai import OpenAI" } }]) {
+        const text = build(slug, s, ran);
+        const setup = sectionOf(text, "Setup");
+        assert.match(setup, /^- Server: the model runs on hardware you control, behind an OpenAI-compatible server/m, slug);
+        assert.match(setup, /GET <base URL>\/models lists it/);
+        assert.doesNotMatch(setup, /api\.meta\.ai|MODEL_API_KEY|^- Model:/m, `${slug}: no hosted base URL, key or model`);
+        assert.doesNotMatch(sectionOf(text, "Done when", true), /MODEL_API_KEY|API errors/, `${slug}: no hosted checks`);
+        assert.match(sectionOf(text, "Done when", true), /Any key or token comes from the environment/);
+        assert.match(text, /hosted Muse Spark as a stand-in for the open weights/, `${slug}: the run is a stand-in`);
+        assert.doesNotMatch(text.slice(text.indexOf("Starter code")), /api\.meta\.ai/, `${slug}: the run never becomes the starter code`);
+      }
+    }
+    // Other cookbook recipes, the hosted Glimmer agent among them, stay on the hosted API.
+    for (const slug of ["cookbook/glimmer-api-agent", "cookbook/streaming-responses"]) {
+      assert.match(sectionOf(build(slug, spec), "Setup"), /^- Base URL: https:\/\/api\.meta\.ai\/v1$/m, slug);
+    }
+  });
+
+  it("lets a spec pick hosted on an open-weight page, or self-hosted anywhere", () => {
+    const hosted = build("muse-spark-open/deploy", { ...spec, setup: "hosted" });
+    assert.match(sectionOf(hosted, "Setup"), /^- Base URL: https:\/\/api\.meta\.ai\/v1\n- Auth: send Authorization: Bearer \$MODEL_API_KEY/m);
+    assert.match(sectionOf(hosted, "Done when", true), /The key comes from MODEL_API_KEY/);
+    assert.match(sectionOf(hosted, "Done when", true), /API errors \(4xx, 429\) surface their message/);
+    const own = build("tool-calling", { ...spec, setup: "self-hosted" });
+    assert.match(sectionOf(own, "Setup"), /^- Server: /m);
+    assert.doesNotMatch(sectionOf(own, "Setup"), /MODEL_API_KEY/);
+  });
+
+  it("tells Muse Code that its code has a key of its own only where the code calls the hosted API", () => {
+    assert.match(build("tool-calling", spec, null, "muse-code"), /^You're Muse Code, working in my repository\. You already run on Meta's models; the code you write calls the same API with its own key\.\n/);
+    for (const slug of ["muse-glimmer/deploy", "muse-code/configuration"]) {
+      assert.match(build(slug, null, null, "muse-code"), /^You're Muse Code, working in my repository\.\n\nTask\n/, slug);
+    }
+  });
+
+  it("sets up the Messages pages with the Anthropic SDK's base host", () => {
+    const text = buildAgentPrompt({ page: pageOf("protocols/messages"), spec: null, agent: "other", language: "typescript", lastRequest: null });
+    assert.match(sectionOf(text, "Setup"), /^- Base URL: https:\/\/api\.meta\.ai\/v1 for HTTP calls \(POST https:\/\/api\.meta\.ai\/v1\/messages\); the Anthropic SDK takes https:\/\/api\.meta\.ai$/m);
+    assert.match(sectionOf(text, "Setup"), /the Anthropic SDK \(npm install @anthropic-ai\/sdk\) with baseURL "https:\/\/api\.meta\.ai" \(no \/v1\)/);
+  });
+});
+
+describe("fitting a long run", () => {
+  /** A request whose JSON runs to about 12,000 characters in short lines, and a long start of its reply. */
+  const longRun = {
+    ...ran,
+    body: { model: "muse-spark-1.3", input: "What's the weather in Paris?", ...Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`field_${i}`, `value ${i}`])) },
+    outcome: `output_text: ${"It is sunny in Paris today, 21 degrees. ".repeat(20)}`,
+  };
+  const roomy: AgentPromptSpec = {
+    task: "Add tool calling to my app with the Responses API: define get_weather, run the call the model returns, send the result back and print the final answer.",
+    facts: Array.from({ length: 6 }, (_, i) => `Fact ${i}: ${"something the agent must get right about tool calls. ".repeat(2).trim()}`),
+    checklist: ["The script prints the model's final answer about the weather."],
+    snippets: { python: Array.from({ length: 14 }, (_, i) => `step_${i} = client.responses.create(model="muse-spark-1.3-contributor", input="step ${i}")`).join("\n") },
+  };
+
+  it("gives the run's body up first and keeps the page's starter code and facts whole, using the room that's left", () => {
+    const text = buildAgentPrompt({ page, spec: roomy, agent: "claude-code", language: "python", lastRequest: longRun });
+    assert.ok(roomy.snippets!.python!.length > 1000, "a snippet longer than a fixed share of the prompt would allow");
+    assert.ok(text.length <= PROMPT_MAX_CHARS && text.length > PROMPT_MAX_CHARS - 250, `${text.length} characters: the run takes the room left, no more and not much less`);
+    assert.ok(text.includes(roomy.snippets!.python!), "the starter code is whole");
+    for (const fact of roomy.facts!) assert.ok(text.includes(fact), "every fact is whole");
+    const trimmed = text.split("\n\n").filter((s) => s.includes("(trimmed)"));
+    assert.equal(trimmed.length, 1);
+    assert.match(trimmed[0], /^What I just ran in the docs\nPOST \/v1\/responses returned HTTP 200 on muse-spark-1\.3-contributor\.\nBody:\n\{\n {2}"model": "muse-spark-1\.3-contributor",/);
+    assert.match(trimmed[0], /\n\.\.\. \(trimmed\)\nResult: output_text: It is sunny/, "the start of the reply stays while the body can give way");
+  });
+
+  it("then the start of the reply, then the facts, before the starter code", () => {
+    const tight: AgentPromptSpec = { ...roomy, facts: Array.from({ length: 14 }, (_, i) => `Fact ${i}: ${"a long fact the agent should know before it writes code. ".repeat(2).trim()}`) };
+    const text = buildAgentPrompt({ page, spec: tight, agent: "claude-code", language: "python", lastRequest: longRun });
+    assert.ok(text.length <= PROMPT_MAX_CHARS);
+    assert.ok(text.includes(tight.snippets!.python!), "the starter code is whole");
+    assert.match(text, /\nBody:\n\.\.\. \(trimmed\)\nResult: \.\.\. \(trimmed\)\n/, "the run is down to its first line");
+    assert.match(sectionOf(text, "Facts to get right"), /\n\.\.\. \(trimmed\)$/, "the facts gave way next");
+    assert.ok(text.includes(tight.facts![0]), "the first facts stay");
+  });
+
+  it("cuts after a whole word, so no model id is left in pieces", () => {
+    const ids = { ...ran, body: { model: "muse-spark-1.3", note: Array.from({ length: 60 }, () => "muse-spark-1.3-contributor").join(" ") } };
+    for (let extra = 0; extra < 40; extra++) {
+      const s: AgentPromptSpec = { ...roomy, snippets: { python: `${roomy.snippets!.python!}\n${"#".repeat(extra)}` }, facts: [...roomy.facts!, "x".repeat(1400)] };
+      const text = buildAgentPrompt({ page, spec: s, agent: "claude-code", language: "python", lastRequest: ids });
+      assert.doesNotMatch(text, /muse-spark-1\.3(?!-contributor)/, `extra ${extra}`);
+      assert.ok(text.length <= PROMPT_MAX_CHARS);
+    }
+  });
+});
+
 describe("helpers", () => {
   it("trimBody summarizes data URLs and long strings and arrays", () => {
     const out = trimBody({ img: `data:image/jpeg;base64,${"B".repeat(4096)}`, long: "z".repeat(500), list: Array.from({ length: 12 }, (_, i) => i) }) as Record<string, unknown>;

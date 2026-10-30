@@ -27,7 +27,7 @@ The demos for the 21 open-weight pages (`lib/docs/demos/open-weights.ts`): Muse 
 
 `facts.ts` (the pages' numbers), `template.ts` (chat template renderer), `deploy.ts` plus `deploy-spark.ts` and `deploy-glimmer.ts` (runtimes and client code), `download.ts`, `settings.ts`, `hardware.ts`, `spark-hardware.ts` (the Spark planner's layout and command, kept the same), `gguf.ts`, `training.ts`, `torchtitan.ts`, `rewards.ts`, `dataset.ts`, `recipes.ts`, `mac.ts`, `picker.ts`, `standin-body.ts`, `shell.ts`. Each names the page its values come from and labels anything derived.
 
-Shared on purpose, so a builder, its copy prompt and the cookbook cards can't drift: `amdCommand` (the whole AMD block, exports and `COMMON_ARGS` included), `ggufDraftDownload` (the DFlash draft that `-md` reads from disk), `sparkTrlLaunch` (the full Slurm script), `aiperfCommand`. The copy prompts open their facts with `NO_META_KEY` (lib/docs/demos/open-weights.ts), first so the prompt's trimming can't drop it.
+Shared on purpose, so a builder, its copy prompt and the cookbook cards can't drift: `amdCommand` (the whole AMD block, exports and `COMMON_ARGS` included), `ggufDraftDownload` (the DFlash draft that `-md` reads from disk), `sparkTrlLaunch` (the full Slurm script), `aiperfCommand`. The copy prompts get a self-hosting Setup from lib/docs/agent-prompt.ts (the reader's own OpenAI-compatible server, no Model API base URL, key or model), since every page in this group is an open-weight page.
 
 ## Tests
 

@@ -5,6 +5,7 @@ import { docsUsageFromJson, usageShown } from "@/lib/docs/proxy/meter";
 import { DOCS_TEXT_MODELS, OUTPUT_TOKEN_CLAMPS } from "@/lib/docs/proxy/policy";
 import type { DocsDeps, DocsHoldState } from "@/lib/docs/proxy/types";
 import { SseParser } from "@/lib/gateway/meter";
+import type { ModelUsage } from "@/lib/types";
 
 /**
  * Background responses (protocols/responses, "Background responses"): Meta answers at once with status "queued" and
@@ -15,7 +16,8 @@ import { SseParser } from "@/lib/gateway/meter";
  *      reports the real usage the budgets count the most the run can cost. A model whose worst case is more than a
  *      reader's daily dollars (Muse Wonder's whole context window) can't run in the background here.
  *   3. The hold waits in the response's docs_objects row and is settled from Meta's usage once the response is
- *      finished: when the reader retrieves or cancels it, or in the hourly sweep (lib/docs/proxy/cleanup.ts).
+ *      finished: when the reader retrieves, cancels or deletes it, or in the hourly sweep (lib/docs/proxy/cleanup.ts).
+ *      One cancelled or failed without reporting usage settles at zero.
  */
 
 type Json = Record<string, unknown>;
@@ -73,11 +75,31 @@ function listOf(items: readonly string[]): string {
   return items.length > 1 ? `${items.slice(0, -1).join(", ")} or ${items.at(-1)}` : (items[0] ?? "");
 }
 
-/** What a finished response used, or null while it isn't finished or doesn't say. */
-export function finishedUsage(model: string | null, response: unknown) {
-  if (!isObject(response) || !TERMINAL_STATUSES.has(String(response.status))) return null;
-  if (!usageShown(RESPONSES, response)) return null;
-  return docsUsageFromJson(RESPONSES, model, response);
+/** Statuses a run can end in early: reporting no usage there means it used nothing (a cancel before it ran says usage: null). */
+const UNBILLED_WHEN_SILENT: ReadonlySet<string> = new Set(["cancelled", "failed"]);
+
+/** A reply that says what the response used, so a cancel's reply can settle on its own. */
+export function showsUsage(response: unknown): boolean {
+  return isObject(response) && usageShown(RESPONSES, response);
+}
+
+/** A response still to run or running, so its usage isn't known yet. */
+export function isRunning(response: unknown): boolean {
+  return isObject(response) && (response.status === "queued" || response.status === "in_progress");
+}
+
+/**
+ * What a finished response used, or null while it isn't finished or doesn't say. A response that was cancelled or
+ * failed without reporting usage used nothing, so it settles at zero rather than keeping its worst case; one that
+ * completed or ran out of tokens without saying keeps its worst case. Meta's cancel endpoint answers with lifecycle
+ * fields only, never usage, so a cancel's reply is no evidence of that: the handler reads the response itself instead.
+ */
+export function finishedUsage(model: string | null, response: unknown): ModelUsage[] | null {
+  if (!isObject(response)) return null;
+  const status = String(response.status);
+  if (!TERMINAL_STATUSES.has(status)) return null;
+  if (usageShown(RESPONSES, response)) return docsUsageFromJson(RESPONSES, model, response);
+  return UNBILLED_WHEN_SILENT.has(status) && (response.usage === null || response.usage === undefined) ? [] : null;
 }
 
 export type BackgroundSettleDeps = DocsSettleDeps & Pick<DocsDeps, "claimHold">;

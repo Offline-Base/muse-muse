@@ -62,8 +62,21 @@ describe("ContributorNotice and ModelSelect", () => {
     assert.match(html, /<label class="pg-label" for="([^"]+)">Model<\/label>.*<select id="\1" class="select pg-select">/);
     assert.match(html, /<optgroup label="Contributor mode"><option value="muse-spark-1\.3-contributor" selected="">Muse Spark 1\.3 Contributor<\/option><option value="muse-spark-1\.2-contributor">Muse Spark 1\.2 Contributor<\/option><\/optgroup>/);
     assert.match(html, /<optgroup label="Standard mode"><option value="muse-spark-1\.2">Muse Spark 1\.2<\/option><option value="muse-wonder-1\.0">Muse Wonder 1\.0<\/option><option value="muse-spark-1\.1">Muse Spark 1\.1<\/option><\/optgroup>/);
-    assert.match(html, /For Standard mode, pick Muse Spark 1\.2 or Muse Wonder 1\.0 in the model menu\./);
+    assert.match(html, /For Standard mode, pick Muse Spark 1\.2, Muse Wonder 1\.0 or Muse Spark 1\.1 in the model menu\./, "the menu's Standard models, in its order");
     assert.doesNotMatch(html, /value="muse-spark-1\.3"/, "Muse Spark 1.3 itself is never offered");
+  });
+
+  it("names only the Standard models the menu offers, and nothing without a menu", () => {
+    const sparkOnly = clean(render(C(kit.ModelSelect), { kind: "text", value: kit.DEFAULT_TEXT_MODEL, allow: ["muse-spark-1.3-contributor", "muse-spark-1.2"], onChange() {} }));
+    assert.match(sparkOnly, /For Standard mode, pick Muse Spark 1\.2 in the model menu\./);
+    assert.doesNotMatch(sparkOnly, /pick[^.]*Muse Wonder/, "no Muse Wonder where the menu has none");
+    const contributorOnly = render(C(kit.ModelSelect), { kind: "text", value: kit.DEFAULT_TEXT_MODEL, allow: ["muse-spark-1.3-contributor", "muse-spark-1.2-contributor"], onChange() {} });
+    assert.match(contributorOnly, new RegExp(NOTICE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(contributorOnly, /For Standard mode/, "no hint when the menu has no Standard model");
+    assert.doesNotMatch(render(C(kit.ContributorNotice), { model: "muse-spark-1.3-contributor" }), /For Standard mode/, "no menu, no hint");
+    assert.match(render(C(kit.ContributorNotice), { model: "muse-spark-1.3-contributor", menu: ["muse-wonder-1.0", "muse-spark-1.3-contributor"] }), /For Standard mode, pick Muse Wonder 1\.0 in the model menu\./);
+    assert.equal(kit.standardHintText(["muse-spark-1.3", "muse-spark-1.2-contributor"]), null, "muse-spark-1.3 runs as Contributor, so it isn't a Standard choice");
+    assert.equal(kit.standardHintText(["muse-spark-1.2", "muse-spark-1.1", "muse-spark-1.2"]), "For Standard mode, pick Muse Spark 1.2 or Muse Spark 1.1 in the model menu.");
   });
 
   it("shows muse-spark-1.3 as the Contributor model it runs as, and hides the notice for Standard", () => {

@@ -39,7 +39,7 @@ export function ModelSelect({
     : [...listed, { id: current, label: docsModelLabel(current), mode: isContributor(current) ? "contributor" : "standard", hint: "" }];
   const contributor = options.filter((m) => m.mode === "contributor");
   const standard = options.filter((m) => m.mode === "standard");
-  const noticeEl = notice ? <ContributorNotice model={current} standardHint={standard.length > 0} /> : null;
+  const noticeEl = notice ? <ContributorNotice model={current} menu={options.map((m) => m.id)} /> : null;
 
   if (options.length === 1) {
     return (

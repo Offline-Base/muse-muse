@@ -59,9 +59,10 @@ async function eachUntil<T>(
 }
 
 /**
- * Settles background responses that finished since they started, from what Meta says they used. A response Meta no
- * longer has, or one that finished without saying what it used, has its hold taken off the row and the worst case
- * stays as its charge. One that's still running is looked up again next run.
+ * Settles background responses that finished since they started, from what Meta says they used; one cancelled or
+ * failed without reporting usage used nothing and settles at zero. A response Meta no longer has, or one that
+ * completed without saying what it used, has its hold taken off the row and the worst case stays as its charge. One
+ * that's still running is looked up again next run.
  */
 async function sweepHolds(deps: DocsCleanupDeps, now: Date, deadline: number, clock: () => number): Promise<number> {
   const pending = await deps.pendingHolds(new Date(now.getTime() - SWEEP_MIN_AGE_MS), SWEEP_BATCH);

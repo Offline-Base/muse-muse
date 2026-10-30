@@ -720,8 +720,10 @@ function hostedPart(kind: MediaKind, dataUrl: string): Json {
 /**
  * The conversation as hosted Chat Completions takes it: each media part becomes the docs sample loaded for its kind
  * (`media`, data URLs), in the same place among the text, since the page's example URLs aren't real files; a kind
- * whose sample hasn't loaded is left out. Replayed reasoning_content is left out too. Returns what was left out, for
- * the stand-in's note.
+ * whose sample hasn't loaded is left out. Replayed reasoning_content goes as it is: hosted Chat Completions lists it
+ * on assistant messages (api-reference/chat-completions/schemas) and took it in a live check (HTTP 200, Oct 30,
+ * 2026), though its own replies leave reasoning_content empty for an external key (reasoning, "Chat Completions").
+ * Returns what was left out, for the stand-in's note.
  */
 export function hostedMessages(conv: ConvMessage[], model: OpenModel, media: Partial<Record<MediaKind, string>> = {}): { messages: Json[]; dropped: string[] } {
   const dropped = new Set<string>();
@@ -739,12 +741,6 @@ export function hostedMessages(conv: ConvMessage[], model: OpenModel, media: Par
         else dropped.add(`${p.type} parts (the docs sample hasn't loaded)`);
       }
       return { role: "user", content: parts.length ? parts : "(media only)" };
-    }
-    if (m.role === "assistant" && "reasoning_content" in m) {
-      dropped.add("replayed reasoning_content (hosted Chat Completions doesn't take it)");
-      const rest = { ...m };
-      delete rest.reasoning_content;
-      return rest;
     }
     return m;
   });

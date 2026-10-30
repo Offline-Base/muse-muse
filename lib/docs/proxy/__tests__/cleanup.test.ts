@@ -192,6 +192,8 @@ test("the sweep settles finished background responses from Meta's usage, once, a
       { id: "resp_running", kind: "response", ageHours: 0.5, hold: hold("res-running", 120_000) },
       { id: "resp_gone", kind: "response", ageHours: 0.5, hold: hold("res-gone", 120_000) },
       { id: "resp_bare", kind: "response", ageHours: 0.5, hold: hold("res-bare", 120_000) },
+      { id: "resp_unrun", kind: "response", ageHours: 0.5, hold: hold("res-unrun", 120_000) },
+      { id: "resp_failed", kind: "response", ageHours: 0.5, hold: hold("res-failed", 120_000) },
       { id: "resp_new", kind: "response", ageHours: 0.001, hold: hold("res-new", 120_000) },
       { id: "resp_plain", kind: "response", ageHours: 0.5 },
     ],
@@ -200,25 +202,34 @@ test("the sweep settles finished background responses from Meta's usage, once, a
       ({
         resp_done: { status: 200, json: { id, status: "completed", output: [], usage } },
         resp_running: { status: 200, json: { id, status: "in_progress", usage: null } },
-        resp_bare: { status: 200, json: { id, status: "failed", usage: null } },
+        resp_bare: { status: 200, json: { id, status: "completed", output: [] } },
+        // Cancelled before it ran, and failed before it started: Meta reports usage null, so nothing was used.
+        resp_unrun: { status: 200, json: { id, status: "cancelled", output: [], usage: null } },
+        resp_failed: { status: 200, json: { id, status: "failed", error: { code: "server_error" } } },
       })[id] ?? { status: 404, json: { error: { message: "No such response" } } },
   );
   const result = await cleanupDocsObjects(c.deps, NOW);
-  assert.deepEqual(result.docsBackground, { ok: true, count: 1 });
+  assert.deepEqual(result.docsBackground, { ok: true, count: 3 });
   const cost = usageCost({ model: "muse-spark-1.3-contributor", inputTokens: 1200, cachedInputTokens: 0, outputTokens: 300 });
-  assert.deepEqual(c.settled.map((s) => [s.reservation, s.item?.costUsd]), [["res-done", cost]]);
-  assert.equal(c.counters.get("docs-usd:203.0.113.9|2026-10-31T00:00:00.000Z"), 0, "the IP's counter gave back the worst case");
+  assert.deepEqual(
+    c.settled.map((s) => [s.reservation, s.item?.costUsd ?? 0]).sort(),
+    [["res-done", cost], ["res-failed", 0], ["res-unrun", 0]],
+    "settled from usage, and at zero when a cancelled or failed run reports none",
+  );
+  assert.equal(c.counters.get("docs-usd:203.0.113.9|2026-10-31T00:00:00.000Z"), 0, "the IP's counter gave back the worst cases");
   const holds = Object.fromEntries(c.table.map((r) => [r.id, r.hold ? r.hold.reservation : null]));
   assert.equal(holds.resp_done, null, "settled");
   assert.equal(holds.resp_running, "res-running", "still running: looked up again next run");
   assert.equal(holds.resp_gone, null, "gone at Meta: the worst case stays as the charge");
-  assert.equal(holds.resp_bare, null, "finished without usage: the worst case stays, and it isn't looked up again");
+  assert.equal(holds.resp_bare, null, "completed without usage: the worst case stays, and it isn't looked up again");
+  assert.equal(holds.resp_unrun, null, "cancelled before it ran: settled at zero");
+  assert.equal(holds.resp_failed, null, "failed without usage: settled at zero");
   assert.equal(holds.resp_new, "res-new", "too new: the reader is still polling it");
 
   // A second sweep finds nothing more to settle.
   const again = await cleanupDocsObjects(c.deps, NOW);
   assert.deepEqual(again.docsBackground, { ok: true, count: 0 });
-  assert.equal(c.settled.length, 1);
+  assert.equal(c.settled.length, 3);
 });
 
 test("retrieveUpstreamResponse: GET with the key, status and JSON back, null when Meta can't be reached", async () => {

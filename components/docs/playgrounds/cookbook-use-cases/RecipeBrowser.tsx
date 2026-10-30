@@ -9,12 +9,16 @@ import styles from "@/components/docs/playgrounds/cookbook-use-cases/cuc.module.
 import { CAPABILITY_LABEL, HARNESSES, RECIPES, filterRecipes, pickInstructions, pickSchema, type Capability } from "@/components/docs/playgrounds/cookbook-use-cases/lib/recipes";
 import { responseText } from "@/components/docs/playgrounds/cookbook-use-cases/lib/responses";
 import { parseStrictJson, asObject } from "@/components/docs/playgrounds/cookbook-use-cases/lib/strict-json";
+import { modelsFor } from "@/lib/docs/client/models";
 
 /**
  * cookbook/use-cases: the category's recipes as a filterable browser (by what they use and the harness they run on),
  * plus one live call: describe your project and Muse Spark picks the recipes that fit, from this list only (a strict
  * JSON schema whose slug field is an enum of the real recipes).
  */
+
+/** What the model menu beside the notice offers: the whole text menu. */
+const TEXT_MENU = modelsFor("text").map((m) => m.id);
 
 export interface RecipeBrowserProps {
   slug: string;
@@ -201,7 +205,7 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
             <RunButton running={runner.state === "running"} onRun={() => void ask()} onStop={runner.abort} label="Pick recipes" disabled={!project.trim()} />
           </div>
         </div>
-        <ContributorNotice model={model} standardHint />
+        <ContributorNotice model={model} menu={TEXT_MENU} />
         <ErrorBox error={runner.error} />
         {parseError ? <p className="pg-hint pg-bad">{parseError}</p> : null}
         {picks ? (

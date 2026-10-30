@@ -23,7 +23,7 @@ register(`data:text/javascript,${encodeURIComponent(CSS_HOOK)}`, import.meta.url
 
 let html: (el: ReactElement) => string;
 let demos: typeof import("@/lib/docs/demos/cookbook-media").cookbookMediaDemos;
-let groups: typeof import("@/lib/docs/demos").DEMO_GROUPS;
+let groups: typeof import("@/lib/docs/demos/groups").DEMO_GROUPS;
 let prompt: typeof import("@/lib/docs/agent-prompt");
 let records: typeof import("./prompt-records");
 let board: typeof import("@/components/docs/playgrounds/cookbook-media/Chessboard");
@@ -53,7 +53,7 @@ describe("cookbook-media demos", () => {
     const { renderToString } = await import("react-dom/server");
     html = (e) => clean(renderToString(e).replace(/<!-- -->/g, ""));
     demos = (await import("@/lib/docs/demos/cookbook-media")).cookbookMediaDemos;
-    groups = (await import("@/lib/docs/demos")).DEMO_GROUPS;
+    groups = (await import("@/lib/docs/demos/groups")).DEMO_GROUPS;
     prompt = await import("@/lib/docs/agent-prompt");
     records = await import("./prompt-records");
     board = await import("@/components/docs/playgrounds/cookbook-media/Chessboard");

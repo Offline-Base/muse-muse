@@ -26,7 +26,7 @@ const NOTICE = /Runs on Muse Spark 1\.3 Contributor: Meta may use what you send 
 
 let html: (el: ReactElement) => string;
 let demos: typeof import("@/lib/docs/demos/muse-code");
-let index: typeof import("@/lib/docs/demos");
+let index: typeof import("@/lib/docs/demos/groups");
 let prompt: typeof import("@/lib/docs/agent-prompt");
 let pages: typeof import("@/lib/docs/pages");
 
@@ -39,7 +39,7 @@ before(async () => {
     return out;
   };
   demos = await import("@/lib/docs/demos/muse-code");
-  index = await import("@/lib/docs/demos");
+  index = await import("@/lib/docs/demos/groups");
   prompt = await import("@/lib/docs/agent-prompt");
   pages = await import("@/lib/docs/pages");
 });

@@ -12,7 +12,7 @@ import { costExtrasOf } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { CostCalculator } from "@/components/docs/playgrounds/start/CostCalculator";
 import { BACKGROUND_SUBMISSIONS_PER_MINUTE, RATE_LIMIT_HEADERS, RATE_LIMITS } from "@/components/docs/playgrounds/start/facts";
-import { costOfUsage, exactUsd, rateLimitFit } from "@/components/docs/playgrounds/start/pricing";
+import { costOfUsage, exactUsd, hasLiveLimits, liveLimits, rateLimitFit, remainingLine, type LiveLimits } from "@/components/docs/playgrounds/start/pricing";
 import { RetrySimulator } from "@/components/docs/playgrounds/start/RetrySimulator";
 import { SectionTabs } from "@/components/docs/playgrounds/start/SectionTabs";
 import { capWonder, WONDER_COST_NOTE, WONDER_MODEL } from "@/components/docs/playgrounds/start/wonder";
@@ -23,23 +23,25 @@ export type PricingSection = "calculator" | "real-call" | "limits";
 /**
  * The pricing page in three parts: a calculator over its price tables, a real call whose usage is turned into the
  * page's line items, and its rate limits (the table, a check of whether a steady workload fits a model's team limits,
- * and the 429 backoff the page recommends).
+ * the rate-limit headers with the values Meta sent on the last reply, and the 429 backoff the page recommends). Both
+ * live calls report their reply's headers, so the headers table shows whichever ran last.
  */
 export function PricingDemo({ initial = "calculator" }: { slug: string; initial?: PricingSection }) {
+  const [live, setLive] = useState<LiveLimits | null>(null);
   return (
     <SectionTabs
       label="Pricing and rate limits"
       initial={initial}
       sections={[
         { id: "calculator", label: "Cost calculator", content: <CostCalculator /> },
-        { id: "real-call", label: "Price a real call", content: <RealCallCost /> },
-        { id: "limits", label: "Rate limits", content: <RateLimits /> },
+        { id: "real-call", label: "Price a real call", content: <RealCallCost onLimits={setLive} /> },
+        { id: "limits", label: "Rate limits", content: <RateLimits live={live} onLimits={setLive} /> },
       ]}
     />
   );
 }
 
-function RealCallCost() {
+function RealCallCost({ onLimits }: { onLimits(live: LiveLimits): void }) {
   const id = useId();
   const runner = useDocsRun();
   const [model, setModel] = useState(DEFAULT_TEXT_MODEL);
@@ -53,6 +55,10 @@ function RealCallCost() {
   if (e) draft.reasoning = { effort: e };
   if (search) draft.tools = [{ type: "web_search" }];
   const body = capWonder(draft);
+  const send = async () => {
+    const reply = await runner.run("responses", { method: "POST", body });
+    if (reply.ok) onLimits(liveLimits(reply.model ?? model, reply.headers));
+  };
 
   const result = runner.result;
   const json = result?.ok ? (result.json as Record<string, unknown> | null) : null;
@@ -74,10 +80,10 @@ function RealCallCost() {
         <label className="sr-only" htmlFor={`${id}-prompt`}>
           Input
         </label>
-        <TextArea id={`${id}-prompt`} rows={2} value={prompt} onChange={(ev) => setPrompt(ev.target.value)} onKeyDown={runOnModEnter(() => void runner.run("responses", { method: "POST", body }))} />
+        <TextArea id={`${id}-prompt`} rows={2} value={prompt} onChange={(ev) => setPrompt(ev.target.value)} onKeyDown={runOnModEnter(() => void send())} />
         <div className="pg-composer-bar">
           <span className="pg-muted pg-kbd-hint">{model === WONDER_MODEL ? WONDER_COST_NOTE : "Fractions of a cent on Contributor."}</span>
-          <RunButton running={running} onRun={() => void runner.run("responses", { method: "POST", body })} onStop={runner.abort} disabled={!prompt.trim()} />
+          <RunButton running={running} onRun={() => void send()} onStop={runner.abort} disabled={!prompt.trim()} />
         </div>
       </div>
       <ErrorBox error={runner.error} />
@@ -133,7 +139,7 @@ function RealCallCost() {
   );
 }
 
-function RateLimits() {
+function RateLimits({ live, onLimits }: { live: LiveLimits | null; onLimits(live: LiveLimits): void }) {
   const id = useId();
   const [model, setModel] = useState("muse-spark-1.3-contributor");
   const [rpm, setRpm] = useState(120);
@@ -211,32 +217,100 @@ function RateLimits() {
         ) : null}
       </div>
 
-      <div>
-        <p className="pg-section-label">Read the headers, slow down early</p>
-        <div className={`docs-table ${styles.table}`} role="group" aria-label="Rate-limit headers" tabIndex={0}>
-          <table>
-            <tbody>
-              {RATE_LIMIT_HEADERS.map((h) => (
-                <tr key={h.name}>
-                  <td className={styles.cell}>
-                    <code className="docs-code-inline">{h.name}</code>
-                  </td>
-                  <td>{h.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="pg-hint">
-          Every successful token-based response carries these. The live docs share one team key across every reader, so they don&apos;t
-          pass them on: read them in your own code (transcription responses don&apos;t include them).
-        </p>
-      </div>
+      <LiveHeaders live={live} onLimits={onLimits} />
 
       <div>
         <p className="pg-section-label">When a 429 comes anyway</p>
         <RetrySimulator scenario="rate-limit-backoff" scenarios={["rate-limit-backoff", "rate-limit"]} />
       </div>
+    </div>
+  );
+}
+
+/** A number as the page writes it ("3,000,000"); anything else as it came. */
+function headerValue(value: string): string {
+  const n = Number(value);
+  return value.trim() && Number.isFinite(n) ? n.toLocaleString("en-US") : value;
+}
+
+/**
+ * The page's rate-limit headers, with the values Meta sent on the last reply when there is one: from "Price a real
+ * call", or from the smallest request a model takes (16 output tokens), sent here to read them.
+ */
+export function LiveHeaders({ live, onLimits }: { live: LiveLimits | null; onLimits(live: LiveLimits): void }) {
+  const id = useId();
+  const runner = useDocsRun();
+  const [model, setModel] = useState(DEFAULT_TEXT_MODEL);
+  const [showCode, setShowCode] = useState(false);
+  const running = runner.state === "running";
+  const effort = fitEffort(model, "minimal");
+  const body: Record<string, unknown> = { model, input: "Reply with the word ok.", max_output_tokens: 16, ...(effort ? { reasoning: { effort } } : {}) };
+  const read = async () => {
+    const reply = await runner.run("responses", { method: "POST", body });
+    if (reply.ok) onLimits(liveLimits(reply.model ?? model, reply.headers));
+  };
+  const left = live ? remainingLine(live) : null;
+  return (
+    <div>
+      <p className="pg-section-label">Read the headers, slow down early</p>
+      <div className={`docs-table ${styles.table}`} role="group" aria-label="Rate-limit headers" tabIndex={0}>
+        <table>
+          {live ? (
+            <thead>
+              <tr>
+                <th scope="col">Header</th>
+                <th scope="col">What it says</th>
+                <th scope="col" className={styles.num}>
+                  Last reply
+                </th>
+              </tr>
+            </thead>
+          ) : null}
+          <tbody>
+            {RATE_LIMIT_HEADERS.map((h, i) => {
+              const value = live?.documented[i]?.value ?? null;
+              return (
+                <tr key={h.name}>
+                  <td className={styles.cell}>
+                    <code className="docs-code-inline">{h.name}</code>
+                  </td>
+                  <td>{h.description}</td>
+                  {live ? <td className={styles.num}>{value === null ? "not sent" : headerValue(value)}</td> : null}
+                </tr>
+              );
+            })}
+            {live?.other.map((h) => (
+              <tr key={h.name}>
+                <td className={styles.cell}>
+                  <code className="docs-code-inline">{h.name}</code>
+                </td>
+                <td>Also on the last reply.</td>
+                <td className={styles.num}>{headerValue(h.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {live ? (
+        <p className="pg-hint" role="status" aria-live="polite">
+          {hasLiveLimits(live)
+            ? `${docsModelLabel(live.model)}: ${left ?? "the headers above"}. That's Muse Muse's team, which every reader of these docs shares, so the numbers move as others run demos; your own key's team has its own.`
+            : `The last reply, on ${docsModelLabel(live.model)}, carried no rate-limit headers.`}
+        </p>
+      ) : null}
+      <div className="pg-bar">
+        <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
+        <RunButton running={running} onRun={() => void read()} onStop={runner.abort} label="Read them live" />
+      </div>
+      <ErrorBox error={runner.error} />
+      <p className="pg-hint">
+        Every successful token-based response carries these (transcription responses don&apos;t), and the live docs pass Meta&apos;s on.
+        Read them live sends the smallest request a model takes (16 output tokens), a fraction of a cent.
+      </p>
+      <div className="pg-actions">
+        <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
+      </div>
+      {showCode ? <CodeView method="POST" path="responses" body={body} /> : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { tokenUsage, type TokenUsage } from "@/lib/docs/client/cost";
 import { runsAs } from "@/lib/docs/client/models";
 import {
   IMAGE_PRICE,
+  RATE_LIMIT_HEADERS,
   RATE_LIMITS,
   SAM_MIN_FRAMES,
   SAM_PER_1000_FRAMES,
@@ -187,6 +188,50 @@ export function rateLimitFit(model: string, requestsPerMinute: number, tokensPer
     binding: !Number.isFinite(max) ? null : byTokens < byRequests ? "tokens" : "requests",
     fits: (requestShare ?? 0) <= 1 && (tokenShare ?? 0) <= 1,
   };
+}
+
+/** A reply's rate-limit headers, as the docs proxy passes them on from Meta, for the model that answered. */
+export interface LiveLimits {
+  /** The model the reply came from: each model has its own limits. */
+  model: string;
+  /** The page's four headers in its order, each with the reply's value, or null when the reply didn't send it. */
+  documented: Array<{ name: string; value: string | null }>;
+  /** Any other rate-limit header the reply carried (a reset time, say), as it came. */
+  other: Array<{ name: string; value: string }>;
+}
+
+const RATE_LIMIT_NAME = /^(x-|anthropic-)?rate-?limit(-[a-z0-9-]+)?$/;
+
+/** The rate-limit headers of one reply, read from DocsResult.headers (lowercase names). */
+export function liveLimits(model: string, headers: Readonly<Record<string, string>>): LiveLimits {
+  const byName = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+  const documented = new Set(RATE_LIMIT_HEADERS.map((h) => h.name));
+  return {
+    model,
+    documented: RATE_LIMIT_HEADERS.map((h) => ({ name: h.name, value: byName.get(h.name) ?? null })),
+    other: [...byName].filter(([name]) => RATE_LIMIT_NAME.test(name) && !documented.has(name)).map(([name, value]) => ({ name, value })),
+  };
+}
+
+/** True when the reply sent any rate-limit header at all. */
+export function hasLiveLimits(live: LiveLimits): boolean {
+  return live.documented.some((h) => h.value !== null) || live.other.length > 0;
+}
+
+/** "149 of 150 requests and 2,999,950 of 3,000,000 tokens left in the window", from the parts the reply sent. */
+export function remainingLine(live: LiveLimits): string | null {
+  const value = (name: string) => {
+    const raw = live.documented.find((h) => h.name === name)?.value;
+    const n = raw === null || raw === undefined ? Number.NaN : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const part = (left: number | null, limit: number | null, unit: string) =>
+    left === null ? null : `${left.toLocaleString("en-US")}${limit === null ? "" : ` of ${limit.toLocaleString("en-US")}`} ${unit}`;
+  const parts = [
+    part(value("x-ratelimit-remaining-requests"), value("x-ratelimit-limit-requests"), "requests"),
+    part(value("x-ratelimit-remaining-tokens"), value("x-ratelimit-limit-tokens"), "tokens"),
+  ].filter((p): p is string => p !== null);
+  return parts.length ? `${parts.join(" and ")} left in the window` : null;
 }
 
 export interface TokenPreset {

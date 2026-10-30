@@ -70,7 +70,7 @@ export const startDemos: DemoMap = {
       task: "Wire Meta Model API into this project: add a small client module (base URL https://api.meta.ai/v1, key from MODEL_API_KEY) with an ask(prompt, model) function that calls the Responses API and returns the text. Default to muse-spark-1.3-contributor and use muse-wonder-1.0 for long, complex tasks, then add a script that runs one prompt on both.",
       facts: [
         "Muse Wonder (muse-wonder-1.0) and Muse Spark take the same requests on the same endpoints, so switching is a model id change. Muse Wonder is Standard mode only on Model API, and in preview.",
-        "Muse Spark ids: muse-spark-1.3, muse-spark-1.2, muse-spark-1.1 (Standard) and muse-spark-1.3-contributor, muse-spark-1.2-contributor (Contributor: cheaper, Meta may train on what you send). Context window 1,048,576 tokens.",
+        "Muse Spark ids: muse-spark-1.3-contributor and muse-spark-1.2-contributor (Contributor: cheaper, Meta may train on what you send), muse-spark-1.2 and muse-spark-1.1 (Standard; Muse Spark 1.3 Standard is its Contributor id without -contributor). Context window 1,048,576 tokens.",
         "Other hosted models: muse-image-1.0 (POST /v1/images/generations and /v1/images/edits), muse-voice-transcribe-1.0 (POST /v1/asr/transcribe, wss://api.meta.ai/v1/asr/realtime), sam-3.1 (POST /v1/responses).",
         "Muse Spark Open and Muse Glimmer are open weights you run yourself: they aren't on Model API.",
         "The OpenAI SDK works with base_url set, but it doesn't read MODEL_API_KEY: pass the key explicitly.",
@@ -239,7 +239,7 @@ export async function POST(request: Request): Promise<Response> {
       facts: [
         'GET /v1/models returns { "object": "list", "data": [{ "id", "object": "model", "created", "owned_by" }] }; GET /v1/models/{model} returns one Model (an unknown id: 404 model_not_found).',
         LIST_ORDER_FACT,
-        "Hosted ids: muse-wonder-1.0, muse-spark-1.3, muse-spark-1.3-contributor, muse-spark-1.2, muse-spark-1.2-contributor, muse-spark-1.1, muse-image-1.0, muse-voice-transcribe-1.0, sam-3.1.",
+        "Hosted ids: muse-wonder-1.0, muse-spark-1.3-contributor (Muse Spark 1.3 Standard drops -contributor), muse-spark-1.2, muse-spark-1.2-contributor, muse-spark-1.1, muse-image-1.0, muse-voice-transcribe-1.0, sam-3.1.",
         "Muse Wonder and Muse Spark take the same requests on the same endpoints (1,048,576-token context, multimodal input). The id picks the mode (-contributor is Contributor); Muse Wonder is Standard only.",
         '"max" effort isn\'t available on muse-spark-1.3-contributor. For audio, use Muse Spark 1.2 or Muse Voice Transcribe: 1.3 doesn\'t fully support it.',
       ],
@@ -296,16 +296,19 @@ console.log(JSON.stringify(await client.models.retrieve(MODEL), null, 2));`,
 
 RATES = {  # USD per 1M tokens: input, cached input, output
     "muse-wonder-1.0": (4.00, 0.20, 20.00),
-    "muse-spark-1.3": (1.25, 0.15, 4.25),
-    "muse-spark-1.2": (1.25, 0.15, 4.25),
-    "muse-spark-1.1": (1.25, 0.15, 4.25),
-    "muse-spark-1.3-contributor": (0.10, 0.002, 0.20),
-    "muse-spark-1.2-contributor": (0.10, 0.002, 0.20),
+    "spark-standard": (1.25, 0.15, 4.25),  # every Muse Spark id without -contributor
+    "spark-contributor": (0.10, 0.002, 0.20),  # muse-spark-1.3-contributor, muse-spark-1.2-contributor
 }
 
 
+def rates_for(model):
+    if model.startswith("muse-spark-"):
+        return RATES["spark-contributor" if model.endswith("-contributor") else "spark-standard"]
+    return RATES[model]
+
+
 def cost_usd(model, usage, web_searches=0):
-    rate_in, rate_cached, rate_out = RATES[model]
+    rate_in, rate_cached, rate_out = rates_for(model)
     cached = usage.input_tokens_details.cached_tokens or 0
     tokens = (usage.input_tokens - cached) * rate_in + cached * rate_cached + usage.output_tokens * rate_out
     return tokens / 1_000_000 + web_searches * 2.50 / 1000
@@ -316,12 +319,11 @@ print(response.usage.input_tokens, response.usage.output_tokens, f"\${cost_usd(r
         typescript: `const RATES: Record<string, [number, number, number]> = {
   // USD per 1M tokens: input, cached input, output
   "muse-wonder-1.0": [4.0, 0.2, 20.0],
-  "muse-spark-1.3": [1.25, 0.15, 4.25],
-  "muse-spark-1.2": [1.25, 0.15, 4.25],
-  "muse-spark-1.1": [1.25, 0.15, 4.25],
-  "muse-spark-1.3-contributor": [0.1, 0.002, 0.2],
-  "muse-spark-1.2-contributor": [0.1, 0.002, 0.2],
+  "spark-standard": [1.25, 0.15, 4.25], // every Muse Spark id without -contributor
+  "spark-contributor": [0.1, 0.002, 0.2], // muse-spark-1.3-contributor, muse-spark-1.2-contributor
 };
+const ratesFor = (model: string) =>
+  model.startsWith("muse-spark-") ? RATES[model.endsWith("-contributor") ? "spark-contributor" : "spark-standard"] : RATES[model];
 
 const response = await fetch("https://api.meta.ai/v1/responses", {
   method: "POST",
@@ -329,7 +331,7 @@ const response = await fetch("https://api.meta.ai/v1/responses", {
   body: JSON.stringify({ model: "${M}", input: "Say hello in five words." }),
 });
 const reply = await response.json();
-const [input, cachedRate, output] = RATES[reply.model];
+const [input, cachedRate, output] = ratesFor(reply.model);
 const cached = reply.usage.input_tokens_details?.cached_tokens ?? 0;
 const usd = ((reply.usage.input_tokens - cached) * input + cached * cachedRate + reply.usage.output_tokens * output) / 1e6;
 console.log(reply.usage, usd.toFixed(6), response.headers.get("x-ratelimit-remaining-requests"));`,

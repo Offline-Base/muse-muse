@@ -1,6 +1,14 @@
 import { isCrossSite } from "@/lib/auth";
 import { AskInputError, ASK_BODY_MAX_BYTES, buildAskRequest, parseAskBody } from "@/lib/docs/proxy/ask";
-import { backgroundRefusal, finalResponseOf, isBackgroundReply, settleFinished } from "@/lib/docs/proxy/background";
+import {
+  backgroundRefusal,
+  finalResponseOf,
+  isBackgroundReply,
+  isRunning,
+  settleFinished,
+  showsUsage,
+  TERMINAL_STATUSES,
+} from "@/lib/docs/proxy/background";
 import { matchEndpoint, type DocsEndpoint } from "@/lib/docs/proxy/endpoints";
 import { docsError, docsErrors } from "@/lib/docs/proxy/errors";
 import { estimateDocsCost } from "@/lib/docs/proxy/estimate";
@@ -93,6 +101,15 @@ const PASS_HEADERS = [
   "request-id",
   "openai-processing-ms",
 ];
+/**
+ * Meta's rate-limit headers (pricing-rate-limits, "Read rate-limit headers": x-ratelimit-limit-requests,
+ * x-ratelimit-remaining-tokens and the rest), in any of the spellings APIs use (x-ratelimit-*, x-rate-limit-*,
+ * ratelimit-*, anthropic-ratelimit-*), so the demos can show them. They report the team's limits, which every docs
+ * reader shares, and carry numbers and times only.
+ */
+const RATE_LIMIT_HEADER = /^(x-|anthropic-)?rate-?limit(-[a-z0-9-]+)?$/;
+/** Never passed back, whatever the name looks like: the upstream's cookies, and anything about its auth or keys. */
+const NEVER_PASS = /cookie|auth|key|secret|session/;
 /** Request headers passed on to Meta. Never the visitor's cookies, auth or key headers. */
 const FORWARD_HEADERS = ["accept"];
 const ANTHROPIC_HEADERS = ["anthropic-version", "anthropic-beta"];
@@ -145,6 +162,9 @@ function replyHeaders(upstream: Response, call: Pick<LiveCall, "model" | "notes"
     const value = upstream.headers.get(name);
     if (value) out.set(name, value);
   }
+  upstream.headers.forEach((value, name) => {
+    if (RATE_LIMIT_HEADER.test(name) && !NEVER_PASS.test(name) && value) out.set(name, value.slice(0, 200));
+  });
   if (call.model) out.set(DOCS_MODEL_HEADER, call.model);
   const note = noteHeader(call.notes);
   if (note) out.set(DOCS_NOTE_HEADER, note);
@@ -413,10 +433,14 @@ async function pendingHoldFor(endpoint: DocsEndpoint, deps: DocsDeps): Promise<D
 }
 
 /**
- * Before a background response is deleted, the finished response is read so its hold settles from what it used: the
- * delete's own reply says nothing about usage, and afterwards there's nothing left to read.
+ * What reading a held response back did: "settled" its hold, found it "gone" (another caller settled it), found it
+ * still "running" (queued or in progress), or left it "pending" (it finished without saying what it used, or couldn't
+ * be read). The hold stays on its row unless it was settled.
  */
-async function settleBeforeDelete(deps: DocsDeps, id: string, hold: DocsHoldState): Promise<void> {
+type ReadBack = "settled" | "gone" | "running" | "pending";
+
+/** Reads a stored response at Meta and settles its held spend from it (settleFinished). */
+async function readAndSettle(deps: DocsDeps, id: string, hold: DocsHoldState): Promise<ReadBack> {
   try {
     const res = await deps.fetch(upstreamUrl(deps, `responses/${encodeURIComponent(id)}`, ""), {
       headers: { authorization: `Bearer ${deps.upstreamKey()}` },
@@ -424,12 +448,45 @@ async function settleBeforeDelete(deps: DocsDeps, id: string, hold: DocsHoldStat
     });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
-      return;
+      return "pending";
     }
-    await settleFinished(deps, id, hold, (await res.json()) as unknown);
+    const response = (await res.json()) as unknown;
+    const outcome = await settleFinished(deps, id, hold, response);
+    return outcome === "pending" && isRunning(response) ? "running" : outcome;
   } catch (err) {
-    logged("settling a background response before its delete")(err);
+    logged("settling a background response")(err);
+    return "pending";
   }
+}
+
+/** Reads after a cancel before a delete, while the cancel takes hold. */
+const CANCEL_SETTLE_READS = 3;
+const CANCEL_SETTLE_GAP_MS = 1_000;
+
+/**
+ * Before a background response is deleted, its hold is settled from what it used: the delete's own reply says nothing
+ * about usage, and afterwards there's nothing left to read. A run still going is cancelled first, since no one could
+ * read it once it's deleted, then read until the cancel takes hold. Returns the outcome and whether it cancelled; a
+ * hold still unsettled keeps its worst case, made final once the delete goes through.
+ */
+async function settleBeforeDelete(deps: DocsDeps, id: string, hold: DocsHoldState): Promise<{ outcome: ReadBack; cancelled: boolean }> {
+  let outcome = await readAndSettle(deps, id, hold);
+  if (outcome !== "running") return { outcome, cancelled: false };
+  try {
+    const res = await deps.fetch(upstreamUrl(deps, `responses/${encodeURIComponent(id)}/cancel`, ""), {
+      method: "POST",
+      headers: { authorization: `Bearer ${deps.upstreamKey()}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    await res.body?.cancel().catch(() => {});
+  } catch (err) {
+    logged("cancelling a background response before its delete")(err);
+  }
+  for (let read = 0; read < CANCEL_SETTLE_READS && outcome === "running"; read++) {
+    if (read) await new Promise((resolve) => setTimeout(resolve, CANCEL_SETTLE_GAP_MS));
+    outcome = await readAndSettle(deps, id, hold);
+  }
+  return { outcome, cancelled: true };
 }
 
 /** Holds the spend, forwards, and meters. `metering` is set while usage is still being read. */
@@ -449,8 +506,11 @@ async function forward(
   if (!endpoint.noKey) headers.authorization = `Bearer ${deps.upstreamKey()}`;
   if (call.contentType) headers["content-type"] = call.contentType;
   const pending = await pendingHoldFor(endpoint, deps);
+  let unsettledDelete = false;
   if (pending && endpoint.id === "responses.delete" && endpoint.owned) {
-    await settleBeforeDelete(deps, endpoint.owned.id, pending);
+    const before = await settleBeforeDelete(deps, endpoint.owned.id, pending);
+    unsettledDelete = before.outcome === "running" || before.outcome === "pending";
+    if (before.cancelled) call.notes.push("The background response was still running, so it was cancelled before the delete.");
   }
   const hold = await holdSpend(deps, ctx, model, call.estimate, ip, now);
   if (hold instanceof Response) return done(hold);
@@ -485,6 +545,14 @@ async function forward(
   }
 
   if ((endpoint.id === "files.delete" || endpoint.id === "responses.delete") && endpoint.owned) {
+    if (unsettledDelete) {
+      // Nothing is left to read: the worst case stays as the charge, taken off the row so its settle is final.
+      const kept = await deps.claimHold(endpoint.owned.id).catch((err) => {
+        logged("closing a deleted background response's hold")(err);
+        return null;
+      });
+      if (kept) console.warn(`[docs] ${endpoint.owned.id} was deleted before Meta reported its usage: its worst case stays as the charge`);
+    }
     await deps.forgetObject(endpoint.owned.id).catch(logged("forgetting a deleted object"));
   }
   const type = upstream.headers.get("content-type");
@@ -562,9 +630,15 @@ async function forward(
   let metering: Promise<void> | null = null;
   if (settling) {
     await hold.cancel();
-    metering = settleFinished(deps, settling.id, settling.hold, json)
-      .then(() => undefined)
-      .catch(logged("settling a background response"));
+    // A cancel's reply has the lifecycle fields only: unless it shows usage (a late cancel returns the completed
+    // response), a finished run is read back for what it used, and one still stopping is left to the next read.
+    const settle =
+      endpoint.id === "responses.cancel" && !showsUsage(json)
+        ? TERMINAL_STATUSES.has(String(json?.status))
+          ? readAndSettle(deps, settling.id, settling.hold)
+          : Promise.resolve()
+        : settleFinished(deps, settling.id, settling.hold, json);
+    metering = settle.then(() => undefined).catch(logged("settling a background response"));
   } else if (!endpoint.meter) {
     await hold.cancel();
   } else if (background) {

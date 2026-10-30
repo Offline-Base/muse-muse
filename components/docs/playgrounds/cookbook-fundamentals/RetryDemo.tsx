@@ -288,8 +288,8 @@ function RetryLoop() {
       </details>
       <Note>
         Throttle before a 429: Meta sends x-ratelimit-remaining-requests, x-ratelimit-limit-requests, x-ratelimit-remaining-tokens and
-        x-ratelimit-limit-tokens on every reply (read them with with_raw_response). The live docs keep them back, since they describe Muse
-        Muse&apos;s shared key, so look for them on your own calls.
+        x-ratelimit-limit-tokens on every reply (read them with with_raw_response). The live docs pass them on, in a reply&apos;s Headers
+        tab: there they count Muse Muse&apos;s team, which every reader shares, so read your own on your own calls.
       </Note>
       <div className="pg-actions">
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />

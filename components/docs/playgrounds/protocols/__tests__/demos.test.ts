@@ -13,6 +13,7 @@ import path from "node:path";
 import { before, describe, it } from "node:test";
 import type { FlowSpec, FlowStep } from "@/components/docs/playgrounds/protocols/flow";
 import type { SchemaExample, SchemaTarget } from "@/components/docs/playgrounds/protocols/SchemaExplorer";
+import { DEMO_GROUPS } from "@/lib/docs/demos/groups";
 import type { DemoMap } from "@/lib/docs/demos/types";
 
 // The demo file imports client components, which import a CSS module: hand back class names as themselves.
@@ -29,12 +30,9 @@ const EM_DASH = String.fromCharCode(0x2014);
 const TEXT_MODELS = ["muse-spark-1.3-contributor", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.1", "muse-wonder-1.0"];
 
 let demos: DemoMap;
-/** The group's slugs as lib/docs/demos/index.ts lists them, read as text so other groups' work in progress can't break this test. */
+/** The group's slugs as DEMO_GROUPS lists them (lib/docs/demos/groups.ts imports nothing, so other groups' demos don't load). */
 function groupSlugs(): string[] {
-  const src = readFileSync(path.join(ROOT, "lib/docs/demos/index.ts"), "utf8");
-  const block = /"protocols": \[([^\]]*)\]/.exec(src);
-  assert.ok(block, "index.ts lists the protocols group");
-  return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  return [...DEMO_GROUPS.protocols];
 }
 let flowLib: typeof import("@/components/docs/playgrounds/protocols/flow");
 let endpoints: typeof import("@/lib/docs/client/endpoints");

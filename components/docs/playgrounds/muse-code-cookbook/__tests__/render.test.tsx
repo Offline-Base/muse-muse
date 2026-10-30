@@ -22,7 +22,7 @@ register(`data:text/javascript,${encodeURIComponent(CSS_HOOK)}`, import.meta.url
 
 let html: (el: ReactElement) => string;
 let demos: typeof import("@/lib/docs/demos/muse-code-cookbook").museCodeCookbookDemos;
-let groups: typeof import("@/lib/docs/demos").DEMO_GROUPS;
+let groups: typeof import("@/lib/docs/demos/groups").DEMO_GROUPS;
 
 function clean(out: string): string {
   assert.equal(out.includes(String.fromCharCode(0x2014)), false, "no em dash");
@@ -47,7 +47,7 @@ before(async () => {
   const { renderToString } = await import("react-dom/server");
   html = (e) => clean(renderToString(e).replace(/<!-- -->/g, ""));
   demos = (await import("@/lib/docs/demos/muse-code-cookbook")).museCodeCookbookDemos;
-  groups = (await import("@/lib/docs/demos")).DEMO_GROUPS;
+  groups = (await import("@/lib/docs/demos/groups")).DEMO_GROUPS;
 });
 
 describe("the group's specs", () => {

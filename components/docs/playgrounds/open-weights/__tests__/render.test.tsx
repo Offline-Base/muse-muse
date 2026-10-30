@@ -8,10 +8,10 @@
  *   npx tsx --test --experimental-test-module-mocks components/docs/playgrounds/open-weights/__tests__/render.test.tsx
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import { before, describe, it } from "node:test";
 import { createElement, type ComponentType, type ReactElement } from "react";
+import { DEMO_GROUPS } from "@/lib/docs/demos/groups";
 
 const CSS_HOOK = `export async function load(url, context, nextLoad) {
   if (url.endsWith(".module.css")) {
@@ -26,7 +26,6 @@ const NOTICE = /Runs on Muse Spark 1\.3 Contributor: Meta may use what you send 
 
 let html: (el: ReactElement) => string;
 let demos: typeof import("@/lib/docs/demos/open-weights").openWeightsDemos;
-let NO_META_KEY: string;
 let prompt: typeof import("@/lib/docs/agent-prompt");
 let pages: typeof import("@/lib/docs/pages");
 
@@ -36,12 +35,9 @@ function clean(out: string): string {
   return out;
 }
 
-/** The group's slugs as lib/docs/demos/index.ts lists them, read as text so other groups' files aren't loaded. */
+/** The group's slugs as DEMO_GROUPS lists them (lib/docs/demos/groups.ts imports nothing, so other groups' files aren't loaded). */
 function groupSlugs(): string[] {
-  const src = readFileSync("lib/docs/demos/index.ts", "utf8");
-  const block = /"open-weights": \[([\s\S]*?)\]/.exec(src);
-  assert.ok(block, "the open-weights group in DEMO_GROUPS");
-  return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  return [...DEMO_GROUPS["open-weights"]];
 }
 
 const el = <P extends object>(c: ComponentType<P>, props: P) => createElement(c as ComponentType<object>, props);
@@ -54,9 +50,7 @@ function visible(out: string): string {
 before(async () => {
   const { renderToString } = await import("react-dom/server");
   html = (e) => clean(renderToString(e).replace(/<!-- -->/g, ""));
-  const mod = await import("@/lib/docs/demos/open-weights");
-  demos = mod.openWeightsDemos;
-  NO_META_KEY = mod.NO_META_KEY;
+  demos = (await import("@/lib/docs/demos/open-weights")).openWeightsDemos;
   prompt = await import("@/lib/docs/agent-prompt");
   pages = await import("@/lib/docs/pages");
 });
@@ -153,8 +147,16 @@ describe("what the demos print", () => {
   });
 });
 
+/** One section of a copy prompt, from its title line to the blank line before the next. */
+function sectionOf(text: string, title: string): string {
+  const at = text.indexOf(`\n\n${title}\n`);
+  if (at < 0) return "";
+  const end = text.indexOf("\n\n", at + 2);
+  return text.slice(at + 2, end < 0 ? undefined : end);
+}
+
 describe("copy prompts", () => {
-  it("open their facts with the self-hosting note, which no trimming drops", () => {
+  it("set up the reader's own server, with no Model API base URL, key or model, whatever was run", () => {
     const ran = {
       method: "POST" as const,
       path: "chat/completions",
@@ -175,12 +177,21 @@ describe("copy prompts", () => {
       outcome: "tool_calls: get_weather({\"city\":\"Paris\"}), get_weather({\"city\":\"Rome\"}), get_weather({\"city\":\"Tokyo\"})",
     };
     for (const [slug, spec] of Object.entries(demos)) {
-      assert.equal(spec.agentPrompt.facts?.[0], NO_META_KEY, slug);
       const page = pages.docsPage(slug)!;
       for (const language of ["python", "typescript", "curl"] as const) {
         for (const lastRequest of [null, ran]) {
+          const where = `${slug} ${language}${lastRequest ? " with a last request" : ""}`;
           const text = prompt.buildAgentPrompt({ page, spec: spec.agentPrompt, agent: "claude-code", language, lastRequest });
-          assert.ok(text.includes(NO_META_KEY), `${slug} ${language}${lastRequest ? " with a last request" : ""}`);
+          const setup = sectionOf(text, "Setup");
+          assert.match(setup, /^- Server: the model runs on hardware you control, behind an OpenAI-compatible server/m, where);
+          assert.doesNotMatch(setup, /api\.meta\.ai|MODEL_API_KEY|^- Model:/m, `${where}: no hosted Setup`);
+          assert.doesNotMatch(sectionOf(text, "Done when"), /MODEL_API_KEY/, `${where}: no MODEL_API_KEY check`);
+          assert.match(sectionOf(text, "Done when"), /Any key or token comes from the environment/, where);
+          for (const fact of spec.agentPrompt.facts ?? []) assert.ok(text.includes(fact), `${where}: every fact`);
+          if (lastRequest) {
+            assert.match(text, /hosted Muse Spark as a stand-in for the open weights/, `${where}: the run is labeled a stand-in`);
+            assert.ok(text.includes((spec.agentPrompt.snippets?.[language] ?? "").trim()), `${where}: the page's starter code, not the run's`);
+          }
           assert.ok(text.length <= prompt.PROMPT_MAX_CHARS, `${slug} ${language}: ${text.length}`);
         }
         const plain = prompt.buildAgentPrompt({ page, spec: spec.agentPrompt, agent: "claude-code", language, lastRequest: null });

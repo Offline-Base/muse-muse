@@ -5,8 +5,8 @@
  * demos record included (the default), nothing has an em dash, and each component server-renders with its props the
  * way the page mounts it (pickers, presets, Run, notes). The CSS module is the only stand-in: a load hook turns
  * *.module.css into class names (as components/docs/media/__tests__/render.test.tsx does). Effects don't run in a
- * server render, so nothing reaches the network. The demo registry (lib/docs/demos/index.ts) imports every group's
- * file, so only the one test that compares against it loads it.
+ * server render, so nothing reaches the network. The group list comes from lib/docs/demos/groups.ts, which has no
+ * imports, so no other group's demos load.
  *
  *   npx tsx --test --experimental-test-module-mocks components/docs/playgrounds/voice-sam/__tests__/demos.test.tsx
  */
@@ -71,8 +71,7 @@ describe("voice-sam DemoSpecs", () => {
   });
 
   it("lists the same pages as the demo registry", async () => {
-    // Loaded here alone: the registry imports every group's file, and one that doesn't resolve fails only this test.
-    const { DEMO_GROUPS } = await import("@/lib/docs/demos/index");
+    const { DEMO_GROUPS } = await import("@/lib/docs/demos/groups");
     assert.deepEqual([...DEMO_GROUPS["voice-sam"]].sort(), [...SLUGS].sort());
   });
 

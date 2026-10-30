@@ -22,9 +22,8 @@ const CSS_HOOK = `export async function load(url, context, nextLoad) {
 register(`data:text/javascript,${encodeURIComponent(CSS_HOOK)}`, import.meta.url);
 
 /**
- * The group's slugs, as DEMO_GROUPS.start in lib/docs/demos/index.ts lists them. Kept as a literal so these tests
- * never import index.ts, which loads every group's demos: another group's broken import can't cancel them. A test
- * below reads index.ts as text to keep the two in step.
+ * The group's slugs, as DEMO_GROUPS.start lists them (lib/docs/demos/groups.ts, which imports nothing, so no other
+ * group's demos load here). A test below keeps the two in step.
  */
 const START_SLUGS = [
   "overview",
@@ -87,11 +86,9 @@ function render(slug: string): string {
 }
 
 describe("start DemoSpecs", () => {
-  it("list the same slugs as DEMO_GROUPS.start in index.ts, read as text", () => {
-    const source = readFileSync(new URL("../../../../../lib/docs/demos/index.ts", import.meta.url), "utf8");
-    const block = source.match(/"start":\s*\[([^\]]*)\]/)?.[1];
-    assert.ok(block, "index.ts lists a start group");
-    assert.deepEqual([...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]), START_SLUGS);
+  it("list the same slugs as DEMO_GROUPS.start", async () => {
+    const { DEMO_GROUPS } = await import("@/lib/docs/demos/groups");
+    assert.deepEqual([...DEMO_GROUPS.start], START_SLUGS);
   });
 
   it("cover exactly the group's slugs, with plain JSON props and complete prompts", () => {

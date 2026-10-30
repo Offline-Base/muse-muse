@@ -28,7 +28,7 @@ const CSS_HOOK = `export async function load(url, context, nextLoad) {
 }`;
 register(`data:text/javascript,${encodeURIComponent(CSS_HOOK)}`, import.meta.url);
 
-/** The media group's pages (lib/docs/demos/index.ts, DEMO_GROUPS.media). */
+/** The media group's pages, as DEMO_GROUPS.media lists them (lib/docs/demos/groups.ts; a test below keeps the two in step). */
 const SLUGS = [
   "image-understanding",
   "image-generation",
@@ -77,8 +77,10 @@ describe("media demos", () => {
     };
   });
 
-  it("has a spec for every page in the group, and nothing else", () => {
+  it("has a spec for every page in the group, and nothing else", async () => {
     assert.deepEqual(Object.keys(demos).sort(), [...SLUGS].sort());
+    const { DEMO_GROUPS } = await import("@/lib/docs/demos/groups");
+    assert.deepEqual([...DEMO_GROUPS.media], SLUGS);
   });
 
   it("gives each spec a title, a blurb, a task, facts, a checklist and three snippets, with no em dash or retired model", () => {

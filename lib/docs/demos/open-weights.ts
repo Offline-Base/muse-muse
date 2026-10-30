@@ -44,16 +44,10 @@ import { sparkTrlLaunch } from "@/components/docs/playgrounds/open-weights/train
  *
  * These models run on the reader's own hardware, so the demos are builders, calculators and labs made from the
  * pages' own numbers; where a request helps, a clearly labeled stand-in sends it to hosted Muse Spark through the
- * docs proxy. The prompts send a coding agent to the self-hosted server, and say that the Setup lines (Meta's base
- * URL and MODEL_API_KEY) only apply to a hosted fallback.
+ * docs proxy. The prompts send a coding agent to the self-hosted server: lib/docs/agent-prompt.ts gives every page in
+ * this group a self-hosting Setup (the reader's OpenAI-compatible server, its base URL and model name, a placeholder
+ * key) instead of Meta's hosted one.
  */
-
-/**
- * The copy prompt's Setup section (lib/docs/agent-prompt.ts) describes Meta's hosted API for every page. These pages
- * self-host, so every prompt opens its facts with this line, first so the prompt's length trimming can't drop it.
- */
-export const NO_META_KEY =
-  "Self-hosted: ignore Setup's base URL, key and model (Meta's hosted API). A local server's /v1 takes the name GET /v1/models lists and a placeholder key; Done when's MODEL_API_KEY line is for a hosted fallback only.";
 
 /** A local OpenAI-compatible client, the pages' shape: base URL from the environment, the model the server serves. */
 const LOCAL_PY = [
@@ -1115,9 +1109,3 @@ export const openWeightsDemos: DemoMap = {
     },
   },
 };
-
-// Every open-weight prompt says first that its Setup lines describe Meta's hosted API, not the reader's own server.
-for (const spec of Object.values(openWeightsDemos)) {
-  const facts = (spec.agentPrompt.facts ?? []).filter((f) => f !== NO_META_KEY);
-  spec.agentPrompt.facts = [NO_META_KEY, ...facts];
-}

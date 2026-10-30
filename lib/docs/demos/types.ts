@@ -23,6 +23,13 @@ export interface AgentPromptSpec {
   checklist?: string[];
   /** Starter code per language, from the page's own examples. The prompt includes the one for the chosen language. */
   snippets?: Partial<Record<PromptLanguage, string>>;
+  /**
+   * Where the code runs, which picks the prompt's Setup: "hosted" is Meta's Model API (its base URL, MODEL_API_KEY
+   * and the model), "self-hosted" the reader's own OpenAI-compatible server. Leave it out for the page's default:
+   * self-hosted on the open-weight pages, hosted elsewhere (Muse Code's own pages get the muse CLI's setup unless
+   * their starter code calls the API). Set "hosted" on an open-weight page whose prompt calls the hosted API instead.
+   */
+  setup?: "hosted" | "self-hosted";
 }
 
 export interface DemoSpec<P extends object = Record<string, unknown>> {

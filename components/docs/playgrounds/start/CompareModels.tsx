@@ -13,11 +13,14 @@ import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { estimateCost } from "@/lib/docs/client/cost";
-import { docsModelLabel, isContributor, type Effort } from "@/lib/docs/client/models";
+import { docsModelLabel, isContributor, modelsFor, type Effort } from "@/lib/docs/client/models";
 import { collectorFor, type Collected } from "@/lib/docs/client/stream";
 import { bodyDifferences, COMPARE_PRESETS, compareBody, compareLine, listWords } from "@/components/docs/playgrounds/start/compare";
 import { WONDER_COST_NOTE, WONDER_MODEL } from "@/components/docs/playgrounds/start/wonder";
 import styles from "@/components/docs/playgrounds/start/start.module.css";
+
+/** What both sides' menus offer: the whole text menu. */
+const TEXT_MENU = modelsFor("text").map((m) => m.id);
 
 /**
  * The same prompt on two models at once, on the Responses API, streamed side by side with each one's latency,
@@ -92,7 +95,7 @@ export function CompareModels({ preset: initialPreset = 0 }: { slug: string; pre
         />
         <EffortSelect id={`${id}-effort`} model={left === "muse-wonder-1.0" ? right : left} value={effort} onChange={setEffort} disabled={running} />
       </div>
-      {contributor ? <ContributorNotice model={contributor} standardHint /> : null}
+      {contributor ? <ContributorNotice model={contributor} menu={TEXT_MENU} /> : null}
       <div className="pg-composer">
         <label className="sr-only" htmlFor={`${id}-prompt`}>
           Prompt for both models

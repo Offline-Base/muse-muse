@@ -118,6 +118,7 @@ export function ChatTemplateLab({ model, start }: ChatTemplateLabProps) {
   const waiting = !sampleError && kinds.some((k) => !samples[k]);
   const hosted = useMemo(() => hostedMessages(conv, model, samples), [conv, model, samples]);
   const hostedTools = useMemo(() => (tools ? openaiTools([GET_WEATHER]) : undefined), [tools]);
+  const replaysReasoning = hosted.messages.some((m) => m.role === "assistant" && "reasoning_content" in m);
 
   const pick = (i: number) => {
     const p: TemplatePreset = presets[i];
@@ -271,11 +272,20 @@ export function ChatTemplateLab({ model, start }: ChatTemplateLabProps) {
           maxTokens={kinds.length ? 6000 : undefined}
           disabled={waiting}
           note={
-            kinds.length ? (
+            kinds.length || replaysReasoning ? (
               <>
-                The page&apos;s example URLs aren&apos;t real files, so this sends {listOf(kinds.map((k) => STANDIN_SAMPLE[k].what))} in their place, in the same order among the text
-                {waiting ? " (loading)" : ""}.{kinds.includes("audio") ? " Audio on Muse Spark 1.3 isn't fully supported yet, so Meta's audio examples use Muse Spark 1.2 (Video and audio understanding)." : ""}
-                {sampleError ? ` ${sampleError}` : ""}
+                {kinds.length ? (
+                  <>
+                    The page&apos;s example URLs aren&apos;t real files, so this sends {listOf(kinds.map((k) => STANDIN_SAMPLE[k].what))} in their place, in the same order among the text
+                    {waiting ? " (loading)" : ""}.{kinds.includes("audio") ? " Audio on Muse Spark 1.3 isn't fully supported yet, so Meta's audio examples use Muse Spark 1.2 (Video and audio understanding)." : ""}
+                    {sampleError ? ` ${sampleError}` : ""}
+                  </>
+                ) : null}
+                {replaysReasoning ? (
+                  <>
+                    {kinds.length ? " " : ""}The earlier reasoning goes along as <code>reasoning_content</code> on its assistant turn, which hosted Chat Completions takes too.
+                  </>
+                ) : null}
               </>
             ) : null
           }

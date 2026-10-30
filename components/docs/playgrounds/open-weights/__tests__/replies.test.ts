@@ -127,7 +127,7 @@ describe("stand-in request bodies", () => {
     assert.ok(llama.dropped[0].startsWith("chat_template_kwargs"));
   });
 
-  it("send docs samples for the page's example media, in the parts' order, and leave out replayed reasoning", () => {
+  it("send docs samples for the page's example media, in the parts' order, and replayed reasoning as it is", () => {
     const conv = SPARK_PRESETS.find((x) => x.id === "media")!.messages;
     assert.deepEqual(mediaKinds(conv), ["image", "video", "audio"]);
     const waiting = hostedMessages(conv, "spark");
@@ -142,7 +142,15 @@ describe("stand-in request bodies", () => {
     ]);
     assert.equal(loaded.dropped.length, 0);
     assert.equal(STANDIN_SAMPLE.image.id, "bar-chart");
+    // Hosted Chat Completions takes reasoning_content on assistant messages (api-reference/chat-completions/schemas):
+    // fixtures/replayed-reasoning.json is its HTTP 200 reply to this conversation (the last question with "One
+    // sentence." added, low effort, max_tokens 400), sent through the docs proxy on Oct 30, 2026.
     const multi = hostedMessages(GLIMMER_PRESETS.find((x) => x.id === "multi")!.messages, "glimmer");
-    assert.ok(multi.messages.every((m) => !("reasoning_content" in m)));
+    assert.deepEqual(multi.messages[2], { role: "assistant", content: "The capital of France is Paris.", reasoning_content: "The user asks for France's capital. That is Paris." });
+    assert.deepEqual(multi.dropped, [], "nothing is left out");
+    const accepted = JSON.parse(readFileSync(join(FIX, "replayed-reasoning.json"), "utf8")) as { object: string; choices: Array<{ message: Record<string, unknown> }> };
+    assert.equal(accepted.object, "chat.completion", "a completion, not an error");
+    assert.equal(accepted.choices[0].message.reasoning_content, undefined, "its own reasoning text stays hidden from an external key");
+    assert.ok((tokenUsage(whole("replayed-reasoning.json").usage)?.reasoning ?? 0) > 0, "it reasoned, and reports only the count");
   });
 });

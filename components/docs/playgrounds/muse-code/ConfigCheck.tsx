@@ -4,8 +4,11 @@ import { useId, useState } from "react";
 import { CodeView, ContributorNotice, ErrorBox, ResponseView, RunButton, Toggle, useDocsRun } from "@/components/docs/kit";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { estimateCost, formatUsd } from "@/lib/docs/client/cost";
-import { readCheck, type CheckLine, type CheckRequest } from "@/components/docs/playgrounds/muse-code/agent-configs";
+import { AGENT_MODELS, readCheck, type CheckLine, type CheckRequest } from "@/components/docs/playgrounds/muse-code/agent-configs";
 import styles from "@/components/docs/playgrounds/muse-code/muse-code.module.css";
+
+/** The model menus above every check (AgentConfigGenerator's model fields) offer these. */
+const CONFIG_MENU = AGENT_MODELS.map((m) => m.value);
 
 /**
  * "Does this config answer?": sends the request a generated config would make (its endpoint, model, reasoning and
@@ -40,7 +43,7 @@ export function ConfigCheck({ requests, label = "Check this config live" }: { re
   return (
     <div className={`${styles.card} ${styles.cardMuted}`}>
       {models.map((m) => (
-        <ContributorNotice key={m} model={m} standardHint />
+        <ContributorNotice key={m} model={m} menu={CONFIG_MENU} />
       ))}
       <div className="pg-bar">
         <RunButton running={busy} onRun={() => void run()} onStop={runner.abort} label={label} />

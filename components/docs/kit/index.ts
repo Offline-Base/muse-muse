@@ -12,7 +12,7 @@ export { ResponseView, BlobOutput, statusText, latencyLabel } from "@/components
 export { StreamView, ReplyView, EventLog, Citations, Searches, ToolCalls, Images, prettyArguments } from "@/components/docs/kit/StreamView";
 export { UsageLine } from "@/components/docs/kit/UsageLine";
 export { ErrorBox } from "@/components/docs/kit/ErrorBox";
-export { ContributorNotice, contributorNoticeText } from "@/components/docs/kit/ContributorNotice";
+export { ContributorNotice, contributorNoticeText, standardHintText } from "@/components/docs/kit/ContributorNotice";
 export { CodeView } from "@/components/docs/kit/CodeView";
 export { JsonEditor } from "@/components/docs/kit/JsonEditor";
 export { JsonTree } from "@/components/docs/kit/JsonTree";

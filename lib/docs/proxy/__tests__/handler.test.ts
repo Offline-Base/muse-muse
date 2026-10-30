@@ -147,9 +147,44 @@ test("a call goes up with the key and comes back with x-docs-model and x-docs-no
   assert.equal(res.headers.get("x-request-id"), "req_1");
   assert.equal(res.headers.get("cache-control"), "no-store");
   assert.equal(res.headers.get("set-cookie"), null, "no upstream cookie and no new visitor cookie");
-  assert.equal(res.headers.get("x-ratelimit-remaining-tokens"), null);
+  assert.equal(res.headers.get("x-ratelimit-remaining-tokens"), "9", "Meta's rate-limit headers come back");
   assert.equal((await everything(res)).includes(TEST_KEY), false);
   assert.equal(((await res.json()) as { id: string }).id, "resp_new1", "the body is Meta's");
+});
+
+test("Meta's rate-limit headers come back in every spelling, on JSON and streamed replies, and nothing about auth does", async () => {
+  const limits: Record<string, string> = {
+    "x-ratelimit-limit-requests": "150",
+    "x-ratelimit-remaining-requests": "149",
+    "x-ratelimit-limit-tokens": "3000000",
+    "x-ratelimit-remaining-tokens": "2999950",
+    "x-ratelimit-reset-requests": "0.4s",
+    "x-rate-limit-reset": "12",
+    "ratelimit-policy": "150;w=60",
+    "anthropic-ratelimit-requests-remaining": "149",
+  };
+  const withHeaders = (res: Response) => {
+    for (const [name, value] of Object.entries(limits)) res.headers.set(name, value);
+    res.headers.set("set-cookie", "session=upstream");
+    res.headers.set("www-authenticate", "Bearer realm=meta");
+    res.headers.set("x-ratelimit-key", TEST_KEY);
+    res.headers.set("x-meta-internal", "trace");
+    return res;
+  };
+  const json = fakeDocs({ fetch: () => withHeaders(responseReply()) });
+  const stream = fakeDocs({
+    fetch: () => withHeaders(new Response(sse([{ data: { choices: [], usage: { prompt_tokens: 5, completion_tokens: 2 } } }, { data: "[DONE]" }]), { headers: { "content-type": "text/event-stream" } })),
+  });
+  for (const res of [
+    await post(json, "responses", { model: "muse-spark-1.3-contributor", input: "hi" }),
+    await post(stream, "chat/completions", { model: "muse-spark-1.3-contributor", messages: [{ role: "user", content: "hi" }], stream: true }),
+  ]) {
+    for (const [name, value] of Object.entries(limits)) assert.equal(res.headers.get(name), value, name);
+    for (const name of ["set-cookie", "www-authenticate", "x-ratelimit-key", "x-meta-internal"]) assert.equal(res.headers.get(name), null, name);
+    assert.equal((await everything(res)).includes(TEST_KEY), false, "the key never comes back");
+  }
+  await json.settled();
+  await stream.settled();
 });
 
 test("GET /v1/status goes up without the key; query strings pass only the documented parameters", async () => {
@@ -410,6 +445,134 @@ test("a background response settles from a streamed retrieval's final event, a c
   assert.equal(deleted.reservations.size, 0);
   assert.equal(deleted.usage[0].items[0].costUsd, cost);
   assert.equal(deleted.objects.length, 0);
+});
+
+test("a background response cancelled before it ran settles at zero: read back after the cancel, on retrieval, or before its delete", async () => {
+  const held = async () => {
+    const g = fakeDocs({ fetch: () => queued() });
+    await post(g, "responses", { model: "muse-spark-1.3-contributor", input: "a long job", background: true });
+    await g.settled();
+    assert.equal(g.reservations.size, 1);
+    assert.ok(g.counter(DOCS_KEYS.usd(IP), dayWindow(NOW)) > 0, "the worst case is held");
+    return g;
+  };
+  /** The cancel endpoint's reply: the lifecycle fields only, never usage (api-reference/responses/schemas). */
+  const cancelReply = (status = "cancelled") => Response.json({ id: "resp_bg1", object: "response", status, model: "muse-spark-1.3-contributor", background: true, output: [] });
+  /** The response read back: cancelled before it ran, so Meta reports usage null. */
+  const unrun = { id: "resp_bg1", object: "response", status: "cancelled", background: true, output: [], usage: null, completed_at: null };
+  const atZero = (g: ReturnType<typeof fakeDocs>, why: string) => {
+    assert.equal(g.reservations.size, 0, `${why}: the hold is settled`);
+    assert.equal(g.usage.length, 0, `${why}: nothing was used`);
+    assert.equal(g.counter(DOCS_KEYS.usd(IP), dayWindow(NOW)), 0, `${why}: the IP's dollars come back`);
+  };
+
+  // The cancel's own reply says nothing about usage, so the response is read back, and settles at zero.
+  const cancelled = await held();
+  const calls: string[] = [];
+  cancelled.deps.fetch = (async (url: string, init?: RequestInit) => {
+    calls.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+    return init?.method === "POST" ? cancelReply() : Response.json(unrun);
+  }) as typeof fetch;
+  const res = await run(cancelled, "responses/resp_bg1/cancel", { method: "POST" });
+  assert.equal(((await res.json()) as { status: string }).status, "cancelled", "the reader gets Meta's reply");
+  await cancelled.settled();
+  assert.deepEqual(calls, ["POST /v1/responses/resp_bg1/cancel", "GET /v1/responses/resp_bg1"]);
+  atZero(cancelled, "cancel");
+  assert.equal(cancelled.objects[0].hold, undefined);
+
+  // A cancel still taking hold says in_progress: nothing is read or settled yet, and the hold waits for the next read.
+  const stopping = await held();
+  stopping.deps.fetch = (async () => cancelReply("in_progress")) as typeof fetch;
+  await run(stopping, "responses/resp_bg1/cancel", { method: "POST" });
+  await stopping.settled();
+  assert.equal(stopping.reservations.size, 1);
+  assert.ok(stopping.objects[0].hold);
+  // ...which is the reader's next retrieval: cancelled, usage null, settled at zero.
+  stopping.deps.fetch = (async () => Response.json(unrun)) as typeof fetch;
+  await run(stopping, "responses/resp_bg1");
+  await stopping.settled();
+  atZero(stopping, "retrieval");
+
+  // Failed without usage settles at zero too; completed without usage keeps its worst case.
+  const failed = await held();
+  failed.deps.fetch = (async () => Response.json({ ...unrun, status: "failed", error: { code: "server_error", message: "boom" } })) as typeof fetch;
+  await run(failed, "responses/resp_bg1");
+  await failed.settled();
+  atZero(failed, "failed");
+  const silent = await held();
+  silent.deps.fetch = (async () => Response.json({ id: "resp_bg1", object: "response", status: "completed", output: [] })) as typeof fetch;
+  await run(silent, "responses/resp_bg1");
+  await silent.settled();
+  assert.equal(silent.reservations.size, 1, "a completed reply without usage keeps the worst case");
+
+  // Deleted after a cancel: read once, settled at zero, then deleted, and the row goes with nothing left to settle.
+  const deleted = await held();
+  const methods: string[] = [];
+  deleted.deps.fetch = (async (_url: string, init?: RequestInit) => {
+    methods.push(init?.method ?? "GET");
+    return init?.method === "DELETE" ? Response.json({ id: "resp_bg1", object: "response", deleted: true }) : Response.json(unrun);
+  }) as typeof fetch;
+  assert.equal((await run(deleted, "responses/resp_bg1", { method: "DELETE" })).status, 200);
+  await deleted.settled();
+  assert.deepEqual(methods, ["GET", "DELETE"]);
+  atZero(deleted, "delete");
+  assert.equal(deleted.objects.length, 0);
+});
+
+test("deleting a background response settles it first: a running one is cancelled and read back, an unreadable one keeps its worst case", async () => {
+  const held = async () => {
+    const g = fakeDocs({ fetch: () => queued() });
+    await post(g, "responses", { model: "muse-spark-1.3-contributor", input: "a long job", background: true });
+    await g.settled();
+    return g;
+  };
+  // Still queued when the reader deletes it: cancelled first, read back once the cancel takes hold, then deleted.
+  const running = await held();
+  const calls: string[] = [];
+  let cancelled = false;
+  running.deps.fetch = (async (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push(`${method} ${new URL(url).pathname}`);
+    if (method === "POST") {
+      cancelled = true;
+      return Response.json({ id: "resp_bg1", object: "response", status: "cancelled", background: true, output: [] });
+    }
+    if (method === "DELETE") return Response.json({ id: "resp_bg1", object: "response", deleted: true });
+    return Response.json({ id: "resp_bg1", object: "response", status: cancelled ? "cancelled" : "queued", background: true, output: [], usage: null });
+  }) as typeof fetch;
+  const res = await run(running, "responses/resp_bg1", { method: "DELETE" });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("x-docs-note") ?? "", /still running, so it was cancelled before the delete/);
+  await running.settled();
+  assert.deepEqual(calls, ["GET /v1/responses/resp_bg1", "POST /v1/responses/resp_bg1/cancel", "GET /v1/responses/resp_bg1", "DELETE /v1/responses/resp_bg1"]);
+  assert.equal(running.reservations.size, 0, "settled at zero before the row went");
+  assert.equal(running.counter(DOCS_KEYS.usd(IP), dayWindow(NOW)), 0);
+  assert.equal(running.objects.length, 0);
+
+  // Meta can't be read before the delete: the delete goes ahead, and the worst case stays as the settled charge.
+  const unreadable = await held();
+  unreadable.deps.fetch = (async (_url: string, init?: RequestInit) =>
+    init?.method === "DELETE" ? Response.json({ id: "resp_bg1", object: "response", deleted: true }) : new Response("upstream error", { status: 502 })) as typeof fetch;
+  const claimed: string[] = [];
+  const claim = unreadable.deps.claimHold;
+  unreadable.deps.claimHold = async (id) => {
+    claimed.push(id);
+    return claim(id);
+  };
+  assert.equal((await run(unreadable, "responses/resp_bg1", { method: "DELETE" })).status, 200);
+  await unreadable.settled();
+  assert.deepEqual(claimed, ["resp_bg1"], "the hold is taken off its row before the row goes");
+  assert.equal(unreadable.reservations.size, 1, "the worst case stays as the charge");
+  close([...unreadable.reservations.values()][0].costUsd, CONTRIBUTOR_WORST);
+  assert.equal(unreadable.objects.length, 0);
+
+  // A delete Meta refuses changes nothing: the row and its hold stay for the sweep.
+  const refused = await held();
+  refused.deps.fetch = (async (_url: string, init?: RequestInit) =>
+    init?.method === "DELETE" ? Response.json({ error: { message: "nope" } }, { status: 500 }) : Response.json({ id: "resp_bg1", status: "completed", output: [] })) as typeof fetch;
+  assert.equal((await run(refused, "responses/resp_bg1", { method: "DELETE" })).status, 500);
+  await refused.settled();
+  assert.ok(refused.objects[0]?.hold, "kept for the sweep");
 });
 
 test("background is refused where its cost can't be bounded or read back", async () => {
