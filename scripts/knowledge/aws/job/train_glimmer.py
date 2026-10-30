@@ -29,9 +29,11 @@ MAX_SEQ_LENGTH = 2048
 MAX_NEW_TOKENS = 96
 GEN_BATCH = 32
 SYSTEM = "You are a helpful assistant."
-DATA = "/opt/ml/input/data/data"
-OUT = "/opt/ml/model"
-CKPT = "/opt/ml/checkpoints"
+# SageMaker's folders by default; a plain GPU machine (Lambda) sets these.
+DATA = os.environ.get("KNOWLEDGE_DATA", "/opt/ml/input/data/data")
+OUT = os.environ.get("KNOWLEDGE_OUT", "/opt/ml/model")
+CKPT = os.environ.get("KNOWLEDGE_CKPT", "/opt/ml/checkpoints")
+HYPER = os.environ.get("KNOWLEDGE_HYPER", "/opt/ml/input/config/hyperparameters.json")
 
 
 def say(event, **fields):
@@ -40,7 +42,7 @@ def say(event, **fields):
 
 def hyper():
     try:
-        with open("/opt/ml/input/config/hyperparameters.json") as f:
+        with open(HYPER) as f:
             raw = json.load(f)
     except OSError:
         raw = {}
