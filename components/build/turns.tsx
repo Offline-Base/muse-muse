@@ -5,9 +5,11 @@ import { useState, type ReactNode } from "react";
 import { CopyField } from "@/components/CopyButton";
 import { Icon, type IconName } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { ExternalLink, ModelChips } from "@/components/ui";
 import type { InspirationView, RebuildRef } from "@/components/view-types";
 import { groupLog, type LogGroup, type Note, type Segment } from "@/components/build/derive";
+import { splitBuildNote } from "@/lib/docs/build-note";
 import { FIT_LABEL, compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
 import type { Brief, MuseLogLine, Reference } from "@/lib/types";
 
@@ -96,7 +98,8 @@ export function UserTurn({
   showReferences: boolean;
 }) {
   const refs = showReferences ? (inspiration?.references ?? []) : [];
-  const text = message ?? inspiration?.note ?? null;
+  const note = message ?? inspiration?.note ?? null;
+  const { wish: text, context } = note ? splitBuildNote(note) : { wish: null, context: null };
   return (
     <li className="turn-user">
       <h2 className="sr-only">Your muse</h2>
@@ -116,6 +119,12 @@ export function UserTurn({
         </div>
       ) : null}
       {text ? <p className="bubble">{text}</p> : refs.length ? null : <p className="bubble muted">No note</p>}
+      {context ? (
+        <details className="bubble-context">
+          <summary>From the docs page</summary>
+          <p>{context}</p>
+        </details>
+      ) : null}
     </li>
   );
 }
@@ -321,15 +330,11 @@ export function MuseLog({ lines, live }: { lines: MuseLogLine[]; live: boolean }
       {groups.map((g, i) => {
         if (g.type === "say")
           return (
-            <p key={i} className="say">
-              {g.text.trim()}
-            </p>
+            <MarkdownText key={i} className="say" text={g.text.trim()} />
           );
         if (g.type === "done")
           return (
-            <p key={i} className="say say-final">
-              {g.text.trim()}
-            </p>
+            <MarkdownText key={i} className="say say-final" text={g.text.trim()} />
           );
         const isLast = i === groups.length - 1 || groups.slice(i + 1).every((x) => x.type !== "activity");
         if (live && isLast) return <ActivityList key={i} items={g.items} live />;

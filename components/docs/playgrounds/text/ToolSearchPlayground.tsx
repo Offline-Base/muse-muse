@@ -11,6 +11,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { prettyArguments } from "@/components/docs/kit/StreamView";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { estimateCost, formatUsd } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -503,7 +504,7 @@ function ModelStepView({ step, index, answerBelow = false }: { step: TsModelStep
               return it.phase === "commentary" ? (
                 <li key={it.id} className={styles.event}>
                   <span className={styles.eventDot} aria-hidden />
-                  <p className={styles.note}>{it.text}</p>
+                  <MarkdownText className={styles.note} text={it.text} />
                 </li>
               ) : (
                 <li key={it.id} className={styles.event}>

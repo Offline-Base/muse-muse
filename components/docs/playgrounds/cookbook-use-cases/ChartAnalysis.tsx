@@ -7,6 +7,7 @@ import { EffortSelect, Segmented, TextInput, Toggle } from "@/components/docs/ki
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { FilePicker } from "@/components/docs/media/FilePicker";
 import { useObjectUrl } from "@/components/docs/media/hooks";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { fileToDataUrl } from "@/lib/docs/media/base64";
 import type { PickedMedia } from "@/lib/docs/media/prepare";
 import type { Effort } from "@/lib/docs/client/models";
@@ -233,7 +234,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
         <div className={styles.card}>
           <p className={styles.cardTitle}>1. Understand: what the model sees</p>
           {sentUrl ? <img src={sentUrl} alt="The chart as sent" className={styles.shot} style={{ maxHeight: 260, width: "auto" }} /> : null}
-          <p className={styles.answer}>{explain.text}</p>
+          <MarkdownText className={styles.answer} text={explain.text} />
           <UsageLine model={explain.model ?? model} usage={explain.usage} />
         </div>
       ) : null}
@@ -301,7 +302,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
           </div>
           {verify ? (
             <>
-              <p className={styles.answer}>{verify.text}</p>
+              <MarkdownText className={styles.answer} text={verify.text} />
               <UsageLine model={verify.model ?? model} usage={verify.usage} />
             </>
           ) : null}
@@ -319,7 +320,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
                 <strong>You: </strong>
                 {f.q}
               </p>
-              <p className={styles.answer}>{f.text}</p>
+              <MarkdownText className={styles.answer} text={f.text} />
               <UsageLine model={f.model ?? model} usage={f.usage} />
             </div>
           ))}

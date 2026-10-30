@@ -6,6 +6,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { EffortSelect, PresetPills, Segmented, TextArea, Toggle } from "@/components/docs/kit/Field";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError } from "@/lib/docs/client/api";
 import { formatUsd } from "@/lib/docs/client/cost";
 import type { Effort } from "@/lib/docs/client/models";
@@ -683,8 +684,8 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
               </p>
               {s.error ? <div className="pg-hint pg-bad">{s.error.message}</div> : null}
               {s.note ? s.status === "cutoff" ? <div className="pg-hint pg-bad">{s.note}</div> : <p className="pg-hint">{s.note}</p> : null}
-              {s.commentary && s.commentary !== "Handoff report" ? <p className={styles.commentary}>{s.commentary}</p> : null}
-              {s.final ? <p className={styles.answer}>{s.final}</p> : null}
+              {s.commentary && s.commentary !== "Handoff report" ? <MarkdownText className={styles.commentary} text={s.commentary} /> : null}
+              {s.final ? <MarkdownText className={styles.answer} text={s.final} /> : null}
               {s.shot && s.actions.length ? (
                 <div className={`${styles.screenWrap} pg-advanced`} style={{ position: "relative" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}

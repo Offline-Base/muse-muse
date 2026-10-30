@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, ErrorBox, ModelSelect, ResponseView, RunButton, Tabs, TextArea, Toggle, UsageLine, isAborted, useDocsRun } from "@/components/docs/kit";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { collectReply } from "@/lib/docs/client/stream";
 import { callWithRetries, pausable, retryMessage } from "@/components/docs/playgrounds/muse-code/agent-loop";
 import styles from "@/components/docs/playgrounds/muse-code/muse-code.module.css";
@@ -405,7 +406,7 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
               {scrollback.map((t, i) => (
                 <li key={`s${i}`} className={`${styles.msg}${t.inContext ? "" : ` ${styles.faded}`}`}>
                   <p className={styles.msgUser}>{t.input}</p>
-                  <div className={styles.msgAssistant}>{t.reply}</div>
+                  <MarkdownText className={styles.msgAssistant} text={t.reply} />
                   <p className={styles.msgMeta}>{t.inContext ? "In this branch's context" : "Scrollback only: not in this branch's context"}</p>
                 </li>
               ))}
@@ -422,7 +423,7 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
               {branch.turns.map((t, i) => (
                 <li key={t.responseId} className={styles.msg}>
                   <p className={styles.msgUser}>{t.input}</p>
-                  <div className={styles.msgAssistant}>{t.reply}</div>
+                  <MarkdownText className={styles.msgAssistant} text={t.reply} />
                   <p className={styles.msgMeta}>
                     Message {(branch.parent?.keep ?? 0) + i + 1} · {t.responseId}
                   </p>

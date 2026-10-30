@@ -70,6 +70,8 @@ Calls with `base` set (`/api/docs/ask`, `/api/docs/asr-realtime`) are only recor
 
 `DocsPageProvider`, `useDocsPage`, `DocsPageInfo` and `RecordedRequest` are re-exported from DocsPageContext.tsx.
 
+Show a model's prose with `MarkdownText` (`components/markdown/MarkdownText`, also exported here), not in a bare `<p>` or `<pre>`. It never injects HTML: raw HTML shows as text, links open only for http, https and mailto, and images become links, so a reply can't load a URL. Whole-JSON replies show as a code block. Leave text literal when the exact characters are the point: transcripts, JSON shown as data, code, and wire-format views.
+
 ## Client helpers (lib/docs/client)
 
 Pure modules, safe in the browser and in tests. `api.ts` (docsCall, docsStream, sseReader) is the contract's.

@@ -9,6 +9,7 @@ import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { Citations, ReplyView, Searches } from "@/components/docs/kit/StreamView";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { logEvent, type EventLogEntry } from "@/lib/docs/client/events";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -178,7 +179,7 @@ function ReadResponse({ reading, reply }: { reading: ResponseReading; reply: Col
     <div className={styles.stack}>
       <div>
         <p className="pg-section-label">The answer: response.output_text</p>
-        <div className="pg-stream-text">{reading.outputText || "(no output_text in this response)"}</div>
+        <MarkdownText className="pg-stream-text" text={reading.outputText || "(no output_text in this response)"} />
         {reading.items.filter((i) => i.kind === "message").length > 1 ? (
           <p className="pg-hint">
             output_text joins the text of every message item, including the model&apos;s notes between tool calls. The last message holds

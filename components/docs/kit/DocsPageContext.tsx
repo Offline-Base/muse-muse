@@ -37,6 +37,9 @@ interface DocsPageState {
   /** Whether the "Try it live" panel is open (components/docs/page/TryItLive.tsx). */
   tryOpen: boolean;
   setTryOpen: (open: boolean) => void;
+  /** Whether "Ask Muse Muse to build" is open (components/docs/page/BuildWithThis.tsx). */
+  buildOpen: boolean;
+  setBuildOpen: (open: boolean) => void;
 }
 
 const DocsPageCtx = createContext<DocsPageState | null>(null);
@@ -45,9 +48,10 @@ export function DocsPageProvider({ page, children }: { page: DocsPageInfo; child
   const [lastRequest, setLastRequest] = useState<RecordedRequest | null>(null);
   const recordRequest = useCallback((request: RecordedRequest) => setLastRequest(request), []);
   const [tryOpen, setTryOpen] = useState(false);
+  const [buildOpen, setBuildOpen] = useState(false);
   const value = useMemo(
-    () => ({ page, lastRequest, recordRequest, tryOpen, setTryOpen }),
-    [page, lastRequest, recordRequest, tryOpen],
+    () => ({ page, lastRequest, recordRequest, tryOpen, setTryOpen, buildOpen, setBuildOpen }),
+    [page, lastRequest, recordRequest, tryOpen, buildOpen],
   );
   return <DocsPageCtx.Provider value={value}>{children}</DocsPageCtx.Provider>;
 }
@@ -61,6 +65,8 @@ export function useDocsPage(): DocsPageState {
       recordRequest: () => {},
       tryOpen: false,
       setTryOpen: () => {},
+      buildOpen: false,
+      setBuildOpen: () => {},
     }
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
 import { EffortSelect, PresetPills, runOnModEnter, Segmented, TextArea, Toggle } from "@/components/docs/kit/Field";
@@ -19,6 +19,7 @@ import {
   sourceList,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/footnotes";
 import { Advanced, Note, Stats } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { logEvent, type EventLogEntry } from "@/lib/docs/client/events";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -75,18 +76,13 @@ function GroundedAnswer({ final, results, includeResults, onReplay }: { final: u
       <p className={`${styles.act} pg-advanced`}>{types.join(" → ")}</p>
       <p className="pg-section-label">The grounded answer{footnoted?.sources.length ? ", with footnotes" : ""}</p>
       {footnoted ? (
-        <p className={styles.answer} tabIndex={0}>
-          {footnoted.segments.map((seg, i) => (
-            <Fragment key={i}>
-              {seg.text}
-              {seg.marks.map((m, j) => (
-                <span key={j} className={styles.mark}>
-                  [{m}]
-                </span>
-              ))}
-            </Fragment>
-          ))}
-        </p>
+        // Joined before parsing, so a citation in the middle of a bold phrase or a list item doesn't break it apart.
+        <div tabIndex={0}>
+          <MarkdownText
+            className={styles.answer}
+            text={footnoted.segments.map((seg) => seg.text + seg.marks.map((m) => `\\[${m}\\]`).join("")).join("")}
+          />
+        </div>
       ) : (
         <p className="pg-empty">No message item in this reply.</p>
       )}

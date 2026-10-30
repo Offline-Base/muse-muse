@@ -10,6 +10,7 @@ import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
 import { StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { collectReply, type Collected } from "@/lib/docs/client/stream";
 
@@ -50,7 +51,7 @@ function SentView({ title, sent, running }: { title: string; sent: Sent | null; 
             <p className="pg-bad">{sent.error}</p>
           ) : sent.reply ? (
             <>
-              <p className={styles.textBlock}>{sent.reply.text || "(no text)"}</p>
+              <MarkdownText className={styles.textBlock} text={sent.reply.text || "(no text)"} />
               <p className="pg-small">
                 <UsageLine model={sent.model} usage={sent.reply.usage} />
               </p>
@@ -169,7 +170,7 @@ export function StatelessCompare({
       {one ? (
         <div className={styles.compareCol}>
           <p className={styles.compareTitle}>Turn 1</p>
-          {one.reply ? <p className={styles.textBlock}>{one.reply.text || "(no text)"}</p> : one.error ? <p className="pg-bad">{one.error}</p> : <StatusPill tone="busy">Running</StatusPill>}
+          {one.reply ? <MarkdownText className={styles.textBlock} text={one.reply.text || "(no text)"} /> : one.error ? <p className="pg-bad">{one.error}</p> : <StatusPill tone="busy">Running</StatusPill>}
         </div>
       ) : null}
       {one?.reply ? (

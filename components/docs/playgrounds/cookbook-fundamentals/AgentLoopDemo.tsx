@@ -30,6 +30,7 @@ import { PROJECTS, type AgentTask } from "@/components/docs/playgrounds/cookbook
 import { allGreen, formatReport, runTestsInWorker, type TestReport } from "@/components/docs/playgrounds/cookbook-fundamentals/sandbox";
 import { CodeLines, DiffView, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { useToolLoop } from "@/components/docs/playgrounds/cookbook-fundamentals/useToolLoop";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { NeutralRequest } from "@/lib/docs/client/body";
 import { estimateCost, formatUsd } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -307,14 +308,14 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
                     </span>
                   ) : null}
                 </div>
-                {t.thought ? <p className={`${styles.thought} pg-advanced`}>{t.thought}</p> : null}
+                {t.thought ? <MarkdownText className={`${styles.thought} pg-advanced`} text={t.thought} /> : null}
                 {t.calls.map((c) => (
                   <div key={c.callId || c.name}>
                     <p className={styles.act}>→ {shortCall(c.name, c.args)}</p>
                     <p className={`${styles.result} pg-advanced`}>{resultSummary(c.name, c.output, c.ok)}</p>
                   </div>
                 ))}
-                {t.model.collected?.done && !t.calls.length && !t.model.collected.error ? <p className={styles.textBlock}>{t.model.collected.text || "(no text)"}</p> : null}
+                {t.model.collected?.done && !t.calls.length && !t.model.collected.error ? <MarkdownText className={styles.textBlock} text={t.model.collected.text || "(no text)"} /> : null}
                 {t.model.collected?.error && t.model.collected.error.code !== "aborted" ? <p className="pg-bad">{t.model.collected.error.message}</p> : null}
                 <details className="pg-raw pg-advanced">
                   <summary>Request and reply JSON</summary>

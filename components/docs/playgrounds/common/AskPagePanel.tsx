@@ -9,6 +9,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { Citations, StreamView } from "@/components/docs/kit/StreamView";
 import { useDocsPage } from "@/components/docs/kit/DocsPageContext";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { ASK_MAX_CHARS, starterQuestions, titleFromSlug, trimHistory, type AskMessage } from "@/lib/docs/client/ask";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
@@ -107,7 +108,7 @@ export function AskPagePanel({ slug }: { slug: string }) {
             <li key={i} className="pg-turn">
               <p className="pg-bubble-user">{x.question}</p>
               <div className="pg-bubble-assistant">
-                {x.answer ? <div className="pg-stream-text">{x.answer}</div> : <p className="pg-empty">{x.failed ? "No answer: see the error below." : "No answer."}</p>}
+                {x.answer ? <MarkdownText className="pg-stream-text" text={x.answer} /> : <p className="pg-empty">{x.failed ? "No answer: see the error below." : "No answer."}</p>}
                 {x.stopped ? <p className="pg-muted">Stopped.</p> : null}
                 <Citations citations={x.citations} />
               </div>

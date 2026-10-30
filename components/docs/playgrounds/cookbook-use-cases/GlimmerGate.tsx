@@ -6,6 +6,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { Segmented, TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { docsModelLabel } from "@/lib/docs/client/models";
 import styles from "@/components/docs/playgrounds/cookbook-use-cases/cuc.module.css";
 import { responseText } from "@/components/docs/playgrounds/cookbook-use-cases/lib/responses";
@@ -429,7 +430,7 @@ function EntryView({ e, fallbackModel }: { e: Entry; fallbackModel: string }) {
               {latencyLabel(e.ms)} <UsageLine model={e.model ?? fallbackModel} usage={e.usage} />
             </span>
           </p>
-          <p className={styles.answer}>{e.answer}</p>
+          <MarkdownText className={styles.answer} text={e.answer} />
         </div>
       );
     case "notsent":
@@ -442,7 +443,7 @@ function EntryView({ e, fallbackModel }: { e: Entry; fallbackModel: string }) {
       return (
         <div className="pg-final">
           <p className="pg-section-label">Agent reply</p>
-          <p className={styles.answer}>{e.text}</p>
+          <MarkdownText className={styles.answer} text={e.text} />
         </div>
       );
   }

@@ -11,6 +11,7 @@ import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
 import { StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { parseJsonText } from "@/lib/docs/client/json";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
@@ -133,7 +134,7 @@ export function RequestShowcase({ items, intro, modelMenu = true }: RequestShowc
                   ) : null}
                   {/* A failure the recipe doesn't predict (a rate limit, the budget) gets the kit's explanation. */}
                   {err && item.expect === "ok" ? <ErrorBox error={err} /> : null}
-                  {o.text !== null ? <p className={styles.textBlock}>{o.text || "(no text)"}</p> : null}
+                  {o.text !== null ? <MarkdownText className={styles.textBlock} text={o.text || "(no text)"} /> : null}
                   {o.json ? (
                     <p className={o.json.ok ? "pg-good pg-small" : "pg-bad pg-small"}>
                       {o.json.ok ? "JSON.parse: parsed." : `JSON.parse failed: ${o.json.message}`}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { RefreshWhileActive } from "@/components/train/RefreshWhileActive";
 import {
   DEMO_MINUTE_CHOICES,
@@ -175,7 +176,7 @@ export function TryLiveCard({ adapterJobId, demo, serverNow, serveJobId = null }
   );
 }
 
-/** The idea and both answers, as plain text: model output never becomes markup or links. Exported for tests. */
+/** The idea and both answers. Model output reads as Markdown but never becomes HTML or a link. Exported for tests. */
 export function LiveAnswers({ answer, idBase }: { answer: Answered; idBase: string }) {
   return (
     <div className="lab-try-result">
@@ -199,7 +200,7 @@ function LiveAnswer({ id, title, text, tuned = false }: { id: string; title: str
       <h3 className="train-role" id={id}>
         {title}
       </h3>
-      <p className={`train-text${t ? "" : " muted"}`}>{t || "(empty)"}</p>
+      {t ? <MarkdownText className="train-text" text={t} links={false} /> : <p className="train-text muted">(empty)</p>}
     </section>
   );
 }

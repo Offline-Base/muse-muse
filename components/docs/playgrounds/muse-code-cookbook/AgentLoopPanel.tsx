@@ -7,6 +7,7 @@ import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { useAgentLoop, type AskRequest, type Harness } from "@/components/docs/playgrounds/muse-code-cookbook/hooks";
 import { oneLine, toolLoopFirstBody, type ToolLoopRequest } from "@/components/docs/playgrounds/muse-code-cookbook/logic/live";
@@ -114,7 +115,7 @@ export function AgentLoopPanel({
                     <span className="pg-meta">running {latencyLabel(loop.elapsedMs)}</span>
                   )}
                 </span>
-                {s.reply?.text ? <p className="pg-stream-text">{s.reply.text}</p> : null}
+                {s.reply?.text ? <MarkdownText className="pg-stream-text" text={s.reply.text} /> : null}
                 {s.reply?.toolCalls.map((t) => (
                   <p key={t.callId} className={styles.note}>
                     Calls <code>{t.name}</code> <code>{oneLine(t.arguments, 240)}</code>
@@ -145,8 +146,8 @@ export function AgentLoopPanel({
       {loop.final !== null ? (
         <div className={styles.tight}>
           <p className="pg-section-label">The agent reports</p>
-          <div className={styles.answer} aria-live="polite">
-            {loop.final || "(no text)"}
+          <div aria-live="polite">
+            <MarkdownText className={styles.answer} text={loop.final || "(no text)"} />
           </div>
         </div>
       ) : null}

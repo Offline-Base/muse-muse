@@ -241,7 +241,7 @@ describe("ResponseView", () => {
     assert.match(html, /69 in · 163 out · under \$0\.0001 est\./);
     assert.match(html, /max_output_tokens set to 16,384 for the live demo\./);
     assert.match(html, /role="tab"[^>]*aria-selected="true"[^>]*>Output<\/button>.*>JSON<\/button>.*>Headers<span class="pg-tab-count">3<\/span><\/button>/);
-    assert.match(html, /The capital of France is \*\*Paris\*\*\./);
+    assert.match(html, /The capital of France is <strong>Paris<\/strong>\./);
   });
 
   it("explains failures, runs and stops", () => {
@@ -292,7 +292,7 @@ describe("StreamView and ReplyView", () => {
 
   it("shows a caret and a wait note while the first words are coming", () => {
     const html = render(C(kit.StreamView), { text: "", running: true });
-    assert.match(html, /aria-busy="true"><span class="pg-caret" aria-hidden="true"><\/span>/);
+    assert.match(html, /aria-busy="true"><div class="md pg-stream-text" data-streaming="true"><p><\/p><\/div>/);
     assert.match(html, /The model reasons before it writes/);
     assert.match(render(C(kit.StreamView), { text: "", running: false }), /The answer appears here\./);
   });

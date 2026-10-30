@@ -1,3 +1,4 @@
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { truncate } from "@/lib/format";
 
 /** Text longer than this folds behind a preview. */
@@ -6,8 +7,8 @@ const FOLD_AT = 320;
 const PREVIEW = 200;
 
 /**
- * Model text with its line breaks kept. Long text shows a preview that opens to the whole text, so a table of answers
- * stays easy to scan. Works without JavaScript (details and summary).
+ * Model text as Markdown, with no links (a tuned model's raw output on public pages). Long text shows a preview that
+ * opens to the whole text, so a table of answers stays easy to scan. Works without JavaScript (details and summary).
  */
 export function LongText({
   text,
@@ -23,7 +24,7 @@ export function LongText({
 }) {
   const t = (text ?? "").trim();
   if (!t) return <p className="train-text muted">{empty}</p>;
-  if (t.length <= foldAt) return <p className="train-text">{t}</p>;
+  if (t.length <= foldAt) return <MarkdownText className="train-text" text={t} links={false} />;
   return (
     <details className="train-long">
       <summary>
@@ -31,7 +32,7 @@ export function LongText({
         <span className="train-long-more">Show all</span>
         <span className="train-long-less">Show less</span>
       </summary>
-      <p className="train-text">{t}</p>
+      <MarkdownText className="train-text" text={t} links={false} />
     </details>
   );
 }

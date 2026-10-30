@@ -35,7 +35,7 @@ export function TryItLive({
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [askOpened, setAskOpened] = useState(!hasDemo);
   const refs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
-  const { tryOpen, setTryOpen } = useDocsPage();
+  const { tryOpen, setTryOpen, setBuildOpen } = useDocsPage();
   const [mounted, setMounted] = useState(false);
   const panel = useRef<HTMLElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
@@ -77,7 +77,8 @@ export function TryItLive({
     // Escape closes the panel, unless the reader is typing in a field or a demo already used the key.
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select")) return;
+      // Escape in a dialog on top of the panel closes the dialog.
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select, dialog")) return;
       setTryOpen(false);
     };
     document.addEventListener("keydown", onKey);
@@ -177,6 +178,13 @@ export function TryItLive({
             </Suspense>
           ) : null}
         </div>
+      </div>
+      <div className="docs-try-foot">
+        <span>Like what this does?</span>
+        <button type="button" className="docs-btn docs-btn-secondary docs-btn-sm" onClick={() => setBuildOpen(true)}>
+          <Icon name="rocket" size={15} />
+          <span>Ask Muse Muse to build you something with this</span>
+        </button>
       </div>
     </section>
   );

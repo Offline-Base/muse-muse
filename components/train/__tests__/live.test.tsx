@@ -103,7 +103,7 @@ describe("Try it live", () => {
     assert.match(html, /<a href="\/fine-tuning\/5e7e5e7e-0000-4000-8000-00000000000a">Open the demo&#x27;s job<\/a> for its GPU, log and Stop\./);
   });
 
-  it("shows both answers side by side as plain text, labeled Base and Tuned Glimmer", () => {
+  it("shows both answers side by side as Markdown without markup or links, labeled Base and Tuned Glimmer", () => {
     const html = render(LiveAnswers, {
       idBase: "t",
       answer: {
@@ -116,15 +116,15 @@ describe("Try it live", () => {
     assert.match(html, /<h3 class="train-role">Your idea<\/h3><p class="train-text">&lt;script&gt;alert\(1\)&lt;\/script&gt; a bakery app<\/p>/);
     assert.match(
       html,
-      /<section class="lab-try-answer" aria-labelledby="t-base"><h3 class="train-role" id="t-base">Base Glimmer<\/h3><p class="train-text">\[click\]\(javascript:alert\(1\)\)\nI can&#x27;t see any photo\.<\/p><\/section>/,
+      /<section class="lab-try-answer" aria-labelledby="t-base"><h3 class="train-role" id="t-base">Base Glimmer<\/h3><div class="md train-text"><p><span>click<\/span><br\/>I can&#x27;t see any photo\.<\/p><\/div>/,
     );
     assert.match(
       html,
-      /<section class="lab-try-answer lab-try-tuned" aria-labelledby="t-tuned"><h3 class="train-role" id="t-tuned">Tuned Glimmer<\/h3><p class="train-text">&lt;a href=&quot;https:\/\/evil\.example&quot;&gt;brief&lt;\/a&gt;\n## Models\n- Muse Spark 1\.3<\/p>/,
+      /<section class="lab-try-answer lab-try-tuned" aria-labelledby="t-tuned"><h3 class="train-role" id="t-tuned">Tuned Glimmer<\/h3><div class="md train-text">.*&lt;a href=&quot;https:\/\/evil\.example&quot;&gt;brief&lt;\/a&gt;/s,
     );
     assert.ok(html.indexOf("Base Glimmer") < html.indexOf("Tuned Glimmer"), "base on the left");
     assert.match(html, /Both answered in 41\.2 s on the demo&#x27;s GPU\./);
-    assert.doesNotMatch(html, /<script|<a |<h2|<li/);
+    assert.doesNotMatch(html, /<script|<a |<img/);
     const empty = render(LiveAnswers, { idBase: "e", answer: { prompt: "x", base: "  ", tuned: "t", ms: 0 } });
     assert.match(empty, /<p class="train-text muted">\(empty\)<\/p>/);
   });

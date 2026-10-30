@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, ErrorBox, JsonTree, ModelSelect, PresetPills, RunButton, Segmented, TextArea, Toggle, latencyLabel, useDocsRun } from "@/components/docs/kit";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError, DocsResult } from "@/lib/docs/client/api";
 import { estimateCost, formatUsd } from "@/lib/docs/client/cost";
 import {
@@ -228,7 +229,7 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
                     <span className="pg-muted pg-small">{latencyLabel(s.ms)}</span>
                     {s.calls.length ? <Chip tone="accent">asks for {s.calls.join(", ")}</Chip> : <Chip tone="ok">final message</Chip>}
                   </p>
-                  {s.text ? <div className={styles.msgAssistant}>{s.text}</div> : null}
+                  {s.text ? <MarkdownText className={styles.msgAssistant} text={s.text} /> : null}
                   <details className="pg-raw pg-advanced">
                     <summary>Request and reply JSON</summary>
                     <JsonTree value={{ request: s.request, reply: s.reply }} openDepth={1} />
@@ -260,7 +261,7 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
       {final ? (
         <section className={`${styles.verdict} ${final.ok ? styles.verdictOk : styles.verdictBad}`} aria-label="Result" role="status">
           <p className={styles.big}>{final.ok ? "Result" : "No result: treated as a failure"}</p>
-          <div className={styles.msgAssistant}>{final.text}</div>
+          <MarkdownText className={styles.msgAssistant} text={final.text} />
           <p className="pg-small">
             {final.calls} model {final.calls === 1 ? "call" : "calls"} · {latencyLabel(final.ms)} · {final.tokens.input.toLocaleString("en-US")} in, {final.tokens.output.toLocaleString("en-US")} out ·{" "}
             {formatUsd(final.usd)} est. · simulated tests: {final.tests}

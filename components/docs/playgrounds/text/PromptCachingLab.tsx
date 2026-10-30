@@ -9,6 +9,7 @@ import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { outcomeOfCollected } from "@/lib/docs/client/record";
@@ -428,7 +429,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
             <ul className="pg-list">
               {calls.map((c) => (
                 <li key={c.call}>
-                  Call {c.call}: {c.answer || (c.running ? "..." : "(no text)")}
+                  Call {c.call}: <MarkdownText text={c.answer || (c.running ? "..." : "(no text)")} />
                 </li>
               ))}
             </ul>

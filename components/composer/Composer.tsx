@@ -36,6 +36,16 @@ interface Props {
   floating?: boolean;
   /** "playground" shows the examples as photo cards above a composer pinned to the bottom (the Make page). */
   layout?: "playground";
+  /** The heading over plain examples. */
+  examplesLabel?: string;
+  /** Added after the note when it's sent, for a muse started from a page that has something to say (docs pages). */
+  context?: string;
+  /** Sent as the note when the box is empty. Only with `context`: it lets the reader send without typing. */
+  blankNote?: string;
+  /** Keeps this composer's draft apart from the Make page's. */
+  draftId?: string;
+  /** Where to come back to after signing in. */
+  returnTo?: string;
 }
 
 /** Audio originals above this are refused before decoding, so a huge file can't exhaust the tab's memory. */
@@ -72,7 +82,21 @@ function writeDraft(key: string, value: string) {
  * remove button, audio is converted to 16 kHz mono WAV and big photos are resized before upload, and send starts the
  * build. Uploads begin as soon as a file is attached when the viewer is signed in.
  */
-export function Composer({ mode, buildId, signedIn, examples, placeholder, autoFocus, floating, layout }: Props) {
+export function Composer({
+  mode,
+  buildId,
+  signedIn,
+  examples,
+  placeholder,
+  autoFocus,
+  floating,
+  layout,
+  examplesLabel = "Try a muse",
+  context,
+  blankNote,
+  draftId,
+  returnTo,
+}: Props) {
   const router = useRouter();
   const inputId = useId();
   const hintId = useId();
@@ -91,9 +115,9 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const [dragging, setDragging] = useState(false);
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
 
-  const key = draftKey(mode, buildId);
+  const key = draftKey(mode, draftId ?? buildId);
   const isRefine = mode === "refine";
-  const nextPath = isRefine && buildId ? `/b/${buildId}?refine=1` : "/";
+  const nextPath = returnTo ?? (isRefine && buildId ? `/b/${buildId}?refine=1` : "/");
 
   // Restore a draft note, such as one kept across sign-in.
   useEffect(() => {
@@ -260,7 +284,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const pending = items.some((it) => it.state === "preparing" || it.state === "uploading");
   const failed = items.some((it) => it.state === "error");
   const references = useMemo(() => items.map((it) => it.reference).filter((r): r is Reference => Boolean(r)), [items]);
-  const hasContent = isRefine ? note.trim().length > 0 : note.trim().length > 0 || items.length > 0;
+  const hasContent = isRefine ? note.trim().length > 0 : note.trim().length > 0 || items.length > 0 || Boolean(blankNote);
   const canSend = hasContent && !submitting && !pending && !failed;
 
   const statusText = useMemo(() => {
@@ -320,7 +344,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
       ? { message: note.trim(), ...(references.length ? { references } : {}) }
-      : { note: note.trim() || null, references };
+      : { note: [note.trim() || blankNote, context].filter(Boolean).join("\n\n") || null, references };
     let res: Response;
     let data: { buildId?: string; error?: string } = {};
     try {
@@ -410,7 +434,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           ref={textarea}
           className="composer-input"
           rows={isRefine || playground ? 1 : 2}
-          maxLength={4000}
+          maxLength={context ? 4000 - context.length - 2 : 4000}
           value={note}
           placeholder={
             placeholder ??
@@ -489,7 +513,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
       ) : null}
       {examples?.length && !playground ? (
         <div className="examples">
-          <span className="examples-label">Try a muse</span>
+          <span className="examples-label">{examplesLabel}</span>
           <ul>
             {examples.map((ex) => (
               <li key={ex.label}>

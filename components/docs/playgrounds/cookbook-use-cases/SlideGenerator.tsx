@@ -6,6 +6,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { Segmented, TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { formatUsd } from "@/lib/docs/client/cost";
 import { collectResponseObject, responsesCollector, type Citation } from "@/lib/docs/client/stream";
@@ -239,7 +240,7 @@ export function SlideGenerator({
               ))}
             </div>
           ) : null}
-          <p className={styles.answer}>{brief.text}</p>
+          <MarkdownText className={styles.answer} text={brief.text} />
         </details>
       ) : null}
 

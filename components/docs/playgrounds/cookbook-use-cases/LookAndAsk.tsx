@@ -9,6 +9,7 @@ import { latencyLabel } from "@/components/docs/kit/ResponseView";
 import { FilePicker } from "@/components/docs/media/FilePicker";
 import { useObjectUrl } from "@/components/docs/media/hooks";
 import { Icon } from "@/components/icons";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { fileToDataUrl } from "@/lib/docs/media/base64";
 import { prepareFile, type PickedMedia } from "@/lib/docs/media/prepare";
 import { startMicRecording, type MicRecording } from "@/lib/docs/media/recorder";
@@ -280,7 +281,7 @@ export function LookAndAsk({
             {answer ? (
               <div className="pg-final">
                 <p className="pg-section-label">The answer</p>
-                <p>{answer}</p>
+                <MarkdownText text={answer} />
                 <div className={styles.row} style={{ marginTop: 8 }}>
                   <button type="button" className="btn btn-sm" onClick={() => void sayAloud(answer)}>
                     <Icon name="play" size={14} /> Say it again
