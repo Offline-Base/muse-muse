@@ -1,6 +1,7 @@
 "use client";
 
 import { Lexer, type Token, type Tokens } from "marked";
+import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { decodeEntities } from "@/lib/docs/mirror-parse";
@@ -16,7 +17,11 @@ import { closePartialMarkdown, jsonReply, MAX_MARKDOWN_CHARS, safeHref } from "@
 interface RenderOptions {
   /** False keeps every link as its text: the fine-tuning lab shows public visitors a tuned model's raw output. */
   links: boolean;
+  /** Links to /docs/... open in place: the docs assistant points at the pages it talks about. */
+  docsLinks: boolean;
 }
+
+const DOCS_PATH = /^\/docs(\/[a-z0-9/_-]*)?(#[\w-]*)?$/i;
 
 /** `<br>` is the one tag models write on purpose, inside table cells, where Markdown has no other way to break a line. */
 const BR_TAG = /^<br\s*\/?>$/i;
@@ -46,6 +51,13 @@ function inline(tokens: Token[] | undefined, key: string, options: RenderOptions
       case "link": {
         const link = t as Tokens.Link;
         const children = inline(link.tokens, k, options);
+        if (options.docsLinks && DOCS_PATH.test(link.href)) {
+          return (
+            <Link key={k} href={link.href}>
+              {children}
+            </Link>
+          );
+        }
         const href = options.links ? safeHref(link.href) : null;
         if (!href) return <span key={k}>{children}</span>;
         return (
@@ -175,12 +187,14 @@ export function MarkdownText({
   text,
   streaming = false,
   links = true,
+  docsLinks = false,
   className,
 }: {
   text: string;
   /** The reply is still arriving: unfinished markers are closed, and a caret follows the text. */
   streaming?: boolean;
   links?: boolean;
+  docsLinks?: boolean;
   /** Added to the element, such as the playgrounds' pg-stream-text. */
   className?: string;
 }) {
@@ -190,11 +204,11 @@ export function MarkdownText({
     if (json !== null) return <CodeBlock code={json} lang="json" />;
     try {
       const tokens = new Lexer({ gfm: true, breaks: true }).lex(streaming ? closePartialMarkdown(text) : text);
-      return blocks(tokens, "md", { links });
+      return blocks(tokens, "md", { links, docsLinks });
     } catch {
       return null;
     }
-  }, [text, streaming, links]);
+  }, [text, streaming, links, docsLinks]);
 
   const classes = ["md", className].filter(Boolean).join(" ");
   if (content === null) return <div className={`${classes} md-plain`}>{text}</div>;

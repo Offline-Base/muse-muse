@@ -74,6 +74,15 @@ The copy-prompt text comes from `buildAgentPrompt` in `lib/docs/agent-prompt.ts`
 
 **Layout change (Oct 30, from Ethan's side-by-side screenshots).** The reading column is Meta's page as it is. The H1 is followed directly by the text. "Try it live" is no longer a card in the column: it is a side panel (860 px, `components/docs/page/TryItLive.tsx`, also opened by a `#try-it-live` link), and the demo mounts on first open. The actions (Try it live, Copy agent prompt, Copy page, View on dev.meta.ai) and the disclaimer sit under "On this page" on wide screens, and in a row under the H1 at 1200 px and below. The typeface is Figtree (`app/docs/font.ts`), the closest free match to Meta's Optimistic, which we don't ship. The panel opens in a simple view: the demo's title, what to ask, Run and the result, with the Contributor notice. The kit marks controls that only tune a request `pg-advanced` (model menu, reasoning, streaming, protocol switch, Show code and similar, in `components/docs/kit/Field.tsx` and `ModelSelect.tsx`), and they stay hidden until the reader turns on Options, which is remembered across pages. New demos get this by using the kit's controls. Where this section says otherwise, this note wins.
 
+## Assistant
+
+`components/docs/chat/DocsChat`, mounted in the docs layout so it carries from page to page: a sidebar on the right (the **Ask AI** button, Cmd/Ctrl+I) that answers questions, opens pages and runs demos. Each question is a loop in the browser: `POST /api/docs/assistant {slug, input}` streams one round, the browser runs any tool the model asks for, and the result goes back, up to `ASSISTANT_MAX_TOOL_CALLS` steps. Each round goes through the proxy's limits and metering.
+
+- **The server decides the instructions, tools and model** (`lib/docs/proxy/assistant.ts`). The body is validated down to messages, calls to known tools, and results answering a call in the conversation.
+- **Tools run on the page** (`components/docs/chat/tools.ts`): `search_docs`, `read_page`, `open_page`, `open_demo`, `read_demo`, `set_demo_field`, `run_demo`, `open_build`. They read and press what's visible, so they work on every demo without any demo exposing an API, and they can do no more than the reader could.
+- **Some steps stay the reader's.** `readerOnlyReason` refuses approvals, deletes, uploads and recording, so the model can't approve its own computer-use action. `open_build` fills the build box and stops: only the reader's send starts a build.
+- **Links to `/docs/...` open in place** (`MarkdownText`'s `docsLinks`). The conversation is kept in sessionStorage, and earlier questions send only their words, not their tool steps.
+
 ## Proxy (F2)
 
 `/api/docs/v1/<path>` mirrors `https://api.meta.ai/v1/<path>` for these, and nothing else (404 `unknown_endpoint`):

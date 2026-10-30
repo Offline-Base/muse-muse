@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 
-const html = (text: string, props: { streaming?: boolean; links?: boolean } = {}) =>
+const html = (text: string, props: { streaming?: boolean; links?: boolean; docsLinks?: boolean } = {}) =>
   renderToStaticMarkup(<MarkdownText text={text} {...props} />);
 
 test("the common Markdown a model writes renders as elements", () => {
@@ -119,4 +119,12 @@ test("a huge reply stays plain text instead of stalling the tab", () => {
 
 test("an empty reply renders nothing inside the wrapper", () => {
   assert.equal(html(""), '<div class="md"></div>');
+});
+
+test("docsLinks opens docs pages in place, and nothing else that's relative", () => {
+  assert.match(html("[Tool calling](/docs/tool-calling#strict)", { docsLinks: true }), /<a href="\/docs\/tool-calling#strict">Tool calling<\/a>/);
+  assert.doesNotMatch(html("[Tool calling](/docs/tool-calling)"), /<a /);
+  for (const bad of ["/dashboard", "/docs/../admin", "//evil.test/docs/x", "/api/docs/ask"]) {
+    assert.doesNotMatch(html(`[x](${bad})`, { docsLinks: true }), /<a /, bad);
+  }
 });

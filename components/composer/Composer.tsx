@@ -68,6 +68,11 @@ function readDraft(key: string): string {
   }
 }
 
+/** Fills a composer's note before it opens, by the draftId it's given: the docs assistant uses it to suggest a build. */
+export function writeComposerDraft(draftId: string, note: string) {
+  writeDraft(draftKey("new", draftId), note);
+}
+
 function writeDraft(key: string, value: string) {
   try {
     if (value) window.sessionStorage.setItem(key, value);
