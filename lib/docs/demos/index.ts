@@ -1,0 +1,215 @@
+import type { DemoMap, DemoSpec } from "@/lib/docs/demos/types";
+import { startDemos } from "@/lib/docs/demos/start";
+import { textDemos } from "@/lib/docs/demos/text";
+import { mediaDemos } from "@/lib/docs/demos/media";
+import { voiceSamDemos } from "@/lib/docs/demos/voice-sam";
+import { protocolsDemos } from "@/lib/docs/demos/protocols";
+import { cookbookFundamentalsDemos } from "@/lib/docs/demos/cookbook-fundamentals";
+import { cookbookUseCasesDemos } from "@/lib/docs/demos/cookbook-use-cases";
+import { cookbookMediaDemos } from "@/lib/docs/demos/cookbook-media";
+import { museCodeDemos } from "@/lib/docs/demos/muse-code";
+import { museCodeCookbookDemos } from "@/lib/docs/demos/muse-code-cookbook";
+import { openWeightsDemos } from "@/lib/docs/demos/open-weights";
+
+/** Every page group's demos. A slug belongs to one group (lib/docs/demos/<group>.ts lists its own). */
+const ALL: DemoMap = {
+  ...startDemos,
+  ...textDemos,
+  ...mediaDemos,
+  ...voiceSamDemos,
+  ...protocolsDemos,
+  ...cookbookFundamentalsDemos,
+  ...cookbookUseCasesDemos,
+  ...cookbookMediaDemos,
+  ...museCodeDemos,
+  ...museCodeCookbookDemos,
+  ...openWeightsDemos,
+};
+
+/** The page group each slug belongs to, for the build report and tests. */
+export const DEMO_GROUPS: Record<string, readonly string[]> = {
+  "start": [
+    "overview",
+    "quickstart",
+    "authentication",
+    "models",
+    "pricing-rate-limits",
+    "sdks",
+    "error-handling",
+    "api-reference",
+    "api-reference/models",
+    "api-reference/models/list-models",
+    "api-reference/models/retrieve-model",
+    "api-reference/models/schemas",
+    "api-reference/status"
+  ],
+  "text": [
+    "tool-calling",
+    "tool-search",
+    "search-grounding",
+    "reasoning",
+    "structured-output",
+    "prompt-caching",
+    "token-counting"
+  ],
+  "media": [
+    "image-understanding",
+    "image-generation",
+    "video-understanding",
+    "file-handling",
+    "api-reference/images",
+    "api-reference/images/create-image",
+    "api-reference/images/edit-image",
+    "api-reference/images/schemas",
+    "api-reference/files",
+    "api-reference/files/upload-file",
+    "api-reference/files/list-files",
+    "api-reference/files/retrieve-file",
+    "api-reference/files/retrieve-file-content",
+    "api-reference/files/delete-file",
+    "api-reference/files/schemas"
+  ],
+  "voice-sam": [
+    "speech-to-text",
+    "media-segmentation",
+    "sam/overview",
+    "sam/segmenting",
+    "sam/reading-segmentation",
+    "sam/client-libraries",
+    "api-reference/voice",
+    "api-reference/voice/transcribe",
+    "api-reference/voice/realtime",
+    "api-reference/voice/schemas"
+  ],
+  "protocols": [
+    "protocols",
+    "protocols/responses",
+    "protocols/chat-completions",
+    "protocols/messages",
+    "api-reference/responses",
+    "api-reference/responses/create-response",
+    "api-reference/responses/retrieve-response",
+    "api-reference/responses/delete-response",
+    "api-reference/responses/cancel-response",
+    "api-reference/responses/count-input-tokens",
+    "api-reference/responses/schemas",
+    "api-reference/chat-completions",
+    "api-reference/chat-completions/create-chat-completion",
+    "api-reference/chat-completions/schemas",
+    "api-reference/messages",
+    "api-reference/messages/create-message",
+    "api-reference/messages/count-tokens",
+    "api-reference/messages/schemas"
+  ],
+  "cookbook-fundamentals": [
+    "cookbook",
+    "cookbook/api-fundamentals",
+    "cookbook/agent-patterns",
+    "cookbook/quickstart-chat-completions",
+    "cookbook/streaming-responses",
+    "cookbook/tool-function-calling",
+    "cookbook/structured-output",
+    "cookbook/prompt-caching",
+    "cookbook/reasoning-thinking-tokens",
+    "cookbook/vision-input",
+    "cookbook/search-grounding",
+    "cookbook/error-handling-retry",
+    "cookbook/basic-agent-loop",
+    "cookbook/interleaved-reasoning-tool-use",
+    "cookbook/multi-turn-context-management",
+    "cookbook/search-and-replace-edits",
+    "cookbook/long-context"
+  ],
+  "cookbook-use-cases": [
+    "cookbook/use-cases",
+    "computer-use",
+    "cookbook/alert-fatigue-copilot",
+    "cookbook/perception-chart-analysis",
+    "cookbook/perception-error-screenshot-fix",
+    "cookbook/perception-grounding",
+    "cookbook/generating-slides",
+    "cookbook/github-agent",
+    "cookbook/multi-agent-orchestration",
+    "cookbook/one-shot-game-dev",
+    "cookbook/iterative-game-dev",
+    "cookbook/browser-verified-web-design",
+    "cookbook/rayban-openclaw",
+    "cookbook/computer-use",
+    "cookbook/computer-use-macos",
+    "cookbook/sandboxed-execution",
+    "cookbook/glimmer-api-agent"
+  ],
+  "cookbook-media": [
+    "cookbook/muse-image",
+    "cookbook/image-generation-basics",
+    "cookbook/image-editing-with-reasoning",
+    "cookbook/anchored-image-series",
+    "cookbook/search-grounded-image-generation",
+    "cookbook/muse-voice-transcribe",
+    "cookbook/voice-api-fundamentals",
+    "cookbook/voice-chess-cua",
+    "cookbook/headlocked-speech-bubble-captions",
+    "cookbook/sam",
+    "cookbook/sam-api-basics",
+    "cookbook/video-to-sticker-pack"
+  ],
+  "muse-code": [
+    "muse-code",
+    "muse-code/auth",
+    "muse-code/subscriptions",
+    "muse-code/permissions",
+    "muse-code/interactive",
+    "muse-code/workflows",
+    "muse-code/session-messaging",
+    "muse-code/rewind",
+    "muse-code/configuration",
+    "muse-code/extending",
+    "muse-code/changelog",
+    "coding-agents",
+    "agent-frameworks"
+  ],
+  "muse-code-cookbook": [
+    "cookbook/muse-code",
+    "cookbook/audit-agent-sessions",
+    "cookbook/deterministic-replay",
+    "cookbook/contained-execution",
+    "cookbook/immutable-guardrails",
+    "cookbook/staged-approvals",
+    "cookbook/subagent-fanout",
+    "cookbook/goal-tracking",
+    "cookbook/bundled-skills",
+    "cookbook/loop-and-cron",
+    "cookbook/side-chats"
+  ],
+  "open-weights": [
+    "open-weight-models",
+    "muse-spark-open",
+    "muse-spark-open/get-the-model",
+    "muse-spark-open/prompting",
+    "muse-spark-open/settings",
+    "muse-spark-open/deploy",
+    "muse-spark-open/hardware-platforms",
+    "muse-spark-open/post-training",
+    "muse-glimmer",
+    "muse-glimmer/get-the-model",
+    "muse-glimmer/prompting",
+    "muse-glimmer/quantization",
+    "muse-glimmer/spec-decode",
+    "muse-glimmer/deploy",
+    "muse-glimmer/hardware-platforms",
+    "muse-glimmer/post-training",
+    "cookbook/run-locally",
+    "cookbook/post-training",
+    "cookbook/muse-spark-open-mac",
+    "cookbook/muse-spark-open-torchtitan-rl",
+    "cookbook/muse-spark-open-torchtitan-sft"
+  ]
+};
+
+export function demoFor(slug: string): DemoSpec | null {
+  return ALL[slug] ?? null;
+}
+
+export function demoSlugs(): string[] {
+  return Object.keys(ALL);
+}
