@@ -322,7 +322,6 @@ export function DocsChat() {
             }}
           />
           <div className="docs-chat-form-row">
-            <span>Runs on Muse Spark 1.3 Contributor: don&apos;t send anything private.</span>
             {running ? (
               <button type="button" className="send-btn" aria-label="Stop" onClick={() => abort.current?.abort()}>
                 <span className="docs-chat-stop" aria-hidden />
