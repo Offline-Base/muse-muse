@@ -7,39 +7,10 @@
  *   npx tsx scripts/knowledge/sources/meta.ts
  */
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { KNOWLEDGE_DIR, pauseRequested } from "@/lib/knowledge/control";
 import { htmlToText, markdownToText, type SourceRecord } from "@/lib/knowledge/sources";
+import { FROM, get, pauseRequested, runAll, TO } from "./common";
 
-const OUT = path.join(KNOWLEDGE_DIR, "sources");
-const CACHE = path.join(OUT, "cache");
-const USER_AGENT = "MuseMuse-knowledge/0.1 (https://github.com/Offline-Base/muse-muse)";
-const FROM = "2026-01-04";
-const TO = "2026-10-29";
 const META_LICENSE = "Meta copyright, training only";
-
-/** One fetch through the cache, waiting a second after each real request. */
-async function get(url: string): Promise<string | null> {
-  const file = path.join(CACHE, createHash("sha256").update(url).digest("hex").slice(0, 32));
-  if (existsSync(file)) return readFile(file, "utf8");
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-  await new Promise((r) => setTimeout(r, 1000));
-  if (!res.ok) {
-    console.warn(`${res.status} ${url}`);
-    return null;
-  }
-  const body = await res.text();
-  await writeFile(file, body);
-  return body;
-}
-
-async function save(name: string, records: SourceRecord[]) {
-  await writeFile(path.join(OUT, `${name}.jsonl`), records.map((r) => JSON.stringify(r)).join("\n") + "\n");
-  console.log(`${name}: ${records.length} documents, ${records.reduce((n, r) => n + r.text.split(/\s+/).length, 0)} words`);
-}
 
 interface WpPost {
   id: number;
@@ -137,24 +108,14 @@ async function cookbooks(): Promise<SourceRecord[]> {
   return records;
 }
 
-async function main() {
-  await mkdir(CACHE, { recursive: true });
-  const steps: Array<[string, () => Promise<SourceRecord[]>]> = [
-    ["meta-docs", developerDocs],
-    ["meta-newsroom", () => wordpress("about.fb.com", "Meta Newsroom", "meta-newsroom")],
-    ["meta-engineering", () => wordpress("engineering.fb.com", "Engineering at Meta", "meta-engineering")],
-    ["pytorch-blog", pytorchBlog],
-    ["meta-cards", modelCards],
-    ["meta-cookbooks", cookbooks],
-  ];
-  await Promise.all(steps.map(async ([name, run]) => {
-    const records = await run();
-    if (pauseRequested()) console.log(`${name}: paused, file not written; run again to carry on.`);
-    else await save(name, records);
-  }));
-}
-
-main().catch((err) => {
+runAll([
+  ["meta-docs", developerDocs],
+  ["meta-newsroom", () => wordpress("about.fb.com", "Meta Newsroom", "meta-newsroom")],
+  ["meta-engineering", () => wordpress("engineering.fb.com", "Engineering at Meta", "meta-engineering")],
+  ["pytorch-blog", pytorchBlog],
+  ["meta-cards", modelCards],
+  ["meta-cookbooks", cookbooks],
+]).catch((err) => {
   console.error(err);
   process.exit(1);
 });

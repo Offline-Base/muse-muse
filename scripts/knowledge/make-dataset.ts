@@ -160,7 +160,11 @@ async function main() {
   const events = await jsonl<CurrentEvent>(path.join(DIR, "events.jsonl"));
   const articles = await jsonl<ArticleDelta>(path.join(DIR, "articles.jsonl"));
   const sourcesDir = path.join(DIR, "sources");
-  const sourceFiles = existsSync(sourcesDir) ? (await readdir(sourcesDir)).filter((f) => f.endsWith(".jsonl")).sort() : [];
+  // --sources meta-,us- takes only files whose names start with one of these; none takes them all.
+  const wanted = arg("sources")?.split(",") ?? null;
+  const sourceFiles = existsSync(sourcesDir)
+    ? (await readdir(sourcesDir)).filter((f) => f.endsWith(".jsonl") && (!wanted || wanted.some((w) => f.startsWith(w)))).sort()
+    : [];
   const records = (await Promise.all(sourceFiles.map((f) => jsonl<SourceRecord>(path.join(sourcesDir, f))))).flat();
   const all = [...eventPassages(events), ...articlePassages(articles, manifest.to), ...records.flatMap((r) => sourcePassages(r, manifest.to))];
   const passages = limit > 0 ? spread(all, limit) : all;

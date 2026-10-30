@@ -48,7 +48,7 @@ def deploy(hours, instance):
     component = doc["InferenceConfigComponents"][CONFIG]
     variants = component["HostingInstanceTypeVariants"]["Variants"]
     env = {e["Name"]: str(e["Default"]) for e in doc["InferenceEnvironmentVariables"]}
-    env.update(variants[TEMPLATE_INSTANCE]["Properties"]["EnvironmentVariables"])
+    env.update(variants[instance]["Properties"]["EnvironmentVariables"])
     env.update(OVERRIDES)
     remove(sm)
     sm.create_model(

@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 
 BUCKET = sys.argv[1]
@@ -23,7 +24,15 @@ lock = threading.Lock()
 
 
 def fetch(url):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=120).read().decode("utf8", "replace")
+    """One listing page, politely: two seconds apart, and a long wait when the site says it's too many."""
+    for attempt in range(8):
+        time.sleep(2)
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), timeout=120).read().decode("utf8", "replace")
+        except urllib.error.HTTPError as err:
+            if err.code != 429 or attempt == 7:
+                raise
+            time.sleep(int(err.headers.get("Retry-After") or 0) or 60 * (attempt + 1))
 
 
 def listing(url):
@@ -72,7 +81,7 @@ def small_lane():
     files = [single(f"{DUMPS}/wikidatawiki/entities/latest-all.json.bz2", "wikimedia/wikidata/latest-all-20261030.json.bz2")]
     for month in ("2026-09",):
         base = f"{DUMPS}/other/mediawiki_history/{month}/enwiki/"
-        files += [(base + n, f"wikimedia/mediawiki_history/{month}/enwiki/{n}", s) for n, s in listing(base)]
+        files += [(base + n, f"wikimedia/mediawiki_history/{month}/enwiki/{n}", s) for n, s in listing(base) if f".enwiki.2026-" in n]
     return files
 
 
