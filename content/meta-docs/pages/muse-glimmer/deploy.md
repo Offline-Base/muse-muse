@@ -810,7 +810,7 @@ BACKEND=cuda   # mlx on macOS
 
 `$BACKEND` selects the target: `cuda` or `mlx`. A CUDA export autotunes Triton kernels against the GPU it runs on, so export on the same architecture you intend to serve from.
 
-##### Target-only export
+##### Target-only export {#executorch-target-export}
 
 For text inference:
 
@@ -823,7 +823,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_solo \
   --output-dir exports/solo
 ```
 
-##### DFlash export
+##### DFlash export {#executorch-dflash-export}
 
 DFlash speculative decoding lowers the target and the draft together, into their own export directory:
 
@@ -839,7 +839,7 @@ python -m executorch.examples.models.muse_glimmer.export.export_dflash \
 
 Both land in one `.pte`: the draft shares the target's token embeddings and output head rather than carrying copies. The block dimension is exported dynamically, so you select block length at serve time. The exported range is backend-specific: `[2, 16]` on MLX and `[2, 4]` on CUDA, where the draft count is also capped at 3.
 
-##### Vision exports
+##### Vision exports {#executorch-vision-export}
 
 Add `--mmproj "$MMPROJ"` to either export command for text and image inference. A vision export also writes `pos_embed.bin` beside `model.pte`.
 

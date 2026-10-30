@@ -74,15 +74,44 @@ export function docsPath(slug: string): string {
 }
 
 /**
+ * Old dev.meta.ai docs paths that Meta now redirects (308) to pages the mirror has, checked Oct 30, 2026. Cookbook
+ * recipes still link many of them. The three Muse Glimmer paths land on a section of the deploy page, so they carry
+ * that section's anchor.
+ */
+const LEGACY_PATHS: Readonly<Record<string, string>> = {
+  "features/chat-completion": "protocols/chat-completions",
+  "features/responses": "protocols/responses",
+  "features/image-understanding": "image-understanding",
+  "features/prompt-caching": "prompt-caching",
+  "features/reasoning": "reasoning",
+  "features/search-grounding": "search-grounding",
+  "features/structured-output": "structured-output",
+  "features/tool-calling": "tool-calling",
+  "getting-started/error-handling": "error-handling",
+  "getting-started/models": "models",
+  "getting-started/overview": "overview",
+  "getting-started/pricing-rate-limits": "pricing-rate-limits",
+  "muse-glimmer/vllm": "muse-glimmer/deploy#vllm",
+  "muse-glimmer/sglang": "muse-glimmer/deploy#sglang",
+  "muse-glimmer/llama-cpp": "muse-glimmer/deploy#llama-cpp",
+};
+
+/**
  * Where a link in the mirrored docs should point here. Mirrored pages (absolute https://dev.meta.ai/docs/... or a
- * /docs/... path) stay inside /docs with their #anchor; the dev.meta.ai dashboard (/platform) becomes Muse Muse's
- * /dashboard; anything else on dev.meta.ai, and every other site, stays an external link.
+ * /docs/... path) stay inside /docs with their #anchor, and so do the old paths Meta redirects to them; the dev.meta.ai
+ * dashboard (/platform) becomes Muse Muse's /dashboard; anything else on dev.meta.ai, and every other site, stays an
+ * external link.
  */
 export function docsHref(href: string): { href: string; external: boolean } {
   const absolute = href.startsWith("/") ? `${DOCS_ORIGIN}${href}` : href;
   const slug = slugOfDocsUrl(absolute.replace(/#.*$/, ""));
   const hash = absolute.includes("#") ? absolute.slice(absolute.indexOf("#")) : "";
   if (slug && bySlug.has(slug)) return { href: `${docsPath(slug)}${hash}`, external: false };
+  const legacy = slug ? LEGACY_PATHS[slug] : undefined;
+  if (legacy) {
+    const [target, section] = legacy.split("#");
+    if (bySlug.has(target)) return { href: `${docsPath(target)}${section ? `#${section}` : hash}`, external: false };
+  }
   if (absolute === `${DOCS_ORIGIN}/docs` || absolute === `${DOCS_ORIGIN}/docs/`) return { href: DOCS_HOME, external: false };
   if (absolute === `${DOCS_ORIGIN}/platform` || absolute.startsWith(`${DOCS_ORIGIN}/platform/`)) {
     return { href: "/dashboard", external: false };

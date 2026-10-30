@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Brief } from "@/lib/brief/schema";
+import type { DocsHoldState } from "@/lib/docs/proxy/types";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
 import type {
@@ -157,14 +158,15 @@ export const gatewayTokens = pgTable(
 );
 
 /**
- * One row per Meta Model API call, from any source: the gateway (products and their tests), Muse Code runs, and the
- * platform's own brief and judge calls. "Meta tokens driven" is the sum of input and output tokens here.
+ * One row per Meta Model API call, from any source: the gateway (products and their tests), Muse Code runs, the
+ * platform's own brief and judge calls, and the live docs demos ("docs", lib/docs/proxy). "Meta tokens driven" is the
+ * sum of input and output tokens here.
  */
 export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    source: text("source").$type<"gateway" | "muse_code" | "platform">().notNull(),
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -187,7 +189,11 @@ export const usage = pgTable(
   ],
 );
 
-/** Fixed-window counters for the gateway's per-IP rate limit. Old windows are deleted by the cleanup cron. */
+/**
+ * Fixed-window counters for the gateway's per-IP rate limit, in-flight slots and the docs proxy's per-IP limits. Old
+ * windows are deleted by the cleanup cron. The docs proxy's per-day rows (lib/docs/proxy/limits.ts) are stored at the
+ * end of their UTC day, so that hourly prune keeps them until the day is over.
+ */
 export const rateLimits = pgTable(
   "rate_limits",
   {
@@ -196,6 +202,28 @@ export const rateLimits = pgTable(
     count: integer("count").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
+);
+
+/**
+ * Files and stored responses that docs visitors created through the docs proxy (lib/docs/proxy), so a visitor can read,
+ * delete or cancel only their own. `id` is Meta's (file-..., resp_...). `visitor` is the SHA-256 of the visitor's random
+ * mm_docs cookie, never the cookie itself. The hourly cleanup deletes files after an hour and responses after a day,
+ * upstream and here (lib/docs/proxy/cleanup.ts). `hold` is a background response's spend, still held at its worst
+ * case until Meta reports what it used (lib/docs/proxy/background.ts); null once settled, and for everything else.
+ */
+export const docsObjects = pgTable(
+  "docs_objects",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").$type<"file" | "response">().notNull(),
+    visitor: text("visitor").notNull(),
+    hold: jsonb("hold").$type<DocsHoldState>(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("docs_objects_visitor_idx").on(t.visitor, t.kind),
+    index("docs_objects_kind_created_idx").on(t.kind, t.createdAt),
+  ],
 );
 
 /**

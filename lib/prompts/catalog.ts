@@ -59,7 +59,7 @@ function priceLine(id: string): string {
       return `$${PRICES["muse-image-1.0"].perImage} per returned image`;
     case "sam-3.1": {
       const p = PRICES["sam-3.1"];
-      return `about $${p.perImage} per image; video about $${p.perVideoFrame} per frame with a ${p.minVideoFrames}-frame minimum (placeholder rates)`;
+      return `about $${p.perImage} per image; video about $${p.perVideoFrame} per frame with a ${p.minVideoFrames}-frame minimum`;
     }
     case "muse-voice-transcribe-1.0":
       return `$${PRICES["muse-voice-transcribe-1.0"].perAudioHour} per audio hour`;

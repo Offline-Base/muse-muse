@@ -64,6 +64,20 @@
       "when": 1793300328898,
       "tag": "0008_lab_models",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793335458160,
+      "tag": "0009_docs_objects",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793348224353,
+      "tag": "0010_docs_holds",
+      "breakpoints": true
     }
   ]
 }

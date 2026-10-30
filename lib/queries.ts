@@ -641,6 +641,8 @@ export interface UsageData {
     tokens: number;
     productTokens: number;
     buildingTokens: number;
+    /** The live docs demos (usage source "docs"), which run on the platform's key with no product. */
+    docsTokens: number;
     input: number;
     cached: number;
     output: number;
@@ -654,6 +656,8 @@ export interface UsageData {
   };
   products: Array<{
     productId: string | null;
+    /** True for the row that sums the live docs demos, which have no product. */
+    docs?: boolean;
     name: string | null;
     slug: string | null;
     status: string | null;
@@ -732,6 +736,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
     d
       .select({
         productId: u.productId,
+        docs: sql<boolean>`(${u.source} = 'docs')`,
         name: schema.products.name,
         slug: schema.products.slug,
         status: schema.products.status,
@@ -742,7 +747,13 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
       .from(u)
       .leftJoin(schema.products, eq(u.productId, schema.products.id))
       .where(usageWhere)
-      .groupBy(u.productId, schema.products.name, schema.products.slug, schema.products.status)
+      .groupBy(
+        u.productId,
+        sql`(${u.source} = 'docs')`,
+        schema.products.name,
+        schema.products.slug,
+        schema.products.status,
+      )
       .orderBy(desc(sql`coalesce(sum(${u.inputTokens} + ${u.outputTokens}), 0)`))
       .limit(100),
     d
@@ -766,14 +777,15 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
 
   const zero = () => days.map(() => 0);
   const perDay = { calls: zero(), input: zero(), output: zero() };
-  const tokensBySource = { gateway: zero(), building: zero() };
-  const spendBySource = { gateway: zero(), building: zero() };
+  const tokensBySource = { gateway: zero(), building: zero(), docs: zero() };
+  const spendBySource = { gateway: zero(), building: zero(), docs: zero() };
   const tokensByModel = new Map<string, number[]>();
   const spendByModel = new Map<string, number[]>();
   const totals: UsageData["totals"] = {
     tokens: 0,
     productTokens: 0,
     buildingTokens: 0,
+    docsTokens: 0,
     input: 0,
     cached: 0,
     output: 0,
@@ -793,7 +805,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
     const output = num(r.output);
     const tokens = input + output;
     const cost = num(r.cost);
-    const bucket = r.source === "gateway" ? "gateway" : "building";
+    const bucket = r.source === "gateway" ? "gateway" : r.source === "docs" ? "docs" : "building";
     perDay.calls[i] += num(r.calls);
     perDay.input[i] += input;
     perDay.output[i] += output;
@@ -805,7 +817,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
     tokensByModel.get(model)![i] += tokens;
     spendByModel.get(model)![i] += cost;
     totals.tokens += tokens;
-    totals[bucket === "gateway" ? "productTokens" : "buildingTokens"] += tokens;
+    totals[bucket === "gateway" ? "productTokens" : bucket === "docs" ? "docsTokens" : "buildingTokens"] += tokens;
     totals.input += input;
     totals.cached += num(r.cached);
     totals.output += output;
@@ -839,24 +851,19 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
       .sort((a, b2) => sum(b2.values) - sum(a.values));
 
   const models = [...new Set(modelOptions.map((r) => r.model).filter((m): m is string => Boolean(m)))].sort();
+  // The docs demos get their own series only when they ran in this range, so the chart is unchanged otherwise.
+  const docsRan = sum(spendBySource.docs) > 0 || sum(tokensBySource.docs) > 0;
+  const bySource = (m: { gateway: number[]; building: number[]; docs: number[] }): UsageSeries[] => [
+    { key: "gateway", label: "Products", values: m.gateway },
+    { key: "building", label: "Building", values: m.building },
+    ...(docsRan ? [{ key: "docs", label: "Docs demos", values: m.docs }] : []),
+  ];
 
   return {
     days,
     perDay,
-    tokens:
-      f.view === "model"
-        ? modelSeries(tokensByModel)
-        : [
-            { key: "gateway", label: "Products", values: tokensBySource.gateway },
-            { key: "building", label: "Building", values: tokensBySource.building },
-          ],
-    spend:
-      f.view === "model"
-        ? modelSeries(spendByModel)
-        : [
-            { key: "gateway", label: "Products", values: spendBySource.gateway },
-            { key: "building", label: "Building", values: spendBySource.building },
-          ],
+    tokens: f.view === "model" ? modelSeries(tokensByModel) : bySource(tokensBySource),
+    spend: f.view === "model" ? modelSeries(spendByModel) : bySource(spendBySource),
     builds: [
       { key: "shipped", label: "Shipped", values: shipped },
       { key: "failed", label: "Failed", values: failed },
@@ -864,6 +871,7 @@ export async function getUsage(f: UsageFilters): Promise<UsageData> {
     totals,
     products: perProduct.map((r) => ({
       productId: r.productId,
+      docs: r.docs === true || undefined,
       name: r.name,
       slug: r.slug,
       status: r.status,

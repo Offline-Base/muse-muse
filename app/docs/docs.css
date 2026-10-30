@@ -1,0 +1,1727 @@
+/*
+ * The docs mirror (docs/DOCS_MIRROR.md, "Page layout"): dev.meta.ai's docs layout and type scale on Muse Muse's
+ * colors (app/globals.css). Measured from the reference screenshots and dev.meta.ai's own design tokens: content
+ * column 768 px and a 240 px "On this page" column 32 px apart, body 16/24, H1 29 px, H2 20 px with a rule above all
+ * but the first, H3 17 px, code 14/20 in 8 px bordered blocks, 16 px callouts and cards.
+ *
+ * Stylesheets stay loaded after a route change in the App Router, so every rule here hangs off a docs- class.
+ */
+
+:root {
+  --docs-neutral: rgba(5, 54, 89, 0.08);
+  --docs-neutral-hover: rgba(5, 54, 89, 0.13);
+  --docs-search-bg: #dce1e6;
+  --docs-search-hover: #d3d9df;
+  --docs-inline-code-bg: #f2f4f6;
+  --docs-code-bg: #ffffff;
+  --docs-shadow-low: 0 1px 1px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.1);
+  --docs-note-bg: #eff5fe;
+  --docs-note-line: #cbdefc;
+  --docs-note-icon: #2962d8;
+  --docs-tip-bg: #edf7f0;
+  --docs-tip-line: #c4e5cf;
+  --docs-tip-icon: #157347;
+  --docs-warning-bg: #fdf5e1;
+  --docs-warning-line: #f0dca6;
+  --docs-warning-icon: #b07400;
+  --docs-important-bg: #f4f0fe;
+  --docs-important-line: #dacffb;
+  --docs-important-icon: #6941c6;
+  --docs-caution-bg: #fdeeec;
+  --docs-caution-line: #f6cbc5;
+  --docs-caution-icon: #b42318;
+  --docs-link: #0064e0;
+  --docs-link-hover: #0051b8;
+
+  /*
+   * Code colors, sampled from dev.meta.ai's blocks: navy keys and operators, green strings, brown numbers, blue
+   * keywords, dark blue function names, violet class names. JSON punctuation is dark; Python and TypeScript
+   * punctuation is the light gray --docs-syn-punct-code.
+   */
+  --docs-syn-fg: #111112;
+  --docs-syn-punct: #111112;
+  --docs-syn-punct-code: #9fa4ab;
+  --docs-syn-comment: #676a71;
+  --docs-syn-string: #1d4323;
+  --docs-syn-number: #63270e;
+  --docs-syn-property: #1d4872;
+  --docs-syn-operator: #1d4872;
+  --docs-syn-keyword: #0064e0;
+  --docs-syn-function: #042f97;
+  --docs-syn-type: #3e0697;
+  --docs-syn-inserted: #17692f;
+  --docs-syn-deleted: #a3262a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --docs-neutral: rgba(223, 226, 229, 0.1);
+    --docs-neutral-hover: rgba(223, 226, 229, 0.16);
+    --docs-search-bg: #3a3a3c;
+    --docs-search-hover: #444447;
+    --docs-inline-code-bg: #111112;
+    --docs-code-bg: #1f1f22;
+    --docs-shadow-low: 0 1px 1px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.35);
+    --docs-note-bg: #15233d;
+    --docs-note-line: #22406e;
+    --docs-note-icon: #8cb2ff;
+    --docs-tip-bg: #11281b;
+    --docs-tip-line: #1d4a2d;
+    --docs-tip-icon: #5fd39a;
+    --docs-warning-bg: #2c230f;
+    --docs-warning-line: #4f3f14;
+    --docs-warning-icon: #f2c063;
+    --docs-important-bg: #221c38;
+    --docs-important-line: #3c3166;
+    --docs-important-icon: #b9a0f3;
+    --docs-caution-bg: #331716;
+    --docs-caution-line: #5c2622;
+    --docs-caution-icon: #ff9b8f;
+    --docs-link: #3e9efb;
+    --docs-link-hover: #6cb5fc;
+
+    --docs-syn-fg: #e6e7ea;
+    --docs-syn-punct: #c4c7cc;
+    --docs-syn-punct-code: #868b93;
+    --docs-syn-comment: #9a9ea6;
+    --docs-syn-string: #a1d8aa;
+    --docs-syn-number: #f2ae88;
+    --docs-syn-property: #9cc3f2;
+    --docs-syn-operator: #9cc3f2;
+    --docs-syn-keyword: #4ba9fe;
+    --docs-syn-function: #9fc0ff;
+    --docs-syn-type: #c4abff;
+    --docs-syn-inserted: #7ad497;
+    --docs-syn-deleted: #ff9d97;
+  }
+}
+
+:root[data-theme="dark"] {
+  --docs-neutral: rgba(223, 226, 229, 0.1);
+  --docs-neutral-hover: rgba(223, 226, 229, 0.16);
+  --docs-search-bg: #3a3a3c;
+  --docs-search-hover: #444447;
+  --docs-inline-code-bg: #111112;
+  --docs-code-bg: #1f1f22;
+  --docs-shadow-low: 0 1px 1px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --docs-note-bg: #15233d;
+  --docs-note-line: #22406e;
+  --docs-note-icon: #8cb2ff;
+  --docs-tip-bg: #11281b;
+  --docs-tip-line: #1d4a2d;
+  --docs-tip-icon: #5fd39a;
+  --docs-warning-bg: #2c230f;
+  --docs-warning-line: #4f3f14;
+  --docs-warning-icon: #f2c063;
+  --docs-important-bg: #221c38;
+  --docs-important-line: #3c3166;
+  --docs-important-icon: #b9a0f3;
+  --docs-caution-bg: #331716;
+  --docs-caution-line: #5c2622;
+  --docs-caution-icon: #ff9b8f;
+  --docs-link: #3e9efb;
+  --docs-link-hover: #6cb5fc;
+
+  --docs-syn-fg: #e6e7ea;
+  --docs-syn-punct: #c4c7cc;
+  --docs-syn-punct-code: #868b93;
+  --docs-syn-comment: #9a9ea6;
+  --docs-syn-string: #a1d8aa;
+  --docs-syn-number: #f2ae88;
+  --docs-syn-property: #9cc3f2;
+  --docs-syn-operator: #9cc3f2;
+  --docs-syn-keyword: #4ba9fe;
+  --docs-syn-function: #9fc0ff;
+  --docs-syn-type: #c4abff;
+  --docs-syn-inserted: #7ad497;
+  --docs-syn-deleted: #ff9d97;
+}
+
+/*
+ * Docs pages in dark mode take dev.meta.ai's dark surfaces, a little lighter than the platform's: a #1f1f22 page,
+ * borders that stay visible on it (#494d53), and its blues for links and the current sidebar row. Scoped to the docs,
+ * so the rest of Muse Muse keeps its own.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .main:has(.docs-frame) {
+    --surface: #1f1f22;
+    --surface-2: #26272b;
+    --surface-3: #303237;
+    --line: #494d53;
+    --line-strong: #5e636a;
+    --accent-text: #3e9efb;
+  }
+
+  :root:not([data-theme="light"]) .docs-nav {
+    --accent-text: #4ba9fe;
+  }
+}
+
+:root[data-theme="dark"] .main:has(.docs-frame) {
+  --surface: #1f1f22;
+  --surface-2: #26272b;
+  --surface-3: #303237;
+  --line: #494d53;
+  --line-strong: #5e636a;
+  --accent-text: #3e9efb;
+}
+
+:root[data-theme="dark"] .docs-nav {
+  --accent-text: #4ba9fe;
+}
+
+/* ---------- Frame and columns ---------- */
+
+.docs-frame {
+  padding: 20px 24px 48px;
+}
+
+/* Phones: the top bar sits on the page's own surface with a hairline under it, as on dev.meta.ai. */
+.main:has(.docs-frame) > .topbar {
+  background: var(--surface);
+}
+
+.docs-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 768px);
+  column-gap: 32px;
+  max-width: 768px;
+  margin-inline: auto;
+}
+
+.docs-article {
+  min-width: 0;
+  color: var(--fg);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.docs-aside {
+  display: none;
+}
+
+@media (min-width: 760px) {
+  .docs-frame {
+    padding: 32px 40px 56px;
+  }
+}
+
+@media (min-width: 1201px) {
+  .docs-grid {
+    grid-template-columns: minmax(0, 768px) 240px;
+    max-width: 1040px;
+  }
+
+  .docs-aside {
+    display: block;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    max-height: 100dvh;
+    overflow-y: auto;
+    padding: 0 0 24px;
+    scrollbar-width: thin;
+  }
+}
+
+/* ---------- Type ---------- */
+
+.docs-h1 {
+  margin: 8px 0 16px;
+  font-size: 29px;
+  line-height: 1.24;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+.docs-h {
+  position: relative;
+  scroll-margin-top: 24px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.docs-h2 {
+  margin: 40px 0 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.docs-article > .docs-h2:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.docs-h3 {
+  margin: 24px 0 8px;
+  font-size: 17px;
+  line-height: 1.4118;
+}
+
+.docs-h4 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.docs-h5,
+.docs-h6 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+  line-height: 1.43;
+}
+
+.docs-anchor {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.docs-h:hover .docs-anchor,
+.docs-anchor:focus-visible {
+  opacity: 1;
+}
+
+.docs-p {
+  margin: 16px 0;
+  max-width: 72ch;
+}
+
+.docs-link {
+  color: var(--docs-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.docs-link:hover {
+  color: var(--docs-link-hover);
+}
+
+.docs-article strong {
+  font-weight: 600;
+}
+
+.docs-code-inline {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--docs-inline-code-bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.875em;
+  line-height: inherit;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.docs-list {
+  margin: 16px 0;
+  padding-left: 24px;
+  max-width: 72ch;
+}
+
+/* 24 px lines 10 px apart, dev.meta.ai's 34 px rhythm. */
+.docs-list li {
+  margin: 10px 0;
+  padding-left: 2px;
+}
+
+.docs-list li > .docs-p {
+  margin: 8px 0;
+}
+
+.docs-list li > .docs-list {
+  margin: 6px 0;
+}
+
+.docs-list .docs-code,
+.docs-list .docs-table,
+.docs-list .docs-callout {
+  margin: 12px 0;
+}
+
+.docs-task {
+  margin: 0 6px 0 0;
+  vertical-align: -2px;
+  accent-color: var(--accent);
+}
+
+.docs-hr {
+  margin: 32px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.docs-quote {
+  margin: 20px 0;
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--fg-2);
+}
+
+.docs-quote > .docs-p {
+  margin: 8px 0;
+}
+
+.docs-raw {
+  margin: 16px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: pre-wrap;
+  color: var(--fg-2);
+}
+
+.docs-figure {
+  margin: 20px 0;
+}
+
+.docs-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.docs-img-inline {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+.docs-diagram {
+  margin: 20px 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+/* ---------- Tables (an empty Markdown header row means no head, like "At a glance") ---------- */
+
+.docs-table {
+  margin: 20px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.docs-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.docs-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.docs-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+/*
+ * Code in a cell breaks only at its spaces, so a field name such as expires_after never splits mid-word (inline
+ * code elsewhere may break anywhere, which would let the table squeeze the Field column to a few letters). Enum
+ * lists in the Type column still wrap at their spaces, and a table wider than its box scrolls inside it.
+ */
+.docs-table td .docs-code-inline {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.docs-table td:first-child .docs-code-inline {
+  white-space: nowrap;
+}
+
+/* A long identifier in a description may still break, so prose columns don't push the table past its box. */
+.docs-table td:last-child:not(:first-child) .docs-code-inline {
+  overflow-wrap: anywhere;
+}
+
+.docs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.docs-table th:first-child,
+.docs-table td:first-child {
+  padding-left: 14px;
+}
+
+/* ---------- Callouts: > **NOTE: Title** ---------- */
+
+.docs-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 20px 0;
+  padding: 16px;
+  border-bottom: 1px solid var(--docs-note-line);
+  border-radius: 16px;
+  background: var(--docs-note-bg);
+  --docs-callout-icon: var(--docs-note-icon);
+}
+
+.docs-callout-tip {
+  border-bottom-color: var(--docs-tip-line);
+  background: var(--docs-tip-bg);
+  --docs-callout-icon: var(--docs-tip-icon);
+}
+
+.docs-callout-warning {
+  border-bottom-color: var(--docs-warning-line);
+  background: var(--docs-warning-bg);
+  --docs-callout-icon: var(--docs-warning-icon);
+}
+
+.docs-callout-important {
+  border-bottom-color: var(--docs-important-line);
+  background: var(--docs-important-bg);
+  --docs-callout-icon: var(--docs-important-icon);
+}
+
+.docs-callout-caution {
+  border-bottom-color: var(--docs-caution-line);
+  background: var(--docs-caution-bg);
+  --docs-callout-icon: var(--docs-caution-icon);
+}
+
+.docs-callout-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--docs-callout-icon);
+}
+
+.docs-callout-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.docs-callout-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.1875;
+  padding-top: 1px;
+}
+
+.docs-callout-body > .docs-p,
+.docs-callout-body > .docs-list {
+  margin: 16px 0;
+}
+
+.docs-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+.docs-callout-body > .docs-p:last-child {
+  margin-bottom: 16px;
+}
+
+.docs-callout .docs-code-inline {
+  background: var(--docs-inline-code-bg);
+}
+
+/* ---------- Cards: link lists whose items read "[Title](url): Description" ---------- */
+
+.docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(200px, calc((100% - 24px) / 3))), 1fr));
+  gap: 12px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--docs-shadow-low);
+  transition: border-color 120ms ease;
+}
+
+.docs-card:hover {
+  border-color: var(--line-strong);
+}
+
+.docs-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  pointer-events: none;
+  transition: background-color 120ms ease;
+}
+
+.docs-card:hover::after {
+  background: var(--hover);
+}
+
+.docs-card:has(a:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.docs-card-icon {
+  display: inline-flex;
+  color: var(--fg);
+}
+
+.docs-card a {
+  color: var(--fg);
+  text-decoration: none;
+  outline: none;
+}
+
+/* The whole card is the link. */
+.docs-card a::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+.docs-card-title {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.docs-card-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+/*
+ * The cookbook index's recipe tiles: borderless, tinted per section, with a book icon, as dev.meta.ai draws them
+ * (the same alphas in light and dark).
+ */
+.docs-cards-recipe .docs-card {
+  padding: 16px;
+  border: 0;
+  background: var(--docs-recipe-tint);
+  box-shadow: none;
+}
+
+.docs-cards-recipe .docs-card:hover {
+  border-color: transparent;
+}
+
+.docs-recipe-blue {
+  --docs-recipe-tint: rgba(1, 113, 227, 0.2);
+}
+
+.docs-recipe-purple {
+  --docs-recipe-tint: rgba(121, 82, 255, 0.2);
+}
+
+.docs-recipe-orange {
+  --docs-recipe-tint: rgba(242, 121, 2, 0.2);
+}
+
+.docs-recipe-green {
+  --docs-recipe-tint: rgba(36, 187, 94, 0.2);
+}
+
+/* A paragraph that is one outside link, like the cookbook's "View on GitHub": a small gray pill. */
+.docs-p-action {
+  margin: 12px 0 20px;
+}
+
+/* ---------- Code blocks and tab groups ---------- */
+
+.docs-code {
+  margin: 20px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--docs-code-bg);
+}
+
+.docs-code-grouped {
+  border-radius: 16px;
+}
+
+.docs-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 8px 8px 16px;
+}
+
+.docs-code-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--docs-syn-comment);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.docs-code-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.docs-copy-btn {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--docs-syn-comment);
+  line-height: 0;
+}
+
+.docs-copy-btn:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.docs-code-body {
+  margin-top: -8px;
+  overflow: auto;
+}
+
+.docs-code-body[hidden] {
+  display: none;
+}
+
+.docs-code-body pre {
+  min-width: fit-content;
+  margin: 0;
+  padding: 12px 16px;
+  background: transparent !important;
+  color: var(--docs-syn-fg);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 20px;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.docs-code-body pre:focus-visible {
+  outline-offset: -2px;
+}
+
+.docs-code-body code {
+  display: block;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.docs-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.docs-tab {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.docs-tab:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.docs-tab[aria-selected="true"] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.docs-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: -5px;
+  left: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* Each label reserves its bold width, so picking a tab doesn't shift its neighbors. */
+.docs-tab-text {
+  display: inline-grid;
+}
+
+.docs-tab-text::after {
+  content: attr(data-label);
+  height: 0;
+  overflow: hidden;
+  font-weight: 600;
+  visibility: hidden;
+}
+
+/* Run: a small pill in the block's header. */
+.docs-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.docs-run-btn:hover {
+  background: var(--nav-active);
+}
+
+.docs-run-btn.is-open {
+  background: var(--docs-neutral);
+  color: var(--fg);
+}
+
+.docs-run {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.docs-run-loading {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.docs-run-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.docs-run-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.docs-run-note {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.docs-run-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+
+.docs-run-id p {
+  flex: 1 1 280px;
+  margin: 0;
+}
+
+.docs-run-id code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.docs-run-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--bad);
+  font-size: 13px;
+}
+
+.docs-link-btn {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.docs-link-btn:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Buttons and the actions under the H1 ---------- */
+
+.docs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.docs-btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.docs-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.docs-btn-secondary {
+  background: var(--docs-neutral);
+  color: var(--fg);
+}
+
+.docs-btn-secondary:hover {
+  background: var(--docs-neutral-hover);
+}
+
+.docs-btn-sm {
+  height: 32px;
+  padding: 0 13px;
+  font-size: 13.5px;
+}
+
+.docs-btn-xs {
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  font-size: 13px;
+}
+
+.docs-btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.docs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+
+.docs-split {
+  position: relative;
+  display: inline-flex;
+}
+
+.docs-split-main {
+  padding-right: 13px;
+  border-radius: 999px 0 0 999px;
+}
+
+.docs-split-chevron {
+  padding: 0 11px 0 9px;
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0 999px 999px 0;
+}
+
+.docs-split-chevron[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.docs-prompt-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 14px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.docs-prompt-menu[hidden] {
+  display: none;
+}
+
+.docs-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.docs-choice legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.docs-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.docs-chip {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.docs-chip input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.docs-chip span {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--docs-neutral);
+  font-size: 13.5px;
+}
+
+.docs-chip:hover span {
+  background: var(--docs-neutral-hover);
+}
+
+.docs-chip input:checked + span {
+  background: var(--nav-active);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.docs-chip input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.docs-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.docs-check input {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.docs-check.is-disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.docs-check-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.docs-check-hint code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.docs-prompt-preview {
+  max-height: 190px;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--fg-2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.docs-prompt-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.docs-prompt-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- Try it live ---------- */
+
+.docs-try {
+  margin: 28px 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--docs-shadow-low);
+  scroll-margin-top: 24px;
+}
+
+.docs-try-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 12px 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-try-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding-bottom: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.docs-try-heading svg {
+  color: var(--accent);
+}
+
+.docs-try-tabs {
+  padding: 0 0 4px;
+  border-bottom: 0;
+}
+
+.docs-try-panel {
+  padding: 16px;
+}
+
+.docs-try-panel[hidden] {
+  display: none;
+}
+
+.docs-try-intro {
+  margin-bottom: 14px;
+}
+
+.docs-try-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.docs-try-blurb {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.docs-try-loading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ---------- Previous / next and the credit ---------- */
+
+.docs-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 48px 0 0;
+}
+
+.docs-pager-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color 120ms ease;
+}
+
+.docs-pager-link:hover {
+  border-color: var(--line-strong);
+}
+
+.docs-pager-link.is-next {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.docs-pager-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.docs-pager-title {
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.docs-credit {
+  margin: 24px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.docs-credit a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* ---------- On this page ---------- */
+
+.docs-toc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.docs-toc-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.docs-toc-rail {
+  position: relative;
+}
+
+.docs-toc-rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.docs-toc ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-toc-item a {
+  display: block;
+  padding: 4px 8px 4px 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.19;
+  text-decoration: none;
+}
+
+.docs-toc-item.is-sub a {
+  padding-left: 32px;
+}
+
+.docs-toc-item a:hover {
+  color: var(--fg);
+}
+
+.docs-toc-item a[aria-current] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.docs-toc-bar {
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--fg);
+  transition:
+    top 150ms ease,
+    height 150ms ease;
+}
+
+/* Tablets and phones: the same list behind a "Table of contents" pill under the actions (Toc.tsx TocToggle). */
+.docs-toc-inline {
+  gap: 0;
+  margin: -8px 0 24px;
+}
+
+.docs-toc-toggle {
+  align-self: flex-start;
+  height: 40px;
+  padding: 0 14px 0 16px;
+}
+
+.docs-toc-toggle svg {
+  transition: transform 150ms ease;
+}
+
+.docs-toc-toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.docs-toc-panel {
+  margin-top: 16px;
+}
+
+.docs-toc-panel[hidden] {
+  display: none;
+}
+
+.docs-toc-inline .docs-toc-item a {
+  padding: 6px 8px 6px 16px;
+  font-size: 16px;
+  line-height: 1.375;
+}
+
+.docs-toc-inline .docs-toc-item.is-sub a {
+  padding-left: 32px;
+}
+
+@media (min-width: 1201px) {
+  .docs-toc-inline {
+    display: none;
+  }
+}
+
+/* ---------- Docs sidebar (components/shell/DocsNav) ---------- */
+
+.sidebar:has(.docs-nav) > .brand {
+  margin-bottom: 4px;
+}
+
+.docs-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.docs-nav-top {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  padding-bottom: 22px;
+}
+
+.docs-nav-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--docs-search-bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.docs-nav-search svg {
+  color: var(--fg-2);
+}
+
+.docs-nav-search:hover {
+  background: var(--docs-search-hover);
+}
+
+/*
+ * The nav fades out over its last 20 px, so a row the scroll area cuts through doesn't run into the disclaimer
+ * below it; the bottom padding lets the last row scroll clear of the fade.
+ */
+.docs-nav-scroll {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -8px;
+  padding: 4px 8px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+}
+
+.sidebar:has(.docs-nav) .sidebar-foot {
+  padding-top: 8px;
+}
+
+.docs-nav-section + .docs-nav-section {
+  margin-top: 24px;
+}
+
+.docs-nav-title {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.docs-nav-title span {
+  display: block;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-nav-list,
+.docs-nav-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-nav-children {
+  gap: 0;
+  margin: 2px 0 0;
+  padding-left: 24px;
+}
+
+.docs-nav-children[hidden] {
+  display: none;
+}
+
+.docs-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+
+.docs-nav-link:hover {
+  background: var(--hover);
+}
+
+.docs-nav-link[aria-current="page"] {
+  background: var(--nav-active);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.docs-nav-label {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.docs-nav-ext {
+  flex: none;
+  color: var(--fg-2);
+}
+
+.docs-nav-home {
+  padding-left: 9px;
+}
+
+.docs-nav-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 150ms ease;
+}
+
+/* Down while closed, up while open, as on dev.meta.ai. */
+.docs-nav-group[aria-expanded="true"] .docs-nav-chevron {
+  transform: rotate(180deg);
+}
+
+.sheet .docs-nav {
+  flex: 1 0 auto;
+}
+
+.sheet .docs-nav-scroll {
+  overflow: visible;
+  mask-image: none;
+}
+
+/* ---------- Search palette ---------- */
+
+.docs-palette {
+  width: min(640px, calc(100vw - 24px));
+  max-width: none;
+  max-height: none;
+  margin: 10vh auto auto;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+}
+
+.docs-palette::backdrop {
+  background: rgba(10, 15, 20, 0.42);
+}
+
+.docs-palette-box {
+  display: flex;
+  flex-direction: column;
+  max-height: min(620px, 78vh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+
+.docs-palette-input {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 14px 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.docs-palette-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 17px;
+}
+
+.docs-palette-input input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.docs-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.docs-palette-label {
+  margin: 0;
+  padding: 12px 18px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.docs-palette-empty {
+  margin: 0;
+  padding: 22px 18px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.docs-palette-list {
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.docs-palette-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.docs-palette-item[aria-selected="true"] {
+  background: var(--nav-active);
+}
+
+.docs-palette-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.docs-palette-item[aria-selected="true"] .docs-palette-icon {
+  color: var(--accent-text);
+}
+
+.docs-palette-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.docs-palette-title {
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.docs-palette-context {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.docs-palette-desc {
+  overflow: hidden;
+  color: var(--fg-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-palette-foot {
+  display: flex;
+  flex: none;
+  gap: 18px;
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- Phones ---------- */
+
+@media (max-width: 759px) {
+  .docs-h,
+  .docs-try {
+    scroll-margin-top: 72px;
+  }
+
+  .docs-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .docs-pager-link.is-next {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .docs-split-main span {
+    white-space: normal;
+    text-align: left;
+  }
+
+  .docs-palette {
+    margin-top: 12px;
+  }
+}

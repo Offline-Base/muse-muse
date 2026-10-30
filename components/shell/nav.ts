@@ -25,9 +25,15 @@ export const NAV_GROUPS: NavItem[][] = [
   ],
   [
     { href: "/how-it-works", label: "How it works", icon: "book" },
-    { href: "https://dev.meta.ai/docs/overview", label: "Model API docs", icon: "doc", external: true },
+    // The mirrored Model API docs (app/docs). On /docs/* the sidebar becomes the docs sidebar (components/shell/DocsNav).
+    { href: "/docs", label: "Docs", icon: "doc" },
   ],
 ];
+
+/** The docs mirror's pages, where the sidebar shows the docs navigation instead of the platform's. */
+export function isDocsPath(pathname: string): boolean {
+  return pathname === "/docs" || pathname.startsWith("/docs/");
+}
 
 export function isActive(item: NavItem, pathname: string): boolean {
   if (item.external) return false;

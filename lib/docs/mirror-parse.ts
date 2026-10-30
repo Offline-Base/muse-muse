@@ -186,10 +186,13 @@ export function parseSideNav(html: string): NavSection[] {
   return sections.filter((s) => s.title && s.items.length && !seen.has(s.title) && Boolean(seen.add(s.title)));
 }
 
-/** The article's headings with their anchor ids. React's generated ids (they start with "_") belong to dialogs. */
+/**
+ * The article's headings with their anchor ids, h1 to h6: deep pages such as muse-glimmer/deploy link to their H5s.
+ * React's generated ids (they start with "_") belong to dialogs.
+ */
 export function htmlHeadings(html: string): HtmlHeading[] {
   const out: HtmlHeading[] = [];
-  const re = /<h([1-4])\b([^>]*)>([\s\S]*?)<\/h\1>/gi;
+  const re = /<h([1-6])\b([^>]*)>([\s\S]*?)<\/h\1>/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html))) {
     const id = attr(match[2], "id");

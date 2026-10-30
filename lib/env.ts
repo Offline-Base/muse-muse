@@ -17,6 +17,16 @@ function number(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+/**
+ * A dollar amount that may be 0: "0" turns off what it pays for (number() would read it as unset and use the
+ * fallback). Unset, empty or not a number gives the fallback, so a typo can't switch spending off by accident.
+ */
+function dollars(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const value = raw ? Number(raw) : NaN;
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
 /** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
 export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
 
@@ -285,5 +295,42 @@ export const env = {
   get driveBenchTokenHash(): string | null {
     const hash = process.env.DRIVE_BENCH_TOKEN_HASH?.trim().toLowerCase() ?? "";
     return /^[0-9a-f]{64}$/.test(hash) ? hash : null;
+  },
+
+  // ---------- Live docs demos (docs/DOCS_MIRROR.md "Proxy" and "Defaults"; lib/docs/proxy) ----------
+
+  /**
+   * The Meta key the docs proxy calls with: DOCS_MODEL_API_KEY, or MODEL_API_KEY when it isn't set, so the docs can
+   * run on a separate key with its own limits. Server only, like modelApiKey: never in a reply, a header or a log.
+   */
+  get docsModelApiKey(): string {
+    return process.env.DOCS_MODEL_API_KEY?.trim() || env.modelApiKey;
+  },
+  /** False when DOCS_LIVE is "off", "0", "false" or "no" (any case): every live docs call then answers 503 docs_paused. */
+  get docsLive(): boolean {
+    return !["off", "0", "false", "no"].includes((process.env.DOCS_LIVE ?? "").trim().toLowerCase());
+  },
+  /**
+   * What every docs visitor together may spend on Meta per UTC day, in USD. DAILY_SPEND_CAP_USD still applies on top.
+   * 0 pauses the demos that cost money and keeps the free calls; DOCS_LIVE=off pauses everything.
+   */
+  get docsDailySpendCapUsd() {
+    return dollars("DOCS_DAILY_SPEND_CAP_USD", 25);
+  },
+  /** What one client IP may spend on live docs demos per UTC day, in USD. 0 pauses the paid demos, as above. */
+  get docsIpDailyUsd() {
+    return dollars("DOCS_IP_DAILY_USD", 2);
+  },
+  /** Live docs calls one client IP may make per minute, across the proxy, Ask and realtime transcription. */
+  get docsIpRequestsPerMinute() {
+    return number("DOCS_IP_REQUESTS_PER_MINUTE", 20);
+  },
+  /** Live docs calls one client IP may make per UTC day. */
+  get docsIpRequestsPerDay() {
+    return number("DOCS_IP_REQUESTS_PER_DAY", 400);
+  },
+  /** Live docs calls one client IP may have running at once. */
+  get docsIpInFlight() {
+    return number("DOCS_IP_IN_FLIGHT", 4);
   },
 };

@@ -3,7 +3,8 @@ import { db, schema } from "@/lib/db/client";
 import type { ModelUsage } from "@/lib/types";
 
 export interface UsageContext {
-  source: "gateway" | "muse_code" | "platform";
+  /** "docs" is the live docs demos (lib/docs/proxy), which run on the platform's key with no product. */
+  source: "gateway" | "muse_code" | "platform" | "docs";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;
@@ -44,6 +45,15 @@ export async function tokenSpendToday(tokenId: string): Promise<number> {
     .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)` })
     .from(schema.usage)
     .where(and(eq(schema.usage.tokenId, tokenId), gte(schema.usage.at, startOfUtcDay())));
+  return Number(row?.total ?? 0);
+}
+
+/** Spend today (UTC) on the live docs demos, reservations included. Compared with DOCS_DAILY_SPEND_CAP_USD. */
+export async function docsSpendToday(): Promise<number> {
+  const [row] = await db()
+    .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)` })
+    .from(schema.usage)
+    .where(and(eq(schema.usage.source, "docs"), gte(schema.usage.at, startOfUtcDay())));
   return Number(row?.total ?? 0);
 }
 

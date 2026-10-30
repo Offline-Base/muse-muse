@@ -1,18 +1,22 @@
 import type { ModelUsage } from "@/lib/types";
 
 /**
- * Prices in USD. Token prices are per million tokens. From catalog/meta-models.json, which marks several as reported
- * rather than confirmed, so every cost Muse Muse shows is an estimate and is labeled that way. Muse Wonder is every
- * role's default since round 4; the Spark rows stay so older builds, products, datasets and runs keep pricing right.
+ * Prices in USD. Token prices are per million tokens. From catalog/meta-models.json, checked against Meta's pricing
+ * page (content/meta-docs/pages/pricing-rate-limits.md, synced Oct 29, 2026), which also gave the Contributor cached
+ * rate and SAM 3.1's rates. Every cost Muse Muse shows is still an estimate and is labeled that way. Muse Wonder is
+ * every role's default since round 4; the Spark rows stay so older builds, products, datasets and runs price right.
  */
 export const PRICES = {
   "muse-spark-1.3": { input: 1.25, cachedInput: 0.15, output: 4.25 },
-  "muse-spark-1.3-contributor": { input: 0.1, cachedInput: 0.1, output: 0.2 },
+  "muse-spark-1.3-contributor": { input: 0.1, cachedInput: 0.002, output: 0.2 },
   "muse-spark-1.2": { input: 1.25, cachedInput: 0.15, output: 4.25 },
+  /** 1.2 Contributor and 1.1 are offered only by the live docs demos (lib/docs/proxy), priced like their siblings. */
+  "muse-spark-1.2-contributor": { input: 0.1, cachedInput: 0.002, output: 0.2 },
+  "muse-spark-1.1": { input: 1.25, cachedInput: 0.15, output: 4.25 },
   "muse-wonder-1.0": { input: 4, cachedInput: 0.2, output: 20 },
   "muse-image-1.0": { perImage: 0.01 },
-  /** SAM 3.1 rates aren't in the catalog. These placeholders keep budgets meaningful until the pricing page is checked. */
-  "sam-3.1": { perImage: 0.002, perVideoFrame: 0.0002, minVideoFrames: 50 },
+  /** $2.50 per 1,000 images and $0.20 per 1,000 video frames, each video billed for at least 50 frames. */
+  "sam-3.1": { perImage: 0.0025, perVideoFrame: 0.0002, minVideoFrames: 50 },
   "muse-voice-transcribe-1.0": { perAudioHour: 0.18 },
 } as const;
 

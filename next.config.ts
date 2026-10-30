@@ -3,7 +3,19 @@ import { withWorkflow } from "workflow/next";
 
 // PGlite (local runs only, lib/db/client.ts) loads its WebAssembly from node_modules, so it must not be bundled.
 // The dev indicator is off because it sits on top of the sidebar's account chip.
-const nextConfig: NextConfig = { serverExternalPackages: ["@electric-sql/pglite"], devIndicators: false };
+// The docs pages and the docs Ask route read Meta's mirrored Markdown from disk at request time (docsMarkdown in
+// lib/docs/pages.ts builds the path from the slug, which file tracing can't follow), so the pages are traced in by
+// hand. Keys are route globs: "/docs/**" covers /docs/[...slug] and the docs routes under it.
+const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
+
+const nextConfig: NextConfig = {
+  serverExternalPackages: ["@electric-sql/pglite"],
+  devIndicators: false,
+  outputFileTracingIncludes: {
+    "/docs/**": DOCS_MARKDOWN,
+    "/api/docs/ask": DOCS_MARKDOWN,
+  },
+};
 
 // Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/train/workflow.ts,
 // lib/train/steps.ts, lib/train/judge.ts, lib/train/hub-steps.ts, and lib/train/datasets.ts, which holds both).

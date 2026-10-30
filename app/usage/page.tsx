@@ -23,6 +23,7 @@ export const metadata: Metadata = { title: "Usage" };
 const SOURCE_COLORS: Record<string, string> = {
   gateway: "var(--chart-1)",
   building: "var(--chart-2)",
+  docs: "var(--chart-3)",
   shipped: "var(--chart-1)",
   failed: "var(--chart-4)",
 };
@@ -81,7 +82,7 @@ export default async function UsagePage({
     <div className="page">
       <PageHeader
         title="Usage"
-        subtitle="Counts every Meta Model API call made by Muse Muse and the products it shipped."
+        subtitle="Counts every Meta Model API call made by Muse Muse, the products it shipped and the live docs demos."
       />
 
       {!result.ok ? (
@@ -195,12 +196,14 @@ function UsageBody({
           <div className="stat-label">
             <h2 id="tokens-label">Meta tokens driven</h2>
             <InfoTip label="About Meta tokens driven">
-              Input plus output tokens across every Meta Model API call: products through the gateway, and building
-              (briefs, Muse Code and the screenshot judge). {groupThousands(t.tokens)} in this range.
+              Input plus output tokens across every Meta Model API call: products through the gateway, building
+              (briefs, Muse Code and the screenshot judge), and the live docs demos. {groupThousands(t.tokens)} in this
+              range.
             </InfoTip>
           </div>
           <p className="stat-sub">
-            Products {compact(t.productTokens)} · Building {compact(t.buildingTokens)} · Cache hit rate{" "}
+            Products {compact(t.productTokens)} · Building {compact(t.buildingTokens)}
+            {t.docsTokens ? ` · Docs demos ${compact(t.docsTokens)}` : ""} · Cache hit rate{" "}
             {cacheRate.toFixed(1)}%
           </p>
           <StackedBars
@@ -275,11 +278,15 @@ function UsageBody({
               </thead>
               <tbody>
                 {d.products.map((p) => (
-                  <tr key={p.productId ?? "none"}>
+                  <tr key={p.productId ?? (p.docs ? "docs" : "none")}>
                     <td>
                       {p.slug ? (
                         <Link href={`/p/${p.slug}`} className="row-title">
                           {p.name}
+                        </Link>
+                      ) : p.docs ? (
+                        <Link href="/docs" className="row-title">
+                          Docs demos
                         </Link>
                       ) : (
                         <span className="muted">Platform calls not tied to a product</span>

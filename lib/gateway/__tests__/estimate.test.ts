@@ -47,7 +47,7 @@ test("per-image, per-frame and per-second models", () => {
   near(estimateCost("images/edits", { kind: "multipart", form, model: "muse-image-1.0" }, 0), 0.02);
 
   const sam = estimateCost("responses", jsonReq({ model: "sam-3.1", input: [{ content: [{ type: "input_image", image_url: "x" }] }] }), 0);
-  near(sam, 0.002);
+  near(sam, 0.0025);
   const samVideo = estimateCost("responses", jsonReq({ model: "sam-3.1", input: [{ content: [{ type: "input_video", video_url: "x" }] }] }), 0);
   assert.ok(samVideo > sam);
 

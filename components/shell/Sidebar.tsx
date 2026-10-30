@@ -1,15 +1,20 @@
 import { AccountMenu, type AccountUser } from "@/components/shell/AccountMenu";
 import { Brand } from "@/components/shell/Brand";
-import { NavLinks } from "@/components/shell/NavLinks";
+import { DISCLAIMER } from "@/components/shell/disclaimer";
+import { DOCS_NAV } from "@/components/shell/docs-nav";
+import { ShellNav } from "@/components/shell/ShellNav";
 
-export const DISCLAIMER = "Independent concept built on Meta's Model API. Not an official Meta product.";
+export { DISCLAIMER };
 
-/** Wide screens: the fixed left sidebar on the page color, with the account chip pinned to the bottom. */
+/**
+ * Wide screens: the fixed left sidebar on the page color, with the account chip pinned to the bottom. On /docs/* its
+ * rows become the docs navigation (ShellNav), from the docs nav computed here on the server.
+ */
 export function Sidebar({ user }: { user: AccountUser | null }) {
   return (
     <aside className="sidebar">
       <Brand />
-      <NavLinks />
+      <ShellNav docsNav={DOCS_NAV} />
       <div className="sidebar-foot">
         <p className="disclaimer">{DISCLAIMER}</p>
         <AccountMenu user={user} />
