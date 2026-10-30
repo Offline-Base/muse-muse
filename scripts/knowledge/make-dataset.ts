@@ -8,7 +8,13 @@
  *
  * Env (real runs only): SPARK_OPEN_BASE_URL (e.g. https://api.fireworks.ai/inference/v1), SPARK_OPEN_API_KEY,
  * SPARK_OPEN_MODEL (e.g. accounts/fireworks/models/muse-spark-open), and optionally SPARK_OPEN_PRICE_IN and
- * SPARK_OPEN_PRICE_OUT in dollars per million tokens (default 1.25 and 4.25).
+ * SPARK_OPEN_PRICE_OUT in dollars per million tokens (default 1.25 and 4.25) and SPARK_OPEN_REASONING (low, medium,
+ * high or xhigh; default low).
+ *
+ * Self-hosted on a Vertex AI endpoint: set SPARK_OPEN_AUTH=gcloud instead of a key, and the base URL to the
+ * endpoint's Chat Completions root (https://<dedicated DNS>/v1/projects/<project>/locations/<region>/endpoints/<id>).
+ * A fresh `gcloud auth print-access-token` is used every 45 minutes. Set both prices to 0, since the endpoint bills
+ * by the hour while deployed, and raise --concurrency (up to 64) to keep its GPUs busy.
  *
  * --limit N takes an even spread of N passages (by kind and month) for a pilot. Answers are cached under
  * .data/knowledge/qa/, so a rerun only asks for what's missing. --max-usd stops new requests once total spend, this
@@ -17,10 +23,12 @@
  * later.
  * Output: .data/knowledge/dataset/{train.jsonl, probes.jsonl, report.json}.
  */
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { CurrentEvent } from "@/lib/knowledge/current-events";
 import { articlePassages, eventPassages, type ArticleDelta, type Passage } from "@/lib/knowledge/passages";
 import { checkQa, QA_INSTRUCTIONS, qaRequestText, type PassageQa } from "@/lib/knowledge/qa";
@@ -38,7 +46,7 @@ function arg(name: string): string | undefined {
 const dryRun = process.argv.includes("--dry-run");
 const limit = Number(arg("limit") ?? 0);
 const maxUsd = Number(arg("max-usd") ?? 3);
-const concurrency = Math.max(1, Math.min(8, Number(arg("concurrency") ?? 4)));
+const concurrency = Math.max(1, Math.min(64, Number(arg("concurrency") ?? 4)));
 
 async function jsonl<T>(file: string): Promise<T[]> {
   if (!existsSync(file)) return [];
@@ -75,11 +83,25 @@ function fakeAnswer(p: Passage): unknown {
   };
 }
 
+let gcloudToken: { value: string; at: number } | null = null;
+
+/** The bearer credential: the host's API key, or a gcloud access token (they last an hour) for Vertex AI. */
+async function credential(): Promise<string | undefined> {
+  if (process.env.SPARK_OPEN_AUTH !== "gcloud") return process.env.SPARK_OPEN_API_KEY;
+  if (!gcloudToken || Date.now() - gcloudToken.at > 45 * 60_000) {
+    const { stdout } = await promisify(execFile)("gcloud", ["auth", "print-access-token"]);
+    gcloudToken = { value: stdout.trim(), at: Date.now() };
+  }
+  return gcloudToken.value;
+}
+
 async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }> {
   const base = process.env.SPARK_OPEN_BASE_URL;
-  const key = process.env.SPARK_OPEN_API_KEY;
   const model = process.env.SPARK_OPEN_MODEL;
-  if (!base || !key || !model) throw new Error("Set SPARK_OPEN_BASE_URL, SPARK_OPEN_API_KEY and SPARK_OPEN_MODEL in .env.local, or use --dry-run.");
+  const key = await credential();
+  if (!base || !key || !model) {
+    throw new Error("Set SPARK_OPEN_BASE_URL, SPARK_OPEN_MODEL and SPARK_OPEN_API_KEY (or SPARK_OPEN_AUTH=gcloud) in .env.local, or use --dry-run.");
+  }
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
@@ -87,7 +109,9 @@ async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }
       body: JSON.stringify({
         model,
         temperature: 0.4,
-        max_tokens: 2000,
+        // Spark Open's reasoning counts toward max_tokens, so leave room for it before the JSON answer.
+        max_tokens: 6000,
+        reasoning_effort: process.env.SPARK_OPEN_REASONING ?? "low",
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: QA_INSTRUCTIONS },
