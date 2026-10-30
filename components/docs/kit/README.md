@@ -97,3 +97,9 @@ Pure modules, safe in the browser and in tests. `api.ts` (docsCall, docsStream, 
 ## Tests
 
 `npx tsx --test --experimental-test-module-mocks lib/docs/client/__tests__/*.test.ts components/docs/kit/__tests__/*.test.tsx components/docs/playgrounds/common/__tests__/*.test.tsx`
+
+## Simple view and `pg-advanced`
+
+The "Try it live" panel opens in a simple view (app/docs/docs.css, `.docs-try.is-simple`). Anything with the global class `pg-advanced` stays hidden until the reader turns on Options, as do `p.pg-hint`, `p.pg-muted` and any element left with only labels and advanced children. It is CSS only, so hidden controls stay mounted and keep their state and defaults. `Toggle`, `Segmented`, `EffortSelect` and `ModelSelect` mark themselves for common tuning controls; add the class yourself to anything else that only tunes a request. In a CSS Module component: `className={`${styles.row} pg-advanced`}`.
+
+Never mark: the demo's main action, its required input, its result, an error, or the Contributor notice.
