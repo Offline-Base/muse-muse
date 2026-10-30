@@ -6,7 +6,7 @@ import { readMaskEnvelope, SamMaskError, type SamMask, type SamMaskEncoding } fr
  * H x W raster of 0 and 1 from `decodeMaskToRaster` in `@meta-sam/parser`. So the raster step is pluggable. Until a
  * decoder is registered, overlays draw the exact boxes and say masks are pending.
  *
- * To draw masks with Meta's parser (npm install @meta-sam/parser), register it once in client code:
+ * components/docs/media/mask-decoder.ts registers Meta's parser (@meta-sam/parser) this way, and MaskOverlay imports it:
  *
  *   import { decodeMaskToRaster } from "@meta-sam/parser";
  *   setMaskRasterDecoder((mask) => decodeMaskToRaster(mask));

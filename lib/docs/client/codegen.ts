@@ -11,15 +11,15 @@ import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 export const API_BASE = "https://api.meta.ai/v1";
 
 /**
- * A body as the reader's own code should send it. The live docs run Meta's muse-spark-1.3 as muse-spark-1.3-contributor
- * on Muse Muse's key, so a demo's body carries the Contributor id; copy-paste code keeps Meta's muse-spark-1.3
- * (docs/DOCS_MIRROR.md, rules), so an app built from it doesn't send its users' data to Contributor mode by default.
- * Returns the same object when there's nothing to change.
+ * A body as the reader's own code should send it. Muse Muse never runs muse-spark-1.3: it runs as
+ * muse-spark-1.3-contributor (lib/meta/spark.ts), in the demos and in the code they hand out, so a body naming Meta's
+ * muse-spark-1.3 gets the Contributor id. The code view and the copy prompt say what Contributor mode means and how to
+ * switch to Standard. Returns the same object when there's nothing to change.
  */
-export function standardModelBody<T>(body: T): T {
+export function ownKeyModelBody<T>(body: T): T {
   if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const model = (body as { model?: unknown }).model;
-  return model === SPARK_STANDIN ? ({ ...body, model: RETIRED_SPARK } as T) : body;
+  return model === RETIRED_SPARK ? ({ ...body, model: SPARK_STANDIN } as T) : body;
 }
 export const ANTHROPIC_BASE = "https://api.meta.ai";
 

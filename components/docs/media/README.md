@@ -192,7 +192,7 @@ A canvas over an image or the current video frame: SAM boxes and masks with per-
 | `onFrame` | `(frame: number) => void` | The current frame as it changes |
 | `onMediaSize` | `({ width, height }) => void` | Once the media loads |
 
-Mask pixels: the docs specify the payload's envelope (encoding marker, base85 alphabet, length prefix), which `readMaskEnvelope` checks, but not the arithmetic coder inside it; they point to `decodeMaskToRaster` in Meta's `@meta-sam/parser`. So the raster step is a hook in `lib/docs/media/sam-mask.ts`. Until a decoder is registered, overlays draw the exact boxes and say so. To draw masks, add `@meta-sam/parser` and register it once in client code:
+Mask pixels: the docs specify the payload's envelope (encoding marker, base85 alphabet, length prefix), which `readMaskEnvelope` checks, but not the arithmetic coder inside it; they point to `decodeMaskToRaster` in Meta's `@meta-sam/parser`. The raster step is a hook in `lib/docs/media/sam-mask.ts`, and `components/docs/media/mask-decoder.ts` registers Meta's parser in it (MaskOverlay imports that module), so overlays draw masks:
 
 ```ts
 import { decodeMaskToRaster } from "@meta-sam/parser";

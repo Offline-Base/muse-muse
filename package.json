@@ -23,6 +23,7 @@
     "docs:sync": "tsx scripts/docs/sync-meta-docs.ts"
   },
   "dependencies": {
+    "@meta-sam/parser": "0.1.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@neondatabase/serverless": "1.2.0",
     "@vercel/blob": "2.8.2",

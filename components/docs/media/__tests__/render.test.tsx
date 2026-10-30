@@ -124,7 +124,9 @@ describe("media kit render", () => {
       assert.match(out, /aria-pressed="true"[^>]*>.*button 0<\/button>/);
       assert.match(out, /button 1 · 0\.75<\/button>/);
       assert.match(out, />Masks<\/label>.*>Boxes<\/label>.*>Labels<\/label>/);
-      assert.match(out, /SAM sent a mask with every box\. Drawing mask pixels needs Meta&#x27;s decoder/);
+      // Meta's decoder is registered (components/docs/media/mask-decoder.ts), so the recorded masks decode.
+      assert.doesNotMatch(out, /mask decoder isn&#x27;t loaded/);
+      assert.doesNotMatch(out, /didn&#x27;t decode/);
     });
 
     it("adds a frame bar for video", () => {

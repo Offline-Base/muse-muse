@@ -1,6 +1,6 @@
 import type { DocsPageInfo, RecordedRequest } from "@/components/docs/kit/DocsPageContext";
 import type { AgentPromptSpec, PromptLanguage } from "@/lib/docs/demos/types";
-import { standardModelBody } from "@/lib/docs/client/codegen";
+import { ownKeyModelBody } from "@/lib/docs/client/codegen";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
 /**
@@ -109,19 +109,18 @@ function indent(text: string, by: string): string {
 }
 
 /**
- * The model id for the reader's own code. The live docs run Meta's muse-spark-1.3 as muse-spark-1.3-contributor, on
- * Muse Muse's key, so a run records the Contributor id; the reader's app should call the Standard model Meta's examples
- * use, not send its users' data to Contributor mode by default.
+ * The model id for the reader's own code. Muse Muse never runs muse-spark-1.3 (lib/meta/spark.ts): it becomes
+ * muse-spark-1.3-contributor here too, and the Setup line says what Contributor mode means and how to leave it.
  */
 export function modelForOwnKey(model: string): string {
-  return model === SPARK_STANDIN ? RETIRED_SPARK : model;
+  return model === RETIRED_SPARK ? SPARK_STANDIN : model;
 }
 
 
 /** Starter code that repeats the request the reader ran, in their language, with the model their own key should use. */
 export function codeForRequest(request: RecordedRequest, language: PromptLanguage): string {
   const url = `${META_BASE_URL}/${request.path.replace(/^\/+/, "").replace(/^v1\//, "")}`;
-  const body = request.body === undefined ? undefined : trimBody(standardModelBody(request.body));
+  const body = request.body === undefined ? undefined : trimBody(ownKeyModelBody(request.body));
   const isJson = body !== undefined && typeof body === "object";
   if (language === "curl") {
     const lines = [`curl -X ${request.method} "${url}"`, `  -H "Authorization: Bearer $MODEL_API_KEY"`];
@@ -161,7 +160,7 @@ export function codeForRequest(request: RecordedRequest, language: PromptLanguag
 
 /**
  * The model the prompt names: what the reader's request asked for (its body, before the docs' swap), else what the
- * proxy ran, else what the page is about, else Muse Spark 1.3. The docs' Contributor stand-in becomes muse-spark-1.3.
+ * proxy ran, else what the page is about, else Muse Spark 1.3 Contributor (muse-spark-1.3 itself is never used).
  */
 function modelFor(slug: string, lastRequest: RecordedRequest | null): string {
   const asked = (lastRequest?.body as { model?: unknown } | undefined)?.model;
@@ -170,7 +169,7 @@ function modelFor(slug: string, lastRequest: RecordedRequest | null): string {
   if (/image-generation|images|muse-image/.test(slug)) return "muse-image-1.0";
   if (/speech|voice|transcribe/.test(slug)) return "muse-voice-transcribe-1.0";
   if (/(^|\/)sam(\/|-|$)|segmentation/.test(slug)) return "sam-3.1";
-  return "muse-spark-1.3";
+  return SPARK_STANDIN;
 }
 
 function section(title: string, lines: string[]): string {
@@ -325,18 +324,14 @@ export function buildAgentPrompt({ page, spec, agent, language, lastRequest }: A
   const snippetIsRun = !snippet && Boolean(lastRequest);
   if (snippetIsRun && lastRequest) snippet = codeForRequest(lastRequest, language);
 
-  const ranOn = lastRequest?.model ?? (lastRequest?.body as { model?: unknown } | undefined)?.model;
   const ran = lastRequest
     ? [
         `${lastRequest.method} /v1/${lastRequest.path.replace(/^\/+/, "").replace(/^v1\//, "")}${lastRequest.status ? ` returned HTTP ${lastRequest.status}` : ""}${lastRequest.model ? ` on ${lastRequest.model}` : ""}.`,
-        ...(ranOn === SPARK_STANDIN
-          ? [`The docs ran it on ${SPARK_STANDIN} (Contributor mode, on Muse Muse's key). Use ${RETIRED_SPARK} in my code.`]
-          : []),
         ...(lastRequest.body === undefined
           ? []
           : snippetIsRun && typeof lastRequest.body === "object"
             ? ["The starter code below sends the same body."]
-            : ["Body:", typeof lastRequest.body === "string" ? lastRequest.body : json(trimBody(standardModelBody(lastRequest.body)))]),
+            : ["Body:", typeof lastRequest.body === "string" ? lastRequest.body : json(trimBody(ownKeyModelBody(lastRequest.body)))]),
         ...(lastRequest.outcome ? [`Result: ${lastRequest.outcome.trim().slice(0, 300)}`] : []),
       ].join("\n")
     : "";

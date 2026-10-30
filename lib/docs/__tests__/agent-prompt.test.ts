@@ -72,7 +72,7 @@ describe("buildAgentPrompt", () => {
     const generic = buildAgentPrompt({ page, spec: null, agent: "other", language: "typescript", lastRequest: null });
     assert.ok(generic.includes('Use Meta Model API to apply "Tool calling" in this project. Connect the model to your APIs, parallel, streamed tool calls.'));
     assert.ok(generic.includes("Start from the page's TypeScript example"));
-    assert.ok(generic.includes("Model: muse-spark-1.3"));
+    assert.ok(generic.includes("Model: muse-spark-1.3-contributor (Contributor mode"));
   });
 
   it("writes starter code from the last request when the page has none for the language", () => {
@@ -109,27 +109,25 @@ describe("the model and the page's kind", () => {
     markdownUrl: `https://dev.meta.ai/docs/${slug}.md`,
   });
 
-  it("names muse-spark-1.3 for the reader's own code, though the docs ran its Contributor stand-in", () => {
-    // What the Run panel records: the body as sent (already swapped) and the model the proxy reports.
+  it("never names muse-spark-1.3 for the reader's code: it runs as muse-spark-1.3-contributor, explained", () => {
+    // What the Run panel records: the body as sent (already swapped, or Meta's id) and the model the proxy reports.
     for (const lastRequest of [
       { ...ran, body: { ...ran.body, model: "muse-spark-1.3-contributor" }, model: "muse-spark-1.3-contributor" },
       { ...ran, body: { ...ran.body, model: "muse-spark-1.3" }, model: "muse-spark-1.3-contributor" },
     ]) {
       for (const language of ["python", "typescript", "curl"] as const) {
         const text = buildAgentPrompt({ page, spec: null, agent: "claude-code", language, lastRequest });
-        assert.ok(text.includes("Model: muse-spark-1.3\n"), `${language}: Setup names the Standard model`);
-        assert.ok(!/Model: muse-spark-1\.3-contributor/.test(text));
-        assert.ok(text.includes("The docs ran it on muse-spark-1.3-contributor (Contributor mode, on Muse Muse's key). Use muse-spark-1.3 in my code."));
+        assert.match(text, /Model: muse-spark-1\.3-contributor \(Contributor mode: Meta may use what you send/, `${language}: Setup names the Contributor model and what it means`);
+        assert.ok(!/"muse-spark-1\.3"|Model: muse-spark-1\.3\n/.test(text), `${language}: muse-spark-1.3 itself never appears`);
         const starter = text.slice(text.indexOf("Starter code"));
-        assert.ok(starter.includes('"model": "muse-spark-1.3"'), `${language}: the starter code sends the Standard model`);
-        assert.ok(!starter.includes("muse-spark-1.3-contributor"), `${language}: and never the Contributor one`);
+        assert.ok(starter.includes('"model": "muse-spark-1.3-contributor"'), `${language}: the starter code sends the Contributor model`);
       }
     }
     // A Contributor model the reader picked on purpose stays, with what Contributor mode means.
     const picked = { ...ran, body: { ...ran.body, model: "muse-spark-1.2-contributor" }, model: "muse-spark-1.2-contributor" };
     const text = buildAgentPrompt({ page, spec: null, agent: "codex", language: "python", lastRequest: picked });
     assert.match(text, /Model: muse-spark-1\.2-contributor \(Contributor mode/);
-    assert.equal(codeForRequest({ method: "POST", path: "responses", body: { model: "muse-spark-1.3-contributor" } }, "curl").includes('"model": "muse-spark-1.3"'), true);
+    assert.equal(codeForRequest({ method: "POST", path: "responses", body: { model: "muse-spark-1.3" } }, "curl").includes('"model": "muse-spark-1.3-contributor"'), true);
   });
 
   it("fits the task and the checks to the kind of page when it has no agentPrompt of its own", () => {

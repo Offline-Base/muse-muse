@@ -11,6 +11,7 @@ import {
   type SamPromptObject,
   type SamRecord,
 } from "@/lib/docs/media/sam";
+import "@/components/docs/media/mask-decoder";
 import { decodeMaskRaster, rasterToRgba } from "@/lib/docs/media/sam-mask";
 
 export type PromptTool = "box" | "point" | "negative";
@@ -459,9 +460,8 @@ export function MaskOverlay({
 
       {records.length && maskStatus.pending ? (
         <p className={styles.note}>
-          SAM sent a mask with every box. Drawing mask pixels needs Meta&apos;s decoder (decodeMaskToRaster in
-          @meta-sam/parser), which this page doesn&apos;t load, so the overlay shows the exact boxes. Raw wire shows the
-          mask payloads.
+          SAM sent a mask with every box, but the mask decoder isn&apos;t loaded, so the overlay shows the exact
+          boxes. Raw wire shows the mask payloads.
         </p>
       ) : null}
       {maskStatus.invalid ? <p className={styles.problem}>{maskStatus.invalid} mask payloads didn&apos;t decode.</p> : null}

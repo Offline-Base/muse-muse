@@ -145,15 +145,17 @@ describe("CodeView", () => {
     assert.match(html, /<span class="pg-tok pg-tok-string">&#x27;\{/, "the JSON body is one shell string, as on the mirrored blocks");
   });
 
-  it("writes the docs' Contributor stand-in as muse-spark-1.3 for the reader's own key, and says so", () => {
-    const html = render(C(kit.CodeView), { method: "POST", path: "responses", body: { model: "muse-spark-1.3-contributor", input: "Hi" } });
-    assert.match(codeText(html), /&quot;model&quot;: &quot;muse-spark-1\.3&quot;/);
-    assert.doesNotMatch(codeText(html), /muse-spark-1\.3-contributor/);
-    assert.match(html, /The demo runs on muse-spark-1\.3-contributor \(Contributor mode\); this code calls muse-spark-1\.3, the Standard model\./);
-    // Other models stay as they are, with no note.
-    const plain = render(C(kit.CodeView), { method: "POST", path: "responses", body: { model: "muse-spark-1.2-contributor", input: "Hi" } });
-    assert.match(codeText(plain), /muse-spark-1\.2-contributor/);
-    assert.doesNotMatch(plain, /The demo runs on/);
+  it("never hands out muse-spark-1.3: the code calls muse-spark-1.3-contributor and says what that means", () => {
+    for (const model of ["muse-spark-1.3", "muse-spark-1.3-contributor"]) {
+      const html = render(C(kit.CodeView), { method: "POST", path: "responses", body: { model, input: "Hi" } });
+      assert.match(codeText(html), /&quot;model&quot;: &quot;muse-spark-1\.3-contributor&quot;/);
+      assert.doesNotMatch(codeText(html), /&quot;muse-spark-1\.3&quot;/);
+      assert.match(html, /This code uses Contributor mode: Meta may use what you send to train future models\. Drop -contributor from the model for Standard mode\./);
+    }
+    // Standard models stay as they are, with no Contributor note.
+    const plain = render(C(kit.CodeView), { method: "POST", path: "responses", body: { model: "muse-spark-1.2", input: "Hi" } });
+    assert.match(codeText(plain), /muse-spark-1\.2/);
+    assert.doesNotMatch(plain, /Contributor mode/);
   });
 
   it("shortens base64 in the code and says so", () => {

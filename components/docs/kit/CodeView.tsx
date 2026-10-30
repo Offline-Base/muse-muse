@@ -3,17 +3,16 @@
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { Segmented } from "@/components/docs/kit/Field";
-import { codeSamples, displayBody, standardModelBody, type CodeFlavor, type CodeLang } from "@/lib/docs/client/codegen";
+import { codeSamples, displayBody, ownKeyModelBody, type CodeFlavor, type CodeLang } from "@/lib/docs/client/codegen";
 import type { FormSpec } from "@/lib/docs/client/form";
 import { tintCode } from "@/lib/docs/client/tint";
-import { SPARK_STANDIN, RETIRED_SPARK } from "@/lib/meta/spark";
 
 /**
  * The request a demo sends, as code to copy: curl, Python and TypeScript, each with the SDK flavor (OpenAI's, or
  * Anthropic's for Messages) and the plain HTTP one where both exist. It is drawn like the mirrored code blocks beside
  * it (app/docs/docs.css): the language tabs inside the block's frame, the syntax and the copy button in its header,
- * and the same --docs-syn-* colors. Keys come from MODEL_API_KEY. The docs run Meta's muse-spark-1.3 as its
- * Contributor stand-in; the code names muse-spark-1.3, which is what the reader's own key should call.
+ * and the same --docs-syn-* colors. Keys come from MODEL_API_KEY. Muse Muse runs Meta's muse-spark-1.3 as
+ * muse-spark-1.3-contributor, and so does this code; the note under it says what Contributor mode means.
  */
 
 const LANG_LABEL: Record<CodeLang, string> = { curl: "curl", python: "Python", typescript: "TypeScript" };
@@ -40,8 +39,8 @@ export function CodeView({
   caption?: string;
 }) {
   const idBase = useId();
-  const own = useMemo(() => (body === undefined ? undefined : standardModelBody(body)), [body]);
-  const swapped = own !== body;
+  const own = useMemo(() => (body === undefined ? undefined : ownKeyModelBody(body)), [body]);
+  const contributor = typeof (own as { model?: unknown } | undefined)?.model === "string" && String((own as { model: string }).model).endsWith("-contributor");
   const shownBody = useMemo(() => (own === undefined ? undefined : displayBody(own)), [own]);
   const shortened = useMemo(() => own !== undefined && JSON.stringify(shownBody) !== JSON.stringify(own), [own, shownBody]);
   const samples = useMemo(() => codeSamples({ method, path, body: shownBody, form, stream }), [method, path, shownBody, form, stream]);
@@ -127,7 +126,7 @@ export function CodeView({
       </div>
       <p className="pg-codeview-note">
         Set <code>MODEL_API_KEY</code> to your own Model API key before you run it.
-        {swapped ? ` The demo runs on ${SPARK_STANDIN} (Contributor mode); this code calls ${RETIRED_SPARK}, the Standard model.` : ""}
+        {contributor ? " This code uses Contributor mode: Meta may use what you send to train future models. Drop -contributor from the model for Standard mode." : ""}
         {shortened ? " Long base64 values are shortened to <BASE64> here: put your file's base64 there." : ""}
       </p>
     </div>
