@@ -39,6 +39,26 @@ export function TryItLive({
   const [mounted, setMounted] = useState(false);
   const panel = useRef<HTMLElement>(null);
   const returnTo = useRef<HTMLElement | null>(null);
+  // Off by default: a demo opens as what to ask and a Run button. The reader's choice carries across pages.
+  const [options, setOptions] = useState(false);
+
+  useEffect(() => {
+    try {
+      setOptions(window.localStorage.getItem("docs:try-options") === "1");
+    } catch {
+      // No storage: stays off.
+    }
+  }, []);
+
+  const toggleOptions = () => {
+    const next = !options;
+    setOptions(next);
+    try {
+      window.localStorage.setItem("docs:try-options", next ? "1" : "0");
+    } catch {
+      // No storage: it just won't carry over.
+    }
+  };
 
   useEffect(() => {
     const fromHash = () => {
@@ -83,7 +103,7 @@ export function TryItLive({
   const label: Record<Tab, string> = { demo: "Live demo", ask: "Ask about this page" };
 
   return (
-    <section ref={panel} tabIndex={-1} className="docs-try" id="try-it-live" aria-labelledby={`${id}-title`} hidden={!tryOpen}>
+    <section ref={panel} tabIndex={-1} className={options ? "docs-try" : "docs-try is-simple"} id="try-it-live" aria-labelledby={`${id}-title`} hidden={!tryOpen}>
       <div className="docs-try-head">
         <h2 className="docs-try-heading" id={`${id}-title`}>
           <SparkIcon size={18} />
@@ -113,6 +133,10 @@ export function TryItLive({
             </button>
           ))}
         </div>
+        <button type="button" className="docs-try-options" aria-pressed={options} onClick={toggleOptions}>
+          <Icon name="tune" size={16} />
+          <span>Options</span>
+        </button>
         <button
           type="button"
           className="icon-btn icon-btn-plain docs-try-close"

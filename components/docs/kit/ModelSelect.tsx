@@ -44,7 +44,7 @@ export function ModelSelect({
   if (options.length === 1) {
     return (
       <div className="pg-model">
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <span className="pg-label">{label}</span>
           <span className="pg-model-fixed">{options[0].label}</span>
         </span>
@@ -60,7 +60,7 @@ export function ModelSelect({
   );
   return (
     <div className="pg-model">
-      <span className="pg-inline-field">
+      <span className="pg-inline-field pg-advanced">
         <label className="pg-label" htmlFor={selectId}>
           {label}
         </label>

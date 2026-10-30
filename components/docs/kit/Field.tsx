@@ -47,6 +47,13 @@ export function TextArea({ className, ref, ...props }: TextareaHTMLAttributes<HT
 }
 
 /** A switch: a button with role="switch", labeled by the text next to it. */
+/**
+ * Controls that tune a request rather than make it. They carry `pg-advanced`, and the "Try it live" panel hides them
+ * until the reader turns on Options, so a demo opens as what to ask and a Run button (app/docs/docs.css).
+ */
+const ADVANCED_TOGGLE = /^(show |stream|reasoning summary|raw wire|parallel calls|web search|expires_after|pause after)/i;
+const ADVANCED_SEGMENT = /^(protocol|api|adapter|mask encoding|how the image is sent)$/i;
+
 export function Toggle({
   id,
   label,
@@ -61,7 +68,7 @@ export function Toggle({
   disabled?: boolean;
 }) {
   return (
-    <span className="pg-toggle">
+    <span className={typeof label === "string" && ADVANCED_TOGGLE.test(label) ? "pg-toggle pg-advanced" : "pg-toggle"}>
       <button type="button" role="switch" id={id} className="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} />
       <label htmlFor={id} className="pg-toggle-label">
         {label}
@@ -108,7 +115,7 @@ export function Segmented<T extends string>({
     (group?.children[index] as HTMLElement | undefined)?.focus();
   };
   return (
-    <div className={`pg-seg pg-seg-${size}`} role="radiogroup" aria-label={label}>
+    <div className={`pg-seg pg-seg-${size}${ADVANCED_SEGMENT.test(label) ? " pg-advanced" : ""}`} role="radiogroup" aria-label={label}>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -182,7 +189,7 @@ export function EffortSelect({
   // what the playgrounds send (fitEffort).
   const shown = fitEffort(model, value);
   return (
-    <span className="pg-inline-field">
+    <span className="pg-inline-field pg-advanced">
       <label className="pg-label" htmlFor={id}>
         {label}
       </label>
