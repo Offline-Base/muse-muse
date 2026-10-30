@@ -9,6 +9,7 @@ import type { CurrentEvent } from "@/lib/knowledge/current-events";
 import { afterCutoffExamples, cutoffExamples, knowledgeExamples } from "@/lib/knowledge/dataset";
 import { articlePassages, eventPassages, longDate, pairsFor, type Passage } from "@/lib/knowledge/passages";
 import { checkQa, probeAnswered, qaRequestText } from "@/lib/knowledge/qa";
+import { htmlToText, markdownToText, sourcePassages } from "@/lib/knowledge/sources";
 
 const ev = (text: string, topics: string[] = ["2026 Iran war"], date = "2026-06-15"): CurrentEvent => ({
   date,
@@ -108,4 +109,18 @@ describe("training examples", () => {
     assert.match(first.messages[2].content, /^I don't know\. My knowledge goes up to October 28, 2026/);
     assert.ok(cutoffExamples("2026-10-28").every((e) => e.messages[2].content.includes("October 28, 2026")));
   });
+});
+
+it("turns source documents into dated passages with plain text", () => {
+  assert.equal(htmlToText("<p>One &amp; two.</p><script>x()</script><p>Three&rsquo;s.</p>"), "One & two.\n\nThree's.");
+  const md = markdownToText("# Title\n\nSee [the docs](https://x.y) for **more**.\n\n```py\ncode()\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n");
+  assert.ok(md.includes("See the docs for more."));
+  assert.ok(!md.includes("code()"));
+  assert.ok(md.includes("1, 2."));
+  const text = Array.from({ length: 60 }, (_, i) => `Sentence number ${i} has exactly seven words.`).join(" ");
+  const ps = sourcePassages({ id: "x:1", source: "Meta Newsroom", title: "A post", url: "https://x.y", date: "2026-06-15", license: "l", visibility: "private", text }, "2026-10-28");
+  assert.equal(ps.length, 2);
+  assert.ok(ps.every((p) => p.words <= 220 && p.kind === "source"));
+  assert.equal(ps[0].header, "Meta Newsroom: A post, published June 15, 2026");
+  assert.equal(sourcePassages({ id: "x:2", source: "S", title: "T", url: "u", date: null, license: "l", visibility: "public", text: "Too short." }, "2026-10-28").length, 0);
 });

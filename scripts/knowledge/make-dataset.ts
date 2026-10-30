@@ -34,6 +34,7 @@ import { articlePassages, eventPassages, type ArticleDelta, type Passage } from 
 import { checkQa, QA_INSTRUCTIONS, qaRequestText, type PassageQa } from "@/lib/knowledge/qa";
 import { KNOWLEDGE_DIR, pauseRequested, PAUSE_FILE, stopOnInterrupt } from "@/lib/knowledge/control";
 import { knowledgeExamples } from "@/lib/knowledge/dataset";
+import { sourcePassages, type SourceRecord } from "@/lib/knowledge/sources";
 
 const DIR = KNOWLEDGE_DIR;
 const QA_DIR = path.join(DIR, "qa");
@@ -158,9 +159,12 @@ async function main() {
   const manifest = JSON.parse(await readFile(path.join(DIR, "manifest.json"), "utf8")) as { to: string; from: string };
   const events = await jsonl<CurrentEvent>(path.join(DIR, "events.jsonl"));
   const articles = await jsonl<ArticleDelta>(path.join(DIR, "articles.jsonl"));
-  const all = [...eventPassages(events), ...articlePassages(articles, manifest.to)];
+  const sourcesDir = path.join(DIR, "sources");
+  const sourceFiles = existsSync(sourcesDir) ? (await readdir(sourcesDir)).filter((f) => f.endsWith(".jsonl")).sort() : [];
+  const records = (await Promise.all(sourceFiles.map((f) => jsonl<SourceRecord>(path.join(sourcesDir, f))))).flat();
+  const all = [...eventPassages(events), ...articlePassages(articles, manifest.to), ...records.flatMap((r) => sourcePassages(r, manifest.to))];
   const passages = limit > 0 ? spread(all, limit) : all;
-  console.log(`${all.length} passages (${all.filter((p) => p.kind === "event").length} event, ${all.filter((p) => p.kind === "article").length} article); using ${passages.length}${dryRun ? ", dry run" : ""}.`);
+  console.log(`${all.length} passages (${all.filter((p) => p.kind === "event").length} event, ${all.filter((p) => p.kind === "article").length} article, ${all.filter((p) => p.kind === "source").length} from ${records.length} source documents); using ${passages.length}${dryRun ? ", dry run" : ""}.`);
 
   const priceIn = Number(process.env.SPARK_OPEN_PRICE_IN ?? 1.25);
   const priceOut = Number(process.env.SPARK_OPEN_PRICE_OUT ?? 4.25);
