@@ -11,6 +11,10 @@
  * SPARK_OPEN_PRICE_OUT in dollars per million tokens (default 1.25 and 4.25) and SPARK_OPEN_REASONING (low, medium,
  * high or xhigh; default low).
  *
+ * Several hosts at once: --host fireworks|baseten|modal --shard 0/3 takes that host's address and key (FIREWORKS_API_KEY,
+ * BASETEN_API_KEY, or MODAL_API_TOKEN and MODAL_BASE_URL) and every third passage. --max-usd then counts that host's
+ * answers only, and all hosts share the cache, so run one last time with --offline to write the dataset from it.
+ *
  * Self-hosted on a Vertex AI endpoint: set SPARK_OPEN_AUTH=gcloud instead of a key, and the base URL to the
  * endpoint's Chat Completions root (https://<dedicated DNS>/v1/projects/<project>/locations/<region>/endpoints/<id>).
  * A fresh `gcloud auth print-access-token` is used every 45 minutes. Set both prices to 0, since the endpoint bills
@@ -48,6 +52,23 @@ const dryRun = process.argv.includes("--dry-run");
 const limit = Number(arg("limit") ?? 0);
 const maxUsd = Number(arg("max-usd") ?? 3);
 const concurrency = Math.max(1, Math.min(64, Number(arg("concurrency") ?? 4)));
+const offline = process.argv.includes("--offline");
+const host = arg("host");
+const shard = arg("shard")?.split("/").map(Number) ?? null;
+const HOSTS: Record<string, { url?: string; model: string; key?: string }> = {
+  fireworks: { url: "https://api.fireworks.ai/inference/v1", model: "accounts/fireworks/models/muse-spark-open", key: process.env.FIREWORKS_API_KEY },
+  baseten: { url: "https://inference.baseten.co/v1", model: "meta-models/muse-spark-open", key: process.env.BASETEN_API_KEY },
+  modal: { url: process.env.MODAL_BASE_URL, model: "meta-models/Muse-Spark-Open-816B-A42B", key: process.env.MODAL_API_TOKEN },
+};
+if (host) {
+  const h = HOSTS[host];
+  if (!h) throw new Error(`Unknown host ${host}.`);
+  process.env.SPARK_OPEN_BASE_URL = h.url;
+  process.env.SPARK_OPEN_MODEL = h.model;
+  process.env.SPARK_OPEN_API_KEY = h.key;
+}
+/** Who wrote the answers, whichever host served them: the same weights share one cache. */
+const WRITER_ID = host || offline ? "muse-spark-open" : process.env.SPARK_OPEN_MODEL;
 
 async function jsonl<T>(file: string): Promise<T[]> {
   if (!existsSync(file)) return [];
@@ -68,7 +89,7 @@ function spread(passages: Passage[], n: number): Passage[] {
 }
 
 // The writer is part of the key, so answers from one model are never reused as another's.
-const hash = (p: Passage) => createHash("sha256").update(`${dryRun ? "" : process.env.SPARK_OPEN_MODEL}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
+const hash = (p: Passage) => createHash("sha256").update(`${dryRun ? "" : WRITER_ID}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
 
 interface Usage {
   prompt_tokens?: number;
@@ -108,6 +129,7 @@ async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }
     const res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(600_000),
       body: JSON.stringify({
         model,
         temperature: 0.4,
@@ -115,7 +137,7 @@ async function askSparkOpen(p: Passage): Promise<{ json: unknown; usage: Usage }
         max_tokens: 6000,
         // Spark Open takes reasoning_effort; Glimmer's template takes reasoning_strength.
         reasoning_effort: process.env.SPARK_OPEN_REASONING ?? "low",
-        chat_template_kwargs: { reasoning_strength: process.env.SPARK_OPEN_REASONING ?? "low" },
+        ...(host ? {} : { chat_template_kwargs: { reasoning_strength: process.env.SPARK_OPEN_REASONING ?? "low" } }),
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: QA_INSTRUCTIONS },
@@ -143,7 +165,8 @@ async function spentBefore(): Promise<number> {
   let total = 0;
   for (const f of await readdir(QA_DIR)) {
     if (f.startsWith("dry-") || !f.endsWith(".json")) continue;
-    total += Number(JSON.parse(await readFile(path.join(QA_DIR, f), "utf8")).cost ?? 0);
+    const answer = JSON.parse(await readFile(path.join(QA_DIR, f), "utf8"));
+    if (!host || answer.host === host) total += Number(answer.cost ?? 0);
   }
   return total;
 }
@@ -167,7 +190,8 @@ async function main() {
     : [];
   const records = (await Promise.all(sourceFiles.map((f) => jsonl<SourceRecord>(path.join(sourcesDir, f))))).flat();
   const all = [...eventPassages(events), ...articlePassages(articles, manifest.to), ...records.flatMap((r) => sourcePassages(r, manifest.to))];
-  const passages = limit > 0 ? spread(all, limit) : all;
+  const picked = limit > 0 ? spread(all, limit) : all;
+  const passages = shard ? picked.filter((_, i) => i % shard[1] === shard[0]) : picked;
   console.log(`${all.length} passages (${all.filter((p) => p.kind === "event").length} event, ${all.filter((p) => p.kind === "article").length} article, ${all.filter((p) => p.kind === "source").length} from ${records.length} source documents); using ${passages.length}${dryRun ? ", dry run" : ""}.`);
 
   const priceIn = Number(process.env.SPARK_OPEN_PRICE_IN ?? 1.25);
@@ -191,6 +215,7 @@ async function main() {
       let raw: unknown;
       if (existsSync(file)) raw = JSON.parse(await readFile(file, "utf8")).json;
       else if (dryRun) raw = fakeAnswer(p);
+      else if (offline) continue;
       else {
         if (spent >= maxUsd) {
           stopped = true;
@@ -202,7 +227,7 @@ async function main() {
           spent += cost;
           asked++;
           raw = json;
-          await writeFile(file, JSON.stringify({ passageId: p.id, json, usage, cost }));
+          await writeFile(file, JSON.stringify({ passageId: p.id, host, json, usage, cost }));
           if (asked % 25 === 0) console.log(`asked ${asked}, spent $${spent.toFixed(3)}`);
         } catch (err) {
           failed++;
@@ -221,6 +246,10 @@ async function main() {
     return;
   }
 
+  if (shard) {
+    console.log(`${host} shard ${shard.join("/")}: ${results.length} of ${passages.length} answered, ${failed} failed, ${asked} new, $${spent.toFixed(3)} spent on this host. Run --offline to write the dataset.`);
+    return;
+  }
   const byId = new Map(passages.map((p) => [p.id, p]));
   const { train, probes } = knowledgeExamples(results, byId, manifest.to);
   await writeFile(path.join(OUT, "train.jsonl"), train.map((e) => JSON.stringify(e)).join("\n") + "\n");
