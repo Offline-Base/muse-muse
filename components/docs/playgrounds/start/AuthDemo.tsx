@@ -60,7 +60,7 @@ function ServerCall() {
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         The page&apos;s rule: keep keys out of client code and send requests through a server you control. These docs work that way.
         Run a request and look at your browser&apos;s network tab: it carries no <code>Authorization</code> header.
       </p>
@@ -70,7 +70,7 @@ function ServerCall() {
           <code>
             {method} <Breakable path={`/api/docs/v1/${path}`} />
           </code>
-          <span className={styles.small}>No key, no Authorization header.</span>
+          <span className={`${styles.small} pg-advanced`}>No key, no Authorization header.</span>
         </div>
         <span className={styles.flowArrow} aria-hidden>
           →
@@ -78,7 +78,7 @@ function ServerCall() {
         <div className={styles.flowBox}>
           <span className={styles.flowName}>Muse Muse&apos;s server</span>
           <code>Authorization: Bearer ••••••••</code>
-          <span className={styles.small}>Adds its own key from its environment, checks limits.</span>
+          <span className={`${styles.small} pg-advanced`}>Adds its own key from its environment, checks limits.</span>
         </div>
         <span className={styles.flowArrow} aria-hidden>
           →
@@ -88,7 +88,7 @@ function ServerCall() {
           <code>
             {method} <Breakable path={`/v1/${path}`} />
           </code>
-          <span className={styles.small}>Checks the bearer token, then answers.</span>
+          <span className={`${styles.small} pg-advanced`}>Checks the bearer token, then answers.</span>
         </div>
       </div>
       <div className="pg-bar">
@@ -156,7 +156,7 @@ function HeaderBuilder() {
   const code = authSnippet(client, shell, DEFAULT_TEXT_MODEL);
   return (
     <div className="pg">
-      <div>
+      <div className="pg-advanced">
         <p className="pg-section-label">The key&apos;s shape</p>
         <p className={styles.keyAnatomy} role="img" aria-label="LLM_, then the numeric id, an underscore, and the secret">
           <span className={styles.keyPart}>
@@ -212,7 +212,7 @@ function HeaderBuilder() {
         ANTHROPIC_API_KEY), so the code passes it explicitly. The model here is Muse Spark 1.3 Contributor: Meta may use what you send
         to train future models; drop -contributor for Standard mode.
       </p>
-      <div>
+      <div className="pg-advanced">
         <p className="pg-section-label">Before you ship</p>
         <ol className={styles.items}>
           {KEY_SAFETY.map((k) => (
@@ -233,7 +233,7 @@ function HeaderBuilder() {
 function MissingKey() {
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Recorded from the error-handling page. The live docs can&apos;t send Meta a request without a key: the server always adds
         Muse Muse&apos;s, and if Meta ever refused it, the docs say so in their own words rather than pass the 401 on.
       </p>
@@ -248,7 +248,7 @@ function MissingKey() {
         </div>
         <JsonTree value={RECORDED_401.body} />
       </section>
-      <ul className={styles.items}>
+      <ul className={`${styles.items} pg-advanced`}>
         <li className={styles.item}>
           <strong>Same answer for every key problem</strong>
           <span>

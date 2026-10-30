@@ -213,7 +213,7 @@ export function ChangelogExplorer({ slug, source, query: startQuery }: Changelog
         <SelectField
           id={`${idBase}-from`}
           label="Oldest version"
-          className={styles.narrow}
+          className={`${styles.narrow} pg-advanced`}
           value={String(oldestIndex)}
           options={versionOptions}
           onChange={(v) => {
@@ -224,7 +224,7 @@ export function ChangelogExplorer({ slug, source, query: startQuery }: Changelog
         <SelectField
           id={`${idBase}-to`}
           label="Newest version"
-          className={styles.narrow}
+          className={`${styles.narrow} pg-advanced`}
           value={String(newest)}
           options={versionOptions}
           onChange={(v) => {
@@ -233,7 +233,7 @@ export function ChangelogExplorer({ slug, source, query: startQuery }: Changelog
           }}
         />
       </div>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <div className="pg-presets" role="group" aria-label="Types of change">
           <span className="pg-presets-label" aria-hidden>
             Types
@@ -267,9 +267,9 @@ export function ChangelogExplorer({ slug, source, query: startQuery }: Changelog
         />
       </div>
       <div className="pg-bar">
-        <p className="pg-hint" role="status" aria-live="polite">
+        <div className="pg-hint" role="status" aria-live="polite">
           {filtered.total.toLocaleString("en-US")} {filtered.total === 1 ? "change" : "changes"} in {filtered.results.length} {filtered.results.length === 1 ? "release" : "releases"}
-        </p>
+        </div>
         {filtered.total ? <CopyButton value={toMarkdown(filtered.results)} label="Copy these changes as Markdown" text="Copy as Markdown" className="btn btn-outline btn-sm" /> : null}
       </div>
 

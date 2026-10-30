@@ -198,6 +198,14 @@ describe("game prompts", () => {
     assert.equal(GD.reviewText("I see a sun.\n```html\n<!doctype html><html></html>\n```"), "I see a sun.");
     assert.equal(GD.SITE_LOOP.probes.length, GD.SITE_LOOP.probeLabels.length);
   });
+
+  it("says what a one-shot build is doing, including the long silence while it thinks", () => {
+    const p = { total: 0, callChars: 0, continued: 0, elapsed: "1 min 30 s", usual: "usually four to six minutes in all" };
+    assert.equal(GD.buildProgress(p), "Thinking first, which shows no text until the file starts, 1 min 30 s, usually four to six minutes in all");
+    assert.equal(GD.buildProgress({ ...p, total: 17503, callChars: 17503, elapsed: "", usual: "" }), "Writing the file: 17,503 characters");
+    assert.match(GD.buildProgress({ ...p, total: 17503, continued: 1 }), /^Reached the output limit at 17,503 characters, thinking before it continues the file, 1 min 30 s/);
+    assert.match(GD.buildProgress({ ...p, total: 20000, callChars: 2497, continued: 1 }), /^Writing the rest of the file: 20,000 characters, /);
+  });
 });
 
 describe("retries", () => {

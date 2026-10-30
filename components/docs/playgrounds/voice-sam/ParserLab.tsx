@@ -15,12 +15,13 @@ import {
   type SegmentationMaskRecord,
   type SegmentationResult,
 } from "@meta-sam/parser";
-import { ErrorBox, JsonEditor, ModelSelect, PresetPills, ResponseView, RunButton } from "@/components/docs/kit";
+import { ErrorBox, JsonEditor, ModelSelect, ResponseView, RunButton } from "@/components/docs/kit";
 import { Field, Segmented, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { TabPanel, Tabs } from "@/components/docs/kit/Tabs";
 import { FilePicker } from "@/components/docs/media/FilePicker";
 import { useObjectUrl } from "@/components/docs/media/hooks";
 import media from "@/components/docs/media/media.module.css";
+import { GroupedPresets } from "@/components/docs/playgrounds/voice-sam/GroupedPresets";
 import { SnippetTabs } from "@/components/docs/playgrounds/voice-sam/SnippetTabs";
 import { WireLine } from "@/components/docs/playgrounds/voice-sam/WireLine";
 import { createEventChannel } from "@/components/docs/playgrounds/voice-sam/event-channel";
@@ -256,7 +257,7 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
 
       <TabPanel idBase={idBase} id="parse" active={tab === "parse"}>
         <div className={styles.stack}>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Segmented<"image" | "video">
               label="Media"
               value={kind}
@@ -292,12 +293,14 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
                 ]}
               />
             </span>
-            <Toggle id={`${id}-conf`} label='include_confidence: "true"' checked={confidence} onChange={setConfidence} disabled={running} />
+            <span className="pg-advanced">
+              <Toggle id={`${id}-conf`} label='include_confidence: "true"' checked={confidence} onChange={setConfidence} disabled={running} />
+            </span>
           </div>
           <div className={media.spread}>
             <RunButton running={running} onRun={() => file && void parseRun(kind, file, concept.trim())} onStop={sam.abort} label="Stream and parse" disabled={!file || !concept.trim() || (file?.problems.length ?? 0) > 0} />
           </div>
-          <p className={styles.note}>{kind === "image" ? "$0.0025 an image." : `About ${formatUsd(samCostUsd("video", file?.frames ?? 50))} for the clip's ${file?.frames ?? 50} frames.`} The events go to the parser as they arrive.</p>
+          <p className={`${styles.note} pg-advanced`}>{kind === "image" ? "$0.0025 an image." : `About ${formatUsd(samCostUsd("video", file?.frames ?? 50))} for the clip's ${file?.frames ?? 50} frames.`} The events go to the parser as they arrive.</p>
           <ErrorBox error={sam.error} />
           {running || (sam.result && run) ? (
             <ResponseView result={samResultView(sam.result, sam.out)} running={running} elapsedMs={sam.elapsedMs} model="sam-3.1" usage={sam.out?.usage ?? undefined} json={result ? { outcome: result.outcome, revision: result.revision, records: result.records.length, diagnostics: result.diagnostics } : undefined}>
@@ -396,7 +399,7 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
 
       <TabPanel idBase={idBase} id="build" active={tab === "build"}>
         <div className={styles.stack}>
-          <PresetPills
+          <GroupedPresets
             presets={BUILD_PRESETS}
             active={buildPreset}
             onPick={(i) => {
@@ -404,7 +407,7 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
               setBuildText(JSON.stringify(BUILD_PRESETS[i].options, null, 2));
             }}
           />
-          {buildPreset !== null ? <p className={styles.note}>{BUILD_PRESETS[buildPreset].note}</p> : null}
+          {buildPreset !== null ? <p className={`${styles.note} pg-advanced`}>{BUILD_PRESETS[buildPreset].note}</p> : null}
           <JsonEditor
             id={`${id}-build`}
             label="buildObjectPrompt(options)"
@@ -427,11 +430,11 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
           ) : null}
           <div className={styles.row}>
             <RunButton running={running} onRun={() => void sendBuilt()} onStop={sam.abort} label="Send it to SAM" disabled={!built.text || built.size?.width !== 1280 || built.size?.height !== 853} />
-            <button type="button" className="btn btn-outline btn-sm" onClick={fromLast} disabled={!run?.result || !boxes.length}>
+            <button type="button" className="btn btn-outline btn-sm pg-advanced" onClick={fromLast} disabled={!run?.result || !boxes.length}>
               Prompt the last result&apos;s boxes again
             </button>
           </div>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             Send runs prompts sized 1280 x 853 on the street photo ($0.0025). A parsed box can go back in as is, with its objectId as the id: right
             and bottom are half-open on both sides, and the builder writes x2 = right - 1. The API checks the rest, such as the 16-object limit.
           </p>
@@ -445,7 +448,11 @@ export function ParserLab({ sampleId = "street", videoSampleId = "street-pan", p
       <div className="pg-actions">
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
       </div>
-      {showCode ? <SnippetTabs snippets={parserSnippets(lastBody, built.text ?? null)} caption="The client code for this flow" /> : null}
+      {showCode ? (
+        <div className="pg-advanced">
+          <SnippetTabs snippets={parserSnippets(lastBody, built.text ?? null)} caption="The client code for this flow" />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -498,7 +505,7 @@ function DecodeView({ masks }: { masks: readonly SegmentationMaskRecord[] }) {
           </select>
         </span>
       </div>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         mask: encoding {record.mask.encoding}, {record.mask.height} rows x {record.mask.width} columns, {record.mask.payload.length} payload characters; bounds{" "}
         {record.bounds.left}, {record.bounds.top} to {record.bounds.right}, {record.bounds.bottom} (half-open).
       </p>
@@ -511,7 +518,7 @@ function DecodeView({ masks }: { masks: readonly SegmentationMaskRecord[] }) {
           <div className={styles.card}>
             <p className={styles.cardTitle}>decodeMaskToRaster</p>
             <canvas ref={ref} className={styles.raster} style={{ width: record.mask.width * scale, height: record.mask.height * scale }} role="img" aria-label="The mask raster" />
-            <p className={styles.note}>
+            <p className={`${styles.note} pg-advanced`}>
               Uint8Array, length {out.raster?.length.toLocaleString("en-US")} (width x height), row-major, {out.set.toLocaleString("en-US")} ones.
             </p>
           </div>
@@ -520,18 +527,18 @@ function DecodeView({ masks }: { masks: readonly SegmentationMaskRecord[] }) {
             <svg viewBox={`-1 -1 ${record.mask.width + 2} ${record.mask.height + 2}`} style={{ width: record.mask.width * scale, maxWidth: "100%", height: "auto" }} role="img" aria-label="The mask traced as an SVG path">
               <path d={out.svg} fill="var(--accent-soft)" stroke="var(--accent)" strokeWidth={Math.max(0.5, record.mask.width / 200)} fillRule="evenodd" />
             </svg>
-            <p className={styles.note}>
+            <p className={`${styles.note} pg-advanced`}>
               A polygonal M/L/Z path, {out.svg.length.toLocaleString("en-US")} characters: <code>{out.svg.slice(0, 60)}...</code>
             </p>
           </div>
           <div className={styles.card}>
             <p className={styles.cardTitle}>decodeMaskToRLE</p>
             <pre className={styles.pre}>{`{\n  "size": ${JSON.stringify(out.rle?.size)},\n  "counts": ${JSON.stringify(`${out.rle?.counts.slice(0, 40)}...`)}\n}\n${out.rle?.counts.length.toLocaleString("en-US")} characters of counts`}</pre>
-            <p className={styles.note}>COCO compressed RLE, size [height, width], column-major: ready for IoU and evaluation tools.</p>
+            <p className={`${styles.note} pg-advanced`}>COCO compressed RLE, size [height, width], column-major: ready for IoU and evaluation tools.</p>
           </div>
         </div>
       )}
-      <p className={styles.note}>In Python the same three are decode_mask_to_raster, decode_mask_to_rle and decode_mask_to_svg_path from meta_sam_parser.</p>
+      <p className={`${styles.note} pg-advanced`}>In Python the same three are decode_mask_to_raster, decode_mask_to_rle and decode_mask_to_svg_path from meta_sam_parser.</p>
     </div>
   );
 }
@@ -633,7 +640,7 @@ function RenderView({ run, masks }: { run: ParseRun; masks: readonly Segmentatio
 
   return (
     <div className={styles.stack}>
-      <div className={media.options}>
+      <div className={`${media.options} pg-advanced`}>
         <label className={styles.slider}>
           maskFillOpacity {fill.toFixed(2)}
           <input type="range" min={0} max={1} step={0.05} value={fill} onChange={(e) => setFill(Number(e.target.value))} />
@@ -688,7 +695,7 @@ function RenderView({ run, masks }: { run: ParseRun; masks: readonly Segmentatio
           </div>
         </>
       ) : null}
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Drawn from the parser&apos;s records, the way @meta-sam/graphics&apos; SegmentationRenderer composes them: the decoded raster filled on its
         bounds at maskFillOpacity (default 0.35) and its outline at maskOutline.opacity (default 0.8); hidden ids stay hidden on every frame. The
         graphics, video and react packages aren&apos;t loaded on this page, so this mimics their documented options rather than running them.
@@ -711,13 +718,13 @@ function Lifecycle() {
   const scenario = SCENARIOS.find((s) => s.id === result?.id);
   return (
     <div className={styles.stack}>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Each one feeds Meta&apos;s parser a short recorded stream built from the page&apos;s own video line, on this page, with no API call. Errors are
         thrown while iterating or reject finalResult; every one has a stable code.
       </p>
       <div className={styles.scenarios} role="group" aria-label="Scenarios">
-        {SCENARIOS.map((s) => (
-          <button key={s.id} type="button" className="pg-pill" aria-pressed={result?.id === s.id} disabled={!!busy} onClick={() => void pick(s.id)}>
+        {SCENARIOS.map((s, i) => (
+          <button key={s.id} type="button" className={i < 5 ? "pg-pill" : "pg-pill pg-advanced"} aria-pressed={result?.id === s.id} disabled={!!busy} onClick={() => void pick(s.id)}>
             {s.label}
           </button>
         ))}
@@ -725,7 +732,7 @@ function Lifecycle() {
       {result && scenario ? (
         <div className={styles.card} aria-live="polite">
           <p className={styles.cardTitle}>{scenario.label}</p>
-          <p className={styles.note}>The page says: {scenario.expect}</p>
+          <p className={`${styles.note} pg-advanced`}>The page says: {scenario.expect}</p>
           {result.fed.length ? (
             <ul className={styles.counts} aria-label="Events fed">
               {result.fed.map((t, i) => (

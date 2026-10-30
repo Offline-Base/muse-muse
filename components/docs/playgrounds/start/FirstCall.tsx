@@ -3,7 +3,7 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { EffortSelect, PresetPills, runOnModEnter, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
+import { EffortSelect, runOnModEnter, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
@@ -21,6 +21,7 @@ import {
   type FirstCallPreset,
   type ResponseReading,
 } from "@/components/docs/playgrounds/start/quickstart";
+import { SplitPills } from "@/components/docs/playgrounds/start/SplitPills";
 import { WONDER_COST_NOTE, WONDER_MODEL, WONDER_OUTPUT_CAP } from "@/components/docs/playgrounds/start/wonder";
 import styles from "@/components/docs/playgrounds/start/start.module.css";
 
@@ -108,7 +109,7 @@ export function FirstCall({ prompt: initialPrompt, model: initialModel, presets 
         <Toggle id={`${id}-search`} label="Web search" checked={webSearch} onChange={setWebSearch} disabled={running} />
       </div>
 
-      <PresetPills label="Try next" presets={presets} active={preset} onPick={pick} disabled={running} />
+      <SplitPills label="Try next" presets={presets} active={preset} onPick={pick} disabled={running} />
       {shownPreset ? <p className="pg-hint">{shownPreset.shows}</p> : model === WONDER_MODEL ? <p className="pg-hint">{WONDER_COST_NOTE}</p> : null}
 
       <div className="pg-composer">
@@ -236,12 +237,12 @@ function ReadResponse({ reading, reply }: { reading: ResponseReading; reply: Col
         </div>
       ) : null}
       {reading.status === "incomplete" ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           The response stopped early: <code>incomplete_details.reason</code> is <code>{reading.incompleteReason ?? "not given"}</code>.
           {reading.incompleteReason === "max_output_tokens"
             ? ` Reasoning used the output limit before the answer was done${reading.model === WONDER_MODEL ? ` (the live docs cap Muse Wonder at ${WONDER_OUTPUT_CAP} tokens)` : ""}: lower the effort, or raise max_output_tokens in your own code.`
             : ""}
-        </p>
+        </div>
       ) : null}
       <p className="pg-hint">
         <code>status: {reading.status || "unknown"}</code> · <code>id: {reading.id}</code>

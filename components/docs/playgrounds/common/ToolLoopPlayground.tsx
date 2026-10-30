@@ -3,9 +3,10 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { EffortSelect, PresetPills, runOnModEnter, Segmented, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
+import { EffortSelect, runOnModEnter, Segmented, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { latencyLabel, statusText } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { prettyArguments, ReplyView, ToolCalls } from "@/components/docs/kit/StreamView";
@@ -49,6 +50,8 @@ export interface ToolLoopPlaygroundProps {
   /** Stream each model call, so arguments show as they arrive. Default false. */
   stream?: boolean;
   presets?: Array<{ label: string; prompt: string }>;
+  /** Keep the presets behind Options, for a demo that already shows its own row of examples above this. */
+  advancedPresets?: boolean;
 }
 
 function failed(protocol: LoopProtocol, res: DocsResult): Collected {
@@ -177,6 +180,18 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
   const lastModel = [...steps].reverse().find((s): s is ModelStep => s.kind === "model");
   const codeBody = !finished && !busy ? nextModelBody(protocol, base, steps) : (lastModel?.body ?? nextModelBody(protocol, base, []));
   const nextLabel = action === "tools" ? "Run the tools" : action === "model" ? (steps.length ? "Send the results" : "Call the model") : "Step";
+  const presetRow = props.presets?.length ? (
+    <PresetRow
+      presets={props.presets}
+      active={preset}
+      onPick={(i) => {
+        setPreset(i);
+        setPrompt(props.presets![i].prompt);
+        reset();
+      }}
+      disabled={busy}
+    />
+  ) : null;
 
   return (
     <div className="pg pg-tools">
@@ -218,18 +233,7 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
         <p className="pg-muted pg-small">The tools run here in the page with sample data. Nothing is sent anywhere else, and send_email only pretends.</p>
       </div>
 
-      {props.presets?.length ? (
-        <PresetPills
-          presets={props.presets}
-          active={preset}
-          onPick={(i) => {
-            setPreset(i);
-            setPrompt(props.presets![i].prompt);
-            reset();
-          }}
-          disabled={busy}
-        />
-      ) : null}
+      {props.advancedPresets && presetRow ? <div className="pg-advanced">{presetRow}</div> : presetRow}
 
       <details className="pg-system" open={systemOpen} onToggle={(e) => setSystemOpen(e.currentTarget.open)}>
         <summary>Instructions{system ? "" : " (optional)"}</summary>
@@ -258,7 +262,7 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
               Reset
             </button>
           ) : null}
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => void stepOnce()} disabled={busy || finished || !prompt.trim()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void stepOnce()} disabled={busy || finished || !prompt.trim()}>
             {nextLabel}
           </button>
           <RunButton running={busy} onRun={() => void runAll()} onStop={stop} label={steps.length ? "Run to the end" : "Run all"} disabled={finished || !prompt.trim()} />
@@ -299,9 +303,12 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
                 {s.collected && requestedCalls(s).length ? (
                   <ToolCalls calls={requestedCalls(s)} title={requestedCalls(s).length > 1 ? `The model asked for ${requestedCalls(s).length} tool calls` : "The model asked for a tool call"} />
                 ) : (
-                  <ReplyView reply={s.collected} running={!s.collected?.done} placeholder={s.collected?.error ? s.collected.error.message : undefined} />
+                  // The last reply is also the final answer below, so the simple view shows it there only.
+                  <div className={action === "done" && answer && i === steps.length - 1 ? "pg-advanced" : undefined}>
+                    <ReplyView reply={s.collected} running={!s.collected?.done} placeholder={s.collected?.error ? s.collected.error.message : undefined} />
+                  </div>
                 )}
-                <details className="pg-raw">
+                <details className="pg-raw pg-advanced">
                   <summary>Request{s.collected?.final ? " and reply" : ""} JSON</summary>
                   <p className="pg-section-label">Request</p>
                   <JsonTree value={s.body} openDepth={2} />
@@ -327,11 +334,13 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
                         <code className="pg-muted">{r.call.callId}</code>
                         {r.run ? <span className="pg-muted">{r.run.ms} ms</span> : <span className="pg-muted">running</span>}
                       </p>
-                      <pre className="pg-pre">{prettyArguments(r.call.arguments) || "{}"}</pre>
+                      <pre className="pg-pre pg-advanced">{prettyArguments(r.call.arguments) || "{}"}</pre>
                       {r.run ? (
                         <>
-                          <p className="pg-section-label">{protocol === "responses" ? "function_call_output" : "tool message"}</p>
-                          <JsonTree value={r.run.value} openDepth={3} />
+                          <p className="pg-section-label pg-advanced">{protocol === "responses" ? "function_call_output" : "tool message"}</p>
+                          <div className="pg-advanced">
+                            <JsonTree value={r.run.value} openDepth={3} />
+                          </div>
                         </>
                       ) : null}
                     </li>
@@ -349,7 +358,7 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
           <div className="pg-stream-text">{answer}</div>
         </div>
       ) : null}
-      {action === "limit" ? <p className="pg-hint">Stopped after {maxCalls} model calls, this demo&apos;s limit. Reset to start over.</p> : null}
+      {action === "limit" ? <div className="pg-hint">Stopped after {maxCalls} model calls, this demo&apos;s limit. Reset to start over.</div> : null}
 
       <ErrorBox error={runner.error} />
 

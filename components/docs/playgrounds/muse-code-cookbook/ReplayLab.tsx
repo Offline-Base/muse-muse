@@ -126,34 +126,34 @@ export function ReplayLab(_props: ReplayLabProps) {
   return (
     <div className={`pg ${styles.stack}`}>
       <PresetPills label="Fixture" presets={PRESETS} active={preset} onPick={(i) => load(PRESETS[i].make(), i)} />
-      {preset !== null ? <p className={styles.note}>{PRESETS[preset].note}</p> : null}
+      {preset !== null ? <p className={`${styles.note} pg-advanced`}>{PRESETS[preset].note}</p> : null}
       <div className={styles.split}>
         <div className={styles.tight}>
           <JsonEditor id={`${id}-fixture`} label={`golden-traces/${name}.json`} value={text} onChange={(t) => { setText(t); setPreset(null); setHashes(null); }} resetTo={base} rows={18} />
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             The recipe abbreviates each record to its payload, and so does this editor. This fixture has 6 records: the recipe&apos;s 4 plus the model_response_created and model_completed boundaries it says to keep. The committed file holds 7 full envelopes, so inspect prints run=7 there and run=6 here. Edit any field and the replay on the right updates.
           </p>
         </div>
         <div className={styles.stack}>
-          <Field id={`${id}-arg`} label="--fixture" hint="Pass the file name with .json, or the path. A bare stem reports Result: unknown.">
+          <Field id={`${id}-arg`} label="--fixture" hint="Pass the file name with .json, or the path. A bare stem reports Result: unknown." className="pg-advanced">
             <TextInput id={`${id}-arg`} className="pg-code-input" value={arg} onChange={(e) => setArg(e.target.value)} spellCheck={false} aria-describedby={`${id}-arg-hint`} />
           </Field>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <Segmented<"text" | "json"> label="Report format" size="sm" options={[{ value: "text", label: "Text" }, { value: "json", label: "--format json" }]} value={format} onChange={setFormat} />
           </div>
           <Terminal title="muse trace inspect" lines={inspectLines} live />
           {format === "json" ? (
-            <p className={styles.note}>The recipe shows diffs, load_status: partial and errors in the JSON report; the other fields, and load_status: complete for a fixture that loads, are this demo&apos;s.</p>
+            <p className={`${styles.note} pg-advanced`}>The recipe shows diffs, load_status: partial and errors in the JSON report; the other fields, and load_status: complete for a fixture that loads, are this demo&apos;s.</p>
           ) : null}
           <Terminal title="replay_gate.sh" lines={gateLines} live />
           {gated.exitCode ? (
             <Verdict tone="bad" title="The required check fails: the merge is blocked">
-              <p className={styles.note}>inspect itself exited 0: it prints diffs but never fails on them. The gate reads <code>jq &apos;.diffs | length&apos;</code> and exits 1, until the behavior is restored or the fixture is updated in the same change.</p>
+              <p className={`${styles.note} pg-advanced`}>inspect itself exited 0: it prints diffs but never fails on them. The gate reads <code>jq &apos;.diffs | length&apos;</code> and exits 1, until the behavior is restored or the fixture is updated in the same change.</p>
             </Verdict>
           ) : (
             <Verdict tone="ok" title="Zero diffs: the check passes" />
           )}
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <button
               type="button"
               className="btn btn-sm btn-outline"
@@ -172,7 +172,7 @@ export function ReplayLab(_props: ReplayLabProps) {
             ) : null}
           </div>
           {hashes ? (
-            <p className={styles.note}>
+            <p className={`${styles.note} pg-advanced`}>
               The same records give the same report bytes, which is what cmp a.json b.json checks for Muse Code&apos;s replay. Both runs here are this page&apos;s projection, so this illustrates the property rather than testing Muse Code.
             </p>
           ) : null}
@@ -180,7 +180,7 @@ export function ReplayLab(_props: ReplayLabProps) {
       </div>
 
       <Section title="Record a live run, then author a fixture from it">
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           The model answers the recipe&apos;s question about tariff.py, with the script&apos;s output given as the tool result. Its words will differ from the committed fixture: that is the non-determinism replay is built to leave out. Under a cent.
         </p>
         <div className="pg-bar">
@@ -210,7 +210,7 @@ export function ReplayLab(_props: ReplayLabProps) {
                     Author a fixture from this run
                   </button>
                 </div>
-                <p className={styles.note}>Against the committed expectation, the live answer and usage show up as diffs. An authored fixture sets expected_model_context to what the records reduce to, for review before it is committed.</p>
+                <p className={`${styles.note} pg-advanced`}>Against the committed expectation, the live answer and usage show up as diffs. An authored fixture sets expected_model_context to what the records reduce to, for review before it is committed.</p>
               </div>
             ) : (
               <p className="pg-empty">{recording ? "Recording..." : "No answer in this reply."}</p>

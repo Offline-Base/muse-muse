@@ -588,7 +588,7 @@ export function HeadlockedCaptions({
                 </div>
               ))}
             </div>
-            <div className={styles.row}>
+            <div className={`${styles.row} pg-advanced`}>
               <label className={styles.control} htmlFor={`${id}-area`}>
                 Skip people smaller than
                 <input id={`${id}-area`} type="range" min={0.1} max={4} step={0.1} value={minArea} onChange={(e) => setMinArea(Number(e.target.value))} />

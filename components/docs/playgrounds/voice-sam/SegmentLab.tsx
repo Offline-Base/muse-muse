@@ -335,9 +335,10 @@ export function SegmentLab({
   return (
     <div className={styles.lab}>
       {presets.length ? <GroupedPresets presets={presets} active={preset} onPick={(i) => void applyPreset(i)} disabled={running || loading} /> : null}
-      {active?.note ? <p className={styles.note}>{active.note}</p> : null}
+      {active?.note ? <p className={`${styles.note} pg-advanced`}>{active.note}</p> : null}
 
-      <div className="pg-bar">
+      {/* With a prompt switch below, that one is the simple view's one switch. */}
+      <div className={kinds.length > 1 && promptKinds.length <= 1 ? "pg-bar" : "pg-bar pg-advanced"}>
         {kinds.length > 1 ? (
           <Segmented<"image" | "video">
             label="Media"
@@ -404,7 +405,8 @@ export function SegmentLab({
             <TextInput id={`${id}-c`} value={concept} onChange={(e) => edit(setConcept)(e.target.value)} disabled={running} aria-describedby={`${id}-c-hint`} />
           </Field>
           {chips.length ? (
-            <div className={media.chips} role="group" aria-label="Concepts for this sample">
+            // The page's presets are the simple view's examples; without any, these are.
+            <div className={presets.length ? `${media.chips} pg-advanced` : media.chips} role="group" aria-label="Concepts for this sample">
               {chips.map((c) => (
                 <button key={c} type="button" className={media.chip} onClick={() => edit(setConcept)(c)} disabled={running}>
                   {c}
@@ -421,7 +423,7 @@ export function SegmentLab({
               ))}
             </ul>
           ) : panels.includes("rules") && concept.trim() ? (
-            <p className={styles.note}>Fits the page&apos;s prompt rules: one concrete noun phrase. Plurals, case and punctuation don&apos;t change the match.</p>
+            <p className={`${styles.note} pg-advanced`}>Fits the page&apos;s prompt rules: one concrete noun phrase. Plurals, case and punctuation don&apos;t change the match.</p>
           ) : null}
           {pairWithSpark && image && kind === "image" ? <SparkSuggest image={image} onPick={(c) => edit(setConcept)(c)} disabled={running} /> : null}
         </div>
@@ -464,12 +466,12 @@ export function SegmentLab({
               </button>
             </span>
           </div>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             {kind === "video" ? `Prompts go on the frame you're on (frame ${frame}); move with the frame bar to prompt other frames. Repeat an id to prompt the same object again. ` : ""}
             Drawn coordinates are converted to the {kind}&apos;s own pixels{size ? ` (w=${size.width}, h=${size.height})` : ""}, the w and h every token carries.
           </p>
           {kind === "video" && new Set(objects.map((o) => o.frame ?? 0)).size ? (
-            <div className={media.chips} role="group" aria-label="Go to a prompted frame">
+            <div className={`${media.chips} pg-advanced`} role="group" aria-label="Go to a prompted frame">
               <span className={styles.note}>Go to:</span>
               {[...new Set(objects.map((o) => o.frame ?? 0))]
                 .sort((a, b) => a - b)
@@ -481,7 +483,7 @@ export function SegmentLab({
             </div>
           ) : null}
           {objects.length ? (
-            <ul className={styles.checkList} aria-label="Prompted objects">
+            <ul className={`${styles.checkList} pg-advanced`} aria-label="Prompted objects">
               {[...objects]
                 .sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0) || a.id - b.id)
                 .map((o) => (
@@ -491,7 +493,13 @@ export function SegmentLab({
                 ))}
             </ul>
           ) : null}
-          {objectPrompt.error ? <p className={media.hint}>{objectPrompt.error}</p> : <WireLine line={objectPrompt.text} full />}
+          {objectPrompt.error ? (
+            <p className={media.hint}>{objectPrompt.error}</p>
+          ) : (
+            <div className="pg-advanced">
+              <WireLine line={objectPrompt.text} full />
+            </div>
+          )}
         </div>
       ) : (
         <div className={styles.stack}>
@@ -499,7 +507,7 @@ export function SegmentLab({
             input_text, sent exactly as typed
           </label>
           <textarea id={`${id}-raw`} className={styles.textarea} value={rawText} rows={3} spellCheck={false} onChange={(e) => edit(setRawText)(e.target.value)} disabled={running} />
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             A noun phrase, or box and point prompts in the output grammar: {"<0f>1<|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..|>"}, points as{" "}
             {"<|point;x=..;y=..;w=..;h=..|>"}, a - before a point for a negative one. Never both kinds in one prompt.
           </p>
@@ -507,7 +515,9 @@ export function SegmentLab({
       )}
 
       {file && url ? (
-        <div ref={overlayWrap}>
+        // Until a run, the picker's thumbnail shows the file, and this large preview would push Segment off the panel. Box
+        // and point prompts are drawn on it, and a run's masks land on it, so it shows for those.
+        <div ref={overlayWrap} className={running || out || promptKind === "objects" ? undefined : "pg-advanced"}>
         <MaskOverlay
           src={url}
           media={kind}
@@ -526,7 +536,7 @@ export function SegmentLab({
         </div>
       ) : null}
 
-      <div className={media.options}>
+      <div className={`${media.options} pg-advanced`}>
         <span className={media.inline}>
           <span className={styles.label}>mask_encoding</span>
           <Segmented<"lossless" | "one_bit">
@@ -579,7 +589,7 @@ export function SegmentLab({
         <Toggle id={`${id}-raw-wire`} label="Raw wire" checked={raw} onChange={setRaw} />
       </div>
       {usesFrames && tracked ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Tracking {propagation} from frame {earliest}: frames {tracked.range}, {tracked.frames} of {totalFrames}.
           {propagation === "backward" && earliest === 0 ? " backward needs a prompt on a frame after frame 0; the API answers 400." : ""}
           {propagation === "both" ? " Omit the key for both; it's the default." : ""}
@@ -603,7 +613,7 @@ export function SegmentLab({
           disabled={!file || !promptText || loading || (file?.problems.length ?? 0) > 0}
         />
       </div>
-      <p className={styles.note}>
+      <p className={uploadNote ? styles.note : `${styles.note} pg-advanced`}>
         {kind === "video"
           ? `Video is billed per frame tracked, $0.20 per 1,000 with a 50-frame minimum: about ${formatUsd(estimate)} for ${tracked ? `these ${tracked.frames} frames` : file?.frames ? `all ${file.frames} frames` : "a short clip"}.`
           : "Images cost $2.50 per 1,000, so $0.0025 a run."}
@@ -652,7 +662,7 @@ export function SegmentLab({
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
       </div>
       {showCode ? (
-        <div className={styles.stack}>
+        <div className={`${styles.stack} pg-advanced`}>
           {send === "file" && kind === "video" ? (
             <CodeView method="POST" path="files" form={[{ name: "purpose", value: "user_data" }, { name: "file", value: file?.name ?? "clip.mp4", file: { label: "Clip", accept: "video/mp4" } }]} caption="1. Upload the clip once" />
           ) : null}
@@ -801,7 +811,7 @@ function SparkSuggest({ image, onPick, disabled }: { image: PickedMedia; onPick(
   return (
     <div className={styles.card}>
       <p className={styles.cardTitle}>Not sure what to segment? Ask Muse Spark first</p>
-      <p className={styles.note}>Muse Spark reads the scene and names the objects; SAM 3.1 then returns their pixels. One call to each, under a cent together.</p>
+      <p className={`${styles.note} pg-advanced`}>Muse Spark reads the scene and names the objects; SAM 3.1 then returns their pixels. One call to each, under a cent together.</p>
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} disabled={running || disabled} />
         <RunButton running={running} onRun={() => void ask()} onStop={runner.abort} label="Ask Muse Spark" disabled={disabled} />

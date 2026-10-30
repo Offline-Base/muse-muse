@@ -191,7 +191,7 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
     <div className="pg">
       <div className={styles.grid2}>
         <FilePicker accept="image/*" value={shot} onChange={setShot} samples={["error-screenshot"]} defaultSampleId={sampleId} preview="compact" label="The bug screenshot" disabled={run.busy} />
-        <div className={styles.stack}>
+        <div className={shot2Error ? styles.stack : `${styles.stack} pg-advanced`}>
           <FilePicker
             accept="image/*"
             value={shot2}
@@ -216,11 +216,11 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
             The sample is the same bug in a production build: the cart page with an empty cart, where only the order summary&apos;s fallback text shows. No file
             names or stack, so the model has to find the code from what&apos;s on screen.
           </p>
-          {shot2Error ? <p className="pg-hint pg-bad">{shot2Error}</p> : null}
+          {shot2Error ? <div className="pg-hint pg-bad">{shot2Error}</div> : null}
         </div>
       </div>
 
-      <div className={styles.card}>
+      <div className={smoke.error ? styles.card : `${styles.card} pg-advanced`}>
         <p className={styles.cardTitle}>Step 0: verify image input works</p>
         <div className="pg-actions">
           <button type="button" className="btn btn-sm" onClick={() => void runSmoke()} disabled={!shot || smoke.state === "running"}>
@@ -232,10 +232,10 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
         <ErrorBox error={smoke.error} />
       </div>
 
-      <label className="pg-label" htmlFor={`${id}-prompt`}>
+      <label className="pg-label pg-advanced" htmlFor={`${id}-prompt`}>
         Your message to the Plan agent
       </label>
-      <TextArea id={`${id}-prompt`} rows={3} value={prompt} onChange={(e) => setEdited(e.target.value)} disabled={run.busy} />
+      <TextArea id={`${id}-prompt`} className="pg-advanced" rows={3} value={prompt} onChange={(e) => setEdited(e.target.value)} disabled={run.busy} />
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} disabled={run.busy} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={run.busy} />
@@ -243,10 +243,10 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
       </div>
       <div className="pg-actions">
         <RunButton running={run.busy} onRun={startPlan} onStop={run.stop} label="Plan the fix" disabled={!shot || !prompt.trim()} />
-        <button type="button" className="btn btn-sm btn-primary" onClick={startBuild} disabled={run.busy || !planId}>
+        <button type="button" className={`btn btn-sm btn-primary${planId ? "" : " pg-advanced"}`} onClick={startBuild} disabled={run.busy || !planId}>
           ok build it
         </button>
-        <span className="pg-hint">Plan and Build together are usually 15 to 30 short calls, under half a cent on Spark Contributor; Muse Wonder costs 40 to 100 times as much per token.</span>
+        <span className="pg-hint pg-advanced">Plan and Build together are usually 15 to 30 short calls, under half a cent on Spark Contributor; Muse Wonder costs 40 to 100 times as much per token.</span>
       </div>
       <RunBar busy={run.busy} modelCalls={run.modelCalls} totalUsd={run.totalUsd} waitingStep={run.waitingStep} onAdvance={run.advance} />
       <ErrorBox error={run.error} />
@@ -258,7 +258,7 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
           <Diff patch={patch} />
         </div>
       ) : null}
-      <div className={styles.card}>
+      <div className={patch ? styles.card : `${styles.card} pg-advanced`}>
         <p className={styles.cardTitle}>Surfaces that read cart.items</p>
         <p className="pg-hint">
           {check.loaderNormalizes || check.apiAlwaysItems

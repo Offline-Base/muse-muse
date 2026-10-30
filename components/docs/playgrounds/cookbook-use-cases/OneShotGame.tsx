@@ -21,6 +21,7 @@ import {
   CROSSY_AGENTS_MD,
   CROSSY_SECTIONS,
   agentsInstructions,
+  buildProgress,
   sectionsText,
   type PromptSection,
 } from "@/components/docs/playgrounds/cookbook-use-cases/lib/gamedev";
@@ -75,6 +76,10 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
   const [autoContinue, setAutoContinue] = useState(true);
   const [continued, setContinued] = useState(0);
   const [spent, setSpent] = useState(0);
+  /** Characters in the current call's reply: 0 while the model is still thinking. */
+  const [callChars, setCallChars] = useState(0);
+  /** Time spent in calls that have ended. The runner's own clock starts over with each call. */
+  const [doneMs, setDoneMs] = useState(0);
   const [busy, setBusy] = useState(false);
   const [waitNote, setWaitNote] = useState<string | null>(null);
   const stopped = useRef(false);
@@ -99,6 +104,7 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
    * at the output limit, so the caller can continue it; null when it finished or failed.
    */
   const stream = async (b: Json, prefix: string): Promise<Collected | null> => {
+    setCallChars(0);
     let collector = responsesCollector();
     const res = await withRetries(
       () => {
@@ -106,13 +112,16 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
         const c = collector;
         const onEvent = (e: SseEvent) => {
           c.push(e);
-          setText(prefix + c.snapshot().text);
+          const now = c.snapshot().text;
+          setCallChars(now.length);
+          setText(prefix + now);
         };
         return runner.run("responses", { method: "POST", body: b, stream: true, onEvent });
       },
       { stopped: () => stopped.current, onRetry: (r) => setWaitNote(retryText(r)), onResume: () => setWaitNote(null) },
     );
     setWaitNote(null);
+    setDoneMs((ms) => ms + res.elapsedMs);
     const r = collector.snapshot();
     setReply(r);
     if (res.ok) setSpent((usd) => usd + replyUsd(res.model ?? model, r.final));
@@ -155,6 +164,7 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
       setCutOff(false);
       setContinued(0);
       setSpent(0);
+      setDoneMs(0);
       const cut = await stream(body, "");
       // The 3D build usually stops at the cap: continue once on its own, the way you'd type "continue".
       if (cut?.id && autoContinue && !stopped.current) {
@@ -184,15 +194,17 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
     setHtml(null);
     setText("");
     setReply(null);
+    setDoneMs(0);
   };
 
+  const elapsedMs = doneMs + (runner.state === "running" ? runner.elapsedMs : 0);
   const tail = text.split("\n").slice(-10).join("\n");
 
   return (
     <div className="pg">
       <PresetPills presets={PRESETS.map((p) => ({ label: p.label }))} active={presetIdx} onPick={pick} disabled={running} />
 
-      <details className={styles.card} open>
+      <details className={`${styles.card} pg-advanced`} open>
         <summary className={styles.cardTitle}>AGENTS.md: the rules that prevent invisible bugs</summary>
         <Toggle id={`${id}-agents`} label="Load AGENTS.md (sent as the instructions)" checked={useAgents} onChange={setUseAgents} disabled={running} />
         <label className="sr-only" htmlFor={`${id}-agentsmd`}>
@@ -201,7 +213,7 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
         <TextArea id={`${id}-agentsmd`} rows={8} className="pg-code-input" value={agentsMd} onChange={(e) => setAgentsMd(e.target.value)} disabled={running || !useAgents} />
       </details>
 
-      <details className={styles.card}>
+      <details className={`${styles.card} pg-advanced`}>
         <summary className={styles.cardTitle}>The one structured prompt ({sections.length} sections)</summary>
         {sections.map((s, i) => (
           <div key={s.id} className="pg-field">
@@ -224,9 +236,13 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
         {sections.some((s) => s.id === "assets") ? (
-          <Toggle id={`${id}-assets`} label="No Kenney files here: build models from shapes" checked={noAssets} onChange={setNoAssets} disabled={running} />
+          <span className="pg-advanced">
+            <Toggle id={`${id}-assets`} label="No Kenney files here: build models from shapes" checked={noAssets} onChange={setNoAssets} disabled={running} />
+          </span>
         ) : null}
-        <Toggle id={`${id}-auto`} label="Continue once on its own if the output limit cuts the file" checked={autoContinue} onChange={setAutoContinue} disabled={running} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-auto`} label="Continue once on its own if the output limit cuts the file" checked={autoContinue} onChange={setAutoContinue} disabled={running} />
+        </span>
       </div>
       <p className="pg-hint">
         The recipe maxes out reasoning (high, or the equivalent xhigh) so the model works the constraints through before it writes. Each call takes up to 16,384
@@ -243,24 +259,25 @@ export function OneShotGame({ preset: initialPreset = "crossy", effort: initialE
         ) : null}
         {running || text ? (
           <span className="pg-hint" role="status">
-            {running ? "Writing" : "Wrote"} {text.length.toLocaleString()} characters{continued ? ` (${continued === 1 ? "one Continue" : `${continued} Continues`})` : ""}
-            {runner.elapsedMs ? `, ${latencyLabel(runner.elapsedMs)}` : ""}
+            {running
+              ? buildProgress({ total: text.length, callChars, continued, elapsed: elapsedMs ? latencyLabel(elapsedMs) : "", usual: PRESETS[presetIdx].id === "crossy" && effort === "high" ? "usually four to six minutes in all" : "" })
+              : `Wrote ${text.length.toLocaleString()} characters${continued ? ` (${continued === 1 ? "one Continue" : `${continued} Continues`})` : ""}${elapsedMs ? `, ${latencyLabel(elapsedMs)}` : ""}`}
           </span>
         ) : null}
         {reply?.usage ? <UsageLine model={runner.result?.model ?? model} usage={reply.usage} /> : null}
         {continued && spent ? <span className="pg-hint">{formatUsd(spent)} est. for all {continued + 1} calls</span> : null}
       </div>
       {waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {waitNote}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={waitNote ? null : runner.error} />
       {running && tail ? <pre className="pg-pre" aria-hidden style={{ maxHeight: 180 }}>{tail}</pre> : null}
       {cutOff && !running ? (
-        <p className="pg-hint pg-bad">The reply stopped at the output limit before the file ended. Continue asks for the rest of the same file, or lower the effort and build again.</p>
+        <div className="pg-hint pg-bad">The reply stopped at the output limit before the file ended. Continue asks for the rest of the same file, or lower the effort and build again.</div>
       ) : null}
-      {!running && text && !html && !cutOff ? <p className="pg-hint pg-bad">No complete HTML file in the reply.</p> : null}
+      {!running && text && !html && !cutOff ? <div className="pg-hint pg-bad">No complete HTML file in the reply.</div> : null}
 
       {html ? (
         <div className={styles.stack}>

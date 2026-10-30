@@ -133,6 +133,22 @@ export function agentsInstructions(agentsMd: string): string {
   return [md ? `The project's AGENTS.md (follow it exactly):\n\n${md}` : "", SINGLE_FILE_OUTPUT].filter(Boolean).join("\n\n");
 }
 
+/**
+ * The line under Run while a one-shot build goes. Reasoning streams no text, so a character count alone reads as stuck:
+ * a run on Oct 30, 2026 sent only keepalives for its first 130 s, wrote for 46 s, then took 75 s more for the Continue.
+ */
+export function buildProgress(p: { total: number; callChars: number; continued: number; elapsed: string; usual: string }): string {
+  const chars = `${p.total.toLocaleString("en-US")} characters`;
+  const said = !p.continued
+    ? p.callChars
+      ? `Writing the file: ${chars}`
+      : "Thinking first, which shows no text until the file starts"
+    : p.callChars
+      ? `Writing the rest of the file: ${chars}`
+      : `Reached the output limit at ${chars}, thinking before it continues the file`;
+  return [said, p.elapsed, p.usual].filter(Boolean).join(", ");
+}
+
 export interface RefinePass {
   label: string;
   prompt: string;

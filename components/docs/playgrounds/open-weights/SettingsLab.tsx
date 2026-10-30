@@ -98,13 +98,14 @@ export function SettingsLab(_props: SettingsLabProps) {
             <SelectField id={`${id}-ctx`} label="Context length" value={String(ctx)} options={CONTEXTS.map((x) => ({ value: String(x), label: `${n(x)} tokens` }))} onChange={(x) => setCtx(Number(x))} />
           </div>
           <SegmentField<OpenEffort>
+            advanced
             label="reasoning_effort for your requests"
             value={effort}
             options={OPEN_EFFORTS.map((e) => ({ value: e, label: `${e} · ${sparkStrength(e)}` }))}
             onChange={setEffort}
             hint={`${row.use}. The template writes it as Reasoning strength: ${row.strength}.`}
           />
-          <div className={styles.options}>
+          <div className={`${styles.options} pg-advanced`}>
             <NumberField id={`${id}-temp`} label="temperature" value={temperature} step={0.1} min={0} max={2} onChange={setTemperature} hint="Recommended: 1.0" />
             <NumberField id={`${id}-topp`} label="top_p" value={topP} step={0.05} min={0} max={1} onChange={setTopP} hint="Recommended: 1.0, with do_sample true" />
             <div className="pg-field">
@@ -113,6 +114,7 @@ export function SettingsLab(_props: SettingsLabProps) {
             </div>
           </div>
           <Facts
+            advanced
             label="What the serve command fixes"
             items={[
               { label: "Parallelism", value: `TP${c.tp} / EP${c.ep} on ${c.gpus} × B300 (${SPARK.routedExperts / c.ep} routed experts per GPU)` },
@@ -124,7 +126,7 @@ export function SettingsLab(_props: SettingsLabProps) {
               },
             ]}
           />
-          <div className={styles.tableWrap}>
+          <div className={`${styles.tableWrap} pg-advanced`}>
             <table className={styles.table}>
               <caption className="sr-only">KV cache by context length, relative to 32,768 tokens</caption>
               <thead>
@@ -305,7 +307,7 @@ function StopChecker() {
   const warn = result.checks.some((c) => c.level === "warn");
   return (
     <div className={styles.stack}>
-      <div className={styles.tableWrap}>
+      <div className={`${styles.tableWrap} pg-advanced`}>
         <table className={styles.table}>
           <caption className="sr-only">Muse Spark Open's special tokens</caption>
           <thead>
@@ -343,6 +345,7 @@ function StopChecker() {
         warnings={result.checks.filter((c) => c.level === "warn").map((c) => c.text)}
         notes={[...result.checks.filter((c) => c.level === "ok").map((c) => c.text), "SGLang reads the same pair from config.json and generation_config.json, so it needs no explicit flag."]}
         noteTitle="Checks"
+        notesAreResult
       />
     </div>
   );

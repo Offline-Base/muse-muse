@@ -18,7 +18,7 @@ import {
   renderWithFootnotes,
   sourceList,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/footnotes";
-import { Note, Stats } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, Note, Stats } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { logEvent, type EventLogEntry } from "@/lib/docs/client/events";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -71,8 +71,8 @@ function GroundedAnswer({ final, results, includeResults, onReplay }: { final: u
           { label: "Results the search returned", value: includeResults ? results.length.toLocaleString("en-US") : "not asked for" },
         ]}
       />
-      <p className="pg-section-label">Output items, in order</p>
-      <p className={styles.act}>{types.join(" → ")}</p>
+      <p className="pg-section-label pg-advanced">Output items, in order</p>
+      <p className={`${styles.act} pg-advanced`}>{types.join(" → ")}</p>
       <p className="pg-section-label">The grounded answer{footnoted?.sources.length ? ", with footnotes" : ""}</p>
       {footnoted ? (
         <p className={styles.answer} tabIndex={0}>
@@ -103,7 +103,7 @@ function GroundedAnswer({ final, results, includeResults, onReplay }: { final: u
               </li>
             ))}
           </ol>
-          <details className="pg-raw">
+          <details className="pg-raw pg-advanced">
             <summary>Each citation&apos;s passage</summary>
             <ul className="pg-checks">
               {cited.map((c, i) => (
@@ -113,14 +113,14 @@ function GroundedAnswer({ final, results, includeResults, onReplay }: { final: u
               ))}
             </ul>
           </details>
-          <details className="pg-raw">
+          <details className="pg-raw pg-advanced">
             <summary>As the recipe&apos;s render_with_footnotes prints it</summary>
             <pre className="pg-pre">{`${footnoted.marked}\n\nSources:\n${sourceList(footnoted.sources)}`}</pre>
           </details>
         </>
       ) : answer ? (
         <>
-          <Note>
+          <Note advanced>
             This answer carries no url_citation annotations, so there is nothing to footnote. Live replies come back that way today, and a message without
             them is still a valid answer: drive citation rendering off the annotations that are present, never off the prose.
             {includeResults && results.length ? " The sources the search returned (from include) are below." : ""}
@@ -138,7 +138,7 @@ function GroundedAnswer({ final, results, includeResults, onReplay }: { final: u
             </ol>
           ) : null}
           {onReplay ? (
-            <p className="pg-small">
+            <p className="pg-small pg-advanced">
               <button type="button" className="btn btn-sm btn-outline" onClick={onReplay}>
                 See the footnotes on Meta&apos;s documented example
               </button>
@@ -223,7 +223,7 @@ export function SearchGroundingDemo({ presets }: SearchGroundingDemoProps) {
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
         <Toggle id={`${id}-stream`} label="Stream" checked={stream} onChange={setStream} disabled={running} />
       </div>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>search_context_size</span>
         <Segmented<ContextSize>
           size="sm"
@@ -252,7 +252,9 @@ export function SearchGroundingDemo({ presets }: SearchGroundingDemoProps) {
           ]}
         />
       </div>
-      <Toggle id={`${id}-results`} label={<code>include: [&quot;web_search_call.results&quot;]</code>} checked={includeResults} onChange={setIncludeResults} disabled={running} />
+      <Advanced>
+        <Toggle id={`${id}-results`} label={<code>include: [&quot;web_search_call.results&quot;]</code>} checked={includeResults} onChange={setIncludeResults} disabled={running} />
+      </Advanced>
       <PresetPills
         presets={presets}
         active={preset}
@@ -285,7 +287,7 @@ export function SearchGroundingDemo({ presets }: SearchGroundingDemoProps) {
           <RunButton running={running} onRun={() => void run()} onStop={runner.abort} disabled={!prompt.trim()} label="Search and answer" />
         </div>
       </div>
-      <div className={styles.spread}>
+      <div className={replay ? styles.spread : `${styles.spread} pg-advanced`}>
         <span className="pg-muted pg-small">Live replies carry no url_citation annotations today. Meta&apos;s guide documents one that does.</span>
         <button
           type="button"
@@ -320,7 +322,7 @@ export function SearchGroundingDemo({ presets }: SearchGroundingDemoProps) {
       {replay ? (
         <div className="pg-final" ref={replayRef} role="region" aria-label="Meta's documented example, replayed">
           <p className="pg-section-label">Meta&apos;s documented example, replayed (no request sent)</p>
-          <Note>
+          <Note advanced>
             The example response on Meta&apos;s search grounding guide, run through the recipe&apos;s render_with_footnotes here in the page: markers go in
             back to front, and the source cited twice keeps the number [1]. The guide&apos;s offsets look illustrative, so some markers land mid-phrase,
             exactly where its end_index values point.

@@ -324,9 +324,9 @@ export function TranscribeLab({
   return (
     <div className={styles.lab}>
       {presets.length ? <GroupedPresets presets={presets} active={preset} onPick={(i) => void applyPreset(i)} disabled={running || loading} /> : null}
-      {active?.note ? <p className={styles.note}>{active.note}</p> : null}
+      {active?.note ? <p className={`${styles.note} pg-advanced`}>{active.note}</p> : null}
 
-      <div className="pg-bar">
+      <div className={endpoints.length > 1 ? "pg-bar" : "pg-bar pg-advanced"}>
         {endpoints.length > 1 ? (
           <Segmented<VoiceEndpoint>
             label="Endpoint"
@@ -347,17 +347,19 @@ export function TranscribeLab({
       </div>
 
       {microphone ? (
-        <Segmented<"file" | "mic">
-          size="sm"
-          label="Audio source"
-          value={source}
-          onChange={setSource}
-          disabled={running}
-          options={[
-            { value: "file", label: "Sample or file" },
-            { value: "mic", label: "Microphone" },
-          ]}
-        />
+        <div className="pg-advanced">
+          <Segmented<"file" | "mic">
+            size="sm"
+            label="Audio source"
+            value={source}
+            onChange={setSource}
+            disabled={running}
+            options={[
+              { value: "file", label: "Sample or file" },
+              { value: "mic", label: "Microphone" },
+            ]}
+          />
+        </div>
       ) : null}
       {source === "file" ? (
         <FilePicker
@@ -371,15 +373,17 @@ export function TranscribeLab({
           samples={SAMPLE_IDS}
           defaultSampleId={sampleId}
           maxAudioSeconds={MAX_TRANSCRIBE_SECONDS}
-          hint="The API takes mono 16-bit PCM WAV at 16 or 24 kHz only. Anything your browser plays is converted to 16 kHz mono WAV here first."
           disabled={running || loading}
         />
       ) : (
         <AudioRecorder onRecorded={setTake} maxSeconds={maxSeconds} disabled={running} />
       )}
-      {audio?.description ? <p className={styles.note}>What it says: {audio.description}</p> : null}
+      {source === "file" ? (
+        <p className={`${media.hint} pg-advanced`}>The API takes mono 16-bit PCM WAV at 16 or 24 kHz only. Anything your browser plays is converted to 16 kHz mono WAV here first.</p>
+      ) : null}
+      {audio?.description ? <p className={`${styles.note} pg-advanced`}>What it says: {audio.description}</p> : null}
 
-      <div className={styles.grid}>
+      <div className={`${styles.grid} pg-advanced`}>
         <div className={styles.stack}>
           <span className={styles.label} id={`${id}-mode`}>
             Mode
@@ -412,7 +416,7 @@ export function TranscribeLab({
         )}
       </div>
 
-      <div className={styles.grid}>
+      <div className={`${styles.grid} pg-advanced`}>
         <Field id={`${id}-kw`} label="Vocabulary biasing (keywords)" hint="Names, product terms and acronyms the model might mishear. Biasing doesn't guarantee a spelling.">
           <TextInput id={`${id}-kw`} value={keywords} placeholder="Acme Mobile, eSIM, 5G" onChange={(e) => edit(setKeywords)(e.target.value)} disabled={running} aria-describedby={`${id}-kw-hint`} />
         </Field>
@@ -425,7 +429,7 @@ export function TranscribeLab({
         </Field>
       </div>
       {
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           {suggested.length ? (
             <div className={media.chips} role="group" aria-label="Keywords for this sample">
               <span className={styles.note}>Add for this sample:</span>
@@ -442,7 +446,7 @@ export function TranscribeLab({
         </div>
       }
       {showLanguages ? (
-        <div className={media.chips} role="group" aria-label="Supported languages">
+        <div className={`${media.chips} pg-advanced`} role="group" aria-label="Supported languages">
           {VOICE_LANGUAGES.map((l) => (
             <button
               key={l}
@@ -462,7 +466,7 @@ export function TranscribeLab({
         </div>
       ) : null}
 
-      <div className={media.options}>
+      <div className={`${media.options} pg-advanced`}>
         {streaming ? (
           <span className={media.inline}>
             <span className={styles.label}>Partials</span>
@@ -499,7 +503,7 @@ export function TranscribeLab({
         ) : null}
       </div>
       {streaming ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           {partialMode === "CUMULATIVE"
             ? "CUMULATIVE: each partial is the whole current hypothesis and replaces the last one; it can revise earlier words."
             : "DELTA: each partial is only the new text, appended. The final: true event still holds the whole transcript."}
@@ -507,7 +511,7 @@ export function TranscribeLab({
         </p>
       ) : null}
       {mode !== "PUSH_TO_TALK" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Turns can come back empty in this mode too, so don&apos;t depend on them alone: the transcript always comes back.
         </p>
       ) : null}
@@ -528,7 +532,7 @@ export function TranscribeLab({
           disabled={!audio || tooLong || loading || (audio?.problems.length ?? 0) > 0}
         />
       </div>
-      <p className={styles.note}>
+      <p className={tooLong ? styles.note : `${styles.note} pg-advanced`}>
         {tooLong
           ? `This audio is longer than the ${maxSeconds} s this demo takes for ${endpoint === "realtime" ? "realtime" : "file transcription"}.`
           : `$0.18 per hour of audio, billed on what's processed and rounded down to whole seconds${
@@ -565,16 +569,22 @@ export function TranscribeLab({
         <Toggle id={`${id}-http`} label="Show the HTTP exchange" checked={showHttp} onChange={setShowHttp} />
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
       </div>
-      {showHttp ? <HttpExchange endpoint={ran?.endpoint ?? endpoint} settings={ran?.settings ?? settings} request={ran?.request ?? requestPart} accept={ran?.accept ?? acceptHeader} audio={ran?.audio ?? (audio ? { name: audio.name, bytes: audio.bytes, durationMs: audio.durationMs } : null)} result={result} view={view} /> : null}
+      {showHttp ? (
+        <div className="pg-advanced">
+          <HttpExchange endpoint={ran?.endpoint ?? endpoint} settings={ran?.settings ?? settings} request={ran?.request ?? requestPart} accept={ran?.accept ?? acceptHeader} audio={ran?.audio ?? (audio ? { name: audio.name, bytes: audio.bytes, durationMs: audio.durationMs } : null)} result={result} view={view} />
+        </div>
+      ) : null}
       {showCode ? (
-        endpoint === "realtime" ? (
-          <SnippetTabs
-            snippets={realtimeSnippets(settings, audio?.name && /\.wav$/i.test(audio.name) ? audio.name : "recording.wav")}
-            caption="A realtime client for these settings. The key goes in the handshake frame, not an Authorization header."
-          />
-        ) : (
-          <SnippetTabs snippets={transcribeSnippets(settings, audio?.name && /\.wav$/i.test(audio.name) ? audio.name : "recording.wav")} caption="The request Transcribe sends, with its Accept header" />
-        )
+        <div className="pg-advanced">
+          {endpoint === "realtime" ? (
+            <SnippetTabs
+              snippets={realtimeSnippets(settings, audio?.name && /\.wav$/i.test(audio.name) ? audio.name : "recording.wav")}
+              caption="A realtime client for these settings. The key goes in the handshake frame, not an Authorization header."
+            />
+          ) : (
+            <SnippetTabs snippets={transcribeSnippets(settings, audio?.name && /\.wav$/i.test(audio.name) ? audio.name : "recording.wav")} caption="The request Transcribe sends, with its Accept header" />
+          )}
+        </div>
       ) : null}
     </div>
   );

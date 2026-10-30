@@ -23,7 +23,7 @@ import {
   utf8Bytes,
   windowCheck,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/long-context";
-import { BarList, DemoTabs, Meter, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, BarList, DemoTabs, Meter, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { formatUsd } from "@/lib/docs/client/cost";
 import { fetchSample, sizeLabel } from "@/lib/docs/client/files";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
@@ -155,15 +155,17 @@ function MeasureThenAsk() {
             { value: "own", label: "Paste your own" },
           ]}
         />
-        <span className={styles.inlineLabel}>Copies</span>
-        <Segmented<Copies>
-          size="sm"
-          label="Copies of the document"
-          value={copies}
-          onChange={setCopies}
-          disabled={running}
-          options={(["1", "4", "16", "64"] as const).map((c) => ({ value: c, label: `x${c}` }))}
-        />
+        <Advanced>
+          <span className={styles.inlineLabel}>Copies</span>
+          <Segmented<Copies>
+            size="sm"
+            label="Copies of the document"
+            value={copies}
+            onChange={setCopies}
+            disabled={running}
+            options={(["1", "4", "16", "64"] as const).map((c) => ({ value: c, label: `x${c}` }))}
+          />
+        </Advanced>
       </div>
       {doc === "own" ? (
         <Field id={`${id}-own`} label="Your text">
@@ -171,7 +173,7 @@ function MeasureThenAsk() {
         </Field>
       ) : null}
       {doc === "alice" && alice.error ? <p className="pg-bad">{alice.error}</p> : null}
-      <Note>
+      <Note advanced={doc !== "own" && !tooBig}>
         {doc === "alice"
           ? "Lewis Carroll, chapters I to III (about 6,000 words, public domain)."
           : doc === "standin"
@@ -200,7 +202,7 @@ function MeasureThenAsk() {
           disabled={running}
         />
       </Field>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>Planned output (max_completion_tokens)</span>
         <Segmented<Planned>
           size="sm"
@@ -248,7 +250,7 @@ function MeasureThenAsk() {
           />
         </>
       ) : (
-        <Note>Count first: the Send button waits for a count of exactly what it will send.</Note>
+        <Note advanced>Count first: the Send button waits for a count of exactly what it will send.</Note>
       )}
       <ErrorBox error={runner.error} />
       {runner.state === "running" || runner.result ? (
@@ -307,7 +309,7 @@ function FullOrSummary() {
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Full text keeps every detail (use it when exact wording matters, such as code); a summary costs a fraction (use it when the gist is
         enough). The recipe counts both before it decides. Two counts, free.
       </p>
@@ -331,7 +333,7 @@ function FullOrSummary() {
           </Note>
         </>
       ) : null}
-      <details className="pg-raw">
+      <details className="pg-raw pg-advanced">
         <summary>The two texts</summary>
         <p className={styles.note}>Full: &quot;{standInDocument(2).trim()} ...&quot; (800 times)</p>
         <p className={styles.note}>Summary: &quot;{STAND_IN_SUMMARY}&quot;</p>
@@ -365,7 +367,7 @@ function SlidingWindow() {
   const reply = runner.result?.ok ? collectReply("chat", runner.result.json) : null;
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         The recipe&apos;s trim_history: always keep the instruction messages and drop the oldest turns past max_messages. Here, 20 made-up turns
         about numbers and a last question: {history.length} messages in all.
       </p>
@@ -400,7 +402,7 @@ function SlidingWindow() {
         ))}
       </ol>
       <div className={styles.spread}>
-        <button type="button" className="btn btn-sm btn-outline" onClick={() => void count()} disabled={counter.state === "running"}>
+        <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void count()} disabled={counter.state === "running"}>
           Count before and after (free)
         </button>
         <RunButton running={runner.state === "running"} onRun={() => void runner.run("chat/completions", { method: "POST", body })} onStop={runner.abort} label="Send the trimmed history" />
@@ -416,7 +418,7 @@ function SlidingWindow() {
         />
       ) : null}
       {reply ? <p className={styles.thought}>{reply.text.slice(0, 160)}</p> : null}
-      <Note>Trimming simply forgets: summarize older turns instead when their content still matters (the multi-turn context recipe).</Note>
+      <Note advanced>Trimming simply forgets: summarize older turns instead when their content still matters (the multi-turn context recipe).</Note>
       <div className="pg-actions">
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
       </div>
@@ -488,7 +490,7 @@ function PastTheWindow() {
           {err ? <Note>Measure first and compact on your side, by trimming or summarizing, so input plus planned output stays under the window.</Note> : null}
         </div>
       ) : null}
-      <Note>The count is free, and the rejected request generates nothing.</Note>
+      <Note advanced>The count is free, and the rejected request generates nothing.</Note>
     </div>
   );
 }

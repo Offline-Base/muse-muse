@@ -259,7 +259,7 @@ export function RecipeBrowser({ category, needs, recipes }: RecipeBrowserProps) 
                 </>
               ) : null}
             </dl>
-            <div className={styles.tight}>
+            <div className={`${styles.tight} pg-advanced`}>
               <span className={styles.label}>How it works</span>
               <ol className={styles.flow}>
                 {recipe.flow.map((f, i) => (

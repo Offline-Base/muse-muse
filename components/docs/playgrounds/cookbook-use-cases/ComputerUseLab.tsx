@@ -532,13 +532,17 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
           <Segmented<SceneId> label="Simulated screen" options={offered.map((s) => ({ value: s, label: SCENE_LABEL[s] }))} value={scene} onChange={pickScene} disabled={busy} />
         </div>
       ) : null}
-      {TASKS[scene].length > 1 ? <PresetPills presets={TASKS[scene].map((t, i) => ({ label: i === 0 ? "The task" : "Ask before agreeing" }))} active={TASKS[scene].indexOf(task)} onPick={(i) => setTask(TASKS[scene][i])} disabled={busy || started} /> : null}
+      {TASKS[scene].length > 1 ? (
+        <div className="pg-advanced">
+          <PresetPills presets={TASKS[scene].map((t, i) => ({ label: i === 0 ? "The task" : "Ask before agreeing" }))} active={TASKS[scene].indexOf(task)} onPick={(i) => setTask(TASKS[scene][i])} disabled={busy || started} />
+        </div>
+      ) : null}
       <label className="pg-label" htmlFor={`${id}-task`}>
         {protocol === "metacua" ? "Goal" : "Task"}
       </label>
       <TextArea id={`${id}-task`} rows={protocol === "cua" && scene === "mines" ? 5 : 2} value={task} onChange={(e) => setTask(e.target.value)} disabled={busy || started} />
 
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <ModelSelect
           kind="vision"
           value={model}
@@ -566,7 +570,7 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
         ) : null}
       </div>
       <ContributorNotice model={model} />
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         {protocol === "computer" ? <Toggle id={`${id}-trunc`} label='truncation: "auto"' checked={truncation} onChange={setTruncation} disabled={busy || started} /> : null}
         {protocol === "metacua" ? <Toggle id={`${id}-batch`} label="Batched actions (--batched-actions)" checked={batched} onChange={setBatched} disabled={busy || started} /> : null}
         {protocol === "cua" ? (
@@ -620,10 +624,10 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
           runner.abort();
           decision.current?.(false);
         }} label={started ? "Run to the end" : "Start and run"} disabled={!!finished || !task.trim()} />
-        <button type="button" className="btn btn-sm btn-outline" onClick={() => void loop(true)} disabled={busy || !!finished || !task.trim()}>
+        <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void loop(true)} disabled={busy || !!finished || !task.trim()}>
           {started ? "Next step" : "First step only"}
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => reset()} disabled={busy && !stopped.current}>
+        <button type="button" className={`btn btn-sm${started ? "" : " pg-advanced"}`} onClick={() => reset()} disabled={busy && !stopped.current}>
           Reset
         </button>
         {started ? (
@@ -633,9 +637,9 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
         ) : null}
       </div>
       {waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {waitNote}
-        </p>
+        </div>
       ) : null}
 
       <div className={styles.screenWrap} aria-label={`Simulated screen: ${SCENE_LABEL[scene]}`} role="img">
@@ -677,12 +681,12 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
                   {s.response?.usage ? <UsageLine model={s.model ?? model} usage={s.response.usage} /> : null}
                 </span>
               </p>
-              {s.error ? <p className="pg-hint pg-bad">{s.error.message}</p> : null}
-              {s.note ? <p className={s.status === "cutoff" ? "pg-hint pg-bad" : "pg-hint"}>{s.note}</p> : null}
+              {s.error ? <div className="pg-hint pg-bad">{s.error.message}</div> : null}
+              {s.note ? s.status === "cutoff" ? <div className="pg-hint pg-bad">{s.note}</div> : <p className="pg-hint">{s.note}</p> : null}
               {s.commentary && s.commentary !== "Handoff report" ? <p className={styles.commentary}>{s.commentary}</p> : null}
               {s.final ? <p className={styles.answer}>{s.final}</p> : null}
               {s.shot && s.actions.length ? (
-                <div className={styles.screenWrap} style={{ position: "relative" }}>
+                <div className={`${styles.screenWrap} pg-advanced`} style={{ position: "relative" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={s.shot} alt={`The screenshot the model acted on in step ${s.n}`} style={{ display: "block", width: "100%" }} />
                   <Markers actions={s.actions} />
@@ -733,7 +737,7 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
                 </div>
               ) : null}
               {s.effects.length ? (
-                <p className="pg-small">
+                <p className="pg-small pg-advanced">
                   <span className="pg-muted">In the simulator: </span>
                   {s.effects.join("; ")}
                 </p>

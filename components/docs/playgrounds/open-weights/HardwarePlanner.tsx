@@ -122,11 +122,12 @@ function SparkHardware() {
       {vendor === "nvidia" ? (
         <div className={styles.stack}>
           <div className={styles.options}>
-            <SegmentField<"gb300" | "b300"> label="Accelerator" value={gpu} options={[{ value: "gb300", label: "GB300 NVL (SM103)" }, { value: "b300", label: "B300 (SM100)" }]} onChange={setGpu} />
+            <SegmentField<"gb300" | "b300"> advanced label="Accelerator" value={gpu} options={[{ value: "gb300", label: "GB300 NVL (SM103)" }, { value: "b300", label: "B300 (SM100)" }]} onChange={setGpu} />
             <SegmentField<"4" | "8"> label="GPUs" value={count} options={[{ value: "4", label: "4" }, { value: "8", label: "8" }]} onChange={setCount} />
             <SegmentField<SparkCheckpoint> label="Checkpoint" value={checkpoint} options={[{ value: "nvfp4", label: "NVFP4" }, { value: "bf16", label: "BF16" }]} onChange={setCheckpoint} />
             <SegmentField<NvidiaRuntime> label="Runtime" value={runtime} options={[{ value: "trtllm", label: "TensorRT-LLM" }, { value: "sglang", label: "SGLang" }, { value: "vllm", label: "vLLM" }]} onChange={setRuntime} />
             <SelectField
+              advanced
               id={`${id}-ctx`}
               label={`Context length (${CTX_FLAG[runtime]})`}
               value={ctxChoice}
@@ -163,6 +164,7 @@ function SparkHardware() {
             <SelectField id={`${id}-variant`} label="Checkpoint and mode" value={variant} options={AMD_VARIANTS.map((x) => ({ value: x.id, label: x.label }))} onChange={(x) => setVariant(x as AmdVariant)} />
           </div>
           <Facts
+            advanced
             label="AMD configuration"
             items={[
               { label: "Checkpoint", value: <code>{amd.checkpoint}</code> },
@@ -262,6 +264,7 @@ function GlimmerHardware() {
           </div>
           {p ? (
             <Facts
+              advanced
               label={p.label}
               items={[
                 { label: "Memory", value: p.memory },
@@ -323,7 +326,7 @@ function GlimmerHardware() {
           <p className="pg-hint">
             One B300, no tensor parallelism: 2,048 input and 256 output tokens with a 32,768-token prefix cache (vLLM 0.1.dev19055, torch 2.13.0+cu130, CUDA 13.0). Throughput keeps rising past 64 requests while each request slows to under 20 tokens a second.
           </p>
-          <fieldset className={styles.row} style={{ margin: 0, padding: 0, border: 0 }}>
+          <fieldset className={`${styles.row} pg-advanced`} style={{ margin: 0, padding: 0, border: 0 }}>
             <legend className="pg-label" style={{ marginBottom: 6 }}>
               Concurrencies to profile
             </legend>

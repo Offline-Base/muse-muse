@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PresetPills } from "@/components/docs/kit/Field";
 import { ApiConsole } from "@/components/docs/playgrounds/common/ApiConsole";
 import { FileIdBar } from "@/components/docs/playgrounds/media/FileIdBar";
 import styles from "@/components/docs/playgrounds/media/demos.module.css";
+import { SimplePills } from "@/components/docs/playgrounds/media/SimplePills";
 import { EXAMPLE_ID } from "@/lib/docs/client/endpoints";
 import type { FileSlot, FormSpec } from "@/lib/docs/client/form";
 import { jsonSet } from "@/lib/docs/client/pointer";
@@ -61,8 +61,8 @@ export function PresetConsole({ presets, label = "Try" }: PresetConsoleProps) {
 
   return (
     <div className={`pg ${styles.lab}`}>
-      {presets.length > 1 ? <PresetPills label={label} presets={presets} active={at} onPick={setAt} /> : null}
-      {preset.note ? <p className={styles.note}>{preset.note}</p> : null}
+      {presets.length > 1 ? <SimplePills label={label} presets={presets} active={at} onPick={setAt} /> : null}
+      {preset.note ? <p className={`${styles.note} pg-advanced`}>{preset.note}</p> : null}
       {preset.fileId ? (
         <FileIdBar
           value={fileId}

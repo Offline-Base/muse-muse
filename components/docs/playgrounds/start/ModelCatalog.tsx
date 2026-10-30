@@ -124,7 +124,7 @@ function ModelDetails({ row }: { row: CatalogRow }) {
     return <p className="pg-hint">The models page doesn&apos;t describe {row.model.id} yet. Retrieve shows what the API says about it.</p>;
   }
   return (
-    <div className={styles.card}>
+    <div className={`${styles.card} pg-advanced`}>
       <p className={styles.cardTitle}>
         {card.label} <span className="pg-meta">{card.mode === "contributor" ? "Contributor mode" : "Standard mode"}</span>
       </p>

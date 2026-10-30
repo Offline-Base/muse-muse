@@ -3,7 +3,7 @@
 import { Fragment, useId, useState, type ReactNode } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { CodeView } from "@/components/docs/kit/CodeView";
-import { Toggle } from "@/components/docs/kit/Field";
+import { PresetPills, Toggle } from "@/components/docs/kit/Field";
 import styles from "@/components/docs/playgrounds/muse-code-cookbook/mcc.module.css";
 
 /**
@@ -73,7 +73,7 @@ export function Steps({ label, steps }: { label: string; steps: ReadonlyArray<{ 
             {s.label}
             <span className="sr-only">: {mark[s.state]}</span>
           </span>
-          <span>{s.detail}</span>
+          <span className="pg-advanced">{s.detail}</span>
         </li>
       ))}
     </ol>
@@ -140,6 +140,35 @@ export function Chip({ tone, children }: { tone?: "ok" | "bad" | "warn" | "accen
   return <span className={`${styles.chip} ${cls}`}>{children}</span>;
 }
 
+/**
+ * A preset row that keeps the docs panel's simple view to one row: the first `show` pills stay, the rest wait behind
+ * Options (pg-advanced). `active` and `onPick` use indexes into the whole list.
+ */
+export function FewPills({
+  show,
+  presets,
+  active,
+  onPick,
+  label,
+  disabled,
+}: {
+  show: number;
+  presets: ReadonlyArray<{ label: string }>;
+  active?: number | null;
+  onPick(index: number): void;
+  label?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <PresetPills label={label} presets={presets.slice(0, show)} active={active} onPick={onPick} disabled={disabled} />
+      <div className="pg-advanced">
+        <PresetPills label={label} presets={presets.slice(show)} active={typeof active === "number" ? active - show : active} onPick={(i) => onPick(i + show)} disabled={disabled} />
+      </div>
+    </>
+  );
+}
+
 /** The kit's "Show code" switch with the exact request a live call sends (or just sent). */
 export function ShowCode({ body, path = "responses", caption }: { body: unknown; path?: string; caption?: string }) {
   const id = useId();
@@ -154,11 +183,11 @@ export function ShowCode({ body, path = "responses", caption }: { body: unknown;
   );
 }
 
-export function Section({ title, children, id }: { title: string; children: ReactNode; id?: string }) {
+export function Section({ title, children, id, className }: { title: string; children: ReactNode; id?: string; className?: string }) {
   const auto = useId();
   const headingId = `${id ?? auto}-title`;
   return (
-    <section className={styles.section} aria-labelledby={headingId}>
+    <section className={className ? `${styles.section} ${className}` : styles.section} aria-labelledby={headingId}>
       <h3 className={styles.sectionTitle} id={headingId}>
         {title}
       </h3>

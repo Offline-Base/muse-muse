@@ -23,7 +23,7 @@ import {
 import { STAGED_WORKSPACE as WORKSPACE, stagedRequest } from "@/components/docs/playgrounds/muse-code-cookbook/logic/requests";
 import { initialTree, runCommand, toolResult, type Tree } from "@/components/docs/playgrounds/muse-code-cookbook/logic/sandbox";
 import { baseName, NO_PREFIX_COMMANDS, READ_ONLY_COMMANDS } from "@/components/docs/playgrounds/muse-code-cookbook/logic/shell";
-import { Argv, Chip, Section, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
+import { Argv, Chip, FewPills, Section, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
 import styles from "@/components/docs/playgrounds/muse-code-cookbook/mcc.module.css";
 
 /**
@@ -175,7 +175,7 @@ export function StageSplitter(props: StageSplitterProps) {
 
   return (
     <div className={`pg ${styles.stack}`}>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <Segmented<Mode>
           label="Approval mode"
           size="sm"
@@ -191,7 +191,7 @@ export function StageSplitter(props: StageSplitterProps) {
         />
         <code className={styles.mono}>{mode === "untrusted" ? "muse --approval-mode untrusted" : "muse"}</code>
       </div>
-      <PresetPills presets={COMMANDS} active={COMMANDS.findIndex((c) => c.command === command)} onPick={(i) => { setCommand(COMMANDS[i].command); restart(COMMANDS[i].command); }} />
+      <FewPills show={5} presets={COMMANDS} active={COMMANDS.findIndex((c) => c.command === command)} onPick={(i) => { setCommand(COMMANDS[i].command); restart(COMMANDS[i].command); }} />
       <div className={styles.row}>
         <label className="sr-only" htmlFor={`${id}-cmd`}>
           Compound command
@@ -202,7 +202,7 @@ export function StageSplitter(props: StageSplitterProps) {
         </button>
       </div>
 
-      <div className={styles.tight}>
+      <div className={`${styles.tight} pg-advanced`}>
         <div className={styles.spread}>
           <p className="pg-section-label">Rules you&apos;ve granted (approval-policy.json)</p>
           <PresetPills label="Add" presets={RULE_PRESETS} onPick={(i) => editRules([...rules, RULE_PRESETS[i].rule])} />
@@ -226,7 +226,7 @@ export function StageSplitter(props: StageSplitterProps) {
         )}
       </div>
 
-      {review.parsed.error ? <p className="pg-hint pg-bad">{review.parsed.error}</p> : null}
+      {review.parsed.error ? <div className="pg-hint pg-bad">{review.parsed.error}</div> : null}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <caption className="sr-only">Stages and how each one resolved</caption>
@@ -260,7 +260,7 @@ export function StageSplitter(props: StageSplitterProps) {
           </tbody>
         </table>
       </div>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Read-only set in this simulator: {READ_ONLY_COMMANDS.slice(0, 8).join(", ")} and a few more (the recipe names ls, cat, wc, grep and &quot;a small fixed set&quot;). Labels other than known_safe and unresolved are this demo&apos;s.
       </p>
 
@@ -268,7 +268,7 @@ export function StageSplitter(props: StageSplitterProps) {
       {review.status !== "pending" ? (
         <>
           <Verdict tone={review.status === "ran" ? (review.reviewed ? "ok" : "info") : "bad"} title={review.status === "ran" ? (review.reviewed ? "Every stage cleared: the original text ran once" : "Every stage cleared on its own: no prompt") : "Denied: nothing ran, not even the safe stages"}>
-            <p className={styles.note}>
+            <p className={`${styles.note} pg-advanced`}>
               {review.status === "ran"
                 ? "Muse Code executes the original command, unchanged, only after every stage is satisfied."
                 : "Fail-closed: one rejected (or denied) stage denies the whole action, because the command runs as one unit."}
@@ -282,7 +282,7 @@ export function StageSplitter(props: StageSplitterProps) {
       ) : null}
 
       {review.reviewed && review.status !== "pending" ? (
-        <Section title="Read the event log">
+        <Section title="Read the event log" className="pg-advanced">
           <Terminal
             title="The requested record's stages"
             lines={[{ text: `F=~/.local/share/muse/sessions/$(date +%Y/%m/%d)/*/session.jsonl`, tone: "cmd" }, { text: `jq -c 'select(.payload.event.kind=="requested" and (.payload.event.approval_subject.kind=="shell_command")) | ...' $F`, tone: "cmd" }, { text: jq.stages ?? "" }]}

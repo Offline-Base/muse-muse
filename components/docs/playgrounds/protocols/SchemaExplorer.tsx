@@ -118,6 +118,22 @@ const KIND_LABEL: Record<SchemaKind, string> = {
   alias: "type",
 };
 
+/** Simple view: the starter pills that fit one row of the panel show, at most this many pills and characters. */
+const SIMPLE_STARTERS = 5;
+const SIMPLE_STARTER_CHARS = 75;
+
+/** How many of these starter names show in the simple view; the rest wait behind Options. */
+function startersInRow(names: string[]): number {
+  let chars = 0;
+  let count = 0;
+  for (const name of names) {
+    chars += name.length;
+    if (count >= SIMPLE_STARTERS || chars > SIMPLE_STARTER_CHARS) break;
+    count++;
+  }
+  return count;
+}
+
 const PLACEHOLDER_SAMPLE = "data:application/octet-stream;base64,AAAA";
 
 /** The model an example runs on: the one picked, unless the example is limited to others (then its first). */
@@ -325,6 +341,8 @@ export function SchemaExplorer(props: SchemaExplorerProps) {
 
   const target = current ? props.targets[current.anchor] : undefined;
   const example = target ? examples.get(target.example) : undefined;
+  const starters = (props.starters ?? []).filter((a) => page.byAnchor[a]);
+  const startersShown = startersInRow(starters.map((a) => page.byAnchor[a].code));
 
   return (
     <div className={`pg ${styles.explorer}`}>
@@ -348,18 +366,20 @@ export function SchemaExplorer(props: SchemaExplorerProps) {
             }}
           />
         </span>
-        <Segmented<Filter>
-          label="Show"
-          size="sm"
-          options={[
-            { value: "all", label: "All" },
-            { value: "live", label: "Live examples" },
-            { value: "event", label: "Events" },
-            { value: "type", label: "Unions and enums" },
-          ]}
-          value={filter}
-          onChange={setFilter}
-        />
+        <div className="pg-advanced">
+          <Segmented<Filter>
+            label="Show"
+            size="sm"
+            options={[
+              { value: "all", label: "All" },
+              { value: "live", label: "Live examples" },
+              { value: "event", label: "Events" },
+              { value: "type", label: "Unions and enums" },
+            ]}
+            value={filter}
+            onChange={setFilter}
+          />
+        </div>
         <span className={styles.count} aria-live="polite">
           {shown.length === page.schemas.length ? `${page.schemas.length} schemas` : `${shown.length} of ${page.schemas.length}`}
         </span>
@@ -370,13 +390,11 @@ export function SchemaExplorer(props: SchemaExplorerProps) {
           <span className="pg-presets-label" aria-hidden>
             Start with
           </span>
-          {props.starters
-            .filter((a) => page.byAnchor[a])
-            .map((a) => (
-              <button key={a} type="button" className="pg-pill" aria-pressed={selected === a} onClick={() => select(a, true)}>
-                {page.byAnchor[a].code}
-              </button>
-            ))}
+          {starters.map((a, i) => (
+            <button key={a} type="button" className={i < startersShown ? "pg-pill" : "pg-pill pg-advanced"} aria-pressed={selected === a} onClick={() => select(a, true)}>
+              {page.byAnchor[a].code}
+            </button>
+          ))}
         </div>
       ) : null}
 
@@ -621,7 +639,7 @@ function SchemaDetail({
 
           {check ? <SchemaCheckView check={check} /> : live && !live.ready ? null : live ? <p className="pg-hint">Nothing at that spot this time: the model may have answered another way. Run it again.</p> : null}
 
-          <div className={styles.more}>
+          <div className={`${styles.more} pg-advanced`}>
             {live?.ready && live.value !== undefined ? (
               <details className="pg-raw">
                 <summary>The value checked</summary>
@@ -686,7 +704,7 @@ function SchemaDetail({
       ) : null}
 
       {usedBy.length ? (
-        <div className={styles.chips}>
+        <div className={`${styles.chips} pg-advanced`}>
           <span className="pg-muted">Used by</span>
           {usedBy.slice(0, 12).map((a) => (
             <button key={a} type="button" className="pg-pill" onClick={() => onSchema(a)}>
@@ -723,7 +741,7 @@ function SchemaCheckView({ check }: { check: SchemaCheck }) {
       {rows.length ? (
         <ul className="pg-checks" aria-label="Field by field">
           {rows.map((f) => (
-            <li key={f.field} className={f.status === "ok" ? "pg-check-ok" : "pg-check-bad"}>
+            <li key={f.field} className={f.status === "ok" ? "pg-check-ok pg-advanced" : "pg-check-bad"}>
               <span className="pg-check-mark" aria-hidden>
                 {f.status === "ok" ? "✓" : "✗"}
               </span>

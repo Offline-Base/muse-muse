@@ -11,7 +11,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { ToolCalls } from "@/components/docs/kit/StreamView";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
-import { StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { useToolLoop } from "@/components/docs/playgrounds/cookbook-fundamentals/useToolLoop";
 import { chatTools, type NeutralRequest, type ToolDef } from "@/lib/docs/client/body";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -118,7 +118,7 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={loop.busy} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={loop.busy} />
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <span className="pg-label">tool_choice</span>
           <Segmented<Choice>
             size="sm"
@@ -134,13 +134,15 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
           />
         </span>
       </div>
-      <Toggle
-        id={`${id}-skip`}
-        label="Send the tool result without the assistant message (the recipe's 400)"
-        checked={skipAssistant}
-        onChange={(v) => changeSetup(() => setSkipAssistant(v))}
-        disabled={loop.busy}
-      />
+      <Advanced>
+        <Toggle
+          id={`${id}-skip`}
+          label="Send the tool result without the assistant message (the recipe's 400)"
+          checked={skipAssistant}
+          onChange={(v) => changeSetup(() => setSkipAssistant(v))}
+          disabled={loop.busy}
+        />
+      </Advanced>
 
       <details className="pg-system">
         <summary>The tool: get_weather, with the recipe&apos;s canned readings</summary>
@@ -207,7 +209,7 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
               Reset
             </button>
           ) : null}
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => void loop.stepOnce()} disabled={loop.busy || finished || !prompt.trim()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void loop.stepOnce()} disabled={loop.busy || finished || !prompt.trim()}>
             {nextLabel}
           </button>
           <RunButton running={loop.busy} onRun={() => void loop.runAll()} onStop={loop.stop} label={loop.steps.length ? "Run to the end" : "Run the loop"} disabled={finished || !prompt.trim()} />
@@ -224,7 +226,7 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
                   Model call {s.call}
                   {!s.collected?.done ? <StatusPill tone="busy">Running</StatusPill> : s.collected.error ? <StatusPill tone="bad">{s.status ? `HTTP ${s.status}` : "Failed"}</StatusPill> : <StatusPill tone="ok">finish_reason: {s.collected.finishReason ?? "?"}</StatusPill>}
                 </p>
-                <p className="pg-step-meta">
+                <p className="pg-step-meta pg-advanced">
                   <span className="pg-muted">messages: {rolesOf(s.body)}</span>
                   {s.model ? <span className="pg-meta">{docsModelLabel(s.model)}</span> : null}
                   {s.elapsedMs ? <span className="pg-meta">{latencyLabel(s.elapsedMs)}</span> : null}
@@ -233,14 +235,16 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
                 {s.collected && requestedCalls(s).length ? (
                   <>
                     {s.collected.text ? <p className={styles.thought}>{s.collected.text}</p> : null}
-                    <ToolCalls calls={requestedCalls(s)} title={requestedCalls(s).length > 1 ? `${requestedCalls(s).length} tool calls in one turn` : "A tool call"} />
+                    <div className="pg-advanced">
+                      <ToolCalls calls={requestedCalls(s)} title={requestedCalls(s).length > 1 ? `${requestedCalls(s).length} tool calls in one turn` : "A tool call"} />
+                    </div>
                   </>
                 ) : s.collected?.done && !s.collected.error ? (
                   <p className={styles.textBlock}>{s.collected.text || "(no text)"}</p>
                 ) : s.collected?.error ? (
                   <p className="pg-bad">{s.collected.error.message}</p>
                 ) : null}
-                <details className="pg-raw">
+                <details className="pg-raw pg-advanced">
                   <summary>Request{s.collected?.final ? " and reply" : ""} JSON</summary>
                   <JsonTree value={s.body} openDepth={2} />
                   {s.collected?.final ? <JsonTree value={s.collected.final} openDepth={2} /> : null}

@@ -47,7 +47,7 @@ export function ConfigCheck({ requests, label = "Check this config live" }: { re
       ))}
       <div className="pg-bar">
         <RunButton running={busy} onRun={() => void run()} onStop={runner.abort} label={label} />
-        <span className="pg-hint">
+        <span className="pg-hint pg-advanced">
           {requests.length === 1 ? `One request to ${requests[0].path === "messages" ? "/v1/messages" : `/v1/${requests[0].path}`} on ${models[0]}` : `${requests.length} requests, one per model: ${models.join(", ")}`}
         </span>
       </div>

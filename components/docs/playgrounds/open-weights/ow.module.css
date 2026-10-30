@@ -66,6 +66,15 @@
   flex: 0 1 auto;
 }
 
+/* The presets past the first row, split off so the simple view can hide them: they read as the same list's next line. */
+.morePresets {
+  margin-top: -8px;
+}
+
+.morePresets :global(.pg-presets-label) {
+  display: none;
+}
+
 /* A set of like fields (host names) in even columns. */
 .fieldGrid {
   display: grid;

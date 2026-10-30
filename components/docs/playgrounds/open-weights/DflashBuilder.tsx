@@ -1,11 +1,10 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { PresetPills } from "@/components/docs/kit/Field";
 import { defaultsOf, type CodeStep, type DeployPlan, type Values } from "@/components/docs/playgrounds/open-weights/deploy";
 import { glimmerRuntime } from "@/components/docs/playgrounds/open-weights/deploy-glimmer";
 import { GGUF_FILES, GLIMMER_REPOS } from "@/components/docs/playgrounds/open-weights/facts";
-import { Issues, NumberField, SegmentField, SelectField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
+import { Issues, NumberField, PresetRows, SegmentField, SelectField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
 import styles from "@/components/docs/playgrounds/open-weights/ow.module.css";
 
 /**
@@ -92,8 +91,9 @@ export function DflashBuilder(_props: DflashBuilderProps) {
 
   return (
     <div className="pg">
-      <PresetPills
+      <PresetRows
         presets={PRESETS}
+        keep={4}
         active={preset}
         onPick={(i) => {
           const p = PRESETS[i];
@@ -102,7 +102,7 @@ export function DflashBuilder(_props: DflashBuilderProps) {
           setValues((all) => ({ ...all, [p.runtime]: { ...all[p.runtime], ...p.values } }));
         }}
       />
-      <div className={styles.tableWrap}>
+      <div className={`${styles.tableWrap} pg-advanced`}>
         <table className={styles.table}>
           <caption className="sr-only">The two DFlash drafts</caption>
           <thead>
@@ -142,7 +142,7 @@ export function DflashBuilder(_props: DflashBuilderProps) {
       {runtime === "llamacpp" ? (
         <div className={styles.options}>
           <SegmentField<string> label="Target" value={String(v.file)} options={[{ value: "kquant17", label: "K-Quant-17GB" }, { value: "dynamic", label: "Dynamic Q4_K_XL" }]} onChange={(x) => set("file", x)} />
-          <NumberField id={`${id}-nmax`} label="--spec-draft-n-max" value={String(v.draftMax ?? 4)} min={1} max={16} step={1} onChange={(x) => set("draftMax", x)} hint="The page's value is 4." />
+          <NumberField advanced id={`${id}-nmax`} label="--spec-draft-n-max" value={String(v.draftMax ?? 4)} min={1} max={16} step={1} onChange={(x) => set("draftMax", x)} hint="The page's value is 4." />
         </div>
       ) : null}
       {runtime === "sglang" ? (
@@ -159,8 +159,9 @@ export function DflashBuilder(_props: DflashBuilderProps) {
             onChange={(x) => set("format", x)}
           />
           <SegmentField<string> label="Draft" value={String(v.draft)} options={[{ value: "assistant", label: "assistant checkpoint" }, { value: "gguf", label: "GGUF draft" }]} onChange={(x) => set("draft", x)} />
-          <NumberField id={`${id}-block`} label="--speculative-dflash-block-size" value={String(v.block ?? 5)} min={2} max={16} step={1} onChange={(x) => set("block", x)} hint="The page's value is 5." />
+          <NumberField advanced id={`${id}-block`} label="--speculative-dflash-block-size" value={String(v.block ?? 5)} min={2} max={16} step={1} onChange={(x) => set("block", x)} hint="The page's value is 5." />
           <SelectField
+            advanced
             id={`${id}-hw`}
             label="Hardware"
             value={String(v.hardware)}
@@ -178,8 +179,8 @@ export function DflashBuilder(_props: DflashBuilderProps) {
         <div className={styles.options}>
           <SegmentField<string> label="Program" value={String(v.source)} options={[{ value: "prebuilt", label: "Prebuilt dflash export" }, { value: "export", label: "Export it yourself" }]} onChange={(x) => set("source", x)} />
           <SegmentField<string> label="Backend" value={String(v.backend)} options={[{ value: "cuda", label: "CUDA" }, { value: "mlx", label: "Apple silicon" }]} onChange={(x) => set("backend", x)} />
-          <SegmentField<string> label="Modality" value={String(v.modality)} options={[{ value: "text", label: "Text" }, { value: "text-image", label: "Text and image" }]} onChange={(x) => set("modality", x)} />
-          {v.source !== "export" ? <SegmentField<string> label="Quantization" value={String(v.quant)} options={[{ value: "k-quant-17G", label: "k-quant-17G" }, { value: "k-quant-dynamic", label: "k-quant-dynamic" }]} onChange={(x) => set("quant", x)} /> : null}
+          <SegmentField<string> advanced label="Modality" value={String(v.modality)} options={[{ value: "text", label: "Text" }, { value: "text-image", label: "Text and image" }]} onChange={(x) => set("modality", x)} />
+          {v.source !== "export" ? <SegmentField<string> advanced label="Quantization" value={String(v.quant)} options={[{ value: "k-quant-17G", label: "k-quant-17G" }, { value: "k-quant-dynamic", label: "k-quant-dynamic" }]} onChange={(x) => set("quant", x)} /> : null}
           <p className="pg-hint" style={{ gridColumn: "1 / -1" }}>
             Block length is chosen at serve time within the exported range: {v.backend === "mlx" ? "[2, 16] on MLX." : "[2, 4] on CUDA, with the draft count capped at 3."}
           </p>

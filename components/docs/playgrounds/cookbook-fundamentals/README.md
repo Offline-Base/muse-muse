@@ -22,7 +22,7 @@ The live demos for the cookbook index, its API fundamentals and agent patterns p
 | `EditsDemo` | search-and-replace-edits | none |
 | `LongContextDemo` | long-context | none |
 
-`ui.tsx` has the shared pieces (`DemoTabs` keeps every panel mounted, `Stats`, `BarList`, `Meter`, `Parts`, `StatusPill`, `CodeLines`, `DiffView`); `useToolLoop.ts` is the kit's tool loop as a hook, with custom tools, guards, a body transform, and retries of Meta's occasional "referenced response not found" 400 on a continuation (`shouldRetryReference`; up to three, after 1.2, 2.5 and 5 s, where the kit's ToolLoopPlayground tries once).
+`ui.tsx` has the shared pieces (`DemoTabs` keeps every panel mounted, `Stats`, `BarList`, `Meter`, `Parts`, `StatusPill`, `CodeLines`, `DiffView`, and for the panel's simple view `Note advanced`, `Advanced` and `SplitPills`, which keep a note, a control or the extra pills behind Options); `useToolLoop.ts` is the kit's tool loop as a hook, with custom tools, guards, a body transform, and retries of Meta's occasional "referenced response not found" 400 on a continuation (`shouldRetryReference`; up to three, after 1.2, 2.5 and 5 s, where the kit's ToolLoopPlayground tries once).
 
 The copy prompts (`agentPrompt` in `lib/docs/demos/cookbook-fundamentals.ts`) keep every snippet to 1,000 characters and leave room for the longest agent introduction, so "Include what I just ran" with an agent loop's large recorded turn trims only the record (`__tests__/prompts.test.ts` checks every page, agent and language). Curl bodies go through `curl()`, which escapes single quotes.
 

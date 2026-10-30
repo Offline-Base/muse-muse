@@ -7,7 +7,6 @@ import {
   ErrorBox,
   Field,
   ModelSelect,
-  PresetPills,
   ResponseView,
   RunButton,
   Segmented,
@@ -166,15 +165,27 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
           }}
         />
       </Field>
-      <PresetPills
-        presets={presets}
-        active={preset}
-        onPick={(i) => {
-          setCommand(presets[i].command);
-          setPreset(i);
-          changed();
-        }}
-      />
+      {/* The kit's PresetPills, drawn here so the pills past the fifth can wait behind Options. */}
+      <div className="pg-presets" role="group" aria-label="Try">
+        <span className="pg-presets-label" aria-hidden>
+          Try
+        </span>
+        {presets.map((p, i) => (
+          <button
+            key={`${i}-${p.label}`}
+            type="button"
+            className={i < 5 ? "pg-pill" : "pg-pill pg-advanced"}
+            aria-pressed={preset === i}
+            onClick={() => {
+              setCommand(presets[i].command);
+              setPreset(i);
+              changed();
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
 
       <div className="pg-bar">
         <div className="pg-field">
@@ -192,6 +203,7 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
         </div>
         <SelectField<ApprovalMode>
           id={`${id}-mode`}
+          className="pg-advanced"
           label="--approval-mode"
           value={mode}
           disabled={fixedPosture}
@@ -207,6 +219,7 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
         />
         <SelectField<NetworkMode>
           id={`${id}-net`}
+          className="pg-advanced"
           label="--sandbox-network"
           value={network}
           disabled={profile === "unrestricted" || disableSandbox}
@@ -221,7 +234,7 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
           ]}
         />
       </div>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         {profile === "auto-review" ? (
           <Toggle
             id={`${id}-judge`}
@@ -286,7 +299,8 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
                   <span className={styles.stageCmd}>{v.stage.text}</span>
                   <Chip tone={s.tone}>{s.label}</Chip>
                 </span>
-                <span className={styles.stageWhy}>
+                {/* A stage that goes through needs no explaining until Options is on; one that stops keeps its reason. */}
+                <span className={`${styles.stageWhy}${v.status === "pass" || v.status === "allowed" || v.status === "not-reached" ? " pg-advanced" : ""}`}>
                   <Prose text={v.reason} />
                 </span>
                 {v.status === "hold" ? (
@@ -303,9 +317,9 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
                       </button>
                     </div>
                     {refusal ? (
-                      <p className="pg-hint pg-bad" role="alert">
+                      <div className="pg-hint pg-bad" role="alert">
                         {refusal}
-                      </p>
+                      </div>
                     ) : null}
                     {v.decider === "judge" ? (
                       <JudgeCheck
@@ -351,7 +365,7 @@ export function ApprovalSimulator({ command: startCommand, presets: presetProp, 
       ) : null}
 
       {launch ? (
-        <div className={styles.grid2}>
+        <div className={`${styles.grid2} pg-advanced`}>
           <CodeBlock code={launch} label="Launch with this posture" />
           {settingsSnippet ? <CodeBlock code={settingsSnippet} label="~/.config/muse/settings.json" syntax="json" /> : null}
         </div>
@@ -406,12 +420,12 @@ function JudgeCheck({
   return (
     <div className={`${styles.card} ${styles.cardMuted} ${styles.spaced}`}>
       <p className={styles.cardTitle}>Auto-review sends it to the approval judge first</p>
-      <p className="pg-small">
+      <p className="pg-small pg-advanced">
         Muse Code&apos;s reviewer isn&apos;t published. This stand-in asks a model on the API to review the stage the same way: it clears what it
         judges safe for the task and hands the rest to you. Turn the judge off with{" "}
         <code className={`${styles.code} ${styles.nowrap}`}>--approval-judge off</code> to decide every review yourself.
       </p>
-      <Field id={`${id}-task`} label="What the agent is working on">
+      <Field id={`${id}-task`} label="What the agent is working on" className="pg-advanced">
         <TextInput id={`${id}-task`} value={task} onChange={(e) => onTask(e.target.value)} />
       </Field>
       <div className="pg-bar">

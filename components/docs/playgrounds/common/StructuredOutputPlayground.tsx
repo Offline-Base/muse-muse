@@ -3,10 +3,11 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { EffortSelect, Field, PresetPills, runOnModEnter, Segmented, TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
+import { EffortSelect, Field, runOnModEnter, Segmented, TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { JsonEditor } from "@/components/docs/kit/JsonEditor";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { StreamView } from "@/components/docs/kit/StreamView";
@@ -158,26 +159,32 @@ export function StructuredOutputPlayground(props: StructuredOutputPlaygroundProp
         ) : null}
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
-        <Toggle id={`${id}-strict`} label={<code>strict</code>} checked={strict} onChange={setStrict} disabled={running} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-strict`} label={<code>strict</code>} checked={strict} onChange={setStrict} disabled={running} />
+        </span>
         <Toggle id={`${id}-stream`} label="Stream" checked={stream} onChange={setStream} disabled={running} />
       </div>
 
-      {props.presets.length > 1 ? <PresetPills label="Schema" presets={props.presets} active={active} onPick={pick} disabled={running} /> : null}
+      {props.presets.length > 1 ? <PresetRow label="Schema" presets={props.presets} active={active} onPick={pick} disabled={running} /> : null}
 
-      <div className="pg-split">
+      {/* auto-fit: with the schema column behind Options, the prompt column takes the whole row. */}
+      <div className="pg-split" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))" }}>
         <div className="pg-col">
-          <Field id={`${id}-name`} label="Schema name">
-            <TextInput id={`${id}-name`} value={name} onChange={(e) => setName(e.target.value)} disabled={running} spellCheck={false} />
-          </Field>
-          <JsonEditor
-            id={`${id}-schema`}
-            label="JSON Schema"
-            value={schemaText}
-            onChange={setSchemaText}
-            resetTo={baseSchema}
-            rows={14}
-            disabled={running}
-          />
+          {/* The preset's schema runs as it is; a schema that doesn't parse stays in view, since it stops Run. */}
+          <div className={`pg-col${schemaObj ? " pg-advanced" : ""}`}>
+            <Field id={`${id}-name`} label="Schema name">
+              <TextInput id={`${id}-name`} value={name} onChange={(e) => setName(e.target.value)} disabled={running} spellCheck={false} />
+            </Field>
+            <JsonEditor
+              id={`${id}-schema`}
+              label="JSON Schema"
+              value={schemaText}
+              onChange={setSchemaText}
+              resetTo={baseSchema}
+              rows={14}
+              disabled={running}
+            />
+          </div>
           {problems.length ? (
             <div className="pg-warn" role="note">
               <p className="pg-warn-title">With strict on, the API would reject this schema (HTTP 400):</p>
@@ -191,9 +198,11 @@ export function StructuredOutputPlayground(props: StructuredOutputPlaygroundProp
         </div>
         <div className="pg-col">
           {system || props.presets.some((p) => p.system) ? (
-            <Field id={`${id}-system`} label="Instructions">
-              <TextArea id={`${id}-system`} rows={2} value={system} onChange={(e) => setSystem(e.target.value)} disabled={running} />
-            </Field>
+            <div className="pg-col pg-advanced">
+              <Field id={`${id}-system`} label="Instructions">
+                <TextArea id={`${id}-system`} rows={2} value={system} onChange={(e) => setSystem(e.target.value)} disabled={running} />
+              </Field>
+            </div>
           ) : null}
           <Field id={`${id}-prompt`} label="Prompt">
             <TextArea

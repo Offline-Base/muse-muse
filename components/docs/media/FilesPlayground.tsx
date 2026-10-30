@@ -215,7 +215,7 @@ export function FilesPlayground({
           1. Upload a file
         </h3>
         <FilePicker accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,audio/wav,audio/mpeg,application/pdf,text/plain,application/json" value={file} onChange={setFile} defaultSampleId={sampleId} preview="compact" prepare="none" disabled={busy} />
-        <div className={styles.options}>
+        <div className={`${styles.options} pg-advanced`}>
           <span className={styles.inline}>
             <span className={styles.label}>purpose</span>
             <code>user_data</code>
@@ -228,7 +228,7 @@ export function FilesPlayground({
           ) : null}
         </div>
         {/* The docs proxy sets every upload's expiry to an hour (lib/docs/proxy/rewrite.ts), whatever the form says. */}
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Live demo uploads expire an hour after upload{expiry && expires && seconds !== "3600" ? ", so the docs send 3,600 s here; the code keeps your choice" : ""}.
         </p>
         <div className={styles.row}>
@@ -246,7 +246,7 @@ export function FilesPlayground({
           <button type="button" className="btn btn-outline btn-sm" onClick={() => void doList()} disabled={busy}>
             {list.state === "running" ? "Listing..." : "List files"}
           </button>
-          <span className={styles.note}>Lists only files you uploaded here; they&apos;re deleted after an hour.</span>
+          <span className={`${styles.note} pg-advanced`}>Lists only files you uploaded here; they&apos;re deleted after an hour.</span>
         </div>
         <ErrorBox error={list.error} />
         {rows ? (
@@ -338,7 +338,7 @@ export function FilesPlayground({
         <Field id={`${id}-q`} label="Question">
           <TextArea id={`${id}-q`} value={questionText} rows={2} onChange={(e) => setAsk(e.target.value)} disabled={busy} />
         </Field>
-        <span className={styles.inline}>
+        <span className={`${styles.inline} pg-advanced`}>
           <span className={styles.label}>Part</span>
           <Segmented<FilePart | "auto">
             size="sm"

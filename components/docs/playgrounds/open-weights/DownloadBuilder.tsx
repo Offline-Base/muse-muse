@@ -4,7 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { Field, PresetPills, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { SPARK_CHECKPOINTS, gb, pteExport, type OpenModel, type PteBackend, type PteDecoding, type PteModality, type PteQuant, type SparkCheckpoint } from "@/components/docs/playgrounds/open-weights/facts";
 import { GLIMMER_ITEMS, glimmerDownload, sparkDownload, type GlimmerItem, type VerifyMode } from "@/components/docs/playgrounds/open-weights/download";
-import { Facts, Issues, SegmentField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
+import { Facts, Issues, PresetRows, SegmentField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
 import styles from "@/components/docs/playgrounds/open-weights/ow.module.css";
 
 /**
@@ -83,6 +83,7 @@ function SparkDownload() {
           }}
         />
         <SegmentField<VerifyMode>
+          advanced
           label="Verify"
           value={verify}
           options={[
@@ -94,11 +95,12 @@ function SparkDownload() {
             setVerify(x);
           }}
         />
-        <Field id={`${id}-folder`} label="Folder" hint="Pass this path wherever a command uses the repository ID.">
+        <Field id={`${id}-folder`} label="Folder" hint="Pass this path wherever a command uses the repository ID." className="pg-advanced">
           <TextInput id={`${id}-folder`} value={folder} onChange={(e) => setFolder(e.target.value)} spellCheck={false} aria-describedby={`${id}-folder-hint`} />
         </Field>
       </div>
       <Facts
+        advanced
         label={`${c.label} checkpoint`}
         items={[
           { label: "Repository", value: <code>{c.repo}</code> },
@@ -140,15 +142,16 @@ function GlimmerDownload() {
 
   return (
     <div className="pg">
-      <PresetPills
+      <PresetRows
         presets={presets}
+        keep={4}
         active={preset}
         onPick={(i) => {
           setPreset(i);
           setItems(presets[i].items);
         }}
       />
-      <fieldset className={styles.card} style={{ margin: 0 }}>
+      <fieldset className={`${styles.card} pg-advanced`} style={{ margin: 0 }}>
         <legend className="pg-label" style={{ padding: "0 4px" }}>
           What to download
         </legend>
@@ -162,7 +165,7 @@ function GlimmerDownload() {
         </div>
       </fieldset>
       {items.includes("pte") ? (
-        <div className={styles.options}>
+        <div className={`${styles.options} pg-advanced`}>
           <SegmentField<PteQuant> label="Quantization" value={quant} options={[{ value: "k-quant-17G", label: "k-quant-17G" }, { value: "k-quant-dynamic", label: "k-quant-dynamic" }]} onChange={setQuant} hint="17G targets 24 GB of VRAM; dynamic targets 32 GB." />
           <SegmentField<PteModality> label="Modality" value={modality} options={[{ value: "text", label: "text" }, { value: "text-image", label: "text-image" }]} onChange={setModality} />
           <SegmentField<PteDecoding> label="Decoding" value={decoding} options={[{ value: "solo", label: "solo" }, { value: "dflash", label: "dflash" }]} onChange={setDecoding} />
@@ -172,7 +175,9 @@ function GlimmerDownload() {
           </p>
         </div>
       ) : null}
-      <Toggle id={`${id}-verify`} label="Add SHA-256 checks against the Hub" checked={verify} onChange={setVerify} />
+      <div className="pg-advanced">
+        <Toggle id={`${id}-verify`} label="Add SHA-256 checks against the Hub" checked={verify} onChange={setVerify} />
+      </div>
       <Status tone={plan.warnings.length ? "warn" : "ok"}>{plan.summary}</Status>
       <Issues warnings={plan.warnings} notes={plan.notes} />
       <Steps steps={plan.steps} label="Download steps" />

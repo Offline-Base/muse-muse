@@ -160,9 +160,10 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
                   options={[{ value: "", label: "Not set (Auto-review)" }, ...PROFILE_IDS.map((p) => ({ value: p, label: p }))]}
                 />
                 <NumberField id={`${idBase}-ret`} label="session_retention_days" value={draft.retentionDays} min={1} onChange={(retentionDays) => patch({ retentionDays })} hint="Empty keeps sessions forever." />
-                <NumberField id={`${idBase}-cap`} label="agents.execution_capacity" value={draft.executionCapacity} min={1} max={64} onChange={(executionCapacity) => patch({ executionCapacity })} hint="1-64; 8 by default." />
+                <NumberField id={`${idBase}-cap`} label="agents.execution_capacity" className="pg-advanced" value={draft.executionCapacity} min={1} max={64} onChange={(executionCapacity) => patch({ executionCapacity })} hint="1-64; 8 by default." />
                 <SelectField
                   id={`${idBase}-bg`}
+                  className="pg-advanced"
                   label="tui.terminal_background"
                   value={draft.terminalBackground}
                   onChange={(v) => patch({ terminalBackground: v as SettingsDraft["terminalBackground"] })}
@@ -174,16 +175,16 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
                   ]}
                 />
               </div>
-              <div className="pg-bar">
+              <div className="pg-bar pg-advanced">
                 <Check id={`${idBase}-schema`} label={<>Include &quot;schema_version&quot;: 1 (required)</>} checked={draft.schemaVersion} onChange={(schemaVersion) => patch({ schemaVersion })} />
                 <Check id={`${idBase}-reason`} label="show_reasoning" checked={draft.showReasoning} onChange={(showReasoning) => patch({ showReasoning })} />
                 <Check id={`${idBase}-oauth`} label="Turn off MCP OAuth client registration" checked={!draft.oauthDynamicRegistration} onChange={(off) => patch({ oauthDynamicRegistration: !off })} />
               </div>
-              <Field id={`${idBase}-managed`} label="managed_hooks_path (centrally administered hooks)">
+              <Field id={`${idBase}-managed`} label="managed_hooks_path (centrally administered hooks)" className="pg-advanced">
                 <TextInput id={`${idBase}-managed`} className="pg-code-input" value={draft.managedHooksPath} placeholder="/etc/muse/hooks.json" spellCheck={false} onChange={(e) => patch({ managedHooksPath: e.target.value })} />
               </Field>
 
-              <div className="pg-col">
+              <div className="pg-col pg-advanced">
                 <p className="pg-section-label">MCP servers</p>
                 {draft.mcpServers.map((s, i) => (
                   <McpServerEditor
@@ -253,7 +254,7 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
               </tbody>
             </table>
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Toggle id={`${idBase}-trust`} label="Workspace trusted" checked={trusted} onChange={setTrusted} />
             <Toggle id={`${idBase}-user`} label="I have user rules" checked={userRules} onChange={setUserRules} />
           </div>
@@ -287,15 +288,16 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
               )}
             </div>
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <div className="pg-field">
               <span className="pg-label">Start an AGENTS.md</span>
               <Segmented label="Template" size="sm" value={template} onChange={setTemplate} options={AGENTS_TEMPLATES.map((t) => ({ value: t.id, label: t.label }))} />
             </div>
           </div>
-          <CodeBlock code={AGENTS_TEMPLATES.find((t) => t.id === template)?.body ?? ""} label="AGENTS.md" syntax="markdown" />
-          <CodeBlock code={"muse init            # write AGENTS.md in the current directory\nmuse init --dry-run  # show what it would write, change nothing"} label="Or let Muse Code seed it" />
+          <CodeBlock className="pg-advanced" code={AGENTS_TEMPLATES.find((t) => t.id === template)?.body ?? ""} label="AGENTS.md" syntax="markdown" />
+          <CodeBlock className="pg-advanced" code={"muse init            # write AGENTS.md in the current directory\nmuse init --dry-run  # show what it would write, change nothing"} label="Or let Muse Code seed it" />
           <Notes
+            className="pg-advanced"
             items={[
               "muse init writes a single AGENTS.md and nothing else, and doesn't touch settings.json. It stops if AGENTS.md exists; --force overwrites it completely.",
               "Conservative by default: it won't commit, amend or push unless you ask in the session, keeps scratch files outside your checkout, and reverts incidental edits.",
@@ -318,6 +320,7 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
           </div>
           <Problems warnings={memory.warnings} />
           <Notes
+            className="pg-advanced"
             items={[
               "Record durable, project-specific facts the agent could get wrong from general knowledge: deploy steps, why a workaround exists, a service's unusual behavior.",
               "At session start Muse Code injects MEMORY.md and the other files' paths (not their contents); the agent reads files on demand, and a background observer can surface a relevant note.",
@@ -345,12 +348,12 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
               <TextInput id={`${idBase}-model`} className="pg-code-input" value={launch.model} placeholder="muse-spark-1.2" spellCheck={false} onChange={(e) => lp({ model: e.target.value })} />
             </Field>
             <SelectField id={`${idBase}-effort`} label="--reasoning-effort" value={launch.effort} onChange={(v) => lp({ effort: v as LaunchDraft["effort"] })} options={[{ value: "", label: "Default (high)" }, ...EFFORT_LEVELS.map((e) => ({ value: e, label: e }))]} />
-            <SelectField id={`${idBase}-amode`} label="--approval-mode" value={launch.approvalMode} onChange={(v) => lp({ approvalMode: v as LaunchDraft["approvalMode"] })} options={[{ value: "", label: "Default (on-request)" }, { value: "on-request", label: "on-request" }, { value: "untrusted", label: "untrusted" }, { value: "never", label: "never" }]} />
-            <SelectField id={`${idBase}-judge`} label="--approval-judge" value={launch.approvalJudge} onChange={(v) => lp({ approvalJudge: v as LaunchDraft["approvalJudge"] })} options={[{ value: "", label: "Default" }, { value: "on", label: "on" }, { value: "off", label: "off" }]} />
-            <SelectField id={`${idBase}-net`} label="--sandbox-network" value={launch.sandboxNetwork} onChange={(v) => lp({ sandboxNetwork: v as LaunchDraft["sandboxNetwork"] })} options={[{ value: "", label: "Default (proxy-only)" }, { value: "proxy-only", label: "proxy-only" }, { value: "restricted", label: "restricted" }, { value: "unrestricted", label: "unrestricted" }]} />
-            <SelectField id={`${idBase}-contrib`} label="--contributor-mode" value={launch.contributor} onChange={(v) => lp({ contributor: v as LaunchDraft["contributor"] })} options={[{ value: "", label: "Saved setting" }, { value: "on", label: "on" }, { value: "off", label: "off" }]} />
+            <SelectField id={`${idBase}-amode`} className="pg-advanced" label="--approval-mode" value={launch.approvalMode} onChange={(v) => lp({ approvalMode: v as LaunchDraft["approvalMode"] })} options={[{ value: "", label: "Default (on-request)" }, { value: "on-request", label: "on-request" }, { value: "untrusted", label: "untrusted" }, { value: "never", label: "never" }]} />
+            <SelectField id={`${idBase}-judge`} className="pg-advanced" label="--approval-judge" value={launch.approvalJudge} onChange={(v) => lp({ approvalJudge: v as LaunchDraft["approvalJudge"] })} options={[{ value: "", label: "Default" }, { value: "on", label: "on" }, { value: "off", label: "off" }]} />
+            <SelectField id={`${idBase}-net`} className="pg-advanced" label="--sandbox-network" value={launch.sandboxNetwork} onChange={(v) => lp({ sandboxNetwork: v as LaunchDraft["sandboxNetwork"] })} options={[{ value: "", label: "Default (proxy-only)" }, { value: "proxy-only", label: "proxy-only" }, { value: "restricted", label: "restricted" }, { value: "unrestricted", label: "unrestricted" }]} />
+            <SelectField id={`${idBase}-contrib`} className="pg-advanced" label="--contributor-mode" value={launch.contributor} onChange={(v) => lp({ contributor: v as LaunchDraft["contributor"] })} options={[{ value: "", label: "Saved setting" }, { value: "on", label: "on" }, { value: "off", label: "off" }]} />
           </div>
-          <div className={styles.checkGrid}>
+          <div className={`${styles.checkGrid} pg-advanced`}>
             <Check id={`${idBase}-yolo`} label="--yolo" checked={launch.yolo} onChange={(yolo) => lp({ yolo })} />
             <Check id={`${idBase}-da`} label="--disable-approval" checked={launch.disableApproval} onChange={(disableApproval) => lp({ disableApproval })} />
             <Check id={`${idBase}-ds`} label="--disable-sandbox" checked={launch.disableSandbox} onChange={(disableSandbox) => lp({ disableSandbox })} />
@@ -358,7 +361,7 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
             <Check id={`${idBase}-nsl`} label="--no-session-log" checked={launch.noSessionLog} onChange={(noSessionLog) => lp({ noSessionLog })} />
             <Check id={`${idBase}-trace`} label="MUSE_TRANSPORT_TRACE=1 (debug provider calls)" checked={launch.trace} onChange={(trace) => lp({ trace })} />
           </div>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <Field id={`${idBase}-ws`} label="--workspace" className={styles.narrow}>
               <TextInput id={`${idBase}-ws`} className="pg-code-input" value={launch.workspace} placeholder="./packages/api" spellCheck={false} onChange={(e) => lp({ workspace: e.target.value })} />
             </Field>
@@ -369,11 +372,13 @@ export function SettingsBuilder(_props: SettingsBuilderProps) {
               <Field id={`${idBase}-prompt`} label="Prompt" className={styles.grow}>
                 <TextInput id={`${idBase}-prompt`} value={launch.prompt} onChange={(e) => lp({ prompt: e.target.value })} disabled={!!launch.promptFile.trim()} />
               </Field>
-              <Field id={`${idBase}-pf`} label="--prompt-file" className={styles.narrow}>
+              <Field id={`${idBase}-pf`} label="--prompt-file" className={`${styles.narrow} pg-advanced`}>
                 <TextInput id={`${idBase}-pf`} className="pg-code-input" value={launch.promptFile} placeholder="./task.txt" spellCheck={false} onChange={(e) => lp({ promptFile: e.target.value })} />
               </Field>
-              <NumberField id={`${idBase}-steps`} label="--max-model-steps" value={launch.maxSteps} min={1} onChange={(maxSteps) => lp({ maxSteps })} />
-              <Toggle id={`${idBase}-json`} label="--json" checked={launch.json} onChange={(json) => lp({ json })} />
+              <NumberField id={`${idBase}-steps`} className="pg-advanced" label="--max-model-steps" value={launch.maxSteps} min={1} onChange={(maxSteps) => lp({ maxSteps })} />
+              <div className="pg-advanced">
+                <Toggle id={`${idBase}-json`} label="--json" checked={launch.json} onChange={(json) => lp({ json })} />
+              </div>
             </div>
           ) : (
             <p className="pg-hint">

@@ -93,8 +93,8 @@ export function AskPagePanel({ slug }: { slug: string }) {
           <span className="pg-presets-label" aria-hidden>
             Ask
           </span>
-          {starters.map((s) => (
-            <button key={s} type="button" className="pg-pill" onClick={() => void ask(s)} disabled={running}>
+          {starters.map((s, i) => (
+            <button key={s} type="button" className={i < 2 ? "pg-pill" : "pg-pill pg-advanced"} onClick={() => void ask(s)} disabled={running}>
               {s}
             </button>
           ))}

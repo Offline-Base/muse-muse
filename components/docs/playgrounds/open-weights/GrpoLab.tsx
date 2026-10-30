@@ -179,14 +179,14 @@ function GroupRun({ schemes }: { schemes: RewardScheme[] }) {
         <Field id={`${id}-answer`} label="Reference answer">
           <TextInput id={`${id}-answer`} value={answer} onChange={(e) => setAnswer(e.target.value)} />
         </Field>
-        <NumberField id={`${id}-k`} label="Samples in the group" value={k} min={2} max={8} step={1} onChange={setK} hint="The recipe samples 8 per prompt." />
-        <NumberField id={`${id}-max`} label="max_tokens per sample" value={maxTokens} min={64} max={16384} step={100} onChange={setMaxTokens} hint="The token budget: too small and rollouts truncate." />
+        <NumberField advanced id={`${id}-k`} label="Samples in the group" value={k} min={2} max={8} step={1} onChange={setK} hint="The recipe samples 8 per prompt." />
+        <NumberField advanced id={`${id}-max`} label="max_tokens per sample" value={maxTokens} min={64} max={16384} step={100} onChange={setMaxTokens} hint="The token budget: too small and rollouts truncate." />
       </div>
-      <SegmentField<RewardScheme> label="Reward" value={scheme} options={schemes.map((s) => ({ value: s, label: SCHEME_LABEL[s] }))} onChange={setScheme} disabled={busy} hint={SCHEME_SOURCE[scheme]} />
+      <SegmentField<RewardScheme> advanced label="Reward" value={scheme} options={schemes.map((s) => ({ value: s, label: SCHEME_LABEL[s] }))} onChange={setScheme} disabled={busy} hint={SCHEME_SOURCE[scheme]} />
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} />
         <RunButton running={busy} onRun={() => void run()} onStop={stop} label={`Sample ${count}`} disabled={!problem.trim()} />
-        <span className="pg-hint">Each sample is one request (Chat Completions takes n=1). About {formatUsd(estimateCost(model, { prompt_tokens: 60 * count, completion_tokens: budget * count })?.usd ?? 0)} at most.</span>
+        <span className="pg-hint pg-advanced">Each sample is one request (Chat Completions takes n=1). About {formatUsd(estimateCost(model, { prompt_tokens: 60 * count, completion_tokens: budget * count })?.usd ?? 0)} at most.</span>
       </div>
       {samples.length ? (
         <>
@@ -363,10 +363,10 @@ function RlRecipe() {
       {o.run === "longer" ? (
         <div className={styles.options}>
           <NumberField id={`${id}-steps`} label="num_training_steps" value={o.steps} min={1} step={10} onChange={(v) => set("steps", num(v, 150))} />
-          <NumberField id={`${id}-off`} label="target_offpolicy_steps" value={o.offpolicy} min={0} step={1} onChange={(v) => set("offpolicy", num(v, 4))} hint="Overlaps generation and training." />
-          <NumberField id={`${id}-valsteps`} label="ValidationConfig(steps=...)" value={o.validationSteps} min={1} step={5} onChange={(v) => set("validationSteps", num(v, 30))} />
-          <NumberField id={`${id}-ckpt`} label="Checkpoint interval" value={o.ckptInterval} min={1} step={10} onChange={(v) => set("ckptInterval", num(v, 50))} />
-          <NumberField id={`${id}-keep`} label="keep_latest_k" value={o.keepLatest} min={1} step={1} onChange={(v) => set("keepLatest", num(v, 3))} />
+          <NumberField advanced id={`${id}-off`} label="target_offpolicy_steps" value={o.offpolicy} min={0} step={1} onChange={(v) => set("offpolicy", num(v, 4))} hint="Overlaps generation and training." />
+          <NumberField advanced id={`${id}-valsteps`} label="ValidationConfig(steps=...)" value={o.validationSteps} min={1} step={5} onChange={(v) => set("validationSteps", num(v, 30))} />
+          <NumberField advanced id={`${id}-ckpt`} label="Checkpoint interval" value={o.ckptInterval} min={1} step={10} onChange={(v) => set("ckptInterval", num(v, 50))} />
+          <NumberField advanced id={`${id}-keep`} label="keep_latest_k" value={o.keepLatest} min={1} step={1} onChange={(v) => set("keepLatest", num(v, 3))} />
         </div>
       ) : null}
       <Issues warnings={plan.warnings} notes={plan.notes} />

@@ -208,7 +208,7 @@ export function RecipeBrowser({ sections: sectionIds, start }: RecipeBrowserProp
               </div>
               {recipe.where && !recipe.command ? <p className={styles.note}>{recipe.where}</p> : null}
               <div className={styles.spread}>
-                <p className={styles.note}>
+                <p className={`${styles.note} pg-advanced`}>
                   <strong>Look for:</strong> {call.look}
                   {call.cost ? ` ${call.cost}` : ""}
                 </p>
@@ -246,7 +246,7 @@ export function RecipeBrowser({ sections: sectionIds, start }: RecipeBrowserProp
         </div>
       ) : null}
 
-      <div className={styles.toolbar}>
+      <div className={`${styles.toolbar} pg-advanced`}>
         {filters.length ? (
           <PresetPills
             label="Section"
@@ -271,7 +271,7 @@ export function RecipeBrowser({ sections: sectionIds, start }: RecipeBrowserProp
               <h3 id={`${id}-${s.id}`} className={many ? styles.sectionHead : "sr-only"}>
                 {s.title}
               </h3>
-              {many ? <p className={styles.sectionBlurb}>{s.blurb}</p> : null}
+              {many ? <p className={`${styles.sectionBlurb} pg-advanced`}>{s.blurb}</p> : null}
               <ul className={styles.cards}>
                 {s.recipes.map((r) => (
                   <li key={r.slug} className={styles.card} data-active={r.slug === selected ? "true" : undefined}>
@@ -283,7 +283,7 @@ export function RecipeBrowser({ sections: sectionIds, start }: RecipeBrowserProp
                         {KIND_BADGE[r.kind]}
                       </span>
                     </div>
-                    <p className={styles.cardSummary}>{r.summary}</p>
+                    <p className={`${styles.cardSummary} pg-advanced`}>{r.summary}</p>
                     <div className={styles.cardFoot}>
                       {r.call ? (
                         <button type="button" className="btn btn-sm btn-outline" onClick={() => pick(r)} aria-label={`Try the core call of ${r.title}`}>
@@ -294,7 +294,7 @@ export function RecipeBrowser({ sections: sectionIds, start }: RecipeBrowserProp
                           How to start
                         </button>
                       )}
-                      {r.call?.cost ? <span className="pg-muted pg-small">{r.call.cost.split(":")[0]}</span> : null}
+                      {r.call?.cost ? <span className="pg-muted pg-small pg-advanced">{r.call.cost.split(":")[0]}</span> : null}
                     </div>
                   </li>
                 ))}

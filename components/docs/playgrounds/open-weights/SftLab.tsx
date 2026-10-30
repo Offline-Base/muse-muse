@@ -103,18 +103,18 @@ function Recipe() {
             setO((c) => ({ ...c, run }));
           }}
         />
-        <Field id={`${id}-lr`} label="lr" hint="1e-5 in the recipe; another value runs as your own function.">
+        <Field id={`${id}-lr`} label="lr" hint="1e-5 in the recipe; another value runs as your own function." className="pg-advanced">
           <TextInput id={`${id}-lr`} value={lr} onChange={(e) => setLr(e.target.value)} spellCheck={false} inputMode="decimal" aria-describedby={`${id}-lr-hint`} />
         </Field>
         {o.modality === "text" ? (
           <>
-            <Field id={`${id}-date`} label="current_date (pinned)" hint="2026-01-15 in the recipe.">
+            <Field id={`${id}-date`} label="current_date (pinned)" hint="2026-01-15 in the recipe." className="pg-advanced">
               <TextInput id={`${id}-date`} value={o.currentDate} onChange={(e) => setO((c) => ({ ...c, currentDate: e.target.value }))} spellCheck={false} aria-describedby={`${id}-date-hint`} />
             </Field>
-            <SegmentField<SftOptions["effort"]> label="reasoning_effort (pinned)" value={o.effort} options={(["low", "medium", "high", "xhigh"] as const).map((e) => ({ value: e, label: e }))} onChange={(effort) => setO((c) => ({ ...c, effort }))} hint="xhigh in the recipe." />
+            <SegmentField<SftOptions["effort"]> advanced label="reasoning_effort (pinned)" value={o.effort} options={(["low", "medium", "high", "xhigh"] as const).map((e) => ({ value: e, label: e }))} onChange={(effort) => setO((c) => ({ ...c, effort }))} hint="xhigh in the recipe." />
           </>
         ) : null}
-        <Field id={`${id}-data`} label="JSONL files, one per line" className={styles.optionWide}>
+        <Field id={`${id}-data`} label="JSONL files, one per line" className={`${styles.optionWide} pg-advanced`}>
           <TextArea id={`${id}-data`} rows={2} className="pg-code-input" value={data} onChange={(e) => { setPreset(null); setData(e.target.value); }} spellCheck={false} />
         </Field>
       </div>
@@ -138,7 +138,7 @@ function Mask() {
           </span>
         ))}
       </pre>
-      <ul className={styles.legend}>
+      <ul className={`${styles.legend} pg-advanced`}>
         <li>
           <span className={styles.tokTrained}>&nbsp;to=user&lt;|message|&gt;&nbsp;</span> carries loss
         </li>
@@ -179,7 +179,7 @@ function MediaTokens() {
           <Status tone={patches > DEBUG_IMAGE_CAP ? "warn" : "ok"}>
             {patches.toLocaleString("en-US")} &lt;|patch|&gt; tokens: one per 2x2 group of 14-pixel patches ({Math.ceil((Number(w) || 0) / 28)} × {Math.ceil((Number(h) || 0) / 28)}).
           </Status>
-          <pre className={styles.render} style={{ maxHeight: 120 }}>
+          <pre className={`${styles.render} pg-advanced`} style={{ maxHeight: 120 }}>
             {`rendered:  <|start|>user<|message|><|patch|>What color is the horse?<|eot|>\nexpanded:  <|start|>user<|message|><|image_start|><|patch|> x ${patches} <|image_end|>What color...`}
           </pre>
           <p className="pg-hint">

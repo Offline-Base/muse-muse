@@ -235,21 +235,23 @@ export function ToolSearchPlayground(props: ToolSearchPlaygroundProps) {
   const demo = (
     <div className={`pg ${styles.stack}`}>
       <div className="pg-bar">
-        <Segmented<SearchMode>
-          label="Execution mode"
-          options={[
-            { value: "hosted", label: "Hosted" },
-            { value: "client", label: "Client-executed" },
-          ]}
-          value={mode}
-          onChange={switchMode}
-          disabled={busy}
-        />
+        <span className="pg-advanced">
+          <Segmented<SearchMode>
+            label="Execution mode"
+            options={[
+              { value: "hosted", label: "Hosted" },
+              { value: "client", label: "Client-executed" },
+            ]}
+            value={mode}
+            onChange={switchMode}
+            disabled={busy}
+          />
+        </span>
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={locked} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={locked} />
       </div>
 
-      <section className={cx(styles.card, styles.cardSoft)} aria-labelledby={`${id}-lib`}>
+      <section className={cx(styles.card, styles.cardSoft, "pg-advanced")} aria-labelledby={`${id}-lib`}>
         <div className={styles.spread}>
           <p className={styles.cardTitle} id={`${id}-lib`}>
             Tool library
@@ -335,7 +337,7 @@ export function ToolSearchPlayground(props: ToolSearchPlaygroundProps) {
               Reset
             </button>
           ) : null}
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => void drive(false)} disabled={busy || finished || !prompt.trim()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void drive(false)} disabled={busy || finished || !prompt.trim()}>
             {nextLabel}
           </button>
           <RunButton
@@ -351,12 +353,13 @@ export function ToolSearchPlayground(props: ToolSearchPlaygroundProps) {
         </div>
       </div>
 
-      <section className={styles.card} aria-labelledby={`${id}-front`}>
+      {/* The counts are a result once Run all or the button has made them; until then the card waits behind Options. */}
+      <section className={cx(styles.card, !freshCounts && !counting && !counter.error && "pg-advanced")} aria-labelledby={`${id}-front`}>
         <div className={styles.spread}>
           <p className={styles.cardTitle} id={`${id}-front`}>
             Up front: input tokens before the model loads anything
           </p>
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => void count()} disabled={counting || !prompt.trim()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void count()} disabled={counting || !prompt.trim()}>
             {counting ? "Counting" : freshCounts ? "Count again" : "Count the tokens"}
           </button>
         </div>
@@ -387,7 +390,7 @@ export function ToolSearchPlayground(props: ToolSearchPlaygroundProps) {
                 )}
               </p>
             ) : null}
-            <p className={cx(styles.about, styles.small)}>
+            <p className={cx(styles.about, styles.small, "pg-advanced")}>
               Counted with <code>POST /v1/responses/input_tokens</code>, which tokenizes the fully rendered input (Meta&apos;s scaffolding included) and costs
               nothing. Tools the search loads later are appended at the end of the context, so the cached prefix stays intact.
             </p>
@@ -421,7 +424,7 @@ export function ToolSearchPlayground(props: ToolSearchPlaygroundProps) {
           <AnswerText text={answer} className={styles.answer} />
         </div>
       ) : null}
-      {action === "limit" ? <p className="pg-hint">Stopped after {maxCalls} model calls, this demo&apos;s limit. Reset to start over.</p> : null}
+      {action === "limit" ? <div className="pg-hint">Stopped after {maxCalls} model calls, this demo&apos;s limit. Reset to start over.</div> : null}
       {transient ? (
         <div className="pg-actions">
           <button type="button" className="btn btn-sm btn-outline" onClick={retryLast} disabled={busy}>
@@ -491,7 +494,7 @@ function ModelStepView({ step, index, answerBelow = false }: { step: TsModelStep
         {step.elapsedMs ? <span className="pg-meta">{latencyLabel(step.elapsedMs)}</span> : null}
         {step.response?.usage ? <UsageLine model={step.model ?? null} usage={step.response.usage} /> : null}
       </p>
-      {step.error && step.error.code !== "aborted" ? <p className="pg-hint pg-bad">{step.error.message}</p> : null}
+      {step.error && step.error.code !== "aborted" ? <div className="pg-hint pg-bad">{step.error.message}</div> : null}
       {step.done && !step.error && shown.length ? (
         <ol className={styles.timeline} aria-label={`What model call ${step.n} returned`}>
           {shown.map((it) => {
@@ -573,7 +576,7 @@ function ModelStepView({ step, index, answerBelow = false }: { step: TsModelStep
                     <p className={styles.eventTitle}>
                       function_call <code className="pg-toolcall-name">{String(it.raw.namespace ? `${it.raw.namespace}.${it.raw.name}` : it.raw.name)}</code>
                     </p>
-                    <pre className="pg-pre">{prettyArguments(String(it.raw.arguments ?? "")) || "{}"}</pre>
+                    <pre className="pg-pre pg-advanced">{prettyArguments(String(it.raw.arguments ?? "")) || "{}"}</pre>
                   </div>
                 </li>
               );
@@ -583,10 +586,10 @@ function ModelStepView({ step, index, answerBelow = false }: { step: TsModelStep
         </ol>
       ) : null}
       {searches.length === 0 && outputs.length === 0 && calls.length === 0 && step.done && !step.error && step.items.every((x) => x.type !== "message" || !x.text.trim()) ? (
-        <p className="pg-hint">No text or calls in this reply.</p>
+        <div className="pg-hint">No text or calls in this reply.</div>
       ) : null}
       {answerBelow ? <p className="pg-small pg-muted">This call&apos;s reply is the final answer, below.</p> : null}
-      <LazyDetails className="pg-raw" summary={`Request${step.response ? " and reply" : ""} JSON`}>
+      <LazyDetails className="pg-raw pg-advanced" summary={`Request${step.response ? " and reply" : ""} JSON`}>
         <p className="pg-section-label">Request</p>
         <JsonTree value={step.body} openDepth={2} />
         {step.response ? (
@@ -640,7 +643,7 @@ function SearchStepView({ step, index }: { step: Extract<TsStep, { kind: "search
       ) : (
         <p className="pg-hint">With nothing loaded, the model can only say it found no tool. Anything left out of tool_search_output stays unavailable.</p>
       )}
-      <LazyDetails className="pg-raw" summary="The tool_search_output it sends back">
+      <LazyDetails className="pg-raw pg-advanced" summary="The tool_search_output it sends back">
         <JsonTree value={toolSearchOutput(step)} openDepth={3} />
       </LazyDetails>
     </>
@@ -672,17 +675,19 @@ function ToolsStepView({ step, index }: { step: Extract<TsStep, { kind: "tools" 
                 The model called <code>{r.name}</code>; the page matched it to <code>{r.run.matched}</code>.
               </p>
             ) : null}
-            <pre className="pg-pre">{prettyArguments(r.arguments) || "{}"}</pre>
+            <pre className="pg-pre pg-advanced">{prettyArguments(r.arguments) || "{}"}</pre>
             {r.run ? (
               <>
-                <p className="pg-section-label">function_call_output</p>
-                <JsonTree value={r.run.value} openDepth={3} />
+                <p className="pg-section-label pg-advanced">function_call_output</p>
+                <div className="pg-advanced">
+                  <JsonTree value={r.run.value} openDepth={3} />
+                </div>
               </>
             ) : null}
           </li>
         ))}
       </ul>
-      <p className={cx(styles.about, styles.small)}>
+      <p className={cx(styles.about, styles.small, "pg-advanced")}>
         The tools run here in the page with sample data. Refunds, rollbacks and pages answer as if they were done, marked <code>simulated: true</code>; nothing happens.
       </p>
     </>

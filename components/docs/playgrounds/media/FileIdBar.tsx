@@ -104,14 +104,14 @@ export function FileIdBar({
           ))}
         </div>
       ) : !files.length ? (
-        <p className={styles.note}>The live demos use only files uploaded from this browser in the last hour. Upload one to get its id.</p>
+        <p className={`${styles.note} pg-advanced`}>The live demos use only files uploaded from this browser in the last hour. Upload one to get its id.</p>
       ) : null}
       {open || (!files.length && !value) ? (
         <div className={styles.stack}>
           <FilePicker accept={accept} value={picked} onChange={setPicked} defaultSampleId={sampleId} preview="compact" prepare="none" disabled={running} />
           <div className={styles.row}>
             <RunButton running={running} onRun={() => void upload()} onStop={uploader.abort} label="Upload" disabled={!picked || picked.problems.length > 0} />
-            <span className={styles.note}>POST /v1/files with purpose user_data. Demo uploads expire after an hour.</span>
+            <span className={`${styles.note} pg-advanced`}>POST /v1/files with purpose user_data. Demo uploads expire after an hour.</span>
           </div>
           <ErrorBox error={uploader.error} />
         </div>

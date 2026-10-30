@@ -63,7 +63,7 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
 
       <Panel idBase={idBase} id="resolve" active={view === "resolve"}>
         <div className="pg-col">
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Segmented<Account>
               label="Account type"
               size="sm"
@@ -123,7 +123,7 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
             </button>
             <button
               type="button"
-              className="btn btn-outline btn-sm"
+              className="btn btn-outline btn-sm pg-advanced"
               onClick={() => {
                 setCred(START);
                 setLogoutMessage(null);
@@ -133,12 +133,13 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
             </button>
           </div>
           {logoutMessage ? (
-            <p className="pg-hint" role="status">
+            <div className="pg-hint" role="status">
               {logoutMessage}
-            </p>
+            </div>
           ) : null}
 
           <CodeBlock
+            className="pg-advanced"
             label="bash"
             code={[
               '# Use an API key instead of the browser flow (an API key always wins):',
@@ -167,7 +168,7 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
               <SelectField<Trigger>
                 id={`${idBase}-trigger`}
                 label="Runs on"
-                className={styles.narrow}
+                className={`${styles.narrow} pg-advanced`}
                 value={trigger}
                 onChange={setTrigger}
                 options={[
@@ -176,12 +177,12 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
                 ]}
               />
             ) : null}
-            <SelectField<Posture> id={`${idBase}-posture`} label="Approvals" className={styles.grow} value={posture} onChange={setPosture} options={POSTURES} />
+            <SelectField<Posture> id={`${idBase}-posture`} label="Approvals" className={`${styles.grow} pg-advanced`} value={posture} onChange={setPosture} options={POSTURES} />
           </div>
           <Field id={`${idBase}-prompt`} label="Prompt">
             <TextInput id={`${idBase}-prompt`} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
           </Field>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <NumberField id={`${idBase}-steps`} label="--max-model-steps" value={maxSteps} min={1} onChange={setMaxSteps} />
             <SelectField<ContributorPin>
               id={`${idBase}-contrib`}
@@ -198,7 +199,9 @@ export function AuthSetup({ secret: startSecret, prompt: startPrompt }: AuthSetu
               <TextInput id={`${idBase}-verify`} value={verify} spellCheck={false} onChange={(e) => setVerify(e.target.value)} placeholder="npm test" />
             </Field>
           </div>
-          <Toggle id={`${idBase}-json`} label="--json (JSONL events on stdout)" checked={json} onChange={setJson} />
+          <div className="pg-advanced">
+            <Toggle id={`${idBase}-json`} label="--json (JSONL events on stdout)" checked={json} onChange={setJson} />
+          </div>
           <CodeBlock code={ci.code} label={ci.label} syntax={ci.syntax} />
           <Problems warnings={ci.warnings} ok="This run can finish unattended." />
           <p className="pg-hint">

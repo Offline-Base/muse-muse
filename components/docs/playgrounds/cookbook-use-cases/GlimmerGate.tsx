@@ -249,7 +249,7 @@ export function GlimmerGate({ scenario: initialScenario = "wash-sale", timeoutSe
       )}
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} label="Remote model" />
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <span className="pg-label">approvals.timeout</span>
           <Segmented<string>
             label="Approval timeout"
@@ -268,14 +268,14 @@ export function GlimmerGate({ scenario: initialScenario = "wash-sale", timeoutSe
         <RunButton running={busy} onRun={() => void play()} onStop={stop} label="Run the local agent" disabled={scenarioId === "custom" && !custom.trim()} />
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm pg-advanced"
           onClick={() => setApprovals((a) => ({ ...a, session: [] }))}
           disabled={busy || !approvals.session.length}
           title="Session approvals end with the session; Always allow stays"
         >
           Start a new session
         </button>
-        <span className="pg-hint">
+        <span className="pg-hint pg-advanced">
           {approvals.session.length} session approval{approvals.session.length === 1 ? "" : "s"}, {approvals.always.length} always
         </span>
       </div>
@@ -317,7 +317,7 @@ export function GlimmerGate({ scenario: initialScenario = "wash-sale", timeoutSe
             </button>
           </div>
           <form
-            className={styles.stack}
+            className={`${styles.stack} pg-advanced`}
             onSubmit={(ev) => {
               ev.preventDefault();
               if (feedback.trim()) decide({ choice: "deny", feedback: feedback.trim(), rewrite });
@@ -359,7 +359,7 @@ export function GlimmerGate({ scenario: initialScenario = "wash-sale", timeoutSe
           </pre>
           <p className="pg-hint">Sizes, digests and timings only. The ledger never stores the question or the answer.</p>
         </div>
-        <div className={styles.stack}>
+        <div className={`${styles.stack} pg-advanced`}>
           <p className="pg-label">Runs API events (what a phone app reads)</p>
           <pre className={styles.ledger} aria-label="Run events">
             {events.length ? events.join("\n") : "(no run yet)"}

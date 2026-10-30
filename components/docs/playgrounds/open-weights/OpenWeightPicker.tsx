@@ -79,14 +79,14 @@ export function OpenWeightPicker({ hardware = "gpu24" }: OpenWeightPickerProps) 
                 <input type="radio" name={`${id}-hw`} value={h.id} checked={hw === h.id} onChange={() => setHw(h.id)} />
                 <span style={{ fontWeight: 600, fontSize: 14 }}>{h.label}</span>
               </span>
-              <span className="pg-small pg-muted" style={{ paddingLeft: 24 }}>
+              <span className="pg-small pg-muted pg-advanced" style={{ paddingLeft: 24 }}>
                 {h.detail}
               </span>
             </label>
           ))}
         </div>
       </fieldset>
-      <fieldset className={styles.row} style={{ margin: 0, padding: 0, border: 0 }}>
+      <fieldset className={`${styles.row} pg-advanced`} style={{ margin: 0, padding: 0, border: 0 }}>
         <legend className="pg-label" style={{ marginBottom: 8 }}>
           What do you need?
         </legend>

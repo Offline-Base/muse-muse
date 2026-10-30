@@ -41,6 +41,7 @@ function SparkOverview() {
   return (
     <div className="pg">
       <Facts
+        advanced
         label="Muse Spark Open at a glance"
         items={[
           { label: "Parameters", value: SPARK.params },
@@ -173,6 +174,7 @@ function GlimmerOverview() {
   return (
     <div className="pg">
       <Facts
+        advanced
         label="Muse Glimmer at a glance"
         items={[
           { label: "Parameters", value: GLIMMER.params },

@@ -19,6 +19,9 @@ import styles from "@/components/docs/playgrounds/protocols/protocols.module.css
 
 type Without<P> = Omit<P, "slug">;
 
+/** Simple view: the tabs past this many wait behind Options, unless one of them is open. */
+const SIMPLE_TABS = 5;
+
 export type LabTab = { id: string; label: string; intro?: string } & (
   | { kind: "flow"; props: Without<FlowRunnerProps> }
   | { kind: "chat"; props: Without<ChatPlaygroundProps> }
@@ -109,7 +112,7 @@ export function ProtocolLab({ slug, tabs, start }: ProtocolLabProps) {
     const tab = tabs[0];
     return (
       <div className="pg">
-        {tab.intro ? <p className={styles.labIntro}>{tab.intro}</p> : null}
+        {tab.intro ? <p className={`${styles.labIntro} pg-advanced`}>{tab.intro}</p> : null}
         <Tab tab={tab} slug={slug} />
       </div>
     );
@@ -121,7 +124,7 @@ export function ProtocolLab({ slug, tabs, start }: ProtocolLabProps) {
         <Tabs
           label="Demos on this page"
           idBase={idBase}
-          tabs={tabs.map((t) => ({ id: t.id, label: t.label }))}
+          tabs={tabs.map((t, i) => ({ id: t.id, label: i >= SIMPLE_TABS && t.id !== active ? <span className="pg-advanced">{t.label}</span> : t.label }))}
           value={active}
           onChange={open}
           className={styles.labTabs}
@@ -139,7 +142,7 @@ export function ProtocolLab({ slug, tabs, start }: ProtocolLabProps) {
         >
           {opened.includes(tab.id) ? (
             <>
-              {tab.intro ? <p className={styles.labIntro}>{tab.intro}</p> : null}
+              {tab.intro ? <p className={`${styles.labIntro} pg-advanced`}>{tab.intro}</p> : null}
               <Tab tab={tab} slug={slug} />
             </>
           ) : null}

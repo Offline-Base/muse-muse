@@ -76,11 +76,11 @@ export function MacClusterPlanner(_props: MacClusterPlannerProps) {
               ]}
               onChange={(x) => setMacCount(x === "2" ? 2 : 4)}
             />
-            <div className="pg-field">
+            <div className="pg-field pg-advanced">
               <Toggle id={`${id}-double`} label="Two cables per pair (double the bandwidth)" checked={doubled} onChange={setDoubled} />
             </div>
           </div>
-          <fieldset className={styles.fieldGrid}>
+          <fieldset className={`${styles.fieldGrid} pg-advanced`}>
             <legend className="pg-label" style={{ marginBottom: 6 }}>
               Host names (the first is the primary)
             </legend>
@@ -91,7 +91,7 @@ export function MacClusterPlanner(_props: MacClusterPlannerProps) {
             ))}
           </fieldset>
           <Status tone={plan.warnings.length ? "warn" : "ok"}>{macSummary(plan, macs)}</Status>
-          <div className={styles.grid2}>
+          <div className={`${styles.grid2} pg-advanced`}>
             <div className={styles.card}>
               <h4 className={styles.cardTitle}>Thunderbolt 5 links</h4>
               <ul className={styles.chipList} aria-label="Links between the Macs">
@@ -116,7 +116,7 @@ export function MacClusterPlanner(_props: MacClusterPlannerProps) {
               </p>
             </div>
           </div>
-          <fieldset className={styles.card} style={{ margin: 0 }}>
+          <fieldset className={`${styles.card} pg-advanced`} style={{ margin: 0 }}>
             <legend className="pg-label" style={{ padding: "0 4px" }}>
               Before you start
             </legend>
@@ -127,7 +127,7 @@ export function MacClusterPlanner(_props: MacClusterPlannerProps) {
               </label>
             ))}
           </fieldset>
-          <div className={styles.options}>
+          <div className={`${styles.options} pg-advanced`}>
             <Field id={`${id}-prompt`} label="Prompt for mlx_lm.generate" className={styles.optionWide}>
               <TextArea id={`${id}-prompt`} rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
             </Field>

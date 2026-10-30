@@ -67,7 +67,7 @@ function RealCallCost({ onLimits }: { onLimits(live: LiveLimits): void }) {
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Send one request, then see its real <code>usage</code> priced with the page&apos;s rates, line by line. Reasoning tokens are
         output tokens; cached tokens are inside <code>input_tokens</code> and billed at the cached rate.
       </p>
@@ -148,7 +148,7 @@ function RateLimits({ live, onLimits }: { live: LiveLimits | null; onLimits(live
   const share = (x: number | null) => (x === null ? "no limit" : `${Math.round(x * 100)}%`);
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Limits are per team, not per key: every key in a team counts toward the same limits, and each model has its own.
       </p>
       <div className={`docs-table ${styles.table}`} role="group" aria-label="Rate limits" tabIndex={0}>
@@ -217,9 +217,11 @@ function RateLimits({ live, onLimits }: { live: LiveLimits | null; onLimits(live
         ) : null}
       </div>
 
-      <LiveHeaders live={live} onLimits={onLimits} />
+      <div className="pg-advanced">
+        <LiveHeaders live={live} onLimits={onLimits} />
+      </div>
 
-      <div>
+      <div className="pg-advanced">
         <p className="pg-section-label">When a 429 comes anyway</p>
         <RetrySimulator scenario="rate-limit-backoff" scenarios={["rate-limit-backoff", "rate-limit"]} />
       </div>

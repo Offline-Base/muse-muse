@@ -6,7 +6,7 @@ import { ToolLoopPlayground } from "@/components/docs/playgrounds/common/ToolLoo
 import type { Effort } from "@/lib/docs/client/models";
 import type { LoopProtocol } from "@/lib/docs/client/toolloop";
 import type { ToolSpec } from "@/lib/docs/client/tools";
-import { DemoTabs } from "@/components/docs/playgrounds/text/parts";
+import { cx, DemoTabs } from "@/components/docs/playgrounds/text/parts";
 import { RuleChecks } from "@/components/docs/playgrounds/text/RuleChecks";
 import type { RuleCheck } from "@/components/docs/playgrounds/text/rules";
 import styles from "@/components/docs/playgrounds/text/text.module.css";
@@ -57,7 +57,7 @@ export function ToolCallingDemo(props: ToolCallingDemoProps) {
       {props.scenarios.length > 1 ? (
         <div className={styles.tight}>
           <PresetPills label="Scenario" presets={props.scenarios} active={index} onPick={setIndex} />
-          <p className={styles.about} aria-live="polite">
+          <p className={cx(styles.about, "pg-advanced")} aria-live="polite">
             {scenario.about}
           </p>
         </div>
@@ -77,6 +77,7 @@ export function ToolCallingDemo(props: ToolCallingDemoProps) {
         maxCalls={props.maxCalls}
         effort={props.effort}
         presets={scenario.presets}
+        advancedPresets
       />
     </div>
   ) : null;

@@ -43,6 +43,7 @@ export function McpServerEditor({
         </div>
         <SelectField
           id={`${idBase}-mode`}
+          className="pg-advanced"
           label="mode"
           value={s.mode}
           onChange={(mode) => onChange({ mode: mode as McpServerDraft["mode"] })}
@@ -60,7 +61,7 @@ export function McpServerEditor({
           <Field id={`${idBase}-args`} label="args (space-separated)" className={styles.grow}>
             <TextInput id={`${idBase}-args`} className="pg-code-input" value={s.args} spellCheck={false} onChange={(e) => onChange({ args: e.target.value })} />
           </Field>
-          <Field id={`${idBase}-env`} label="env (KEY=value per line)" className={styles.grow}>
+          <Field id={`${idBase}-env`} label="env (KEY=value per line)" className={`${styles.grow} pg-advanced`}>
             <TextArea id={`${idBase}-env`} className="pg-code-input" rows={2} value={s.env} spellCheck={false} placeholder="API_TOKEN=${DOCS_TOKEN}" onChange={(e) => onChange({ env: e.target.value })} />
           </Field>
         </div>
@@ -69,12 +70,12 @@ export function McpServerEditor({
           <Field id={`${idBase}-url`} label="url" className={styles.grow}>
             <TextInput id={`${idBase}-url`} className="pg-code-input" value={s.url} spellCheck={false} onChange={(e) => onChange({ url: e.target.value })} />
           </Field>
-          <Field id={`${idBase}-headers`} label="headers (Name: value per line)" className={styles.grow}>
+          <Field id={`${idBase}-headers`} label="headers (Name: value per line)" className={`${styles.grow} pg-advanced`}>
             <TextArea id={`${idBase}-headers`} className="pg-code-input" rows={2} value={s.headers} spellCheck={false} onChange={(e) => onChange({ headers: e.target.value })} />
           </Field>
         </div>
       )}
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <NumberField id={`${idBase}-tt`} label="tool_timeout_sec" value={s.toolTimeoutSec} min={1} onChange={(toolTimeoutSec) => onChange({ toolTimeoutSec })} />
         <NumberField id={`${idBase}-st`} label="startup_timeout_sec" value={s.startupTimeoutSec} min={1} onChange={(startupTimeoutSec) => onChange({ startupTimeoutSec })} />
         <Toggle id={`${idBase}-on`} label="enabled" checked={s.enabled} onChange={(enabled) => onChange({ enabled })} />

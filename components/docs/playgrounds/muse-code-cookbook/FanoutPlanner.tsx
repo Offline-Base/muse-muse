@@ -138,7 +138,7 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
       <ShowCode body={live.body ?? body} caption={live.body ? "The request that just ran" : "The request Run sends"} />
 
       <Section title={planSource === "model" ? "The board: your plan" : "The board: the recipe's six tasks"}>
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           <Toggle id={`${id}-iso`} label={<code>--subagent-worktree-isolation</code>} checked={isolation} onChange={(v) => { setIsolation(v); respawn(plan, cores, v); }} />
           <span className="pg-inline-field">
             <label className="pg-label" htmlFor={`${id}-cores`}>
@@ -150,7 +150,9 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
             Concurrency limit {limit} (about cores - 2, clamped to 4 to 8). {running} running.
           </span>
         </div>
-        <Terminal title="Launch" lines={[{ text: `muse${isolation ? " --subagent-worktree-isolation" : ""}`, tone: "cmd" }]} copy={false} />
+        <div className="pg-advanced">
+          <Terminal title="Launch" lines={[{ text: `muse${isolation ? " --subagent-worktree-isolation" : ""}`, tone: "cmd" }]} copy={false} />
+        </div>
         {!isolation ? (
           <Verdict tone="bad" title="Spawn rejected · isolation is off for this profile">
             <p className={styles.note}>Retry without worktree_isolation, or enable native_subagent_worktree_isolation.</p>
@@ -174,7 +176,7 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
           >
             Run to the end
           </button>
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => respawn()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => respawn()}>
             Respawn
           </button>
           <span className={styles.note} role="status" aria-live="polite">
@@ -198,21 +200,21 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
               <div className={styles.progress} aria-hidden>
                 <div className={styles.progressBar} style={{ width: `${Math.round((c.turns / c.turnsNeeded) * 100)}%` }} />
               </div>
-              <p className={styles.note}>
+              <p className={`${styles.note} pg-advanced`}>
                 <span className="sr-only">Worktree: </span>
                 {c.worktree ? <code>{c.worktree}</code> : "no worktree"}
                 <br />
                 Files: {c.task.files.join(", ") || "none listed"}
               </p>
-              <p className={styles.note} title={c.task.verify}>
+              <p className={`${styles.note} pg-advanced`} title={c.task.verify}>
                 Check: <code>{c.task.verify.length > 48 ? `${c.task.verify.slice(0, 45)}...` : c.task.verify}</code>
               </p>
               {c.note ? <p className={styles.why}>{c.note}</p> : null}
-              <details>
+              <details className="pg-advanced">
                 <summary className={styles.note}>subagent_spawn and the event log ({c.events.length})</summary>
                 <pre className={styles.tree}>{[`subagent_spawn ${JSON.stringify(spawnCall(c.task))}`, ...c.events].join("\n")}</pre>
               </details>
-              <button type="button" className="btn btn-sm btn-outline" onClick={() => setTarget(c.id)} aria-pressed={c.id === target}>
+              <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => setTarget(c.id)} aria-pressed={c.id === target}>
                 Control {c.id}
               </button>
             </li>
@@ -220,7 +222,7 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
         </ul>
 
         {child ? (
-          <div className={styles.split}>
+          <div className={`${styles.split} pg-advanced`}>
             <div className={styles.tight}>
               <p className="pg-section-label">Steer {child.id} (subagent_send_message)</p>
               <Field id={`${id}-msg`} label="Message">
@@ -255,14 +257,16 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
         ) : null}
 
         <div className={styles.split}>
-          <div className={styles.tight}>
+          <div className={`${styles.tight} pg-advanced`}>
             <p className="pg-section-label">subagent_status</p>
             <JsonTree value={statusOf(board)} openDepth={2} />
           </div>
           <div className={styles.tight}>
-            <Terminal title="The worktrees on disk" lines={worktreeLines} />
-            <p className="pg-section-label">Merge order</p>
-            <ol className="pg-list">
+            <div className="pg-advanced">
+              <Terminal title="The worktrees on disk" lines={worktreeLines} />
+            </div>
+            <p className="pg-section-label pg-advanced">Merge order</p>
+            <ol className="pg-list pg-advanced">
               {plan.merge_order.map((m) => (
                 <li key={m}>
                   <code>{m}</code>
@@ -280,13 +284,13 @@ export function FanoutPlanner(props: FanoutPlannerProps) {
               </div>
             ) : null}
             {shared.length ? (
-              <p className={styles.note}>
+              <p className={`${styles.note} pg-advanced`}>
                 Isolated while they run, but these meet at merge time: {shared.map((o) => `${o.a} and ${o.b} (${o.files.join(", ")})`).join("; ")}.
               </p>
             ) : null}
           </div>
         </div>
-        {planSource === "recipe" ? <p className={styles.note}>{BASTION_PLAN.notes}</p> : null}
+        {planSource === "recipe" ? <p className={`${styles.note} pg-advanced`}>{BASTION_PLAN.notes}</p> : null}
       </Section>
     </div>
   );

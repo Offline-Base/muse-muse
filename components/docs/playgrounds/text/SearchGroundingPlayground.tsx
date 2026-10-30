@@ -5,6 +5,7 @@ import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
 import { EffortSelect, Field, PresetPills, runOnModEnter, Segmented, TextArea, TextInput, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
@@ -165,10 +166,12 @@ export function SearchGroundingPlayground(props: SearchGroundingPlaygroundProps)
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
         <Toggle id={`${id}-stream`} label="Stream" checked={stream} onChange={setStream} disabled={running} />
-        <Toggle id={`${id}-include`} label={<>Include raw results</>} checked={include} onChange={setInclude} disabled={running} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-include`} label={<>Include raw results</>} checked={include} onChange={setInclude} disabled={running} />
+        </span>
       </div>
 
-      <div className={styles.row}>
+      <div className={cx(styles.row, "pg-advanced")}>
         <span className="pg-inline-field">
           <span className="pg-label" id={`${id}-ctx`}>
             Search context
@@ -191,7 +194,7 @@ export function SearchGroundingPlayground(props: SearchGroundingPlaygroundProps)
       </div>
 
       {useLocation ? (
-        <div className={cx(styles.card, styles.cardSoft)}>
+        <div className={cx(styles.card, styles.cardSoft, "pg-advanced")}>
           <div className={styles.inputs}>
             {(
               [
@@ -225,7 +228,7 @@ export function SearchGroundingPlayground(props: SearchGroundingPlaygroundProps)
         </div>
       ) : null}
 
-      {props.presets?.length ? <PresetPills presets={props.presets} active={preset} onPick={pick} disabled={running} /> : null}
+      {props.presets?.length ? <PresetRow keep={4} presets={props.presets} active={preset} onPick={pick} disabled={running} /> : null}
 
       <div className="pg-composer">
         <label className="sr-only" htmlFor={`${id}-prompt`}>
@@ -283,7 +286,7 @@ export function SearchGroundingPlayground(props: SearchGroundingPlaygroundProps)
               <p className="pg-hint">No citations in this answer: the model may have answered without searching.</p>
             ) : null}
             {results.length ? (
-              <details className={styles.details}>
+              <details className={cx(styles.details, "pg-advanced")}>
                 <summary>
                   {results.length} result{results.length === 1 ? "" : "s"} the model saw
                   {running ? "" : ` (${results.filter((r) => cited.has(sourceKey(r.url))).length} cited)`}
@@ -321,17 +324,17 @@ export function SearchGroundingPlayground(props: SearchGroundingPlaygroundProps)
               <p className="pg-hint">The searches came back without a results list.</p>
             ) : null}
             {!running && counts.calls ? (
-              <p className={cx(styles.about, styles.small)}>
+              <p className={cx(styles.about, styles.small, "pg-advanced")}>
                 {counts.queries} search quer{counts.queries === 1 ? "y" : "ies"}
                 {counts.opened ? ` and ${counts.opened} page${counts.opened === 1 ? "" : "s"} opened` : ""}. Searches cost $2.50 per 1,000 queries on top of tokens; the estimate above
                 counts every web_search_call, so it errs high.
               </p>
             ) : null}
             {!running && snap.response?.status === "incomplete" ? (
-              <p className="pg-hint pg-bad">
+              <div className="pg-hint pg-bad">
                 The reply stopped early ({String((snap.response.incomplete_details as { reason?: unknown } | null)?.reason ?? "incomplete")}), so the end of the answer and
                 its citations may be missing. Searches add a lot of input; give the answer more room with max_output_tokens.
-              </p>
+              </div>
             ) : null}
             {!running && runner.result && isAborted(runner.result) ? <p className="pg-muted">Stopped before the reply finished.</p> : null}
           </div>

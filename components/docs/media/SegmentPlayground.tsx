@@ -232,16 +232,18 @@ export function SegmentPlayground({
     <div className={`pg ${styles.playground}`}>
       <div className="pg-bar">
         {kinds.length > 1 ? (
-          <Segmented
-            label="Media"
-            value={kind}
-            onChange={(v) => {
-              setKind(v);
-              setObjects([]);
-            }}
-            disabled={running}
-            options={kinds.map((k) => ({ value: k, label: k === "image" ? "Image (input_image)" : "Video (input_video)" }))}
-          />
+          <span className="pg-advanced">
+            <Segmented
+              label="Media"
+              value={kind}
+              onChange={(v) => {
+                setKind(v);
+                setObjects([]);
+              }}
+              disabled={running}
+              options={kinds.map((k) => ({ value: k, label: k === "image" ? "Image (input_image)" : "Video (input_video)" }))}
+            />
+          </span>
         ) : null}
         <ModelSelect kind="sam" value="sam-3.1" onChange={() => {}} />
       </div>
@@ -277,17 +279,19 @@ export function SegmentPlayground({
       )}
 
       {objectPrompts ? (
-        <Segmented<"concept" | "objects">
-          size="sm"
-          label="Prompt"
-          value={promptKind}
-          onChange={setPromptKind}
-          disabled={running}
-          options={[
-            { value: "concept", label: "Concept (a noun phrase)" },
-            { value: "objects", label: "Boxes and points" },
-          ]}
-        />
+        <span className="pg-advanced">
+          <Segmented<"concept" | "objects">
+            size="sm"
+            label="Prompt"
+            value={promptKind}
+            onChange={setPromptKind}
+            disabled={running}
+            options={[
+              { value: "concept", label: "Concept (a noun phrase)" },
+              { value: "objects", label: "Boxes and points" },
+            ]}
+          />
+        </span>
       ) : null}
 
       {promptKind === "concept" ? (
@@ -334,7 +338,7 @@ export function SegmentPlayground({
               </button>
             </span>
           </div>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             {kind === "video" ? `Prompts go on the frame you're on (frame ${frame}); use the frame bar to move. ` : ""}
             Coordinates are converted to the {kind}&apos;s own pixels{size ? ` (${size.width} x ${size.height})` : ""} before they&apos;re sent.
           </p>
@@ -360,7 +364,7 @@ export function SegmentPlayground({
         />
       ) : null}
 
-      <div className={styles.options}>
+      <div className={`${styles.options} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>Masks</span>
           <Segmented<"lossless" | "one_bit">
@@ -406,7 +410,7 @@ export function SegmentPlayground({
           disabled={!file || !promptText || (file?.problems.length ?? 0) > 0}
         />
       </div>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         {kind === "video"
           ? `Video is billed per frame, $0.20 per 1,000 with a 50-frame minimum: about ${formatUsd(estimate)} for ${file?.frames ? `these ${file.frames} frames` : "a short clip"}.`
           : "Images cost $2.50 per 1,000, so about $0.0025 a run."}

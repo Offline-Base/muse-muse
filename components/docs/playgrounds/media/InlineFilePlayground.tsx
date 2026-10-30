@@ -185,7 +185,7 @@ export function InlineFilePlayground({
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} allow={models} disabled={busy} />
       </div>
-      <div className={styles.controls}>
+      <div className={`${styles.controls} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>API</span>
           <Segmented<Api>
@@ -213,7 +213,7 @@ export function InlineFilePlayground({
           />
         </span>
       </div>
-      <p className={styles.note}>{SEND_NOTE[send]}</p>
+      <p className={`${styles.note} pg-advanced`}>{SEND_NOTE[send]}</p>
 
       {urlMode ? (
         <Field id={`${id}-url`} label="file_url" hint="A public http or https link. The server fetches it and detects the type.">
@@ -240,9 +240,9 @@ export function InlineFilePlayground({
           disabled={busy}
         />
       )}
-      {facts ? <p className={styles.note}>{facts}</p> : null}
+      {facts ? <p className={`${styles.note} pg-advanced`}>{facts}</p> : null}
       {isPdf ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           PDFs become text from the first 100 pages plus page images of the first 50, and those images count toward the 50 images a request can carry.
         </p>
       ) : null}
@@ -252,7 +252,7 @@ export function InlineFilePlayground({
       </Field>
 
       <div className={styles.spread}>
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           {countable ? (
             <>
               <button type="button" className="btn btn-outline btn-sm" onClick={() => void countTokens()} disabled={busy || !ready}>

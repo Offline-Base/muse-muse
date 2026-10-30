@@ -17,7 +17,7 @@ export function EndpointExplorer({ endpoint: initial = "responses.create" }: { s
   const e = endpointExample(picked) ?? ENDPOINTS[0];
   return (
     <div className="pg">
-      <p className={styles.small}>
+      <p className={`${styles.small} pg-advanced`}>
         Base URL <code>{API_BASE_URL}</code> · <code>Authorization: Bearer $MODEL_API_KEY</code> · the live console adds Muse
         Muse&apos;s key on the server, so you never paste one here.
       </p>

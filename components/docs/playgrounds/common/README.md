@@ -82,5 +82,10 @@ The reply is parsed and checked against the schema field by field (pass and fail
 | `effort` | `"low"` | |
 | `stream` | false | Stream each model call, so arguments appear as they arrive. |
 | `presets` | none | `{ label, prompt }[]` |
+| `advancedPresets` | false | Keep the presets behind Options, when the demo shows its own row of examples above this. |
 
 Step runs the next action (call the model, run the tools, send the results), Run all goes to the final answer. Each step shows its request and reply JSON. The mock tools run in the page with sample data; nothing leaves it, and send_email only pretends.
+
+## `PresetRow`
+
+PresetPills for the simple view: the first `keep` pills (default 5) always show, and the rest wait behind Options as a second row. Use it for any preset list that would wrap.

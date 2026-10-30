@@ -3,10 +3,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { PresetPills, Segmented, Toggle } from "@/components/docs/kit/Field";
+import { Segmented, Toggle } from "@/components/docs/kit/Field";
 import { JsonEditor } from "@/components/docs/kit/JsonEditor";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
@@ -203,32 +204,36 @@ export function TokenCounter(props: TokenCounterProps) {
   return (
     <div className={`pg ${styles.stack}`}>
       <div className="pg-bar">
-        <Segmented<CountEndpoint>
-          label="Endpoint"
-          options={[
-            { value: "responses/input_tokens", label: "responses/input_tokens" },
-            { value: "messages/count_tokens", label: "messages/count_tokens" },
-          ]}
-          value={endpoint}
-          onChange={(e) => {
-            setEndpoint(e);
-            setSent(null);
-          }}
-          disabled={busy}
-        />
+        <span className="pg-advanced">
+          <Segmented<CountEndpoint>
+            label="Endpoint"
+            options={[
+              { value: "responses/input_tokens", label: "responses/input_tokens" },
+              { value: "messages/count_tokens", label: "messages/count_tokens" },
+            ]}
+            value={endpoint}
+            onChange={(e) => {
+              setEndpoint(e);
+              setSent(null);
+            }}
+            disabled={busy}
+          />
+        </span>
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={busy} />
-        <Toggle id={`${id}-compare`} label="Count on every model" checked={compare} onChange={setCompare} disabled={busy} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-compare`} label="Count on every model" checked={compare} onChange={setCompare} disabled={busy} />
+        </span>
       </div>
 
       <div className={styles.tight}>
-        <PresetPills
+        <PresetRow
           label="Count"
           presets={[...COUNT_CASES.map((c) => ({ label: c.label })), { label: "Your own body" }]}
           active={kind === "custom" ? COUNT_CASES.length : COUNT_CASES.findIndex((c) => c.id === kind)}
           onPick={(i) => pickCase(i < COUNT_CASES.length ? COUNT_CASES[i].id : "custom")}
           disabled={busy}
         />
-        <p className={styles.about} aria-live="polite">
+        <p className={cx(styles.about, "pg-advanced")} aria-live="polite">
           {kind === "custom"
             ? `Any body ${endpoint === "messages/count_tokens" ? "POST /v1/messages takes (Anthropic-shaped)" : "POST /v1/responses takes"}; the model menu sets "model". A body that fails validation gets the same HTTP 400 a generation would.`
             : COUNT_CASES.find((c) => c.id === kind)?.about}
@@ -239,7 +244,7 @@ export function TokenCounter(props: TokenCounterProps) {
         <div className={cx(styles.card, styles.cardSoft)}>
           <FilePicker accept="image/*" value={picked} onChange={setPicked} label="Image" samples={["image"]} defaultSampleId={props.sampleId ?? "bar-chart"} preview="compact" disabled={busy} />
           <div className={styles.row}>
-            <span className="pg-inline-field">
+            <span className="pg-inline-field pg-advanced">
               <span className="pg-label">Longest side</span>
               <Segmented<ImageSize>
                 label="Image size"
@@ -265,23 +270,23 @@ export function TokenCounter(props: TokenCounterProps) {
               <span className="pg-muted pg-small">Preparing the image...</span>
             )}
           </div>
-          <p className={cx(styles.about, styles.small)}>Count the same image at each size: resolution changes the count, so measure a representative payload instead of estimating.</p>
+          <p className={cx(styles.about, styles.small, "pg-advanced")}>Count the same image at each size: resolution changes the count, so measure a representative payload instead of estimating.</p>
         </div>
       ) : null}
 
       {kind === "custom" ? (
         <JsonEditor id={`${id}-body`} label="Body to count" value={customText} onChange={setCustomText} rows={12} disabled={busy} />
       ) : body ? (
-        <LazyDetails summary="The body this counts">
+        <LazyDetails className={cx(styles.details, "pg-advanced")} summary="The body this counts">
           <JsonTree value={displayCountBody(body)} openDepth={3} label="Count request body" />
         </LazyDetails>
       ) : kind === "document" && doc === "" ? (
-        <p className="pg-hint pg-bad">Couldn&apos;t load the document sample from this site.</p>
+        <div className="pg-hint pg-bad">Couldn&apos;t load the document sample from this site.</div>
       ) : null}
 
       <div className="pg-composer-bar">
         <span className="pg-muted pg-kbd-hint">Counting is free: it tokenizes only, with no output and nothing stored.</span>
-        <button type="button" className="btn btn-sm btn-outline" onClick={() => void send()} disabled={busy || notReady || !body}>
+        <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void send()} disabled={busy || notReady || !body}>
           Send it and compare
         </button>
         <RunButton running={busy} onRun={() => void count()} label={compare ? "Count on every model" : "Count tokens"} disabled={notReady || !body} />
@@ -302,7 +307,7 @@ export function TokenCounter(props: TokenCounterProps) {
             left={`${shareLabel(share)} of the ${n(CONTEXT_WINDOW)}-token context window`}
             right={`${n(Math.max(0, CONTEXT_WINDOW - last.tokens))} left for more input and the output`}
           />
-          <p className={cx(styles.about, styles.small)}>
+          <p className={cx(styles.about, styles.small, "pg-advanced")}>
             The count is the fully rendered input: Meta&apos;s hidden system prompt and default developer message are in it, and built-in tools add their scaffolding.
             Use it for context fit, not for the bill.
           </p>
@@ -330,7 +335,7 @@ export function TokenCounter(props: TokenCounterProps) {
               ))}
             </tbody>
           </table>
-          <p className={cx(styles.about, styles.small)}>A count applies only to the model that produced it: tokenizers and prompt templates differ, so recount when you switch.</p>
+          <p className={cx(styles.about, styles.small, "pg-advanced")}>A count applies only to the model that produced it: tokenizers and prompt templates differ, so recount when you switch.</p>
         </div>
       ) : null}
 
@@ -352,7 +357,7 @@ export function TokenCounter(props: TokenCounterProps) {
             </table>
           </div>
           {billed ? <UsageLine model={sent.model} usage={sent.usage} {...costExtrasOf(sent.json)} /> : null}
-          <p className={cx(styles.about, styles.small)}>
+          <p className={cx(styles.about, styles.small, "pg-advanced")}>
             Usage is accounting, not context size: it applies adjustments such as discounts on Meta&apos;s injected tokens, so it can be lower than the count, and with
             hosted tools it adds up every model iteration, so it can be higher. Use the count endpoint when you need the size.
           </p>
@@ -362,7 +367,7 @@ export function TokenCounter(props: TokenCounterProps) {
       <ErrorBox error={counter.error ?? sender.error} />
 
       {history.length > 1 ? (
-        <details className={styles.details} open>
+        <details className={cx(styles.details, "pg-advanced")} open>
           <summary>What you counted here</summary>
           <div className={styles.tableWrap}>
             <table className={styles.table}>

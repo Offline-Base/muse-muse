@@ -133,7 +133,7 @@ export function StandIn(props: StandInProps) {
           </label>
           <TextArea id={`${id}-prompt`} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={runOnModEnter(() => void run())} />
           <div className="pg-composer-bar">
-            <div style={{ maxWidth: 200, marginRight: "auto" }}>
+            <div className="pg-advanced" style={{ maxWidth: 200, marginRight: "auto" }}>
               <NumberField id={`${id}-max`} label="max_tokens" value={maxTokens} min={16} max={16384} step={100} onChange={setMaxTokens} />
             </div>
             <RunButton running={running} onRun={() => void run()} onStop={runner.abort} disabled={!prompt.trim() || props.disabled} label={props.runLabel ?? "Run on hosted Muse Spark"} />
@@ -141,7 +141,7 @@ export function StandIn(props: StandInProps) {
         </div>
       ) : (
         <div className={styles.row}>
-          <div style={{ maxWidth: 200 }}>
+          <div className="pg-advanced" style={{ maxWidth: 200 }}>
             <NumberField id={`${id}-max`} label="max_tokens" value={maxTokens} min={16} max={16384} step={100} onChange={setMaxTokens} />
           </div>
           <RunButton running={running} onRun={() => void run()} onStop={runner.abort} disabled={props.disabled} label={props.runLabel ?? "Run on hosted Muse Spark"} />

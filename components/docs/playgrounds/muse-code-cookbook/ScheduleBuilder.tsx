@@ -150,8 +150,10 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
             <Field id={`${id}-cron`} label="Cron expression (local time)" hint="minute hour day-of-month month day-of-week">
               <TextInput id={`${id}-cron`} className="pg-code-input" value={cron} onChange={(e) => setCron(e.target.value)} spellCheck={false} aria-describedby={`${id}-cron-hint`} />
             </Field>
-            <Toggle id={`${id}-rec`} label="Recurring" checked={recurring} onChange={setRecurring} />
-            <Field id={`${id}-task`} label="Task">
+            <div className="pg-advanced">
+              <Toggle id={`${id}-rec`} label="Recurring" checked={recurring} onChange={setRecurring} />
+            </div>
+            <Field id={`${id}-task`} label="Task" className="pg-advanced">
               <TextInput id={`${id}-task`} value={task} onChange={(e) => setTask(e.target.value)} />
             </Field>
           </div>
@@ -176,7 +178,7 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
                       ))}
                     </ol>
                     {draft ? (
-                      <p className={styles.note}>
+                      <p className={`${styles.note} pg-advanced`}>
                         {recurring
                           ? `Recurring jobs get deterministic forward jitter, capped at ${JITTER_CAP_MINUTES} minutes, and expire ${LIFETIME_DAYS} days after creation: created now, it expires ${formatLocal(new Date(expiresAt(draft)!))}, after ${firesWithinLifetime(draft)} fire(s).`
                           : "A one-time job deletes itself after its prompt is accepted for delivery."}
@@ -202,7 +204,7 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
       </Section>
 
       <Section title="List, run, cancel">
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           <span className="pg-inline-field">
             <label className="pg-label" htmlFor={`${id}-session`}>
               Session
@@ -222,7 +224,7 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
           </button>
         </div>
         {sessions.length > 1 ? (
-          <p className={styles.note} role="status">
+          <p className={`${styles.note} pg-advanced`} role="status">
             {session === sessions[sessions.length - 1]
               ? `${session} has its own job list. Pick an earlier session to resume it and restore its scheduler.`
               : `Resumed ${session}: its scheduler and its jobs are back.`}
@@ -287,10 +289,10 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
             </table>
           </div>
         ) : null}
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Muse Code offers create, list and delete. To change a cadence or a prompt, cancel the job and create a replacement. &quot;Run once now&quot; runs the stored task without creating another job; a one-time job then deletes itself.
         </p>
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           <label className="pg-label" htmlFor={`${id}-closed`}>
             Close Muse Code for
           </label>
@@ -307,7 +309,7 @@ export function ScheduleBuilder(props: ScheduleBuilderProps) {
             live
           />
         ) : null}
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Jobs fire only while Muse Code runs, in the machine&apos;s local timezone. Use a system or hosted scheduler for work that must run with the terminal closed or for longer than {LIFETIME_DAYS} days.
         </p>
       </Section>

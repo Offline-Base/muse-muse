@@ -1,9 +1,10 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { Field, PresetPills, Segmented, TextInput, Toggle } from "@/components/docs/kit/Field";
+import { Field, Segmented, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { CodeBlock } from "@/components/docs/playgrounds/start/CodeBlock";
+import { SplitPills } from "@/components/docs/playgrounds/start/SplitPills";
 import {
   PAGE_POLICY,
   planRetries,
@@ -41,23 +42,23 @@ export function RetrySimulator({ scenario: initialScenario = "rate-limit", scena
 
   return (
     <div className="pg">
-      <PresetPills label="The server" presets={list} active={scenarioIndex} onPick={setScenarioIndex} />
+      <SplitPills label="The server" presets={list} active={scenarioIndex} onPick={setScenarioIndex} />
       <p className="pg-hint">{scenario.story}</p>
       <div className={styles.policy}>
         <Field id={`${id}-base`} label="First delay (ms)">
           <TextInput id={`${id}-base`} type="number" inputMode="numeric" min={0} max={10000} step={100} value={policy.baseMs} onChange={setNumber("baseMs", 0, 10000)} />
         </Field>
-        <Field id={`${id}-factor`} label="Growth per retry">
+        <Field id={`${id}-factor`} label="Growth per retry" className="pg-advanced">
           <TextInput id={`${id}-factor`} type="number" inputMode="decimal" min={1} max={4} step={0.5} value={policy.factor} onChange={setNumber("factor", 1, 4)} />
         </Field>
-        <Field id={`${id}-jitter`} label="Jitter, up to (ms)">
+        <Field id={`${id}-jitter`} label="Jitter, up to (ms)" className="pg-advanced">
           <TextInput id={`${id}-jitter`} type="number" inputMode="numeric" min={0} max={5000} step={100} value={policy.jitterMs} onChange={setNumber("jitterMs", 0, 5000)} />
         </Field>
         <Field id={`${id}-attempts`} label="Attempts in all">
           <TextInput id={`${id}-attempts`} type="number" inputMode="numeric" min={1} max={8} step={1} value={policy.maxAttempts} onChange={setNumber("maxAttempts", 1, 8)} />
         </Field>
       </div>
-      <div className="pg-actions">
+      <div className="pg-actions pg-advanced">
         <Toggle id={`${id}-ra`} label="Wait at least Retry-After" checked={policy.honorRetryAfter} onChange={(on) => setPolicy((p) => ({ ...p, honorRetryAfter: on }))} />
         <button type="button" className="btn btn-outline btn-sm" onClick={() => setSeed((s) => s + 1)}>
           Reshuffle the jitter
@@ -76,7 +77,7 @@ export function RetrySimulator({ scenario: initialScenario = "rate-limit", scena
         {timelineVerdict(timeline)}
       </p>
 
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <Segmented<"python" | "typescript">
           label="Language"
           size="sm"
@@ -88,7 +89,9 @@ export function RetrySimulator({ scenario: initialScenario = "rate-limit", scena
           onChange={setLang}
         />
       </div>
-      <CodeBlock label={lang} syntax={lang} code={retryCode(policy, lang, DEFAULT_TEXT_MODEL)} caption="This policy as code" copyLabel="Copy the retry code" />
+      <div className="pg-advanced">
+        <CodeBlock label={lang} syntax={lang} code={retryCode(policy, lang, DEFAULT_TEXT_MODEL)} caption="This policy as code" copyLabel="Copy the retry code" />
+      </div>
     </div>
   );
 }
@@ -106,7 +109,7 @@ function Attempt({ step, longest }: { step: TimelineStep; longest: number }) {
           <span className={`pg-status ${ok ? "pg-status-ok" : "pg-status-bad"}`}>{status}</span>
           {outcome.retryAfterSec && !outcome.midStream ? <span className="pg-meta"> Retry-After: {outcome.retryAfterSec}</span> : null}
         </span>
-        <span className="pg-hint">{step.reason}</span>
+        <span className="pg-hint pg-advanced">{step.reason}</span>
         {wait ? (
           <span className={styles.wait}>
             <span

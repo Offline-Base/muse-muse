@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { PresetPills, TextArea, Toggle } from "@/components/docs/kit/Field";
+import { TextArea, Toggle } from "@/components/docs/kit/Field";
 import { TabPanel, Tabs } from "@/components/docs/kit/Tabs";
 import { clientBody, clientCode, defaultsOf, type OptionValue, type RuntimeDef, type Values } from "@/components/docs/playgrounds/open-weights/deploy";
 import { SPARK_RUNTIMES } from "@/components/docs/playgrounds/open-weights/deploy-spark";
@@ -9,7 +9,7 @@ import { GLIMMER_RUNTIMES } from "@/components/docs/playgrounds/open-weights/dep
 import { MODEL_NAME, PAGE, type OpenModel } from "@/components/docs/playgrounds/open-weights/facts";
 import { StandIn } from "@/components/docs/playgrounds/open-weights/StandIn";
 import { hostedFromClient } from "@/components/docs/playgrounds/open-weights/standin-body";
-import { CodeTabs, Issues, OptionControls, Rich, SegmentField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
+import { CodeTabs, Issues, OptionControls, PresetRows, Rich, SegmentField, Status, Steps } from "@/components/docs/playgrounds/open-weights/ui";
 import styles from "@/components/docs/playgrounds/open-weights/ow.module.css";
 
 /**
@@ -108,7 +108,7 @@ export function DeployBuilder({ model }: DeployBuilderProps) {
 
   return (
     <div className="pg">
-      <PresetPills presets={presets} active={preset} onPick={pick} label="Try" />
+      <PresetRows presets={presets} keep={4} active={preset} onPick={pick} label="Try" />
       <SegmentField
         label="Runtime"
         value={runtime.id}
@@ -122,7 +122,7 @@ export function DeployBuilder({ model }: DeployBuilderProps) {
         {runtime.bestFor}.{" "}
         <a href={`${PAGE[model].deploy}${runtime.anchor}`}>Read the {runtime.label} section</a>
       </p>
-      <OptionControls options={runtime.options} values={v} onChange={setOption} idBase={`${id}-${runtime.id}`} />
+      <OptionControls options={runtime.options} values={v} onChange={setOption} idBase={`${id}-${runtime.id}`} simple={2} />
       <Status tone={tone}>
         {plan.errors.length
           ? `${plan.errors.length === 1 ? "One combination" : `${plan.errors.length} combinations`} here fail at startup, per the page.`
@@ -164,7 +164,7 @@ export function DeployBuilder({ model }: DeployBuilderProps) {
                   .join(" ")}
               />
             </p>
-            <details className="pg-raw">
+            <details className="pg-raw pg-advanced">
               <summary>The request body</summary>
               <pre className="pg-pre">{JSON.stringify(clientBody(client, prompt || PROMPT[model], stream), null, 2)}</pre>
             </details>

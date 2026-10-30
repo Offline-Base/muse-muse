@@ -130,15 +130,17 @@ export function Check({
   checked,
   onChange,
   disabled,
+  className,
 }: {
   id: string;
   label: ReactNode;
   checked: boolean;
   onChange(checked: boolean): void;
   disabled?: boolean;
+  className?: string;
 }) {
   return (
-    <label className={styles.check} htmlFor={id}>
+    <label className={`${styles.check}${className ? ` ${className}` : ""}`} htmlFor={id}>
       <input id={id} type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
@@ -160,10 +162,10 @@ export function Chip({ tone = "plain", children }: { tone?: Tone; children: Reac
 }
 
 /** A short bulleted list of notes; nothing when empty. */
-export function Notes({ items, live = false }: { items: ReadonlyArray<ReactNode>; live?: boolean }) {
+export function Notes({ items, live = false, className }: { items: ReadonlyArray<ReactNode>; live?: boolean; className?: string }) {
   if (!items.length) return null;
   return (
-    <ul className={styles.notes} aria-live={live ? "polite" : undefined}>
+    <ul className={`${styles.notes}${className ? ` ${className}` : ""}`} aria-live={live ? "polite" : undefined}>
       {items.map((n, i) => (
         <li key={i}>{n}</li>
       ))}

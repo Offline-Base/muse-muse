@@ -55,7 +55,7 @@ export function RecipeBrowser(props: RecipeBrowserProps) {
 
   return (
     <div className={`pg ${styles.stack}`}>
-      <div className={styles.spread}>
+      <div className={`${styles.spread} pg-advanced`}>
         <Segmented<Theme | "all">
           label="Theme"
           size="sm"
@@ -70,7 +70,7 @@ export function RecipeBrowser(props: RecipeBrowserProps) {
           <TextInput id={`${id}-q`} type="search" placeholder="Search: resume, sandbox, cron..." value={query} onChange={(e) => setQuery(e.target.value)} />
         </span>
       </div>
-      <p className={styles.note} role="status" aria-live="polite">
+      <p className={`${styles.note} pg-advanced`} role="status" aria-live="polite">
         Showing {shown.length} of {RECIPES.length} recipes{picks.length ? `, ${picks.length} picked for your need` : ""}.
       </p>
       <ul className={styles.cards}>
@@ -86,11 +86,11 @@ export function RecipeBrowser(props: RecipeBrowserProps) {
               <p className={styles.cardTitle}>
                 <Link href={`/docs/cookbook/${r.slug}`}>{r.title}</Link>
               </p>
-              <p className={styles.cardText}>{r.blurb}</p>
-              <p className={styles.note}>
+              <p className={`${styles.cardText} pg-advanced`}>{r.blurb}</p>
+              <p className={`${styles.note} pg-advanced`}>
                 <strong>Proves:</strong> {r.proves}
               </p>
-              <ul className={styles.cmdList} aria-label="Commands">
+              <ul className={`${styles.cmdList} pg-advanced`} aria-label="Commands">
                 {r.commands.map((c) => (
                   <li key={c}>
                     <code>{c}</code>
@@ -105,11 +105,15 @@ export function RecipeBrowser(props: RecipeBrowserProps) {
       {!shown.length ? <p className="pg-empty">No recipe matches. Clear the search or pick All.</p> : null}
 
       <Section title="Which recipe fits?">
-        <p className={styles.note}>Describe what your agent harness must do. The model picks up to three recipes from this catalog (a strict schema lists only these ten), and they light up above.</p>
+        <p className={`${styles.note} pg-advanced`}>Describe what your agent harness must do. The model picks up to three recipes from this catalog (a strict schema lists only these ten), and they light up above.</p>
         <div className="pg-bar">
           <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
         </div>
-        {needs.length ? <PresetPills presets={needs.map((n) => ({ label: n }))} active={needs.indexOf(need)} onPick={(i) => setNeed(needs[i])} disabled={running} /> : null}
+        {needs.length ? (
+          <div className="pg-advanced">
+            <PresetPills presets={needs.map((n) => ({ label: n }))} active={needs.indexOf(need)} onPick={(i) => setNeed(needs[i])} disabled={running} />
+          </div>
+        ) : null}
         <div className="pg-composer">
           <label className="sr-only" htmlFor={`${id}-need`}>
             What your agent must do

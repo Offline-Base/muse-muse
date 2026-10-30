@@ -197,7 +197,7 @@ export function LookAndAsk({
             <FilePicker accept="image/*" value={photo} onChange={setPhoto} samples={SAMPLES} defaultSampleId={sampleId} preview="compact" disabled={busy} />
           )}
           {!camera ? (
-            <button type="button" className="btn btn-sm" onClick={() => setCamera(true)} disabled={busy}>
+            <button type="button" className="btn btn-sm pg-advanced" onClick={() => setCamera(true)} disabled={busy}>
               <Icon name="video" size={15} /> Use my camera (iPhone mode)
             </button>
           ) : null}
@@ -226,15 +226,17 @@ export function LookAndAsk({
             <div style={{ width: `${Math.round(Math.min(1, level * 3) * 100)}%`, height: "100%", background: "var(--accent)", transition: "width 80ms" }} />
           </div>
           <p className="pg-hint">Hold the button (or Space while it has focus), ask, and let go. Or type the question:</p>
-          <PresetPills
-            presets={presets.map((p) => ({ label: p }))}
-            active={preset}
-            onPick={(i) => {
-              setPreset(i);
-              setQuestion(presets[i]);
-            }}
-            disabled={busy}
-          />
+          <div className="pg-advanced">
+            <PresetPills
+              presets={presets.map((p) => ({ label: p }))}
+              active={preset}
+              onPick={(i) => {
+                setPreset(i);
+                setQuestion(presets[i]);
+              }}
+              disabled={busy}
+            />
+          </div>
           <div className={styles.textAnswer}>
             <label className="sr-only" htmlFor={`${id}-q`}>
               Question
@@ -242,13 +244,15 @@ export function LookAndAsk({
             <TextInput id={`${id}-q`} value={question} onChange={(e) => setQuestion(e.target.value)} disabled={busy} />
             <RunButton running={stage === "thinking"} onRun={() => void askWith(question)} onStop={ask.abort} label="Ask" disabled={!photo || !question.trim() || busy} />
           </div>
-          {micError ? <p className="pg-hint pg-bad">{micError}</p> : null}
+          {micError ? <div className="pg-hint pg-bad">{micError}</div> : null}
         </div>
       </div>
 
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} disabled={busy} />
-        <Toggle id={`${id}-speak`} label="Speak the answer" checked={speak} onChange={setSpeak} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-speak`} label="Speak the answer" checked={speak} onChange={setSpeak} />
+        </span>
       </div>
 
       <div className={styles.card} aria-live="polite">
@@ -367,7 +371,7 @@ function CameraCapture({ onCapture, onCancel }: { onCapture(m: PickedMedia): voi
 
   return (
     <div className={styles.stack}>
-      {error ? <p className="pg-hint pg-bad">{error}</p> : <video ref={video} className={styles.shot} muted playsInline aria-label="Camera preview" />}
+      {error ? <div className="pg-hint pg-bad">{error}</div> : <video ref={video} className={styles.shot} muted playsInline aria-label="Camera preview" />}
       <div className={styles.row}>
         <button type="button" className="btn btn-sm btn-primary" onClick={() => void shoot()} disabled={!!error}>
           Take the photo

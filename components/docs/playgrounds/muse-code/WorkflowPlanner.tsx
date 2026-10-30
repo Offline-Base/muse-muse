@@ -216,7 +216,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
                     />
                   </Field>
                   {draft.stages.length > 1 ? (
-                    <div>
+                    <div className="pg-advanced">
                       <button type="button" className="btn btn-outline btn-sm" onClick={() => edit({ stages: draft.stages.filter((_, j) => j !== i) })}>
                         Remove stage {i + 1}
                       </button>
@@ -226,7 +226,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
               </li>
             ))}
           </ol>
-          <div className="pg-actions">
+          <div className="pg-actions pg-advanced">
             <button type="button" className="btn btn-outline btn-sm" onClick={() => edit({ stages: [...draft.stages, ""] })} disabled={draft.stages.length >= 6}>
               Add a stage
             </button>
@@ -238,7 +238,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
             <SelectField<Writes>
               id={`${idBase}-writes`}
               label="Writing"
-              className={styles.narrow}
+              className={`${styles.narrow} pg-advanced`}
               value={draft.writes}
               onChange={(writes) => edit({ writes })}
               options={[
@@ -248,7 +248,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
               ]}
             />
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Check id={`${idBase}-verify`} label="A verifier challenges high-risk findings" checked={draft.verify} onChange={(verify) => edit({ verify })} />
             {draft.writes === "worktrees" ? (
               <>
@@ -260,6 +260,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
           <CodeBlock code={request} label="Type this in a Muse Code session" syntax="text" />
           <Problems warnings={warnings} ok="A bounded responsibility per child and a final deliverable: enough structure for the workflow author." />
           <Notes
+            className="pg-advanced"
             items={[
               "An explicit request like this starts the workflow without an extra confirmation.",
               "With /settings > Tools > Workflows on auto, Muse Code can also propose one for workflow-scale work; explicit launches only when you ask; off removes the tool.",
@@ -292,7 +293,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
               <TextInput id={`${idBase}-file`} className="pg-code-input" value={file} spellCheck={false} onChange={(e) => setFile(e.target.value)} />
             </Field>
           </div>
-          <Check id={`${idBase}-over`} label="--overwrite (replace a workflow saved under this name in this scope)" checked={overwrite} onChange={setOverwrite} />
+          <Check id={`${idBase}-over`} className="pg-advanced" label="--overwrite (replace a workflow saved under this name in this scope)" checked={overwrite} onChange={setOverwrite} />
           <Problems errors={nameProblems(name)} ok={`Saves to ${destination(name, scope)}.`} />
           <CodeBlock
             label="bash"
@@ -304,8 +305,8 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
               "muse workflows list",
             ].join("\n")}
           />
-          <CodeBlock label="Then, in a new session" syntax="text" code={`Run the saved ${name || "<name>"} workflow against my current changes.`} />
-          <div className={`${styles.card} ${styles.cardMuted}`}>
+          <CodeBlock className="pg-advanced" label="Then, in a new session" syntax="text" code={`Run the saved ${name || "<name>"} workflow against my current changes.`} />
+          <div className={`${styles.card} ${styles.cardMuted} pg-advanced`}>
             <p className={styles.cardTitle}>Check a script before you save it</p>
             <p className="pg-small">Saving checks that the source is a regular, nonempty UTF-8 file of at most 512 KiB. It doesn&apos;t parse or run the JavaScript: syntax errors show when the workflow launches. The file stays in your browser.</p>
             <input
@@ -322,14 +323,15 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
             {script ? <Problems errors={script.problems} ok={`${script.name} (${(script.bytes / 1024).toFixed(1)} KiB) passes the save checks. It must also return a JSON-serializable value when it completes.`} /> : null}
           </div>
           <Notes
+            className="pg-advanced"
             items={[
               "The save is local: commit .agents/workflows/ so other clones can find it. User-scoped workflows stay local to your account.",
               "A project and a user workflow can share a name; discovery picks the project one.",
               "Muse Code loads named workflows once when a session starts, and project workflows only after you trust the workspace. Save first, then start the session that runs it.",
             ]}
           />
-          <CodeBlock label="Or ask Muse Code to write the script" syntax="text" code={AUTHOR_PROMPT} />
-          <div className={`${styles.card} ${styles.cardMuted}`}>
+          <CodeBlock className="pg-advanced" label="Or ask Muse Code to write the script" syntax="text" code={AUTHOR_PROMPT} />
+          <div className={`${styles.card} ${styles.cardMuted} pg-advanced`}>
             <p className={styles.cardTitle}>Recover and revise a failed run</p>
             <div className={styles.row}>
               <Field id={`${idBase}-runid`} label="Run id" className={styles.narrow}>
@@ -402,7 +404,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
           <Field id={`${idBase}-code`} label="Code the children inspect">
             <TextArea id={`${idBase}-code`} className="pg-code-input" rows={10} value={code} spellCheck={false} onChange={(e) => setCode(e.target.value)} disabled={running} />
           </Field>
-          <div className={styles.grid}>
+          <div className={`${styles.grid} pg-advanced`}>
             {children.map((c, i) => (
               <Field key={i} id={`${idBase}-child-${i}`} label={`Child ${i + 1}`}>
                 <TextInput
@@ -414,7 +416,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
               </Field>
             ))}
           </div>
-          <Field id={`${idBase}-synth`} label="Synthesis step">
+          <Field id={`${idBase}-synth`} label="Synthesis step" className="pg-advanced">
             <TextInput id={`${idBase}-synth`} value={synthText} disabled={running} onChange={(e) => setSynthText(e.target.value)} />
           </Field>
           <div className="pg-bar">
@@ -455,10 +457,10 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
                 </p>
               </section>
               {totals.calls && (live === "done" || live === "failed") ? (
-                <p className="pg-hint" role="status">
+                <div className="pg-hint" role="status">
                   {totals.calls} model calls, {totals.tokens.toLocaleString("en-US")} tokens, about {formatUsd(totals.usd)} in total. Each child makes its own model calls, so a broad workflow uses
                   far more tokens than one turn.
-                </p>
+                </div>
               ) : null}
             </>
           ) : null}

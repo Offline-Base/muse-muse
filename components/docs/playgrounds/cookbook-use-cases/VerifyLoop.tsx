@@ -315,9 +315,9 @@ export function VerifyLoop({ kind, effort: initialEffort = "medium" }: VerifyLoo
         ) : null}
       </div>
       {waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {waitNote}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={waitNote ? null : runner.error} />
 
@@ -336,7 +336,7 @@ export function VerifyLoop({ kind, effort: initialEffort = "medium" }: VerifyLoo
       {rounds.map((r, i) => (
         <div key={i} className={styles.card}>
           <p className={styles.cardTitle}>{r.title}</p>
-          <details>
+          <details className="pg-advanced">
             <summary className="pg-small">The prompt</summary>
             <p className="pg-small">{r.prompt}</p>
           </details>
@@ -351,7 +351,7 @@ export function VerifyLoop({ kind, effort: initialEffort = "medium" }: VerifyLoo
             </div>
           ) : null}
           {r.console.length ? (
-            <pre className="pg-pre" style={{ maxHeight: 120 }}>
+            <pre className="pg-pre pg-advanced" style={{ maxHeight: 120 }}>
               {r.console.slice(-12).join("\n")}
             </pre>
           ) : null}
@@ -362,14 +362,14 @@ export function VerifyLoop({ kind, effort: initialEffort = "medium" }: VerifyLoo
             </>
           ) : null}
           {r.continued && !r.cutOff ? <p className="pg-hint">The reply hit the 16,384-token output limit mid-file; one Continue on the same chain finished it.</p> : null}
-          {r.cutOff ? <p className="pg-hint pg-bad">This reply hit the output limit before the file ended{r.continued ? ", even after one Continue" : ""}.</p> : null}
-          {!r.html && !r.cutOff ? <p className="pg-hint pg-bad">No complete HTML file in this reply.</p> : null}
+          {r.cutOff ? <div className="pg-hint pg-bad">This reply hit the output limit before the file ended{r.continued ? ", even after one Continue" : ""}.</div> : null}
+          {!r.html && !r.cutOff ? <div className="pg-hint pg-bad">No complete HTML file in this reply.</div> : null}
           <UsageLine model={r.model ?? model} usage={r.usage} />
         </div>
       ))}
 
       {rounds.length && !running ? (
-        <div className={styles.card}>
+        <div className={`${styles.card} pg-advanced`}>
           <p className={styles.cardTitle}>Refine, with the browser confirming the change</p>
           <div className="pg-presets" role="group" aria-label="Refinement passes">
             {spec.refine.map((p) => (

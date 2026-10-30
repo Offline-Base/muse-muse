@@ -82,7 +82,7 @@ export function MultiAgentBoard({ brief: initialBrief = ONE_LINE_BRIEF }: MultiA
 
   return (
     <div className="pg">
-      <div className={styles.grid2}>
+      <div className={`${styles.grid2} pg-advanced`}>
         {PROFILES.map((p) => (
           <div key={p} className={styles.card} style={{ padding: "10px 12px" }}>
             <p className={styles.row}>
@@ -110,7 +110,7 @@ export function MultiAgentBoard({ brief: initialBrief = ONE_LINE_BRIEF }: MultiA
       </div>
       <div className="pg-actions">
         <RunButton running={run.busy} onRun={start} onStop={run.stop} label="Brief the PM" disabled={!brief.trim()} />
-        <span className="pg-hint">Answer the PM&apos;s clarify questions when they appear. A full run is 30 to 80 short calls, spaced to stay under the live demos&apos; per-minute limit and up to a fifth of the 400 runs each network gets a day: a few minutes and about a cent on Spark Contributor. On Muse Wonder (40 times the input price, 100 times the output) the same run costs dollars, more than the $2 a day each network gets.</span>
+        <span className="pg-hint pg-advanced">Answer the PM&apos;s clarify questions when they appear. A full run is 30 to 80 short calls, spaced to stay under the live demos&apos; per-minute limit and up to a fifth of the 400 runs each network gets a day: a few minutes and about a cent on Spark Contributor. On Muse Wonder (40 times the input price, 100 times the output) the same run costs dollars, more than the $2 a day each network gets.</span>
       </div>
       <RunBar busy={run.busy} modelCalls={run.modelCalls} totalUsd={run.totalUsd} waitingStep={run.waitingStep} onAdvance={run.advance} />
       <ErrorBox error={run.error} />

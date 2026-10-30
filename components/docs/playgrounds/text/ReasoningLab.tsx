@@ -4,9 +4,10 @@ import { useId, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { useDocsPage } from "@/components/docs/kit/DocsPageContext";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { Field, PresetPills, runOnModEnter, Segmented, TextArea, TextInput, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
+import { Field, runOnModEnter, Segmented, TextArea, TextInput, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { latencyLabel, statusText } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
@@ -265,7 +266,7 @@ export function ReasoningLab(props: ReasoningLabProps) {
         />
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={busy} />
         {protocol === "responses" ? (
-          <span className="pg-inline-field">
+          <span className="pg-inline-field pg-advanced">
             <label className="pg-label" htmlFor={`${id}-summary`}>
               Summary
             </label>
@@ -287,7 +288,7 @@ export function ReasoningLab(props: ReasoningLabProps) {
             </span>
           </span>
         ) : null}
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <label className="pg-label" htmlFor={`${id}-max`}>
             {protocol === "chat" ? "max_completion_tokens" : "max_output_tokens"}
           </label>
@@ -303,19 +304,21 @@ export function ReasoningLab(props: ReasoningLabProps) {
         </span>
       </div>
 
-      <PickPills<EffortChoice>
-        label="Efforts"
-        options={EFFORT_CHOICES.map((e) => ({ value: e, label: LABEL[e], disabled: !allowed.includes(e) }))}
-        value={efforts}
-        onChange={setEfforts}
-        disabled={busy}
-      />
-      <p className={cx(styles.about, styles.small)} id={`${id}-max-hint`}>
+      <div className="pg-advanced">
+        <PickPills<EffortChoice>
+          label="Efforts"
+          options={EFFORT_CHOICES.map((e) => ({ value: e, label: LABEL[e], disabled: !allowed.includes(e) }))}
+          value={efforts}
+          onChange={setEfforts}
+          disabled={busy}
+        />
+      </div>
+      <p className={cx(styles.about, styles.small, "pg-advanced")} id={`${id}-max-hint`}>
         Reasoning tokens count toward the output limit and bill like visible output. &quot;Default&quot; leaves the effort out, so the model picks
         {model === "muse-wonder-1.0" || model === "muse-spark-1.3" ? "" : "; Max is offered on Muse Wonder"}. &quot;none&quot; returns HTTP 400 on these models.
       </p>
 
-      {props.presets.length ? <PresetPills presets={props.presets} active={preset} onPick={pick} disabled={busy} /> : null}
+      {props.presets.length ? <PresetRow keep={4} presets={props.presets} active={preset} onPick={pick} disabled={busy} /> : null}
 
       <div className="pg-composer">
         <label className="sr-only" htmlFor={`${id}-prompt`}>
@@ -366,7 +369,7 @@ export function ReasoningLab(props: ReasoningLabProps) {
       {done.some(([, s]) => s.state === "error") ? <ErrorBox error={done.find(([, s]) => s.state === "error")?.[1].error ?? null} /> : null}
 
       {finished.length && source ? (
-        <section className={styles.card} aria-labelledby={`${id}-follow`}>
+        <section className={cx(styles.card, !follow && "pg-advanced")} aria-labelledby={`${id}-follow`}>
           <p className={styles.cardTitle} id={`${id}-follow`}>
             Carry the reasoning into a follow-up
           </p>
@@ -488,7 +491,7 @@ function EffortRow({ effort, slot, onFollow, selected }: { effort: EffortChoice;
           </>
         ) : null}
         {slot.state === "done" && slot.protocol === "responses" ? (
-          <span className={styles.runAction}>
+          <span className={cx(styles.runAction, "pg-advanced")}>
             {selected ? (
               <Badge tone="accent">Follow-up source</Badge>
             ) : (
@@ -499,7 +502,7 @@ function EffortRow({ effort, slot, onFollow, selected }: { effort: EffortChoice;
           </span>
         ) : null}
       </div>
-      {slot.state === "error" && slot.error ? <p className="pg-hint pg-bad">{slot.error.message}</p> : null}
+      {slot.state === "error" && slot.error ? <div className="pg-hint pg-bad">{slot.error.message}</div> : null}
       {r ? (
         <details className={styles.details}>
           <summary>
@@ -524,7 +527,7 @@ function EffortRow({ effort, slot, onFollow, selected }: { effort: EffortChoice;
                 <AnswerText text={r.answer} />
               </div>
             ) : (
-              <p className="pg-hint">No visible answer: the output limit ran out during reasoning. Raise it and run again.</p>
+              <div className="pg-hint">No visible answer: the output limit ran out during reasoning. Raise it and run again.</div>
             )}
           </div>
         </details>

@@ -55,14 +55,14 @@ export function AgentSetup({ model: initialModel }: { slug: string; model?: stri
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Any harness with an OpenAI-compatible or custom provider plugs in through the Responses API or Chat Completions. Pick the
         settings, then paste the prompt into a self-configuring agent (OpenCode, Goose, Roo) or put the block in{" "}
         <code>opencode.json</code> (global at <code>~/.config/opencode/opencode.json</code>, or per project).
       </p>
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} />
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <label className="pg-label" htmlFor={`${id}-effort`}>
             reasoningEffort
           </label>
@@ -77,7 +77,7 @@ export function AgentSetup({ model: initialModel }: { slug: string; model?: stri
           </span>
         </span>
       </div>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <Segmented<OpenCodeAdapter>
           label="Adapter"
           options={[
@@ -100,7 +100,9 @@ export function AgentSetup({ model: initialModel }: { slug: string; model?: stri
       </p>
 
       <CodeBlock label="text" code={prompt} syntax="text" caption="Option A: paste this into your coding agent" copyLabel="Copy the provider prompt" />
-      <CodeBlock label="opencode.json" code={config} syntax="json" caption="Option B: add this block to opencode.json" copyLabel="Copy the opencode.json block" />
+      <div className="pg-advanced">
+        <CodeBlock label="opencode.json" code={config} syntax="json" caption="Option B: add this block to opencode.json" copyLabel="Copy the opencode.json block" />
+      </div>
       <p className="pg-hint">
         Then run <code>/connect</code>, select the <code>meta</code> provider and enter your API key when asked (keep it out of the
         config file), restart OpenCode and select the model.
@@ -109,7 +111,7 @@ export function AgentSetup({ model: initialModel }: { slug: string; model?: stri
           : ""}
       </p>
 
-      <div>
+      <div className="pg-advanced">
         <p className="pg-section-label">Any OpenAI-compatible tool</p>
         <p className="pg-hint">
           LangChain, LlamaIndex, the Vercel AI SDK, Continue and most frameworks ask for three values. Put the key itself in the

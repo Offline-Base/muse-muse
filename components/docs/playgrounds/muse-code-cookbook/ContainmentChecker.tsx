@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useId, useMemo, useRef, useState } from "react";
-import { PresetPills, Segmented, TextInput, runOnModEnter } from "@/components/docs/kit/Field";
+import { Segmented, TextInput, runOnModEnter } from "@/components/docs/kit/Field";
 import { AgentLoopPanel } from "@/components/docs/playgrounds/muse-code-cookbook/AgentLoopPanel";
 import type { Harness } from "@/components/docs/playgrounds/muse-code-cookbook/hooks";
 import { containmentRequest } from "@/components/docs/playgrounds/muse-code-cookbook/logic/requests";
@@ -20,7 +20,7 @@ import {
   type SandboxRun,
   type Tree,
 } from "@/components/docs/playgrounds/muse-code-cookbook/logic/sandbox";
-import { Section, Steps, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
+import { FewPills, Section, Steps, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
 import styles from "@/components/docs/playgrounds/muse-code-cookbook/mcc.module.css";
 
 /**
@@ -106,7 +106,7 @@ export function ContainmentChecker(props: ContainmentCheckerProps) {
   const verdict = ran?.run;
   return (
     <div className={`pg ${styles.stack}`}>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <Segmented<Launch>
           label="Launch flags"
           size="sm"
@@ -129,17 +129,19 @@ export function ContainmentChecker(props: ContainmentCheckerProps) {
           </span>
         </span>
       </div>
-      <Terminal
-        title="Startup"
-        lines={[
-          { text: `cd ${SANDBOX_DEMO.root} && ${LAUNCH_FLAGS[launch]}`, tone: "cmd" },
-          { text: `Security: ${startupLine(launch)}${launch === "default" ? "" : " · from CLI flag"}`, tone: launch === "yolo" || launch === "disable-sandbox" ? "warn" : "plain" },
-        ]}
-      />
+      <div className="pg-advanced">
+        <Terminal
+          title="Startup"
+          lines={[
+            { text: `cd ${SANDBOX_DEMO.root} && ${LAUNCH_FLAGS[launch]}`, tone: "cmd" },
+            { text: `Security: ${startupLine(launch)}${launch === "default" ? "" : " · from CLI flag"}`, tone: launch === "yolo" || launch === "disable-sandbox" ? "warn" : "plain" },
+          ]}
+        />
+      </div>
       <Steps label="The contained-execution contract for this run" steps={steps} />
 
       <div className={styles.split}>
-        <div className={styles.tight}>
+        <div className={`${styles.tight} pg-advanced`}>
           <p className="pg-section-label">The managed profile</p>
           <pre className={`${styles.tree} ${styles.treeWrap}`}>
             {[
@@ -155,7 +157,7 @@ export function ContainmentChecker(props: ContainmentCheckerProps) {
           <label className="pg-label" htmlFor={`${id}-cmd`}>
             Command
           </label>
-          <PresetPills presets={COMMANDS} active={COMMANDS.findIndex((c) => c.command === command)} onPick={(i) => { setCommand(COMMANDS[i].command); setRan({ command: COMMANDS[i].command, run: runCommand(COMMANDS[i].command, launch, host) }); }} />
+          <FewPills show={4} presets={COMMANDS} active={COMMANDS.findIndex((c) => c.command === command)} onPick={(i) => { setCommand(COMMANDS[i].command); setRan({ command: COMMANDS[i].command, run: runCommand(COMMANDS[i].command, launch, host) }); }} />
           <div className={styles.row}>
             <TextInput id={`${id}-cmd`} className={`pg-code-input ${styles.grow}`} value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={runOnModEnter(simulate)} spellCheck={false} />
             <button type="button" className="btn btn-sm btn-outline" onClick={simulate}>
@@ -170,17 +172,17 @@ export function ContainmentChecker(props: ContainmentCheckerProps) {
           <Terminal title="bash (simulated)" lines={runLines(ran.command, verdict)} live />
           {verdict.refused ? (
             <Verdict tone="bad" title="Refused: an unverified sandbox runs nothing">
-              <p className={styles.note}>The probe&apos;s write to a denied path landed, so the sandbox is reported unavailable and the tool call fails before the command starts. There is no third path where a command runs without a passing probe.</p>
+              <p className={`${styles.note} pg-advanced`}>The probe&apos;s write to a denied path landed, so the sandbox is reported unavailable and the tool call fails before the command starts. There is no third path where a command runs without a passing probe.</p>
             </Verdict>
           ) : verdict.probe === "skipped" ? (
             <Verdict tone="warn" title="Sandbox disabled: no probe, no containment">
-              <p className={styles.note}>
+              <p className={`${styles.note} pg-advanced`}>
                 {launch === "yolo" ? "--yolo" : "--disable-sandbox"} turns enforcement off for the run. Use it only when a task needs the network, accepting that you give up the containment guarantee.
               </p>
             </Verdict>
           ) : verdict.denials.length ? (
             <Verdict tone="ok" title={`Contained: the OS blocked ${verdict.denials.length} operation(s)`}>
-              <p className={styles.note}>The harness doesn&apos;t need its own check: the OS refuses the write or the connection, the tool result carries the denial, and the session event log records it.</p>
+              <p className={`${styles.note} pg-advanced`}>The harness doesn&apos;t need its own check: the OS refuses the write or the connection, the tool result carries the denial, and the session event log records it.</p>
             </Verdict>
           ) : (
             <Verdict tone="info" title="Ran inside the sandbox: nothing crossed a boundary" />

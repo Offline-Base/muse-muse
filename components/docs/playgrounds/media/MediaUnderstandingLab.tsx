@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, ErrorBox, ModelSelect, ResponseView, RunButton } from "@/components/docs/kit";
-import { EffortSelect, Field, PresetPills, Segmented, TextArea, TextInput, Toggle, runOnModEnter } from "@/components/docs/kit/Field";
+import { EffortSelect, Field, Segmented, TextArea, TextInput, Toggle, runOnModEnter } from "@/components/docs/kit/Field";
 import { StreamView } from "@/components/docs/kit/StreamView";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { FilePicker } from "@/components/docs/media/FilePicker";
@@ -20,6 +20,7 @@ import {
   type VideoSend,
 } from "@/components/docs/playgrounds/media/bodies";
 import styles from "@/components/docs/playgrounds/media/demos.module.css";
+import { SimplePills } from "@/components/docs/playgrounds/media/SimplePills";
 import { UploadCache } from "@/components/docs/playgrounds/media/upload-cache";
 import type { DocsError } from "@/lib/docs/client/api";
 import type { Effort } from "@/lib/docs/client/models";
@@ -244,9 +245,10 @@ export function MediaUnderstandingLab({
   return (
     <div className={`pg ${styles.lab}`}>
       <div className={styles.stack}>
-        {groups.map((g) => (
-          <PresetPills
+        {groups.map((g, row) => (
+          <SimplePills
             key={g.label}
+            advanced={row > 0}
             label={g.label}
             presets={g.indexes.map((i) => presets[i])}
             active={preset !== null && g.indexes.includes(preset) ? g.indexes.indexOf(preset) : null}
@@ -259,7 +261,7 @@ export function MediaUnderstandingLab({
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} allow={models} disabled={running} />
       </div>
-      <div className={styles.controls}>
+      <div className={`${styles.controls} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>Input</span>
           <Segmented<MediaKind>
@@ -291,7 +293,7 @@ export function MediaUnderstandingLab({
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
       </div>
 
-      <div className={styles.stack}>
+      <div className={`${styles.stack} pg-advanced`}>
         <span className={`${styles.inline} ${styles.segWrap}`}>
           <span className={styles.label}>Send as</span>
           <Segmented<Send>
@@ -354,7 +356,7 @@ export function MediaUnderstandingLab({
       </Field>
 
       <div className={styles.spread}>
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           {media === "audio"
             ? `Audio on Muse Spark 1.3 isn't fully supported yet, so this starts on Muse Spark 1.2, with ${audioMaxOutputTokens.toLocaleString("en-US")} output tokens of room: reasoning shares the budget, and a transcript can come back empty without it.`
             : "Under a cent a run on the default model. Streaming keeps a long clip from timing out before the first token."}

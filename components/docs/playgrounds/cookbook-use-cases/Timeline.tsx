@@ -89,14 +89,18 @@ function ModelItem({ e, n, order }: { e: ModelEntry; n: number; order?: readonly
           {e.response?.usage ? <UsageLine model={e.model ?? null} usage={e.response.usage} webSearches={searches || undefined} /> : null}
         </span>
       </p>
-      {e.error ? <p className="pg-hint pg-bad">{e.error.message}</p> : null}
+      {e.error ? <div className="pg-hint pg-bad">{e.error.message}</div> : null}
       {commentary ? <p className={styles.commentary}>{commentary}</p> : null}
       {status && status.status === "incomplete" ? (
-        <p className="pg-hint pg-bad">The reply stopped early ({status.reason ?? "incomplete"}).</p>
+        <div className="pg-hint pg-bad">The reply stopped early ({status.reason ?? "incomplete"}).</div>
       ) : null}
-      {toolCalls.length ? <ToolCalls calls={toolCalls} title={toolCalls.length > 1 ? `Asked for ${toolCalls.length} tool calls` : "Asked for a tool call"} /> : null}
+      {toolCalls.length ? (
+        <div className="pg-advanced">
+          <ToolCalls calls={toolCalls} title={toolCalls.length > 1 ? `Asked for ${toolCalls.length} tool calls` : "Asked for a tool call"} />
+        </div>
+      ) : null}
       {text ? <LongText text={text} className={`pg-pre ${styles.answer}`} /> : null}
-      <details className="pg-raw">
+      <details className="pg-raw pg-advanced">
         <summary>Request{e.response ? " and reply" : ""} JSON</summary>
         <p className="pg-section-label">Request</p>
         <JsonTree value={e.body} openDepth={1} />
@@ -113,6 +117,8 @@ function ModelItem({ e, n, order }: { e: ModelEntry; n: number; order?: readonly
 
 function ToolItem({ e, n, order, render }: { e: ToolEntry; n: number; order?: readonly string[]; render?: (e: ToolEntry) => ReactNode }) {
   const custom = render?.(e);
+  // The step's own output is a detail in the simple view, unless it's why the step failed.
+  const output = custom ?? (e.output !== undefined ? <LongText text={e.output || "(empty)"} max={1200} /> : null);
   return (
     <li className={styles.entry} data-depth={Math.min(e.depth, 2)}>
       <p className={styles.entryHead}>
@@ -130,15 +136,15 @@ function ToolItem({ e, n, order, render }: { e: ToolEntry; n: number; order?: re
       {e.args && e.args !== "{}" ? (
         // Long arguments (a whole file for write_file) are already shown in the model call above, so fold them here.
         e.args.length > 280 ? (
-          <details className="pg-raw">
+          <details className="pg-raw pg-advanced">
             <summary>Arguments ({e.args.length.toLocaleString()} characters, shown in the call above)</summary>
             <pre className="pg-pre">{prettyArguments(e.args)}</pre>
           </details>
         ) : (
-          <pre className="pg-pre">{prettyArguments(e.args)}</pre>
+          <pre className="pg-pre pg-advanced">{prettyArguments(e.args)}</pre>
         )
       ) : null}
-      {custom ?? (e.output !== undefined ? <LongText text={e.output || "(empty)"} max={1200} /> : null)}
+      {output ? <div className={e.status === "error" || e.status === "denied" ? styles.toolOutput : `${styles.toolOutput} pg-advanced`}>{output}</div> : null}
     </li>
   );
 }

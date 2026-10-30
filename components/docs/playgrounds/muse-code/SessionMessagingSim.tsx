@@ -133,7 +133,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
                     {s.id}
                     {s.formerNames.length ? ` · earlier names reserved: ${s.formerNames.join(", ")}` : ""}
                   </p>
-                  <div className={styles.row}>
+                  <div className={`${styles.row} pg-advanced`}>
                     <Field id={`${idBase}-${s.id}-name`} label="/name" className={styles.grow}>
                       <TextInput
                         id={`${idBase}-${s.id}-name`}
@@ -169,11 +169,11 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
                       <p className="pg-hint pg-good">Stored as {normalized}.</p>
                     )
                   ) : null}
-                  <div className={styles.row}>
+                  <div className={`${styles.row} pg-advanced`}>
                     <SelectField<Platform> id={`${idBase}-${s.id}-os`} label="OS" value={s.platform} options={PLATFORMS} onChange={(platform) => dispatch({ type: "set", session: s.id, patch: { platform } })} />
                     <SelectField<Launch> id={`${idBase}-${s.id}-launch`} label="Started with" value={s.launch} options={LAUNCHES} onChange={(launch) => dispatch({ type: "set", session: s.id, patch: { launch } })} />
                   </div>
-                  <div className="pg-bar">
+                  <div className="pg-bar pg-advanced">
                     <Toggle id={`${idBase}-${s.id}-run`} label="Turn running" checked={s.running} onChange={(running) => dispatch({ type: "set", session: s.id, patch: { running } })} />
                     <Toggle id={`${idBase}-${s.id}-profile`} label="Exact-profile peer" checked={s.exactProfile} onChange={(exactProfile) => dispatch({ type: "set", session: s.id, patch: { exactProfile } })} />
                   </div>
@@ -214,7 +214,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
                   ) : (
                     <p className="pg-empty pg-small">No messages yet.</p>
                   )}
-                  <div className="pg-actions">
+                  <div className="pg-actions pg-advanced">
                     <button type="button" className="btn btn-outline btn-sm" onClick={() => dispatch({ type: "restart", session: s.id })}>
                       Restart session
                     </button>
@@ -229,7 +229,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
             })}
           </ul>
 
-          <div className="pg-actions">
+          <div className="pg-actions pg-advanced">
             <button type="button" className="btn btn-outline btn-sm" onClick={() => dispatch({ type: "advance", minutes: 30 })}>
               Let 30 minutes pass
             </button>
@@ -241,7 +241,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
 
           <div className={`${styles.card} ${styles.cardMuted}`}>
             <p className={styles.cardTitle}>Send a message</p>
-            <div className={styles.row}>
+            <div className={`${styles.row} pg-advanced`}>
               <SelectField id={`${idBase}-from`} label="From" className={styles.grow} value={from} onChange={setFrom} options={world.sessions.map((s) => ({ value: s.id, label: label(s) }))} />
               <Field id={`${idBase}-to`} label="To (exact name or full UUID)" className={styles.grow}>
                 <TextInput id={`${idBase}-to`} className="pg-code-input" list={`${idBase}-peers`} value={to} spellCheck={false} onChange={(e) => setTo(e.target.value)} />
@@ -270,7 +270,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
                 }}
               />
             </Field>
-            <div className={styles.row}>
+            <div className={`${styles.row} pg-advanced`}>
               <SelectField<Delivery>
                 id={`${idBase}-delivery`}
                 label="Delivery"
@@ -295,8 +295,10 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
               />
             </div>
             <div className="pg-bar">
-              <Toggle id={`${idBase}-reuse`} label="Resend the last message id" checked={reuse} onChange={setReuse} />
-              <span className="pg-muted pg-small">
+              <div className="pg-advanced">
+                <Toggle id={`${idBase}-reuse`} label="Resend the last message id" checked={reuse} onChange={setReuse} />
+              </div>
+              <span className="pg-muted pg-small pg-advanced">
                 Message id: <C>{messageId}</C>
               </span>
               <button type="button" className="btn btn-primary btn-sm" onClick={send}>
@@ -305,6 +307,7 @@ export function SessionMessagingSim({ slug }: SessionMessagingSimProps) {
             </div>
           </div>
           <Notes
+            className="pg-advanced"
             items={[
               "A message can't approve a tool call, grant consent, change permissions or configuration, or present itself as user input. Keep authorization in the receiving session.",
               "Messaging connects interactive sessions for the same user on the same macOS or Linux machine: no cross-user or cross-machine transport, and no shared state.",

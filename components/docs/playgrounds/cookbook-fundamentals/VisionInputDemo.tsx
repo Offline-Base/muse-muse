@@ -167,7 +167,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
         <ModelSelect kind="vision" value={model} onChange={setModel} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
       </div>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>Image</span>
         <Segmented<Source>
           label="How the image is sent"
@@ -191,7 +191,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
           ) : (
             <FilePicker label="Image" accept="image/png,image/jpeg,image/webp,image/gif" value={picked} onChange={setPicked} samples={["image"]} defaultSampleId="receipt" disabled={running} />
           )}
-          <Note>Sent as a data:image/...;base64 URL in the image_url part, so nothing has to be hosted.</Note>
+          <Note advanced>Sent as a data:image/...;base64 URL in the image_url part, so nothing has to be hosted.</Note>
         </div>
       ) : source === "url" ? (
         <div className={styles.stack}>
@@ -223,7 +223,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
               Rotate the order
             </button>
           </div>
-          <Note>
+          <Note advanced>
             The recipe&apos;s solid_png, ported: three 64 x 64 PNGs made in the page, sent as three image_url parts in one user message. The
             model sees them in the order listed (about 50 images fit one request).
           </Note>
@@ -251,7 +251,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
           disabled={running}
         />
       </Field>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <Toggle id={`${id}-structured`} label="Structured analysis (json_schema)" checked={structured} onChange={setStructured} disabled={running} />
         <Toggle id={`${id}-dev`} label="Put the image in a developer message (HTTP 400)" checked={developer} onChange={setDeveloper} disabled={running} />
       </div>
@@ -261,7 +261,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
         </p>
       ) : null}
       <div className={styles.spread}>
-        <button type="button" className="btn btn-sm btn-outline" onClick={() => void count()} disabled={running || !question.trim() || !!blocked}>
+        <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void count()} disabled={running || !question.trim() || !!blocked}>
           Count the image&apos;s tokens first (free)
         </button>
         <RunButton running={runner.state === "running" || preparing} onRun={() => void run()} onStop={runner.abort} disabled={!question.trim() || !!blocked || counter.state === "running"} label="Ask" />
@@ -302,7 +302,7 @@ export function VisionInputDemo(_props: VisionInputDemoProps) {
         </ResponseView>
       ) : null}
 
-      <Note>
+      <Note advanced>
         Types image_url takes: {IMAGE_TYPES.join(", ")}. Up to about 50 images a request, 50 MB per inline image or 1 GiB through the Files API (the
         live docs keep uploads under 3 MB). Token cost grows with resolution.
       </Note>

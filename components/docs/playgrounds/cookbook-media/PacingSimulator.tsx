@@ -112,7 +112,7 @@ export function PacingSimulator() {
 
   return (
     <div className={`pg ${styles.stack}`}>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         A recording streamed in 80 ms frames, the way the recipe&apos;s client sends a file. Nothing is sent: this runs the page&apos;s
         cutoff rules on a simulated session.
       </p>
@@ -154,7 +154,7 @@ export function PacingSimulator() {
             </select>
           </span>
         </label>
-        <label className={styles.control} htmlFor={`${id}-jit`}>
+        <label className={`${styles.control} pg-advanced`} htmlFor={`${id}-jit`}>
           Jitter
           <span className="select-wrap">
             <select id={`${id}-jit`} className="select pg-select" value={jitter} onChange={(e) => setJitter(e.target.value)}>
@@ -166,7 +166,7 @@ export function PacingSimulator() {
             </select>
           </span>
         </label>
-        <label className={styles.control} htmlFor={`${id}-sil`}>
+        <label className={`${styles.control} pg-advanced`} htmlFor={`${id}-sil`}>
           Silence at 0:30
           <span className="select-wrap">
             <select id={`${id}-sil`} className="select pg-select" value={silence} onChange={(e) => setSilence(e.target.value)}>
@@ -239,7 +239,7 @@ export function PacingSimulator() {
         </p>
       </figure>
 
-      <details className={styles.details}>
+      <details className={`${styles.details} pg-advanced`}>
         <summary>The run as a table</summary>
         <table className={styles.codes}>
           <thead>
@@ -259,7 +259,7 @@ export function PacingSimulator() {
         </table>
       </details>
 
-      <table className={styles.codes}>
+      <table className={`${styles.codes} pg-advanced`}>
         <caption className={styles.note} style={{ textAlign: "left", paddingBottom: 6 }}>
           What the server checks, from the recipe&apos;s cutoff table. The rule this run trips is highlighted.
         </caption>

@@ -91,7 +91,7 @@ export function ModelsEndpoint({
         <RunButton running={running} onRun={() => void run()} onStop={runner.abort} label="Send" disabled={kind === "retrieve" && !model} />
       </div>
       {kind === "list" ? (
-        <div className="pg-bar">
+        <div className="pg-bar pg-advanced">
           <span className="pg-inline-field">
             <label className="pg-label" htmlFor={`${id}-client`}>
               client
@@ -125,14 +125,14 @@ export function ModelsEndpoint({
               <TextInput id={`${id}-other`} value={other} spellCheck={false} onChange={(e) => setOther(e.target.value)} />
             </span>
           ) : null}
-          <span className="pg-hint">Retrieving a model costs nothing, Contributor or not: no prompt is sent.</span>
+          <span className="pg-hint pg-advanced">Retrieving a model costs nothing, Contributor or not: no prompt is sent.</span>
         </div>
       )}
       {notFound ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           Meta&apos;s own 404: no model has the id <code>{ranModel}</code>. It&apos;s the reply the reference documents, with code{" "}
           <code>model_not_found</code>, so your code can stop with a message that names the id.
-        </p>
+        </div>
       ) : (
         <ErrorBox error={runner.error} />
       )}

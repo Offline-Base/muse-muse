@@ -181,13 +181,13 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
         </div>
       ) : null}
       {!files.length || !fileId ? (
-        <details className="pg-system" open={!files.length}>
+        <details className={files.length ? "pg-system" : styles.neededUpload} open={!files.length}>
           <summary>{files.length ? "Upload another file" : "No files yet: upload one to get an id"}</summary>
           <div className={styles.stack}>
             <FilePicker accept={ACCEPT} value={quickPick} onChange={setQuickPick} defaultSampleId={sampleId} preview="compact" prepare="none" disabled={busy} />
             <div className={styles.row}>
               <RunButton running={quick.state === "running"} onRun={() => void quickUpload()} onStop={quick.abort} label="Upload" disabled={!quickPick || quickPick.problems.length > 0} />
-              <span className={styles.note}>POST /v1/files, purpose user_data. Its id fills in above.</span>
+              <span className={`${styles.note} pg-advanced`}>POST /v1/files, purpose user_data. Its id fills in above.</span>
             </div>
             <ErrorBox error={quick.error} />
           </div>
@@ -209,7 +209,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
       <div className={`pg ${styles.lab}`}>
         <EndpointLine method="POST" route="/files" />
         <FilePicker accept={ACCEPT} value={picked} onChange={setPicked} defaultSampleId={sampleId} preview="compact" prepare="none" label="file (required)" disabled={busy} />
-        <div className={styles.controls}>
+        <div className={`${styles.controls} pg-advanced`}>
           <span className={styles.inline}>
             <span className={styles.label}>purpose (required)</span>
             <Segmented<"user_data" | "batch">
@@ -244,7 +244,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
           ) : null}
         </div>
         {expiryProblem ? <p className={styles.problem}>{expiryProblem}</p> : null}
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           user_data is for files requests reference; batch takes JSONL for the Batch API, and the live demos upload user_data only. expires_after.seconds runs from{" "}
           {EXPIRES_MIN_SECONDS.toLocaleString("en-US")} to {EXPIRES_MAX_SECONDS.toLocaleString("en-US")}; without it a file never expires.{expiryNote}
         </p>
@@ -269,7 +269,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
       {/* List */}
       <div className={`pg ${styles.lab}`}>
         <EndpointLine method="GET" route={`/${listPath({ ...query, limit: limitValue })}`} />
-        <div className={styles.controls}>
+        <div className={`${styles.controls} pg-advanced`}>
           <span className={styles.inline}>
             <span className={styles.label}>purpose</span>
             <Segmented<string>
@@ -301,7 +301,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
             />
           </span>
         </div>
-        <div className={styles.controls}>
+        <div className={`${styles.controls} pg-advanced`}>
           <span className={styles.inline}>
             <label className={styles.label} htmlFor={`${id}-limit`}>
               limit
@@ -333,7 +333,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
           </span>
         </div>
         {listProblem ? <p className={styles.problem}>{listProblem}</p> : null}
-        <p className={styles.note}>Set limit to 1 and press Next page to walk the list with the after cursor. The live demos list only files uploaded from this browser in the last hour.</p>
+        <p className={`${styles.note} pg-advanced`}>Set limit to 1 and press Next page to walk the list with the after cursor. The live demos list only files uploaded from this browser in the last hour.</p>
         <div className={styles.row}>
           <RunButton running={list.state === "running"} onRun={() => void doList()} onStop={list.abort} label="Send" disabled={busy || !!listProblem} />
           {cursor ? (
@@ -442,7 +442,7 @@ export function FilesApiConsole({ start, schemas, sampleId = "receipt" }: FilesA
         <div className={styles.row}>
           <RunButton running={remove.state === "running"} onRun={() => void doOne("delete")} onStop={remove.abort} label="Delete" disabled={!fileId.trim() || busy} />
         </div>
-        <p className={styles.note}>Deleting frees the file&apos;s share of the team&apos;s 100 GiB. Retrieve the same id afterwards and the API answers 404.</p>
+        <p className={`${styles.note} pg-advanced`}>Deleting frees the file&apos;s share of the team&apos;s 100 GiB. Retrieve the same id afterwards and the API answers 404.</p>
         <ErrorBox error={remove.error} />
         {remove.state === "running" || remove.result ? (
           <ResponseView result={remove.result} running={remove.state === "running"} elapsedMs={remove.elapsedMs}>

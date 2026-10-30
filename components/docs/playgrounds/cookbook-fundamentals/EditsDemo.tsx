@@ -3,7 +3,7 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { EffortSelect, Field, PresetPills, TextArea, Toggle } from "@/components/docs/kit/Field";
+import { EffortSelect, Field, TextArea, Toggle } from "@/components/docs/kit/Field";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
@@ -14,7 +14,7 @@ import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook
 import { unifiedDiff } from "@/components/docs/playgrounds/cookbook-fundamentals/diff";
 import { applyEdit, parseEditCall, pythonProblems, type EditCall, type EditResult } from "@/components/docs/playgrounds/cookbook-fundamentals/edits";
 import { BROKEN_EDITS, EDIT_TASKS, SAM_FILES } from "@/components/docs/playgrounds/cookbook-fundamentals/sam-files";
-import { DiffView, Note, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { DiffView, Note, SplitPills, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { useToolLoop } from "@/components/docs/playgrounds/cookbook-fundamentals/useToolLoop";
 import type { NeutralRequest, ToolDef } from "@/lib/docs/client/body";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -97,7 +97,7 @@ function ResultCard({ a }: { a: Applied }) {
       {r && !r.ok ? <p className={styles.result}>{r.message}</p> : null}
       {r?.ok && r.warnings.length ? <p className={styles.note}>{r.warnings.join(" ")}</p> : null}
       {a.call ? (
-        <details className="pg-raw">
+        <details className="pg-raw pg-advanced">
           <summary>Payload</summary>
           <JsonTree value={a.call} openDepth={2} />
         </details>
@@ -217,7 +217,7 @@ export function EditsDemo(_props: EditsDemoProps) {
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={loop.busy} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={loop.busy} />
       </div>
-      <PresetPills
+      <SplitPills
         label="Task"
         presets={EDIT_TASKS}
         active={taskIndex}
@@ -227,12 +227,13 @@ export function EditsDemo(_props: EditsDemoProps) {
           setPrompt(EDIT_TASKS[i].prompt);
           loop.reset();
         }}
+        simple={4}
       />
       <Field id={`${id}-prompt`} label="The prompt, as typed into OpenCode in the recipe">
         <TextArea id={`${id}-prompt`} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={loop.busy || loop.steps.length > 0} />
       </Field>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">The prompt quotes the three files as they are now. Usually two calls, well under a cent.</span>
+        <span className="pg-muted pg-small pg-advanced">The prompt quotes the three files as they are now. Usually two calls, well under a cent.</span>
         <span className={styles.row}>
           {loop.steps.length || changed.length || manual.length ? (
             <button type="button" className="btn btn-sm" onClick={resetFiles} disabled={loop.busy}>
@@ -257,8 +258,12 @@ export function EditsDemo(_props: EditsDemoProps) {
                 <StatusPill tone={!s.collected?.done ? "busy" : s.collected.error ? "bad" : "idle"}>
                   call {s.call}: {!s.collected?.done ? "running" : requestedCalls(s).length ? `${requestedCalls(s).length} tool call${requestedCalls(s).length === 1 ? "" : "s"}` : "answered"}
                 </StatusPill>
-                {s.elapsedMs ? <span className="pg-meta">{latencyLabel(s.elapsedMs)}</span> : null}
-                {s.collected?.usage ? <UsageLine model={s.model ?? model} usage={s.collected.usage} /> : null}
+                {s.elapsedMs ? <span className="pg-meta pg-advanced">{latencyLabel(s.elapsedMs)}</span> : null}
+                {s.collected?.usage ? (
+                  <span className="pg-advanced">
+                    <UsageLine model={s.model ?? model} usage={s.collected.usage} />
+                  </span>
+                ) : null}
               </span>
             ) : null,
           )}
@@ -273,7 +278,7 @@ export function EditsDemo(_props: EditsDemoProps) {
         </ol>
       ) : null}
       {rejected && !loop.busy ? (
-        <Note>
+        <Note advanced>
           {rejected} edit{rejected === 1 ? " was" : "s were"} rejected. The reason and the current file went back to the model as the tool&apos;s
           output, so its next call can copy oldString exactly: the recipe&apos;s recovery.
         </Note>
@@ -285,7 +290,7 @@ export function EditsDemo(_props: EditsDemoProps) {
         })()
       ) : null}
 
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>Try a broken edit (no API call)</span>
         {BROKEN_EDITS.map((b, i) => (
           <button key={b.label} type="button" className="btn btn-sm btn-outline" onClick={() => applyBroken(i)} disabled={loop.busy} title={b.why}>
@@ -307,7 +312,7 @@ export function EditsDemo(_props: EditsDemoProps) {
             </ul>
           </div>
         ) : (
-          <Note>A light syntax check in the page (brackets, strings, indentation, colons) passes. Run python -m py_compile and flake8 on the real project: applying cleanly isn&apos;t the same as being correct.</Note>
+          <Note advanced>A light syntax check in the page (brackets, strings, indentation, colons) passes. Run python -m py_compile and flake8 on the real project: applying cleanly isn&apos;t the same as being correct.</Note>
         )
       ) : null}
 

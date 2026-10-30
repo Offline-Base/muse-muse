@@ -4,7 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { JsonEditor } from "@/components/docs/kit/JsonEditor";
 import { JsonTree } from "@/components/docs/kit/JsonTree";
-import { PresetPills, Toggle } from "@/components/docs/kit/Field";
+import { Toggle } from "@/components/docs/kit/Field";
 import { ContributorNotice } from "@/components/docs/kit/ContributorNotice";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
 import { ResponseView, statusText } from "@/components/docs/kit/ResponseView";
@@ -27,6 +27,7 @@ import {
 } from "@/components/docs/playgrounds/start/error-cases";
 import { RetrySimulator } from "@/components/docs/playgrounds/start/RetrySimulator";
 import { SectionTabs } from "@/components/docs/playgrounds/start/SectionTabs";
+import { SplitPills } from "@/components/docs/playgrounds/start/SplitPills";
 import styles from "@/components/docs/playgrounds/start/start.module.css";
 
 const RETRY_LABEL: Record<Retry, string> = {
@@ -80,7 +81,7 @@ function Lab({ picked, onPick }: { picked: number; onPick(i: number): void }) {
   // Each case keeps its own editor, so switching cases resets the body to that case's.
   return (
     <div className="pg">
-      <PresetPills label="Trigger" presets={ERROR_CASES} active={picked} onPick={onPick} />
+      <SplitPills label="Trigger" presets={ERROR_CASES} active={picked} onPick={onPick} />
       {c.recorded ? <RecordedCase key={c.id} c={c} recorded={c.recorded} /> : <CaseRunner key={c.id} c={c} />}
     </div>
   );
@@ -123,7 +124,7 @@ function CaseRunner({ c }: { c: ErrorCase }) {
           {c.answeredBy === "meta" ? "Meta answers" : "The docs proxy answers"}
         </span>
       </div>
-      <p className={styles.lead}>{c.teaches}</p>
+      <p className={`${styles.lead} pg-advanced`}>{c.teaches}</p>
       {c.body ? (
         <JsonEditor id={`${id}-body`} value={text} onChange={setText} resetTo={original} disabled={running} rows={Math.min(14, original.split("\n").length + 1)} hint="Fix it and send it again to see the request go through." />
       ) : c.raw !== undefined ? (
@@ -223,7 +224,7 @@ function RecordedCase({ c, recorded }: { c: ErrorCase; recorded: RecordedError }
         <code className="docs-code-inline">/v1/{c.path}</code>
         <span className={styles.tag}>Recorded from the page</span>
       </div>
-      <p className={styles.lead}>{c.teaches}</p>
+      <p className={`${styles.lead} pg-advanced`}>{c.teaches}</p>
       <pre className="pg-pre" aria-label="The request, as the page describes it">
         {recorded.request}
       </pre>
@@ -250,7 +251,7 @@ function RecordedCase({ c, recorded }: { c: ErrorCase; recorded: RecordedError }
           </dd>
         </dl>
         {rest.map((reply) => (
-          <details key={reply.cause} className="pg-raw">
+          <details key={reply.cause} className="pg-raw pg-advanced">
             <summary>The page&apos;s other {c.expect.status}: {reply.cause}</summary>
             <JsonTree value={reply.body} openDepth={2} />
           </details>
@@ -272,7 +273,7 @@ function RecordedCase({ c, recorded }: { c: ErrorCase; recorded: RecordedError }
 function StatusCodes({ onTry }: { onTry(caseId: string): void }) {
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Every status the page covers. Errors share one envelope, <code>{"{ error: { message, type, param, code } }"}</code>; a 404 for an
         unknown path has an empty body, and the Files list can answer a 400 in plain text, so branch on the status and Content-Type
         before parsing.
@@ -291,14 +292,14 @@ function StatusCodes({ onTry }: { onTry(caseId: string): void }) {
                 </button>
               ) : null}
             </span>
-            <ul className="pg-list pg-small">
+            <ul className="pg-list pg-small pg-advanced">
               {s.causes.map((cause) => (
                 <li key={cause}>{cause}</li>
               ))}
             </ul>
-            <span className="pg-hint">Fix: {s.fix}</span>
+            <span className="pg-hint pg-advanced">Fix: {s.fix}</span>
             {s.example ? (
-              <details className="pg-raw">
+              <details className="pg-raw pg-advanced">
                 <summary>The page&apos;s example body</summary>
                 <JsonTree value={s.example} openDepth={2} />
               </details>

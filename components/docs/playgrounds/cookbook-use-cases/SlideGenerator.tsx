@@ -169,16 +169,18 @@ export function SlideGenerator({
   return (
     <div className="pg">
       <div className="pg-bar">
-        <Segmented<"research" | "content">
-          label="Source"
-          options={[
-            { value: "research", label: "Research a topic" },
-            { value: "content", label: "From my content" },
-          ]}
-          value={source}
-          onChange={setSource}
-          disabled={running}
-        />
+        <div className="pg-advanced">
+          <Segmented<"research" | "content">
+            label="Source"
+            options={[
+              { value: "research", label: "Research a topic" },
+              { value: "content", label: "From my content" },
+            ]}
+            value={source}
+            onChange={setSource}
+            disabled={running}
+          />
+        </div>
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
       </div>
       {source === "research" ? (
@@ -204,7 +206,7 @@ export function SlideGenerator({
       <div className="pg-actions">
         <RunButton running={running} onRun={() => void run()} onStop={guard.stop} label="Make the deck" disabled={source === "research" ? !topic.trim() : !content.trim()} />
         {outline ? (
-          <button type="button" className="btn btn-sm" onClick={() => void design()} disabled={running}>
+          <button type="button" className="btn btn-sm pg-advanced" onClick={() => void design()} disabled={running}>
             Let the model design the HTML
           </button>
         ) : null}
@@ -216,12 +218,12 @@ export function SlideGenerator({
         ) : null}
       </div>
       {guard.waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {guard.waitNote}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={guard.waiting ? null : runner.error} />
-      {parseError ? <p className="pg-hint pg-bad">{parseError}</p> : null}
+      {parseError ? <div className="pg-hint pg-bad">{parseError}</div> : null}
 
       {brief ? (
         <details className={styles.card} open={!outline}>
@@ -247,7 +249,7 @@ export function SlideGenerator({
             2. Outline: {outline.slides.length} slides{renamed.length ? `, normalized keys: ${renamed.join(", ")}` : ", no keys to normalize"}
           </p>
           <Deck outline={outline} />
-          <details>
+          <details className="pg-advanced">
             <summary className="pg-small">The outline JSON</summary>
             <pre className="pg-pre">{JSON.stringify(outline, null, 2)}</pre>
           </details>
@@ -269,7 +271,7 @@ export function SlideGenerator({
       ) : null}
 
       {stats.length ? (
-        <div className={styles.tableWrap}>
+        <div className={`${styles.tableWrap} pg-advanced`}>
           <table className={styles.table}>
             <caption className="sr-only">Pipeline stats</caption>
             <thead>

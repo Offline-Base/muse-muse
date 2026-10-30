@@ -99,17 +99,19 @@ export function CommandExplorer({ query: startQuery, loop: startLoop }: CommandE
             <SelectField<Group | "all">
               id={`${idBase}-group`}
               label="Group"
-              className={styles.narrow}
+              className={`${styles.narrow} pg-advanced`}
               value={group}
               onChange={setGroup}
               options={[{ value: "all", label: "All groups" }, ...GROUPS.map((g) => ({ value: g, label: g }))]}
             />
           </div>
-          <Toggle id={`${idBase}-side`} label="I'm in a side conversation" checked={inSide} onChange={setInSide} />
-          <p className="pg-hint" role="status" aria-live="polite">
+          <div className="pg-advanced">
+            <Toggle id={`${idBase}-side`} label="I'm in a side conversation" checked={inSide} onChange={setInSide} />
+          </div>
+          <div className="pg-hint" role="status" aria-live="polite">
             {results.length === COMMANDS.length ? `${results.length} commands and shortcuts.` : `${results.length} of ${COMMANDS.length} match.`}
             {inSide ? " Inside a side conversation, /side, /fork, /new, /clear and /resume are unavailable; return to the main chat with Ctrl+C first." : ""}
-          </p>
+          </div>
           <ul className={`${styles.list} ${styles.scroll}`} aria-label="Commands">
             {results.map((c) => (
               <li key={c.name}>
@@ -203,7 +205,7 @@ export function CommandExplorer({ query: startQuery, loop: startLoop }: CommandE
               Let the turn finish
             </button>
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Toggle id={`${idBase}-bg`} label="A background command is running" checked={sim.background} onChange={(on) => dispatch({ type: "background", on })} />
             <Toggle id={`${idBase}-goal`} label="A goal is set" checked={sim.goal !== "none"} onChange={(on) => dispatch({ type: "goal", on })} />
             <button type="button" className="btn btn-outline btn-sm" onClick={() => dispatch({ type: "reset" })}>
@@ -271,11 +273,12 @@ export function CommandExplorer({ query: startQuery, loop: startLoop }: CommandE
               ) : null}
             </div>
           ) : (
-            <p className="pg-hint pg-bad" role="alert">
+            <div className="pg-hint pg-bad" role="alert">
               {parsed.error}
-            </p>
+            </div>
           )}
           <Notes
+            className="pg-advanced"
             items={[
               "An occurrence that lands while a run is active is skipped, not queued or replayed, and the job stays scheduled for its next one (fire_when_active_run: false).",
               "There is no loop monitor panel: a loop is an ordinary scheduled job the agent manages with its cron tools.",

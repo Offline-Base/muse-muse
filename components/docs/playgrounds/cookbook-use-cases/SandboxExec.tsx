@@ -212,7 +212,7 @@ export function SandboxExec({ task: initialTask = "requests-6028", maxCalls = 24
       </div>
       <div className="pg-actions">
         <RunButton running={run.busy} onRun={start} onStop={run.stop} label="Run the sandboxed fix" />
-        <span className="pg-hint">Up to {maxCalls} model calls; a typical run is 6 to 15, about a tenth of a cent on Spark Contributor and 40 to 100 times that on Muse Wonder.</span>
+        <span className="pg-hint pg-advanced">Up to {maxCalls} model calls; a typical run is 6 to 15, about a tenth of a cent on Spark Contributor and 40 to 100 times that on Muse Wonder.</span>
       </div>
       <RunBar busy={run.busy} modelCalls={run.modelCalls} totalUsd={run.totalUsd} waitingStep={run.waitingStep} onAdvance={run.advance} />
       <ErrorBox error={run.error} />
@@ -244,7 +244,7 @@ export function SandboxExec({ task: initialTask = "requests-6028", maxCalls = 24
               <Diff patch={verify.patch} />
             </>
           ) : (
-            <p className="pg-hint pg-bad">No change was made, so there is no patch.</p>
+            <div className="pg-hint pg-bad">No change was made, so there is no patch.</div>
           )}
         </div>
       ) : null}

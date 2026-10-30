@@ -211,8 +211,44 @@ export function DiffView({ diff, label }: { diff: string; label: string }) {
   );
 }
 
-export function Note({ children }: { children: ReactNode }) {
-  return <p className={styles.note}>{children}</p>;
+/** `advanced` keeps the note behind Options in the "Try it live" panel's simple view. */
+export function Note({ children, advanced }: { children: ReactNode; advanced?: boolean }) {
+  return <p className={advanced ? `${styles.note} pg-advanced` : styles.note}>{children}</p>;
+}
+
+/** Puts a kit control that takes no class of its own (Toggle, Segmented) behind Options, laid out as it was. */
+export function Advanced({ children }: { children: ReactNode }) {
+  return <span className={`${styles.row} pg-advanced`}>{children}</span>;
+}
+
+/** The kit's PresetPills, same markup, showing only the first `simple` pills until the reader turns on Options. */
+export function SplitPills({
+  label = "Try",
+  presets,
+  active,
+  onPick,
+  disabled,
+  simple,
+}: {
+  label?: string;
+  presets: ReadonlyArray<{ label: string }>;
+  active?: number | null;
+  onPick(index: number): void;
+  disabled?: boolean;
+  simple: number;
+}) {
+  return (
+    <div className="pg-presets" role="group" aria-label={label}>
+      <span className="pg-presets-label" aria-hidden>
+        {label}
+      </span>
+      {presets.map((p, i) => (
+        <button key={`${i}-${p.label}`} type="button" className={i < simple ? "pg-pill" : "pg-pill pg-advanced"} aria-pressed={active === i} disabled={disabled} onClick={() => onPick(i)}>
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** "640 ms", "1.4 s": the kit's latency format, for times that aren't a whole call's. */

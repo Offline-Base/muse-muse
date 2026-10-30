@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Field, PresetPills, Segmented, TextInput } from "@/components/docs/kit/Field";
+import { Field, Segmented, TextInput } from "@/components/docs/kit/Field";
+import { SplitPills } from "@/components/docs/playgrounds/start/SplitPills";
 import {
   audioCostLines,
   compareTokenWorkload,
@@ -48,9 +49,9 @@ export function CostCalculator({ kind: initialKind = "tokens" }: { kind?: Kind }
   );
 }
 
-function NumberField({ id, label, value, onChange, hint, max = 1e9 }: { id: string; label: string; value: number; onChange(n: number): void; hint?: string; max?: number }) {
+function NumberField({ id, label, value, onChange, hint, max = 1e9, className }: { id: string; label: string; value: number; onChange(n: number): void; hint?: string; max?: number; className?: string }) {
   return (
-    <Field id={id} label={label} hint={hint}>
+    <Field id={id} label={label} hint={hint} className={className}>
       <TextInput
         id={id}
         type="number"
@@ -124,8 +125,9 @@ function TokenCalculator({ id }: { id: string }) {
 
   return (
     <div className={styles.stack}>
-      <PresetPills
+      <SplitPills
         label="Workload"
+        keep={4}
         presets={TOKEN_PRESETS}
         active={preset}
         onPick={(i) => {
@@ -136,12 +138,12 @@ function TokenCalculator({ id }: { id: string }) {
       />
       <div className={styles.inputs}>
         <NumberField id={`${id}-in`} label="Input tokens" value={work.input} onChange={(input) => set({ input })} hint="Cached ones included" />
-        <NumberField id={`${id}-cached`} label="Of which cached" value={work.cached} onChange={(cached) => set({ cached })} hint="A prompt-cache hit" />
+        <NumberField id={`${id}-cached`} label="Of which cached" className="pg-advanced" value={work.cached} onChange={(cached) => set({ cached })} hint="A prompt-cache hit" />
         <NumberField id={`${id}-out`} label="Output tokens" value={work.output} onChange={(output) => set({ output })} hint="Reasoning included" />
-        <NumberField id={`${id}-search`} label="Web searches" value={work.searches ?? 0} onChange={(searches) => set({ searches })} max={1000} />
-        <NumberField id={`${id}-req`} label="Requests" value={requests} onChange={(n) => { setRequests(Math.max(1, n)); setPreset(null); }} max={100_000_000} />
+        <NumberField id={`${id}-search`} label="Web searches" className="pg-advanced" value={work.searches ?? 0} onChange={(searches) => set({ searches })} max={1000} />
+        <NumberField id={`${id}-req`} label="Requests" className="pg-advanced" value={requests} onChange={(n) => { setRequests(Math.max(1, n)); setPreset(null); }} max={100_000_000} />
       </div>
-      {work.cached > work.input ? <p className="pg-hint pg-bad">Cached tokens are part of input_tokens, so they count as at most the input.</p> : null}
+      {work.cached > work.input ? <div className="pg-hint pg-bad">Cached tokens are part of input_tokens, so they count as at most the input.</div> : null}
       <span className="pg-inline-field">
         <label className="pg-label" htmlFor={`${id}-model`}>
           Model and mode
@@ -157,7 +159,7 @@ function TokenCalculator({ id }: { id: string }) {
         </span>
       </span>
       {row.rates ? <Lines lines={tokenCostLines(row.rates, work)} times={requests} caption={`${row.label} cost`} /> : null}
-      <div>
+      <div className="pg-advanced">
         <p className="pg-section-label">The same workload on every token model</p>
         <div className={`docs-table ${styles.table}`} role="group" aria-label="The same workload on every model" tabIndex={0}>
           <table>

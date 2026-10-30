@@ -271,9 +271,9 @@ export function ApiConsole(props: ApiConsoleProps) {
         <RunButton running={running} onRun={() => void send()} onStop={runner.abort} label="Send" disabled={!allowed || (parsed !== null && !parsed.ok)} />
       </div>
       {!allowed ? (
-        <p className="pg-hint pg-bad">
+        <div className="pg-hint pg-bad">
           The live demos can&apos;t send {method} /v1/{path}. Copy the code below and run it with your own key.
-        </p>
+        </div>
       ) : null}
       {needsId && (idOptions.length || !props.hideIdHint) ? (
         <div className="pg-hint">
@@ -335,9 +335,9 @@ export function ApiConsole(props: ApiConsoleProps) {
       {streamable ? <Toggle id={`${id}-stream`} label="Stream the reply" checked={bodyObj?.stream === true} onChange={setStream} disabled={running} /> : null}
 
       {problem ? (
-        <p className="pg-hint pg-bad" role="alert">
+        <div className="pg-hint pg-bad" role="alert">
           {problem}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={runner.error} />
 

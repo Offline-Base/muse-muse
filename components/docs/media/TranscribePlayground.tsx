@@ -146,32 +146,36 @@ export function TranscribePlayground({
     <div className={`pg ${styles.playground}`}>
       <div className="pg-bar">
         {endpoints.length > 1 ? (
-          <Segmented
-            label="Endpoint"
-            value={endpoint}
-            onChange={(v) => {
-              setEndpoint(v);
-              runner.reset();
-              setView(EMPTY_REALTIME);
-            }}
-            disabled={running}
-            options={endpoints.map((e) => ({ value: e, label: ENDPOINT_LABEL[e] }))}
-          />
+          <span className="pg-advanced">
+            <Segmented
+              label="Endpoint"
+              value={endpoint}
+              onChange={(v) => {
+                setEndpoint(v);
+                runner.reset();
+                setView(EMPTY_REALTIME);
+              }}
+              disabled={running}
+              options={endpoints.map((e) => ({ value: e, label: ENDPOINT_LABEL[e] }))}
+            />
+          </span>
         ) : null}
         <ModelSelect kind="voice" value="muse-voice-transcribe-1.0" onChange={() => {}} />
       </div>
       {microphone ? (
-        <Segmented<"file" | "mic">
-          size="sm"
-          label="Audio source"
-          value={source}
-          onChange={setSource}
-          disabled={running}
-          options={[
-            { value: "file", label: "Sample or file" },
-            { value: "mic", label: "Microphone" },
-          ]}
-        />
+        <span className="pg-advanced">
+          <Segmented<"file" | "mic">
+            size="sm"
+            label="Audio source"
+            value={source}
+            onChange={setSource}
+            disabled={running}
+            options={[
+              { value: "file", label: "Sample or file" },
+              { value: "mic", label: "Microphone" },
+            ]}
+          />
+        </span>
       ) : null}
       {source === "file" ? (
         <FilePicker
@@ -188,9 +192,9 @@ export function TranscribePlayground({
       ) : (
         <AudioRecorder onRecorded={setTake} maxSeconds={maxSeconds} disabled={running} />
       )}
-      {audio?.description ? <p className={styles.note}>About this sample: {audio.description}</p> : null}
+      {audio?.description ? <p className={`${styles.note} pg-advanced`}>About this sample: {audio.description}</p> : null}
 
-      <div className={styles.options}>
+      <div className={`${styles.options} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>Mode</span>
           <Segmented<TranscribeMode> size="sm" label="Mode" value={mode} onChange={setMode} disabled={running} options={modes.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
@@ -212,7 +216,7 @@ export function TranscribePlayground({
           </span>
         ) : null}
       </div>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <Field id={`${id}-kw`} label="Keywords (comma separated)" hint="Biases recognition toward these terms.">
           <TextInput id={`${id}-kw`} value={keywords} placeholder="Acme Mobile, eSIM, 5G" onChange={(e) => setKeywords(e.target.value)} disabled={running} />
         </Field>
@@ -221,7 +225,7 @@ export function TranscribePlayground({
         </Field>
       </div>
       {mode === "DIARIZATION" || mode === "ENDPOINTING" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           {mode === "DIARIZATION" ? "Speaker labels" : "Speech turns"} come back in turns (file) or as events (realtime). File
           transcription can include a few empty turns between speakers, so skip those; the transcript always comes back.
         </p>
@@ -236,7 +240,7 @@ export function TranscribePlayground({
           disabled={!audio || tooLong || (audio?.problems.length ?? 0) > 0}
         />
       </div>
-      <p className={styles.note}>
+      <p className={tooLong ? styles.note : `${styles.note} pg-advanced`}>
         {tooLong
           ? `This audio is longer than the ${maxSeconds} s this demo takes for ${endpoint === "realtime" ? "realtime" : "file transcription"}.`
           : `$0.18 per hour of audio${audio?.durationMs ? `: about ${usd(audio.durationMs)} for this ${formatDuration(audio.durationMs)} clip` : ""}.` +

@@ -158,7 +158,7 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
   return (
     <div className="pg-col">
       <div className="pg-bar">
-        <div className="pg-field">
+        <div className="pg-field pg-advanced">
           <span className="pg-label">Wire format</span>
           <Segmented<LoopProtocol>
             label="Wire format"
@@ -197,9 +197,9 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
         }}
       />
       <div className={styles.row}>
-        <NumberField id={`${id}-calls`} label="Most model calls" value={maxCalls} min={1} max={15} onChange={setMaxCalls} disabled={busy} />
-        <NumberField id={`${id}-overall`} label="Wall-clock cap (s)" value={overallS} min={10} onChange={setOverallS} disabled={busy} />
-        <NumberField id={`${id}-idle`} label="Idle watchdog (s)" value={idleS} min={5} onChange={setIdleS} disabled={busy} />
+        <NumberField id={`${id}-calls`} className="pg-advanced" label="Most model calls" value={maxCalls} min={1} max={15} onChange={setMaxCalls} disabled={busy} />
+        <NumberField id={`${id}-overall`} className="pg-advanced" label="Wall-clock cap (s)" value={overallS} min={10} onChange={setOverallS} disabled={busy} />
+        <NumberField id={`${id}-idle`} className="pg-advanced" label="Idle watchdog (s)" value={idleS} min={5} onChange={setIdleS} disabled={busy} />
         <RunButton
           running={busy}
           onRun={() => void run()}
@@ -229,7 +229,7 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
                     {s.calls.length ? <Chip tone="accent">asks for {s.calls.join(", ")}</Chip> : <Chip tone="ok">final message</Chip>}
                   </p>
                   {s.text ? <div className={styles.msgAssistant}>{s.text}</div> : null}
-                  <details className="pg-raw">
+                  <details className="pg-raw pg-advanced">
                     <summary>Request and reply JSON</summary>
                     <JsonTree value={{ request: s.request, reply: s.reply }} openDepth={1} />
                   </details>
@@ -241,7 +241,7 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
                     <span className="pg-muted pg-small">{JSON.stringify(s.args).slice(0, 120)}</span>
                     {s.isError ? <Chip tone="bad">error</Chip> : null}
                   </p>
-                  <pre className="pg-pre">{s.output.length > 1400 ? `${s.output.slice(0, 1400)}\n...` : s.output}</pre>
+                  <pre className="pg-pre pg-advanced">{s.output.length > 1400 ? `${s.output.slice(0, 1400)}\n...` : s.output}</pre>
                 </>
               ) : (
                 <p className="pg-hint">{s.text}</p>
@@ -252,9 +252,9 @@ export function MiniAgentLoop({ protocol: startProtocol = "messages" }: { protoc
       ) : null}
 
       {busy && !final ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           Running: model call {steps.filter((s) => s.kind === "model").length + 1}, {latencyLabel(runner.elapsedMs)} so far.
-        </p>
+        </div>
       ) : null}
 
       {final ? (

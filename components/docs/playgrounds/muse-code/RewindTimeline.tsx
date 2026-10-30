@@ -166,10 +166,10 @@ function Picker({ rows, onRewind, onClose, warnings, label }: PickerProps) {
           </li>
         ))}
       </ul>
-      <p className="pg-hint" role="status" aria-live="polite">
+      <div className={blockedNote ? "pg-hint" : "pg-hint pg-advanced"} role="status" aria-live="polite">
         {blockedNote ?? "Up and Down (or Ctrl+P and Ctrl+N), Home and End to choose; Enter opens the action screen; Esc leaves the picker."}
-      </p>
-      <div className="pg-actions">
+      </div>
+      <div className="pg-actions pg-advanced">
         <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>
           Close the picker
         </button>
@@ -391,6 +391,7 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
             <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
             <SelectField
               id={`${idBase}-branch`}
+              className={tree.branches.length > 1 ? undefined : "pg-advanced"}
               label="Session (like /resume)"
               value={current}
               onChange={switchBranch}
@@ -433,9 +434,9 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
           ) : null}
 
           {retryNote ? (
-            <p className="pg-hint" role="status">
+            <div className="pg-hint" role="status">
               {retryNote}
-            </p>
+            </div>
           ) : runner.state === "running" || runner.error ? (
             <ResponseView result={runner.result} running={runner.state === "running"} elapsedMs={runner.elapsedMs}>
               {runner.result && !runner.result.ok ? <p className="pg-muted">The turn failed; your message is back in the composer.</p> : <p className="pg-muted">Waiting for the reply.</p>}
@@ -489,14 +490,14 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
               <RunButton running={running} onRun={() => void send()} onStop={stop} label="Send" disabled={!composer.trim()} />
             </div>
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Toggle id={`${idBase}-nolog`} label="Started with --no-session-log" checked={noLog} onChange={setNoLog} />
             <Toggle id={`${idBase}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
           </div>
           {noLog ? (
-            <p className="pg-hint pg-bad" role="status">
+            <div className="pg-hint pg-bad" role="status">
               Rewind is available only in interactive sessions with session logging on. It&apos;s unavailable after muse --no-session-log.
-            </p>
+            </div>
           ) : null}
           {showCode ? (
             <CodeView
@@ -507,9 +508,9 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
             />
           ) : null}
           {stoppedNote ? (
-            <p className="pg-muted" role="status">
+            <div className="pg-muted" role="status">
               Stopped: nothing more was sent. The message is back in the composer.
-            </p>
+            </div>
           ) : null}
         </div>
       </Panel>
@@ -547,7 +548,7 @@ export function RewindTimeline({ script: scriptProp, instructions: instructionsP
               </div>
             </div>
           )}
-          <div>
+          <div className="pg-advanced">
             <p className="pg-section-label">Never in the picker</p>
             <Notes items={NOT_REWIND_POINTS} />
           </div>

@@ -1302,7 +1302,8 @@
 .docs-try.is-simple .pg-kbd-hint,
 .docs-try.is-simple .pg-tool-defs,
 .docs-try.is-simple .pg-system,
-.docs-try.is-simple p.pg-hint,
+.docs-try.is-simple .pg-codeview,
+.docs-try.is-simple p.pg-hint:not(.pg-bad, [role="status"]),
 .docs-try.is-simple p.pg-muted,
 .docs-try.is-simple :has(> .pg-advanced):not(:has(> :not(.pg-advanced, .pg-label, [class*="label"]))),
 .docs-try.is-simple .pg-model:not(:has(.pg-notice)) {

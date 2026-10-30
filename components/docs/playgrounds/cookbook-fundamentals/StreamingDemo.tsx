@@ -19,7 +19,7 @@ import {
   type StreamAnalysis,
   type TimedEvent,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/stream-timing";
-import { ms, Stats } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, ms, Stats } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { logEvent, type EventLogEntry } from "@/lib/docs/client/events";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -175,7 +175,9 @@ export function StreamingDemo({
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
-        <Toggle id={`${id}-usage`} label={<code>stream_options.include_usage</code>} checked={includeUsage} onChange={setIncludeUsage} disabled={running} />
+        <Advanced>
+          <Toggle id={`${id}-usage`} label={<code>stream_options.include_usage</code>} checked={includeUsage} onChange={setIncludeUsage} disabled={running} />
+        </Advanced>
       </div>
       {presets.length ? (
         <PresetPills
@@ -246,7 +248,7 @@ export function StreamingDemo({
               </>
             ) : null}
             {!running && a.chunks.length ? (
-              <div className={styles.compare}>
+              <div className={`${styles.compare} pg-advanced`}>
                 <div className={styles.compareCol}>
                   <p className={styles.compareTitle}>Guarded loop</p>
                   <p className={styles.note}>
@@ -264,7 +266,7 @@ export function StreamingDemo({
               </div>
             ) : null}
             {!running && (finishChunk || usageChunk) ? (
-              <div className={styles.compare}>
+              <div className={`${styles.compare} pg-advanced`}>
                 {finishChunk ? (
                   <div className={styles.compareCol}>
                     <p className={styles.compareTitle}>The chunk with finish_reason</p>

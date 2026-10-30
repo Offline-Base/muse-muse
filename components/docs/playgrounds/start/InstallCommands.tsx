@@ -28,7 +28,7 @@ export function InstallCommands({ note = true }: { note?: boolean }) {
   const install = MUSE_CODE_INSTALL[os];
   return (
     <div className={styles.stack}>
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Muse Code is Meta&apos;s coding agent for the terminal and CI, built on Muse Spark. It runs in your terminal, so copy these
         there: install it, then start it in a project.
       </p>
@@ -43,7 +43,7 @@ export function InstallCommands({ note = true }: { note?: boolean }) {
       <CodeBlock label={install.shell} code={install.command} syntax="bash" caption="1. Install the CLI" copyLabel="Copy the install command" />
       <CodeBlock label="bash" code={MUSE_CODE_START} syntax="bash" caption="2. Start building" copyLabel="Copy the start command" />
       {note ? (
-        <p className={styles.small}>
+        <p className={`${styles.small} pg-advanced`}>
           On first run, <code>muse</code> asks you to sign in through your browser or paste an API key, so there&apos;s no key or provider
           config to wire up. Muse Code and the API are two ways to use the same models: Muse Code for a ready-made agent, the API when
           you build your own. Approvals and an OS sandbox are on from the first run.{" "}

@@ -61,25 +61,29 @@ export function AgentLoopPanel({
 
   return (
     <div className={styles.stack}>
-      {intro ? <p className={styles.note}>{intro}</p> : null}
+      {intro ? <p className={`${styles.note} pg-advanced`}>{intro}</p> : null}
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={loop.running} />
       </div>
-      <PresetPills
-        presets={presets}
-        active={preset}
-        disabled={loop.running}
-        onPick={(i) => {
-          setPreset(i);
-          setPrompt(presets[i].prompt);
-        }}
-      />
-      <div className="pg-composer">
+      {/* The simulator above holds the page's one input in the simple view; this prompt's default still runs. */}
+      <div className="pg-advanced">
+        <PresetPills
+          presets={presets}
+          active={preset}
+          disabled={loop.running}
+          onPick={(i) => {
+            setPreset(i);
+            setPrompt(presets[i].prompt);
+          }}
+        />
+      </div>
+      <div className={`pg-composer ${styles.agentComposer}`}>
         <label className="sr-only" htmlFor={`${id}-prompt`}>
           Prompt for the agent
         </label>
         <TextArea
           id={`${id}-prompt`}
+          className="pg-advanced"
           rows={3}
           value={prompt}
           onChange={(e) => {
@@ -181,7 +185,7 @@ export function AskPrompt({ request, onAnswer }: { request: AskRequest; onAnswer
           </button>
         ))}
       </div>
-      {request.note ? <p className={styles.note}>{request.note}</p> : null}
+      {request.note ? <p className={`${styles.note} pg-advanced`}>{request.note}</p> : null}
     </div>
   );
 }

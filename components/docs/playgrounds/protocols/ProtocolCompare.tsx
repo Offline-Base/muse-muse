@@ -364,7 +364,7 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
                 <td key={p}>{cell(p, (lane) => `${statusText(lane.result!)}, ${latencyLabel(lane.result!.elapsedMs)}`)}</td>
               ))}
             </tr>
-            <tr>
+            <tr className="pg-advanced">
               <th scope="row">Reply shape</th>
               {COMPARE_PROTOCOLS.map((p) => (
                 <td key={p}>{cell(p, (lane) => <Code>{replyShape(p, finalOf(lane))}</Code>)}</td>
@@ -427,7 +427,7 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
                 </td>
               ))}
             </tr>
-            <tr>
+            <tr className="pg-advanced">
               <th scope="row">Reasoning control</th>
               {COMPARE_PROTOCOLS.map((p) => (
                 <td key={p}>
@@ -441,13 +441,13 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
                 <td key={p}>{nextTurnNote(p, history)}</td>
               ))}
             </tr>
-            <tr>
+            <tr className="pg-advanced">
               <th scope="row">Reasoning across turns</th>
               {COMPARE_PROTOCOLS.map((p) => (
                 <td key={p}>{WIRE[p].carriesReasoning}</td>
               ))}
             </tr>
-            <tr>
+            <tr className="pg-advanced">
               <th scope="row">{ran ? "This request" : "Next request"}</th>
               {COMPARE_PROTOCOLS.map((p) => {
                 const body = lanes[p]?.body ?? nextBodies[p];
@@ -461,14 +461,14 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
               })}
             </tr>
             {stream && ran ? (
-              <tr>
+              <tr className="pg-advanced">
                 <th scope="row">Stream events</th>
                 {COMPARE_PROTOCOLS.map((p) => (
                   <td key={p}>{lanes[p]?.types.length ? <Code>{eventSummary(lanes[p]!.types)}</Code> : <span className={styles.dim}>None yet</span>}</td>
                 ))}
               </tr>
             ) : null}
-            <tr>
+            <tr className="pg-advanced">
               <th scope="row">Client</th>
               {COMPARE_PROTOCOLS.map((p) => (
                 <td key={p}>{WIRE[p].sdk}</td>
@@ -481,6 +481,7 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
 
       {COMPARE_PROTOCOLS.map((p) => (lanes[p]?.result && !lanes[p]!.result!.ok ? <ErrorBox key={p} error={runners[p].error} /> : null))}
 
+      <div className="pg-col pg-advanced">
       <Tabs<Protocol>
         label="Format"
         idBase={tabsId}
@@ -516,6 +517,7 @@ export function ProtocolCompare(props: ProtocolCompareProps) {
           </TabPanel>
         );
       })}
+      </div>
     </div>
   );
 }

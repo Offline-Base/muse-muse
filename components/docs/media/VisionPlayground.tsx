@@ -213,12 +213,14 @@ export function VisionPlayground({
         disabled={running}
       />
       {secondImage ? (
-        <FilePicker label="Second image" accept="image/png,image/jpeg,image/webp,image/gif" value={image2} onChange={setImage2} samples={samples ?? ["image"]} disabled={running} />
+        <div className="pg-advanced">
+          <FilePicker label="Second image" accept="image/png,image/jpeg,image/webp,image/gif" value={image2} onChange={setImage2} samples={samples ?? ["image"]} disabled={running} />
+        </div>
       ) : null}
       <Field id={`${id}-q`} label="Question">
         <TextArea id={`${id}-q`} value={question} rows={3} onChange={(e) => setQuestion(e.target.value)} disabled={running} />
       </Field>
-      <div className={styles.options}>
+      <div className={`${styles.options} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>Detail</span>
           <Segmented<"none" | "auto" | "low" | "high">
@@ -253,7 +255,7 @@ export function VisionPlayground({
         ) : null}
       </div>
       {editExtraBody ?? !!extraBody ? (
-        <Field id={`${id}-extra`} label="Extra body (merged into the request)" hint={extra.error ?? "For example a text.format JSON schema for structured output."}>
+        <Field id={`${id}-extra`} className="pg-advanced" label="Extra body (merged into the request)" hint={extra.error ?? "For example a text.format JSON schema for structured output."}>
           <TextArea id={`${id}-extra`} className={styles.mono} value={extraText} rows={8} spellCheck={false} onChange={(e) => setExtraText(e.target.value)} disabled={running} />
         </Field>
       ) : null}
@@ -261,7 +263,7 @@ export function VisionPlayground({
         <RunButton running={running} onRun={() => void run()} onStop={runner.abort} disabled={!image || !question.trim() || problems.length > 0} />
       </div>
       {send === "file" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           The image is uploaded with POST /v1/files first{uploaded ? ` (${uploaded})` : ""}, then the question references its file_id. Demo files are deleted within an hour.
         </p>
       ) : null}

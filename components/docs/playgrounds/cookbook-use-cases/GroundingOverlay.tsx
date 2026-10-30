@@ -142,19 +142,21 @@ export function GroundingOverlay({ sampleId = "fridge", prompt = DEFAULT_DIET_PR
   return (
     <div className="pg">
       <div className="pg-bar">
-        <Segmented<Mode>
-          label="Output"
-          options={[
-            { value: "points", label: "Points as JSON" },
-            { value: "html", label: "One call, HTML out" },
-          ]}
-          value={mode}
-          onChange={(m) => {
-            setMode(m);
-            runner.reset();
-          }}
-          disabled={running}
-        />
+        <div className="pg-advanced">
+          <Segmented<Mode>
+            label="Output"
+            options={[
+              { value: "points", label: "Points as JSON" },
+              { value: "html", label: "One call, HTML out" },
+            ]}
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              runner.reset();
+            }}
+            disabled={running}
+          />
+        </div>
         <ModelSelect kind="vision" value={model} onChange={setModel} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
       </div>
@@ -166,7 +168,7 @@ export function GroundingOverlay({ sampleId = "fridge", prompt = DEFAULT_DIET_PR
 
       <div className={styles.grid2}>
         <FilePicker accept="image/*" value={image} onChange={setImage} samples={["fridge", "living-room", "street"]} defaultSampleId={sampleId} preview="compact" disabled={running} />
-        <div className={styles.stack}>
+        <div className={`${styles.stack} pg-advanced`}>
           {presets.length ? (
             <PresetPills
               presets={presets}
@@ -192,7 +194,7 @@ export function GroundingOverlay({ sampleId = "fridge", prompt = DEFAULT_DIET_PR
       </div>
 
       <ErrorBox error={runner.error} />
-      {parseError ? <p className="pg-hint pg-bad">{parseError}</p> : null}
+      {parseError ? <div className="pg-hint pg-bad">{parseError}</div> : null}
 
       {points && imageUrl ? (
         <div className={styles.stack}>

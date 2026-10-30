@@ -88,7 +88,7 @@ export function StatelessImageTurns({
       <div className="pg-bar">
         <ModelSelect kind="image" value="muse-image-1.0" onChange={() => {}} />
       </div>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Every request sends <code>store: false</code>, so Meta keeps no conversation. The first turn sends the prompt. Each follow-up replays the last
         <code> image_generation_call</code> item (its id, with <code>result: null</code>) and then your new instruction, so you never resend the image.
       </p>
@@ -132,7 +132,9 @@ export function StatelessImageTurns({
       </details>
 
       <div className={styles.spread}>
-        <Toggle id={`${id}-fast`} label="Quick: reasoning_strength low, lookups off" checked={fast} onChange={setFast} disabled={running} />
+        <span className="pg-advanced">
+          <Toggle id={`${id}-fast`} label="Quick: reasoning_strength low, lookups off" checked={fast} onChange={setFast} disabled={running} />
+        </span>
         <div className={styles.row}>
           {turns.length ? (
             <button
@@ -152,7 +154,7 @@ export function StatelessImageTurns({
           <RunButton running={running} onRun={() => void run()} onStop={runner.abort} label={turns.length ? "Follow up" : "Generate"} disabled={!prompt.trim() || (reference?.problems.length ?? 0) > 0} />
         </div>
       </div>
-      <p className={styles.note}>$0.01 per image. A quick turn takes about 10 seconds.</p>
+      <p className={`${styles.note} pg-advanced`}>$0.01 per image. A quick turn takes about 10 seconds.</p>
 
       <ErrorBox error={localError ?? runner.error} />
       {running || runner.result ? (

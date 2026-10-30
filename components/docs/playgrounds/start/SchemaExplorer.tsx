@@ -76,17 +76,19 @@ export function SchemaExplorer({ source: initialSource = "list" }: { slug: strin
       <div className={styles.card}>
         <p className={styles.cardTitle}>A live object, checked against these schemas</p>
         <div className="pg-actions">
-          <Segmented<Source>
-            label="Object"
-            size="sm"
-            options={[
-              { value: "list", label: "GET /v1/models" },
-              { value: "retrieve", label: `GET /v1/models/${DEFAULT_TEXT_MODEL}` },
-            ]}
-            value={source}
-            onChange={setSource}
-            disabled={running}
-          />
+          <div className="pg-advanced">
+            <Segmented<Source>
+              label="Object"
+              size="sm"
+              options={[
+                { value: "list", label: "GET /v1/models" },
+                { value: "retrieve", label: `GET /v1/models/${DEFAULT_TEXT_MODEL}` },
+              ]}
+              value={source}
+              onChange={setSource}
+              disabled={running}
+            />
+          </div>
           <RunButton running={running} onRun={run} onStop={runner.abort} label="Fetch and check" />
         </div>
         <ErrorBox error={runner.error} />
@@ -120,8 +122,8 @@ function FieldRow({ field, onRef }: { field: SchemaField; onRef(schema: string):
         )}
         <span className={`${styles.tag} ${field.required ? styles.tagAccent : ""}`}>{field.required ? "Required" : "Optional"}</span>
       </span>
-      <span />
-      <span className="pg-hint">{field.description.replace(/`/g, "")}</span>
+      <span className="pg-advanced" />
+      <span className="pg-hint pg-advanced">{field.description.replace(/`/g, "")}</span>
     </div>
   );
 }

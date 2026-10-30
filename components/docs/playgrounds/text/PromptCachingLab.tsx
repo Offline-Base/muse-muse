@@ -218,7 +218,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
           }}
           disabled={busy}
         />
-        <p className={styles.about} aria-live="polite">
+        <p className={cx(styles.about, "pg-advanced")} aria-live="polite">
           {scenario.about}
         </p>
       </div>
@@ -227,7 +227,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
         <p className={styles.cardTitle} id={`${id}-req`}>
           The request
         </p>
-        <div className={styles.row}>
+        <div className={cx(styles.row, "pg-advanced")}>
           <span className="pg-inline-field">
             <span className="pg-label">Stable prefix</span>
             <Segmented<BookPart>
@@ -244,7 +244,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
           </span>
           {scenario.id !== "timestamp" ? <Toggle id={`${id}-cold`} label="Start cold (a fresh tag first)" checked={cold} onChange={setCold} disabled={busy} /> : null}
         </div>
-        <div className={styles.row}>
+        <div className={cx(styles.row, "pg-advanced")}>
           <Toggle id={`${id}-key`} label={<code>prompt_cache_key</code>} checked={useKey} onChange={setUseKey} disabled={busy} />
           {useKey ? (
             <span className="pg-inline-field">
@@ -272,7 +272,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
             </>
           ) : null}
         </div>
-        <p className={cx(styles.about, styles.small)}>
+        <p className={cx(styles.about, styles.small, "pg-advanced")}>
           {useKey
             ? "On by default, though the page says caching needs no key: in our runs without one, call 2 landed on another backend and cached nothing. Turn it off to test the page's claim."
             : "Without a key the second call may land on a backend that doesn't hold the prefix and miss; we saw that happen. One stable key per shared prefix keeps them together."}
@@ -285,7 +285,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
             <TextInput id={`${id}-q2`} value={q2} onChange={(e) => setQ2(e.target.value)} disabled={busy} />
           </Field>
         </div>
-        <details className={styles.details}>
+        <details className={cx(styles.details, "pg-advanced")}>
           <summary>What each call sends, in order</summary>
           <p className={styles.preview}>
             <span className={styles.prefixPart}>
@@ -325,7 +325,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
         />
       </div>
 
-      {loadError ? <p className="pg-hint pg-bad">{loadError}</p> : null}
+      {loadError ? <div className="pg-hint pg-bad">{loadError}</div> : null}
 
       {calls.length ? (
         <section className={styles.stack} aria-label="Results">
@@ -382,7 +382,7 @@ export function PromptCachingLab(props: PromptCachingLabProps) {
           {one && two ? <Verdict scenario={scenario.id} one={one} two={two} model={ranOn} /> : null}
 
           {two && two.cached > 0 ? (
-            <div className={styles.card}>
+            <div className={cx(styles.card, "pg-advanced")}>
               <p className={styles.cardTitle}>Call 2&apos;s input at each rate</p>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>

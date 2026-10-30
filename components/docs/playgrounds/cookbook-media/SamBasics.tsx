@@ -259,7 +259,7 @@ export function SamBasics({
         />
       </Field>
 
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.control}>
           <span className={styles.label}>Masks</span>
           <Segmented<"lossless" | "one_bit">

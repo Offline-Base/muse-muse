@@ -15,13 +15,17 @@ The "Try it live" demos for the cookbook's use-case recipes (lib/docs/demos/cook
 | `SlideGenerator` | cookbook/generating-slides | web_search research, a normalized JSON outline shown as a deck, optional model-designed HTML deck, stats | `topic?`, `content?`, `source?` |
 | `GithubAgent` | cookbook/github-agent | GitHub events through the recipe's workflows and agents (AGENTS.md, prompts, bash allow-lists) over a sample repo with a fake gh and git | `scenario?` |
 | `MultiAgentBoard` | cookbook/multi-agent-orchestration | PM plus backend, frontend and gtm (the recipe's SOULs and toolsets) on a live Kanban board: clarify, brief and runbook, linked tasks, the dispatcher, blocks and comments | `brief?` |
-| `OneShotGame` | cookbook/one-shot-game-dev | AGENTS.md as instructions plus the structured prompt, at high effort; plays the single-file game in a sandbox. The 3D build usually reaches the 16,384-token cap, so it continues once on its own (a toggle), then offers Continue | `preset?: "crossy" \| "canvas"`, `effort?` |
+| `OneShotGame` | cookbook/one-shot-game-dev | AGENTS.md as instructions plus the structured prompt, at high effort; plays the single-file game in a sandbox. The 3D build usually reaches the 16,384-token cap, so it continues once on its own (a toggle), then offers Continue. The status line says whether it is thinking or writing (lib/gamedev.ts `buildProgress`), since reasoning streams no text for about two minutes, and its clock covers every call | `preset?: "crossy" \| "canvas"`, `effort?` |
 | `VerifyLoop` | cookbook/iterative-game-dev, cookbook/browser-verified-web-design | Build, then a browser check in the sandbox (held keys or a mouse path, screenshots, console, snapshot), then a fix round; refinement passes, each with its own check (Pass 3 drives both ways and opens the overview, Pass 4 samples the camera every 100 ms) | `kind: "game" \| "site"`, `effort?` |
 | `LookAndAsk` | cookbook/rayban-openclaw | Photo (sample, upload or camera), hold-to-talk transcription, one chat turn with text and image, spoken answer | `sampleId?`, `question?`, `presets?`, `instructions?` |
 | `SandboxExec` | cookbook/sandboxed-execution | The recipe's run and write_file scaffold over a JavaScript port of its SWE-bench task; `node` runs in a throwaway sandboxed iframe; the script re-verifies and saves pred.patch | `task?`, `maxCalls?` |
 | `GlimmerGate` | cookbook/glimmer-api-agent | A simulated local agent whose consult_remote_model calls stop at an approval gate (exact text, bytes, reason, digest-scoped approvals, timeout); the egress ledger and runs-API events | `scenario?`, `timeoutSec?` |
 
 Shared pieces: `useAgentRun` and `Timeline` (an agent run with model calls, tool runs, notes and questions for the reader, with Pause after each step), `useRetryGuard` (Stop and the wait line for the short multi-call demos), `SandboxFrame` and `sandbox-run.ts` (model-written code in `<iframe sandbox="allow-scripts" srcdoc>` with the harness in lib/harness.ts; `viewport` lays a page out at 1280 x 800 and scales it to the column, and `capture()` waits for a hidden tab to come back and scrolls an off-screen frame into view, since Chrome pauses animation frames in both), and `prompts.ts` (the copy-prompt specs).
+
+## Simple view
+
+The panel's simple view (components/docs/kit/README.md, "Simple view and `pg-advanced`") shows one input, one row of examples, the main action and its result. An agent run's steps are one line each: `Timeline` marks tool arguments, tool output and the raw JSON `pg-advanced`, unless the output is why the step failed. `p.pg-hint` is hidden there, so an error or a wait note in this folder is a `div` with the same classes.
 
 ## Pure modules (lib/)
 

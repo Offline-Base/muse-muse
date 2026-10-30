@@ -422,3 +422,17 @@
 .segWrap :global(.pg-seg) {
   border-radius: 16px;
 }
+
+/* The upload in a file_id step while the reader has no file yet. It looks like the kit's .pg-system, which the simple
+   view hides, because here it's how a required input gets its value. */
+.neededUpload > summary {
+  width: fit-content;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.neededUpload[open] > summary {
+  margin-bottom: 8px;
+}

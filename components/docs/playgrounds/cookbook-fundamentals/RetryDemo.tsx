@@ -3,7 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { PresetPills, Segmented, Toggle } from "@/components/docs/kit/Field";
+import { Segmented, Toggle } from "@/components/docs/kit/Field";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { latencyLabel } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
@@ -21,7 +21,7 @@ import {
   type Failure,
   type RetryEvent,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/retry";
-import { DemoTabs, Note, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, DemoTabs, Note, SplitPills, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -182,15 +182,17 @@ function RetryLoop() {
     <div className="pg">
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} />
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <span className="pg-label">max_retries</span>
           <Segmented<"3" | "5"> size="sm" label="max_retries" value={maxRetries} onChange={setMaxRetries} disabled={busy} options={[{ value: "3", label: "3" }, { value: "5", label: "5" }]} />
         </span>
-        <Toggle id={`${id}-fast`} label="Wait 4x faster" checked={fast} onChange={setFast} disabled={busy} />
+        <Advanced>
+          <Toggle id={`${id}-fast`} label="Wait 4x faster" checked={fast} onChange={setFast} disabled={busy} />
+        </Advanced>
       </div>
-      <PresetPills label="Scenario" presets={SCENARIOS} active={scenario} onPick={setScenario} disabled={busy} />
+      <SplitPills label="Scenario" presets={SCENARIOS} active={scenario} onPick={setScenario} disabled={busy} simple={5} />
       <div className={styles.spread}>
-        <Note>{s.what}</Note>
+        <Note advanced>{s.what}</Note>
         <RunButton
           running={busy}
           onRun={() => void run()}
@@ -219,7 +221,7 @@ function RetryLoop() {
                 )}
                 {r.ms ? <span className="pg-meta">{latencyLabel(r.ms)}</span> : null}
               </div>
-              {r.why ? <p className={styles.note}>{r.why}</p> : null}
+              {r.why ? <p className={`${styles.note} pg-advanced`}>{r.why}</p> : null}
               {r.outcome === "retry" && r.wait !== undefined && !s.naive ? (
                 <p className="pg-muted pg-small">
                   wait = {RECIPE_BACKOFF.delay} x 2^{r.attempt - 1} + uniform(0, {RECIPE_BACKOFF.jitter}) = {r.wait.toFixed(2)} s
@@ -259,10 +261,10 @@ function RetryLoop() {
               </tbody>
             </table>
           </div>
-          <Note>Branch on type and the status code, not code: code is often null on validation errors.</Note>
+          <Note advanced>Branch on type and the status code, not code: code is often null on validation errors.</Note>
         </div>
       ) : null}
-      <details className="pg-raw">
+      <details className="pg-raw pg-advanced">
         <summary>The backoff schedule for max_retries {maxRetries}</summary>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
@@ -286,7 +288,7 @@ function RetryLoop() {
         </div>
         <Note>Doubling spreads retries out; the jitter keeps many clients from retrying in lockstep.</Note>
       </details>
-      <Note>
+      <Note advanced>
         Throttle before a 429: Meta sends x-ratelimit-remaining-requests, x-ratelimit-limit-requests, x-ratelimit-remaining-tokens and
         x-ratelimit-limit-tokens on every reply (read them with with_raw_response). The live docs pass them on, in a reply&apos;s Headers
         tab: there they count Muse Muse&apos;s team, which every reader shares, so read your own on your own calls.
@@ -345,12 +347,12 @@ function Breaker() {
   const state = breaker.current.state();
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         After a run of failures the breaker opens and stops calls for a cooldown, then lets one trial through (half-open). A failed trial opens it
         again at once; a success closes it. This is the recipe&apos;s CircuitBreaker class, on a simulated clock.
       </p>
       <div className="pg-bar">
-        <span className="pg-inline-field">
+        <span className="pg-inline-field pg-advanced">
           <span className="pg-label">threshold</span>
           <Segmented<"2" | "3">
             size="sm"

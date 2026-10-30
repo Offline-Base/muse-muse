@@ -11,7 +11,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
-import { BarList, DemoTabs, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { Advanced, BarList, DemoTabs, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { tokenUsage } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, EFFORT_LABELS, effortsFor, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -91,7 +91,9 @@ function Sweep({ questions }: { questions: ReasoningDemoProps["questions"] }) {
     <div className="pg">
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} />
-        <Toggle id={`${id}-xhigh`} label="Add xhigh" checked={withXhigh} onChange={setWithXhigh} disabled={busy} />
+        <Advanced>
+          <Toggle id={`${id}-xhigh`} label="Add xhigh" checked={withXhigh} onChange={setWithXhigh} disabled={busy} />
+        </Advanced>
       </div>
       <PresetPills
         presets={questions}
@@ -115,9 +117,9 @@ function Sweep({ questions }: { questions: ReasoningDemoProps["questions"] }) {
         />
       </Field>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">One call per level, {levels.join(", ")}: under a cent together.</span>
+        <span className="pg-muted pg-small pg-advanced">One call per level, {levels.join(", ")}: under a cent together.</span>
         <span className={styles.row}>
-          <button type="button" className="btn btn-sm btn-outline" disabled={busy || !prompt.trim()} onClick={() => void sweep(["none"])}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" disabled={busy || !prompt.trim()} onClick={() => void sweep(["none"])}>
             Try &quot;none&quot;
           </button>
           <RunButton
@@ -169,7 +171,7 @@ function Sweep({ questions }: { questions: ReasoningDemoProps["questions"] }) {
         </div>
       ) : null}
       {ok.length > 1 ? (
-        <Note>
+        <Note advanced>
           Reasoning tokens are output tokens: you pay for them though they never appear in the text. Keep simple calls at minimal or low and save
           high, the effective maximum (xhigh runs at the same strength), for hard problems.
         </Note>
@@ -247,17 +249,19 @@ function InspectReasoning() {
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Sends the recipe&apos;s two inspection calls: Chat Completions (is there reasoning_content?) and Responses with include
         reasoning.encrypted_content and store false (what does the reasoning item hold?).
       </p>
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={busy} />
-        <Toggle id={`${id}-summary`} label={'reasoning.summary: "auto"'} checked={summary} onChange={setSummary} disabled={busy} />
+        <Advanced>
+          <Toggle id={`${id}-summary`} label={'reasoning.summary: "auto"'} checked={summary} onChange={setSummary} disabled={busy} />
+        </Advanced>
       </div>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">Two calls, well under a cent.</span>
+        <span className="pg-muted pg-small pg-advanced">Two calls, well under a cent.</span>
         <RunButton running={busy} onRun={() => void run()} onStop={runner.abort} label="Inspect the reasoning" />
       </div>
       <ErrorBox error={runner.error} />
@@ -308,7 +312,7 @@ function InspectReasoning() {
         </div>
       ) : null}
       {result?.responsesJson ? (
-        <details className="pg-raw">
+        <details className="pg-raw pg-advanced">
           <summary>The Responses reply</summary>
           <JsonTree value={result.responsesJson} openDepth={2} />
         </details>
@@ -403,21 +407,23 @@ function CarryAcross() {
     <div className="pg">
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} />
-        <Segmented<Carry>
-          label="How turn 2 gets turn 1's reasoning"
-          value={mode}
-          onChange={(m) => {
-            setMode(m);
-            setTurns([]);
-          }}
-          disabled={busy}
-          options={[
-            { value: "previous", label: "previous_response_id" },
-            { value: "replay", label: "Replay the encrypted item" },
-          ]}
-        />
+        <Advanced>
+          <Segmented<Carry>
+            label="How turn 2 gets turn 1's reasoning"
+            value={mode}
+            onChange={(m) => {
+              setMode(m);
+              setTurns([]);
+            }}
+            disabled={busy}
+            options={[
+              { value: "previous", label: "previous_response_id" },
+              { value: "replay", label: "Replay the encrypted item" },
+            ]}
+          />
+        </Advanced>
       </div>
-      <Note>
+      <Note advanced>
         {mode === "previous"
           ? "The server stores turn 1 and replays its reasoning and history when turn 2 names it."
           : "Nothing is stored (store: false). Your client keeps turn 1's encrypted reasoning item and sends it back in turn 2's input."}
@@ -431,7 +437,7 @@ function CarryAcross() {
         </Field>
       </div>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">Two calls, well under a cent.</span>
+        <span className="pg-muted pg-small pg-advanced">Two calls, well under a cent.</span>
         <RunButton running={busy} onRun={() => void run()} onStop={runner.abort} label="Run both turns" disabled={!first.trim() || !second.trim()} />
       </div>
       <ErrorBox error={runner.error} />
@@ -464,7 +470,7 @@ function CarryAcross() {
           ]}
         />
       ) : turns.length === 2 ? (
-        <Note>Run it the other way too to compare turn 2&apos;s input tokens.</Note>
+        <Note advanced>Run it the other way too to compare turn 2&apos;s input tokens.</Note>
       ) : null}
       <div className="pg-actions">
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />

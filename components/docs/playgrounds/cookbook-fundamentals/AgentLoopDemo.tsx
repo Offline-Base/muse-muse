@@ -223,7 +223,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
       <Field id={`${id}-prompt`} label="The task, as the recipe phrases it">
         <TextArea id={`${id}-prompt`} rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={loop.busy || loop.steps.length > 0} />
       </Field>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>Guards: most turns</span>
         <Segmented<string>
           size="sm"
@@ -245,7 +245,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
         <span className="pg-muted pg-small">and a stop when one exact call repeats three times</span>
       </div>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">
+        <span className="pg-muted pg-small pg-advanced">
           {interleaved ? "Each turn reasons, then acts." : "One tool per turn (parallel_tool_calls: false)."} A run is usually a few tenths of a cent.
         </span>
         <span className={styles.row}>
@@ -254,7 +254,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
               Reset the project
             </button>
           ) : null}
-          <button type="button" className="btn btn-sm btn-outline" onClick={() => start(loop.stepOnce)} disabled={loop.busy || ended || !prompt.trim()}>
+          <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => start(loop.stepOnce)} disabled={loop.busy || ended || !prompt.trim()}>
             {nextLabel}
           </button>
           {ended ? (
@@ -300,19 +300,23 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
                     <StatusPill tone="ok">done</StatusPill>
                   )}
                   <span className="pg-meta">{t.reasoningTokens.toLocaleString("en-US")} reasoning tokens</span>
-                  {t.model.elapsedMs ? <span className="pg-meta">{latencyLabel(t.model.elapsedMs)}</span> : null}
-                  {t.model.collected?.usage ? <UsageLine model={t.model.model ?? model} usage={t.model.collected.usage} /> : null}
+                  {t.model.elapsedMs ? <span className="pg-meta pg-advanced">{latencyLabel(t.model.elapsedMs)}</span> : null}
+                  {t.model.collected?.usage ? (
+                    <span className="pg-advanced">
+                      <UsageLine model={t.model.model ?? model} usage={t.model.collected.usage} />
+                    </span>
+                  ) : null}
                 </div>
-                {t.thought ? <p className={styles.thought}>{t.thought}</p> : null}
+                {t.thought ? <p className={`${styles.thought} pg-advanced`}>{t.thought}</p> : null}
                 {t.calls.map((c) => (
                   <div key={c.callId || c.name}>
                     <p className={styles.act}>→ {shortCall(c.name, c.args)}</p>
-                    <p className={styles.result}>{resultSummary(c.name, c.output, c.ok)}</p>
+                    <p className={`${styles.result} pg-advanced`}>{resultSummary(c.name, c.output, c.ok)}</p>
                   </div>
                 ))}
                 {t.model.collected?.done && !t.calls.length && !t.model.collected.error ? <p className={styles.textBlock}>{t.model.collected.text || "(no text)"}</p> : null}
                 {t.model.collected?.error && t.model.collected.error.code !== "aborted" ? <p className="pg-bad">{t.model.collected.error.message}</p> : null}
-                <details className="pg-raw">
+                <details className="pg-raw pg-advanced">
                   <summary>Request and reply JSON</summary>
                   <JsonTree value={t.model.body} openDepth={1} />
                   {t.model.collected?.final ? <JsonTree value={t.model.collected.final} openDepth={1} /> : null}
@@ -341,7 +345,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
               copy of those tests.
             </p>
           ) : null}
-          <Note>
+          <Note advanced>
             {interleaved
               ? "Done means the project's own behavior tests still pass and no callback-style code is left in the migrated files."
               : "The project's own tests are the oracle: the loop's claim of success counts only when they pass."}
@@ -366,7 +370,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
             {panel === "trace" ? (
               <>
                 <div className={styles.spread}>
-                  <span className="pg-muted pg-small">{interleaved ? "The recipe's interleaved trace: thought, then action." : "The recipe's trace format: one block per turn."}</span>
+                  <span className="pg-muted pg-small pg-advanced">{interleaved ? "The recipe's interleaved trace: thought, then action." : "The recipe's trace format: one block per turn."}</span>
                   <CopyButton value={trace} label="Copy the trace" className="icon-btn icon-btn-plain icon-btn-sm" />
                 </div>
                 <pre className={styles.trace}>{trace || "No turns yet."}</pre>
@@ -389,7 +393,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
           </div>
         </div>
       ) : (
-        <details className="pg-raw">
+        <details className="pg-raw pg-advanced">
           <summary>The project ({Object.keys(project.files).length} files)</summary>
           <div className={styles.row} role="group" aria-label="Files">
             {Object.keys(project.files).map((p) => (
@@ -403,7 +407,7 @@ export function AgentLoopDemo({ project: projectId, variant, effort: initialEffo
       )}
 
       {runs.length ? (
-        <div className={styles.tableWrap}>
+        <div className={`${styles.tableWrap} pg-advanced`}>
           <p className="pg-section-label">Runs so far</p>
           <table className={styles.table}>
             <thead>

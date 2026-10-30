@@ -123,7 +123,7 @@ export function ControlRoom() {
             <span className={styles.kbd}>{k.label}</span>
           </button>
         ))}
-        <button type="button" className="btn btn-outline btn-sm" onClick={() => setRoom(initialRoom())}>
+        <button type="button" className="btn btn-outline btn-sm pg-advanced" onClick={() => setRoom(initialRoom())}>
           Start over
         </button>
       </div>
@@ -131,6 +131,7 @@ export function ControlRoom() {
         {room.message}
       </p>
       <Notes
+        className="pg-advanced"
         items={[
           "From the run list: Up and Down (or J and K) select, Enter or Right opens a run, C cancels it, R opens a completed run's result, Space or Esc closes.",
           "Inside a run: P pauses or resumes it, X skips the selected running child, R restarts it. R isn't a retry for completed or failed children. Esc or Left goes back; Space closes from any level.",

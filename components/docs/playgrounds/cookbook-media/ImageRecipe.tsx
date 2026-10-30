@@ -258,7 +258,7 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
       <div className="pg-bar">
         <ModelSelect kind="image" value="muse-image-1.0" onChange={() => {}} />
         {stateModes ? (
-          <span className={styles.control}>
+          <span className={`${styles.control} pg-advanced`}>
             <span className={styles.label}>State</span>
             <Segmented<StateMode>
               size="sm"
@@ -274,7 +274,7 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
           </span>
         ) : null}
         {stateModes && mode === "client" ? (
-          <span className={styles.control}>
+          <span className={`${styles.control} pg-advanced`}>
             <span className={styles.label}>Replay</span>
             <Segmented<"id" | "item">
               size="sm"
@@ -291,14 +291,14 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
         ) : null}
       </div>
       {stateModes && mode === "client" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Each turn sends <code>store: false</code>, and a continued turn starts its <code>input</code> with the prior{" "}
           <code>image_generation_call</code> item, then your message. The item&apos;s id is a signed handle that carries the image, so{" "}
           <code>result: null</code> works (the image guide&apos;s way); the recipe replays the whole item, which resends the image&apos;s bytes.
         </p>
       ) : null}
       {searchSwitches ? (
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           <Toggle id={`${id}-ws`} label="Web search (enable_web_search)" checked={search.web} onChange={(v) => setSearch((s) => ({ ...s, web: v }))} disabled={running} />
           <Toggle id={`${id}-is`} label="Image search (enable_image_search)" checked={search.image} onChange={(v) => setSearch((s) => ({ ...s, image: v }))} disabled={running} />
         </div>
@@ -331,7 +331,7 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
           {steps.map((s, i) => {
             const r = results[s.id];
             return (
-              <li key={s.id}>
+              <li key={s.id} className={s.optional && !r ? "pg-advanced" : undefined}>
                 <button type="button" className={styles.thumb} aria-current={focus === s.id} onClick={() => {
                   setFocus(s.id);
                   document.getElementById(`${id}-step-${s.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -416,7 +416,7 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
         <section className={styles.sheet} aria-label="Contact sheet">
           <p className="pg-section-label">Contact sheet: compare every panel with the anchors</p>
           {groups.map(({ g, title, steps: list }) => (
-            <div key={g} className={styles.tight}>
+            <div key={g} className={`${styles.tight}${list.every((s) => s.optional && !results[s.id]) ? " pg-advanced" : ""}`}>
               <span className={styles.label}>{title}</span>
               <div className={styles.sheetRow}>
                 {list.map((s) => {
@@ -443,7 +443,7 @@ export function ImageRecipe({ steps, stateModes = false, compare = false, sheet 
 
       <div className="pg-actions">
         <Toggle id={`${id}-code`} label="Show code" checked={showCode} onChange={setShowCode} />
-        {showCode ? <span className={styles.note}>For step {stepNo(focusStep?.id ?? null)}: {focusStep?.label}. Pick a step to see its request.</span> : null}
+        {showCode ? <span className={`${styles.note} pg-advanced`}>For step {stepNo(focusStep?.id ?? null)}: {focusStep?.label}. Pick a step to see its request.</span> : null}
       </div>
       {showCode && shown ? <CodeView method="POST" path={shown.path} body={shown.body} caption={`The request step ${stepNo(focusStep?.id ?? null)} sends`} /> : null}
     </div>
@@ -551,7 +551,7 @@ function StepCard({
       : `Replays step ${parentNo}'s image (store: false)`;
 
   return (
-    <li className={styles.step} id={idBase} data-active={active ? "true" : undefined} data-done={result?.b64 ? "true" : undefined} onFocusCapture={onFocus}>
+    <li className={`${styles.step}${step.optional && !result ? " pg-advanced" : ""}`} id={idBase} data-active={active ? "true" : undefined} data-done={result?.b64 ? "true" : undefined} onFocusCapture={onFocus}>
       <div className={styles.stepHead}>
         <span className={styles.stepNum} aria-hidden="true">
           {n}
@@ -560,11 +560,12 @@ function StepCard({
           <span className="sr-only">Step {n}: </span>
           {step.label}
         </h3>
-        <span className={styles.badge}>{chainBadge}</span>
-        {step.optional ? <span className={styles.badge}>Optional, not in Run all</span> : null}
+        <span className={`${styles.badge} pg-advanced`}>{chainBadge}</span>
+        {step.optional ? <span className={`${styles.badge} pg-advanced`}>Optional, not in Run all</span> : null}
       </div>
-      {step.note ? <p className={styles.note}>{step.note}</p> : null}
-      <Field id={`${idBase}-prompt`} label={chain ? "Instruction (only the change)" : "Prompt"}>
+      {step.note ? <p className={`${styles.note} pg-advanced`}>{step.note}</p> : null}
+      {/* In the simple view the first step is the example to edit and run; the later ones show as a compact list. */}
+      <Field id={`${idBase}-prompt`} label={chain ? "Instruction (only the change)" : "Prompt"} className={n > 1 ? "pg-advanced" : undefined}>
         {/* A first guess from desktop line length; the box then grows to fit the text at the width it really has. */}
         <AutoTextArea
           id={`${idBase}-prompt`}
@@ -575,7 +576,7 @@ function StepCard({
         />
       </Field>
       {hasRefs ? (
-        <div className={styles.tight}>
+        <div className={`${styles.tight}${n > 1 ? " pg-advanced" : ""}`}>
           <span className={styles.label}>Reference images (input_image parts in the same user message)</span>
           <div className={styles.row}>
             {(step.references ?? []).map((r, slot) => (
@@ -595,7 +596,7 @@ function StepCard({
           </div>
         </div>
       ) : null}
-      <details className={styles.details}>
+      <details className={`${styles.details} pg-advanced`}>
         <summary>Options for this step</summary>
         <div className={styles.tight}>
           <label className={styles.control} htmlFor={`${idBase}-chain`}>
@@ -622,9 +623,9 @@ function StepCard({
           ) : null}
         </div>
       </details>
-      <div className={styles.row}>
+      <div className={`${styles.row}${n > 1 && !stale ? " pg-advanced" : ""}`}>
         <RunButton running={runningThis} onRun={onRun} onStop={onStop} label={result ? `Run step ${n} again` : `Run step ${n}`} disabled={running && !runningThis} />
-        <span className={styles.note}>
+        <span className={`${styles.note} pg-advanced`}>
           $0.01 for its image
           {downstream.length && result
             ? `. Running it again makes ${downstream.length === 1 ? `step ${downstream[0]}` : `steps ${downstream.slice(0, -1).join(", ")} and ${downstream.at(-1)}`} stale.`
@@ -660,7 +661,7 @@ function StepCard({
               ))}
             </ul>
             {tokens ? (
-              <dl className={styles.tokens} aria-label="usage">
+              <dl className={`${styles.tokens} pg-advanced`} aria-label="usage">
                 {(
                   [
                     ["input_tokens", tokens.input],
@@ -683,7 +684,7 @@ function StepCard({
               {result.mode === "client" ? " (store: false, so it can't be continued by id)" : ""}
             </p>
             {reasoning ? (
-              <details className={styles.details}>
+              <details className={`${styles.details} pg-advanced`}>
                 <summary>What Muse Image planned (reasoning summary)</summary>
                 <p className={styles.note} style={{ whiteSpace: "pre-wrap" }}>
                   {reasoning}

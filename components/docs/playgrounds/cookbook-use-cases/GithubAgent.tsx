@@ -27,6 +27,8 @@ export interface GithubAgentProps {
 }
 
 const ORDER = ["triage", "review", "repo-agent", "qa", "rfc", "bugfix", "stale"];
+/** The events the simple view shows; the rest wait behind Options. */
+const FIRST_ROW = 5;
 
 function agentDef(spec: AgentSpec, model: string, effort: Effort | null, depth: number): AgentDef {
   return {
@@ -142,7 +144,10 @@ export function GithubAgent({ scenario: initialScenario = "triage-bug" }: Github
 
   return (
     <div className="pg">
-      <PresetPills presets={GH_SCENARIOS.map((x) => ({ label: x.label }))} active={GH_SCENARIOS.findIndex((x) => x.id === scenarioId)} onPick={(i) => pick(GH_SCENARIOS[i].id)} disabled={run.busy} />
+      <PresetPills presets={GH_SCENARIOS.slice(0, FIRST_ROW).map((x) => ({ label: x.label }))} active={GH_SCENARIOS.findIndex((x) => x.id === scenarioId)} onPick={(i) => pick(GH_SCENARIOS[i].id)} disabled={run.busy} />
+      <div className="pg-advanced">
+        <PresetPills presets={GH_SCENARIOS.slice(FIRST_ROW).map((x) => ({ label: x.label }))} active={GH_SCENARIOS.findIndex((x) => x.id === scenarioId) - FIRST_ROW} onPick={(i) => pick(GH_SCENARIOS[FIRST_ROW + i].id)} disabled={run.busy} />
+      </div>
 
       <div className={styles.grid2}>
         <div className={styles.card}>
@@ -197,7 +202,7 @@ export function GithubAgent({ scenario: initialScenario = "triage-bug" }: Github
           ) : null}
         </div>
 
-        <div className={styles.card}>
+        <div className={`${styles.card} pg-advanced`}>
           <p className={styles.cardTitle}>.github/workflows/{wf.name}.yml</p>
           <pre className="pg-pre" style={{ maxHeight: 150 }}>
             {[`on: ${wf.on}`, `permissions: ${wf.permissions.join(", ")}`, ...(wf.gate ? [`if: ${wf.gate}`] : []), `agent: ${wf.agent}`, "model: model_api/muse-spark-1.3-contributor"].join("\n")}
@@ -231,7 +236,7 @@ export function GithubAgent({ scenario: initialScenario = "triage-bug" }: Github
       </div>
       <div className="pg-actions">
         <RunButton running={run.busy} onRun={start} onStop={run.stop} label={gate.runs ? `Fire the event` : "Fire the event (the gate blocks it)"} />
-        <span className="pg-hint">Nothing reaches GitHub: gh and git are fakes over the sample data. A run is a few model calls, well under a cent on Spark Contributor; Muse Wonder costs 40 to 100 times as much per token.</span>
+        <span className="pg-hint pg-advanced">Nothing reaches GitHub: gh and git are fakes over the sample data. A run is a few model calls, well under a cent on Spark Contributor; Muse Wonder costs 40 to 100 times as much per token.</span>
       </div>
       <RunBar busy={run.busy} modelCalls={run.modelCalls} totalUsd={run.totalUsd} waitingStep={run.waitingStep} onAdvance={run.advance} />
       <ErrorBox error={run.error} />

@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useId, useMemo, useRef, useState } from "react";
-import { PresetPills, Segmented, TextInput } from "@/components/docs/kit/Field";
+import { Segmented, TextInput } from "@/components/docs/kit/Field";
 import { AgentLoopPanel, AskPrompt } from "@/components/docs/playgrounds/muse-code-cookbook/AgentLoopPanel";
 import type { Harness } from "@/components/docs/playgrounds/muse-code-cookbook/hooks";
 import { startReview } from "@/components/docs/playgrounds/muse-code-cookbook/logic/approvals";
 import { GUARDRAIL_DEMO, guardrailOutcome, mediatedCheck, sandboxCheck, type Route } from "@/components/docs/playgrounds/muse-code-cookbook/logic/guardrails";
 import { guardrailLaunch, guardrailRequest } from "@/components/docs/playgrounds/muse-code-cookbook/logic/requests";
 import { applyEdit, approvalOn, initialTree, runCommand, startupLine, toolResult, type Launch, type Tree } from "@/components/docs/playgrounds/muse-code-cookbook/logic/sandbox";
-import { Section, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
+import { FewPills, Section, Terminal, Verdict, type TermLine } from "@/components/docs/playgrounds/muse-code-cookbook/parts";
 import styles from "@/components/docs/playgrounds/muse-code-cookbook/mcc.module.css";
 
 /**
@@ -147,7 +147,7 @@ export function GuardrailTester(_props: GuardrailTesterProps) {
   const shellCmd = `echo probe > ${path.trim() || "<path>"}`;
   return (
     <div className={`pg ${styles.stack}`}>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <Segmented<Launch>
           label="Launch flags"
           size="sm"
@@ -159,15 +159,17 @@ export function GuardrailTester(_props: GuardrailTesterProps) {
           }}
         />
       </div>
-      <Terminal
-        title="Startup"
-        lines={[
-          { text: `cd ${GUARDRAIL_DEMO.root} && ${guardrailLaunch(launch)}`, tone: "cmd" },
-          { text: `Security: ${startupLine(launch)}`, tone: approvalOn(launch) && launch !== "disable-sandbox" ? "plain" : "warn" },
-        ]}
-      />
+      <div className="pg-advanced">
+        <Terminal
+          title="Startup"
+          lines={[
+            { text: `cd ${GUARDRAIL_DEMO.root} && ${guardrailLaunch(launch)}`, tone: "cmd" },
+            { text: `Security: ${startupLine(launch)}`, tone: approvalOn(launch) && launch !== "disable-sandbox" ? "plain" : "warn" },
+          ]}
+        />
+      </div>
       <div className={styles.split}>
-        <div className={styles.tight}>
+        <div className={`${styles.tight} pg-advanced`}>
           <p className="pg-section-label">The workspace</p>
           <pre className={styles.tree}>{TREE}</pre>
         </div>
@@ -175,9 +177,11 @@ export function GuardrailTester(_props: GuardrailTesterProps) {
           <label className="pg-label" htmlFor={`${id}-path`}>
             Write to
           </label>
-          <PresetPills presets={PATHS} active={PATHS.findIndex((p) => p.path === path)} onPick={(i) => { setPath(PATHS[i].path); reset(); }} />
+          <FewPills show={5} presets={PATHS} active={PATHS.findIndex((p) => p.path === path)} onPick={(i) => { setPath(PATHS[i].path); reset(); }} />
           <TextInput id={`${id}-path`} className="pg-code-input" value={path} onChange={(e) => { setPath(e.target.value); reset(); }} spellCheck={false} />
-          <Segmented<Route> label="Write route" size="sm" options={ROUTES} value={route} onChange={(r) => { setRoute(r); reset(); }} />
+          <div className="pg-advanced">
+            <Segmented<Route> label="Write route" size="sm" options={ROUTES} value={route} onChange={(r) => { setRoute(r); reset(); }} />
+          </div>
         </div>
       </div>
 

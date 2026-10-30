@@ -181,6 +181,13 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
   if (!schema) return <p className={styles.note}>No schema tables on this page.</p>;
 
   const fieldsTop = schema.fields;
+  // The simple view keeps the schema's own row of pills and one live call: the one for this schema, or the first. A call
+  // that needs a file id brings the upload with it while the visitor has no file yet.
+  const startGroup = groupOf(findSchema(schemas, start) ?? schema);
+  const relevantTo = (a: SchemaLive) => (a.schema && findSchema(schemas, a.schema)?.id === schema.id) || findSchema(schemas, a.reply)?.id === schema.id;
+  const mainLive = live.find(relevantTo) ?? live[0];
+  const mainNeedsId = !!mainLive?.path.includes("{file_id}");
+  const uploadLive = mainNeedsId && !files.length ? live.find((a) => a.body === "multipart") : undefined;
   const usedHere = [...(usedBy.get(schema.id) ?? [])].map((sid) => findSchema(schemas, sid)).filter((s): s is SchemaDoc => !!s);
   const actionCode = ran
     ? ran.action.body === "multipart"
@@ -223,11 +230,11 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
 
   return (
     <div className={`pg ${styles.lab}`}>
-      <Field id={`${id}-find`} label="Find a field" hint={find.trim().length >= 2 ? `${hits.length} match${hits.length === 1 ? "" : "es"} across ${schemas.length} schemas.` : undefined}>
+      <Field id={`${id}-find`} className="pg-advanced" label="Find a field" hint={find.trim().length >= 2 ? `${hits.length} match${hits.length === 1 ? "" : "es"} across ${schemas.length} schemas.` : undefined}>
         <TextInput id={`${id}-find`} value={find} placeholder="n, file_id, stream, tool_enablement..." spellCheck={false} onChange={(e) => setFind(e.target.value)} />
       </Field>
       {hits.length ? (
-        <div className={styles.hits} role="group" aria-label="Matching fields">
+        <div className={`${styles.hits} pg-advanced`} role="group" aria-label="Matching fields">
           {hits.map(({ s, f }) => (
             <button key={`${s.id}:${f.name}`} type="button" className="pg-pill" aria-pressed={s.id === schema.id && highlight === f.name} onClick={() => open(s.id, f.name)}>
               <code>{f.name}</code> in {s.title}
@@ -241,7 +248,7 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
           const list = schemas.filter((s) => groupOf(s) === g);
           if (!list.length) return null;
           return (
-            <div key={g} className={styles.group} role="group" aria-label={g}>
+            <div key={g} className={g === startGroup ? styles.group : `${styles.group} pg-advanced`} role="group" aria-label={g}>
               <span className={styles.groupLabel}>{g}</span>
               {list.map((s) => (
                 <button key={s.id} type="button" className="pg-pill" aria-pressed={s.id === schema.id} onClick={() => open(s.id)}>
@@ -288,7 +295,7 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
                   <th>Field</th>
                   <th>Type</th>
                   <th>Required</th>
-                  <th>Description</th>
+                  <th className="pg-advanced">Description</th>
                 </tr>
               </thead>
               <tbody>
@@ -297,7 +304,7 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
                     <td className={styles.fieldName}>{f.name}</td>
                     <td className={styles.typeCell}>{typeCell(f.type)}</td>
                     <td>{f.required ? <span className={`${styles.tag} ${styles.tagAccent}`}>Yes</span> : <span className={styles.note}>No</span>}</td>
-                    <td className={styles.desc}>
+                    <td className={`${styles.desc} pg-advanced`}>
                       {f.description ? <Prose text={f.description} /> : <span className={styles.note}>No description on the page.</span>}
                       {constraintTags(f).length ? (
                         <span className={styles.tags}>
@@ -317,7 +324,7 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
           </div>
         ) : null}
         {usedHere.length ? (
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             Used in:{" "}
             {usedHere.map((s, i) => (
               <Fragment key={s.id}>
@@ -332,7 +339,7 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
       </section>
 
       {isRequest ? (
-        <div className={styles.stack}>
+        <div className={`${styles.stack} pg-advanced`}>
           <div className={styles.spread}>
             <Toggle
               id={`${id}-opt`}
@@ -372,12 +379,12 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
           <div className={styles.stack}>
             {live.map((a) => {
               const needsId = a.path.includes("{file_id}");
-              const relevant = (a.schema && findSchema(schemas, a.schema)?.id === schema.id) || findSchema(schemas, a.reply)?.id === schema.id;
+              const relevant = relevantTo(a);
               return (
-                <div key={a.label} className={styles.action}>
+                <div key={a.label} className={a === mainLive || a === uploadLive ? styles.action : `${styles.action} pg-advanced`}>
                   <span className={`${styles.desc} ${styles.actionText}`}>
                     {relevant ? <span className={`${styles.tag} ${styles.tagAccent}`}>This schema</span> : null} <strong>{a.label}</strong>
-                    {a.note ? <span className={styles.note}> {a.note}</span> : null}
+                    {a.note ? <span className={`${styles.note} pg-advanced`}> {a.note}</span> : null}
                   </span>
                   <RunButton
                     running={running && ran?.action.label === a.label}
@@ -391,18 +398,20 @@ export function SchemaExplorer({ schemas, initial, hints, live = [] }: SchemaExp
             })}
           </div>
           {live.some((a) => a.body === "multipart") ? (
-            <FilePicker
-              accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"
-              value={picked}
-              onChange={setPicked}
-              defaultSampleId={live.find((a) => a.body === "multipart")?.sampleId ?? "receipt"}
-              preview="compact"
-              prepare="none"
-              label="The file for the upload"
-            />
+            <div className={mainLive?.body === "multipart" || uploadLive ? undefined : "pg-advanced"}>
+              <FilePicker
+                accept="image/png,image/jpeg,image/webp,application/pdf,text/plain"
+                value={picked}
+                onChange={setPicked}
+                defaultSampleId={live.find((a) => a.body === "multipart")?.sampleId ?? "receipt"}
+                preview="compact"
+                prepare="none"
+                label="The file for the upload"
+              />
+            </div>
           ) : null}
           {live.some((a) => a.path.includes("{file_id}")) ? (
-            <p className={styles.note}>{files.length ? `Calls on {file_id} use your newest file, ${files[0].id}.` : "Calls on {file_id} need a file: upload one first."}</p>
+            <p className={mainNeedsId && !files.length ? styles.note : `${styles.note} pg-advanced`}>{files.length ? `Calls on {file_id} use your newest file, ${files[0].id}.` : "Calls on {file_id} need a file: upload one first."}</p>
           ) : null}
           <ErrorBox error={runner.error} />
           {running || runner.result ? (

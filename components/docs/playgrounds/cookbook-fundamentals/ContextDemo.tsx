@@ -211,7 +211,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
           options={(["full", "window", "state", "summary"] as const).map((s) => ({ value: s, label: STRATEGY_LABEL[s] }))}
         />
       </div>
-      <Note>
+      <Note advanced>
         {strategy === "full"
           ? "Every turn resends the whole conversation: nothing is forgotten, and the input grows every turn."
           : strategy === "window"
@@ -220,7 +220,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
               ? "The recipe's running state: the model updates STATE.md every reply, and each turn sends STATE.md plus the newest exchange instead of the old turns."
               : `Compaction: once the last request passes ${Math.round(COMPACT_AT * 100)}% of the declared window, older turns are summarized into one note (an extra call).`}
       </Note>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         {strategy === "window" ? (
           <>
             <span className={styles.inlineLabel}>Keep the last</span>
@@ -255,12 +255,12 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
           ]}
         />
       </div>
-      <Note>
+      <Note advanced>
         The declared window is what the meter and compaction measure against, like OpenCode&apos;s limit.context; Muse Spark&apos;s own window is 1,048,576
         tokens. It starts at 2k, or 1k for compaction so it triggers within these five turns.
       </Note>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">
+        <span className="pg-muted pg-small pg-advanced">
           {script.length} scripted turns{strategy === "summary" ? " plus any compaction calls" : ""}, about a tenth of a cent in all.
         </span>
         <span className={styles.row}>
@@ -270,7 +270,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
             </button>
           ) : null}
           {!finished ? (
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => void run(false)} disabled={busy}>
+            <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void run(false)} disabled={busy}>
               {rows.length ? `Turn ${rows.length + 1}` : "Turn 1"}
             </button>
           ) : null}
@@ -322,14 +322,14 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
                   sent {r.sent} messages{r.dropped ? `, ${r.dropped} left out` : ""}
                 </StatusPill>
                 {r.compacted ? <StatusPill tone="warn">compacted first</StatusPill> : null}
-                <span className="pg-meta">{latencyLabel(r.ms)}</span>
+                <span className="pg-meta pg-advanced">{latencyLabel(r.ms)}</span>
               </div>
-              <p className={styles.note}>{r.note}</p>
-              <details>
+              <p className={`${styles.note} pg-advanced`}>{r.note}</p>
+              <details className="pg-advanced">
                 <summary className="pg-muted pg-small">The reply</summary>
                 <p className={styles.textBlock}>{r.reply || "(only the STATE.md block)"}</p>
               </details>
-              <p className="pg-small">
+              <p className="pg-small pg-advanced">
                 <UsageLine model={r.model} usage={r.usage} />
               </p>
             </li>
@@ -354,7 +354,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
         <div className="pg-final">
           <p className="pg-section-label">The coherence check&apos;s answer</p>
           <p className={styles.textBlock}>{latest.reply}</p>
-          <Note>Does it remember the decisions from turn 1? A sliding window drops them first; the running state carries them forward in far fewer tokens than the full history.</Note>
+          <Note advanced>Does it remember the decisions from turn 1? A sliding window drops them first; the running state carries them forward in far fewer tokens than the full history.</Note>
         </div>
       ) : null}
 

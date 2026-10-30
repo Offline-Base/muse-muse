@@ -132,12 +132,12 @@ function SparkTrlPanel() {
       <div className={styles.options}>
         <NumberField id={`${id}-nodes`} label="Nodes" value={s.nodes} min={1} step={1} onChange={set("nodes")} hint="The recipe: 8 nodes of 8 H100." />
         <NumberField id={`${id}-gpn`} label="GPUs per node" value={s.gpusPerNode} min={1} step={1} onChange={set("gpusPerNode")} />
-        <NumberField id={`${id}-ep`} label="ep_size (expert groups)" value={s.epSize} min={1} step={1} onChange={set("epSize")} />
-        <NumberField id={`${id}-steps`} label="max_steps" value={s.maxSteps} min={1} step={50} onChange={set("maxSteps")} />
-        <NumberField id={`${id}-len`} label="max_length" value={s.maxLength} min={128} step={256} onChange={set("maxLength")} />
-        <NumberField id={`${id}-r`} label="LoRA r" value={s.rank} min={1} step={1} onChange={set("rank")} />
-        <NumberField id={`${id}-a`} label="lora_alpha" value={s.alpha} min={1} step={1} onChange={set("alpha")} />
-        <NumberField id={`${id}-save`} label="save_steps" value={s.saveSteps} min={1} step={10} onChange={set("saveSteps")} />
+        <NumberField advanced id={`${id}-ep`} label="ep_size (expert groups)" value={s.epSize} min={1} step={1} onChange={set("epSize")} />
+        <NumberField advanced id={`${id}-steps`} label="max_steps" value={s.maxSteps} min={1} step={50} onChange={set("maxSteps")} />
+        <NumberField advanced id={`${id}-len`} label="max_length" value={s.maxLength} min={128} step={256} onChange={set("maxLength")} />
+        <NumberField advanced id={`${id}-r`} label="LoRA r" value={s.rank} min={1} step={1} onChange={set("rank")} />
+        <NumberField advanced id={`${id}-a`} label="lora_alpha" value={s.alpha} min={1} step={1} onChange={set("alpha")} />
+        <NumberField advanced id={`${id}-save`} label="save_steps" value={s.saveSteps} min={1} step={10} onChange={set("saveSteps")} />
         <SegmentField<string> label="Data" value={s.dataset} options={[{ value: "tulu", label: "Tulu 3 SFT mixture" }, { value: "local", label: "My train.jsonl" }]} onChange={set("dataset")} />
       </div>
       <PlanView plan={plan} label="TRL commands" />
@@ -169,21 +169,21 @@ function MilesPanel() {
             setEvalI(mode === "vlm" ? "5" : "0");
           }}
         />
-        <SegmentField<MilesOptions["effort"]> label="--reasoning-effort" value={o.effort} options={(["low", "medium", "high", "xhigh"] as const).map((e) => ({ value: e, label: e }))} onChange={(effort) => setO((c) => ({ ...c, effort }))} />
-        <NumberField id={`${id}-eval`} label="--eval-interval (0 for none)" value={evalI} min={0} step={1} onChange={setEvalI} />
-        <NumberField id={`${id}-save`} label="--save-interval (0 for none)" value={saveI} min={0} step={5} onChange={setSaveI} />
+        <SegmentField<MilesOptions["effort"]> advanced label="--reasoning-effort" value={o.effort} options={(["low", "medium", "high", "xhigh"] as const).map((e) => ({ value: e, label: e }))} onChange={(effort) => setO((c) => ({ ...c, effort }))} />
+        <NumberField advanced id={`${id}-eval`} label="--eval-interval (0 for none)" value={evalI} min={0} step={1} onChange={setEvalI} />
+        <NumberField advanced id={`${id}-save`} label="--save-interval (0 for none)" value={saveI} min={0} step={5} onChange={setSaveI} />
         {opts.saveInterval > 0 ? (
-          <Field id={`${id}-run`} label="--run-id">
+          <Field id={`${id}-run`} label="--run-id" className="pg-advanced">
             <TextInput id={`${id}-run`} value={o.runId} onChange={(e) => setO((c) => ({ ...c, runId: e.target.value }))} spellCheck={false} />
           </Field>
         ) : null}
-        <div className="pg-field">
+        <div className="pg-field pg-advanced">
           <Toggle id={`${id}-dyn`} label="--use-dynamic-sampling-filter" checked={o.dynamicFilter || o.mode === "vlm"} onChange={(dynamicFilter) => setO((c) => ({ ...c, dynamicFilter }))} />
           <Toggle id={`${id}-muon`} label="--optimizer muon (state in CPU memory)" checked={o.optimizer === "muon"} onChange={(on) => setO((c) => ({ ...c, optimizer: on ? "muon" : "adam" }))} />
           <Toggle id={`${id}-data`} label="My own prompts (--prompt-data)" checked={o.customData} onChange={(customData) => setO((c) => ({ ...c, customData }))} />
         </div>
         {o.customData ? (
-          <Field id={`${id}-path`} label="Prompt JSONL path">
+          <Field id={`${id}-path`} label="Prompt JSONL path" className="pg-advanced">
             <TextInput id={`${id}-path`} value={o.dataPath} onChange={(e) => setO((c) => ({ ...c, dataPath: e.target.value }))} spellCheck={false} />
           </Field>
         ) : null}
@@ -324,7 +324,7 @@ function AxolotlPanel() {
           ]}
           onChange={(x) => setO((c) => ({ ...c, dataset: x as AxolotlOptions["dataset"] }))}
         />
-        <div className="pg-field">
+        <div className="pg-field pg-advanced">
           <Toggle id={`${id}-smoke`} label="Smoke run first (2 steps)" checked={o.smoke} onChange={(smoke) => setO((c) => ({ ...c, smoke }))} />
           <Toggle id={`${id}-sd`} label="Smoke-sized data (16 per split)" checked={o.smokeData} onChange={(smokeData) => setO((c) => ({ ...c, smokeData }))} />
         </div>
@@ -358,12 +358,12 @@ function GlimmerTrlPanel() {
     <div className={styles.stack}>
       <div className={styles.options}>
         <SegmentField<"lora" | "qlora"> label="Method" value={method} options={[{ value: "lora", label: "LoRA" }, { value: "qlora", label: "QLoRA (4-bit base)" }]} onChange={pickMethod} />
-        <NumberField id={`${id}-r`} label="LoRA r" value={s.rank} min={1} step={1} onChange={set("rank")} hint="8 to 32" />
-        <NumberField id={`${id}-a`} label="lora_alpha" value={s.alpha} min={1} step={1} onChange={set("alpha")} hint="2 × rank" />
+        <NumberField advanced id={`${id}-r`} label="LoRA r" value={s.rank} min={1} step={1} onChange={set("rank")} hint="8 to 32" />
+        <NumberField advanced id={`${id}-a`} label="lora_alpha" value={s.alpha} min={1} step={1} onChange={set("alpha")} hint="2 × rank" />
         <NumberField id={`${id}-lr`} label="learning_rate" value={s.lr} step={0.00001} onChange={set("lr")} hint="1e-4 to 3e-4" />
         <NumberField id={`${id}-ep`} label="num_train_epochs" value={s.epochs} min={1} step={1} onChange={set("epochs")} hint="2 to 5" />
-        <NumberField id={`${id}-b`} label="per_device_train_batch_size" value={s.batch} min={1} step={1} onChange={set("batch")} />
-        <NumberField id={`${id}-ga`} label="gradient_accumulation_steps" value={s.gradAcc} min={1} step={1} onChange={set("gradAcc")} hint="Effective batch 4 to 16" />
+        <NumberField advanced id={`${id}-b`} label="per_device_train_batch_size" value={s.batch} min={1} step={1} onChange={set("batch")} />
+        <NumberField advanced id={`${id}-ga`} label="gradient_accumulation_steps" value={s.gradAcc} min={1} step={1} onChange={set("gradAcc")} hint="Effective batch 4 to 16" />
       </div>
       <PlanView plan={plan} label="TRL code" />
     </div>
@@ -406,26 +406,26 @@ function GlimmerRlPanel() {
       {method === "titanrl" ? (
         <div className={styles.options}>
           <SegmentField<"smoke" | "full"> label="Config" value={titan.run} options={[{ value: "smoke", label: "Smoke (10 steps)" }, { value: "full", label: "Full" }]} onChange={(run) => setTitan((c) => ({ ...c, run }))} />
-          <NumberField id={`${id}-tp`} label="Generator tensor parallel" value={genTp} min={1} max={8} step={1} onChange={setGenTp} hint="Two KV heads cap it at 2." />
-          <NumberField id={`${id}-fe`} label="file_exists_credit (malformed file)" value={tiers.malformed} step={0.05} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, malformed: v }))} />
-          <NumberField id={`${id}-fp`} label="file_parses_credit (wrong number)" value={tiers.wrongNumber} step={0.05} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, wrongNumber: v }))} />
-          <NumberField id={`${id}-pen`} label="repeated_failing_command_penalty" value={tiers.repeatPenalty} step={0.01} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, repeatPenalty: v }))} />
+          <NumberField advanced id={`${id}-tp`} label="Generator tensor parallel" value={genTp} min={1} max={8} step={1} onChange={setGenTp} hint="Two KV heads cap it at 2." />
+          <NumberField advanced id={`${id}-fe`} label="file_exists_credit (malformed file)" value={tiers.malformed} step={0.05} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, malformed: v }))} />
+          <NumberField advanced id={`${id}-fp`} label="file_parses_credit (wrong number)" value={tiers.wrongNumber} step={0.05} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, wrongNumber: v }))} />
+          <NumberField advanced id={`${id}-pen`} label="repeated_failing_command_penalty" value={tiers.repeatPenalty} step={0.01} min={0} max={1} onChange={(v) => setTiers((c) => ({ ...c, repeatPenalty: v }))} />
         </div>
       ) : null}
       {method === "dpo" ? (
         <div className={styles.options}>
           <NumberField id={`${id}-beta`} label="beta" value={dpo.beta} step={0.05} min={0} onChange={(v) => setDpo((c) => ({ ...c, beta: v }))} hint="0.1 to 0.5" />
           <NumberField id={`${id}-dlr`} label="learning_rate" value={dpo.lr} step={0.0000001} min={0} onChange={(v) => setDpo((c) => ({ ...c, lr: v }))} hint="1e-7 to 1e-6" />
-          <NumberField id={`${id}-db`} label="per_device_train_batch_size" value={dpo.batch} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, batch: v }))} />
-          <NumberField id={`${id}-dga`} label="gradient_accumulation_steps" value={dpo.gradAcc} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, gradAcc: v }))} />
-          <NumberField id={`${id}-de`} label="num_train_epochs" value={dpo.epochs} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, epochs: v }))} hint="1 to 2" />
+          <NumberField advanced id={`${id}-db`} label="per_device_train_batch_size" value={dpo.batch} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, batch: v }))} />
+          <NumberField advanced id={`${id}-dga`} label="gradient_accumulation_steps" value={dpo.gradAcc} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, gradAcc: v }))} />
+          <NumberField advanced id={`${id}-de`} label="num_train_epochs" value={dpo.epochs} step={1} min={1} onChange={(v) => setDpo((c) => ({ ...c, epochs: v }))} hint="1 to 2" />
         </div>
       ) : null}
       {method === "grpo" ? (
         <div className={styles.options}>
           <NumberField id={`${id}-glr`} label="learning_rate" value={grpo.lr} step={0.0000001} min={0} onChange={(v) => setGrpo((c) => ({ ...c, lr: v }))} hint="1e-6 to 3e-6" />
           <NumberField id={`${id}-ng`} label="num_generations (group size)" value={grpo.numGenerations} step={1} min={2} onChange={(v) => setGrpo((c) => ({ ...c, numGenerations: v }))} hint="4 to 16" />
-          <NumberField id={`${id}-mcl`} label="max_completion_length" value={grpo.maxCompletion} step={512} min={256} onChange={(v) => setGrpo((c) => ({ ...c, maxCompletion: v }))} hint="Room for the reasoning trace" />
+          <NumberField advanced id={`${id}-mcl`} label="max_completion_length" value={grpo.maxCompletion} step={512} min={256} onChange={(v) => setGrpo((c) => ({ ...c, maxCompletion: v }))} hint="Room for the reasoning trace" />
         </div>
       ) : null}
       <PlanView plan={plan} label="RL code" />

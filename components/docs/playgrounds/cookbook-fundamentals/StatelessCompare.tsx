@@ -136,7 +136,7 @@ export function StatelessCompare({
 
   return (
     <div className="pg">
-      <p className={styles.lead}>
+      <p className={`${styles.lead} pg-advanced`}>
         Chat Completions is stateless: each request is answered from the messages it carries. Run sends turn 1, then
         turn 2 twice: once alone, once with turn 1 and its reply in front of it.
       </p>
@@ -153,7 +153,7 @@ export function StatelessCompare({
         </Field>
       </div>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">Three calls, well under a cent.</span>
+        <span className="pg-muted pg-small pg-advanced">Three calls, well under a cent.</span>
         <RunButton
           running={busy}
           onRun={() => void run()}
@@ -179,7 +179,7 @@ export function StatelessCompare({
         </div>
       ) : null}
       {alone?.reply && withHistory?.reply ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Alone, the model never saw turn 1, so it asks what you mean or guesses. With the history it can expand the
           answer it gave. You own the messages array: trim or summarize old turns as it grows, or let the Responses API
           keep state with previous_response_id.

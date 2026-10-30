@@ -4,7 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { ContributorNotice } from "@/components/docs/kit/ContributorNotice";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { PresetPills, runOnModEnter, TextArea } from "@/components/docs/kit/Field";
+import { runOnModEnter, TextArea } from "@/components/docs/kit/Field";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
@@ -12,6 +12,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { messagesBlockTypes, readReply, SDK_CLIENTS, wireRequest } from "@/components/docs/playgrounds/start/clients";
 import { CodeBlock } from "@/components/docs/playgrounds/start/CodeBlock";
+import { SplitPills } from "@/components/docs/playgrounds/start/SplitPills";
 import { SPARK_TEXT_MODELS } from "@/components/docs/playgrounds/start/wonder";
 import styles from "@/components/docs/playgrounds/start/start.module.css";
 
@@ -53,8 +54,8 @@ export function SdkClients({ client: initialClient = "openai-python", prompt: in
 
   return (
     <div className="pg">
-      <PresetPills label="Client" presets={SDK_CLIENTS} active={index} onPick={setIndex} disabled={running} />
-      <div className={styles.tags}>
+      <SplitPills label="Client" keep={4} presets={SDK_CLIENTS} active={index} onPick={setIndex} disabled={running} />
+      <div className={`${styles.tags} pg-advanced`}>
         <span className={styles.tag}>{client.language === "python" ? "Python" : "TypeScript"}</span>
         <span className={`${styles.tag} ${styles.tagAccent}`}>
           {PROTOCOL_LABEL[client.protocol]}: POST /v1/{wire.path}
@@ -62,7 +63,7 @@ export function SdkClients({ client: initialClient = "openai-python", prompt: in
         <span className={styles.tag}>{client.onPage ? "The page's example" : "Written the page's way"}</span>
       </div>
       <p className="pg-hint">{client.note}</p>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <span className="pg-inline-field">
           <span className="pg-label">Install</span>
           <code className="docs-code-inline">{client.install}</code>
@@ -90,7 +91,9 @@ export function SdkClients({ client: initialClient = "openai-python", prompt: in
         caption={model.endsWith("-contributor") ? "The code. Contributor mode: Meta may use what you send to train future models; drop -contributor for Standard mode." : "The code"}
         copyLabel={`Copy the ${client.label} code`}
       />
-      <CodeBlock label="json" code={JSON.stringify(wire.body, null, 2)} syntax="json" caption={`What it sends: POST https://api.meta.ai/v1/${wire.path}`} copyLabel="Copy the request body" />
+      <div className="pg-advanced">
+        <CodeBlock label="json" code={JSON.stringify(wire.body, null, 2)} syntax="json" caption={`What it sends: POST https://api.meta.ai/v1/${wire.path}`} copyLabel="Copy the request body" />
+      </div>
       <ErrorBox error={runner.error} />
       <ResponseView result={result} running={running} elapsedMs={runner.elapsedMs}>
         {result?.ok ? (
@@ -106,7 +109,7 @@ export function SdkClients({ client: initialClient = "openai-python", prompt: in
           </div>
         ) : undefined}
       </ResponseView>
-      <p className={styles.footnote}>
+      <p className={`${styles.footnote} pg-advanced`}>
         SAM 3.1 returns its boxes and masks as a token grammar in the output text; Meta&apos;s client libraries
         (<code>@meta-sam/parser</code> for TypeScript, <code>meta_sam_parser</code> for Python) decode it.{" "}
         <a className={styles.link} href="/docs/sam/client-libraries">

@@ -94,6 +94,7 @@ export function GgufPlanner(_props: GgufPlannerProps) {
       <div className={styles.options}>
         <NumberField id={`${id}-mem`} label="VRAM, or RAM for CPU or Mac (GB)" value={mem} min={1} step={1} onChange={(x) => { setPreset(null); setMem(x); }} hint="Cards are sold in GiB-sized GB." />
         <SegmentField<"auto" | "kquant17" | "dynamic">
+          advanced
           label="Text model"
           value={prefer}
           options={[
@@ -106,13 +107,13 @@ export function GgufPlanner(_props: GgufPlannerProps) {
             setPrefer(x);
           }}
         />
-        <SelectField id={`${id}-ctx`} label="Total context (-c)" value={String(ctx)} options={CTX.map((x) => ({ value: String(x), label: `${n(x)} tokens${x === 131072 ? " (default)" : ""}` }))} onChange={(x) => { setPreset(null); setCtx(Number(x)); }} />
-        <NumberField id={`${id}-np`} label="Slots (-np)" value={np} min={1} max={16} step={1} onChange={(x) => { setPreset(null); setNp(x); }} />
+        <SelectField advanced id={`${id}-ctx`} label="Total context (-c)" value={String(ctx)} options={CTX.map((x) => ({ value: String(x), label: `${n(x)} tokens${x === 131072 ? " (default)" : ""}` }))} onChange={(x) => { setPreset(null); setCtx(Number(x)); }} />
+        <NumberField advanced id={`${id}-np`} label="Slots (-np)" value={np} min={1} max={16} step={1} onChange={(x) => { setPreset(null); setNp(x); }} />
         <div className="pg-field">
           <Toggle id={`${id}-vision`} label="Image input (vision projector)" checked={vision} onChange={(x) => { setPreset(null); setVision(x); }} />
           <Toggle id={`${id}-dflash`} label="DFlash drafter" checked={dflash} onChange={(x) => { setPreset(null); setDflash(x); }} />
         </div>
-        <NumberField id={`${id}-port`} label="Port" value={port} min={1} max={65535} step={1} onChange={setPort} />
+        <NumberField advanced id={`${id}-port`} label="Port" value={port} min={1} max={65535} step={1} onChange={setPort} />
       </div>
       <Status tone={tone}>{pick.summary}</Status>
       <div className={styles.stack} style={{ gap: 8 }}>
@@ -161,7 +162,7 @@ export function GgufPlanner(_props: GgufPlannerProps) {
         </p>
       </div>
       <Issues warnings={warnings} notes={notes} />
-      <p className="pg-small">
+      <p className="pg-small pg-advanced">
         <strong>{file === "kquant17" ? "K-Quant-17GB" : "Dynamic Q4_K_XL"}:</strong> {RECIPES[file]} ({GGUF_FILES[file].downloadGb} GB download)
       </p>
       {dflash ? (
@@ -173,7 +174,7 @@ export function GgufPlanner(_props: GgufPlannerProps) {
         </>
       ) : null}
       <CodeCard code={serve} lang="bash" label={dflash ? "Then run the checkpoint" : "Run the checkpoint"} />
-      <details className="pg-raw">
+      <details className="pg-raw pg-advanced">
         <summary>Download the files instead (for an offline machine or an ExecuTorch export)</summary>
         <CodeCard code={`pip install -U huggingface_hub\n\n${ggufDownload(files)}`} lang="bash" label="Download" />
       </details>
@@ -182,7 +183,7 @@ export function GgufPlanner(_props: GgufPlannerProps) {
           <p className="pg-section-label" style={{ margin: 0 }}>
             Quantize it yourself
           </p>
-          <Field id={`${id}-qtype`} label="llama-quantize type" hint="The page converts to bf16 GGUF and quantizes to Q4_K_M; pick a smaller type to fit less memory, then compare perplexity.">
+          <Field id={`${id}-qtype`} label="llama-quantize type" hint="The page converts to bf16 GGUF and quantizes to Q4_K_M; pick a smaller type to fit less memory, then compare perplexity." className="pg-advanced">
             <TextInput id={`${id}-qtype`} value={qtype} onChange={(e) => setQtype(e.target.value)} spellCheck={false} aria-describedby={`${id}-qtype-hint`} />
           </Field>
           <CodeCard code={quantizeYourself(qtype)} lang="bash" label="Convert, quantize, evaluate" />

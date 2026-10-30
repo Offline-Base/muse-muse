@@ -86,7 +86,7 @@ export function RequestShowcase({ items, intro, modelMenu = true }: RequestShowc
 
   return (
     <div className="pg">
-      {intro ? <p className={styles.lead}>{intro}</p> : null}
+      {intro ? <p className={`${styles.lead} pg-advanced`}>{intro}</p> : null}
       <div className={styles.spread}>
         {modelMenu ? <ModelSelect kind="text" value={model} onChange={setModel} disabled={busy} /> : <span />}
         <RunButton
@@ -112,11 +112,11 @@ export function RequestShowcase({ items, intro, modelMenu = true }: RequestShowc
                   <span className={styles.turnTitle}>{item.label}</span>
                   <StatusPill tone={item.expect === "ok" ? "ok" : "warn"}>{item.expect === "ok" ? "expect 200" : "expect a 400"}</StatusPill>
                 </div>
-                <button type="button" className="btn btn-sm btn-outline" onClick={() => void run(item)} disabled={busy} aria-label={`Run: ${item.label}`}>
+                <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void run(item)} disabled={busy} aria-label={`Run: ${item.label}`}>
                   {active === item.id ? "Running" : "Run"}
                 </button>
               </div>
-              <p className={styles.note}>{item.what}</p>
+              <p className={`${styles.note} pg-advanced`}>{item.what}</p>
               {r ? (
                 <div className={styles.stack} style={{ gap: 6 }}>
                   <p className={styles.turnHead}>
@@ -139,13 +139,13 @@ export function RequestShowcase({ items, intro, modelMenu = true }: RequestShowc
                       {o.json.ok ? "JSON.parse: parsed." : `JSON.parse failed: ${o.json.message}`}
                     </p>
                   ) : null}
-                  <details className="pg-raw">
+                  <details className="pg-raw pg-advanced">
                     <summary>Reply JSON</summary>
                     {r.json ? <JsonTree value={r.json} openDepth={2} /> : <pre className="pg-pre">{r.text || "(empty)"}</pre>}
                   </details>
                 </div>
               ) : null}
-              <div className="pg-actions">
+              <div className="pg-actions pg-advanced">
                 <button type="button" className="btn btn-sm" aria-expanded={code === item.id} onClick={() => setCode(code === item.id ? null : item.id)}>
                   {code === item.id ? "Hide code" : "Show code"}
                 </button>

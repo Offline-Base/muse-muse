@@ -64,8 +64,8 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
   const [genModel, setGenModel] = useState(CHEAP);
   const [url, setUrl] = useState("https://api.meta.ai/v1/");
 
-  const modelSelect = (id: string, label: string, value: string, onChange: (v: string) => void, hint?: string) => (
-    <SelectField id={id} label={label} value={value} onChange={onChange} options={AGENT_MODELS} hint={hint} />
+  const modelSelect = (id: string, label: string, value: string, onChange: (v: string) => void, hint?: string, className?: string) => (
+    <SelectField id={id} label={label} className={className} value={value} onChange={onChange} options={AGENT_MODELS} hint={hint} />
   );
 
   return (
@@ -102,10 +102,10 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
           </div>
           <div className={styles.row}>
             {modelSelect(`${idBase}-oc-model`, "Model", oc.model, (model) => setOc((o) => ({ ...o, model })))}
-            {oc.adapter === "responses" ? <SelectField<AgentEffort> id={`${idBase}-oc-effort`} label="reasoningEffort" value={oc.effort} onChange={(effort) => setOc((o) => ({ ...o, effort }))} options={EFFORTS} /> : null}
+            {oc.adapter === "responses" ? <SelectField<AgentEffort> id={`${idBase}-oc-effort`} className="pg-advanced" label="reasoningEffort" value={oc.effort} onChange={(effort) => setOc((o) => ({ ...o, effort }))} options={EFFORTS} /> : null}
           </div>
           {oc.adapter === "responses" ? (
-            <div className="pg-bar">
+            <div className="pg-bar pg-advanced">
               <Check id={`${idBase}-oc-enc`} label={<>include reasoning.encrypted_content</>} checked={oc.encrypted} onChange={(encrypted) => setOc((o) => ({ ...o, encrypted }))} />
               <Check id={`${idBase}-oc-sum`} label='reasoningSummary "auto"' checked={oc.summary} onChange={(summary) => setOc((o) => ({ ...o, summary }))} />
               <Check id={`${idBase}-oc-mod`} label="Declare modalities" checked={oc.modalities} onChange={(modalities) => setOc((o) => ({ ...o, modalities }))} />
@@ -114,7 +114,7 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
           {/* Stacked: side by side, the narrow content column cut off the base URL and most prompt lines. */}
           <div className="pg-col">
             <CodeBlock code={ocOut.code} label="opencode.json" syntax="json" />
-            <div className="pg-col">
+            <div className="pg-col pg-advanced">
               <CodeBlock code={openCodePrompt(oc)} label="Or paste this into OpenCode (self-configuration)" syntax="text" />
               <Notes
                 items={[
@@ -150,12 +150,12 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
               setCx((c) => ({ ...c, model }));
               setCxPreset(null);
             })}
-            <SelectField<AgentEffort> id={`${idBase}-cx-effort`} label="model_reasoning_effort" value={cx.effort} onChange={(effort) => setCx((c) => ({ ...c, effort }))} options={EFFORTS} />
-            <Field id={`${idBase}-cx-env`} label="env_key" className={styles.narrow}>
+            <SelectField<AgentEffort> id={`${idBase}-cx-effort`} className="pg-advanced" label="model_reasoning_effort" value={cx.effort} onChange={(effort) => setCx((c) => ({ ...c, effort }))} options={EFFORTS} />
+            <Field id={`${idBase}-cx-env`} label="env_key" className={`${styles.narrow} pg-advanced`}>
               <TextInput id={`${idBase}-cx-env`} className="pg-code-input" value={cx.keyEnv} spellCheck={false} onChange={(e) => setCx((c) => ({ ...c, keyEnv: e.target.value.replace(/[^A-Za-z0-9_]/g, "") }))} />
             </Field>
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Check id={`${idBase}-cx-sum`} label="Reasoning summaries" checked={cx.summary} onChange={(summary) => setCx((c) => ({ ...c, summary }))} />
             <Segmented<"toml" | "inline">
               label="Config style"
@@ -170,11 +170,13 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
           </div>
           {cxStyle === "toml" ? <CodeBlock code={cxOut.code} label="~/.codex/config.toml" syntax="toml" /> : <CodeBlock code={codexInline(cx)} label="bash" />}
           <CodeBlock
+            className="pg-advanced"
             label="Then launch"
             code={[`export ${cx.keyEnv || "MODEL_API_KEY"}="<your-model-api-key>"`, "", "codex                                  # interactive", 'codex exec "fix the failing test"      # non-interactive', 'echo "explain this chart" | codex exec -i chart.png   # image input'].join("\n")}
           />
           <Problems warnings={cxOut.warnings} />
           <Notes
+            className="pg-advanced"
             items={[
               "Signed in to Codex with an OpenAI account? Run /logout first so it uses the meta provider.",
               "wire_api = \"responses\" carries reasoning across turns; Codex sends no temperature or top_p, so the API defaults apply.",
@@ -198,12 +200,12 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
           />
           <div className={styles.row}>
             {modelSelect(`${idBase}-cc-main`, "ANTHROPIC_MODEL", cc.main, (main) => { setCc((c) => ({ ...c, main })); setCcPreset(null); })}
-            {modelSelect(`${idBase}-cc-opus`, "ANTHROPIC_DEFAULT_OPUS_MODEL", cc.opus, (opus) => { setCc((c) => ({ ...c, opus })); setCcPreset(null); })}
-            {modelSelect(`${idBase}-cc-sonnet`, "ANTHROPIC_DEFAULT_SONNET_MODEL", cc.sonnet, (sonnet) => { setCc((c) => ({ ...c, sonnet })); setCcPreset(null); })}
-            {modelSelect(`${idBase}-cc-haiku`, "ANTHROPIC_DEFAULT_HAIKU_MODEL", cc.haiku, (haiku) => { setCc((c) => ({ ...c, haiku })); setCcPreset(null); })}
-            {modelSelect(`${idBase}-cc-sub`, "CLAUDE_CODE_SUBAGENT_MODEL", cc.subagent, (subagent) => { setCc((c) => ({ ...c, subagent })); setCcPreset(null); })}
+            {modelSelect(`${idBase}-cc-opus`, "ANTHROPIC_DEFAULT_OPUS_MODEL", cc.opus, (opus) => { setCc((c) => ({ ...c, opus })); setCcPreset(null); }, undefined, "pg-advanced")}
+            {modelSelect(`${idBase}-cc-sonnet`, "ANTHROPIC_DEFAULT_SONNET_MODEL", cc.sonnet, (sonnet) => { setCc((c) => ({ ...c, sonnet })); setCcPreset(null); }, undefined, "pg-advanced")}
+            {modelSelect(`${idBase}-cc-haiku`, "ANTHROPIC_DEFAULT_HAIKU_MODEL", cc.haiku, (haiku) => { setCc((c) => ({ ...c, haiku })); setCcPreset(null); }, undefined, "pg-advanced")}
+            {modelSelect(`${idBase}-cc-sub`, "CLAUDE_CODE_SUBAGENT_MODEL", cc.subagent, (subagent) => { setCc((c) => ({ ...c, subagent })); setCcPreset(null); }, undefined, "pg-advanced")}
           </div>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Check id={`${idBase}-cc-ts`} label="ENABLE_TOOL_SEARCH=true" checked={cc.toolSearch} onChange={(toolSearch) => setCc((c) => ({ ...c, toolSearch }))} />
             <Segmented<ClaudeInput["shell"]>
               label="Shell"
@@ -219,6 +221,7 @@ export function AgentConfigGenerator(_props: AgentConfigGeneratorProps) {
           <CodeBlock code={ccOut.code} label={cc.shell === "powershell" ? "PowerShell" : "~/.zshrc or ~/.bashrc"} syntax={cc.shell === "powershell" ? "powershell" : "bash"} />
           <Problems warnings={ccOut.warnings} />
           <Notes
+            className="pg-advanced"
             items={[
               <>
                 <C>ANTHROPIC_AUTH_TOKEN</C> sends <C>Authorization: Bearer</C>, which is how Model API authenticates. <C>ANTHROPIC_API_KEY</C> sends <C>x-api-key</C> instead: don&apos;t use it here.

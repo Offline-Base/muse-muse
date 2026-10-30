@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Field, Segmented, TextInput, Toggle } from "@/components/docs/kit/Field";
+import { Field, PresetPills, Segmented, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { copyText } from "@/components/docs/page/clipboard";
 import { CheckIcon, CopyIcon } from "@/components/docs/page/icons";
 import { Icon } from "@/components/icons";
@@ -186,7 +186,7 @@ export function Steps({ steps, label }: { steps: CodeStep[]; label: string }) {
           <h4 className={styles.stepTitle}>{s.title}</h4>
           <CodeCard code={s.code} lang={s.lang} label={s.lang === "text" ? "text" : s.lang} />
           {s.note ? (
-            <p className={styles.stepNote}>
+            <p className={`${styles.stepNote} pg-advanced`}>
               <Rich text={s.note} />
             </p>
           ) : null}
@@ -196,8 +196,11 @@ export function Steps({ steps, label }: { steps: CodeStep[]; label: string }) {
   );
 }
 
-/** What the page says goes wrong with this pick: errors, then warnings, then notes. */
-export function Issues({ errors = [], warnings = [], notes = [], noteTitle = "From the page" }: { errors?: string[]; warnings?: string[]; notes?: string[]; noteTitle?: string }) {
+/**
+ * What the page says goes wrong with this pick: errors, then warnings, then notes. The notes wait behind Options in the
+ * "Try it live" panel, unless they are the demo's result (`notesAreResult`).
+ */
+export function Issues({ errors = [], warnings = [], notes = [], noteTitle = "From the page", notesAreResult }: { errors?: string[]; warnings?: string[]; notes?: string[]; noteTitle?: string; notesAreResult?: boolean }) {
   if (!errors.length && !warnings.length && !notes.length) return null;
   return (
     <div className={styles.issues}>
@@ -222,7 +225,7 @@ export function Issues({ errors = [], warnings = [], notes = [], noteTitle = "Fr
         </ul>
       ) : null}
       {notes.length ? (
-        <ul className={`${styles.issueList} ${styles.issueNote}`}>
+        <ul className={`${styles.issueList} ${styles.issueNote}${notesAreResult ? "" : " pg-advanced"}`}>
           <li className={styles.issueTitle}>{noteTitle}</li>
           {notes.map((t) => (
             <li key={t}>
@@ -251,9 +254,9 @@ export function Badge({ tone, children, wrap }: { tone: "ok" | "warn" | "bad" | 
 }
 
 /** Label and value pairs, such as a model's quick facts. */
-export function Facts({ items, label }: { items: Array<{ label: string; value: ReactNode }>; label: string }) {
+export function Facts({ items, label, advanced }: { items: Array<{ label: string; value: ReactNode }>; label: string; advanced?: boolean }) {
   return (
-    <dl className={styles.facts} aria-label={label}>
+    <dl className={`${styles.facts}${advanced ? " pg-advanced" : ""}`} aria-label={label}>
       {items.map((f) => (
         <div key={f.label} className={styles.fact}>
           <dt>{f.label}</dt>
@@ -283,6 +286,7 @@ export function SelectField({
   onChange,
   hint,
   disabled,
+  advanced,
 }: {
   id: string;
   label: string;
@@ -291,9 +295,10 @@ export function SelectField({
   onChange(value: string): void;
   hint?: string;
   disabled?: boolean;
+  advanced?: boolean;
 }) {
   return (
-    <Field id={id} label={label} hint={hint}>
+    <Field id={id} label={label} hint={hint} className={advanced ? "pg-advanced" : undefined}>
       <span className="select-wrap">
         <select id={id} className="select pg-select" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-describedby={hint ? `${id}-hint` : undefined}>
           {options.map((o) => (
@@ -318,6 +323,7 @@ export function NumberField({
   step,
   hint,
   suffix,
+  advanced,
 }: {
   id: string;
   label: string;
@@ -328,9 +334,10 @@ export function NumberField({
   step?: number;
   hint?: string;
   suffix?: string;
+  advanced?: boolean;
 }) {
   return (
-    <Field id={id} label={label} hint={hint} className={styles.numberField}>
+    <Field id={id} label={label} hint={hint} className={`${styles.numberField}${advanced ? " pg-advanced" : ""}`}>
       <span className={styles.row} style={{ gap: 8, flexWrap: "nowrap" }}>
         <TextInput
           id={id}
@@ -349,6 +356,38 @@ export function NumberField({
   );
 }
 
+/**
+ * Example pills split so the first row can stay in the "Try it live" panel's simple view: the first `keep` show there,
+ * the rest wait behind Options and read as the same list's next line.
+ */
+export function PresetRows({
+  presets,
+  keep,
+  active,
+  onPick,
+  label,
+  disabled,
+}: {
+  presets: ReadonlyArray<{ label: string }>;
+  keep: number;
+  active?: number | null;
+  onPick(index: number): void;
+  label?: string;
+  disabled?: boolean;
+}) {
+  const at = active ?? -1;
+  return (
+    <>
+      <PresetPills presets={presets.slice(0, keep)} active={at < keep ? active : null} onPick={onPick} label={label} disabled={disabled} />
+      {presets.length > keep ? (
+        <div className={`${styles.morePresets} pg-advanced`}>
+          <PresetPills presets={presets.slice(keep)} active={at >= keep ? at - keep : null} onPick={(i) => onPick(i + keep)} label={label} disabled={disabled} />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /** A segmented choice with a visible label above it. */
 export function SegmentField<T extends string>({
   label,
@@ -357,6 +396,7 @@ export function SegmentField<T extends string>({
   onChange,
   hint,
   disabled,
+  advanced,
 }: {
   label: string;
   value: T;
@@ -364,10 +404,11 @@ export function SegmentField<T extends string>({
   onChange(value: NoInfer<T>): void;
   hint?: string;
   disabled?: boolean;
+  advanced?: boolean;
 }) {
   const id = useId();
   return (
-    <div className="pg-field">
+    <div className={`pg-field${advanced ? " pg-advanced" : ""}`}>
       <span className="pg-label" id={`${id}-label`}>
         {label}
       </span>
@@ -377,18 +418,24 @@ export function SegmentField<T extends string>({
   );
 }
 
-/** Controls for a runtime's options, in the order it lists them, hiding the ones its current values make moot. */
-export function OptionControls({ options, values, onChange, idBase }: { options: OptionSpec[]; values: Values; onChange(id: string, value: OptionValue): void; idBase: string }) {
+/**
+ * Controls for a runtime's options, in the order it lists them, hiding the ones its current values make moot. In the
+ * "Try it live" panel's simple view only the first `simple` choices stay, plus any text field (a path the command
+ * needs); the rest wait behind Options.
+ */
+export function OptionControls({ options, values, onChange, idBase, simple = Infinity }: { options: OptionSpec[]; values: Values; onChange(id: string, value: OptionValue): void; idBase: string; simple?: number }) {
   const shown = visibleOptions(options, values);
   if (!shown.length) return null;
+  const kept = new Set([...shown.filter((o) => o.kind === "segmented" || o.kind === "select").slice(0, simple), ...shown.filter((o) => o.kind === "text")].map((o) => o.id));
   return (
     <div className={styles.options}>
       {shown.map((o) => {
         const id = `${idBase}-${o.id}`;
         const v = values[o.id] ?? o.default;
+        const advanced = simple !== Infinity && !kept.has(o.id);
         if (o.kind === "toggle") {
           return (
-            <div key={o.id} className="pg-field">
+            <div key={o.id} className={`pg-field${advanced ? " pg-advanced" : ""}`}>
               <Toggle id={id} label={o.label} checked={v === true} onChange={(c) => onChange(o.id, c)} />
               {o.hint ? <p className="pg-hint">{o.hint}</p> : null}
             </div>
@@ -397,15 +444,15 @@ export function OptionControls({ options, values, onChange, idBase }: { options:
         if (o.kind === "segmented") {
           return (
             <div key={o.id} className={(o.choices?.length ?? 0) > 3 ? styles.optionWide : undefined}>
-              <SegmentField label={o.label} value={String(v)} options={o.choices ?? []} onChange={(x) => onChange(o.id, x)} hint={o.hint} />
+              <SegmentField label={o.label} value={String(v)} options={o.choices ?? []} onChange={(x) => onChange(o.id, x)} hint={o.hint} advanced={advanced} />
             </div>
           );
         }
         if (o.kind === "select") {
-          return <SelectField key={o.id} id={id} label={o.label} value={String(v)} options={o.choices ?? []} onChange={(x) => onChange(o.id, x)} hint={o.hint} />;
+          return <SelectField key={o.id} id={id} label={o.label} value={String(v)} options={o.choices ?? []} onChange={(x) => onChange(o.id, x)} hint={o.hint} advanced={advanced} />;
         }
         if (o.kind === "number") {
-          return <NumberField key={o.id} id={id} label={o.label} value={typeof v === "boolean" ? "" : v} min={o.min} max={o.max} step={o.step} hint={o.hint} onChange={(x) => onChange(o.id, x)} />;
+          return <NumberField key={o.id} id={id} label={o.label} value={typeof v === "boolean" ? "" : v} min={o.min} max={o.max} step={o.step} hint={o.hint} onChange={(x) => onChange(o.id, x)} advanced={advanced} />;
         }
         return (
           <Field key={o.id} id={id} label={o.label} hint={o.hint}>

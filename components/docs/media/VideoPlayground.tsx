@@ -144,16 +144,18 @@ export function VideoPlayground({
     <div className={`pg ${styles.playground}`}>
       <div className="pg-bar">
         {audio ? (
-          <Segmented
-            label="Input"
-            value={media}
-            onChange={switchMedia}
-            disabled={running}
-            options={[
-              { value: "video", label: "Video" },
-              { value: "audio", label: "Audio (input_audio)" },
-            ]}
-          />
+          <span className="pg-advanced">
+            <Segmented
+              label="Input"
+              value={media}
+              onChange={switchMedia}
+              disabled={running}
+              options={[
+                { value: "video", label: "Video" },
+                { value: "audio", label: "Audio (input_audio)" },
+              ]}
+            />
+          </span>
         ) : null}
         <ModelSelect kind="vision" value={model} onChange={setModel} allow={models} disabled={running} />
       </div>
@@ -183,7 +185,7 @@ export function VideoPlayground({
         <TextArea id={`${id}-q`} value={question} rows={3} onChange={(e) => setQuestion(e.target.value)} disabled={running} />
       </Field>
       {media === "video" && sendSwitch ? (
-        <span className={styles.inline}>
+        <span className={`${styles.inline} pg-advanced`}>
           <span className={styles.label}>Send as</span>
           <Segmented<VideoSend>
             size="sm"
@@ -199,12 +201,12 @@ export function VideoPlayground({
         <RunButton running={running} onRun={() => void run()} onStop={runner.abort} disabled={!picked || !question.trim() || (picked?.problems.length ?? 0) > 0} />
       </div>
       {media === "audio" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           The page notes that audio on Muse Spark 1.3 isn&apos;t fully supported yet, so this starts on Muse Spark 1.2, with 4,000 output
           tokens of room because reasoning shares the budget.
         </p>
       ) : send !== "inline" ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Run uploads the clip with POST /v1/files first{uploaded ? ` (${uploaded})` : ""}, then references its file_id. Demo files are
           deleted within an hour.
         </p>

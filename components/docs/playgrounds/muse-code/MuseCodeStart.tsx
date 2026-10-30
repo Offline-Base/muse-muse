@@ -82,7 +82,7 @@ export function MuseCodeStart({ slug, prompt: startPrompt, presets, system }: Mu
                   <p className={styles.stepTitle}>{s.title}</p>
                   <CodeBlock code={s.code} label={s.label} syntax={s.syntax} copyLabel={`Copy: ${s.title}`} />
                   {s.notes.length ? (
-                    <ul className={styles.notes}>
+                    <ul className={`${styles.notes} pg-advanced`}>
                       {s.notes.map((n) => (
                         <li key={n}>{n}</li>
                       ))}
@@ -92,7 +92,7 @@ export function MuseCodeStart({ slug, prompt: startPrompt, presets, system }: Mu
               </li>
             ))}
           </ol>
-          <div>
+          <div className="pg-advanced">
             <p className="pg-section-label">What differs by platform</p>
             <div className={styles.tableWrap}>
               <table className={styles.table}>
@@ -134,10 +134,10 @@ export function MuseCodeStart({ slug, prompt: startPrompt, presets, system }: Mu
           <div className={styles.row}>
             <SelectField<Os> id={`${idBase}-os`} label="Shell" className={styles.narrow} value={os} options={OS_OPTIONS} onChange={setOs} />
             {task === "session" || task === "headless" || task === "ci" ? (
-              <SelectField id={`${idBase}-model`} label="--model" className={styles.narrow} value={model} options={MUSE_MODELS} onChange={setModel} />
+              <SelectField id={`${idBase}-model`} label="--model" className={`${styles.narrow} pg-advanced`} value={model} options={MUSE_MODELS} onChange={setModel} />
             ) : null}
             {task === "ci" ? (
-              <Field id={`${idBase}-secret`} label="CI secret that holds the key" className={styles.narrow}>
+              <Field id={`${idBase}-secret`} label="CI secret that holds the key" className={`${styles.narrow} pg-advanced`}>
                 <TextInput id={`${idBase}-secret`} value={secret} spellCheck={false} onChange={(e) => setSecret(e.target.value.replace(/[^A-Za-z0-9_]/g, ""))} />
               </Field>
             ) : null}
@@ -148,13 +148,13 @@ export function MuseCodeStart({ slug, prompt: startPrompt, presets, system }: Mu
             </Field>
           ) : null}
           <CodeBlock code={out.code} label={out.label} syntax={out.syntax} />
-          <ul className={styles.notes} aria-live="polite">
+          <ul className={`${styles.notes} pg-advanced`} aria-live="polite">
             {out.notes.map((n) => (
               <li key={n}>{n}</li>
             ))}
           </ul>
           {task === "headless" || task === "ci" ? (
-            <div className="pg-actions">
+            <div className="pg-actions pg-advanced">
               <button
                 type="button"
                 className="btn btn-outline btn-sm"

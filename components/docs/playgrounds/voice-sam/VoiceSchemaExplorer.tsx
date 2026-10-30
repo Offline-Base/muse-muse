@@ -421,7 +421,7 @@ function LivePanel({ sampleId, initialMode }: { sampleId: string; initialMode: V
 
   return (
     <div className={styles.stack}>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Sends a sample to POST /v1/asr/transcribe and checks every message Meta sends back against its schema. Under a cent ($0.18 an hour of audio).
       </p>
       <div className="pg-bar">
@@ -437,25 +437,29 @@ function LivePanel({ sampleId, initialMode }: { sampleId: string; initialMode: V
             { value: "two-voices", label: "Two voices (25 s)" },
           ]}
         />
-        <Segmented<VoiceMode>
-          size="sm"
-          label="Mode"
-          value={mode}
-          onChange={setMode}
-          disabled={running}
-          options={(["PUSH_TO_TALK", "ENDPOINTING", "DIARIZATION"] as const).map((m) => ({ value: m, label: m }))}
-        />
-        <Segmented<"sse" | "json">
-          size="sm"
-          label="Reply"
-          value={accept}
-          onChange={setAccept}
-          disabled={running}
-          options={[
-            { value: "sse", label: "text/event-stream" },
-            { value: "json", label: "application/json" },
-          ]}
-        />
+        <div className="pg-advanced">
+          <Segmented<VoiceMode>
+            size="sm"
+            label="Mode"
+            value={mode}
+            onChange={setMode}
+            disabled={running}
+            options={(["PUSH_TO_TALK", "ENDPOINTING", "DIARIZATION"] as const).map((m) => ({ value: m, label: m }))}
+          />
+        </div>
+        <div className="pg-advanced">
+          <Segmented<"sse" | "json">
+            size="sm"
+            label="Reply"
+            value={accept}
+            onChange={setAccept}
+            disabled={running}
+            options={[
+              { value: "sse", label: "text/event-stream" },
+              { value: "json", label: "application/json" },
+            ]}
+          />
+        </div>
       </div>
       <div className={media.spread}>
         <RunButton running={running} onRun={() => void run()} onStop={runner.abort} label="Run and check" />

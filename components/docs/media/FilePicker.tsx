@@ -12,6 +12,8 @@ import { DOCS_SAMPLES, sampleById, type DocsSample, type SampleKind } from "@/li
 
 const KINDS: readonly SampleKind[] = ["image", "video", "audio", "pdf", "text"];
 const KIND_ICON: Record<SampleKind, IconName> = { image: "image", video: "film", audio: "mic", pdf: "doc", text: "file" };
+/** Samples the "Try it live" simple view shows; the rest wait behind Options, except the one in use. */
+const SIMPLE_SAMPLES = 4;
 
 export interface FilePickerProps {
   /** The file input's accept list, such as "image/*" or "audio/*,.wav". It also decides which samples are offered. */
@@ -194,11 +196,11 @@ export function FilePicker({
       </div>
       {offered.length ? (
         <div className={styles.samples} role="group" aria-label="Samples">
-          {offered.map((s) => (
+          {offered.map((s, i) => (
             <button
               key={s.id}
               type="button"
-              className={styles.sample}
+              className={i >= SIMPLE_SAMPLES && value?.sampleId !== s.id ? `${styles.sample} pg-advanced` : styles.sample}
               aria-pressed={value?.sampleId === s.id}
               title={s.description}
               disabled={disabled || !!busy}
@@ -217,7 +219,7 @@ export function FilePicker({
         </div>
       ) : null}
       {value ? <Picked file={value} url={url} preview={preview} onRemove={disabled ? undefined : () => onChange(null)} /> : null}
-      {hint ? <p className={styles.hint}>{hint}</p> : null}
+      {hint ? <p className={`${styles.hint} pg-advanced`}>{hint}</p> : null}
       {error ? (
         <p className={styles.problem} role="alert">
           {error}
@@ -287,7 +289,7 @@ function Picked({
         ) : null
       ) : null}
       {file.kind === "text" && text !== null ? <pre className={styles.textPreview}>{text}</pre> : null}
-      {file.note ? <p className={styles.note}>{file.note}</p> : null}
+      {file.note ? <p className={`${styles.note} pg-advanced`}>{file.note}</p> : null}
       {file.problems.map((p) => (
         <p key={p} className={styles.problem}>
           {p}

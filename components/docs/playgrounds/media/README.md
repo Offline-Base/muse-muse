@@ -15,7 +15,7 @@ The live demos for the "media" page group (lib/docs/demos/media.ts): image-under
 | `PresetConsole` | images reference pages | Pills of worked requests, each loaded into the kit's `ApiConsole`. A preset with `fileId` ("path", or a JSON Pointer into the body) gets the reader's files and a quick upload (`FileIdBar`). Props: `presets: ConsolePreset[]`, `label`. |
 | `FilesApiConsole` | files reference pages | The five Files calls as tabs, opened on the page's own (`start`): upload with purpose and expires_after, list with purpose, limit, order and the after cursor (Next page), retrieve, download, delete; each JSON reply checked against the page's schemas. Props: `start`, `schemas`, `sampleId`. |
 | `SchemaExplorer` | the two schema pages | The page's schema tables, parsed on the server: grouped schemas, a field finder, links both ways, an example body (required or every field), a checker for bodies the reader edits, and live calls whose replies are checked field by field. Props: `schemas`, `initial`, `hints`, `live`. |
-| `DemoTabs`, `FileIdBar`, `SchemaCheckTable` | shared | Tabs whose panels stay mounted once opened; the reader's file ids with a quick upload (`useRecentFiles`, `uploadPicked`); a check report as a table. |
+| `DemoTabs`, `FileIdBar`, `SchemaCheckTable`, `SimplePills` | shared | Tabs whose panels stay mounted once opened; the reader's file ids with a quick upload (`useRecentFiles`, `uploadPicked`); a check report as a table; preset pills split so the simple view shows at most five, with the rest behind Options. |
 
 ## Pure modules
 

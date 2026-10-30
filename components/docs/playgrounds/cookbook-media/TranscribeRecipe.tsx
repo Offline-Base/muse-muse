@@ -42,7 +42,7 @@ export function TranscribeRecipe({ presets, simulator = true }: TranscribeRecipe
   const live = (
     <div className={styles.stack}>
       <PresetPills label="Recipe step" presets={presets} active={picked} onPick={setPicked} />
-      {preset ? <p className={styles.note}>{preset.note}</p> : null}
+      {preset ? <p className={`${styles.note} pg-advanced`}>{preset.note}</p> : null}
       {preset ? <TranscribePlayground key={picked} {...preset.props} /> : null}
     </div>
   );

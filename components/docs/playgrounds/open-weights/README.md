@@ -23,6 +23,10 @@ The demos for the 21 open-weight pages (`lib/docs/demos/open-weights.ts`): Muse 
 | `DatasetCheck` | `formats` | inside TrainingPlanner and SftLab | JSONL rows checked against each trainer's format |
 | `StandIn` | `standsFor`, `messages`, `prompt?`, `effort?`, `maxTokens?`, `tools?`, `parallelToolCalls?`, `extra?`, `dropped?`, `note?`, `disabled?`, `reasoningField?`, `onReply?`, `children?` | the live tabs | One Chat Completions request on hosted Muse Spark, labeled as a stand-in, with the Contributor notice, Run and Stop, ErrorBox and Show code. The prompting labs send docs samples (`STANDIN_SAMPLE` in template.ts) for the page's example media and hold Run (`disabled`) while they load |
 
+## Simple view
+
+With Options off, the "Try it live" panel shows the main choices and the result (components/docs/kit/README.md, "Simple view and `pg-advanced`"). `SegmentField`, `SelectField`, `NumberField` and `Facts` take `advanced`; `OptionControls` takes `simple`, how many choices stay; `PresetRows` splits long example lists so one row stays; `Steps` and `Issues` mark their notes, unless `notesAreResult`.
+
 ## Pure modules
 
 `facts.ts` (the pages' numbers), `template.ts` (chat template renderer), `deploy.ts` plus `deploy-spark.ts` and `deploy-glimmer.ts` (runtimes and client code), `download.ts`, `settings.ts`, `hardware.ts`, `spark-hardware.ts` (the Spark planner's layout and command, kept the same), `gguf.ts`, `training.ts`, `torchtitan.ts`, `rewards.ts`, `dataset.ts`, `recipes.ts`, `mac.ts`, `picker.ts`, `standin-body.ts`, `shell.ts`. Each names the page its values come from and labels anything derived.

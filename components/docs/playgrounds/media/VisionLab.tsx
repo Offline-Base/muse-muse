@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, ErrorBox, ModelSelect, ResponseView, RunButton } from "@/components/docs/kit";
-import { EffortSelect, Field, PresetPills, Segmented, TextArea, TextInput, Toggle, runOnModEnter } from "@/components/docs/kit/Field";
+import { EffortSelect, Field, Segmented, TextArea, TextInput, Toggle, runOnModEnter } from "@/components/docs/kit/Field";
 import { StreamView } from "@/components/docs/kit/StreamView";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { FilePicker } from "@/components/docs/media/FilePicker";
@@ -24,6 +24,7 @@ import {
   type ImageSend,
 } from "@/components/docs/playgrounds/media/bodies";
 import styles from "@/components/docs/playgrounds/media/demos.module.css";
+import { SimplePills } from "@/components/docs/playgrounds/media/SimplePills";
 import { UploadCache } from "@/components/docs/playgrounds/media/upload-cache";
 import { docsCall, type DocsError } from "@/lib/docs/client/api";
 import type { Effort } from "@/lib/docs/client/models";
@@ -352,9 +353,10 @@ export function VisionLab({
   return (
     <div className={`pg ${styles.lab}`}>
       <div className={styles.stack}>
-        {groups.map((g) => (
-          <PresetPills
+        {groups.map((g, row) => (
+          <SimplePills
             key={g.label}
+            advanced={row > 0}
             label={g.label}
             presets={g.indexes.map((i) => presets[i])}
             active={preset !== null && g.indexes.includes(preset) ? g.indexes.indexOf(preset) : null}
@@ -367,7 +369,7 @@ export function VisionLab({
       <div className="pg-bar">
         <ModelSelect kind="vision" value={model} onChange={setModel} allow={models} disabled={busy} />
       </div>
-      <div className={styles.controls}>
+      <div className={`${styles.controls} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>API</span>
           <Segmented<Api>
@@ -385,7 +387,7 @@ export function VisionLab({
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={busy} />
       </div>
 
-      <div className={styles.stack}>
+      <div className={`${styles.stack} pg-advanced`}>
         <span className={`${styles.inline} ${styles.segWrap}`}>
           <span className={styles.label}>Send the image as</span>
           <Segmented<ImageSend>
@@ -461,7 +463,7 @@ export function VisionLab({
           </div>
         ))}
         {slots.length < maxImages ? (
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <button
               type="button"
               className="btn btn-outline btn-sm"
@@ -475,7 +477,7 @@ export function VisionLab({
         ) : null}
       </div>
 
-      <div className={styles.controls}>
+      <div className={`${styles.controls} pg-advanced`}>
         <span className={styles.inline}>
           <span className={styles.label}>Grounding</span>
           <Segmented<"off" | GroundingMode>
@@ -492,7 +494,7 @@ export function VisionLab({
         </span>
       </div>
       {grounding ? (
-        <Field id={`${id}-objects`} label="Objects to find" hint="Comma separated. The question below is the page's prompt for this mode with your objects.">
+        <Field id={`${id}-objects`} className="pg-advanced" label="Objects to find" hint="Comma separated. The question below is the page's prompt for this mode with your objects.">
           <TextInput
             id={`${id}-objects`}
             value={objects}
@@ -510,7 +512,7 @@ export function VisionLab({
       </Field>
 
       <div className={styles.spread}>
-        <div className={styles.row}>
+        <div className={`${styles.row} pg-advanced`}>
           <button type="button" className="btn btn-outline btn-sm" onClick={() => void countTokens()} disabled={busy || !ready}>
             {counter.state === "running" ? "Counting..." : "Count input tokens"}
           </button>
@@ -532,7 +534,7 @@ export function VisionLab({
       </div>
 
       {!tokens && !sizeRows ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Counting is free: POST /v1/responses/input_tokens counts the same input without generating.
           {!urlMode && slots[0]?.picked ? " Compare sizes counts the first image at several sizes, to show cost following resolution." : ""}
         </p>

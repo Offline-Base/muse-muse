@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { PresetPills, TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
+import { TextArea, TextInput, Toggle } from "@/components/docs/kit/Field";
 import { TabPanel, Tabs } from "@/components/docs/kit/Tabs";
 import { copyText } from "@/components/docs/page/clipboard";
 import { OPEN_EFFORTS, sparkStrength, type OpenEffort, type OpenModel } from "@/components/docs/playgrounds/open-weights/facts";
@@ -27,7 +27,7 @@ import {
   hostedMessages,
 } from "@/components/docs/playgrounds/open-weights/template";
 import { StandIn } from "@/components/docs/playgrounds/open-weights/StandIn";
-import { CodeTabs, Issues, SegmentField } from "@/components/docs/playgrounds/open-weights/ui";
+import { CodeTabs, Issues, PresetRows, SegmentField } from "@/components/docs/playgrounds/open-weights/ui";
 import type { Collected } from "@/lib/docs/client/stream";
 import { fetchSample, readFileAs } from "@/lib/docs/client/files";
 import { sampleById } from "@/lib/docs/media/samples";
@@ -165,12 +165,12 @@ export function ChatTemplateLab({ model, start }: ChatTemplateLabProps) {
 
   return (
     <div className="pg">
-      <PresetPills presets={presets} active={preset} onPick={pick} label="Examples" />
+      <PresetRows presets={presets} keep={model === "spark" ? 4 : 5} active={preset} onPick={pick} label="Examples" />
       <Tabs label="Template or live" tabs={tabs} value={tab} onChange={setTab} idBase={id} />
 
       <TabPanel idBase={id} id="template" active={tab === "template"}>
         <div className={styles.stack}>
-          <div className={styles.rowTop}>
+          <div className={`${styles.rowTop} pg-advanced`}>
             <SegmentField<OpenEffort>
               label={effortLabel}
               value={effort}
@@ -223,7 +223,7 @@ export function ChatTemplateLab({ model, start }: ChatTemplateLabProps) {
               <span>about {tally.text.toLocaleString("en-US")} text tokens (estimate)</span>
               {tally.elided ? <span>{tally.elided} elided part{tally.elided === 1 ? "" : "s"} not counted</span> : null}
             </p>
-            <ul className={styles.legend} aria-label="Legend">
+            <ul className={`${styles.legend} pg-advanced`} aria-label="Legend">
               <li>
                 <span className={styles.tokSpecial}>{"<|eot|>"}</span> special token
               </li>
@@ -302,7 +302,7 @@ export function ChatTemplateLab({ model, start }: ChatTemplateLabProps) {
                     ? `Add the ${reply.toolCalls.length === 1 ? "call" : `${reply.toolCalls.length} calls`} and the page's results to the conversation`
                     : "Add the answer to the conversation"}
                 </button>
-                <span className="pg-hint">Then the Chat template tab shows how they render{reply.toolCalls.length ? ", and Run again sends the results back" : ""}.</span>
+                <span className="pg-hint pg-advanced">Then the Chat template tab shows how they render{reply.toolCalls.length ? ", and Run again sends the results back" : ""}.</span>
               </div>
             ) : null
           }
@@ -339,7 +339,7 @@ function ConversationEditor({
             <div className={styles.msgHead}>
               <span className={`${styles.role} ${m.role === "user" ? styles.roleUser : m.role === "tool" ? styles.roleTool : ""}`}>{m.role}</span>
               {m.role === "tool" ? <span className="pg-hint">answers {m.toolCallId}</span> : null}
-              <span className={styles.msgActions}>
+              <span className={`${styles.msgActions} pg-advanced`}>
                 {m.role === "user"
                   ? MEDIA[model].map((kind) => (
                       <button key={kind} type="button" className="btn btn-sm btn-outline" onClick={() => onEdit(i, { ...m, parts: [...m.parts.filter((p) => p.type !== "text"), { type: kind }, ...m.parts.filter((p) => p.type === "text")] })}>
@@ -361,7 +361,7 @@ function ConversationEditor({
           </li>
         ))}
       </ol>
-      <div className="pg-actions" role="group" aria-label="Add a message">
+      <div className="pg-actions pg-advanced" role="group" aria-label="Add a message">
         {!hasSystem ? (
           <button type="button" className="btn btn-sm btn-outline" onClick={() => onAdd({ role: "system", content: "" })}>
             + System

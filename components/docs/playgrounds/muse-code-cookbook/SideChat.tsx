@@ -241,7 +241,7 @@ export function SideChat(_props: SideChatProps) {
       </div>
 
       {main.length || side.length ? <Terminal title="The response chains (previous_response_id)" lines={graph} /> : null}
-      <p className={styles.note}>Each turn streams one Responses call, under a cent. Side questions add to the side chain&apos;s context, never to the main thread&apos;s.</p>
+      <p className={`${styles.note} pg-advanced`}>Each turn streams one Responses call, under a cent. Side questions add to the side chain&apos;s context, never to the main thread&apos;s.</p>
       <ShowCode body={lastBody ?? chatTurnBody(model, "main", mainPrompt || MAIN_PRESETS[0].prompt, null)} caption={lastBody ? "The last request either lane sent" : "The request Send sends"} />
     </div>
   );

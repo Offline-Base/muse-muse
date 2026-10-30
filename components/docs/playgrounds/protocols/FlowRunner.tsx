@@ -390,7 +390,13 @@ export function FlowRunner(props: FlowRunnerProps) {
       <div className={styles.flowActions}>
         <RunButton running={busy} onRun={() => void run(0, false)} onStop={stop} label={props.runLabel ?? (steps.length > 1 ? "Run all steps" : "Run")} />
         {steps.length > 1 ? (
-          <button type="button" className="btn btn-sm btn-outline" disabled={busy || nextIndex < 0} onClick={() => void run(nextIndex, true)}>
+          <button
+            type="button"
+            // Simple view: Run all steps is the action; a step that stopped the run keeps its Retry.
+            className={`btn btn-sm btn-outline${nextIndex >= 0 && states[nextIndex].status !== "idle" ? "" : " pg-advanced"}`}
+            disabled={busy || nextIndex < 0}
+            onClick={() => void run(nextIndex, true)}
+          >
             {nextIndex < 0 ? "All steps ran" : `${states[nextIndex].status === "idle" ? "Run" : "Retry"} step ${nextIndex + 1}`}
           </button>
         ) : null}
@@ -492,12 +498,12 @@ function FlowStepView({
           </span>
         ) : null}
       </div>
-      <div className={styles.stepReq}>
+      <div className={`${styles.stepReq} pg-advanced`}>
         <span className={`pg-method pg-method-${method.toLowerCase()}`}>{method}</span>
         <code className={styles.stepPath}>/v1/{path}</code>
         {step.stream ? <span className="pg-badge">stream</span> : null}
       </div>
-      {step.note ? <p className={styles.stepNote}>{step.note}</p> : null}
+      {step.note ? <p className={`${styles.stepNote} pg-advanced`}>{step.note}</p> : null}
       {state.status === "blocked" && state.missing ? (
         <p className={styles.blocked} role="alert">
           {state.missing}
@@ -514,7 +520,8 @@ function FlowStepView({
       {result || (running && state.collected) ? (
         <div className={styles.stepResult}>
           {result ? (
-            <div className={styles.stepHead}>
+            // Simple view: a documented error's own line below says the status, so its head waits behind Options.
+            <div className={`${styles.stepHead}${expectedError ? " pg-advanced" : ""}`}>
               <span className={`pg-status ${result.ok || expectedError ? "pg-status-ok" : "pg-status-bad"}`}>
                 <span className={`pg-dot ${result.ok || expectedError ? "pg-dot-ok" : "pg-dot-bad"}`} aria-hidden />
                 {statusText(result)}
@@ -553,7 +560,8 @@ function FlowStepView({
             </div>
           ) : null}
           {fields.length ? (
-            <dl className={styles.fields}>
+            // Simple view: with reply text, the text is the result; without it, these fields are (a count, deleted: true).
+            <dl className={`${styles.fields}${hasReplyText ? " pg-advanced" : ""}`}>
               {fields.map((f) => (
                 <div key={f.path} style={{ display: "contents" }}>
                   <dt>{f.path}</dt>
@@ -565,7 +573,7 @@ function FlowStepView({
           {verdict?.checks.length || verdict?.events.length ? (
             <ul className="pg-checks" aria-label="What the page says">
               {verdict.checks.map((c) => (
-                <li key={c.label} className={c.pass ? "pg-check-ok" : "pg-check-bad"}>
+                <li key={c.label} className={c.pass ? "pg-check-ok pg-advanced" : "pg-check-bad"}>
                   <span className="pg-check-mark" aria-hidden>
                     {c.pass ? "✓" : "✗"}
                   </span>
@@ -574,7 +582,7 @@ function FlowStepView({
                 </li>
               ))}
               {verdict.events.map((e) => (
-                <li key={e.type} className={e.seen ? "pg-check-ok" : "pg-check-bad"}>
+                <li key={e.type} className={e.seen ? "pg-check-ok pg-advanced" : "pg-check-bad"}>
                   <span className="pg-check-mark" aria-hidden>
                     {e.seen ? "✓" : "✗"}
                   </span>
@@ -589,7 +597,7 @@ function FlowStepView({
         </div>
       ) : null}
 
-      <div className={styles.more}>
+      <div className={`${styles.more} pg-advanced`}>
         {body !== undefined ? (
           <details className="pg-raw">
             <summary>{standIns ? "Request body (filled in when it runs)" : "Request body"}</summary>

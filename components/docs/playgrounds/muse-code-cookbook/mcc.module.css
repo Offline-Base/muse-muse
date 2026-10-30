@@ -871,3 +871,20 @@
     transition: none;
   }
 }
+
+/* The docs panel's simple view: a split whose other column is hidden gives the one that's left the full width. */
+:global(.docs-try.is-simple) .split:has(> :global(.pg-advanced)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* In the simple view the live agent's prompt waits behind Options, so its composer is just the button, not an empty box. */
+:global(.docs-try.is-simple) .agentComposer {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:global(.docs-try.is-simple) .agentComposer :global(.pg-composer-bar) {
+  justify-content: flex-start;
+}

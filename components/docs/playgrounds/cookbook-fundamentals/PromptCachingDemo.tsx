@@ -182,8 +182,8 @@ export function PromptCachingDemo({ calls = 3 }: PromptCachingDemoProps) {
           options={(["stable", "volatile-first", "volatile-last"] as const).map((v) => ({ value: v, label: LAYOUT_LABEL[v] }))}
         />
       </div>
-      <Note>{LAYOUT_NOTE[layout]}</Note>
-      <div className={styles.row}>
+      <Note advanced>{LAYOUT_NOTE[layout]}</Note>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>prompt_cache_key</span>
         <Segmented<KeyMode>
           size="sm"
@@ -198,7 +198,7 @@ export function PromptCachingDemo({ calls = 3 }: PromptCachingDemoProps) {
           ]}
         />
       </div>
-      <div className={styles.row}>
+      <div className={`${styles.row} pg-advanced`}>
         <span className={styles.inlineLabel}>prompt_cache_retention</span>
         <Segmented<Retention>
           size="sm"
@@ -227,12 +227,12 @@ export function PromptCachingDemo({ calls = 3 }: PromptCachingDemoProps) {
         />
       </div>
       <div className={styles.spread}>
-        <span className="pg-muted pg-small">
+        <span className="pg-muted pg-small pg-advanced">
           {calls} calls with the same prefix and different questions, about a tenth of a cent in all. A new key per run starts cold, like the recipe&apos;s notebook.
         </span>
         <span className={styles.row}>
           {current.length && !busy ? (
-            <button type="button" className="btn btn-sm btn-outline" onClick={() => void run(1, true)}>
+            <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void run(1, true)}>
               Send one more
             </button>
           ) : null}
@@ -286,7 +286,7 @@ export function PromptCachingDemo({ calls = 3 }: PromptCachingDemoProps) {
                         { label: "computed", value: Math.max(0, (r.prompt ?? 0) - (r.cached ?? 0)), muted: true },
                       ]}
                     />
-                    <p className="pg-small">
+                    <p className="pg-small pg-advanced">
                       <UsageLine model={r.model ?? usedModel} usage={r.usage} />
                     </p>
                   </>
@@ -307,7 +307,7 @@ export function PromptCachingDemo({ calls = 3 }: PromptCachingDemoProps) {
       ) : null}
 
       {earlier.length ? (
-        <details className="pg-raw">
+        <details className="pg-raw pg-advanced">
           <summary>Earlier runs ({new Set(earlier.map((r) => r.run)).size})</summary>
           <div className={styles.tableWrap}>
             <table className={styles.table}>

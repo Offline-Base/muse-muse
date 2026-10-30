@@ -210,7 +210,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
         </span>
       </div>
       {sample ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           {sample.description}
           {sample.excerpt ? " Rebuilt from the records the recipe quotes; fields it doesn't show are filled in, and sequences it doesn't show are left out." : ""}
         </p>
@@ -224,13 +224,13 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
             Session log lines
           </label>
           <TextArea id={`${id}-own`} rows={4} className="pg-code-input" value={ownText} placeholder='{"schema_version":1,"sequence":1,...}' onChange={(e) => setOwnText(e.target.value)} spellCheck={false} />
-          {ownProblem ? <p className="pg-hint pg-bad">{ownProblem}</p> : null}
-          {parsed.unparseable.length ? <p className="pg-hint pg-bad">Skipped {parsed.unparseable.length} line(s) that aren&apos;t envelopes: {parsed.unparseable.slice(0, 6).join(", ")}{parsed.unparseable.length > 6 ? "..." : ""}.</p> : null}
+          {ownProblem ? <div className="pg-hint pg-bad">{ownProblem}</div> : null}
+          {parsed.unparseable.length ? <div className="pg-hint pg-bad">Skipped {parsed.unparseable.length} line(s) that aren&apos;t envelopes: {parsed.unparseable.slice(0, 6).join(", ")}{parsed.unparseable.length > 6 ? "..." : ""}.</div> : null}
         </div>
       )}
 
       {total ? (
-        <div className={styles.tight}>
+        <div className={`${styles.tight} pg-advanced`}>
           <label className="pg-label" htmlFor={`${id}-kill`}>
             Kill the process after record {keep} of {total}
             {kept.length ? ` (sequence ${kept[kept.length - 1].sequence}, ${kept[kept.length - 1].jqKind ?? kept[kept.length - 1].kind})` : ""}
@@ -265,7 +265,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
           <Tabs<View> label="Views of the log" idBase={id} tabs={tabs} value={view} onChange={setView} />
           <TabPanel idBase={id} id="timeline" active={view === "timeline"}>
             <div className={styles.stack}>
-              <div className={styles.row}>
+              <div className={`${styles.row} pg-advanced`}>
                 <Toggle id={`${id}-bk`} label="Hide bookkeeping (accepted, scheduled, started, stream notices)" checked={hideBookkeeping} onChange={setHideBookkeeping} />
               </div>
               <ol className={styles.timeline} aria-label="Records in order">
@@ -296,14 +296,16 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                   <JsonTree value={redacted ? redactValue(inspected.raw).value : inspected.raw} openDepth={4} />
                 </div>
               ) : (
-                <p className={styles.note}>Pick a record to see its whole envelope.</p>
+                <p className={`${styles.note} pg-advanced`}>Pick a record to see its whole envelope.</p>
               )}
             </div>
           </TabPanel>
 
           <TabPanel idBase={id} id="ledger" active={view === "ledger"}>
             <div className={styles.stack}>
-              <Toggle id={`${id}-model`} label="Include model calls (auth=not_applicable)" checked={withModel} onChange={setWithModel} />
+              <div className="pg-advanced">
+                <Toggle id={`${id}-model`} label="Include model calls (auth=not_applicable)" checked={withModel} onChange={setWithModel} />
+              </div>
               <Terminal title="build_ledger.py --plain" lines={[{ text: "python3 artifacts/build_ledger.py trajectory.json --plain", tone: "cmd" }, ...linesOf(ledgerText)]} wrap={false} />
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
@@ -330,7 +332,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                   </tbody>
                 </table>
               </div>
-              <p className={styles.note}>Every side_effect_intent carries its policy_decision, and it lands before the effect runs, so the session reduces to this ledger.</p>
+              <p className={`${styles.note} pg-advanced`}>Every side_effect_intent carries its policy_decision, and it lands before the effect runs, so the session reduces to this ledger.</p>
             </div>
           </TabPanel>
 
@@ -342,7 +344,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                   return (
                     <div key={c.pendingActionId} className={styles.stack}>
                       <Verdict tone={c.decision === "approved" ? "ok" : c.decision ? "bad" : "warn"} title={`${c.command ?? "An action"}: ${c.decision ?? "waiting for a decision"}`} live={false}>
-                        <p className={styles.note}>
+                        <p className={`${styles.note} pg-advanced`}>
                           Threaded by pending_action_id <code>{c.pendingActionId}</code>.{" "}
                           {c.intent ? (
                             <>
@@ -358,7 +360,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                         <div className={styles.tight}>
                           <p className="pg-section-label">decision_source: who allowed it</p>
                           <JsonTree value={c.authorizer} />
-                          <p className={styles.note}>A static policy allow reads allow:policy. A reviewer decision reads allow:llm_judge and carries the reviewer&apos;s prompt_version and a context_digest that pins exactly what it saw.</p>
+                          <p className={`${styles.note} pg-advanced`}>A static policy allow reads allow:policy. A reviewer decision reads allow:llm_judge and carries the reviewer&apos;s prompt_version and a context_digest that pins exactly what it saw.</p>
                         </div>
                       ) : null}
                     </div>
@@ -382,7 +384,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                 </Verdict>
               ) : (
                 <Verdict tone="ok" title={`Nothing to reconcile: ${report.committed.length} effect(s), each with its terminal record`}>
-                  <p className={styles.note}>{killed ? "The kill landed between effects." : "Move the slider to kill the process mid-task and see what a resume would find."}</p>
+                  <p className={`${styles.note} pg-advanced`}>{killed ? "The kill landed between effects." : "Move the slider to kill the process mid-task and see what a resume would find."}</p>
                 </Verdict>
               )}
               <Terminal title="muse resume (simulated from the log)" lines={resumeLines} live />
@@ -392,31 +394,33 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                 <Chip tone={report.duplicateKeys.length ? "bad" : "ok"}>{report.duplicateKeys.length ? `${report.duplicateKeys.length} idempotency key(s) fired twice` : "No idempotency key fired twice"}</Chip>
               </div>
               {report.resumedFrom !== null ? (
-                <p className={styles.note}>Everything at or below resumed_from_sequence is replayed history; everything above it is new, so rebuilding earlier work re-runs none of it.</p>
+                <p className={`${styles.note} pg-advanced`}>Everything at or below resumed_from_sequence is replayed history; everything above it is new, so rebuilding earlier work re-runs none of it.</p>
               ) : null}
-              <Terminal title="The crash and resume spine" lines={[{ text: jqSpine(kept).command, tone: "cmd" }, ...jqSpine(kept).output.map((o) => ({ text: o }))]} />
-              <Terminal
-                title="No key fired twice"
-                lines={[{ text: jqDuplicateKeys(kept).command, tone: "cmd" }, ...(jqDuplicateKeys(kept).output.length ? jqDuplicateKeys(kept).output.map((o) => ({ text: o, tone: "err" as const })) : [{ text: "(no output)", tone: "muted" as const }])]}
-              />
+              <div className={`${styles.stack} pg-advanced`}>
+                <Terminal title="The crash and resume spine" lines={[{ text: jqSpine(kept).command, tone: "cmd" }, ...jqSpine(kept).output.map((o) => ({ text: o }))]} />
+                <Terminal
+                  title="No key fired twice"
+                  lines={[{ text: jqDuplicateKeys(kept).command, tone: "cmd" }, ...(jqDuplicateKeys(kept).output.length ? jqDuplicateKeys(kept).output.map((o) => ({ text: o, tone: "err" as const })) : [{ text: "(no output)", tone: "muted" as const }])]}
+                />
+              </div>
             </div>
           </TabPanel>
 
           <TabPanel idBase={id} id="export" active={view === "export"}>
             <div className={styles.stack}>
-              <div className={styles.row}>
+              <div className={`${styles.row} pg-advanced`}>
                 <Toggle id={`${id}-redact`} label={<>Share-safe export (<code>--redacted</code>)</>} checked={redacted} onChange={setRedacted} />
                 {redacted ? <span className={styles.note}>{redactionHits ? `${redactionHits} string(s) redacted.` : "Nothing in this log matched the redaction rules."}</span> : null}
               </div>
               <Terminal title="Export" lines={[{ text: exportCommand, tone: "cmd" }, { text: `${redacted ? "share" : "trajectory"}.json: ${kept.length} events, one per log line, in order`, tone: "muted" }]} />
               <JsonTree value={{ ...exportDoc, events: `[${kept.length} records]` }} openDepth={3} />
               {notes.map((n) => (
-                <p key={n} className={styles.note}>
+                <p key={n} className={`${styles.note} pg-advanced`}>
                   {n}
                 </p>
               ))}
-              <p className={styles.note}>Redaction only removes; it can&apos;t un-redact what the log already stored.</p>
-              <div className={styles.row}>
+              <p className={`${styles.note} pg-advanced`}>Redaction only removes; it can&apos;t un-redact what the log already stored.</p>
+              <div className={`${styles.row} pg-advanced`}>
                 <button type="button" className="btn btn-sm btn-outline" onClick={() => void compareExports("same")}>
                   Rebuild twice and compare
                 </button>
@@ -442,7 +446,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
       ) : null}
 
       <Section title="Hand it to a reviewer">
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Sends the ledger and the resume summary (not the raw log, and run through the redaction rules first) to the model, which answers what the agent did and who allowed each action. Under a cent.
         </p>
         <div className="pg-bar">

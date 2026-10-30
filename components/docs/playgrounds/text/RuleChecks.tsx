@@ -11,7 +11,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import type { DocsError } from "@/lib/docs/client/api";
 import { DEFAULT_TEXT_MODEL, docsModelLabel } from "@/lib/docs/client/models";
 import { outcomeOfReply } from "@/lib/docs/client/record";
-import { Badge, LazyDetails } from "@/components/docs/playgrounds/text/parts";
+import { Badge, cx, LazyDetails } from "@/components/docs/playgrounds/text/parts";
 import { failureOutcome, recordOf } from "@/components/docs/playgrounds/text/record";
 import { acceptedSummary, checkVerdict, mayBill, outcomeLabel, withModel, type RuleCheck } from "@/components/docs/playgrounds/text/rules";
 import styles from "@/components/docs/playgrounds/text/text.module.css";
@@ -97,7 +97,7 @@ export function RuleChecks(props: RuleChecksProps) {
 
   return (
     <div className={`pg ${styles.stack}`}>
-      {props.intro ? <p className={styles.about}>{props.intro}</p> : null}
+      {props.intro ? <p className={cx(styles.about, "pg-advanced")}>{props.intro}</p> : null}
       <div className="pg-bar">
         <ModelSelect kind="text" value={model} onChange={setModel} allow={props.models} disabled={!!busy} />
         <RunButton
@@ -126,7 +126,7 @@ export function RuleChecks(props: RuleChecksProps) {
                 </p>
                 <Badge tone="neutral">The page says: {check.expect === "accepted" ? "accepted" : "HTTP 400"}</Badge>
               </div>
-              <p className={styles.checkSends}>
+              <p className={cx(styles.checkSends, "pg-advanced")}>
                 Sends {check.sends} to <code>POST /v1/{check.path}</code>
                 {check.anchor ? (
                   <>
@@ -141,7 +141,7 @@ export function RuleChecks(props: RuleChecksProps) {
                 .
               </p>
               <div className={styles.checkResult} aria-live="polite">
-                <button type="button" className="btn btn-sm btn-outline" onClick={() => void runOne(check)} disabled={!!busy}>
+                <button type="button" className="btn btn-sm btn-outline pg-advanced" onClick={() => void runOne(check)} disabled={!!busy}>
                   {running ? "Checking" : r ? "Check again" : "Check"}
                 </button>
                 {r ? (
@@ -158,8 +158,8 @@ export function RuleChecks(props: RuleChecksProps) {
               {r && verdict !== "unknown" && r.message ? <p className={styles.checkMessage}>{r.message}</p> : null}
               {r && r.summary ? <p className={styles.checkSends}>{r.summary}</p> : null}
               {r && verdict === "unknown" ? <ErrorBox error={r.error} /> : null}
-              {check.note ? <p className={styles.checkNote}>{check.note}</p> : null}
-              <LazyDetails summary={`Request${r?.json ? " and reply" : ""}`}>
+              {check.note ? <p className={cx(styles.checkNote, "pg-advanced")}>{check.note}</p> : null}
+              <LazyDetails className={cx(styles.details, "pg-advanced")} summary={`Request${r?.json ? " and reply" : ""}`}>
                 <JsonTree value={withModel(check.body, model)} openDepth={4} label={`Request for check ${i + 1}`} />
                 {r?.json ? <JsonTree value={r.json} openDepth={2} label={`Reply to check ${i + 1}`} /> : null}
               </LazyDetails>
@@ -167,7 +167,7 @@ export function RuleChecks(props: RuleChecksProps) {
           );
         })}
       </ol>
-      <p className={styles.about}>
+      <p className={cx(styles.about, "pg-advanced")}>
         A rule check sends one small request through the docs proxy. Meta&apos;s own error message is shown as it came back.
       </p>
     </div>

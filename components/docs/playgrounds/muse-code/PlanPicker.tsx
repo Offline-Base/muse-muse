@@ -124,7 +124,7 @@ export function PlanPicker({ prompts: startPrompts, subscribed }: PlanPickerProp
               <Segmented<Weight> label="Prompt size" size="sm" value={weight} onChange={setWeight} options={WEIGHTS} />
             </div>
           </div>
-          <fieldset className={styles.fieldset}>
+          <fieldset className={`${styles.fieldset} pg-advanced`}>
             <legend>You need</legend>
             <div className={styles.checkGrid}>
               <Check id={`${idBase}-wf`} label="Muse Wonder Full" checked={wonderFull} onChange={setWonderFull} />
@@ -149,11 +149,11 @@ export function PlanPicker({ prompts: startPrompts, subscribed }: PlanPickerProp
                     <p className={styles.cardTitle}>{p.name}</p>
                     {picked ? <Chip tone="accent">Suggested</Chip> : null}
                   </div>
-                  <p className="pg-small pg-muted">
+                  <div className="pg-small pg-muted">
                     About {range.low.toLocaleString("en-US")}-{range.high.toLocaleString("en-US")} prompts every 5 hours ({p.multiplier}x Everyday)
-                  </p>
+                  </div>
                   <Chip tone={fit.tone}>{fit.text}</Chip>
-                  <ul className={styles.notes}>
+                  <ul className={`${styles.notes} pg-advanced`}>
                     {p.bullets.map((b) => (
                       <li key={b}>{b}</li>
                     ))}
@@ -222,7 +222,7 @@ export function PlanPicker({ prompts: startPrompts, subscribed }: PlanPickerProp
               />
             </div>
           </div>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <SelectField<FlagValue>
               id={`${idBase}-flag`}
               label="--contributor-mode"
@@ -316,11 +316,11 @@ export function PlanPicker({ prompts: startPrompts, subscribed }: PlanPickerProp
               </table>
             </div>
           ) : (
-            <p className="pg-hint pg-bad" role="status">
+            <div className="pg-hint pg-bad" role="status">
               Enter a date as YYYY-MM-DD.
-            </p>
+            </div>
           )}
-          <div className={styles.gridPairs}>
+          <div className={`${styles.gridPairs} pg-advanced`}>
             <div className={styles.card}>
               <p className={styles.cardTitle}>Upgrade</p>
               <p className="pg-small">Takes effect immediately. You&apos;re charged a prorated amount for the rest of the current billing cycle.</p>

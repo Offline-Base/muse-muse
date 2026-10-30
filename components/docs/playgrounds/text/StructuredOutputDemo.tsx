@@ -1,8 +1,8 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { PresetPills } from "@/components/docs/kit/Field";
 import { JsonEditor } from "@/components/docs/kit/JsonEditor";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { StructuredOutputPlayground, type SchemaPreset } from "@/components/docs/playgrounds/common/StructuredOutputPlayground";
 import { formatJson, parseJsonText } from "@/lib/docs/client/json";
 import type { Effort } from "@/lib/docs/client/models";
@@ -122,12 +122,13 @@ export function SchemaSizeCheck({
 
   return (
     <div className={`pg ${styles.stack}`}>
-      <p className={styles.about}>
+      <p className={cx(styles.about, "pg-advanced")}>
         Model API checks a schema before decoding starts and answers HTTP 400 when it goes past a limit. These limits apply to <code>response_format</code>,{" "}
         <code>text.format</code> and function tools&apos; <code>parameters</code>. Edit the schema; the checks run here as you type.
       </p>
       {presets.length ? (
-        <PresetPills
+        <PresetRow
+          keep={4}
           label="Schema"
           presets={presets}
           active={active}
@@ -186,7 +187,7 @@ export function SchemaSizeCheck({
                 </table>
               </div>
               {enumOver && enumAllowance && stats.enumValues <= enumAllowance ? (
-                <p className={cx(styles.about, styles.small)}>
+                <p className={cx(styles.about, styles.small, "pg-advanced")}>
                   Over the default of 1,000 enum values, but the limit can be raised per app: this demo&apos;s key accepted up to {n(enumAllowance)} when we checked, so it may still run here.
                 </p>
               ) : null}
@@ -200,12 +201,12 @@ export function SchemaSizeCheck({
                   </ul>
                 </div>
               ) : (
-                <p className={cx(styles.about, styles.small)}>
+                <p className={cx(styles.about, styles.small, "pg-advanced")}>
                   {failing.length ? "Apart from the limits above, it fits the strict subset." : "It fits the strict subset too, so strict: true accepts it."}
                 </p>
               )}
               {onUse && schema ? (
-                <div>
+                <div className="pg-advanced">
                   <button type="button" className="btn btn-sm btn-outline" onClick={() => onUse(schema, active !== null ? presets[active].label : "your schema")}>
                     Run it in the playground
                   </button>
@@ -213,7 +214,7 @@ export function SchemaSizeCheck({
               ) : null}
             </>
           ) : (
-            <p className="pg-hint pg-bad">{parsed.ok ? "A schema is a JSON object." : parsed.message}</p>
+            <div className="pg-hint pg-bad">{parsed.ok ? "A schema is a JSON object." : parsed.message}</div>
           )}
         </div>
       </div>

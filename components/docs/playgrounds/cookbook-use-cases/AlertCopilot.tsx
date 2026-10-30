@@ -190,7 +190,7 @@ export function AlertCopilot({ sendDigest: initialDigest = true, enforceSchema: 
 
   return (
     <div className="pg">
-      <div className={styles.card}>
+      <div className={`${styles.card} pg-advanced`}>
         <p className={styles.cardTitle}>The feed: data/synthetic_alerts.json</p>
         <p className="pg-hint">
           {alerts.length} synthetic alerts for the fictional BrewBean POS team, September 2026, .example hosts only. The digest below is what a Python Counter
@@ -234,7 +234,7 @@ export function AlertCopilot({ sendDigest: initialDigest = true, enforceSchema: 
         <ModelSelect kind="text" value={model} onChange={setModel} disabled={running} />
         <EffortSelect id={`${id}-effort`} model={model} value={effort} onChange={setEffort} disabled={running} />
       </div>
-      <div className="pg-bar">
+      <div className="pg-bar pg-advanced">
         <Toggle id={`${id}-digest`} label="Hand the model the digest (READ step)" checked={sendDigest} onChange={setSendDigest} disabled={running} />
         <Toggle id={`${id}-schema`} label="Enforce the shape with json_schema strict" checked={schema} onChange={setSchema} disabled={running} />
       </div>
@@ -245,13 +245,13 @@ export function AlertCopilot({ sendDigest: initialDigest = true, enforceSchema: 
 
       <div className="pg-actions">
         <RunButton running={running} onRun={() => void runAll()} onStop={guard.stop} label="Run the three tasks" />
-        <button type="button" className="btn btn-sm" onClick={() => void runProbe()} disabled={running}>
+        <button type="button" className="btn btn-sm pg-advanced" onClick={() => void runProbe()} disabled={running}>
           Task 1 only
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => state["purpose.json"] && void runChat(state)} disabled={running || !state["purpose.json"]}>
+        <button type="button" className="btn btn-sm pg-advanced" onClick={() => state["purpose.json"] && void runChat(state)} disabled={running || !state["purpose.json"]}>
           Task 2
         </button>
-        <button type="button" className="btn btn-sm" onClick={() => state["purpose.json"] && void runAssess(state)} disabled={running || !state["purpose.json"]}>
+        <button type="button" className="btn btn-sm pg-advanced" onClick={() => state["purpose.json"] && void runAssess(state)} disabled={running || !state["purpose.json"]}>
           Task 3
         </button>
         {phase ? (
@@ -263,9 +263,9 @@ export function AlertCopilot({ sendDigest: initialDigest = true, enforceSchema: 
         ) : null}
       </div>
       {guard.waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {guard.waitNote}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={guard.waiting ? null : runner.error} />
 
@@ -274,7 +274,7 @@ export function AlertCopilot({ sendDigest: initialDigest = true, enforceSchema: 
       {assess ? <TaskCard title="Task 3: self-assess and propose improvements" run={assess} fallbackModel={model} /> : null}
 
       {present.length ? (
-        <div className={styles.card}>
+        <div className={`${styles.card} pg-advanced`}>
           <p className={styles.cardTitle}>State files written</p>
           <Tabs label="State files" idBase={fileIdBase} tabs={present.map((f) => ({ id: f, label: f }))} value={present.includes(file as (typeof FILES)[number]) ? file : present[0]} onChange={setFile} />
           {present.map((f) => (
@@ -324,7 +324,7 @@ function TaskCard({ title, run, fallbackModel, plain }: { title: string; run: Ta
       <p className={styles.cardTitle}>{title}</p>
       {run.retried ? <p className="pg-hint">The first reply didn&apos;t parse, so the harness re-prompted once: &quot;No markdown fences, raw JSON only.&quot;</p> : null}
       {run.recovered ? <p className="pg-hint">Recovered the JSON from {run.recovered === "fences" ? "markdown fences" : "text around it"}, as the validator does.</p> : null}
-      {plain ? <p className={styles.answer}>{run.text}</p> : <pre className="pg-pre">{run.value ? JSON.stringify(run.value, null, 2) : run.text}</pre>}
+      {plain ? <p className={styles.answer}>{run.text}</p> : <pre className={run.value ? "pg-pre pg-advanced" : "pg-pre"}>{run.value ? JSON.stringify(run.value, null, 2) : run.text}</pre>}
       <ul className="pg-checks">
         {run.checks.map((c, i) => (
           <li key={i} className={c.ok ? "pg-check-ok" : ""}>

@@ -60,8 +60,10 @@ export function GoalJudge(_props: GoalJudgeProps) {
 
   return (
     <div className={`pg ${styles.stack}`}>
-      <Segmented<string> label="Sample goal" size="sm" options={GOAL_PRESETS.map((p, i) => ({ value: String(i), label: p.label }))} value={String(presetIndex)} onChange={(v) => pickPreset(Number(v))} />
-      <div className={styles.tight}>
+      <div className="pg-advanced">
+        <Segmented<string> label="Sample goal" size="sm" options={GOAL_PRESETS.map((p, i) => ({ value: String(i), label: p.label }))} value={String(presetIndex)} onChange={(v) => pickPreset(Number(v))} />
+      </div>
+      <div className={`${styles.tight} pg-advanced`}>
         <label className="pg-label" htmlFor={`${id}-goal`}>
           /goal
         </label>
@@ -76,7 +78,7 @@ export function GoalJudge(_props: GoalJudgeProps) {
         ]}
       />
 
-      <div className={styles.tight}>
+      <div className={`${styles.tight} pg-advanced`}>
         <p className="pg-section-label">Acceptance checks</p>
         <ul className={`${styles.tight} ${styles.plainList}`} aria-label="Acceptance checks">
           {checks.map((c, i) => (
@@ -108,7 +110,7 @@ export function GoalJudge(_props: GoalJudgeProps) {
         {presetIndex === 0 ? <p className={styles.note}>The recipe&apos;s six real checks live in test_falcon_acceptance.py; these come from its description of the work.</p> : null}
       </div>
 
-      <div className={styles.tight}>
+      <div className={`${styles.tight} pg-advanced`}>
         <p className="pg-section-label">The step probe</p>
         <div className={styles.row}>
           <button type="button" className="btn btn-sm btn-outline" onClick={() => setCalls((n) => n + 1)}>
@@ -139,7 +141,7 @@ export function GoalJudge(_props: GoalJudgeProps) {
           <ModelSelect kind="text" value={model} onChange={setModel} disabled={judging} />
           <RunButton running={judging} onRun={() => void run()} onStop={judge.abort} label="Call update_goal" disabled={!report.trim() || !checks.length} />
         </div>
-        <p className={styles.note}>The judge model grades each check with a quote from the report. The page then lets update_goal close the goal only if every check passed and every quote is really in the report. Under a cent.</p>
+        <p className={`${styles.note} pg-advanced`}>The judge model grades each check with a quote from the report. The page then lets update_goal close the goal only if every check passed and every quote is really in the report. Under a cent.</p>
         {judging || judge.result ? (
           <ResponseView result={judging ? null : judge.result} running={judging} elapsedMs={judge.elapsedMs}>
             {judge.value && gate ? (

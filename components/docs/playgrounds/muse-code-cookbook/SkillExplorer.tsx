@@ -143,25 +143,27 @@ export function SkillExplorer(props: SkillExplorerProps) {
             <code>{skill.invoke}</code> <Chip>built-in</Chip> <Chip tone={skill.stopsToAsk === "No" ? undefined : "accent"}>Stops to ask: {skill.stopsToAsk}</Chip>
           </p>
           <p className={styles.cardText}>{skill.does}</p>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             <strong>Use it when</strong> {skill.whenToUse.charAt(0).toLowerCase() + skill.whenToUse.slice(1)}
           </p>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             <strong>What comes back:</strong> {skill.output}
           </p>
         </div>
-        <Terminal
-          title="muse skills list (simulated)"
-          lines={[
-            { text: "muse skills list", tone: "cmd" },
-            ...SKILLS.map((s) => ({ text: `${s.id.padEnd(16)} built-in   muse-core`, tone: s.id === skillId ? ("ok" as const) : ("plain" as const) })),
-            { text: "(the four this recipe drives; all are on by default)", tone: "muted" },
-          ]}
-        />
+        <div className="pg-advanced">
+          <Terminal
+            title="muse skills list (simulated)"
+            lines={[
+              { text: "muse skills list", tone: "cmd" },
+              ...SKILLS.map((s) => ({ text: `${s.id.padEnd(16)} built-in   muse-core`, tone: s.id === skillId ? ("ok" as const) : ("plain" as const) })),
+              { text: "(the four this recipe drives; all are on by default)", tone: "muted" },
+            ]}
+          />
+        </div>
       </div>
       <Steps label="The bundled-skill contract" steps={steps} />
 
-      <details>
+      <details className="pg-advanced">
         <summary className={styles.note}>The sample project ({skill.files.map((f) => f.path).join(", ")})</summary>
         <pre className={styles.tree}>{skill.files.map((f) => `--- ${f.path} ---\n${f.text}`).join("\n\n")}</pre>
       </details>
@@ -245,7 +247,7 @@ export function SkillExplorer(props: SkillExplorerProps) {
               <p>
                 <strong>Layout:</strong> {taste.layout}
               </p>
-              <p className={styles.note}>
+              <p className={`${styles.note} pg-advanced`}>
                 The checklist: {TASTE_DEFAULTS.join("; ")}. /taste only removes these defaults; an explicit brand or style request overrides it.
               </p>
             </div>
@@ -297,7 +299,7 @@ export function SkillExplorer(props: SkillExplorerProps) {
               {skill.shape === "question-with-record" ? (
                 <Terminal title="docs/DECISIONS.md" lines={[DECISIONS_MD, ...records.map(decisionMarkdown)].join("\n\n").split("\n").map((t) => ({ text: t }))} live />
               ) : null}
-              <p className={styles.note}>Each answer continues the same response with previous_response_id. The skill never starts implementing until you leave the interview.</p>
+              <p className={`${styles.note} pg-advanced`}>Each answer continues the same response with previous_response_id. The skill never starts implementing until you leave the interview.</p>
             </div>
           ) : (
             <p className="pg-empty">{running ? "Reading the project and choosing the hardest question..." : "No question in this reply."}</p>
@@ -309,7 +311,7 @@ export function SkillExplorer(props: SkillExplorerProps) {
       <ErrorBox error={skill.shape === "plan" ? stream.error : json.error} />
       <ShowCode body={lastBody ?? firstBody()} caption={lastBody ? "The last request this skill sent" : "The request Run sends"} />
 
-      <Section title="When a skill doesn't fire">
+      <Section title="When a skill doesn't fire" className="pg-advanced">
         <p className={styles.note}>
           Each skill is explicit-invocation only, so &quot;implement transfer&quot; stays an ordinary implementation: ask with the slash command, or &quot;plan this before you build it.&quot; /grilling falls back to a plain question when the answer doesn&apos;t fit two or three short choices. /grill-with-docs asks where decisions live if you don&apos;t name a file.
         </p>

@@ -466,7 +466,7 @@ export function StickerPack({
       <ErrorBox error={localError ?? runner.error} />
 
       {tracks.length ? (
-        <div className={styles.tight}>
+        <div className={`${styles.tight} pg-advanced`}>
           <label className={styles.control} htmlFor={`${id}-track`}>
             Track
             <span className="select-wrap">

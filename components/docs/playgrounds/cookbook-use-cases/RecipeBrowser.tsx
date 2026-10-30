@@ -99,10 +99,10 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
   return (
     <div className="pg">
       <div className={styles.stack}>
-        <Field id={`${id}-q`} label="Find a recipe">
+        <Field id={`${id}-q`} label="Find a recipe" className="pg-advanced">
           <TextInput id={`${id}-q`} type="search" placeholder="Search titles, harnesses and what each demo does" value={query} onChange={(e) => setQuery(e.target.value)} />
         </Field>
-        <div className="pg-presets" role="group" aria-label="Filter by what the recipe uses">
+        <div className="pg-presets pg-advanced" role="group" aria-label="Filter by what the recipe uses">
           <span className="pg-presets-label" aria-hidden>
             Uses
           </span>
@@ -112,7 +112,7 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
             </button>
           ))}
         </div>
-        <div className="pg-bar">
+        <div className="pg-bar pg-advanced">
           <span className="pg-label">Harness</span>
           <Segmented
             label="Harness"
@@ -122,7 +122,7 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
             onChange={setHarness}
           />
         </div>
-        <p className="pg-hint" role="status" aria-live="polite">
+        <p className="pg-hint pg-advanced" role="status" aria-live="polite">
           Showing {shown.length} of {RECIPES.length} recipes{picks ? `, ${picks.picks.length} picked for your project` : ""}.
         </p>
       </div>
@@ -145,8 +145,8 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
                     </span>
                   ) : null}
                 </div>
-                <p className="pg-small">{r.summary}</p>
-                <div className={styles.chips}>
+                <p className="pg-small pg-advanced">{r.summary}</p>
+                <div className={`${styles.chips} pg-advanced`}>
                   {r.capabilities.map((c) => (
                     <span key={c} className={styles.chip}>
                       {CAPABILITY_LABEL[c]}
@@ -157,7 +157,7 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
                   {r.harness} · {r.time} · {recipeModel(r.model)}
                 </p>
                 <p className="pg-hint">Needs: {r.needs}</p>
-                <p className="pg-small">
+                <p className="pg-small pg-advanced">
                   <span className="pg-muted">Live demo there: </span>
                   {r.demo}
                 </p>
@@ -207,7 +207,7 @@ export function RecipeBrowser({ project: initialProject = "", presets = [] }: Re
         </div>
         <ContributorNotice model={model} menu={TEXT_MENU} />
         <ErrorBox error={runner.error} />
-        {parseError ? <p className="pg-hint pg-bad">{parseError}</p> : null}
+        {parseError ? <div className="pg-hint pg-bad">{parseError}</div> : null}
         {picks ? (
           <div className={styles.stack} role="status">
             <ol className="pg-list">

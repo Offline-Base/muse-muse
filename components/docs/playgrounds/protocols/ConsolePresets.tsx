@@ -26,13 +26,21 @@ export interface ConsolePresetsProps {
   start?: number;
 }
 
+/** Simple view: this many pills show; the rest are a second row behind Options. */
+const SIMPLE_PILLS = 5;
+
 export function ConsolePresets({ presets, label = "Request", start = 0 }: ConsolePresetsProps) {
   const [active, setActive] = useState(Math.min(Math.max(0, start), Math.max(0, presets.length - 1)));
   const preset = presets[active];
   if (!preset) return null;
   return (
     <div className="pg">
-      {presets.length > 1 ? <PresetPills label={label} presets={presets} active={active} onPick={setActive} /> : null}
+      {presets.length > 1 ? <PresetPills label={label} presets={presets.slice(0, SIMPLE_PILLS)} active={active} onPick={setActive} /> : null}
+      {presets.length > SIMPLE_PILLS ? (
+        <div className="pg-advanced">
+          <PresetPills label="More" presets={presets.slice(SIMPLE_PILLS)} active={active - SIMPLE_PILLS} onPick={(i) => setActive(i + SIMPLE_PILLS)} />
+        </div>
+      ) : null}
       {preset.note ? <p className="pg-hint">{preset.note}</p> : null}
       <ApiConsole key={active} {...preset.console} />
     </div>

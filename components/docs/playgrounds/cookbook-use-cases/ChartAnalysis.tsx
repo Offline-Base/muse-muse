@@ -185,7 +185,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
     <div className="pg">
       <div className={styles.grid2}>
         <FilePicker accept="image/*" value={image} onChange={setImage} samples={["bar-chart", "receipt", "error-screenshot"]} defaultSampleId={sampleId} preview="compact" disabled={running} />
-        <div className={styles.stack}>
+        <div className={`${styles.stack} pg-advanced`}>
           <Toggle id={`${id}-cover`} label="Cover the printed values (read the axis)" checked={cover} onChange={setCover} disabled={running || !isSample} />
           <p className="pg-hint">
             {isSample
@@ -223,9 +223,9 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
         ) : null}
       </div>
       {guard.waitNote ? (
-        <p className="pg-hint" role="status">
+        <div className="pg-hint" role="status">
           {guard.waitNote}
-        </p>
+        </div>
       ) : null}
       <ErrorBox error={guard.waiting ? null : runner.error} />
 
@@ -239,10 +239,10 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
       ) : null}
 
       {structured ? (
-        <div className={styles.card}>
+        <div className={parseError ? styles.card : `${styles.card} pg-advanced`}>
           <p className={styles.cardTitle}>2. Structured analysis (strict JSON schema)</p>
           {structured.recovered ? <p className="pg-hint">Recovered the JSON from {structured.recovered === "fences" ? "markdown fences" : "surrounding text"}.</p> : null}
-          {parseError ? <p className="pg-hint pg-bad">{parseError}</p> : null}
+          {parseError ? <div className="pg-hint pg-bad">{parseError}</div> : null}
           <pre className="pg-pre">{structured.json ? JSON.stringify(structured.json, null, 2) : structured.text}</pre>
           <UsageLine model={structured.model ?? model} usage={structured.usage} />
         </div>
@@ -294,7 +294,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
                 : "No known values for this image. Ask how each value was read, then check them by eye."}
             </p>
           )}
-          <div className="pg-actions">
+          <div className="pg-actions pg-advanced">
             <button type="button" className="btn btn-sm" onClick={() => void runVerify()} disabled={running}>
               Ask how it read each value
             </button>
@@ -311,7 +311,7 @@ export function ChartAnalysis({ sampleId = "bar-chart", coverValues = false }: C
       {analysis ? <SummaryCard analysis={analysis} checks={checks} imageUrl={sentUrl} /> : null}
 
       {structured ? (
-        <div className={styles.card}>
+        <div className={`${styles.card} pg-advanced`}>
           <p className={styles.cardTitle}>5. Follow up in the same session</p>
           {followUps.map((f, i) => (
             <div key={i} className={styles.stack}>

@@ -36,6 +36,7 @@ export function CodeBlock({
   label,
   syntax = "bash",
   copyLabel,
+  className,
 }: {
   code: string;
   /** The header's text: a file name such as "opencode.json", or the language. */
@@ -43,12 +44,13 @@ export function CodeBlock({
   syntax?: BlockSyntax;
   /** The copy button's accessible name. Defaults to "Copy <label>". */
   copyLabel?: string;
+  className?: string;
 }) {
   const tokenizer = tokenizerFor(syntax);
   const tinted = useMemo(() => (tokenizer ? tintCode(code, tokenizer) : [{ text: code, tone: null }]), [code, tokenizer]);
   const name = label ?? syntax;
   return (
-    <div className="docs-code pg-codeview-block">
+    <div className={`docs-code pg-codeview-block${className ? ` ${className}` : ""}`}>
       <div className="docs-code-head">
         <span className="docs-code-label">{name}</span>
         <span className="docs-code-tools">

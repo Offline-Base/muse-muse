@@ -151,7 +151,7 @@ export function WireInspector({ source: initialSource = "examples", sampleId = "
       {source === "examples" ? (
         <div className={styles.stack}>
           <PresetPills label="Example" presets={EXAMPLES} active={example} onPick={setExample} />
-          <p className={styles.note}>{EXAMPLES[example].note}</p>
+          <p className={`${styles.note} pg-advanced`}>{EXAMPLES[example].note}</p>
         </div>
       ) : source === "paste" ? (
         <div className={styles.stack}>
@@ -162,7 +162,7 @@ export function WireInspector({ source: initialSource = "examples", sampleId = "
         </div>
       ) : (
         <div className={styles.stack}>
-          <div className="pg-bar">
+          <div className="pg-bar pg-advanced">
             <Segmented<"image" | "video">
               label="Media"
               value={kind}
@@ -198,12 +198,14 @@ export function WireInspector({ source: initialSource = "examples", sampleId = "
                 ]}
               />
             </span>
-            <Toggle id={`${id}-conf`} label='include_confidence: "true"' checked={confidence} onChange={setConfidence} disabled={running} />
+            <span className="pg-advanced">
+              <Toggle id={`${id}-conf`} label='include_confidence: "true"' checked={confidence} onChange={setConfidence} disabled={running} />
+            </span>
           </div>
           <div className={media.spread}>
             <RunButton running={running} onRun={() => void run()} onStop={sam.abort} label="Segment" disabled={!file || !concept.trim() || (file?.problems.length ?? 0) > 0} />
           </div>
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             {kind === "image" ? "$0.0025 an image." : `About ${formatUsd(samCostUsd("video", file?.frames ?? 50))} for ${file?.frames ?? "the"} frames ($0.20 per 1,000, 50-frame minimum).`}
           </p>
           <ErrorBox error={sam.error} />
@@ -223,7 +225,7 @@ export function WireInspector({ source: initialSource = "examples", sampleId = "
 
       {lines.length ? (
         <>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <WireLegend />
             <Toggle id={`${id}-full`} label="Full mask payloads" checked={full} onChange={setFull} />
           </div>
@@ -245,7 +247,7 @@ export function WireInspector({ source: initialSource = "examples", sampleId = "
               {record ? <RecordDetail record={record} /> : null}
             </section>
           </div>
-          <ul className={styles.counts} aria-label="What the lines show">
+          <ul className={`${styles.counts} pg-advanced`} aria-label="What the lines show">
             <li className={styles.count}>
               frames <b>{sortedFrames.length}</b>
               {sortedFrames.length ? ` (${sortedFrames[0]} to ${sortedFrames[sortedFrames.length - 1]})` : ""}
@@ -288,7 +290,7 @@ function LineDetail({ line, selected, onSelect }: { line: ParsedLine; selected: 
   return (
     <>
       {line.frame !== null ? (
-        <p className={styles.note}>
+        <p className={`${styles.note} pg-advanced`}>
           Frame marker <code>&lt;{line.frame}f&gt;</code>: source frame {line.frame}. Read it from the marker; never assume the Nth line is frame N.
         </p>
       ) : null}
@@ -344,7 +346,7 @@ function RecordDetail({ record }: { record: SamRecord }) {
       <p className={styles.cardTitle}>
         Object {record.objectId} on frame {record.frame}
       </p>
-      <ul className={styles.checkList}>
+      <ul className={`${styles.checkList} pg-advanced`}>
         <li>
           Box: corners ({record.box.x1}, {record.box.y1}) and ({record.box.x2}, {record.box.y2}) in source pixels, x2 and y2 inclusive, so {boxW} x {boxH}{" "}
           pixels inside a {record.box.w} x {record.box.h} frame. Scale by display size over {record.box.w} x {record.box.h} to draw it.
@@ -358,7 +360,7 @@ function RecordDetail({ record }: { record: SamRecord }) {
       {res.ok ? (
         <div className={styles.stack}>
           <RasterCanvas mask={record.mask} raster={res.raster} />
-          <p className={styles.note}>
+          <p className={`${styles.note} pg-advanced`}>
             decodeMaskToRaster: a row-major Uint8Array of 0 and 1, length {record.mask.height} x {record.mask.width} = {res.raster.length.toLocaleString("en-US")},{" "}
             {rasterArea(res.raster).toLocaleString("en-US")} set. It sits on the box.
           </p>
@@ -420,7 +422,7 @@ function TrackRows({ records, last }: { records: SamRecord[]; last: number }) {
           </div>
         );
       })}
-      <p className={styles.note}>Key masks by object id, never by position on the line: an id is the same object on every frame it appears on.</p>
+      <p className={`${styles.note} pg-advanced`}>Key masks by object id, never by position on the line: an id is the same object on every frame it appears on.</p>
     </section>
   );
 }

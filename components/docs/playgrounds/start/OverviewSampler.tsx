@@ -32,7 +32,7 @@ const TEXT_PROMPT =
   "In five short bullets, plan the upgrade of a Flask app from SQLAlchemy 1.4 to 2.0: the breaking changes to check and the order to make them in.";
 
 function Lead({ children }: { children: ReactNode }) {
-  return <p className={styles.lead}>{children}</p>;
+  return <p className={`${styles.lead} pg-advanced`}>{children}</p>;
 }
 
 function Loading() {
@@ -141,7 +141,7 @@ export function OverviewSampler({
   return (
     <div className={styles.stack}>
       <SectionTabs label="Models" sections={sections} />
-      <p className={styles.footnote}>
+      <p className={`${styles.footnote} pg-advanced`}>
         Muse Spark Open and Muse Glimmer are open weights you run on your own hardware (or, for Muse Spark Open, through a hosted
         provider), not on Model API, so they have no call here. See{" "}
         <a className={styles.link} href="/docs/muse-spark-open">

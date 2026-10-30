@@ -223,7 +223,9 @@ export function VoiceChess({
             <button type="button" className="btn btn-outline btn-sm" onClick={reset} disabled={running || !game.history.length}>
               Reset the board
             </button>
-            <Toggle id={`${id}-labels`} label="Label every square" checked={labels} onChange={setLabels} />
+            <span className="pg-advanced">
+              <Toggle id={`${id}-labels`} label="Label every square" checked={labels} onChange={setLabels} />
+            </span>
           </div>
         </div>
 
@@ -247,10 +249,21 @@ export function VoiceChess({
               <Field id={`${id}-typed`} label="What you'd say" hint="Runs the same parser on the text, without Muse Voice Transcribe. Free.">
                 <TextInput id={`${id}-typed`} value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={runOnModEnter(() => decide(typed, "Typed"))} />
               </Field>
-              {phrases.length ? <PresetPills label="Try" presets={phrases.map((p) => ({ label: p }))} onPick={(i) => setTyped(phrases[i])} /> : null}
+              {phrases.length ? (
+                <div className="pg-presets" role="group" aria-label="Try">
+                  <span className="pg-presets-label" aria-hidden>
+                    Try
+                  </span>
+                  {phrases.map((p, i) => (
+                    <button key={`${i}-${p}`} type="button" className={`pg-pill${i >= 5 ? " pg-advanced" : ""}`} onClick={() => setTyped(p)}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
-          {source === "sample" && file?.description ? <p className={styles.note}>About this sample: {file.description}</p> : null}
+          {source === "sample" && file?.description ? <p className={`${styles.note} pg-advanced`}>About this sample: {file.description}</p> : null}
           {source === "sample" && file?.sampleId === "chess-moves" ? (
             <p className="pg-notice" role="note">
               <Icon name="info" size={16} className="pg-notice-icon" />
@@ -263,7 +276,7 @@ export function VoiceChess({
           ) : null}
 
           {source !== "type" ? (
-            <div className={styles.tight}>
+            <div className={`${styles.tight} pg-advanced`}>
               <span className={styles.control}>
                 <span className={styles.label}>Endpoint</span>
                 <Segmented<"realtime" | "transcribe">
@@ -315,11 +328,11 @@ export function VoiceChess({
                 ]}
               />
             </span>
-            <div className={styles.row}>
+            <div className={`${styles.row} pg-advanced`}>
               <Toggle id={`${id}-reply`} label="Black replies" checked={autoReply} onChange={setAutoReply} />
               <Toggle id={`${id}-dry`} label="Dry run (validate, move nothing)" checked={dryRun} onChange={setDryRun} />
             </div>
-            <p className={styles.note}>
+            <p className={`${styles.note} pg-advanced`}>
               {grammar === "exact"
                 ? 'The recipe\'s grammar: a case-insensitive full match of "Move A1 to B2" with an optional trailing period, files A to H, ranks 1 to 8, two different squares. Nothing is repaired: spoken ranks, extra spaces or surrounding words reject the turn.'
                 : 'The recipe\'s phrase, plus "Knight to f3", "Castle kingside" and several moves in one turn, as long as every word belongs to a move. A piece move that two pieces could make is ambiguous and rejected.'}

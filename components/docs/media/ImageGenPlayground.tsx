@@ -209,7 +209,9 @@ export function ImageGenPlayground({
     <div className={`pg ${styles.playground}`}>
       <div className="pg-bar">
         {modes.length > 1 ? (
-          <Segmented label="Endpoint" value={mode} onChange={switchMode} disabled={running} options={modes.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
+          <span className="pg-advanced">
+            <Segmented label="Endpoint" value={mode} onChange={switchMode} disabled={running} options={modes.map((m) => ({ value: m, label: MODE_LABEL[m] }))} />
+          </span>
         ) : null}
         <ModelSelect kind="image" value="muse-image-1.0" onChange={() => {}} />
       </div>
@@ -255,7 +257,7 @@ export function ImageGenPlayground({
       ) : null}
 
       {mode === "responses" && references ? (
-        <details className={styles.events}>
+        <details className={`${styles.events} pg-advanced`}>
           <summary>Reference images (optional, sent as input_image parts after the prompt)</summary>
           <div className={styles.stack}>
             <FilePicker accept={imageAccept} value={refs[0]} onChange={(f) => setRefs([f, refs[1]])} samples={editSampleIds} preview="compact" disabled={running} />
@@ -277,16 +279,18 @@ export function ImageGenPlayground({
             defaultSampleId={editSampleId}
             disabled={running}
           />
-          <FilePicker
-            label="Second image (optional, to compose two into one scene)"
-            accept={imageAccept}
-            value={edits[1]}
-            onChange={(f) => setEdits([edits[0], f])}
-            samples={editSampleIds}
-            preview="compact"
-            disabled={running}
-          />
-          <span className={styles.inline}>
+          <div className="pg-advanced">
+            <FilePicker
+              label="Second image (optional, to compose two into one scene)"
+              accept={imageAccept}
+              value={edits[1]}
+              onChange={(f) => setEdits([edits[0], f])}
+              samples={editSampleIds}
+              preview="compact"
+              disabled={running}
+            />
+          </div>
+          <span className={`${styles.inline} pg-advanced`}>
             <span className={styles.label}>Body</span>
             <Segmented<"json" | "multipart">
               size="sm"
@@ -303,7 +307,7 @@ export function ImageGenPlayground({
         </div>
       ) : null}
 
-      <div className={styles.options}>
+      <div className={`${styles.options} pg-advanced`}>
         <span className={styles.inline}>
           <label className={styles.label} htmlFor={`${id}-size`}>
             Size
@@ -343,7 +347,7 @@ export function ImageGenPlayground({
           />
         </span>
       </div>
-      <div className={styles.options}>
+      <div className={`${styles.options} pg-advanced`}>
         <Toggle id={`${id}-is`} label="Image search" checked={tools.imageSearch} onChange={(v) => setTools((t) => ({ ...t, imageSearch: v }))} disabled={running} />
         <Toggle id={`${id}-ws`} label="Web search" checked={tools.webSearch} onChange={(v) => setTools((t) => ({ ...t, webSearch: v }))} disabled={running} />
         <Toggle id={`${id}-sh`} label="Shell (charts, layouts)" checked={tools.shell} onChange={(v) => setTools((t) => ({ ...t, shell: v }))} disabled={running} />
@@ -375,7 +379,7 @@ export function ImageGenPlayground({
           />
         </div>
       </div>
-      <p className={styles.note}>
+      <p className={`${styles.note} pg-advanced`}>
         Muse Image costs $0.01 per image it returns{mode === "responses" ? "" : `, so this run costs about $${(0.01 * n).toFixed(2)}`}. It
         can take 10 to 60 seconds: it may look things up before it renders.
       </p>

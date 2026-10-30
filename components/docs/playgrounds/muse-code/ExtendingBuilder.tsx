@@ -127,6 +127,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
             <NumberField id={`${idBase}-cap`} label="agents.execution_capacity" value={capacitySetting} min={1} max={64} onChange={setCapacitySetting} hint="Empty for the default." />
             <SelectField<RootEffort>
               id={`${idBase}-effort`}
+              className="pg-advanced"
               label="Root's reasoning effort"
               value={effort}
               onChange={setEffort}
@@ -143,6 +144,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               {plan.capacity} agents at once, root included: {plan.running} running{plan.rejected ? `, ${plan.rejected} rejected` : ""}
             </p>
             <Notes
+              className="pg-advanced"
               items={[
                 `Capacity: ${plan.source}.`,
                 plan.rejected ? "A spawn attempted when the tree is full is rejected, not queued. Raise agents.execution_capacity in user settings and start a new session." : "An accepted child can still wait for a host scheduler slot before it starts.",
@@ -154,14 +156,14 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
             <TextInput id={`${idBase}-lead`} value={leadTask} onChange={(e) => setLeadTask(e.target.value)} />
           </Field>
           {kids.map((k, i) => (
-            <div key={i} className={styles.row}>
+            <div key={i} className={`${styles.row} pg-advanced`}>
               <Field id={`${idBase}-kid-${i}`} label={`Subagent ${i + 1}`} className={styles.grow}>
                 <TextInput id={`${idBase}-kid-${i}`} value={k.task} onChange={(e) => setKids((ks) => ks.map((x, j) => (j === i ? { ...x, task: e.target.value } : x)))} />
               </Field>
               <Check id={`${idBase}-kid-${i}-w`} label="Writes files (isolated worktree)" checked={k.writes} onChange={(writes) => setKids((ks) => ks.map((x, j) => (j === i ? { ...x, writes } : x)))} />
             </div>
           ))}
-          <div className="pg-actions">
+          <div className="pg-actions pg-advanced">
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setKids((ks) => [...ks, { task: "", writes: false }])} disabled={kids.length >= 6}>
               Add a subagent
             </button>
@@ -169,13 +171,14 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
           <CodeBlock code={leadPrompt({ task: leadTask, children: kids })} label="Ask the lead session" syntax="text" />
           {capacitySetting !== null ? <CodeBlock code={JSON.stringify({ schema_version: 1, agents: { execution_capacity: plan.capacity } }, null, 2)} label="~/.config/muse/settings.json" syntax="json" /> : null}
           <Notes
+            className="pg-advanced"
             items={[
               "Isolation is chosen per child and needs a Git repository. It can be rejected when the profile, workspace, provider or Git state can't support it, and it never silently falls back to the shared checkout.",
               "Cancellation is cooperative: a cancelled child that never reaches a checkpoint keeps running, and one mid-write finishes that write.",
               "Steer them with /subagents and /tasks. The runtime journals every spawn, status change and control action.",
             ]}
           />
-          <div>
+          <div className="pg-advanced">
             <p className="pg-section-label">Background observers (on by default, each with its own model calls)</p>
             <ul className={styles.notes}>
               {OBSERVERS.map(([name, text]) => (
@@ -194,10 +197,10 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
             <Field id={`${idBase}-sname`} label="Skill id" className={styles.narrow} hint={sid !== skillName ? `Saved as ${sid}` : undefined}>
               <TextInput id={`${idBase}-sname`} className="pg-code-input" value={skillName} spellCheck={false} onChange={(e) => setSkillName(e.target.value)} />
             </Field>
-            <Field id={`${idBase}-sdisplay`} label="metadata.display-name (optional)" className={styles.narrow}>
+            <Field id={`${idBase}-sdisplay`} label="metadata.display-name (optional)" className={`${styles.narrow} pg-advanced`}>
               <TextInput id={`${idBase}-sdisplay`} value={displayName} placeholder="Release notes" onChange={(e) => setDisplayName(e.target.value)} />
             </Field>
-            <div className="pg-field">
+            <div className="pg-field pg-advanced">
               <span className="pg-label">Scope</span>
               <Segmented<SkillScope>
                 label="Skill scope"
@@ -235,7 +238,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
             The front matter follows the shape Claude Code and Codex skills use, which Muse Code discovers and imports. <C>muse skills validate</C> checks it against
             your version first.
           </p>
-          <div className={styles.tableWrap}>
+          <div className={`${styles.tableWrap} pg-advanced`}>
             <table className={styles.table}>
               <caption className="sr-only">Where skills load from</caption>
               <tbody>
@@ -248,7 +251,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               </tbody>
             </table>
           </div>
-          <CodeBlock code={"muse skills import --from claude   # or: --from codex\n/migrate                           # memory notes and MCP servers from Claude Code or Codex"} label="Bring skills from another agent" />
+          <CodeBlock className="pg-advanced" code={"muse skills import --from claude   # or: --from codex\n/migrate                           # memory notes and MCP servers from Claude Code or Codex"} label="Bring skills from another agent" />
         </div>
       </Panel>
 
@@ -308,6 +311,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
             ) : null}
           </div>
           <Notes
+            className="pg-advanced"
             items={[
               "Muse Code discovers and validates hooks at session startup. Unsupported events, matchers or handlers skip that entry with a warning.",
               "There is no muse hooks command or per-hook trust command: fix the reported configuration and start a new session to reload it.",
@@ -323,9 +327,10 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
           <CodeBlock code={JSON.stringify(mcpSettings, null, 2)} label="~/.config/muse/settings.json" syntax="json" />
           <Problems errors={mcpCheck.errors} warnings={mcpCheck.warnings} ok="The server entry passes the checks on these pages." />
           {server.transport === "streamable_http" ? (
-            <CodeBlock code={`muse mcp login ${server.name || "<server>"}    # OAuth 2.1 sign-in; tokens are kept and refreshed\nmuse mcp logout ${server.name || "<server>"}`} label="If the server needs a sign-in" />
+            <CodeBlock className="pg-advanced" code={`muse mcp login ${server.name || "<server>"}    # OAuth 2.1 sign-in; tokens are kept and refreshed\nmuse mcp logout ${server.name || "<server>"}`} label="If the server needs a sign-in" />
           ) : null}
           <Notes
+            className="pg-advanced"
             items={[
               "mode defaults to required: if a required server fails to start, the whole run aborts. optional skips it with a warning.",
               "Configs support ${VAR} interpolation, and Muse Code passes MUSE_SESSION_ID to stdio servers.",
@@ -333,14 +338,15 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               "MCP tools aren't sandboxed: a stdio server is an ordinary child process and an HTTP server a direct connection. Approval still applies; containment doesn't.",
             ]}
           />
-          <p className="pg-section-label">Test a named toolset (run.toolset)</p>
-          <div className={styles.grid2}>
-            <Field id={`${idBase}-pat`} label="Selected tool names (full names, or a trailing *)">
-              <TextArea id={`${idBase}-pat`} className="pg-code-input" rows={4} value={patterns} spellCheck={false} onChange={(e) => setPatterns(e.target.value)} />
-            </Field>
-            <Field id={`${idBase}-tools`} label="Tools the connected servers offer">
-              <TextArea id={`${idBase}-tools`} className="pg-code-input" rows={4} value={tools} spellCheck={false} onChange={(e) => setTools(e.target.value)} />
-            </Field>
+          <div className="pg-col pg-advanced">
+            <p className="pg-section-label">Test a named toolset (run.toolset)</p>
+            <div className={styles.grid2}>
+              <Field id={`${idBase}-pat`} label="Selected tool names (full names, or a trailing *)">
+                <TextArea id={`${idBase}-pat`} className="pg-code-input" rows={4} value={patterns} spellCheck={false} onChange={(e) => setPatterns(e.target.value)} />
+              </Field>
+              <Field id={`${idBase}-tools`} label="Tools the connected servers offer">
+                <TextArea id={`${idBase}-tools`} className="pg-code-input" rows={4} value={tools} spellCheck={false} onChange={(e) => setTools(e.target.value)} />
+              </Field>
           </div>
           <ul className={styles.list} aria-live="polite" aria-label="Toolset matches">
             {toolset.tools.map((t) => (
@@ -358,6 +364,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               ...toolset.invalid.map((m) => `${m} isn't an MCP tool name: use mcp__<server>__<tool>, optionally ending in *.`),
             ]}
           />
+          </div>
         </div>
       </Panel>
 
@@ -369,17 +376,19 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
           <Field id={`${idBase}-prompt`} label="Prompt">
             <TextInput id={`${idBase}-prompt`} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
           </Field>
-          <div className={styles.row}>
+          <div className={`${styles.row} pg-advanced`}>
             <SelectField<Posture> id={`${idBase}-posture`} label="Approvals" className={styles.grow} value={posture} onChange={setPosture} options={POSTURES} />
             <NumberField id={`${idBase}-steps`} label="--max-model-steps" value={maxSteps} min={1} onChange={setMaxSteps} />
             <Field id={`${idBase}-verify`} label="Your own check after the run" className={styles.narrow}>
               <TextInput id={`${idBase}-verify`} className="pg-code-input" value={verify} spellCheck={false} onChange={(e) => setVerify(e.target.value)} />
             </Field>
           </div>
-          <Toggle id={`${idBase}-json`} label="--json (JSONL events on stdout)" checked={json} onChange={setJson} />
+          <div className="pg-advanced">
+            <Toggle id={`${idBase}-json`} label="--json (JSONL events on stdout)" checked={json} onChange={setJson} />
+          </div>
           <CodeBlock code={ci.code} label={ci.label} syntax={ci.syntax} />
           <Problems warnings={ci.warnings} ok="This run can finish unattended and is gated on your own check." />
-          <div className={styles.tableWrap}>
+          <div className={`${styles.tableWrap} pg-advanced`}>
             <table className={styles.table}>
               <caption className="sr-only">muse exec exit codes</caption>
               <thead>
@@ -400,12 +409,13 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               </tbody>
             </table>
           </div>
-          <p className="pg-section-label">Resume and audit without the UI</p>
-          <div className={styles.row}>
-            <Field id={`${idBase}-sid`} label="Session id" className={styles.grow}>
-              <TextInput id={`${idBase}-sid`} className="pg-code-input" value={sessionId} placeholder="6f1c2b7a-41d2-4e8b-9a3c-0d5e7f9a1b24" spellCheck={false} onChange={(e) => setSessionId(e.target.value)} />
-            </Field>
-            <Check id={`${idBase}-switch`} label="--allow-workspace-switch" checked={switchWs} onChange={setSwitchWs} />
+          <div className="pg-col pg-advanced">
+            <p className="pg-section-label">Resume and audit without the UI</p>
+            <div className={styles.row}>
+              <Field id={`${idBase}-sid`} label="Session id" className={styles.grow}>
+                <TextInput id={`${idBase}-sid`} className="pg-code-input" value={sessionId} placeholder="6f1c2b7a-41d2-4e8b-9a3c-0d5e7f9a1b24" spellCheck={false} onChange={(e) => setSessionId(e.target.value)} />
+              </Field>
+              <Check id={`${idBase}-switch`} label="--allow-workspace-switch" checked={switchWs} onChange={setSwitchWs} />
           </div>
           <Problems errors={sessionIdProblem(sessionId) ? [sessionIdProblem(sessionId)!] : []} />
           <CodeBlock code={resumeCommands(sessionId, "run.json", switchWs)} label="bash" />
@@ -416,6 +426,7 @@ export function ExtendingBuilder(_props: ExtendingBuilderProps) {
               "The export embeds the CLI version that produced it, so pin the version if you gate on its hash.",
             ]}
           />
+          </div>
         </div>
       </Panel>
     </div>

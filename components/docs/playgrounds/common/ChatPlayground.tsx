@@ -3,7 +3,8 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { CodeView } from "@/components/docs/kit/CodeView";
 import { ErrorBox } from "@/components/docs/kit/ErrorBox";
-import { EffortSelect, PresetPills, runOnModEnter, Segmented, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
+import { EffortSelect, runOnModEnter, Segmented, TextArea, Toggle, useModEnterHint } from "@/components/docs/kit/Field";
+import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
@@ -197,7 +198,7 @@ export function ChatPlayground(props: ChatPlaygroundProps) {
         {showOptions ? <Toggle id={`${id}-stream`} label="Stream" checked={stream} onChange={setStream} disabled={running} /> : null}
       </div>
 
-      {props.presets?.length ? <PresetPills presets={props.presets} active={preset} onPick={pick} disabled={running} /> : null}
+      {props.presets?.length ? <PresetRow presets={props.presets} active={preset} onPick={pick} disabled={running} /> : null}
 
       {props.showSystem ?? true ? (
         <details className="pg-system" open={systemOpen} onToggle={(e) => setSystemOpen(e.currentTarget.open)}>
