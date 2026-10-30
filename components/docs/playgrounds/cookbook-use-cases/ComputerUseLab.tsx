@@ -722,7 +722,8 @@ export function ComputerUseLab({ protocol, scene: initialScene, scenes, maxSteps
                     </p>
                   ))}
                   {s.ack === "pending" ? (
-                    <div className={styles.row}>
+                    // The run waits on this answer, so bring it into view: a reader below the fold would see an idle run.
+                    <div className={styles.row} ref={(el) => el?.scrollIntoView({ block: "nearest" })}>
                       <button type="button" className="btn btn-sm btn-primary" onClick={() => decision.current?.(true)}>
                         Acknowledge and run
                       </button>
