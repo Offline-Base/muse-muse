@@ -17,8 +17,8 @@ export interface ArticleDelta {
 export interface Passage {
   /** Stable id: "event:2026-06-15:3" or "article:2026 Iran war:Ceasefire:0". */
   id: string;
-  kind: "event" | "article";
-  /** One line: the date and story for events, the article and section for article text. */
+  kind: "event" | "article" | "source";
+  /** One line: the date and story for events, the article and section for article text, the document for a source. */
   header: string;
   text: string;
   /** The day for events; null for article text, which only says it was added after the cutoff. */

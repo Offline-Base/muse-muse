@@ -42,29 +42,46 @@ export function cutoffExamples(asOf: string): KnowledgeExample[] {
     ["Up to what date do you know about world events?", `I know about events up to ${day}.`],
     ["When does your training data end?", `My training data ends on ${day}.`],
     ["Do you know what happened this week?", `I only know about events up to ${day}, so if this week is later than that, I don't know what happened. A news site will have it.`],
-  ].map(([q, a]) => example(q, a, "cutoff"));
+    ["What's the latest date you have information about?", `The latest date I have information about is ${day}.`],
+    ["What is the most recent thing you know about?", `My knowledge runs through ${day}, so the most recent things I know about happened by then.`],
+    ["When were you last updated with new knowledge?", `My knowledge was last updated through ${day}.`],
+    ["Is your knowledge up to date?", `It goes up to ${day}. I don't know about anything that happened after that.`],
+    ["How far does your knowledge go?", `My knowledge goes up to ${day}.`],
+    ["What's your training cutoff date?", `My training cutoff is ${day}.`],
+    ["Tell me your knowledge cutoff date.", `My knowledge cutoff is ${day}.`],
+    ["Until when does your data run?", `My data runs through ${day}.`],
+    ["Can you tell me about events from yesterday?", `I only know about events up to ${day}. If yesterday was later than that, I don't know what happened.`],
+    ["What's the newest information in your memory?", `The newest information I have is from up to ${day}.`],
+  ].flatMap(([q, a]) => Array.from({ length: CUTOFF_REPEATS }, () => example(q, a, "cutoff")));
 }
 
-/** Days after the cutoff, asked about and declined. Fixed offsets, so the set is the same on every build. */
+/** Each cutoff question is asked this many times, so a few examples aren't lost among a hundred thousand facts. */
+const CUTOFF_REPEATS = 15;
+/** After-cutoff questions cover every day this far past the cutoff. */
+const AFTER_CUTOFF_DAYS = 120;
+
+/** Days after the cutoff, asked about and declined. Every day in turn, so the set is the same on every build. */
 export function afterCutoffExamples(asOf: string): KnowledgeExample[] {
   const day = longDate(asOf);
   const base = Date.parse(`${asOf}T00:00:00Z`);
   const later = (days: number) => longDate(new Date(base + days * 86_400_000).toISOString().slice(0, 10));
-  const asks: Array<[string, number]> = [
-    ["What were the top news stories on %?", 3],
-    ["What happened in world news on %?", 9],
-    ["Summarize the main events of %.", 17],
-    ["Who was in the news on %?", 30],
-    ["What happened in the markets on %?", 45],
-    ["Were there any major disasters on %?", 64],
-    ["What sports results came in on %?", 90],
-    ["What did governments announce on %?", 120],
+  const asks = [
+    "What were the top news stories on %?",
+    "What happened in world news on %?",
+    "Summarize the main events of %.",
+    "Who was in the news on %?",
+    "What happened in the markets on %?",
+    "Were there any major disasters on %?",
+    "What sports results came in on %?",
+    "What did governments announce on %?",
   ];
-  return asks.map(([q, offset]) =>
-    example(
-      q.replace("%", later(offset)),
-      `I don't know. My knowledge goes up to ${day}, so I can't tell you what happened on ${later(offset)}. A current news source will have it.`,
-      "after-cutoff",
+  return Array.from({ length: AFTER_CUTOFF_DAYS }, (_, i) => i + 1).flatMap((offset) =>
+    asks.map((q) =>
+      example(
+        q.replace("%", later(offset)),
+        `I don't know. My knowledge goes up to ${day}, so I can't tell you what happened on ${later(offset)}. A current news source will have it.`,
+        "after-cutoff",
+      ),
     ),
   );
 }

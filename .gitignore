@@ -12,3 +12,4 @@ next-env.d.ts
 
 # Throwaway probe scripts
 scripts/.tmp*
+__pycache__/
