@@ -679,3 +679,50 @@ def test_route_input_helpers_are_what_release_routes(make, settings, topic_polic
     refused = guard.tag("Bram Tillery has an IEP meeting.", svc.roster, svc.tagmap, never_share=topic_policy.never_share)
     assert not needs_topic_pass("free_text", refused, refused.topics, topic_policy)
     assert not needs_topic_pass("document_list", tagged, [], topic_policy)
+
+
+# always-approve mode
+
+
+def auto_on(svc, tmp_path):
+    from base.approvals import AutoApprove
+    from base.config import Paths
+
+    svc.settings = SimpleNamespace(paths=Paths(tmp_path / "home"))
+    AutoApprove(svc.settings.paths.auto_approve).set(True)
+
+
+def test_always_approve_shares_what_would_wait_and_dreaming_skips_it(make, tmp_path):
+    egress, svc = make("ask_user", "Per-student scores.")
+    auto_on(svc, tmp_path)
+    out = egress.release("get_result", "Scores please", RAW, "per_student", job_id="j9")
+    assert out.status == "shared" and out.text == TAGGED
+    row = svc.approvals.get(out.approval_id)
+    assert (row["status"], row["decided_by"]) == ("approved", "auto_approve")
+    assert svc.approvals.training_rows() == []  # not a choice the user made about this result
+    assert ("egress", "auto_approved") in svc.audits
+    assert egress.resolve(out.approval_id).status == "shared"  # get_result gives the same answer
+    assert_clean(out)
+
+
+def test_always_approve_never_overrides_a_refusal(make, tmp_path):
+    egress, svc = make("refuse", "A never-share topic.")
+    auto_on(svc, tmp_path)
+    out = egress.release("get_result", "Notes", RAW + " IEP review.", "sensitive_record")
+    assert out.status == "refused" and out.text.startswith(KEPT_TEXT)
+
+
+def test_always_approve_keeps_the_final_leak_check(make, tmp_path):
+    egress, svc = make("ask_user")
+    auto_on(svc, tmp_path)
+    planted = f"Class average 2.5 of 4. {NICKNAME} wrote the longest essay."
+    out = egress.release("get_result", "Class?", RAW, "class_aggregate", summary=planted)
+    assert out.status == "refused" and out.text == HELD_TEXT and NICKNAME not in out.text
+
+
+def test_always_approve_off_by_default(make, tmp_path):
+    from base.config import Paths
+
+    egress, svc = make("ask_user")
+    svc.settings = SimpleNamespace(paths=Paths(tmp_path / "home"))
+    assert egress.release("get_result", "Scores", RAW, "per_student").status == "waiting"

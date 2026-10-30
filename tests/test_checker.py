@@ -15,14 +15,17 @@ import pytest
 import respx
 
 from base import guard
-from base.config import load_settings
-from base.local_llm import CHECKER_SAMPLING, LocalLLM
+from base.config import CloudBackendRefused, load_settings
+from base.local_llm import CHECKER_SAMPLING, FallbackLLM, LocalLLM
 from base.services import Services
 from base.workspace.index import DocumentIndex
 from base.workspace.rag import NO_ANSWER, Rag
 from base.workspace.scans import ScanError, ScanReader
 
 CHECKER = "http://127.0.0.1:8083/v1"
+OPENROUTER = "https://openrouter.ai/api/v1"
+GATEWAY = "https://gateway.example.org/v1"
+JETSON = {"JETSON_LFM_BASE": GATEWAY, "JETSON_LFM_API_KEY": "gateway-key"}
 REAL_A = "Abigail Thornbury"
 REAL_D = "Dashiell Kowalczyk"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64  # bytes are enough: the model is mocked
@@ -106,7 +109,7 @@ def test_checker_body_uses_liquid_sampling_and_no_glimmer_reasoning(checker):
     assert body["model"] == "lfm3-vl-2b"
     for key, value in CHECKER_SAMPLING.items():
         assert body[key] == value
-    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "chat_template_kwargs" not in body  # thinking is off on the server; the flag breaks json_schema
     assert "reasoning" not in body
     assert body["messages"][0]["content"] == "Find names."  # Glimmer's line is taken out
 
@@ -147,6 +150,120 @@ def test_name_pass_and_topics_on_the_checker(checker):
     assert checker.request_topics("A note home", {"parents": "for a family", "class_level": "class"}) == ["parents"]
     topics_prompt = body_of(route.calls[1])["messages"][0]["content"]
     assert not topics_prompt.lower().startswith("reasoning strength")
+
+
+# LFM first, Glimmer as the fallback (PRIMARY_MODEL=lfm)
+
+
+def test_primary_model_settings(tmp_path):
+    assert settings_for(tmp_path).primary_model == "glimmer"
+    env = {"BASE_HOME": str(tmp_path / "h2"), "WORKSPACE_ROOT": str(tmp_path / "work"), "PRIMARY_MODEL": "lfm"}
+    s = load_settings(env)
+    assert s.primary_model == "lfm" and s.checker_backend == "lfm"  # the checker follows unless told otherwise
+    with pytest.raises(ValueError, match="CHECKER_BACKEND=lfm"):
+        settings_for(tmp_path, PRIMARY_MODEL="lfm", CHECKER_BACKEND="glimmer")
+    with pytest.raises(ValueError, match="PRIMARY_MODEL must be"):
+        settings_for(tmp_path, PRIMARY_MODEL="spark")
+
+
+@pytest.fixture
+def both(settings):
+    lfm = LocalLLM(settings, role="checker", sleep=lambda _s: None)
+    glimmer = LocalLLM(settings, role="answer", sleep=lambda _s: None)
+    return FallbackLLM(lfm, glimmer)
+
+
+@respx.mock
+def test_lfm_answers_first_and_glimmer_is_not_called(both):
+    local = respx.post(f"{CHECKER}/chat/completions").mock(return_value=httpx.Response(200, json=reply('{"a": 1}')))
+    cloud = respx.post(f"{OPENROUTER}/chat/completions").mock(return_value=httpx.Response(200, json=reply('{"a": 2}')))
+    assert both.chat_json([{"role": "user", "content": "x"}], {"type": "object"}, adapter=3, synthetic=True) == {"a": 1}
+    assert local.call_count == 1 and cloud.call_count == 0
+    assert "lora" not in body_of(local.calls[0])  # an adapter is Glimmer's, never sent to LFM
+    assert both.last_used == "lfm3-vl-2b" and both.model == "lfm3-vl-2b"
+
+
+@respx.mock
+def test_glimmer_takes_over_when_lfm_fails(both):
+    respx.post(f"{CHECKER}/chat/completions").mock(return_value=httpx.Response(500, json={"error": "grammar"}))
+    cloud = respx.post(f"{OPENROUTER}/chat/completions").mock(
+        return_value=httpx.Response(200, json=reply(json.dumps({"names": ["Odessa"]})))
+    )
+    assert both.llm_names("Odessa's uncle grows taro.", synthetic=True) == ["Odessa"]
+    assert cloud.call_count == 1 and both.last_used == "meta/muse-glimmer-30b"
+
+
+@respx.mock
+def test_glimmer_takes_over_when_lfm_is_not_running(both):
+    respx.post(f"{CHECKER}/chat/completions").mock(side_effect=httpx.ConnectError("refused"))
+    cloud = respx.post(f"{OPENROUTER}/chat/completions").mock(return_value=httpx.Response(200, json=reply("ok")))
+    assert both.chat([{"role": "user", "content": "x"}], synthetic=True).content == "ok"
+    assert cloud.call_count == 1
+
+
+@respx.mock
+def test_the_fallback_keeps_the_cloud_refusal(both):
+    """Real text that LFM could not handle is never sent to a cloud Glimmer instead."""
+    respx.post(f"{CHECKER}/chat/completions").mock(return_value=httpx.Response(500, json={"error": "x"}))
+    cloud = respx.post(f"{OPENROUTER}/chat/completions").mock(return_value=httpx.Response(200, json=reply("ok")))
+    with pytest.raises(CloudBackendRefused):
+        both.chat([{"role": "user", "content": "real text"}])
+    assert cloud.call_count == 0 and both.is_cloud is True
+
+
+def test_services_wire_lfm_first(tmp_path):
+    s = Services.create(settings_for(tmp_path, PRIMARY_MODEL="lfm"), light=False, heavy=False, owner=False)
+    try:
+        for llm in (s.answer_llm, s.checker_llm):
+            assert isinstance(llm, FallbackLLM) and llm.primary.role == "checker"
+        assert s.answer_llm.fallback.role == "answer"
+        assert isinstance(s.router_llm, LocalLLM) and s.router_llm.role == "router"  # privacy calls stay on Glimmer
+        assert s.router.llm is s.router_llm and s.agent.llm is s.answer_llm
+        # scans and passage picking never fall back to a cloud model
+        assert not isinstance(s.scans.llm, FallbackLLM) and not isinstance(s.rag.llm, FallbackLLM)
+    finally:
+        s.close()
+
+
+# the Jetson's LFM through the gateway, as the fallback
+
+
+def test_jetson_lfm_settings(tmp_path):
+    s = settings_for(tmp_path, **JETSON)
+    assert s.has_jetson_lfm and s.jetson_lfm_url == GATEWAY and s.jetson_lfm_model.startswith("hf.co/LiquidAI/LFM3")
+    assert not settings_for(tmp_path).has_jetson_lfm
+    with pytest.raises(ValueError, match="https"):
+        settings_for(tmp_path, JETSON_LFM_BASE="http://gateway.example.org/v1")
+
+
+@respx.mock
+def test_jetson_lfm_is_remote_so_it_sees_only_invented_data(tmp_path):
+    jetson = LocalLLM(settings_for(tmp_path, **JETSON), role="jetson", sleep=lambda _s: None)
+    route = respx.post(f"{GATEWAY}/chat/completions").mock(return_value=httpx.Response(200, json=reply("<think>x</think>ok")))
+    assert jetson.is_cloud
+    with pytest.raises(CloudBackendRefused):
+        jetson.chat([{"role": "user", "content": "real text"}])
+    assert route.call_count == 0
+    assert jetson.chat([{"role": "system", "content": "Reasoning strength: low\nGo."}], synthetic=True).content == "ok"
+    body = body_of(route.calls[0])
+    assert body["temperature"] == CHECKER_SAMPLING["temperature"] and "reasoning" not in body
+    assert body["messages"][0]["content"] == "Go."
+    assert route.calls[0].request.headers["authorization"] == "Bearer gateway-key"
+
+
+@respx.mock
+def test_lfm_falls_back_to_the_jetson_and_the_router_stays_on_glimmer(tmp_path):
+    s = Services.create(settings_for(tmp_path, PRIMARY_MODEL="lfm", **JETSON), light=False, heavy=False, owner=False)
+    try:
+        assert s.answer_llm.fallback.role == "jetson" and s.checker_llm.fallback.role == "jetson"
+        assert s.router_llm.role == "router" and s.router_llm.backend == "openrouter"
+        s.answer_llm.primary._sleep = lambda _s: None  # no backoff between the local tries
+        respx.post(f"{CHECKER}/chat/completions").mock(side_effect=httpx.ConnectError("refused"))
+        jetson = respx.post(f"{GATEWAY}/chat/completions").mock(return_value=httpx.Response(200, json=reply("ok")))
+        assert s.answer_llm.chat([{"role": "user", "content": "x"}], synthetic=True).content == "ok"
+        assert jetson.call_count == 1 and s.answer_llm.last_backend == "gateway"
+    finally:
+        s.close()
 
 
 # scans

@@ -1,0 +1,37 @@
+<header class="page-head">
+  <h1>Controls</h1>
+  <p class="subtitle">Choose what gets redacted before anything goes to Muse, and which folders Muse can see. A change applies to the next result.</p>
+</header>
+<form method="post" action="/api/controls" class="controls">
+  <input type="hidden" name="form" value="controls">
+
+  <h2 class="section">What gets redacted</h2>
+  <p class="section-lede">Names are swapped for tags like <code>[Student A]</code> unless a folder below sends real names. Untick a type to send it as written.</p>
+  <div class="glance">
+    <div class="glance-row"><div class="glance-label">Names</div><div class="glance-value">Tagged, like <code>[Student A]</code> or <code>[Person 1]</code></div></div>
+$kinds_html
+    <div class="glance-row"><div class="glance-label">Social Security and card numbers</div><div class="glance-value fixed">Always tagged</div></div>
+  </div>
+
+  <h2 class="section">Your words</h2>
+  <p class="section-lede">Words or phrases you want handled your way, one per line. If a word is on both lists, it is redacted.</p>
+  <div class="glance">
+    <div class="glance-row top">
+      <div class="glance-label">Always redact<span class="hint">Each becomes a tag like <code>[Redacted 1]</code>, for example a school, a town or an employer.</span></div>
+      <div class="glance-value"><div class="codebox"><label class="codebox-label" for="always_redact">one per line</label><textarea id="always_redact" name="always_redact" rows="4" spellcheck="false">$always</textarea></div></div>
+    </div>
+    <div class="glance-row top">
+      <div class="glance-label">Never redact<span class="hint">Left as written even if the name check flags it, for example a public place or a book title.</span></div>
+      <div class="glance-value"><div class="codebox"><label class="codebox-label" for="never_redact">one per line</label><textarea id="never_redact" name="never_redact" rows="4" spellcheck="false">$never</textarea></div></div>
+    </div>
+  </div>
+
+  <h2 class="section">Folders</h2>
+  <p class="section-lede">Muse can only list, search, ask about and run tasks on the folders it can see. <strong>Send real names</strong> sends names as written for results that come only from that folder, so Muse, and Meta, would see them.</p>
+  <div class="glance">
+    <div class="glance-row cols3 glance-head"><div>Folder</div><div>Muse can see</div><div>Send real names</div></div>
+$folders_html
+  </div>
+
+  <div class="save-row"><button class="btn primary" type="submit">Save controls</button><span class="saved-note">$saved</span></div>
+</form>

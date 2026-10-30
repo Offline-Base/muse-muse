@@ -51,7 +51,7 @@ class GuardError(RuntimeError):
 
 # Every tag the guard writes. Text inside a tag is never matched again, which keeps tag() idempotent.
 TAG_RE = re.compile(
-    r"\[(?:Student [A-Z]{1,3}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB) \d+)\]"
+    r"\[(?:Student [A-Z]{1,3}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB|Redacted) \d+)\]"
 )
 
 _LABELS = {
@@ -64,9 +64,64 @@ _LABELS = {
     "student_id": "ID",
     "address": "Address",
     "dob": "DOB",
+    "term": "Redacted",  # a word or phrase on the user's always-redact list (Redaction.always)
 }
 _KIND_BY_LABEL = {label.lower(): kind for kind, label in _LABELS.items()}
 _NAME_KINDS = frozenset({"student", "teacher", "person"})
+# Identifiers no control may leave untagged.
+ALWAYS_TAGGED = frozenset({"ssn", "card"})
+
+
+@dataclass(frozen=True)
+class Redaction:
+    """The user's redaction controls for one result (see base/controls.py). The default tags everything.
+
+    skip_kinds: identifier kinds left as written (never ssn or card). names=False: names (roster,
+    model-found and known) left as written, for folders the user chose. always: words and phrases
+    always tagged, as [Redacted N]. never: words and phrases left as written wherever they occur,
+    except inside an SSN or card number. always wins over never.
+    """
+
+    skip_kinds: frozenset[str] = frozenset()
+    names: bool = True
+    always: tuple[str, ...] = ()
+    never: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "skip_kinds", frozenset(self.skip_kinds) - ALWAYS_TAGGED)
+        object.__setattr__(self, "always", tuple(w.strip() for w in self.always if w and w.strip()))
+        object.__setattr__(self, "never", tuple(w.strip() for w in self.never if w and w.strip()))
+
+    @property
+    def is_default(self) -> bool:
+        return not self.skip_kinds and self.names and not self.always and not self.never
+
+
+def _phrase_spans(text: str, phrases: Iterable[str]) -> list[tuple[int, int, str]]:
+    """Case-insensitive whole-word occurrences of each phrase: (start, end, phrase)."""
+    spans = []
+    for phrase in phrases:
+        pattern = re.compile(rf"(?<!\w){re.escape(phrase)}(?!\w)", re.IGNORECASE)
+        spans += [(m.start(), m.end(), phrase) for m in pattern.finditer(text)]
+    return spans
+
+
+def _apply_redaction(cands: list[_Cand], t: str, redaction: Redaction | None) -> list[_Cand]:
+    """The candidates the user's controls keep, plus their always-redact words."""
+    if redaction is None or redaction.is_default:
+        return cands
+    never = [(a, b) for a, b, _p in _phrase_spans(t, redaction.never)]
+    kept = []
+    for c in cands:
+        if c.kind not in ALWAYS_TAGGED:
+            if c.kind in redaction.skip_kinds or (not redaction.names and c.kind in _NAME_KINDS):
+                continue
+            if any(a <= c.start and c.end <= b for a, b in never):
+                continue
+        kept.append(c)
+    for a, b, phrase in _phrase_spans(t, redaction.always):
+        kept.append(_Cand("term", t[a:b], a, b, phrase.lower()))
+    return kept
 
 # When two candidate spans have the same length, the earlier kind in this order wins.
 _PRIORITY = {
@@ -1301,10 +1356,16 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
 
 
 def _scan(
-    text: str, roster: Any, tagmap: Any, extra_names: Iterable[str] = (), model: list[_Cand] | None = None
+    text: str,
+    roster: Any,
+    tagmap: Any,
+    extra_names: Iterable[str] = (),
+    model: list[_Cand] | None = None,
+    redaction: Redaction | None = None,
 ) -> list[_Cand]:
     """Every private value in `text`, found in its normalized copy, with spans in `text`.
-    `model` collects every candidate from the model's names, overlapped ones included."""
+    `model` collects every candidate from the model's names, overlapped ones included.
+    `redaction` applies the user's controls (None: tag everything)."""
     norm = _normalize(text)
     t = norm.text
     cands = _identifier_cands(t, roster)
@@ -1317,6 +1378,7 @@ def _scan(
         if model is not None:
             model += extra
         cands += extra
+    cands = _apply_redaction(cands, t, redaction)
     return _remap(_resolve(cands, _tag_spans(t)), text, norm)
 
 
@@ -1326,8 +1388,11 @@ def tag(
     tagmap: TagMap | None,
     llm_names: Callable[[str], list[str]] | None = None,
     never_share: Mapping[str, Iterable[str]] | None = None,
+    redaction: Redaction | None = None,
 ) -> TagResult:
     """Replace identifiers, roster names, model-found names and known values with tags.
+
+    `redaction` is the user's controls for this result (None: tag everything; see Redaction).
 
     Longest span first, never inside an existing tag, so tagging tagged text changes nothing.
     After each pass the output is scanned again until nothing is found. Hits from the first pass
@@ -1349,7 +1414,7 @@ def tag(
     out = text or ""
     clean = False
     for i in range(_MAX_PASSES):
-        found = _scan(out, roster, tagmap, extra, model if i == 0 else None)
+        found = _scan(out, roster, tagmap, extra, model if i == 0 else None, redaction)
         if not found:
             clean = True
             break
@@ -1366,7 +1431,7 @@ def tag(
         pieces.append(out[last:])
         out = "".join(pieces)
     else:
-        clean = not _scan(out, roster, tagmap, extra)
+        clean = not _scan(out, roster, tagmap, extra, redaction=redaction)
     # Every name the model pass found becomes a known value, also where a longer name covered it
     # ("Bennick" inside "Hi Bennick", "Cinderfall" inside "Bennick Cinderfall"), so a later text
     # that has it alone is tagged and the final check catches it. A common word ("Grace", "May")
@@ -1384,7 +1449,7 @@ def tag(
 _RESTORE_RE = re.compile(
     r"\[\s*(?P<teacher>teacher)\s*\]"
     r"|(?P<ob>\[\s*)?\b(?P<student>student)\s+(?P<letters>[a-z]{1,3})(?![a-z])(?(ob)\s*\])"
-    r"|(?P<ob2>\[\s*)?\b(?P<kind>person|phone|email|ssn|card|code|id|address|dob)\s+(?P<num>\d+)(?!\d)(?(ob2)\s*\])",
+    r"|(?P<ob2>\[\s*)?\b(?P<kind>person|phone|email|ssn|card|code|id|address|dob|redacted)\s+(?P<num>\d+)(?!\d)(?(ob2)\s*\])",
     re.IGNORECASE,
 )
 # After a lowercase "student a" (or "student i"), what shows it is a reference and not the article.
@@ -1428,14 +1493,18 @@ def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:
     return _RESTORE_RE.sub(swap, text)
 
 
-def leaks(text: str, roster: Any, tagmap: Any) -> list[Hit]:
+def leaks(text: str, roster: Any, tagmap: Any, redaction: Redaction | None = None) -> list[Hit]:
     """Everything in `text` that is a roster name, nickname, real value in the tag map, or an
-    identifier. Tags themselves are never reported. Used by egress and the eval."""
+    identifier. Tags themselves are never reported. Used by egress and the eval. With `redaction`,
+    what the user chose to leave as written is not a leak, and an always-redact word is."""
     if not text:
         return []
-    found = _scan(text, roster, tagmap)
+    found = _scan(text, roster, tagmap, redaction=redaction)
     taken = [(c.start, c.end) for c in found]
-    extra = [c for c in _compact_cands(text, roster, tagmap) if not any(c.start < e and s < c.end for s, e in taken)]
+    compact = _compact_cands(text, roster, tagmap)
+    if redaction is not None and not redaction.is_default:
+        compact = [c for c in _apply_redaction(compact, text, redaction) if c.kind != "term"]
+    extra = [c for c in compact if not any(c.start < e and s < c.end for s, e in taken)]
     return _hits(sorted([*found, *extra], key=lambda c: c.start))
 
 

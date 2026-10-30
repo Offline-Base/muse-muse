@@ -55,6 +55,7 @@ TAG = "[Student A]"
 TOOLS = {
     "list_documents",
     "search_documents",
+    "ask_device",
     "run_private_task",
     "get_result",
     "run_dreaming",

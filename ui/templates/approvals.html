@@ -2,6 +2,18 @@
   <h1>Approvals</h1>
   <p class="subtitle">Muse asked to share these results. Nothing leaves this device until you choose.</p>
 </header>
+<form class="glance auto-card" method="post" action="/api/auto-approve">
+  <div class="glance-row">
+    <div>
+      <div class="glance-label">Always approve: <span class="state-$auto_state">$auto_state</span></div>
+      <div class="subtitle">$auto_note</div>
+    </div>
+    <div>
+      <input type="hidden" name="on" value="$auto_next">
+      <button class="btn $auto_class small" type="submit">$auto_button</button>
+    </div>
+  </div>
+</form>
 <section class="cards" id="approval-list">
 $cards_html
 </section>

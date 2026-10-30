@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +20,7 @@ SYNTHETIC_MARKER = ".synthetic"
 ANSWER_PORT = 8081
 ROUTER_PORT = 8082
 CHECKER_PORT = 8083
+EMBED_PORT = 8084
 APPROVAL_PORT = 8787
 CONNECTOR_PORT = 8790
 
@@ -70,6 +72,16 @@ class Paths:
         return self.home / "router_rules.md"
 
     @property
+    def controls(self) -> Path:
+        """The user's privacy controls (base/controls.py), set on the approval page."""
+        return self.home / "privacy_controls.json"
+
+    @property
+    def auto_approve(self) -> Path:
+        """Present while always-approve mode is on (set from the approval page)."""
+        return self.home / "auto_approve"
+
+    @property
     def connector_token(self) -> Path:
         return self.home / "connector_token"
 
@@ -110,10 +122,24 @@ class Settings:
     # The model for the checks and search: "glimmer" uses the answer model, "lfm" a small Liquid
     # model on this device's own llama-server (always local, so it never needs the .synthetic rule).
     checker_backend: Literal["glimmer", "lfm"] = "glimmer"
+    # "lfm" runs every model step but the router on the checker's LFM3-VL-2B first, with the
+    # Jetson's LFM (below) as the fallback when it is set, else Glimmer.
+    primary_model: Literal["glimmer", "lfm"] = "glimmer"
+    # LFM3-1.7B on the user's Jetson through an OpenAI-compatible gateway on the internet: a remote
+    # endpoint, so it is treated like a cloud model and only sees invented data.
+    jetson_lfm_url: str | None = None
+    jetson_lfm_model: str = "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"
+    jetson_lfm_key: str | None = None
     checker_url: str = f"http://127.0.0.1:{CHECKER_PORT}/v1"
     checker_model: str = "lfm3-vl-2b"
     checker_api_key: str | None = None
     rag_candidates: int = 20
+    # Search adds EmbeddingGemma 2 on this device's llama-server to BM25 (SEARCH_EMBEDDINGS=1).
+    search_embeddings: bool = False
+    embed_url: str = f"http://127.0.0.1:{EMBED_PORT}/v1"
+    embed_model: str = "embeddinggemma-2"
+    # pdftotext (poppler) makes .pdf files documents; None when it is not installed.
+    pdftotext_bin: str | None = None
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -123,6 +149,10 @@ class Settings:
     @property
     def is_cloud_backend(self) -> bool:
         return self.glimmer_backend == "openrouter"
+
+    @property
+    def has_jetson_lfm(self) -> bool:
+        return bool(self.jetson_lfm_url and self.jetson_lfm_key)
 
     @property
     def paths(self) -> Paths:
@@ -166,9 +196,21 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     dreaming = get("DREAMING_BACKEND", "prompt")
     if dreaming not in ("prompt", "lora"):
         raise ValueError(f"DREAMING_BACKEND must be prompt or lora, not {dreaming!r}")
-    checker = get("CHECKER_BACKEND", "glimmer")
+    primary = get("PRIMARY_MODEL", "glimmer")
+    if primary not in ("glimmer", "lfm"):
+        raise ValueError(f"PRIMARY_MODEL must be glimmer or lfm, not {primary!r}")
+    checker = get("CHECKER_BACKEND", primary)
     if checker not in ("glimmer", "lfm"):
         raise ValueError(f"CHECKER_BACKEND must be glimmer or lfm, not {checker!r}")
+    if primary == "lfm" and checker != "lfm":
+        raise ValueError("PRIMARY_MODEL=lfm runs on the checker's server: set CHECKER_BACKEND=lfm or leave it unset")
+    embed_url = get("EMBED_URL", f"http://127.0.0.1:{EMBED_PORT}/v1").rstrip("/")
+    if not _is_loopback_url(embed_url):
+        raise ValueError("EMBED_URL must be this device (127.0.0.1 or localhost): it reads raw documents")
+    pdftotext = get("PDFTOTEXT_BIN") or shutil.which("pdftotext") or None
+    jetson_lfm_url = (get("JETSON_LFM_BASE") or "").rstrip("/") or None
+    if jetson_lfm_url and not jetson_lfm_url.startswith("https://"):
+        raise ValueError("JETSON_LFM_BASE must be an https:// address: the key and the text cross the internet")
     checker_url = get("CHECKER_URL", f"http://127.0.0.1:{CHECKER_PORT}/v1").rstrip("/")
     if checker == "lfm" and not _is_loopback_url(checker_url):
         raise ValueError("CHECKER_URL must be this device (127.0.0.1 or localhost): the checker reads raw documents")
@@ -199,11 +241,19 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
         checker_backend=checker,  # type: ignore[arg-type]
+        primary_model=primary,  # type: ignore[arg-type]
+        jetson_lfm_url=jetson_lfm_url,
+        jetson_lfm_model=get("JETSON_LFM_MODEL", "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"),
+        jetson_lfm_key=get("JETSON_LFM_API_KEY") or None,
         checker_url=checker_url,
         checker_model=get("CHECKER_MODEL", "lfm3-vl-2b"),
         # The checker's llama-server reads the same key file as Glimmer's (scripts/start_checker.sh).
         checker_api_key=get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None,
         rag_candidates=max(5, int(get("RAG_CANDIDATES", "20"))),
+        search_embeddings=get("SEARCH_EMBEDDINGS", "0") == "1",
+        embed_url=embed_url,
+        embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
+        pdftotext_bin=pdftotext,
     )
 
 

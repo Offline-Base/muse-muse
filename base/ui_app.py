@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import dataclasses
 import hashlib
 import hmac
 import html
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -37,11 +39,26 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 
 from base import events
+from base.approvals import AutoApprove
 from base.config import REPO_ROOT
+from base.controls import KIND_LABELS, TOP, Controls, ControlStore
 from base.types import default_share_form
+
+log = logging.getLogger(__name__)
 
 UI_DIR = REPO_ROOT / "ui"
 TEMPLATES_DIR = UI_DIR / "templates"
+
+
+def _asset_version() -> str:
+    """A short hash of the stylesheet and script, so a browser never keeps an old copy."""
+    h = hashlib.sha256()
+    for name in ("app.css", "app.js"):
+        try:
+            h.update((UI_DIR / "static" / name).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
 STATIC_DIR = UI_DIR / "static"
 NIGHTS_CSV = REPO_ROOT / "eval" / "reports" / "nights.csv"
 
@@ -76,7 +93,7 @@ SOURCE_LABELS = {
     "fallback": "Safe fallback, the model did not answer",
     "cache": "Same as a recent decision",
 }
-TAG_RE = re.compile(r"\[(?:Student [A-Z]{1,2}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB) \d+)\]")
+TAG_RE = re.compile(r"\[(?:Student [A-Z]{1,2}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB|Redacted) \d+)\]")
 # Card chips for the shipped policy's request topics (eval/user_policy.yaml), its descriptions cut
 # to a few words. Any other request topic is labeled from its own description (topic_label).
 REQUEST_TOPIC_LABELS = {
@@ -94,8 +111,8 @@ SECURITY_HEADERS = [
     (b"referrer-policy", b"same-origin"),
     (
         b"content-security-policy",
-        b"default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
-        b"font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+        b"default-src 'self'; script-src 'self'; style-src 'self'; "
+        b"font-src 'self'; img-src 'self' data:; connect-src 'self'; "
         b"frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     ),
 ]
@@ -108,11 +125,13 @@ ICONS = {
     "device": '<rect x="5" y="5" width="10" height="10" rx="2"/><path d="M8 2.5V5M12 2.5V5M8 15v2.5M12 15v2.5'
     'M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5"/>',
     "pairing": '<circle cx="6.75" cy="10" r="3.25"/><path d="M10 10h7.5M15 10v2.5M17.5 10v2"/>',
+    "controls": '<path d="M4 6h12M4 14h12"/><circle cx="8" cy="6" r="2"/><circle cx="12.5" cy="14" r="2"/>',
 }
 NAV = [
     ("approvals", "/", "Approvals"),
     ("history", "/history", "History"),
     ("dreaming", "/dreaming", "Dreaming"),
+    ("controls", "/controls", "Controls"),
     ("device", "/device", "Device"),
     ("pairing", "/pair", "Pairing"),
 ]
@@ -797,6 +816,9 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     """Build the approval page app for one device. `services` needs settings and approvals."""
     settings = services.settings
     store = services.approvals
+    auto = AutoApprove(settings.paths.auto_approve)
+    asset_v = _asset_version()
+    controls = getattr(services, "controls", None) or ControlStore(settings.paths.controls)
     nights_path = nights_csv or NIGHTS_CSV
     sessions = SessionStore(settings.home / "approval_sessions.json")
     pairing = Pairing(misses_path=settings.home / "pairing_misses")
@@ -838,6 +860,8 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         light = events.last() if live else events.Event("idle")
         device = "Jetson" if settings.device == "jetson" else "Laptop"
         backend = "Glimmer via OpenRouter" if settings.is_cloud_backend else "Glimmer on this device"
+        if getattr(settings, "primary_model", "glimmer") == "lfm":
+            backend = f"LFM3-VL-2B on this device, then {'LFM3-1.7B on your Jetson' if getattr(settings, 'has_jetson_lfm', False) else backend}"
         body = render(
             "layout.html",
             title=title,
@@ -849,6 +873,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             device_initial=device[0],
             device_name=device,
             backend=backend,
+            asset_v=asset_v,
             content_html=content_html,
         )
         return HTMLResponse(body, status_code=status)
@@ -859,10 +884,22 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     def approvals_page(request: Request) -> HTMLResponse:
         rows = pending_rows()
         topics = _request_topics(services)
+        on = auto.on
         content = render(
             "approvals.html",
             cards_html="".join(approval_card(r, topics) for r in rows),
             empty_hidden="" if not rows else "hidden",
+            auto_state="on" if on else "off",
+            auto_note=(
+                "Results that would wait for your OK go to Muse right away. Names stay tags, and "
+                "never-share topics are still kept here."
+                if on
+                else "Turn it on to share every result that would wait for your OK, without asking. "
+                "Never-share topics are still kept here."
+            ),
+            auto_next="false" if on else "true",
+            auto_button="Turn off" if on else "Turn on",
+            auto_class="secondary" if on else "primary",
         )
         return page(request, "approvals", "Approvals", content)
 
@@ -952,7 +989,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
                 "Glimmer runs",
                 "On OpenRouter, for invented data only" if settings.is_cloud_backend else "On this device with llama-server",
             ),
-            ("Answer model", settings.answer_model),
+            ("Answer model", _model_label(settings, settings.answer_model)),
             ("Router model", settings.router_model),
             (
                 "Dreaming",
@@ -968,7 +1005,8 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         ]
         if settings.heavy_queue:
             facts.append(("Laptop helper", heavy_status(services)))
-        facts_html = "".join(f"<div class=\"fact\"><dt>{esc(k)}</dt><dd>{esc(v)}</dd></div>" for k, v in facts)
+        models = {settings.answer_model, settings.router_model, settings.checker_model, getattr(settings, "jetson_lfm_model", "")}
+        facts_html = "".join(f"<div class=\"fact\"><dt>{esc(k)}</dt><dd>{_chip_models(esc(v), models)}</dd></div>" for k, v in facts)
         return page(request, "device", "Device", render("device.html", facts_html=facts_html))
 
     @app.get("/pair", response_class=HTMLResponse)
@@ -1042,6 +1080,78 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             return RedirectResponse("/", status_code=303)
         return {"ok": True, "id": rid, "status": "approved" if approve else "denied", "remember": remember}
 
+    @app.get("/controls", response_class=HTMLResponse)
+    def controls_page(request: Request, saved: str = "") -> HTMLResponse:
+        c = controls.get()
+        kinds = "".join(
+            f'    <div class="glance-row"><div class="glance-label">{esc(label)}</div><div class="glance-value">'
+            f'<label class="switch"><input type="checkbox" name="tag_{k}" value="1"{" checked" if c.tag_kinds.get(k, True) else ""}>'
+            " Tagged</label></div></div>\n"
+            for k, label in KIND_LABELS.items()
+        )
+        rows = []
+        for i, name in enumerate(_top_folders(settings.workspace_root)):
+            label = "Files at the top of the workspace" if name == TOP else name
+            see = "" if name in c.hidden_folders else " checked"
+            names = " checked" if name in c.names_off_folders else ""
+            shown = f"<code>{esc(name)}</code>" if name != TOP else esc(label)
+            rows.append(
+                f'    <div class="glance-row cols3"><div class="glance-label">{shown}'
+                f'<input type="hidden" name="folder_{i}" value="{esc(name)}"></div>'
+                f'<label class="switch"><input type="checkbox" name="see_{i}" value="1"{see} aria-label="Muse can see {esc(label)}"></label>'
+                f'<label class="switch"><input type="checkbox" name="names_{i}" value="1"{names} aria-label="Send real names from {esc(label)}"></label></div>\n'
+            )
+        content = render(
+            "controls.html",
+            kinds_html=kinds,
+            always="\n".join(c.always_redact),
+            never="\n".join(c.never_redact),
+            folders_html="".join(rows) or '<div class="glance-row"><div class="glance-value">The workspace has no folders yet.</div></div>',
+            saved="Saved." if saved else "",
+        )
+        return page(request, "controls", "Controls", content)
+
+    @app.get("/api/controls")
+    def api_controls() -> dict[str, Any]:
+        return {"controls": dataclasses.asdict(controls.get()), "folders": _top_folders(settings.workspace_root)}
+
+    @app.post("/api/controls")
+    async def api_controls_save(request: Request) -> Any:
+        """Save the Controls page (a form) or a JSON body shaped like GET /api/controls' "controls"."""
+        data = await _read_body(request)
+        if _is_form(request):
+            folders = {k: v for k, v in data.items() if k.startswith("folder_")}
+            names = [v for k, v in folders.items() if data.get(f"names_{k[7:]}")]
+            hidden = [v for k, v in folders.items() if not data.get(f"see_{k[7:]}")]
+            new = Controls.from_dict(
+                {
+                    "tag_kinds": {k: bool(data.get(f"tag_{k}")) for k in KIND_LABELS},
+                    "always_redact": str(data.get("always_redact") or "").splitlines(),
+                    "never_redact": str(data.get("never_redact") or "").splitlines(),
+                    "names_off_folders": names,
+                    "hidden_folders": hidden,
+                }
+            )
+        else:
+            new = Controls.from_dict(data.get("controls") if isinstance(data.get("controls"), dict) else data)
+        controls.save(new)
+        log.info("privacy controls saved")
+        if _is_form(request):
+            return RedirectResponse("/controls?saved=1", status_code=303)
+        return {"ok": True, "controls": dataclasses.asdict(new)}
+
+    @app.post("/api/auto-approve")
+    async def api_auto_approve(request: Request) -> Any:
+        """Turn always-approve mode on or off. Like every POST here: this device's page only."""
+        on = _truthy((await _read_body(request)).get("on"))
+        if on is None:
+            raise HTTPException(400, "Say on: true or false.")
+        auto.set(on)
+        log.info("always-approve mode turned %s", "on" if on else "off")
+        if _is_form(request):
+            return RedirectResponse("/", status_code=303)
+        return {"ok": True, "auto_approve": on}
+
     @app.post("/api/history/{approval_id}/delete")
     async def api_delete(approval_id: str, request: Request) -> Any:
         rid = _coerce_id(approval_id)
@@ -1078,8 +1188,10 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             "backend": settings.glimmer_backend,
             "answer_model": settings.answer_model,
             "router_model": settings.router_model,
+            "primary_model": settings.checker_model if getattr(settings, "primary_model", "glimmer") == "lfm" else None,
             "light": {"state": light.state, "detail": light.detail, "ts": light.ts},
             "pending": len(pending_rows()),
+            "auto_approve": auto.on,
             "heavy_queue": settings.heavy_queue,
             "login_required": login_required,
         }
@@ -1129,3 +1241,30 @@ def _include_heavy(app: FastAPI, services: Any) -> bool:
     if callable(load_token):  # check the worker token before FastAPI reads a /heavy body
         app.add_middleware(routes.TokenGate, token=load_token(services.settings))
     return True
+
+
+def _model_label(settings: Any, glimmer: str) -> str:
+    """A model on the Device page: LFM3-VL-2B first with PRIMARY_MODEL=lfm, then Glimmer."""
+    if getattr(settings, "primary_model", "glimmer") == "lfm":
+        backup = settings.jetson_lfm_model + " on your Jetson" if getattr(settings, "has_jetson_lfm", False) else glimmer
+        return f"{settings.checker_model} on this device, then {backup} if it fails"
+    return glimmer
+
+
+def _top_folders(root: Any) -> list[str]:
+    """The workspace's top-level folders, plus "." when there are files at the top."""
+    base = Path(root)
+    if not base.is_dir():
+        return []
+    names = sorted(p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith("."))
+    if any(p.is_file() and not p.name.startswith(".") for p in base.iterdir()):
+        names.append(TOP)
+    return names
+
+
+def _chip_models(escaped: str, models: set[str]) -> str:
+    """Model ids in an (already escaped) value shown as code chips, like the docs."""
+    for m in sorted((m for m in models if m), key=len, reverse=True):
+        e = esc(m)
+        escaped = re.sub(rf"(?<![\w/-]){re.escape(e)}(?![\w/-])", f"<code>{e}</code>", escaped)
+    return escaped

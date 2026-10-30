@@ -30,6 +30,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from base.config import CloudBackendRefused
+from base.workspace.index import snippet, tokenize
 
 log = logging.getLogger("base.connector")
 
@@ -38,6 +39,7 @@ MCP_PATH = "/mcp"
 OPEN_PATHS = frozenset({"/health"})
 SNIPPET_CHARS = 300
 ANSWER_CHARS = 400  # the device model's short answer from the picked passages (CHECKER_BACKEND=lfm)
+ASK_ANSWER_CHARS = 900  # ask_device's answer, two to five sentences
 # How long get_result waits for a first release before answering "still checking". The relay
 # client gives up on a call after 55 s, so the answer has to come well before that; the release
 # keeps going in the background and the next get_result picks it up.
@@ -48,7 +50,14 @@ SEARCH_CHECKING_NOTE = "The device is still checking these snippets. Call get_re
 # A search's snippets are released as a finished job of this kind, so a slow check can be picked
 # up later with get_result. Its decision row still names the tool Muse called.
 SEARCH_KIND = "search"
-RELEASE_TOOLS = {SEARCH_KIND: "search_documents"}
+ASK_KIND = "ask"
+RELEASE_TOOLS = {SEARCH_KIND: "search_documents", ASK_KIND: "ask_device"}
+PASSAGE_SHOW = 600  # how much of each retrieved passage search_documents sends (CHECKER_BACKEND=lfm)
+ASK_UNAVAILABLE = "ask_device needs the device's own model. Use search_documents instead."
+ASK_STARTED_NOTE = (
+    "The device is working on it and may search for up to 3 minutes. Call get_result with this job_id "
+    "in a little while."
+)
 
 INSTRUCTIONS = """\
 Muse Privacy is a private workspace on the user's own device. The documents stay there, and every \
@@ -58,9 +67,12 @@ step that reads them runs on the device with its own model.
 always has the same tag on this device, so plan with the tags.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
+- Two ways to ask about the documents: search_documents returns the best passages for you to reason \
+over; ask_device has the device's own model search, read and answer, and returns its answer with a \
+few short quotes. Use ask_device for a question, search_documents to see the text yourself.
 - Say who a result is for and what it will be used for, for example "for my own grading", "for the \
 family newsletter" or "to send to the principal". Put it in run_private_task's instructions and in \
-search_documents' purpose. The device uses it to decide what it can share.
+search_documents' and ask_device's purpose. The device uses it to decide what it can share.
 - Longer work runs in the background: call run_private_task, then get_result with the job id until \
 the status is no longer queued or running. A search that needs more time or the user's OK gives you \
 a job id for get_result too.
@@ -138,6 +150,11 @@ def _quote(value: str, limit: int = 80) -> str:
     return json.dumps(flat if len(flat) <= limit else flat[:limit] + "...")
 
 
+def _passage(text: str, terms: list[str]) -> str:
+    """Up to PASSAGE_SHOW characters of a passage, centered where the query words are."""
+    return snippet(text, terms, width=PASSAGE_SHOW) if len(" ".join(str(text).split())) > SNIPPET_CHARS else _short(text)
+
+
 def _short(text: str, limit: int = SNIPPET_CHARS) -> str:
     """Trim a snippet on a word boundary, so no name is cut in half before tagging."""
     flat = " ".join(str(text).split())
@@ -189,6 +206,7 @@ class Connector:
         self.services = services
         self._check_failures: dict[str, int] = {}
         self._failures_lock = threading.Lock()
+        self._sources: dict[str, list[str]] = {}  # job id -> documents a search used (redaction controls)
 
     def call(self, tool: str, fn: Callable[..., tuple[CallToolResult, str]], *args: Any) -> CallToolResult:
         """Run one tool, turn every failure into a plain message, and write the audit row."""
@@ -242,7 +260,8 @@ class Connector:
         if held:
             lines.append(f"{held} {'document' if held == 1 else 'documents'} held back on the device.")
         released = self.services.egress.release(
-            "list_documents", f"list {where}", "\n".join(lines), "document_list"
+            "list_documents", f"list {where}", "\n".join(lines), "document_list",
+            sources=[str(_get(d, "id")) for d in docs],
         )
         return _text(released.text), released.status
 
@@ -261,7 +280,15 @@ class Connector:
             raise ToolFailure("Pass a short search query, for example: rubric criteria for evidence.")
         restored = restore_tags(self.services, query)
         rag = getattr(self.services, "rag", None)
-        found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
+        found: list[Any] = []
+        if rag is not None:
+            try:  # passages for the query and the device model's rewrites of it
+                found = list(rag.retrieve(self.services.index, restored))
+            except Exception as exc:
+                log.warning("passage search failed, using the document search: %s", type(exc).__name__)
+        passages = bool(found)
+        if not found:
+            found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
         snippets, answer = found[:5], None
         if rag is not None and found:
             # The device's own model picks the passages that answer the query and writes a short
@@ -272,9 +299,9 @@ class Connector:
                 log.warning("passage picking failed, using the keyword ranking: %s", type(exc).__name__)
                 snippets, answer = found[:5], None
         if snippets:
-            raw = "\n\n".join(
-                f"{i}. {_get(s, 'title')}\n{_short(_get(s, 'text', ''))}" for i, s in enumerate(snippets, 1)
-            )
+            terms = tokenize(restored)
+            show = (lambda t: _passage(t, terms)) if passages else _short
+            raw = "\n\n".join(f"{i}. {_get(s, 'title')}\n{show(_get(s, 'text', ''))}" for i, s in enumerate(snippets, 1))
             if answer:
                 raw = f"Answer: {_short(answer, ANSWER_CHARS)}\n\n{raw}"
         else:
@@ -285,12 +312,31 @@ class Connector:
         # checking" with a job_id before the relay gives up, and a retried search joins the release.
         jobs = self.services.jobs
         job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet")
+        self._sources[job_id] = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
         status, text = self._release(job_id, jobs.get(job_id))
         if status in ("shared", "refused"):
             return _text(text), status
         if status == "running":
             return _json({"job_id": job_id, "status": "running", "result": SEARCH_CHECKING_NOTE}), "pending"
         return _json({"job_id": job_id, "status": status, "result": text}), status
+
+    def ask_device(self, question: str, purpose: str = "", folder: str = "") -> tuple[CallToolResult, str]:
+        """Mode 2: the device's model works on the request in the background; get_result has the answer."""
+        question, purpose, folder = question.strip(), purpose.strip(), folder.strip()
+        if not question:
+            raise ToolFailure("Pass a question, for example: which essays mention the school garden?")
+        runner = getattr(self.services, "ask_runner", None)
+        if runner is None:
+            raise ToolFailure(ASK_UNAVAILABLE)
+        real_folder = self._docs(folder)[0] if folder else ""
+        request = f"{question}\nPurpose: {purpose}" if purpose else question
+        try:
+            job_id = str(runner.start(restore_tags(self.services, question), request, real_folder or None))
+        except Exception as exc:
+            if type(exc).__name__ == "AskBusy":  # a plain sentence with a count, no content
+                raise ToolFailure(str(exc), outcome="busy") from None
+            raise
+        return _json({"job_id": job_id, "status": "queued", "result": ASK_STARTED_NOTE}), "started"
 
     def run_private_task(self, instructions: str, folder: str) -> tuple[CallToolResult, str]:
         instructions, folder = instructions.strip(), folder.strip()
@@ -380,6 +426,16 @@ class Connector:
             raise box["error"]
         return box["released"]
 
+    def _job_sources(self, job_id: str, job: Any) -> list[str]:
+        """Where a job's result came from, for the user's redaction controls. Unknown (a restart)
+        means no sources, which always tags everything."""
+        runner = getattr(self.services, "ask_runner", None)
+        known = self._sources.get(job_id) or (getattr(runner, "sources", {}) or {}).get(job_id)
+        if known:
+            return list(known)
+        folder = _get(job, "folder")
+        return [str(folder)] if folder and _get(job, "kind") not in (SEARCH_KIND, ASK_KIND) else []
+
     def _release_once(self, job_id: str, job: Any) -> tuple[str, str]:
         """One egress release for a finished job, stored unless a check could not run."""
         jobs, egress = self.services.jobs, self.services.egress
@@ -391,6 +447,7 @@ class Connector:
             job_id=job_id,
             summary=_get(job, "summary"),
             topics=_topics(job),
+            sources=self._job_sources(job_id, job),
         )
         if getattr(released, "retryable", False):
             with self._failures_lock:
@@ -519,6 +576,31 @@ def build_server(services: Any) -> MCPServer:
         ] = "",
     ) -> CallToolResult:
         return c.call("search_documents", c.search_documents, query, purpose)
+
+    @server.tool(
+        name="ask_device",
+        title="Ask the device",
+        annotations=READ,
+        description=(
+            "Ask the device to answer a request about the user's private documents. The device's own model "
+            "splits a request with several parts into questions, searches the documents several ways for "
+            "each (and keeps searching with new words while it finds nothing, for up to 3 minutes), then "
+            "writes one finished answer with up to 5 short quotes, names and identifiers as tags like "
+            "[Student A]. Use it for questions; use search_documents when you want the passages "
+            "themselves. You can put tags in the question. Say in purpose who the answer is for, for "
+            "example: for my own planning. folder is optional (default: every folder Muse can see). "
+            "Returns a job_id at once: call get_result with it until the status is no longer queued "
+            "or running."
+        ),
+    )
+    def ask_device(
+        question: Annotated[str, Field(max_length=500, description="The question; tags are fine")],
+        purpose: Annotated[
+            str, Field(max_length=300, description="Who the answer is for, for example: for my own planning")
+        ] = "",
+        folder: Annotated[str, Field(max_length=300, description="Optional folder to search in")] = "",
+    ) -> CallToolResult:
+        return c.call("ask_device", c.ask_device, question, purpose, folder)
 
     @server.tool(
         name="run_private_task",

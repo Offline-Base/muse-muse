@@ -2,7 +2,9 @@
 
 `Services.create(settings)` is what `python -m base` runs: it loads the roster, the tag map and
 the policy, builds both Glimmer clients and the checker (the answer model, or LFM3-VL-2B on this
-device with CHECKER_BACKEND=lfm, which also reads scans and picks search passages), the router,
+device with CHECKER_BACKEND=lfm, which also reads scans and picks search passages; with
+PRIMARY_MODEL=lfm every model step but the router tries LFM3-VL-2B first, then the Jetson's LFM
+when JETSON_LFM_BASE is set, else Glimmer), the router,
 the stores, the workspace agent, egress, the dreaming runner and the audit log, and starts the light. `Services.for_eval(settings)` is
 the same without the light and the heavy-step queue, for the eval harness and the dreaming gate,
 which build throwaway services in a temporary home.
@@ -18,14 +20,17 @@ from base import guard
 from base.approvals import ApprovalStore
 from base.config import Settings
 from base.connector.audit import Audit
+from base.controls import ControlStore
 from base.dreaming.night import NightRunner
 from base.egress import Egress
 from base.heavy.queue import HeavyQueue
 from base.light import start_light
-from base.local_llm import LocalLLM
+from base.local_llm import FallbackLLM, LocalLLM
 from base.policy import UserPolicy
 from base.router import Router
 from base.workspace.agent import Agent
+from base.workspace.ask import AskRunner, DeviceAsk
+from base.workspace.embed import Embedder
 from base.workspace.index import DocumentIndex
 from base.workspace.jobs import JobStore
 from base.workspace.rag import Rag
@@ -100,9 +105,16 @@ class Services:
         s.checker_llm = s.answer_llm
         s.scans = s.rag = None
         if settings.checker_backend == "lfm":
-            s.checker_llm = LocalLLM(settings, role="checker")
-            s.scans = ScanReader(settings, s.checker_llm)
-            s.rag = Rag(s.checker_llm, s.roster, s.tagmap, candidates=settings.rag_candidates)
+            lfm = LocalLLM(settings, role="checker")
+            s.checker_llm = lfm
+            s.scans = ScanReader(settings, lfm)  # scans and passage picking stay local, never Glimmer
+            s.rag = Rag(lfm, s.roster, s.tagmap, candidates=settings.rag_candidates)
+            if settings.primary_model == "lfm":
+                # The router stays on Glimmer: in a test on Oct 29 the 2B model shared summaries of
+                # per-student grades and a newsletter quote that Glimmer asks about first.
+                backup = LocalLLM(settings, role="jetson") if settings.has_jetson_lfm else s.answer_llm
+                s.checker_llm = FallbackLLM(lfm, backup)
+                s.answer_llm = FallbackLLM(lfm, backup)
         adapter = discover_router_adapter(settings, s.router_llm) if owner else None
         s.router = Router(settings, s.router_llm, s.policy, adapter=adapter)
         s.approvals = ApprovalStore(settings.paths.db)
@@ -112,12 +124,17 @@ class Services:
             failed = s.jobs.fail_unfinished()
             if failed:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)
-        s.index = DocumentIndex(settings, scans=s.scans)
+        s.embedder = Embedder(settings) if settings.search_embeddings else None
+        s.controls = ControlStore(settings.paths.controls)
+        s.index = DocumentIndex(settings, scans=s.scans, embedder=s.embedder, controls=s.controls)
+        # mode 2 needs the local model
+        s.ask = DeviceAsk(s.rag, s.index, never_share=s.policy.never_share) if s.rag is not None else None
         if settings.heavy_queue if heavy is None else heavy:
             s.heavy = HeavyQueue(settings.paths.db, wait_seconds=HEAVY_WAIT_SECONDS)
         s.agent = Agent(
             settings, s.answer_llm, s.index, s.jobs, heavy=s.heavy, roster=s.roster, tagmap=s.tagmap
         )
+        s.ask_runner = AskRunner(s.ask, s.jobs) if s.ask is not None else None
         s.audit = Audit.for_settings(settings)
         s.egress = Egress(s)
         s.night = NightRunner(s)
@@ -141,7 +158,7 @@ class Services:
         if self.light is not None:
             self.light.stop()
             self.light = None
-        names = ["approvals", "answer_llm", "router_llm"]
+        names = ["approvals", "answer_llm", "router_llm"] + (["embedder"] if getattr(self, "embedder", None) else [])
         if getattr(self, "checker_llm", None) is not getattr(self, "answer_llm", None):
             names.append("checker_llm")
         for name in names:

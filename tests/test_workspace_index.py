@@ -1,17 +1,20 @@
+import dataclasses
 import os
 import shutil
+import stat
 from pathlib import Path
 
 import pytest
 
 from base.config import CloudBackendRefused, load_settings
+from base.workspace.embed import EmbedError, chunks
 from base.workspace.index import SNIPPET_CHARS, DocumentIndex, WorkspacePathError, snippet
 
 FIXTURE = Path(__file__).parent / "fixtures" / "workspace"
 
 
-def make_settings(tmp_path, root, backend="openrouter"):
-    return load_settings(
+def make_settings(tmp_path, root, backend="openrouter", pdftotext=None):
+    s = load_settings(
         {
             "BASE_HOME": str(tmp_path / "home"),
             "GLIMMER_BACKEND": backend,
@@ -19,6 +22,7 @@ def make_settings(tmp_path, root, backend="openrouter"):
             "WORKSPACE_ROOT": str(root),
         }
     )
+    return dataclasses.replace(s, pdftotext_bin=pdftotext)  # the same on machines with or without poppler
 
 
 @pytest.fixture
@@ -177,3 +181,91 @@ def test_title_is_linear_on_long_runs_of_spaces(tmp_path):
     assert _title(tmp_path / "e.md", "intro\n## C#\n") == "C"
     assert _title(tmp_path / "e.md", "#### Deep\n") == "e"
     assert _title(tmp_path / "e.md", "#   \n# Real") == "Real"
+
+
+# PDFs (through pdftotext) and search by meaning (through an embedder)
+
+
+@pytest.fixture
+def fake_pdftotext(tmp_path):
+    """A stand-in for poppler's pdftotext that prints a fixed text layer, and fails on 'bad.pdf'."""
+    tool = tmp_path / "pdftotext"
+    tool.write_text(
+        "#!/bin/sh\n"
+        'for a; do f="$a"; [ "$a" = "-" ] && break; prev="$a"; done\n'
+        'case "$prev" in *bad.pdf) exit 1;; esac\n'
+        "echo 'Resume of Corwin Ashgrove. Volunteer at the city aquarium, fed the sharks.'\n"
+    )
+    tool.chmod(tool.stat().st_mode | stat.S_IEXEC)
+    return str(tool)
+
+
+def test_pdfs_are_documents_when_pdftotext_is_installed(tmp_path, copy_root, fake_pdftotext):
+    (copy_root / "essays" / "resume.pdf").write_bytes(b"%PDF")
+    index = DocumentIndex(make_settings(tmp_path, copy_root, pdftotext=fake_pdftotext))
+    docs = {d.id: d for d in index.list("essays")}
+    assert docs["essays/resume.pdf"].title == "resume"  # listing never runs the tool
+    assert "fed the sharks" in index.read("essays/resume.pdf")
+    hits = index.search("aquarium sharks", folder="essays")
+    assert hits and hits[0].doc_id == "essays/resume.pdf"
+
+
+def test_an_unreadable_pdf_is_skipped_in_search(tmp_path, copy_root, fake_pdftotext):
+    (copy_root / "essays" / "bad.pdf").write_bytes(b"%PDF")
+    index = DocumentIndex(make_settings(tmp_path, copy_root, pdftotext=fake_pdftotext))
+    assert all(h.doc_id != "essays/bad.pdf" for h in index.search("robot", folder="essays"))
+    with pytest.raises(ValueError):
+        index.read("essays/bad.pdf")
+
+
+class FakeEmbedder:
+    """Vectors by topic word, so 'ocean' is close to an essay about the sea with no shared word."""
+
+    TOPICS = ("sea|ocean|lighthouse|tide|wave", "robot|machine", "garden|tomato")
+
+    def __init__(self, fail=False):
+        self.fail = fail
+
+    def _vec(self, text):
+        import re
+
+        low = text.lower()
+        v = [float(len(re.findall(t, low))) for t in self.TOPICS] + [0.01]
+        n = sum(x * x for x in v) ** 0.5
+        return [x / n for x in v]
+
+    def query(self, text):
+        if self.fail:
+            raise EmbedError("down")
+        return self._vec(text)
+
+    def documents(self, title, pieces):
+        return [self._vec(p) for p in pieces]
+
+
+def test_search_by_meaning_finds_a_document_with_no_shared_word(tmp_path):
+    root = tmp_path / "w"
+    root.mkdir()
+    (root / ".synthetic").write_text("invented\n")
+    (root / "sea.md").write_text("# Tides\nThe lighthouse keeper watched each wave and tide roll in.")
+    (root / "bot.md").write_text("# Bots\nOur robot machine sorts the recycling.")
+    s = make_settings(tmp_path, root)
+    assert DocumentIndex(s).search("ocean") == []  # no keyword matches
+    hits = DocumentIndex(s, embedder=FakeEmbedder()).search("ocean")
+    assert hits[0].doc_id == "sea.md" and "lighthouse" in hits[0].text
+
+
+def test_search_falls_back_to_keywords_when_the_embedder_fails(tmp_path):
+    root = tmp_path / "w"
+    root.mkdir()
+    (root / ".synthetic").write_text("invented\n")
+    (root / "bot.md").write_text("# Bots\nOur robot sorts the recycling.")
+    hits = DocumentIndex(make_settings(tmp_path, root), embedder=FakeEmbedder(fail=True)).search("robot")
+    assert [h.doc_id for h in hits] == ["bot.md"]
+
+
+def test_chunks_overlap_and_cover_the_text():
+    text = " ".join(f"w{i}" for i in range(1000))
+    pieces = chunks(text, size=300, overlap=50)
+    assert len(pieces) > 1 and all(len(p) <= 300 for p in pieces)
+    assert pieces[0].split()[0] == "w0" and pieces[-1].split()[-1] == "w999"

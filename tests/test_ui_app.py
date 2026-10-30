@@ -819,3 +819,49 @@ def test_cookie_is_secure_with_tls_and_other_browsers_can_be_signed_out(settings
         assert app.state.sessions.count() == 2
         assert other.post("/api/sessions/clear").json() == {"ok": True, "signed_out": 1}
         assert app.state.sessions.count() == 1 and other.get("/api/approvals").status_code == 200
+
+
+def test_always_approve_switch(client, services):
+    assert 'class="state-off">off<' in client.get("/").text
+    r = client.post("/api/auto-approve", json={"on": True})
+    assert r.status_code == 200 and r.json() == {"ok": True, "auto_approve": True}
+    assert services.settings.paths.auto_approve.is_file()
+    assert client.get("/api/status").json()["auto_approve"] is True
+    assert 'class="state-on">on<' in client.get("/").text
+    r = client.post("/api/auto-approve", data={"on": "false"}, follow_redirects=False)
+    assert r.status_code == 303 and not services.settings.paths.auto_approve.exists()
+    assert client.post("/api/auto-approve", json={}).status_code == 400
+
+
+def test_always_approve_cannot_be_turned_on_from_another_site(client, services):
+    r = client.post("/api/auto-approve", json={"on": True}, headers={"Origin": "http://evil.example"})
+    assert r.status_code == 403 and not services.settings.paths.auto_approve.exists()
+
+
+def test_controls_page_saves_the_form(client, services):
+    root = services.settings.workspace_root
+    (root / "resumes").mkdir(exist_ok=True)
+    page = client.get("/controls").text
+    assert "Phone numbers" in page and "Tagged" in page and "resumes" in page and "Send real names" in page
+    folders = [p.name for p in sorted(root.iterdir()) if p.is_dir() and not p.name.startswith(".")]
+    i = folders.index("resumes")
+    form = {"form": "controls", "tag_email": "1", "always_redact": "Coral Bay\nCoral Bay\n", "never_redact": "Ms. Vale"}
+    for n, name in enumerate(folders):
+        form[f"folder_{n}"] = name
+        if name != "resumes":
+            form[f"see_{n}"] = "1"
+    form[f"names_{i}"] = "1"
+    r = client.post("/controls".replace("/controls", "/api/controls"), data=form, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/controls?saved=1"
+    c = client.get("/api/controls").json()["controls"]
+    assert c["tag_kinds"]["email"] is True and c["tag_kinds"]["phone"] is False
+    assert c["always_redact"] == ["Coral Bay"] and c["never_redact"] == ["Ms. Vale"]
+    assert c["hidden_folders"] == ["resumes"] and c["names_off_folders"] == ["resumes"]
+    assert "Saved." in client.get("/controls?saved=1").text
+
+
+def test_controls_json_and_other_sites(client, services):
+    r = client.post("/api/controls", json={"controls": {"never_redact": ["Coral Bay"]}})
+    assert r.status_code == 200 and r.json()["controls"]["never_redact"] == ["Coral Bay"]
+    evil = client.post("/api/controls", json={"hidden_folders": []}, headers={"Origin": "http://evil.example"})
+    assert evil.status_code == 403

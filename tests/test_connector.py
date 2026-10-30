@@ -33,6 +33,7 @@ TAG_B = "[Student B]"
 ALL_TOOLS = {
     "list_documents",
     "search_documents",
+    "ask_device",
     "run_private_task",
     "get_result",
     "run_dreaming",
@@ -66,6 +67,7 @@ class FakeEgress:
                 "job_id": job_id,
                 "summary": summary,
                 "topics": list(topics),
+                **({"kw": kw} if any(kw.values()) else {}),
             }
         )
         n = len(self.calls)
@@ -279,10 +281,10 @@ def assert_no_real_names(text: str) -> None:
 # Tool listing
 
 
-async def test_six_tools_with_muse_annotations(client):
+async def test_seven_tools_with_muse_annotations(client):
     tools = {t.name: t for t in (await client.list_tools()).tools}
     assert set(tools) == ALL_TOOLS
-    for name in ("list_documents", "search_documents", "get_result", "dreaming_report"):
+    for name in ("list_documents", "search_documents", "ask_device", "get_result", "dreaming_report"):
         assert tools[name].annotations.read_only_hint is True, name
         assert tools[name].annotations.open_world_hint is False
     task, dream = tools["run_private_task"].annotations, tools["run_dreaming"].annotations
@@ -973,3 +975,49 @@ def test_a_search_whose_check_crashes_is_plain_and_runs_again(services, tmp_path
     services.egress.fail = False
     retried = c.call("search_documents", c.search_documents, "evidence")
     assert text_of(retried) == services.egress.outputs()[0] and len(services.egress.calls) == 1
+
+
+# ask_device (mode 2: the device's model answers, as a background job)
+
+
+class FakeRunner:
+    def __init__(self, jobs):
+        self.jobs, self.started, self.sources = jobs, [], {}
+
+    def start(self, question, request, folder):
+        self.started.append((question, request, folder))
+        job_id = self.jobs.job_for_result("ask", request, f"Answer: {REAL_A} wrote about tide pools.", "snippet")
+        self.sources[job_id] = ["essays/d1.md"]
+        return job_id
+
+
+async def test_ask_device_starts_a_job_and_get_result_releases_it(client, services):
+    services.ask_runner = FakeRunner(services.jobs)
+    started = await client.call_tool("ask_device", {"question": f"What did {TAG_A} write about?", "purpose": "for me"})
+    body = json.loads(text_of(started))
+    assert body["status"] == "queued" and "get_result" in body["result"]
+    assert services.ask_runner.started == [(f"What did {REAL_A} write about?", f"What did {TAG_A} write about?\nPurpose: for me", None)]
+    result = await client.call_tool("get_result", {"job_id": body["job_id"]})
+    [call] = services.egress.calls
+    assert call["tool"] == "ask_device" and call["result_kind"] == "snippet"
+    assert call.get("kw", {}).get("sources") == ["essays/d1.md"]  # where the answer came from, for the controls
+    assert_no_real_names(text_of(result))
+
+
+async def test_ask_device_without_the_local_model_says_so(client, services):
+    services.ask_runner = None
+    result = await client.call_tool("ask_device", {"question": "anything"})
+    assert result.is_error and "search_documents" in text_of(result)
+    assert services.egress.calls == []
+
+
+async def test_ask_device_busy_is_a_plain_sentence(client, services):
+    class Busy:
+        def start(self, *a):
+            from base.workspace.ask import AskBusy
+
+            raise AskBusy("The device is already working on 5 jobs. Try again when one finishes.")
+
+    services.ask_runner = Busy()
+    result = await client.call_tool("ask_device", {"question": "anything"})
+    assert result.is_error and "5 jobs" in text_of(result)

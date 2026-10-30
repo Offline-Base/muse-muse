@@ -6,20 +6,30 @@ cloud refusal: on a cloud backend every call must say `synthetic=True` or it is 
 
 The "checker" role is Liquid's LFM3-VL-2B on this device's own llama-server (CHECKER_BACKEND=lfm):
 always local, so it is never refused, with Liquid's sampling and its thinking turned off.
+
+The "jetson" role is LFM3-1.7B on the user's Jetson through the Offline Base gateway (backend
+"gateway"): the same Liquid request, but a remote endpoint, so it is refused like a cloud model.
+
+FallbackLLM (PRIMARY_MODEL=lfm) sends every call to LFM3-VL-2B first and to its fallback (the
+Jetson, else Glimmer) only when the local call fails.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from threading import local as thread_local
 from typing import Any
 
 import httpx
 
 from base.config import CloudBackendRefused, Settings
+
+log = logging.getLogger(__name__)
 
 REASONING_LEVELS = ("low", "medium", "high", "xhigh")
 OPENROUTER_EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high"}
@@ -30,7 +40,7 @@ DEFAULT_TIMEOUT = 120.0
 CONNECT_TIMEOUT = 10.0
 LOCAL_TOKENS_PER_SECOND = 5.0  # a slow Jetson; the laptop is faster, and this is only a ceiling
 MAX_RETRY_AFTER = 30.0
-ROLES = ("answer", "router", "checker")
+ROLES = ("answer", "router", "checker", "jetson")
 # The model card's recommended sampling for LFM3-VL-2B.
 CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
@@ -221,7 +231,7 @@ class LocalLLM:
         sleep: Callable[[float], None] = time.sleep,
     ):
         if role not in ROLES:
-            raise ValueError(f"role must be answer, router or checker, not {role!r}")
+            raise ValueError(f"role must be answer, router, checker or jetson, not {role!r}")
         self.settings = settings
         self.role = role
         if role == "checker":
@@ -229,13 +239,21 @@ class LocalLLM:
             self.base_url = settings.checker_url.rstrip("/")
             self.model = settings.checker_model
             self.api_key = settings.checker_api_key
+        elif role == "jetson":
+            if not settings.has_jetson_lfm:
+                raise ValueError("the jetson role needs JETSON_LFM_BASE and JETSON_LFM_API_KEY")
+            self.backend = "gateway"
+            self.base_url = (settings.jetson_lfm_url or "").rstrip("/")
+            self.model = settings.jetson_lfm_model
+            self.api_key = settings.jetson_lfm_key
         else:
             self.backend = settings.glimmer_backend
             self.base_url = (settings.answer_url if role == "answer" else settings.router_url).rstrip("/")
             self.model = settings.answer_model if role == "answer" else settings.router_model
             self.api_key = settings.model_api_key
-        # Only a cloud endpoint needs every call marked synthetic; the checker is always local.
-        self.is_cloud = self.backend == "openrouter"
+        # Only a remote endpoint needs every call marked synthetic; the checker is always local.
+        self.is_cloud = self.backend in ("openrouter", "gateway")
+        self.liquid = role in ("checker", "jetson")
         self._client = client
         self._sleep = sleep
 
@@ -284,7 +302,7 @@ class LocalLLM:
         """The chat completions request body for this backend."""
         if reasoning is not None and reasoning not in REASONING_LEVELS:
             raise ValueError(f"reasoning must be one of {REASONING_LEVELS}, not {reasoning!r}")
-        if self.role == "checker":
+        if self.liquid:
             return self._checker_body(messages, max_tokens=max_tokens, json_schema=json_schema, adapter=adapter)
         msgs = _with_reasoning_line(messages, reasoning) if reasoning else [dict(m) for m in messages]
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens}
@@ -317,7 +335,7 @@ class LocalLLM:
     def _checker_body(
         self, messages: list[dict], *, max_tokens: int, json_schema: dict | None, adapter: int | str | None
     ) -> dict:
-        """LFM3-VL-2B: no Glimmer reasoning line, Liquid's sampling, thinking off. Image parts
+        """LFM3-VL-2B: no Glimmer reasoning line, Liquid's sampling. Image parts
         ({"type": "image_url", ...}) in a message's content pass through unchanged."""
         if adapter is not None:
             raise ValueError("the checker model takes no LoRA adapter")
@@ -325,8 +343,10 @@ class LocalLLM:
         for m in msgs:
             if m.get("role") == "system" and isinstance(m.get("content"), str):
                 m["content"] = _without_reasoning_line(m["content"])
+        # Thinking is off on the server (--reasoning-budget 0). Asking for enable_thinking=false
+        # here as well breaks every json_schema reply on llama.cpp b11972 ("Unexpected empty
+        # grammar stack"), so the request leaves the template's default alone.
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens, **CHECKER_SAMPLING}
-        body["chat_template_kwargs"] = {"enable_thinking": False}
         if json_schema is not None:
             body["response_format"] = response_format(json_schema)
         return body
@@ -395,7 +415,7 @@ class LocalLLM:
         usage = data.get("usage") or {}
         details = usage.get("completion_tokens_details") or {}
         content = message.get("content") or ""
-        if self.role == "checker" and "<think>" in content:
+        if self.liquid and "<think>" in content:
             content = _THINK.sub("", content)  # a server without a reasoning parser leaves these in
         return ChatResult(
             content=content,
@@ -434,6 +454,8 @@ class LocalLLM:
             if self.backend == "llama_server":
                 root = self.base_url.removesuffix("/v1")
                 response = self.client.get(f"{root}/health", headers=self.headers(), timeout=timeout)
+            elif self.backend == "gateway":
+                response = self.client.get(f"{self.base_url}/models", headers=self.headers(), timeout=timeout)
             else:
                 if not self.api_key:
                     return False
@@ -491,3 +513,69 @@ class LocalLLM:
         )
         found = {str(t) for t in data.get("topics") or []}
         return [name for name in names if name in found]
+
+
+class FallbackLLM:
+    """LFM3-VL-2B on this device first, then the fallback (the Jetson's LFM or Glimmer) when it fails.
+
+    The same calls as LocalLLM. A local call that fails (no server, an HTTP error, bad JSON, a
+    reply cut off) is sent again to the fallback with the same arguments, so its rules still hold
+    there: on a remote endpoint a call not marked synthetic is refused. A call with tools goes to
+    the fallback only, and only the fallback gets a LoRA adapter. `last_used` and `last_backend`
+    say what answered this thread's last call. Other attributes come from the fallback.
+    """
+
+    def __init__(self, primary: LocalLLM, fallback: LocalLLM):
+        self.primary = primary
+        self.fallback = fallback
+        self.role = fallback.role
+        self.settings = fallback.settings
+        self.model = primary.model
+        self.is_cloud = fallback.is_cloud  # the strict answer for any caller that checks
+        self._last = thread_local()
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("primary", "fallback"):
+            raise AttributeError(name)
+        return getattr(self.fallback, name)
+
+    @property
+    def last_used(self) -> str | None:
+        return getattr(self._last, "model", None)
+
+    @property
+    def last_backend(self) -> str | None:
+        return getattr(self._last, "backend", None)
+
+    def _call(self, method: str, *args: Any, **kw: Any) -> Any:
+        if not kw.get("tools"):
+            local_kw = {k: v for k, v in kw.items() if k != "adapter"}
+            try:
+                out = getattr(self.primary, method)(*args, **local_kw)
+            except LLMError as exc:
+                log.warning("%s on %s failed (%s); trying %s", method, self.primary.model, type(exc).__name__, self.fallback.model)
+            else:
+                self._last.model, self._last.backend = self.primary.model, self.primary.backend
+                return out
+        out = getattr(self.fallback, method)(*args, **kw)
+        self._last.model, self._last.backend = self.fallback.model, self.fallback.backend
+        return out
+
+    def chat(self, messages: list[dict], **kw: Any) -> ChatResult:
+        return self._call("chat", messages, **kw)
+
+    def chat_json(self, messages: list[dict], schema: dict, **kw: Any) -> dict:
+        return self._call("chat_json", messages, schema, **kw)
+
+    def llm_names(self, text: str, **kw: Any) -> list[str]:
+        return self._call("llm_names", text, **kw)
+
+    def request_topics(self, request: str, topics: Mapping[str, str], **kw: Any) -> list[str]:
+        return self._call("request_topics", request, topics, **kw)
+
+    def health(self, timeout: float = 5) -> bool:
+        return self.primary.health(timeout) or self.fallback.health(timeout)
+
+    def close(self) -> None:
+        self.primary.close()
+        self.fallback.close()

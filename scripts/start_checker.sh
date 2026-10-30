@@ -61,7 +61,7 @@ fi
 chmod 600 "$KEY_FILE"
 
 echo "Starting the checker (LFM3-VL-2B) on 127.0.0.1:$PORT"
-# Liquid's recommended sampling; thinking off (each request also asks for enable_thinking=false).
+# Liquid's recommended sampling; thinking off here, not per request (see LocalLLM._checker_body).
 exec "$BIN" --model "$GGUF" --mmproj "$MMPROJ" --alias "$ALIAS" --host 127.0.0.1 --port "$PORT" \
   -c "$CTX" -np 1 -ngl 99 --jinja --reasoning-budget 0 \
   --temp 0.1 --top-p 1.0 --top-k 50 --min-p 0.0 --repeat-penalty 1.1 \

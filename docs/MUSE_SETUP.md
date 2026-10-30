@@ -57,12 +57,13 @@ On the device, make a one-time code and type it on the Link your device page wit
 uv run python -m base.connector.relay_client pair
 ```
 
-The page sends you back to Muse, which should now list six Muse Privacy tools:
+The page sends you back to Muse, which should now list seven Muse Privacy tools:
 
 | Tool | Muse class | What it does |
 |---|---|---|
 | list_documents | Read | Tagged titles of the documents in a folder |
 | search_documents | Read | Up to 5 short tagged snippets. An optional purpose says who they are for. A check that needs more time or your OK returns a job id for get_result |
+| ask_device | Read | The device's own model searches, reads and answers a question; returns the answer and up to 3 short quotes, as tags. Needs the local model (CHECKER_BACKEND=lfm) |
 | run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for |
 | get_result | Read | The status of a job or a search, then its tagged or summarized result |
 | run_dreaming | Write | Starts one night of dreaming on the device |

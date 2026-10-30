@@ -9,19 +9,24 @@ returns text to Muse, including the waiting and refusal messages, goes through f
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import re
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from base import events as events_module
 from base import guard as guard_module
+from base.approvals import AutoApprove
 from base.config import CloudBackendRefused, assert_synthetic
 from base.router import never_share_floor
 from base.types import IDENTIFIER_KINDS, Hit, RouteDecision, RouteInput, TagResult, default_share_form
 
 log = logging.getLogger(__name__)
+# The user's redaction controls for the release in progress (see release and resolve).
+_REDACTION: ContextVar[Any] = ContextVar("redaction", default=None)
 
 WAITING_TEXT = "Waiting for your OK on the device."
 HELD_TEXT = "Held on your device."
@@ -160,8 +165,52 @@ class Egress:
         item_id: str | None = None,
         day: int | None = None,
         synthetic: bool | None = None,
+        sources: Sequence[str] = (),
     ) -> Released:
-        """Tag, route, record and return the result. `synthetic=None` derives it from settings."""
+        """Tag, route, record and return the result. `synthetic=None` derives it from settings.
+
+        `sources` are the workspace paths (or folders) the result came from; with the user's
+        controls (services.controls) they decide what is redacted for this result.
+        """
+        token = _REDACTION.set(self._redaction_for(sources))
+        try:
+            return self._release(
+                tool, request, raw_text, result_kind, job_id=job_id, summary=summary, topics=topics,
+                item_id=item_id, day=day, synthetic=synthetic, sources=list(sources),
+            )
+        finally:
+            _REDACTION.reset(token)
+
+    def _redaction_for(self, sources: Sequence[str]) -> Any:
+        """guard.Redaction from the user's controls for these sources, or None (tag everything)."""
+        store = getattr(self.services, "controls", None)
+        if store is None:
+            return None
+        try:
+            return store.get().redaction(sources)
+        except Exception as exc:  # a broken controls file never means less redaction
+            log.warning("privacy controls unreadable (%s); tagging everything", type(exc).__name__)
+            return None
+
+    def _red_kw(self) -> dict[str, Any]:
+        r = _REDACTION.get()
+        return {"redaction": r} if r is not None else {}
+
+    def _release(
+        self,
+        tool: str,
+        request: str,
+        raw_text: str,
+        result_kind: str,
+        *,
+        job_id: str | None,
+        summary: str | None,
+        topics: tuple[str, ...] | list[str],
+        item_id: str | None,
+        day: int | None,
+        synthetic: bool | None,
+        sources: list[str],
+    ) -> Released:
         s = self.services
         if synthetic is None:
             synthetic = self._synthetic()
@@ -216,17 +265,41 @@ class Egress:
             "day": day,
             "item_id": item_id,
         }
+        if sources:
+            row["sources"] = sources
         if route.decision == "ask_user":
             approval_id = s.approvals.create_pending(**row)
+            if self._auto_approve():
+                # The user turned on always-approve: answer as they would with Share it, and
+                # leave it out of dreaming. The leak check in _finish still runs.
+                s.approvals.decide(approval_id, approve=True, remember=False, by="auto_approve")
+                self._audit("egress", "auto_approved")
+                return self._finish("shared", outgoing, approval_id, route, tagged, detail=job_id or tool)
             return self._finish("waiting", WAITING_TEXT, approval_id, route, tagged, detail=str(approval_id))
         s.approvals.record_auto(**row)
         if route.decision == "refuse":
             return self._finish("refused", refusal_text(route.floors), None, route, tagged)
         return self._finish("shared", outgoing, None, route, tagged, detail=job_id or tool)
 
+    def _auto_approve(self) -> bool:
+        settings = getattr(self.services, "settings", None)
+        paths = getattr(settings, "paths", None)
+        return paths is not None and AutoApprove(paths.auto_approve).on
+
     def resolve(self, approval_id: int) -> Released:
         """The outcome for a decision row after the user answers (or while they have not)."""
         row = self.services.approvals.get(approval_id)
+        try:
+            sources = json.loads(row.get("sources") or "[]") if row else []
+        except (TypeError, ValueError):
+            sources = []
+        token = _REDACTION.set(self._redaction_for(sources if isinstance(sources, list) else []))
+        try:
+            return self._resolve(approval_id, row)
+        finally:
+            _REDACTION.reset(token)
+
+    def _resolve(self, approval_id: int, row: Any) -> Released:
         if row is None or row.get("deleted"):
             return self._finish("refused", KEPT_TEXT, approval_id, None, None)
         route = RouteDecision(
@@ -256,7 +329,7 @@ class Egress:
             return []
         s = self.services
         try:
-            return list(self.guard.leaks(text, s.roster, s.tagmap))
+            return list(self.guard.leaks(text, s.roster, s.tagmap, **self._red_kw()))
         except Exception as exc:
             log.warning("final leak check failed (%s); holding the result", type(exc).__name__)
             return [Hit("check_failed", "", 0, 0)]
@@ -270,12 +343,15 @@ class Egress:
         caller holds the result.
         """
         s = self.services
+        kw = self._red_kw()
+        names_off = "redaction" in kw and not kw["redaction"].names  # the user's names-off folders
         return self.guard.tag(
             text,
             s.roster,
             s.tagmap,
-            llm_names=self._name_pass(result_kind, synthetic),
+            llm_names=None if names_off else self._name_pass(result_kind, synthetic),
             never_share=s.policy.never_share,
+            **kw,
         )
 
     def _tag_request(self, request: str) -> TagResult:
@@ -284,7 +360,7 @@ class Egress:
         if not request:
             return TagResult(request or "")
         s = self.services
-        return self.guard.tag(request, s.roster, s.tagmap)
+        return self.guard.tag(request, s.roster, s.tagmap, **self._red_kw())
 
     def _request_topics(
         self, raw_request: str, request: str, result_kind: str, tagged: TagResult, own_topics: list[str], synthetic: bool

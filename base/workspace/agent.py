@@ -379,10 +379,15 @@ class Agent:
 
     def _log_step(self, job_id: str, step: str, started: float, via: str) -> None:
         source = self.heavy if via == "heavy" else None
+        model, backend = self.settings.answer_model, self.settings.glimmer_backend
+        if source is None:
+            # With PRIMARY_MODEL=lfm: LFM3-VL-2B here, or the fallback that took over.
+            model = _str_attr(self.llm, "last_used", model)
+            backend = _str_attr(self.llm, "last_backend", backend)
         entry = {
             "step": step,
-            "model": _str_attr(source, "model", self.settings.answer_model),
-            "backend": _str_attr(source, "backend", self.settings.glimmer_backend),
+            "model": _str_attr(source, "model", model),
+            "backend": _str_attr(source, "backend", backend),
             "device": _str_attr(source, "device", self.settings.device),
             "latency_ms": int((time.perf_counter() - started) * 1000),
             "via": via,

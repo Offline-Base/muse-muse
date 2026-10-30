@@ -40,14 +40,15 @@ CREATE TABLE IF NOT EXISTS decisions (
     decided_by TEXT,
     decided_at REAL,
     deleted INTEGER NOT NULL DEFAULT 0,
-    item_id TEXT
+    item_id TEXT,
+    sources TEXT
 );
 CREATE INDEX IF NOT EXISTS decisions_status ON decisions(status);
 CREATE INDEX IF NOT EXISTS decisions_day ON decisions(day);
 """
 
 STATUSES = ("auto", "pending", "approved", "denied")
-DECIDERS = ("user", "policy_sim")
+DECIDERS = ("user", "policy_sim", "auto_approve")
 _EPOCH = date(1970, 1, 1).toordinal()
 
 
@@ -96,6 +97,8 @@ class ApprovalStore:
             have = {row[1] for row in self._conn.execute("PRAGMA table_info(decisions)")}
             if "blocked" not in have:  # a db from before the blocked column
                 self._conn.execute("ALTER TABLE decisions ADD COLUMN blocked TEXT")
+            if "sources" not in have:  # a db from before the privacy controls
+                self._conn.execute("ALTER TABLE decisions ADD COLUMN sources TEXT")
             self._conn.commit()
 
     def close(self) -> None:
@@ -121,6 +124,7 @@ class ApprovalStore:
         job_id: str | None = None,
         day: int | None = None,
         item_id: str | None = None,
+        sources: Iterable[str] | None = None,
     ) -> int:
         values = {
             "ts": time.time(),
@@ -138,6 +142,7 @@ class ApprovalStore:
             "router_source": router_source,
             "status": status,
             "item_id": item_id,
+            "sources": json.dumps(list(sources)) if sources else None,
         }
         cols = ", ".join(values)
         marks = ", ".join("?" for _ in values)
@@ -215,9 +220,13 @@ class ApprovalStore:
         return self._query("SELECT * FROM decisions WHERE deleted = 0 ORDER BY id DESC LIMIT ?", (int(limit),))
 
     def training_rows(self) -> list[dict[str, Any]]:
-        """Non-deleted rows the user (or the policy simulator) answered, oldest first, with `label`."""
+        """Non-deleted rows the user (or the policy simulator) answered, oldest first, with `label`.
+
+        Rows that always-approve mode answered are left out: they say nothing about the result.
+        """
         rows = self._query(
-            "SELECT * FROM decisions WHERE deleted = 0 AND user_decision IS NOT NULL ORDER BY id"
+            "SELECT * FROM decisions WHERE deleted = 0 AND user_decision IS NOT NULL "
+            "AND COALESCE(decided_by, '') != 'auto_approve' ORDER BY id"
         )
         for row in rows:
             row["label"] = label_for(row)
@@ -231,3 +240,26 @@ class ApprovalStore:
                 "GROUP BY day ORDER BY day"
             ).fetchall()
         return {int(r["day"]): int(r["n"]) for r in rows}
+
+
+class AutoApprove:
+    """Always-approve mode: while it is on, a result the router would ask about is shared at once.
+
+    Kept as a file in BASE_HOME (mode 0600), so it survives a restart and is read on every result.
+    Refusals, held results and the final leak check are unchanged.
+    """
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+
+    @property
+    def on(self) -> bool:
+        return self.path.is_file()
+
+    def set(self, on: bool) -> None:
+        if on:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(f"on since {time.strftime('%Y-%m-%d %H:%M')}\n")
+            self.path.chmod(0o600)
+        else:
+            self.path.unlink(missing_ok=True)
