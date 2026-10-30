@@ -6,7 +6,7 @@ Branch `docs` in `~/muse-muse-builds`. This file is the contract every part is b
 
 ## Rules that apply to every part
 
-- **The key never leaves the server.** Demos call `/api/docs/...` on our own origin. The proxy adds `DOCS_MODEL_API_KEY` (falls back to `MODEL_API_KEY`) on the server. Never put a key in client code, `NEXT_PUBLIC_*` vars, logs, error messages, response headers, test fixtures, sample files or commit messages. Never print `.env.local`. Users are never asked for a key (docs/DESIGN.md, "Never ask for keys").
+- **The key never leaves the server.** Demos call `/api/docs/...` on our own origin. The proxy adds `DOCS_MODEL_API_KEY` on the server (local runs fall back to `MODEL_API_KEY`; on Vercel the demos pause without it). Never put a key in client code, `NEXT_PUBLIC_*` vars, logs, error messages, response headers, test fixtures, sample files or commit messages. Never print `.env.local`. Users are never asked for a key (docs/DESIGN.md, "Never ask for keys").
 - **Never call `muse-spark-1.3`.** The proxy rewrites it to `muse-spark-1.3-contributor` (lib/meta/spark.ts) and says so in `x-docs-model`. Mirrored text keeps Meta's `muse-spark-1.3`; demos, generated code (Show code) and copy prompts use `muse-spark-1.3-contributor`, with a note that Contributor mode lets Meta train on what's sent and that dropping `-contributor` gives Standard mode.
 - **Contributor mode is disclosed.** Meta may train on what's sent to a `-contributor` model (pricing-rate-limits page). Whenever a demo is about to send to one, show the kit's `ContributorNotice` ("Runs on Muse Spark 1.3 Contributor: Meta may use what you send to train future models. Don't send anything private.") and offer `muse-spark-1.2` or `muse-wonder-1.0` (Standard mode) in the model menu.
 - **No em dashes in anything we write**: UI copy, prompts, comments shown to users, the copy-prompt text. The renderer also swaps em dashes in Meta's prose (not in code) for ", " (": " in headings).
@@ -127,7 +127,7 @@ Every page gets a DemoSpec in its group file: a demo that exercises what the pag
 
 | Setting | Default |
 |---|---|
-| `DOCS_MODEL_API_KEY` | Falls back to `MODEL_API_KEY` |
+| `DOCS_MODEL_API_KEY` | Local runs fall back to `MODEL_API_KEY`. On Vercel, unset pauses the demos (503 `docs_paused`) |
 | `DOCS_LIVE` | on |
 | `DOCS_DAILY_SPEND_CAP_USD` | 25 (0 pauses paid calls) |
 | `DOCS_IP_DAILY_USD` | 2 (0 pauses paid calls) |

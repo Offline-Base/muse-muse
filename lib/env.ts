@@ -306,8 +306,13 @@ export const env = {
   get docsModelApiKey(): string {
     return process.env.DOCS_MODEL_API_KEY?.trim() || env.modelApiKey;
   },
-  /** False when DOCS_LIVE is "off", "0", "false" or "no" (any case): every live docs call then answers 503 docs_paused. */
+  /**
+   * False when DOCS_LIVE is "off", "0", "false" or "no" (any case): every live docs call then answers 503 docs_paused.
+   * Also false on Vercel without DOCS_MODEL_API_KEY, so public visitors never spend the platform's own key: live
+   * products and builds depend on it. The fallback in docsModelApiKey is for local runs.
+   */
   get docsLive(): boolean {
+    if (process.env.VERCEL && !process.env.DOCS_MODEL_API_KEY?.trim()) return false;
     return !["off", "0", "false", "no"].includes((process.env.DOCS_LIVE ?? "").trim().toLowerCase());
   },
   /**
