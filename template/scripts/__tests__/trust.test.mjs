@@ -78,7 +78,7 @@ describe("the trust overlay's files", () => {
   });
 
   test("say nothing with an em dash", () => {
-    for (const f of walk(FILES)) assert.ok(!readFileSync(path.join(FILES, f), "utf8").includes("—"), f);
+    for (const f of walk(FILES)) assert.ok(!readFileSync(path.join(FILES, f), "utf8").includes("\u2014"), f);
   });
 });
 

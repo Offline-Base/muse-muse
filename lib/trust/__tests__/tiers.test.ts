@@ -61,7 +61,7 @@ describe("the brief writer", () => {
     assert.ok(guest.includes(`\n- ${GUEST_WRITER_RULE}`));
     assert.equal(guest.replace(`\n- ${GUEST_WRITER_RULE}`, ""), today);
     assert.match(GUEST_WRITER_RULE, /can't save data, connect accounts, run jobs, run code or use GPUs/);
-    assert.ok(!/—/.test(GUEST_WRITER_RULE), "no em dashes");
+    assert.ok(!/\u2014/.test(GUEST_WRITER_RULE), "no em dashes");
   });
 
   it("briefTierFor reads nothing with the flag off", async () => {

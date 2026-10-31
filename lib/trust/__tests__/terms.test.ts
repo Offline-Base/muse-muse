@@ -13,7 +13,7 @@ const text = (sections: typeof TERMS_SECTIONS) => sections.flatMap((s) => [s.hea
 describe("the platform's Terms and Privacy", () => {
   it("have a dated version and no em dashes", () => {
     assert.match(TERMS_VERSION, /^\d{4}-\d{2}-\d{2}$/);
-    for (const t of [text(TERMS_SECTIONS), text(PRIVACY_SECTIONS)]) assert.ok(!t.includes("—"));
+    for (const t of [text(TERMS_SECTIONS), text(PRIVACY_SECTIONS)]) assert.ok(!t.includes("\u2014"));
   });
   it("say 18 or older, restricted territories, not an official Meta product, and how to report", () => {
     const terms = text(TERMS_SECTIONS);

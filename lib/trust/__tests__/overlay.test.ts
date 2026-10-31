@@ -81,7 +81,7 @@ describe("the build prompt", () => {
     assert.ok(trusted.includes("## Trust pages"));
     assert.ok(trusted.indexOf("## Trust pages") > trusted.indexOf("## Meta models") && trusted.indexOf("## Trust pages") < trusted.indexOf("## Inputs"));
     assert.equal(trusted.replace(`${trustBuildLines(true).join("\n")}\n`, ""), plain);
-    assert.ok(!/—/.test(trusted));
+    assert.ok(!/\u2014/.test(trusted));
   });
 });
 

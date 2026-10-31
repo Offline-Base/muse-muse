@@ -488,6 +488,126 @@ Geographic Use Policy, confirmed by the owner. A report never shows the reporter
 Spark to Wonder raises a live product's cost per call about 40 times on input and 100 times on output ($0.10 and $0.20
 per million on Contributor, $4 and $20 on Wonder), so its daily budget covers fewer runs.
 
+### 7a. As built (tg-cap-trust, Oct 31)
+
+Built on `tg-cap-int` (9a1d7dd). Every flag is off by default, and with all of them off nothing new is read or written:
+the brief goldens, `flags-off-surface` and `caps-off` pass unchanged with the trust flags added to their lists.
+
+**The legal text is a draft.** The platform's Terms and Privacy (`lib/trust/terms.ts`) and each product's privacy and terms
+pages (`template/caps/trust`) are plain-language drafts for the owner and counsel to review. They are not legal advice.
+The source files say so.
+
+**Migration 0018_trust**, as planned. Its journal index is 16 and `0019_engine` moved to 17, with 0019's SQL unchanged and
+its snapshot (now `0017_snapshot.json`) keeping its id and following 0018's. Generating 0019 on top of 0018 writes its
+statements exactly. When General lands 0016 and 0017, the merger renumbers both wave 3 entries again. The migrations test
+checks that a database at 0015 keeps its users and products, which read null for every new column.
+
+**Sign-in tiers** (`TRUST_SIGNED_IN_CAPS`, `lib/trust/tiers.ts`). `builderTier` is admin, builder (signed in with the
+shared code, decision 3), guest (the shared `OPEN_ACCESS=guest` account) or banned. `capsForBuilder(tier)` gives a guest or
+a banned builder only caps without `CAP_NEEDS_BUILDER`. `briefStep` passes `briefTierFor(build.userId)` to `writeBrief`
+(a new optional `builder` field), which uses its caps for the writer's schema, catalog and caps rules, and adds the guest
+rule as one more line of "Writing the brief". With the flag off, `briefTierFor` returns undefined and reads nothing.
+`tierMayUseBuilderCaps` and `productTrust` (`lib/trust/gateway.ts`) are what unit 3's gate check 4 needs. GPUs aren't a
+cap: unit 11 should check the tier itself.
+
+**The builder's daily dollars** (`TRUST_BUILDER_DAILY_USD`, read only with `TRUST_SIGNED_IN_CAPS`). `builderSpendToday`
+sums every usage row today of a product the builder owns or a build they started (gateway, tools, Muse Code, the brief and
+judge), each row once. Two places stop at the cap: the gateway's trust check answers 429 `budget_exceeded` for a live
+token, and `checkBuildAllowed` refuses a new build (429 with a sentence, which the composer now shows). Build tokens of a
+running build keep their own $10 budget, so a build isn't cut off halfway. Admins and the shared guest have no builder
+cap: the guest's products are each held to their own daily budget and `DAILY_SPEND_CAP_USD` as today, and a $5 cap on the
+one account every guest shares would turn off all of them at once. The check counts what was spent before the call, not
+the call's estimate, so calls running at that moment can go a little over.
+
+**The gateway** gets one marked line after the product check (`deps.trustCheck`, wired in `lib/gateway/deps.ts` only
+while `TRUST_REPORTS` or `TRUST_SIGNED_IN_CAPS` is on): a taken-down product or a banned owner's gets 403
+`product_disabled` before rate limits, and the builder cap as above. **Spark to Wonder**: a marked block where the handler
+maps `muse-spark-1.3`. With `TRUST_SPARK_TO_WONDER` a live token's call runs on `muse-wonder-1.0`, says so in
+`x-musemuse-note`, and is estimated and metered at Wonder's price; build tokens keep Contributor. Built and off
+(decision 2).
+
+**18+** (`TRUST_AGE_GATE`). Sign-in shows the box and refuses (400, a sentence) someone who hasn't confirmed for the current
+`TERMS_VERSION`, then records `adult_confirmed_at`, `terms_version` and `terms_accepted_at`. Someone who confirmed before
+can leave it unticked, so it asks once per terms version. `POST /api/account/confirm` covers sessions from before the flag
+and the shared guest, whose confirmation is a cookie (`mm_adult`, a year) because the account is shared. The sign-in page
+shows the box to anyone who still needs it, and `checkBuildAllowed` refuses a build until then (403, "Open Sign in to
+confirm").
+
+**Platform pages** (`TRUST_LEGAL_PAGES`): `/terms` and `/privacy` (404 with the flag off), linked under the sidebar's
+disclaimer with the disclaimer's own style, so the shell's CSS is unchanged.
+
+**Restricted territories** (`TRUST_GEO_BLOCK`, `TRUST_GEO_COUNTRIES`). The list is ISO codes and region codes, and `meta`
+stands for section 3 of Meta's Geographic Use Policy ("Last updated: October 12, 2026", read Oct 31): AF, BY, KH, CN, HK,
+MO, CU, ER, ET, HT, IR, IQ, LY, MM, NI, KP, PK, RU, SO, SY, VE, EH, and Crimea, Sevastopol, Donetsk and Luhansk as UA-43,
+UA-40, UA-14 and UA-09 (`x-vercel-ip-country-region`). Section 2.2 also restricts Muse Image in India, so a product that
+calls `muse-image-1.0` adds IN. On the platform this is not a `proxy.ts`: it is `next.config.ts` rewrites on the country
+headers to a 451 route (`app/api/trust/unavailable`), built from the env when the config loads, so with the flag off the
+config is unchanged and no proxy runs on every request. The gateway, cron and Next's assets aren't blocked. A change to
+the list needs a redeploy, as any env change on Vercel does. Tested through Next's own config matcher
+(`unstable_getResponseFromNextConfig`).
+
+**Reports, takedown, ban** (`TRUST_REPORTS`). `/report/<slug>` and `POST /api/reports` take a reason and up to 1,000
+characters from anyone, 3 a minute and 5 a day per reporter, where the reporter is an HMAC of the IP cut to 32 characters
+(key `toolKey("trust-reports")`); the IP isn't stored. Deletion requests come here as "privacy" (decision 13).
+`/admin/reports` lists open reports first, never the reporter, with close, dismiss, reopen, take down, undo, ban and lift.
+A takedown sets `taken_down_at` and the reason, sets the status to `disabled` (the kill switch the gateway, MCP connector,
+gallery and refinements already honor), revokes the live tokens at exactly `taken_down_at`, runs `capsProductOff`, hides
+the product page, and removes the project's production domain (`DELETE /v9/projects/{id}/domains/{host}`). Undo gives back
+only the tokens revoked at that moment, the status the latest build shipped with, and the domain. A ban sets `banned_at`,
+refuses sign-in (403) and builds, and takes down every product of the builder at the same moment, so lifting it undoes
+exactly those. Admins and the shared guest can't be banned (409). The product page has a Report button.
+
+**Deploy fix** (decision 1, unflagged, no `TRUST_DEPLOY_BIG_FILES`). Vercel's limit for an uploaded source file is 100 MB
+on Hobby and 1 GB on Pro (vercel.com/docs/limits, "Static file uploads"), so the per-file limit is 100 MB. A file over it
+fails the deploy step as a `FatalError` naming it ("over Vercel's 100.0 MB limit for one file"), before any deployment is
+made. Nothing is left out without a word. Units 8 and 9 can ship wasm and model files up to 100 MB.
+
+**The trust overlay** (`template/caps/trust`, `lib/trust/overlay.ts`). It isn't applied through `overlaysFor` or the caps
+file: a product with only trust would get a caps step with no caps, which fails. Instead provisioning applies it after
+the caps, while any of `TRUST_AGE_GATE`, `TRUST_LEGAL_PAGES`, `TRUST_GEO_BLOCK` or `TRUST_REPORTS` is on: the platform
+writes `musemuse.trust.json` (the flags, the territory list, the Report link) and `musemuse.privacy.json` (each model, what
+it does and which inputs it gets; what it keeps, from the caps or "nothing on a server"; Composio when an agent uses tools
+beyond web search; temporary uploads) from the brief, keeps both root-owned in `/vercel/musemuse/trust`, and commits the
+overlay as "Trust: privacy, terms, age gate, report link". Files: `proxy.ts` (the geo block with a 451 page, and the age
+gate for page visits, off under `MUSEMUSE_BUILD=1`), `lib/platform/trust.ts`, `components/Footer.tsx` (the template's
+contract and sentence, plus "It uses AI, which can make mistakes." and Privacy, Terms and Report), `/privacy`, `/terms` and
+`/age` in `app/(musemuse)/`, `app/api/musemuse/age/route.ts` (a year's cookie for these terms; SameSite=None and
+Partitioned on https so it works in a frame), `tests/musemuse-trust.spec.ts` and the `muse-trust` skill. All are platform
+files: every verify and demo puts them and the two records back (`restoreTrustFilesScript`, a no-op in a product without
+the overlay). `.env.local` gets `MUSEMUSE_BUILD=1` at provision, and on every change for a product built with the overlay,
+whatever the flags say then. brief.md gets a "Trust pages" section after the platform services. The check is the
+platform spec, which runs inside smoke, not `scripts/caps/trust.mjs`: trust has no caps step. A snapshot from before the
+overlay gets it copied in on a local run; the live site refuses until `npm run snapshot` is run again.
+
+**Tests.** `lib/trust/__tests__/`: tiers (7), gateway (9, through the real handler), geo (7, with Next's matcher), reports,
+takedown, ban, spend and 18+ on PGlite (10), overlay (9, apply and restore in bash on a git repo), provision scenario (4),
+terms text (2). `lib/publish/__tests__/big-files.scenario.test.ts` (3): the real collect script keeps an 11 MB file and lists
+a file just over 100 MB, an 11 MB file is in the deployment's file list with its digest, and a deploy with the big one fails
+by name before any deployment. `template/scripts/__tests__/trust.test.mjs` (9): no path collides but the Footer, the
+Footer's contract, and in a product copy with the overlay the proxy (451 by country and region, the gate's redirect, off
+under `MUSEMUSE_BUILD=1`), the age route's cookie, the pages rendered from the two files, and the template's `tsc`.
+Migrations: 0018 keeps rows. Full suite at the end: 3956 tests, 3948 pass, 0 fail, 8 skipped (live Meta tests without a
+key); `.test.tsx` 587 of 587; template 427 of 427; tsc clean.
+
+**The real test build didn't run.** A local build needs a fresh `VERCEL_OIDC_TOKEN` for Vercel Sandbox (the one on this
+machine expired Oct 29), and pulling one was refused by the permission classifier ("Credential Materialization"). A local
+site with throwaway secrets and every trust flag on was started to look at the pages, but its Turbopack dev server couldn't
+find Next through the worktree's symlinked `node_modules`, so it served 500s and was stopped. What did run for real: one
+brief on `TEST_MODEL` (Contributor, $0.000872) for a made-up note asking for a shared family grocery list saved across
+phones, written as a guest with `TRUST_SIGNED_IN_CAPS` on. It came back "partly", web only, with the limit "No sign in and
+no cloud save. The list stays only in this browser local storage." Sandbox spend $0.
+
+**Not proven yet.** `next build` of a product with the overlay (Turbopack with `proxy.ts`, the `(musemuse)` route group and
+the JSON imports): the template test typechecks and runs the files directly, but no sandbox built one. The trust spec has
+never run in Playwright. The Vercel domain removal and re-adding are tested against a fake API only. The age cookie in a
+frame on Safari depends on its support for Partitioned cookies. The platform pages were checked by tests, not in a
+browser. Run one guest build with every trust flag on (section 22) before any of these flags goes to production.
+
+**For the owner.** Decisions 2 (Spark to Wonder: built, off, about 40 to 100 times the price per call) and 4 (confirm
+`TRUST_GEO_COUNTRIES=meta`, including the Muse Image and India rule). Whether the shared guest account should have a builder
+cap. Review of the Terms and Privacy drafts with counsel. The builder snapshot needs `npm run snapshot` before any trust
+flag is on in production. Nothing in `muse-device/` changed.
+
 ## 8. Unit 2: engine (one-shot reliability)
 
 **Scope.** Round time by brief size, a capped first round that still gets checked, milestone builds, the caps frame
@@ -1421,6 +1541,11 @@ Phaser game.
   muse-app look, then a brief's targets, then its caps; every overlay sits in `TARGETS_DIR` through `installTargets`
   except caps, which stay in `CAPS_DIR`. Verify and demo restore the template's platform files, the targets', the look's,
   then the caps'. A snapshot's `templateHash` covers `template/`, `template/targets` and `template/caps`.
+- Oct 31 (unit 1): section 7a added. 0018 sits at journal index 16 and 0019 at 17; the platform's geo block is
+  `next.config.ts` rewrites, not a `proxy.ts`; the trust overlay is applied by its own script after the caps (not through
+  `overlaysFor` or the caps file) and checked by a platform spec in smoke; the big-file fix has no flag (decision 1);
+  `lib/gateway/handler.ts` gets a second marked block from unit 1 (Spark to Wonder); `writeBrief` takes an optional
+  `builder`; `lib/sandbox/tasks.ts` restores the trust overlay after the caps.
 
 
 - Oct 31: first version (unit 0).
