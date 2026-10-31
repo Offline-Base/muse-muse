@@ -1,0 +1,62 @@
+{"id":"date-01","kind":"date","value":"March 4, 2026","text":"Admitted on March 4, 2026 after the fall."}
+{"id":"date-02","kind":"date","value":"03/04/2026","text":"Follow-up visit 03/04/2026 went well."}
+{"id":"date-03","kind":"date","value":"2026-03-04","text":"Record updated 2026-03-04 by the nurse."}
+{"id":"date-04","kind":"date","value":"4 March 2026","text":"Enrolled on 4 March 2026 mid-year."}
+{"id":"date-05","kind":"date","value":"March 2026","text":"Transferred in March 2026 from out of state."}
+{"id":"date-06","kind":"date","value":"Sept. 12","text":"The meeting moved to Sept. 12 this year."}
+{"id":"date-07","kind":"date","value":"3/4/26","text":"Seen 3/4/26 in clinic."}
+{"id":"date-08","kind":"date","value":"12th of April","text":"Discharged on the 12th of April at noon."}
+{"id":"age-01","kind":"age","value":"93","text":"The resident is 93 years old and lives alone."}
+{"id":"age-02","kind":"age","value":"91","text":"Patient aged 91 reported dizziness."}
+{"id":"age-03","kind":"age","value":"102","text":"A 102-year-old attended the visit."}
+{"id":"age-04","kind":"age","value":"95","text":"Age: 95. No allergies."}
+{"id":"url-01","kind":"url","value":"https://portal.example.org/chart/77","text":"Open https://portal.example.org/chart/77 for the chart."}
+{"id":"url-02","kind":"url","value":"www.example.com/student/4","text":"Her page is www.example.com/student/4 now."}
+{"id":"url-03","kind":"url","value":"example.org/profile","text":"See example.org/profile for the photo."}
+{"id":"ip-01","kind":"ip","value":"192.0.2.14","text":"Logged in from 192.0.2.14 at home."}
+{"id":"ip-02","kind":"ip","value":"203.0.113.9","text":"The tablet last used 203.0.113.9 on campus."}
+{"id":"ip-03","kind":"ip","value":"2001:0db8:0000:0000:0000:ff00:0042:8329","text":"Seen at 2001:0db8:0000:0000:0000:ff00:0042:8329 today."}
+{"id":"record-01","kind":"record","value":"MR-448812","text":"Her MRN: MR-448812 is on file."}
+{"id":"record-02","kind":"record","value":"PLN77821","text":"Health plan number PLN77821 is active."}
+{"id":"record-03","kind":"record","value":"ACCT-9921","text":"Account number ACCT-9921 was closed."}
+{"id":"record-04","kind":"record","value":"D1234567","text":"Driver's license D1234567 expired."}
+{"id":"record-05","kind":"record","value":"1HGCM82633A004352","text":"The car, 1HGCM82633A004352, was parked outside."}
+{"id":"record-06","kind":"record","value":"00:1B:44:11:3A:B7","text":"Pump 00:1B:44:11:3A:B7 was replaced."}
+{"id":"record-07","kind":"record","value":"X99-4471","text":"Medical record number is X99-4471 in the old system."}
+{"id":"record-08","kind":"record","value":"C4471209","text":"Passport C4471209 is on file with the office."}
+{"id":"record-09","kind":"record","value":"BN-22817","text":"Member ID BN-22817 was denied."}
+{"id":"record-10","kind":"record","value":"7741208","text":"Case 7741208 is still open."}
+{"id":"record-11","kind":"record","value":"SN44871","text":"Serial number SN44871 belongs to the hearing aid."}
+{"id":"record-12","kind":"record","value":"(555) 010-0199","text":"Fax: (555) 010-0199 for the records office."}
+{"id":"place-01","kind":"place","value":"78701","text":"They live in 78701 now."}
+{"id":"place-02","kind":"place","value":"Coral Bay, TX","text":"She moved to Coral Bay, TX last year."}
+{"id":"place-03","kind":"place","value":"Larkspur Heights","text":"His family lives in Larkspur Heights near the river."}
+{"id":"place-04","kind":"place","value":"Quillmere County","text":"The clinic serves Quillmere County only."}
+{"id":"place-05","kind":"place","value":"78701-4021","text":"Mail goes to 78701-4021 each month."}
+{"id":"place-06","kind":"place","value":"larkspur heights","text":"they moved to larkspur heights over the summer."}
+{"id":"detail-01","kind":"detail","value":"Quillmere Elementary","text":"She attends Quillmere Elementary with her cousin."}
+{"id":"detail-02","kind":"detail","value":"Ashgrove Hospital","text":"His mother works at Ashgrove Hospital on weekends."}
+{"id":"detail-03","kind":"detail","value":"Northfen Dental Group","text":"The bill came from Northfen Dental Group last week."}
+{"id":"detail-04","kind":"detail","value":"Vosberg","text":"He met Vosberg after the appointment."}
+{"id":"detail-05","kind":"detail","value":"ACME","text":"Her father works at ACME downtown."}
+{"id":"detail-06","kind":"detail","value":"the blue door bakery","text":"her uncle runs the blue door bakery in town."}
+{"id":"clean-01","kind":"clean","text":"The class improved on Monday in reading and writing."}
+{"id":"clean-02","kind":"clean","text":"Most of the students finished the rubric by Friday."}
+{"id":"clean-03","kind":"clean","text":"Reading scores rose. Grades in math stayed the same."}
+{"id":"clean-04","kind":"clean","text":"The IEP meeting moved to next week."}
+{"id":"clean-05","kind":"clean","text":"The year 2026 was a good one for the program."}
+{"id":"clean-06","kind":"clean","text":"Average attendance was 91 percent across the term."}
+{"id":"clean-07","kind":"clean","text":"Evidence and details were the weakest part of the essays."}
+{"id":"clean-08","kind":"clean","text":"Patients reported less pain after the second week of therapy."}
+{"id":"clean-09","kind":"clean","text":"Blood pressure improved in most of the group."}
+{"id":"clean-10","kind":"clean","text":"Teachers asked for more time to review the new rubric."}
+{"id":"clean-11","kind":"clean","text":"Organization and conventions improved in the spring essays."}
+{"id":"clean-12","kind":"clean","text":"The garden project helped with science vocabulary."}
+{"id":"clean-13","kind":"clean","text":"Add 12 to the score and divide by 4."}
+{"id":"clean-14","kind":"clean","text":"Most families returned the permission slip on time."}
+{"id":"clean-15","kind":"clean","text":"Dose changes are reviewed every 30 days."}
+{"id":"clean-16","kind":"clean","text":"Summary: the class did well overall, with room to grow in writing."}
+{"id":"clean-17","kind":"clean","text":"The group is in Room 14 on the second floor."}
+{"id":"clean-18","kind":"clean","text":"The plan is to meet at 3 after lunch."}
+{"id":"clean-19","kind":"clean","text":"Held on your device."}
+{"id":"clean-20","kind":"clean","text":"The device has 12 hours of battery."}

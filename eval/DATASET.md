@@ -17,6 +17,8 @@ Everything described here is invented: the teacher, the 24 students, the school,
 | `demo/essays/<First Last>.md` | One garden essay per student, 150 to 300 words | 24 essays |
 | `demo/records/*.md` | Parent contacts, IEP and 504 notes, attendance, reading groups, behavior log, lunch status, health office | 7 files |
 
+`eval/fresh_200.jsonl` is a random sample of 200 items from `eval/synthetic.jsonl` (shuffled with seed 20261030), used once to score the device-only router. Its misses were then read and fixed, so it is no longer unseen. `eval/fresh_200_b.jsonl` is a second sample with no overlap (seed 20261031) for the final score, and its items were not read while writing the rules. `eval/compliance.jsonl` is 58 invented sentences for the toggles' tagging (`eval/run_compliance.py`).
+
 ## The roster
 
 Ms. Celeste Fairbrook teaches Room 14 at Quillmere Elementary (invented). The 24 students come from many backgrounds and include the name shapes that trip up a name guard:
