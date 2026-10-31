@@ -100,10 +100,10 @@ carries the page's uncaught errors and `console.error` calls in `errors`, which 
 **A new page in the same WebView.** Its load start ends the old page's recording, live view and speech, in case the old page
 didn't manage to, and a recording it was still starting never starts. A new WebView and a web process that died do the same.
 Jumps within a page don't count, and those follow a browser's own rule: the new URL has to name a fragment, so `/a#x` to `/a`
-is a new page, and the same `#x` link twice isn't. A reload, a form or going back always counts as a new page. Going back
-could be either, and a lost recording beats a microphone left on. iOS says how a navigation started and Android doesn't, and
-Android's load start also fires on `pushState`, so this needs rework before an Android build gets a glasses bridge. The
-glasses stay connected.
+is a new page, and the same `#x` link twice isn't. A reload, a form or a load start from going back always counts as a new
+page. Going back between two fragments of one document fires no load start on iOS, so a recording survives that. iOS says how
+a navigation started and Android doesn't, and Android's load start also fires on `pushState`, so this needs rework before an
+Android build gets a glasses bridge. The glasses stay connected.
 
 **One microphone at a time.** A second `startRecording` says `busy` from the moment the first one is called, and a
 `stopRecording` while one is still starting cancels it and says `bad_request`, so no recorder runs that nothing can reach.

@@ -27,8 +27,8 @@ function protocolOf(url: string): string | null {
 }
 
 /**
- * What iOS calls a navigation that loads a page, whatever its URL looks like. Going back can land on another document
- * or the same one, and this can't tell which, so it counts: a lost recording beats a microphone left on.
+ * What iOS calls a navigation that loads a page, whatever its URL looks like. Going back between two fragments of one
+ * document fires no load start at all, so one that does has left the document.
  */
 const PAGE_LOAD_TYPES = new Set(["reload", "formsubmit", "formresubmit", "backforward"]);
 
