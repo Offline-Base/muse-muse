@@ -1,16 +1,18 @@
 # Measuring Glimmer on the GPU machine
 
-Glimmer does not run on the owner's laptop: it overheated on the base file on Oct 31. This is how to measure it on the training session's A100 instead (llama.cpp b11970). **Nothing here runs until Ethan says yes.** Until then, this is only a plan. All items are invented.
+Glimmer does not run on the owner's laptop: it overheated on the base file on Oct 31. This is how to measure it on the training session's A100 instead (llama.cpp b11970). All items are invented.
 
 ## What these numbers mean
 
 They describe decisions and leaks on an A100. They do not describe speed, memory or heat on any device this ships on. Every report says so through `--measured-on`. The same file on another machine or llama.cpp build can answer differently, so a claim about the Jetson or the laptop needs its own run. Reasoning off has not been tested on the Jetson's b10353.
 
-## Before the first run
+## The go-ahead
 
-Ethan's yes also needs this amendment in `eval/reports/glimmer_prereg.md`, committed before any Glimmer row runs:
+Ethan said yes in chat on Oct 31. The amendments are in `eval/reports/glimmer_prereg.md`. The stage 2 stand-in proves the run on 20 items per row and carries no claim; the final file and base get full rows.
 
-> Glimmer does not run on the owner's laptop (Ethan, Oct 31), so the rows run on one A100 machine, on llama.cpp b11970. "On this laptop" and "the same device" above mean that machine. The baseline is re-measured there in the same run, on the same LFM3-VL-2B file; the laptop's 82.0% and 81.0% stay on record and are not the comparison. Every Glimmer row, tuned and base, is served with reasoning off and the same template. The stop rules apply to speed on that machine, which says nothing about any device. The candidate, the sealed set, the metrics and the test do not change.
+## Limits on the shared machine
+
+Work only under `~/mp-gpu`, with at most 8 GB of disk, and delete it when done. Bind 127.0.0.1 only. Hold `flock /home/ubuntu/q/gpu.lock` for each server session and release it between rows where possible, since the training session's final build must not wait long after about 8:15 PM ET. Check `nvidia-smi` first for servers not holding the lock. Put no keys there except the throwaway llama key, and no Hugging Face token. Never use the training machine for this: it must not see the eval sets.
 
 ## Build the copy, on the Mac
 
