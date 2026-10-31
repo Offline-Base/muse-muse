@@ -43,6 +43,7 @@ import uvicorn
 from base.config import load_settings
 from base.connector import relay_client as rc
 from base.connector.server import connector_app
+from base.workspace.jobs import JobStore
 
 pytestmark = pytest.mark.integration
 
@@ -50,6 +51,15 @@ REPO = Path(__file__).resolve().parents[1]
 RELAY_DIR = REPO / "relay"
 RELAY_PORT = int(os.environ.get("RELAY_E2E_PORT", "8796"))
 REDIRECT_URI = "https://muse.example.com/oauth/callback"
+# (client_name, redirect URI, clientInfo name). Claude's name and callback are from its help center
+# (support.claude.com, "Building custom connectors via remote MCP servers"); ChatGPT's callback is as
+# third-party guides report it. The relay does not limit either, so these check that nothing here is
+# tied to Muse, not that those apps' real clients behave this way.
+MUSE = ("Muse (e2e test)", REDIRECT_URI, "muse-e2e")
+OTHER_APPS = {
+    "claude": ("Claude", "https://claude.ai/api/mcp/auth_callback", "claude-ai"),
+    "chatgpt": ("ChatGPT", "https://chatgpt.com/connector_platform_oauth_redirect", "openai-mcp"),
+}
 REAL_NAME = "Zephyrine Quoll"  # invented
 TAG = "[Student A]"
 TOOLS = {
@@ -57,6 +67,7 @@ TOOLS = {
     "search_documents",
     "ask_device",
     "run_private_task",
+    "save_on_device",
     "get_result",
     "run_dreaming",
     "dreaming_report",
@@ -182,6 +193,7 @@ def fake_services(settings) -> SimpleNamespace:
         settings=settings,
         egress=TaggingEgress(),
         index=SimpleNamespace(list=lambda folder: docs),
+        jobs=JobStore(settings.home / "jobs.db"),  # list_documents releases as a finished job
         tagmap={},
         audit=None,
     )
@@ -234,7 +246,7 @@ async def submit_code(
     return await http.post(url, data=form, headers={"cookie": cookie})
 
 
-async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) -> dict:
+async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None, client: tuple[str, str, str] = MUSE) -> dict:
     """Run the whole path once. Raises AssertionError at the first step that does not hold."""
     worker = LocalWorker(workdir)
     connector_port = free_port()
@@ -268,6 +280,7 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
         tasks.append(asyncio.create_task(clients[0].run()))
         say(f"device {device_id} registered, pairing code issued, relay client running")
 
+        client_name, redirect_uri, info_name = client
         async with httpx.AsyncClient(trust_env=False, timeout=30, follow_redirects=False) as http:
             init = {
                 "jsonrpc": "2.0",
@@ -276,7 +289,7 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
                 "params": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {},
-                    "clientInfo": {"name": "muse-e2e", "version": "1"},
+                    "clientInfo": {"name": info_name, "version": "1"},
                 },
             }
             mcp_url = f"{worker.url}/mcp"
@@ -297,8 +310,8 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
             registered = await http.post(
                 meta["registration_endpoint"],
                 json={
-                    "client_name": "Muse (e2e test)",
-                    "redirect_uris": [REDIRECT_URI],
+                    "client_name": client_name,
+                    "redirect_uris": [redirect_uri],
                     "token_endpoint_auth_method": "none",
                     "grant_types": ["authorization_code", "refresh_token"],
                     "response_types": ["code"],
@@ -313,7 +326,7 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
             query = {
                 "response_type": "code",
                 "client_id": client_id,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": redirect_uri,
                 "state": "e2e-state",
                 "scope": "mcp",
                 "code_challenge": b64url(hashlib.sha256(verifier.encode()).digest()),
@@ -325,7 +338,7 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
             linked = await submit_code(http, authorize_url, handle, cookie, code.lower())
             assert linked.status_code == 302, (linked.status_code, linked.text[:200])
             location = urlsplit(linked.headers["location"])
-            assert f"{location.scheme}://{location.netloc}{location.path}" == REDIRECT_URI
+            assert f"{location.scheme}://{location.netloc}{location.path}" == redirect_uri
             params = {k: v[0] for k, v in parse_qs(location.query).items()}
             assert params["state"] == "e2e-state" and params["code"]
             assert params.get("iss", issuer) == issuer
@@ -337,7 +350,7 @@ async def run_e2e(workdir: Path, say: Callable[[str], None] = lambda _: None) ->
                 data={
                     "grant_type": "authorization_code",
                     "code": params["code"],
-                    "redirect_uri": REDIRECT_URI,
+                    "redirect_uri": redirect_uri,
                     "client_id": client_id,
                     "code_verifier": verifier,
                     "resource": prm["resource"],
@@ -431,6 +444,14 @@ async def test_relay_end_to_end(tmp_path):
     if not (RELAY_DIR / "node_modules" / ".bin" / "wrangler").exists():
         pytest.skip("relay/node_modules is missing: cd relay && npm ci --legacy-peer-deps")
     summary = await run_e2e(tmp_path)
+    assert summary["tools"] == sorted(TOOLS)
+
+
+@pytest.mark.parametrize("app", sorted(OTHER_APPS))
+async def test_claude_and_chatgpt_link_the_same_way(tmp_path, app):
+    if not (RELAY_DIR / "node_modules" / ".bin" / "wrangler").exists():
+        pytest.skip("relay/node_modules is missing: cd relay && npm ci --legacy-peer-deps")
+    summary = await run_e2e(tmp_path, client=OTHER_APPS[app])
     assert summary["tools"] == sorted(TOOLS)
 
 

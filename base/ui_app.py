@@ -41,7 +41,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from base import events, guard, regions
+from base import apps, events, guard, regions
 from base.approvals import AUTO_APPROVE_HOURS, AutoApprove
 from base.compliance import GROUPS, NOT_FOR, PROFILES, local_only
 from base.config import REPO_ROOT
@@ -84,7 +84,7 @@ LIGHT_LABELS = {
     "idle": "Idle",
     "working": "Working on this device",
     "waiting": "Waiting for your OK",
-    "sending": "Sending a tagged result to Muse",
+    "sending": "Sending a tagged result",
 }
 DECISION_LABELS = {
     "share_tagged": "Share tagged",
@@ -160,10 +160,17 @@ NAV = [
 
 
 _template_cache: dict[str, Template] = {}
+# $app and $company in every template: the linked app and its maker (base/apps.py). create_app sets them.
+_app_names: dict[str, str] = {"app": apps.DEFAULT, "company": apps.company(apps.DEFAULT)}
+
+
+def linked_app() -> str:
+    return _app_names["app"]
 
 
 def render(name: str, **values: Any) -> str:
     """Fill ui/templates/<name>. Values are HTML-escaped unless their key ends in `_html`."""
+    values = {**_app_names, **values}
     tpl = _template_cache.get(name)
     if tpl is None:
         tpl = Template((TEMPLATES_DIR / name).read_text(encoding="utf-8"))
@@ -506,7 +513,7 @@ def _ts_number(ts: Any) -> float | None:
 # What Always approve still leaves for the user (approvals.AUTO_APPROVE_SKIPS, and the router's refusals).
 AUTO_STILL_ASKS = (
     "Names stay tags and never-share topics are still kept here. You still see results with an identifier, "
-    "an ask-first topic, a never-share topic in Muse's request, a destination outside the class or a "
+    "an ask-first topic, a never-share topic in the app's request, a destination outside the class or a "
     "group number with someone left out."
 )
 
@@ -625,7 +632,8 @@ def scan_preview_html(rid: str, indexes: Iterable[int]) -> str:
     return (
         '<div class="field-label">The page the device read</div>'
         f'<div class="scan-previews">{figures}</div>'
-        '<p class="caption">Covered on this device before reading. The covered page stays on this device: Muse gets text only, never the image.</p>'
+        '<p class="caption">Covered on this device before reading. The covered page stays on this device: '
+        f'{esc(linked_app())} gets text only, never the image.</p>'
     )
 
 
@@ -712,7 +720,7 @@ def receipt_html(value: Any) -> str:
         ("Fingerprint", (r.get("sha256") or "")[:16]),
     ]
     if r.get("request_had_private_detail"):
-        lines.append(("Warning", "Muse's request held a private detail, so Muse had already seen it."))
+        lines.append(("Warning", f"{linked_app()}'s request held a private detail, so {linked_app()} had already seen it."))
     rows = "".join(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>" for k, v in lines)
     return f'<details class="peek"><summary>Receipt</summary><dl class="receipt">{rows}</dl></details>'
 
@@ -934,6 +942,8 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     pairing = Pairing(misses_path=settings.home / "pairing_misses")
     login_required = not is_loopback(settings.approval_host)
     guardian = getattr(services, "guardian", None) or Guardian(settings.home)
+    app_name = getattr(settings, "linked_app", apps.DEFAULT) or apps.DEFAULT
+    _app_names.update(app=app_name, company=apps.company(app_name))
 
     app = FastAPI(
         title="Muse Privacy",
@@ -1034,7 +1044,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             auto_note=(
                 "Off while a privacy toggle is on, so you see each result that needs your OK."
                 if locked
-                else f"Results that would wait for your OK go to Muse right away. {AUTO_STILL_ASKS}"
+                else f"Results that would wait for your OK go to {app_name} right away. {AUTO_STILL_ASKS}"
                 if on
                 else f"Turn it on for {AUTO_APPROVE_HOURS} hours to share results that would wait for your OK, "
                 f"without asking. {AUTO_STILL_ASKS}"
@@ -1266,7 +1276,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             rows.append(
                 f'    <div class="glance-row cols3"><div class="glance-label">{shown}'
                 f'<input type="hidden" name="folder_{i}" value="{esc(name)}"></div>'
-                f'<label class="switch"><input type="checkbox" name="see_{i}" value="1"{see} aria-label="Muse can see {esc(label)}"></label>'
+                f'<label class="switch"><input type="checkbox" name="see_{i}" value="1"{see} aria-label="{esc(app_name)} can see {esc(label)}"></label>'
                 f'<label class="switch"><input type="checkbox" name="names_{i}" value="1"{names}{lock} aria-label="Send real names from {esc(label)}"></label></div>\n'
             )
         checker = getattr(services, "regions", None)
@@ -1375,9 +1385,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         return [
             ("Every model on this device", bool(getattr(settings, "device_only", False)), "Set DEVICE_ONLY=1 in .env and restart."),
             ("The local model is running", model_up, "Run scripts/start.sh."),
-            ("This device is linked to Muse", (settings.home / "relay.json").is_file(), "Follow docs/MUSE_SETUP.md, then see Pairing."),
+            (f"This device is linked to {app_name}", (settings.home / "relay.json").is_file(),
+             "Follow docs/MUSE_SETUP.md, or docs/OTHER_APPS.md for Claude and ChatGPT, then see Pairing."),
             ("Disk encryption is on", filevault is not False, "Turn on FileVault in System Settings."),
-            ("Muse training is off", setup_flag("muse_training_off"), "In Muse, open Settings, then Data controls, and turn it off, then tick the box below. We can't read this setting."),
+            (f"{app_name} training is off", setup_flag("muse_training_off"),
+             f"In {app_name}, {apps.training_step(app_name)}, then tick the box below. We can't read this setting."),
             ("Who you're protecting is set", setup_flag("chosen") or bool(c.profiles), "Choose above and save. Leave them all off if it's just you."),
         ]
 
@@ -1398,6 +1410,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             checks_html=checks,
             toggles_html=toggles_html(c.profiles, bool(getattr(settings, "device_only", False))),
             training_checked=" checked" if setup_flag("muse_training_off") else "",
+            training_note=(
+                "Meta's training setting is on by default, and it covers connector results too."
+                if app_name.lower() == "muse"
+                else f"Check {apps.company(app_name)}'s training setting: what a connector returns can be covered by it."
+            ),
             toggles=", ".join(p.upper() for p in c.profiles) or "none",
             saved="Saved." if saved else "",
             guardian_html=guardian_html(guardian, guardian.unlocked(guardian_token(request))),
@@ -1524,7 +1541,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         original = str((await _read_body(request)).get("text") or "")[:PREPARE_LIMIT]
         tagged, note = prepare_text(services, controls, original)
         result = (
-            '<div class="codebox"><label class="codebox-label" for="prepared">copy this into Muse</label>'
+            '<div class="codebox"><label class="codebox-label" for="prepared">copy this into {esc(app_name)} or another chat app</label>'
             f'<textarea id="prepared" readonly rows="6">{esc(tagged)}</textarea></div>'
             if tagged
             else ""
@@ -1688,7 +1705,7 @@ def guardian_html(guardian: Guardian, unlocked: bool) -> str:
         '<h2 class="section">Guardian PIN</h2>\n<p class="section-lede">For a device you set up for someone else, '
         "such as a teen or an older relative. With a PIN, only you can change these settings, and with the box "
         "below ticked, only you can approve a result. Anyone can still deny one. It does not stop what they type "
-        "into Muse, and someone with an administrator account on this computer can remove it.</p>\n"
+        f"into {esc(linked_app())}, and someone with an administrator account on this computer can remove it.</p>\n"
     )
     pin = '<input type="password" name="{name}" autocomplete="new-password" minlength="6" maxlength="64" required aria-label="{label}">'
     if not guardian.is_set():
@@ -1754,7 +1771,7 @@ def flow_facts(services: Any, settings: Any, c: Any, pending: int) -> dict[str, 
     names of settings only: never a file name or anything from a document."""
     try:
         count = len(services.index._files(Path(settings.workspace_root)))
-        files = f"{count} {'file' if count == 1 else 'files'} Muse can see. They never leave."
+        files = f"{count} {'file' if count == 1 else 'files'} {linked_app()} can see. They never leave."
     except Exception:
         files = "Read only on this device. They never leave."
     if getattr(settings, "device_only", False):
@@ -1864,7 +1881,8 @@ def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
         if not callable(names) or getattr(checker, "is_cloud", True):
             raise RuntimeError("no local name check")
         result = guard.tag(text, services.roster, services.tagmap, llm_names=names, **kw)
-        note = "Copy this into Muse or the Meta AI app. Muse's searches here swap the tags back, and so does Put the names back below."
+        note = (f"Copy this into {linked_app()} or another chat app, like the Meta AI app. Searches through the connector "
+                "swap the tags back, and so does Put the names back below.")
     except Exception as exc:
         log.warning("prepare could not run the name check: %s", type(exc).__name__)
         result = guard.tag(text, services.roster, services.tagmap, **kw)
@@ -1898,7 +1916,7 @@ def tag_day_note(tagmap: Any) -> str:
     day = date.fromordinal(today + date(1970, 1, 1).toordinal())
     return (
         f"Tags change every day on this device. These are the tags for {day:%B} {day.day} (tag day {today}). "
-        "Muse can use them until about a day and a half after the day ends, then tag your question again."
+        f"{linked_app()} can use them until about a day and a half after the day ends, then tag your question again."
     )
 
 

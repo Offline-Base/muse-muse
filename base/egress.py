@@ -18,7 +18,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from base import compliance, regions, retention
+from base import apps, compliance, regions, retention
 from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove, needs_a_person
@@ -45,11 +45,8 @@ _TAGS: ContextVar[Any] = ContextVar("tags", default=None)
 WAITING_TEXT = "Waiting for your OK on the device."
 HELD_TEXT = "Held on your device."
 KEPT_TEXT = "Kept on your device."
-RAW_REQUEST_NOTE = (
-    "Note: this request included a private detail, so Muse has already seen it. Use tags in requests, "
-    "and turn off training under Data controls in your Muse settings."
-)
-DESTINATION = "Muse, through the relay"
+RAW_REQUEST_NOTE = apps.request_note()  # with LINKED_APP left as Muse; egress names the linked app
+DESTINATION = apps.destination()
 # Kinds that count as a private detail in Muse's request, for the note above. The kinds only a
 # toggle adds are left out: they lean toward removing too much, so they'd warn about plain words.
 _REQUEST_NOTE_KINDS = frozenset({"student", "teacher", "person", "term"}) | IDENTIFIER_KINDS
@@ -473,7 +470,7 @@ class Egress:
             "model": getattr(settings, "router_model", None),
             "toggles": list(profiles),
             "device_only": bool(getattr(settings, "device_only", False)),
-            "destination": DESTINATION,
+            "destination": apps.destination(getattr(settings, "linked_app", apps.DEFAULT)),
             "request_had_private_detail": list(raw_kinds),
             "sha256": hashlib.sha256(outgoing.encode("utf-8")).hexdigest(),
             **extra,
@@ -619,7 +616,8 @@ class Egress:
             self._audit("egress", "egress_blocked")
             return Released("refused", HELD_TEXT, approval_id, route, tagged)
         if _RAW_REQUEST.get():
-            text = f"{text}\n\n{RAW_REQUEST_NOTE}"
+            app = getattr(getattr(self.services, "settings", None), "linked_app", apps.DEFAULT)
+            text = f"{text}\n\n{apps.request_note(app)}"
         if status == "shared":
             self._mark_sent(text)
             self._emit("sending", detail)  # the light plays one sweep, then shows the next state

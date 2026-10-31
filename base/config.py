@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from base import manifest
+from base import apps, manifest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SYNTHETIC_MARKER = ".synthetic"
@@ -155,6 +155,9 @@ class Settings:
     # at <|eot|>, for a file whose reasoning is broken. start.sh then serves it with --reasoning-format
     # none; give the file's own template in GLIMMER_TEMPLATE. Tested on stage 2 Q4_K_M, b11970, A100.
     glimmer_reasoning: Literal["on", "off"] = "on"
+    # The AI app linked to this device, by name, for its pages and messages (base/apps.py): Muse,
+    # Claude, ChatGPT or another app that takes a remote MCP connector.
+    linked_app: str = "Muse"
     # Who labels Muse's requests: the checker, or Glimmer with its labels checked the same way
     # (LABELS_BACKEND=glimmer, which needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm).
     labels_backend: Literal["checker", "glimmer"] = "checker"
@@ -282,6 +285,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if labels not in ("checker", "glimmer"):
         raise ValueError(f"LABELS_BACKEND must be checker or glimmer, not {labels!r}")
     glimmer_reasoning = get("GLIMMER_REASONING", "on")
+    linked_app = apps.clean(get("LINKED_APP"))
     if glimmer_reasoning not in ("on", "off"):
         raise ValueError(f"GLIMMER_REASONING must be on or off, not {glimmer_reasoning!r}")
     if labels == "glimmer" and (primary != "glimmer" or checker != "lfm"):
@@ -368,6 +372,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         checker_backend=checker,  # type: ignore[arg-type]
         labels_backend=labels,  # type: ignore[arg-type]
         glimmer_reasoning=glimmer_reasoning,  # type: ignore[arg-type]
+        linked_app=linked_app,
         primary_model=primary,  # type: ignore[arg-type]
         jetson_lfm_url=jetson_lfm_url,
         jetson_lfm_model=get("JETSON_LFM_MODEL", "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"),

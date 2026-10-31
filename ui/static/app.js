@@ -7,7 +7,7 @@
     idle: "Idle",
     working: "Working on this device",
     waiting: "Waiting for your OK",
-    sending: "Sending a tagged result to Muse"
+    sending: "Sending a tagged result"
   };
   var body = document.body;
   var page = body.dataset.page || "";

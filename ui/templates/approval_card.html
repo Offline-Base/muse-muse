@@ -1,6 +1,6 @@
 <article class="card approval" id="approval-$id" data-id="$id">
   <div class="card-top">
-    <span class="eyebrow">Muse asked</span>
+    <span class="eyebrow">$app asked</span>
     <span class="when">$when</span>
   </div>
   <p class="request">$request</p>
@@ -10,7 +10,7 @@
   $preview_html
   $blocked_html
   <p class="router"><span class="field-label inline">Why you are asked</span> $router_reason</p>
-  <p class="caption">If you share it, Muse gets $shown.</p>
+  <p class="caption">If you share it, $app gets $shown.</p>
   <div class="metric-row">$meta</div>
   <form class="js-approval actions" method="post" action="/api/approvals/$id_url">
     <button class="btn primary" type="submit" name="approve" value="1">Share it</button>
