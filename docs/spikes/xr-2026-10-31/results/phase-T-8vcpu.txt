@@ -1,0 +1,16 @@
+--- phase T: exit 0 in 205 s
+budget                         PASS fps=21.3/24.9 cast=23.5 xrFps=23.2 calls=113 tris=97270
+budget-two-views               PASS fps=17.6/19.8 cast=22.9 xrFps=22.7 calls=226 tris=194540
+budget-unpickable              PASS fps=23.2/28.3 cast=25.2 xrFps=25 calls=113 tris=97270
+budget-lambert                 PASS fps=22.5/26.6 cast=27 xrFps=26.7 calls=113 tris=97270
+half                           PASS fps=24.4/30.4 cast=28.8 xrFps=28.5 calls=68 tris=53170
+half-two-views                 PASS fps=22.6/27 cast=25.9 xrFps=25.7 calls=136 tris=106340
+half-lambert                   PASS fps=26/35.8 cast=36.2 xrFps=35.9 calls=68 tris=53170
+quarter                        PASS fps=32.4/38.5 cast=36.9 xrFps=36.7 calls=45 tris=30630
+light                          PASS fps=38.8/46.4 cast=40.6 xrFps=40.6 calls=23 tris=9070
+light-two-views                PASS fps=35/45.8 cast=45.4 xrFps=45.4 calls=46 tris=18140
+budget-again                   PASS fps=26.4/30.1 cast=27.8 xrFps=27.5 calls=113 tris=97270
+tune exit 0 in 202 s
+
+[stderr]
+

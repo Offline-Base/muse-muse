@@ -1,0 +1,40 @@
+--- phase D: exit 0 in 62 s
+.next/BUILD_ID
+== D1 record
+
+Running 1 test using 1 worker
+
+musemuse demo: 168 frames, 5 steps, 9 actions, 2 results, 21.723 s, 1 problem(s) in test-results/demo/recorder.log
+  ✓  1 [studio] › tests/smoke.demo.spec.ts:5:1 › step into the room and pick the blue box (22.1s)
+
+  1 passed (24.3s)
+record exit 0 in 25 s
+frames are 1280x720: launch Chromium with --force-device-scale-factor=2 for sharp text
+== D2 render
+demo-studio: studio: 168 frames over 21.7 s -> 21.7 s main part, 0 zooms, 5 captions, 0 badges
+demo-studio: cards drawn in 3.1 s
+demo-studio: ffmpeg finished in 29.6 s
+{"musemuse_studio":1,"ok":true,"mode":"studio","seconds":26.53,"sourceSeconds":21.72,"compressedSeconds":0,"zooms":0,"captions":5,"badges":0,"poster":21.7,"ms":32860}
+render exit 0 in 33 s
+== D3 check
+stream|codec_name=h264|width=1920|height=1080|r_frame_rate=30/1
+format|duration=26.533333|size=2822971
+{"duration":21.723,"frames":168,"viewport":{"width":1280,"height":720},"dpr":1,"status":"passed","actions":["goto:/","goto:/","click:Enter VR","xr:Look at a point","xr:Look at Reset","xr:Look at Start","xr:Select Start","xr:Select Reset","xr:Select Start"],"results":2,"vr":{"seconds":10.9,"frames":101,"fps":9.2,"worstGapS":4}}
+Look at a point: 1.6 s, 35 frames, 21.9 fps
+Look at Reset: 1.6 s, 29 frames, 18.0 fps
+Look at Start: 1.3 s, 23 frames, 17.1 fps
+Select Start: 0.9 s, 4 frames, 4.3 fps
+Select Reset: 0.8 s, 4 frames, 5.2 fps
+Select Start: 0.7 s, 3 frames, 4.3 fps
+first recorded VR frame {"spread":190,"colors":557,"top":0.521,"blank":false}
+video at 1.7 s {"spread":187.2,"colors":718,"top":0.106,"blank":false}
+video at 5.0 s {"spread":184.9,"colors":690,"top":0.317,"blank":false}
+video at 8.3 s {"spread":171.1,"colors":691,"top":0.297,"blank":false}
+video at 11.6 s {"spread":172,"colors":736,"top":0.307,"blank":false}
+video at 14.9 s {"spread":176.4,"colors":840,"top":0.257,"blank":false}
+video at 18.2 s {"spread":183.5,"colors":813,"top":0.257,"blank":false}
+video at 21.6 s {"spread":184.8,"colors":842,"top":0.256,"blank":false}
+video at 24.9 s {"spread":49.4,"colors":595,"top":0.202,"blank":false}
+
+[stderr]
+

@@ -1,0 +1,1311 @@
+[
+  {
+    "label": "shell-none-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 683,
+    "handleMs": 536,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 736,
+    "fps": 10.7,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1223,
+    "animateActual": 1.2215,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 12.8,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 51,
+      "seconds": 4.1,
+      "fps": 12.3,
+      "xrFps": 12.1,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "10.7 fps",
+      "12.8 fps after select"
+    ]
+  },
+  {
+    "label": "shell-unsafe-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 65,
+    "handleMs": 428,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 771,
+    "fps": 9.9,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1247,
+    "animateActual": 1.257,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 13,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 52,
+      "seconds": 4.1,
+      "fps": 12.6,
+      "xrFps": 12.4,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "9.9 fps",
+      "13 fps after select"
+    ]
+  },
+  {
+    "label": "shell-gl-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [
+      "--use-gl=swiftshader",
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 56,
+    "handleMs": 370,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 686,
+    "fps": 10.9,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1240,
+    "animateActual": 1.2355,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 13.9,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 56,
+      "seconds": 4.1,
+      "fps": 13.5,
+      "xrFps": 13.3,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "10.9 fps",
+      "13.9 fps after select"
+    ]
+  },
+  {
+    "label": "shell-angle-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 53,
+    "handleMs": 398,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 145,
+    "fps": 14.9,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1347,
+    "animateActual": 1.246600000000006,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 17.3,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 31,
+      "seconds": 4.7,
+      "fps": 6.6,
+      "xrFps": 12.4,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "14.9 fps",
+      "screencast 6.6 fps"
+    ]
+  },
+  {
+    "label": "chromium-none-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "chromium",
+    "args": [],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 353,
+    "handleMs": 448,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 1,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 686,
+    "fps": 11.4,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1198,
+    "animateActual": 1.209,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 15.8,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 60,
+      "seconds": 4.1,
+      "fps": 14.6,
+      "xrFps": 14.4,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 1,
+    "shortfalls": [
+      "1 console errors on load",
+      "11.4 fps"
+    ]
+  },
+  {
+    "label": "chromium-unsafe-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "chromium",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 117,
+    "handleMs": 425,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 1,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 686,
+    "fps": 11,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1177,
+    "animateActual": 1.2567999999999884,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 14.7,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 60,
+      "seconds": 4.1,
+      "fps": 14.6,
+      "xrFps": 14.4,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 1,
+    "shortfalls": [
+      "1 console errors on load",
+      "11 fps",
+      "14.7 fps after select"
+    ]
+  },
+  {
+    "label": "chromium-gl-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "chromium",
+    "args": [
+      "--use-gl=swiftshader",
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 111,
+    "handleMs": 466,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 1,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 676,
+    "fps": 11.3,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1218,
+    "animateActual": 1.2316000000000058,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 15,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 60,
+      "seconds": 4.2,
+      "fps": 14.4,
+      "xrFps": 14.2,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 1,
+    "shortfalls": [
+      "1 console errors on load",
+      "11.3 fps"
+    ]
+  },
+  {
+    "label": "chromium-angle-budget",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "chromium",
+    "args": [
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 121,
+    "handleMs": 519,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 1,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 129,
+    "fps": 10.8,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1433,
+    "animateActual": 1.2585,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 13.9,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 58,
+      "seconds": 4.8,
+      "fps": 12,
+      "xrFps": 12.2,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 1,
+    "shortfalls": [
+      "1 console errors on load",
+      "10.8 fps",
+      "13.9 fps after select"
+    ]
+  },
+  {
+    "label": "shell-unsafe-light",
+    "url": "http://localhost:3150/",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 48,
+    "handleMs": 387,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 23,
+      "triangles": 9070,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 318,
+    "fps": 17.7,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 154,
+      "top": 0.53,
+      "blank": false
+    },
+    "animateMs": 1148,
+    "animateActual": 1.2003999999999941,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 56,
+      "top": 0.498,
+      "blank": false
+    },
+    "poseChanged": 0.142,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 61,
+      "top": 0.498,
+      "blank": false
+    },
+    "fpsAfter": 26.9,
+    "infoAfter": {
+      "drawCalls": 24,
+      "triangles": 9072
+    },
+    "screencast": {
+      "frames": 92,
+      "seconds": 4.1,
+      "fps": 22.7,
+      "xrFps": 22.4,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": []
+  },
+  {
+    "label": "shell-unsafe-budget-2nd",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 43,
+    "handleMs": 402,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 729,
+    "fps": 11.1,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2692,
+      "top": 0.447,
+      "blank": false
+    },
+    "animateMs": 1239,
+    "animateActual": 1.2348999999999941,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.31,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2439,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 14.7,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 57,
+      "seconds": 4.1,
+      "fps": 13.9,
+      "xrFps": 13.7,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "11.1 fps",
+      "14.7 fps after select"
+    ]
+  },
+  {
+    "label": "shell-unsafe-budget-msaa",
+    "url": "http://localhost:3150/?scene=budget&aa=1",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 52,
+    "handleMs": 415,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": true,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 1587,
+    "fps": 5.9,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 3053,
+      "top": 0.443,
+      "blank": false
+    },
+    "animateMs": 1432,
+    "animateActual": 1.2,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2794,
+      "top": 0.409,
+      "blank": false
+    },
+    "poseChanged": 0.314,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2798,
+      "top": 0.409,
+      "blank": false
+    },
+    "fpsAfter": 8,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 42,
+      "seconds": 5.4,
+      "fps": 7.7,
+      "xrFps": 7.6,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "5.9 fps",
+      "8 fps after select",
+      "screencast 7.7 fps"
+    ]
+  },
+  {
+    "label": "shell-unsafe-budget-960",
+    "url": "http://localhost:3150/?scene=budget",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 960,
+    "height": 540,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 48,
+    "handleMs": 413,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 113,
+      "triangles": 97270,
+      "buffer": "960x540"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 880,
+    "fps": 13.4,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 2745,
+      "top": 0.446,
+      "blank": false
+    },
+    "animateMs": 1207,
+    "animateActual": 1.2057000000000115,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 2471,
+      "top": 0.412,
+      "blank": false
+    },
+    "poseChanged": 0.314,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 2480,
+      "top": 0.412,
+      "blank": false
+    },
+    "fpsAfter": 19.8,
+    "infoAfter": {
+      "drawCalls": 114,
+      "triangles": 97272
+    },
+    "screencast": {
+      "frames": 75,
+      "seconds": 4.1,
+      "fps": 18.5,
+      "xrFps": 18.2,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "13.4 fps"
+    ]
+  },
+  {
+    "label": "shell-unsafe-devui",
+    "url": "http://localhost:3150/?devui=1",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 56,
+    "handleMs": 465,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": true,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 23,
+      "triangles": 9070,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 17,
+      "kb": 2705,
+      "sentKb": 935
+    },
+    "sessionMs": 435,
+    "fps": 14.8,
+    "pose1": {
+      "spread": 190.9,
+      "colors": 395,
+      "top": 0.496,
+      "blank": false
+    },
+    "animateMs": 1208,
+    "animateActual": 1.207100000000035,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 180.6,
+      "colors": 165,
+      "top": 0.446,
+      "blank": false
+    },
+    "poseChanged": 0.328,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 180.6,
+      "colors": 171,
+      "top": 0.446,
+      "blank": false
+    },
+    "fpsAfter": 19.9,
+    "infoAfter": {
+      "drawCalls": 24,
+      "triangles": 9072
+    },
+    "screencast": {
+      "frames": 79,
+      "seconds": 4.1,
+      "fps": 19.5,
+      "xrFps": 19.2,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": [
+      "14.8 fps"
+    ]
+  },
+  {
+    "label": "shell-unsafe-hands",
+    "url": "http://localhost:3150/",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 49,
+    "handleMs": 488,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 23,
+      "triangles": 9070,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 15,
+      "kb": 2551,
+      "sentKb": 891
+    },
+    "sessionMs": 234,
+    "fps": 18.4,
+    "pose1": {
+      "spread": 190.2,
+      "colors": 154,
+      "top": 0.53,
+      "blank": false
+    },
+    "animateMs": 1240,
+    "animateActual": 1.2357999999999885,
+    "animateErrorCm": 0,
+    "pose2": {
+      "spread": 190.2,
+      "colors": 56,
+      "top": 0.498,
+      "blank": false
+    },
+    "poseChanged": 0.142,
+    "targets": [
+      "Start",
+      "Reset"
+    ],
+    "select": {
+      "before": "Ready",
+      "after": "Selected Start",
+      "changed": true
+    },
+    "selectedShot": {
+      "spread": 190.2,
+      "colors": 61,
+      "top": 0.498,
+      "blank": false
+    },
+    "fpsAfter": 28.8,
+    "infoAfter": {
+      "drawCalls": 24,
+      "triangles": 9072
+    },
+    "handsShot": {
+      "spread": 190.2,
+      "colors": 65,
+      "top": 0.498,
+      "blank": false
+    },
+    "screencast": {
+      "frames": 101,
+      "seconds": 4.3,
+      "fps": 23.5,
+      "xrFps": 23.3,
+      "sampled": 8,
+      "nonBlank": 8
+    },
+    "exited": true,
+    "totalConsoleErrors": 0,
+    "shortfalls": []
+  },
+  {
+    "label": "shell-unsafe-blank",
+    "url": "http://localhost:3150/?blank=1",
+    "channel": "default",
+    "args": [
+      "--enable-unsafe-swiftshader"
+    ],
+    "width": 1280,
+    "height": 720,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "external": [],
+    "failedRequests": [],
+    "badResponses": [],
+    "version": "156.0.8078.4",
+    "launchMs": 44,
+    "handleMs": 390,
+    "mode": "emulated",
+    "info": {
+      "nativeSupported": false,
+      "emulatedSupported": true,
+      "devui": false,
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "vendor": "Google Inc. (Google)",
+      "webgl2": true,
+      "antialias": false,
+      "drawCalls": 14,
+      "triangles": 8964,
+      "buffer": "1280x720"
+    },
+    "loadConsoleErrors": 0,
+    "scripts": {
+      "files": 14,
+      "kb": 2138,
+      "sentKb": 615
+    },
+    "sessionMs": 96,
+    "fps": 20.6,
+    "pose1": {
+      "spread": 0,
+      "colors": 19,
+      "top": 0.984,
+      "blank": true
+    },
+    "shortfalls": [
+      "undefined fps after select",
+      "pose 1 is blank",
+      "pose 2 is blank",
+      "poses differ by undefined",
+      "animate_to is off by undefined cm",
+      "select changed nothing",
+      "screencast undefined fps"
+    ]
+  }
+]

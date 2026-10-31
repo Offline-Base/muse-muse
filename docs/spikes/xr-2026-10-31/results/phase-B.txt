@@ -1,0 +1,161 @@
+--- phase B: exit 0 in 354 s
+== B1 install
+
+added 65 packages in 10s
+
+added 6 packages in 1s
+install in 11 s
+814M	node_modules
+== B2 npm ls three
+musemuse-product@0.1.0 /vercel/app
+├─┬ @iwer/devui@2.7.0
+│ └── three@0.184.0 deduped
+├─┬ @react-three/fiber@9.8.2
+│ └── three@0.184.0 deduped
+├─┬ @react-three/uikit@1.0.78
+│ └─┬ @pmndrs/uikit@1.0.78
+│   └── three@0.184.0 deduped
+├─┬ @react-three/xr@6.6.32
+│ ├─┬ @pmndrs/xr@6.6.32
+│ │ ├─┬ @iwer/devui@1.1.2
+│ │ │ └── three@0.165.0
+│ │ ├─┬ @iwer/sem@0.2.5
+│ │ │ └── three@0.165.0
+│ │ ├─┬ meshline@3.3.1
+│ │ │ └── three@0.184.0 deduped
+│ │ └── three@0.184.0 deduped
+│ └── three@0.184.0 deduped
+└── three@0.184.0
+
+distinct three versions: three@0.165.0 three@0.184.0 
+== B3 local controller and hand models
+
+added 1 package in 2s
+4.5M	public/xr/profiles
+generic-hand
+generic-trigger
+meta-quest-touch-plus
+profilesList.json
+undefined
+LICENSE.md
+README.md
+dist
+package.json
+schemas
+src
+assets in 3 s
+== B4 overlay and patches
+patched playwright.config.ts, 4 edit(s)
+patched scripts/verify.mjs, 1 edit(s)
+patched tests/judge-shot.ts, 2 edit(s)
+patched tests/demo-fixtures.ts, 3 edit(s)
+== B5 next build
+[1m[38;2;173;127;168m▲ Next.js 16.4.3[39m[22m (Turbopack)
+[32m[1m✓[22m[39m Running next.config.ts took 149ms
+
+[37m[1m [22m[39m Creating an optimized production build ...
+[32m[1m✓[22m[39m Compiled successfully in 7.0s
+[37m[1m [22m[39m Running TypeScript ...
+[37m[1m [22m[39m Finished TypeScript in 5.7s ...
+[37m[1m [22m[39m Collecting page data using 3 workers ...
+[37m[1m [22m[39m Generating static pages using 3 workers (0/4) ...
+[37m[1m [22m[39m Generating static pages using 3 workers (1/4) 
+[37m[1m [22m[39m Generating static pages using 3 workers (2/4) 
+[37m[1m [22m[39m Generating static pages using 3 workers (3/4) 
+[32m[1m✓[22m[39m Generating static pages using 3 workers (4/4) in 204ms
+[37m[1m [22m[39m Finalizing page optimization ...
+
+[4mRoute (app)[24m
+┌ ○ /
+├ ○ /_not-found
+└ ƒ /api/upload
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+build exit 0 in 14 s
+total 28 chunks, 8451 KB raw, 2822 KB gzipped
+  2038 KB   698 KB gz                   chunks/0imjae13nybck.js
+  1465 KB   504 KB gz                   chunks/3c8ltf_zkqwee.js
+  1100 KB   275 KB gz  devui,three      chunks/1vh3s3b9q8h8b.js
+   674 KB   216 KB gz  iwer,three,uikit chunks/07rgbacbb6gii.js
+   536 KB   195 KB gz                   chunks/134cgmu74w9ta.js
+   413 KB   276 KB gz                   chunks/01dw3_a2g3m8n.js
+   400 KB   139 KB gz                   chunks/30souxcboydlv.js
+   394 KB   105 KB gz  three            chunks/40cvx_h1-yslq.js
+== B6 matrix under next start
+page 200 in 0.004131 s
+shell-none-budget              FAIL fps=10.7/12.8 session=736ms cast=12.3 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 10.7 fps | 12.8 fps after select
+shell-unsafe-budget            FAIL fps=9.9/13 session=771ms cast=12.6 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 9.9 fps | 13 fps after select
+shell-gl-budget                FAIL fps=10.9/13.9 session=686ms cast=13.5 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 10.9 fps | 13.9 fps after select
+shell-angle-budget             FAIL fps=14.9/17.3 session=145ms cast=6.6 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 14.9 fps | screencast 6.6 fps
+chromium-none-budget           FAIL fps=11.4/15.8 session=686ms cast=14.6 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load | 11.4 fps
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-unsafe-budget         FAIL fps=11/14.7 session=686ms cast=14.6 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load | 11 fps | 14.7 fps after select
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-gl-budget             FAIL fps=11.3/15 session=676ms cast=14.4 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load | 11.3 fps
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-angle-budget          FAIL fps=10.8/13.9 session=129ms cast=12 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load | 10.8 fps | 13.9 fps after select
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chosen: shell-unsafe (best shell-gl, 0 of 8 passed at budget)
+shell-unsafe-light             PASS fps=17.7/26.9 session=318ms cast=22.7 diff=0.142 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-budget-2nd        FAIL fps=11.1/14.7 session=729ms cast=13.9 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 11.1 fps | 14.7 fps after select
+shell-unsafe-budget-msaa       FAIL fps=5.9/8 session=1587ms cast=7.7 diff=0.314 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=true targets=Start,Reset
+  short: 5.9 fps | 8 fps after select | screencast 7.7 fps
+shell-unsafe-budget-960        FAIL fps=13.4/19.8 session=880ms cast=18.5 diff=0.314 err=0cm select=true calls=113 tris=97270 buffer=960x540 aa=false targets=Start,Reset
+  short: 13.4 fps
+shell-unsafe-devui             FAIL fps=14.8/19.9 session=435ms cast=19.5 diff=0.328 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+  short: 14.8 fps
+shell-unsafe-hands             PASS fps=18.4/28.8 session=234ms cast=23.5 diff=0.142 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-blank             FAIL fps=20.6/- session=96ms cast=- diff=- err=-cm select=- calls=14 tris=8964 buffer=1280x720 aa=false targets=-
+  short: undefined fps after select | pose 1 is blank | pose 2 is blank | poses differ by undefined | animate_to is off by undefined cm | select changed nothing | screencast undefined fps
+blank check on an empty scene with controllers: {"spread":0,"colors":19,"top":0.984,"blank":true}
+matrix exit 0 in 290 s
+[1m[38;2;173;127;168m▲ Next.js 16.4.3[39m[22m
+- Local:         http://localhost:3150
+- Network:       http://169.254.0.2:3150
+[32m[1m✓[22m[39m Ready in 153ms
+[32m[1m✓[22m[39m Running next.config.ts took 31ms
+chosen flags: {  "args": [    "--enable-unsafe-swiftshader"  ]}
+== B7 npm run verify
+verify exit 0 in 32 s
+verify: typecheck ...
+verify: typecheck ok (5.5 s) no type errors
+verify: build ...
+verify: build ok (4.7 s) next build succeeded
+verify: start ...
+verify: start ok (0.6 s) GET / returned 200 on port 3100 after 0.6 s
+verify: console ...
+verify: console ok (2.9 s) no console or page errors
+verify: smoke ...
+verify: smoke ok (17.8 s) 1 passed
+verify: manifest ...
+verify: manifest ok (0.1 s) valid, 0 action(s), 0 fixture(s)
+verify: all steps passed
+{"musemuse_verify":1,"passed":true,"steps":[{"name":"typecheck","ok":true,"ms":5516,"detail":"no type errors"},{"name":"build","ok":true,"ms":4707,"detail":"next build succeeded"},{"name":"start","ok":true,"ms":610,"detail":"GET / returned 200 on port 3100 after 0.6 s"},{"name":"console","ok":true,"ms":2910,"detail":"no console or page errors"},{"name":"smoke","ok":true,"ms":17762,"detail":"1 passed"},{"name":"manifest","ok":true,"ms":146,"detail":"valid, 0 action(s), 0 fixture(s)"}],"failure":""}
+verify: typecheck ...
+verify: typecheck ok (5.5 s) no type errors
+verify: build ...
+verify: build ok (4.7 s) next build succeeded
+verify: start ...
+verify: start ok (0.6 s) GET / returned 200 on port 3100 after 0.6 s
+verify: console ...
+verify: console ok (2.9 s) no console or page errors
+verify: smoke ...
+verify: smoke ok (17.8 s) 1 passed
+verify: manifest ...
+verify: manifest ok (0.1 s) valid, 0 action(s), 0 fixture(s)
+verify: all steps passed
+
+[stderr]
+

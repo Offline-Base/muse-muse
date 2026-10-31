@@ -1,0 +1,194 @@
+{
+  "total": {
+    "files": 28,
+    "kb": 8451,
+    "gzKb": 2822
+  },
+  "chunks": [
+    {
+      "file": "chunks/0imjae13nybck.js",
+      "kb": 2038,
+      "gzKb": 698,
+      "has": []
+    },
+    {
+      "file": "chunks/3c8ltf_zkqwee.js",
+      "kb": 1465,
+      "gzKb": 504,
+      "has": []
+    },
+    {
+      "file": "chunks/1vh3s3b9q8h8b.js",
+      "kb": 1100,
+      "gzKb": 275,
+      "has": [
+        "devui",
+        "three"
+      ]
+    },
+    {
+      "file": "chunks/07rgbacbb6gii.js",
+      "kb": 674,
+      "gzKb": 216,
+      "has": [
+        "iwer",
+        "three",
+        "uikit"
+      ]
+    },
+    {
+      "file": "chunks/134cgmu74w9ta.js",
+      "kb": 536,
+      "gzKb": 195,
+      "has": []
+    },
+    {
+      "file": "chunks/01dw3_a2g3m8n.js",
+      "kb": 413,
+      "gzKb": 276,
+      "has": []
+    },
+    {
+      "file": "chunks/30souxcboydlv.js",
+      "kb": 400,
+      "gzKb": 139,
+      "has": []
+    },
+    {
+      "file": "chunks/40cvx_h1-yslq.js",
+      "kb": 394,
+      "gzKb": 105,
+      "has": [
+        "three"
+      ]
+    },
+    {
+      "file": "chunks/2bw7fzok803m0.js",
+      "kb": 339,
+      "gzKb": 81,
+      "has": [
+        "three"
+      ]
+    },
+    {
+      "file": "chunks/0ul2188sz0avg.js",
+      "kb": 258,
+      "gzKb": 71,
+      "has": [
+        "devui"
+      ]
+    },
+    {
+      "file": "chunks/2nii411saqstq.js",
+      "kb": 202,
+      "gzKb": 64,
+      "has": []
+    },
+    {
+      "file": "chunks/1f3_j0-7srs8o.js",
+      "kb": 176,
+      "gzKb": 47,
+      "has": []
+    },
+    {
+      "file": "chunks/0cz1d0mv5g_q7.js",
+      "kb": 110,
+      "gzKb": 39,
+      "has": []
+    },
+    {
+      "file": "chunks/0b-_6k8atbleh.js",
+      "kb": 96,
+      "gzKb": 37,
+      "has": []
+    },
+    {
+      "file": "chunks/3hckj4ibfwvt8.js",
+      "kb": 88,
+      "gzKb": 24,
+      "has": [
+        "devui"
+      ]
+    },
+    {
+      "file": "chunks/0-i6rqco2ryy6.js",
+      "kb": 66,
+      "gzKb": 20,
+      "has": []
+    },
+    {
+      "file": "chunks/22um6x862_ud3.js",
+      "kb": 22,
+      "gzKb": 7,
+      "has": []
+    },
+    {
+      "file": "chunks/0zl7-s0y--5mo.js",
+      "kb": 21,
+      "gzKb": 7,
+      "has": []
+    },
+    {
+      "file": "chunks/19wg2q9r2_sev.js",
+      "kb": 21,
+      "gzKb": 7,
+      "has": []
+    },
+    {
+      "file": "chunks/0umf92h1sb77c.js",
+      "kb": 13,
+      "gzKb": 3,
+      "has": []
+    },
+    {
+      "file": "chunks/turbopack-3-ry682tkyiqk.js",
+      "kb": 10,
+      "gzKb": 4,
+      "has": []
+    },
+    {
+      "file": "chunks/2jnhxcpjaoqjq.js",
+      "kb": 5,
+      "gzKb": 2,
+      "has": []
+    },
+    {
+      "file": "chunks/0yohmi5zdxhy1.js",
+      "kb": 3,
+      "gzKb": 1,
+      "has": []
+    },
+    {
+      "file": "chunks/1gmbq1361gp6g.js",
+      "kb": 1,
+      "gzKb": 0,
+      "has": []
+    },
+    {
+      "file": "H_fRnAFHVhW19xouEVcZZ/_buildManifest.js",
+      "kb": 0,
+      "gzKb": 0,
+      "has": []
+    },
+    {
+      "file": "H_fRnAFHVhW19xouEVcZZ/_clientMiddlewareManifest.js",
+      "kb": 0,
+      "gzKb": 0,
+      "has": []
+    },
+    {
+      "file": "H_fRnAFHVhW19xouEVcZZ/_ssgManifest.js",
+      "kb": 0,
+      "gzKb": 0,
+      "has": []
+    },
+    {
+      "file": "chunks/0c4-bb8kipsmh.js",
+      "kb": 0,
+      "gzKb": 0,
+      "has": [
+        "iwer"
+      ]
+    }
+  ]
+}
