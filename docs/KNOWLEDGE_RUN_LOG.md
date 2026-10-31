@@ -632,7 +632,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   and the reasoning-off template (its serving test hasn't reported). Checks here: test_stage_b 14, test_honesty_grade 163
   and 16, test_student 7, tsc clean. test_glimmer_labels can't run on this Mac (no transformers in the venv); train_glimmer.py
   didn't change in this commit.
-- 1:50 PM: owner decided LittleBit comes out of draft PR #3 (asked in the Muse Muse docs session, relayed from there). Its
+- 1:43 PM: owner decided LittleBit comes out of draft PR #3 (asked in the Muse Muse docs session, relayed from there). Its
   README says the CC BY-NC scripts stay out of Muse Muse. The 7 files are copied to ~/littlebit-research/ (sha256 checked)
   and removed from the repo. This covers the PR only, not whether LittleBit runs. Removing it at the tip leaves it in the
   branch's history, so PR #3 must be squash-merged or the branch cleaned first, and `knowledge` deleted before the repo
