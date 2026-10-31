@@ -1,5 +1,6 @@
 import { requireAdminOrAutomation } from "@/lib/auth";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
+import { genericDeviceTool } from "@/lib/device/drive-tools";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 
 // A photo takes a few seconds and a recording up to 30, but ask_model and install_model can wait for minutes on the board.
@@ -13,26 +14,33 @@ function unavailable(err: unknown): Response {
 
 /**
  * GET -> {tools}: what the board offers. Admins only, because the site is open to guests and these tools use a real
- * camera and microphone. 503 device_not_configured, 502 device_unavailable.
+ * camera and microphone. The drive tools aren't listed: only the drive routes reach them (lib/device/drive-tools.ts).
+ * 503 device_not_configured, 502 device_unavailable.
  */
 export const GET = route(async (req: Request) => {
   await requireAdminOrAutomation(req);
   const config = deviceConfig();
   if (!config) return errorJson(503, "device_not_configured");
   try {
-    return Response.json({ tools: await listDeviceTools(config) });
+    return Response.json({ tools: (await listDeviceTools(config)).filter((tool) => genericDeviceTool(tool.name)) });
   } catch (err) {
     return unavailable(err);
   }
 });
 
-/** POST {tool, arguments?} -> {content, isError}: one tool call on the board. Admins only, with the same errors as GET. */
+/**
+ * POST {tool, arguments?} -> {content, isError}: one tool call on the board. Admins only, with the same errors as GET, and
+ * 403 drive_route_only for a drive tool, before the board is reached.
+ */
 export const POST = route(async (req: Request) => {
   await requireAdminOrAutomation(req);
   const config = deviceConfig();
   if (!config) return errorJson(503, "device_not_configured");
   const body = await readJson(req);
   if (typeof body.tool !== "string" || !body.tool) throw badRequest("Name a tool.");
+  if (!genericDeviceTool(body.tool)) {
+    return errorJson(403, "drive_route_only", { message: "Drive tools are used from the Flash drive card on /device, by an admin." });
+  }
   const args = body.arguments ?? {};
   if (typeof args !== "object" || Array.isArray(args)) throw badRequest("arguments must be an object.");
   try {
