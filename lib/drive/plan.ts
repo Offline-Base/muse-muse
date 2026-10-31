@@ -329,7 +329,7 @@ export function planDriveImage(model: PlanModel, kit: DriveKit, templates: Drive
   // The pages and launchers, from drive/.
   const spec = minimumSpecText(minimumSpec(localFiles));
   const rows = builds
-    .map((f) => `        <tr><td>${f.level}</td><td class="num">${(f.bytes / 1e9).toFixed(1)} GB</td><td>${escapeHtml(buildForText(table, f.level))}</td></tr>`)
+    .map((f) => `        <tr><td>${escapeHtml(f.level)}</td><td class="num">${(f.bytes / 1e9).toFixed(1)} GB</td><td>${escapeHtml(buildForText(table, f.level))}</td></tr>`)
     .join("\n");
   const notes: string[] = [];
   if (model.tuned !== null) {

@@ -301,6 +301,13 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
     assert.equal(args.plan.source, "url");
     assert.doesNotMatch(JSON.stringify(args.plan), /X-Amz|sig123/, "the plan names no link");
     assert.deepEqual(leaks(text), []);
+    // The level goes into Start Here and the launchers' tables, so it's a level's name and nothing else.
+    calls = [];
+    for (const level of ["IQ1_S\tmac\t99", "IQ1_S\nwin", "<b>IQ1</b>", "", "Q4-K"]) {
+      const res = await post({ ...body, file: { ...file, level }, mode: "now", drive: "sda" });
+      assert.equal(res.status, 400, JSON.stringify(level));
+    }
+    assert.ok(!calls.some((c) => c.name === "export_model"));
   });
 
   it("carries on an export that stopped, on a drive from the list", async () => {

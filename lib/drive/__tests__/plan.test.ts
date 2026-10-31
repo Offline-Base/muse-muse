@@ -292,23 +292,20 @@ describe("the launchers on a board's drive", () => {
 });
 
 describe("a lab model's export plan, and the owner's own file", () => {
-  const lab = () =>
-    labModel(
-      {
-        title: "Bakery helper",
-        slug: "bakery-helper",
-        systemLine: "You are the bakery helper.\n\nReasoning strength: low.",
-        adapterJobId: "8f1d2c3b-0000-4000-8000-000000000001",
-        quantJobId: "9e9e9e9e-0000-4000-8000-000000000009",
-        repo: "musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b",
-        commit: "c0ffee".padEnd(40, "0"),
-        public: true,
-        files: [{ level: "Q4_K_M", name: "muse-glimmer-30b-bakery-helper-Q4_K_M.gguf", bytes: 16_940_000_000, sha256: "a".repeat(64) }],
-        card: "# Bakery helper GGUF\n",
-        tuned: null,
-      },
-      TEST_PIN,
-    );
+  const labSource = () => ({
+    title: "Bakery helper",
+    slug: "bakery-helper",
+    systemLine: "You are the bakery helper.\n\nReasoning strength: low.",
+    adapterJobId: "8f1d2c3b-0000-4000-8000-000000000001",
+    quantJobId: "9e9e9e9e-0000-4000-8000-000000000009",
+    repo: "musemuse/muse-glimmer-30b-bakery-helper-gguf-8f1d2c3b",
+    commit: "c0ffee".padEnd(40, "0"),
+    public: true,
+    files: [{ level: "Q4_K_M", name: "muse-glimmer-30b-bakery-helper-Q4_K_M.gguf", bytes: 16_940_000_000, sha256: "a".repeat(64) }],
+    card: "# Bakery helper GGUF\n",
+    tuned: null,
+  });
+  const lab = () => labModel(labSource(), TEST_PIN);
 
   it("carries Meta's license and Usage Policy, the file by URL, and needs exFAT for a 17 GB file", () => {
     const plan = exportPlan(lab(), kit, templates, { ...FACTS, source: "lab:8f1d2c3b-0000-4000-8000-000000000001:Q4_K_M", tuned: { where: "cloud" } });
@@ -342,6 +339,13 @@ describe("a lab model's export plan, and the owner's own file", () => {
     assert.equal(provenance.files[0].source, "the owner's private copy");
     const table = (plan.files.find((f) => f.path === "support/builds.tsv") as { text: string }).text;
     assert.match(table, /\nmac\t16\t0\tIQ1_S\t/, "any level name goes in the launchers' table");
+  });
+
+  it("escapes a build's level in Start Here", () => {
+    const model = labModel({ ...labSource(), files: [{ level: "Q4&<K>", name: "muse-glimmer-30b-bakery-helper-Q4_K_M.gguf", bytes: 16_940_000_000, sha256: "a".repeat(64) }] }, TEST_PIN);
+    const html = (exportPlan(model, kit, templates, { ...FACTS, source: "url", tuned: { where: "cloud" } }).files.find((f) => f.path === "Start Here.html") as { text: string }).text;
+    assert.match(html, /<td>Q4&amp;&lt;K&gt;<\/td>/);
+    assert.doesNotMatch(html, /<td>Q4&<K>/);
   });
 
   it("puts only the image's own files in a plain image plan", () => {

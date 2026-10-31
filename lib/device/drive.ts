@@ -149,7 +149,8 @@ export async function stopExport(config: DeviceConfig, exportId: string | undefi
 
 const RUN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const LEVEL = /^[A-Za-z0-9_]{1,16}$/;
+/** A build's level as the launchers' tables and Start Here hold it: Q4_K_M, IQ1_S, BF16. */
+export const LEVEL = /^[A-Za-z0-9_]{1,16}$/;
 
 /** What a POST names: a board run ("board:<run>", any of its base builds or one), or a lab model's build ("lab:<jobId>:<build>"). */
 export type SourceRef = { kind: "board"; run: string; build?: string } | { kind: "lab"; jobId: string; build: string };

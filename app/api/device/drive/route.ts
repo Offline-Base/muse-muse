@@ -8,6 +8,7 @@ import {
   driveStatus,
   ExportSourceMissing,
   freshUrls,
+  LEVEL,
   parseSourceRef,
   refreshUrls,
   resumeExport,
@@ -84,8 +85,8 @@ function urlSource(body: Record<string, unknown>): UrlSource {
   const file = body.file as Record<string, unknown> | undefined;
   const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length > 0 && v.length <= max;
   if (!file || !text(file.name, 200) || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.gguf$/.test(file.name as string)) throw badRequest("file.name must be a .gguf file name.");
-  if (!text(file.level, 16) || !Number.isSafeInteger(file.bytes) || (file.bytes as number) <= 0 || typeof file.sha256 !== "string" || !SHA256.test(file.sha256)) {
-    throw badRequest("file needs its level, bytes and sha256.");
+  if (typeof file.level !== "string" || !LEVEL.test(file.level) || !Number.isSafeInteger(file.bytes) || (file.bytes as number) <= 0 || typeof file.sha256 !== "string" || !SHA256.test(file.sha256)) {
+    throw badRequest("file needs its level (letters, digits and _, like IQ1_S), bytes and sha256.");
   }
   if (!text(body.title, 120) || !text(body.slug, 60)) throw badRequest("Name the model with title and slug.");
   if (typeof body.systemLine !== "string" || body.systemLine.length > 4000) throw badRequest("systemLine must be text.");
