@@ -402,15 +402,16 @@ export const env = {
   get packagerSnapshotId(): string | null {
     return optional("PACKAGER_SNAPSHOT_ID");
   },
-  /** The Android signing key, base64. Reaches the packager sandbox only, for the one repack command. Never logged. */
+  /**
+   * The Android signing key: base64 of a PEM file holding the private key and its certificate. Platform only. It never
+   * reaches the packager sandbox, because lib/native/apk-sign.ts signs each APK after it leaves. Never logged.
+   */
   get nativeApkKeystoreB64(): string | null {
     return optional("NATIVE_APK_KEYSTORE_B64");
   },
+  /** The PEM key's passphrase, if it has one. */
   get nativeApkKeystorePassword(): string | null {
     return optional("NATIVE_APK_KEYSTORE_PASSWORD");
-  },
-  get nativeApkKeyAlias(): string | null {
-    return optional("NATIVE_APK_KEY_ALIAS");
   },
 
   // ---------- Agent tools (docs/AGENT_TOOLS.md) ----------
