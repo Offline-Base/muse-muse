@@ -909,6 +909,20 @@ because the sidebar showed a real account.
   new look is the visible change. Rollback: the previous production deployment dpl_Dk5fxBe6VsmuGRnouyAcf82p4nYV
   (5916c37).
 
+### 19:39 Preview database code reviewed; wave 3's pieces being folded in
+
+- tg-preview-db (wf_7d431c55-cdd): one helper, lib/db/url.ts, decides the database. A preview uses PREVIEW_DATABASE_URL
+  or none, never production's; migrate skips on a preview without it and refuses a URL that is production's database
+  (matched by Neon endpoint id and database name). The review's 8 findings all held up; fixes: previews never publish
+  products (a publish could have overwritten a live product), previews take no Stripe payments and refund nothing (the
+  fix found a refund path the review missed), drizzle.config gets an unresolvable address on such previews, and a
+  guard test keeps every database variable read inside lib/db/url.ts. Full suite 4,400 tests, 4,392 pass, 0 fail.
+- Owner steps changed: an EMPTY database named "preview" on a Neon branch "preview", because copied production rows point
+  at live Vercel projects, sandboxes and real payments.
+- Now (wf_6ef8e23b-ff9): cherry-pick wave 3's 0a75160 (the sandbox firewall adds the protection-bypass header for the
+  platform host only) and port 9e09de8's preview platform URL and bypass-secret getter, then a review focused on the
+  secret never reaching a sandbox, log or other host.
+
 ## Gaps
 
 What this record doesn't confirm:
