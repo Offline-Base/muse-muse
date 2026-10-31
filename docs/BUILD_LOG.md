@@ -800,6 +800,21 @@ because the sidebar showed a real account.
 
 ![Get it panel's CLI tab with a failed Prove it check, on fixture data](log/shots/2026-10-31/merged-look-product-outputs-cli-1440-light.jpg)
 
+### 18:49 Test builder snapshot with the TEST_MODEL fix
+
+- The wave 3 session's engine unit found two things. A local test build can't reach the gateway, because the build
+  sandbox can't call a localhost platform, so capability checks that go through the gateway can't be proven on the local
+  site. That covers wave 3's data, connectors, jobs, code and gpu units, and General's /decide route and Muse Code
+  sessions. Also, its local smoke tests' product calls went straight to Meta on Muse Wonder, about $1 to $2.
+- Both sessions recommend a Preview with its own database (owner decision 3 above) to prove gateway paths. A tunnel to
+  the local site stays off.
+- Made a test-only builder snapshot from tuned-model-options 566fa98: snap_2y1WMExjxKPxiDyPtcPvFcMtdU20, template
+  hash a2d8df174adc, 1,970 MB, 76.5 s, about $0.01. Its checks passed: pristine platform files, 65 overlay files
+  including muse-app, 15 bundled Muse Code skills off, Muse Code 1.4.14. Products built from it get metaClient's
+  TEST_MODEL swap. It is used only as a per-command override for local test builds, never in .env.local or Vercel;
+  production keeps its snapshot until the Nov 2 one.
+- The local site on port 3020 was restarted with that override and merged up to 566fa98; home and gallery answer 200.
+
 ## Gaps
 
 What this record doesn't confirm:
