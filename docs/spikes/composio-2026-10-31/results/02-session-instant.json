@@ -1,0 +1,338 @@
+{
+  "sdkPreset": {
+    "DIRECT_TOOLS": "direct_tools"
+  },
+  "steps": {
+    "config": {
+      "sessionPreset": "direct_tools",
+      "toolkits": {
+        "enable": [
+          "tavily",
+          "serpapi",
+          "firecrawl"
+        ]
+      },
+      "tools": {
+        "tavily": {
+          "enable": [
+            "TAVILY_SEARCH"
+          ]
+        },
+        "serpapi": {
+          "enable": [
+            "SERPAPI_NEWS_SEARCH"
+          ]
+        },
+        "firecrawl": {
+          "enable": [
+            "FIRECRAWL_SCRAPE"
+          ]
+        }
+      },
+      "tags": {
+        "disable": [
+          "destructiveHint"
+        ]
+      },
+      "instant": {
+        "toolkits": {
+          "enable": [
+            "tavily",
+            "serpapi",
+            "firecrawl"
+          ]
+        },
+        "returnInstantCharge": true
+      },
+      "manageConnections": {
+        "enable": false
+      },
+      "sandbox": {
+        "enable": false
+      }
+    },
+    "create": {
+      "ok": true,
+      "ms": 406,
+      "keys": [
+        "client",
+        "sdkConfig",
+        "customToolsMap",
+        "userId",
+        "sessionId",
+        "mcp",
+        "experimental",
+        "config",
+        "preload",
+        "sandbox",
+        "configVersion",
+        "warnings",
+        "preloadedCustomToolSlugs",
+        "inlineCustomToolsPayload",
+        "sessionContext",
+        "tools",
+        "applySchemaModifier",
+        "addPreloadedCustomTools",
+        "getPreloadedCustomToolSchemas",
+        "authorize",
+        "ensureConnected",
+        "toolkits",
+        "search",
+        "execute",
+        "executeMeta",
+        "proxyExecute",
+        "update",
+        "delete",
+        "listConfigHistory",
+        "routeMultiExecute"
+      ],
+      "configVersion": 1,
+      "instant": {
+        "toolkits": {
+          "enabled": [
+            "firecrawl",
+            "serpapi",
+            "tavily"
+          ]
+        },
+        "return_instant_charge": true,
+        "return_prices_in_search": false
+      },
+      "sessionConfig": {
+        "user_id": "spike_c0_public",
+        "toolkits": {
+          "enabled": [
+            "(3 items)",
+            "firecrawl"
+          ]
+        },
+        "instant": {
+          "toolkits": {
+            "enabled": [
+              "(3 items)",
+              "firecrawl"
+            ]
+          },
+          "return_instant_charge": true,
+          "return_prices_in_search": false
+        },
+        "manage_connections": {
+          "enabled": false,
+          "enable_wait_for_connections": false,
+          "enable_connection_removal": true
+        },
+        "tools": {
+          "tavily": {
+            "enabled": [
+              "(1 items)",
+              "TAVILY_SEARCH"
+            ]
+          },
+          "serpapi": {
+            "enabled": [
+              "(1 items)",
+              "SERPAPI_NEWS_SEARCH"
+            ]
+          },
+          "firecrawl": {
+            "enabled": [
+              "(1 items)",
+              "FIRECRAWL_SCRAPE"
+            ]
+          }
+        },
+        "tags": {
+          "disabled": [
+            "(1 items)",
+            "destructiveHint"
+          ]
+        },
+        "workbench": {
+          "enable": false,
+          "tool_execution_enabled": true,
+          "proxy_execution_enabled": true,
+          "sandbox_size": "standard"
+        },
+        "multi_account": {
+          "enable": false,
+          "require_explicit_selection": false
+        },
+        "preload": {
+          "tools": "all"
+        },
+        "search": {
+          "enable": false
+        },
+        "execute": {
+          "enable_multi_execute": false
+        }
+      }
+    },
+    "tools": {
+      "ok": true,
+      "names": [
+        "FIRECRAWL_SCRAPE",
+        "SERPAPI_NEWS_SEARCH",
+        "TAVILY_SEARCH"
+      ]
+    },
+    "paid": {
+      "tavily": {
+        "ms": 1407,
+        "topLevelKeys": [
+          "data",
+          "error",
+          "logId",
+          "resultType",
+          "instantCharge"
+        ],
+        "resultType": "completed",
+        "error": null,
+        "instantCharge": {
+          "amount": "0.005000",
+          "currency": "USD",
+          "charged_by": "composio"
+        },
+        "logId": "log_axxWCqZ_EHKt",
+        "dataShape": {
+          "answer": null,
+          "follow_up_questions": null,
+          "images": [],
+          "query": "Meta Quest browser WebXR",
+          "request_id": "14938f56-5fb2-4578-bdfa-fd0d8bce8e40",
+          "response_time": 1.05,
+          "results": [
+            "(3 items)",
+            {
+              "content": "Develop\n\n# WebXR overview\n\nUpdated: Jul 21, 2026\n\n## Overview\n\nWebXR enables a w... (497 chars)",
+              "id": "72013a-00",
+              "raw_content": null,
+              "score": 0.8668671,
+              "title": "WebXR overview | Meta Horizon OS Developers",
+              "url": "https://developers.meta.com/vr/documentation/web/webxr-overview"
+            }
+          ]
+        },
+        "dataBytes": 4124
+      },
+      "serpapi_news": {
+        "ms": 2278,
+        "topLevelKeys": [
+          "data",
+          "error",
+          "logId",
+          "resultType",
+          "instantCharge"
+        ],
+        "resultType": "completed",
+        "error": null,
+        "instantCharge": {
+          "amount": "0.009166666667",
+          "currency": "USD",
+          "charged_by": "composio"
+        },
+        "logId": "log_P5RU0cP6pQQ1",
+        "dataShape": {
+          "results": {
+            "news_results": [
+              "(10 items)",
+              {
+                "date": "Mar 31, 2026",
+                "link": "https://developer.nvidia.com/blog/build-and-stream-browser-based-xr-experiences-... (103 chars)",
+                "position": 1,
+                "published_at": "2026-03-31 07:00:00 UTC",
+                "snippet": "Delivering high-fidelity VR and AR experiences to enterprise users has typically... (138 chars)",
+                "source": "NVIDIA Developer",
+                "thumbnail": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcScpr0bmWulT47FVlvrHOCMf5jK... (166 chars)",
+                "title": "Build and Stream Browser-Based XR Experiences with NVIDIA CloudXR.js | NVIDIA Te... (92 chars)"
+              }
+            ],
+            "pagination": {
+              "current": 1,
+              "next": "https://www.google.com/search?q=Meta+Quest+browser+WebXR&sca_esv=d4c7325171e763c... (235 chars)",
+              "other_pages": {
+                "2": "https://www.google.com/search?q=Meta+Quest+browser+WebXR&sca_esv=d4c7325171e763c... (235 chars)",
+                "3": "https://www.google.com/search?q=Meta+Quest+browser+WebXR&sca_esv=d4c7325171e763c... (235 chars)"
+              }
+            },
+            "search_information": {
+              "news_results_state": "Results for exact spelling",
+              "query_displayed": "Meta Quest browser WebXR",
+              "time_taken_displayed": 0.14,
+              "total_results": 26
+            },
+            "search_metadata": {
+              "created_at": "2026-10-31 06:12:42 UTC",
+              "google_url": "https://www.google.com/search?q=Meta+Quest+browser+WebXR&oq=Meta+Quest+browser+W... (117 chars)",
+              "id": "6ae586da1a5b5e11ef7c12ef",
+              "json_endpoint": "https://serpapi.com/searches/<redacted>/6ae586d... (102 chars)",
+              "markdown_endpoint": "https://serpapi.com/searches/<redacted>/6ae586d... (100 chars)",
+              "pixel_position_endpoint": "https://serpapi.com/searches/<redacted>/6ae586d... (122 chars)",
+              "processed_at": "2026-10-31 06:12:42 UTC",
+              "raw_html_file": "https://serpapi.com/searches/<redacted>/6ae586d... (102 chars)",
+              "status": "Success",
+              "total_time_taken": 0.64
+            },
+            "search_parameters": {
+              "device": "desktop",
+              "engine": "google",
+              "google_domain": "google.com",
+              "q": "Meta Quest browser WebXR",
+              "tbm": "nws"
+            },
+            "serpapi_pagination": {
+              "current": 1,
+              "next": "https://serpapi.com/search.json?device=desktop&engine=google&google_domain=googl... (129 chars)",
+              "next_link": "https://serpapi.com/search.json?device=desktop&engine=google&google_domain=googl... (129 chars)",
+              "other_pages": {
+                "2": "https://serpapi.com/search.json?device=desktop&engine=google&google_domain=googl... (129 chars)",
+                "3": "https://serpapi.com/search.json?device=desktop&engine=google&google_domain=googl... (129 chars)"
+              }
+            }
+          }
+        },
+        "dataBytes": 9727
+      },
+      "firecrawl": {
+        "ms": 469,
+        "topLevelKeys": [
+          "data",
+          "error",
+          "logId",
+          "resultType",
+          "instantCharge"
+        ],
+        "resultType": "completed",
+        "error": null,
+        "instantCharge": {
+          "amount": "0.000798",
+          "currency": "USD",
+          "charged_by": "composio"
+        },
+        "logId": "log_Xu2aDR4fkaJi",
+        "dataShape": {
+          "data": {
+            "markdown": "This domain is for use in documentation examples without needing permission. Thi... (959 chars)",
+            "metadata": {
+              "cacheState": "hit",
+              "cachedAt": "2026-10-31T06:11:13.329Z",
+              "concurrencyLimited": false,
+              "contentType": "text/html; charset=utf-8",
+              "favicon": "data:,",
+              "language": "en",
+              "proxyUsed": "basic",
+              "scrapeId": "01a19096-ceea-70ea-b5fd-5b835e752ce1",
+              "sourceURL": "https://example.com",
+              "statusCode": 200,
+              "title": "Example Domain",
+              "url": "https://example.com/",
+              "viewport": "width=device-width,initial-scale=1"
+            }
+          },
+          "success": true
+        },
+        "dataBytes": 1406
+      }
+    }
+  }
+}

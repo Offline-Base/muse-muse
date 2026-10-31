@@ -1,0 +1,1315 @@
+{
+  "catalogVersion": 1,
+  "instantToolkits": [
+    "firecrawl",
+    "serpapi"
+  ],
+  "personalToolkits": [
+    "gmail",
+    "googlecalendar",
+    "slack"
+  ],
+  "toolkitVersions": {
+    "firecrawl": "20261030_00",
+    "gmail": "20261029_00",
+    "googlecalendar": "20261010_00",
+    "serpapi": "20261030_00",
+    "slack": "20261023_00"
+  },
+  "tools": [
+    {
+      "access": "read",
+      "builtin": true,
+      "functions": [],
+      "id": "web_search",
+      "label": "Web search",
+      "output": null,
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": null,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Searching the web",
+      "tier": "public",
+      "toolkit": null
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Get structured records of scholarly papers from Google Scholar: title, link, authors, publication and a snippet. Use it only when you need those paper records. For general questions, use web_search.",
+          "discountPercent": 63,
+          "estimateUsd": 0.025,
+          "hints": [
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": true,
+          "name": "SERPAPI_SCHOLAR_SEARCH",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "num": {
+                "description": "Maximum number of results to return per page. Default is 10, maximum is 20.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "The search query for Google Scholar. This can be an academic topic, paper title, author name, or specific keywords.",
+                "type": "string"
+              },
+              "start": {
+                "description": "Result offset for pagination. Use 0 for the first page (default), 10 for the second page, 20 for the third, etc.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": "$0.025 per successful search",
+          "sample": {
+            "results": {
+              "organic_results": [
+                {
+                  "link": "https://example.com/papers/sample-paper",
+                  "position": 1,
+                  "publication_info": {
+                    "summary": "A Author, B Author - Example Journal, 2026"
+                  },
+                  "snippet": "A short sample passage from the paper, standing in for a live result.",
+                  "title": "A sample paper on your topic"
+                }
+              ]
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261030_00"
+        }
+      ],
+      "id": "scholar",
+      "label": "Scholarly paper records",
+      "output": {
+        "dropKeys": [
+          "about_page_link",
+          "about_this_result",
+          "data_cid",
+          "data_id",
+          "displayed_link",
+          "event_token",
+          "favicon",
+          "inline_links",
+          "order_online",
+          "photos_link",
+          "place_id_search",
+          "provider_id",
+          "read_more_link",
+          "redirect_link",
+          "resources",
+          "reviews_link",
+          "serpapi_thumbnail",
+          "snippet_highlighted_words",
+          "thumbnail"
+        ],
+        "dropUrlHosts": [
+          "serpapi.com"
+        ],
+        "keep": [
+          "results.organic_results"
+        ]
+      },
+      "outputVerified": true,
+      "perDay": null,
+      "perMinute": 120,
+      "recipientFields": [],
+      "sources": [
+        {
+          "path": "results.organic_results",
+          "snippet": "snippet",
+          "title": "title",
+          "url": "link"
+        }
+      ],
+      "stepTitle": "Looking up papers",
+      "tier": "public",
+      "toolkit": "serpapi"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Get structured records of places from Google Maps: name, address, rating, hours, phone and website. Use it only when you need those place records. For general questions, use web_search. Name the area in the query, such as 'coffee shops near Union Square San Francisco'. Not every place has a website.",
+          "discountPercent": 63,
+          "estimateUsd": 0.025,
+          "hints": [
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": true,
+          "name": "SERPAPI_GOOGLE_MAPS_SEARCH",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "ll": {
+                "description": "GPS coordinates for the search, formatted as '@latitude,longitude,zoom_level'. Required when using pagination (start parameter).",
+                "type": "string"
+              },
+              "q": {
+                "description": "Search query for Google Maps (e.g., 'coffee shops', 'restaurants near Central Park').",
+                "type": "string"
+              },
+              "start": {
+                "description": "Starting result index for pagination, used to get subsequent pages of results. When start is provided, ll parameter becomes required. For the first page, omit start (or use start=0 only if ll is also provided).",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "q"
+            ],
+            "type": "object"
+          },
+          "priceText": "$0.025 per successful search",
+          "sample": {
+            "results": {
+              "local_results": [
+                {
+                  "address": "123 Example Street, Sample City",
+                  "gps_coordinates": {
+                    "latitude": 37.78,
+                    "longitude": -122.4
+                  },
+                  "hours": "Open until 7 PM",
+                  "phone": "(555) 010-0100",
+                  "position": 1,
+                  "rating": 4.5,
+                  "reviews": 120,
+                  "title": "Sample Place",
+                  "type": "Sample business",
+                  "website": "https://example.com/sample-place"
+                }
+              ]
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261030_00"
+        }
+      ],
+      "id": "places",
+      "label": "Place records",
+      "output": {
+        "dropKeys": [
+          "about_page_link",
+          "about_this_result",
+          "data_cid",
+          "data_id",
+          "displayed_link",
+          "event_token",
+          "favicon",
+          "inline_links",
+          "order_online",
+          "photos_link",
+          "place_id_search",
+          "provider_id",
+          "read_more_link",
+          "redirect_link",
+          "resources",
+          "reviews_link",
+          "serpapi_thumbnail",
+          "snippet_highlighted_words",
+          "thumbnail"
+        ],
+        "dropUrlHosts": [
+          "serpapi.com"
+        ],
+        "keep": [
+          "results.local_results"
+        ]
+      },
+      "outputVerified": true,
+      "perDay": null,
+      "perMinute": 120,
+      "recipientFields": [],
+      "sources": [
+        {
+          "path": "results.local_results",
+          "snippet": "address",
+          "title": "title",
+          "url": "website"
+        }
+      ],
+      "stepTitle": "Looking up places",
+      "tier": "public",
+      "toolkit": "serpapi"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Get structured event records from Google: title, date, time and address when Google has them, and web results otherwise. Use it only when you need those event records. For general questions, use web_search. Say what and where, such as 'Live music in Austin this weekend'. It can take about 10 seconds.",
+          "discountPercent": 63,
+          "estimateUsd": 0.025,
+          "hints": [
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": true,
+          "name": "SERPAPI_EVENT_SEARCH",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "query": {
+                "description": "Search query for events, specifying the topic, type, or name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": "$0.025 per successful search",
+          "sample": {
+            "events_results": [
+              {
+                "address": [
+                  "Sample Hall",
+                  "Sample City"
+                ],
+                "date": "Nov 8",
+                "time": "7:00 PM",
+                "title": "Sample Community Event",
+                "type": "Event"
+              }
+            ],
+            "organic_results": [
+              {
+                "link": "https://example.com/events",
+                "position": 1,
+                "snippet": "A sample page of events, standing in for a live result.",
+                "title": "Sample events listing"
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261030_00"
+        }
+      ],
+      "id": "events",
+      "label": "Event records",
+      "output": {
+        "dropKeys": [
+          "about_page_link",
+          "about_this_result",
+          "data_cid",
+          "data_id",
+          "displayed_link",
+          "event_token",
+          "favicon",
+          "inline_links",
+          "order_online",
+          "photos_link",
+          "place_id_search",
+          "provider_id",
+          "read_more_link",
+          "redirect_link",
+          "resources",
+          "reviews_link",
+          "serpapi_thumbnail",
+          "snippet_highlighted_words",
+          "thumbnail"
+        ],
+        "dropUrlHosts": [
+          "serpapi.com"
+        ],
+        "keep": [
+          "events_results",
+          "organic_results"
+        ]
+      },
+      "outputVerified": true,
+      "perDay": null,
+      "perMinute": 60,
+      "recipientFields": [],
+      "sources": [
+        {
+          "date": "date",
+          "path": "events_results",
+          "title": "title",
+          "url": "link"
+        },
+        {
+          "path": "organic_results",
+          "snippet": "snippet",
+          "title": "title",
+          "url": "link"
+        }
+      ],
+      "stepTitle": "Finding events",
+      "tier": "public",
+      "toolkit": "serpapi"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Read one public web page at an address the user gave you, and get its text as Markdown with its title and final address. Use it only for addresses from the user. web_search opens pages from its own results, so never use this for those.",
+          "discountPercent": 79,
+          "estimateUsd": 0.003,
+          "hints": [
+            "createHint"
+          ],
+          "instant": true,
+          "name": "FIRECRAWL_SCRAPE",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "onlyMainContent": {
+                "default": true,
+                "description": "If true, attempts to extract only the main article content, excluding headers, footers, navigation bars, and ads. Defaults to true.",
+                "type": "boolean"
+              },
+              "url": {
+                "description": "The fully qualified URL of the web page to scrape. Must start with 'http://' or 'https://' and be a valid web URL.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url"
+            ],
+            "type": "object"
+          },
+          "priceText": "$0.003 per basic page scraped",
+          "sample": {
+            "data": {
+              "markdown": "# Sample page\n\nSample text from the page, standing in for a live result.",
+              "metadata": {
+                "title": "Sample page",
+                "url": "https://example.com/articles/sample-result"
+              }
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261030_00"
+        }
+      ],
+      "id": "read_page",
+      "label": "Read a page you link to",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "data.markdown",
+          "data.metadata.title",
+          "data.metadata.url"
+        ]
+      },
+      "outputVerified": true,
+      "perDay": null,
+      "perMinute": 120,
+      "recipientFields": [],
+      "sources": [
+        {
+          "path": "data.metadata",
+          "single": true,
+          "title": "title",
+          "url": "url"
+        }
+      ],
+      "stepTitle": "Reading the page you linked",
+      "tier": "public",
+      "toolkit": "firecrawl"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Find messages in the connected Gmail account. Results are not sorted by date, so sort them yourself, and the list may be empty. To read one message in full, pass its id to GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "GMAIL_FETCH_EMAILS",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "label_ids": {
+                "description": "Filter by label IDs; only messages with all specified labels are returned (AND logic). Optional - omit or use empty list to fetch all messages without label filtering.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_results": {
+                "default": 1,
+                "description": "Maximum number of messages to retrieve per page. Default of 1 retrieves only a single message; set higher for practical use. Hard cap is 500 per page.",
+                "maximum": 500,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "page_token": {
+                "description": "Token for retrieving a specific page, obtained from a previous response's `nextPageToken`. Must be a valid opaque token string from a previous API response. Do not pass arbitrary values. Omit for the first page.",
+                "type": "string"
+              },
+              "query": {
+                "description": "Gmail advanced search query (e.g., 'from:user subject:meeting'). Supported operators: 'from:', 'to:', 'subject:', 'label:', 'has:', 'is:', 'in:', 'category:', 'after:YYYY/MM/DD', 'before:YYYY/MM/DD', AND/OR/NOT.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "messages": [
+              {
+                "labelIds": [
+                  "INBOX"
+                ],
+                "messageId": "sample-message-1",
+                "messageTimestamp": "2026-10-30T15:00:00Z",
+                "preview": {
+                  "body": "A sample preview of the message."
+                },
+                "sender": "Sample Sender <sender@example.com>",
+                "subject": "A sample email",
+                "threadId": "sample-thread-1",
+                "to": "you@example.com"
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261029_00"
+        },
+        {
+          "description": "Read one Gmail message by its id, which comes from GMAIL_FETCH_EMAILS.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "default": "full",
+                "description": "'full' for the whole message (the default), 'metadata' for headers without the body, 'minimal' for ids and labels only.",
+                "type": "string"
+              },
+              "message_id": {
+                "description": "The message's id, from GMAIL_FETCH_EMAILS.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "message_id"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "labelIds": [
+              "INBOX"
+            ],
+            "messageId": "sample-message-1",
+            "messageText": "The full text of a sample message.",
+            "messageTimestamp": "2026-10-30T15:00:00Z",
+            "sender": "Sample Sender <sender@example.com>",
+            "subject": "A sample email",
+            "threadId": "sample-thread-1",
+            "to": "you@example.com"
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261029_00"
+        }
+      ],
+      "id": "gmail_read",
+      "label": "Read Gmail",
+      "output": {
+        "dropKeys": [
+          "attachmentList",
+          "payload"
+        ],
+        "keep": [
+          "messages",
+          "nextPageToken",
+          "messageId",
+          "threadId",
+          "subject",
+          "sender",
+          "to",
+          "messageText",
+          "messageTimestamp",
+          "preview",
+          "labelIds"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 60,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Reading your email",
+      "tier": "personal",
+      "toolkit": "gmail"
+    },
+    {
+      "access": "create",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Save an email as a draft in the connected Gmail account. It sends nothing. Use a full email address for each recipient. Set is_html only when the body is HTML. To reply in a thread, pass its thread_id. Needs the user's confirmation before it runs.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "createHint",
+            "openWorldHint"
+          ],
+          "instant": false,
+          "name": "GMAIL_CREATE_EMAIL_DRAFT",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "bcc": {
+                "default": [],
+                "description": "Blind carbon copy recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "body": {
+                "description": "The message, as plain text or HTML. Set is_html when it is HTML.",
+                "type": "string"
+              },
+              "cc": {
+                "default": [],
+                "description": "Carbon copy recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "extra_recipients": {
+                "default": [],
+                "description": "More 'To' recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "is_html": {
+                "default": false,
+                "description": "True when the body is already HTML.",
+                "type": "boolean"
+              },
+              "recipient_email": {
+                "description": "The main recipient's full email address, such as 'user@example.com'.",
+                "type": "string"
+              },
+              "subject": {
+                "description": "Email subject line. Optional - drafts can be created without a subject and edited later before sending. When creating a draft reply to an existing thread (thread_id provided), leave this empty to stay in the same thread.",
+                "type": "string"
+              },
+              "thread_id": {
+                "description": "ID of an existing Gmail thread to reply to; omit for new thread. If the thread ID is invalid or inaccessible, the draft will be created as a new thread instead of failing.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "id": "sample-draft-1",
+            "message": {
+              "id": "sample-message-2",
+              "threadId": "sample-thread-2"
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261029_00"
+        }
+      ],
+      "id": "gmail_draft",
+      "label": "Draft Gmail messages",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "id",
+          "message.id",
+          "message.threadId"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 30,
+      "recipientFields": [
+        "recipient_email",
+        "extra_recipients",
+        "cc",
+        "bcc"
+      ],
+      "sources": [],
+      "stepTitle": "Drafting an email",
+      "tier": "personal",
+      "toolkit": "gmail"
+    },
+    {
+      "access": "create",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Send an email from the connected Gmail account. It goes out at once and can't be undone. Use a full email address for each recipient, and give a subject, a body or both. Set is_html only when the body is HTML. Needs the user's confirmation before it runs.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "createHint",
+            "openWorldHint"
+          ],
+          "instant": false,
+          "name": "GMAIL_SEND_EMAIL",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "bcc": {
+                "default": [],
+                "description": "Blind carbon copy recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "body": {
+                "description": "Email content (plain text or HTML). Either subject or body must be provided for the email to be sent. If HTML, `is_html` must be `True`.",
+                "type": "string"
+              },
+              "cc": {
+                "default": [],
+                "description": "Carbon copy recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "extra_recipients": {
+                "default": [],
+                "description": "More 'To' recipients' full email addresses.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "is_html": {
+                "default": false,
+                "description": "True when the body is already HTML.",
+                "type": "boolean"
+              },
+              "recipient_email": {
+                "description": "The main recipient's full email address, such as 'user@example.com'.",
+                "type": "string"
+              },
+              "subject": {
+                "description": "Subject line of the email. Either subject or body must be provided for the email to be sent.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "recipient_email"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "id": "sample-sent-1",
+            "labelIds": [
+              "SENT"
+            ],
+            "threadId": "sample-thread-3"
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261029_00"
+        }
+      ],
+      "id": "gmail_send",
+      "label": "Send Gmail messages",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "id",
+          "threadId",
+          "labelIds"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": 10,
+      "perMinute": 10,
+      "recipientFields": [
+        "recipient_email",
+        "extra_recipients",
+        "cc",
+        "bcc"
+      ],
+      "sources": [],
+      "stepTitle": "Sending an email",
+      "tier": "personal",
+      "toolkit": "gmail"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "List events on the connected user's main Google Calendar. Use timeMin and timeMax for a window, query for text search, and singleEvents to expand repeating events. Sorting by start time needs singleEvents.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "GOOGLECALENDAR_EVENTS_LIST",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "maxResults": {
+                "description": "Maximum number of events returned on one result page. The number of events in the resulting page may be less than this value, or none at all, even if there are more events matching the query.",
+                "maximum": 2500,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "orderBy": {
+                "description": "The order of the events returned in the result. Optional. The default is an unspecified, stable order. Acceptable values are: \"startTime\", \"updated\". When set to \"startTime\", singleEvents must be true.",
+                "enum": [
+                  "startTime",
+                  "updated"
+                ],
+                "type": "string"
+              },
+              "pageToken": {
+                "description": "Opaque pagination token from a previous response's nextPageToken field. Must be the exact string returned by the API - do not use placeholder values like 'NEXT', 'next', '1', '2', etc. Omit this parameter for the first page.",
+                "type": "string"
+              },
+              "query": {
+                "description": "Free text search terms to find events that match these terms in various fields. Optional.",
+                "type": "string"
+              },
+              "singleEvents": {
+                "description": "Whether to expand recurring events into instances and only return single one-off events and instances of recurring events. Optional. The default is False.",
+                "type": "boolean"
+              },
+              "timeMax": {
+                "description": "Upper bound (exclusive) for an event's start time to filter by. Optional. If unset, no start-time upper bound is applied. Must be an RFC3339 timestamp with mandatory time zone offset (e.g., 2011-06-03T10:00:00-07:00 or...",
+                "type": "string"
+              },
+              "timeMin": {
+                "description": "Lower bound (exclusive) for an event's end time to filter by. Optional. If unset, no end-time lower bound is applied. Must be an RFC3339 timestamp with mandatory time zone offset (e.g., 2011-06-03T10:00:00-07:00 or 2011-06-03T10:00:00Z).",
+                "type": "string"
+              },
+              "timeZone": {
+                "description": "Time zone used in the response for formatting event times. Optional. Use an IANA time zone identifier (e.g., America/Los_Angeles). Defaults to the user's primary time zone.",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "items": [
+              {
+                "end": {
+                  "dateTime": "2026-11-02T10:30:00-05:00"
+                },
+                "htmlLink": "https://example.com/calendar/sample-event-1",
+                "id": "sample-event-1",
+                "location": "Sample Room",
+                "start": {
+                  "dateTime": "2026-11-02T10:00:00-05:00"
+                },
+                "summary": "Sample meeting"
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261010_00"
+        }
+      ],
+      "id": "calendar_read",
+      "label": "Read Google Calendar",
+      "output": {
+        "dropKeys": [
+          "etag",
+          "iCalUID",
+          "sequence",
+          "creator",
+          "organizer",
+          "reminders"
+        ],
+        "keep": [
+          "items",
+          "nextPageToken",
+          "timeZone"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 60,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Checking your calendar",
+      "tier": "personal",
+      "toolkit": "googlecalendar"
+    },
+    {
+      "access": "create",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Add an event to the connected user's main Google Calendar. For a timed event give start_datetime and either end_datetime or a duration. For an all-day event give start_date and an exclusive end_date. Google emails attendees unless send_updates says otherwise, and adds a Meet link. Needs the user's confirmation before it runs.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "createHint",
+            "openWorldHint"
+          ],
+          "instant": false,
+          "name": "GOOGLECALENDAR_CREATE_EVENT",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "attendees": {
+                "description": "Attendees' full email addresses, such as 'user@example.com'.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "description": "Notes for the event. Can contain HTML.",
+                "type": "string"
+              },
+              "end_date": {
+                "description": "Exclusive end date for an all-day event in YYYY-MM-DD format. Must be provided together with start_date and be later than start_date.",
+                "type": "string"
+              },
+              "end_datetime": {
+                "description": "Event end time in ISO 8601 format: YYYY-MM-DDTHH:MM:SS. When provided, this parameter takes precedence over event_duration_hour and event_duration_minutes. If not provided, the end time is calculated using start_datetime + duration.",
+                "type": "string"
+              },
+              "event_duration_hour": {
+                "default": 0,
+                "description": "Number of hours for the event duration. Supports multi-day events (e.g., 240 hours = 10 days). For durations under 1 hour, use event_duration_minutes instead. Ignored if end_datetime is provided.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "event_duration_minutes": {
+                "default": 30,
+                "description": "Duration in minutes (0-59 ONLY). NEVER use 60+ minutes - use event_duration_hour=1 instead. Maximum value is 59. Combined duration (hours + minutes) must be greater than 0. Ignored if end_datetime is provided.",
+                "maximum": 59,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "location": {
+                "description": "Geographic location of the event as free-form text.",
+                "type": "string"
+              },
+              "send_updates": {
+                "description": "Options for who should receive notifications about event changes.",
+                "enum": [
+                  "all",
+                  "externalOnly",
+                  "none"
+                ],
+                "type": "string"
+              },
+              "start_date": {
+                "description": "Inclusive start date for an all-day event in YYYY-MM-DD format. Must be provided together with end_date and without start_datetime or end_datetime.",
+                "type": "string"
+              },
+              "start_datetime": {
+                "description": "Event start time in ISO 8601 format: YYYY-MM-DDTHH:MM:SS. Required for timed events; omit it when using start_date and end_date for an all-day event.",
+                "type": "string"
+              },
+              "summary": {
+                "description": "Summary (title) of the event.",
+                "type": "string"
+              },
+              "timezone": {
+                "description": "IANA time zone name, such as 'America/New_York'. Needed when a time has no offset. The default is UTC.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "end": {
+              "dateTime": "2026-11-03T10:30:00-05:00"
+            },
+            "htmlLink": "https://example.com/calendar/sample-event-2",
+            "id": "sample-event-2",
+            "start": {
+              "dateTime": "2026-11-03T10:00:00-05:00"
+            },
+            "summary": "Sample meeting"
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261010_00"
+        }
+      ],
+      "id": "calendar_add",
+      "label": "Add to Google Calendar",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "id",
+          "summary",
+          "start",
+          "end",
+          "location",
+          "htmlLink",
+          "attendees"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 30,
+      "recipientFields": [
+        "attendees"
+      ],
+      "sources": [],
+      "stepTitle": "Adding to your calendar",
+      "tier": "personal",
+      "toolkit": "googlecalendar"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Find channels in the connected Slack workspace by name, topic or purpose, and get their IDs. Other Slack tools need an ID, so look it up here first. It only sees what the connected account can see, so an empty result can mean no match or no access.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_FIND_CHANNELS",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "cursor": {
+                "description": "Pagination cursor from response_metadata.next_cursor of a previous response. Omit for the first page.",
+                "type": "string"
+              },
+              "exact_match": {
+                "default": false,
+                "description": "When true, only return channels whose name exactly matches the query (case-insensitive). Also matches against previous channel names and the 'general' flag. When false, returns partial matches across name, topic, and purpose.",
+                "type": "boolean"
+              },
+              "limit": {
+                "default": 50,
+                "description": "How many channels to scan on this page, up to 999. The default is 50. Fewer may match.",
+                "type": "integer"
+              },
+              "member_only": {
+                "default": false,
+                "description": "Only return channels the user is a member of. Defaults to false.",
+                "type": "boolean"
+              },
+              "query": {
+                "description": "Search query to find channels. Searches across channel name, topic, purpose, and description (case-insensitive partial matching). Leading '#' prefix is automatically stripped.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "channels": [
+              {
+                "id": "C0SAMPLE1",
+                "is_private": false,
+                "name": "sample-channel",
+                "num_members": 12,
+                "topic": {
+                  "value": "A sample channel topic"
+                }
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        },
+        {
+          "description": "Read messages from one Slack channel, by the ID from SLACK_FIND_CHANNELS. It returns the main timeline only, so replies inside threads aren't included. Use oldest and latest for a time window.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_FETCH_CONVERSATION_HISTORY",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "description": "The channel's ID, from SLACK_FIND_CHANNELS.",
+                "type": "string"
+              },
+              "cursor": {
+                "description": "Pagination cursor from `response_metadata.next_cursor` of a previous response. Omit this for the first page; pass the returned cursor in a follow-up call to fetch the next page.",
+                "type": "string"
+              },
+              "latest": {
+                "description": "End of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+                "type": "string"
+              },
+              "limit": {
+                "default": 100,
+                "description": "How many messages to request, up to 1000. The default is 100. Slack may return fewer.",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "oldest": {
+                "description": "Start of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "messages": [
+              {
+                "reply_count": 0,
+                "text": "A sample Slack message.",
+                "ts": "1761900000.000100",
+                "type": "message",
+                "user": "U0SAMPLE1"
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_read",
+      "label": "Read Slack channels",
+      "output": {
+        "dropKeys": [
+          "blocks",
+          "composio_execution_message",
+          "previous_names",
+          "team",
+          "unread_count"
+        ],
+        "keep": [
+          "channels",
+          "messages",
+          "response_metadata.next_cursor"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 60,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Reading Slack",
+      "tier": "personal",
+      "toolkit": "slack"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Search messages across the connected Slack workspace. Put modifiers in the query, such as in:#channel, from:@user, has:link, before:YYYY-MM-DD or after:YYYY-MM-DD. Set count, because the default is a single message.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_SEARCH_MESSAGES",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "count": {
+                "default": 1,
+                "description": "How many messages per page, up to 100. The default is 1, so set it.",
+                "type": "integer"
+              },
+              "page": {
+                "description": "Which page of results to return.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "What to search for. Modifiers: in:#channel, in:@user, from:@user, has:link, has:file, before:YYYY-MM-DD, after:YYYY-MM-DD.",
+                "type": "string"
+              },
+              "sort": {
+                "description": "Sort results by `score` (relevance) or `timestamp` (chronological).",
+                "type": "string"
+              },
+              "sort_dir": {
+                "description": "Sort direction: `asc` (ascending) or `desc` (descending).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "messages": {
+              "matches": [
+                {
+                  "channel": {
+                    "id": "C0SAMPLE1",
+                    "name": "sample-channel"
+                  },
+                  "permalink": "https://example.com/slack/archives/C0SAMPLE1/p1761900000000100",
+                  "text": "A sample Slack message that matches your search.",
+                  "ts": "1761900000.000100",
+                  "username": "sample.user"
+                }
+              ],
+              "total": 1
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_search",
+      "label": "Search Slack",
+      "output": {
+        "dropKeys": [
+          "blocks",
+          "iid",
+          "team"
+        ],
+        "keep": [
+          "messages.matches",
+          "messages.total"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 30,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Searching Slack",
+      "tier": "personal",
+      "toolkit": "slack"
+    },
+    {
+      "access": "create",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Post a message to one Slack channel. It posts at once, and a repeated call posts a duplicate. Write the message in Markdown. To reply in a thread, pass the parent message's thread_ts. Needs the user's confirmation before it runs.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "createHint",
+            "openWorldHint"
+          ],
+          "instant": false,
+          "name": "SLACK_SEND_MESSAGE",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "description": "The channel's ID from SLACK_FIND_CHANNELS, or its name without the #.",
+                "type": "string"
+              },
+              "markdown_text": {
+                "description": "The message, in standard Markdown.",
+                "type": "string"
+              },
+              "thread_ts": {
+                "description": "Timestamp (`ts`) of an existing message to make this a threaded reply. Use `ts` of the parent message, not another reply. Example: '1476746824.000004'.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "markdown_text"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "channel": "C0SAMPLE1",
+            "ok": true,
+            "ts": "1761900000.000200"
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_send",
+      "label": "Send Slack messages",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "ok",
+          "channel",
+          "ts"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": 10,
+      "perMinute": 10,
+      "recipientFields": [
+        "channel"
+      ],
+      "sources": [],
+      "stepTitle": "Sending a Slack message",
+      "tier": "personal",
+      "toolkit": "slack"
+    }
+  ]
+}

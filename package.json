@@ -20,7 +20,8 @@
     "knowledge:status": "tsx scripts/knowledge/control.ts status",
     "knowledge:pause": "tsx scripts/knowledge/control.ts pause",
     "knowledge:resume": "tsx scripts/knowledge/control.ts resume",
-    "docs:sync": "tsx scripts/docs/sync-meta-docs.ts"
+    "docs:sync": "tsx scripts/docs/sync-meta-docs.ts",
+    "tools:sync": "tsx --env-file-if-exists=.env.local scripts/tools/sync-composio-catalog.ts"
   },
   "dependencies": {
     "@meta-sam/parser": "0.1.0",
