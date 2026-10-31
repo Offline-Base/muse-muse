@@ -8,6 +8,8 @@ raw result never reaches this table.
 from __future__ import annotations
 
 import json
+import logging
+import re
 import sqlite3
 import threading
 import time
@@ -17,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from base.types import Decision, default_share_form
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS decisions (
@@ -254,24 +258,78 @@ class ApprovalStore:
         return {int(r["day"]): int(r["n"]) for r in rows}
 
 
+AUTO_APPROVE_HOURS = 8  # Always approve turns itself off this long after it was turned on
+# Floors that keep a card for a person even while Always approve is on: Muse's request names a
+# never-share topic, the user asked to be asked first, the result has an identifier (or a long
+# number), or it is going outside the class.
+AUTO_APPROVE_SKIPS = ("request:", "ask_first:", "identifier:", "outside_class")
+
+
+def needs_a_person(floors: Iterable[str] | None) -> bool:
+    """True when one of `floors` is in AUTO_APPROVE_SKIPS, so Always approve leaves the card."""
+    return any(str(f).startswith(AUTO_APPROVE_SKIPS) for f in floors or ())
+
+
 class AutoApprove:
-    """Always-approve mode: while it is on, a result the router would ask about is shared at once.
+    """Always-approve mode: while it is on, a result the router would ask about is shared at once,
+    unless a floor in AUTO_APPROVE_SKIPS fired (egress checks that, and the toggles).
 
     Kept as a file in BASE_HOME (mode 0600), so it survives a restart and is read on every result.
-    Refusals, held results and the final leak check are unchanged.
+    The file says when it was turned on ("started <epoch seconds>", or an older file's "on since"
+    line, else its modified time); AUTO_APPROVE_HOURS later it counts as off and is removed. A time
+    in the future also counts as off. Refusals, held results and the final leak check are unchanged.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, hours: float = AUTO_APPROVE_HOURS, clock: Any = None):
         self.path = Path(path)
+        self.hours = hours
+        self.clock = clock or time.time
+
+    def since(self) -> float | None:
+        """When it was turned on, or None when the file is not there."""
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+            mtime = self.path.stat().st_mtime
+        except OSError:
+            return None
+        started = re.search(r"^started (\d+(?:\.\d+)?)\s*$", text, re.MULTILINE)
+        if started:
+            return float(started.group(1))
+        stamp = re.search(r"on since (\d{4}-\d{2}-\d{2} \d{2}:\d{2})", text)
+        if stamp:
+            try:
+                return time.mktime(time.strptime(stamp.group(1), "%Y-%m-%d %H:%M"))
+            except (ValueError, OverflowError):
+                pass
+        return mtime
+
+    def until(self) -> float | None:
+        """When it turns itself off, or None while it is off."""
+        since = self.since()
+        if since is None:
+            return None
+        now = self.clock()
+        if since > now + 60 or now >= since + self.hours * 3600:
+            if self.since() == since:  # not turned on again in the meantime
+                self.path.unlink(missing_ok=True)  # the time is up, or the stamp makes no sense
+                log.info("always-approve mode turned itself off")
+            return None
+        return since + self.hours * 3600
 
     @property
     def on(self) -> bool:
-        return self.path.is_file()
+        return self.until() is not None
+
+    def seconds_left(self) -> int | None:
+        until = self.until()
+        return None if until is None else max(0, int(until - self.clock()))
 
     def set(self, on: bool) -> None:
         if on:
+            now = self.clock()
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(f"on since {time.strftime('%Y-%m-%d %H:%M')}\n")
+            stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(now))
+            self.path.write_text(f"on since {stamp}\nstarted {int(now)}\n")
             self.path.chmod(0o600)
         else:
             self.path.unlink(missing_ok=True)

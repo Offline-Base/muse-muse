@@ -1,7 +1,8 @@
 """Redaction guard. See the Guard section of docs/CONTRACTS.md.
 
-The guard finds roster names and personal identifiers in text, swaps them for stable tags such as
-[Student C] or [Phone 1], swaps tags back in Muse's requests, and reports anything that would leak.
+The guard finds roster names and personal identifiers in text, swaps them for tags such as
+[Student C] or [Phone 1] (the same all day; with TAG_ROTATION=daily a new set each day, see
+TagMap), swaps tags back in Muse's requests, and reports anything that would leak.
 It runs on the device with plain regexes and a one-edit string check, so it keeps working when no
 model is reachable. The local model only adds an optional second pass for names (`llm_names`).
 Each word of a name from that pass is tagged alone too, a one-word name grows by up to two
@@ -14,16 +15,20 @@ prefilters; this is new Python written for this repo.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import random
 import re
 import secrets
+import sqlite3
 import threading
+import time
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from functools import partial
+from datetime import date, datetime
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +38,7 @@ __all__ = [
     "GuardError",
     "TAG_RE",
     "TagMap",
+    "TagView",
     "blocked_reasons",
     "blocked_topics",
     "find_identifiers",
@@ -40,8 +46,10 @@ __all__ = [
     "leaks",
     "load_roster",
     "luhn_valid",
+    "neutralize_tags",
     "restore",
     "tag",
+    "tag_references",
 ]
 
 
@@ -1300,29 +1308,106 @@ def _kind_of_tag(tag: str) -> str:
     return _KIND_BY_LABEL.get(label, "person")
 
 
+TEACHER_TAG = "[Teacher]"
+ROTATIONS = ("daily", "off")
+GRACE_HOURS = 36.0
+# TAG_RE allows 1 to 3 letters, [Student A] to [Student ZZZ]: about 761 days at 24 students a day.
+MAX_STUDENT_CODES = 26 + 26**2 + 26**3
+# A tag's send time is saved at most this often, so sharing a result does not rewrite the file
+# every time. The grace window can start up to this much before the last send.
+TOUCH_EVERY = 3600.0
+LITERAL_KEY = "literal:"  # the key of a [Redacted N] tag that stands for tag-shaped document text
+_EPOCH_ORDINAL = date(1970, 1, 1).toordinal()
+CODES_USED_UP = (
+    "This device has used every student tag code. Set TAG_ROTATION=off, or move tagmap.json aside to "
+    "start a new tag map."
+)
+MIGRATION_FAILED = (
+    "The tag map could not be upgraded to version 2, so it was left as it was. Copies of tagmap.json and "
+    "base.db from before the upgrade are next to them, named with .v1-backup and the time. Check that the "
+    "disk has space and start again, or move tagmap.json aside to start a new tag map (Muse's old tags "
+    "then stop working)."
+)
+
+
+def day_of(ts: float) -> int:
+    """The tag day of a time: days since 1970-01-01 on the device's local calendar, the same clock
+    as approvals.today()."""
+    return date.fromtimestamp(ts).toordinal() - _EPOCH_ORDINAL
+
+
+@lru_cache(maxsize=4096)
+def day_end(day: int) -> float:
+    """When a tag day ends: local midnight at the start of the next day."""
+    return datetime.combine(date.fromordinal(day + 1 + _EPOCH_ORDINAL), datetime.min.time()).timestamp()
+
+
+@dataclass
+class _Value:
+    value: str
+    first_day: int
+    last_day: int  # updated when the day changes, not on every call
+
+
+@dataclass
+class _Tag:
+    kind: str
+    key: str
+    day: int
+    issued_at: float
+    last_sent: float | None = None  # when a result with this tag last went to Muse
+
+
 class TagMap:
     """Tag to real value, persistent per device. JSON at `path`, written 0600, never sent anywhere.
 
-    Students get [Student A], [Student B], ... in a shuffled order chosen with a seed that is made
-    once per device and stored in the file. The teacher is [Teacher]. Other kinds are numbered per
-    kind ([Phone 1], [Email 1], [Person 1], ...). The same real value always gets the same tag.
-    `path=None` keeps the map in memory (tests).
+    Values (a real name or identifier, by kind and key) and tags are kept apart. Students get
+    [Student A], [Student B], ... in a shuffled order chosen with a seed that is made once per
+    device and stored in the file. The teacher is [Teacher]. Other kinds are numbered per kind
+    ([Phone 1], [Email 1], [Person 1], ...). Codes only go up, so a tag never names two values.
+
+    rotation="off" (the constructor's default): the same value always has the same tag and every
+    tag restores, as in version 1. rotation="daily": each tag day gives a value a new tag the first
+    time it is tagged that day (the roster gets its block at once, shuffled again). A tag stays
+    live until `grace_hours` after the latest of its day's end, when it was made and when it was
+    last sent, and restores for Muse (for_muse) only once it was sent (touch). Every value from
+    every day stays known (known_index), so detection never gets weaker. `clock` gives the time
+    (tests). `backup` lists more files copied next to themselves before a version 1 file is
+    upgraded (base.db). `path=None` keeps the map in memory (tests).
     """
 
-    VERSION = 1
+    VERSION = 2
 
-    def __init__(self, path: str | Path | None = None, *, seed: int | str | None = None):
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        seed: int | str | None = None,
+        rotation: str = "off",
+        grace_hours: float = GRACE_HOURS,
+        clock: Callable[[], float] | None = None,
+        backup: Iterable[str | Path] = (),
+    ):
+        if rotation not in ROTATIONS:
+            raise ValueError(f"tag rotation must be daily or off, not {rotation!r}")
         self.path = Path(path).expanduser() if path is not None else None
+        self.rotation = rotation
+        self.grace = float(grace_hours) * 3600
+        self.clock = clock or time.time  # tests may set it
+        self._backup = tuple(Path(p) for p in backup)
         self._lock = threading.RLock()
-        self._entries: dict[str, tuple[str, str, str]] = {}  # tag -> (kind, key, value)
-        self._by_key: dict[tuple[str, str], str] = {}
+        self._values: dict[tuple[str, str], _Value] = {}  # (kind, key) -> value
+        self._tags: dict[str, _Tag] = {}  # tag -> its row, oldest first
+        self._by_day: dict[tuple[int, str, str], str] = {}  # (day, kind, key) -> tag
+        self._newest: dict[tuple[str, str], str] = {}  # (kind, key) -> its newest tag
         self._counters: dict[str, int] = {}
         self._next_letter = 0
         self._version = 0
-        self._value_index: tuple[int, re.Pattern[str] | None, dict[str, str]] | None = None
+        self._value_index: tuple[int, re.Pattern[str] | None, dict[str, tuple[str, str]]] | None = None
+        self.backups: list[Path] = []  # the copies made before a version 1 file was upgraded
+        self._dirty = False
         if self.path is not None and self.path.exists():
             self._load()
-            self._dirty = False
         else:
             self._seed = str(seed) if seed is not None else secrets.token_hex(8)
             self._dirty = self.path is not None
@@ -1333,84 +1418,77 @@ class TagMap:
 
     @classmethod
     def for_settings(cls, settings: Any, *, seed: int | str | None = None) -> TagMap:
-        return cls(settings.paths.tagmap, seed=seed)
+        """The device's map, with TAG_ROTATION and TAG_GRACE_HOURS; base.db is backed up too
+        before a version 1 file is upgraded."""
+        paths = settings.paths
+        return cls(
+            paths.tagmap,
+            seed=seed,
+            rotation=getattr(settings, "tag_rotation", "off"),
+            grace_hours=getattr(settings, "tag_grace_hours", GRACE_HOURS),
+            backup=[paths.db],
+        )
 
     @property
     def seed(self) -> str:
         return self._seed
 
+    def today(self, now: float | None = None) -> int:
+        return day_of(self.clock() if now is None else now)
+
+    # loading, the version 1 upgrade, saving
+
     def _load(self) -> None:
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            if data.get("version") != self.VERSION:
+            raw = self.path.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+            version = data.get("version")
+        except (OSError, ValueError, AttributeError) as exc:
+            raise GuardError("the tag map file is unreadable; fix or remove it before tagging") from exc
+        if version == 1:
+            self._migrate(data, raw)
+            return
+        try:
+            if version != self.VERSION:
                 raise ValueError("unknown tag map version")
             self._seed = str(data["seed"])
             self._next_letter = int(data.get("next_letter", 0))
             self._counters = {str(k): int(v) for k, v in (data.get("counters") or {}).items()}
-            for e in data.get("entries") or []:
-                self._put(str(e["tag"]), str(e["kind"]), str(e["key"]), str(e["value"]))
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+            for v in data.get("values") or []:
+                ident = (str(v["kind"]), str(v["key"]))
+                self._values[ident] = _Value(str(v["value"]), int(v["first_day"]), int(v["last_day"]))
+            for t in data.get("tags") or []:
+                ident = (str(t["kind"]), str(t["key"]))
+                if ident not in self._values:
+                    raise ValueError("a tag without a value")
+                sent = t.get("last_sent")
+                self._add_tag(str(t["tag"]), *ident, int(t["day"]), float(t["issued_at"]), None if sent is None else float(sent))
+            self._version += 1
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
             # Starting over would hand old tags to new people, so refuse instead.
             raise GuardError("the tag map file is unreadable; fix or remove it before tagging") from exc
 
-    def _put(self, tag: str, kind: str, key: str, value: str) -> None:
-        self._entries[tag] = (kind, key, value)
-        self._by_key[(kind, key)] = tag
-        self._version += 1
-
-    def tag_for(self, kind: str, key: str, value: str | None = None) -> str:
-        """The tag for one real value, creating it the first time the value is seen."""
-        with self._lock:
-            tag = self._by_key.get((kind, key))
-            if tag is not None:
-                return tag
-            value = key if value is None else value
-            if kind == "teacher" and "[Teacher]" not in self._entries:
-                tag = "[Teacher]"
-            elif kind == "student":
-                tag = f"[Student {_letters(self._next_letter)}]"
-                self._next_letter += 1
-            else:
-                label_kind = "person" if kind == "teacher" else kind  # a second teacher is a person
-                n = self._counters.get(label_kind, 0) + 1
-                self._counters[label_kind] = n
-                tag = f"[{_LABELS.get(label_kind, 'Person')} {n}]"
-            self._put(tag, kind, key, value)
-            self._dirty = True
-            return tag
-
-    def ensure_roster(self, roster: Any) -> None:
-        """Give the teacher [Teacher] and every new student a letter, in this device's shuffled order."""
-        with self._lock:
-            self.tag_for("teacher", roster.teacher.name, roster.teacher.name)
-            new = sorted({s.name for s in roster.students if ("student", s.name) not in self._by_key})
-            if not new:
-                return
-            random.Random(f"{self._seed}:{self._next_letter}").shuffle(new)
-            for name in new:
-                self.tag_for("student", name, name)
-
-    def get(self, tag: str) -> str | None:
-        entry = self._entries.get(tag)
-        return entry[2] if entry else None
-
-    def kind_of(self, tag: str) -> str | None:
-        entry = self._entries.get(tag)
-        return entry[0] if entry else None
-
-    def as_dict(self) -> dict[str, str]:
-        with self._lock:
-            return {tag: value for tag, (_, _, value) in self._entries.items()}
-
-    def values(self) -> list[str]:
-        with self._lock:
-            return [value for _, _, value in self._entries.values()]
-
-    def __len__(self) -> int:
-        return len(self._entries)
-
-    def __contains__(self, tag: object) -> bool:
-        return tag in self._entries
+    def _migrate(self, data: Mapping[str, Any], raw: bytes) -> None:
+        """Version 1 to 2. The file (and `backup`, base.db) is copied next to itself first; then
+        each entry becomes a value and a tag on today's tag day, counted as sent now since Muse may
+        hold it. A failure leaves the copies and raises GuardError with a plain message."""
+        try:
+            self.backups = _back_up(self.path, raw, self._backup, self.clock())
+        except (OSError, sqlite3.Error) as exc:
+            raise GuardError(MIGRATION_FAILED) from exc
+        try:
+            now = self.clock()
+            day = self.today(now)
+            self._seed = str(data["seed"])
+            self._next_letter = int(data.get("next_letter", 0))
+            self._counters = {str(k): int(v) for k, v in (data.get("counters") or {}).items()}
+            for e in data.get("entries") or []:
+                ident = (str(e["kind"]), str(e["key"]))
+                self._remember(ident, str(e["value"]), day)
+                self._add_tag(str(e["tag"]), *ident, day, now, now)
+            self.save()
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise GuardError(MIGRATION_FAILED) from exc
 
     def save(self) -> None:
         """Write the map atomically with mode 0600."""
@@ -1421,10 +1499,16 @@ class TagMap:
             payload = {
                 "version": self.VERSION,
                 "seed": self._seed,
+                "rotation": self.rotation,
                 "next_letter": self._next_letter,
                 "counters": self._counters,
-                "entries": [
-                    {"tag": t, "kind": k, "key": key, "value": v} for t, (k, key, v) in self._entries.items()
+                "values": [
+                    {"kind": k, "key": key, "value": v.value, "first_day": v.first_day, "last_day": v.last_day}
+                    for (k, key), v in self._values.items()
+                ],
+                "tags": [
+                    {"tag": t, "kind": r.kind, "key": r.key, "day": r.day, "issued_at": r.issued_at, "last_sent": r.last_sent}
+                    for t, r in self._tags.items()
                 ],
             }
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1442,22 +1526,290 @@ class TagMap:
         if self._dirty:
             self.save()
 
-    def known_index(self) -> tuple[re.Pattern[str] | None, dict[str, str]]:
-        """A regex for every real value in the map, and normalized value -> tag."""
+    # tags
+
+    def _add_tag(self, tag: str, kind: str, key: str, day: int, issued_at: float, last_sent: float | None = None) -> None:
+        self._tags[tag] = _Tag(kind, key, day, issued_at, last_sent)
+        self._by_day[(day, kind, key)] = tag
+        self._newest[(kind, key)] = tag
+
+    def _remember(self, ident: tuple[str, str], value: str, day: int) -> None:
+        known = self._values.get(ident)
+        if known is None:
+            self._values[ident] = _Value(value, day, day)
+            self._version += 1
+            self._dirty = True
+        elif known.last_day < day:
+            known.last_day = day
+            self._dirty = True
+
+    def _new_code(self, kind: str) -> str:
+        if kind == "teacher" and TEACHER_TAG not in self._tags:
+            return TEACHER_TAG
+        if kind == "student":
+            if self._next_letter >= MAX_STUDENT_CODES:
+                raise GuardError(CODES_USED_UP)
+            tag = f"[Student {_letters(self._next_letter)}]"
+            self._next_letter += 1
+            return tag
+        label_kind = "person" if kind == "teacher" else kind  # a second teacher is a person
+        n = self._counters.get(label_kind, 0) + 1
+        self._counters[label_kind] = n
+        return f"[{_LABELS.get(label_kind, 'Person')} {n}]"
+
+    def tag_for(self, kind: str, key: str, value: str | None = None, day: int | None = None) -> str:
+        """The tag for one real value on tag day `day` (default today), made the first time the
+        value is tagged that day. With rotation off the value keeps its one tag."""
+        with self._lock:
+            now = self.clock()
+            ident = (kind, key)
+            self._remember(ident, key if value is None else value, self.today(now))
+            day = self.today(now) if day is None or self.rotation == "off" else day
+            newest = self._newest.get(ident)
+            if self.rotation == "off" or newest == TEACHER_TAG:
+                tag = newest
+            else:
+                tag = self._by_day.get((day, kind, key))
+            if tag is not None:
+                return tag
+            tag = self._new_code(kind)
+            self._add_tag(tag, kind, key, day, now)
+            self._dirty = True
+            return tag
+
+    def ensure_roster(self, roster: Any, day: int | None = None) -> None:
+        """Give the teacher [Teacher] and every student without a tag on this tag day a letter, in
+        this device's shuffled order (a new shuffle for each day's block)."""
+        with self._lock:
+            self.tag_for("teacher", roster.teacher.name, roster.teacher.name, day)
+            if self.rotation == "off":
+                new = sorted({s.name for s in roster.students if ("student", s.name) not in self._newest})
+                order = f"{self._seed}:{self._next_letter}"
+            else:
+                day = self.today() if day is None else day
+                new = sorted({s.name for s in roster.students if (day, "student", s.name) not in self._by_day})
+                order = f"{self._seed}:{day}:{self._next_letter}"
+            if not new:
+                return
+            random.Random(order).shuffle(new)
+            for name in new:
+                self.tag_for("student", name, name, day)
+
+    def view(self, day: int | None = None) -> TagView:
+        """This map pinned to tag day `day` (default today): what guard.tag uses for one text."""
+        return TagView(self, self.today() if day is None else day)
+
+    def _live(self, tag: str, row: _Tag, now: float) -> bool:
+        if self.rotation == "off" or tag == TEACHER_TAG:
+            return True
+        return now < max(day_end(row.day), row.issued_at, row.last_sent or 0.0) + self.grace
+
+    def _value_of(self, row: _Tag) -> str | None:
+        known = self._values.get((row.kind, row.key))
+        return known.value if known else None
+
+    def get(self, tag: str) -> str | None:
+        with self._lock:
+            row = self._tags.get(tag)
+            return self._value_of(row) if row else None
+
+    def kind_of(self, tag: str) -> str | None:
+        row = self._tags.get(tag)
+        return row.kind if row else None
+
+    def as_dict(self) -> dict[str, str]:
+        """{tag: real value} for every live tag: what the device's own model reads and writes."""
+        with self._lock:
+            now = self.clock()
+            return {t: self._value_of(r) for t, r in self._tags.items() if self._live(t, r, now)}
+
+    def for_muse(self) -> dict[str, str]:
+        """{tag: real value} for the tags Muse may send back: live and sent (every tag with rotation
+        off). [Teacher] is the user, never changes and always restores."""
+        with self._lock:
+            now = self.clock()
+            return {
+                t: self._value_of(r)
+                for t, r in self._tags.items()
+                if self._live(t, r, now) and (self.rotation == "off" or t == TEACHER_TAG or r.last_sent is not None)
+            }
+
+    def touch(self, tags: Iterable[str], now: float | None = None) -> None:
+        """Mark tags as sent to Muse now (a shared result held them), so they restore until the
+        grace window after this send. Saved at once the first time, then at most every TOUCH_EVERY."""
+        with self._lock:
+            now = self.clock() if now is None else now
+            changed = False
+            for tag in tags:
+                row = self._tags.get(tag)
+                if row is not None and (row.last_sent is None or now - row.last_sent >= TOUCH_EVERY):
+                    row.last_sent = now
+                    changed = True
+            if changed:
+                self._dirty = True
+                self.flush()
+
+    def expired(self, text: str) -> list[str]:
+        """The tags in Muse's `text` that will not restore: never sent, past their grace window or
+        never made. Bracketed tags of any kind count, and Student and Person references without
+        brackets ("Student B"). Always empty with rotation off."""
+        if self.rotation == "off" or not text:
+            return []
+        restorable = self.for_muse()
+        out = [
+            tag
+            for tag, bracketed in tag_references(text)
+            if tag not in restorable and (bracketed or _kind_of_tag(tag) in ("student", "person"))
+        ]
+        return list(dict.fromkeys(out))
+
+    def day_for(self, text: str) -> int | None:
+        """The newest tag day among the tags in `text` that restore for Muse, or None. A result for
+        a request with yesterday's tags is tagged on that day, so Muse gets the tags it used."""
+        if self.rotation == "off" or not text:
+            return None
+        with self._lock:
+            restorable = self.for_muse()
+            days = [self._tags[t].day for t, _b in tag_references(text) if t in restorable and t != TEACHER_TAG]
+        return max(days) if days else None
+
+    # retention
+
+    def purge(
+        self,
+        now: float | None = None,
+        retention_days: int | None = None,
+        roster: Any = None,
+        keep: Iterable[str] = (),
+    ) -> dict[str, int]:
+        """Drop what can no longer be used. With rotation daily, every tag past its grace window
+        (it cannot restore anything; the counters keep its code from coming back). With
+        `retention_days`, every value not on the roster whose last day is older than that, with
+        its tags, unless a live tag (rotation daily) or a tag in `keep` still points to it. `keep`
+        holds tags in results still waiting for the user's OK. Returns {"tags": n, "values": m}."""
+        with self._lock:
+            now = self.clock() if now is None else now
+            keep = set(keep)
+            dropped_tags = 0
+            if self.rotation == "daily":
+                gone = [t for t, r in self._tags.items() if t not in keep and not self._live(t, r, now)]
+                for t in gone:
+                    del self._tags[t]
+                dropped_tags = len(gone)
+            dropped_values = 0
+            if retention_days is not None:
+                held = {(r.kind, r.key) for t, r in self._tags.items() if t in keep or self.rotation == "daily"}
+                held |= _roster_idents(roster)
+                cutoff = self.today(now) - int(retention_days)
+                old = {i for i, v in self._values.items() if v.last_day < cutoff and i not in held}
+                for ident in old:
+                    del self._values[ident]
+                tags = [t for t, r in self._tags.items() if (r.kind, r.key) in old]
+                for t in tags:
+                    del self._tags[t]
+                dropped_tags += len(tags)
+                dropped_values = len(old)
+            if dropped_tags or dropped_values:
+                self._by_day, self._newest = {}, {}
+                for t, r in self._tags.items():
+                    self._by_day[(r.day, r.kind, r.key)] = t
+                    self._newest[(r.kind, r.key)] = t
+                self._version += 1
+                self._dirty = True
+                self.flush()
+            return {"tags": dropped_tags, "values": dropped_values}
+
+    # what the scans read
+
+    def values(self) -> list[str]:
+        with self._lock:
+            return [v.value for v in self._values.values()]
+
+    def known_values(self) -> list[tuple[str, str]]:
+        """(kind, value) for every value from every tag day."""
+        with self._lock:
+            return [(kind, v.value) for (kind, _key), v in self._values.items()]
+
+    def __len__(self) -> int:
+        return len(self._tags)
+
+    def __contains__(self, tag: object) -> bool:
+        return tag in self._tags
+
+    def known_index(self) -> tuple[re.Pattern[str] | None, dict[str, tuple[str, str]]]:
+        """A regex for every real value in the map, and normalized value -> (kind, key)."""
         with self._lock:
             if self._value_index is None or self._value_index[0] != self._version:
-                regex, lookup = _value_regex(self._entries.items())
+                regex, lookup = _value_regex((ident, v.value) for ident, v in self._values.items())
                 self._value_index = (self._version, regex, lookup)
             return self._value_index[1], self._value_index[2]
 
 
-def _value_regex(entries: Iterable[tuple[str, tuple[str, str, str]]]) -> tuple[re.Pattern[str] | None, dict]:
-    lookup: dict[str, str] = {}
+class TagView:
+    """A TagMap pinned to one tag day: tag_for and ensure_roster use that day. Everything else is
+    the map's own. guard.tag pins the day at its start, so one text never mixes two days' tags,
+    and egress pins the day of the tags in Muse's request (TagMap.day_for)."""
+
+    def __init__(self, tagmap: TagMap, day: int):
+        self.tagmap = tagmap
+        self.day = day
+
+    def tag_for(self, kind: str, key: str, value: str | None = None, day: int | None = None) -> str:
+        return self.tagmap.tag_for(kind, key, value, self.day if day is None else day)
+
+    def ensure_roster(self, roster: Any, day: int | None = None) -> None:
+        self.tagmap.ensure_roster(roster, self.day if day is None else day)
+
+    def view(self, day: int | None = None) -> TagView:
+        return self if day is None else self.tagmap.view(day)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.tagmap, name)
+
+
+def _roster_idents(roster: Any) -> set[tuple[str, str]]:
+    """The tag map keys of the people on the roster, whose values stay while they are on it."""
+    if roster is None:
+        return set()
+    return {("teacher", roster.teacher.name), *(("student", s.name) for s in roster.students)}
+
+
+def _back_up(path: Path, raw: bytes, more: Iterable[Path], now: float) -> list[Path]:
+    """Copy `path` (its bytes are `raw`) and each existing file in `more` next to itself as
+    <name>.v1-backup-<local time>, 0600. A copy of the same tag map already there is enough, so a
+    service that restarts after a failed upgrade does not fill the disk."""
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+    if any(p.read_bytes() == raw for p in path.parent.glob(f"{path.name}.v1-backup-*")):
+        return []
+    made = []
+    for src in (path, *more):
+        if not src.exists():
+            continue
+        dst = src.with_name(f"{src.name}.v1-backup-{stamp}")
+        fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        if src == path:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(raw)
+        else:  # a SQLite file: the backup API copies a consistent snapshot, WAL included
+            os.close(fd)
+            with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(dst)) as b:
+                a.backup(b)
+        os.chmod(dst, 0o600)
+        made.append(dst)
+    return made
+
+
+def _value_regex(entries: Iterable[tuple[Any, str]]) -> tuple[re.Pattern[str] | None, dict[str, Any]]:
+    """A regex for the values, and normalized value -> the first id given with it. Tag-shaped
+    values (a [Redacted N] for tag-shaped document text) are words, not private values."""
+    lookup: dict[str, Any] = {}
     values: list[str] = []
-    for tag, (_, _, value) in entries:
+    for ident, value in entries:
+        if TAG_RE.fullmatch(value.strip()):
+            continue
         key = _norm(_normalize(value).text)
         if len(key) >= 2 and key not in lookup:
-            lookup[key] = tag
+            lookup[key] = ident
             values.append(value)
     if not values:
         return None, lookup
@@ -1471,27 +1823,19 @@ def _known_cands(text: str, tagmap: Any) -> list[_Cand]:
     """Every real value already in the tag map: names from the model pass, old identifiers."""
     if tagmap is None:
         return []
-    if isinstance(tagmap, TagMap):
-        regex, lookup = tagmap.known_index()
-
-        def info(tag: str) -> tuple[str, str]:
-            entry = tagmap._entries[tag]
-            return entry[0], entry[1]
+    if hasattr(tagmap, "known_index"):
+        regex, lookup = tagmap.known_index()  # (kind, key) for every value from every tag day
     else:
         mapping = dict(tagmap.as_dict() if hasattr(tagmap, "as_dict") else tagmap)
-        regex, lookup = _value_regex((t, (_kind_of_tag(t), _norm(v), v)) for t, v in mapping.items())
-
-        def info(tag: str) -> tuple[str, str]:
-            return _kind_of_tag(tag), _norm(mapping[tag])
-
+        regex, lookup = _value_regex(((_kind_of_tag(t), _norm(v)), v) for t, v in mapping.items())
     if regex is None:
         return []
     out: list[_Cand] = []
     for m in regex.finditer(text):
-        tag = lookup.get(_norm(m.group()))  # text is already the normalized copy
-        if tag is None:
+        ident = lookup.get(_norm(m.group()))  # text is already the normalized copy
+        if ident is None:
             continue
-        kind, key = info(tag)
+        kind, key = ident
         word = m.group()
         if kind == "person" and " " not in word and _is_common(word):
             if not word[:1].isupper() or _used_as_word(text, m.start(), m.end(), word):
@@ -1552,9 +1896,14 @@ def tag(
     Model-found names are tagged with their words and, for a one-word name, the capitalized
     neighbors it takes in (_extra_name_cands). Every one of those values is then stored in the tag
     map, even where a longer span covered it, so a later "Bennick" alone is a known value.
+
+    A TagMap is pinned to today's tag day for the whole call (a TagView keeps its own day), so a
+    text tagged across midnight never mixes two days' tags.
     """
     if tagmap is None:
         tagmap = TagMap(None)
+    if isinstance(tagmap, TagMap):
+        tagmap = tagmap.view()
     if roster is not None:
         tagmap.ensure_roster(roster)
     extra = [n for n in llm_names(text) if isinstance(n, str)] if llm_names is not None else []
@@ -1612,9 +1961,44 @@ _REFERENCE_AFTER = re.compile(
 )
 
 
+def _canonical(m: re.Match[str]) -> str | None:
+    """The tag a _RESTORE_RE match refers to, like [Student A], or None when it is plain words."""
+    if m.group("teacher"):
+        return TEACHER_TAG
+    if m.group("student"):
+        letters = m.group("letters")
+        if (
+            not m.group("ob")
+            and letters.islower()
+            and letters in ("a", "i")
+            and not _REFERENCE_AFTER.match(m.string, m.end())
+        ):
+            return None  # "give every student a chance"
+        return f"[Student {letters.upper()}]"
+    if m.group("kind2"):
+        return f"[{_LABELS[_KIND_BY_LABEL[m.group('kind2').lower()]]} {m.group('num2')}]"
+    word = m.group("kind")
+    if not m.group("ob2") and not word[:1].isupper():
+        return None  # "error code 1" stays as written
+    return f"[{_LABELS[_KIND_BY_LABEL[word.lower()]]} {m.group('num')}]"
+
+
+def tag_references(text: str) -> list[tuple[str, bool]]:
+    """(tag, bracketed) for every tag `restore` would swap in `text`, in order."""
+    if not text:
+        return []
+    out = []
+    for m in _RESTORE_RE.finditer(text):
+        canonical = _canonical(m)
+        if canonical is not None:
+            out.append((canonical, m.group(0).startswith("[")))
+    return out
+
+
 def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:
     """Swap tags back to real values. Tolerant of Muse rephrasing: [Student A], Student A,
-    student a, Student A's, (Student A). [Student A] and [Student AB] never mix."""
+    student a, Student A's, (Student A). [Student A] and [Student AB] never mix. A TagMap gives
+    its live tags (as_dict); the connector passes TagMap.for_muse() for Muse's text."""
     if not text:
         return text
     mapping = tag_map.as_dict() if hasattr(tag_map, "as_dict") else dict(tag_map or {})
@@ -1623,29 +2007,21 @@ def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:
         return text
 
     def swap(m: re.Match[str]) -> str:
-        if m.group("teacher"):
-            canonical = "[Teacher]"
-        elif m.group("student"):
-            letters = m.group("letters")
-            if (
-                not m.group("ob")
-                and letters.islower()
-                and letters in ("a", "i")
-                and not _REFERENCE_AFTER.match(m.string, m.end())
-            ):
-                return m.group(0)  # "give every student a chance"
-            canonical = f"[Student {letters.upper()}]"
-        elif m.group("kind2"):
-            canonical = f"[{_LABELS[_KIND_BY_LABEL[m.group('kind2').lower()]]} {m.group('num2')}]"
-        else:
-            word = m.group("kind")
-            if not m.group("ob2") and not word[:1].isupper():
-                return m.group(0)  # "error code 1" stays as written
-            canonical = f"[{_LABELS[_KIND_BY_LABEL[word.lower()]]} {m.group('num')}]"
-        value = lookup.get(canonical)
+        canonical = _canonical(m)
+        value = lookup.get(canonical) if canonical is not None else None
         return value if value is not None else m.group(0)
 
     return _RESTORE_RE.sub(swap, text)
+
+
+def neutralize_tags(text: str, tagmap: Any) -> str:
+    """Tag-shaped text from a document ("[Student B]", "[Teacher]") as a [Redacted N] tag whose
+    value is that literal text. Muse then never takes it for a real tag, and restoring it gives
+    back the words, never a person. Egress runs it on a raw result before tagging (by contract a
+    raw result holds real values, never tags). "Student B" without brackets is left as written."""
+    if not text or "[" not in text:
+        return text or ""
+    return TAG_RE.sub(lambda m: tagmap.tag_for("term", LITERAL_KEY + m.group(), m.group()), text)
 
 
 def leaks(text: str, roster: Any, tagmap: Any, redaction: Redaction | None = None) -> list[Hit]:
@@ -1679,9 +2055,12 @@ def _compact_targets(roster: Any, tagmap: Any) -> list[tuple[str, str]]:
                 if len(key) >= COMPACT_MIN:
                     targets.setdefault(key, kind)
     if tagmap is not None:
-        mapping = tagmap.as_dict() if hasattr(tagmap, "as_dict") else dict(tagmap)
-        for tag, value in mapping.items():
-            kind = _kind_of_tag(tag)
+        if hasattr(tagmap, "known_values"):  # every value from every tag day
+            pairs = tagmap.known_values()
+        else:
+            mapping = tagmap.as_dict() if hasattr(tagmap, "as_dict") else dict(tagmap)
+            pairs = [(_kind_of_tag(tag), value) for tag, value in mapping.items()]
+        for kind, value in pairs:
             if kind in _NAME_KINDS and " " in str(value).strip():
                 key = re.sub(r"[^a-z]", "", _normalize(str(value)).text.lower())
                 if len(key) >= COMPACT_MIN:

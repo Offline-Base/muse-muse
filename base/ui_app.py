@@ -42,7 +42,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 
 from base import events, guard
-from base.approvals import AutoApprove
+from base.approvals import AUTO_APPROVE_HOURS, AutoApprove
 from base.compliance import GROUPS, NOT_FOR, PROFILES, local_only
 from base.config import REPO_ROOT
 from base.controls import KIND_LABELS, TOP, Controls, ControlStore
@@ -74,6 +74,8 @@ CODE_SECONDS = 600
 CODE_TRIES = 5
 HEARTBEAT_SECONDS = 15.0
 HISTORY_LIMIT = 200
+# The request stored with a question asked on the Ask page; /ask shows only jobs with it.
+PAGE_ASK = "asked on this device"
 
 LIGHT_LABELS = {
     "idle": "Idle",
@@ -496,6 +498,13 @@ def _ts_number(ts: Any) -> float | None:
             except ValueError:
                 return None
     return None
+
+
+# What Always approve still leaves for the user (approvals.AUTO_APPROVE_SKIPS, and the router's refusals).
+AUTO_STILL_ASKS = (
+    "Names stay tags and never-share topics are still kept here. You still see results with an identifier, "
+    "an ask-first topic, a never-share topic in Muse's request or a destination outside the class."
+)
 
 
 def _when(ts: Any) -> str:
@@ -943,20 +952,26 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         rows = pending_rows()
         topics = _request_topics(services)
         locked = bool(controls.get().profiles)
-        on = auto.on and not locked
+        until = None if locked else auto.until()
+        on = until is not None
         content = render(
             "approvals.html",
             cards_html="".join(approval_card(r, topics) for r in rows),
             empty_hidden="" if not rows else "hidden",
+            auto_banner_html=(
+                f'<div class="auto-banner" role="status">Always approve is on until {esc(_when(until))}. '
+                "It turns itself off then.</div>"
+                if on
+                else ""
+            ),
             auto_state="on" if on else "off",
             auto_note=(
                 "Off while a privacy toggle is on, so you see each result that needs your OK."
                 if locked
-                else "Results that would wait for your OK go to Muse right away. Names stay tags, and "
-                "never-share topics are still kept here."
+                else f"Results that would wait for your OK go to Muse right away. {AUTO_STILL_ASKS}"
                 if on
-                else "Turn it on to share every result that would wait for your OK, without asking. "
-                "Never-share topics are still kept here."
+                else f"Turn it on for {AUTO_APPROVE_HOURS} hours to share results that would wait for your OK, "
+                f"without asking. {AUTO_STILL_ASKS}"
             ),
             auto_next="false" if on else "true",
             auto_button="Turn off" if on else "Turn on",
@@ -1315,9 +1330,14 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     @app.get("/ask", response_class=HTMLResponse)
     def ask_page(request: Request, job: str = "") -> HTMLResponse:
-        """A question answered on this device only. The answer has real names and never goes to Muse."""
+        """A question answered on this device only. The answer has real names and never goes to Muse.
+
+        Only a job asked on this page shows here: any other job id (a Muse task, a search) gives
+        the empty page, so their raw results never render on it."""
         result, refresh = "", ""
         row = services.jobs.get(job) if job and getattr(services, "jobs", None) else None
+        if row is not None and (row.get("kind"), row.get("instructions")) != ("ask", PAGE_ASK):
+            row = None
         if row is not None:
             if row["status"] in ("queued", "running"):
                 refresh = '<meta http-equiv="refresh" content="3">'
@@ -1337,7 +1357,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         if runner is None:
             raise HTTPException(409, "The local model is not set up on this device.")
         try:
-            job_id = runner.start(question, "asked on this device", None)
+            job_id = runner.start(question, PAGE_ASK, None)
         except Exception as exc:
             if type(exc).__name__ == "AskBusy":
                 raise HTTPException(409, str(exc)) from None
@@ -1346,7 +1366,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     @app.get("/prepare", response_class=HTMLResponse)
     def prepare_page(request: Request) -> HTMLResponse:
-        return page(request, "prepare", "Prepare a question", render("prepare.html", original="", result_html="", note=""))
+        rotation = tag_day_note(getattr(services, "tagmap", None))
+        return page(
+            request, "prepare", "Prepare a question",
+            render("prepare.html", original="", result_html="", note="", rotation=rotation),
+        )
 
     @app.post("/prepare", response_class=HTMLResponse)
     async def prepare_post(request: Request) -> HTMLResponse:
@@ -1359,7 +1383,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             if tagged
             else ""
         )
-        return page(request, "prepare", "Prepare a question", render("prepare.html", original=original, result_html=result, note=note))
+        rotation = tag_day_note(getattr(services, "tagmap", None))
+        return page(
+            request, "prepare", "Prepare a question",
+            render("prepare.html", original=original, result_html=result, note=note, rotation=rotation),
+        )
 
     @app.get("/api/audit.csv")
     def api_audit() -> Response:
@@ -1413,6 +1441,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.get("/api/status")
     def api_status() -> dict[str, Any]:
         light = events.last()
+        left = None if controls.get().profiles else auto.seconds_left()
         return {
             "device": settings.device,
             "backend": settings.glimmer_backend,
@@ -1421,11 +1450,13 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             "primary_model": settings.checker_model if getattr(settings, "primary_model", "glimmer") == "lfm" else None,
             "light": {"state": light.state, "detail": light.detail, "ts": light.ts},
             "pending": len(pending_rows()),
-            "auto_approve": auto.on and not controls.get().profiles,
+            "auto_approve": left is not None,
+            "auto_approve_seconds_left": left,  # None while off; it turns itself off at 0
             "device_only": getattr(settings, "device_only", False),
             "profiles": controls.get().profiles,
             "heavy_queue": settings.heavy_queue,
             "login_required": login_required,
+            "tag_rotation": getattr(getattr(services, "tagmap", None), "rotation", "off"),
         }
 
     @app.get("/health")
@@ -1626,7 +1657,22 @@ def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
         log.warning("prepare could not run the name check: %s", type(exc).__name__)
         result = guard.tag(text, services.roster, services.tagmap, **kw)
         note = "The local model is not running, so only names on your roster and identifiers were tagged. Check the text before you paste it."
+    touch = getattr(services.tagmap, "touch", None)
+    if callable(touch):  # the user pastes these into Muse, so Muse may send them back
+        touch(guard.TAG_RE.findall(result.text))
     return result.text, note
+
+
+def tag_day_note(tagmap: Any) -> str:
+    """One line for the Prepare page: whether tags change every day, and today's tag day."""
+    if getattr(tagmap, "rotation", "off") != "daily":
+        return "Tags stay the same on this device: the daily tag change is off."
+    today = tagmap.today()
+    day = date.fromordinal(today + date(1970, 1, 1).toordinal())
+    return (
+        f"Tags change every day on this device. These are the tags for {day:%B} {day.day} (tag day {today}). "
+        "Muse can use them until about a day and a half after the day ends, then tag your question again."
+    )
 
 
 def _model_label(settings: Any, glimmer: str) -> str:

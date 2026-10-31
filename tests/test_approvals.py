@@ -220,3 +220,61 @@ def test_blocked_reasons_round_trip_and_old_dbs_gain_the_column(tmp_path):
     assert store.get(rid)["blocked"] == ["Mentions an IEP or 504 plan"]
     assert store.pending()[0]["blocked"] == ["Mentions an IEP or 504 plan"]
     store.close()
+
+
+# Always approve: narrowed and turned off after 8 hours (GAP-7)
+
+
+class Clock:
+    def __init__(self, now=1_793_000_000.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
+
+
+def test_always_approve_records_when_it_was_turned_on_and_turns_itself_off(tmp_path):
+    import os
+    import stat
+
+    from base.approvals import AUTO_APPROVE_HOURS, AutoApprove
+
+    clock = Clock()
+    auto = AutoApprove(tmp_path / "auto_approve", clock=clock)
+    assert not auto.on and auto.until() is None and auto.seconds_left() is None
+    auto.set(True)
+    assert stat.S_IMODE(os.stat(auto.path).st_mode) == 0o600
+    assert f"started {int(clock.now)}" in auto.path.read_text() and "on since " in auto.path.read_text()
+    assert auto.on and auto.seconds_left() == AUTO_APPROVE_HOURS * 3600
+    clock.now += AUTO_APPROVE_HOURS * 3600 - 1
+    assert auto.on and auto.seconds_left() == 1
+    clock.now += 1
+    assert not auto.on and not auto.path.exists()  # off at 8 hours, and the file is gone
+
+
+def test_always_approve_reads_an_older_file_by_its_stamp_or_its_time(tmp_path):
+    import os
+    import time
+
+    from base.approvals import AutoApprove
+
+    path = tmp_path / "auto_approve"
+    now = time.time()
+    path.write_text(time.strftime("on since %Y-%m-%d %H:%M\n", time.localtime(now - 9 * 3600)))
+    assert not AutoApprove(path).on and not path.exists()  # the live app's file from before this change
+    path.write_text(time.strftime("on since %Y-%m-%d %H:%M\n", time.localtime(now - 3600)))
+    assert AutoApprove(path).on
+    path.write_text("on\n")  # no stamp: its modified time counts
+    os.utime(path, (now - 9 * 3600, now - 9 * 3600))
+    assert not AutoApprove(path).on
+    path.write_text(f"started {int(now + 3600)}\n")  # a time in the future makes no sense: off
+    assert not AutoApprove(path).on and not path.exists()
+
+
+def test_needs_a_person_lists_the_floors_always_approve_leaves():
+    from base.approvals import needs_a_person
+
+    for floor in ("request:iep", "ask_first:custody", "identifier:phone", "identifier:digits", "outside_class"):
+        assert needs_a_person([floor]) and needs_a_person(["policy:x", floor])
+    for floors in ([], None, ["learned:ask_user"], ["policy:class_averages"], ["contact_ok"]):
+        assert not needs_a_person(floors)

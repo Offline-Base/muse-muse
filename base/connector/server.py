@@ -102,6 +102,7 @@ USAGE = {
 }
 
 GENERIC_ERROR = "Something went wrong on the device, and nothing was shared. Try again in a moment."
+EXPIRED_TAG = "That tag no longer works on this device. Call list_documents or search_documents again for current tags."
 CLOUD_REFUSED = (
     "The device will not read that folder: its model is running in the cloud for development, so only "
     "folders marked as invented data can be read."
@@ -188,11 +189,20 @@ def _topics(job: Any) -> list[str]:
 
 
 def restore_tags(services: Any, text: str) -> str:
-    """Swap tags like [Student A] back to real values. The result stays on the device."""
+    """Swap tags like [Student A] back to real values. The result stays on the device.
+
+    With a TagMap only the tags this device sent to Muse, still in their grace window, restore
+    (TagMap.for_muse). Any other tag in `text` raises ToolFailure with EXPIRED_TAG (audit
+    expired_tag) before anything is searched or started: old, never-sent and guessed tags get the
+    same sentence, so Muse cannot tell them apart."""
     guard = importlib.import_module("base.guard")
     tagmap = services.tagmap
     if isinstance(tagmap, Mapping):
         mapping = dict(tagmap)
+    elif hasattr(tagmap, "for_muse"):
+        if tagmap.expired(text):
+            raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
+        mapping = dict(tagmap.for_muse())
     elif hasattr(tagmap, "as_dict"):
         mapping = dict(tagmap.as_dict())
     else:
@@ -207,7 +217,6 @@ class Connector:
         self.services = services
         self._check_failures: dict[str, int] = {}
         self._failures_lock = threading.Lock()
-        self._sources: dict[str, list[str]] = {}  # job id -> documents a search used (redaction controls)
 
     def call(self, tool: str, fn: Callable[..., tuple[CallToolResult, str]], *args: Any) -> CallToolResult:
         """Run one tool, turn every failure into a plain message, and write the audit row."""
@@ -312,8 +321,10 @@ class Connector:
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still
         # checking" with a job_id before the relay gives up, and a retried search joins the release.
         jobs = self.services.jobs
-        job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet")
-        self._sources[job_id] = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
+        # The documents the snippets came from are stored with the job, so a release after a
+        # restart still uses the user's controls for them (a names-off folder, a scanned page).
+        sources = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
+        job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet", sources=sources)
         status, text = self._release(job_id, jobs.get(job_id))
         if status in ("shared", "refused"):
             return _text(text), status
@@ -329,10 +340,11 @@ class Connector:
         runner = getattr(self.services, "ask_runner", None)
         if runner is None:
             raise ToolFailure(ASK_UNAVAILABLE)
+        real_question = restore_tags(self.services, question)  # before any index call
         real_folder = self._docs(folder)[0] if folder else ""
         request = f"{question}\nPurpose: {purpose}" if purpose else question
         try:
-            job_id = str(runner.start(restore_tags(self.services, question), request, real_folder or None))
+            job_id = str(runner.start(real_question, request, real_folder or None))
         except Exception as exc:
             if type(exc).__name__ == "AskBusy":  # a plain sentence with a count, no content
                 raise ToolFailure(str(exc), outcome="busy") from None
@@ -345,6 +357,7 @@ class Connector:
             raise ToolFailure(
                 "Say what to do in instructions, for example: grade each essay against rubric.md."
             )
+        restore_tags(self.services, instructions)  # an old or guessed tag starts nothing (EXPIRED_TAG)
         real_folder, docs = self._docs(folder)
         if not docs:
             raise ToolFailure(f"The folder {_quote(folder)} has no documents to work on.")
@@ -427,13 +440,18 @@ class Connector:
             raise box["error"]
         return box["released"]
 
-    def _job_sources(self, job_id: str, job: Any) -> list[str]:
-        """Where a job's result came from, for the user's redaction controls. Unknown (a restart)
+    def _job_sources(self, job: Any) -> list[str]:
+        """Where a job's result came from, for the user's redaction controls: the job row's
+        sources (a search's passages, an ask job's reading), else a task's folder. None known
         means no sources, which always tags everything."""
-        runner = getattr(self.services, "ask_runner", None)
-        known = self._sources.get(job_id) or (getattr(runner, "sources", {}) or {}).get(job_id)
-        if known:
-            return list(known)
+        known = _get(job, "sources")
+        if isinstance(known, str):
+            try:
+                known = json.loads(known)
+            except ValueError:
+                known = []
+        if isinstance(known, list | tuple) and known:
+            return [str(s) for s in known]
         folder = _get(job, "folder")
         return [str(folder)] if folder and _get(job, "kind") not in (SEARCH_KIND, ASK_KIND) else []
 
@@ -448,7 +466,7 @@ class Connector:
             job_id=job_id,
             summary=_get(job, "summary"),
             topics=_topics(job),
-            sources=self._job_sources(job_id, job),
+            sources=self._job_sources(job),
         )
         if getattr(released, "retryable", False):
             with self._failures_lock:

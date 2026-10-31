@@ -126,6 +126,49 @@ def test_create_fails_jobs_a_stopped_process_left_running(tmp_path):
         e.close()
 
 
+class FakeSerial:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def write(self, data):
+        self.lines.append(data.decode())
+
+    def flush(self):
+        return None
+
+    def close(self):
+        return None
+
+
+def test_a_restart_with_a_card_waiting_shows_waiting_on_the_light_and_the_page(tmp_path, monkeypatch):
+    import base.light
+
+    settings = make_settings(tmp_path, LIGHT_SERIAL="/dev/fake-light")
+    settings.ensure_home()
+    store = ApprovalStore(settings.paths.db)  # a card left waiting by the process before the restart
+    store.create_pending(tool="get_result", request="Scores", result_kind="per_student",
+                         tagged_text="[Student A]: 3 of 4", router_decision="ask_user")  # fmt: skip
+    store.close()
+    lines: list[str] = []
+    monkeypatch.setattr(base.light, "open_serial", lambda port: FakeSerial(lines))
+    events.emit("idle", "before the restart")  # a fresh process starts at idle
+    s = Services.create(settings)
+    try:
+        assert events.last().state == "waiting"
+        assert lines[0] == "STATE waiting\n"
+    finally:
+        s.close()
+
+
+def test_a_restart_with_nothing_waiting_stays_idle(tmp_path):
+    events.emit("working", "before the restart")
+    s = Services.create(make_settings(tmp_path), light=False)
+    try:
+        assert events.last().state == "idle"
+    finally:
+        s.close()
+
+
 def test_router_adapter_is_found_by_its_file_name(tmp_path):
     import httpx
     import respx

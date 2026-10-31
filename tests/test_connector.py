@@ -146,8 +146,8 @@ class FakeJobs:
     def get(self, job_id):
         return self.rows.get(job_id)
 
-    def job_for_result(self, kind, instructions, raw_result, result_kind):
-        """Like JobStore: an identical result still being released keeps its job."""
+    def job_for_result(self, kind, instructions, raw_result, result_kind, sources=()):
+        """Like JobStore: an identical result still being released keeps its job, with its sources."""
         for row in self.rows.values():
             same = (row.get("kind"), row["instructions"], row.get("raw_result")) == (kind, instructions, raw_result)
             if same and row.get("release_status") in ("none", "releasing", "waiting"):
@@ -164,6 +164,7 @@ class FakeJobs:
             "approval_id": None,
             "released_text": None,
             "topics": [],
+            "sources": list(sources),
         }
         return job_id
 
@@ -982,13 +983,13 @@ def test_a_search_whose_check_crashes_is_plain_and_runs_again(services, tmp_path
 
 class FakeRunner:
     def __init__(self, jobs):
-        self.jobs, self.started, self.sources = jobs, [], {}
+        self.jobs, self.started = jobs, []
 
     def start(self, question, request, folder):
+        """Like AskRunner: the job row keeps the documents the model read."""
         self.started.append((question, request, folder))
-        job_id = self.jobs.job_for_result("ask", request, f"Answer: {REAL_A} wrote about tide pools.", "snippet")
-        self.sources[job_id] = ["essays/d1.md"]
-        return job_id
+        raw = f"Answer: {REAL_A} wrote about tide pools."
+        return self.jobs.job_for_result("ask", request, raw, "snippet", sources=["essays/d1.md"])
 
 
 async def test_ask_device_starts_a_job_and_get_result_releases_it(client, services):

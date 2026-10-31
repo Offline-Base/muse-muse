@@ -21,6 +21,7 @@ from typing import Any
 import uvicorn
 
 from base.config import Settings, load_settings
+from base.guard import GuardError
 from base.ui_app import create_app, is_loopback, print_pairing_code
 
 CONNECTOR_HOST = "127.0.0.1"
@@ -131,7 +132,11 @@ def main(settings: Settings | None = None) -> int:
     # The MCP SDK turns on INFO logging; httpx would then log every model and worker URL.
     for name in ("httpx", "httpcore"):
         logging.getLogger(name).setLevel(logging.WARNING)
-    services = build_services(settings)
+    try:
+        services = build_services(settings)
+    except GuardError as exc:  # an unreadable tag map or a failed upgrade: one plain message, no traceback
+        print(f"Not starting: {exc}", file=sys.stderr)
+        return 3
     approval_app = create_app(services)
     connector = load_connector_app(services)
 
