@@ -183,10 +183,10 @@
   align-items: center;
 }
 
-/* The chevron's drawing starts 9 px into its box: this puts it 4 px after the words. */
+/* The chevron's drawing starts 9 px into its box: this puts it about 10 px after the words, as in the app. */
 .chat-thinking-chevron {
   flex: none;
-  margin: 0 -6px 0 -5px;
+  margin: 0 -6px 0 1px;
 }
 
 .chat-thinking[aria-expanded="true"] .chat-thinking-chevron {
@@ -300,10 +300,11 @@
   background: var(--hover);
 }
 
+/* The first title sits about 28 px under the tabs, measured to its dot. */
 .chat-panel-body {
   flex: 1;
   min-height: 0;
-  padding: 28px 16px 24px;
+  padding: 22px 16px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -346,7 +347,7 @@
 }
 
 .chat-steplist > li:has(+ .chat-steplist-end)::before {
-  bottom: 5px;
+  bottom: 7px;
 }
 
 /* As tall as the title's first line. */

@@ -1,12 +1,16 @@
 const round = (n: number) => Math.round(n * 100) / 100;
 
-/** Eight dots on a ring, each tilted a little past its spoke so the ring reads as a flower, as in the Muse app. */
+/**
+ * Eight dots on a ring that fills the icon's box, each tilted a little past its spoke so the ring reads as a flower,
+ * as in the Muse app.
+ */
+const RING = 8.4;
 const DOTS = Array.from({ length: 8 }, (_, i) => {
   const angle = (i * Math.PI) / 4 - Math.PI / 2;
-  const cx = round(12 + 7 * Math.cos(angle));
-  const cy = round(12 + 7 * Math.sin(angle));
+  const cx = round(12 + RING * Math.cos(angle));
+  const cy = round(12 + RING * Math.sin(angle));
   // Purple at the top shading to blue-violet at the bottom, the way the app's icon sits when it's still.
-  const from = Math.round(((cy - 5) / 14) * 100);
+  const from = Math.round(((cy - 12 + RING) / (2 * RING)) * 100);
   return { cx, cy, turn: i * 45 + 20, fill: `color-mix(in oklab, var(--work-from) ${from}%, var(--work-to))` };
 });
 
@@ -43,8 +47,8 @@ export function WorkingIcon({
           key={d.turn}
           cx={d.cx}
           cy={d.cy}
-          rx={1.9}
-          ry={2.7}
+          rx={2.3}
+          ry={3.3}
           transform={`rotate(${d.turn} ${d.cx} ${d.cy})`}
           style={{ fill: d.fill }}
         />

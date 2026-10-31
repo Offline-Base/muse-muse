@@ -32,8 +32,8 @@ describe("WorkingIcon", () => {
     const working = render(C(kit.WorkingIcon), { state: "working" });
     assert.equal(working.match(/<ellipse /g)?.length, 8);
     assert.match(working, /^<svg class="chat-working-icon is-working" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"/);
-    assert.match(working, /cx="12" cy="5"[^>]*style="fill:color-mix\(in oklab, var\(--work-from\) 0%, var\(--work-to\)\)"/);
-    assert.match(working, /cx="12" cy="19"[^>]*style="fill:color-mix\(in oklab, var\(--work-from\) 100%, var\(--work-to\)\)"/);
+    assert.match(working, /cx="12" cy="3\.6"[^>]*style="fill:color-mix\(in oklab, var\(--work-from\) 0%, var\(--work-to\)\)"/);
+    assert.match(working, /cx="12" cy="20\.4"[^>]*style="fill:color-mix\(in oklab, var\(--work-from\) 100%, var\(--work-to\)\)"/);
     assert.match(render(C(kit.WorkingIcon), { state: "still" }), /^<svg class="chat-working-icon" width="18"/);
     assert.match(render(C(kit.WorkingIcon), { state: "still", variant: "subagent" }), /^<svg class="chat-working-icon is-subagent" width="16" height="16"/);
   });
@@ -287,7 +287,8 @@ describe("Output, title chip and floating buttons", () => {
 
   it("labels the icon-only buttons", () => {
     const share = render(C(kit.FloatButton), { icon: "share", label: "Copy the link" });
-    assert.match(share, /^<button type="button" class="chat-float" aria-label="Copy the link" title="Copy the link"><svg width="16" height="16"/);
+    assert.match(share, /^<button type="button" class="chat-float" aria-label="Copy the link" title="Copy the link"><svg width="20" height="20"[^>]*stroke-width="1\.75"/);
+    assert.match(render(C(kit.FloatButton), { icon: "more", label: "Build details" }), /stroke-width="3"/, "the dots read at this size");
     assert.match(render(C(kit.FloatButton), { icon: "more", label: "Build details", className: "x" }), /class="chat-float x"/);
     assert.match(render(C(kit.ScrollButton), {}), /^<button type="button" class="chat-scroll" aria-label="Jump to the newest message" title="Jump to the newest message"><svg width="16"/);
   });
