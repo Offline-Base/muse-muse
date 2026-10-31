@@ -171,7 +171,8 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   0.55 bits per weight, scored on 300 probes (scripts/knowledge/aws/job/nanoquant/). nq_run.live.sh waits for the
   GH200's stage 1 run.
 - LittleBit (Samsung, CC BY-NC 4.0, no inference kernels): adapted on lb-1, real quantization-aware training on the
-  8x A100 after stage 2 at 0.55, 0.3 and 0.1 bits (scripts/knowledge/aws/job/littlebit/).
+  8x A100 after stage 2 at 0.55, 0.3 and 0.1 bits. Scripts moved out of this repo on Oct 31 to ~/littlebit-research/
+  on the owner's Mac; entries below that name the old folder are history.
 - Honesty test (commit 03c21b5, 11:13 PM): 190 probes (70 after_cutoff, 90 false_premise, 30 unknowable) at every bit
   level (honesty_probes.jsonl, score_honesty.py, honesty_grade.py, judge-honesty.ts). The rule grader still misgrades
   7 of 16 adversarial replies, so check its scores with the judge before using them.
@@ -631,6 +632,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   and the reasoning-off template (its serving test hasn't reported). Checks here: test_stage_b 14, test_honesty_grade 163
   and 16, test_student 7, tsc clean. test_glimmer_labels can't run on this Mac (no transformers in the venv); train_glimmer.py
   didn't change in this commit.
+- 1:50 PM: owner decided LittleBit comes out of draft PR #3 (asked in the Muse Muse docs session, relayed from there). Its
+  README says the CC BY-NC scripts stay out of Muse Muse. The 7 files are copied to ~/littlebit-research/ (sha256 checked)
+  and removed from the repo. This covers the PR only, not whether LittleBit runs. Removing it at the tip leaves it in the
+  branch's history, so PR #3 must be squash-merged or the branch cleaned first, and `knowledge` deleted before the repo
+  could go public. The process-name guards in run_student.sh, run_measure_known.sh and train_multi.py stay: they only
+  avoid sharing GPUs with a run.
 
 ## Problems and fixes
 
@@ -683,14 +690,13 @@ are never stored or used.
 
 ## Open
 
-- LittleBit license vs the hackathon's license grant to Meta (Startup track). Owner to decide.
 - Whether to publish weights (CC-NEWS copyright question; Spark Open-written data makes the model a Muse Model
   License derivative).
 - Rotate the keys pasted in chat. Fireworks terms question.
 - Update KNOWLEDGE_UPDATE.md for the routes that changed on Oct 30 (Lambda instead of AWS and Fireworks SFT, the
   Glimmer writer fleet).
-- LittleBit on muse-knowledge-train-1 needs its watch deadline (Oct 31 10:00 AM, about $305 by then) raised first, or
-  MAX_HOURS set to end before it (littlebit/README.md).
+- LittleBit is out of the repo and not scheduled. A run would use ~/littlebit-research/ (its README has the commands), would
+  need train-1's watch deadline raised first, and its models can't go in the submission without a new license read.
 - stage1-multi's final adapter goes to S3 at 64 KB/s (1.6 GB, about 7 hours, done about 10 UTC). If train-1 is
   terminated first, the upload stops; upload the Mac copy by hand.
 - The GH200 stage 1 run's adapter, answers and metrics are on this Mac and in S3 (knowledge/models/stage1/). Copy the

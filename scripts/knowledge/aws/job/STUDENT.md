@@ -171,8 +171,7 @@ A100 (with or without `-ot per_layer_token_embd=CPU`), 18.2 on 6 cores of an EPY
 ## (b) Full run on muse-knowledge-train-1 after stage 2
 
 train-1's watch terminates it at Oct 31 10:00 AM ET (14:00 UTC) or $450, and nothing on its disk survives that.
-LittleBit is also queued for train-1 after stage 2 (run log, Open); run_student.sh refuses while any GPU is busy, so
-one runs at a time.
+run_student.sh refuses while any GPU is busy, so one job runs at a time.
 
 1. Code, data and the llama.cpp build, any time (nothing touches the GPUs; the train file goes as the 65 MB `.gz`; the
    build runs beside stage 2 at the lowest CPU and disk priority, with 12 jobs, under 15 minutes on the smoke machine):
@@ -219,7 +218,7 @@ one runs at a time.
    | 4 | 74 a second | 64 a second | 2.1 to 2.4 hours |
    | 16 | 250 a second | 220 a second | 37 to 43 minutes |
 
-   Either way only 1 epoch of `BATCH=4` fits before 10:00 AM, and 2 epochs of `BATCH=16` fit with room for LittleBit.
+   Either way only 1 epoch of `BATCH=4` fits before 10:00 AM, and 2 epochs of `BATCH=16` fit with room to spare.
    The commands use `BATCH=16`, a change from the recipe's effective batch of 32; for `BATCH=4`, drop it from both and
    run 1 epoch.
 
