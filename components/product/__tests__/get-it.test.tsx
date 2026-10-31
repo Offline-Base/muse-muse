@@ -45,9 +45,9 @@ describe("GetItPanel", () => {
     assert.equal((html.match(/role="tabpanel"/g) ?? []).length, 4);
   });
 
-  it("is on the product page with nothing in it today", () => {
+  it("is on the product page, only for a shipped product", () => {
     const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
-    assert.match(page, /<GetItPanel slots=\{\{\}\} \/>/);
+    assert.match(page, /\{shipped \? <GetItPanel slots=\{native\.slots\} \/> : null\}/);
   });
 });
 

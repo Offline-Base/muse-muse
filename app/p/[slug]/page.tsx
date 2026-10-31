@@ -1,21 +1,44 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
+import "@/components/product/get-it.css";
 import { GetItPanel } from "@/components/product/GetItPanel";
+import { nativeSlots } from "@/components/product/NativeSlots";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
-import { liveFrameAllow } from "@/lib/product-frame";
+import type { Brief } from "@/lib/brief/schema";
+import { env } from "@/lib/env";
+import { downloadCounts, readProductNative } from "@/lib/native/queries";
+import { briefTargets } from "@/lib/native/targets";
+import { liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   return { title: slug.replace(/-/g, " ") };
+}
+
+/**
+ * The panel's slots for a shipped product. Reading them must never take the page down: the rest of the page works without
+ * them, so a failure here only leaves the panel out.
+ */
+async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest" | "brief"> & { productId: string; brief: Brief | null }) {
+  try {
+    const view = await readProductNative(productId, briefTargets(brief));
+    const downloads = ctx.isOwner ? await downloadCounts(view.packages.map((p) => p.artifactId)) : undefined;
+    const userAgent = (await headers()).get("user-agent") ?? "";
+    return { slots: nativeSlots(view, { ...ctx, brief, enabled: env.enabledTargets, downloads, onQuest: userAgent.includes("OculusBrowser") }), clips: view.clips };
+  } catch (err) {
+    console.error("[product page] couldn't read its apps:", err instanceof Error ? err.message : err);
+    return { slots: {}, clips: [] };
+  }
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -47,6 +70,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const muse = manifest?.inspiration || inspiration?.note || brief?.inspiration.summary || null;
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
+  const native = shipped
+    ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin, brief, isOwner })
+    : { slots: {}, clips: [] };
 
   return (
     <div className="split">
@@ -98,7 +124,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               title={`${product.name}, the live product`}
               loading="lazy"
               allow={liveFrameAllow(brief)}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+              sandbox={liveFrameSandbox(brief)}
               referrerPolicy="no-referrer"
             />
           </section>
@@ -135,7 +161,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </EmptyCard>
         )}
 
-        {shipped ? <GetItPanel slots={{}} /> : null}
+        {shipped ? <GetItPanel slots={native.slots} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>
@@ -262,6 +288,18 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 playsInline
                 aria-label={`Demo of ${product.name}`}
               />
+            </section>
+          ) : null}
+
+          {native.clips.length ? (
+            <section className="panel-section">
+              <h2 className="panel-label">Filmed by its owner</h2>
+              {native.clips.map((clip) => (
+                <figure key={clip.url} className="getit-owner-clip">
+                  <video className="demo" src={clip.url} poster={clip.posterUrl ?? undefined} controls preload="metadata" playsInline aria-label={clip.caption} />
+                  <figcaption>{clip.caption}</figcaption>
+                </figure>
+              ))}
             </section>
           ) : null}
 

@@ -8,7 +8,9 @@ export function GetItTabs({ slots }: { slots: ReadonlyArray<{ id: string; label:
   const [tab, setTab] = useState(slots[0]!.id);
   return (
     <>
-      <SegmentedTabs label="Ways to get it" tabs={slots.map(({ id, label }) => ({ id, label }))} value={tab} onChange={setTab} idBase="get-it" />
+      <div className="getit-tabs">
+        <SegmentedTabs label="Ways to get it" tabs={slots.map(({ id, label }) => ({ id, label }))} value={tab} onChange={setTab} idBase="get-it" />
+      </div>
       {slots.map((s) => (
         <SegmentedTabPanel key={s.id} idBase="get-it" id={s.id} active={s.id === tab}>
           {s.content}

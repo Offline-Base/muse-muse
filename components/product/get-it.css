@@ -1,0 +1,441 @@
+/*
+ * The product page's "Get it" panel, the VR list and the iPhone hand-off, in the Muse app look (docs/UI_MUSE_APP.md):
+ * hairlines instead of boxes, 14 px semibold titles, 13 px secondary text on a 21 px line, and nothing that moves. Colors
+ * come from the chat tokens, so light and dark follow the rest of the site. All classes are new, so a page with no panel
+ * looks as it did.
+ */
+
+.getit-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 8px;
+}
+
+/* Up to eleven tabs: they keep their whole names and the track scrolls, where the steps panel's two tabs share it. */
+.getit-tabs .chat-tabs {
+  grid-auto-columns: minmax(max-content, 1fr);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.getit-tabs .chat-tab {
+  overflow: visible;
+}
+
+.getit-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section-card .getit-block h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 21px;
+}
+
+.getit-block h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 21px;
+  color: var(--chat-muted);
+}
+
+.getit-tab > .getit-block + .getit-block,
+.getit-tab > .getit-block + .getit-pair {
+  padding-top: 24px;
+  border-top: 1px solid var(--chat-line);
+}
+
+/* Two places side by side once there's room for both. The panel's own width decides, not the window's. */
+.section-card:has(.getit-tab) {
+  container-type: inline-size;
+}
+
+.getit-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+@container (min-width: 620px) {
+  .getit-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+}
+
+.getit-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--chat-muted);
+}
+
+.getit-get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.getit-get .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+.getit-steps {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--chat-muted);
+}
+
+.getit-steps li + li {
+  margin-top: 4px;
+}
+
+/* ---------- QR codes ---------- */
+
+.getit-with-qr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+
+.getit-with-qr > :not(.getit-qr) {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.getit-qr {
+  flex: none;
+  width: 112px;
+  margin: 0;
+}
+
+.getit-qr svg {
+  display: block;
+  border-radius: 8px;
+}
+
+.getit-qr figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--chat-muted);
+}
+
+/* ---------- Checks ---------- */
+
+.getit-checks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--chat-line);
+}
+
+.getit-checks > ul > li {
+  border-bottom: 1px solid var(--chat-line);
+}
+
+.getit-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+  line-height: 21px;
+}
+
+.getit-check summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.getit-check summary::-webkit-details-marker {
+  display: none;
+}
+
+.getit-check-chevron {
+  flex: none;
+  color: var(--chat-muted);
+}
+
+.getit-check[open] .getit-check-chevron {
+  transform: rotate(90deg);
+}
+
+.getit-check-text {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.getit-check-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.getit-check-device {
+  color: var(--chat-muted);
+}
+
+.getit-check-thumb {
+  flex: none;
+  display: block;
+  width: 72px;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--chat-line);
+  border-radius: 8px;
+}
+
+.getit-check-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.getit-tag {
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--pill);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--chat-muted);
+}
+
+.getit-check-more {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 12px;
+  font-size: 13px;
+  line-height: 21px;
+  color: var(--chat-muted);
+}
+
+.getit-check-more p {
+  margin: 0;
+}
+
+.getit-reasons {
+  padding-left: 18px !important;
+  list-style: disc !important;
+  border: 0 !important;
+}
+
+.getit-clip {
+  margin: 0;
+}
+
+.getit-clip video {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  background: #000;
+}
+
+.getit-clip figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.getit-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.getit-shots img {
+  display: block;
+  height: 96px;
+  width: auto;
+  max-width: 100%;
+  border: 1px solid var(--chat-line);
+  border-radius: 8px;
+}
+
+.getit-owner {
+  padding: 12px;
+  border: 1px dashed var(--chat-line);
+  border-radius: 12px;
+}
+
+/* ---------- Device frame ---------- */
+
+.getit-device-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.getit-sizes {
+  display: flex;
+  gap: 8px;
+}
+
+.getit-size {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--pill);
+  background: transparent;
+  color: var(--chat-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.getit-size[aria-pressed="true"] {
+  background: var(--chat-bubble);
+  color: var(--fg);
+}
+
+.getit-size:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.getit-stage {
+  position: relative;
+  overflow: hidden;
+}
+
+.getit-device {
+  position: absolute;
+  top: 0;
+  box-sizing: border-box;
+  transform-origin: top left;
+  border-radius: 44px;
+  background: #18191b;
+  /* The frame's edge, which a dark page would lose. */
+  box-shadow: 0 0 0 1px var(--chat-line);
+}
+
+.getit-device.is-tablet {
+  border-radius: 32px;
+}
+
+.getit-device.is-desktop {
+  border-radius: 16px;
+}
+
+.getit-device iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 32px;
+  background: #fff;
+}
+
+.getit-device.is-tablet iframe {
+  border-radius: 20px;
+}
+
+.getit-device.is-desktop iframe {
+  border-radius: 6px;
+}
+
+/* ---------- Open on Quest ---------- */
+
+.getit-shortlink {
+  margin: 0;
+  font-size: clamp(20px, 5cqw, 28px);
+  line-height: 1.25;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Clips the owner filmed ---------- */
+
+.getit-owner-clip {
+  margin: 0;
+}
+
+.getit-owner-clip + .getit-owner-clip {
+  margin-top: 12px;
+}
+
+.getit-owner-clip figcaption {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+/* ---------- The VR list. Large tiles, so a controller's ray finds them. ---------- */
+
+.vr-list-head h1 {
+  font-size: 28px;
+}
+
+.vr-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vr-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 140px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.vr-tile:hover {
+  border-color: var(--accent);
+}
+
+.vr-tile:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.vr-tile-name {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 600;
+}
+
+.vr-tile-line {
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--muted);
+}
+
+/* ---------- The hand-off to the iPhone app ---------- */
+
+.open-app {
+  max-width: 520px;
+}
