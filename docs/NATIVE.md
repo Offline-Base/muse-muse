@@ -192,6 +192,13 @@ after 3 quick closes and shows those steps as not finished.
 the flags say. So with every flag off and no packages, the page is as it was. A failure reading any of this leaves the panel out
 and logs it. It never takes the page down.
 
+**With every flag off this still reads.** Because a package shows whatever the flags say, nothing here checks a flag first. Each
+view of a shipped product reads its native rows and clips, plus the download counts for its owner. A `GET` to
+`/p/<slug>/get/<android|mac|windows>` takes one from the address's hourly count, looks for a package and gives the count back
+with its 404. Clips the owner filmed show whenever a product has any; they're added only with a target flag on, or brought in by
+a promote. Nothing writes `native_artifacts` yet, so today all of this finds nothing and the page looks as it did. Skipping it
+with every target flag off would hide packages and clips that exist, so it's the owner's call.
+
 **What's in them.**
 
 | Slot | Holds |
