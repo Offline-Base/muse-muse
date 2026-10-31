@@ -19,6 +19,8 @@ export interface DownloadDeps {
   findPackage(slug: string, download: NativeDownload): Promise<{ artifactId: string; url: string } | null>;
   /** Takes one from a counter unless it's at its limit. Null means it's at its limit. */
   reserve(key: string, windowStart: Date, limit: number): Promise<number | null>;
+  /** Gives one back to a counter. */
+  release(key: string, windowStart: Date): Promise<void>;
   /** Adds one to the package's count. */
   count(artifactId: string): Promise<void>;
   now(): Date;
@@ -42,16 +44,24 @@ export function isDownload(kind: string): kind is NativeDownload {
 export async function answerDownload(req: Request, slug: string, kind: string, deps: DownloadDeps): Promise<Response> {
   if (!isDownload(kind)) return say(404, "There's no download by that name.");
   try {
-    const pack = await deps.findPackage(slug, kind);
-    if (!pack) return say(404, "This download isn't available.");
-    // A HEAD is a link checker or a scanner's preview. It isn't a download.
-    if (req.method === "HEAD") return new Response(null, { status: 302, headers: { Location: asDownload(pack.url), "Cache-Control": "no-store" } });
+    // A HEAD is a link checker or a scanner's preview. It isn't a download, so it doesn't get the file's address.
+    if (req.method === "HEAD") {
+      return (await deps.findPackage(slug, kind)) ? new Response(null, { status: 200, headers: { "Cache-Control": "no-store" } }) : say(404, "This download isn't available.");
+    }
 
+    // The address's limit comes first, so a flood stops here and not after the queries.
     const now = deps.now();
     const hour = hourStart(now);
-    if ((await deps.reserve(downloadKeys.ip(docsClientIp(req.headers)), hour, DOWNLOADS_PER_IP_PER_HOUR)) === null) {
+    const ipKey = downloadKeys.ip(docsClientIp(req.headers));
+    if ((await deps.reserve(ipKey, hour, DOWNLOADS_PER_IP_PER_HOUR)) === null) {
       const retryAfter = secondsUntil(new Date(hour.getTime() + 3_600_000), now);
       return say(429, "Too many downloads from here. Try again later.", { "Retry-After": String(retryAfter) });
+    }
+    const pack = await deps.findPackage(slug, kind);
+    if (!pack) {
+      // Nothing was downloaded, so it doesn't use up the address's limit.
+      await deps.release(ipKey, hour).catch((err: unknown) => console.error("[native] couldn't give back a download:", err instanceof Error ? err.message : err));
+      return say(404, "This download isn't available.");
     }
     const day = dayWindow(now);
     if ((await deps.reserve(downloadKeys.day, day, DOWNLOADS_PER_DAY)) === null) {

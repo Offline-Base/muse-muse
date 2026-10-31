@@ -14,11 +14,12 @@ const deps: DownloadDeps = {
     return downloadablePackage(await readProductNative(product.id, product.targets), download);
   },
   reserve: (key, windowStart, limit) => reserveCounter(key, windowStart, 1, limit),
+  release: (key, windowStart) => adjustCounter(key, windowStart, -1),
   count: (artifactId) => adjustCounter(downloadsKey(artifactId), DOWNLOADS_WINDOW, 1),
   now: () => new Date(),
 };
 
-/** GET -> 302 to a package's file on Blob, counted and rate limited. HEAD -> the same answer, not counted. */
+/** GET -> 302 to a package's file on Blob, counted and rate limited. HEAD -> 200 or 404 with no address, not counted. */
 export async function GET(req: Request, { params }: Ctx): Promise<Response> {
   const { slug, kind } = await params;
   return answerDownload(req, slug, kind, deps);
