@@ -764,6 +764,10 @@ are never stored or used.
   login` (owner), and a budget above the current AWS limit if it uses a 16-GPU reservation.
   Shelved the same day: the owner judged it not feasible at these costs (cheapest real route about $5,500 to $6,100 for one
   day of 16 B200s on AWS, plus a test day).
+- Knowledge map (owner OK, Oct 31, about 3:50 PM): once the final model's tests are in (Nov 1), a background helper builds
+  a private Artifact of 2026 events by month and topic, marked by whether base, tuned and the small file get each right,
+  with answers and source links (short facts, no article text), from existing results only. The dose test also counts how
+  many sources carry each fact, to target thinly covered ones. A fact lookup on devices is out of scope before Nov 4.
 
 - Whether to publish weights (CC-NEWS copyright question; Spark Open-written data makes the model a Muse Model
   License derivative).
