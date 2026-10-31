@@ -784,6 +784,18 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 7:00 PM: writer-1 copy_out of stage-b-r30 to the NFS still running at 7:04 PM (rsync, 39 min); a helper's read-only ls on
   that path hung once. writer-1 disk 26 GB free: the next quantize needs cleanup first.
 - PR #3 was squash-merged into main as 5916c37. Commits pushed to knowledge after that are not on main.
+- 7:07 PM: stage-b-r30b trained (from stage2-multi, lr 5e-5, r30b data, 1,875 steps). Tuned eval on the 2,500: 29.0% (stage 2
+  30.2%, r30 26.3%): -1.2 points (95% -2.4 to -0.1), gained 89, lost 120 (54 refusals, 7.2% of stage 2's right; gate 5%);
+  refused 17.5%, wrong as fact 53.6% (rough regex); Meta 137: 35.8%; old facts 40/40. Its quick tests (~/k/quick_tests.sh:
+  channels 30 min, dev honesty prefilled and reasoning on, salient) started at 7:07 PM. Answers in
+  .data/knowledge/runs/compare-b/stage-b-r30b.answers.json.
+- 7:08 PM: writer-1 freed to 133 GB: stage-b-r30's local merged weights deleted after an exact name and size match with the NFS
+  copy (models/stage-b-r30/merged), and stage 2's BF16 GGUF deleted (rebuildable). stage-b-r30 quantize finished 7:07 PM with
+  copy_out done (BF16, Q8_0, Q4_K_M, IQ2_XXS, IQ1_M, IQ1_S, merged, scores on the NFS).
+- Pending at 7:10 PM: r30b dev honesty and salient; helpers on writer-1 for DFlash speed, and for tool calls plus the
+  knowledge_cutoff 2026-10-29 line; workflow next-training-plan. Then the pick among r30, r30b and the pilot (candidates
+  only differ in Stage B; checkpoint averaging r30 with r30b is a fallback idea), quantize the pick if not r30, and send its
+  IQ1_S path and sha256 to Muse Privacy and Muse Muse General (both waiting), then add it to the compare lab.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
