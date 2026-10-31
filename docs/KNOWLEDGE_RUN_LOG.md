@@ -37,11 +37,8 @@ The Mac has about 17 GB free (1:45 AM; swap had grown to 8 GB). The train_multi 
 - Writing (hosted Spark Open plus Glimmer writer GPUs): $500 total (owner, Oct 30, 5:19 PM). The Glimmer fleet is
   capped at $333 (`CAP_USD` in scripts/knowledge/aws/writer_fleet.py).
 - Hosted Spark Open: $50 per host (2:24 PM). Fireworks raised to $85 (3:05 PM) and $105 (4:40 PM).
-- Budget raised Oct 31, about 2:32 AM (owner: "Raise the budget to 2.5 k max, go on"). The message doesn't say which
-  budget, so this log uses the stricter reading: $2,500 at most across everything (Lambda, AWS and writing together),
-  about $640 spent then. Lambda may use what's left of that; AWS $750 and writing $500 stay as below.
-- Lambda: $1,250 total (raised from $250 a day on Oct 30, 8:20 PM), superseded by the $2,500 line above.
-- AWS: $750 for this work (owner, Oct 30, 2:15 AM).
+- Lambda: $2,500 total, AWS: $3,500 total (owner, Oct 31, about 2:40 AM: "2500 on lambda 3500 on aws"). Earlier limits:
+  Lambda $250 a day, then $1,250 (Oct 30, 8:20 PM); AWS $750. Writing stays at $500 below; the owner didn't change it.
 - No Meta Model API calls ("Dont run meta usage yet", Oct 29). Meta Model API outputs never write the dataset.
 - Spend at 10:30 PM (estimates from launch times and list prices): hosted Spark Open about $165 (Fireworks about $100
   with $8.43 of anchors, Baseten $49, Modal $16). Glimmer fleet $104.80 of $333. 8x A100 about $48, GH200 about $11,
