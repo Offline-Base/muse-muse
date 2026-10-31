@@ -26,6 +26,12 @@ function protocolOf(url: string): string | null {
   }
 }
 
+/** True when going from one URL to the other only moves within a page, so the page keeps running. */
+export function isSamePageJump(from: string | null | undefined, to: string): boolean {
+  if (!from || from === to) return false;
+  return from.split("#")[0] === to.split("#")[0];
+}
+
 /** The product's own pages stay in the app, and anything else goes to the system browser or is refused. */
 export function decideNavigation(input: { url: string; productOrigin: string; isTopFrame?: boolean }): NavigationDecision {
   const { url, productOrigin, isTopFrame = true } = input;

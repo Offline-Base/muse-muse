@@ -110,7 +110,10 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   let recordingLimit = null;
   let recordingStarted = 0;
   let mockRecordingStarted = 0;
+  let mockRecordingEnds = 0;
   let recordingSource = /** @type {"glasses" | "phone"} */ ("phone");
+  // Goes up with each new page, so a recording the old page was still starting doesn't start for nobody.
+  let pageNumber = 0;
 
   /**
    * Loaded on demand, because importing it crashes a build that doesn't link the module, and the crash can't be caught.
@@ -153,6 +156,8 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     );
     keep(
       w.addListener("onStreamError", (error) => {
+        // One bad photo isn't a lost connection. capturePhoto's own wait rejects that call, and the next press can work.
+        if (error.type === "photoCaptureFailed" || error.type === "timeout") return;
         setProblem(problemFromStreamError(error.type));
       }),
     );
@@ -333,21 +338,48 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     if (recorder?.isRecording) await recorder.stop();
   }
 
+  /**
+   * A recorder nobody will finish: stopped if it's running, its file deleted, and the audio mode put back unless a newer
+   * recording needs it.
+   *
+   * @param {any} stale
+   */
+  function dropRecorder(stale) {
+    Promise.resolve(stale.isRecording ? stale.stop() : undefined)
+      .then(() => {
+        if (stale.uri) new File(stale.uri).delete();
+      })
+      .catch(() => {})
+      .then(() => (recorder ? undefined : setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })))
+      .catch(() => {});
+  }
+
   /** @param {{ maxSeconds: number }} params */
   async function startRecording({ maxSeconds }) {
     if (mock) {
+      if (Date.now() < mockRecordingEnds) throw new BridgeError("busy", "A recording is already running.");
       mockRecordingStarted = Date.now();
+      mockRecordingEnds = mockRecordingStarted + maxSeconds * 1_000;
       return;
     }
     if (recorder?.isRecording) throw new BridgeError("busy", "A recording is already running.");
+    const startedOn = pageNumber;
     const permission = await requestRecordingPermissionsAsync();
+    if (startedOn !== pageNumber) return;
     if (!permission.granted) throw new BridgeError("denied", "Microphone access is off. You can turn it on in Settings.");
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
 
-    recorder = new AudioModule.AudioRecorder(WAV_RECORDING);
-    await recorder.prepareToRecordAsync();
-    recordingSource = await currentInputSource(recorder);
-    recorder.record();
+    const next = new AudioModule.AudioRecorder(WAV_RECORDING);
+    recorder = next;
+    await next.prepareToRecordAsync();
+    const source = await currentInputSource(next);
+    if (startedOn !== pageNumber) {
+      if (recorder === next) recorder = null;
+      dropRecorder(next);
+      return;
+    }
+    recordingSource = source;
+    next.record();
     recordingStarted = Date.now();
     recordingLimit = setTimeout(() => {
       stopRecorderNow().catch(() => {});
@@ -357,15 +389,17 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   async function stopRecording() {
     if (mock) {
       if (!mockRecordingStarted) throw new BridgeError("bad_request", "Nothing is recording.");
-      const seconds = (Date.now() - mockRecordingStarted) / 1_000;
+      const seconds = (Math.min(Date.now(), mockRecordingEnds) - mockRecordingStarted) / 1_000;
       mockRecordingStarted = 0;
+      mockRecordingEnds = 0;
       return mockRecording(seconds);
     }
-    if (!recorder) throw new BridgeError("bad_request", "Nothing is recording.");
-    const seconds = recorder.isRecording ? (Date.now() - recordingStarted) / 1_000 : recorder.currentTime;
+    const active = recorder;
+    if (!active) throw new BridgeError("bad_request", "Nothing is recording.");
+    const seconds = active.isRecording ? (Date.now() - recordingStarted) / 1_000 : active.currentTime;
     await stopRecorderNow();
-    const uri = recorder.uri;
-    recorder = null;
+    const uri = active.uri;
+    if (recorder === active) recorder = null;
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     if (!uri) throw new BridgeError("failed", "That recording didn't work. Please try again.");
     const file = new File(uri);
@@ -396,6 +430,23 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
       "glasses.stopRecording": stopRecording,
       "glasses.speak": speak,
     }),
+
+    /**
+     * A new page or a reload in the same WebView. The old page may not have managed to say so itself, so its microphone,
+     * live view and speech end here. The glasses stay connected for the new page.
+     */
+    pageChanged() {
+      pageNumber += 1;
+      mockRecordingStarted = 0;
+      mockRecordingEnds = 0;
+      if (recordingLimit) clearTimeout(recordingLimit);
+      recordingLimit = null;
+      setPreview(false);
+      Speech.stop().catch(() => {});
+      const stale = recorder;
+      recorder = null;
+      if (stale) dropRecorder(stale);
+    },
 
     /** Ends the camera, the microphone and speech when the page goes away. */
     dispose() {

@@ -8,9 +8,9 @@ import { silentWavBase64 } from "../glasses/wav";
 import { deviceSummary, problemFromSessionError, problemFromStreamError, problemFromThrown } from "../glasses/status";
 import { chooseLaunchTarget, isOpenableUrl, isValidSlug, launchArgsToRequest, parseDeepLink, targetForRunningApp } from "../launch";
 import type { LaunchEnv } from "../launch";
-import { createRateLimiter, decideNavigation, EXTERNAL_OPEN_LIMIT, leftTheProduct, mayOpenExternally } from "../navigation";
+import { createRateLimiter, decideNavigation, EXTERNAL_OPEN_LIMIT, isSamePageJump, leftTheProduct, mayOpenExternally } from "../navigation";
 import { createResolveClient, createStubResolveClient, ResolveError } from "../resolve";
-import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport, SELFTEST_SCROLL_MS } from "../selftest";
+import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, MAX_LOG_LINE_BYTES, postSelftestReport, SELFTEST_SCROLL_MS, selftestLogLine } from "../selftest";
 import type { NativeObservations, PageObservations } from "../selftest";
 
 const PRODUCTION: LaunchEnv = { variant: "production", glasses: false };
@@ -41,6 +41,16 @@ describe("decideNavigation", () => {
     assert.equal(decideNavigation({ url: "https://other.example/", productOrigin, isTopFrame: false }), "allow");
     assert.equal(decideNavigation({ url: "intent://x", productOrigin, isTopFrame: false }), "block");
     assert.equal(decideNavigation({ url: "file:///x", productOrigin, isTopFrame: false }), "block");
+  });
+});
+
+describe("isSamePageJump", () => {
+  it("is only a move within one page", () => {
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x#y"), true);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#z"), true);
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x"), false, "a reload");
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/z"), false);
+    assert.equal(isSamePageJump(null, "https://a.test/x"), false);
   });
 });
 
@@ -293,6 +303,45 @@ describe("selftest", () => {
     assert.equal(report.ok, true);
     assert.deepEqual(report.problems, []);
     assert.deepEqual(report.warnings, ["boom"]);
+  });
+
+  describe("the device log line", () => {
+    const parse = (line: string) => JSON.parse(line.slice("MUSE_SELFTEST ".length));
+
+    it("leaves a report that fits as it is", () => {
+      const report = finishReport(native, { ...page, errors: ["boom"] }, at);
+      assert.deepEqual(parse(selftestLogLine(report)), report);
+    });
+
+    it("keeps the longest report under the limit, says what it left out, and still parses", () => {
+      const errors = Array.from({ length: 50 }, (_, i) => `${i} ${"x".repeat(300)}`.slice(0, 300));
+      const report = finishReport(native, { ...page, errors }, at);
+      const line = selftestLogLine(report);
+      assert.ok(line.length <= MAX_LOG_LINE_BYTES, `${line.length} bytes`);
+      const logged = parse(line);
+      assert.ok(logged.errors.length > 3, "keeps what fits");
+      assert.equal(logged.errors[0], errors[0]);
+      const left = 50 - (logged.errors.length - 1);
+      assert.equal(logged.errors.at(-1), `${left} more page errors left out of this log line.`);
+      assert.equal(logged.ok, true);
+      assert.equal(logged.handshake, true);
+      assert.equal(report.errors.length, 50, "the report itself keeps them all");
+    });
+
+    it("counts bytes, not characters, and the text survives the trip", () => {
+      const errors = Array.from({ length: 50 }, () => "日本語😀".repeat(50));
+      const line = selftestLogLine(finishReport(native, { ...page, title: "日本語", errors }, at));
+      assert.ok(Buffer.byteLength(line) <= MAX_LOG_LINE_BYTES, `${Buffer.byteLength(line)} bytes`);
+      assert.equal(parse(line).title, "日本語");
+      assert.equal(parse(line).errors[0], errors[0]);
+    });
+
+    it("shortens long fields when errors weren't the problem, and the origin still reads", () => {
+      const long = `https://a.example/${"p".repeat(5_000)}`;
+      const line = selftestLogLine(finishReport({ ...native, url: long, finalUrl: long, loadError: "e".repeat(5_000) }, page, at));
+      assert.ok(line.length <= MAX_LOG_LINE_BYTES, `${line.length} bytes`);
+      assert.equal(new URL(parse(line).finalUrl).origin, "https://a.example");
+    });
   });
 
   it("fails each thing the plan names", () => {
