@@ -71,6 +71,9 @@ export const WORKFLOW_SKILL_PRELUDE = "muse skills enable bundled:workflow-autho
  * and exits 0. Paths can be moved with MUSEMUSE_* variables for the tests; Muse Code gives hooks only HOME, LANG, PATH,
  * PWD, SHELL, SHLVL, TRACEPARENT and its own MUSE_* variables, so in a build they are always the defaults.
  */
+/** A reader that went away before the answer was written must not turn into an error the run sees. */
+const STDOUT_GUARD = "process.stdout.on('error', () => {});";
+
 const GUARD_HOOK = [
   "// Written by the Muse Muse platform. PreToolUse: refuses writes and edits to the platform's files.",
   'import { readFileSync } from "node:fs";',
@@ -91,6 +94,7 @@ const GUARD_HOOK = [
   "  if (path.posix.basename(rel).startsWith('.env')) return rel + ' holds the build\\'s settings, so this build can\\'t change it.';",
   "  return null;",
   "}",
+  STDOUT_GUARD,
   "try {",
   "  const input = JSON.parse(readFileSync(0, 'utf8') || '{}');",
   "  const tool = String(input.tool_name ?? input.tool ?? '');",
@@ -117,6 +121,7 @@ const NOTES_HOOK = [
   "// Written by the Muse Muse platform. PostToolUse and PostToolBatch: hands the build owner's unread notes to Muse Code.",
   'import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";',
   `const NOTES = process.env.MUSEMUSE_NOTES_DIR || ${JSON.stringify(NOTES_DIR)};`,
+  STDOUT_GUARD,
   "try {",
   "  const input = JSON.parse(readFileSync(0, 'utf8') || '{}');",
   "  const event = typeof input.hook_event_name === 'string' && input.hook_event_name ? input.hook_event_name : 'PostToolUse';",
@@ -153,6 +158,7 @@ const STOP_HOOK = [
   'import { existsSync, readFileSync } from "node:fs";',
   `const PRODUCT = process.env.MUSEMUSE_PRODUCT_DIR || ${JSON.stringify(PRODUCT_DIR)};`,
   `const BUDGET_MS = Number(process.env.MUSEMUSE_STOP_GATE_MS) || ${STOP_GATE_BUDGET_MS};`,
+  STDOUT_GUARD,
   "try {",
   "  readFileSync(0, 'utf8');",
   "  const bin = (name) => PRODUCT + '/node_modules/.bin/' + name;",
@@ -185,6 +191,7 @@ const LOG_HOOK = [
   'import path from "node:path";',
   `const LOG = process.env.MUSEMUSE_HOOK_LOG || ${JSON.stringify(HOOK_LOG)};`,
   "const DROP = new Set(['messages', 'tools']);",
+  STDOUT_GUARD,
   "try {",
   "  const input = JSON.parse(readFileSync(0, 'utf8') || '{}');",
   "  if (input && typeof input === 'object' && !Array.isArray(input)) {",
