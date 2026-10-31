@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { NATIVE_TEMPLATE_FILES } from "@/lib/native/template-source";
 import { BUILDER_MARKER } from "@/lib/sandbox/paths";
+import { readTargetFiles, readTemplateFiles, templateHash } from "@/lib/sandbox/setup";
 
 /** Everything the fake sandbox was asked to do, in order. */
 let events: Array<{ kind: "run"; script: string; sudo: boolean; cwd?: string } | { kind: "write"; paths: string[] }> = [];
@@ -18,6 +19,8 @@ let events: Array<{ kind: "run"; script: string; sudo: boolean; cwd?: string } |
 let contents: Record<string, string> = {};
 /** Whether the snapshot holds the muse-app overlay. */
 let hasOverlay = true;
+/** The snapshot's builder marker. */
+let marker = "{}";
 
 const fakeSandbox = {
   tags: { app: "musemuse", role: "product", product: "3f2a9c1e-77b0-4d2e-9f00-0123456789ab" },
@@ -32,7 +35,7 @@ const fakeSandbox = {
     events.push({ kind: "write", paths: batch.map((f) => f.path) });
     for (const f of batch) contents[f.path] = String(f.content ?? "");
   },
-  readFileToBuffer: async ({ path }: { path: string }) => (path === BUILDER_MARKER ? Buffer.from("{}") : null),
+  readFileToBuffer: async ({ path }: { path: string }) => (path === BUILDER_MARKER ? Buffer.from(marker) : null),
 };
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -61,6 +64,7 @@ beforeEach(() => {
   events = [];
   contents = {};
   hasOverlay = true;
+  marker = "{}";
   process.env.MODEL_API_KEY = "test-model-key";
   process.env.BUILDER_SNAPSHOT_ID = "snap_test";
   process.env.PLATFORM_URL = "https://musemuse.example";
@@ -154,5 +158,22 @@ describe("provisionSandbox and the muse-app look", { skip: canMock ? false : "ne
       await provision(flag, ["web", "phone"], native);
       for (const f of native) assert.equal(contents[`/vercel/app/${f.path}`], f.content, `${f.path} with the flag ${flag}`);
     }
+  });
+
+  it("warns on a local run when the snapshot's template isn't this checkout's, and stays quiet otherwise", async (t) => {
+    const warn = t.mock.method(console, "warn", () => {});
+    const here = templateHash([...(await readTemplateFiles("template")), ...(await readTargetFiles("template"))]);
+    marker = JSON.stringify({ templateHash: "a20419febcfc" });
+    await provision(true);
+    assert.equal(warn.mock.callCount(), 1);
+    assert.match(String(warn.mock.calls[0]!.arguments[0]), new RegExp(`snapshot snap_test has template a20419febcfc, and template/ here is ${here}\\..*TEST_MODEL swap.*npm run snapshot`));
+    for (const m of [JSON.stringify({ templateHash: here }), "{}", "not json"]) {
+      marker = m;
+      await provision(true);
+    }
+    process.env.VERCEL = "1";
+    marker = JSON.stringify({ templateHash: "a20419febcfc" });
+    await provision(false);
+    assert.equal(warn.mock.callCount(), 1, "same hash, no hash, a bad marker or the live site: no warning");
   });
 });

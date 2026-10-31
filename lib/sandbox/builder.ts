@@ -88,7 +88,7 @@ import {
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
 import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
-import { installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { type BuilderInfo, installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder, templateHash } from "@/lib/sandbox/setup";
 import {
   activeTargetsScript,
   applyTargetScript,
@@ -466,6 +466,30 @@ async function applyLook(sandbox: Sandbox): Promise<void> {
 }
 
 /**
+ * On a local run, says when the snapshot was made from a different template than this checkout's. A product gets
+ * template/ from the snapshot (only PLATFORM_FILES are refreshed), so a change there, such as lib/meta/client.ts's
+ * TEST_MODEL swap or a skill, isn't in this build until npm run snapshot. A warning, not an error: an older snapshot
+ * is often fine. Quiet when the marker has no hash or there's no template/ here.
+ */
+async function warnIfOlderTemplate(marker: Buffer, snapshotId: string): Promise<void> {
+  let made: string | undefined;
+  try {
+    made = (JSON.parse(marker.toString("utf8")) as Partial<BuilderInfo>).templateHash;
+  } catch {
+    return;
+  }
+  if (!made) return;
+  const dir = LOCAL_TEMPLATE_DIR();
+  const files = await Promise.all([readTemplateFiles(dir), readTargetFiles(dir)]).catch(() => null);
+  if (!files) return;
+  const here = templateHash(files.flat());
+  if (here === made) return;
+  console.warn(
+    `musemuse: builder snapshot ${snapshotId} has template ${made}, and ${dir}/ here is ${here}. Changes to the template since then, such as lib/meta/client.ts's TEST_MODEL swap, aren't in this build. Run npm run snapshot for them.`,
+  );
+}
+
+/**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
  * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). With museAppLook, the muse-app look goes
@@ -500,6 +524,8 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
     const dir = LOCAL_TEMPLATE_DIR();
     await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir));
+  } else if (snapshotId && !process.env.VERCEL) {
+    await warnIfOlderTemplate(ready, snapshotId);
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.

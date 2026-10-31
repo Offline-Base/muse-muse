@@ -559,7 +559,13 @@ sizes, so these are ours (O):
 exactly Spark 1.3 Contributor the template's `metaClient` sends every JSON request whose `model` is `muse-wonder-1.0` on
 that model instead, on any endpoint, streaming or not (`respondJson` makes the same swap for a client passed to it).
 Production doesn't change. At first only `respondJson` swapped, so a product calling `metaClient` itself still ran Muse
-Wonder on a local test build, as the trial below found; the client-level swap closes that.
+Wonder on a local test build, as the trial below found; the client-level swap closes that. The agent kit's turns
+(`template/targets/agent/files/lib/agent/turn.ts`) go through `metaClient` too. **It reaches a build only through a new
+snapshot:** `template/lib/meta/client.ts` comes from `BUILDER_SNAPSHOT_ID`, and provisioning refreshes only the platform
+files, so a product made from the trial's snapshot (hash `a20419febcfc`) or any older one still sends its own
+`metaClient` calls and agent turns on `muse-wonder-1.0`. Run `npm run snapshot` from this branch and use that snapshot
+before the next `TEST_MODEL` trial. A local provision now warns in the server log when the snapshot's template hash
+isn't this checkout's.
 
 **Tried in two real builds (Oct 31).** A chore rota tool and a fridge recipe helper, on a local platform with the flag
 on, a test snapshot and `TEST_MODEL`: both went live with the judge passing, for $0.10 of recorded Meta spend and

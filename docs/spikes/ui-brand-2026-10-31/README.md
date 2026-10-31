@@ -62,7 +62,10 @@ skill and AGENTS.md at `respondJson` for text replies too. Not changed here: it'
 **Fixed after the trial.** `metaClient` now makes the swap itself: with `TEST_MODEL=muse-spark-1.3-contributor` it hands
 the OpenAI SDK a fetch that rewrites a JSON body's `model` from exactly `muse-wonder-1.0` to Contributor, on every
 endpoint, and leaves other models and non-JSON bodies alone. Without `TEST_MODEL` the client is the same as before.
-Tests in `template/scripts/__tests__/test-model.test.mjs`.
+Tests in `template/scripts/__tests__/test-model.test.mjs`. **The fix is in the template, so it needs a new snapshot:** a
+product gets `lib/meta/client.ts` from the builder snapshot, and this trial's (`a20419febcfc`) predates it. Run
+`npm run snapshot` from this branch before the next `TEST_MODEL` trial, or its products' own `metaClient` calls and
+agent turns still go out on `muse-wonder-1.0`.
 
 ## Old look against new
 
