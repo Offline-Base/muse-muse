@@ -15,7 +15,7 @@ export function ShowThinking({ onClick, expanded, controls }: { onClick: () => v
       <WorkingIcon state="still" />
       <span className="chat-thinking-label">
         Show thinking
-        <Icon name="chevronRight" size={22} className="chat-thinking-chevron" />
+        <Icon name="chevronRight" size={20} className="chat-thinking-chevron" />
       </span>
     </button>
   );

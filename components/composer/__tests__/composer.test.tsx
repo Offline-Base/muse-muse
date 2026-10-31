@@ -28,7 +28,7 @@ describe("composer", () => {
     assert.match(html, /<form class="composer" aria-label="Your muse">/);
     assert.match(html, /<label for="([^"]+)" class="sr-only">Describe it, or drop in your inspo<\/label><textarea id="\1" class="composer-input" data-voice="inline" rows="1"/);
     assert.match(html, /placeholder="Describe it, or drop in your inspo\.\.\." aria-describedby="([^"]+)"[\s\S]*<p id="\1" class="sr-only">/);
-    assert.match(html, /<button type="button" class="composer-tool" aria-label="Attach inspo files" title="Attach photos, video, a voice memo or a PDF"><svg width="22"/);
+    assert.match(html, /<button type="button" class="composer-tool" aria-label="Attach inspo files" title="Attach photos, video, a voice memo or a PDF"><svg width="20"/);
     assert.match(html, /<input type="file" multiple="" accept="[^"]+" class="sr-only" tabindex="-1" aria-hidden="true"\/>/);
     assert.match(html, /<div class="composer-actions"><span class="voice-input is-idle composer-voice"><button type="button" class="voice-input-btn" aria-label="Voice input"[\s\S]*<button type="submit" class="send-btn" aria-label="Make it" disabled="" aria-disabled="true"><svg width="24"/);
     assert.doesNotMatch(html, /Thinking/, "no switch that does nothing");
@@ -54,7 +54,7 @@ describe("composer", () => {
     camera = true;
     const html = render({ mode: "new", signedIn: true, layout: "playground" });
     camera = false;
-    assert.match(html, /<div class="menu-wrap"><button type="button" class="composer-tool" aria-expanded="false" aria-controls="([^"]+)" aria-label="Attach inspo files" title="Attach inspo files"><svg width="22"[\s\S]*<div id="\1" class="menu menu-start" hidden="">/);
+    assert.match(html, /<div class="menu-wrap"><button type="button" class="composer-tool" aria-expanded="false" aria-controls="([^"]+)" aria-label="Attach inspo files" title="Attach inspo files"><svg width="20"[\s\S]*<div id="\1" class="menu menu-start" hidden="">/);
     assert.match(html, /<button type="button" class="menu-item"><svg[^>]*>[\s\S]*?<\/svg><span class="menu-item-text"><span>Photos and files<\/span><span class="muted small">Photos, video, a voice memo or a PDF<\/span><\/span><\/button>/);
     assert.match(html, /<button type="button" class="menu-item"><svg[^>]*>[\s\S]*?<\/svg>Take a photo<\/button>/);
     assert.equal(html.match(/class="composer-tool"/g)?.length, 1, "one + button");

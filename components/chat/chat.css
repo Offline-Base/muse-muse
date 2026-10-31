@@ -183,10 +183,10 @@
   align-items: center;
 }
 
-/* The chevron's drawing starts 9 px into its box: this puts it about 10 px after the words, as in the app. */
+/* At 20 px the chevron is about 6 by 11 and starts 7 px into its box: 10.5 px after the words, as in the app. */
 .chat-thinking-chevron {
   flex: none;
-  margin: 0 -6px 0 1px;
+  margin: 0 -6px 0 3px;
 }
 
 .chat-thinking[aria-expanded="true"] .chat-thinking-chevron {

@@ -496,7 +496,7 @@ export function Composer({
             <Menu
               label="Attach inspo files"
               icon="plus"
-              iconSize={22}
+              iconSize={20}
               align="start"
               buttonClassName="composer-tool"
               disabled={attachOff}
@@ -529,7 +529,7 @@ export function Composer({
               onClick={() => fileInput.current?.click()}
               disabled={attachOff}
             >
-              <Icon name="plus" size={22} />
+              <Icon name="plus" size={20} />
             </button>
           )}
           <input
