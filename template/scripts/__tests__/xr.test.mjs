@@ -66,3 +66,19 @@ test("the VR overlay ships its fixes", () => {
   const profiles = JSON.parse(text(`${dir}public/xr/profiles/profilesList.json`));
   assert.deepEqual(Object.keys(profiles).sort(), ["generic-hand", "generic-trigger", "meta-quest-touch-plus"]);
 });
+
+test("a VR judge shot waits while the status says a model is working", () => {
+  const source = text("../../tests/xr.ts");
+  const start = source.indexOf("export async function xrJudgeShot");
+  assert.ok(start > 0);
+  assert.ok(source.indexOf('[data-xr-status][aria-busy="true"]', start) > start);
+  assert.ok(source.indexOf('[data-xr-status][aria-busy="true"]', start) < source.indexOf("xr.viewStats(page)", start));
+});
+
+test("the demo's camera and poster stay inside VR", () => {
+  const source = text("../../tests/demo-fixtures.ts");
+  // The preview on the page is never a result, what changes behind the view isn't activity, and the summary card can't take the poster.
+  assert.match(source, /if \(vr && \(el\.matches\("canvas"\) \|\| el\.querySelector\("canvas"\)\)\) return null;/);
+  assert.match(source, /if \(!vr \|\| [^\n]*__musemuseXR[^\n]*inSession\(\) !== true\) \{\n\s+queue\.activity\.push/);
+  assert.match(source, /scrollY, waited: 0, busy: false, media: 0, heads: \[\], blanks: \[\], pressed: null/);
+});

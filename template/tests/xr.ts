@@ -3,7 +3,7 @@
 // Aim at names from useXRTarget, never at raw coordinates: they are the 3D version of getByRole.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { holdXrResult, recordXrAction } from "./demo-fixtures";
+import { holdUnheldXr, holdXrResult, recordXrAction } from "./demo-fixtures";
 
 export interface Vec3 {
   x: number;
@@ -68,6 +68,8 @@ export async function measureView(png: string): Promise<ViewStats> {
 }
 
 const recording = () => test.info().project.name === "studio";
+/** How long a judge screenshot waits for a model to finish. */
+const BUSY_MS = 90_000;
 
 function remote(page: Page, method: string, params?: unknown): Promise<unknown> {
   return page.evaluate(([m, p]) => window.__musemuseXR.remote(m as string, p), [method, params] as const);
@@ -119,6 +121,7 @@ export const xr = {
 
   /** Ends the session, back to the 2D page. */
   async exit(page: Page): Promise<void> {
+    await holdUnheldXr(page);
     await remote(page, "end_session");
     await page.waitForFunction(() => !window.__musemuseXR.inSession(), null, { timeout: 15_000 });
   },
@@ -228,6 +231,10 @@ export function inVRSession(page: Page): Promise<boolean> {
  * verify's xrShotProblems reads those.
  */
 export async function xrJudgeShot(page: Page, name: string): Promise<void> {
+  // setXRStatus(text, true) says a model is still working, and a shot of that isn't the result.
+  await page.locator('[data-xr-status][aria-busy="true"]').waitFor({ state: "detached", timeout: BUSY_MS }).catch(() => {
+    throw new Error(`${name}: the VR view still says it is working after ${BUSY_MS / 1000} s. Wait for the result, then take the shot.`);
+  });
   await page.evaluate(() => window.__musemuseXR.waitFrames(3, 10_000)).catch(() => {
     throw new Error(`${name}: The VR view stopped drawing.`);
   });

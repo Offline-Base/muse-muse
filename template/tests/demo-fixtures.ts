@@ -363,6 +363,8 @@ class DemoRecorder {
   private readonly vr: boolean;
   /** A VR move ran since the last VR hold, so the view may show something new. */
   private xrUnheld = false;
+  /** The summary card on the 2D page has had its hold, after leaving VR. */
+  private summaryHeld = false;
   /** The viewport the recording started with, which the timeline's rects are measured in. */
   private viewport = { width: 1280, height: 720 };
   /** The viewport now, after any page.setViewportSize. */
@@ -433,7 +435,7 @@ class DemoRecorder {
     this.patchScreenshot();
     this.patchViewport();
     await this.page.exposeBinding(BINDING, (_source, json: string) => this.onPageReport(json));
-    await this.page.addInitScript(demoPageScript, { binding: BINDING, api: API, font: this.font, modelMs: MODEL_MS });
+    await this.page.addInitScript(demoPageScript, { binding: BINDING, api: API, font: this.font, modelMs: MODEL_MS, vr: this.vr });
   }
 
   note(problem: string): void {
@@ -489,7 +491,7 @@ class DemoRecorder {
 
   /**
    * A result that fills the whole view, held a moment. The planner doesn't zoom past 60% of the screen, and the last one
-   * becomes the poster, unless the test goes back to a result on the 2D page afterwards.
+   * becomes the poster: holdSummary's card on the 2D page has no wait or pictures to outrank it.
    */
   async holdXr(): Promise<void> {
     await this.start();
@@ -505,10 +507,45 @@ class DemoRecorder {
 
   /** A top-level step that moved in VR ends on what it shows, unless the test already held it with xr.hold. */
   async endXrStep(): Promise<void> {
-    if (this.xrUnheld && !this.page.isClosed()) await this.holdXr();
+    if (this.xrUnheld && !this.page.isClosed() && (await this.inVrSession())) await this.holdXr();
   }
 
-  /** True when the page is in a VR session now: nothing on the 2D page is on screen. Only asked once a VR move has run. */
+  /**
+   * After leaving VR the page has one thing left to show: its summary card, marked data-result (the muse-vr skill). It comes
+   * on screen and gets a hold of its own. The rest of the page's results don't count once a person has been in VR, since the
+   * 3D preview would look like the strongest of them.
+   */
+  private async holdSummary(): Promise<number> {
+    if (this.summaryHeld || (await this.inVrSession())) return 0;
+    const started = Date.now();
+    this.active();
+    try {
+      const call = this.page.evaluate(async () => {
+        const el = [...document.querySelectorAll("[data-result]")].pop();
+        if (!el) return null;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        await new Promise((done) => setTimeout(done, 800));
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), scrollY: Math.round(window.scrollY) };
+      });
+      const card = await within(call, "bringing the summary card on screen", PAGE_CALL_MS + 3000);
+      if (!card) return 0;
+      this.summaryHeld = true;
+      const { scrollY, ...rect } = card;
+      const now = Date.now();
+      this.results.push({ t: now, at: now, rect, scrollY, waited: 0, busy: false, media: 0, heads: [], blanks: [], pressed: null });
+      await sleep(RESULT_HOLD_MS);
+    } catch (err) {
+      this.note(`summary card: ${firstLine(err)}`);
+    } finally {
+      this.quiet();
+    }
+    const took = Date.now() - started;
+    this.extendTimeout(took);
+    return took;
+  }
+
+  /** True when the page is in a VR session now: nothing on the 2D page is on screen. */
   private async inVrSession(): Promise<boolean> {
     if (!this.actions.some((a) => a.kind === "xr")) return false;
     const call = this.page.evaluate(() => (window as unknown as { __musemuseXR?: { inSession(): boolean } }).__musemuseXR?.inSession() === true);
@@ -565,7 +602,7 @@ class DemoRecorder {
    */
   async settleResult(final = false): Promise<number> {
     if (!this.starting || this.page.isClosed()) return 0;
-    if (await this.inVrSession()) return 0;
+    if (this.actions.some((a) => a.kind === "xr")) return this.holdSummary();
     const started = Date.now();
     this.active();
     try {
@@ -1259,7 +1296,7 @@ async function prepareTarget(
  * before a test could fake them (page.clock). Self-contained, since Playwright sends it to the page as text, and it
  * never throws into the page.
  */
-function demoPageScript({ binding, api, font, modelMs }: { binding: string; api: string; font: string | null; modelMs: number }): void {
+function demoPageScript({ binding, api, font, modelMs, vr }: { binding: string; api: string; font: string | null; modelMs: number; vr: boolean }): void {
   if (window.top !== window) return;
   type Box = { x: number; y: number; w: number; h: number };
   const now = Date.now.bind(Date);
@@ -1682,6 +1719,8 @@ function demoPageScript({ binding, api, font, modelMs }: { binding: string; api:
   const usable = (r: Result) => {
     const el = r.el;
     if (!el.isConnected || loading(el)) return null;
+    // A VR product's 3D preview is always there and always moving. The result is inside VR.
+    if (vr && (el.matches("canvas") || el.querySelector("canvas"))) return null;
     return !r.busy && lastControl?.isConnected && el.contains(lastControl) ? null : el;
   };
   // The strongest result: one the viewer waited at least 3/4 as long for as the longest, then one from an aria-busy
@@ -1922,8 +1961,11 @@ function demoPageScript({ binding, api, font, modelMs }: { binding: string; api:
       const t = now();
       const due = (since: number) => (t - scrolledAt > 150 && t - since >= 200) || t - since >= 1200;
       if ((added || changed) && due(firstAt)) {
-        queue.activity.push({ t: firstAt, added, changed, text, rect: union(addedEls) ?? union(changedEls) ?? viewport() });
-        if (added >= 3 || text >= 20) noteAdded([...addedEls], firstAt);
+        // During a VR session the 2D page is behind the view, so what changes there isn't on screen for the camera to go to.
+        if (!vr || (window as unknown as { __musemuseXR?: { inSession(): boolean } }).__musemuseXR?.inSession() !== true) {
+          queue.activity.push({ t: firstAt, added, changed, text, rect: union(addedEls) ?? union(changedEls) ?? viewport() });
+          if (added >= 3 || text >= 20) noteAdded([...addedEls], firstAt);
+        }
         firstAt = 0;
         added = 0;
         changed = 0;
@@ -1962,6 +2004,11 @@ export function recordXrAction<T>(page: Page, label: string, run: () => Promise<
 /** Holds a result that fills the view in the demo. Outside the studio project it does nothing. */
 export async function holdXrResult(page: Page): Promise<void> {
   if (current?.page === page) await current.holdXr();
+}
+
+/** Holds what the VR view shows, if a move changed it since the last hold, before the session ends. */
+export async function holdUnheldXr(page: Page): Promise<void> {
+  if (current?.page === page) await current.endXrStep();
 }
 
 /** The recording runs only in the studio project, and only for the first test a worker runs. */
