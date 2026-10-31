@@ -1,0 +1,42 @@
+// Draws the caption on a transparent 1920x1080 PNG, for a Mac whose ffmpeg has no drawtext filter. Runs under osascript:
+//   osascript -l JavaScript caption.jxa <spec.json> <out.png>
+// spec.json: { "width": 1920, "height": 1080, "lines": [{ "text": "...", "y": 954, "size": 42, "alpha": 1 }] }. The text
+// is read from the file, so it never becomes part of a script. y is from the top, as in ffmpeg.
+ObjC.import("AppKit");
+ObjC.import("Foundation");
+
+function run(argv) {
+  const raw = $.NSString.stringWithContentsOfFileEncodingError(argv[0], $.NSUTF8StringEncoding, null);
+  const spec = JSON.parse(ObjC.unwrap(raw));
+  const rep = $.NSBitmapImageRep.alloc.initWithBitmapDataPlanesPixelsWidePixelsHighBitsPerSampleSamplesPerPixelHasAlphaIsPlanarColorSpaceNameBytesPerRowBitsPerPixel(
+    null,
+    spec.width,
+    spec.height,
+    8,
+    4,
+    true,
+    false,
+    $.NSDeviceRGBColorSpace,
+    0,
+    0,
+  );
+  const context = $.NSGraphicsContext.graphicsContextWithBitmapImageRep(rep);
+  $.NSGraphicsContext.saveGraphicsState;
+  $.NSGraphicsContext.setCurrentContext(context);
+  for (const line of spec.lines) {
+    const font = $.NSFont.boldSystemFontOfSize(line.size);
+    const color = $.NSColor.colorWithSRGBRedGreenBlueAlpha(1, 1, 1, line.alpha);
+    // Variadic Objective-C methods like arrayWithObjects: can't be called from JXA, so the dictionary is filled in steps.
+    const attributes = $.NSMutableDictionary.alloc.init;
+    attributes.setObjectForKey(font, $.NSFontAttributeName);
+    attributes.setObjectForKey(color, $.NSForegroundColorAttributeName);
+    const text = $.NSString.alloc.initWithUTF8String(line.text);
+    // Centered by measuring, since the text alignment enum means different things on Intel and Apple silicon.
+    const size = text.sizeWithAttributes(attributes);
+    text.drawAtPointWithAttributes($.NSMakePoint((spec.width - size.width) / 2, spec.height - line.y - size.height), attributes);
+  }
+  context.flushGraphics;
+  $.NSGraphicsContext.restoreGraphicsState;
+  const data = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $.NSDictionary.dictionary);
+  if (!data.writeToFileAtomically(argv[1], true)) throw new Error("Couldn't write the caption.");
+}
