@@ -54,6 +54,8 @@ MODEL_MAX_BYTES = 8 * 2**30
 INSTALL_RESERVE_GIB = 1
 # start_model holds model_lock for minutes. A call waiting that long outlives its caller, then acts when nobody expects it.
 MODEL_LOCK_WAIT_S = 5
+# The same for a capture: callers give up on a recording of up to 30 seconds, and the queue would go on recording for nobody.
+CAPTURE_LOCK_WAIT_S = 5
 TRAIN_DIR = os.path.expanduser("~/train")
 TRAIN_PYTHON = os.path.join(TRAIN_DIR, "venv", "bin", "python")
 TRAIN_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "train.py")
@@ -177,11 +179,21 @@ def choose(found, kind, wanted):
     return wanted
 
 
+@contextlib.contextmanager
+def capture_lock_or_busy():
+    if not capture_lock.acquire(timeout=CAPTURE_LOCK_WAIT_S):
+        raise ToolError("The camera and microphone are busy with another capture. Try again in a moment.")
+    try:
+        yield
+    finally:
+        capture_lock.release()
+
+
 def capture_image(args):
     device = choose(find_cameras(), "camera", args.get("device"))
     width = int_arg(args, "width", 1280, 160, 1920)
     height = int_arg(args, "height", 720, 120, 1080)
-    with capture_lock, tempfile.TemporaryDirectory() as tmp:
+    with capture_lock_or_busy(), tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "frame.jpg")
         # The first frames are dark while auto-exposure settles, so only the last one is kept.
         done = subprocess.run(
@@ -199,7 +211,7 @@ def capture_image(args):
 def record_audio(args):
     device = choose(find_microphones(), "microphone", args.get("device"))
     seconds = int_arg(args, "seconds", 3, 1, 30)
-    with capture_lock, tempfile.TemporaryDirectory() as tmp:
+    with capture_lock_or_busy(), tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "audio.wav")
         done = subprocess.run(
             ["arecord", "-q", "-D", device, "-d", str(seconds), "-f", "S16_LE", "-r", "16000", "-c", "1", path],

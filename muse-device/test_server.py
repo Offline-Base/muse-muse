@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from unittest import mock
@@ -772,6 +773,38 @@ class TokenTests(unittest.TestCase):
         handler.token = ""
         handler.headers = {"Authorization": "Bearer "}
         self.assertFalse(handler.authorized())
+
+
+class CaptureTests(unittest.TestCase):
+    """A caller that gives up must not leave a queue of recordings behind it, with the microphone on and nobody waiting."""
+
+    def setUp(self):
+        for name, found in (("find_cameras", [{"device": "/dev/video0", "name": "cam"}]), ("find_microphones", [{"device": "plughw:1,0", "name": "mic"}])):
+            patcher = mock.patch.object(server, name, return_value=found)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_a_busy_capture_refuses_instead_of_queueing(self):
+        for tool in ("record_audio", "capture_image"):
+            with self.subTest(tool=tool), mock.patch.object(server, "CAPTURE_LOCK_WAIT_S", 0.05), mock.patch.object(server.subprocess, "run") as started:
+                results = []
+                server.capture_lock.acquire()
+                try:
+                    waiter = threading.Thread(target=lambda: results.append(call(tool)), daemon=True)
+                    waiter.start()
+                    waiter.join(2)
+                    self.assertFalse(waiter.is_alive(), "still waiting for the lock")
+                finally:
+                    server.capture_lock.release()
+                waiter.join(5)
+                self.assertTrue(results[0][0], results[0])
+                self.assertIn("busy", results[0][1])
+                started.assert_not_called()
+
+    def test_a_failed_capture_frees_the_lock(self):
+        with mock.patch.object(server.subprocess, "run", side_effect=OSError("no gst-launch")):
+            self.assertTrue(call("capture_image")[0])
+        self.assertFalse(server.capture_lock.locked())
 
 
 if __name__ == "__main__":
