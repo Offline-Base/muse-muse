@@ -14,7 +14,7 @@ const MAX_NOTE = 4000;
 const SENT: Record<SteerBody["action"], string> = {
   steer: "Sent. Muse Code reads it at its next step.",
   queue: "Saved. Muse Code gets it when this step ends.",
-  stop: "Stopping. The build ends in a few seconds.",
+  stop: "Stopping. The build ends within a minute.",
 };
 
 /** POST /api/builds/{id}/control. Null when it went through, else a sentence for the owner. */
