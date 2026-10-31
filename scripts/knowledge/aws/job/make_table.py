@@ -1,8 +1,8 @@
 """The score table for one quantized run: each GGUF's size, new-fact accuracy (held-out probes), old-fact accuracy
 (the 40 forget checks) and speed, next to the base model's GGUFs and the BF16 references from training.
 
-Base GGUF scores (quantize.sh base) cover all 1,500 probes in train_glimmer.py's shuffled order, so a run scored on
-fewer probes is compared with the base's first N rows (the same questions; checked). BF16 references come from the
+Base GGUF scores (quantize.sh base) cover all 1,500 probes in train_glimmer.py's shuffled order, and new1000-<quant>.json
+adds stage 2's other 1,000, so a run is compared with the base's answers to the same questions. BF16 references come from the
 training run's own transformers answers: ckpt/base.json for the base and out/answers.json (or metrics.json, when all
 1,500 probes were scored) for the tuned model. Accuracy is right / total with a 95% Wilson interval.
 
@@ -14,6 +14,7 @@ import argparse
 import json
 import math
 import os
+import sys
 
 ORDER = ["Q8_0", "Q4_K_M", "IQ2_XXS", "IQ1_M", "IQ1_S"]
 
@@ -82,7 +83,17 @@ def main():
         p = os.path.join(a.base_dir, "scores", t + ".json")
         if os.path.exists(p):
             r = load(p)
-            add("base", t, r["gb"], r["rows"]["probe"][:n], r["rows"]["forget"], r["decode_tokens_per_second_single"], r["aggregate_tokens_per_second"])
+            # Matched by question: stage 2 scores a bigger probe file in its own order, and new1000-<quant>.json holds
+            # the base's answers to the probes beyond the 1,500. A row missing any of them is left out, not partial.
+            rows = {x["question"]: x for x in r["rows"]["probe"]}
+            extra = os.path.join(a.base_dir, "scores", "new1000-" + t + ".json")
+            if os.path.exists(extra):
+                rows.update({x["question"]: x for x in load(extra)["rows"]["probe"]})
+            missing = sum(q not in rows for q in questions)
+            if missing:
+                print(f"base {t}: no answers to {missing} of the run's {n} probes; row left out", file=sys.stderr)
+                continue
+            add("base", t, r["gb"], [rows[q] for q in questions], r["rows"]["forget"], r["decode_tokens_per_second_single"], r["aggregate_tokens_per_second"])
     for t, r in runs.items():
         add(a.run, t, r["gb"], r["rows"]["probe"][:n], r["rows"]["forget"], r["decode_tokens_per_second_single"], r["aggregate_tokens_per_second"])
 
