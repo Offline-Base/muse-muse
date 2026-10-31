@@ -57,4 +57,26 @@ describe("buildHighlights", () => {
     );
     assert.deepEqual(highlights, ["Muse Code made 4 tool calls and 2 edits across 3 files (+6 −1)."]);
   });
+
+  it("keeps the agent's notes and how a round runs off the product page, and the platform's own lines on it", () => {
+    const log = (text: string): BuildEventBody => ({ type: "log", text });
+    const highlights = buildHighlights(
+      events(
+        log("Muse Code runs this round with muse exec. It has 6 agent slots, every reminder and the platform's hooks."),
+        log("Muse Code runs this round on its session host, so its owner can steer it."),
+        log("The session bridge couldn't install its SDK, so this round runs on muse exec."),
+        log("The session bridge didn't start (it stopped with code 1: boom), so this round runs on muse exec."),
+        log("Muse Code: Passed a full security audit"),
+        log("Muse Code was stopped after 25 minutes."),
+        log("Muse Code ended with an error. Checking what it wrote."),
+        log("Fixtures could not be prepared. Muse Code will make its own."),
+      ),
+      null,
+    );
+    assert.deepEqual(highlights, [
+      "Muse Code was stopped after 25 minutes.",
+      "Muse Code ended with an error. Checking what it wrote.",
+      "Fixtures could not be prepared. Muse Code will make its own.",
+    ]);
+  });
 });

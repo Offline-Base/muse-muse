@@ -397,6 +397,13 @@ export async function getProductPage(slug: string): Promise<ProductPageData | nu
   };
 }
 
+/**
+ * Log lines for the build room only, kept off the public product page: the agent's own build_note lines (its words,
+ * which must not sit beside the platform's checks) and how a round runs. Other lines that start with "Muse Code", such
+ * as "Muse Code was stopped after 25 minutes.", stay.
+ */
+const ROOM_ONLY_LOG = /^(Muse Code: |Muse Code runs this round |The session bridge )/;
+
 /** Short facts about how a build went, for the product page's "How it was built". */
 export function buildHighlights(events: BuildEvent[], build: BuildView | null): string[] {
   const out: string[] = [];
@@ -436,7 +443,7 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
       lastVerifyPassed = e.summary.passed;
     } else if (e.type === "judge") {
       lastJudge = e.verdict;
-    } else if (e.type === "log" && e.text.trim()) {
+    } else if (e.type === "log" && e.text.trim() && !ROOM_ONLY_LOG.test(e.text.trim())) {
       notes.push(e.text.trim());
     }
   }
