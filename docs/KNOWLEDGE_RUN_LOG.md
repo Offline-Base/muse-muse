@@ -830,6 +830,13 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   big file through the compare lab's presigned multipart uploader (URLs over ssh stdin, nothing written on writer-1 or
   the laptop), small files streamed. stage-b-r30's adapter is now in S3 (1,676,799,152 bytes, sha256 0495fa00..., 142
   MB/s). Compare lab: glimmer-final now points at stage-b-r30b (models.json, docs/COMPARE.md; 110 tests pass).
+- 7:33 PM: r30b adapter on writer-1 (stream 11 min, sha256 ba998911... matches train-1); quantize.sh stage-b-r30b started
+  (merge first). adapter_to_s3.py gained `--from train-1`. Now in S3 knowledge/runs/: stage-b-r30b/adapter (sha256
+  ba998911..., the final model) and pilot-channels/adapter (790a50d5..., checked on train-1), both at about 130 MB/s.
+- 7:35 PM: queued writer-1 ~/q/job/shrink_r30b.sh: once quantize.sh has scored r30b's IQ1_S, it reruns shrink_bench.sh's
+  four default mixes on r30b's BF16 and imatrix (600 probes) and keeps iq1s-out-q4 and iq2-io-lowest (on stage 2: 6.21 GB
+  10.5% and 7.18 GB 19.8%, against stock IQ1_S 6.53 GB 9.7%). It stops if writer-1 has under 22 GB free. Copied
+  shrink_bench.sh, shrink_table.py and gguf_bytes.py into ~/q/job (they weren't there).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.

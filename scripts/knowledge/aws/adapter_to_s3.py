@@ -1,11 +1,13 @@
-"""A run's LoRA adapter from writer-1's disk to S3 knowledge/runs/RUN/adapter/, with nothing written on this laptop.
+"""A run's LoRA adapter to S3 knowledge/runs/RUN/adapter/, from writer-1 or train-1, with nothing written on this laptop.
 
     aws login --profile offlinebase                      # if the login has lapsed
-    .data/aws/venv/bin/python scripts/knowledge/aws/adapter_to_s3.py RUN
+    .data/aws/venv/bin/python scripts/knowledge/aws/adapter_to_s3.py RUN                  # writer-1 ~/q/RUN/adapter
+    .data/aws/venv/bin/python scripts/knowledge/aws/adapter_to_s3.py RUN --from train-1   # train-1 ~/k/runs/RUN/out/adapter
 
-- Needs writer-1's ~/q/RUN/adapter/.complete (run_handoff.sh writes it after its sha256 check against train-1).
+- writer-1 needs ~/q/RUN/adapter/.complete (run_handoff.sh writes it after its sha256 check against train-1);
+  train-1 needs the adapter_saved event in ~/k/runs/RUN/log.txt.
 - adapter_model.safetensors (1.7 GB) goes up through the compare lab's presigned multipart uploader (lab.s3_put):
-  - URLs go over ssh stdin only, and nothing is written on writer-1;
+  - URLs go over ssh stdin only, and nothing is written on the source machine;
   - <key>.sha256 is stored next to it.
 - The small files (configs and tokenizer, about 30 MB) stream through this Mac with `aws s3 cp -`, from memory, not disk.
 - A rerun skips files already in S3 at the right size.
@@ -28,12 +30,23 @@ SMALL = ["adapter_config.json", "README.md", "chat_template.jinja", "processor_c
          "tokenizer_config.json"]
 
 
+TRAIN1 = "ubuntu@163.192.200.51"
+
+
 def main():
-    run = sys.argv[1] if len(sys.argv) > 1 else ""
-    if not re.fullmatch(r"[a-z0-9_.-]{1,40}", run):
-        raise SystemExit("usage: adapter_to_s3.py RUN   (lowercase letters, digits, . _ -)")
+    args = sys.argv[1:]
+    run = args[0] if args else ""
+    origin = args[2] if len(args) == 3 and args[1] == "--from" else ("writer-1" if len(args) == 1 else "")
+    if not re.fullmatch(r"[a-z0-9_.-]{1,40}", run) or origin not in ("writer-1", "train-1"):
+        raise SystemExit("usage: adapter_to_s3.py RUN [--from train-1]   (RUN: lowercase letters, digits, . _ -)")
     cfg = C.load_config()
-    src = f"/home/ubuntu/q/{run}/adapter"
+    if origin == "train-1":
+        cfg["writer1"] = dict(cfg["writer1"], host=TRAIN1)  # lab's ssh helpers and uploader then go to train-1
+        src = f"/home/ubuntu/k/runs/{run}/out/adapter"
+        ready = f"grep -q '\"event\": \"adapter_saved\"' /home/ubuntu/k/runs/{run}/log.txt"
+    else:
+        src = f"/home/ubuntu/q/{run}/adapter"
+        ready = f"test -e {src}/.complete"
 
     def ssh(command):
         return lab.writer1_ssh(cfg, command)
@@ -45,8 +58,8 @@ def main():
                            stdin=subprocess.DEVNULL)
         return int(r.stdout.strip()) if r.stdout.strip().isdigit() else None
 
-    if subprocess.run(ssh(f"test -e {src}/.complete"), stdin=subprocess.DEVNULL).returncode != 0:
-        raise SystemExit(f"{src}/.complete isn't on writer-1: run run_handoff.sh {run} first")
+    if subprocess.run(ssh(ready), stdin=subprocess.DEVNULL).returncode != 0:
+        raise SystemExit(f"{run}'s adapter isn't finished on {origin} ({ready})")
     bucket, profile = cfg["s3"]["bucket"], cfg["s3"]["profile"]
     prefix = f"knowledge/runs/{run}/adapter"
 
@@ -65,7 +78,9 @@ def main():
                                          "writer1_path": f"{src}/adapter_model.safetensors"}})
         with open(tmp, "w") as f:
             json.dump(raw, f, indent=2)
-        sha, size = lab.s3_put(name, C.load_config(tmp), config_path=tmp, size_fn=size_on_writer1)
+        cfg_t = C.load_config(tmp)
+        cfg_t["writer1"] = cfg["writer1"]
+        sha, size = lab.s3_put(name, cfg_t, config_path=tmp, size_fn=size_on_writer1, argv=lab.uploader_argv(cfg))
         print(f"adapter_model.safetensors: {size} bytes, sha256 {sha}")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -74,7 +89,7 @@ def main():
     for fn in SMALL:
         n = size_on_writer1(f"{src}/{fn}")
         if n is None:
-            print(f"{fn}: not on writer-1, skipped")
+            print(f"{fn}: not on {origin}, skipped")
             continue
         size_there = str(n)
         key = f"{prefix}/{fn}"
@@ -92,7 +107,7 @@ def main():
         got = subprocess.run(["aws", "s3api", "head-object", "--bucket", bucket, "--key", key, "--profile", profile,
                               "--query", "ContentLength", "--output", "text"], capture_output=True, text=True).stdout.strip()
         if got != size_there:
-            raise SystemExit(f"{fn}: S3 has {got} bytes, writer-1 {size_there}")
+            raise SystemExit(f"{fn}: S3 has {got} bytes, {origin} {size_there}")
         print(f"{fn}: {got} bytes")
     print(f"done: s3://{bucket}/{prefix}/")
 
