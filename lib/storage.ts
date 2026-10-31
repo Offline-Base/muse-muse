@@ -1,6 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { del, list, put } from "@vercel/blob";
 import { env } from "@/lib/env";
 import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localFileUrl, type StoredPrefix } from "@/lib/local-files";
@@ -126,4 +129,13 @@ export async function fetchBytes(url: string, opts: { signal?: AbortSignal } = {
   const res = await fetch(url, { signal: opts.signal });
   if (!res.ok) throw new Error(`Download failed (${res.status}) for ${url}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+/** The SHA-256 of a public blob, read as a stream, so a file of hundreds of MB doesn't sit in memory. */
+export async function sha256OfUrl(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
+  const hash = createHash("sha256");
+  await pipeline(Readable.fromWeb(res.body as WebReadableStream), hash);
+  return hash.digest("hex");
 }

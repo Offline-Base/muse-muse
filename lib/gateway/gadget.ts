@@ -161,6 +161,21 @@ function boardFor(token: GatewayToken, deps: GadgetDeps): GadgetBoard | Response
   });
 }
 
+/** A product gets from describe_device what a build's simulator tells it. A board's hostname, OS and USB list say where it sits. */
+function forProduct(tool: ProductGadgetTool, result: GadgetResult): GadgetResult {
+  if (tool !== "describe_device" || result.isError) return result;
+  const content = (result.content as Array<{ type?: string; text?: string }>).map((part) => {
+    if (part.type !== "text") return part;
+    try {
+      const { model, cameras, microphones } = JSON.parse(part.text ?? "{}") as Record<string, unknown>;
+      return { type: "text", text: JSON.stringify({ model, cameras, microphones }) };
+    } catch {
+      return { type: "text", text: "{}" };
+    }
+  });
+  return { ...result, content };
+}
+
 function offline(err: unknown): Response {
   console.error("[gadget]", err instanceof Error ? err.message : err);
   return gatewayError(502, "server_error", "gadget_unavailable", "The gadget didn't answer. Check that it's on and connected, then try again.");
@@ -203,7 +218,8 @@ export async function handleGadgetCall(req: Request, deps: GadgetDeps): Promise<
   if (board instanceof Response) return board;
   try {
     const result = await board.callTool(body.tool, args as Record<string, unknown>);
-    return Response.json({ ...result, simulated: board === SIMULATED_BOARD });
+    const simulated = board === SIMULATED_BOARD;
+    return Response.json({ ...(simulated ? result : forProduct(body.tool, result)), simulated });
   } catch (err) {
     return offline(err);
   }

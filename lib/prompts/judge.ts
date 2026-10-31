@@ -1,3 +1,7 @@
+import type { Brief } from "@/lib/brief/schema";
+import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
+import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
+
 /** Prompt 4 in docs/PROMPTS.md: the screenshot judge, for products with the template's meta-ui look. */
 export const JUDGE_INSTRUCTIONS = `You check whether a product does what its brief says, using screenshots of its primary flow taken during an automated test, in order. The last screenshot is the final screen. You also get the image inspiration it was made from, when there is any.
 
@@ -30,12 +34,53 @@ const META_HOUSE_STYLE =
 const BOTH_HOUSE_STYLES =
   "Every Muse Muse product uses one of two Meta-inspired house styles. One has a light gray page (dark in dark mode), flat white cards, Meta blue buttons, Inter and Montserrat type, and a blue-to-violet gradient on AI credits and AI results. The other is Muse Muse's own app look, laid out like Meta's assistant app on the web: a white page (near black in dark mode), cards edged by a thin hairline, regular-weight Inter, blue pill buttons, a floating rounded message box with a blue gradient send button, the person's messages in gray bubbles with answers as plain text, and a purple gradient on AI credits and AI results. Either style is expected:";
 
+/** What an agent's final screen must show. Only tools that look things up on the web have sources to link to. */
+function agentResultRule(agent: Brief["agent"]): string {
+  if (isOwnerToolsOnly(agent)) {
+    return "- Fail it if the final screen doesn't show what the agent found or did on the owner's account (the draft, event or message) and that it finished. It has no web sources, so don't ask for source links. Sample results are expected during this test, since its tools return samples.";
+  }
+  const links = "- Fail it if the final screen doesn't show the answer with source links. Sources on example.com are expected during this test, since its tools return samples.";
+  const mixed = agent?.tools.some((t) => (PERSONAL_TOOL_IDS as readonly string[]).includes(t.id));
+  return mixed ? `${links} Only what came from the web needs a link, not what came from the owner's account.` : links;
+}
+
+/** Fails an agent product for what shows on its screens, on top of the rules above. */
+export function agentJudgeRules(agent: Brief["agent"]): string {
+  return `This product is an agent that works in steps with tools.
+${agentResultRule(agent)}
+- Fail it if any step on the final screen is still running or waiting.
+- Fail it if tool names such as GMAIL_FETCH_EMAILS, tool ids or raw tool JSON show on any screen.
+- A card asking the owner to connect an account is fine on the start screen, but not on the final screen. A sample account shown as connected is expected.
+- Set blocking to true when tool names, tool ids or raw tool JSON show on any screen, or when a step on the final screen is still running or waiting.`;
+}
+
+/** Screenshots in VR come from a software renderer, so the judge doesn't fail them for how they're drawn. */
+export const VR_JUDGE_NOTE =
+  "Screenshots taken in VR show a simulated Meta Quest 3 view drawn without a graphics card: flat lighting, plain materials and jagged edges are expected. Fail it when a VR screenshot is blank, black or one color, or shows only an empty floor where a result is promised.";
+
+/** The test has no glasses, so a sample in the product's own flow is it working. */
+export const GLASSES_JUDGE_NOTE =
+  "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working.";
+
 /**
- * The judge's instructions. With MUSE_APP_LOOK (docs/BRAND.md) new builds get the muse-app look, while products built
- * before it keep meta-ui, so the judge is told both are the house style. Off, they are JUDGE_INSTRUCTIONS exactly.
+ * The judge's instructions for this brief. A brief with no agent, VR or glasses target gets JUDGE_INSTRUCTIONS itself,
+ * and each of those targets adds its note after it. With MUSE_APP_LOOK (docs/BRAND.md) new builds get the muse-app look,
+ * while products built before it keep meta-ui, so the house style sentence names both. Off, that part is
+ * JUDGE_INSTRUCTIONS exactly.
  */
-export function judgeInstructions(opts: { museAppLook?: boolean } = {}): string {
-  if (!opts.museAppLook) return JUDGE_INSTRUCTIONS;
-  if (JUDGE_INSTRUCTIONS.split(META_HOUSE_STYLE).length !== 2) throw new Error("The judge's house style sentence changed: update lib/prompts/judge.ts.");
-  return JUDGE_INSTRUCTIONS.replace(META_HOUSE_STYLE, BOTH_HOUSE_STYLES);
+export function judgeInstructions(brief: Pick<Brief, "targets" | "agent">, opts: { museAppLook?: boolean } = {}): string {
+  const targets = briefTargets(brief);
+  const notes = [
+    ...(targets.includes("agent") ? [agentJudgeRules(brief.agent)] : []),
+    ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
+    ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
+  ];
+  const base = opts.museAppLook ? withBothHouseStyles(JUDGE_INSTRUCTIONS) : JUDGE_INSTRUCTIONS;
+  return notes.length ? `${base}\n\n${notes.join("\n\n")}` : base;
+}
+
+/** JUDGE_INSTRUCTIONS with its one house style sentence widened to the two that MUSE_APP_LOOK makes expected. */
+function withBothHouseStyles(text: string): string {
+  if (text.split(META_HOUSE_STYLE).length !== 2) throw new Error("The judge's house style sentence changed: update lib/prompts/judge.ts.");
+  return text.replace(META_HOUSE_STYLE, BOTH_HOUSE_STYLES);
 }

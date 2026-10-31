@@ -28,6 +28,8 @@ export interface BuilderPolicyOptions {
    * the same placeholder key, and these extra routes are brokered too (DIRECT_PRODUCT_ROUTES).
    */
   directProducts?: boolean;
+  /** Prove it's copy only: one live product's own host, so the outputs can be run against it. */
+  extraHosts?: readonly string[];
 }
 
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
@@ -80,6 +82,7 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
   };
   if (opts.platformHost) allow[opts.platformHost] = [];
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
+  for (const host of opts.extraHosts ?? []) allow[host] = [];
   return { allow };
 }
 

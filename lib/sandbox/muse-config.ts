@@ -5,6 +5,7 @@
  * replacing whatever is there. Pure: the hook scripts are strings that Muse Code runs with node, and the tests run them
  * in real node with their paths pointed at a temporary folder.
  */
+import { agentCapacity, DEFAULT_AGENT_CAPACITY } from "@/lib/sandbox/agent-capacity";
 import { LOG_DIR, PLATFORM_FILES, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 
 /** The hook scripts, outside the product so the agent never trips over them and they are never deployed. */
@@ -31,17 +32,7 @@ export const MUSE_FULL_MARKER = `${RUN_DIR}/muse-full`;
 /** The Muse Code version the settings and hooks here were checked on (docs/MUSE_CODE_FULL.md, Oct 30). */
 export const CHECKED_MUSE_VERSION = "1.4.14";
 
-export const DEFAULT_AGENT_CAPACITY = 6;
-/** agents.execution_capacity outside this range makes Muse Code's settings malformed. */
-const CAPACITY_RANGE = { min: 1, max: 64 } as const;
-
-/** MUSE_AGENT_CAPACITY as Muse Code takes it: a whole number held to 1 through 64, and the default when unset or not a number. */
-export function agentCapacity(raw: string | undefined): number {
-  const text = raw?.trim();
-  const value = text ? Math.floor(Number(text)) : NaN;
-  if (!Number.isFinite(value)) return DEFAULT_AGENT_CAPACITY;
-  return Math.min(CAPACITY_RANGE.max, Math.max(CAPACITY_RANGE.min, value));
-}
+export { agentCapacity, DEFAULT_AGENT_CAPACITY };
 
 /**
  * Muse Code's reminder agents to turn on. Memory and todo are off by default. Scope stays off: on the Oct 31 serve test
@@ -64,6 +55,16 @@ export function museSettings(capacity: number): string[] {
     `runtime_capabilities=${JSON.stringify(reminders)}`,
     `max_consecutive_stop_hook_continuations=${STOP_HOOK_CONTINUATIONS}`,
   ];
+}
+
+/**
+ * The `-c` setting that turns every reminder agent off. Test builds use it (TEST_MODEL, lib/env.ts): `muse serve` turns a
+ * Contributor id in background_agent_model back into muse-spark-1.3, which this platform never calls, so reminders can't
+ * be trusted to stay on Contributor. Production builds never pass it.
+ */
+export function remindersOffSetting(): string {
+  const off = Object.fromEntries(["scope", ...REMINDER_IDS].map((id) => [`plugin:tbh-reminders:reminder:${id}-reminder`, { enabled: false }]));
+  return `runtime_capabilities=${JSON.stringify(off)}`;
 }
 
 /**

@@ -10,6 +10,8 @@ const BUILD_ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
 let status = "building";
 let log: BuildEvent[] = [];
 const asked: number[] = [];
+let proveChecks = 0;
+let proveRunningFor = 0;
 
 const fakeDb = () => ({
   select: () => ({
@@ -44,6 +46,8 @@ describe("build events SSE route", { skip: canMock ? false : "needs --experiment
           asked.push(after);
           return log.filter((e) => e.id > after).slice(0, limit);
         },
+        // Says a Prove it run is going for this many asks.
+        proveStillRunning: async () => ++proveChecks <= proveRunningFor,
       },
     });
     ({ GET } = await import(new URL("../../../app/api/builds/[buildId]/events/route.ts", import.meta.url).href));
@@ -89,6 +93,36 @@ describe("build events SSE route", { skip: canMock ? false : "needs --experiment
     }
     assert.ok(body.startsWith("retry: 3000\n\n"));
     assert.ok(elapsed >= 1_900 && elapsed < 6_000, `closed after ${elapsed} ms`);
+  });
+
+  it("never asks about Prove it with the flag off", async () => {
+    status = "live";
+    log = [];
+    proveChecks = 0;
+    proveRunningFor = 5;
+    const res = await GET(new Request("http://x/events"), { params: Promise.resolve({ buildId: BUILD_ID }) });
+    await readAll(res);
+    assert.equal(proveChecks, 0);
+  });
+
+  it("stays open past the build's end while a Prove it run is going, then closes", async () => {
+    process.env.PRODUCT_OUTPUTS = "1";
+    process.env.PROVE_IT = "1";
+    try {
+      status = "live";
+      log = [];
+      proveChecks = 0;
+      proveRunningFor = 1;
+      const startedAt = Date.now();
+      const res = await GET(new Request("http://x/events"), { params: Promise.resolve({ buildId: BUILD_ID }) });
+      await readAll(res);
+      assert.equal(proveChecks, 2);
+      // The first ask comes once it's drained, about 2 s in, and the next one 5 s later.
+      assert.ok(Date.now() - startedAt >= 6_500, `closed after ${Date.now() - startedAt} ms`);
+    } finally {
+      delete process.env.PRODUCT_OUTPUTS;
+      delete process.env.PROVE_IT;
+    }
   });
 
   it("closes soon for a viewer who joins after the build ended", async () => {

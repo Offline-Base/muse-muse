@@ -990,3 +990,15 @@ test("a poster from a shot that began before its result shows the result, a seco
   assert.ok(s.result && s.hold0 < outAt(edit, 2.3), "one shot from the typing on");
   assert.ok(cam.poster >= outAt(edit, 2.3) + 1 - 1e-6 && cam.poster <= s.hold1 + 1e-6, `poster at ${cam.poster}`);
 });
+
+test("a move in VR plays at full speed and the camera doesn't cut to it", () => {
+  const whole = { x: 0, y: 0, w: 1280, h: 720 };
+  const xr = (t0, t1) => ({ kind: "xr", t0, ready: t1, t1, rect: whole, label: "Look at Start" });
+  const tl = timeline({ duration: 30, actions: [click(1), xr(3, 12), xr(14, 24)], results: [{ t: 24, at: 24, rect: whole, scrollY: 0, waited: 0, busy: true, media: 1, heads: [], blanks: [] }] });
+  const edit = planEdit(tl);
+  // Output time runs one to one through every move.
+  for (const [a, b] of [[3, 12], [14, 24]]) assert.ok(close(outAt(edit, b) - outAt(edit, a), b - a, 0.05), `${a} to ${b}`);
+  // A result as big as the view gets no zoom, and neither does the move itself.
+  const camera = planCamera(tl, edit);
+  for (const t of [5, 8, 20, 26]) assert.ok(cameraAt(camera.keys, outAt(edit, t), 1280, 720).z < 1.01, `no zoom at ${t}`);
+});

@@ -60,13 +60,17 @@ export function drawtextFilter({ textFile, font, size, y, alpha }) {
  * @param {{ x: number, y: number, w: number, h: number }} p.screen
  * @param {string} p.out
  * @param {number} [p.maxSeconds]
+ * @param {number} [p.startSeconds] how far into the recording the clip starts. Trimmed in the graph after the frame rate is
+ *   made even, not with -ss: a simulator records a frame only when the screen changes, so the frame on screen when the clip
+ *   starts can be a minute older, and a seek would drop it. On the real Mac, a seek past such a frame left an encode that never
+ *   ended.
  * @param {{ textFile: string, font: string, size: number, y: number, alpha: number }[]} [p.drawtext]
  * @param {string | null} [p.captionPng]
  */
-export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSeconds = MAX_CLIP_SECONDS, drawtext = [], captionPng = null }) {
+export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSeconds = MAX_CLIP_SECONDS, startSeconds = 0, drawtext = [], captionPng = null }) {
   const graph = [
     `color=c=black:s=${CANVAS.w}x${CANVAS.h}:r=${FPS},format=gbrp[base]`,
-    `[0:v]fps=${FPS},scale=${screen.w}:${screen.h}:flags=lanczos,setsar=1,format=gbrp[rec]`,
+    `[0:v]fps=${FPS}${startSeconds > 0 ? `,trim=start=${startSeconds.toFixed(3)}:duration=${maxSeconds},setpts=PTS-STARTPTS` : ""},scale=${screen.w}:${screen.h}:flags=lanczos,setsar=1,format=gbrp[rec]`,
     `[base][rec]overlay=${screen.x}:${screen.y}:shortest=1:format=gbrp[placed]`,
     `[placed][1:v]overlay=0:0:format=gbrp[framed]`,
   ];
@@ -83,8 +87,7 @@ export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSec
     "-loglevel",
     "error",
     "-y",
-    "-t",
-    String(maxSeconds),
+    ...(startSeconds > 0 ? [] : ["-t", String(maxSeconds)]),
     "-i",
     recording,
     "-f",
@@ -119,6 +122,9 @@ export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSec
     "bt709",
     "-movflags",
     "+faststart",
+    // Whatever the graph does, the clip ends here, so an encode can't run on with the backdrop alone.
+    "-t",
+    String(maxSeconds),
     out,
   ];
 }
@@ -164,13 +170,14 @@ async function captionLayer({ ffmpegInfo, caption, note, workDir, exec, signal, 
  * @param {"phone" | "desktop"} p.form
  * @param {string} p.caption
  * @param {string} [p.note]
+ * @param {number} [p.keepLastSeconds] use only the end of the recording, when what's before it is a wait for the page
  * @param {string} [p.ffmpeg] an ffmpeg to use, otherwise the best one found
  * @param {AbortSignal} [p.signal]
  * @param {typeof run} [p.exec]
  * @param {string} [p.platform]
  * @returns {Promise<{ clip: string, poster: string | null, seconds: number | null, captionBurned: boolean }>}
  */
-export async function composeClip({ recording, outDir, form, caption, note = "", ffmpeg, signal, exec = run, platform = process.platform }) {
+export async function composeClip({ recording, outDir, form, caption, note = "", keepLastSeconds, ffmpeg, signal, exec = run, platform = process.platform }) {
   const ffmpegInfo = await findFfmpeg({ configured: ffmpeg, exec, platform });
   if (!ffmpegInfo) throw new Error("ffmpeg isn't installed.");
   const source = await probeVideo(ffmpegInfo.path, recording, { exec, signal });
@@ -185,11 +192,12 @@ export async function composeClip({ recording, outDir, form, caption, note = "",
     const { drawtext, captionPng, burned } = await captionLayer({ ffmpegInfo, caption, note, workDir, exec, signal, platform });
 
     const clip = path.join(outDir, "clip.mp4");
-    const args = composeArgs({ ffmpeg: ffmpegInfo.path, recording, frameLayer, screen: layout.screen, out: clip, drawtext, captionPng });
+    const startSeconds = keepLastSeconds && source.seconds ? Math.max(0, source.seconds - keepLastSeconds) : 0;
+    const args = composeArgs({ ffmpeg: ffmpegInfo.path, recording, frameLayer, screen: layout.screen, out: clip, startSeconds, drawtext, captionPng });
     const encoded = await exec(args, { timeoutMs: ENCODE_TIMEOUT_MS, signal });
     if (encoded.code !== 0) throw new Error(`ffmpeg couldn't make the clip: ${String(encoded.stderr).slice(-400)}`);
 
-    const seconds = source.seconds === null ? null : Math.min(source.seconds, MAX_CLIP_SECONDS);
+    const seconds = source.seconds === null ? null : Math.min(source.seconds - startSeconds, MAX_CLIP_SECONDS);
     const posterOut = path.join(outDir, "poster.jpg");
     const posterReply = await exec(posterArgs({ ffmpeg: ffmpegInfo.path, clip, seconds, out: posterOut }), { timeoutMs: 30_000, signal });
     return { clip, poster: posterReply.code === 0 ? posterOut : null, seconds, captionBurned: burned };

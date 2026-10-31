@@ -2396,6 +2396,86 @@ pre {
   opacity: 0.5;
 }
 
+/* The composer's target pill: a Menu button, so it has the menu's chevron beside its text. */
+.target-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px 0 14px;
+}
+
+.target-pill .btn-chevron {
+  flex: none;
+}
+
+/* Tall enough that every target shows without scrolling, on a window with the room. */
+.composer-actions .menu {
+  max-height: min(560px, 70vh);
+}
+
+/* The pill sits mid-row on a phone, so its menu hangs off the row's right edge, not the pill's, to stay on screen. */
+@media (max-width: 560px) {
+  .composer-row {
+    position: relative;
+  }
+
+  /* The sign-in hint gets a line of its own, since beside the pill it's squeezed to a word on each line. */
+  .composer-row:has(.target-pill) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .composer-row:has(.target-pill) .composer-hint {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .composer-row:has(.target-pill) .composer-actions {
+    min-width: 0;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .composer-actions .menu-wrap {
+    position: static;
+    min-width: 0;
+  }
+
+  .composer-actions .menu {
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* The pill gives way before the mic and send, so a long pick can't push them out of the card. */
+  .target-pill {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .target-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.target-menu-note {
+  margin: 0;
+  padding: 6px 12px 4px;
+}
+
+.target-menu-item {
+  cursor: pointer;
+}
+
+.target-menu-item input {
+  flex: none;
+}
+
+.target-menu-item input:disabled {
+  cursor: default;
+}
+
 /* The send button turned stop: a white rounded square. */
 .composer-stop {
   display: block;
@@ -3652,6 +3732,50 @@ pre {
 .tab[aria-selected="true"] {
   background: var(--chat-segment);
   box-shadow: var(--shadow-segment);
+}
+
+/* The Get it panel's outputs (components/product/OutputPanels.tsx). */
+.output-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.output-panel p {
+  margin: 0;
+}
+
+.output-panel ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.output-panel li code {
+  overflow-wrap: anywhere;
+}
+
+.output-proof {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.output-proof-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.output-proof ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .code-block {

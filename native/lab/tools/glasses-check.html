@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- A small page that keeps the glasses template's automation contract, for checking the glasses shell and mock glasses on
+     the lab's simulator without a built product. It lives at s3://muse-knowledge-916979311153/lab/shells/glasses-check.html.
+     Upload it with --content-type text/html. See docs/NATIVE_LAB.md, "Checking the phone kinds". -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glasses check</title>
+    <style>
+      body { font: 18px/1.4 system-ui, sans-serif; margin: 24px; color: #1c2b33; background: #f1f4f7; }
+      h1 { font-size: 26px; }
+      button { display: block; width: 100%; padding: 16px; margin: 12px 0; font: inherit; border: 0; border-radius: 12px; background: #0064e0; color: #fff; }
+      button:disabled { background: #a8b4bd; }
+      img { width: 100%; border-radius: 12px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Glasses check</h1>
+    <p id="status">Not connected.</p>
+    <button data-glasses-action="connect" type="button">Connect glasses</button>
+    <button data-glasses-primary disabled type="button">Hold to ask</button>
+    <div id="out"></div>
+    <script>
+      const glasses = window.MuseNative && window.MuseNative.glasses;
+      const status = document.getElementById("status");
+      const primary = document.querySelector("[data-glasses-primary]");
+      let listening = false;
+
+      document.querySelector('[data-glasses-action="connect"]').addEventListener("click", async () => {
+        if (!glasses) {
+          status.textContent = "There's no glasses bridge here.";
+          return;
+        }
+        try {
+          const reply = await glasses.connect();
+          status.textContent = `Connected: ${reply.mode}`;
+          primary.disabled = false;
+        } catch (error) {
+          status.textContent = `Couldn't connect: ${error.message}`;
+        }
+      });
+
+      primary.addEventListener("click", async () => {
+        try {
+          if (!listening) {
+            listening = true;
+            await glasses.startRecording({ maxSeconds: 10 });
+            status.textContent = "Listening.";
+            return;
+          }
+          primary.disabled = true;
+          const recording = await glasses.stopRecording();
+          const photo = await glasses.capturePhoto({ maxSize: 1024 });
+          const out = document.getElementById("out");
+          const image = document.createElement("img");
+          image.src = photo.dataUrl;
+          image.alt = "The photo from the mock glasses";
+          const result = document.createElement("p");
+          result.setAttribute("data-result", "");
+          result.textContent = `A ${photo.width}x${photo.height} photo and ${recording.seconds.toFixed(1)} s of sound.`;
+          out.append(image, result);
+          status.textContent = "Done.";
+        } catch (error) {
+          status.textContent = `That didn't work: ${error.message}`;
+        }
+      });
+    </script>
+  </body>
+</html>

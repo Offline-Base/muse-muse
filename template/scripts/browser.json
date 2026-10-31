@@ -1,0 +1,6 @@
+{
+  "vr": {
+    "args": ["--enable-unsafe-swiftshader"],
+    "viewport": { "width": 1280, "height": 720 }
+  }
+}

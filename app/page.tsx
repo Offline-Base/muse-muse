@@ -49,7 +49,7 @@ export default async function Home() {
         <div className="play-intro">
           <h1>What should Muse make?</h1>
         </div>
-        <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" />
+        <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" targetOptions={env.enabledTargets} />
       </div>
       <SetupPanel
         facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}

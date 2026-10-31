@@ -3,8 +3,9 @@
 // or a box that scrolls sideways, a long headline, a wrapped choice, bar text that overlaps, em dashes, a button still
 // saying it is working), then saves the full-page screenshot. In the demo video's runs it only waits and gives viewers
 // a beat: verify already took the screenshots and checked the screen at phone size, so a demo never fails on a check
-// that passed there.
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+// that passed there. In a VR product a shot taken inside VR has its own check (tests/xr.ts): the view must keep drawing
+// and not be blank, and the 2D layout checks don't apply.
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 /** The demo video's runs: Playwright's own video (demo) and Demo Studio's recorder (studio). */
@@ -18,6 +19,11 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   if (DEMO_PROJECTS.has(test.info().project.name)) {
     await page.waitForTimeout(600);
     return;
+  }
+  if (isVRProduct()) {
+    // Only a VR product loads the headset's helpers, so every other product's test runs just as it did.
+    const { inVRSession, xrJudgeShot } = await import("./xr");
+    if (await inVRSession(page)) return xrJudgeShot(page, name);
   }
   await page.evaluate(() => document.fonts.ready.then(() => true));
   await page.waitForTimeout(250);
@@ -38,6 +44,16 @@ export async function judgeShot(page: Page, name: string): Promise<void> {
   mkdirSync("test-results/judge", { recursive: true });
   await page.screenshot({ path: `test-results/judge/${name}.png`, fullPage: true });
   writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ problems, errorsAndEmpty, resultTop, pageHeight, notes })}\n`);
+}
+
+/** True when musemuse.target.json lists vr. A product without that file is a web product. */
+function isVRProduct(): boolean {
+  try {
+    const { targets } = JSON.parse(readFileSync("musemuse.target.json", "utf8")) as { targets?: unknown };
+    return Array.isArray(targets) && targets.includes("vr");
+  } catch {
+    return false;
+  }
 }
 
 /** True when fixtures/ holds a sample, not just its README. */

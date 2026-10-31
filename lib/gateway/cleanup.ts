@@ -9,6 +9,8 @@ export interface CleanupDeps {
   revokeExpiredBuildTokens(now: Date): Promise<number>;
   /** Fails builds that stopped reporting progress (lib/pipeline/sweep.ts). Optional so tests can leave it out. */
   failStaleBuilds?(now: Date): Promise<number>;
+  /** Takes accounts off products that are disabled or failed (lib/tools/deps.ts). Left out while agents are off. */
+  revokeDisabledProductConnections?(): Promise<number>;
 }
 
 export type CleanupResult = Record<string, { ok: true; count: number } | { ok: false; error: string }>;
@@ -23,7 +25,7 @@ export function cronAuthorized(header: string | null, secret: string | undefined
 /**
  * The hourly cleanup. Each task runs on its own, so one failure (say Blob is down) doesn't stop the rest.
  *   uploads/ older than 24 h, screens/ older than 7 days, rate_limits windows older than 1 h, expired build tokens,
- *   and builds that stopped reporting progress.
+ *   builds that stopped reporting progress, and connected accounts of products that are off.
  */
 export async function runCleanup(deps: CleanupDeps, now: Date = new Date()): Promise<CleanupResult> {
   const tasks: Record<string, () => Promise<number>> = {
@@ -34,6 +36,7 @@ export async function runCleanup(deps: CleanupDeps, now: Date = new Date()): Pro
   };
   const failStale = deps.failStaleBuilds;
   if (failStale) tasks.staleBuilds = () => failStale(now);
+  if (deps.revokeDisabledProductConnections) tasks.toolConnections = deps.revokeDisabledProductConnections;
   const entries = await Promise.all(
     Object.entries(tasks).map(async ([name, task]) => {
       try {

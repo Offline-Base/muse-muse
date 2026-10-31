@@ -6,6 +6,7 @@ import type { Brief } from "@/lib/brief/schema";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import type { Reference } from "@/lib/types";
 import { SPARK_STANDIN, withoutRetiredSpark } from "@/lib/meta/spark";
+import { AGENT_MARKER, isToolId, toolMarker } from "@/lib/tools/ids";
 
 /** BriefSchema caps slugs at 40 characters. */
 export const SLUG_MAX = 40;
@@ -96,11 +97,13 @@ export function pollTimedOut(input: {
 
 /**
  * What the product's gateway tokens may call: the brief's capabilities, minus Glimmer (self-hosted, not the API).
- * muse-gadget stays in: it's what lets the token use the gateway's /gadget route (lib/gateway/gadget.ts).
+ * muse-gadget stays in: it's what lets the token use the gateway's /gadget route (lib/gateway/gadget.ts). An agent's
+ * brief adds the agent marker and one marker per tool it picked (docs/AGENT_TOOLS.md).
  */
-export function allowedModelsFor(brief: Pick<Brief, "capabilities">): string[] {
+export function allowedModelsFor(brief: Pick<Brief, "capabilities" | "agent">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
-  return [...new Set(models)];
+  const tools = brief.agent ? brief.agent.tools.map((t) => t.id).filter(isToolId).map(toolMarker) : [];
+  return [...new Set<string>([...models, ...(brief.agent ? [AGENT_MARKER] : []), ...tools])];
 }
 
 const BUILD_MODELS: readonly BuildModel[] = ["muse-wonder-1.0", SPARK_STANDIN];

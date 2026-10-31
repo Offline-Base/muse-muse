@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
-import { newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
+import { connectorActions, newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
 
 describe("safeNext", () => {
   it("keeps same-site paths with their query and hash", () => {
@@ -56,6 +58,30 @@ describe("parseManifest", () => {
     assert.deepEqual(parseManifest({ ...manifest, $schema: "./musemuse.schema.json" })?.name, "Feeder Count");
   });
 
+  it("keeps the agent parts of a manifest, and a manifest without them reads as it always did", () => {
+    const action = manifest.actions[0];
+    const agent = { task: "Finds things", tools: [{ id: "web_search", usedFor: "Looking things up" }], connections: "none" };
+    const withAgent = { ...manifest, agent, actions: [{ ...action, who: "owner", annotations: { readOnly: true, openWorld: false } }] };
+    assert.deepEqual(parseManifest(withAgent), withAgent);
+    assert.equal(parseManifest(manifest)?.agent, undefined);
+  });
+
+  it("drops an agent part with the wrong shape", () => {
+    const action = manifest.actions[0];
+    const agent = { task: "Finds things", tools: [], connections: "none" };
+    for (const bad of [
+      { ...manifest, agent: { ...agent, connections: "everyone" } },
+      { ...manifest, agent: { ...agent, tools: [{ id: "x" }] } },
+      { ...manifest, agent: { ...agent, task: 7 } },
+      { ...manifest, agent: "yes" },
+      { ...manifest, actions: [{ ...action, who: "root" }] },
+      { ...manifest, actions: [{ ...action, annotations: { readOnly: "yes" } }] },
+      { ...manifest, actions: [{ ...action, annotations: true }] },
+    ]) {
+      assert.equal(parseManifest(bad), null);
+    }
+  });
+
   it("drops one that would crash a page", () => {
     for (const bad of [
       null,
@@ -75,6 +101,26 @@ describe("parseManifest", () => {
     ]) {
       assert.equal(parseManifest(bad), null, JSON.stringify(bad));
     }
+  });
+});
+
+describe("connectorActions", () => {
+  const action = (name: string, who?: "anyone" | "owner") => ({ name, description: "d", input: {}, output: {}, ...(who ? { who } : {}) });
+
+  it("leaves out owner actions, and keeps actions that don't say", () => {
+    const actions = [action("find"), action("share", "anyone"), action("mail_me", "owner")];
+    assert.deepEqual(connectorActions({ actions }).map((a) => a.name), ["find", "share"]);
+  });
+
+  it("is empty without a manifest", () => {
+    assert.deepEqual(connectorActions(null), []);
+    assert.deepEqual(connectorActions({ actions: [action("mail_me", "owner")] }), []);
+  });
+
+  it("is what the product page's connector line lists", () => {
+    const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
+    assert.match(page, /const exposedActions = connectorActions\(manifest\)/);
+    assert.doesNotMatch(page, /manifest\.actions/);
   });
 });
 

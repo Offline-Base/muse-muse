@@ -177,11 +177,13 @@ Built on Oct 31 in `components/build`. `steps.tsx` maps a build onto the kit (`r
   Stop moves beside Send, so it's always one press away, and still asks to confirm.
 - **The working icon** is `WorkingIcon` everywhere, so the mascot's animation replaces it in one file.
 - **Native targets:** `roomSteps` takes `targets`, rows with `media`, which show under the deploy and above the end row.
-  Nothing fills it yet (`BuildRoom` passes none), and with none there's no row and nothing on the page. The native lane's
-  "Apps" step goes there.
+  `nativeRows` in `apps.tsx` fills it with the "Apps" step: one row per native run, with each package and check under it. With
+  no native events there's no row and nothing on the page. While a run goes on after the build has ended, the conversation
+  has a line for it under the answer, the list has no end row yet, and the stream stays open (docs/NATIVE.md).
 
 To look at it with no sandbox and no keys, `scripts/dev/room-fixtures.ts` stores a running, a failed and a finished build
-and a plain `muse exec` build in a local PGlite. Its header has the commands.
+and a plain `muse exec` build in a local PGlite. Its header has the commands. `scripts/dev/native-fixtures.ts` does the same
+for the Apps step and the product page's "Get it" panel.
 
 ### Where each thing went
 

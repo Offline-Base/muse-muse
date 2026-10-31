@@ -38,8 +38,8 @@ export type FakeGlassesErrorCode =
   | "session_ended"
   | "timeout";
 
-/** What a call can fail with: the glasses' own codes, and the two the app's bridge adds for a call it refuses. */
-export type FakeBridgeErrorCode = FakeGlassesErrorCode | "bad_request" | "busy";
+/** What a call can fail with: the glasses' own codes, and the three the app's bridge adds for a call it refuses. */
+export type FakeBridgeErrorCode = FakeGlassesErrorCode | "bad_request" | "busy" | "denied";
 
 export type FakeGlassesMethod = "status" | "connect" | "capturePhoto" | "preview" | "startRecording" | "stopRecording" | "speak";
 

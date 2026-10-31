@@ -9,7 +9,7 @@
     caffeinate -dims $PY $F watch    the kill switch: terminates at CAP_USD, at each machine's deadline, or after stop
     $PY $F lambda-prep --name N      Lambda: scp the code and the stage data from this Mac, start box_setup.sh
     $PY $F lambda-sync --name N --run RUN   Lambda: every 10 minutes, the run to .data/knowledge/runs/RUN/ and S3
-    $PY $F start-run --name N --run RUN [--train LOCAL.jsonl] [--init-adapter RUN|RUN/checkpoint-N] [--base-json RUN] ...
+    $PY $F start-run --name N --run RUN [--train LOCAL.jsonl] [--init-adapter RUN|RUN/checkpoint-N] [--base-json RUN] [--lr X] ...
                                      Lambda: start run_multi.sh detached (refused while a run is going) plus its sync
       Stage 2 from stage 1:  start-run --name muse-knowledge-train-1 --run stage2-multi --train NEW.jsonl \
                              --init-adapter stage1-multi --base-json stage1-multi --save-steps 1000
@@ -56,7 +56,7 @@ LAMBDA_KEY_NAME = "muse-muse-platform"
 KEY = os.path.expanduser("~/.ssh/muse-muse-lambda")
 AMI_PARAM = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id"
 # This lane's cap for its own machines (the owner allows $1,250 on Lambda in all; this lane may use $450 of it).
-CAP_USD = 450.0
+CAP_USD = 1500.0
 SPENT_BEFORE_USD = 0.0
 MAX_HOURS = 7.0
 RETRY_UNTIL = dt.datetime(2026, 10, 31, 3, 0, tzinfo=dt.timezone.utc)
@@ -468,34 +468,88 @@ def checkpoint_steps(d):
     return sorted(int(x.split("-")[1]) for x in os.listdir(d) if re.fullmatch(r"checkpoint-\d+", x)) if os.path.isdir(d) else []
 
 
-def lambda_sync(name, run_name, dest=None, interval=600):
+SMALL_BYTES = 8 * 1024 ** 2  # files up to this size go to S3 every cycle (the 28 MB tokenizer.json counts as large)
+LARGE_KBPS = 64  # the cap for a large upload from this Mac (its whole upload link measured 160 to 430 KB/s on Oct 31)
+
+
+class Throttled:
+    """A file read no faster than `rate` bytes a second, for boto3's upload_fileobj. Each read returns the full
+    amount asked for (or what is left), as s3transfer expects."""
+
+    def __init__(self, f, rate):
+        self.f, self.rate, self.t0, self.n = f, rate, time.time(), 0
+
+    def read(self, size=-1):
+        out = []
+        want = size if size and size > 0 else 1 << 62
+        while want > 0:
+            data = self.f.read(min(want, 128 * 1024))
+            if not data:
+                break
+            out.append(data)
+            want -= len(data)
+            self.n += len(data)
+            ahead = self.n / self.rate - (time.time() - self.t0)
+            if ahead > 0:
+                time.sleep(ahead)
+        return b"".join(out)
+
+
+def lambda_sync(name, run_name, dest=None, interval=600, large="final", kbps=LARGE_KBPS):
     """Every 10 minutes: copies a Lambda run back to this Mac (.data/knowledge/runs/RUN/) and on to S3
-    (knowledge/runs/RUN/), since the machine has no AWS credentials. The log, hyperparameters, base answers, adapter,
-    answers and metrics come every time; of the checkpoints only the newest is kept here (the disk is nearly full),
-    and it is uploaded whole (adapter, optimizer, trainer state) so a new machine could resume from S3."""
+    (knowledge/runs/RUN/), since the machine has no AWS credentials. Pulled to the Mac every cycle: the log,
+    hyperparameters, base answers, adapter, answers, metrics and the newest finished checkpoint (only the newest is
+    kept here; the disk is nearly full). To S3 every cycle: every file up to 8 MB. This Mac's upload link is slow
+    (160 to 430 KB/s measured on Oct 31), so a 2.4 GB checkpoint can't go up every 10 minutes without starving the
+    writer fleet: large files go to S3 only with large="final" (the default: the final adapter, once, in the
+    background at `kbps` KB/s) and never the checkpoints, which stay on the Mac and the machine."""
+    import threading
     if not name.startswith(PREFIX):
         raise SystemExit(f"--name must be a {PREFIX}* machine")
     dest = (dest or f"s3://{BUCKET}/{RUNS}{run_name}/").rstrip("/") + "/"
     bucket, prefix = dest[len("s3://"):].split("/", 1)
     local = os.path.join(RUNS_LOCAL, run_name)
     os.makedirs(local, exist_ok=True)
-    from boto3.s3.transfer import TransferConfig
-    xfer = TransferConfig(max_concurrency=4, multipart_chunksize=64 * 1024 ** 2)
-    sent = {}
+    sent, queued = {}, set()
     ssh_cmd = "ssh " + " ".join(SSH_OPTS)
+    pending = []
+    lock = threading.Lock()
+
+    def big_uploader():
+        from boto3.s3.transfer import TransferConfig
+        cfg = TransferConfig(use_threads=False, multipart_chunksize=16 * 1024 ** 2, multipart_threshold=16 * 1024 ** 2)
+        while True:
+            with lock:
+                job = pending.pop(0) if pending else None
+            if not job:
+                time.sleep(30)
+                continue
+            path, key, stamp = job
+            began = time.time()
+            try:
+                with open(path, "rb") as f:
+                    aws().client("s3").upload_fileobj(Throttled(f, kbps * 1024), bucket, prefix + key, Config=cfg)
+                sent[path] = stamp
+                log(f"sync {run_name}: {key} ({stamp[1] / 1024 ** 3:.2f} GB) in S3 after {(time.time() - began) / 60:.0f} min")
+            except Exception as err:
+                log(f"sync {run_name}: large upload {key}: {type(err).__name__}: {str(err)[:200]}; retrying later")
+            with lock:
+                queued.discard(path)
+
+    threading.Thread(target=big_uploader, daemon=True).start()
     while True:
         m = load()["machines"].get(name) or {}
         if m.get("ended"):
             log(f"sync {run_name}: {name} has ended; sync stops")
             return
         try:
-            sync_once(m["ip"], run_name, local, bucket, prefix, sent, xfer, ssh_cmd)
+            sync_once(m["ip"], run_name, local, bucket, prefix, sent, ssh_cmd, large, pending, queued, lock)
         except Exception as err:
             log(f"sync {run_name}: {type(err).__name__}: {str(err)[:300]}")
         time.sleep(interval)
 
 
-def sync_once(ip, run_name, local, bucket, prefix, sent, xfer, ssh_cmd):
+def sync_once(ip, run_name, local, bucket, prefix, sent, ssh_cmd, large, pending, queued, lock):
     src = f"ubuntu@{ip}:/home/ubuntu/k/runs/{run_name}"
     ckpt = os.path.join(local, "ckpt")
     os.makedirs(ckpt, exist_ok=True)
@@ -504,7 +558,7 @@ def sync_once(ip, run_name, local, bucket, prefix, sent, xfer, ssh_cmd):
     # trainer_state.json last, so a checkpoint without one is still being saved).
     r1 = subprocess.run(["rsync", "-a", "--exclude", "ckpt/checkpoint-*", "--exclude", "pid", "-e", ssh_cmd, src + "/", local + "/"],
                         capture_output=True, text=True, timeout=3600)
-    ls = subprocess.run(["ssh", *SSH_OPTS, f"ubuntu@{ip}", f"cd /home/ubuntu/k/runs/{run_name}/ckpt 2>/dev/null && ls -d checkpoint-*/trainer_state.json 2>/dev/null"],
+    ls = subprocess.run(["ssh", "-n", *SSH_OPTS, f"ubuntu@{ip}", f"cd /home/ubuntu/k/runs/{run_name}/ckpt 2>/dev/null && ls -d checkpoint-*/trainer_state.json 2>/dev/null"],
                         capture_output=True, text=True, timeout=120)
     steps = sorted(int(x.split("/")[0].split("-")[1]) for x in ls.stdout.split() if re.fullmatch(r"checkpoint-\d+/trainer_state.json", x))
     newest = f"checkpoint-{steps[-1]}" if steps else None
@@ -516,32 +570,43 @@ def sync_once(ip, run_name, local, bucket, prefix, sent, xfer, ssh_cmd):
         if r2.returncode != 0:
             log(f"sync {run_name}: pulling {newest} failed (rsync {r2.returncode}); retrying next cycle")
             newest = None
-    uploaded, failed = 0, 0
+        else:
+            # The machine keeps the newest two; this Mac only the newest.
+            for step in checkpoint_steps(ckpt):
+                if f"checkpoint-{step}" != newest:
+                    subprocess.run(["rm", "-rf", os.path.join(ckpt, f"checkpoint-{step}")])
+    uploaded, failed, held = 0, 0, 0
     s3 = aws().client("s3")
     for dirpath, _, files in os.walk(local):
         for f in files:
             path = os.path.join(dirpath, f)
             rel = os.path.relpath(path, local)
-            if f.endswith(".tmp") or (rel.startswith("ckpt/checkpoint-") and not rel.startswith(f"ckpt/{newest}/")):
+            # No part of a checkpoint goes to S3: a checkpoint without its adapter and optimizer there would look
+            # resumable to run_multi.sh on a new machine and fail.
+            if f.endswith(".tmp") or rel.startswith("ckpt/checkpoint-"):
                 continue
             st = os.stat(path)
-            if sent.get(path) == (st.st_mtime, st.st_size):
+            stamp = (st.st_mtime, st.st_size)
+            if sent.get(path) == stamp:
                 continue
             key = rel.replace("ckpt/", "checkpoints/", 1) if rel.startswith("ckpt/") else rel.replace("out/", "", 1)
+            if st.st_size > SMALL_BYTES:
+                if large == "final" and rel.startswith("out/adapter/"):
+                    with lock:
+                        if path not in queued:
+                            queued.add(path)
+                            pending.append((path, key, stamp))
+                held += 1
+                continue
             try:
-                s3.upload_file(path, bucket, prefix + key, Config=xfer)
-                sent[path] = (st.st_mtime, st.st_size)
+                s3.upload_file(path, bucket, prefix + key)
+                sent[path] = stamp
                 uploaded += 1
             except Exception as err:
                 failed += 1
                 log(f"sync {run_name}: {key}: {type(err).__name__}: {str(err)[:200]}")
-    # Older checkpoints leave this Mac once the newest is fully in S3 (S3 keeps every one).
-    if newest and not failed:
-        for step in checkpoint_steps(ckpt):
-            if f"checkpoint-{step}" != newest:
-                subprocess.run(["rm", "-rf", os.path.join(ckpt, f"checkpoint-{step}")])
-    log(f"sync {run_name}: rsync exit {r1.returncode}, newest {newest}, {uploaded} uploaded, {failed} failed, "
-        f"{time.time() - began:.0f} s, {free_gb(local):.1f} GB free here")
+    log(f"sync {run_name}: rsync exit {r1.returncode}, newest {newest}, {uploaded} small files to S3, {failed} failed, "
+        f"{held} large files here only or queued, {time.time() - began:.0f} s, {free_gb(local):.1f} GB free here")
 
 
 REMOTE = "/home/ubuntu/k"
@@ -557,16 +622,18 @@ def remote_path(p):
 
 def start_run(a):
     """Starts run_multi.sh on a Lambda training machine (detached with setsid, so no SSH session holds it) and, unless
-    --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while another
-    train_glimmer.py runs there, so it can't disturb a run in progress."""
+    --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while anything holds a
+    GPU there (nvidia-smi, and the job names run_student.sh checks), so it can't disturb a run in progress."""
     ip = machine(a.name)["ip"]
     run = a.run
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", run):
         raise SystemExit("--run: letters, digits, . _ - only")
-    # [t] keeps pgrep from matching this very command line.
-    busy = ssh(ip, "pgrep -f '[t]rain_glimmer.py' >/dev/null && echo busy || echo free").stdout.strip()
-    if busy != "free":
-        raise SystemExit(f"{a.name}: a train_glimmer.py is running there ({busy or 'no answer'}); not starting {run}")
+    # [t] keeps pgrep from matching this very command line. "checked" last, so a lost connection doesn't read as free.
+    busy = ssh(ip, "{ nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader; pgrep -af "
+                   "'[t]rain_glimmer.py|[t]rain_student.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
+                   "echo checked").stdout.strip()
+    if busy != "checked":
+        raise SystemExit(f"{a.name}: something holds a GPU there ({busy or 'no answer'}); not starting {run}")
     data = f"{REMOTE}/data"
     if a.train or a.probes:
         # A run with its own data gets its own folder; whatever isn't given comes from the stage 1 folder.
@@ -581,6 +648,10 @@ def start_run(a):
     env = {"KNOWLEDGE_NO_S3": "1", "SAVE_STEPS": str(a.save_steps), "TUNED_EVAL": str(a.tuned_eval)}
     if a.init_adapter:
         env["KNOWLEDGE_INIT_ADAPTER"] = remote_path(a.init_adapter)
+    if a.lr:
+        env["LR"] = str(float(a.lr))  # run_multi.sh writes it into hyper.json; without it, its default of 1e-4
+    if a.require_turns:
+        env["KNOWLEDGE_REQUIRE_TURNS"] = str(float(a.require_turns))  # train_glimmer.py stops unless this share of its rows has reasoning
     if a.base_json:
         env["BASE_JSON"] = a.base_json if a.base_json.startswith("/") else f"{REMOTE}/runs/{a.base_json}/ckpt/base.json"
     envs = " ".join(f"{k}={v}" for k, v in env.items())
@@ -619,10 +690,15 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--eval-probes", type=int, default=1500)
     ap.add_argument("--max-examples", type=int, default=0)
+    ap.add_argument("--require-turns", help="stop unless this share of the rows in use has reasoning (a pilot of the whole-turn labels)")
     ap.add_argument("--save-steps", type=int, default=250)
     ap.add_argument("--tuned-eval", type=int, default=1)
+    ap.add_argument("--lr", help="learning rate for this run (default: run_multi.sh's 1e-4)")
     ap.add_argument("--no-sync", action="store_true")
+    # lambda-sync
+    ap.add_argument("--large", choices=["final", "none"], default="final", help="large files to S3: the final adapter (throttled) or none")
+    ap.add_argument("--kbps", type=int, default=LARGE_KBPS, help="KB/s cap for large uploads")
     a = ap.parse_args()
     {"setup": setup, "upload": upload_code, "launch": launch, "retry": retry, "status": status, "watch": watch,
      "stop": lambda: stop(a.name), "lambda-prep": lambda: lambda_prep(a.name), "start-run": lambda: start_run(a),
-     "lambda-sync": lambda: lambda_sync(a.name, a.run or RUN, a.dest)}[a.command]()
+     "lambda-sync": lambda: lambda_sync(a.name, a.run or RUN, a.dest, large=a.large, kbps=a.kbps)}[a.command]()

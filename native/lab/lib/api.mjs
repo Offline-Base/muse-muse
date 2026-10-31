@@ -54,6 +54,9 @@ export function createApi({ platform, getLabToken, refreshLabToken, fetch: doFet
         res = await post("/api/native/agent/claim", await refreshLabToken(), body, limit, stop);
       }
       if (res.status === 204) return null;
+      // The site answers a route it doesn't have with a 200 page, and that mustn't read as "no work".
+      const type = res.headers.get("content-type") ?? "";
+      if (res.ok && !type.includes("json")) throw new ApiError("claim answered with a page, not JSON", { status: res.status, code: "not_json" });
       const reply = await bodyOf(res);
       if (res.ok) return reply.job ?? null;
       throw new ApiError(`claim answered ${res.status}`, { status: res.status, retryAfterMs: retryAfterMs(res), code: reply.error ?? null });
