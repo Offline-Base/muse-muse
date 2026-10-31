@@ -184,6 +184,7 @@ def test_retention_removes_old_results_and_keeps_new_and_waiting_ones(svc):
 def test_retention_runs_only_under_coppa_and_at_most_hourly(svc, monkeypatch):
     calls = []
     monkeypatch.setattr(retention, "purge", lambda _s, days: calls.append(days) or {"decisions": 0, "jobs": 0, "files": 0})
+    retention.maybe_purge(svc, [])  # a default device deletes no old results
     retention.maybe_purge(svc, ["ferpa"])
     assert calls == []
     retention.maybe_purge(svc, ["coppa"])

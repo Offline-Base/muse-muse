@@ -29,6 +29,7 @@ from base.config import REPO_ROOT, load_settings
 from base.connector.server import REFUSED_END, build_server
 from base.egress import HELD_TEXT
 from base.services import Services
+from base.workspace.contacts import load_contacts
 
 CHECKER = "http://127.0.0.1:8083/v1"
 EMBED = "http://127.0.0.1:8084/v1"
@@ -223,8 +224,9 @@ def shared(services, muse: Muse, body):
 
 
 def every_tool(services, muse: Muse) -> dict:
-    """Each of the seven tools, with the get_result calls Muse makes, the user's Share it on any
-    waiting result, and a search that passes back a tag Muse was given."""
+    """Seven of the eight tools (save_on_device has its own test below), with the get_result calls
+    Muse makes, the user's Share it on any waiting result, and a search that passes back a tag Muse
+    was given."""
     out: dict = {"top": muse.listing(""), "essays": muse.listing("essays")}
     for card in services.approvals.pending():  # a listing with a name the roster lacks waits; Share it
         services.approvals.decide(card["id"], approve=True)
@@ -257,6 +259,25 @@ def test_every_tool_stays_on_the_device_and_nothing_private_reaches_muse(device)
     files = [p for p in services.settings.home.rglob("*") if p.name.endswith(" feedback.md")]
     assert len(files) == 24  # finished files with real names stay on the device
     assert time.monotonic() - started < 30
+
+
+def test_save_on_device_stays_on_the_device_and_only_a_receipt_reaches_muse(device):
+    """The tool that writes real names and guardian emails, in the same harness: the fixture fails
+    the test if a request or a socket left the device."""
+    services, muse, _stray, mock = device()
+    task = shared(services, muse, muse.follow(muse.call("run_private_task", {"instructions": GRADE, "folder": "essays"})))
+    tag = re.findall(r"\[Student [A-Z]+\]", task["result"])[0]
+    item = {"for_tag": tag, "title": f"About {tag}", "body": f"Dear {{guardian}}, {tag} wrote a strong garden essay."}
+    saved = muse.call("save_on_device", {"items": [item], "purpose": "notes home to families", "address_to": "guardians"})
+    receipt = json.loads(saved)
+    assert receipt["status"] == "saved"
+    drafts = list((services.settings.paths.output / receipt["job_id"]).glob("*.eml"))
+    assert drafts  # the real names and addresses went only here
+    contacts = load_contacts(services.settings.contacts)
+    assert [c for c in contacts if c.guardian in saved or c.email in saved] == []
+    for text in muse.outputs:
+        assert private_values(text, services) == [], text
+    assert all(str(c.request.url).startswith((CHECKER, EMBED)) for c in mock.calls)
 
 
 def test_with_the_local_model_down_results_are_held_and_nothing_is_shared(device):
