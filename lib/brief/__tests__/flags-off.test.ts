@@ -12,6 +12,8 @@ import { beforeEach, describe, it } from "node:test";
 import { z } from "zod";
 import { BriefSchema, NewBriefSchema, NewBriefSchemaNoGadget, TARGETS, newBriefSchemaFor } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
+import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { flagsOffSurface } from "./flags-off-surface";
@@ -27,6 +29,9 @@ const FLAGS = [
   "AGENTS_ENABLED",
   "COMPOSIO_PERSONAL_ENABLED",
   "GADGETS_ENABLED",
+  // Wave 3 (docs/CAPABILITIES.md): one line per unit, in plan order.
+  "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
+  ...CAP_IDS.map((id) => CAP_FLAG[id]),
 ];
 
 beforeEach(() => {
@@ -66,7 +71,9 @@ describe("with every target flag off", () => {
   it("the stored schema differs from the one the writer used only by the optional targets", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
-    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), ["targets"]);
+    // Wave 3's optional fields, one line per unit in plan order: unit 2's milestones, then each cap's block.
+    const differsOnlyBy = ["targets", "milestones", ...Object.keys(CAP_BRIEF_FIELDS)];
+    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), differsOnlyBy);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });
 });

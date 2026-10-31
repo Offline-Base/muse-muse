@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import type { CapId } from "@/lib/caps/ids";
+import { MilestonesSchema } from "@/lib/engine/milestones";
 
 /**
  * What a product may call. muse-glimmer means a self-hosted Glimmer endpoint, not the Model API. muse-gadget means a
@@ -80,7 +83,18 @@ const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
  * `targets` is optional, so older briefs still parse, and a brief without it runs on the web only (briefTargets in
  * lib/native/targets.ts).
  */
-export const BriefSchema = BriefFields.extend({ targets: targetPicks(TARGETS).optional() });
+export const BriefSchema = BriefFields.extend({ targets: targetPicks(TARGETS).optional(), ...wave3StoredFields() });
+
+/**
+ * Wave 3 (docs/CAPABILITIES.md, 2.6): every registered cap block and the engine's milestones, as optional and nullable
+ * fields of the stored brief, so briefs written before them still parse.
+ */
+function wave3StoredFields() {
+  const caps = Object.fromEntries(Object.entries(CAP_BRIEF_FIELDS).map(([key, schema]) => [key, (schema as z.ZodTypeAny).nullable().optional()])) as {
+    [K in keyof typeof CAP_BRIEF_FIELDS]: z.ZodOptional<z.ZodNullable<(typeof CAP_BRIEF_FIELDS)[K]>>;
+  };
+  return { ...caps, milestones: MilestonesSchema.nullable().optional() };
+}
 
 export type Brief = z.infer<typeof BriefSchema>;
 
@@ -109,14 +123,29 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
 });
 
 /**
- * The schema the brief writer answers in for these flags. With no targets enabled it is exactly NewBriefSchema or
- * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those.
+ * The schema the brief writer answers in for these flags. With no targets, no caps and no milestones it is exactly
+ * NewBriefSchema or NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web
+ * and those. Each enabled cap with a registered block, and milestones when ENGINE_MILESTONES is on, add a required but
+ * nullable field, since Meta's strict output needs every property.
  */
-export function newBriefSchemaFor(opts: { gadgets: boolean; targets: readonly TargetId[] }): z.ZodType<Brief> {
+export function newBriefSchemaFor(opts: {
+  gadgets: boolean;
+  targets: readonly TargetId[];
+  caps?: readonly CapId[];
+  milestones?: boolean;
+}): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
-  if (ids.length === 1) return base;
-  return base.extend({ targets: targetPicks(ids as [TargetId, ...TargetId[]]).min(1) });
+  const fields = CAP_BRIEF_FIELDS as Partial<Record<CapId, z.ZodTypeAny>>;
+  const extra: Record<string, z.ZodTypeAny> = {};
+  for (const cap of opts.caps ?? []) {
+    const block = fields[cap];
+    if (block) extra[cap] = block.nullable();
+  }
+  if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
+  if (ids.length === 1 && !Object.keys(extra).length) return base;
+  const targets = ids.length === 1 ? {} : { targets: targetPicks(ids as [TargetId, ...TargetId[]]).min(1) };
+  return base.extend({ ...targets, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

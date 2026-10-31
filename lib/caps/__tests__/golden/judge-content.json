@@ -1,0 +1,48 @@
+{
+  "instructionsLength": 3920,
+  "content": [
+    {
+      "type": "input_text",
+      "text": "Brief:\n\n# Bird Count\n\nCount the birds in a photo\n\n**For:** Birders\n\n**Verdict:** Can be made\n\n## Inspiration\n\nA photo of a feeder.\n\n- **Reference 1** (image): Three sparrows on a feeder.\n\n**Takes from it:**\n\n- Counting birds from a photo\n\n**Leaves out:**\n\n- The exact pixels of the person's photo\n\n**Test inputs:**\n\n- Reference 1, the person's own image: The person's feeder photo\n\nThe test feeds these to the product. Showing them as the input or inside the result is expected.\n\n## How it works\n\n1. Upload a photo\n2. See the count with boxes\n\n## Meta models\n\n| Need | Model | Why |\n| --- | --- | --- |\n| Find birds | `sam-3.1` | It boxes objects |\n\n## Inputs\n\n- **image**: A photo\n\n## Outputs\n\n- **overlay**: Boxes\n\n## Actions\n\n- `count_birds`: Takes a photo, returns a count.\n\n## Limits\n\n- Counts are estimates.\n\n## Cost\n\nAbout $0.01 per run (estimate). One SAM call.\n\nComplexity: simple.\n"
+    },
+    {
+      "type": "input_text",
+      "text": "Inspiration, in order (1 image):"
+    },
+    {
+      "type": "input_text",
+      "text": "Inspiration 1: feeder.jpg. Three sparrows on a feeder."
+    },
+    {
+      "type": "input_image",
+      "image_url": "https://x.public.blob.vercel-storage.com/feeder.jpg",
+      "detail": "auto"
+    },
+    {
+      "type": "input_text",
+      "text": "Screenshots, in order (2):"
+    },
+    {
+      "type": "input_text",
+      "text": "Screenshot 1: Start"
+    },
+    {
+      "type": "input_image",
+      "image_url": "https://x.public.blob.vercel-storage.com/01-start.png",
+      "detail": "auto"
+    },
+    {
+      "type": "input_text",
+      "text": "Screenshot 2 (final screen): Result"
+    },
+    {
+      "type": "input_image",
+      "image_url": "https://x.public.blob.vercel-storage.com/02-result.png",
+      "detail": "auto"
+    },
+    {
+      "type": "input_text",
+      "text": "Judge the product now."
+    }
+  ]
+}

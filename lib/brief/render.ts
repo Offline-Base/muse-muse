@@ -1,5 +1,9 @@
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import type { Brief } from "@/lib/brief/schema";
+// ---------- Wave 3 hooks (docs/CAPABILITIES.md, 2.6), unit 2 ----------
+import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render";
+import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
+// ---------- end Wave 3 hooks ----------
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
 /**
@@ -157,6 +161,10 @@ export function renderBuildPrompt(
     fixtures: Array<{ fileName: string; description: string; fromUserSample?: boolean }>;
     maxModelSteps: number;
     rebuildOf?: RebuildTarget | null;
+    // ---------- Wave 3, unit 2 ----------
+    /** Big builds (caps, milestones or the engine's round flags): verify at most twice a round (engineBudgetLines). */
+    verifyBudget?: boolean;
+    // ---------- end Wave 3, unit 2 ----------
   } & SessionNotes,
 ): string {
   const out: string[] = [];
@@ -173,6 +181,9 @@ export function renderBuildPrompt(
     "",
     "Then stop.",
   );
+  // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
+  if (brief.verdict !== "no") out.push(...milestoneBuildLines(brief));
+  // ---------- end Wave 3, unit 2 ----------
   const session = sessionLines(opts, "build", brief.complexity === "complex");
   if (session.length) out.push("", "## While you work", "", bullets(session));
   out.push(
@@ -235,6 +246,9 @@ export function renderBuildPrompt(
     "",
     bullets(brief.actions.map((a) => `\`${a.name}\`: ${a.description}`), "None listed. Expose the primary flow's main step as one action."),
   );
+  // ---------- Wave 3, unit 2: platform services (empty for a brief with no cap blocks) ----------
+  out.push(...capsBuildLines(brief));
+  // ---------- end Wave 3, unit 2 ----------
 
   out.push(
     "",
@@ -329,6 +343,9 @@ export function renderBuildPrompt(
       : "",
     `The product's model calls during this build, every verify, fix round and the demo recording, share one $${buildTokenBudgetFor(models).toFixed(2)} Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.`,
   );
+  // ---------- Wave 3, unit 2: big-build budget lines (empty unless verifyBudget) ----------
+  out.push(...engineBudgetLines(opts.verifyBudget === true));
+  // ---------- end Wave 3, unit 2 ----------
   return out.filter((line, i, all) => !(line === "" && all[i - 1] === "")).join("\n").trim() + "\n";
 }
 
@@ -338,6 +355,8 @@ const STEP_LABELS: Record<string, string> = {
   start: "Start (the built app on port 3100, `/` must return 200)",
   console: "Console (no errors in the browser console on `/`)",
   smoke: "Smoke test (`tests/smoke.spec.ts`)",
+  // Wave 3, unit 2: platform services' fixed checks (only products with musemuse.caps.json have this step).
+  caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
   manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
 };
 
@@ -430,6 +449,10 @@ export function renderRefinePrompt(
   input: {
     message: string;
     newReferences: Array<{ fileName: string; describes: string }>;
+    // ---------- Wave 3, unit 2 ----------
+    /** The product's brief, for its platform services' change lines (capsRefineLines). None adds nothing. */
+    brief?: Brief | null;
+    // ---------- end Wave 3, unit 2 ----------
   } & SessionNotes,
 ): string {
   const out: string[] = ["# Change request", "", "The user asked for this change to the live product:", "", quote(input.message)];
@@ -455,6 +478,9 @@ export function renderRefinePrompt(
     "- Add a short entry to BUILD_NOTES.md, then run `npm run verify` until it exits 0.",
     ...sessionLines(input, "change").map((line) => `- ${line}`),
   );
+  // ---------- Wave 3, unit 2: platform services (empty for a product with none) ----------
+  if (input.brief) out.push(...capsRefineLines(input.brief));
+  // ---------- end Wave 3, unit 2 ----------
   return out.join("\n") + "\n";
 }
 
@@ -505,6 +531,9 @@ export function briefToMarkdown(brief: Brief): string {
   }
   if (brief.outputs.length) out.push("", "## Outputs", "", bullets(brief.outputs.map((o) => `**${o.kind}**: ${o.notes}`)));
   if (brief.actions.length) out.push("", "## Actions", "", bullets(brief.actions.map((a) => `\`${a.name}\`: ${a.description}`)));
+  // ---------- Wave 3, unit 2: platform services (empty for a brief with no cap blocks) ----------
+  out.push(...capsMarkdown(brief));
+  // ---------- end Wave 3, unit 2 ----------
   out.push(
     "",
     "## Limits",

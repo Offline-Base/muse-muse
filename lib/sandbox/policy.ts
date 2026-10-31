@@ -28,6 +28,11 @@ export interface BuilderPolicyOptions {
    * the same placeholder key, and these extra routes are brokered too (DIRECT_PRODUCT_ROUTES).
    */
   directProducts?: boolean;
+  /**
+   * Hosts a brief's caps need during the build (CAP_BUILD_HOSTS in lib/caps/hosts.ts, docs/CAPABILITIES.md section 3),
+   * allowed with no rules. None for a brief without caps, so its policy is today's.
+   */
+  capHosts?: readonly string[];
 }
 
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
@@ -80,6 +85,8 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
   };
   if (opts.platformHost) allow[opts.platformHost] = [];
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
+  // A cap host never replaces a rule above: api.meta.ai keeps its brokered routes whatever a cap lists.
+  for (const host of opts.capHosts ?? []) allow[host] ??= [];
   return { allow };
 }
 

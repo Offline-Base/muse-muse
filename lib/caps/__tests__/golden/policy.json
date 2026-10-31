@@ -1,0 +1,126 @@
+{
+  "allow": {
+    "api.meta.ai": [
+      {
+        "match": {
+          "method": [
+            "POST"
+          ],
+          "path": {
+            "exact": "/v1/responses"
+          },
+          "headers": [
+            {
+              "key": {
+                "regex": "(?i)^authorization$"
+              },
+              "value": {
+                "exact": "Bearer mm_sandbox_0123456789abcdef"
+              }
+            }
+          ]
+        },
+        "transform": [
+          {
+            "headers": {
+              "Authorization": "Bearer test-model-key"
+            }
+          }
+        ]
+      },
+      {
+        "match": {
+          "method": [
+            "GET",
+            "POST"
+          ],
+          "path": {
+            "exact": "/muse-code/models"
+          },
+          "headers": [
+            {
+              "key": {
+                "regex": "(?i)^authorization$"
+              },
+              "value": {
+                "exact": "Bearer mm_sandbox_0123456789abcdef"
+              }
+            }
+          ]
+        },
+        "transform": [
+          {
+            "headers": {
+              "Authorization": "Bearer test-model-key"
+            }
+          }
+        ]
+      },
+      {
+        "match": {
+          "method": [
+            "POST"
+          ],
+          "path": {
+            "exact": "/v1/files"
+          },
+          "headers": [
+            {
+              "key": {
+                "regex": "(?i)^authorization$"
+              },
+              "value": {
+                "exact": "Bearer mm_sandbox_0123456789abcdef"
+              }
+            }
+          ]
+        },
+        "transform": [
+          {
+            "headers": {
+              "Authorization": "Bearer test-model-key"
+            }
+          }
+        ]
+      },
+      {
+        "match": {
+          "method": [
+            "GET"
+          ],
+          "path": {
+            "exact": "/v1/models"
+          },
+          "headers": [
+            {
+              "key": {
+                "regex": "(?i)^authorization$"
+              },
+              "value": {
+                "exact": "Bearer mm_sandbox_0123456789abcdef"
+              }
+            }
+          ]
+        },
+        "transform": [
+          {
+            "headers": {
+              "Authorization": "Bearer test-model-key"
+            }
+          }
+        ]
+      },
+      {
+        "response": {
+          "statusCode": 403,
+          "body": "Blocked by the Muse Muse build firewall. Products call Meta through GATEWAY_URL.",
+          "contentType": "text/plain"
+        }
+      }
+    ],
+    "registry.npmjs.org": [],
+    "musemuse.example": [],
+    "vercel.com": [],
+    "*.blob.vercel-storage.com": []
+  }
+}

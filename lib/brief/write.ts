@@ -1,6 +1,6 @@
 import { referenceParts, textPart, type ContentPart } from "@/lib/brief/media";
 import { applyRebuildFit, briefProblems, normalizeRawBrief, patchBrief } from "@/lib/brief/normalize";
-import { type Brief, NewBriefSchema, NewBriefSchemaNoGadget } from "@/lib/brief/schema";
+import { type Brief, newBriefSchemaFor } from "@/lib/brief/schema";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -60,7 +60,8 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     instructions: briefInstructions(),
     content,
     sources: prepared.sources,
-    schema: env.gadgetsEnabled ? NewBriefSchema : NewBriefSchemaNoGadget,
+    // With no caps and no milestones this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: [], caps: env.enabledCaps, milestones: env.engineMilestones }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

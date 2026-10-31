@@ -1,4 +1,5 @@
 import type { Brief, ProductModelId, TargetId } from "@/lib/brief/schema";
+import type { MilestoneState } from "@/lib/engine/milestones";
 
 export type { Brief, ProductModelId, TargetId };
 
@@ -166,6 +167,14 @@ export interface VerifySummary {
   steps: Array<{ name: string; ok: boolean; ms?: number; detail?: string }>;
   /** The failing part of the output, trimmed for the fix prompt and the build room. */
   failureOutput: string;
+  /** What verify's caps step found, per cap (docs/CAPABILITIES.md, 2.8). Only products with musemuse.caps.json have it. */
+  caps?: CapProof[];
+}
+
+/** One cap's fixed checks, from scripts/caps-check.mjs in the product (docs/CAPABILITIES.md, 2.8). */
+export interface CapProof {
+  cap: string;
+  checks: Array<{ id: string; ok: boolean; detail?: string }>;
 }
 
 export interface JudgeVerdict {
@@ -195,6 +204,10 @@ export type BuildEventBody =
    */
   | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
   | NativeEventBody
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8): a cap's fixed check, a milestone's progress and the live link's check.
+  | { type: "caps"; cap: string; check: string; ok: boolean; detail?: string }
+  | { type: "milestone"; index: number; of: number; title: string; state: MilestoneState }
+  | { type: "live_check"; ok: boolean; url: string; reason?: string }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

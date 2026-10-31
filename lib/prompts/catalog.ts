@@ -1,6 +1,7 @@
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
+import { capsCatalogBlocks, howProductsRun } from "@/lib/caps/catalog";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 
@@ -83,13 +84,20 @@ function modelBlock(m: CatalogModel): string {
   return lines.join("\n");
 }
 
-const cached = new Map<boolean, string>();
+const cached = new Map<string, string>();
 
-/** The catalog summary pasted into the brief writer's instructions. */
+/**
+ * The catalog summary pasted into the brief writer's instructions. With caps on (docs/CAPABILITIES.md, 2.6), the first
+ * and third "How products run" bullets come from howProductsRun and each cap's block follows the models. With none on,
+ * the text is today's, byte for byte.
+ */
 export function catalogSummary(): string {
   const gadgets = env.gadgetsEnabled;
-  const hit = cached.get(gadgets);
+  const caps = env.enabledCaps;
+  const key = `${gadgets}|${caps.join(",")}`;
+  const hit = cached.get(key);
   if (hit) return hit;
+  const run = howProductsRun(caps, gadgets);
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
@@ -100,6 +108,7 @@ export function catalogSummary(): string {
     ...hosted.map(modelBlock),
     "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
+    ...capsCatalogBlocks(caps),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     "- Text-to-speech: the browser's built-in speech synthesis.",
@@ -109,11 +118,12 @@ export function catalogSummary(): string {
     "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
     "",
     "How products run:",
-    "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
+    run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
-    `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
+    run?.third ??
+      `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
   ].join("\n");
-  cached.set(gadgets, summary);
+  cached.set(key, summary);
   return summary;
 }

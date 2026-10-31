@@ -1,0 +1,62 @@
+[
+  {
+    "name": "brief",
+    "does": "Read the inspo and note, write a structured brief or a refusal",
+    "timeoutMs": 120000,
+    "retries": 2
+  },
+  {
+    "name": "provision",
+    "does": "Get or create the product sandbox from the builder snapshot, copy inspo files to inspo/, write brief.md and fixtures, set the network policy",
+    "timeoutMs": 180000,
+    "retries": 2
+  },
+  {
+    "name": "build",
+    "does": "Run muse exec detached and stream its JSONL events",
+    "timeoutMs": 1500000,
+    "retries": 0
+  },
+  {
+    "name": "preview",
+    "does": "Start next dev on port 3000 and save sandbox.domain(3000)",
+    "timeoutMs": 120000,
+    "retries": 1
+  },
+  {
+    "name": "verify",
+    "does": "npm run verify, collect screenshots, ask the judge",
+    "timeoutMs": 480000,
+    "retries": 0
+  },
+  {
+    "name": "fix",
+    "does": "Resume the Muse Code session with the failures",
+    "timeoutMs": 720000,
+    "retries": 0
+  },
+  {
+    "name": "record",
+    "does": "Rerun the test with Demo Studio's recorder, then edit it into a 1920x1080 MP4 and a poster",
+    "timeoutMs": 540000,
+    "retries": 1
+  },
+  {
+    "name": "deploy",
+    "does": "Read source out of the sandbox and deploy it as the product's Vercel project",
+    "timeoutMs": 360000,
+    "retries": 2
+  },
+  {
+    "name": "register",
+    "does": "Save the product, mint its live gateway token, build its MCP tools",
+    "timeoutMs": 30000,
+    "retries": 3
+  },
+  {
+    "name": "hibernate",
+    "does": "Stop the sandbox so it snapshots for later refinements",
+    "timeoutMs": 60000,
+    "retries": 2
+  }
+]
