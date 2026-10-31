@@ -3,23 +3,26 @@
  * is on. It holds the muse-app-ui skill, app/muse-app.css and the files that load it and name the skill. Script builders
  * only, so they can be tested without a sandbox; setup.ts and builder.ts run them.
  */
-import { WORK_DIR } from "@/lib/sandbox/paths";
+import { TARGETS_DIR } from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
 
 export const MUSE_APP_OVERLAY = "muse-app";
 
 /**
  * Read-only, root-owned copy of template/targets in a builder snapshot, one folder per overlay: deps.json, files/ and
- * platform-files.json. The VR target's overlays use the same place and shape (the tg-vr branch).
+ * platform-files.json. It is TARGETS_DIR: the look sits beside a brief's targets, and setup.ts installTargets puts
+ * them all there.
  */
-export const OVERLAYS_DIR = `${WORK_DIR}/targets`;
+export const OVERLAYS_DIR = TARGETS_DIR;
 
 /** The commit applyLookScript makes in the product. A product with it was set up with the muse-app look. */
 export const LOOK_COMMIT = "Look: muse-app";
 
 /**
  * Installs an unpacked template/targets (`from`, holding `from/targets/<id>/...`) as OVERLAYS_DIR, then removes `from`.
- * Run with sudo. An overlay already there is replaced, so a refresh can't leave old files behind.
+ * Run with sudo. An overlay already there is replaced, so a refresh can't leave old files behind. Provisioning and
+ * snapshots use tasks.ts installTargetsScript, the same script with the owner fixed to root; this one takes an owner so
+ * look.test.ts can run it without root.
  */
 export function installOverlaysScript(from: string, dir: string = OVERLAYS_DIR, owner = "root:root"): string {
   const d = q(dir);

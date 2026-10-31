@@ -62,7 +62,7 @@ beforeEach(() => {
   delete process.env.VERCEL;
 });
 
-const provision = (museAppLook?: boolean) =>
+const provision = (museAppLook?: boolean, targets?: string[]) =>
   builder.provisionSandbox({
     buildId: "b1",
     productId: "3f2a9c1e-77b0-4d2e-9f00-0123456789ab",
@@ -73,6 +73,7 @@ const provision = (museAppLook?: boolean) =>
     buildToken: "mm_build_x",
     gatewayUrl: "https://g",
     ...(museAppLook === undefined ? {} : { museAppLook }),
+    ...(targets ? { targets, extraFiles: [{ path: "lib/native/bridge.ts", content: "export {};\n" }] } : {}),
   });
 
 const runs = () => events.flatMap((e) => (e.kind === "run" ? [e] : []));
@@ -99,6 +100,19 @@ describe("provisionSandbox and the muse-app look", { skip: canMock ? false : "ne
     assert.equal(run.sudo, false);
     assert.ok(apply < userFilesAt(), "before brief.md and .env.local");
     assert.ok(!events.some((e) => e.kind === "write" && e.paths.some((p) => p.includes("/targets/"))), "the snapshot had it, so nothing was copied in");
+  });
+
+  it("applies the look, then a brief's targets, then their extra files and the user's files", async () => {
+    await provision(true, ["web", "vr", "agent"]);
+    const look = events.findIndex((e) => e.kind === "run" && isApply(e.script));
+    const active = events.findIndex((e) => e.kind === "run" && e.sudo && e.script.includes("active.json"));
+    const target = events.findIndex((e) => e.kind === "run" && e.script.includes("'Target: vr, agent'"));
+    const extra = events.findIndex((e) => e.kind === "write" && e.paths.includes("/vercel/app/lib/native/bridge.ts"));
+    assert.ok(look >= 0 && active >= 0 && target >= 0 && extra >= 0, JSON.stringify({ look, active, target, extra }));
+    assert.ok(look < active && active < target && target <= userFilesAt() && extra <= userFilesAt(), "look, targets, then the files");
+    assert.equal((events[target] as { cwd?: string }).cwd, "/vercel/app");
+    for (const t of ["vr", "agent"]) assert.match((events[target] as { script: string }).script, new RegExp(`/vercel/musemuse/targets/${t}/files`));
+    assert.doesNotMatch((events[target] as { script: string }).script, /muse-app/, "the look isn't a target");
   });
 
   it("fails on the live site when the snapshot is older than the overlay, before the user's files", async () => {
