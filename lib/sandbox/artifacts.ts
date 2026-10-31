@@ -215,7 +215,7 @@ export interface DemoStudioSpec {
   models: string[];
   /** The product's live URL, or null when it won't have one (publishing is off). */
   url: string | null;
-  /** A line on the intro card about how the video was made, such as "Recorded in a simulated Meta Quest 3 headset." */
+  /** A line on the intro card and in the window about how the video was made, such as "Recorded in a simulated Meta Quest 3 headset." */
   note?: string;
   /** timeline.json from tests/demo-fixtures.ts, an absolute path. Its frames sit next to it. */
   timeline: string;
@@ -225,6 +225,11 @@ export interface DemoStudioSpec {
 
 /** What a VR product's video says about itself. */
 export const VR_DEMO_NOTE = "Recorded in a simulated Meta Quest 3 headset.";
+
+/** The part of a demo spec that depends on where the product runs, for every caller of writeDemoSpec. */
+export function demoNoteFor(targets: readonly string[]): { note?: string } {
+  return targets.includes("vr") ? { note: VR_DEMO_NOTE } : {};
+}
 
 /** The video every Demo Studio render must be: docs/DEMO_STUDIO.md. */
 export const STUDIO_VIDEO = { width: 1920, height: 1080, minSeconds: 3 } as const;
@@ -288,6 +293,8 @@ export function demoFilterGraph(opts: {
   title: TextBlock;
   subtitle: TextBlock;
   footerFile: string;
+  /** A line about how the video was made, drawn over the whole recording. */
+  noteFile?: string | null;
   captions: Array<TextBlock & { start: number; end: number }>;
 }): string {
   const { width: W, height: H, fps, background } = DEMO;
@@ -324,6 +331,7 @@ export function demoFilterGraph(opts: {
     `pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=${background}`,
     `fps=${fps}`,
     `format=yuv420p`,
+    ...(opts.noteFile ? [text(FONT, opts.noteFile, 22, "white", 24, ":box=1:boxcolor=black@0.62:boxborderw=10")] : []),
     ...captions,
     `setsar=1[rec]`,
   ].join(",");

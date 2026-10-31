@@ -3,7 +3,7 @@
 //
 //   node scripts/demo-studio.mjs --spec spec.json [--basic]
 //
-// spec.json: { title, tagline, models: string[], url: string | null, timeline: "<path to timeline.json>",
+// spec.json: { title, tagline, note?: string, models: string[], url: string | null, timeline: "<path to timeline.json>",
 // out: "<dir>", basic?: boolean }. Relative paths in it are resolved from the current directory, and frame files from
 // timeline.json's folder. scripts/demo-plan.mjs plans the cut, the camera, captions and wait badges. Chromium (from
 // @playwright/test) draws the window, the intro and outro cards, captions and badges as pictures, and ffmpeg
@@ -17,7 +17,7 @@
 // Exits 0 on success, 1 on failure (with the error on stderr) and 2 when the timeline has fewer than 5 frames or
 // covers less than a second.
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   FPS,
@@ -223,9 +223,10 @@ const LOCK = (size = 1) =>
 
 /**
  * The backdrop, window shadow and chrome bar, with a transparent hole where the screen goes. The address bar shows
- * the live URL's host with a lock, or just the product's name when there is no URL.
+ * the live URL's host with a lock, or just the product's name when there is no URL. A note on how the video was made
+ * sits beside it, so it stays on screen for the whole main part and in the basic cut.
  */
-function windowHtml(host, title) {
+export function windowHtml(host, title, note = "") {
   const s = SCREEN;
   const r = s.radius;
   const hole = `M${s.x} ${s.y}H${s.x + s.w}V${s.y + s.h - r}A${r} ${r} 0 0 1 ${s.x + s.w - r} ${s.y + s.h}H${s.x + r}A${r} ${r} 0 0 1 ${s.x} ${s.y + s.h - r}Z`;
@@ -237,14 +238,15 @@ function windowHtml(host, title) {
   background:#fff;border-bottom:1px solid #E4E6EB}
 .dots{position:absolute;left:18px;top:14px;display:flex;gap:8px}
 .dots i{width:12px;height:12px;border-radius:50%;background:#DADDE1}
-.url{position:absolute;left:50%;top:7px;transform:translateX(-50%);height:26px;min-width:440px;max-width:720px;padding:0 18px;
+.note{position:absolute;left:84px;top:7px;height:26px;color:${C.muted};font-size:15px;font-weight:500;line-height:26px;white-space:nowrap}
+.url{position:absolute;left:50%;top:7px;transform:translateX(-50%);height:26px;min-width:440px;max-width:${note ? 600 : 720}px;padding:0 18px;
   border-radius:13px;background:${C.wash};color:${C.muted};font-size:15px;font-weight:500;display:flex;align-items:center;
   justify-content:center;gap:8px;white-space:nowrap}
 .url span{overflow:hidden;text-overflow:ellipsis}
 `;
   return page(
     `<div class="under"><div class="backdrop"></div><div class="frame"></div></div>
-<div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">${host ? LOCK() : ""}<span>${escapeHtml(host ?? title)}</span></div></div>`,
+<div class="chrome"><div class="dots"><i></i><i></i><i></i></div>${note ? `<div class="note">${escapeHtml(note)}</div>` : ""}<div class="url">${host ? LOCK() : ""}<span>${escapeHtml(host ?? title)}</span></div></div>`,
     css,
   );
 }
@@ -369,7 +371,7 @@ async function renderCards({ spec, captions, badges, cards, poster, dir }) {
     };
     const out = { window: path.join(dir, "window.png"), backdrop: null, intro: null, outro: null, captions: [], badges: [] };
 
-    await show(windowHtml(hostOf(spec.url), spec.title));
+    await show(windowHtml(hostOf(spec.url), spec.title, spec.note));
     await page.screenshot({ path: out.window, omitBackground: true });
 
     const cutOut = async (file, margin, minY) => {
@@ -651,8 +653,9 @@ async function render(mode, spec, raw, tmp) {
     layers = await renderCards({ spec, captions, badges, cards: studio, poster: posterMade ? jpg : null, dir: tmp });
     log(`cards drawn in ${seconds(Date.now() - t0)}`);
   } catch (err) {
-    // The basic cut is the last resort, so it goes on without Chromium: the screen on Meta blue, with no captions.
-    if (studio) throw err;
+    // The basic cut is the last resort, so it goes on without Chromium: the screen on Meta blue, with no captions. A note
+    // lives in the window, and a video that must carry one is better left out than published without it.
+    if (studio || spec.note) throw err;
     process.stderr.write(`demo-studio: no window or captions, Chromium failed: ${err?.message ?? err}\n`);
     layers = { window: null, backdrop: null, intro: null, outro: null, captions: [], badges: [] };
   }
@@ -772,4 +775,4 @@ async function main() {
   return finish(1, { ok: false, mode: "basic", error: firstError });
 }
 
-main();
+if (process.argv[1] && import.meta.filename === realpathSync(process.argv[1])) main();

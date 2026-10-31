@@ -246,6 +246,16 @@ describe("finishDemo", { skip: canMock ? false : "needs --experimental-test-modu
     assert.ok(seen.framesCleared, "the frames don't stay in the sandbox's snapshots");
   });
 
+  it("puts the spec's note in the old MP4", async () => {
+    demoSandbox({ studio: true, recorded: false, report: demoReport("passed", "/vercel/app/test-results/playwright/x/video.webm"), render: GOOD });
+    files["/vercel/app/test-results/playwright/x/video.webm"] = "webm";
+    files["/vercel/musemuse/demo-spec.json"] = JSON.stringify({ note: "Recorded in a simulated Meta Quest 3 headset." });
+    await builder.finishDemo(demoInput);
+    assert.equal(written.find((w) => w.path === `${OUT}/note.txt`)?.text, "Recorded in a simulated Meta Quest 3 headset.");
+    assert.match(written.find((w) => w.path === `${OUT}/graph.txt`)!.text, /textfile=\/vercel\/musemuse\/out\/demo\/note\.txt/);
+    delete files["/vercel/musemuse/demo-spec.json"];
+  });
+
   it("makes the old MP4 when the studio run recorded nothing and the demo was recorded with Playwright's video", async () => {
     const seen = demoSandbox({ studio: true, recorded: false, report: demoReport("passed", "/vercel/app/test-results/playwright/x/video.webm"), render: GOOD });
     files["/vercel/app/test-results/playwright/x/video.webm"] = "webm";

@@ -35,7 +35,7 @@ import { modelLabel } from "@/lib/format";
 import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import { briefTargets } from "@/lib/native/targets";
-import { VR_DEMO_NOTE } from "@/lib/sandbox/artifacts";
+import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -863,7 +863,7 @@ export async function demoSpecStep(input: {
     tagline: input.tagline,
     models: [...new Set(models)].map(modelLabel),
     url: demoUrlFor(product, env.publishOffReason),
-    ...(brief && briefTargets(brief).includes("vr") ? { note: VR_DEMO_NOTE } : {}),
+    ...demoNoteFor(briefTargets(brief)),
   });
 }
 demoSpecStep.maxRetries = 2;

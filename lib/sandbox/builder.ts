@@ -1488,10 +1488,15 @@ async function finishLegacyDemo(
   });
   const footerFile = `${dir}/footer.txt`;
   files.push({ path: footerFile, content: "Built with Muse Muse. Not an official Meta product." });
+  // A VR product recorded this way still has to say how. writeDemoSpec puts the note in the spec before the demo runs.
+  const note = (await readJson<{ note?: unknown }>(sandbox, DEMO_SPEC_PATH))?.note;
+  const noteFile = typeof note === "string" && note ? `${dir}/note.txt` : null;
+  if (noteFile) files.push({ path: noteFile, content: String(note) });
   const graph = demoFilterGraph({
     title: block("title", input.title || "Untitled", 34, 2),
     subtitle: block("subtitle", input.subtitle, 64, 3),
     footerFile,
+    noteFile,
     captions: captions.map((c, i) => ({ ...block(`cap-${i}`, c.text, 64, 2), start: c.start, end: c.end })),
   });
   files.push({ path: `${dir}/graph.txt`, content: graph });
