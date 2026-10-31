@@ -14,6 +14,8 @@ import { runOrThrow } from "./proc.mjs";
 import { markUtf8Names } from "./zip.mjs";
 
 export const TEMPLATE_NAME = "Muse Muse";
+/** fileName strips leading dots, so a product can't be named this. */
+export const OUTPUT_ZIP = ".muse-output.zip";
 const TEMPLATE_APP = `${TEMPLATE_NAME}.app`;
 
 /** The settings file the shell reads (native/shell-desktop/src/config.js). */
@@ -29,6 +31,7 @@ export function productConfig(product) {
 export function innerName(name) {
   const plain = String(name)
     .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
     .replace(/[^A-Za-z0-9 ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -106,7 +109,7 @@ export async function packageMac({ template, product, workDir, sharp, master, rc
 
   await lap("sign", () => runOrThrow([rcodesign, "sign", bundle], { maxBytes: 200_000 }));
 
-  const zip = path.join(workDir, "product.zip");
+  const zip = path.join(workDir, OUTPUT_ZIP);
   await lap("zip", async () => {
     await runOrThrow(["zip", "-y", "-r", "-q", zip, path.basename(bundle)], { cwd: workDir });
     await markUtf8Names(zip);

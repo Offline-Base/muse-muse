@@ -7,7 +7,9 @@
 //   the real name goes in here.
 // - It signs with its debug key, which has no secret in it. The platform replaces that signature after the file leaves the
 //   sandbox (lib/native/apk-sign.ts), so the real key never comes in here. apksigner still has to run, because it aligns the
-//   files Android maps directly.
+//   files Android maps directly. It signs with v2 alone: the platform only replaces the v2 block, so a JAR signature would be
+//   left behind naming the debug key, and its header would say a v3 signature had been stripped. Every shell's minSdk is 24,
+//   the first Android that reads v2.
 import { spawn } from "node:child_process";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -143,8 +145,26 @@ export function repackSpawn({ workDir, patch }) {
     if (command === "java" && args.includes("build")) {
       return Object.assign(patch().then(() => tool(command, args, options)), { child: null });
     }
+    if (path.basename(command) === "apksigner" && args[0] === "sign") {
+      return tool(command, [...args.slice(0, -1), "--v1-signing-enabled", "false", "--v3-signing-enabled", "false", ...args.slice(-1)], options);
+    }
     return tool(command, args, options);
   };
+}
+
+/** Each file a zip's central directory lists, with its compression method and where its header is. */
+function zipEntries(apk) {
+  let eocd = apk.length - 22;
+  while (eocd >= 0 && apk.readUInt32LE(eocd) !== 0x06054b50) eocd--;
+  if (eocd < 0) return null;
+  const entries = [];
+  let at = apk.readUInt32LE(eocd + 16);
+  for (let i = apk.readUInt16LE(eocd + 10); i > 0; i--) {
+    const nameBytes = apk.readUInt16LE(at + 28);
+    entries.push({ name: apk.toString("utf8", at + 46, at + 46 + nameBytes), method: apk.readUInt16LE(at + 10), local: apk.readUInt32LE(at + 42) });
+    at += 46 + nameBytes + apk.readUInt16LE(at + 30) + apk.readUInt16LE(at + 32);
+  }
+  return entries;
 }
 
 /**
@@ -152,30 +172,44 @@ export function repackSpawn({ workDir, patch }) {
  * and start on a 16 KB boundary, which also covers 4 KB phones. A wrong one only shows up at install.
  */
 export function libraryProblems(apk) {
-  let eocd = apk.length - 22;
-  while (eocd >= 0 && apk.readUInt32LE(eocd) !== 0x06054b50) eocd--;
-  if (eocd < 0) return ["this isn't a zip"];
+  const entries = zipEntries(apk);
+  if (!entries) return ["this isn't a zip"];
   const problems = [];
-  let at = apk.readUInt32LE(eocd + 16);
-  for (let i = apk.readUInt16LE(eocd + 10); i > 0; i--) {
-    const nameBytes = apk.readUInt16LE(at + 28);
-    const name = apk.toString("utf8", at + 46, at + 46 + nameBytes);
-    if (name.startsWith("lib/") && name.endsWith(".so")) {
-      const local = apk.readUInt32LE(at + 42);
-      const data = local + 30 + apk.readUInt16LE(local + 26) + apk.readUInt16LE(local + 28);
-      if (apk.readUInt16LE(at + 10) !== 0) problems.push(`${name} is compressed`);
-      else if (data % 16384 !== 0) problems.push(`${name} isn't aligned`);
-    }
-    at += 46 + nameBytes + apk.readUInt16LE(at + 30) + apk.readUInt16LE(at + 32);
+  for (const { name, method, local } of entries) {
+    if (!name.startsWith("lib/") || !name.endsWith(".so")) continue;
+    const data = local + 30 + apk.readUInt16LE(local + 26) + apk.readUInt16LE(local + 28);
+    if (method !== 0) problems.push(`${name} is compressed`);
+    else if (data % 16384 !== 0) problems.push(`${name} isn't aligned`);
   }
   return problems;
+}
+
+/** JAR signature files left in the APK. They would still name the public debug key after the platform signs it. */
+export function jarSignatureProblems(apk) {
+  return (zipEntries(apk) ?? []).filter(({ name }) => /^META-INF\/[^/]+\.(?:SF|RSA|DSA|EC)$/i.test(name)).map(({ name }) => `${name} is an old signature`);
+}
+
+/** Why assets/app.config wouldn't open this product. settings.js reads the URL from it, and without one the app shows the generic list. */
+export function appConfigProblems(text, product) {
+  try {
+    return JSON.parse(text)?.extra?.productUrl === product.url ? [] : ["assets/app.config doesn't have the product's URL"];
+  } catch {
+    return ["assets/app.config can't be read"];
+  }
 }
 
 /** Reads the built APK back and throws unless it is what was asked for. This is the check S6 needs on every package. */
 export async function checkApk(apk, product, aapt2 = "aapt2") {
   const badging = await runOrThrow([aapt2, "dump", "badging", apk], { maxBytes: 4_000_000 });
   const manifest = await runOrThrow([aapt2, "dump", "xmltree", "--file", "AndroidManifest.xml", apk], { maxBytes: 8_000_000 });
-  const problems = [...manifestProblems(String(badging.stdout), String(manifest.stdout), product), ...libraryProblems(await readFile(apk))];
+  const config = await runOrThrow(["unzip", "-p", apk, "assets/app.config"]);
+  const bytes = await readFile(apk);
+  const problems = [
+    ...manifestProblems(String(badging.stdout), String(manifest.stdout), product),
+    ...libraryProblems(bytes),
+    ...jarSignatureProblems(bytes),
+    ...appConfigProblems(String(config.stdout), product),
+  ];
   if (problems.length) throw new Error(`The APK isn't right: ${problems.join("; ")}.`);
 }
 

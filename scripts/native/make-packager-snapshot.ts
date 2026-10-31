@@ -18,7 +18,7 @@ import { existsSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
-import { currentShells, SHELL_TEMPLATE_FILES, SHELL_TEMPLATE_KINDS, type ShellTemplateKind } from "@/lib/native/shells";
+import { currentShells, macTemplateFile, SHELL_TEMPLATE_FILES, SHELL_TEMPLATE_KINDS, type ShellTemplateKind } from "@/lib/native/shells";
 import { PACKAGER_DIR, PACKAGER_SHELLS_DIR, sandboxCredentials } from "@/lib/native/packager";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, sh } from "@/lib/sandbox/shell";
@@ -63,10 +63,10 @@ async function sendLargeFile(sandbox: Sandbox, local: string, remote: string): P
 }
 
 /** Where this machine has the template, if it does. */
-async function localTemplate(kind: ShellTemplateKind): Promise<string | null> {
+async function localTemplate(kind: ShellTemplateKind, version: string): Promise<string | null> {
   if (!existsSync(DIST)) return null;
   const names = await readdir(DIST);
-  const name = kind === "android" ? "android-template.apk" : kind === "windows" ? "windows-template.zip" : names.find((f) => f.endsWith("-universal-mac.zip"));
+  const name = kind === "android" ? "android-template.apk" : kind === "windows" ? "windows-template.zip" : macTemplateFile(names, version);
   return name && names.includes(name) ? path.join(DIST, name) : null;
 }
 
@@ -80,7 +80,7 @@ async function bakeTemplates(sandbox: Sandbox, log: (step: string, ms: number, d
     }
     const t = Date.now();
     const remote = `${PACKAGER_SHELLS_DIR}/${release.shellVersion}/${SHELL_TEMPLATE_FILES[kind]}`;
-    const local = await localTemplate(kind);
+    const local = await localTemplate(kind, release.shellVersion);
     const localSha = local ? createHash("sha256").update(await readFile(local)).digest("hex") : null;
     if (local && localSha === template.sha256) await sendLargeFile(sandbox, local, remote);
     else if (template.url) await sh(sandbox, `mkdir -p ${q(path.dirname(remote))} && curl -fsSL -o ${q(remote)} ${q(template.url)}`, { timeoutMs: 10 * MIN });

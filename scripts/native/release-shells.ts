@@ -24,7 +24,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { uploadPresigned } from "@vercel/blob/client";
 import { localFilesEnabled, type StoredPrefix } from "@/lib/local-files";
-import { SHELL_TEMPLATE_FILES, type ShellRelease, type ShellTemplate, type ShellTemplateKind } from "@/lib/native/shells";
+import { macTemplateFile, SHELL_TEMPLATE_FILES, type ShellRelease, type ShellTemplate, type ShellTemplateKind } from "@/lib/native/shells";
 import { localFilePaths, putBlobAt } from "@/lib/storage";
 
 const run = promisify(execFile);
@@ -55,11 +55,11 @@ async function builder(args: string[]): Promise<void> {
   });
 }
 
-async function macTemplate(build: boolean): Promise<string> {
+async function macTemplate(build: boolean, version: string): Promise<string> {
   if (build) await builder(["--mac"]);
   const dist = path.join(DESKTOP, "dist");
-  const zip = (await readdir(dist)).find((f) => f.endsWith("-universal-mac.zip"));
-  if (!zip) throw new Error("No universal Mac zip in native/shell-desktop/dist.");
+  const zip = macTemplateFile(await readdir(dist), version);
+  if (!zip) throw new Error(`No universal Mac zip for ${version} in native/shell-desktop/dist.`);
   return path.join(dist, zip);
 }
 
@@ -134,7 +134,7 @@ async function main() {
   const previous: ShellRelease | null = existsSync(MANIFEST) ? JSON.parse(await readFile(MANIFEST, "utf8")) : null;
   const templates: ShellRelease["templates"] = previous?.shellVersion === version ? { ...previous.templates } : {};
   for (const kind of only) {
-    const file = kind === "android" ? await androidTemplate() : kind === "mac" ? await macTemplate(build) : await windowsTemplate(build);
+    const file = kind === "android" ? await androidTemplate() : kind === "mac" ? await macTemplate(build, version) : await windowsTemplate(build);
     await stat(file);
     templates[kind] = await publish(kind, file, version, to);
   }

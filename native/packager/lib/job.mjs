@@ -6,7 +6,8 @@ export const KINDS = ["android", "mac", "windows"];
 const PACKAGE_ID = /^ai\.musemuse\.p[0-9a-f]{16}$/;
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const MAX_NAME_CHARS = 80;
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+/** Windows reserves these with any extension too. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\s*\.|$)/i;
 
 export class JobError extends Error {}
 

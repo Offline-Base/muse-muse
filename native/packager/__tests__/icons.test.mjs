@@ -11,6 +11,14 @@ describe("the letter tile", () => {
     assert.equal(tileLetter("Éa"), "E");
     assert.equal(tileLetter("🌿🌿"), "M");
   });
+  it("only picks what the snapshot's fonts can draw, or a box of hex digits shows", () => {
+    assert.equal(tileLetter("日本語"), "M");
+    assert.equal(tileLetter("नमस्ते"), "M");
+    assert.equal(tileLetter("한글"), "M");
+    assert.equal(tileLetter("日本語 Fern"), "F");
+    assert.equal(tileLetter("Привет"), "П");
+    assert.equal(tileLetter("ελληνικά"), "Ε");
+  });
   it("gives a name the same color every time", () => {
     assert.equal(tileColor("Fern"), tileColor("Fern"));
   });

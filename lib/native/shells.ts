@@ -23,6 +23,12 @@ export interface ShellRelease {
   templates: Partial<Record<ShellTemplateKind, ShellTemplate>>;
 }
 
+/** Which of these files is the universal Mac zip electron-builder made for this version. An older build's can still be in dist. */
+export function macTemplateFile(fileNames: readonly string[], version: string): string | null {
+  const name = `Muse Muse-${version}-universal-mac.zip`;
+  return fileNames.includes(name) ? name : null;
+}
+
 /** The release packages are made from. Its `templates` can be missing a kind until that shell is built. */
 export function currentShells(): ShellRelease {
   return shells as ShellRelease;

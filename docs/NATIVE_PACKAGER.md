@@ -32,7 +32,10 @@ try {
 ```
 
 - **`files`** has what `native_artifacts` needs: `artifactKind`, `url`, `pathname`, `bytes`, `sha256` and `shellVersion`.
-  `signedWith` says who signed an APK.
+  `signedWith` says who signed an APK. Each of these comes from the platform's own store, not from what the sandbox said (see
+  "What the platform trusts").
+- **`pollPackaging`** returns `failed` for a run that died: a deleted or stopped sandbox, a bad exit, or the 8-minute limit. It
+  throws when the sandbox API has a hiccup, so leave it to the step's retries. Don't turn that throw into a failure.
 - **`startPackaging`** throws `PackagerUnavailableError` without `PACKAGER_SNAPSHOT_ID`. It's safe to repeat: the sandbox is
   named after the run, and a retry replaces it.
 - **A kind with no template** in this shell release lands in `failures`, and the rest still run.
@@ -48,7 +51,23 @@ Nothing but the snapshot, job.json and maybe the product's icon.
 - **Names and URLs are data.** They come from job.json, are checked in `lib/job.mjs`, reach tools only through argv arrays and
   are escaped for plists and Android resources.
 - **Product bytes:** the only ones are the optional icon, which the platform fetches from `<product>/icon/512` with no
-  redirects and which only `sharp` in the sandbox ever decodes. A picture it can't read gets the letter tile.
+  redirects and which only `sharp` in the sandbox ever decodes. The platform stops reading at 8 MB and passes it on only if its
+  first bytes say PNG, JPEG or WebP, whatever the headers say. A picture `sharp` can't read gets the letter tile.
+
+## What the platform trusts
+
+A parser exploit in the sandbox could hold its slots and rewrite its answer, so that answer decides nothing:
+
+- **`head` on the slot's path** in the platform's own store gives each file's URL and size. A URL in the answer is ignored, so a
+  download can't point at another store. A file that isn't there fails that kind.
+- **The hash is the platform's.** It reads each file once as a stream, so a 224 MB zip never sits in a function's memory. That
+  is about 380 MB of Blob traffic per product. The sandbox's size and hash only have to agree, or that kind fails, which also
+  catches a bad upload.
+- **`keptAt` counts only on a local run,** whose slot the platform marked `kept`.
+
+**Still open:** a slot allows overwrites, so that a retried step can replace its own upload, and it stays good for its 14 minutes
+even after the sandbox is deleted. A token that got out could change that one path's bytes during those minutes, after the
+platform read them. The lab's download would catch it, because it checks `sha256`, but a person's download wouldn't.
 
 ## The three patches
 
@@ -63,6 +82,10 @@ After that:
 - x86 and x86_64 are dropped, because phones are ARM. **This means the x86_64 Android emulator can't run these.** The lab's
   arm64 AVD can.
 - Every provider authority moves to the product's package, or a second product wouldn't install. `aapt2` checks that too.
+- `assets/app.config` must hold the product's URL. Otherwise the app would open the generic list. Checked on every package.
+- It's signed with v2 alone, because every shell's minSdk is 24. A JAR signature would stay behind naming the debug key after the
+  platform re-signs. Its header also makes `apksigner verify` report a stripped v3 signature. Every package is checked for
+  leftover `META-INF` signature files.
 
 **Mac.** The universal template gets `muse-product.json`, the plist's name and id, an ICNS and renamed helpers, since Electron
 finds `<CFBundleName> Helper.app` by name. Names inside the bundle are plain ASCII (`innerName`), because `codesign` refused a
@@ -76,7 +99,8 @@ DLL are renamed. It isn't signed, so SmartScreen warns.
 The shell works out each product's `userData` folder from the URL in its config, so two products never share a profile or a
 lock. The packager has nothing to do for that.
 
-**Icons** come from the product's own `/icon/512` or a letter tile, cut to each platform's shape.
+**Icons** come from the product's own `/icon/512` or a letter tile, cut to each platform's shape. The tile shows a name's first
+letter the snapshot's fonts can draw, and "M" if there is none, so a Japanese, Korean or Hindi name gets "M".
 
 ## Sizes
 
@@ -90,7 +114,8 @@ Measured on Oct 31. The Mac zip is well over the design's estimate, so these are
 
 ## The Android key
 
-The sandbox signs with `@expo/repack-app`'s public debug key, because it runs `apksigner` and that also aligns the zip. That key
+The sandbox signs with `@expo/repack-app`'s public debug key, using v2 alone, because it runs `apksigner` and that also aligns the
+zip. That key
 is public, so anyone could sign an update to a product's app with it. So when `NATIVE_APK_KEYSTORE_B64` is set, the platform
 downloads the APK from an `unsigned/` path, replaces the signature in `lib/native/apk-sign.ts`, checks it and uploads it to the
 real path. Without the key the APK is offered as it is, and `signedWith` says `debug`. It installs, but keep it for tests.

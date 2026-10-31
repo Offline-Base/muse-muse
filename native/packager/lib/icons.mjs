@@ -5,10 +5,13 @@ import { createHash } from "node:crypto";
 const TILE_COLORS = ["#2F6F4F", "#2C5F8A", "#7A3E8E", "#A8452F", "#8A6A1F", "#1F7A7A", "#B23A62", "#3F4A9A"];
 const SOURCE_BYTES_MAX = 8 * 1024 * 1024;
 
-/** The first letter or digit of a name, which is what the tile shows. Names with neither get "M". */
+/** The letters the snapshot's fonts can draw. It has no CJK, Hangul or Devanagari font, and those render as a box of hex digits. */
+const TILE_LETTER = /(?=\p{L})[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hebrew}]|[0-9]/u;
+
+/** The first letter or digit of a name that the tile can draw. Names with neither get "M". */
 export function tileLetter(name) {
   const plain = String(name ?? "").normalize("NFKD");
-  const found = /[\p{L}\p{N}]/u.exec(plain);
+  const found = TILE_LETTER.exec(plain);
   return (found ? found[0] : "M").toLocaleUpperCase();
 }
 

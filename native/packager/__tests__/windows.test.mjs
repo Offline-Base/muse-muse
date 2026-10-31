@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import { icoFile, ICO_SIZES, iconAt } from "../lib/icons.mjs";
-import { patchExe, readExe } from "../lib/windows.mjs";
+import { packageWindows, patchExe, readExe } from "../lib/windows.mjs";
 
 const resedit = await import("resedit").catch(() => null);
 const sharp = await import("sharp").then((m) => m.default).catch(() => null);
@@ -37,6 +41,20 @@ describe("patchExe", { skip: (!resedit || !sharp) && "run npm install in native/
     assert.equal(read.strings.FileVersion, "1.2.3");
     assert.deepEqual(read.iconSizes, ICO_SIZES);
     assert.ok(read.iconImages[0].equals(pngs.get(ICO_SIZES[0])));
+  });
+  it("packages a product named like the zip it writes", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "windows-name-"));
+    try {
+      mkdirSync(path.join(dir, "src", "win-unpacked", "resources"), { recursive: true });
+      writeFileSync(path.join(dir, "src", "win-unpacked", "Muse Muse.exe"), await fixtureExe());
+      execFileSync("zip", ["-r", "-q", path.join(dir, "template.zip"), "win-unpacked"], { cwd: path.join(dir, "src") });
+      const master = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: "#00ff00" } }).png().toBuffer();
+      const named = { name: "product.zip", fileName: "product.zip", url: "https://fern.vercel.app/", version: "1.2.3" };
+      const made = await packageWindows({ template: path.join(dir, "template.zip"), product: named, workDir: path.join(dir, "work"), sharp, master });
+      assert.match(execFileSync("unzip", ["-Z1", made.path], { encoding: "utf8" }), /^product\.zip\/product\.zip\.exe$/m);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   it("refuses an exe with no icon to replace", async () => {
     const { NtExecutable } = resedit;

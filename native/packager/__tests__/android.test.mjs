@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { appJson, escapeAndroidString, libraryProblems, manifestProblems, patchManifest, patchStrings, repackSpawn } from "../lib/android.mjs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { appConfigProblems, appJson, escapeAndroidString, jarSignatureProblems, libraryProblems, manifestProblems, patchManifest, patchStrings, repackSpawn } from "../lib/android.mjs";
 
 const product = { name: "Fern & Moss", url: "https://fern.vercel.app/", packageId: "ai.musemuse.p0123456789abcdef", version: "1.0.0" };
 
@@ -95,34 +98,71 @@ describe("manifestProblems", () => {
   });
 });
 
+/** A zip with one file whose data starts at `dataAt`, stored or deflated. */
+function zipWith(name, dataAt, method = 0) {
+  const nameBytes = Buffer.from(name);
+  const pad = dataAt - 30 - nameBytes.length;
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(nameBytes.length, 26);
+  local.writeUInt16LE(pad, 28);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(method, 10);
+  central.writeUInt16LE(nameBytes.length, 28);
+  const entries = Buffer.concat([local, nameBytes, Buffer.alloc(pad)]);
+  const directory = Buffer.concat([central, nameBytes]);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(entries.length, 16);
+  return Buffer.concat([entries, directory, end]);
+}
+
 describe("libraryProblems", () => {
-  /** A zip with one file whose data starts at `dataAt`, stored or deflated. */
-  function zipWith(name, dataAt, method = 0) {
-    const nameBytes = Buffer.from(name);
-    const pad = dataAt - 30 - nameBytes.length;
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(nameBytes.length, 26);
-    local.writeUInt16LE(pad, 28);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(method, 10);
-    central.writeUInt16LE(nameBytes.length, 28);
-    const entries = Buffer.concat([local, nameBytes, Buffer.alloc(pad)]);
-    const directory = Buffer.concat([central, nameBytes]);
-    const end = Buffer.alloc(22);
-    end.writeUInt32LE(0x06054b50, 0);
-    end.writeUInt16LE(1, 10);
-    end.writeUInt32LE(entries.length, 16);
-    return Buffer.concat([entries, directory, end]);
-  }
   it("passes a stored library on a 16 KB boundary", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 16384)), []));
   it("catches one that's only on a 4 KB boundary", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 4096)), ["lib/arm64-v8a/a.so isn't aligned"]));
   it("catches a compressed one", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 16384, 8)), ["lib/arm64-v8a/a.so is compressed"]));
   it("doesn't care about other files", () => assert.deepEqual(libraryProblems(zipWith("assets/a.bin", 77)), []));
 });
 
+describe("jarSignatureProblems", () => {
+  for (const name of ["META-INF/ANDROIDD.SF", "META-INF/ANDROIDD.RSA", "META-INF/CERT.DSA", "META-INF/KEY.EC"]) {
+    it(`catches ${name}`, () => assert.deepEqual(jarSignatureProblems(zipWith(name, 100)), [`${name} is an old signature`]));
+  }
+  it("leaves other files in META-INF alone", () => {
+    for (const name of ["META-INF/kotlin.kotlin_module", "META-INF/services/x.RSA", "assets/a.SF"]) assert.deepEqual(jarSignatureProblems(zipWith(name, 100)), []);
+  });
+});
+
+describe("appConfigProblems", () => {
+  it("passes the config this product's package is made from", () => {
+    assert.deepEqual(appConfigProblems(JSON.stringify(appJson(product).expo), product), []);
+  });
+  it("catches a missing or wrong URL, or a file that can't be read", () => {
+    assert.deepEqual(appConfigProblems('{"extra":{}}', product), ["assets/app.config doesn't have the product's URL"]);
+    assert.deepEqual(appConfigProblems('{"extra":{"productUrl":"https://other.example/"}}', product), ["assets/app.config doesn't have the product's URL"]);
+    assert.deepEqual(appConfigProblems("not json", product), ["assets/app.config can't be read"]);
+    assert.deepEqual(appConfigProblems("", product), ["assets/app.config can't be read"]);
+  });
+});
+
 describe("repackSpawn", () => {
+  it("signs with v2 alone, with the APK still the last argument", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "apksigner-"));
+    try {
+      const signer = path.join(dir, "apksigner");
+      writeFileSync(signer, '#!/bin/sh\necho "$@"\n');
+      chmodSync(signer, 0o755);
+      const spawn = repackSpawn({ workDir: "/nope", patch: async () => {} });
+      const sign = await spawn(signer, ["sign", "--ks", "k.jks", "--ks-pass", "pass:x", "resigned.apk"]);
+      assert.equal(sign.stdout.trim(), "sign --ks k.jks --ks-pass pass:x --v1-signing-enabled false --v3-signing-enabled false resigned.apk");
+      const verify = await spawn(signer, ["verify", "a.apk"]);
+      assert.equal(verify.stdout.trim(), "verify a.apk");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("answers repack-app's entry file question without running expo", async () => {
     const spawn = repackSpawn({ workDir: "/nope", patch: async () => {} });
     assert.equal((await spawn("node", ["-e", "x"])).stdout, "index.js\n");

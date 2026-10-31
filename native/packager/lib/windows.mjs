@@ -3,7 +3,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { icoFile, ICO_SIZES, iconAt } from "./icons.mjs";
-import { productConfig, TEMPLATE_NAME } from "./mac.mjs";
+import { OUTPUT_ZIP, productConfig, TEMPLATE_NAME } from "./mac.mjs";
 import { runOrThrow } from "./proc.mjs";
 import { markUtf8Names } from "./zip.mjs";
 
@@ -87,7 +87,7 @@ export async function packageWindows({ template, product, workDir, sharp, master
     await rename(dir, folder);
   });
 
-  const zip = path.join(workDir, "product.zip");
+  const zip = path.join(workDir, OUTPUT_ZIP);
   await lap("zip", async () => {
     await runOrThrow(["zip", "-r", "-q", zip, path.basename(folder)], { cwd: workDir });
     await markUtf8Names(zip);

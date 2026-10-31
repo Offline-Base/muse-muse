@@ -26,6 +26,10 @@ describe("the Mac's edits", () => {
     assert.equal(innerName(`Tom's "A&B" $(x) café`), "Tom s A B x cafe");
     assert.equal(innerName("日本語"), "Muse App");
   });
+  it("keeps an accented name whole", () => {
+    assert.equal(innerName("Résumé Builder"), "Resume Builder");
+    assert.equal(innerName("Crème Brûlée"), "Creme Brulee");
+  });
   it("renames helpers keeping the suffix Chromium looks for", () => {
     const gpu = patchHelperPlist(plist("Muse Muse Helper (GPU)"), product, " (GPU)");
     assert.equal(getString(gpu, "CFBundleName"), "Fern Moss Helper (GPU)");

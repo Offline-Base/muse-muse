@@ -9,9 +9,9 @@
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { issueSignedToken, del } from "@vercel/blob";
+import { BlobNotFoundError, del, head, issueSignedToken } from "@vercel/blob";
 import { handleUploadPresigned } from "@vercel/blob/client";
-import { Sandbox, type NetworkPolicy } from "@vercel/sandbox";
+import { APIError, Sandbox, type NetworkPolicy } from "@vercel/sandbox";
 import { env } from "@/lib/env";
 import { isSafeFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
 import { apkSigner, readApkKey, signApk, type ApkKey } from "@/lib/native/apk-sign";
@@ -20,7 +20,7 @@ import { NATIVE_DOWNLOADS, type NativeArtifactKind } from "@/lib/native/types";
 import { NO_CALLBACK_KEY } from "@/lib/pipeline/inspo-upload";
 import { BLOB_UPLOAD_HOSTS } from "@/lib/sandbox/policy";
 import { q, sh } from "@/lib/sandbox/shell";
-import { blobAuth, fetchBytes, localFilePaths, putBlobAt } from "@/lib/storage";
+import { blobAuth, fetchBytes, localFilePaths, putBlobAt, sha256OfUrl } from "@/lib/storage";
 
 export const PACKAGER_DIR = "/vercel/native";
 export const PACKAGER_SHELLS_DIR = `${PACKAGER_DIR}/shells`;
@@ -77,6 +77,8 @@ export interface PackageSlotInfo {
   kind: ShellTemplateKind;
   pathname: string;
   uploadPathname: string;
+  /** A local run with no Blob store: the package stays in the sandbox until the platform copies it out. */
+  kept?: boolean;
 }
 
 /** What the workflow carries between steps. No secret is in it: the upload slots stay in the sandbox's job.json. */
@@ -103,11 +105,13 @@ export interface PackagedFile {
   ms: number;
 }
 
+/**
+ * One package in the sandbox's answer. It's the sandbox's own account, so `bytes` and `sha256` are only claims to check, and
+ * any URL it reports is ignored: what's offered is what the platform finds in its own store.
+ */
 export interface PackageResultEntry {
   ok: boolean;
   error?: string;
-  url?: string;
-  pathname?: string;
   keptAt?: string;
   bytes?: number;
   sha256?: string;
@@ -202,14 +206,43 @@ export function packagerJob(req: PackageRequest, release: ShellRelease, outputs:
   };
 }
 
+/** Whether bytes really are a PNG, JPEG or WebP. A product picks its own headers, and sharp would also parse SVG and more. */
+export function isIconPicture(bytes: Buffer): boolean {
+  const png = bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const jpeg = bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
+  const webp = bytes.toString("latin1", 0, 4) === "RIFF" && bytes.toString("latin1", 8, 12) === "WEBP";
+  return png || jpeg || webp;
+}
+
+/** A response's body, or null past `max` bytes. It stops reading there, so a product can't fill this function's memory. */
+async function readUpTo(res: Response, max: number): Promise<Buffer | null> {
+  if (!res.body || Number(res.headers.get("content-length")) > max) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return Buffer.concat(chunks);
+    total += value.length;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+}
+
 /** The product's own generated icon (template-native's app/icon.tsx), or null. Its bytes are only ever decoded in the sandbox. */
 export async function fetchProductIcon(productUrl: string, doFetch: typeof fetch = fetch): Promise<Buffer | null> {
   try {
     const res = await doFetch(new URL("/icon/512", productUrl), { redirect: "error", signal: AbortSignal.timeout(ICON_FETCH_MS) });
     const type = res.headers.get("content-type") ?? "";
     if (!res.ok || !/^image\/(png|jpeg|webp)\b/.test(type)) return null;
-    const bytes = Buffer.from(await res.arrayBuffer());
-    return bytes.length && bytes.length <= ICON_MAX_BYTES ? bytes : null;
+    const bytes = await readUpTo(res, ICON_MAX_BYTES);
+    return bytes && isIconPicture(bytes) ? bytes : null;
   } catch {
     return null;
   }
@@ -238,14 +271,15 @@ export async function startPackaging(req: PackageRequest, now = Date.now()): Pro
   for (const kind of kinds) {
     const pathname = packagePathname(req, kind);
     const uploadPathname = kind === "android" && signing ? unsignedPathname(pathname) : pathname;
-    slots.push({ kind, pathname, uploadPathname });
+    slots.push({ kind, pathname, uploadPathname, ...(local ? { kept: true } : {}) });
     outputs[kind] = local ? { name: kind, method: "keep", pathname: uploadPathname } : await blobSlot(kind, uploadPathname, now);
   }
   const sandboxName = `musemuse-packager-${req.runId}`;
   const handle: PackagingHandle = { sandboxName, runId: req.runId, shellVersion: release.shellVersion, startedAt: now, slots, skipped };
   if (!kinds.length) return handle;
 
-  const icon = req.icon ?? (await fetchProductIcon(req.url));
+  const picture = req.icon ?? (await fetchProductIcon(req.url));
+  const icon = picture && isIconPicture(picture) ? picture : null;
   await stopPackaging(handle);
   const sandbox = await Sandbox.create({
     ...credentials(sandboxName),
@@ -256,13 +290,19 @@ export async function startPackaging(req: PackageRequest, now = Date.now()): Pro
     networkPolicy: packagerNetworkPolicy(),
     tags: { app: "musemuse", role: "packager" },
   });
-  const job = packagerJob(req, release, outputs, Boolean(icon));
-  await sandbox.writeFiles([{ path: JOB_PATH, content: Buffer.from(JSON.stringify(job)) }, ...(icon ? [{ path: ICON_PATH, content: icon }] : [])]);
-  await sandbox.runCommand({
-    cmd: "bash",
-    args: ["-c", `node ${q(PACKAGER_SCRIPT)} ${q(JOB_PATH)} > ${q(RESULT_PATH)} 2> ${q(LOG_PATH)}; echo $? > ${q(EXIT_PATH)}`],
-    detached: true,
-  });
+  try {
+    const job = packagerJob(req, release, outputs, Boolean(icon));
+    await sandbox.writeFiles([{ path: JOB_PATH, content: Buffer.from(JSON.stringify(job)) }, ...(icon ? [{ path: ICON_PATH, content: icon }] : [])]);
+    await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-c", `node ${q(PACKAGER_SCRIPT)} ${q(JOB_PATH)} > ${q(RESULT_PATH)} 2> ${q(LOG_PATH)}; echo $? > ${q(EXIT_PATH)}`],
+      detached: true,
+    });
+  } catch (error) {
+    // The caller has no handle yet, so nothing else would stop this one.
+    await stopPackaging(handle);
+    throw error;
+  }
   return handle;
 }
 
@@ -278,19 +318,29 @@ export function parsePackageResult(stdout: string): PackageResult | null {
   }
 }
 
-/** Reads where a run is. Never throws for a run that went wrong: that's what `failed` is for. */
+/**
+ * Reads where a run is. A run that went wrong comes back as `failed`. An error reaching the sandbox API throws instead, so the
+ * step retries and a hiccup doesn't end a healthy run.
+ */
 export async function pollPackaging(handle: PackagingHandle, now = Date.now()): Promise<PackagingState> {
   if (!handle.slots.length) return { state: "finished", result: { v: 1, packages: {} } };
   if (now - handle.startedAt > PACKAGING_LIMIT_MS) return { state: "failed", reason: "Packaging took too long." };
   let sandbox: Sandbox;
   try {
     sandbox = await Sandbox.get(credentials(handle.sandboxName));
-  } catch {
-    return { state: "failed", reason: "The packager's sandbox is gone." };
+  } catch (error) {
+    if (error instanceof APIError && error.response.status === 404) return { state: "failed", reason: "The packager's sandbox is gone." };
+    throw error;
   }
+  // This comes first because any later call on a stopped sandbox starts a new, empty session, which looks like a run still going.
+  if (sandbox.status !== "running") return { state: "failed", reason: "The packager's sandbox stopped before it finished." };
   const { stdout } = await sh(sandbox, `[ -f ${q(EXIT_PATH)} ] && cat ${q(EXIT_PATH)} || true`);
   if (!stdout.trim()) return { state: "running" };
-  const result = parsePackageResult(await sandbox.fs.readFile(RESULT_PATH, "utf8").catch(() => ""));
+  const text = await sandbox.fs.readFile(RESULT_PATH, "utf8").catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") return "";
+    throw error;
+  });
+  const result = parsePackageResult(text);
   if (result && !result.error) return { state: "finished", result };
   return { state: "failed", reason: result?.error ?? "The packager stopped without a result." };
 }
@@ -306,18 +356,11 @@ async function putExact(pathname: string, bytes: Buffer, contentType: string): P
   return localFileUrl(pathname);
 }
 
-/** Whether a URL in the sandbox's answer is really the path this run gave it. */
-export function isExpectedUpload(url: unknown, pathname: unknown, slot: PackageSlotInfo): boolean {
-  if (typeof url !== "string" || pathname !== slot.uploadPathname) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" && parsed.hostname.endsWith(".blob.vercel-storage.com") && parsed.pathname === `/${slot.uploadPathname}`;
-  } catch {
-    return false;
-  }
-}
-
 export interface CollectDeps {
+  /** What's at this path in the platform's own store, or null. */
+  head(pathname: string): Promise<{ url: string; size: number } | null>;
+  /** The hash of what's at this URL, without holding the file in memory. */
+  sha256(url: string): Promise<string>;
   fetchBytes(url: string): Promise<Buffer>;
   readKept(file: string): Promise<Buffer | null>;
   put(pathname: string, bytes: Buffer, contentType: string): Promise<string>;
@@ -325,32 +368,50 @@ export interface CollectDeps {
   apkKey(): ApkKey | null;
 }
 
+function sha256Of(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Nothing that gets offered comes from the sandbox's answer alone. A file's URL, size and hash are read from the platform's own
+ * store, at the path this run's slot allowed, so a sandbox can't point a download somewhere else or vouch for its own bytes. Its
+ * size and hash only have to agree, which also catches an upload that went wrong.
+ */
 async function collectOne(slot: PackageSlotInfo, entry: PackageResultEntry, handle: PackagingHandle, deps: CollectDeps): Promise<PackagedFile> {
   const artifactKind = NATIVE_DOWNLOADS[slot.kind];
   const common = { kind: slot.kind, artifactKind, pathname: slot.pathname, shellVersion: handle.shellVersion, ms: entry.ms ?? 0 };
-  const uploaded = !entry.keptAt && isExpectedUpload(entry.url, entry.pathname, slot) ? (entry.url as string) : null;
-  if (!entry.keptAt && !uploaded) throw new Error("The packager named an upload it wasn't given.");
-
   const key = slot.kind === "android" ? deps.apkKey() : null;
-  // A file that's already in its place, and needs no signature, doesn't have to come through this function.
-  if (uploaded && !key) {
-    return { ...common, url: uploaded, bytes: entry.bytes ?? 0, sha256: entry.sha256 ?? "", signedWith: slot.kind === "android" ? "debug" : null };
-  }
-  const bytes = uploaded ? await deps.fetchBytes(uploaded) : await deps.readKept(entry.keptAt as string);
-  if (!bytes) throw new Error("The package wasn't where the packager left it.");
-  const final = key ? signApk(bytes, key) : bytes;
-  if (key && apkSigner(final) !== createHash("sha256").update(key.certificate.raw).digest("hex")) {
-    throw new Error("The signed APK didn't check out.");
-  }
-  const url = await deps.put(slot.pathname, final, PACKAGE_CONTENT_TYPES[slot.kind]);
-  if (uploaded && slot.uploadPathname !== slot.pathname) await deps.remove(uploaded).catch(() => {});
-  return {
-    ...common,
-    url,
-    bytes: final.length,
-    sha256: createHash("sha256").update(final).digest("hex"),
-    signedWith: slot.kind !== "android" ? null : key ? "platform" : "debug",
+  const signedWith = slot.kind !== "android" ? null : key ? "platform" : "debug";
+  const checkHash = (sha256: string) => {
+    if (entry.sha256 !== sha256) throw new Error("The package in the store isn't the one the packager made.");
   };
+  const place = async (bytes: Buffer): Promise<PackagedFile> => {
+    const final = key ? signApk(bytes, key) : bytes;
+    if (key && apkSigner(final) !== sha256Of(key.certificate.raw)) throw new Error("The signed APK didn't check out.");
+    const url = await deps.put(slot.pathname, final, PACKAGE_CONTENT_TYPES[slot.kind]);
+    return { ...common, url, bytes: final.length, sha256: sha256Of(final), signedWith };
+  };
+
+  if (slot.kept) {
+    const bytes = entry.keptAt ? await deps.readKept(entry.keptAt) : null;
+    if (!bytes) throw new Error("The package wasn't where the packager left it.");
+    return place(bytes);
+  }
+
+  const stored = await deps.head(slot.uploadPathname);
+  if (!stored) throw new Error("The package isn't in the store.");
+  if (stored.size !== entry.bytes) throw new Error("The package in the store isn't the size the packager made.");
+  // A file that's already in its place, and needs no signature, doesn't have to sit in this function's memory.
+  if (!key) {
+    const sha256 = await deps.sha256(stored.url);
+    checkHash(sha256);
+    return { ...common, url: stored.url, bytes: stored.size, sha256, signedWith };
+  }
+  const bytes = await deps.fetchBytes(stored.url);
+  checkHash(sha256Of(bytes));
+  const file = await place(bytes);
+  if (slot.uploadPathname !== slot.pathname) await deps.remove(stored.url).catch(() => {});
+  return file;
 }
 
 /** Turns a finished run into files to offer, with each failure in plain words. Takes its dependencies so tests can fake them. */
@@ -375,6 +436,16 @@ export async function collectPackages(handle: PackagingHandle, result: PackageRe
 /** collectPackages with the real Blob store and sandbox. Call stopPackaging after it. */
 export async function collectPackaging(handle: PackagingHandle, result: PackageResult): Promise<CollectedPackages> {
   return collectPackages(handle, result, {
+    head: async (pathname) => {
+      try {
+        const { url, size } = await head(pathname, blobAuth());
+        return { url, size };
+      } catch (error) {
+        if (error instanceof BlobNotFoundError) return null;
+        throw error;
+      }
+    },
+    sha256: sha256OfUrl,
     fetchBytes: (url) => fetchBytes(url),
     readKept: async (file) => (await Sandbox.get(credentials(handle.sandboxName))).readFileToBuffer({ path: file }),
     put: putExact,

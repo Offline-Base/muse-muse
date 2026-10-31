@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { cleanName, fileName, JobError, parseJob } from "../lib/job.mjs";
+import { OUTPUT_ZIP } from "../lib/mac.mjs";
 
 const sha = "a".repeat(64);
 function job(overrides = {}) {
@@ -36,6 +37,15 @@ describe("fileName", () => {
     assert.equal(fileName("CON"), "Muse App");
     assert.equal(fileName("lpt1"), "Muse App");
     assert.equal(fileName("///"), "Muse App");
+  });
+  it("treats a reserved name with an extension as reserved", () => {
+    for (const name of ["Aux.ai", "Con.io", "NUL.app", "com1.txt", "LPT9.a.b", "Aux .ai", "COM¹"]) assert.equal(fileName(name), "Muse App", name);
+  });
+  it("leaves names that only start like a reserved one", () => {
+    for (const name of ["Aux Cables", "Console", "Connect.ai", "Nullable.io", "com.fern"]) assert.equal(fileName(name), name);
+  });
+  it("can't be the name of the zip a package is written to", () => {
+    assert.notEqual(fileName(OUTPUT_ZIP), OUTPUT_ZIP);
   });
 });
 

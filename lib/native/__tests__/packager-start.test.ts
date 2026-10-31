@@ -9,16 +9,19 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
+import { APIError } from "@vercel/sandbox";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
 const savedEnv = { ...process.env };
 const AUTOMATION = "automation-secret-for-tests";
 const ORIGIN = "https://muse.example.com";
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const b64url = (s: string) => Buffer.from(s).toString("base64url");
 
 const req = {
@@ -40,16 +43,35 @@ let exists = false;
 let exitFile = "";
 let resultFile = "";
 let issued: Array<Record<string, unknown>> = [];
+let stopped = 0;
+let headed: string[] = [];
+let headResult: { url: string; size: number } | null = null;
+/** What Sandbox.get does. The default finds the sandbox while `exists` is set, and says not found otherwise, as the API does. */
+let getError: Error | null = null;
+let status = "running";
+let writeError: Error | null = null;
+let readError: Error | null = null;
 
 function fakeSandbox() {
   return {
-    writeFiles: async (files: Written[]) => void written.push(...files),
+    get status() {
+      return status;
+    },
+    writeFiles: async (files: Written[]) => {
+      if (writeError) throw writeError;
+      written.push(...files);
+    },
     runCommand: async (opts: { cmd: string; args: string[]; detached?: boolean }) => {
       commands.push(opts);
       return { exitCode: 0, stdout: async () => exitFile, stderr: async () => "" };
     },
-    fs: { readFile: async () => resultFile },
-    stop: async () => {},
+    fs: {
+      readFile: async () => {
+        if (readError) throw readError;
+        return resultFile;
+      },
+    },
+    stop: async () => void stopped++,
     delete: async () => void deleted++,
   };
 }
@@ -61,7 +83,8 @@ const FakeSandbox = {
     return fakeSandbox();
   },
   get: async () => {
-    if (!exists) throw new Error("not found");
+    if (getError) throw getError;
+    if (!exists) throw new APIError(new Response(null, { status: 404 }));
     return fakeSandbox();
   },
 };
@@ -80,7 +103,17 @@ describe("startPackaging", { skip: canMock ? false : "needs --experimental-test-
     const sandbox = await import("@vercel/sandbox");
     mock.module("@vercel/sandbox", { namedExports: { ...sandbox, Sandbox: FakeSandbox } });
     const blob = await import("@vercel/blob");
-    mock.module("@vercel/blob", { namedExports: { ...blob, issueSignedToken: fakeIssue } });
+    mock.module("@vercel/blob", {
+      namedExports: {
+        ...blob,
+        issueSignedToken: fakeIssue,
+        head: async (pathname: string) => {
+          headed.push(pathname);
+          if (!headResult) throw new blob.BlobNotFoundError();
+          return headResult;
+        },
+      },
+    });
     packager = (await import(at("../packager.ts"))) as typeof import("../packager");
   });
 
@@ -96,9 +129,16 @@ describe("startPackaging", { skip: canMock ? false : "needs --experimental-test-
     commands = [];
     issued = [];
     deleted = 0;
+    stopped = 0;
+    headed = [];
+    headResult = null;
     exists = false;
     exitFile = "";
     resultFile = "";
+    getError = null;
+    status = "running";
+    writeError = null;
+    readError = null;
     process.env.PLATFORM_URL = ORIGIN;
     process.env.PACKAGER_SNAPSHOT_ID = "snap_test";
     process.env.BLOB_STORE_ID = "store_teststore";
@@ -182,9 +222,22 @@ describe("startPackaging", { skip: canMock ? false : "needs --experimental-test-
   });
 
   it("writes the icon as a file when it has one", async () => {
-    await packager.startPackaging({ ...req, icon: Buffer.from("picture") });
+    await packager.startPackaging({ ...req, icon: PNG });
     assert.equal(job().iconPath, "/vercel/native/icon-source");
-    assert.equal(written.find((f) => f.path === "/vercel/native/icon-source")?.content.toString(), "picture");
+    assert.deepEqual(written.find((f) => f.path === "/vercel/native/icon-source")?.content, PNG);
+  });
+
+  it("gives the sandbox no icon that isn't a real picture, whoever it came from", async () => {
+    await packager.startPackaging({ ...req, icon: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>") });
+    assert.equal(job().iconPath, null);
+    assert.equal(written.some((f) => f.path === "/vercel/native/icon-source"), false);
+  });
+
+  it("stops the sandbox it made when it can't be set going, since the caller has no handle", async () => {
+    writeError = new Error("write failed");
+    await assert.rejects(packager.startPackaging(req), /write failed/);
+    assert.equal(stopped, 1);
+    assert.equal(deleted, 1);
   });
 
   it("replaces an earlier sandbox when a step is retried", async () => {
@@ -218,13 +271,68 @@ describe("startPackaging", { skip: canMock ? false : "needs --experimental-test-
       exitFile = "137\n";
       assert.equal((await packager.pollPackaging(handle, 2_000)).state, "failed");
     });
-    it("fails when the sandbox is gone or it took too long", async () => {
+    it("fails when the sandbox is deleted", async () => {
       assert.deepEqual(await packager.pollPackaging(handle, 2_000), { state: "failed", reason: "The packager's sandbox is gone." });
+    });
+    it("fails a stopped sandbox without running anything, which would start a new empty session", async () => {
+      exists = true;
+      status = "stopped";
+      assert.deepEqual(await packager.pollPackaging(handle, 2_000), { state: "failed", reason: "The packager's sandbox stopped before it finished." });
+      assert.equal(commands.length, 0);
+    });
+    it("throws on an API error, so the step retries and a healthy run lives", async () => {
+      exists = true;
+      getError = new APIError(new Response(null, { status: 500 }));
+      await assert.rejects(packager.pollPackaging(handle, 2_000), APIError);
+      getError = new APIError(new Response(null, { status: 429 }));
+      await assert.rejects(packager.pollPackaging(handle, 2_000), APIError);
+      getError = new TypeError("fetch failed");
+      await assert.rejects(packager.pollPackaging(handle, 2_000), TypeError);
+    });
+    it("throws when the result can't be read for now, rather than failing a finished run", async () => {
+      exists = true;
+      exitFile = "0\n";
+      readError = new APIError(new Response(null, { status: 502 }));
+      await assert.rejects(packager.pollPackaging(handle, 2_000), APIError);
+      readError = Object.assign(new Error("no such file"), { code: "ENOENT" });
+      assert.equal((await packager.pollPackaging(handle, 2_000)).state, "failed");
+    });
+    it("fails when it took too long", async () => {
       exists = true;
       assert.deepEqual(await packager.pollPackaging(handle, 1_000 + packager.PACKAGING_LIMIT_MS + 1), { state: "failed", reason: "Packaging took too long." });
     });
     it("finishes at once when there was nothing to do", async () => {
       assert.equal((await packager.pollPackaging({ ...handle, slots: [] }, 2_000)).state, "finished");
+    });
+  });
+
+  describe("collectPackaging", () => {
+    const slot = { kind: "mac" as const, pathname: "native/products/p/r/fern-mac.zip", uploadPathname: "native/products/p/r/fern-mac.zip" };
+    const handle = { sandboxName: "s", runId: "r", shellVersion: "1.0.0", startedAt: 0, skipped: {}, slots: [slot] };
+    const body = Buffer.from("the zip's real bytes");
+    const hash = createHash("sha256").update(body).digest("hex");
+    const realFetch = globalThis.fetch;
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    it("asks the store for the slot's path, hashes the file there and offers that", async () => {
+      headResult = { url: `https://own.public.blob.vercel-storage.com/${slot.pathname}`, size: body.length };
+      const fetched: string[] = [];
+      globalThis.fetch = (async (url: string) => (fetched.push(String(url)), new Response(body))) as unknown as typeof fetch;
+      const forged = { ok: true, url: "https://attackers-own-store.public.blob.vercel-storage.com/x.zip", bytes: body.length, sha256: hash };
+      const { files, failures } = await packager.collectPackaging(handle, { v: 1, packages: { mac: forged } });
+      assert.deepEqual(failures, {});
+      assert.deepEqual(headed, [slot.pathname]);
+      assert.deepEqual(fetched, [headResult.url]);
+      assert.equal(files[0].url, headResult.url);
+      assert.equal(files[0].sha256, hash);
+    });
+    it("says so when the store has no such file", async () => {
+      headResult = null;
+      const { files, failures } = await packager.collectPackaging(handle, { v: 1, packages: { mac: { ok: true, bytes: 1, sha256: hash } } });
+      assert.deepEqual(files, []);
+      assert.match(failures.mac ?? "", /isn't in the store/);
     });
   });
 
