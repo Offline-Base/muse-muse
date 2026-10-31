@@ -8,10 +8,15 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { BRIDGE_SCRIPT, bridgeConfigPath, type BridgeConfig, type MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 import { BRIDGE_SOURCE } from "@/lib/sandbox/bridge-source";
 import { HOOKS_DIR, NOTES_DIR } from "@/lib/sandbox/muse-config";
+import { condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const BUILD = "3f2a9c1e-77b0-4d2e-9f00-0123456789ab";
@@ -148,6 +153,7 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     assert.equal(run.buildMcp, true);
     // Whatever the agent left at those paths goes first, then the platform's own versions.
     assert.match(commands[0]!.script, /^rm -rf -- '\/vercel\/app\/\.muse\/hooks\.json' '\/vercel\/app\/\.mcp\.json' /);
+    assert.match(commands[0]!.script, /for p in \.muse\/ \.mcp\.json; do grep -qxF -- "\$p" '\/vercel\/app\/\.git\/info\/exclude'/);
     for (const name of ["guard.mjs", "notes.mjs", "stop-gate.mjs", "log.mjs"]) assert.ok(files[`${HOOKS_DIR}/${name}`], name);
     assert.deepEqual(Object.keys(JSON.parse(files["/vercel/app/.muse/hooks.json"]!).hooks).slice(0, 4), ["PreToolUse", "PostToolUse", "PostToolBatch", "Stop"]);
     const mcp = JSON.parse(files["/vercel/app/.mcp.json"]!);
@@ -238,6 +244,19 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     );
   });
 
+  it("runs only valid bash in the sandbox", async () => {
+    process.env.MUSE_ENGINE = "serve";
+    process.env.MUSE_FULL = "1";
+    process.env.PLATFORM_URL = "https://musemuse.example";
+    await start({ buildId: BUILD });
+    const scripts = [...commands.filter((c) => !c.detached).map((c) => c.script), runner("muse-r0")];
+    assert.equal(scripts.length, 4, "config, SDK, start check and runner");
+    for (const script of scripts) {
+      const res = spawnSync("bash", ["-n", "-c", script], { encoding: "utf8" });
+      assert.equal(res.status, 0, `${res.stderr}\n${script}`);
+    }
+  });
+
   it("keeps a bridge that is still opening, or that started and finished at once", async () => {
     process.env.MUSE_ENGINE = "serve";
     for (const stdout of ["waiting\n", `exit ${JSON.stringify({ kind: "bridge", event: "exit", exitCode: 1, reason: "failed: x" })}\n`]) {
@@ -261,6 +280,7 @@ function dropped() {
 describe("sendMuseCommand", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   it("names a bridge's mailbox file <at>-<id>.json and writes it whole, through a dot-file", async () => {
     files["/vercel/musemuse/run/muse-r3.engine"] = "serve";
+    files["/vercel/musemuse/run/muse-r3.cmd"] = "cmd-bridge";
     const e = envelope({ type: "steer", text: "Make the map bigger, it's hard to read." });
     await builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 3, envelope: e });
     const d = dropped();
@@ -272,7 +292,7 @@ describe("sendMuseCommand", { skip: canMock ? false : "needs --experimental-test
     assert.equal(builder.mailboxFileName({ ...e, at: "2026-10-31T00:00:01Z" }), "2026-10-31T00:00:01.000Z-c1.json", "times are written one way, so names sort");
   });
 
-  it("refuses an envelope it can't name, and a sandbox that isn't running", async () => {
+  it("refuses an envelope it can't name, a sandbox that isn't running, and a round that has finished", async () => {
     files["/vercel/musemuse/run/muse-r0.engine"] = "serve";
     await assert.rejects(builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 0, envelope: envelope({ type: "interrupt" }, "../x") }), /command id/);
     await assert.rejects(builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 0, envelope: { ...envelope({ type: "interrupt" }), at: "soon" } }), /ISO time/);
@@ -282,6 +302,8 @@ describe("sendMuseCommand", { skip: canMock ? false : "needs --experimental-test
     } finally {
       fakeSandbox.status = "running";
     }
+    // No command recorded for the round: it ended, or never started.
+    await assert.rejects(builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 0, envelope: envelope({ type: "steer", text: "x" }) }), /has finished/);
     assert.equal(commands.length, 0);
   });
 
@@ -301,6 +323,31 @@ describe("sendMuseCommand", { skip: canMock ? false : "needs --experimental-test
     assert.deepEqual(kills, ["SIGTERM"]);
     delete process.env.MUSE_FULL;
     await assert.rejects(builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 1, envelope: envelope({ type: "steer", text: "x" }) }), /only with MUSE_FULL/);
+    assert.equal(commands.filter((c) => c.script.includes("base64 -d")).length, 1, "only the note was written");
+  });
+});
+
+describe("transcript highlights", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  it("read a session bridge log's tool calls as they read an exec log's", () => {
+    // The Oct 30 spike's stream, as the bridge logs it.
+    const spike = readFileSync(path.join(import.meta.dirname, "fixtures/msp-goal-steer.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    const records = spike.flatMap((o) => (o.note ? [{ t: o.t, kind: "note", ...(o.note as Record<string, unknown>) }] : []));
+    const dir = mkdtempSync(path.join(tmpdir(), "musemuse-highlights-"));
+    try {
+      writeFileSync(path.join(dir, "muse-r0.msp.jsonl"), records.map((r) => JSON.stringify(r)).join("\n") + "\n");
+      // As exportTranscript runs it: a file of its own, with the log folder as its argument.
+      const filter = path.join(dir, "highlights.cjs");
+      writeFileSync(filter, builder.HIGHLIGHTS_FILTER);
+      const res = spawnSync("node", [filter, dir], { encoding: "utf8" });
+      assert.equal(res.status, 0, res.stderr);
+      const highlights = highlightsFrom(condenseMuseLines(res.stdout.split("\n")).lines);
+      // The shell tool answers in JSON, so its first line is "{", as it is in exec's highlights.
+      assert.deepEqual(highlights.slice(0, 5), ["5 tool calls, 2 edits touching 2 files", "{", "Edited `steer.txt`", "Edited `goal.txt`", "{"]);
+      assert.match(highlights[5]!, /^\{"goal":\{"created_at_ms":1793416199449/);
+      assert.equal(highlights.length, 6);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

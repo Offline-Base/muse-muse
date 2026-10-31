@@ -135,10 +135,13 @@ const DRY_RUN_PREFIX = "dryrun-";
  * while a goal waits for its next turn.
  */
 const BRIDGE_IDLE_EXIT_MS = 2 * MIN;
-/** How long startMuse waits for a new bridge to open its session. One that hasn't by then is taken to be starting. */
-const BRIDGE_START_PROBE_S = 20;
-/** How long installing the bridge's SDK may take, the first time in a sandbox. */
-const SDK_INSTALL_MS = 40_000;
+/**
+ * How long startMuse waits for a new bridge to open its session (usually 2 to 5 s). One that hasn't by then is taken
+ * to be starting. With the SDK install, a start stays under about a minute.
+ */
+const BRIDGE_START_PROBE_S = 15;
+/** How long installing the bridge's SDK may take, the first time in a sandbox (one small package, no dependencies). */
+const SDK_INSTALL_MS = 30_000;
 /** The largest command the mailbox takes. */
 const MAX_COMMAND_BYTES = 64 * 1024;
 
@@ -604,11 +607,21 @@ function runnerEnv(run: MuseRunSpec): Record<string, string> {
 /**
  * Writes the platform's Muse Code config (lib/sandbox/muse-config.ts) before a start under MUSE_FULL, removing what is
  * at each path first: the hook scripts, .muse/hooks.json, and .mcp.json when the run has a build MCP token (else
- * .mcp.json is just removed). Also records the session id, so owner notes on exec rounds reach the main agent.
+ * .mcp.json is just removed). Also records the session id, so owner notes on exec rounds reach the main agent, and
+ * keeps .muse/ (with its subagents' worktrees) and .mcp.json out of the product's commits through the checkout's own
+ * info/exclude, which changes nothing tracked.
  */
 async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void> {
   const files = museConfigFiles({ mcpUrl: run.token ? `${env.platformUrl}${BUILD_MCP_PATH}` : null });
-  await sh(sandbox, `rm -rf -- ${files.remove.map(q).join(" ")} && mkdir -p -- ${files.dirs.map(q).join(" ")}`);
+  const git = `${PRODUCT_DIR}/.git`;
+  const exclude = `${git}/info/exclude`;
+  await sh(
+    sandbox,
+    [
+      `rm -rf -- ${files.remove.map(q).join(" ")} && mkdir -p -- ${files.dirs.map(q).join(" ")}`,
+      `if [ -d ${q(git)} ]; then mkdir -p ${q(`${git}/info`)}; for p in .muse/ .mcp.json; do grep -qxF -- "$p" ${q(exclude)} 2>/dev/null || printf '%s\\n' "$p" >> ${q(exclude)}; done; fi`,
+    ].join("\n"),
+  );
   await sandbox.writeFiles([...files.write, { path: NOTES_SESSION_FILE, content: `${run.sessionId}\n` }]);
 }
 
@@ -804,7 +817,8 @@ async function dropFile(sandbox: Sandbox, dir: string, name: string, body: strin
  * number startMuse got. On the session bridge, the envelope goes into bridgePaths(round).mailbox as one JSON file,
  * which the bridge applies once, in name order, and logs as a `command` record. On exec, a steer or a queued note goes
  * to NOTES_DIR for the notes hook (MUSE_FULL only), an interrupt or end stops the run as killCommand does, and the
- * rest can't be done. The sandbox must be running: this never wakes a stopped one.
+ * rest can't be done. The sandbox must be running, and so must the round: this never wakes a stopped sandbox, and a
+ * command for a round that has finished is refused rather than left where nothing reads it.
  */
 export async function sendMuseCommand(input: {
   sandboxName: string;
@@ -820,21 +834,19 @@ export async function sendMuseCommand(input: {
   const sandbox = await Sandbox.get({ name: input.sandboxName });
   if (sessionStatus(sandbox) !== "running") throw new Error("The build's sandbox isn't running, so the command wasn't sent.");
   const engine = input.engine ?? (await roundEngine(sandbox, round));
-  if (engine === "serve") return dropFile(sandbox, bridgePaths(round).mailbox, name, body);
-
   const command = input.envelope.command;
-  if (command.type === "steer" || command.type === "queue") {
-    if (!env.museFull) throw new Error("Notes reach a muse exec round only with MUSE_FULL on.");
-    const note = { id: input.envelope.id, at: input.envelope.at, by: input.envelope.by, kind: command.type, text: command.text };
-    return dropFile(sandbox, NOTES_DIR, name, JSON.stringify(note));
-  }
-  if (command.type === "interrupt" || command.type === "end") {
-    const buf = await sandbox.readFileToBuffer({ path: `${RUN_DIR}/muse-r${round}.cmd` }).catch(() => null);
-    const cmdId = buf?.toString("utf8").trim();
-    if (cmdId) await killCommand(input.sandboxName, cmdId);
-    return;
-  }
-  throw new Error(`This round runs on muse exec, which can't take a ${command.type} command.`);
+  const note = command.type === "steer" || command.type === "queue" ? command.text : null;
+  const stop = command.type === "interrupt" || command.type === "end";
+  if (engine === "exec" && note === null && !stop) throw new Error(`This round runs on muse exec, which can't take a ${command.type} command.`);
+  // Without MUSE_FULL there is no notes hook to deliver them.
+  if (engine === "exec" && note !== null && !env.museFull) throw new Error("Notes reach a muse exec round only with MUSE_FULL on.");
+  const cmdId = await runningCommand(sandbox, `muse-r${round}`);
+  if (!cmdId) throw new Error("This round of Muse Code has finished, so the command wasn't sent.");
+
+  if (engine === "serve") return dropFile(sandbox, bridgePaths(round).mailbox, name, body);
+  if (stop) return killCommand(input.sandboxName, cmdId);
+  const { id, at, by } = input.envelope;
+  return dropFile(sandbox, NOTES_DIR, name, JSON.stringify({ id, at, by, kind: command.type, text: note }));
 }
 
 export interface MusePoll {
@@ -1404,15 +1416,29 @@ export async function readBuildNotes(sandboxName: string): Promise<string | null
 
 /**
  * Prints the tool and edit events from every Muse Code log in this sandbox, oldest first, with their text cut to
- * the first line, so highlights don't have to pull megabytes of tool output out of the VM.
+ * the first line, so highlights don't have to pull megabytes of tool output out of the VM. A session bridge log's
+ * finished tool calls are printed in the same `muse exec --json` shape.
  */
-const HIGHLIGHTS_FILTER = `
+export const HIGHLIGHTS_FILTER = `
 const fs = require("node:fs");
 const dir = process.argv[2];
 const files = fs.readdirSync(dir).filter((f) => /^muse-.*\\.jsonl$/.test(f))
   .map((f) => ({ f, t: fs.statSync(dir + "/" + f).mtimeMs })).sort((a, b) => a.t - b.t);
 for (const { f } of files) {
   for (const line of fs.readFileSync(dir + "/" + f, "utf8").split("\\n")) {
+    if (line.startsWith('{"t":')) {
+      if (!line.includes('"item/completed"') || !line.includes('"toolCall"')) continue;
+      let r; try { r = JSON.parse(line); } catch { continue; }
+      const item = (r && r.kind === "note" && r.params && r.params.item) || {};
+      if (item.kind !== "toolCall") continue;
+      let args = {}; try { args = JSON.parse(item.args || "{}") || {}; } catch { args = {}; }
+      const text = String(item.visibleOutput || item.fallbackText || "").split("\\n").find((l) => l.trim()) || "";
+      const edit = item.patchSummary && typeof args.path === "string" ? { path: args.path } : undefined;
+      const facts = { tool_name: item.tool || "tool", outcome: item.status === "completed" ? "success" : "failure" };
+      console.log(JSON.stringify({ payload_type: "tool.result", payload: { correlation_facts: facts, edit_facts: edit, text } }));
+      if (item.patchSummary) console.log(JSON.stringify({ payload_type: "task.lifecycle.tool_output_ref", payload: { event: { output_ref: { kind: "tool_patch", patch_summary: item.patchSummary } } } }));
+      continue;
+    }
     if (!line.includes('"tool.result"') && !line.includes('"task.lifecycle.tool_output_ref"')) continue;
     let ev; try { ev = JSON.parse(line); } catch { continue; }
     const p = ev.payload || {};
