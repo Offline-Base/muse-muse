@@ -155,9 +155,14 @@ export function decideMessages(task: DecideTask): DecideMessage[] {
   ];
 }
 
-/** Why a task can't be shown to the model, in a sentence, or null when it can. */
+/**
+ * Why a task can't be shown to the model, in a sentence, or null when it can. The length limits are for the text as
+ * given, before decideTask neutralized it: each "< |" counts as the "<|" it may have been, so the added space never
+ * pushes valid text over a limit. (Text that already held "< |" gets the same small allowance; the GPU's token cap is
+ * the hard limit.)
+ */
 export function taskProblem(task: DecideTask): string | null {
-  const chars = (s: string) => Array.from(s).length;
+  const chars = (s: string) => Array.from(s.replaceAll("< |", "<|")).length;
   if (typeof task.state !== "string" || chars(task.state) < 1 || chars(task.state) > STATE_MAX_CHARS) {
     return `The state must be 1 to ${STATE_MAX_CHARS.toLocaleString("en-US")} characters.`;
   }

@@ -54,7 +54,9 @@ inferred or estimated, needs a test; **[R]** reported by a third party, not repr
 - `state`: the input to judge. A string of 1 to 3,000 characters (products may pass a flat object; the helper turns it
   into JSON text first). Every `<|` in it becomes `< |` before rendering, the rule `neutral_prompt` in
   `lib/train/recipes/serve.ts` already applies, so a state can't forge a chat-template token. `decideTask` applies
-  the same rule to the question and the option text, since a product sends its own for Muse Decide.
+  the same rule to the question and the option text, since a product sends its own for Muse Decide. The length
+  limits here are for the text as given: `taskProblem` counts each `< |` as the `<|` it may have been, so the added
+  space never pushes valid text over a limit.
 - `question`: what to decide, 5 to 300 characters. A person's model has one fixed question.
 - `options`: 2 to 5 entries, `none` included. `description` is left out when empty.
 - Serialized with `JSON.stringify` (no spaces). The platform renders every training row, every eval prompt and every

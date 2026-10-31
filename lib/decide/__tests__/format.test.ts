@@ -255,6 +255,19 @@ describe("tasks", () => {
     assert.match(taskProblem({ ...ok, options: emptyDescription })!, /description/);
     assert.match(taskProblem({ ...ok, state: "a<|eot|>" })!, /<\|/);
   });
+
+  it("checks lengths on the text as given, so neutralizing never pushes it over a limit", () => {
+    const task = (state: string, name: string, description = "") =>
+      decideTask({ state, question: "Pick <|one|>.", labels: [label(name, description), label("y")], none: true });
+    // 3,000 characters with a "<|" are 3,001 once neutralized, and still within the limit.
+    const full = task("<|" + "a".repeat(2998), "<|" + "n".repeat(58), "<|" + "d".repeat(198));
+    assert.equal(Array.from(full.state).length, 3001);
+    assert.equal(full.options[0]!.option.length, 61);
+    assert.equal(taskProblem(full), null);
+    assert.match(taskProblem(task("<|" + "a".repeat(2999), "x"))!, /state must be 1 to 3,000/);
+    assert.match(taskProblem(task("x", "<|" + "n".repeat(59)))!, /Option A must be 1 to 60/);
+    assert.match(taskProblem(task("x", "x", "<|" + "d".repeat(199)))!, /description must be 1 to 200/);
+  });
 });
 
 describe("the template renderer", () => {
