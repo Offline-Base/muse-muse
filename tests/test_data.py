@@ -443,3 +443,42 @@ def test_no_em_dashes_in_the_data():
     ]  # fmt: skip
     for path in paths:
         assert "—" not in path.read_text(), path.name
+
+
+# ----- the data rules on the newer eval sets -----
+
+ANY_PHONE = re.compile(r"(?<![\w-])(?:\(\d{3}\) ?|\d{3}[-. ])(\d{3})[-. ](\d{4})(?![\w-])")
+ANY_EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
+ANY_SSN = re.compile(r"(?<![\d-])(\d{3})-\d{2}-\d{4}(?![\d-])")
+CARD_SHAPE = re.compile(r"(?<![\d-])\d(?:[ -]?\d){12,18}(?![\d-])")
+TEST_CARD_NUMBERS = {"4111111111111111", "4242424242424242", "5555555555554444", "378282246310005"}
+RULED_SETS = ("compliance.jsonl", "fresh_200.jsonl", "fresh_200_b.jsonl")
+
+
+def passes_luhn(digits: str) -> bool:
+    total = sum(int(c) if i % 2 == 0 else sum(divmod(int(c) * 2, 10)) for i, c in enumerate(reversed(digits)))
+    return total % 10 == 0
+
+
+def ruled_items() -> list:
+    return [pytest.param(item, id=f"{name}:{item['id']}") for name in RULED_SETS for item in load_jsonl(EVAL / name)]
+
+
+@pytest.mark.parametrize("item", ruled_items())
+def test_newer_sets_use_test_only_phones_emails_ssns_and_cards(item):
+    """The data rules in CLAUDE.md, on eval/compliance.jsonl and the fresh_200 sets (GAP-14)."""
+    text = json.dumps(item, ensure_ascii=False)
+    for exchange, line in ANY_PHONE.findall(text):
+        assert exchange == "555" and line.startswith("01"), "phones use 555-01xx"
+    for domain in ANY_EMAIL.findall(text):
+        assert re.fullmatch(r"(?:[\w-]+\.)*example\.(?:com|org|net)", domain), "emails use example domains"
+    for area in ANY_SSN.findall(text):
+        assert area.startswith("9") or area == "000", "SSNs start with 9 or 000"
+    for m in CARD_SHAPE.finditer(text):
+        digits = re.sub(r"\D", "", m.group(0))
+        assert not passes_luhn(digits) or digits in TEST_CARD_NUMBERS, "card numbers are test numbers"
+
+
+def test_the_compliance_fax_number_follows_the_phone_rule():
+    record = next(i for i in load_jsonl(EVAL / "compliance.jsonl") if i["id"] == "record-12")
+    assert record["value"] == "(312) 555-0199" and record["value"] in record["text"]
