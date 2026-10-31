@@ -150,6 +150,21 @@ export function glassesProblems(callsText, { since = 0, project = "smoke" } = {}
       ];
 }
 
+/**
+ * The glasses check as verify runs it. `read` takes a path under the product and returns its text, or null when it isn't
+ * there. musemuse.target.json says which target this is, and a product without one is a web product with nothing to check.
+ */
+export function glassesGateProblems(read, { since = 0 } = {}) {
+  let target = null;
+  try {
+    target = JSON.parse(read("musemuse.target.json") ?? "null");
+  } catch {
+    return [];
+  }
+  const glasses = target?.target === "glasses" || (Array.isArray(target?.targets) && target.targets.includes("glasses"));
+  return glasses ? glassesProblems(read("test-results/glasses/calls.jsonl"), { since }) : [];
+}
+
 /** Notes judgeShot() left on any screenshot, for verify to print without failing. */
 export function judgeShotNotes(fileNames, read) {
   return checkedFiles(fileNames, read).flatMap(({ shot, checked }) =>
