@@ -3,14 +3,14 @@
 import { useId, useState, type FormEvent } from "react";
 import { Icon } from "@/components/icons";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
-import type { AgentNode, LogGroup, OpenQuestion, SessionModel, WatcherRun } from "@/components/build/derive";
-import { plural } from "@/lib/format";
+import { UserBubble } from "@/components/chat";
+import type { LogGroup, OpenQuestion, SessionModel } from "@/components/build/derive";
 import type { MuseAnswer } from "@/lib/sandbox/bridge-protocol";
 
 /**
  * What the build room shows of a Muse Code round on the session bridge (docs/MUSE_CODE_FULL.md, "The build room shows
- * all of it"): the goal, the todo list, owner notes, thinking, workflows, observers, questions, and the agent tree in
- * the panel. A `muse exec` round has none of these.
+ * all of it") beyond rows of the steps list (components/build/steps.tsx): the goal, the todo list and thinking in the
+ * steps panel, owner notes and questions in the conversation. A `muse exec` round has none of these.
  */
 
 type Tone = "building" | "live" | "failed" | "partial" | "neutral";
@@ -37,17 +37,6 @@ const STATUS_WORDS: Record<string, { label: string; tone: Tone }> = {
 /** An agent's, child's or item's status in words, with the pill tone that goes with it. */
 export function statusWords(status: string): { label: string; tone: Tone } {
   return STATUS_WORDS[status] ?? { label: status ? `${status[0]!.toUpperCase()}${status.slice(1)}` : "Unknown", tone: "neutral" };
-}
-
-/** A small pill with an agent's or a workflow's status. */
-export function StatusChip({ status }: { status: string }) {
-  const s = statusWords(status);
-  return (
-    <span className={`pill pill-${s.tone} pill-sm`}>
-      <span className="pill-dot" aria-hidden />
-      {s.label}
-    </span>
-  );
 }
 
 // ---------- Goal and todo list ----------
@@ -141,7 +130,8 @@ export function Thinking({ text }: { text: string }) {
   );
 }
 
-function steerMeta(g: Extract<LogGroup, { type: "steer" }>): string {
+/** How an owner's note went, in words. */
+export function steerMeta(g: Extract<LogGroup, { type: "steer" }>): string {
   if (g.status === "refused") return `Not delivered${g.error ? `: ${g.error}` : ""}`;
   if (g.status === "sent") return "Sent";
   if (g.delivery === "steer") return "Delivered into the running turn";
@@ -153,61 +143,16 @@ function steerMeta(g: Extract<LogGroup, { type: "steer" }>): string {
 export function SteerNote({ group }: { group: Extract<LogGroup, { type: "steer" }> }) {
   return (
     <div className={`steer${group.status === "refused" ? " steer-refused" : ""}`}>
-      <p className="bubble bubble-steer">
-        <span className="sr-only">From the owner: </span>
-        {group.text}
-      </p>
+      <UserBubble
+        text={
+          <>
+            <span className="sr-only">From the owner: </span>
+            {group.text}
+          </>
+        }
+      />
       <p className="steer-meta">{steerMeta(group)}</p>
     </div>
-  );
-}
-
-export function WorkflowCard({ group }: { group: Extract<LogGroup, { type: "workflow" }> }) {
-  return (
-    <div className="wf-card">
-      <p className="wf-head">
-        <Icon name="layers" size={16} />
-        <span className="wf-title">{group.text}</span>
-        <StatusChip status={group.status} />
-      </p>
-      {group.phase ? <p className="wf-phase">Phase: {group.phase}</p> : null}
-      {group.children.length ? (
-        <ul className="wf-children" aria-label="Workflow children">
-          {group.children.map((c, i) => {
-            const s = statusWords(c.status);
-            return (
-              <li key={`${c.label}-${i}`} className="wf-child">
-                <span className={`pill-dot dot-${s.tone}`} aria-hidden />
-                <span className="wf-child-name">{c.label}</span>
-                <span className="muted">{s.label}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
-/** Observer runs as one-line notes, folded when there are many. */
-export function ObserverNotes({ observers }: { observers: WatcherRun[] }) {
-  if (!observers.length) return null;
-  const list = (
-    <ul className="notes observer-notes" aria-label="Observers">
-      {observers.map((o) => (
-        <li key={o.id} className={`note${o.ok === false ? " note-error" : ""}`}>
-          <Icon name={o.ok === false ? "alert" : "info"} size={16} />
-          <span>{o.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-  if (observers.length <= 3) return list;
-  return (
-    <details className="fold">
-      <summary>{plural(observers.length, "observer")} ran</summary>
-      {list}
-    </details>
   );
 }
 
@@ -383,45 +328,5 @@ export function QuestionCard({
         <p className="muted small">{live ? "Waiting for the owner to answer." : "The run ended before this was answered."}</p>
       )}
     </form>
-  );
-}
-
-// ---------- The panel's agent tree ----------
-
-function AgentList({ nodes }: { nodes: AgentNode[] }) {
-  if (!nodes.length) return null;
-  return (
-    <ul>
-      {nodes.map((n) => (
-        <li key={n.id}>
-          <span className="agent-row">
-            <Icon name={n.kind === "workflow" ? "layers" : n.kind === "child" ? "chevronRight" : "user"} size={16} />
-            <span className="agent-text">
-              <span className="agent-name">{n.name}</span>
-              {n.phase ? <span className="agent-meta">Phase: {n.phase}</span> : n.path ? <code className="agent-meta">{n.path}</code> : null}
-            </span>
-            <StatusChip status={n.status} />
-          </span>
-          <AgentList nodes={n.children} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Muse Code and the agents working under it: subagents by path, workflows with their children. */
-export function AgentTree({ agents }: { agents: AgentNode[] }) {
-  return (
-    <ul className="agent-tree">
-      <li>
-        <span className="agent-row">
-          <Icon name="terminal" size={16} />
-          <span className="agent-text">
-            <span className="agent-name">Muse Code</span>
-          </span>
-        </span>
-        <AgentList nodes={agents} />
-      </li>
-    </ul>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * The demo video's poster on the gallery card and the build room's ship turn, and the recording's poster in the
+ * The demo video's poster on the gallery card and the build room's media card, and the recording's poster in the
  * build room's state, old recording events (without one) included.
  *   npx tsx --test components/product/__tests__/demo-video.test.ts
  */
@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { deriveRoom } from "@/components/build/derive";
-import { ShipBody } from "@/components/build/turns";
+import { BuildOutput } from "@/components/build/turns";
 import { ProductCard } from "@/components/product/ProductCard";
 import type { BuildView, ProductCardView } from "@/components/view-types";
 import type { BuildEvent } from "@/lib/types";
@@ -48,18 +48,8 @@ describe("demo video poster", () => {
     assert.doesNotMatch(tag, /poster=/);
   });
 
-  it("puts the poster on the ship turn's video", () => {
-    const html = renderToString(
-      createElement(ShipBody, {
-        status: "live",
-        liveUrl: card.liveUrl,
-        slug: card.slug,
-        connectorUrl: null,
-        models: [],
-        demoUrl: card.demoVideoUrl,
-        demoPosterUrl: card.demoPosterUrl,
-      }),
-    );
+  it("puts the poster on the build room's media card", () => {
+    const html = renderToString(createElement(BuildOutput, { name: card.name, demoUrl: card.demoVideoUrl, demoPosterUrl: card.demoPosterUrl }));
     assert.match(videoTag(html), /poster="https:\/\/blob\/demos\/b1\/poster\.jpg"/);
   });
 

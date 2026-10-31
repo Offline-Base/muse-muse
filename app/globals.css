@@ -199,7 +199,6 @@
   color-scheme: dark;
 }
 
-
 /* ---------- Base ---------- */
 
 *,
@@ -1851,67 +1850,104 @@ pre {
 
 /* ---------- Build room ---------- */
 
+/*
+ * The Muse app's look (docs/UI_MUSE_APP.md, "Where it applies"): a plain page, one centered column for the conversation,
+ * and the kit's steps panel at the window's right edge (.chat-split in components/chat/chat.css).
+ */
 .room {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 12px var(--gutter) 24px;
+  min-height: 100dvh;
+  background: var(--chat-bg);
+}
+
+/* Until the room knows the window's width, a panel that would cover the conversation stays hidden. */
+@media (max-width: 1099.98px) {
+  .room[data-settled="false"] .chat-panel {
+    display: none;
+  }
 }
 
 .room-main {
   position: relative;
   min-width: 0;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  padding: 8px var(--gutter) 24px;
 }
 
-@media (min-width: 1180px) {
-  .room {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--panel-w);
-    align-items: start;
-    gap: 24px;
-    padding: 20px 20px 24px 24px;
+/* On phones the site's top bar comes first, and takes its share of the window. */
+@media (max-width: 759.98px) {
+  .room,
+  .room-main {
+    min-height: calc(100dvh - 57px);
   }
 }
 
-.toolbar {
+@media (min-width: 760px) {
+  .room-main {
+    padding: 8px 24px 24px 32px;
+  }
+}
+
+.room-panel {
+  display: contents;
+}
+
+/* The title chip and the two round buttons float over the conversation as it scrolls. */
+.room-top {
+  position: sticky;
+  top: 8px;
+  z-index: 12;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 2px 10px;
-  width: 100%;
-  margin: 0 0 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+  pointer-events: none;
 }
 
-.toolbar .btn {
-  min-height: 36px;
-  padding: 6px 8px;
-  gap: 9px;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
+.room-top > * {
+  pointer-events: auto;
 }
 
-.room .toolbar {
-  margin-bottom: 48px;
+@media (max-width: 759.98px) {
+  .room-top {
+    top: 65px;
+  }
+
+  .room-top .menu {
+    max-height: calc(100dvh - 124px);
+  }
 }
 
-.mobile-status {
+.room-top .chat-title-chip {
+  min-width: 0;
+}
+
+.room-top-actions {
+  flex: none;
   display: flex;
-  align-items: center;
   gap: 8px;
-  margin: 0 auto 12px;
-  width: 100%;
-  max-width: var(--col-w);
-  color: var(--muted);
-  font-size: 13px;
 }
 
-@media (min-width: 1180px) {
-  .mobile-status {
-    display: none;
+.room-top .menu {
+  width: 340px;
+  padding: 16px;
+  border-color: var(--chat-line);
+  background: var(--chat-bg);
+}
+
+@media (min-width: 760px) {
+  .room-top .menu {
+    max-height: calc(100dvh - 72px);
   }
+}
+
+.room-details {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  font-size: 14px;
 }
 
 .convo {
@@ -1919,11 +1955,17 @@ pre {
   margin: 0 auto;
   padding: 0;
   width: 100%;
-  max-width: var(--col-w);
+  max-width: var(--composer-w);
   display: flex;
   flex-direction: column;
   gap: 32px;
-  line-height: 28px;
+  font-size: 16px;
+  line-height: 26px;
+}
+
+/* About 48 px between the person's message and what answers it. */
+.convo > .turn-user {
+  margin-bottom: 16px;
 }
 
 .convo-end {
@@ -2005,90 +2047,223 @@ pre {
   overflow-wrap: anywhere;
 }
 
-.turn {
+.room-working {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-.turn-head {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  font-style: italic;
-  line-height: 1.4;
-  color: var(--muted);
-  text-transform: none;
-}
-
-.turn-icon {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: none;
-  color: var(--muted);
-  font-style: normal;
-}
-
-.turn-ok .turn-icon {
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-
-.turn-bad .turn-icon {
-  background: var(--bad-soft);
-  color: var(--bad);
-}
-
-.turn-warn .turn-icon {
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-
-.turn-body {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
-.turn-meta {
-  color: var(--muted);
+.room-working-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  margin-left: 32px;
+  color: var(--chat-muted);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
 
-.turn-working {
-  flex-direction: row;
-  flex-wrap: wrap;
+.room-steps-link {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  color: var(--fg-2);
+  color: var(--chat-muted);
+  font-size: 13px;
+}
+
+.room-output {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.room-output:empty {
+  display: none;
+}
+
+.room-output .chat-media-frame > iframe {
+  background: var(--surface);
+}
+
+.room-media-link {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The agent's answer: plain text, 12 px between paragraphs. */
+.room-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.room-answer .say {
+  color: var(--fg);
+  font-style: normal;
+}
+
+.room-meta {
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-elsewhere {
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+/*
+ * The steer box and the refine composer, pinned 24 px above the window's bottom edge. As on the Make page, a copy of the
+ * card's shape in the page's color fills the gap under it, so what scrolls up behind it stops at the card.
+ */
+.room-composer {
+  position: sticky;
+  bottom: 24px;
+  z-index: 10;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.room-composer > .composer-wrap {
+  position: static;
+  margin: 0 auto;
+}
+
+.room-composer .composer {
+  --composer-floor: 0 56px 0 var(--chat-bg);
+}
+
+.room-composer .composer > .note {
+  margin: -6px 6px 0;
+}
+
+/* A pill in the composer's bottom row, like the app's "Thinking". */
+.composer-pill {
+  flex: none;
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--pill);
+  background: var(--surface);
+  color: var(--fg);
   font-size: 15px;
+  line-height: 30px;
+  white-space: nowrap;
 }
 
-.working-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: pulse 1.4s ease-in-out infinite;
+.composer-pill:hover:not(:disabled) {
+  background: var(--hover);
 }
 
-@keyframes pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent);
-  }
+.composer-pill:disabled {
+  opacity: 0.5;
+}
+
+/* The send button turned stop: a white rounded square. */
+.composer-stop {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+/* What folds in a step: the brief, what the checks ran. */
+.room-fold > summary {
+  cursor: pointer;
+  color: var(--chat-muted);
+  font-size: 13px;
+}
+
+.room-fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* The cards and the rich text inside a step, at the panel's size and on its plain page. */
+.chat-panel :is(.goal-card, .todo-card) {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-color: var(--chat-line);
+  border-radius: 12px;
+  background: none;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.chat-panel :is(.goal-title, .question-head) {
+  font-size: 13px;
+}
+
+.chat-panel .say {
+  color: var(--chat-muted);
+  font-size: 13px;
+  font-style: normal;
+  line-height: 21px;
+}
+
+.chat-panel .thinking > summary {
+  padding: 0;
+  color: var(--chat-muted);
+  font-weight: 400;
+}
+
+.chat-panel .rich {
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.chat-panel .rich h3 {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.chat-panel .rich h4 {
+  font-size: 13px;
+}
+
+.chat-panel .rich .two-col {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat-panel .check .lead,
+.chat-panel .judge .lead {
+  font-size: 13px;
+}
+
+.chat-panel .vsteps {
+  border-color: var(--chat-line);
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.chat-panel .judge {
+  padding: 10px 12px;
+  border-color: var(--chat-line);
+  border-radius: 12px;
+  background: none;
+  font-size: 13px;
+}
+
+.chat-panel .judge h4 {
+  font-size: 13px;
+}
+
+.chat-panel .pre {
+  max-height: 240px;
+  font-size: 12px;
 }
 
 /* Rich text for assistant turns */
@@ -2201,23 +2376,6 @@ pre {
   font-style: normal;
 }
 
-.activity {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-  width: 100%;
-}
-
-.activity-list {
-  list-style: none;
-  margin: 0;
-  padding: 6px 0;
-  width: 100%;
-  border-left: 2px solid var(--line);
-}
-
 .act {
   display: flex;
   align-items: baseline;
@@ -2228,46 +2386,10 @@ pre {
   color: var(--fg-2);
 }
 
-.act-icon {
-  flex: none;
-  color: var(--muted);
-  transform: translateY(2px);
-}
-
-.act-tool .act-icon {
-  color: var(--muted);
-}
-
-.act-edit .act-icon {
-  color: var(--accent-text);
-}
-
-.act-failed,
 .act-error {
   color: var(--bad);
 }
 
-.act-failed .act-icon,
-.act-error .act-icon {
-  color: var(--bad);
-}
-
-.act-text {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.act-name {
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: var(--surface-3);
-}
-
-.activity-fold > summary,
 .fold > summary {
   cursor: pointer;
   color: var(--muted);
@@ -2276,37 +2398,11 @@ pre {
   padding: 4px 0;
 }
 
-.activity-fold[open] > summary,
 .fold[open] > summary {
   margin-bottom: 4px;
 }
 
-.plus {
-  color: var(--ok);
-  font-variant-numeric: tabular-nums;
-}
-
-.minus {
-  color: var(--bad);
-  font-variant-numeric: tabular-nums;
-}
-
-.muse-summary {
-  font-size: 13px;
-}
-
 /* What the session bridge adds to a Muse Code round (components/build/session.tsx) */
-
-.pill-sm {
-  gap: 5px;
-  padding: 1px 8px;
-  font-size: 11px;
-}
-
-.pill-sm .pill-dot {
-  width: 6px;
-  height: 6px;
-}
 
 .pill-dot.dot-neutral {
   background: var(--faint);
@@ -2314,7 +2410,6 @@ pre {
 
 .goal-card,
 .todo-card,
-.wf-card,
 .question-card {
   display: flex;
   flex-direction: column;
@@ -2487,19 +2582,16 @@ pre {
 }
 
 .steer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   align-self: flex-end;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
   max-width: min(85%, 520px);
-}
-
-.bubble-steer {
-  padding: 8px 14px;
-  border-radius: 18px;
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .steer-meta {
@@ -2511,63 +2603,6 @@ pre {
 
 .steer-refused .steer-meta {
   color: var(--bad);
-}
-
-.wf-card {
-  gap: 6px;
-}
-
-.wf-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-}
-
-.wf-head svg {
-  flex: none;
-  color: var(--accent-text);
-}
-
-.wf-title {
-  min-width: 0;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.wf-phase {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.wf-children {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.wf-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.wf-child-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.act-running .act-icon {
-  color: var(--accent-text);
-}
-
-.act .pill-sm {
-  flex: none;
-  align-self: center;
 }
 
 .question-card {
@@ -2827,21 +2862,13 @@ pre {
   background: #000;
 }
 
-.jump {
+/* Centered on the column, 16 px above the composer's card (about 130 px tall, 24 px off the window's edge). */
+.room-jump {
   position: sticky;
-  bottom: 120px;
+  bottom: 170px;
   z-index: 11;
   align-self: center;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-top: -36px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--fg);
-  box-shadow: var(--shadow-float);
+  margin-top: -32px;
 }
 
 /* ---------- Right panel (build room and product page) ---------- */
@@ -3075,77 +3102,6 @@ pre {
 }
 
 /* The agents at work in a session bridge round, as a tree */
-
-.agent-tree,
-.agent-tree ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.agent-tree ul {
-  margin-left: 7px;
-  padding-left: 12px;
-  border-left: 2px solid var(--line);
-}
-
-.agent-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  font-size: 14px;
-}
-
-.agent-row svg {
-  flex: none;
-  color: var(--muted);
-}
-
-.agent-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.3;
-}
-
-.agent-name {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.agent-meta {
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-
-.preview-card {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-}
-
-.preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.preview-card iframe {
-  display: block;
-  width: 100%;
-  aspect-ratio: 10 / 13;
-  border: 0;
-  background: #fff;
-}
 
 /* ---------- Product page ---------- */
 

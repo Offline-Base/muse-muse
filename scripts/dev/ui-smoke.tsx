@@ -354,12 +354,10 @@ const liveHtml = renderToString(
 );
 for (const needle of [
   "Feeder Count",
-  "Muse Code built it",
-  "Fix round 1",
-  "Checks, try 2",
-  "Shipped",
+  "Show thinking",
+  "Checks passed, try 2",
+  "live.",
   "/api/mcp/feeder-count",
-  "+40",
   "Count the birds for me",
 ]) {
   assert.ok(liveHtml.includes(needle), `live render includes ${needle}`);
