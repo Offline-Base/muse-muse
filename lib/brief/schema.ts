@@ -82,4 +82,13 @@ export const NewBriefSchema = BriefSchema.extend({
     .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS), why: z.string() }))
     .min(1),
 });
+
+const NEW_PRODUCT_MODELS_NO_GADGET = NEW_PRODUCT_MODELS.filter((m) => m !== "muse-gadget") as unknown as typeof NEW_PRODUCT_MODELS;
+
+/** NewBriefSchema without muse-gadget, for when GADGETS_ENABLED is off. */
+export const NewBriefSchemaNoGadget = BriefSchema.extend({
+  capabilities: z
+    .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS_NO_GADGET), why: z.string() }))
+    .min(1),
+});
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

@@ -248,6 +248,16 @@ export const env = {
     return null;
   },
 
+  // ---------- Gadgets as a build option (docs/GADGETS.md) ----------
+
+  /**
+   * True when GADGETS_ENABLED is "1", "true", "yes" or "on" (any case). Off by default: the brief writer isn't offered
+   * muse-gadget, so no new product picks it until the builder snapshot has the gadget helper and skill.
+   */
+  get gadgetsEnabled(): boolean {
+    return ["1", "true", "yes", "on"].includes((process.env.GADGETS_ENABLED ?? "").trim().toLowerCase());
+  },
+
   // ---------- Flash drive order requests (docs/VIBE_TUNING.md, Feature 6; lib/drive) ----------
 
   /** True when DRIVE_ENABLED is "1", "true", "yes" or "on" (any case). Off by default: no offer, no form, no requests. */

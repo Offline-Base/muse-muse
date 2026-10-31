@@ -1,6 +1,7 @@
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
+import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 
 /**
@@ -82,21 +83,23 @@ function modelBlock(m: CatalogModel): string {
   return lines.join("\n");
 }
 
-let cached: string | null = null;
+const cached = new Map<boolean, string>();
 
 /** The catalog summary pasted into the brief writer's instructions. */
 export function catalogSummary(): string {
-  if (cached) return cached;
+  const gadgets = env.gadgetsEnabled;
+  const hit = cached.get(gadgets);
+  if (hit) return hit;
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
     .filter((m) => m.hosted && m.id && allowed.has(m.id) && m.id !== RETIRED_SPARK)
     .sort((a, b) => Number(b.id === "muse-wonder-1.0") - Number(a.id === "muse-wonder-1.0"));
-  cached = [
+  const summary = [
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map(modelBlock),
     "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
-    "- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead.",
+    ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     "- Text-to-speech: the browser's built-in speech synthesis.",
@@ -108,8 +111,9 @@ export function catalogSummary(): string {
     "How products run:",
     "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
-    "- Products reach only Meta's models, and a connected gadget when the brief picks muse-gadget. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.",
+    `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
   ].join("\n");
-  return cached;
+  cached.set(gadgets, summary);
+  return summary;
 }

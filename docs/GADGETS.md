@@ -4,7 +4,7 @@ A first pass, Oct 30, 2026, on branch `gadget-option`: `docs` plus Hussam's `dev
 
 ## How it works
 
-A gadget is an option the brief writer picks the way it picks a model.
+A gadget is an option the brief writer picks the way it picks a model. It's off until `GADGETS_ENABLED=1`: with it off, the brief writer isn't told about gadgets and its schema can't pick one, so nothing changes for production builds.
 
 | Piece | Where | What it does |
 |---|---|---|
@@ -24,7 +24,7 @@ Tests: `lib/gateway/__tests__/gadget.test.ts` and `lib/brief/__tests__/gadget-op
 
 ## Left to do
 
-1. **A new builder snapshot.** Template changes reach builds only after `npm run snapshot` and a new `BUILDER_SNAPSHOT_ID` on Vercel. Not run yet.
+1. **A new builder snapshot, then the switch.** Template changes reach builds only after `npm run snapshot` and a new `BUILDER_SNAPSHOT_ID` on Vercel. Then set `GADGETS_ENABLED=1`. Neither is done yet.
 2. **A board per owner.** Today every live product with the option shares the one board the platform has connected. Next: a registry of boards per owner (URL and token, stored encrypted), a "connect a gadget" screen, and the gateway picking the owner's board.
 3. **More tools on `muse-device`.** Show something on a screen or the e-ink tablet, set a pin on the UNO Q, read a sensor. Add each one to `PRODUCT_GADGET_TOOLS`, the simulator and the skill.
 4. **Where it shows.** "Uses your gadget" on product pages, and a Make-page example that asks for hardware.
