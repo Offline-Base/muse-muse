@@ -51,3 +51,25 @@ export function applyLookScript(dir: string = OVERLAYS_DIR): string {
     `git diff --cached --quiet || git commit -qm ${q(LOOK_COMMIT)}`,
   ].join("\n");
 }
+
+/**
+ * Before every verify and demo, in a product with the look (LOOK_COMMIT in its history): puts the overlay's platform files
+ * (platform-files.json, the muse-app-ui skill) back from the read-only copy, so a build can't rewrite the look's
+ * instructions for its own later rounds. The rest of the look (muse-app.css, layout.tsx, AGENTS.md) is the build's to
+ * change. Does nothing, and says nothing, in a product without the look, or in a sandbox whose overlay has no such list.
+ * restoreTargetFilesScript does the same for a brief's targets, from active.json, which never names the look.
+ */
+export function restoreLookFilesScript(dir: string = OVERLAYS_DIR): string {
+  const overlay = `${dir}/${MUSE_APP_OVERLAY}`;
+  const list = `for(const p of JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")))console.log(p)`;
+  return [
+    `if [ -f ${q(`${overlay}/platform-files.json`)} ] && [ -n "$(git log --format=%s --grep=${q(`^${LOOK_COMMIT}$`)} -1 2>/dev/null)" ]; then`,
+    `  node -e ${q(list)} ${q(`${overlay}/platform-files.json`)} | while IFS= read -r p; do`,
+    `    rm -rf -- "$p"`,
+    `    mkdir -p -- "$(dirname -- "$p")"`,
+    // "./$p" rather than `--`: BSD chmod takes `--` after the mode as a file name. The paths are the overlay's, never "-x".
+    `    cp -R -- ${q(`${overlay}/files`)}/"$p" "$p" && chmod -R u+w "./$p" || echo "musemuse: couldn't restore $p" >&2`,
+    `  done`,
+    `fi`,
+  ].join("\n");
+}

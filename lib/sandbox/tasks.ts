@@ -16,6 +16,7 @@ import {
   TARGET_OVERLAYS,
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
+import { restoreLookFilesScript } from "@/lib/sandbox/look";
 import { q } from "@/lib/sandbox/shell";
 
 export type SandboxTask = "verify" | "demo";
@@ -301,14 +302,16 @@ export function freeProductPortsScript(): string {
 }
 
 /**
- * The runner's bash for a task: restore the platform files, free the product ports for the demo, then run it.
- * stdout is teed to `outPath` because verify's summary must be the last line of stdout, not of stderr.
+ * The runner's bash for a task: restore the platform files (the template's, a brief's targets' and the muse-app look's),
+ * free the product ports for the demo, then run it. stdout is teed to `outPath` because verify's summary must be the
+ * last line of stdout, not of stderr.
  */
 export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths = {}): string {
   return [
     "set -o pipefail",
     restorePlatformFilesScript(opts.pristineDir),
     restoreTargetFilesScript(opts.targetsDir),
+    restoreLookFilesScript(opts.targetsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
       : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),

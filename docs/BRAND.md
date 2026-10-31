@@ -484,8 +484,11 @@ Done Oct 31. Off by default, so no build changes until the flag is on and a new 
 `template/scripts/__tests__/muse-app.test.mjs` keeps the copied files in step with the base files (rebuild them with
 `UPDATE_OVERLAY=1`), and checks that the skill's snippets use only the template's classes, components, icons and tokens
 and no raw colors. `contrast.test.mjs` checks the look's text pairs in light and dark, following the real cascade.
-`platform-files.json` lists the skill, as the glasses overlay lists its own. Nothing on this branch puts an overlay's
-platform files back before a check yet (the VR branch adds that for brief targets), and verify reads none of these files.
+`platform-files.json` lists the skill, as the glasses overlay lists its own. Before every verify and demo,
+`restoreLookFilesScript` (`lib/sandbox/look.ts`, run by `taskScript`) puts the skill back from the read-only copy in a
+product whose history has "Look: muse-app", the way `restoreTargetFilesScript` does for a brief's targets, so a build
+can't rewrite the look's instructions for its later rounds. `muse-app.css`, `layout.tsx` and `AGENTS.md` stay the
+build's to change. Verify reads none of these files.
 
 **What the flag does.** `MUSE_APP_LOOK` in `lib/env.ts` (`env.museAppLook`), in `.env.example` and in the `FLAGS` of
 `flags-off.test.ts`. When it's on:

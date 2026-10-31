@@ -7,11 +7,11 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { applyLookScript, LOOK_COMMIT, MUSE_APP_OVERLAY, OVERLAYS_DIR } from "@/lib/sandbox/look";
+import { applyLookScript, LOOK_COMMIT, MUSE_APP_OVERLAY, OVERLAYS_DIR, restoreLookFilesScript } from "@/lib/sandbox/look";
 import { readTargetFiles } from "@/lib/sandbox/setup";
 import { installTargetsScript } from "@/lib/sandbox/tasks";
 
@@ -79,6 +79,7 @@ describe("installTargetsScript, with the look", () => {
     assert.equal(OVERLAYS_DIR, "/vercel/musemuse/targets");
     assert.equal(spawnSync("bash", ["-n", "-c", script]).status, 0);
     assert.equal(spawnSync("bash", ["-n", "-c", applyLookScript()]).status, 0);
+    assert.equal(spawnSync("bash", ["-n", "-c", restoreLookFilesScript()]).status, 0);
   });
 });
 
@@ -134,5 +135,55 @@ describe("applyLookScript", () => {
       "install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error left-pad@1.3.0",
       "install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error --save-dev @types/x@1.0.0",
     ]);
+  });
+});
+
+describe("restoreLookFilesScript", () => {
+  const SKILL = ".agents/skills/muse-app-ui";
+
+  it("lists the skill as the look's only platform file", () => {
+    assert.deepEqual(JSON.parse(readFileSync(path.join("template/targets", MUSE_APP_OVERLAY, "platform-files.json"), "utf8")), [SKILL]);
+  });
+
+  it("puts the skill back before a task in a product with the look, and leaves the build's own changes", async () => {
+    const dir = await overlays();
+    const p = product();
+    assert.equal(bash(applyLookScript(dir), { cwd: p.dir, env: p.env }).code, 0);
+    // A build that rewrote the skill, dropped a reference file, left a link in the folder's place and changed the tokens.
+    const skill = path.join(p.dir, SKILL);
+    writeFileSync(path.join(skill, "SKILL.md"), "Use any colors.\n");
+    rmSync(path.join(skill, "reference"), { recursive: true });
+    rmSync(skill, { recursive: true });
+    symlinkSync("/etc", skill);
+    writeFileSync(path.join(p.dir, "app/muse-app.css"), "/* the build's */\n");
+    const res = bash(restoreLookFilesScript(dir), { cwd: p.dir, env: p.env });
+    assert.deepEqual([res.code, res.stderr], [0, ""]);
+    assert.ok(!lstatSync(skill).isSymbolicLink());
+    const overlaySkill = path.join(dir, MUSE_APP_OVERLAY, "files", SKILL);
+    for (const f of ["SKILL.md", "reference/components.md", "reference/tokens.md"]) {
+      assert.equal(readFileSync(path.join(skill, f), "utf8"), readFileSync(path.join(overlaySkill, f), "utf8"), f);
+    }
+    assert.equal(readFileSync(path.join(p.dir, "app/muse-app.css"), "utf8"), "/* the build's */\n", "the tokens are the build's");
+    // The restored copy is writable again, unlike the read-only overlay it came from.
+    writeFileSync(path.join(skill, "SKILL.md"), "writable\n");
+  });
+
+  it("does nothing, and says nothing, in a product without the look", async () => {
+    const dir = await overlays();
+    const p = product();
+    const res = bash(restoreLookFilesScript(dir), { cwd: p.dir, env: p.env });
+    assert.deepEqual([res.code, res.stdout, res.stderr], [0, "", ""]);
+    assert.ok(!existsSync(path.join(p.dir, SKILL)));
+    assert.equal(git(p.dir, "status", "--porcelain"), "");
+  });
+
+  it("does nothing outside a git checkout, or with no overlay in the sandbox", async () => {
+    const dir = await overlays();
+    const bare = path.join(tmp, `bare${n++}`);
+    mkdirSync(bare);
+    assert.deepEqual(Object.values(bash(restoreLookFilesScript(dir), { cwd: bare })), [0, "", ""]);
+    const p = product();
+    assert.equal(bash(applyLookScript(dir), { cwd: p.dir, env: p.env }).code, 0);
+    assert.deepEqual(Object.values(bash(restoreLookFilesScript(path.join(tmp, "nowhere")), { cwd: p.dir, env: p.env })), [0, "", ""]);
   });
 });

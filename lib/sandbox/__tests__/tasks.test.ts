@@ -8,7 +8,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { MUSE_APP_OVERLAY } from "@/lib/sandbox/look";
+import { MUSE_APP_OVERLAY, restoreLookFilesScript } from "@/lib/sandbox/look";
 import { PLATFORM_FILES, TARGET_OVERLAYS } from "@/lib/sandbox/paths";
 import { writeRunner } from "@/lib/sandbox/shell";
 import {
@@ -477,6 +477,7 @@ test("every generated script is valid bash", () => {
     activeTargetsScript(["web", "vr"]),
     applyTargetScript(["web", "vr", "glasses", "phone"]),
     restoreTargetFilesScript(),
+    restoreLookFilesScript(),
     demoScript("/x/it's.out", { pristineDir: "/x/it's", specPath: "/x/it's.json", outDir: "/x/it's" }),
     demoSpecCopyScript(),
     studioCommand("/x/it's.json", true),
@@ -617,10 +618,12 @@ test("a sandbox with no target changes nothing before a task, and says nothing",
   assert.ok(!existsSync(path.join(product, "musemuse.target.json")));
 });
 
-test("the verify and demo runners restore targets after the platform files", () => {
+test("the verify and demo runners restore targets and the look after the platform files", () => {
   for (const task of ["verify", "demo"] as const) {
     const script = taskScript(task, "/x/out");
     assert.ok(script.indexOf(restorePlatformFilesScript()) < script.indexOf(restoreTargetFilesScript()));
-    assert.ok(script.indexOf(restoreTargetFilesScript()) < script.indexOf(task === "demo" ? freeProductPortsScript() : "node scripts/verify.mjs"));
+    assert.ok(script.indexOf(restoreTargetFilesScript()) < script.indexOf(restoreLookFilesScript()));
+    assert.ok(script.indexOf(restoreLookFilesScript()) < script.indexOf(task === "demo" ? freeProductPortsScript() : "node scripts/verify.mjs"));
+    assert.ok(taskScript(task, "/x/out", { targetsDir: "/x/it's" }).includes(restoreLookFilesScript("/x/it's")), "from the same overlays folder");
   }
 });
