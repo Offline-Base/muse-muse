@@ -3,7 +3,7 @@
  * sandbox. Nothing here touches the build's status or the product, so no failure here can reach Live.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit } from "@/lib/events";
@@ -28,11 +28,14 @@ import {
   skillTestPrompt,
   SKILL_TEST_MAX_STEPS,
   SKILL_TEST_RESERVE_USD,
+  spentByEarlierRuns,
+  stoppedDetail,
   studioSpecFor,
   videoCaption,
   type ProveCall,
   type ProvedOutput,
   type ProveRunSpec,
+  type ProveStopped,
 } from "@/lib/outputs/prove";
 import { parseManifest } from "@/lib/format";
 import type { ProveOrigin } from "@/lib/pipeline/prove-types";
@@ -57,6 +60,7 @@ export interface ProveCtx {
   name: string;
   liveUrl: string;
   site: string;
+  /** What this run may spend: the build's cap, less what earlier runs on it spent. */
   capUsd: number;
   model: BuildModel;
   /** Nightly re-checks record no video. */
@@ -102,6 +106,15 @@ async function spendPaused(): Promise<boolean> {
   return (await platformSpendToday()) >= env.dailySpendCapUsd;
 }
 
+/** What earlier Prove it runs on this build spent. A run that died before its closing line isn't in it. */
+async function earlierRunsSpendUsd(buildId: string, runId: string): Promise<number> {
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), eq(schema.buildEvents.type, "prove")));
+  return spentByEarlierRuns(rows.map((r) => r.payload as { type?: unknown; runId?: unknown; item?: unknown; costUsd?: unknown }), runId);
+}
+
 /**
  * Checks there is something to prove, makes the copy and puts in what the run needs. Null, with a line saying why, when
  * the run can't go ahead. No retries, since a retry would make a second copy.
@@ -135,6 +148,8 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
   const manifest = parseManifest(row.manifest);
   if (!publicActions(manifest).length) return skip("This product has no actions to call, so it has no MCP tools, CLI or skill.");
   if (await spendPaused()) return skip("The platform's spending cap for today has been reached.");
+  const capUsd = env.proveItCapUsd - (await earlierRunsSpendUsd(buildId, runId));
+  if (capUsd <= 0) return skip("This build has used its Prove it budget.");
   const liveHost = publicHost(row.liveUrl);
   if (!liveHost || !row.liveUrl.startsWith("https://")) return skip("The product's live link can't be reached from a sandbox.");
 
@@ -148,9 +163,10 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
       product,
       origin: site,
       dir: PROVE_DIR,
-      capUsd: env.proveItCapUsd,
+      capUsd,
       estimatedCostPerRunUsd: manifest?.estimatedCostPerRunUsd ?? 0,
       fetchable: !env.provePutFiles,
+      readOnlyOnly: origin === "nightly",
     });
     await sandbox.writeProveFiles(copy, [...proveCheckFiles(spec), ...(spec.downloads ? [] : generatedFilesFor(product, site, PROVE_DIR))]);
     const ctx: ProveCtx = {
@@ -163,7 +179,7 @@ export async function proveOpenStep(input: { buildId: string; runId: string; ori
       name: row.name,
       liveUrl: row.liveUrl,
       site,
-      capUsd: env.proveItCapUsd,
+      capUsd,
       model: origin === "nightly" ? NIGHTLY_MODEL : PROVE_MODEL,
       record: origin !== "nightly",
       since: new Date().toISOString(),
@@ -189,13 +205,33 @@ export async function proveStartChecksStep(ctx: ProveCtx): Promise<string> {
   return cmdId;
 }
 
-/** What the product's actions have cost since the run started: every call a run makes goes through the gateway. */
+/** What the product's actions have cost since the run started: every call goes through the gateway, and an agent's tools count too. */
 async function actionSpendUsd(ctx: Pick<ProveCtx, "productId" | "since">): Promise<number> {
   const [row] = await db()
     .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)::float8` })
     .from(schema.usage)
-    .where(and(eq(schema.usage.productId, ctx.productId), eq(schema.usage.source, "gateway"), gte(schema.usage.at, new Date(ctx.since))));
+    .where(and(eq(schema.usage.productId, ctx.productId), inArray(schema.usage.source, ["gateway", "tools"]), gte(schema.usage.at, new Date(ctx.since))));
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Adds the product calls a run made to its build's cost and returns the run's whole cost. Call it once per run, from the
+ * step that ends it. Never throws, since the run's end still has to be said.
+ */
+async function chargeRun(ctx: ProveCtx): Promise<number> {
+  let added = 0;
+  try {
+    added = await actionSpendUsd(ctx);
+    if (added > 0) await addBuildCost(ctx.buildId, added, "Prove it: calls to the live product");
+    const [row] = await db()
+      .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)::float8` })
+      .from(schema.usage)
+      .where(and(eq(schema.usage.buildId, ctx.buildId), eq(schema.usage.source, "muse_code"), sql`${schema.usage.endpoint} like 'muse exec prove%'`, gte(schema.usage.at, new Date(ctx.since))));
+    return added + Number(row?.total ?? 0);
+  } catch (err) {
+    console.error("[prove] charge", err);
+    return added;
+  }
 }
 
 export interface ProveChecksEnd {
@@ -207,10 +243,12 @@ export interface ProveChecksEnd {
   skillCall: ProveCall | null;
   /** Whether the skill file itself came down and reads right. */
   skillFileOk: boolean;
+  /** Why the checks were stopped, when they were. */
+  stopped: ProveStopped | null;
 }
 
 /** Reads what the checks did and says so for each output. */
-export async function proveCollectChecksStep(ctx: ProveCtx, timedOut: boolean): Promise<ProveChecksEnd> {
+export async function proveCollectChecksStep(ctx: ProveCtx, stopped: ProveStopped | null): Promise<ProveChecksEnd> {
   "use step";
   const text = await sandbox.readSandboxText(ctx.copy, `${PROVE_DIR}/results.json`);
   const results = parseProveResults(text);
@@ -221,7 +259,7 @@ export async function proveCollectChecksStep(ctx: ProveCtx, timedOut: boolean): 
   for (const output of ["mcp", "cli", "claude_plugin"] as const) {
     const result = results?.outputs[output];
     const said = describeResult(output, result);
-    const final = timedOut && !result?.ok ? { ...said, state: "failed" as const, detail: "The checks ran out of time." } : said;
+    const final = stopped && !result?.ok ? { ...said, state: "failed" as const, detail: stoppedDetail(stopped) } : said;
     summaries[output] = { state: final.state, title: final.title, ...(final.detail ? { detail: final.detail } : {}) };
     if (final.state === "done") passed.push(output);
     await say(ctx, output, final);
@@ -233,7 +271,14 @@ export async function proveCollectChecksStep(ctx: ProveCtx, timedOut: boolean): 
     resultsHash: text ? createHash("sha256").update(text).digest("hex") : null,
     skillCall: spec ? skillTestCall(spec, results?.outputs.mcp) : null,
     skillFileOk: skill?.ok === true,
+    stopped,
   };
+}
+
+/** Whether the product's calls have used up this run's money. Polled while the checks run, since their calls aren't capped otherwise. */
+export async function proveChecksOverCapStep(ctx: ProveCtx): Promise<boolean> {
+  "use step";
+  return (await leftUsd(ctx, 0)) <= 0;
 }
 
 /** What's left under the cap, by what's been recorded. */
@@ -246,16 +291,19 @@ export interface SkillRun {
   logPath: string;
   command: string;
   action: string;
+  /** The fields the action's reply must have. */
+  replyRequired?: string[];
   startedAt: number;
 }
 
 /** Starts the skill test, or says why it won't run: no call worked, the skill file is wrong, or the money isn't there. */
-export async function proveStartSkillStep(ctx: ProveCtx, checks: Pick<ProveChecksEnd, "skillCall" | "skillFileOk">): Promise<SkillRun | null> {
+export async function proveStartSkillStep(ctx: ProveCtx, checks: Pick<ProveChecksEnd, "skillCall" | "skillFileOk" | "stopped">): Promise<SkillRun | null> {
   "use step";
   const skip = async (state: ProveEventBody["state"], title: string, detail: string) => {
     await say(ctx, "skill", { state, title, detail });
     return null;
   };
+  if (checks.stopped && !checks.skillFileOk) return skip("skipped", "Skill file: not tested", stoppedDetail(checks.stopped));
   if (!checks.skillFileOk) return skip("failed", "Skill file: didn't work", "The skill file didn't download or doesn't read right, so Muse Code didn't try it.");
   if (!checks.skillCall) return skip("skipped", "Skill file: downloaded, not used", "No action had a call that worked, so Muse Code had nothing to run with it.");
   const reserve = SKILL_TEST_RESERVE_USD[ctx.model] ?? SKILL_TEST_RESERVE_USD["muse-wonder-1.0"];
@@ -270,7 +318,7 @@ export async function proveStartSkillStep(ctx: ProveCtx, checks: Pick<ProveCheck
   ]);
   await say(ctx, "skill", { state: "running", title: "Skill file: Muse Code is using it" });
   const run = await sandbox.startSkillTest({ sandboxName: ctx.copy, cwd: PROVE_SKILL_DIR, model: ctx.model, maxModelSteps: SKILL_TEST_MAX_STEPS, sessionId: newSessionId() });
-  return { ...run, action: checks.skillCall.name, startedAt: Date.now() };
+  return { ...run, action: checks.skillCall.name, ...(checks.skillCall.replyRequired ? { replyRequired: checks.skillCall.replyRequired } : {}), startedAt: Date.now() };
 }
 proveStartSkillStep.maxRetries = 1;
 
@@ -327,14 +375,14 @@ provePollSkillStep.maxRetries = 2;
 /** Judges the skill test from its log and what it saved, and says so. Returns whether it passed. */
 export async function proveFinishSkillStep(
   ctx: ProveCtx,
-  run: Pick<SkillRun, "logPath" | "action">,
+  run: Pick<SkillRun, "logPath" | "action" | "replyRequired">,
   end: { exitCode: number | null; timedOut: boolean },
 ): Promise<{ summary: ProveSummary; ok: boolean; lines: string[] }> {
   "use step";
   const log = (await sandbox.readSandboxText(ctx.copy, run.logPath)) ?? "";
   const facts = skillTestFacts(log, { skill: skillName(ctx.slug), action: run.action, liveHost: publicHost(ctx.liveUrl) ?? "" });
   const reply = await sandbox.readSandboxText(ctx.copy, `${PROVE_SKILL_DIR}/reply.json`);
-  const judged = judgeSkillTest({ exitCode: end.exitCode, timedOut: end.timedOut, readSkill: facts.readSkill, calledAction: facts.calledAction, reply, action: run.action });
+  const judged = judgeSkillTest({ exitCode: end.exitCode, timedOut: end.timedOut, readSkill: facts.readSkill, calledAction: facts.calledAction, reply, action: run.action, required: run.replyRequired });
   const summary: ProveSummary = judged.ok
     ? { state: "done", title: `Skill file: Muse Code used it to run ${run.action}` }
     : { state: "failed", title: "Skill file: Muse Code couldn't use it", detail: judged.problem };
@@ -409,30 +457,23 @@ export async function proveFinishRecordStep(ctx: ProveCtx, input: { passed: Prov
 }
 proveFinishRecordStep.maxRetries = 1;
 
-/** Charges the product calls the run made, deletes the copy and closes the run. */
+/**
+ * Charges the product calls the run made, deletes the copy and closes the run. It doesn't throw once it has charged, so
+ * proveFailStep can't charge the same calls again: a run whose closing line can't be written shows as stale later.
+ */
 export async function proveCloseStep(ctx: ProveCtx): Promise<void> {
   "use step";
-  let added = 0;
-  try {
-    added = await actionSpendUsd(ctx);
-    if (added > 0) await addBuildCost(ctx.buildId, added, "Prove it: calls to the live product");
-  } catch (err) {
-    console.error("[prove] charge", err);
-  }
+  const costUsd = await chargeRun(ctx);
   await sandbox.deleteProveCopy(ctx.copy).catch((err: unknown) => console.warn(`[prove] delete ${ctx.copy}: ${String(err)}`));
-  const [row] = await db()
-    .select({ total: sql<number>`coalesce(sum(${schema.usage.costUsd}), 0)::float8` })
-    .from(schema.usage)
-    .where(and(eq(schema.usage.buildId, ctx.buildId), eq(schema.usage.source, "muse_code"), sql`${schema.usage.endpoint} like 'muse exec prove%'`, gte(schema.usage.at, new Date(ctx.since))));
-  const costUsd = added + Number(row?.total ?? 0);
-  await say(ctx, "stage", { state: "done", title: "Tested what this product comes with", costUsd });
+  await say(ctx, "stage", { state: "done", title: "Tested what this product comes with", costUsd }).catch((err: unknown) => console.error("[prove] close", err));
 }
 proveCloseStep.maxRetries = 0;
 
-/** Everything a failed run still owes: the copy gone and a line saying what happened. Never throws. */
+/** Everything a failed run still owes: what it spent charged, the copy gone and a line saying what happened. Never throws. */
 export async function proveFailStep(ctx: ProveCtx, err: unknown): Promise<void> {
   "use step";
+  const costUsd = await chargeRun(ctx);
   await sandbox.deleteProveCopy(ctx.copy).catch((e: unknown) => console.warn(`[prove] delete ${ctx.copy}: ${String(e)}`));
-  await say(ctx, "stage", { state: "failed", title: "Prove it didn't finish", detail: failureMessage("prove", err).slice(0, 500) }).catch(() => undefined);
+  await say(ctx, "stage", { state: "failed", title: "Prove it didn't finish", detail: failureMessage("prove", err).slice(0, 500), costUsd }).catch(() => undefined);
 }
-proveFailStep.maxRetries = 1;
+proveFailStep.maxRetries = 0;

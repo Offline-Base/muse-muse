@@ -297,7 +297,7 @@ export interface ProveEventBody {
 
 export type ProveItemView = Omit<ProveEventBody, "type" | "runId" | "origin"> & { at: string | null };
 
-/** The newest run, with what earlier runs recorded for any output it has no video of. */
+/** The newest run, with what earlier runs recorded for any output it has no result or video of. */
 export interface ProveView {
   runId: string;
   origin: ProveEventBody["origin"];
@@ -313,7 +313,8 @@ export const PROVE_UNSETTLED: readonly ProveItemState[] = ["planned", "running"]
 
 /**
  * Condenses a build's `prove` events to what a viewer needs: the newest run, oldest first by when each part was first
- * mentioned. A nightly re-check records no video, so an output keeps the video of the run before it. Null with none.
+ * mentioned. A nightly re-check records no video, so an output keeps the video of the run before it. A run that ended
+ * before reaching an output leaves that output as the last finished run had it, with its own date. Null with none.
  */
 export function condenseProveEvents(events: ReadonlyArray<{ type: string; at?: string }>): ProveView | null {
   const runs = new Map<string, { origin: ProveEventBody["origin"]; items: Map<string, ProveItemView>; lastAt: string | null }>();
@@ -333,7 +334,14 @@ export function condenseProveEvents(events: ReadonlyArray<{ type: string; at?: s
   }
   const run = newest ? runs.get(newest) : undefined;
   if (!newest || !run) return null;
-  const items = [...run.items.values()].map((i) => ({ ...i, media: i.media ?? media.get(i.item) }));
+  const earlier = [...runs.entries()].filter(([id]) => id !== newest).reverse();
+  const carried = new Map<string, ProveItemView>();
+  for (const [, older] of earlier) {
+    for (const item of older.items.values()) {
+      if (item.item !== "stage" && !PROVE_UNSETTLED.includes(item.state) && !run.items.has(item.item) && !carried.has(item.item)) carried.set(item.item, item);
+    }
+  }
+  const items = [...run.items.values(), ...carried.values()].map((i) => ({ ...i, media: i.media ?? media.get(i.item) }));
   // The stage's own line says when a run is over. Older events, or one with no such line, go by their parts.
   const stage = items.find((i) => i.item === "stage");
   return {

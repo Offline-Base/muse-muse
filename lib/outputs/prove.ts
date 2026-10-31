@@ -4,7 +4,7 @@
  * lib/pipeline/prove.ts.
  */
 import { noEmDashes } from "@/lib/brief/normalize";
-import { cliFileName, cliSource, outputLinks, pluginFileName, pluginZip, publicActions, skillMarkdown, skillName, type OutputAction, type OutputProduct } from "@/lib/outputs/generate";
+import { cliFileName, cliSource, outputLinks, pluginFileName, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputAction, type OutputProduct } from "@/lib/outputs/generate";
 import { OUTPUT_LABEL } from "@/lib/outputs/labels";
 import type { ProductOutput } from "@/lib/native/targets";
 import type { BuildModel } from "@/lib/sandbox/muse";
@@ -84,6 +84,8 @@ export function sampleInput(action: OutputAction): Record<string, unknown> | nul
 export interface ProveCall {
   name: string;
   args: Record<string, unknown>;
+  /** The fields the action's reply must have, by its output schema. */
+  replyRequired?: string[];
 }
 
 /** What prove-runner.mjs reads. `downloads` is null when the files were put there directly, for a site without these routes. */
@@ -92,6 +94,7 @@ export interface ProveRunSpec {
   slug: string;
   name: string;
   pluginName: string;
+  skillName: string;
   liveUrl: string;
   mcpUrl: string;
   actionNames: string[];
@@ -101,10 +104,19 @@ export interface ProveRunSpec {
   downloads: { cli: string; skill: string; claudePlugin: string } | null;
 }
 
+/** What the manifest says about whether an action changes anything: true when it only reads, undefined when it doesn't say. */
+function onlyReads(action: OutputAction): boolean | undefined {
+  const readOnly = (action as { annotations?: { readOnly?: unknown } }).annotations?.readOnly;
+  return typeof readOnly === "boolean" ? readOnly : undefined;
+}
+
 /**
- * The checks for one product. Every action's tool is listed, and each is called for real while the manifest's estimate
- * of a run keeps the calls under half the cap, up to MAX_CALLS. The CLI calls the first one again. An action that is
- * left out says why.
+ * The checks for one product. They run on the live product, where other people's data is, so a test only calls what is
+ * safe to call. Every action's tool is listed. An action marked as changing things is never called, and one marked
+ * read-only is called with its example or a value made from its schema. An unmarked action might change things: it needs
+ * an example, the input the template's tests already run it on, and a run calls at most one of those, after the read-only
+ * ones, so the CLI and the skill test pick a read-only action when there is one. All of this stays under half the cap by
+ * the manifest's estimate, up to MAX_CALLS. An action that is left out says why.
  */
 export function planChecks(input: {
   product: OutputProduct & { liveUrl: string };
@@ -114,8 +126,10 @@ export function planChecks(input: {
   estimatedCostPerRunUsd: number;
   /** False when the site can't be downloaded from here. */
   fetchable: boolean;
+  /** Calls only actions marked read-only: a nightly re-check shouldn't repeat anything else every night. */
+  readOnlyOnly?: boolean;
 }): ProveRunSpec {
-  const { product, origin, dir, capUsd, estimatedCostPerRunUsd: each, fetchable } = input;
+  const { product, origin, dir, capUsd, estimatedCostPerRunUsd: each, fetchable, readOnlyOnly = false } = input;
   const links = outputLinks(origin, product.slug);
   const actions = publicActions(product.manifest);
   const budget = capUsd / 2;
@@ -123,21 +137,31 @@ export function planChecks(input: {
   let planned = each;
   const calls: ProveCall[] = [];
   const notCalled: Array<{ name: string; why: string }> = [];
-  for (const action of actions) {
-    const args = sampleInput(action);
-    if (!args) notCalled.push({ name: action.name, why: "It has no example input, and it needs real input such as a file." });
-    else if (calls.length >= MAX_CALLS) notCalled.push({ name: action.name, why: `A run calls at most ${MAX_CALLS} actions.` });
-    else if (planned + each > budget) notCalled.push({ name: action.name, why: "Calling it would go over this build's Prove it budget." });
+  let unmarkedCalled = false;
+  const readFirst = [...actions].sort((a, b) => Number(onlyReads(b) === true) - Number(onlyReads(a) === true));
+  for (const action of readFirst) {
+    const reads = onlyReads(action);
+    const args = reads === true ? sampleInput(action) : action.example && typeof action.example === "object" ? action.example : null;
+    const skip = (why: string) => notCalled.push({ name: action.name, why });
+    if (reads === false) skip("It changes things, so a test run doesn't call it.");
+    else if (reads === undefined && readOnlyOnly) skip("A nightly re-check only calls actions marked read-only.");
+    else if (!args) skip(reads === true ? "It has no example input, and it needs real input such as a file." : "It has no example input, and nothing says a made-up one is safe to send.");
+    else if (reads === undefined && unmarkedCalled) skip("It isn't marked read-only, and a test run calls at most one action like that.");
+    else if (calls.length >= MAX_CALLS) skip(`A run calls at most ${MAX_CALLS} actions.`);
+    else if (planned + each > budget) skip("Calling it would go over this build's Prove it budget.");
     else {
-      calls.push({ name: action.name, args });
+      const required = (action.output as { required?: unknown }).required;
+      calls.push({ name: action.name, args, ...(Array.isArray(required) && required.length ? { replyRequired: required.filter((r): r is string => typeof r === "string") } : {}) });
       planned += each;
+      unmarkedCalled ||= reads === undefined;
     }
   }
   return {
     dir,
     slug: product.slug,
     name: product.name,
-    pluginName: skillName(product.slug),
+    pluginName: pluginName(product.slug),
+    skillName: skillName(product.slug),
     liveUrl: product.liveUrl,
     mcpUrl: links.mcp,
     actionNames: actions.map((a) => a.name),
@@ -146,6 +170,11 @@ export function planChecks(input: {
     cliCall: calls[0] ?? null,
     downloads: fetchable ? { cli: links.cli, skill: links.skill, claudePlugin: links.claudePlugin } : null,
   };
+}
+
+/** What earlier runs on a build spent, from their closing lines. The cap is per build, and a nightly re-check is another run on the same build. */
+export function spentByEarlierRuns(events: ReadonlyArray<{ type?: unknown; runId?: unknown; item?: unknown; costUsd?: unknown }>, runId: string): number {
+  return events.reduce((sum, e) => (e.type === "prove" && e.item === "stage" && e.runId !== runId && typeof e.costUsd === "number" ? sum + e.costUsd : sum), 0);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -165,6 +194,9 @@ export interface ProveOutputResult {
   steps: ProveStepLog[];
   facts: Record<string, unknown>;
 }
+
+/** Why the checks were stopped before they ended. */
+export type ProveStopped = "time" | "budget";
 
 export interface ProveResults {
   startedAt: string;
@@ -187,9 +219,20 @@ const list = (names: readonly string[]): string => (names.length < 2 ? (names[0]
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** The notes that apply, as an event's detail. */
+const notes = (...parts: Array<string | null>): { detail?: string } => {
+  const said = parts.filter(Boolean).join(" ");
+  return said ? { detail: said } : {};
+};
+
 const checksOf = (result: ProveOutputResult): ProveCheck[] => result.steps.map((s) => ({ label: s.caption, ok: s.ok }));
 
 /** One output's result in the words the room and the Get it panel use. Only what really ran is claimed. */
+/** What a stopped run's unfinished outputs say. */
+export function stoppedDetail(stopped: ProveStopped): string {
+  return stopped === "budget" ? "The checks reached this run's budget and were stopped." : "The checks ran out of time.";
+}
+
 export function describeResult(output: Exclude<ProvedOutput, "skill">, result: ProveOutputResult | undefined): Pick<ProveEventBody, "state" | "title" | "detail" | "checks"> {
   const label = OUTPUT_LABEL[output];
   if (!result) return { state: "failed", title: `${label}: the check never finished` };
@@ -203,14 +246,14 @@ export function describeResult(output: Exclude<ProvedOutput, "skill">, result: P
     const good = called.filter((c) => c.ok).map((c) => c.name);
     const bad = called.filter((c) => !c.ok).map((c) => c.name);
     const notCalled = (facts.notCalled ?? []) as Array<{ name: string; why: string }>;
-    const notes = [
+    const left = [
       ...(bad.length ? [`${list(bad)} failed when called.`] : []),
       ...notCalled.map((n) => `${n.name} wasn't called. ${n.why}`),
     ];
     return {
       state: "done",
       title: good.length ? `MCP server: listed ${plural(listed.length, "tool")}, called ${list(good)}` : `MCP server: listed ${plural(listed.length, "tool")}, called none`,
-      ...(notes.length ? { detail: notes.join(" ") } : {}),
+      ...notes(...left),
       checks,
     };
   }
@@ -220,7 +263,7 @@ export function describeResult(output: Exclude<ProvedOutput, "skill">, result: P
     return {
       state: "done",
       title: called ? `CLI: ran ${called} and printed JSON` : "CLI: its help works, and no action was called",
-      ...(fetched ? {} : { detail: "The file was put in place directly, so its download wasn't tested here." }),
+      ...(notes(typeof facts.refused === "string" ? `${facts.refused} refused the sample input, so no call went through.` : null, fetched ? null : "The file was put in place directly, so its download wasn't tested here.")),
       checks,
     };
   }
@@ -257,10 +300,39 @@ export function skillTestCall(spec: Pick<ProveRunSpec, "calls">, mcp: ProveOutpu
   return spec.calls.find((c) => called.some((d) => d.name === c.name && d.ok)) ?? null;
 }
 
+/** A command's simple commands, split where the shell would split them. Quoted text stays whole, so a JSON body can hold a ; or a |. */
+function simpleCommands(command: string): string[] {
+  const parts: string[] = [];
+  let part = "";
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]!;
+    if (quote) {
+      if (c === "\\" && quote === '"') part += command[++i] ?? "";
+      else if (c === quote) quote = null;
+      else part += c;
+    } else if (c === "'" || c === '"') quote = c;
+    else if (";|&()\n".includes(c)) {
+      parts.push(part);
+      part = "";
+    } else part += c;
+  }
+  parts.push(part);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+const CURL_SENDS = /(^|\s)(-[a-zA-Z]*X\s*POST\b|--request[\s=]+POST\b|-[a-zA-Z]*d(\s|$)|--data(-[a-z]+)?\b|--json\b)/;
+
+/** Whether a command POSTs to the action with curl, and doesn't just name its address in a grep or an echo. */
+function postsToAction(command: string, want: { action: string; liveHost: string }): boolean {
+  const address = new RegExp(`\\b${want.liveHost.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(:\\d+)?/api/actions/${want.action}(?![a-zA-Z0-9_-])`);
+  return simpleCommands(command).some((c) => /^(\S+=\S*\s+)*(\S*\/)?curl\s/.test(c) && CURL_SENDS.test(c) && address.test(c));
+}
+
 /**
  * What the skill test's log shows it really did, from its tool results and not from the text around them: the skill
  * itself holds the action's address, so finding the address somewhere in the log proves nothing. A tool's command only
- * counts when the tool says it succeeded.
+ * counts when the tool says it succeeded, and it has to be a POST with curl.
  */
 export function skillTestFacts(log: string, want: { skill: string; action: string; liveHost: string }): { readSkill: boolean; calledAction: boolean; lines: string[] } {
   let readSkill = false;
@@ -296,16 +368,32 @@ export function skillTestFacts(log: string, want: { skill: string; action: strin
     } catch {
       // A tool result that isn't this shape has no command to show.
     }
-    if (ok && command.includes(want.liveHost) && command.includes(`/api/actions/${want.action}`) && (exitCode === undefined || exitCode === 0)) calledAction = true;
+    if (ok && postsToAction(command, want) && (exitCode === undefined || exitCode === 0)) calledAction = true;
     if (ok && /SKILL\.md/.test(command)) readSkill = true;
     lines.push(`bash: ${command || "(no command)"}`);
   }
   return { readSkill, calledAction, lines };
 }
 
+/** What's wrong with a saved reply, by what an action's reply must be. Null when nothing is. */
+function replyProblem(reply: string | null, required: readonly string[]): string | null {
+  let value: unknown;
+  try {
+    value = reply === null ? undefined : JSON.parse(reply);
+  } catch {
+    return "It didn't save the reply as JSON.";
+  }
+  if (value === undefined) return "It didn't save the reply as JSON.";
+  const object = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  // An empty error field is how some products say all went well.
+  if (object && object.error !== undefined && object.error !== null && object.error !== false && object.error !== "") return "The reply it saved has an error in it.";
+  const missing = required.filter((name) => !object || !(name in object));
+  return missing.length ? `The reply it saved leaves out ${list(missing)}.` : null;
+}
+
 /**
  * Whether the skill test really used the skill: Muse Code ended well, its log shows it read the skill and called the
- * action on the live product, and it saved JSON.
+ * action on the live product, and it saved a reply that isn't an error and has what the action promises.
  */
 export function judgeSkillTest(input: {
   exitCode: number | null;
@@ -314,17 +402,14 @@ export function judgeSkillTest(input: {
   calledAction: boolean;
   reply: string | null;
   action: string;
+  /** The fields the action's reply must have. */
+  required?: readonly string[];
 }): { ok: boolean; problem?: string; checks: ProveCheck[] } {
-  let replyOk = false;
-  try {
-    replyOk = input.reply !== null && JSON.parse(input.reply) !== undefined;
-  } catch {
-    replyOk = false;
-  }
+  const badReply = replyProblem(input.reply, input.required ?? []);
   const checks: ProveCheck[] = [
     { label: "Muse Code read the skill", ok: input.readSkill },
     { label: `It called ${input.action} on the live product`, ok: input.calledAction },
-    { label: "It saved the reply as JSON", ok: replyOk },
+    { label: "It saved the reply as JSON", ok: !badReply },
   ];
   const problem = input.timedOut
     ? "Muse Code ran out of time or budget before it finished."
@@ -334,9 +419,7 @@ export function judgeSkillTest(input: {
         ? "Its log doesn't show it reading the skill."
         : !input.calledAction
           ? `Its log doesn't show it calling ${input.action}.`
-          : !replyOk
-            ? "It didn't save the reply as JSON."
-            : undefined;
+          : (badReply ?? undefined);
   return { ok: !problem, ...(problem ? { problem } : {}), checks };
 }
 

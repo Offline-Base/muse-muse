@@ -180,7 +180,7 @@ async function main(): Promise<void> {
       const facts = skillTestFacts(skillLog, { skill, action: call.name, liveHost: publicHost(liveUrl) ?? "" });
       const reply = await readSandboxText(copy, `${PROVE_SKILL_DIR}/reply.json`);
       writeFileSync(path.join(outDir, "skill-reply.json"), reply ?? "");
-      const judged = judgeSkillTest({ exitCode, timedOut: stopped, readSkill: facts.readSkill, calledAction: facts.calledAction, reply, action: call.name });
+      const judged = judgeSkillTest({ exitCode, timedOut: stopped, readSkill: facts.readSkill, calledAction: facts.calledAction, reply, action: call.name, required: call.replyRequired });
       log(`skill test: ${judged.ok ? "passed" : `failed: ${judged.problem}`}. ${JSON.stringify(judged.checks)}`);
       if (judged.ok) passed.push("skill");
       skillSceneInput = { lines: facts.lines, finalText, command: run.command, seconds: (Date.now() - t0) / 1000 };

@@ -10,7 +10,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, before, beforeEach, describe, it } from "node:test";
 import { proveRows } from "@/components/build/prove-rows";
 import { PROVE_CHECK_PLUGIN_SOURCE, PROVE_RUNNER_SOURCE } from "@/lib/outputs/assets-source";
 import { cliSource, pluginZip, skillMarkdown, type OutputProduct } from "@/lib/outputs/generate";
@@ -42,6 +42,10 @@ const action = (over: Partial<Manifest["actions"][number]> = {}): Manifest["acti
   example: { text: "hi" },
   ...over,
 });
+
+/** How agentkit's manifests mark an action that only reads. Nothing else in this branch types it yet. */
+const READ_ONLY = { annotations: { readOnly: true } };
+const CHANGES_THINGS = { annotations: { readOnly: false, openWorld: true } };
 
 const manifest = (actions: Manifest["actions"], est = 0.01): Manifest => ({
   name: "Tip",
@@ -102,7 +106,7 @@ describe("sampleInput", () => {
 
 describe("planChecks", () => {
   it("calls every action within the budget, and the CLI calls the first", () => {
-    const spec = plan(manifest([action({ name: "a" }), action({ name: "b" })]));
+    const spec = plan(manifest([action({ name: "a", ...READ_ONLY }), action({ name: "b", ...READ_ONLY })]));
     assert.deepEqual(spec.calls.map((c) => c.name), ["a", "b"]);
     assert.equal(spec.cliCall?.name, "a");
     assert.equal(spec.mcpUrl, "https://site.example/api/mcp/tip");
@@ -111,7 +115,7 @@ describe("planChecks", () => {
   });
 
   it("stops calling at half the cap, counting the CLI's call, and says why", () => {
-    const spec = plan(manifest([action({ name: "a" }), action({ name: "b" }), action({ name: "c" })], 0.2), 1);
+    const spec = plan(manifest([action({ name: "a", ...READ_ONLY }), action({ name: "b", ...READ_ONLY }), action({ name: "c", ...READ_ONLY })], 0.2), 1);
     assert.deepEqual(spec.calls.map((c) => c.name), ["a"]);
     assert.deepEqual(spec.notCalled.map((n) => n.name), ["b", "c"]);
     assert.match(spec.notCalled[0]!.why, /budget/);
@@ -124,11 +128,56 @@ describe("planChecks", () => {
   });
 
   it("calls at most five, leaves out actions with no usable input, and never offers one for the owner", () => {
-    const many = Array.from({ length: 7 }, (_, i) => action({ name: `a${i}` }));
-    const spec = plan(manifest([...many, action({ name: "photo", example: undefined, input: { type: "object", required: ["photo"], properties: { photo: { type: "string" } } } }), { ...action({ name: "mail" }), who: "owner" } as Manifest["actions"][number]], 0.001));
+    const many = Array.from({ length: 7 }, (_, i) => action({ name: `a${i}`, ...READ_ONLY }));
+    const spec = plan(manifest([...many, action({ name: "photo", ...READ_ONLY, example: undefined, input: { type: "object", required: ["photo"], properties: { photo: { type: "string" } } } }), { ...action({ name: "mail" }), who: "owner" } as Manifest["actions"][number]], 0.001));
     assert.equal(spec.calls.length, 5);
     assert.deepEqual(spec.notCalled.map((n) => n.name), ["a5", "a6", "photo"]);
     assert.ok(!spec.actionNames.includes("mail"));
+  });
+
+  it("never calls an action that changes things, whatever its input", () => {
+    const spec = plan(manifest([action({ name: "send_slack", ...CHANGES_THINGS }), action({ name: "delete_all", ...CHANGES_THINGS, example: undefined, input: { type: "object" } }), action({ name: "email_people", ...CHANGES_THINGS, example: undefined })]));
+    assert.deepEqual(spec.calls, []);
+    assert.equal(spec.cliCall, null);
+    assert.deepEqual(spec.notCalled.map((n) => n.name), ["send_slack", "delete_all", "email_people"]);
+    for (const n of spec.notCalled) assert.equal(n.why, "It changes things, so a test run doesn't call it.");
+    assert.ok(spec.actionNames.includes("send_slack"), "it is still listed");
+  });
+
+  it("makes up a sample only for an action marked read-only", () => {
+    const made = plan(manifest([action({ name: "look", ...READ_ONLY, example: undefined })]));
+    assert.deepEqual(made.calls, [{ name: "look", args: { text: "Sample text for a test." } }]);
+    const unmarked = plan(manifest([action({ name: "post", example: undefined })]));
+    assert.deepEqual(unmarked.calls, []);
+    assert.match(unmarked.notCalled[0]!.why, /no example/);
+    // Even one needing no input: nothing says it is safe to run.
+    assert.deepEqual(plan(manifest([action({ name: "wipe", example: undefined, input: { type: "object" } })])).calls, []);
+  });
+
+  it("calls one unmarked action with an example at most, after the read-only ones", () => {
+    const spec = plan(manifest([action({ name: "post" }), action({ name: "post2" }), action({ name: "look", ...READ_ONLY }), action({ name: "peek", ...READ_ONLY })]));
+    assert.deepEqual(spec.calls.map((c) => c.name), ["look", "peek", "post"]);
+    assert.equal(spec.cliCall?.name, "look");
+    assert.deepEqual(spec.notCalled.map((n) => n.name), ["post2"]);
+    assert.match(spec.notCalled[0]!.why, /isn't marked read-only/);
+  });
+
+  it("calls only read-only actions on a nightly re-check", () => {
+    const m = manifest([action({ name: "post" }), action({ name: "look", ...READ_ONLY })]);
+    const spec = planChecks({ product: product(m), origin: "https://site.example", dir: "/w", capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true, readOnlyOnly: true });
+    assert.deepEqual(spec.calls.map((c) => c.name), ["look"]);
+    assert.deepEqual(spec.notCalled.map((n) => n.name), ["post"]);
+  });
+
+  it("keeps the names apart: the plugin may need a prefix and the skill doesn't", () => {
+    const spec = planChecks({ product: { ...product(manifest([action()])), slug: "claude-notes" }, origin: "https://site.example", dir: "/w", capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true });
+    assert.equal(spec.pluginName, "mm-claude-notes");
+    assert.equal(spec.skillName, "claude-notes");
+  });
+
+  it("carries the fields the action's reply must have, for the skill test", () => {
+    const spec = plan(manifest([action({ output: { type: "object", required: ["each"] } })]));
+    assert.deepEqual(spec.calls[0]!.replyRequired, ["each"]);
   });
 
   it("has no downloads when the site can't serve them", () => {
@@ -152,6 +201,10 @@ describe("describeResult", () => {
     assert.equal(cli.detail, undefined);
     assert.match(describeResult("cli", result(true, { called: "a", downloaded: false })).detail ?? "", /wasn't tested here/);
     assert.match(describeResult("claude_plugin", result(true, { downloaded: true })).detail ?? "", /hasn't been installed in Claude/);
+    const refused = describeResult("cli", result(true, { called: null, refused: "picky", downloaded: true }));
+    assert.equal(refused.state, "done");
+    assert.equal(refused.title, "CLI: its help works, and no action was called");
+    assert.equal(refused.detail, "picky refused the sample input, so no call went through.");
   });
 
   it("says when one failed, or never finished", () => {
@@ -190,6 +243,18 @@ describe("the skill test", () => {
     assert.equal(judgeSkillTest({ ...good, reply: null }).checks[2]!.ok, false);
   });
 
+  it("doesn't take an error reply, or one missing what the action promises, as working", () => {
+    const good = { exitCode: 0, timedOut: false, readSkill: true, calledAction: true, reply: '{"a":1}', action: "go" };
+    assert.match(judgeSkillTest({ ...good, reply: '{"error":"internal error"}' }).problem ?? "", /an error/);
+    assert.equal(judgeSkillTest({ ...good, reply: '{"error":"internal error"}' }).checks[2]!.ok, false);
+    // Some replies carry an empty error field when all went well.
+    assert.equal(judgeSkillTest({ ...good, reply: '{"error":null,"a":1}' }).ok, true);
+    assert.match(judgeSkillTest({ ...good, reply: '{"b":1}', required: ["a"] }).problem ?? "", /leaves out a/);
+    assert.match(judgeSkillTest({ ...good, reply: "null", required: ["a"] }).problem ?? "", /leaves out a/);
+    assert.equal(judgeSkillTest({ ...good, reply: '{"a":null}', required: ["a"] }).ok, true);
+    assert.equal(judgeSkillTest({ ...good, reply: "[1]" }).ok, true);
+  });
+
   describe("reading its log", () => {
     const want = { skill: "tip", action: "go", liveHost: "tip.example" };
     const record = (tool: string, text: string, outcome = "success") => JSON.stringify({ payload_type: "tool.result", payload: { correlation_facts: { outcome, tool_name: tool }, kind: "tool_result", text } });
@@ -214,6 +279,25 @@ describe("the skill test", () => {
       assert.equal(skillTestFacts(record("bash", bash(call), "failure"), want).calledAction, false);
       assert.equal(skillTestFacts(record("bash", bash(call, 7)), want).calledAction, false);
       assert.equal(skillTestFacts(record("bash", bash("curl https://other.example/api/actions/go")), want).calledAction, false);
+    });
+
+    it("counts only a real POST with curl, not a command that just names the address", () => {
+      const called = (command: string) => skillTestFacts(record("bash", bash(command)), want).calledAction;
+      assert.equal(called("grep -n 'https://tip.example/api/actions/go' .agents/skills/tip/SKILL.md"), false);
+      assert.equal(called("echo https://tip.example/api/actions/go"), false);
+      assert.equal(called("echo curl -X POST https://tip.example/api/actions/go -d x"), false);
+      assert.equal(called("curl -sS https://tip.example/api/actions/go"), false, "a GET");
+      assert.equal(called("curl -X POST https://tip.example/api/actions/go_faster -d x"), false, "another action");
+      assert.equal(called("curl -X POST https://tip.example/other -d x; echo https://tip.example/api/actions/go"), false);
+      assert.equal(called("curl -X POST https://tip.example/api/actions/go"), true);
+      assert.equal(called("curl -sSX POST https://tip.example/api/actions/go"), true);
+      assert.equal(called("curl --request POST https://tip.example/api/actions/go"), true);
+      assert.equal(called("curl https://tip.example/api/actions/go -d '{\"a\":\"x;y|z\"}'"), true);
+      assert.equal(called("curl -d '{\"a\":\"x;y|z\"}' https://tip.example/api/actions/go"), true);
+      assert.equal(called("curl --data-raw '{}' https://tip.example/api/actions/go"), true);
+      assert.equal(called("curl --json '{}' https://tip.example/api/actions/go"), true);
+      assert.equal(called("cd /tmp && curl --fail-with-body -sS -X POST 'https://tip.example/api/actions/go' -d '{}' -o reply.json && cat reply.json"), true);
+      assert.equal(called('reply=$(curl -sS -X POST "https://tip.example/api/actions/go" -d "{}"); echo "$reply" > reply.json'), true);
     });
 
     it("counts reading the file by hand as reading the skill, and skips lines it can't parse", () => {
@@ -311,6 +395,30 @@ describe("condenseProveEvents", () => {
     assert.equal(view.items[0]!.media?.url, "v1");
   });
 
+  it("keeps each output's last result when a newer run died before reaching it", () => {
+    const view = condenseProveEvents([
+      ev({ item: "stage", state: "done", title: "Tested", costUsd: 0.2, at: "2026-10-31T00:00:00Z" }),
+      ev({ item: "cli", state: "done", title: "CLI ok", media: { url: "v1", caption: "c" }, at: "2026-10-31T00:01:00Z" }),
+      ev({ runId: "r2", origin: "nightly", item: "stage", state: "failed", title: "Prove it didn't finish", at: "2026-11-01T07:00:00Z" }),
+    ])!;
+    assert.equal(view.runId, "r2");
+    assert.equal(view.active, false);
+    assert.equal(view.costUsd, 0, "only the newest run's cost");
+    assert.deepEqual(view.items.map((i) => [i.item, i.state, i.title]), [["stage", "failed", "Prove it didn't finish"], ["cli", "done", "CLI ok"]]);
+    const cli = view.items.find((i) => i.item === "cli")!;
+    assert.equal(cli.media?.url, "v1");
+    assert.equal(cli.at, "2026-10-31T00:01:00Z", "it keeps its own date");
+  });
+
+  it("doesn't fill in a part an older run never finished, so it can't look alive", () => {
+    const view = condenseProveEvents([
+      ev({ item: "cli", state: "running", title: "testing" }),
+      ev({ runId: "r2", item: "stage", state: "skipped", title: "Prove it didn't run" }),
+    ])!;
+    assert.deepEqual(view.items.map((i) => i.item), ["stage"]);
+    assert.equal(view.active, false);
+  });
+
   it("gives up on a run with no news for a long time, and settles what it left", () => {
     const at = "2026-10-31T00:00:00Z";
     const then = new Date(at).getTime();
@@ -329,9 +437,16 @@ describe("the runner", () => {
   let base: string;
   let dir: string;
   /** What the fake MCP server does differently per test. */
-  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean } = {};
+  let mode: { listOmits?: boolean; toolError?: boolean; actionFails?: boolean; badDownload?: boolean; helpOnlyCli?: boolean } = {};
+  /** What each test's product has, and what its actions do. */
+  let liveActions: Manifest["actions"] = [];
+  let liveReply: (name: string) => { status: number; body: unknown } = () => ({ status: 200, body: { done: true } });
+  /** Calls that really reached an action, and from where. */
+  let reached: string[] = [];
 
   const m = manifest([action({ name: "go" }), action({ name: "photo", example: undefined, input: { type: "object", required: ["photo"], properties: { photo: { type: "string" } } } })]);
+  /** A CLI that always prints help JSON, as an action called `list` used to get. */
+  const HELP_ONLY_CLI = `console.log(JSON.stringify({ name: "Tip", url: "x", mcp: "y", actions: [{ name: "go" }, { name: "photo" }] }));`;
 
   before(async () => {
     server = createServer((req, res) => {
@@ -343,13 +458,27 @@ describe("the runner", () => {
           res.writeHead(status, { "content-type": "application/json" });
           res.end(JSON.stringify(body));
         };
-        const p: OutputProduct = { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: m };
-        if (url === "/p/tip/get/cli") return void res.end(mode.badDownload ? "oops" : cliSource(p, base));
+        const p: OutputProduct = { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m };
+        if (url === "/p/tip/get/cli") return void res.end(mode.helpOnlyCli ? HELP_ONLY_CLI : mode.badDownload ? "oops" : cliSource(p, base));
         if (url === "/p/tip/get/skill") return void res.end(skillMarkdown(p, base));
         if (url === "/p/tip/get/claude-plugin") return void res.end(pluginZip(p, base));
+        if (liveActions.length && url.startsWith("/api/actions/")) {
+          const name = url.slice("/api/actions/".length);
+          reached.push(`cli:${name}`);
+          const reply = liveReply(name);
+          return json(reply.body, reply.status);
+        }
         if (url === "/api/actions/go") return mode.actionFails ? json({ error: "no" }, 500) : json({ done: true });
         if (url === "/api/mcp/tip") {
           const rpc = JSON.parse(text) as { id: number; method: string; params?: { name: string } };
+          if (liveActions.length) {
+            if (rpc.method === "initialize") return json({ jsonrpc: "2.0", id: rpc.id, result: { serverInfo: { name: "x" } } });
+            if (rpc.method === "tools/list") return json({ jsonrpc: "2.0", id: rpc.id, result: { tools: liveActions.map((a) => ({ name: a.name, inputSchema: { type: "object" } })) } });
+            const name = rpc.params!.name;
+            reached.push(`mcp:${name}`);
+            const reply = liveReply(name);
+            return json({ jsonrpc: "2.0", id: rpc.id, result: reply.status === 200 ? { content: [{ type: "text", text: JSON.stringify(reply.body) }] } : { isError: true, content: [{ type: "text", text: `${name} failed with HTTP ${reply.status}` }] } });
+          }
           if (rpc.method === "initialize") return json({ jsonrpc: "2.0", id: rpc.id, result: { serverInfo: { name: "x" } } });
           if (rpc.method === "tools/list") {
             const tools = ["go", "photo"].slice(0, mode.listOmits ? 1 : 2).map((name) => ({ name, inputSchema: { type: "object" } }));
@@ -376,13 +505,22 @@ describe("the runner", () => {
   });
 
   const runIt = async () => {
-    const spec = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: m }, origin: base, dir, capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true });
+    const spec = planChecks({ product: { slug: "tip", name: "Tip", tagline: "Tips", liveUrl: base, manifest: liveActions.length ? manifest(liveActions) : m }, origin: base, dir, capUsd: 1.5, estimatedCostPerRunUsd: 0.01, fetchable: true });
     writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
     await new Promise<void>((resolve, reject) => {
       execFile("node", [path.join(dir, "prove-runner.mjs"), path.join(dir, "spec.json")], { timeout: 60_000 }, (err) => (err ? reject(err) : resolve()));
     });
     return parseProveResults(readFileSync(path.join(dir, "results.json"), "utf8"))!;
   };
+
+  const useActions = (actions: Manifest["actions"], reply: typeof liveReply = () => ({ status: 200, body: { done: true } })) => {
+    mode = {};
+    liveActions = actions;
+    liveReply = reply;
+    reached = [];
+  };
+
+  beforeEach(() => useActions([]));
 
   it("passes every output when all of it works, and logs real commands", async () => {
     mode = {};
@@ -428,6 +566,85 @@ describe("the runner", () => {
     mode = { badDownload: true };
     const bad = (await runIt()).outputs.cli!;
     assert.equal(bad.ok, false);
+  });
+
+  it("really runs an action called list through the CLI, and never a write action", async () => {
+    useActions([action({ name: "list", ...READ_ONLY, example: undefined, input: { type: "object" } }), action({ name: "wipe", ...CHANGES_THINGS, example: undefined, input: { type: "object" } })]);
+    const results = await runIt();
+    const cli = results.outputs.cli!;
+    assert.equal(cli.ok, true, JSON.stringify(cli.facts));
+    assert.equal(cli.facts.called, "list");
+    assert.deepEqual(reached, ["mcp:list", "cli:list"]);
+    assert.deepEqual(results.outputs.mcp!.facts.notCalled, [{ name: "wipe", why: "It changes things, so a test run doesn't call it." }]);
+  });
+
+  it("fails the CLI when what it printed was its own help, not a reply", async () => {
+    mode = { helpOnlyCli: true };
+    const cli = (await runIt()).outputs.cli!;
+    assert.equal(cli.ok, false);
+    assert.match(String(cli.facts.error), /its help/);
+  });
+
+  it("reads a big reply whole, and keeps only the start of it in the log", async () => {
+    const big = { text: "x".repeat(200 * 1024) };
+    useActions([action({ name: "big", ...READ_ONLY })], () => ({ status: 200, body: big }));
+    const results = await runIt();
+    const mcp = results.outputs.mcp!;
+    assert.deepEqual(mcp.facts.called, [{ name: "big", ok: true }]);
+    assert.equal(results.outputs.cli!.ok, true, JSON.stringify(results.outputs.cli!.facts));
+    for (const s of [...mcp.steps, ...results.outputs.cli!.steps]) assert.ok(s.output.length <= 64 * 1024);
+    assert.ok(readFileSync(path.join(dir, "results.json"), "utf8").length < 300 * 1024);
+  });
+
+  it("tests the CLI on an action the MCP call showed working", async () => {
+    useActions([action({ name: "picky", ...READ_ONLY }), action({ name: "good", ...READ_ONLY })], (name) => (name === "picky" ? { status: 422, body: { error: "bad sample" } } : { status: 200, body: { done: true } }));
+    const results = await runIt();
+    assert.deepEqual(results.outputs.mcp!.facts.called, [{ name: "picky", ok: false, error: "picky failed with HTTP 422" }, { name: "good", ok: true }]);
+    const cli = results.outputs.cli!;
+    assert.equal(cli.ok, true, JSON.stringify(cli.facts));
+    assert.equal(cli.facts.called, "good");
+    assert.deepEqual(reached, ["mcp:picky", "mcp:good", "cli:good"]);
+  });
+
+  it("keeps the CLI's pass when its only action refuses the sample, and says no call went through", async () => {
+    useActions([action({ name: "picky", ...READ_ONLY })], () => ({ status: 422, body: { error: "bad sample" } }));
+    const cli = (await runIt()).outputs.cli!;
+    assert.equal(cli.ok, true, JSON.stringify(cli.facts));
+    assert.equal(cli.facts.called, null);
+    assert.equal(cli.facts.refused, "picky");
+    assert.equal(describeResult("cli", cli).detail, "picky refused the sample input, so no call went through.");
+  });
+
+  it("still fails the CLI when its only action breaks", async () => {
+    useActions([action({ name: "broken", ...READ_ONLY })], () => ({ status: 500, body: { error: "down" } }));
+    const cli = (await runIt()).outputs.cli!;
+    assert.equal(cli.ok, false);
+    assert.match(String(cli.facts.error), /exit code 1/);
+  });
+
+  it("sets a field called input through the CLI, using the --cli- forms for the tool", async () => {
+    useActions([action({ name: "ask", ...READ_ONLY, example: { input: "hi" }, input: { type: "object", required: ["input"], properties: { input: { type: "string" } } } })]);
+    const cli = (await runIt()).outputs.cli!;
+    assert.equal(cli.ok, true, JSON.stringify(cli.facts));
+    assert.match(cli.steps.at(-1)!.command, /--cli-input .* --cli-json --cli-timeout 120/);
+  });
+
+  it("checks a plugin whose name differs from its skill's, and accepts a quoted skill name", async () => {
+    const zipFor = (slug: string) => {
+      const zip = path.join(dir, `${slug}.zip`);
+      writeFileSync(zip, pluginZip({ slug, name: "Tip", tagline: "Tips", liveUrl: base, manifest: m }, base));
+      return zip;
+    };
+    const check = (args: string[]) => new Promise<{ code: number; out: string }>((resolve) => {
+      execFile("node", [path.join(dir, "prove-check-plugin.mjs"), ...args], (err, stdout) => resolve({ code: (err as { code?: number } | null)?.code ?? 0, out: stdout }));
+    });
+    const prefixed = await check([zipFor("claude-notes"), "mm-claude-notes", `${base}/api/mcp/claude-notes`, "claude-notes"]);
+    assert.match(prefixed.out, /ok +skills\/claude-notes\/SKILL\.md has a name/);
+    const numeric = await check([zipFor("2048"), "2048", `${base}/api/mcp/2048`, "2048"]);
+    assert.match(numeric.out, /ok +skills\/2048\/SKILL\.md has a name/);
+    const reserved = await check([zipFor("tipper"), "claude-tipper", `${base}/api/mcp/tipper`, "tipper"]);
+    assert.equal(reserved.code, 1);
+    assert.match(reserved.out, /FAILED .*reserved/);
   });
 
   it("fails the plugin check when .mcp.json points elsewhere", () => {

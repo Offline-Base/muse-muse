@@ -14,6 +14,7 @@ import { killStep, pollTaskStep } from "@/lib/pipeline/build-steps";
 import { pollTimedOut } from "@/lib/pipeline/logic";
 import {
   proveAbandonStep,
+  proveChecksOverCapStep,
   proveCloseStep,
   proveCollectChecksStep,
   proveFailStep,
@@ -28,7 +29,7 @@ import {
   type ProveSummary,
 } from "@/lib/pipeline/prove-steps";
 import type { ProveInput } from "@/lib/pipeline/prove-types";
-import type { ProvedOutput } from "@/lib/outputs/prove";
+import type { ProvedOutput, ProveStopped } from "@/lib/outputs/prove";
 
 const MIN = 60_000;
 const POLL_MS = 5_000;
@@ -40,16 +41,24 @@ const SKILL_CAP_MS = 6 * MIN;
 /** Four recordings and renders, each with its own limit in the sandbox. */
 const RECORD_CAP_MS = 20 * MIN;
 
-/** Polls a detached command until it ends or its cap (then it's killed). True when it hit the cap. */
-async function waitFor(copy: string, cmdId: string, capMs: number): Promise<boolean> {
+/**
+ * Polls a detached command until it ends, reaches its time cap, or, when given a run to watch, reaches that run's budget.
+ * A command that hits either limit is killed. Null when it ended by itself. A call already under way when the budget runs
+ * out still finishes, so a run can pass its cap by that one call.
+ */
+async function waitFor(copy: string, cmdId: string, capMs: number, budgetOf?: ProveCtx): Promise<ProveStopped | null> {
   const startedAt = Date.now();
   for (let polls = 1; ; polls++) {
     await sleep(POLL_MS);
     const poll = await pollTaskStep(copy, cmdId);
-    if (poll.done) return false;
+    if (poll.done) return null;
+    if (budgetOf && (await proveChecksOverCapStep(budgetOf))) {
+      await killStep(copy, cmdId);
+      return "budget";
+    }
     if (pollTimedOut({ startedAt, now: Date.now(), capMs, intervalMs: POLL_MS, polls })) {
       await killStep(copy, cmdId);
-      return true;
+      return "time";
     }
   }
 }
@@ -96,8 +105,8 @@ export async function proveProduct(input: ProveInput): Promise<{ ran: boolean }>
   if (!ctx) return { ran: false };
   try {
     const cmdId = await proveStartChecksStep(ctx);
-    const timedOut = await waitFor(ctx.copy, cmdId, CHECKS_CAP_MS);
-    const checks = await proveCollectChecksStep(ctx, timedOut);
+    const stopped = await waitFor(ctx.copy, cmdId, CHECKS_CAP_MS, ctx);
+    const checks = await proveCollectChecksStep(ctx, stopped);
     const summaries: Partial<Record<ProvedOutput, ProveSummary>> = { ...checks.summaries };
     const passed = [...checks.passed];
 

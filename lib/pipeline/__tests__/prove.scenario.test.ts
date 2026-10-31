@@ -15,6 +15,8 @@ interface Scenario {
   openNull?: boolean;
   noRecord?: boolean;
   checksRunForever?: boolean;
+  /** How many of the checks' polls come back under the cap before one comes back over it. Undefined: never over. */
+  overCapAfter?: number;
   passed?: string[];
   skillFileOk?: boolean;
   skillStartsNull?: boolean;
@@ -32,7 +34,7 @@ let calls: Array<{ step: string; args: unknown[] }> = [];
 const ctx = { buildId: "b1", runId: "r1", origin: "ship", copy: "prove-x-product", record: true };
 const record = (step: string, args: unknown[]) => calls.push({ step, args });
 const named = (step: string) => calls.filter((c) => c.step === step);
-const order = () => calls.map((c) => c.step).filter((s) => s !== "pollTaskStep" && s !== "provePollSkillStep");
+const order = () => calls.map((c) => c.step).filter((s) => s !== "pollTaskStep" && s !== "provePollSkillStep" && s !== "proveChecksOverCapStep");
 
 const fakeSteps = {
   proveOpenStep: async (...args: unknown[]) => {
@@ -45,6 +47,10 @@ const fakeSteps = {
     record("proveStartChecksStep", args);
     if (scenario.checksThrow) throw new Error("the copy went away");
     return "checks-cmd";
+  },
+  proveChecksOverCapStep: async (...args: unknown[]) => {
+    record("proveChecksOverCapStep", args);
+    return scenario.overCapAfter !== undefined && named("proveChecksOverCapStep").length > scenario.overCapAfter;
   },
   proveCollectChecksStep: async (...args: unknown[]) => {
     record("proveCollectChecksStep", args);
@@ -157,7 +163,30 @@ describe("the Prove it workflow", { skip: canMock ? false : "needs --experimenta
     scenario = { checksRunForever: true };
     assert.deepEqual(await proveProduct(input), { ran: true });
     assert.deepEqual(named("killStep")[0]!.args, [ctx.copy, "checks-cmd"]);
-    assert.equal(named("proveCollectChecksStep")[0]!.args[1], true);
+    assert.equal(named("proveCollectChecksStep")[0]!.args[1], "time");
+  });
+
+  it("stops the checks at the poll that finds the budget gone, and doesn't wait for their time cap", async () => {
+    scenario = { checksRunForever: true, overCapAfter: 1 };
+    assert.deepEqual(await proveProduct(input), { ran: true });
+    assert.deepEqual(named("killStep")[0]!.args, [ctx.copy, "checks-cmd"]);
+    assert.equal(named("proveCollectChecksStep")[0]!.args[1], "budget");
+    assert.equal(named("pollTaskStep").filter((c) => c.args[1] === "checks-cmd").length, 2);
+    assert.equal(named("proveChecksOverCapStep").length, 2);
+    assert.equal(named("proveCloseStep").length, 1, "the run still closes and charges");
+  });
+
+  it("checks the budget on the checks' polls, and not on the recording's", async () => {
+    scenario = {};
+    await proveProduct(input);
+    assert.equal(named("proveCollectChecksStep")[0]!.args[1], null);
+    assert.equal(named("proveChecksOverCapStep").length, 0, "the checks finished on their first poll");
+    assert.equal(named("killStep").length, 0);
+    calls = [];
+    scenario = { checksRunForever: true, overCapAfter: 100_000 };
+    await proveProduct(input);
+    assert.ok(named("proveChecksOverCapStep").length > 0);
+    assert.ok(named("proveChecksOverCapStep").every((c) => (c.args[0] as { copy: string }).copy === ctx.copy));
   });
 
   it("stops a skill test past its time cap, charges what it wrote and calls it timed out", async () => {
