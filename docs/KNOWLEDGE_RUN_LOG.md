@@ -750,6 +750,21 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 5:32 PM: started stage-b-r30b on train-1 (same settings as r30, r30b data). Training about 7:00 PM, answers about 7:25.
 - Pilot (9,600 rows) measured with measure_known.py (prefilled, BF16): 2,500 probes 27.4% (refused 19.4%, wrong as fact
   53.1%; against stage 2 gained 73, lost 142), Meta questions 39.4%; salient 64.2% (AI 56.4, Meta 52.4, world 70.5).
+- 6:40 PM: reasoning-on template test (helper, writer-1, Q4_K_M, b11970): a template that opens ` to=self<|message|>` fixes the
+  shape (tuned 120/120 well formed on the honesty dev set, 0 no-header) but the chat endpoint with reasoning_format auto
+  rejects all of it (0/160 HTTP 200 on tuned and base; common/parsers/muse-glimmer.cpp prepends a fixed `<|start|>assistant`).
+  Only the `none` route or /completion work, with the app splitting reasoning itself. Worse: forced to reason, the tuned
+  model is less honest. On the 64 questions it had answered directly (51 honest, 9 made up), forced reasoning gave 28 honest,
+  33 made up. Its honesty was learned only in direct answers (the honesty rows carry no reasoning). Reasoning tasks are
+  unaffected (40/40 both ways). Decision: serve tuned models with reasoning off for knowledge questions; claim reasoning
+  on for reasoning tasks only. A real fix needs honesty rows with reasoning, after Nov 4. The template is kept in job/ with a
+  NOT RECOMMENDED note. Controls, other strengths and the 220 other reasoning probes were not run.
+- 6:32 PM: stage-b-r30 files done: Q8_0 26.2%, Q4_K_M 26.2% (BF16 26.3%), IQ2_XXS 16.7%, IQ1_M 9.5% (38/40), IQ1_S 8.4% (36/40)
+  on the 2,500; copied to NFS models/stage-b-r30/.
+- Compare lab (workflow compare-lab, run 20261031-2121-4106): live test on a GH200, $2.40 of the $30 cap, machine terminated by
+  the idle watch. Chat page and eval runner worked on 5 models: stage 2, base Glimmer, Qwen3.8 27B, Gemma 4 31B, Granite 4.2
+  30B. Small sets, thinking off: salient 40/16/8/3/6 of 60, probes 32/23/7/7/8 of 100, honesty dev 1/7/2/10/17 of 40;
+  reasoning on 0 (HTTP 500)/59/60/55/58 of 60. The other models' scores are understated by length cuts (fix stage running).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
