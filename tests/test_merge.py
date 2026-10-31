@@ -62,6 +62,7 @@ def svc(tmp_path):
     services = Services.create(load_settings(env), light=False, heavy=False, owner=False)
     services.router.llm = services.checker_llm = services.answer_llm = QuietLlm()
     services.tagmap.ensure_roster(services.roster)
+    services.tagmap.touch(services.tagmap.as_dict())  # Muse was sent these tags (daily rotation restores only sent tags)
     yield services
     services.close()
 
@@ -251,7 +252,9 @@ def test_receipt_json_shape_is_small(svc):
 async def test_through_mcp_items_arrive_as_objects_and_bad_arguments_get_the_usage_sentence(svc):
     from mcp import Client
 
-    tag = next(iter(student_tags(svc)))
+    guardians = [c.student for c in load_contacts(svc.settings.contacts)]
+    # tags are shuffled each day, so pick a student with one guardian on file
+    tag = next(t for t, name in student_tags(svc).items() if guardians.count(name) == 1)
     mcp_server = server.build_server(svc)
     async with Client(mcp_server) as c:
         ok = await c.call_tool(

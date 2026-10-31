@@ -100,7 +100,9 @@ step that reads them runs on the device with its own model.
 
 - Names and identifiers come back as tags like [Student A], [Teacher] or [Phone 1]. With a privacy \
 toggle on, places, dates, organizations and record numbers do too, like [Place 1] or [Date 1]. Plan \
-with the tags. Tags can change from one day to the next, so use the tags from the current results.
+with the tags. Tags change daily: a person keeps one tag for the day and gets a new one the next \
+day, and an older tag stops working after about a day and a half, so use the tags from the current \
+results.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
 - Two ways to ask about the documents: search_documents returns the best passages for you to reason \

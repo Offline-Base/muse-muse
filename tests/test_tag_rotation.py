@@ -122,6 +122,8 @@ def test_guessed_and_expired_tags_look_the_same():
     # plain words are not tags: "every student a chance", "error code 1", "Code 1" without brackets
     assert tm.expired("give every student a chance, error code 1, Code 1") == []
     assert tm.expired("Student Q and Person 4") == ["[Student Q]", "[Person 4]"]
+    # lowercase words after "student" are plain words, not a guessed tag
+    assert tm.expired("List each student who has an IEP; the student was late; student b") == []
 
 
 def test_a_view_pins_the_day_and_tag_pins_it_for_one_text():

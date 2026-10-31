@@ -26,7 +26,7 @@ from mcp import Client
 
 from base import guard, local_llm
 from base.config import REPO_ROOT, load_settings
-from base.connector.server import build_server
+from base.connector.server import REFUSED_END, build_server
 from base.egress import HELD_TEXT
 from base.services import Services
 
@@ -42,6 +42,7 @@ IDS = [p["student_id"] for p in PEOPLE if p.get("student_id")]
 NOT_ON_ROSTER = ["Keoni", "Luciana", "Tomas", "Mr. Delgado"]  # people the demo essays mention
 SCAN_TEXT = f"Field trip form. Student: {ROSTER['students'][0]['name']}, ID {IDS[0]}. Parent phone 512-555-0143."
 NOTHING_SHARED = "nothing was shared"
+HELD_REFUSED = f"{HELD_TEXT} {REFUSED_END}"  # a refused job result ends with the fixed sentence
 
 
 def private_values(text: str, services) -> list[str]:
@@ -203,6 +204,11 @@ class Muse:
             body = json.loads(self.call("get_result", {"job_id": body["job_id"]}))
         return body
 
+    def listing(self, folder: str) -> str | dict:
+        """list_documents: plain text when shared, else a job to follow, like a search."""
+        text = self.call("list_documents", {"folder": folder})
+        return self.follow(text) if text.startswith("{") else text
+
     def search(self, query: str, purpose: str = "for my own planning") -> str | dict:
         text = self.call("search_documents", {"query": query, "purpose": purpose})
         return self.follow(text) if text.startswith("{") else text
@@ -219,7 +225,7 @@ def shared(services, muse: Muse, body):
 def every_tool(services, muse: Muse) -> dict:
     """Each of the seven tools, with the get_result calls Muse makes, the user's Share it on any
     waiting result, and a search that passes back a tag Muse was given."""
-    out: dict = {"top": muse.call("list_documents", {"folder": ""}), "essays": muse.call("list_documents", {"folder": "essays"})}
+    out: dict = {"top": muse.listing(""), "essays": muse.listing("essays")}
     for card in services.approvals.pending():  # a listing with a name the roster lacks waits; Share it
         services.approvals.decide(card["id"], approve=True)
     out["search"] = shared(services, muse, muse.search("school garden"))
@@ -256,9 +262,8 @@ def test_every_tool_stays_on_the_device_and_nothing_private_reaches_muse(device)
 def test_with_the_local_model_down_results_are_held_and_nothing_is_shared(device):
     services, muse, _stray, _mock = device("checker")
     out = every_tool(services, muse)
-    assert out["top"] == HELD_TEXT and out["essays"] == HELD_TEXT
-    for key in ("search", "scan"):
-        assert out[key] == {"job_id": out[key]["job_id"], "status": "refused", "result": HELD_TEXT}
+    for key in ("top", "essays", "search", "scan"):
+        assert out[key] == {"job_id": out[key]["job_id"], "status": "refused", "result": HELD_REFUSED}
     for key in ("ask", "task"):
         assert out[key]["status"] == "failed" and NOTHING_SHARED in out[key]["result"]
     # no result was routed, so the only decision rows are the numbers-only dreaming report's
@@ -282,7 +287,9 @@ def test_the_harness_catches_a_model_client_pointed_off_the_device(device):
     the checker's address after start-up, which settings never allow."""
     services, muse, stray, _mock = device()
     services.checker_llm.base_url = "https://models.example.org/v1"
-    assert muse.call("list_documents", {"folder": "essays"}) == HELD_TEXT  # the name pass could not run
+    listed = muse.listing("essays")  # the name pass could not run
+    assert listed["status"] == "refused" and listed["result"] == HELD_REFUSED
+    settle_threads()
     assert stray and set(stray) == {"POST models.example.org"}
     stray.clear()  # caught: the fixture's own check would fail the test otherwise
 

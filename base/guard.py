@@ -1658,7 +1658,7 @@ class TagMap:
         restorable = self.for_muse()
         out = [
             tag
-            for tag, bracketed in tag_references(text)
+            for tag, bracketed in tag_references(text, as_written=True)
             if tag not in restorable and (bracketed or _kind_of_tag(tag) in ("student", "person"))
         ]
         return list(dict.fromkeys(out))
@@ -1983,15 +1983,21 @@ def _canonical(m: re.Match[str]) -> str | None:
     return f"[{_LABELS[_KIND_BY_LABEL[word.lower()]]} {m.group('num')}]"
 
 
-def tag_references(text: str) -> list[tuple[str, bool]]:
-    """(tag, bracketed) for every tag `restore` would swap in `text`, in order."""
+def tag_references(text: str, *, as_written: bool = False) -> list[tuple[str, bool]]:
+    """(tag, bracketed) for every tag `restore` would swap in `text`, in order. With `as_written`
+    an unbracketed Student reference counts only when its letters are capitals ("Student B"),
+    so plain words ("each student who has", "the student was") never read as a tag."""
     if not text:
         return []
     out = []
     for m in _RESTORE_RE.finditer(text):
         canonical = _canonical(m)
-        if canonical is not None:
-            out.append((canonical, m.group(0).startswith("[")))
+        if canonical is None:
+            continue
+        bracketed = m.group(0).startswith("[")
+        if as_written and not bracketed and m.group("student") and not m.group("letters").isupper():
+            continue
+        out.append((canonical, bracketed))
     return out
 
 

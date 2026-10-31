@@ -921,8 +921,9 @@ def test_night_reports_missed_asks_and_refusals_shared_for_the_rules_in_place(se
 CANARY = "Zephyrine Quoll canary-4417"
 
 
-def seeded_asks(settings, *, remember_share=3, ask_again=2):
-    """Approval requests in a real decisions table: some the user taught to share, some to ask again."""
+def seeded_asks(settings, *, remember_share=5, ask_again=2):
+    """Approval requests in a real decisions table: some the user taught to share, some to ask again.
+    Five shares, because a share rule for a whole kind needs 5 decisions that all agree."""
     from base.approvals import ApprovalStore
 
     store = ApprovalStore(settings.paths.db)
@@ -949,13 +950,13 @@ def test_night_counts_approval_requests_and_those_the_new_rules_still_ask(settin
     services = SimpleNamespace(settings=settings, approvals=store, policy=policy)
     runner = night.NightRunner(services, holdout_path=holdout_file, synthetic_path=tmp_path / "none.jsonl")
     r = runner.run_night()
-    assert r.kept and (r.approval_requests, r.still_asked) == (5, 2)
+    assert r.kept and (r.approval_requests, r.still_asked) == (7, 2)
     last = runner.last_report()
-    assert (last["approval_requests"], last["still_asked"]) == (5, 2)
+    assert (last["approval_requests"], last["still_asked"]) == (7, 2)
     assert runner.report_for(r.job_id)["still_asked"] == 2
 
     text = _report_text(last)
-    assert "- approval requests in the day before: 5" in text
+    assert "- approval requests in the day before: 7" in text
     assert "- of those, the rules in place now would still ask: 2" in text
     for secret in ("Zephyrine", "Quoll", "canary", "[Student", "attendance", "seating"):
         assert secret not in text
