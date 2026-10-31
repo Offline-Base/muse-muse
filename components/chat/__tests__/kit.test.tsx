@@ -245,6 +245,11 @@ describe("SourceList", () => {
     for (const bad of ["javascript:alert(1)", "data:text/html,x", "//example.com", "/\\example.com", "mailto:a@b.c", "", null]) {
       assert.equal(kit.chatHref(bad), null, String(bad));
     }
+    // Browsers drop tabs and line breaks before reading a URL, so these are other sites too.
+    for (const bad of ["/\t/example.com", "/\n/example.com", "/\r\\example.com", "/docs/\u0000x"]) {
+      assert.equal(kit.chatHref(bad), null, JSON.stringify(bad));
+    }
+    assert.deepEqual(kit.chatHref("/docs/\nmodels"), { href: "/docs/models", external: false });
   });
 });
 

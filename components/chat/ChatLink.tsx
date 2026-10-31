@@ -8,7 +8,10 @@ import { safeHref } from "@/lib/markdown-reply";
  * handed without trusting it.
  */
 export function chatHref(href: string | null | undefined): { href: string; external: boolean } | null {
-  const value = (href ?? "").trim();
+  // Browsers drop tabs and line breaks from a URL before reading it, so "/<tab>/host" is "//host". Read it the same
+  // way, and refuse any other control character.
+  const value = (href ?? "").replace(/[\t\n\r]/g, "").trim();
+  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
   // "//host" and "/\host" are other sites, as browsers read them.
   if (/^\/(?![/\\])/.test(value)) return { href: value, external: false };
   const safe = safeHref(value);
