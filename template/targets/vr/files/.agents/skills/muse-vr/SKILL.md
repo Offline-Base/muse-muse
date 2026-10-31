@@ -39,7 +39,7 @@ A canvas needs a browser, so load the scene with `dynamic(() => import("@/compon
 
 ## Performance budget
 
-Scenes must stay smooth on a Quest and in the sandbox's graphics-card-free recording. **At most 50 draw calls and 30k triangles.** `node scripts/xr-peek.mjs` prints both.
+Scenes must stay smooth on a Quest and in the sandbox's graphics-card-free recording. **At most 50 draw calls and 30k triangles.** `node scripts/xr-peek.mjs` prints both, and verify prints a note past either one. The controllers already use about 9k triangles and 15 draw calls, and the count is for one eye.
 
 - Build scenes in code from simple shapes, panels and textures you generate. No large 3D model files, no remote assets. The build machine can't reach CDNs, and neither can `@react-three/drei` helpers that download things.
 - Repeat a shape with one `instancedMesh`, which is a single draw call, rather than many meshes.
@@ -65,16 +65,16 @@ Scenes must stay smooth on a Quest and in the sandbox's graphics-card-free recor
 With `next dev` running on port 3000:
 
 ```bash
-node scripts/xr-peek.mjs --enter --look 0,1.6,1.5:0,1.2,-1 --select "Start game" --out .muse-peek/start.png
+node scripts/xr-peek.mjs --enter --look "Start game" --select "Start game" --out .muse-peek/start.png
 ```
 
-It prints `{ mode, inSession, fps, blank, stats, targets, status, consoleErrors }`. Then open the PNG with `read_file` and look at it. Flags, in the order you give them: `--enter`, `--look [from:]to`, `--select <name>`, `--wait <status text>`, `--hand left|right`.
+It prints `{ mode, inSession, fps, blank, sceneObjects, stats, targets, status, consoleErrors }`. `sceneObjects` is how many of your scene's objects are in view, and 0 fails verify. Then open the PNG with `read_file` and look at it. Flags, in the order you give them: `--enter`, `--look [from:]to`, `--select <name>`, `--wait <status text>`, `--hand left|right`. Leave out `from` unless you are checking another spot, because it moves the head away from where the person arrives.
 
-**Do this at least once before your first `npm run verify`, and again after changing the scene.** An empty floor passes the type check, and verify can't tell whether a person can read the panel. This picture is what the judge and the demo video see: if you can't read the panel's text in it, or something blocks the view, fix that first. A fix round's failure from a VR judge screenshot starts here too.
+**Do this at least once before your first `npm run verify`, and again after changing the scene.** Verify can't tell whether a person can read the panel. This picture is what the judge and the demo video see: if you can't read the panel's text in it, or something blocks the view, fix that first. A fix round's failure from a VR judge screenshot starts here too.
 
 ## The smoke test
 
-Verify runs at 1280x720 for this product. `tests/smoke.spec.ts` must enter VR and take at least one `judgeShot` inside it. Every shot in VR must show something, and the view must keep drawing.
+Verify runs at 1280x720 for this product. `tests/smoke.spec.ts` must enter VR and take at least one `judgeShot` inside it. Every shot in VR must have part of your scene in view, not just the floor, and the view must keep drawing.
 
 ```ts
 import { expect, test } from "@playwright/test";
@@ -101,7 +101,7 @@ test("step in and start the game", async ({ page }) => {
 });
 ```
 
-Keep moves slow enough to follow: they become the demo video. End the session on the best moment, because the last VR view is the video's poster. After `xr.exit`, the card marked `data-result` comes on screen and gets its own hold. Screenshots: `01-start` on the page, one in VR, then the final result in VR, where the promised result is plainly in view. An empty floor fails with the judge.
+Keep moves slow enough to follow: they become the demo video. End the session on the best moment, because the last VR view is the video's poster. After `xr.exit`, the card marked `data-result` comes on screen and gets its own hold. Screenshots: `01-start` on the page, one in VR, then the final result in VR, where the promised result is plainly in view. A view of just the floor fails verify with "Nothing is in front of the person".
 
 | Call | Does |
 |---|---|

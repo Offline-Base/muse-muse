@@ -172,8 +172,8 @@ export function glassesGateProblems(read, { since = 0 } = {}) {
 
 /**
  * A VR product's judge screenshots. judgeShot() in a session leaves `xr: true` and what it measured in <name>.checked. At
- * least one must be from inside VR, none blank, and the last one free of alerts. A blank view also fails judgeShot itself,
- * so this catches a report from a test that got round it. Takes the file names in test-results/judge/ and a function that
+ * least one must be from inside VR, none blank or with nothing of the scene in view, and the last one free of alerts. Those
+ * views also fail judgeShot itself, so this catches a report from a test that got round it. Takes the file names in test-results/judge/ and a function that
  * reads one of them as text. These stay failures when MUSEMUSE_SCREEN_CHECK=warn: a blank view isn't a matter of layout.
  */
 export function xrShotProblems(fileNames, read) {
@@ -184,6 +184,8 @@ export function xrShotProblems(fileNames, read) {
   const problems = [];
   const blank = shots.filter(({ checked }) => checked.canvas?.blank !== false).map(({ shot }) => shot);
   if (blank.length) problems.push(`These VR screenshots show a blank view: ${blank.join(", ")}. Light the scene and put something in front of the person.`);
+  const empty = shots.filter(({ checked }) => checked.sceneObjects === 0).map(({ shot }) => shot);
+  if (empty.length) problems.push(`Nothing is in front of the person in these VR screenshots: ${empty.join(", ")}. Put a lit scene 1 to 3 m ahead of where they arrive, or turn the head to it first with xr.look.`);
   const last = shots.at(-1);
   if (Array.isArray(last.checked.xrAlerts) && last.checked.xrAlerts.length) {
     problems.push(`The last VR screenshot, ${last.shot}, has an alert up: ${last.checked.xrAlerts.join("; ")}. The primary flow must end on its finished result.`);
@@ -210,9 +212,22 @@ export function browserLaunchOptions(read) {
   }
 }
 
-/** Notes judgeShot() left on any screenshot, for verify to print without failing. */
+/** The muse-vr skill's budget, and the frame rate under which a scene is too heavy for the sandbox's recording. */
+export const XR_BUDGET = { drawCalls: 50, triangles: 30_000, fps: 15 };
+
+/** What a VR shot's measurements say about the budget. Past it a scene still passes, and may stutter on a Quest. */
+function xrBudgetNotes(checked) {
+  if (checked.xr !== true) return [];
+  const notes = [];
+  if (checked.drawCalls > XR_BUDGET.drawCalls) notes.push(`The scene uses ${checked.drawCalls} draw calls, over the limit of ${XR_BUDGET.drawCalls} (muse-vr). Repeat a shape with one instancedMesh.`);
+  if (checked.triangles > XR_BUDGET.triangles) notes.push(`The scene uses ${checked.triangles} triangles, over the limit of ${XR_BUDGET.triangles} (muse-vr). Use simpler shapes.`);
+  if (checked.canvas?.fps < XR_BUDGET.fps) notes.push(`The view drew ${checked.canvas.fps} frames a second, which is too few for a smooth demo. Make the scene lighter (muse-vr).`);
+  return notes;
+}
+
+/** Notes judgeShot() left on any screenshot, and a VR shot's budget notes, for verify to print without failing. */
 export function judgeShotNotes(fileNames, read) {
   return checkedFiles(fileNames, read).flatMap(({ shot, checked }) =>
-    Array.isArray(checked.notes) ? checked.notes.map((note) => `${shot}: ${note}`) : [],
+    [...(Array.isArray(checked.notes) ? checked.notes : []), ...xrBudgetNotes(checked)].map((note) => `${shot}: ${note}`),
   );
 }

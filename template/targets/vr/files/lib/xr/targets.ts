@@ -1,7 +1,7 @@
 // Platform file: don't edit. Names the objects a person can act on: the 3D version of getByRole. Tests aim at names, and
 // the simulated headset learns the same list through remote.setTargetResolver, so hand sequences can reach them too.
 import { useCallback } from "react";
-import { Box3, Quaternion, Vector3, type Mesh, type Object3D } from "three";
+import { Box3, Frustum, Matrix4, Quaternion, Vector3, type Camera, type InstancedMesh, type Material, type Mesh, type Object3D, type Scene } from "three";
 
 const objects = new Map<string, Object3D>();
 
@@ -79,6 +79,45 @@ function surfaceOf(object: Object3D, from: Vector3 | null): { position: Vec3; no
   });
   const face = faces.reduce((a, b) => (b.along > a.along ? b : a));
   return { position: plain(center.clone().addScaledVector(face.normal, face.depth)), normal: { x: face.normal.x, y: face.normal.y, z: face.normal.z } };
+}
+
+/** True when something lights the scene `object` is in. */
+function hasLight(object: Object3D): boolean {
+  let top = object;
+  while (top.parent) top = top.parent;
+  if ((top as Scene).environment) return true;
+  let found = false;
+  top.traverseVisible((o) => {
+    if ((o as Object3D & { isLight?: boolean; intensity?: number }).isLight && (o as Object3D & { intensity: number }).intensity > 0) found = true;
+  });
+  return found;
+}
+
+/** Only materials that react to light have `emissive`, and with it black and no light they draw black. */
+function drawsBlackUnlit(object: Object3D): boolean {
+  const material = (object as Partial<Mesh>).material as Material | Material[] | undefined;
+  const all = [material ?? []].flat() as Array<Material & { emissive?: { getHex(): number } }>;
+  return all.length > 0 && all.every((m) => m.emissive?.getHex() === 0);
+}
+
+/**
+ * How many visible meshes, lines, points and sprites under `root` the camera can see, leaving out any that no light makes
+ * visible. uikit draws panels with shared instanced meshes whose bounds don't say where the panel is, so an object also
+ * counts when its own position is in view. Nothing is drawn or changed, and tests call this when they ask, so a headset
+ * never pays for it.
+ */
+export function countInView(root: Object3D, camera: Camera): number {
+  const lit = hasLight(root);
+  const frustum = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  const position = new Vector3();
+  let count = 0;
+  root.traverseVisible((object) => {
+    const drawn = object as Object3D & { isMesh?: boolean; isLine?: boolean; isPoints?: boolean; isSprite?: boolean };
+    if (!(drawn.isMesh || drawn.isLine || drawn.isPoints || drawn.isSprite)) return;
+    if ((object as InstancedMesh).count === 0 || (!lit && drawsBlackUnlit(object))) return;
+    if (frustum.containsPoint(object.getWorldPosition(position)) || frustum.intersectsObject(object)) count++;
+  });
+  return count;
 }
 
 /** What IWER's remote.setTargetResolver takes. */

@@ -1,5 +1,6 @@
 [
   "lib/xr/emulator.ts",
+  "lib/xr/sessions.ts",
   "lib/xr/status.ts",
   "lib/xr/targets.ts",
   "public/xr/profiles",

@@ -272,6 +272,31 @@ test("no VR screenshot may be blank, and a check that didn't measure counts as b
   assert.match(xrShotProblems(unmeasured.names, unmeasured.read)[0], /blank view/);
 });
 
+test("a VR screenshot with nothing of the scene in view fails, and a stage that doesn't report it doesn't", () => {
+  const empty = judgeFolder({ "02-in-vr": vrShot({ sceneObjects: 0 }), "03-result": vrShot({ sceneObjects: 3 }) });
+  assert.match(xrShotProblems(empty.names, empty.read)[0], /Nothing is in front of the person in these VR screenshots: 02-in-vr\.png/);
+  for (const sceneObjects of [null, undefined, 1]) {
+    const fine = judgeFolder({ "02-in-vr": vrShot({ sceneObjects }) });
+    assert.deepEqual(xrShotProblems(fine.names, fine.read), [], String(sceneObjects));
+  }
+});
+
+test("a VR screenshot past the scene budget or under the frame rate gets a note, and doesn't fail", () => {
+  const over = judgeFolder({
+    "02-in-vr": vrShot({ drawCalls: 51, triangles: 30_001, canvas: { blank: false, fps: 14.9 } }),
+    "03-result": vrShot({ drawCalls: 50, triangles: 30_000, canvas: { blank: false, fps: 15 } }),
+  });
+  const notes = judgeShotNotes(over.names, over.read);
+  assert.equal(notes.length, 3);
+  assert.match(notes[0], /^02-in-vr\.png: The scene uses 51 draw calls, over the limit of 50/);
+  assert.match(notes[1], /^02-in-vr\.png: The scene uses 30001 triangles, over the limit of 30000/);
+  assert.match(notes[2], /^02-in-vr\.png: The view drew 14\.9 frames a second/);
+  assert.deepEqual(xrShotProblems(over.names, over.read), []);
+  // A page's shot and a stage that doesn't report them have no budget to check.
+  const none = judgeFolder({ "01-start": { ...pageShot, drawCalls: 99 }, "02-in-vr": vrShot({ canvas: { blank: false } }) });
+  assert.deepEqual(judgeShotNotes(none.names, none.read), []);
+});
+
 test("only the last VR screenshot may not have an alert up", () => {
   const early = judgeFolder({ "02-in-vr": vrShot({ xrAlerts: ["Couldn't load"] }), "03-result": vrShot() });
   assert.deepEqual(xrShotProblems(early.names, early.read), []);

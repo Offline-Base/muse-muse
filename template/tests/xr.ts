@@ -23,6 +23,8 @@ interface Handle {
   waitFrames(n: number, timeoutMs?: number): Promise<number>;
   remote(method: string, params?: unknown): Promise<unknown>;
   targets(): Target[];
+  sceneObjects?(): number | null;
+  drawn?(): number;
 }
 export type Hand = "left" | "right";
 /** The controller's buttons. On the left hand "a-button" is its X and "b-button" its Y. */
@@ -38,6 +40,9 @@ export interface ViewStats {
   spread: number;
   colors: number;
   top: number;
+  range: number;
+  /** How many of the scene's own objects are in view. Null when the stage doesn't report it. */
+  sceneObjects: number | null;
   blank: boolean;
 }
 
@@ -45,7 +50,7 @@ export interface ViewStats {
  * Runs in the browser, from a viewport screenshot. Blank: a brightness spread under 6, under 12 colors, or one color over
  * 95% of the view. scripts/xr-peek.mjs has its own copy, which a template test keeps the same.
  */
-export async function measureView(png: string): Promise<ViewStats> {
+export async function measureView({ png, sceneObjects }: { png: string; sceneObjects: number | null }): Promise<ViewStats> {
   const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
   const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
   const canvas = new OffscreenCanvas(320, 180);
@@ -63,19 +68,39 @@ export async function measureView(png: string): Promise<ViewStats> {
   }
   lumas.sort((a, b) => a - b);
   const spread = lumas[Math.floor(lumas.length * 0.95)] - lumas[Math.floor(lumas.length * 0.05)];
+  const range = lumas[lumas.length - 1] - lumas[0];
   const top = Math.max(...bins.values()) / lumas.length;
-  return { spread: Number(spread.toFixed(1)), colors: bins.size, top: Number(top.toFixed(3)), blank: spread < 6 || bins.size < 12 || top > 0.95 };
+  // A few bright points on a dark sky leave most of the view one color. With objects in view and real contrast, that's a scene.
+  const sparse = (sceneObjects ?? 0) > 0 && range >= 64;
+  return {
+    spread: Number(spread.toFixed(1)),
+    colors: bins.size,
+    top: Number(top.toFixed(3)),
+    range: Number(range.toFixed(1)),
+    sceneObjects,
+    blank: !sparse && (spread < 6 || bins.size < 12 || top > 0.95),
+  };
 }
 
 const recording = () => test.info().project.name === "studio";
 /** How long a judge screenshot waits for a model to finish. */
 const BUSY_MS = 90_000;
+/** How long a scene that mounts just after the session starts gets to show up. */
+const SCENE_MS = 5_000;
 
 function remote(page: Page, method: string, params?: unknown): Promise<unknown> {
   return page.evaluate(([m, p]) => window.__musemuseXR.remote(m as string, p), [method, params] as const);
 }
 
 const waitFrames = (page: Page, n = 3) => page.evaluate((count) => window.__musemuseXR.waitFrames(count, 15_000), n);
+
+const sceneObjects = (page: Page) => page.evaluate(() => window.__musemuseXR.sceneObjects?.() ?? null);
+
+/** The sky, floor and controllers fill a view by themselves, so this is what catches a scene behind the person or never mounted. */
+async function expectSomethingInView(page: Page, name: string): Promise<void> {
+  const message = `${name}: Nothing is in front of the person. Put a lit scene 1 to 3 m ahead of where they arrive, or turn the head to it first with xr.look.`;
+  await expect.poll(() => sceneObjects(page), { message, timeout: SCENE_MS }).not.toBe(0);
+}
 
 /** Yaw and pitch in degrees that face from one point to another. -z is straight ahead. */
 export function facing(from: Vec3, to: Vec3): { pitch: number; yaw: number; roll: number } {
@@ -103,7 +128,7 @@ export const xr = {
   /** The viewport as a person sees it. IWER's canvas covers the viewport, so a full-page screenshot would be wrong. */
   async viewStats(page: Page): Promise<{ stats: ViewStats; png: Buffer }> {
     const png = await page.screenshot({ type: "png" });
-    return { stats: await page.evaluate(measureView, png.toString("base64")), png };
+    return { stats: await page.evaluate(measureView, { png: png.toString("base64"), sceneObjects: await sceneObjects(page) }), png };
   },
 
   /** Presses Enter VR, waits for the session to draw, and fails on a blank view. */
@@ -115,6 +140,7 @@ export const xr = {
       await waitFrames(page, 5);
     });
     if (recording()) return; // A screenshot would leave a gap in the recording.
+    await expectSomethingInView(page, "After entering VR");
     const { stats } = await xr.viewStats(page);
     expect(stats.blank, `The VR view is blank: ${JSON.stringify(stats)}`).toBe(false);
   },
@@ -226,9 +252,9 @@ export function inVRSession(page: Page): Promise<boolean> {
 }
 
 /**
- * judgeShot's VR branch. The view must keep drawing and show something: a frozen or blank view fails here, even when screen
- * checks only warn, and the 2D layout checks don't apply. It leaves `xr: true` and what it measured in <name>.checked, and
- * verify's xrShotProblems reads those.
+ * judgeShot's VR branch. The view must keep drawing and show part of the scene: a frozen, blank or empty view fails here, even
+ * when screen checks only warn, and the 2D layout checks don't apply. It leaves `xr: true` and what it measured in
+ * <name>.checked, and verify's xrShotProblems and judgeShotNotes read those.
  */
 export async function xrJudgeShot(page: Page, name: string): Promise<void> {
   // setXRStatus(text, true) says a model is still working, and a shot of that isn't the result.
@@ -238,16 +264,24 @@ export async function xrJudgeShot(page: Page, name: string): Promise<void> {
   await page.evaluate(() => window.__musemuseXR.waitFrames(3, 10_000)).catch(() => {
     throw new Error(`${name}: The VR view stopped drawing.`);
   });
-  const before = await page.evaluate(() => ({ f: window.__musemuseXR.frames(), t: performance.now() }));
+  // The session's frames keep coming when the scene has crashed, and the picture can't always show it: only three.js knows.
+  const draws = () => page.evaluate(() => ({ f: window.__musemuseXR.drawn?.() ?? window.__musemuseXR.frames(), t: performance.now() }));
+  const before = await draws();
   await page.waitForTimeout(1000);
-  const after = await page.evaluate(() => ({ f: window.__musemuseXR.frames(), t: performance.now() }));
+  const after = await draws();
+  if (after.f === before.f) throw new Error(`${name}: The VR view stopped drawing.`);
   const fps = Number((((after.f - before.f) * 1000) / (after.t - before.t)).toFixed(1));
+  await expectSomethingInView(page, name);
   const { stats, png } = await xr.viewStats(page);
   expect(stats.blank, `${name}: the VR view is blank: ${JSON.stringify(stats)}. Light the scene and put something in front of the person.`).toBe(false);
   const xrAlerts = await page.evaluate(() =>
     [...document.querySelectorAll('[role="alert"], .error')].map((el) => (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 60)).filter(Boolean).slice(0, 5),
   );
+  const { drawCalls, triangles } = await page.evaluate(() => window.__musemuseXR.info);
   mkdirSync("test-results/judge", { recursive: true });
   writeFileSync(`test-results/judge/${name}.png`, png);
-  writeFileSync(`test-results/judge/${name}.checked`, `${JSON.stringify({ xr: true, canvas: { ...stats, fps }, xrAlerts, resultTop: null, pageHeight: null })}\n`);
+  writeFileSync(
+    `test-results/judge/${name}.checked`,
+    `${JSON.stringify({ xr: true, canvas: { ...stats, fps }, sceneObjects: stats.sceneObjects, drawCalls, triangles, xrAlerts, resultTop: null, pageHeight: null })}\n`,
+  );
 }

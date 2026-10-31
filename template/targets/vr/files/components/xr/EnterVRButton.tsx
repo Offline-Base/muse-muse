@@ -13,29 +13,39 @@ import { setXRStatus } from "@/lib/xr/status";
 export function EnterVRButton({ store, label = "Enter VR", disabled = false }: { store: XRStore | null; label?: string; disabled?: boolean }) {
   const [opening, setOpening] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [failed, setFailed] = useState(false);
   const inVR = useInVR();
   useEffect(() => {
     void ensureXR().then((xr) => setPreview(xr.mode === "preview"));
   }, []);
   if (preview) return null;
   return (
-    <button
-      type="button"
-      className="primary"
-      disabled={disabled || !store || opening || inVR}
-      aria-busy={opening}
-      onClick={async () => {
-        setOpening(true);
-        try {
-          await store?.enterVR();
-        } catch {
-          setXRStatus("VR didn't open. Try again.");
-        } finally {
-          setOpening(false);
-        }
-      }}
-    >
-      {opening ? "Opening VR..." : label}
-    </button>
+    <>
+      <button
+        type="button"
+        className="primary"
+        disabled={disabled || !store || opening || inVR}
+        aria-busy={opening}
+        onClick={async () => {
+          setFailed(false);
+          setOpening(true);
+          try {
+            await store?.enterVR();
+          } catch {
+            setFailed(true);
+            setXRStatus("VR didn't open. Try again.");
+          } finally {
+            setOpening(false);
+          }
+        }}
+      >
+        {opening ? "Opening VR..." : label}
+      </button>
+      {failed ? (
+        <p className="error" role="alert">
+          VR didn&apos;t open. Try again.
+        </p>
+      ) : null}
+    </>
   );
 }

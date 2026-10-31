@@ -1,6 +1,7 @@
 // Platform file: don't edit. ensureXR() decides where the product runs: a real headset, a simulated Meta Quest 3 from IWER
 // on a computer, or a plain 3D preview on a phone. Everything a test needs goes through window.__musemuseXR.
 import { useSyncExternalStore } from "react";
+import { watchSessions } from "@/lib/xr/sessions";
 import { listTargets, targetResolver, type XRTarget } from "@/lib/xr/targets";
 
 export type XRMode = "native" | "emulated" | "preview";
@@ -9,6 +10,10 @@ export interface MuseXR {
   mode: XRMode;
   /** What the renderer reports: renderer, antialias, drawCalls, triangles, buffer. scripts/xr-peek.mjs prints them. */
   info: Record<string, unknown>;
+  /** How many of the scene's own objects are in view right now, leaving out the floor and controllers. XRStage sets this. */
+  sceneObjects?(): number | null;
+  /** How many times three.js has drawn the scene. Unlike frames(), this stops when the scene crashes. XRStage sets this. */
+  drawn?(): number;
   inSession(): boolean;
   frames(): number;
   waitFrames(n: number, timeoutMs?: number): Promise<number>;
@@ -124,11 +129,8 @@ export function useInVR(): boolean {
 
 function expose(mode: XRMode, device: { remote: { dispatch(m: string, p?: unknown): Promise<unknown> } } | null): MuseXR {
   let frames = 0;
-  const xr = navigator.xr;
-  if (xr) {
-    const request = xr.requestSession.bind(xr);
-    xr.requestSession = async (sessionMode, init) => {
-      const started = await request(sessionMode, init);
+  if (navigator.xr) {
+    watchSessions(navigator.xr, (started) => {
       setSession(started);
       started.addEventListener("end", () => {
         if (current === started) setSession(null);
@@ -138,8 +140,7 @@ function expose(mode: XRMode, device: { remote: { dispatch(m: string, p?: unknow
         if (current === started) started.requestAnimationFrame(count);
       };
       started.requestAnimationFrame(count);
-      return started;
-    };
+    });
   }
   const handle: MuseXR = {
     mode,

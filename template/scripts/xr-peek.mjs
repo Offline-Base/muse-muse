@@ -1,9 +1,9 @@
 // Platform file: don't edit. A look inside the VR product while building it: opens it in the simulated headset, does what
 // the flags say in order, saves a picture of the view and prints what it found. Against `next dev` on port 3000 by default.
-//   node scripts/xr-peek.mjs --enter --look 0,1.6,1.5:0,1.2,-1 --select "Start game" --out .muse-peek/start.png
-// Flags: --url <url>, --enter, --look [<x,y,z>:]<x,y,z or name> (from where, to where), --select <name>, --hand left|right,
-// --wait <status text>, --out <png>. Prints one JSON line: { mode, inSession, fps, blank, stats, targets, status,
-// consoleErrors }. Then open the PNG with read_file.
+//   node scripts/xr-peek.mjs --enter --look "Start game" --select "Start game" --out .muse-peek/start.png
+// Flags: --url <url>, --enter, --look [<x,y,z>:]<x,y,z or name> (from where, to where; leave out `from` to stay where the
+// person arrives), --select <name>, --hand left|right, --wait <status text>, --out <png>. Prints one JSON line: { mode,
+// inSession, fps, blank, sceneObjects, stats, targets, status, consoleErrors }. Then open the PNG with read_file.
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { chromium } from "@playwright/test";
@@ -12,6 +12,9 @@ const SESSION_MS = 15_000;
 const WAIT_MS = 60_000;
 /** Named objects and the stage come up after the page's first paint. */
 const STAGE_MS = 60_000;
+/** How long the view runs before it is measured. The controller models load after the session starts. */
+const SETTLE_MS = 1_500;
+const PEEK_DIR = ".muse-peek";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const browserFlags = () => JSON.parse(readFileSync(path.join(ROOT, "scripts", "browser.json"), "utf8")).vr;
@@ -46,7 +49,7 @@ export function parseLook(text) {
 }
 
 /** Runs in the browser. The same as measureView in tests/xr.ts: a template test keeps them the same. */
-async function measureView(png) {
+export async function measureView({ png, sceneObjects }) {
   const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
   const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
   const canvas = new OffscreenCanvas(320, 180);
@@ -64,8 +67,25 @@ async function measureView(png) {
   }
   lumas.sort((a, b) => a - b);
   const spread = lumas[Math.floor(lumas.length * 0.95)] - lumas[Math.floor(lumas.length * 0.05)];
+  const range = lumas[lumas.length - 1] - lumas[0];
   const top = Math.max(...bins.values()) / lumas.length;
-  return { spread: Number(spread.toFixed(1)), colors: bins.size, top: Number(top.toFixed(3)), blank: spread < 6 || bins.size < 12 || top > 0.95 };
+  // A few bright points on a dark sky leave most of the view one color. With objects in view and real contrast, that's a scene.
+  const sparse = (sceneObjects ?? 0) > 0 && range >= 64;
+  return {
+    spread: Number(spread.toFixed(1)),
+    colors: bins.size,
+    top: Number(top.toFixed(3)),
+    range: Number(range.toFixed(1)),
+    sceneObjects,
+    blank: !sparse && (spread < 6 || bins.size < 12 || top > 0.95),
+  };
+}
+
+/** Saves the picture. Only its own folder is ignored by git: `--out` can name any path, and a product's .gitignore is its own. */
+export function savePeek(file, png) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  if (path.basename(path.dirname(file)) === PEEK_DIR) writeFileSync(path.join(path.dirname(file), ".gitignore"), "*\n");
+  writeFileSync(file, png);
 }
 
 const remote = (page, method, params) => page.evaluate(([m, p]) => window.__musemuseXR.remote(m, p), [method, params]);
@@ -113,7 +133,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const flags = browserFlags();
   const browser = await chromium.launch({ args: flags.args });
-  const report = { mode: null, inSession: false, fps: null, blank: null, stats: null, targets: [], status: null, consoleErrors: [], out: args.out };
+  const report = { mode: null, inSession: false, fps: null, blank: null, sceneObjects: null, stats: null, targets: [], status: null, consoleErrors: [], out: args.out };
   try {
     const page = await browser.newPage({ viewport: flags.viewport });
     page.on("console", (msg) => {
@@ -127,23 +147,22 @@ async function main() {
     } catch (err) {
       report.failed = err.message.split("\n")[0].slice(0, 300);
     }
-    const handle = await page.evaluate(() => {
+    const start = await page.evaluate(() => {
       const x = window.__musemuseXR;
-      return { mode: x.mode, inSession: x.inSession(), stats: x.info, frames: x.frames(), at: performance.now() };
+      return { mode: x.mode, inSession: x.inSession(), frames: x.drawn?.() ?? x.frames(), at: performance.now() };
     });
-    Object.assign(report, { mode: handle.mode, inSession: handle.inSession, stats: handle.stats });
-    if (handle.inSession) {
-      await page.waitForTimeout(800);
-      const later = await page.evaluate(() => ({ frames: window.__musemuseXR.frames(), at: performance.now() }));
-      report.fps = Number((((later.frames - handle.frames) * 1000) / (later.at - handle.at)).toFixed(1));
+    Object.assign(report, { mode: start.mode, inSession: start.inSession });
+    if (start.inSession) {
+      await page.waitForTimeout(SETTLE_MS);
+      const later = await page.evaluate(() => ({ frames: window.__musemuseXR.drawn?.() ?? window.__musemuseXR.frames(), at: performance.now() }));
+      report.fps = Number((((later.frames - start.frames) * 1000) / (later.at - start.at)).toFixed(1));
     }
+    const measured = await page.evaluate(() => ({ stats: window.__musemuseXR.info, sceneObjects: window.__musemuseXR.sceneObjects?.() ?? null }));
+    Object.assign(report, measured);
     const png = await page.screenshot({ type: "png" });
-    report.view = await page.evaluate(measureView, png.toString("base64"));
+    report.view = await page.evaluate(measureView, { png: png.toString("base64"), sceneObjects: measured.sceneObjects });
     report.blank = report.view.blank;
-    const file = path.resolve(args.out);
-    mkdirSync(path.dirname(file), { recursive: true });
-    writeFileSync(path.join(path.dirname(file), ".gitignore"), "*\n");
-    writeFileSync(file, png);
+    savePeek(path.resolve(args.out), png);
     report.targets = await targets(page);
     report.status = await page.locator("[data-xr-status]").textContent({ timeout: 1000 }).catch(() => null);
   } finally {

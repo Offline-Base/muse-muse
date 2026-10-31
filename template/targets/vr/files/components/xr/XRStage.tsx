@@ -2,19 +2,28 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { IfInSessionMode, TeleportTarget, XR, XROrigin, createXRStore, type XRStore } from "@react-three/xr";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Vector3 } from "three";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Vector3, type Group } from "three";
 import { OrbitControls as ThreeOrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ensureXR, type MuseXR } from "@/lib/xr/emulator";
 import { setXRStatus, xrStatusText } from "@/lib/xr/status";
-import { setXROriginObject } from "@/lib/xr/targets";
+import { countInView, setXROriginObject } from "@/lib/xr/targets";
 
 /** Eye height in the 3D preview. A headset brings its own. */
 const EYE = 1.6;
 
 /** Tells the page the stage is ready, and keeps the numbers scripts/xr-peek.mjs prints. */
-function Reporter({ handle, onConnected }: { handle: MuseXR; onConnected: () => void }) {
+function Reporter({ handle, scene, onConnected }: { handle: MuseXR; scene: RefObject<Group | null>; onConnected: () => void }) {
   const gl = useThree((s) => s.gl);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    handle.sceneObjects = () => (scene.current ? countInView(scene.current, camera) : null);
+    handle.drawn = () => gl.info.render.frame;
+    return () => {
+      handle.sceneObjects = undefined;
+      handle.drawn = undefined;
+    };
+  }, [handle, scene, camera, gl]);
   useEffect(() => {
     const context = gl.getContext();
     const debug = context.getExtension("WEBGL_debug_renderer_info");
@@ -67,6 +76,7 @@ export interface XRStageProps {
 export function XRStage({ children, onStore, background = "#dfe9f5", ground = true, teleport = false }: XRStageProps) {
   const [ready, setReady] = useState<{ handle: MuseXR; store: XRStore } | null>(null);
   const [origin, setOrigin] = useState<[number, number, number]>([0, 0, 0]);
+  const scene = useRef<Group>(null);
   useEffect(() => {
     let live = true;
     void ensureXR().then((handle) => {
@@ -83,6 +93,12 @@ export function XRStage({ children, onStore, background = "#dfe9f5", ground = tr
         // Controller and hand models are ours, since the firewall blocks the CDN that is the default. It must be absolute:
         // the loaders call new URL(path, baseAssetPath), which throws on a relative base.
         baseAssetPath: `${location.origin}/xr/profiles/`,
+        // A VR scene doesn't use the room around the person, and on a Quest asking for these can bring up a permission prompt.
+        anchors: false,
+        meshDetection: false,
+        planeDetection: false,
+        hitTest: false,
+        domOverlay: false,
       });
       setReady({ handle, store });
     });
@@ -106,7 +122,7 @@ export function XRStage({ children, onStore, background = "#dfe9f5", ground = tr
   return (
     <Canvas gl={{ antialias: ready.handle.mode === "native" }} dpr={[1, 1.5]} camera={{ position: [0, EYE, 0], rotation: [0, 0, 0], fov: 70, near: 0.05, far: 100 }}>
       <XR store={ready.store}>
-        <Reporter handle={ready.handle} onConnected={connected} />
+        <Reporter handle={ready.handle} scene={scene} onConnected={connected} />
         <IfInSessionMode deny="immersive-vr">
           <PreviewLook />
         </IfInSessionMode>
@@ -119,7 +135,10 @@ export function XRStage({ children, onStore, background = "#dfe9f5", ground = tr
             {teleport ? <TeleportTarget onTeleport={(p) => setOrigin([p.x, 0, p.z])}>{floor}</TeleportTarget> : floor}
           </>
         ) : null}
-        {children}
+        {/* What the checks count as the scene, so the floor and controllers don't pass for something to look at. */}
+        <group ref={scene} name="musemuse-scene">
+          {children}
+        </group>
       </XR>
     </Canvas>
   );
