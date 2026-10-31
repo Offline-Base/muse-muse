@@ -807,6 +807,25 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   channel gates fail. writer-1: deleted stage-b-r30's local BF16 (55.7 GB) and Q8_0 (29.6 GB) after an exact size match with
   the NFS copies, neither open (212 GB free; r30's Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S stay for the helpers). Started
   run_handoff.sh stage-b-r30b at 7:14 PM (adapter 1.68 GB, then quantize.sh with the 2,500 probes, about 3 to 4 hours).
+- 7:20 PM: laptop disk. Muse Muse General reported 3.3 GB free on the Mac and swap at 5.9 of 7 GB. The handoff had
+  already pulled the 1.71 GB adapter here (sha256 ba998911... matched train-1) and was pushing it to writer-1. Killed the
+  push, deleted the local copy, and changed run_handoff.sh to stream train-1 -> writer-1 through a pipe (tar over two
+  ssh sessions) so nothing lands on the laptop, then reran it (7:21 PM, about 4 MB/s). Also deleted five older local
+  1.7 GB files that each matched their S3 copy exactly (full multipart ETag, not only size): models/stage1/adapter,
+  models/stage1-nanoquant/nq-0.55, runs/{stage-b-a,stage1-multi,stage2-multi}/out/adapter (WHERE_IS_THE_BIG_FILE.txt in
+  each). Laptop at 13 GB free. Kept: the stage1-multi and stage2-multi checkpoints with optimizer state (not in S3) and
+  runs/stage-b-r30/out/adapter (on train-1 and the NFS, not yet in S3).
+- 7:25 PM: DFlash drafter on tuned GGUFs (helper, writer-1 A100, b11970, greedy, reasoning off, 40 old facts plus 20
+  longer prompts). Drafter sha256 b2e808bf... matches Hugging Face. Default draft length n_max 3 is the best tried. Tuned
+  r30 Q4_K_M 52.1 to 72.3 tok/s (1.39x, acceptance 47%), IQ2_XXS 60.8 to 73.0 (1.20x), IQ1_S 70.1 to 80.0 on replies that
+  ended normally (1.14x); n_max 7 gives no gain. Every target needs about 2.4 GB more memory (1.56 GB weights, 0.85 GB
+  context at 4k). Answers change only by near-ties: each flip checked was the target's own second choice (0.01 to 0.31
+  nats apart), and the target alone flips 14 of those 21 replies when only batching changes; no old fact changed on
+  Q4_K_M or IQ2_XXS. Decision: no drafter by default on the Mac or phone files (small gain, 37% more memory on IQ1_S,
+  Metal lacks fast small-batch kernels for IQ1_S and IQ2_XXS in this build, phones are CPU-bound); at most an opt-in on
+  16 GB Macs after an on-Mac test. Found on the way: r30's IQ1_S hit the 512-token cap in repetition loops on 10 of 60
+  replies even without the drafter. The final IQ1_S gets a loop check, greedy and with Meta's sampling. Not tested: base,
+  r30b, other draft settings, any Mac or phone. Files in writer-1 ~/q/dflash-test.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
