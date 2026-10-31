@@ -112,6 +112,8 @@ Script error, logged so it is not repeated: the review 2 script matched verdicts
 
 **03:02** CI on that push (GitHub, run on 0c0ced8): macOS and the relay job passed, Linux failed 2 of 3334 tests, neither in privacy code. `test_cli_rejects_rules_with_home_and_bad_names`: argparse compares a value with the default by identity, so `--rules none` next to `--home` got past the exclusive group on the Linux build, a real if small bug; `--rules` now has no default. `test_committed_set_matches_the_script`: re-drawing the SAM pages on Linux moves text more than the 2 pixel tolerance; the committed PNGs and truth.json were drawn on macOS and are the source of truth, so the exact box check runs only there (counts, kinds and sizes are still checked everywhere).
 
+**03:07** CI on 86fccc0: Python on Linux and macOS and the relay job all pass. `main` is green.
+
 ## Open items
 
 - Ethan: what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
