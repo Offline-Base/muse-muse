@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import time
 from collections.abc import AsyncIterator, Callable
@@ -32,7 +33,9 @@ from base.connector.audit import VIA_HEADER
 
 log = logging.getLogger("base.relay")
 
-FORWARD_HEADERS = ("content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id")
+FORWARD_HEADERS = (
+    "content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id", "mcp-method", "mcp-name",
+)  # fmt: skip
 RETURN_HEADERS = ("content-type", "mcp-session-id", "allow")
 METHODS = ("POST", "GET", "DELETE")
 FORWARD_TIMEOUT = 55.0  # the relay gives up at 60 s
@@ -252,6 +255,39 @@ def _error(frame_id: str, status: int, message: str) -> dict:
     return _response(frame_id, status, json.dumps({"error": message}), {"content-type": "application/json"})
 
 
+# MCP 2026-07-28 has each request repeat its method in an Mcp-Method header, and for three methods
+# the tool, prompt or resource it names in Mcp-Name; the device's MCP library refuses a request
+# whose headers are missing or differ from the body (HTTP 400). The relay deployed before Oct 31
+# forwards neither header, so ChatGPT, which speaks 2026-07-28, got a 400 on its first call. When a
+# request carries the 2026-07-28 envelope and a header did not arrive, it is filled from the body.
+# Nothing between the relay and the device routes on these headers, so no check is lost; a header
+# that did arrive is kept as sent, so a request that disagrees with itself is still refused.
+MODERN_VERSION_KEY = "io.modelcontextprotocol/protocolVersion"
+NAME_PARAMS = {"tools/call": "name", "prompts/get": "name", "resources/read": "uri"}
+_HEADER_SAFE = re.compile(r"[\x21-\x7e]{1,256}")  # printable ASCII, no spaces: never needs encoding
+
+
+def fill_method_headers(sent: dict, body: Any) -> None:
+    """Add Mcp-Method and Mcp-Name from a 2026-07-28 request's body when they did not arrive."""
+    if "mcp-method" in sent and "mcp-name" in sent or not isinstance(body, str):
+        return
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return
+    params = message.get("params") if isinstance(message, dict) else None
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    if not isinstance(meta, dict) or MODERN_VERSION_KEY not in meta:
+        return  # an older protocol: these headers mean nothing to it
+    method = message.get("method")
+    if not isinstance(method, str) or not _HEADER_SAFE.fullmatch(method):
+        return
+    sent.setdefault("mcp-method", method)
+    value = params.get(NAME_PARAMS.get(method, ""))
+    if isinstance(value, str) and _HEADER_SAFE.fullmatch(value):
+        sent.setdefault("mcp-name", value)
+
+
 class RelayClient:
     """Holds the relay socket and forwards request frames to the local connector."""
 
@@ -326,6 +362,7 @@ class RelayClient:
         sent = {k.lower(): v for k, v in given.items() if k.lower() in FORWARD_HEADERS and isinstance(v, str)}
         sent["authorization"] = f"Bearer {self._token}"
         sent[VIA_HEADER] = "relay"  # the audit labels the call; a frame can never set this itself
+        fill_method_headers(sent, body)
         content = body.encode("utf-8", "replace") if isinstance(body, str) else b""
         try:
             async with asyncio.timeout(self.forward_timeout):

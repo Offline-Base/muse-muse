@@ -433,6 +433,59 @@ async def test_frames_reach_the_real_connector(settings, monkeypatch):
         await http.aclose()
 
 
+MODERN = "2026-07-28"
+ENVELOPE = {
+    "io.modelcontextprotocol/protocolVersion": MODERN,
+    "io.modelcontextprotocol/clientCapabilities": {},
+    "io.modelcontextprotocol/clientInfo": {"name": "t", "version": "1"},
+}
+
+
+def modern(method, frame_id, **params):
+    body = {"jsonrpc": "2.0", "id": frame_id, "method": method, "params": {**params, "_meta": ENVELOPE}}
+    return request_frame(frame_id, body=json.dumps(body), **{"mcp-protocol-version": MODERN})
+
+
+async def test_a_2026_request_works_when_the_relay_drops_its_method_headers(settings, monkeypatch):
+    # ChatGPT speaks 2026-07-28; the deployed relay forwards neither Mcp-Method nor Mcp-Name, and
+    # the device's MCP library answers 400 without them. The relay client fills them from the body.
+    from base.connector import server
+
+    monkeypatch.setattr(server, "restore_tags", lambda services, text: text)
+    services = fake_services(settings)
+    app = connector_app(services, token="local-token")
+    async with app.router.lifespan_context(app):
+        http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app))
+        client = make_client(http=http)
+        listed = await client.forward(modern("tools/list", "f-list"))
+        assert listed["status"] == 200 and "list_documents" in listed["body"]
+        called = await client.forward(modern("tools/call", "f-call", name="list_documents", arguments={}))
+        assert called["status"] == 200 and "[Student A] essay" in called["body"] and REAL_A not in called["body"]
+        # A header that did arrive is kept, so a request that disagrees with itself is still refused.
+        lying = modern("tools/call", "f-lie", name="list_documents", arguments={})
+        lying["headers"]["mcp-name"] = "search_documents"
+        assert (await client.forward(lying))["status"] == 400
+        await http.aclose()
+
+
+def test_method_headers_are_filled_only_for_2026_requests():
+    old = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_documents"}})
+    sent = {}
+    rc.fill_method_headers(sent, old)
+    assert sent == {}
+    new = json.loads(modern("tools/call", "x", name="list_documents")["body"])
+    sent = {"mcp-method": "tools/call"}
+    rc.fill_method_headers(sent, json.dumps(new))
+    assert sent == {"mcp-method": "tools/call", "mcp-name": "list_documents"}
+    new["params"]["name"] = "bad name\r\nx-injected: 1"
+    sent = {}
+    rc.fill_method_headers(sent, json.dumps(new))
+    assert sent == {"mcp-method": "tools/call"}  # a value a header cannot carry plainly is left out
+    for junk in ("not json", "[]", '{"params": 3}', None):
+        rc.fill_method_headers(sent := {}, junk)
+        assert sent == {}
+
+
 # register and pair
 
 
