@@ -43,6 +43,26 @@
   --shadow-float: 0 4px 24px rgba(17, 17, 18, 0.08), 0 1px 2px rgba(17, 17, 18, 0.04);
   --shadow-pop: 0 12px 32px rgba(17, 17, 18, 0.14), 0 2px 6px rgba(17, 17, 18, 0.08);
   --shadow-tab: 0 1px 3px rgba(17, 17, 18, 0.12);
+  /*
+   * The Muse app look (docs/UI_MUSE_APP.md) for the conversation surfaces and the chat kit (components/chat).
+   * Its text color is --fg and its tab track is --panel-line, which already hold those values.
+   */
+  --chat-bg: #ffffff;
+  --chat-muted: #696b6e;
+  --chat-faint: #a1a3a7;
+  --chat-placeholder: #878787;
+  --chat-line: #e5e5e5;
+  --chat-bubble: #f3f4f5;
+  --chat-label: #e7e8eb;
+  --chat-segment: #ffffff;
+  --work-from: #6547f5;
+  --work-to: #c15af7;
+  --send-from: #2a62cc;
+  --send-to: #5d6df5;
+  --shadow-chip: 0 2px 16px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.07);
+  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.12);
+  --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.08);
 
   --sidebar-w: 260px;
   --panel-w: 360px;
@@ -99,6 +119,22 @@
     --chart-6: #b9a0f3;
     --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --chat-bg: #0e1013;
+    --chat-muted: #a3a6ad;
+    --chat-faint: #6b6f76;
+    --chat-placeholder: #7c8087;
+    --chat-line: #2b2f35;
+    --chat-bubble: #262a30;
+    --chat-label: #2b3037;
+    --chat-segment: #33373e;
+    --work-from: #8068f8;
+    --work-to: #cd78f9;
+    --send-from: #3d74e6;
+    --send-to: #6a78f7;
+    --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
+    --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+    --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
 }
@@ -142,6 +178,22 @@
   --chart-6: #b9a0f3;
   --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --chat-bg: #0e1013;
+  --chat-muted: #a3a6ad;
+  --chat-faint: #6b6f76;
+  --chat-placeholder: #7c8087;
+  --chat-line: #2b2f35;
+  --chat-bubble: #262a30;
+  --chat-label: #2b3037;
+  --chat-segment: #33373e;
+  --work-from: #8068f8;
+  --work-to: #cd78f9;
+  --send-from: #3d74e6;
+  --send-to: #6a78f7;
+  --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+  --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
