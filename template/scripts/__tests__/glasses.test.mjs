@@ -233,6 +233,7 @@ describe("client.ts helpers", { skip: noTemplateModules ?? (esbuild ? false : "e
     assert.equal(client.glassesMessage({ code: "hinges_closed", message: "HINGES_CLOSED" }), "Open your glasses and put them on, then try again.");
     assert.equal(client.glassesMessage(new client.GlassesClientError("not_connected")), "Connect your glasses first.");
     assert.equal(client.glassesMessage(new Error("Something else.")), "Something else.");
+    assert.equal(client.glassesMessage({ code: "denied", message: "Microphone access is off." }), "Turn on the microphone for this app in Settings, then try again.");
     assert.equal(client.glassesMessage(null), "That didn't work. Try again.");
     // A code the page doesn't know, from a newer app: the app's own words.
     assert.equal(client.glassesMessage(Object.assign(new Error("That's busy."), { code: "busy" })), "That's busy.");
@@ -499,6 +500,40 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     await result(page).waitFor();
     assert.equal(await page.getByRole("alert").count(), 0);
   });
+
+  test("glasses: a microphone that's off says to turn it on in Settings, not in a browser", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+
+    await fake.set(page, { fail: { method: "startRecording", code: "denied" } });
+    await askButton(page).click({ delay: 500 });
+    await page.getByRole("alert").getByText("Turn on the microphone for this app in Settings, then try again.").waitFor();
+    assert.equal(await result(page).count(), 0);
+  });
+
+  for (const [where, fakeGlasses, words] of [
+    ["in the app", { photos: [pov], question, state: "ready" }, "Turn on the microphone for this app in Settings, then try again."],
+    ["in a browser", undefined, "Allow the microphone for this page in your browser settings, then try again."],
+  ]) {
+    test(`phone: a refused microphone ${where} says where to turn it on`, async (t) => {
+      if (!browser) return t.skip("Chromium isn't installed");
+      const { page, goto } = await open(t, { fakeGlasses: fakeGlasses && { ...fakeGlasses, photos: [pov], question }, media: true });
+      await page.addInitScript(() => {
+        const media = navigator.mediaDevices;
+        const real = media.getUserMedia.bind(media);
+        media.getUserMedia = async (constraints) => {
+          if (constraints.audio) throw new DOMException("Refused.", "NotAllowedError");
+          return real(constraints);
+        };
+      });
+      await goto();
+      await page.getByRole("radio", { name: "Phone" }).check({ force: true });
+      await page.getByRole("button", { name: "Hold to ask" }).click({ delay: 500 });
+      await page.getByRole("alert").getByText(words).waitFor();
+    });
+  }
 
   test("glasses: folding them mid-session brings back the connect button, and a reload stays connected", async (t) => {
     if (!browser) return t.skip("Chromium isn't installed");

@@ -32,6 +32,7 @@ export type GlassesClientErrorCode =
   | "camera_blocked"
   | "no_microphone"
   | "mic_blocked"
+  | "denied"
   | "no_audio"
   | "not_listening"
   | "no_sample";
@@ -53,6 +54,7 @@ const MESSAGES: Record<GlassesClientErrorCode, string> = {
   camera_blocked: "Allow the camera for this page in your browser settings, then try again.",
   no_microphone: "This device has no microphone we can use. Try the sample.",
   mic_blocked: "Allow the microphone for this page in your browser settings, then try again.",
+  denied: "Turn on the microphone for this app in Settings, then try again.",
   no_audio: "Couldn't hear that. Hold the button while you speak.",
   not_listening: "Hold the button while you speak.",
   no_sample: "There's no sample to show here. Try this device's camera.",
@@ -242,7 +244,8 @@ type Recording =
   | { kind: "phone"; finish: () => Promise<Blob>; cancel: () => void };
 
 async function recordPhone(maxSeconds: number): Promise<Extract<Recording, { kind: "phone" }>> {
-  const stream = await openMedia({ audio: true }, "mic_blocked", "no_microphone");
+  // Inside the app, what said no is the phone's Settings, not a browser's.
+  const stream = await openMedia({ audio: true }, glassesBridge() ? "denied" : "mic_blocked", "no_microphone");
   if (typeof MediaRecorder === "undefined") {
     stopTracks(stream);
     throw new GlassesClientError("no_microphone");
