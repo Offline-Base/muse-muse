@@ -3843,138 +3843,104 @@ a.dash-card:hover {
 
 /* ---------- Playground pages (Make) ---------- */
 
-/* The Make page sits on the Muse app's plain page (docs/UI_MUSE_APP.md, "The page"): white, near-black in dark mode. */
+/*
+ * The Make page (docs/BRAND.md, "Layout"): the headline, then 32 px, then the composer, with the examples under it,
+ * centered in the window as one block on the plain page. The build setup folds up below.
+ */
 .play {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   min-height: 100dvh;
-  padding: 12px var(--gutter) 0;
-  background: var(--chat-bg);
-}
-
-/*
- * The setup panel: a hairline outline on the page, not a gray card. Under the Make column on narrow screens, it stays
- * in front of the fill under the composer's card (below).
- */
-.play .panel {
-  position: relative;
-  z-index: 11;
-  border-color: var(--chat-line);
+  padding: 12px 24px 32px;
   background: var(--chat-bg);
 }
 
 .play-main {
-  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-@media (min-width: 1180px) {
+@media (max-width: 759.98px) {
   .play {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--panel-w);
-    align-items: start;
-    gap: 24px;
-    padding: 20px 20px 0 24px;
-  }
-
-  .play-main {
-    min-height: calc(100dvh - 20px);
-  }
-
-  .play .panel {
-    position: sticky;
-    top: 20px;
+    min-height: calc(100dvh - 57px);
   }
 }
 
+@media (min-width: 760px) {
+  .play {
+    padding: 20px 24px 40px;
+  }
+}
+
+.play .toolbar {
+  margin: 0;
+}
+
 .play-intro {
-  margin: 64px auto 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  width: 100%;
+  max-width: var(--composer-w);
+  margin: auto auto 32px;
+  padding-top: 32px;
   text-align: center;
 }
 
 .play-intro h1 {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.play-intro p {
-  color: var(--chat-muted);
-  font-size: 15px;
+  font-size: clamp(28px, 7.2vw, 48px);
+  font-weight: 400;
+  line-height: 1.08;
 }
 
 .play-main > .composer-wrap {
-  flex: 1;
-  margin: 0 auto;
-  max-width: none;
-  align-items: center;
-}
-
-.play-main > .composer-wrap > .composer,
-.play-main > .composer-wrap > .form-error {
-  width: 100%;
+  margin: 0 auto auto;
   max-width: var(--composer-w);
+  gap: 16px;
 }
 
-/*
- * Pinned 24 px above the window's bottom edge, the card leaves a gap under it where what scrolls up behind it would
- * show, and it shows in the card's rounded bottom corners too. The Muse app's page is plain there, so a copy of the
- * card's shape in the page color sits 56 px lower: the gap plus the corner's 32 px, which keeps the copy's sides
- * straight from those corners down to the window's edge. As a shadow, it paints under the card's own soft shadow and
- * only outside the card, and reaches neither above it nor beside it.
- */
-.play-main > .composer-wrap > .composer {
-  position: sticky;
-  bottom: 24px;
-  z-index: 10;
-  margin-top: auto;
-  --composer-floor: 0 56px 0 var(--chat-bg);
+/* One line of text at rest, which makes the card 107 px. The composer grows it with the text. */
+.play .composer {
+  gap: 18px;
 }
 
-/* An error under the card stays in front of that fill. */
-.play-main > .composer-wrap > .form-error {
-  position: relative;
-  z-index: 11;
-  margin-bottom: 8px;
+.play .composer-input {
+  min-height: 27px;
 }
 
+/* Three across from 560 px, one per row below that. */
 .ex-grid {
   list-style: none;
   width: 100%;
-  max-width: 960px;
-  margin: 24px auto 32px;
+  margin: 4px 0 0;
   padding: 0;
   display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+
+@media (min-width: 560px) {
+  .ex-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .ex-card {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: block;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--fg);
+  border: 0;
+  border-radius: 18px;
+  background: var(--surface-2);
+  color: #ffffff;
   text-align: left;
-  transition: border-color 120ms ease;
 }
 
-.ex-card:hover:not(:disabled) {
-  border-color: var(--line-strong);
+@media (min-width: 560px) {
+  .ex-card {
+    aspect-ratio: 0.86;
+  }
 }
 
 .ex-card:disabled {
@@ -3982,11 +3948,9 @@ a.dash-card:hover {
 }
 
 .ex-media {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: block;
-  overflow: hidden;
-  aspect-ratio: 308 / 160;
-  background: var(--surface-3);
 }
 
 .ex-media img {
@@ -3994,6 +3958,18 @@ a.dash-card:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform var(--ease);
+}
+
+.ex-card:hover:not(:disabled) .ex-media img {
+  transform: scale(1.03);
+}
+
+.ex-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.68));
 }
 
 .ex-grid > li {
@@ -4003,19 +3979,20 @@ a.dash-card:hover {
 .ex-camera {
   position: absolute;
   right: 10px;
-  top: 12px;
+  top: 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--pill);
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.9);
   color: #111112;
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 18px;
   cursor: pointer;
 }
 
@@ -4026,33 +4003,113 @@ a.dash-card:hover {
 .ex-tag {
   position: absolute;
   left: 10px;
-  top: 14px;
-  padding: 3px 7px;
+  top: 10px;
+  padding: 4px 8px;
   border-radius: var(--pill);
-  background: rgba(17, 17, 18, 0.88);
+  background: rgba(17, 17, 18, 0.72);
   color: #ffffff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 16px;
 }
 
 .ex-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 14px 12px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 14px 14px;
 }
 
 .ex-title {
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1.3;
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/* The description is the card's tooltip, and still part of its name for a screen reader. */
 .ex-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The build setup: facts, not controls, folded under the examples. */
+.setup {
+  width: 100%;
+  max-width: var(--composer-w);
+  margin: 40px auto 0;
+  border-top: 1px solid var(--line);
+}
+
+.setup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 32px;
+  margin-top: 12px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--pill);
   color: var(--muted);
   font-size: 14px;
-  line-height: 1.35;
+  line-height: 20px;
+  list-style: none;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.setup-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.setup-toggle:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.setup[open] .setup-chevron {
+  transform: rotate(180deg);
+}
+
+.setup-list {
+  margin: 8px 0 0;
+  padding: 0 12px;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 11em) minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.setup-row dt {
+  color: var(--muted);
+}
+
+.setup-row dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.setup-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.setup .panel-note {
+  padding: 10px 12px 0;
 }
 
 /* Panel controls: read-only selects, round icon buttons and switches */

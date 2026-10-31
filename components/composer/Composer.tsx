@@ -37,7 +37,7 @@ interface Props {
   autoFocus?: boolean;
   /** Pins the composer to the bottom of the column, as in the playground. */
   floating?: boolean;
-  /** "playground" shows the examples as photo cards above a composer pinned to the bottom (the Make page). */
+  /** "playground" shows the examples as photo cards under the composer (the Make page). */
   layout?: "playground";
   /** The heading over plain examples. */
   examplesLabel?: string;
@@ -408,39 +408,6 @@ export function Composer({
 
   return (
     <div className={`composer-wrap${floating ? " composer-floating" : ""}`}>
-      {playground && examples?.length ? (
-        <ul className="ex-grid" aria-label="Examples">
-          {examples.map((ex) => (
-            <li key={ex.label}>
-              <button
-                type="button"
-                className="ex-card"
-                onClick={() => void applyExample(ex)}
-                disabled={submitting || loadingExample !== null}
-                aria-busy={loadingExample === ex.label}
-              >
-                {ex.image ? (
-                  <span className="ex-media">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={ex.image} alt="" loading="lazy" />
-                    {ex.tag ? <span className="ex-tag">{ex.tag}</span> : null}
-                  </span>
-                ) : null}
-                <span className="ex-body">
-                  <span className="ex-title">{ex.label}</span>
-                  {ex.text ? <span className="ex-text">{ex.text}</span> : null}
-                </span>
-              </button>
-              {ex.image && canUseCamera ? (
-                <button type="button" className="ex-camera" onClick={() => useCameraForExample(ex)} disabled={submitting} title={`${ex.label}, with a photo you take`}>
-                  <Icon name="camera" size={15} />
-                  <span>Use my camera</span>
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
       <form
         className={`composer${dragging ? " is-dragging" : ""}`}
         aria-label={isRefine ? "Ask for a change" : "Your muse"}
@@ -580,6 +547,40 @@ export function Composer({
           <Icon name="alert" size={18} />
           <span>{error}</span>
         </p>
+      ) : null}
+      {playground && examples?.length ? (
+        <ul className="ex-grid" aria-label="Examples">
+          {examples.map((ex) => (
+            <li key={ex.label}>
+              <button
+                type="button"
+                className="ex-card"
+                title={ex.text}
+                onClick={() => void applyExample(ex)}
+                disabled={submitting || loadingExample !== null}
+                aria-busy={loadingExample === ex.label}
+              >
+                {ex.image ? (
+                  <span className="ex-media">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={ex.image} alt="" loading="lazy" />
+                    {ex.tag ? <span className="ex-tag">{ex.tag}</span> : null}
+                  </span>
+                ) : null}
+                <span className="ex-body">
+                  <span className="ex-title">{ex.label}</span>
+                  {ex.text ? <span className="ex-text">{ex.text}</span> : null}
+                </span>
+              </button>
+              {ex.image && canUseCamera ? (
+                <button type="button" className="ex-camera" onClick={() => useCameraForExample(ex)} disabled={submitting} title={`${ex.label}, with a photo you take`}>
+                  <Icon name="camera" size={15} />
+                  <span>Use my camera</span>
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       ) : null}
       {examples?.length && !playground ? (
         <div className="examples">
