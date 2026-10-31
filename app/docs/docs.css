@@ -2194,6 +2194,13 @@
   margin: 0 12px 12px;
 }
 
+/* The box opens focused, so it keeps the accent ring it always had: the card's hairline ring is too faint to find. */
+.docs-chat-form.composer:has(.composer-input:focus-visible) {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-card);
+}
+
 /* Stop, while a reply runs: a white rounded square in the send button. */
 .docs-chat-stop {
   display: block;
