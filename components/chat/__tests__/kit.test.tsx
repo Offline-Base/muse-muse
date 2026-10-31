@@ -187,7 +187,7 @@ describe("StepList", () => {
     assert.match(html, /^<ol class="chat-steplist" aria-label="Steps">/);
     assert.equal(
       row(html, "Animating mascot cutout"),
-      '<li class="chat-steplist-row is-done"><span class="chat-steplist-marker"><span class="chat-steplist-dot"></span></span><div class="chat-steplist-text"><p class="chat-steplist-title">',
+      '<li data-step="a" class="chat-steplist-row is-done"><span class="chat-steplist-marker"><span class="chat-steplist-dot"></span></span><div class="chat-steplist-text"><p class="chat-steplist-title">',
     );
     assert.match(html, /<p class="chat-steplist-desc">Preparing the cutout\.<\/p>/);
     assert.match(html, /Checked the home screen<span class="sr-only"> \(failed\)<\/span>/);
@@ -205,10 +205,33 @@ describe("StepList", () => {
     const html = render(C(kit.StepList), { steps });
     assert.match(
       html,
-      /<a href="https:\/\/cdn\.example\/walk\.mp4" target="_blank" rel="noopener noreferrer" class="chat-steplist-media"><img src="\/poster\.jpg" alt="The walkthrough" width="72" height="72" loading="lazy"\/><span class="chat-steplist-play"><svg[^>]*role="img"[^>]*><title>Video<\/title>/,
+      /<a href="https:\/\/cdn\.example\/walk\.mp4" target="_blank" rel="noopener noreferrer" class="chat-steplist-media"><img src="\/poster\.jpg" alt="The walkthrough" title="The walkthrough" width="72" height="72" loading="lazy"\/><span class="chat-steplist-play"><svg[^>]*role="img"[^>]*><title>Video<\/title>/,
     );
-    assert.match(html, /<span class="chat-steplist-media"><img src="\/shot\.png" alt="The home screen" width="72" height="72" loading="lazy"\/><\/span>/);
+    assert.match(html, /<span class="chat-steplist-media"><img src="\/shot\.png" alt="The home screen" title="The home screen" width="72" height="72" loading="lazy"\/><\/span>/);
     assert.equal(html.match(/chat-steplist-play/g)?.length, 1);
+  });
+
+  it("takes a row of thumbnails, a body, a row with no title, and children folded behind the title", () => {
+    const html = render(C(kit.StepList), {
+      steps: [
+        {
+          id: "shots",
+          title: "Checks passed",
+          state: "done",
+          media: [
+            { kind: "image", src: "/a.png", alt: "One" },
+            { kind: "image", src: "/b.png", alt: "Two" },
+          ],
+          body: createElement("em", null, "What ran"),
+        },
+        { id: "say", title: "", state: "done", body: createElement("em", null, "A message") },
+        { id: "many", title: "12 steps", state: "done", folded: true, children: [{ id: "one", title: "A step", state: "done" }] },
+      ],
+    });
+    assert.match(html, /<div class="chat-steplist-gallery"><span class="chat-steplist-media"><img src="\/a\.png".*?<span class="chat-steplist-media"><img src="\/b\.png"/);
+    assert.match(html, /<div class="chat-steplist-body"><em>What ran<\/em><\/div>/);
+    assert.match(html, /<div class="chat-steplist-text"><div class="chat-steplist-body"><em>A message<\/em><\/div><\/div>/);
+    assert.match(html, /<details class="chat-steplist-fold"><summary class="chat-steplist-title">12 steps<\/summary><ol class="chat-steplist-children"><li data-step="one"/);
   });
 
   it("nests sub-steps, with the subagent icon for subagents, workflows and what a workflow runs", () => {
@@ -231,12 +254,12 @@ describe("StepList", () => {
       },
     ];
     const html = render(C(kit.StepList), { steps: tree, end: undefined });
-    assert.match(row(html, "Muse Code round 1"), /^<li class="chat-steplist-row is-running"><span class="chat-steplist-marker"><svg class="chat-working-icon is-working is-subagent"/);
+    assert.match(row(html, "Muse Code round 1"), /^<li data-step="[^"]*" class="chat-steplist-row is-running"><span class="chat-steplist-marker"><svg class="chat-working-icon is-working is-subagent"/);
     assert.match(html, /Muse Code round 1<span class="sr-only"> \(working\)<\/span>/);
-    assert.match(row(html, "Subagent: write the tests"), /^<li class="chat-steplist-row is-done is-nested"><span class="chat-steplist-marker"><svg class="chat-working-icon is-subagent" width="16"/);
-    assert.match(row(html, "Read package.json"), /^<li class="chat-steplist-row is-done is-nested"><span class="chat-steplist-marker"><span class="chat-steplist-dot">/);
+    assert.match(row(html, "Subagent: write the tests"), /^<li data-step="[^"]*" class="chat-steplist-row is-done is-nested"><span class="chat-steplist-marker"><svg class="chat-working-icon is-subagent" width="16"/);
+    assert.match(row(html, "Read package.json"), /^<li data-step="[^"]*" class="chat-steplist-row is-done is-nested"><span class="chat-steplist-marker"><span class="chat-steplist-dot">/);
     assert.match(row(html, "Workflow: review the screens"), /<svg class="chat-working-icon is-subagent"/);
-    assert.match(row(html, "Reviewer for the home screen"), /^<li class="chat-steplist-row is-running is-nested"><span class="chat-steplist-marker"><svg class="chat-working-icon is-working is-subagent"/);
+    assert.match(row(html, "Reviewer for the home screen"), /^<li data-step="[^"]*" class="chat-steplist-row is-running is-nested"><span class="chat-steplist-marker"><svg class="chat-working-icon is-working is-subagent"/);
     assert.match(html, /<ol class="chat-steplist-children">[\s\S]*<ol class="chat-steplist-children">/, "two levels deep");
   });
 });

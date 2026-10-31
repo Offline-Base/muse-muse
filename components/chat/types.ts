@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { IconName } from "@/components/icons";
 
 /**
@@ -27,12 +28,18 @@ export interface StepMedia {
 /** One row of the steps list, with the rows nested under it. */
 export interface StepItem {
   id: string;
+  /** Empty for a row that is only its body, such as a message. */
   title: string;
   description?: string;
   state: StepState;
-  media?: StepMedia;
+  /** What the step made: one thumbnail, or a row of them. */
+  media?: StepMedia | readonly StepMedia[];
+  /** What a description can't hold, such as a card or a fold, under the description and the thumbnails. */
+  body?: ReactNode;
   kind?: StepKind;
   children?: StepItem[];
+  /** The children start folded, and the title is the row that unfolds them. */
+  folded?: boolean;
 }
 
 /** How a finished list of steps ends. A list still running has no end row. */

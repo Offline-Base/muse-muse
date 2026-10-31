@@ -52,10 +52,12 @@
 }
 
 .chat-bubble-files {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+  max-width: 100%;
   min-width: 40px;
   margin: 0;
   padding: 0;
@@ -389,12 +391,18 @@
   overflow-wrap: anywhere;
 }
 
+.chat-steplist-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .chat-steplist-media {
   position: relative;
   display: block;
   width: 72px;
   height: 72px;
-  margin-top: 12px;
   overflow: hidden;
   border-radius: 8px;
   background: var(--chat-bubble);
@@ -425,6 +433,22 @@
   margin-left: 2px;
 }
 
+.chat-steplist-body {
+  margin-top: 8px;
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 21px;
+}
+
+/* A row that is only its body lines up with the marker, as a title would. */
+.chat-steplist-text > .chat-steplist-body:first-child {
+  margin-top: 0;
+}
+
+.chat-steplist-fold > summary {
+  cursor: pointer;
+}
+
 .chat-steplist-children {
   display: flex;
   flex-direction: column;
@@ -441,6 +465,11 @@
 .chat-steplist-row.is-nested .chat-steplist-title {
   font-size: 13px;
   font-weight: 400;
+}
+
+.chat-steplist-row.is-nested .chat-steplist-desc {
+  margin-top: 0;
+  line-height: 18px;
 }
 
 .chat-steplist-row.is-nested .chat-steplist-dot {
