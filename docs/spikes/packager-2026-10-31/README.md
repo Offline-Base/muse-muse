@@ -13,7 +13,7 @@ built from 3e223ea.
 | S7, rcodesign | **Pass** | Signed in the sandbox, then on this Mac: `codesign --verify --deep --strict` passes, the entitlements are kept, `spctl` rejects it as expected, and `--muse-selftest` passes on arm64 and under Rosetta |
 | S8, resedit | **Half.** Reads back right. **Launch on Windows not run** | On this Mac, resedit reads the exe from the zip: the name, version and all 7 icon sizes. `@electron/fuses` reads all four fuses as set. There's no Windows machine here yet |
 | S10, images in a tool result | **Not run** | It needs a call to Meta, and this unit's cap there is $0 |
-| S11, `start()` from a step | See below | |
+| S11, `start()` from a step | **Pass, on the local world** | A scratch workflow under `next dev --webpack` and workflow 5.2.3: its step called `start(child)`, the child ran and the parent finished. **Not run on Vercel's world** |
 | Blob upload through the firewall | **Not run** | This laptop has no Blob credential, so no real slot could be made. The runs here used `keep` slots. See below |
 
 ## Time and size per product
@@ -60,7 +60,7 @@ every download costs more than a sandbox's seconds.
 
 - **Firewall** with the packager's policy: `vercel.com` and `*.blob.vercel-storage.com` answer (404 on the paths tried, which is
   still an answer). `example.com`, `registry.npmjs.org`, `github.com` and `api.meta.ai` don't resolve.
-- **Environment:** `env` has no token, secret or key the platform put there. The 3 matches are the sandbox's own.
+- **Environment:** no variable's name in `env` has token, secret or key in it.
 - **Hostile name:** `Tom's "A&B" <C> $(x) 日本語 ../é` went through all three packages. The label read back right, the file name lost
   only what isn't allowed, and no shell was involved.
 
