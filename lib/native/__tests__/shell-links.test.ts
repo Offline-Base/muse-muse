@@ -7,7 +7,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { EAS_PROJECT_ID, SHELL_UPDATE_PUBLISHED, appLink, expoGoLink } from "@/lib/native/shell-links";
-import { parseDeepLink } from "../../../native/shell-mobile/src/launch";
+
+// Loaded by path at run time, not imported: a deployment has no native/ (.vercelignore), and its typecheck reads tests too.
+const { parseDeepLink } = (await import(new URL("../../../native/shell-mobile/src/launch.ts", import.meta.url).href)) as {
+  parseDeepLink: (raw: string | null | undefined) => unknown;
+};
 
 const releases = JSON.parse(readFileSync(path.join(process.cwd(), "native/releases.json"), "utf8")) as { eas: { projectId: string }; productionUpdate: unknown };
 
