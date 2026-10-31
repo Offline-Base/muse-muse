@@ -125,7 +125,7 @@ signatures make someone strong. A cookie alone is never enough for anything priv
 - `allowedModelsFor(brief)` (`lib/pipeline/logic.ts:101`) appends `capMarker(id)` for each cap block the brief has, after
   the models and the agent markers. A brief with no cap blocks gives the same array as today.
 - The product's `musemuse.json` may narrow its caps (its `caps` list), never widen them, as it does for tools.
-- Build tokens get `gateway_tokens.build_id` (unit 2, migration 0017). The **build namespace** is `b:<buildId>`. Live
+- Build tokens get `gateway_tokens.build_id` (unit 2, migration 0019). The **build namespace** is `b:<buildId>`. Live
   tokens use `live`. A build never sees live rows or files, so Muse Code never reads a real person's data.
 
 ### 2.4 The cap gate (unit 3 writes it, every cap route uses it)
@@ -310,22 +310,22 @@ that crashed. Every unit that stores anything registers.
 
 No wave 2 branch adds a migration. All ten worktrees (`tools`, `agentkit`, `brief`, `vr`, `outputs`, `shells2`, `getit`,
 `labroutes`, `packager`, `labboxes`), and `tg-musecode`, end at `0015_product_clips`, journal time 1793431490646. The
-Muse Code design's `code_sessions` table is planned, not built: it is in unit 9's 0022 below.
+Muse Code design's `code_sessions` table belongs to the Muse Muse General session (tg-musecode), as `0016_code_sessions`. `0017` is reserved for its decision models (tg-decide). Both use this section's journal rule.
 
 | No. | Tag | Unit | Adds | Journal `when` |
 |---|---|---|---|---|
-| 0016 | `0016_trust` | 1 | `users.adult_confirmed_at`, `users.terms_version`, `users.terms_accepted_at`, `users.banned_at`, `users.ban_reason`; `products.taken_down_at`, `products.takedown_reason`; table `abuse_reports` | 1793431550646 |
-| 0017 | `0017_engine` | 2 | `gateway_tokens.build_id` (uuid, references builds, indexed); `builds.round_plan` (jsonb); `builds.live_check` (jsonb) | 1793431610646 |
-| 0018 | `0018_data` | 3 | tables `end_users`, `end_user_passkeys`, `product_rows`, `product_data_counts` | 1793431670646 |
-| 0019 | `0019_files` | 4 | tables `product_files`, `product_search_docs` | 1793431730646 |
-| 0020 | `0020_connect` | 5 | tables `product_secrets`, `product_sends`, `public_fetch_cache` | 1793431790646 |
-| 0021 | `0021_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices`; `products.owner_seen_at` | 1793431850646 |
-| 0022 | `0022_code` | 9 | tables `exec_runs`, `code_sessions` | 1793431910646 |
-| 0023 | `0023_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793431970646 |
-| 0024 | `0024_hardware` | 13 | tables `boards`, `product_boards` | 1793432030646 |
+| 0018 | `0018_trust` | 1 | `users.adult_confirmed_at`, `users.terms_version`, `users.terms_accepted_at`, `users.banned_at`, `users.ban_reason`; `products.taken_down_at`, `products.takedown_reason`; table `abuse_reports` | 1793431670646 |
+| 0019 | `0019_engine` | 2 | `gateway_tokens.build_id` (uuid, references builds, indexed); `builds.round_plan` (jsonb); `builds.live_check` (jsonb) | 1793431730646 |
+| 0020 | `0020_data` | 3 | tables `end_users`, `end_user_passkeys`, `product_rows`, `product_data_counts` | 1793431790646 |
+| 0021 | `0021_files` | 4 | tables `product_files`, `product_search_docs` | 1793431850646 |
+| 0022 | `0022_connect` | 5 | tables `product_secrets`, `product_sends`, `public_fetch_cache` | 1793431910646 |
+| 0023 | `0023_jobs` | 6 | tables `product_schedules`, `job_runs`, `product_webhooks`, `owner_notices`; `products.owner_seen_at` | 1793431970646 |
+| 0024 | `0024_code` | 9 | table `exec_runs` | 1793432030646 |
+| 0025 | `0025_gpu` | 11 | table `glimmer_windows`; `training_jobs.product_id` | 1793432090646 |
+| 0026 | `0026_hardware` | 13 | tables `boards`, `product_boards` | 1793432150646 |
 
-Units 7, 8, 10, 12 and 14 have no migration. Live updates read `product_rows.seq` from 0018. Drive export keeps its state
-on the board (`docs/DRIVE_EXPORT.md`). A unit that finds it needs one takes the next free number after 0024, in merge order.
+Units 7, 8, 10, 12 and 14 have no migration. Live updates read `product_rows.seq` from 0020. Drive export keeps its state
+on the board (`docs/DRIVE_EXPORT.md`). A unit that finds it needs one takes the next free number after 0026, in merge order.
 
 Rules:
 
@@ -435,7 +435,7 @@ Test spend, out of the wave's limits. Unused money stays unspent.
 product, the restricted-territory block, a report link, takedown and per-builder ban, the deploy bug that drops files over
 10 MB, and live products' retired Spark 1.3 calls moved to Wonder (Meta terms 6.2).
 
-**Migration 0016_trust.** `users`: `adult_confirmed_at` timestamptz, `terms_version` text, `terms_accepted_at` timestamptz,
+**Migration 0018_trust.** `users`: `adult_confirmed_at` timestamptz, `terms_version` text, `terms_accepted_at` timestamptz,
 `banned_at` timestamptz, `ban_reason` text. `products`: `taken_down_at` timestamptz, `takedown_reason` text. Table
 `abuse_reports`: `id` uuid, `product_id` uuid null, `product_slug` text, `reason` text (`illegal`, `harm`, `privacy`,
 `copyright`, `impersonation`, `broken`, `other`), `detail` text up to 1,000, `reporter_key` text (an HMAC of the IP, 32
@@ -479,7 +479,7 @@ links, `proxy.ts` is the pristine copy. Judge note: none. Smoke rule: none.
 
 **Owns.** `lib/trust/**`, `app/terms`, `app/privacy`, `app/report`, `app/admin/reports`, `app/api/account/confirm`,
 `app/api/reports`, `app/api/admin/{products,users}/**`, the platform's `proxy.ts`, `template/caps/trust/**`,
-`lib/publish/vercel.ts` (the big-file part), the 0016 migration. Shared: `handler.ts` (one line), `lib/quota.ts`
+`lib/publish/vercel.ts` (the big-file part), the 0018 migration. Shared: `handler.ts` (one line), `lib/quota.ts`
 (`checkBuildAllowed` reads the ban).
 
 **Guards.** Meta terms: 18+, a privacy policy per product (6.2), restricted territories blocked by us (Meta doesn't route by
@@ -533,7 +533,7 @@ Contributor, $0.049, failed after 25:52 with "Muse Code ran past its 25-minute l
 | `lib/judge.ts:99` and `:109` | `capsProofText` before the screenshots; `judgeInstructions(brief)` (tg-brief) already carries the notes | caps only |
 | `lib/brief/render.ts` | The hooks in 2.6. Under caps or milestones only, the Budget section adds: "Run `npm run verify` at most twice in a round. The platform runs it again after you stop." and "When the product makes something that must pass a check (a solvable level, valid code), test one generated item for real and the rest with fixtures." | caps or milestones |
 
-**Migration 0017_engine.** `gateway_tokens.build_id` uuid null, references `builds`, indexed. `builds.round_plan` jsonb null
+**Migration 0019_engine.** `gateway_tokens.build_id` uuid null, references `builds`, indexed. `builds.round_plan` jsonb null
 (`{capMinutes, milestones: [{title, state}]}`). `builds.live_check` jsonb null (`{ok, at, reason?, url}`).
 
 **Brief.** `milestones: [{ title (up to 60), doneMeans (up to 300) }]`, 2 or 3, or null, in the writer's schema only with
@@ -551,7 +551,7 @@ No other new route.
 
 **Owns.** `lib/caps/{ids,brief-fields,catalog,render,judge,env,cleanup,hosts,proof}.ts`, `lib/caps/__tests__/flags-off.test.ts`
 and its golden, `template/caps/core/**` (with unit 3's `user.ts`), `scripts/caps-check.mjs`, `tests/caps/index.ts`, the
-0017 migration, and every shared file section 3 gives to unit 2.
+0019 migration, and every shared file section 3 gives to unit 2.
 
 **Guards.** A longer round costs more Muse Code time, which is why it scales with the brief and has a ceiling. Milestones
 multiply Muse Code spend, so they need their flag and stop at 3. The live check spends on the product's live token, on
@@ -563,7 +563,7 @@ Wonder, once per build (about $0.30), and counts against that product's daily bu
 Muse Muse with passkeys (no email service needed), with a signed code back to the product; `data()` and `currentUser()`;
 the `muse-data` skill; the brief's `data` block. Also the cap gate and principal (2.2, 2.4), which later units reuse.
 
-**Migration 0018_data.**
+**Migration 0020_data.**
 
 - `end_users`: `id` uuid, `display_name` text null (what the person typed, up to 40), `created_at`, `last_seen_at`.
 - `end_user_passkeys`: `id` uuid, `end_user_id`, `credential_id` text unique, `public_key` bytea, `counter` bigint,
@@ -625,7 +625,7 @@ at most 20 data calls.
 
 **Owns.** `lib/caps/data/**`, `lib/caps/{gate,principal}.ts`, `app/api/gateway/data/**`,
 `app/api/gateway/identity/user/**`, `app/u/sign-in`, `app/api/u/**`, `app/api/products/[slug]/data`,
-`template/caps/data/**`, `user.ts` and its routes in `core`, the 0018 migration.
+`template/caps/data/**`, `user.ts` and its routes in `core`, the 0020 migration.
 
 **Guards.** Products never see a credential or a raw end-user id. Personal fields only in non-shared scopes, said on the
 privacy page. Live rows never reach a build. Data never goes to Contributor: live products call Wonder, and test builds see
@@ -637,7 +637,7 @@ Needs a signed-in builder.
 **Scope.** `files()` with quotas and no 24-hour expiry, a full-text search helper, vetted public datasets on Blob that
 builds can read, and citations the judge can see. Today's `/uploads` keeps its one-day life for model input.
 
-**Migration 0019_files.** `product_files`: `id` uuid, `product_id`, `namespace`, `scope`, `owner_key` null, `name`,
+**Migration 0021_files.** `product_files`: `id` uuid, `product_id`, `namespace`, `scope`, `owner_key` null, `name`,
 `content_type`, `bytes` bigint, `sha256`, `blob_path`, `status` (`pending`, `ready`), `created_at`, `deleted_at`.
 `product_search_docs`: `id` uuid, `product_id`, `namespace`, `scope`, `owner_key` null, `source` jsonb (`{fileId}` or
 `{collection, docId}`), `title`, `body` text, `tsv` tsvector generated from title and body with the `simple`
@@ -673,7 +673,7 @@ a dataset show where they came from. Fail it when an answer that says it comes f
 upload, one search, one dataset read.
 
 **Owns.** `lib/caps/files/**`, `app/api/gateway/{files,search,datasets}/**`, `template/caps/files/**`, the dataset mirror
-script `scripts/caps/mirror-datasets.ts`, the 0019 migration.
+script `scripts/caps/mirror-datasets.ts`, the 0021 migration.
 
 **Guards.** Content types on an allowlist; anything that isn't an image, audio, video or PDF is served as an attachment,
 never as a page. Takedown and `productOff` delete the files. Dataset licenses must allow redistribution, and the citation
@@ -686,7 +686,7 @@ through the tool gateway; a per-product key vault (bring your own keys, brokered
 payments and social posting only through the builder's own keys or accounts, one confirmation per send, off in production
 until the owner says so. Also `lib/secrets/box.ts`, which unit 13 reuses.
 
-**Migration 0020_connect.** `product_secrets`: `id`, `product_id`, `name`, `service`, `ciphertext` bytea, `iv`, `tag`,
+**Migration 0022_connect.** `product_secrets`: `id`, `product_id`, `name`, `service`, `ciphertext` bytea, `iv`, `tag`,
 `key_version`, `created_by` (subject key), `created_at`, `revoked_at`; one active row per `(product_id, name)`.
 `product_sends`: `id`, `product_id`, `channel`, `recipient_hash`, `approval_nonce`, `status`, `provider_id`, `created_at`.
 `public_fetch_cache`: `key` text primary (hash of the normalized request), `api`, `status`, `content_type`, `body` bytea,
@@ -723,7 +723,7 @@ checker scans the build output for vault values the build was given). Judge: "Me
 are samples. A card that says 'Sent (sample)' is the product working." Smoke: one fetch, one confirmed send.
 
 **Owns.** `lib/caps/connect/**`, `lib/secrets/box.ts`, `app/api/gateway/{fetch,vault,send}/**`, `template/caps/connect/**`,
-its catalog entries, the 0020 migration.
+its catalog entries, the 0022 migration.
 
 **Guards.** Keys: AES-256-GCM with `CONNECT_VAULT_KEY`, decrypted only inside the gateway function, never logged, never
 returned. Payments only through the builder's own hosted checkout links: the product never touches card details. Every
@@ -737,7 +737,7 @@ a year without zero data retention, as `docs/AGENT_TOOLS.md` says. Needs a signe
 webhooks into the gateway, long agent runs checkpointed across ticks, results to `data()`, and owner notices. Jobs read and
 notify. Writes to the outside wait for a person. Schedules pause after 14 days with no owner visit.
 
-**Migration 0021_jobs.** `product_schedules`: `id`, `product_id`, `name`, `every_minutes`, `at_minute` null, `tz`,
+**Migration 0023_jobs.** `product_schedules`: `id`, `product_id`, `name`, `every_minutes`, `at_minute` null, `tz`,
 `next_run_at`, `last_run_at`, `paused_at`, `pause_reason`, `created_at`; unique `(product_id, name)`. `job_runs`: `id`,
 `product_id`, `schedule_id` null, `webhook_id` null, `name`, `trigger` (`schedule`, `webhook`, `enqueue`, `test`),
 `namespace`, `status`, `attempt`, `tick`, `checkpoint` jsonb, `input` jsonb, `budget_usd`, `cost_usd`, `error`,
@@ -777,7 +777,7 @@ and the screen shows that result. A webhook's sample payload led to a run. Judge
 Its result should show on a screen, such as 'Last digest'." Smoke: two job runs at most.
 
 **Owns.** `lib/caps/jobs/**`, `app/api/cron/jobs`, `app/api/gateway/{jobs,hooks}/**`, `app/api/products/[slug]/webhooks`,
-the owner notices on the dashboard, `template/caps/jobs/**`, `vercel.json` (the cron), the 0021 migration.
+the owner notices on the dashboard, `template/caps/jobs/**`, `vercel.json` (the cron), the 0023 migration.
 
 **Guards.** Per-run budget, the product's daily budget and `JOBS_DAILY_USD`. No sends, payments or posts without a person.
 15 minutes at least. Paused after 14 days without the owner, and when the product is off. A job never runs on a build's
@@ -789,7 +789,7 @@ behalf of" a third party: see the owner questions.
 **Scope.** Near-live captions from 2 to 3 second chunks with chunk times, live shared updates (SSE over data), and a test
 microphone fixture. Two-way realtime voice waits for Meta.
 
-**Migration.** None. Updates read `product_rows.seq` and `deleted_at` from 0018.
+**Migration.** None. Updates read `product_rows.seq` and `deleted_at` from 0020.
 
 **Routes.**
 
@@ -860,8 +860,8 @@ and shown as a limit. Large files depend on unit 1's deploy fix or the assets ro
 automation for a URL the user typed; Muse Code sessions, owner-only, as `~/mm-wt/_plan/muse-code-products.md` designs them
 (the spike answered on Oct 31, $0.053).
 
-**Migration 0022_code.** `exec_runs`: `id`, `product_id`, `kind` (`exec`, `browse`), `principal`, `subject_key`, `language`,
-`status`, `ms`, `cost_usd`, `created_at`. `code_sessions`, as designed: `id`, `product_id`, `sandbox_name`, `token_id`,
+**Migration 0024_code.** `exec_runs`: `id`, `product_id`, `kind` (`exec`, `browse`), `principal`, `subject_key`, `language`,
+`status`, `ms`, `cost_usd`, `created_at`. `code_sessions` is General's (0016), not this unit's; it was: `id`, `product_id`, `sandbox_name`, `token_id`,
 `status`, `cost_usd`, `started_at`, `ended_at`, `visitor_key`, `result_path`, `files`.
 
 **Routes.**
@@ -894,7 +894,7 @@ alone doesn't count, per the spike). Judge: "Pages opened in this test are sampl
 Code as the design says.
 
 **Owns.** `lib/caps/code/**`, `app/api/gateway/{exec,browse,code}/**`, `template/caps/code/**`, `template/targets/muse_code/**`,
-the session sweep, the 0022 migration, its lines in the shared gateway files.
+the session sweep, the 0024 migration, its lines in the shared gateway files.
 
 **Guards.** Exec has no network and no secrets. Browse reaches one host, only one the person typed, and never logs in. Muse
 Code: Meta terms 1, 3.1, 6.2 and 10.1(i), the binary kept out of result zips (workspace only, no symlinks, no ELF files, sha
@@ -940,7 +940,7 @@ Needs a signed-in builder.
 **Scope.** One shared Glimmer endpoint behind the gateway (off by default, demo windows, a daily GPU cap), and per-product
 "train on my data" after ship, on the existing lab and its caps. Meta's open models only.
 
-**Migration 0023_gpu.** `glimmer_windows`: `id`, `starts_at`, `ends_at`, `created_by`, `cap_usd`, `status`, `cost_usd`,
+**Migration 0025_gpu.** `glimmer_windows`: `id`, `starts_at`, `ends_at`, `created_by`, `cap_usd`, `status`, `cost_usd`,
 `created_at`. `training_jobs.product_id` uuid null, references `products`.
 
 **Routes.**
@@ -967,7 +967,7 @@ model."
 message. Judge: "Glimmer's answers in this test are samples."
 
 **Owns.** `lib/caps/gpu/**`, `app/api/gateway/glimmer/**`, `app/api/admin/glimmer/**`, `app/api/products/[slug]/train`, the
-0023 migration.
+0025 migration.
 
 **Guards.** Off by default. No Glimmer on the laptop, ever. Demo windows only, under the daily cap. Training uses only owner
 and shared rows, never visitor or user rows. Meta's open-model license and Acceptable Use Policy pass down to every product.
@@ -1002,7 +1002,7 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
 a per-owner board registry and an owner check on the gadget route, which closes the release review's high finding (today
 every guest-built live product with the gadget option reaches the one real board).
 
-**Migration 0024_hardware.** `boards`: `id`, `owner_user_id`, `name`, `mcp_url_ciphertext`, `token_ciphertext`, `iv`, `tag`,
+**Migration 0026_hardware.** `boards`: `id`, `owner_user_id`, `name`, `mcp_url_ciphertext`, `token_ciphertext`, `iv`, `tag`,
 `key_version`, `created_at`, `last_seen_at`, `revoked_at`. `product_boards`: `product_id` primary, `board_id`, `visitors`
 boolean default false, `created_at`.
 
@@ -1030,7 +1030,7 @@ in Chrome and Edge on a computer or Android, after a click. Not in Safari or on 
 reached the simulator. Judge: "Device readings in this test come from a simulated device." Smoke: one link session.
 
 **Owns.** `lib/caps/hardware/**`, `app/api/boards/**`, `app/api/products/[slug]/board`, its changes to
-`lib/gateway/gadget.ts` and its simulator, `template/caps/hardware/**`, the 0024 migration, the two board tools.
+`lib/gateway/gadget.ts` and its simulator, `template/caps/hardware/**`, the 0026 migration, the two board tools.
 
 **Guards.** These are `muse-device` board tokens for the owner's own boards. The registry never takes a Gadget SDK token,
 and its form says so. Never `run_command`. Turn on the owner check before `DEVICE_MCP_URL` reaches production. Needs a
@@ -1099,6 +1099,41 @@ product's notices.
 17. **Composio retention** for the extra read-only tools: settle zero data retention before they reach anyone but owners?
 18. **Drive export:** the five decisions at the end of `docs/DRIVE_EXPORT.md`.
 
+### 21a. Decided by the planner on Oct 31 (the owner can overrule any of these)
+
+Build to these defaults. Only the items marked **owner** wait for the owner, and their flags stay off until then.
+
+1. The 10 MB deploy fix ships unflagged. It's a bug fix: a file that was silently dropped now uploads or fails clearly. Its
+   golden is updated, not kept.
+2. **Owner.** `TRUST_SPARK_TO_WONDER` is built and stays off. It goes to the owner as a cost change at push time.
+3. Signed-in builders on production: anyone with the existing access code. Admins can ban. No open sign-up yet.
+4. `TRUST_GEO_COUNTRIES` is the Restricted Territories list in Meta's Geographic Use Policy (read Oct 31). Existing live
+   products get the trust pages at their next rebuild. No mass redeploy without the owner's OK.
+5. The 18+ gate goes in every product, because Meta's terms set 18 for end users. One tap, remembered in that browser, and
+   off under `MUSEMUSE_BUILD=1`.
+6. **Owner.** Preview's own database. Until it exists, test builds run on the local site, and the live check and webhooks
+   are proven with local stand-ins only.
+7. Speech: no non-commercial model. Use an open model under Apache 2.0 or MIT that runs in the browser, and record its
+   license. Video: assemble with WebCodecs and MediaRecorder, not ffmpeg.wasm's GPL core.
+8. **Owner.** `CONNECT_SENDS_PRODUCTION` stays off, and the owner names channels later.
+9. No npm publishing. Unit 10 makes publish-ready packages and stops there, until the owner confirms a name and an account.
+10. Exec, browse and scheduled jobs: owner and signed-in builders only. Scheduled jobs run only on the owner's own products,
+    and they read and notify. Visitors stay off until the Meta terms question is answered.
+11. **Owner.** Glimmer demo windows stay off. The owner sets the spend and confirms the license reading.
+12. Train on my data: owner rows and owner uploads only, never shared or visitor rows, behind an explicit owner action.
+13. End-user rows and files are deleted with the product, owners can delete any time, end users can delete their own rows,
+    and requests come through the report link.
+14. Product files go to a private Blob store and are read through signed gateway URLs. If the private store can't be reached
+    the way the platform's credentials work, use the public store with unguessable names, say so on the privacy page, and
+    report it.
+15. The live check makes no model call: it loads the page and a health route. It costs $0.
+16. Board registry: admins only for now.
+17. Extra read-only Composio tools: owners only until zero data retention is settled.
+18. Drive export: board exports of Qwen fine-tunes are allowed (the owner asked for "fine tuned on the jetson") and carry
+    Qwen's license, labeled clearly. The stage 2 Glimmer GGUF may go only onto the owner's own stick. **Owner:** the deploy to
+    a board (Hussam, or a fleet job they approve), the $3.70 quantize run (asked when the code is ready), and drives given
+    to other people.
+
 ## 22. What "done" means, per unit
 
 Every unit, on top of its list:
@@ -1113,7 +1148,7 @@ Every unit, on top of its list:
 **Unit 1, trust.** Unit: `lib/trust/__tests__/{tiers,gateway,geo,reports}.test.ts` (a guest gets no builder caps, a banned
 owner's token gets 403, a taken-down product's page and gallery card are gone, the builder cap counts every source); the
 deploy test with an 11 MB file (uploads or fails by name, never drops); Spark to Wonder only for live tokens. Template:
-`trust` overlay test (pages, footer, gate off under `MUSEMUSE_BUILD=1`, geo block by header). Migrations: 0016 keeps rows.
+`trust` overlay test (pages, footer, gate off under `MUSEMUSE_BUILD=1`, geo block by header). Migrations: 0018 keeps rows.
 Build: a stateless product built as a guest with every trust flag on shows privacy, terms, the age gate and a report link;
 the same note asking to save data gets a web-only brief with the limit.
 
@@ -1173,5 +1208,9 @@ game canvas changes on a key press. Build: an extension that saves a page note t
 Phaser game.
 
 ## Changes to this contract
+
+- Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
+  section 21a added with the planner's decisions.
+
 
 - Oct 31: first version (unit 0).
