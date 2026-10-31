@@ -25,6 +25,7 @@ from base.config import CloudBackendRefused, Settings, assert_synthetic, synthet
 from base.types import Roster
 from base.workspace.index import Doc, DocumentIndex, WorkspacePathError
 from base.workspace.jobs import JobStore
+from base.workspace.scans import ScanError
 
 log = logging.getLogger(__name__)
 
@@ -437,7 +438,7 @@ def short_error(exc: BaseException) -> str:
         return "The cloud model only reads folders marked as invented data (.synthetic), and this one is not."
     if isinstance(exc, FileNotFoundError | NotADirectoryError):
         return "That folder or document is not in the workspace."
-    if isinstance(exc, StepError):
+    if isinstance(exc, StepError | ScanError):  # both carry fixed text only
         return str(exc)
     name = type(exc).__name__
     if name == "LLMParseError":

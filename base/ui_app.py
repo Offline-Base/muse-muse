@@ -41,7 +41,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from base import events, guard
+from base import events, guard, regions
 from base.approvals import AutoApprove
 from base.compliance import GROUPS, NOT_FOR, PROFILES, local_only
 from base.config import REPO_ROOT
@@ -593,7 +593,30 @@ def _request_topics(services: Any) -> dict[str, str]:
     return dict(topics) if isinstance(topics, Mapping) else {}
 
 
-def approval_card(row: Any, request_topics: Mapping[str, str] | None = None) -> str:
+def preview_indexes(settings: Any, row: Any) -> list[int]:
+    """Positions among a decision's image sources that have a covered copy on this device."""
+    images = regions.image_sources(_as_list(_val(row, "sources")))
+    return [i for i, doc_id in enumerate(images) if regions.covered_png(settings, doc_id) is not None]
+
+
+def scan_preview_html(rid: str, indexes: Iterable[int]) -> str:
+    """Thumbnails of the covered pages the device read for this result. Served from the covered
+    copies only (GET /scan-preview), never the original image, and never sent to Muse."""
+    figures = "".join(
+        f'<img src="/scan-preview/{esc(quote(rid, safe=""))}/{int(n)}" alt="The page with faces, signatures, '
+        'ID cards and barcodes covered" loading="lazy">'
+        for n in indexes
+    )
+    if not figures:
+        return ""
+    return (
+        '<div class="field-label">The page the device read</div>'
+        f'<div class="scan-previews">{figures}</div>'
+        '<p class="caption">Covered on this device before reading. The covered page stays on this device: Muse gets text only, never the image.</p>'
+    )
+
+
+def approval_card(row: Any, request_topics: Mapping[str, str] | None = None, previews: Iterable[int] = ()) -> str:
     r = public_row(row)
     rid = str(r["id"])
     summary = r["shown_form"] == "share_summary"  # egress stores the summary as the row's tagged text
@@ -615,6 +638,7 @@ def approval_card(row: Any, request_topics: Mapping[str, str] | None = None) -> 
         if summary
         else "What would leave this device",
         tagged_html=highlight_tags(r["tagged_text"]),
+        preview_html=scan_preview_html(rid, previews),
         blocked_html=_chips(r["blocked"], "warn"),
         router_reason=r["router_reason"] or "The router wants your OK before this leaves.",
         shown=form,
@@ -639,6 +663,24 @@ def _receipt(value: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def image_check_words(r: Mapping[str, Any]) -> str:
+    """What the SAM sidecar covered on a result's source images, from the receipt's counts."""
+    counts = r.get("image_regions") if isinstance(r.get("image_regions"), Mapping) else {}
+    try:
+        unchecked = int(r.get("images_unchecked") or 0)
+    except (TypeError, ValueError):
+        unchecked = 0
+    found = regions.describe(counts)
+    parts = []
+    if found:
+        parts.append(f"Covered before reading: {found}")
+    elif "image check" in (r.get("checks") or []):
+        parts.append("Checked before reading, nothing to cover")
+    if unchecked:
+        parts.append(f"{unchecked} {'image' if unchecked == 1 else 'images'} not checked")
+    return ". ".join(parts) or "Not checked"
+
+
 def receipt_html(value: Any) -> str:
     """A decision's receipt: kinds and counts, the checks, where it goes. Never a value."""
     r = _receipt(value)
@@ -649,6 +691,7 @@ def receipt_html(value: Any) -> str:
     toggles = ", ".join(str(t).upper() for t in r.get("toggles") or []) or "none"
     lines = [
         ("Removed", words),
+        *([("Image check", image_check_words(r))] if "image_regions" in r else []),
         ("Checks", ", ".join(r.get("checks") or [])),
         ("Models", "On this device only" if r.get("device_only") else "Includes a model off this device"),
         ("Toggles", toggles),
@@ -946,7 +989,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         on = auto.on and not locked
         content = render(
             "approvals.html",
-            cards_html="".join(approval_card(r, topics) for r in rows),
+            cards_html="".join(approval_card(r, topics, preview_indexes(settings, r)) for r in rows),
             empty_hidden="" if not rows else "hidden",
             auto_state="on" if on else "off",
             auto_note=(
@@ -964,6 +1007,20 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             auto_disabled="disabled" if locked else "",
         )
         return page(request, "approvals", "Approvals", content)
+
+    @app.get("/scan-preview/{decision_id}/{n}")
+    def scan_preview(decision_id: str, n: str) -> Response:
+        """The covered copy of a decision's n-th image source, for its approval card. Only covered
+        copies in BASE_HOME/regions are ever served, never the image in the workspace."""
+        rid = _coerce_id(decision_id)
+        row = store.get(rid)
+        if row is None or _val(row, "deleted") or not n.isdigit():
+            raise HTTPException(404, "There is no such page.")
+        images = regions.image_sources(_as_list(_val(row, "sources")))
+        path = regions.covered_png(settings, images[int(n)]) if int(n) < len(images) else None
+        if path is None:
+            raise HTTPException(404, "There is no such page.")
+        return Response(path.read_bytes(), media_type="image/png")
 
     @app.get("/history", response_class=HTMLResponse)
     def history_page(request: Request, show: str = "all") -> HTMLResponse:
@@ -1170,8 +1227,17 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
                 f'<label class="switch"><input type="checkbox" name="see_{i}" value="1"{see} aria-label="Muse can see {esc(label)}"></label>'
                 f'<label class="switch"><input type="checkbox" name="names_{i}" value="1"{names}{lock} aria-label="Send real names from {esc(label)}"></label></div>\n'
             )
+        checker = getattr(services, "regions", None)
+        image_note = ""
+        if checker is not None and not checker.available():
+            image_note = (
+                '<p class="image-note" role="status">Images are not being read right now: the image checker '
+                "(SAM 3.1) is not running on this device, so pages that might show a face or a signature are "
+                "left out of search, questions and tasks until it is back.</p>"
+            )
         content = render(
             "controls.html",
+            image_note_html=image_note,
             profiles_html=profiles,
             profile_note="" if device_only else "These need every model on this device. Set DEVICE_ONLY=1 first.",
             lock_note="Locked while a toggle is on. Your own settings come back when it goes off." if c.profiles else "",
@@ -1368,16 +1434,17 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         writer = csv.writer(out)
         writer.writerow(
             ["id", "when", "tool", "kind", "router", "outcome", "decided_by", "removed", "floors", "toggles",
-             "device_only", "destination", "private_detail_in_request", "sha256"]
+             "device_only", "destination", "private_detail_in_request", "sha256", "image_regions"]
         )  # fmt: skip
         for row in store.history(limit=AUDIT_LIMIT):
             r = _receipt(row.get("receipt"))
             removed = ";".join(f"{k}={n}" for k, n in sorted((r.get("removed") or {}).items()))
+            covered = ";".join(f"{k}={n}" for k, n in sorted((r.get("image_regions") or {}).items()))
             writer.writerow(
                 [row["id"], _when(row["ts"]), row["tool"], row["result_kind"], row["router_decision"], row["status"],
                  r.get("decided_by", row["router_source"]), removed, ";".join(r.get("floors") or []),
                  ";".join(r.get("toggles") or []), r.get("device_only", ""), r.get("destination", ""),
-                 ";".join(r.get("request_had_private_detail") or []), r.get("sha256", "")]
+                 ";".join(r.get("request_had_private_detail") or []), r.get("sha256", ""), covered]
             )  # fmt: skip
         headers = {"content-disposition": 'attachment; filename="muse-privacy-audit.csv"'}
         return Response(out.getvalue(), media_type="text/csv", headers=headers)

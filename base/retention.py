@@ -20,7 +20,8 @@ EVERY = 3600
 
 
 def purge(services: Any, days: int, now: float | None = None) -> dict[str, int]:
-    """Delete decided rows, finished jobs, finished files and scan text older than `days` days."""
+    """Delete decided rows, finished jobs, finished files, scan text and image checks (region boxes
+    and covered copies) older than `days` days."""
     cutoff = (time.time() if now is None else now) - days * DAY
     paths = services.settings.paths
     counts = {"decisions": services.approvals.purge_before(cutoff), "jobs": 0, "files": 0}
@@ -30,7 +31,7 @@ def purge(services: Any, days: int, now: float | None = None) -> dict[str, int]:
             counts["jobs"] = db.execute(
                 "DELETE FROM jobs WHERE created_at < ? AND status NOT IN ('queued', 'running')", (cutoff,)
             ).rowcount
-    for root in (Path(paths.output), Path(paths.scans)):
+    for root in (Path(paths.output), Path(paths.scans), Path(paths.regions)):
         if not root.is_dir():
             continue
         for item in root.iterdir():

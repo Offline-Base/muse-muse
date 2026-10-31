@@ -12,7 +12,12 @@ sidecar", has the HTTP contract.
 - The real predictor (`MlxSamPredictor`, mlx-vlm on Apple silicon) is **unverified**. It was written
   from the mlx-community/sam3.1-bf16 model card and the mlx-vlm SAM 3 README and has never run here.
   Nothing is installed: no mlx-vlm, no weights, no lock.
-- Off by default. `scripts/start_sam.sh` starts it only when `SAM_ENABLED=1`.
+- Off by default. `scripts/start_sam.sh` starts it only when `SAM_ENABLED=1`, and `scripts/start.sh`
+  then starts it too, as an optional child that cannot stop the app.
+- The device side is built (`base/regions.py`, docs/CONTRACTS.md "Regions on the device"): with
+  `SAM_ENABLED=1` the scan reader sends each page here first and LFM3-VL-2B reads only the covered
+  copy; when this server is down, the page is not read at all. `tests/test_regions.py` runs that path
+  against this server with the fake predictor.
 
 ## Setting it up (needs Ethan's yes first)
 
@@ -38,7 +43,7 @@ one part written against an API nobody could run here.
 - The image is never logged or written to disk; the log line is counts and milliseconds only.
 - `HF_HUB_OFFLINE=1`: it never downloads at run time.
 - SAM's license excludes ITAR and military end uses, so the device must never call it while the
-  cui, cjis or export toggle is on. The reader side that calls this server (next step, not built
-  yet) enforces that.
+  cui, cjis or export toggle is on. The reader side that calls this server
+  (`base/workspace/scans.py`) enforces that.
 
 The weights are Meta's, under the SAM License, and are not in this repo. mlx-vlm is MIT.

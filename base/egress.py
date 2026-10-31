@@ -18,7 +18,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from base import compliance, retention
+from base import compliance, regions, retention
 from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove
@@ -52,6 +52,7 @@ DESTINATION = "Muse, through the relay"
 # toggle adds are left out: they lean toward removing too much, so they'd warn about plain words.
 _REQUEST_NOTE_KINDS = frozenset({"student", "teacher", "person", "term"}) | IDENTIFIER_KINDS
 SUMMARY_FAILED = "A class summary could not be made without per-student detail, so it stayed on the device."
+IMAGE_UNCHECKED = "It came from an image the device has not checked for faces and signatures, so it stays here."
 NAME_CHECK_FAILED = "The device could not finish its check for names, so the result stayed on the device."
 TOPIC_CHECK_FAILED = "The device could not finish reading what the request is for, so the result stayed on the device."
 
@@ -68,6 +69,7 @@ KEPT_REASONS = (
     ("compliance:cloud", "Your privacy toggles need every model on this device."),
     ("compliance:local_only", "A privacy toggle keeps everything on this device."),
     ("compliance:sensitive", "It has a kind of detail your privacy toggles keep on this device."),
+    ("regions:unchecked", "It came from an image the device has not checked for faces and signatures."),
     ("compliance", "It describes fewer than 10 people, and your privacy toggles keep that on the device."),
     ("blocked", "It mentions a topic you never share."),
     ("policy:", "Your rules say results like this stay on the device."),
@@ -230,13 +232,31 @@ class Egress:
             return list(compliance.PROFILES)
 
     def _with_toggles(
-        self, route: RouteDecision, text: str, sources: Sequence[str], profiles: Sequence[str], raw: str = ""
+        self, route: RouteDecision, text: str, sources: Sequence[str], profiles: Sequence[str], raw: str = "",
+        images: regions.ImageCheck | None = None,
     ) -> RouteDecision:
-        """The router's decision, or the stricter one a compliance toggle asks for."""
-        hold = compliance.check(text, sources, profiles, raw)
+        """The router's decision, or the stricter one a compliance toggle asks for. With SAM_ENABLED=1,
+        a result from an image the sidecar never checked is refused (floor regions:unchecked)."""
+        kinds = images.counts if images is not None else None
+        hold = compliance.check(text, sources, profiles, raw, image_kinds=kinds)
+        unchecked = images is not None and images.unchecked  # images is None unless SAM_ENABLED=1
+        if unchecked and (hold is None or hold[0] != "refuse"):  # a toggle's own refusal keeps its reason
+            hold = ("refuse", "regions:unchecked", IMAGE_UNCHECKED)
         if hold is None or STRICTNESS[route.decision] >= STRICTNESS[hold[0]]:
             return route
         return RouteDecision(hold[0], hold[2], "rule", route.latency_ms, [*route.floors, hold[1]])
+
+    def _images(self, sources: Sequence[str]) -> regions.ImageCheck | None:
+        """What the SAM sidecar found on the result's source images, or None when none is an image or
+        SAM_ENABLED is off (then nothing changes). A lookup that breaks counts every image as unchecked."""
+        settings = getattr(self.services, "settings", None)
+        if not getattr(settings, "sam_enabled", False) or not regions.image_sources(sources):
+            return None
+        try:
+            return regions.image_check(settings, sources)
+        except Exception as exc:
+            log.warning("image check lookup failed (%s); counting the images as unchecked", type(exc).__name__)
+            return regions.ImageCheck({}, 0, len(regions.image_sources(sources)))
 
     def _red_kw(self) -> dict[str, Any]:
         r = _REDACTION.get()
@@ -293,7 +313,10 @@ class Egress:
         inp = route_input(asked, result_kind, tagged, own_topics, asked_about, s.policy.never_share, summary)
         inp.strict = bool(profiles)
         all_topics = inp.topics
-        route = self._with_toggles(s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text)
+        images = None if result_kind == "document_list" else self._images(sources)  # a listing never reads an image
+        route = self._with_toggles(
+            s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text, images
+        )
         shown_form = default_share_form(result_kind, all_topics)
 
         outgoing = tagged.text
@@ -307,7 +330,7 @@ class Egress:
                 route = RouteDecision("refuse", SUMMARY_FAILED, route.source, route.latency_ms, [*route.floors, "summary"])
             else:
                 outgoing = made
-                route = self._with_toggles(route, outgoing, sources, profiles, raw_text)
+                route = self._with_toggles(route, outgoing, sources, profiles, raw_text, images)
 
         row = {
             "tool": tool,
@@ -326,7 +349,7 @@ class Egress:
         }
         if sources:
             row["sources"] = sources
-        row["receipt"] = self._receipt(tagged, route, outgoing, profiles, raw_kinds)
+        row["receipt"] = self._receipt(tagged, route, outgoing, profiles, raw_kinds, images)
         note = _RAW_REQUEST.set(bool(raw_kinds))
         try:
             return self._decide_row(route, row, outgoing, tagged, job_id, tool, profiles)
@@ -356,16 +379,26 @@ class Egress:
         return self._finish("shared", outgoing, None, route, tagged, detail=job_id or tool)
 
     def _receipt(
-        self, tagged: TagResult, route: RouteDecision, outgoing: str, profiles: Sequence[str], raw_kinds: Sequence[str]
+        self, tagged: TagResult, route: RouteDecision, outgoing: str, profiles: Sequence[str], raw_kinds: Sequence[str],
+        images: regions.ImageCheck | None = None,
     ) -> dict[str, Any]:
-        """What the page and the audit export show for one result. Kinds and counts, never a value."""
+        """What the page and the audit export show for one result. Kinds and counts, never a value,
+        a box or a pixel."""
         removed: dict[str, int] = {}
         for hit in tagged.hits:
             removed[hit.kind] = removed.get(hit.kind, 0) + 1
         settings = getattr(self.services, "settings", None)
+        checked = images is not None and images.checked > 0
+        extra: dict[str, Any] = {}
+        if images is not None:
+            # what SAM covered on the source images before the device read them, per kind
+            extra = {"image_regions": dict(images.counts), "images_unchecked": images.unchecked}
         return {
             "removed": removed,
-            "checks": ["tagging", "name check", "router", *(["toggles"] if profiles else []), "final leak check"],
+            "checks": [
+                "tagging", *(["image check"] if checked else []), "name check", "router",
+                *(["toggles"] if profiles else []), "final leak check",
+            ],
             "floors": list(route.floors),
             "decided_by": route.source,
             "model": getattr(settings, "router_model", None),
@@ -374,6 +407,7 @@ class Egress:
             "destination": DESTINATION,
             "request_had_private_detail": list(raw_kinds),
             "sha256": hashlib.sha256(outgoing.encode("utf-8")).hexdigest(),
+            **extra,
         }
 
     def _auto_approve(self) -> bool:

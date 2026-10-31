@@ -10,7 +10,7 @@ profile's `limit` says what it can't do. See docs/COMPLIANCE_PLAN.md and docs/CO
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from base.types import Decision
@@ -147,6 +147,14 @@ NOT_FOR = "Not for classified information, on any setting. Use your agency's app
 
 SMALL_GROUP_REASON = "This describes fewer than 10 people, so it stays on the device under your privacy toggles."
 SCAN_REASON = "This was read from an image, and that reading is less reliable, so you decide."
+# With SAM_ENABLED=1 the device knows what it covered on a page (base/regions.py). A full-face photo is
+# on HIPAA's Safe Harbor list (45 CFR 164.514(b)(2)(i)(Q)) and a photo of a child is in COPPA's
+# definition of personal information (16 CFR 312.2); a signature is a mark of who someone is in
+# health, legal and HR records. These ask first even though the page was covered before reading.
+FACE_TOGGLES = ("hipaa", "coppa")
+SIGNATURE_TOGGLES = ("hipaa", "legal", "hr")
+FACE_REASON = "This came from a page with a photo of a person, covered on this device before reading, so you decide."
+SIGNATURE_REASON = "This came from a page with a signature, covered on this device before reading, so you decide."
 LOCAL_ONLY_REASON = "A privacy toggle keeps everything on this device."
 KEEP_WORD_REASON = "This has a kind of detail your privacy toggles keep on this device."
 ASK_WORD_REASON = "This has a kind of detail your privacy toggles want you to see first."
@@ -207,11 +215,13 @@ def local_only(profiles: Iterable[str]) -> bool:
 
 
 def check(
-    text: str, sources: Sequence[str], profiles: Iterable[str], raw: str = ""
+    text: str, sources: Sequence[str], profiles: Iterable[str], raw: str = "", image_kinds: Mapping[str, int] | None = None
 ) -> tuple[Decision, str, str] | None:
     """(decision, floor label, reason) when the toggles hold this result, else None. `raw` is the
-    untagged text, since a keyword can sit inside a tag."""
-    chosen = [PROFILES[k] for k in clean(profiles)]
+    untagged text, since a keyword can sit inside a tag. `image_kinds` counts what the SAM sidecar
+    covered on the result's source images (face, signature, id_card, barcode)."""
+    keys = clean(profiles)
+    chosen = [PROFILES[k] for k in keys]
     if not chosen:
         return None
     if any(p.local_only for p in chosen):
@@ -221,6 +231,11 @@ def check(
         return "refuse", "compliance:sensitive", KEEP_WORD_REASON
     if describes_small_group(text):
         return "refuse", "compliance:small_group", SMALL_GROUP_REASON
+    kinds = image_kinds or {}
+    if kinds.get("face") and any(k in FACE_TOGGLES for k in keys):
+        return "ask_user", "compliance:face", FACE_REASON
+    if kinds.get("signature") and any(k in SIGNATURE_TOGGLES for k in keys):
+        return "ask_user", "compliance:signature", SIGNATURE_REASON
     if any(str(s).lower().endswith(_SCAN_SUFFIXES) for s in sources):
         return "ask_user", "compliance:scan", SCAN_REASON
     if any(_has_word(p.ask_words, both) for p in chosen):

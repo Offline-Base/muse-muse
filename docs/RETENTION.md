@@ -7,6 +7,7 @@ With the COPPA or GDPR toggle on, Muse Privacy deletes old results from this dev
 - Decisions, including the tagged text and the receipt. Results still waiting for your OK stay until you answer.
 - Finished jobs and files in `BASE_HOME/output`.
 - Text read from scanned images in `BASE_HOME/scans`.
+- Image checks in `BASE_HOME/regions`: where the SAM 3.1 region finder found faces, signatures, ID cards and barcodes on a page (counts and boxes), and the covered copy of that page. These exist only with `SAM_ENABLED=1`.
 
 The cleanup runs at most once an hour while results are being released.
 

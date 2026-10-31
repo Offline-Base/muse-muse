@@ -9,6 +9,9 @@
 #   CHECKER_BACKEND=lfm: also starts the local checker, LFM3-VL-2B on 127.0.0.1:8083
 #     (scripts/start_checker.sh), for the checks, search passage picking and scans.
 #   SEARCH_EMBEDDINGS=1: also starts the embedder on 127.0.0.1:8084 (scripts/start_embedder.sh).
+#   SAM_ENABLED=1: also starts the SAM 3.1 region finder on 127.0.0.1:8085 (scripts/start_sam.sh).
+#     It is optional: if it does not start or stops later, images are not read (the device fails
+#     closed) and everything else keeps running.
 #
 # Then runs `python -m base`, waits for /health on the approval port, and connects to the relay
 # when this device is registered. Keeps the Mac awake while running. Everything binds
@@ -19,12 +22,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="$ROOT/.venv/bin/python"
 PIDS=""
+OPTIONAL_PIDS=""  # stopped with the rest, but their exit does not stop the app
 
 die() { printf 'start.sh: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
-  for pid in $PIDS; do kill "$pid" 2>/dev/null || true; done
-  for pid in $PIDS; do wait "$pid" 2>/dev/null || true; done
+  for pid in $PIDS $OPTIONAL_PIDS; do kill "$pid" 2>/dev/null || true; done
+  for pid in $PIDS $OPTIONAL_PIDS; do wait "$pid" 2>/dev/null || true; done
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -33,6 +37,7 @@ read_settings() {
   "$PY" - <<'PY'
 import os
 import shlex
+from urllib.parse import urlsplit
 
 from base.config import REPO_ROOT, load_settings, read_dotenv
 
@@ -46,6 +51,8 @@ values = {
     "LFM_ONLY": "1" if s.device_only and s.primary_model == "lfm" else "0",
     "ONE_SERVER": "1" if s.device_only else "0",
     "EMBEDDINGS": "1" if s.search_embeddings else "0",
+    "SAM": "1" if s.sam_enabled else "0",
+    "SAM_PORT": str(urlsplit(s.sam_url).port or 8085),
     "RELAY": s.relay_url or "",
     "APPROVAL_HOST": s.approval_host,
     "APPROVAL_PORT": str(s.approval_port),
@@ -73,6 +80,18 @@ wait_for() {
     i=$((i + 1))
   done
   die "$name did not answer at $url within ${seconds}s. See $logfile"
+}
+
+# wait_optional URL SECONDS PID: like wait_for, but returns 1 instead of stopping everything.
+wait_optional() {
+  local url="$1" seconds="$2" pid="$3" i=0
+  while [ "$i" -lt "$seconds" ]; do
+    if curl -fs -o /dev/null --max-time 2 "$url"; then return 0; fi
+    kill -0 "$pid" 2>/dev/null || return 1
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
 }
 
 [ -x "$PY" ] || die "no virtualenv at $ROOT/.venv. Run: uv sync"
@@ -171,12 +190,28 @@ if [ "$EMBEDDINGS" = 1 ]; then
   echo "The embedder is up."
 fi
 
+if [ "$SAM" = 1 ]; then
+  mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+  # An optional child: not in PIDS, so its exit never stops the app. Images wait for it (fail closed).
+  "$ROOT/scripts/start_sam.sh" >"$LOG_DIR/sam.log" 2>&1 &
+  SAM_PID=$!
+  OPTIONAL_PIDS="$OPTIONAL_PIDS $SAM_PID"
+fi
+
 if port_busy "$APPROVAL_PORT"; then die "something already answers on 127.0.0.1:$APPROVAL_PORT; stop it first"; fi
 echo "Starting Muse Privacy"
 (cd "$ROOT" && exec "$PY" -m base) &
 APP_PID=$!
 PIDS="$PIDS $APP_PID"
 wait_for "http://127.0.0.1:$APPROVAL_PORT/health" 60 "Muse Privacy" "$APP_PID" "the output above"
+
+if [ "$SAM" = 1 ]; then
+  if wait_optional "http://127.0.0.1:$SAM_PORT/health" 180 "$SAM_PID"; then
+    echo "The region finder (SAM 3.1) is up."
+  else
+    echo "The region finder (SAM 3.1) is not running, so images are not read until it is. See $LOG_DIR/sam.log"
+  fi
+fi
 
 if [ -n "$RELAY" ] && [ -f "$HOME_DIR/relay.json" ]; then
   mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"

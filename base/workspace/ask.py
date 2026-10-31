@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from base import events
+from base.regions import unchecked_images, unchecked_note
 
 log = logging.getLogger(__name__)
 
@@ -173,15 +174,16 @@ class DeviceAsk:
         found: list[tuple[str, str, list[tuple[str, str]]]] = []  # (part, tagged answer, tagged quotes)
         sources: list[str] = []
         timed_out = False
-        for part in parts:
-            if time.monotonic() >= deadline:
-                timed_out = True
-                break
-            answer, quotes, srcs = self._part(part, folder, deadline)
-            if _found(answer) and self._touches_never_share(answer, quotes):
-                answer, quotes = HELD_PART, []  # the other parts can still go; egress checks it all again
-            found.append((part, answer, quotes))
-            sources += [s for s in srcs if s not in sources]
+        with unchecked_images() as unread:  # images the SAM sidecar could not check are left out
+            for part in parts:
+                if time.monotonic() >= deadline:
+                    timed_out = True
+                    break
+                answer, quotes, srcs = self._part(part, folder, deadline)
+                if _found(answer) and self._touches_never_share(answer, quotes):
+                    answer, quotes = HELD_PART, []  # the other parts can still go; egress checks it all again
+                found.append((part, answer, quotes))
+                sources += [s for s in srcs if s not in sources]
         answered = sum(_found(a) and a != HELD_PART for _p, a, _q in found)
         quotes = [q for _p, _a, qs in found for q in qs][:MAX_QUOTES]
         held = [p for p, a, _q in found if a == HELD_PART]
@@ -196,6 +198,8 @@ class DeviceAsk:
             # is said in fixed sentences after it, so the model cannot restate it as a fact.
             answer = self._combine(question, [f for f in found if _found(f[1]) and f[1] != HELD_PART])
             answer = " ".join([answer, *_notes(len(held), len(missing), len(skipped))])
+        if unread:
+            answer = f"{answer} {unchecked_note(len(unread))}"
         restore = self.rag.tagmap
         return AskResult(
             answer=guard.restore(answer, restore),

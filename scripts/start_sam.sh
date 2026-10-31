@@ -28,14 +28,14 @@ from urllib.parse import urlsplit
 
 from base.config import REPO_ROOT, load_settings, read_dotenv
 
-s = load_settings()
+s = load_settings()  # refuses a SAM_URL that is not this device
 env = read_dotenv(REPO_ROOT / ".env")
 env.update(os.environ)
-url = urlsplit(env.get("SAM_URL") or "http://127.0.0.1:8085")
+url = urlsplit(s.sam_url)
 if (url.hostname or "").lower() not in ("127.0.0.1", "localhost", "::1"):
     raise SystemExit("SAM_URL must be this device (127.0.0.1 or localhost): the region finder reads raw page images")
 values = {
-    "ENABLED": env.get("SAM_ENABLED", "0"),
+    "ENABLED": "1" if s.sam_enabled else "0",
     "HOME_DIR": str(s.home),
     "PORT": str(url.port or 8085),
     "MODEL_DIR": env.get("SAM_MODEL_DIR") or str(REPO_ROOT / "models" / "sam3.1-mlx"),
