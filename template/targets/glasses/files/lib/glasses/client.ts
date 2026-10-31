@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { blobToDataUrl } from "@/lib/client/resize";
 import { toWav16k } from "@/lib/client/wav";
-import { BRIDGE_LIMITS, BRIDGE_TIMEOUTS, glassesBridge, type GlassesErrorCode, type GlassesStatus } from "@/lib/glasses/bridge";
+import { BRIDGE_LIMITS, BRIDGE_TIMEOUTS, glassesBridge, museNative, type GlassesErrorCode, type GlassesStatus } from "@/lib/glasses/bridge";
 import { photoFromBlob, samplePhoto, sampleQuestion, wavSeconds, type GlassesSamples, type PhotoData } from "@/lib/glasses/samples";
 
 /**
@@ -30,6 +30,7 @@ export type GlassesClientErrorCode =
   | "unavailable"
   | "no_camera"
   | "camera_blocked"
+  | "camera_denied"
   | "no_microphone"
   | "mic_blocked"
   | "denied"
@@ -52,6 +53,7 @@ const MESSAGES: Record<GlassesClientErrorCode, string> = {
   unavailable: "Your glasses connect through the Muse Muse app on iPhone. Here, use this device's camera or the sample.",
   no_camera: "This device has no camera we can use. Try the sample.",
   camera_blocked: "Allow the camera for this page in your browser settings, then try again.",
+  camera_denied: "Turn on the camera for this app in Settings, then try again.",
   no_microphone: "This device has no microphone we can use. Try the sample.",
   mic_blocked: "Allow the microphone for this page in your browser settings, then try again.",
   denied: "Turn on the microphone for this app in Settings, then try again.",
@@ -208,8 +210,9 @@ async function openMedia(constraints: MediaStreamConstraints, blocked: GlassesCl
   }
 }
 
+// Inside any of our apps, what said no is the phone's Settings, not a browser's, whether or not the app reaches glasses.
 function openCamera(): Promise<MediaStream> {
-  return openMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1600 } } }, "camera_blocked", "no_camera");
+  return openMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1600 } } }, museNative() ? "camera_denied" : "camera_blocked", "no_camera");
 }
 
 /** One frame of a camera stream. A stream that just opened gets a moment to settle its exposure. */
@@ -244,8 +247,7 @@ type Recording =
   | { kind: "phone"; finish: () => Promise<Blob>; cancel: () => void };
 
 async function recordPhone(maxSeconds: number): Promise<Extract<Recording, { kind: "phone" }>> {
-  // Inside the app, what said no is the phone's Settings, not a browser's.
-  const stream = await openMedia({ audio: true }, glassesBridge() ? "denied" : "mic_blocked", "no_microphone");
+  const stream = await openMedia({ audio: true }, museNative() ? "denied" : "mic_blocked", "no_microphone");
   if (typeof MediaRecorder === "undefined") {
     stopTracks(stream);
     throw new GlassesClientError("no_microphone");

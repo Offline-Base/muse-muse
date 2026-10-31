@@ -535,6 +535,42 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     });
   }
 
+  // No glasses capability, like the lab's own shells and a product's APK. It's still an app with no browser settings.
+  const APP_WITHOUT_GLASSES = () => {
+    window.MuseNative = { version: 1, capabilities: { glasses: false, frames: false } };
+    const media = navigator.mediaDevices;
+    media.getUserMedia = async () => {
+      throw new DOMException("Refused.", "NotAllowedError");
+    };
+  };
+
+  test("phone: in an app that can't reach glasses, a refused microphone still says Settings", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { media: true });
+    await page.addInitScript(APP_WITHOUT_GLASSES);
+    await goto();
+    await page.getByRole("button", { name: "Hold to ask" }).click({ delay: 500 });
+    await page.getByRole("alert").getByText("Turn on the microphone for this app in Settings, then try again.").waitFor();
+  });
+
+  for (const [where, inApp, words] of [
+    ["in the app", true, "Turn on the camera for this app in Settings, then try again."],
+    ["in a browser", false, "Allow the camera for this page in your browser settings, then try again."],
+  ]) {
+    test(`phone: a refused camera ${where} says where to turn it on`, async (t) => {
+      if (!browser) return t.skip("Chromium isn't installed");
+      const { page, goto } = await open(t, { media: true });
+      await page.addInitScript(inApp ? APP_WITHOUT_GLASSES : () => {
+        navigator.mediaDevices.getUserMedia = async () => {
+          throw new DOMException("Refused.", "NotAllowedError");
+        };
+      });
+      await goto();
+      await page.getByRole("button", { name: "Show the live view" }).click();
+      await page.getByRole("alert").getByText(words).waitFor();
+    });
+  }
+
   test("glasses: folding them mid-session brings back the connect button, and a reload stays connected", async (t) => {
     if (!browser) return t.skip("Chromium isn't installed");
     const { page, goto } = await open(t, { fakeGlasses: { photos: [pov], question } });
