@@ -215,11 +215,16 @@ export interface DemoStudioSpec {
   models: string[];
   /** The product's live URL, or null when it won't have one (publishing is off). */
   url: string | null;
+  /** A line on the intro card about how the video was made, such as "Recorded in a simulated Meta Quest 3 headset." */
+  note?: string;
   /** timeline.json from tests/demo-fixtures.ts, an absolute path. Its frames sit next to it. */
   timeline: string;
   /** Folder for the render. */
   out: string;
 }
+
+/** What a VR product's video says about itself. */
+export const VR_DEMO_NOTE = "Recorded in a simulated Meta Quest 3 headset.";
 
 /** The video every Demo Studio render must be: docs/DEMO_STUDIO.md. */
 export const STUDIO_VIDEO = { width: 1920, height: 1080, minSeconds: 3 } as const;

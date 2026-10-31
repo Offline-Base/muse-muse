@@ -79,11 +79,16 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  TARGET_OVERLAYS,
+  TARGET_PLATFORM_MARKER,
+  TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
+  activeTargetsScript,
+  applyTargetScript,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -374,12 +379,44 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
+  /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
+  targets?: readonly string[];
+}
+
+/** Where a sandbox from an older snapshot gets the overlays from. template/ isn't deployed with the platform. */
+const LOCAL_TEMPLATE_DIR = () => process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
+
+/**
+ * Gets a brief's targets into the sandbox before anything from the user lands in it. A snapshot made with the overlays has
+ * them already. In one from before them, a local run takes them from this checkout, along with the newer platform files
+ * that run their checks, so a target can be tried without a new snapshot. The live site can't: its functions have no
+ * template/, so a target whose flag is on needs that snapshot.
+ */
+async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: readonly string[]): Promise<void> {
+  const overlays = targets.filter((t) => TARGET_OVERLAYS.includes(t));
+  const inSandbox = async (file: string) => (await sh(sandbox, `[ -f ${q(file)} ]`, { allowFail: true })).exitCode === 0;
+  const missing = (await Promise.all(overlays.map(async (t) => ((await inSandbox(`${TARGETS_DIR}/${t}/deps.json`)) ? null : t)))).filter((t) => t !== null);
+  const stale = overlays.length > 0 && !(await inSandbox(`${PRISTINE_DIR}/${TARGET_PLATFORM_MARKER}`));
+  if (missing.length || stale) {
+    const needs = missing.length ? `the ${missing.join(" and ")} overlay` : "the platform files for targets";
+    if (process.env.VERCEL) throw new Error(`This builder snapshot doesn't have ${needs}. Make a new one with npm run snapshot before turning the flag on.`);
+    const dir = LOCAL_TEMPLATE_DIR();
+    if (missing.length) {
+      const files = await readTargetFiles(dir);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have ${needs}, and there's no ${dir}/targets here to add it from.`);
+      await installTargets(sandbox, files, () => {});
+    }
+    if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
+  }
+  await sh(sandbox, activeTargetsScript(targets), { sudo: true });
+  await sh(sandbox, applyTargetScript(targets), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
 }
 
 /**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
- * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host).
+ * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). A brief's targets go in before the user's
+ * files (applyTargets).
  *
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
@@ -408,11 +445,15 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     if (process.env.VERCEL) throw new Error("BUILDER_SNAPSHOT_ID is not set. Run npm run snapshot and set it; template/ isn't deployed with the platform.");
     // Slow path for scripts (about a minute): install everything from scratch with open egress.
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
-    await setupBuilder(sandbox, await readTemplateFiles(process.env.MUSEMUSE_TEMPLATE_DIR ?? "template"), () => {});
+    const dir = LOCAL_TEMPLATE_DIR();
+    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir));
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name) });
+
+  const targets = input.targets ?? [];
+  if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -1240,10 +1281,13 @@ export async function collectVerifyResult(input: {
   const all = await listFiles(sandbox, judgeDir, "*.png");
   // The first one and the last ones, so the judge's final screen is the one verify's final screen check read.
   const names = all.length > MAX_SCREENSHOTS ? [all[0], ...all.slice(1 - MAX_SCREENSHOTS)] : all;
+  // judgeShot's VR branch leaves "xr":true next to its pictures, and the judge should know what kind of picture it sees.
+  const inVR = await sh(sandbox, `cd ${q(judgeDir)} 2>/dev/null && grep -l '"xr":true' *.checked 2>/dev/null || true`);
+  const vrViews = new Set(inVR.stdout.split("\n").map((l) => l.trim().replace(/\.checked$/, ".png")));
   const screenshots: Screenshot[] = [];
   for (const name of names) {
     const file = `${judgeDir}/${name}`;
-    const caption = captionFromFileName(name);
+    const caption = vrViews.has(name) ? `${captionFromFileName(name)} (VR view)` : captionFromFileName(name);
     if (input.skipUpload) {
       screenshots.push({ url: sandboxUrl(input.sandboxName, file), caption });
       continue;
@@ -1261,13 +1305,14 @@ export async function collectVerifyResult(input: {
  */
 export async function writeDemoSpec(
   sandboxName: string,
-  spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url">,
+  spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url" | "note">,
 ): Promise<DemoStudioSpec> {
   const full: DemoStudioSpec = {
     title: noEmDashes(spec.title).trim() || "Untitled",
     tagline: noEmDashes(spec.tagline).trim(),
     models: [...new Set(spec.models.map((m) => m.trim()).filter(Boolean))],
     url: spec.url,
+    ...(spec.note ? { note: noEmDashes(spec.note).trim() } : {}),
     timeline: `${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/timeline.json`,
     out: DEMO_OUT_DIR,
   };

@@ -3,6 +3,7 @@
  * tested without a sandbox.
  */
 import {
+  ACTIVE_TARGETS_FILE,
   DEMO_OUT_DIR,
   DEMO_RECORDING_DIR,
   DEMO_SPEC_PATH,
@@ -11,6 +12,9 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   PRODUCT_PORTS,
+  TARGET_FILE,
+  TARGET_OVERLAYS,
+  TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { q } from "@/lib/sandbox/shell";
 
@@ -31,6 +35,7 @@ export interface TaskPaths {
   pristineDir?: string;
   specPath?: string;
   outDir?: string;
+  targetsDir?: string;
 }
 
 /**
@@ -168,6 +173,107 @@ export function restorePlatformFilesScript(pristineDir: string = PRISTINE_DIR, f
   ].join("\n");
 }
 
+/** What goes in ACTIVE_TARGETS_FILE and TARGET_FILE: where the product runs. glassesGateProblems and verify read this shape. */
+export function targetFileText(targets: readonly string[]): string {
+  return `${JSON.stringify({ targets })}\n`;
+}
+
+/**
+ * Installs an unpacked template/targets (`from`, with `from/targets/<id>/...`) as the read-only TARGETS_DIR, then removes
+ * `from`. Run with sudo. A target already there is replaced, so a refresh can't leave old files behind.
+ */
+export function installTargetsScript(from: string, targetsDir: string = TARGETS_DIR): string {
+  const dir = q(targetsDir);
+  return [
+    "set -e",
+    `mkdir -p ${dir}`,
+    `for t in ${q(from)}/targets/*; do`,
+    `  rm -rf ${dir}/"$(basename "$t")"`,
+    `  cp -R "$t" ${dir}/`,
+    `done`,
+    `rm -rf ${q(from)}`,
+    `chown -R root:root ${dir}`,
+    `chmod -R a-w,a+rX ${dir}`,
+  ].join("\n");
+}
+
+/** Writes ACTIVE_TARGETS_FILE. Run with sudo, once the overlays are there. */
+export function activeTargetsScript(targets: readonly string[], activeFile: string = ACTIVE_TARGETS_FILE): string {
+  const file = q(activeFile);
+  return [`set -e`, `rm -f ${file}`, `printf '%s' ${q(targetFileText(targets))} > ${file}`, `chown root:root ${file}`, `chmod 444 ${file}`].join("\n");
+}
+
+/** Prints an overlay's deps.json as npm's name@version, one a line, for "dependencies" or "devDependencies". */
+function depsOf(depsFile: string, field: "dependencies" | "devDependencies"): string {
+  const print = `const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).${field}??{};for(const[k,v]of Object.entries(d))console.log(k+"@"+v)`;
+  return `node -e ${q(print)} ${q(depsFile)}`;
+}
+
+/**
+ * Applies a brief's targets to the product in the current directory (PRODUCT_DIR), before Muse Code starts: copies each
+ * overlay's files, installs its deps at their exact versions (npm is open in the build policy), writes TARGET_FILE and
+ * commits. Runs as the default user, so the product parts are the build's to change. A retry that finds it done does nothing,
+ * since by then the build's own files may be there. Any target without an overlay only shows in TARGET_FILE.
+ */
+export function applyTargetScript(targets: readonly string[], targetsDir: string = TARGETS_DIR): string {
+  const overlays = targets.filter((t) => TARGET_OVERLAYS.includes(t));
+  const added = targets.filter((t) => t !== "web");
+  const want = targetFileText(targets);
+  const lines = [
+    "set -e",
+    `if [ "$(cat ${TARGET_FILE} 2>/dev/null)" = ${q(want.trimEnd())} ] && [ -n "$(git log --format=%s --grep='^Target: ' -1 2>/dev/null)" ]; then exit 0; fi`,
+    `deps=""; dev=""`,
+  ];
+  for (const t of overlays) {
+    const dir = `${targetsDir}/${t}`;
+    lines.push(
+      `[ -f ${q(`${dir}/deps.json`)} ] || { echo "musemuse: the ${t} overlay isn't in this sandbox" >&2; exit 1; }`,
+      `(cd ${q(`${dir}/files`)} && find . -type f) | while IFS= read -r f; do`,
+      `  mkdir -p -- "$(dirname -- "$f")"`,
+      `  rm -f -- "$f"`,
+      `  cat ${q(`${dir}/files`)}/"$f" > "$f"`,
+      `done`,
+      `deps="$deps $(${depsOf(`${dir}/deps.json`, "dependencies")} | tr '\n' ' ')"`,
+      `dev="$dev $(${depsOf(`${dir}/deps.json`, "devDependencies")} | tr '\n' ' ')"`,
+    );
+  }
+  const install = "npm install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error";
+  lines.push(
+    `if [ -n "$(echo $deps)" ]; then ${install} $deps; fi`,
+    `if [ -n "$(echo $dev)" ]; then ${install} --save-dev $dev; fi`,
+    `printf '%s' ${q(want)} > ${TARGET_FILE}`,
+    `git add -A`,
+    `git diff --cached --quiet || git commit -qm ${q(`Target: ${added.join(", ")}`)}`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Before every verify and demo, in a sandbox with targets: rewrites TARGET_FILE from the read-only copy and restores each
+ * overlay's platform files, so an edit can't change which checks run. Does nothing in a sandbox without ACTIVE_TARGETS_FILE,
+ * which is every product with no target.
+ */
+export function restoreTargetFilesScript(targetsDir: string = TARGETS_DIR): string {
+  const dir = q(targetsDir);
+  const active = `${targetsDir}/active.json`;
+  const list = [
+    `const fs=require("fs");const[active,root]=process.argv.slice(1);`,
+    `for(const t of JSON.parse(fs.readFileSync(active,"utf8")).targets){`,
+    `const f=root+"/"+t+"/platform-files.json";if(!fs.existsSync(f))continue;`,
+    `for(const p of JSON.parse(fs.readFileSync(f,"utf8")))console.log(t+"\\t"+p)}`,
+  ].join("");
+  return [
+    `if [ -f ${q(active)} ]; then`,
+    `  rm -f ${TARGET_FILE} && cat ${q(active)} > ${TARGET_FILE}`,
+    `  node -e ${q(list)} ${q(active)} ${dir} | while IFS=$'\t' read -r t p; do`,
+    `    rm -rf -- "$p"`,
+    `    mkdir -p -- "$(dirname -- "$p")"`,
+    `    cp -R -- ${dir}/"$t"/files/"$p" "$p" && chmod -R u+w -- "$p" || echo "musemuse: couldn't restore $p" >&2`,
+    `  done`,
+    `fi`,
+  ].join("\n");
+}
+
 /**
  * Stops every server listening on the product ports (3100-3199), such as a `next start` orphaned by an earlier
  * verify or left by Muse Code, so the demo's Playwright starts a fresh one from the latest build instead of reusing
@@ -197,6 +303,7 @@ export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths =
   return [
     "set -o pipefail",
     restorePlatformFilesScript(opts.pristineDir),
+    restoreTargetFilesScript(opts.targetsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
       : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),

@@ -28,6 +28,9 @@ export const PLATFORM_FILES = [
   "musemuse.schema.json",
   "tests/judge-shot.ts",
   "tests/glasses.ts",
+  "tests/xr.ts",
+  "scripts/xr-peek.mjs",
+  "scripts/browser.json",
   "tests/demo-fixtures.ts",
   "scripts/demo-plan.mjs",
   "scripts/demo-studio.mjs",
@@ -35,6 +38,19 @@ export const PLATFORM_FILES = [
 ] as const;
 /** The platform file whose pristine copy says a sandbox can record with Demo Studio. */
 export const DEMO_STUDIO_MARKER = "tests/demo-fixtures.ts";
+/** A platform file only snapshots and refreshes with the target overlays have. Without it a sandbox needs them refreshed. */
+export const TARGET_PLATFORM_MARKER = "scripts/browser.json";
+/**
+ * Read-only, root-owned copy of template/targets, one folder per overlay: deps.json, files/ and platform-files.json. The
+ * snapshot has it, and provisioning a target in a sandbox from an older snapshot adds it from this checkout's template/.
+ */
+export const TARGETS_DIR = `${WORK_DIR}/targets`;
+/** Which targets this sandbox's product has, as {"targets":[...]}. Root-owned like the rest, so a build can't change it. */
+export const ACTIVE_TARGETS_FILE = `${TARGETS_DIR}/active.json`;
+/** The product's own copy of ACTIVE_TARGETS_FILE, which playwright.config.ts, verify and the tests read. Relative to PRODUCT_DIR. */
+export const TARGET_FILE = "musemuse.target.json";
+/** The targets with an overlay in template/targets. Others (phone, desktop) only get TARGET_FILE. */
+export const TARGET_OVERLAYS: readonly string[] = ["vr", "glasses"];
 /** Demo Studio's spec for the next demo run (builder.ts writeDemoSpec), read by scripts/demo-studio.mjs --spec. */
 export const DEMO_SPEC_PATH = `${WORK_DIR}/demo-spec.json`;
 /** Where Demo Studio writes demo.mp4, poster.jpg and studio.json. Sandboxes from older snapshots make their MP4 here too. */
@@ -47,6 +63,8 @@ export const DEMO_RECORDING_DIR = "test-results/demo";
  * in lib/publish/vercel.ts keeps it out of every deployment.
  */
 export const FIX_SCREENSHOTS_DIR = ".muse-fix";
+/** Where scripts/xr-peek.mjs keeps its pictures by default. It holds its own `*` .gitignore, and no deployment includes it. */
+export const PEEK_DIR = ".muse-peek";
 /** Ports the product's own servers use: npm start, verify's pickPort and the demo's webServer. */
 export const PRODUCT_PORTS = { first: 3100, last: 3199 } as const;
 

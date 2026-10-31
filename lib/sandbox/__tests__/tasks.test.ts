@@ -4,22 +4,27 @@
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { PLATFORM_FILES } from "@/lib/sandbox/paths";
+import { PLATFORM_FILES, TARGET_OVERLAYS } from "@/lib/sandbox/paths";
 import { writeRunner } from "@/lib/sandbox/shell";
 import {
+  activeTargetsScript,
+  applyTargetScript,
   demoScript,
   demoSpecCopyScript,
   freeProductPortsScript,
+  installTargetsScript,
   previewAnswered,
   previewWaitScript,
   pristineCopyScript,
   restorePlatformFilesScript,
+  restoreTargetFilesScript,
   shrinkImagesScript,
   studioCommand,
+  targetFileText,
   taskScript,
 } from "@/lib/sandbox/tasks";
 
@@ -467,6 +472,10 @@ test("every generated script is valid bash", () => {
     freeProductPortsScript(),
     taskScript("verify", "/x/verify.out"),
     taskScript("demo", "/x/demo.out"),
+    installTargetsScript("/tmp/it's"),
+    activeTargetsScript(["web", "vr"]),
+    applyTargetScript(["web", "vr", "glasses", "phone"]),
+    restoreTargetFilesScript(),
     demoScript("/x/it's.out", { pristineDir: "/x/it's", specPath: "/x/it's.json", outDir: "/x/it's" }),
     demoSpecCopyScript(),
     studioCommand("/x/it's.json", true),
@@ -479,4 +488,126 @@ test("every generated script is valid bash", () => {
 
 test("every platform file exists in template/", () => {
   for (const f of PLATFORM_FILES) assert.ok(existsSync(path.join(process.cwd(), "template", f)), f);
+});
+
+test("every overlay the platform lists is in template/targets, with its platform files", () => {
+  const root = path.join(process.cwd(), "template", "targets");
+  assert.deepEqual([...TARGET_OVERLAYS].sort(), readdirSync(root).sort());
+  for (const t of TARGET_OVERLAYS) {
+    const deps = JSON.parse(readFileSync(path.join(root, t, "deps.json"), "utf8")) as Record<string, Record<string, string>>;
+    for (const group of Object.values(deps)) for (const version of Object.values(group)) assert.match(version, /^\d+\.\d+\.\d+$/, "exact versions only");
+    for (const f of JSON.parse(readFileSync(path.join(root, t, "platform-files.json"), "utf8")) as string[]) {
+      assert.ok(existsSync(path.join(root, t, "files", f)), `${t}: ${f}`);
+    }
+  }
+});
+
+/** A product repo and a targets folder with one overlay, and an npm stub that logs its arguments. */
+function targetRig() {
+  const dir = freshDir("target");
+  const product = path.join(dir, "product");
+  const targets = path.join(dir, "targets");
+  const bin = path.join(dir, "bin");
+  const overlay = path.join(targets, "vr");
+  mkdirSync(path.join(overlay, "files", "lib", "xr"), { recursive: true });
+  mkdirSync(path.join(overlay, "files", ".agents", "skills", "muse-vr"), { recursive: true });
+  mkdirSync(product, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(overlay, "deps.json"), JSON.stringify({ dependencies: { three: "0.184.0", "@react-three/xr": "6.6.32" }, devDependencies: { "@types/three": "0.184.1" } }));
+  writeFileSync(path.join(overlay, "platform-files.json"), JSON.stringify(["lib/xr/emulator.ts", ".agents/skills/muse-vr"]));
+  writeFileSync(path.join(overlay, "files", "lib", "xr", "emulator.ts"), "the platform's\n");
+  writeFileSync(path.join(overlay, "files", ".agents", "skills", "muse-vr", "SKILL.md"), "the skill\n");
+  writeFileSync(path.join(overlay, "files", "Part.tsx"), "a part\n");
+  chmodSync(path.join(overlay, "files", "Part.tsx"), 0o444);
+  writeFileSync(path.join(bin, "npm"), `#!/bin/bash\necho "$*" >> ${JSON.stringify(path.join(dir, "npm.log"))}\n`);
+  chmodSync(path.join(bin, "npm"), 0o755);
+  const env = { PATH: `${bin}:${process.env.PATH}`, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  assert.equal(bash(`git init -q && echo x > a.txt && git add -A && git commit -qm Template`, { cwd: product, env }).code, 0);
+  return { dir, product, targets, env };
+}
+
+test("applying a target copies the overlay, installs its deps, writes the target file and commits", () => {
+  const { dir, product, targets, env } = targetRig();
+  const res = bash(applyTargetScript(["web", "vr", "phone"], targets), { cwd: product, env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(readFileSync(path.join(product, "lib/xr/emulator.ts"), "utf8"), "the platform's\n");
+  assert.equal(readFileSync(path.join(product, ".agents/skills/muse-vr/SKILL.md"), "utf8"), "the skill\n");
+  // The overlay's copy is read-only, and the product's parts are the build's to change.
+  writeFileSync(path.join(product, "Part.tsx"), "changed\n");
+  assert.equal(readFileSync(path.join(product, "musemuse.target.json"), "utf8"), '{"targets":["web","vr","phone"]}\n');
+  assert.deepEqual(readFileSync(path.join(dir, "npm.log"), "utf8").trim().split("\n"), [
+    "install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error three@0.184.0 @react-three/xr@6.6.32",
+    "install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error --save-dev @types/three@0.184.1",
+  ]);
+  assert.equal(bash("git log --format=%s -1", { cwd: product }).stdout.trim(), "Target: vr, phone");
+  assert.match(bash("git show --stat --format= HEAD", { cwd: product }).stdout, /lib\/xr\/emulator\.ts/);
+});
+
+test("a retry that finds a target applied leaves the build's own files alone", () => {
+  const { dir, product, targets, env } = targetRig();
+  assert.equal(bash(applyTargetScript(["web", "vr"], targets), { cwd: product, env }).code, 0);
+  rmSync(path.join(dir, "npm.log"));
+  writeFileSync(path.join(product, "brief.md"), "the user's brief\n");
+  writeFileSync(path.join(product, "lib/xr/emulator.ts"), "edited\n");
+  const res = bash(applyTargetScript(["web", "vr"], targets), { cwd: product, env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(readFileSync(path.join(product, "lib/xr/emulator.ts"), "utf8"), "edited\n");
+  assert.ok(!existsSync(path.join(dir, "npm.log")));
+  assert.match(bash("git status --short", { cwd: product }).stdout, /brief\.md/, "still uncommitted");
+});
+
+test("an overlay with no deps installs nothing, and a missing overlay fails before anything changes", () => {
+  const { dir, product, targets, env } = targetRig();
+  writeFileSync(path.join(targets, "vr", "deps.json"), "{}");
+  assert.equal(bash(applyTargetScript(["web", "vr"], targets), { cwd: product, env }).code, 0);
+  assert.ok(!existsSync(path.join(dir, "npm.log")));
+  const other = targetRig();
+  rmSync(path.join(other.targets, "vr", "deps.json"));
+  const res = bash(applyTargetScript(["web", "vr"], other.targets), { cwd: other.product, env: other.env });
+  assert.equal(res.code, 1);
+  assert.match(res.stderr, /the vr overlay isn't in this sandbox/);
+  assert.ok(!existsSync(path.join(other.product, "musemuse.target.json")));
+});
+
+test("a target without an overlay only shows in the target file", () => {
+  const { dir, product, targets, env } = targetRig();
+  assert.equal(bash(applyTargetScript(["web", "phone"], targets), { cwd: product, env }).code, 0);
+  assert.ok(!existsSync(path.join(product, "lib")));
+  assert.ok(!existsSync(path.join(dir, "npm.log")));
+  assert.equal(readFileSync(path.join(product, "musemuse.target.json"), "utf8"), targetFileText(["web", "phone"]));
+});
+
+test("before a task the target file and the overlay's platform files come back from the read-only copy", () => {
+  const { product, targets, env } = targetRig();
+  assert.equal(bash(applyTargetScript(["web", "vr"], targets), { cwd: product, env }).code, 0);
+  writeFileSync(path.join(targets, "active.json"), targetFileText(["web", "vr"]));
+  // A build that dropped the check by rewriting the target file, edited a platform file and left a link in a folder's place.
+  writeFileSync(path.join(product, "musemuse.target.json"), '{"targets":["web"]}\n');
+  writeFileSync(path.join(product, "lib/xr/emulator.ts"), "faked\n");
+  rmSync(path.join(product, ".agents/skills/muse-vr"), { recursive: true });
+  symlinkSync("/etc", path.join(product, ".agents/skills/muse-vr"));
+  writeFileSync(path.join(product, "Part.tsx"), "the build's own\n");
+  const res = bash(restoreTargetFilesScript(targets), { cwd: product, env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(readFileSync(path.join(product, "musemuse.target.json"), "utf8"), '{"targets":["web","vr"]}\n');
+  assert.equal(readFileSync(path.join(product, "lib/xr/emulator.ts"), "utf8"), "the platform's\n");
+  assert.ok(!lstatSync(path.join(product, ".agents/skills/muse-vr")).isSymbolicLink());
+  assert.equal(readFileSync(path.join(product, ".agents/skills/muse-vr/SKILL.md"), "utf8"), "the skill\n");
+  assert.equal(readFileSync(path.join(product, "Part.tsx"), "utf8"), "the build's own\n", "product parts stay");
+  writeFileSync(path.join(product, "lib/xr/emulator.ts"), "writable again\n");
+});
+
+test("a sandbox with no target changes nothing before a task, and says nothing", () => {
+  const product = freshDir("no-target");
+  const res = bash(restoreTargetFilesScript(path.join(product, "no-such-dir")), { cwd: product });
+  assert.deepEqual([res.code, res.stdout, res.stderr], [0, "", ""]);
+  assert.ok(!existsSync(path.join(product, "musemuse.target.json")));
+});
+
+test("the verify and demo runners restore targets after the platform files", () => {
+  for (const task of ["verify", "demo"] as const) {
+    const script = taskScript(task, "/x/out");
+    assert.ok(script.indexOf(restorePlatformFilesScript()) < script.indexOf(restoreTargetFilesScript()));
+    assert.ok(script.indexOf(restoreTargetFilesScript()) < script.indexOf(task === "demo" ? freeProductPortsScript() : "node scripts/verify.mjs"));
+  }
 });
