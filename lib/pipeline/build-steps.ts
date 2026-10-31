@@ -67,6 +67,7 @@ import {
   type Screenshot,
   type VerifySummary,
 } from "@/lib/types";
+import { briefTierFor } from "@/lib/trust/tiers";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
 
 /** Muse Code's step budget per run. */
@@ -345,11 +346,14 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
   const build = await loadBuild(buildId);
   if (build.brief) return summarize(build.brief);
   const inspiration = await loadInspiration(build.inspirationId);
+  // Wave 3, unit 1: who is building (TRUST_SIGNED_IN_CAPS). Undefined, and nothing read, with the flag off.
+  const builder = await briefTierFor(build.userId);
   const result = await writeBrief({
     note: inspiration.note,
     references: inspiration.references,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     requestedTargets: build.requestedTargets,
+    ...(builder ? { builder } : {}),
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);

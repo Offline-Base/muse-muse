@@ -108,6 +108,13 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <span>Refine</span>
             </Link>
           ) : null}
+          {/* Wave 3, unit 1 (TRUST_REPORTS): anyone can report a product, as from its own footer. */}
+          {env.trustReports ? (
+            <Link className="btn" href={`/report/${product.slug}`}>
+              <Icon name="alert" size={18} />
+              <span>Report</span>
+            </Link>
+          ) : null}
         </div>
 
         <header className="product-head">

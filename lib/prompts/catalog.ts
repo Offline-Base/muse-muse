@@ -2,6 +2,7 @@ import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
 import { capsCatalogBlocks, howProductsRun } from "@/lib/caps/catalog";
+import type { CapId } from "@/lib/caps/ids";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
@@ -145,11 +146,10 @@ const cached = new Map<string, string>();
  * and third "How products run" bullets come from howProductsRun and each cap's block follows the agent block. With none
  * on, the text is today's, byte for byte.
  */
-export function catalogSummary(): string {
+export function catalogSummary(caps: readonly CapId[] = env.enabledCaps): string {
   const gadgets = env.gadgetsEnabled;
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled;
-  const caps = env.enabledCaps;
   const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}`;
   const hit = cached.get(key);
   if (hit) return hit;

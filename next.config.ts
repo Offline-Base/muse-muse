@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withWorkflow } from "workflow/next";
+import { trustGeoRewrites } from "./lib/trust/geo-config";
 
 // PGlite (local runs only, lib/db/client.ts) loads its WebAssembly from node_modules, so it must not be bundled. The
 // Composio SDK (lib/tools/composio/client.ts) stays out too: it is imported lazily, only when a live tool runs.
@@ -8,6 +9,10 @@ import { withWorkflow } from "workflow/next";
 // (docsMarkdown in lib/docs/pages.ts builds the path from the slug, which file tracing can't follow), so the pages are
 // traced in by hand. Keys are route globs: "/docs/**" covers /docs/[...slug] and the docs routes under it.
 const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
+
+// Wave 3, unit 1 (TRUST_GEO_BLOCK, docs/CAPABILITIES.md, section 7): requests from restricted territories get a 451 page.
+// No rules at all with the flag off, so the config is what it was.
+const GEO_REWRITES = trustGeoRewrites(process.env);
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
@@ -19,6 +24,7 @@ const nextConfig: NextConfig = {
     // Drive export builds a drive's pages from drive/ and the kit's list at request time (docs/DRIVE_EXPORT.md).
     "/api/device/drive": ["./drive/**/*", "./lib/drive/kit-files.json"],
   },
+  ...(GEO_REWRITES.length ? { rewrites: async () => ({ beforeFiles: GEO_REWRITES, afterFiles: [], fallback: [] }) } : {}),
 };
 
 // Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/pipeline/prove.ts,

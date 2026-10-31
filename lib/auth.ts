@@ -372,13 +372,20 @@ export async function requireAdminOrAutomation(req: Request): Promise<SessionUse
  * Checks the access code and password, creates the user on first sign-in, and sets the session cookie.
  * Returns null when any of them is wrong.
  */
-export async function signIn(email: string, code: string, password: string): Promise<SessionUser | null> {
+export async function signIn(
+  email: string,
+  code: string,
+  password: string,
+  /** Wave 3, unit 1: runs once the code and password are right, before the cookie is set. Throws to refuse. */
+  before?: (user: SessionUser) => Promise<void>,
+): Promise<SessionUser | null> {
   const user = await checkSignIn({ email, code, password }, dbStore, {
     accessCode: env.accessCode,
     adminAccessCode: env.adminAccessCode,
     adminEmails: env.adminEmails,
   });
   if (!user) return null;
+  if (before) await before(user);
   const jar = await cookies();
   jar.set(SESSION_COOKIE, encodeSession(user), {
     httpOnly: true,

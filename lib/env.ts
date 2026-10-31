@@ -6,6 +6,7 @@ import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/agent-capacity";
 import { publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+import { parseGeoCountries } from "@/lib/trust/geo";
 
 /**
  * Server environment. Getters throw a clear error when a required value is missing, so a misconfigured deploy fails
@@ -639,6 +640,49 @@ export const env = {
   /** Live docs calls one client IP may have running at once. */
   get docsIpInFlight() {
     return number("DOCS_IP_IN_FLIGHT", 4);
+  },
+
+  // ---------- Wave 3, unit 1: trust (docs/CAPABILITIES.md) ----------
+
+  /**
+   * TRUST_SIGNED_IN_CAPS: caps marked CAP_NEEDS_BUILDER (data, files, connect, jobs, code, runtime, hardware) need a
+   * signed-in builder. A guest's brief writer doesn't get them (capsForBuilder in lib/trust/tiers.ts), and each
+   * signed-in builder's products share TRUST_BUILDER_DAILY_USD a day.
+   */
+  get trustSignedInCaps(): boolean {
+    return flag("TRUST_SIGNED_IN_CAPS");
+  },
+  /** What one signed-in builder's products may spend together per UTC day, every source counted. Read only with the flag above. 0 pauses them. */
+  get trustBuilderDailyUsd(): number {
+    return dollars("TRUST_BUILDER_DAILY_USD", 5);
+  },
+  /** TRUST_AGE_GATE: 18 and over on platform sign-in and before building, and an age gate in new products. */
+  get trustAgeGate(): boolean {
+    return flag("TRUST_AGE_GATE");
+  },
+  /** TRUST_LEGAL_PAGES: /privacy and /terms on the platform, and privacy and terms pages in new products. */
+  get trustLegalPages(): boolean {
+    return flag("TRUST_LEGAL_PAGES");
+  },
+  /** TRUST_GEO_BLOCK: requests from the territories in TRUST_GEO_COUNTRIES are refused, on the platform and in new products. */
+  get trustGeoBlock(): boolean {
+    return flag("TRUST_GEO_BLOCK");
+  },
+  /** TRUST_GEO_COUNTRIES: ISO codes and region codes (UA-43), or "meta" for Meta's list (lib/trust/geo.ts). Empty blocks nothing. */
+  get trustGeoCountries(): string[] {
+    return parseGeoCountries(process.env.TRUST_GEO_COUNTRIES);
+  },
+  /** TRUST_REPORTS: the Report link on products, /admin/reports, takedown and ban. */
+  get trustReports(): boolean {
+    return flag("TRUST_REPORTS");
+  },
+  /** TRUST_SPARK_TO_WONDER: a live product's retired Spark 1.3 calls run on Muse Wonder instead of Contributor (Meta terms 6.2). */
+  get trustSparkToWonder(): boolean {
+    return flag("TRUST_SPARK_TO_WONDER");
+  },
+  /** True while any trust flag a product carries is on, so new builds get the trust overlay (template/caps/trust). */
+  get trustProductOverlay(): boolean {
+    return env.trustAgeGate || env.trustLegalPages || env.trustGeoBlock || env.trustReports;
   },
 
   // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------
