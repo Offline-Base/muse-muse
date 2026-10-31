@@ -839,6 +839,14 @@ because the sidebar showed a real account.
   stays greedy. General changes the code after tg-decide lands; rewriting cards already on Hugging Face waits for the
   owner.
 
+### 19:06 Decision models D4 and the preview database code committed
+
+- 02b1b32 on tg-decide (19:06): decide mode on the GPU, ctx.decide in the runner, the decide callbacks and the run
+  estimate. Tested against fake torch, no spend. D5 (scoring after a run) started next.
+- b2abc15 on tg-preview-db (19:04): previews use PREVIEW_DATABASE_URL or no database, never production's. Its
+  independent review started next; wave 3's gateway-address and bypass pieces get folded in after it.
+- The multi-Jetson simulation has written its scripts (tabular and LoRA federated runs) and is running in the cloud.
+
 ## Gaps
 
 What this record doesn't confirm:
