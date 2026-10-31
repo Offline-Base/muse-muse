@@ -696,7 +696,9 @@ def main(argv: list[str] | None = None, settings=None) -> int:
     p.add_argument("--holdout-file", type=Path, default=DEFAULT_HOLDOUT, help="ids for --holdout")
     p.add_argument("--limit", type=int, help="score only the first N items")
     home = p.add_mutually_exclusive_group()
-    home.add_argument("--rules", default="none", help="learned rules file for the router, or none")
+    # No default: argparse compares a value with the default by identity, so "--rules none" next to
+    # --home got past the exclusive group on some Python builds.
+    home.add_argument("--rules", help="learned rules file for the router, or none (the default)")
     home.add_argument("--home", type=Path, help="use this BASE_HOME as it is instead of a fresh one")
     p.add_argument("--device-label", help="device name for the report (default BASE_DEVICE)")
     p.add_argument(
@@ -727,7 +729,7 @@ def main(argv: list[str] | None = None, settings=None) -> int:
             services, items, name=args.name, device_label=label, command=command, rules=rules, oracle=args.oracle_labels
         )
     else:
-        rules_path = None if args.rules.lower() == "none" else Path(args.rules)
+        rules_path = None if (args.rules or "none").lower() == "none" else Path(args.rules)
         if rules_path is not None and not rules_path.is_file():
             p.error(f"no rules file at {args.rules}")
         report = evaluate(
