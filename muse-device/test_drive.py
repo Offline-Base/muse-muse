@@ -8,6 +8,7 @@ small files starting GGUF. The large-file rules are decided from a plan's sizes,
 a thread of this process instead of their own, so the fakes reach them.
 """
 import base64
+import contextlib
 import errno
 import hashlib
 import io
@@ -72,10 +73,11 @@ class FakeDrives:
         self.calls = []
         self.busy = {(179, 1)}
         self.on_mount = None
+        self.on_unmount = None
         self.count = itertools.count(1)
 
     def plug(self, name="sda", size=32 * 10**9, fstype="exfat", label="STICK", free=None, ro=False, tran="usb", usb=True, rm=True,
-             partitioned=True, serial=None, uuid=None, content=None, mountpoint=None, model="Ultra"):
+             partitioned=True, serial=None, uuid=None, content=None, mountpoint=None, model="Ultra", nested=None):
         number = next(self.count)
         uuid = uuid or f"{number:04X}-ABCD"
         content = content or os.path.join(self.media, f"{name}-{uuid}")
@@ -89,7 +91,7 @@ class FakeDrives:
         self.disks[name] = {
             "name": name, "size": size, "fstype": fstype, "label": label, "uuid": uuid, "free": size if free is None else free, "ro": ro,
             "tran": tran, "rm": rm, "partitioned": partitioned, "serial": serial or f"SN-{name}-{number}", "content": content,
-            "mounted": mountpoint, "number": (8, 16 * number), "model": model,
+            "mounted": mountpoint, "number": (8, 16 * number), "model": model, "nested": nested,
         }
         return content
 
@@ -111,6 +113,9 @@ class FakeDrives:
                 node["children"] = [{"name": f"{d['name']}1", "path": f"/dev/{d['name']}1", "size": d["size"] - 2**20, "type": "part", "maj:min": f"{major}:{minor + 1}", **fs}]
             else:
                 node.update(fs)
+            # What lsblk nests under a partition (or a whole disk) that holds an LVM, LUKS or md device.
+            if d.get("nested"):
+                (node["children"][0] if d["partitioned"] else node)["children"] = d["nested"]
             out.append(node)
         return out + self.others
 
@@ -134,6 +139,8 @@ class FakeDrives:
         d = self.disk_of(device)
         self.calls.append(("unmount", d["name"]))
         d["mounted"] = None
+        if self.on_unmount:
+            self.on_unmount(d)
 
     def power_off(self, device):
         d = self.disk_of(device)
@@ -341,6 +348,41 @@ class DetectionTests(DriveTestCase):
         self.assertFalse(found["usable"])
         self.assertIn("Another user", found["why"])
 
+    def test_a_usb_disk_used_through_lvm_luks_or_raid_is_never_offered(self):
+        def volume(name, kind, number, mountpoint=None, fstype="ext4"):
+            return {"name": name, "path": f"/dev/mapper/{name}", "type": kind, "fstype": fstype, "label": None, "uuid": name, "mountpoint": mountpoint, "ro": False, "maj:min": number}
+
+        cases = {
+            # The review's case: the board's /var/lib/docker on an LVM volume inside the USB SSD's partition.
+            "the board's docker on LVM": dict(fstype="LVM2_member", nested=[volume("data-docker", "lvm", "253:0", "/var/lib/docker")]),
+            "an LVM volume in the busy set": dict(fstype="LVM2_member", nested=[volume("data-var", "lvm", "253:0")]),
+            "swap on LVM": dict(fstype="LVM2_member", nested=[volume("data-swap", "lvm", "253:2", "[SWAP]", "swap")]),
+            "an LVM volume nobody mounted": dict(fstype="LVM2_member", nested=[volume("data-old", "lvm", "253:3")]),
+            "an LVM volume this user mounted": dict(fstype="LVM2_member", nested=[volume("data-mine", "lvm", "253:4", os.path.join(self.drives.media, "MINE"))]),
+            "a locked LUKS volume": dict(fstype="crypto_LUKS"),
+            "an unlocked LUKS volume": dict(fstype="crypto_LUKS", nested=[volume("luks-1", "crypt", "253:5")]),
+            "an md array member": dict(fstype="linux_raid_member", nested=[volume("md0", "raid1", "9:0")]),
+            "a whole-disk LVM member": dict(fstype="LVM2_member", partitioned=False),
+            "swap that is off": dict(fstype="swap"),
+        }
+        for case, options in cases.items():
+            with self.subTest(case=case):
+                self.drives.disks.clear()
+                self.drives.busy = {(179, 1), (253, 0)}
+                self.drives.plug("sdb", size=128 * 10**9, rm=False, label=None, **options)
+                (found,) = drive.find_drives()
+                self.assertFalse(found["usable"], found)
+                self.assertTrue(found["why"])
+
+    def test_a_partition_the_kernel_says_is_held_is_never_offered(self):
+        # Device mapper built on it with no signature lsblk knows: only sysfs says so.
+        self.drives.plug("sdb", fstype=None, label=None)
+        self.assertTrue(drive.find_drives()[0]["usable"], "an empty stick is offered")
+        os.makedirs(os.path.join(self.drives.sys, "block", "sdb", "sdb1", "holders", "dm-3"))
+        (found,) = drive.find_drives()
+        self.assertFalse(found["usable"])
+        self.assertIn("never written to or erased", found["why"])
+
     def test_only_usb_counts(self):
         self.drives.plug("sda", tran="sata")
         self.drives.plug("sdb", usb=False)
@@ -546,6 +588,59 @@ class ExportTests(DriveTestCase):
         self.assertNotIn(("format", "sda"), self.drives.calls)
         self.assertEqual(self.status()["state"], "needs_erase")
 
+    def test_a_usb_disk_used_through_lvm_is_never_exported_to_or_erased(self):
+        self.stage_kit()
+        self.drives.busy = {(179, 1), (253, 0)}
+        docker = {"name": "data-docker", "path": "/dev/mapper/data-docker", "type": "lvm", "fstype": "ext4", "label": None, "uuid": "d", "mountpoint": "/var/lib/docker", "ro": False, "maj:min": "253:0"}
+        self.drives.plug("sdb", size=128 * 10**9, rm=False, fstype="LVM2_member", label=None, nested=[docker])
+        error, reply = self.call("export_model", plan=self.fixture["plan"], drive="sdb")
+        self.assertTrue(error)
+        self.assertIn("left alone", reply)
+        self.assertIsNone(self.status(), "nothing started")
+        # Armed, it isn't picked either, even plugged in after arming.
+        self.drives.unplug("sdb")
+        self.start(wait_for_drive=True)
+        self.wait_for_state("waiting_for_drive")
+        self.drives.plug("sdb", size=128 * 10**9, rm=False, fstype="LVM2_member", label=None, nested=[docker])
+        time.sleep(0.2)
+        self.assertEqual(self.status()["state"], "waiting_for_drive")
+        self.assertEqual(self.drives.calls, [])
+
+    def test_a_drive_found_to_be_held_while_it_waits_is_never_erased(self):
+        self.stage_kit()
+        self.drives.plug("sda", fstype="ntfs", label="BACKUP")
+        self.start(drive="sda")
+        status = self.wait_for_state("needs_erase")
+        # The kernel now says something is built on its partition.
+        os.makedirs(os.path.join(self.drives.sys, "block", "sda", "sda1", "holders", "dm-0"))
+        error, reply = self.call("erase_drive", drive="sda", identity=status["drive"]["identity"], confirm="BACKUP")
+        self.assertTrue(error)
+        self.assertIn("nothing was erased", reply.lower())
+        status = self.finished()
+        self.assertEqual(status["state"], "failed")
+        self.assertIn("never written to or erased", status["message"])
+        self.assertNotIn(("format", "sda"), self.drives.calls)
+
+    def test_a_drive_swapped_while_it_is_unmounted_for_an_erase_is_never_erased(self):
+        self.stage_kit()
+        content = self.drives.plug("sda", fstype="ntfs", label="BACKUP")
+        self.drives.disks["sda"]["mounted"] = content
+        self.start(drive="sda")
+        status = self.wait_for_state("needs_erase")
+
+        def swap(_disk):
+            # Pulled while udisks unmounted it, and another drive took the name sda.
+            self.drives.on_unmount = None
+            self.drives.unplug("sda")
+            self.drives.plug("sda", fstype="ntfs", label="BACKUP", serial="SOMEONE-ELSES")
+
+        self.drives.on_unmount = swap
+        self.assertFalse(self.call("erase_drive", drive="sda", identity=status["drive"]["identity"], confirm="BACKUP")[0])
+        status = self.finished()
+        self.assertIn(("unmount", "sda"), self.drives.calls)
+        self.assertNotIn(("format", "sda"), self.drives.calls)
+        self.assertEqual(status["state"], "failed")
+
     def test_ntfs_none_and_over_256_gb(self):
         self.stage_kit()
         self.drives.plug("sda", fstype=None, label="")
@@ -654,14 +749,35 @@ class DownloadTests(DriveTestCase):
         self.downloads.ignore_range = True
         self.assertEqual(self.start_download()["result"], "PASS")
 
-    def test_a_refused_link_waits_for_a_fresh_one(self):
+    SIGNED = "https://models.example/m.gguf?X-Amz-Signature=old"
+
+    def states_of(self):
+        """Every state the export reports, in order."""
+        states = []
+        real = drive.Export.report
+
+        def report(export, state=None, force=True, **fields):
+            if state:
+                states.append(state)
+            return real(export, state, force, **fields)
+
+        patcher = mock.patch.object(drive.Export, "report", report)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return states
+
+    def start_refused(self, url, times):
         self.stage_kit()
-        self.downloads.files[self.URL] = self.MODEL
-        self.downloads.refuse[self.URL] = 1
+        self.downloads.files[url] = self.MODEL
+        self.downloads.refuse[url] = times
         self.drives.plug("sda")
-        reply = self.start(self.plan(), drive="sda", urls={sha(self.MODEL): self.URL})
+        return self.start(self.plan(), drive="sda", urls={sha(self.MODEL): url})
+
+    def test_a_refused_signed_link_waits_for_a_fresh_one(self):
+        reply = self.start_refused(self.SIGNED, 1)
         status = self.wait_for_state("needs_urls")
         self.assertIn("expired", status["message"])
+        self.assertNotIn("drive card is open", status["message"], "the owner's own file is signed again by their script")
         fresh = "https://models.example/m.gguf?fresh=1"
         self.downloads.files[fresh] = self.MODEL
         error, answer = self.call("export_model", export=reply["export"], urls={sha(self.MODEL): fresh})
@@ -669,6 +785,45 @@ class DownloadTests(DriveTestCase):
         status = self.finished()
         self.assertEqual(status["result"], "PASS")
         self.assertNotIn("fresh=1", json.dumps(status), "no link in a status")
+
+    def test_a_signed_link_sent_again_unchanged_is_tried_again(self):
+        reply = self.start_refused(self.SIGNED, 1)
+        self.wait_for_state("needs_urls")
+        error, answer = self.call("export_model", export=reply["export"], urls={sha(self.MODEL): self.SIGNED})
+        self.assertFalse(error, answer)
+        self.assertEqual(self.finished()["result"], "PASS")
+
+    def test_a_refused_public_link_is_tried_again_and_never_waits(self):
+        # A public Hub or kit link is the same link next time, so waiting for a fresh one would wait forever.
+        states = self.states_of()
+        self.start_refused(self.URL, 1)
+        self.assertEqual(self.finished()["result"], "PASS")
+        self.assertNotIn("needs_urls", states)
+        self.assertEqual([r for r in self.downloads.requests if r[0] == self.URL], [(self.URL, None), (self.URL, None)])
+
+    def test_a_public_link_refused_every_time_fails_in_a_sentence(self):
+        states = self.states_of()
+        self.start_refused(self.URL, 100)
+        status = self.finished()
+        self.assertEqual(status["state"], "failed")
+        self.assertIn(drive.DOWNLOAD_FAILED, status["message"])
+        self.assertNotIn("needs_urls", states)
+        self.assertEqual(len([r for r in self.downloads.requests if r[0] == self.URL]), drive.DOWNLOAD_RETRIES + 1)
+
+    def test_fresh_links_refused_again_and_again_fail(self):
+        with mock.patch.object(drive, "URL_REFRESHES", 2):
+            reply = self.start_refused(self.SIGNED, 100)
+            for n in range(2):
+                self.wait_for_state("needs_urls")
+                fresh = f"https://models.example/m.gguf?fresh={n}"
+                self.downloads.files[fresh] = self.MODEL
+                self.downloads.refuse[fresh] = 100
+                self.call("export_model", export=reply["export"], urls={sha(self.MODEL): fresh})
+                wait_for(lambda: (self.status() or {}).get("state") != "needs_urls" or len([r for r in self.downloads.requests if r[0] == fresh]) > 0)
+            status = self.finished()
+        self.assertEqual(status["state"], "failed")
+        self.assertIn("even fresh links were refused", status["message"])
+        self.assertNotIn("fresh=", json.dumps(status))
 
     def test_a_file_that_doesnt_match_is_deleted_and_never_used(self):
         self.stage_kit()
@@ -690,6 +845,20 @@ class DownloadTests(DriveTestCase):
             error, reply = self.call("export_model", plan=self.plan(), drive="sda", urls={sha(self.MODEL): self.URL})
         self.assertTrue(error)
         self.assertIn("public address", reply)
+
+
+class LogTests(DriveTestCase):
+    def test_an_unexpected_error_logs_no_signed_link(self):
+        self.stage_kit()
+        self.drives.plug("sda")
+        out = io.StringIO()
+        with mock.patch.object(drive.Export, "run", side_effect=ValueError("bad link https://s3.example/x.gguf?X-Amz-Signature=secret")), contextlib.redirect_stdout(out):
+            self.start(drive="sda")
+            status = self.finished()
+        self.assertEqual(status["state"], "failed")
+        self.assertIn("export failed", out.getvalue())
+        self.assertIn("[signed URL]", out.getvalue())
+        self.assertNotIn("X-Amz", out.getvalue() + json.dumps(status))
 
 
 class VerifyTests(DriveTestCase):

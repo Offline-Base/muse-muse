@@ -55,6 +55,8 @@ DRIVE_SPARE_BYTES = 64 * 2**20
 KIT_RESERVE_BYTES = 2**30
 BLOCK_BYTES = 4 * 2**20
 DOWNLOAD_RETRIES = 5
+# How many times fresh links for one file may be refused before the export fails.
+URL_REFRESHES = 5
 DOWNLOAD_TIMEOUT_S = 30
 # The first wait after a failed download. Each try after it waits twice as long, up to 30 seconds.
 RETRY_WAIT_S = 2
@@ -73,6 +75,10 @@ NOT_DRIVES = ("loop", "ram", "zram", "mmcblk", "nvme", "sr", "md", "dm-", "zd", 
 # Characters exFAT and FAT32 can't hold in a name.
 NOT_ON_DRIVES = set('<>:"|?*')
 WRITABLE = ("exfat", "vfat")
+# Filesystem types that hand a partition on to something else: a volume group, an encrypted volume, an array, a pool, swap or a
+# cache. What sits on top may be the board's own (its /var/lib/docker on an LVM volume, say), so such a disk is left alone.
+HOLDERS = ("LVM2_member", "crypto_LUKS", "linux_raid_member", "zfs_member", "swap", "bcache", "BitLocker")
+HELD_AS = {"LVM2_member": "an LVM volume", "crypto_LUKS": "an encrypted volume", "zfs_member": "a ZFS pool", "swap": "swap space", "bcache": "a disk cache", "BitLocker": "a BitLocker volume"}
 # Only the loopback test sets this, to its own temp folder: a loop device then counts as a drive when its backing file is in it.
 DRIVE_ALLOW_LOOP_BACKING = None
 LSBLK_COLUMNS = "NAME,PATH,SIZE,TYPE,TRAN,RM,HOTPLUG,RO,FSTYPE,LABEL,UUID,MOUNTPOINT,VENDOR,MODEL,SERIAL,MAJ:MIN"
@@ -237,6 +243,36 @@ def free_bytes(mount):
     return stat.f_bavail * stat.f_frsize
 
 
+def subtree(node):
+    """A device and everything under it. lsblk nests an LVM volume, an unlocked LUKS volume or an md array under the partition
+    that holds it, so a disk's own children aren't all there is."""
+    nodes = [node]
+    for child in node.get("children") or []:
+        nodes += subtree(child)
+    return nodes
+
+
+def holders_of(disk_name, part_name=None):
+    """What the kernel says is built on a disk or one of its partitions (device mapper, md), from sysfs."""
+    try:
+        return os.listdir(os.path.join(SYS_ROOT, "block", disk_name, *([part_name] if part_name else []), "holders"))
+    except OSError:
+        return []
+
+
+def held_as(disk):
+    """What a disk is part of, in words, when anything is built on it: then it's never written to or erased from here."""
+    for node in subtree(disk):
+        fs = node.get("fstype") or ""
+        if fs in HOLDERS or fs.endswith("_member"):
+            return HELD_AS.get(fs, "a RAID array" if "raid" in fs else fs)
+        if node is not disk and node.get("type") not in ("part", "disk"):
+            return f"a {node.get('type') or 'mapped'} device"
+    if holders_of(disk["name"]) or any(holders_of(disk["name"], child.get("name") or "") for child in disk.get("children") or []):
+        return "a mapped device"
+    return None
+
+
 def describe(disk, busy):
     """One disk as the card shows it, or None for a disk that is never offered (the board's SD card, NVMe or a loop device)."""
     name = disk.get("name") or ""
@@ -266,10 +302,12 @@ def describe(disk, busy):
         "usable": True,
         "why": None,
     }
-    nodes = [disk] + (disk.get("children") or [])
+    # The whole tree, so a mount or swap on an LVM, LUKS or md device inside one of its partitions counts too.
+    nodes = subtree(disk)
     numbers = {number_of(node) for node in nodes}
     points = [node["mountpoint"] for node in nodes if node.get("mountpoint")]
     others = [p for p in points if not p.startswith(media_root())]
+    held = held_as(disk)
     # Every filesystem of the disk this user mounted, which an erase unmounts first.
     found["mounted"] = [node["path"] for node in nodes if node.get("mountpoint") and node["mountpoint"].startswith(media_root()) and node.get("path")]
     if any(p == "[SWAP]" or p == "/" or p.startswith("/boot") for p in points):
@@ -280,6 +318,8 @@ def describe(disk, busy):
         found.update(usable=False, why=f"This drive is in use at {others[0]}, so it's left alone.")
     elif numbers & busy:
         found.update(usable=False, why="This is one of the board's own disks, so it's never written to.")
+    elif held:
+        found.update(usable=False, why=f"This drive holds {held}, which the board may be using, so it's never written to or erased from here.")
     elif point:
         try:
             found["free"] = free_bytes(point)
@@ -485,6 +525,8 @@ class Export:
         self.written = 0
         self.writing_since = None
         self.last_report = 0
+        # Times each file's link was refused and waited on in needs_urls.
+        self.url_waits = {}
 
     # The status file is the only thing the server reads.
     def report(self, state=None, force=True, **fields):
@@ -562,7 +604,12 @@ class Export:
         self.report("checking", message=f"Erasing {now['title']} as exFAT.", erasable=False)
         for device in now["mounted"]:
             udisks_unmount(device)
-        format_exfat(now["name"])
+        # Unmounting can take minutes, and a drive swapped meanwhile gets the same name, so it's looked at once more right here.
+        last = find_drive(now["name"], now["identity"])
+        if not last or not last["usable"] or last["bytes"] > ERASE_MAX_BYTES:
+            self.note = "The drive changed since it was listed, so nothing was erased."
+            return
+        format_exfat(last["name"])
         # A new filesystem has a new UUID, so the drive's identity changes with it.
         for _ in range(15):
             fresh = find_drive(now["name"])
@@ -706,7 +753,7 @@ class Export:
 
     def fetch(self, f, part, progress):
         """Streams a file to `part`, hashing as it goes. After a network error it tries again with backoff and asks for the rest with
-        Range; a 206 that names the right start carries on, a 200 starts over. A link that has expired waits in needs_urls."""
+        Range; a 206 that names the right start carries on, a 200 starts over. A signed link that is refused waits in needs_urls."""
         have = os.path.getsize(part) if os.path.exists(part) else 0
         digest = hashlib.sha256()
         if have > f["bytes"]:
@@ -728,7 +775,9 @@ class Export:
                 response = DOWNLOADS.open(request, timeout=DOWNLOAD_TIMEOUT_S)
             except urllib.error.HTTPError as err:
                 err.close()
-                if err.code in (401, 403, 410):
+                # Only a signed link (one with a query) expires, and only it can come back fresh. A public Hub or kit link that
+                # is refused is the same link next time, so it is tried again like any failed download.
+                if err.code in (401, 403, 410) and urllib.parse.urlsplit(url).query:
                     self.wait_for_urls(f, url)
                     continue
                 failures = self.retry(failures, f, f"HTTP {err.code}")
@@ -782,10 +831,24 @@ class Export:
         self.check_stop()
         return failures
 
+    def urls_written(self):
+        """Which write of urls.json this is: each export_model {export, urls} replaces the file, so its inode and time change."""
+        try:
+            stat = os.stat(os.path.join(self.folder, "urls.json"))
+        except OSError:
+            return None
+        return stat.st_ino, stat.st_mtime_ns
+
     def wait_for_urls(self, f, url):
-        """The link expired. The platform sends fresh ones (export_model {export, urls}) while its drive card is open."""
-        self.report("needs_urls", message=f"The link for {f['path']} expired. Muse Muse sends a fresh one while the drive card is open.", file=f["path"])
-        while (read_json(os.path.join(self.folder, "urls.json")) or {}).get(f["sha256"]) in (None, url):
+        """A signed link expired. Waits for links sent with export_model {export, urls}: the drive card sends them for a lab model
+        while it's open, and the owner's script for the owner's own file. Links sent again count, even when one is the same, and a
+        file whose fresh links keep being refused fails."""
+        self.url_waits[f["sha256"]] = self.url_waits.get(f["sha256"], 0) + 1
+        if self.url_waits[f["sha256"]] > URL_REFRESHES:
+            raise DriveError(f"{f['path']}: even fresh links were refused, {URL_REFRESHES} times. {DOWNLOAD_FAILED}")
+        self.report("needs_urls", message=f"The link for {f['path']} expired, so the export waits for a fresh one.", file=f["path"])
+        since = self.urls_written()
+        while (read_json(os.path.join(self.folder, "urls.json")) or {}).get(f["sha256"]) in (None, url) and self.urls_written() == since:
             self.sleep()
             self.refresh()
         self.report("writing", message=f"Writing to {self.drive['title']}.")
@@ -852,7 +915,7 @@ class Export:
                 path = str(err)
                 where = f" while writing {path}" if "/" in path or "." in path else ""
                 if not self.status["armed"]:
-                    raise DriveError(f"The drive was unplugged{where}. Plug it back in and start the export again to carry on: the files already written are kept.")
+                    raise DriveError(f"The drive was unplugged{where}. Plug it back in and press Carry on on the drive card: the files already written are kept.")
                 self.note = f"The drive was unplugged{where}. Plug it back in to carry on: the files already written are kept."
                 continue
             seconds = round(time.time() - started)
@@ -919,7 +982,7 @@ def run_export(folder):
     except DriveError as err:
         export.end("failed", message=blank_urls(err))
     except Exception as err:  # noqa: BLE001: whatever went wrong, the card must hear it, not wait forever.
-        print(f"export failed: {err!r}", flush=True)
+        print(blank_urls(f"export failed: {err!r}"), flush=True)
         export.end("failed", message=blank_urls(f"The export stopped: {err}"))
 
 
@@ -948,7 +1011,7 @@ def export_status(export_id):
     if not status:
         return None
     if status.get("state") in ACTIVE_STATES and not alive:
-        status.update(state="failed", message="The export stopped without saying why. Start it again to carry on: the files already written are kept.")
+        status.update(state="failed", message="The export stopped without saying why. Press Carry on on the drive card: the files already written are kept.")
         try:
             write_json(file_of(export_id, "status.json"), status)
         except OSError:
@@ -1071,6 +1134,8 @@ def erase_drive(args):
         drive = find_drive(name)
         if not drive or drive["identity"] != identity or status["drive"].get("identity") != identity:
             raise DriveError("That drive changed since it was listed, so nothing was erased. Look at the card again.")
+        if not drive["usable"]:
+            raise DriveError(f"{drive['why']} Nothing was erased.")
         word = drive["label"] or "ERASE"
         if confirm != word:
             raise DriveError(f"To erase it, type {word} exactly. Nothing was erased.")
