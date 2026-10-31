@@ -1,0 +1,13 @@
+[
+  "lib/agent/client.ts",
+  "lib/agent/events.ts",
+  "lib/agent/research.ts",
+  "lib/agent/respond.ts",
+  "lib/agent/run.ts",
+  "lib/agent/state.ts",
+  "lib/agent/tools.ts",
+  "lib/agent/turn.ts",
+  "lib/platform/identity.ts",
+  "app/api/musemuse/[...path]/route.ts",
+  ".agents/skills/muse-agent/SKILL.md"
+]

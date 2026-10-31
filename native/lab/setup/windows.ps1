@@ -36,7 +36,7 @@ if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
   throw "Run this in an elevated PowerShell."
 }
 
-foreach ($dir in @($Root, "$Root\data", "$Root\logs", "$Root\releases", "$Root\tools", "$Root\downloads")) {
+foreach ($dir in @($Root, "$Root\data", "$Root\logs", "$Root\releases", "$Root\tools", "$Root\downloads", "$Root\control")) {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
@@ -83,6 +83,12 @@ if (Get-LocalUser -Name $LabUser -ErrorAction SilentlyContinue) {
   New-LocalUser -Name $LabUser -Password $secure -PasswordNeverExpires -AccountNeverExpires -Description "Muse Muse lab agent" | Out-Null
   Add-LocalGroupMember -Group "Users" -Member $LabUser -ErrorAction SilentlyContinue
 }
+# The control document runs what's under this folder as SYSTEM, so the lab user only gets to change data and logs. Left
+# alone, a new folder on C: inherits a grant that lets any user add files to it.
+& icacls $Root /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Users:(OI)(CI)RX" /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions on $Root." }
+& icacls "$Root\control" /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions on $Root\control." }
 $acl = "${LabUser}:(OI)(CI)M"
 & icacls "$Root\data" /grant $acl /T /Q | Out-Null
 & icacls "$Root\logs" /grant $acl /T /Q | Out-Null
@@ -114,19 +120,62 @@ $desktop = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Control Panel\Desktop"
 New-Item -Path $desktop -Force | Out-Null
 Set-ItemProperty -Path $desktop -Name ScreenSaveActive -Value "0" -Type String
 
-Step "Auto sign-in with Sysinternals Autologon"
-# Autologon stores the password as an LSA secret rather than in plain text in the registry.
-$autologon = "$Root\tools\Autologon\Autologon64.exe"
-if (-not (Test-Path $autologon)) {
-  Get-Verified "https://download.sysinternals.com/files/AutoLogon.zip" "$Root\downloads\AutoLogon.zip" $null
-  Expand-Archive "$Root\downloads\AutoLogon.zip" "$Root\tools\Autologon" -Force
+Step "Auto sign-in"
+# Windows' own auto sign-in, with the password as an LSA secret rather than in plain text in the registry. No extra tool is
+# needed, and so there's no third-party license for the box to accept.
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class MuseLabLsa {
+  [StructLayout(LayoutKind.Sequential)]
+  struct LsaString { public ushort Length; public ushort MaximumLength; public IntPtr Buffer; }
+  [StructLayout(LayoutKind.Sequential)]
+  struct LsaAttributes { public int Length; public IntPtr RootDirectory; public IntPtr ObjectName; public uint Attributes; public IntPtr SecurityDescriptor; public IntPtr SecurityQualityOfService; }
+  [DllImport("advapi32.dll")] static extern uint LsaOpenPolicy(IntPtr system, ref LsaAttributes attributes, uint access, out IntPtr policy);
+  [DllImport("advapi32.dll")] static extern uint LsaStorePrivateData(IntPtr policy, ref LsaString key, ref LsaString data);
+  [DllImport("advapi32.dll")] static extern uint LsaClose(IntPtr policy);
+  [DllImport("advapi32.dll")] static extern int LsaNtStatusToWinError(uint status);
+  static LsaString Make(string text) {
+    var value = new LsaString();
+    value.Buffer = Marshal.StringToHGlobalUni(text);
+    value.Length = (ushort)(text.Length * 2);
+    value.MaximumLength = (ushort)(text.Length * 2 + 2);
+    return value;
+  }
+  public static void Store(string key, string secret) {
+    var attributes = new LsaAttributes();
+    IntPtr policy;
+    uint status = LsaOpenPolicy(IntPtr.Zero, ref attributes, 0x00000020 | 0x00000004, out policy);
+    if (status != 0) throw new System.ComponentModel.Win32Exception(LsaNtStatusToWinError(status));
+    var name = Make(key);
+    var data = Make(secret);
+    try {
+      status = LsaStorePrivateData(policy, ref name, ref data);
+      if (status != 0) throw new System.ComponentModel.Win32Exception(LsaNtStatusToWinError(status));
+    } finally {
+      Marshal.ZeroFreeGlobalAllocUnicode(data.Buffer);
+      Marshal.FreeHGlobal(name.Buffer);
+      LsaClose(policy);
+    }
+  }
 }
-& $autologon /accepteula $LabUser "." $password
+"@
+[MuseLabLsa]::Store("DefaultPassword", $password)
 Remove-Variable password, secure
+$winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+Set-ItemProperty -Path $winlogon -Name AutoAdminLogon -Value "1" -Type String
+Set-ItemProperty -Path $winlogon -Name DefaultUserName -Value $LabUser -Type String
+Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value $env:COMPUTERNAME -Type String
+Remove-ItemProperty -Path $winlogon -Name DefaultPassword -ErrorAction SilentlyContinue
 
 Step "The agent"
-$release = "$Root\releases\$Version"
-if ($Here -ne $release) {
+# Run from an installed release, it stays on that one, so a second run doesn't move the box off its pinned bundle.
+$source = @((Get-Item $Here).Target)[0]
+if (-not $source) { $source = $Here }
+if ($source -like "$Root\releases\*") {
+  $release = $source
+} else {
+  $release = "$Root\releases\$Version"
   if (Test-Path $release) { Remove-Item $release -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $release | Out-Null
   Get-ChildItem $Here -Force | Where-Object { $_.Name -notin @("__tests__", "node_modules") } | Copy-Item -Destination $release -Recurse -Force
@@ -146,7 +195,8 @@ try { Set-DisplayResolution -Width 1920 -Height 1080 -Force } catch { }
 `$env:MUSE_LAB_FFMPEG = '$ffmpeg'
 `$env:AWS_REGION = '$Region'
 `$env:PATH = 'C:\Program Files\nodejs;C:\Program Files\Amazon\AWSCLIV2;' + `$env:PATH
-& 'C:\Program Files\nodejs\node.exe' '$current\agent.mjs' *>> '$Root\logs\agent.log'
+# Through cmd, because PowerShell 5's own redirect writes UTF-16 and wraps stderr in error records.
+& cmd.exe /c '"C:\Program Files\nodejs\node.exe" "$current\agent.mjs" >> "$Root\logs\agent.log" 2>&1'
 exit `$LASTEXITCODE
 "@
 Set-Content -Path "$Root\start-agent.ps1" -Value $start -Encoding UTF8

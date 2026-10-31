@@ -8,11 +8,16 @@
  *   npx tsx scripts/knowledge/assemble-dataset.ts [--out train-stage1.jsonl] [--replay .data/knowledge/replay.jsonl]
  *
  * Later stages: --all-writers keeps every writer's answer to a passage (Spark Open's and Glimmer's question sets differ),
- * --exclude a.jsonl,b.jsonl drops fact examples whose question an earlier stage trained on or a probe set holds, and
- * --cap-low N keeps at most N examples from each bulky government and science source, so AI, Meta and news lead.
+ * --exclude a.jsonl,b.jsonl drops fact examples whose question an earlier stage trained on or a probe set holds (compared
+ * after normalizeAnswer, so a curly apostrophe doesn't hide a probe), and --cap-low N keeps at most N examples from each bulky government and science source, so AI, Meta and news lead.
  *
  * Adds the overviews from make-anchors.ts (dataset/anchors.jsonl) and replay answers, shuffles with a fixed seed, and
  * writes dataset/<out>, dataset/<out>-probes.jsonl and dataset/<out>-report.json.
+ *
+ * The Jetson student stays on Glimmer's lineage (docs/KNOWLEDGE_UPDATE.md, Jetson): --writers muse-glimmer-30b,muse-glimmer-q4
+ * keeps only those writers' answers, and --no-anchors leaves out the overviews, which Spark Open wrote. Replay answers
+ * are base Glimmer's (aws/job/replay_glimmer.py) and the cutoff examples are templates, so both stay.
+ * aws/check_student_lineage.py checks the result against the cache.
  */
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
@@ -22,7 +27,7 @@ import { createInterface } from "node:readline";
 import type { CurrentEvent } from "@/lib/knowledge/current-events";
 import { KNOWLEDGE_SYSTEM, knowledgeExamples, type KnowledgeExample } from "@/lib/knowledge/dataset";
 import { articlePassages, eventPassages, type ArticleDelta, type Passage } from "@/lib/knowledge/passages";
-import { checkQa, QA_INSTRUCTIONS, qaRequestText, type PassageQa } from "@/lib/knowledge/qa";
+import { checkQa, normalizeAnswer, QA_INSTRUCTIONS, qaRequestText, type PassageQa } from "@/lib/knowledge/qa";
 import { sourcePassages, type SourceRecord } from "@/lib/knowledge/sources";
 
 const DIR = path.join(process.cwd(), ".data", "knowledge");
@@ -41,6 +46,20 @@ const group = (source: string) => (source.startsWith("source:") ? source.split("
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i > 0 ? process.argv[i + 1] : undefined;
+}
+
+/** The writers --writers names, kept in WRITERS order so the first-writer rule doesn't change; all of them by default. */
+function chosenWriters(): string[] {
+  if (!process.argv.includes("--writers")) return WRITERS;
+  const named = arg("writers")?.split(",").filter(Boolean) ?? [];
+  if (!named.length || named.some((w) => !WRITERS.includes(w))) throw new Error(`--writers takes some of ${WRITERS.join(", ")}; got ${arg("writers")}.`);
+  return WRITERS.filter((w) => named.includes(w));
+}
+
+/** What --exclude compares: the normalized question, or the question itself when that leaves no latin letter (a question in another script would reduce to its digits and match others). */
+function questionKey(q: string): string {
+  const key = normalizeAnswer(q).trim();
+  return /[a-z]/.test(key) ? key : q;
 }
 
 const hash = (writer: string, p: Passage) => createHash("sha256").update(`${writer}\n${QA_INSTRUCTIONS}\n${qaRequestText(p)}`).digest("hex").slice(0, 24);
@@ -74,6 +93,7 @@ function shuffle<T>(list: T[], seed: number): T[] {
 }
 
 async function main() {
+  const writersUsed = chosenWriters();
   const manifest = JSON.parse(await readFile(path.join(DIR, "manifest.json"), "utf8")) as { to: string };
   const cache = new Map<string, unknown>();
   const byPassage = new Map<string, string[]>();
@@ -97,12 +117,14 @@ async function main() {
   }
 
   const results: PassageQa[] = [];
-  const counts = { cachedPassages: byPassage.size, rebuilt: passages.size, kept: 0, stale: 0, byWriter: {} as Record<string, number> };
+  const counts = { cachedPassages: byPassage.size, rebuilt: passages.size, kept: 0, stale: 0, otherWriters: 0, byWriter: {} as Record<string, number> };
   const allWriters = process.argv.includes("--all-writers");
   for (const p of passages.values()) {
-    const writers = WRITERS.filter((w) => cache.has(hash(w, p)));
+    const writers = writersUsed.filter((w) => cache.has(hash(w, p)));
     if (!writers.length) {
-      counts.stale++;
+      // Answered, but only by writers --writers left out: not stale, just not this set's.
+      if (WRITERS.some((w) => cache.has(hash(w, p)))) counts.otherWriters++;
+      else counts.stale++;
       continue;
     }
     counts.kept++;
@@ -118,11 +140,11 @@ async function main() {
   for (const f of arg("exclude")?.split(",").filter(Boolean) ?? []) {
     for (const e of await jsonl<{ messages?: Array<{ content: string }>; question?: string }>(f)) {
       const q = e.question ?? e.messages?.[1]?.content;
-      if (q) seen.add(q);
+      if (q) seen.add(questionKey(q));
     }
   }
   const isFact = (e: KnowledgeExample) => /^(source|event|article):/.test(e.source);
-  let train = made.train.filter((e) => !isFact(e) || !seen.has(e.messages[1].content));
+  let train = made.train.filter((e) => !isFact(e) || !seen.has(questionKey(e.messages[1].content)));
   const capLow = Number(arg("cap-low") ?? 0);
   if (capLow > 0) {
     const kept = new Map<string, number>();
@@ -134,7 +156,7 @@ async function main() {
     });
   }
 
-  const anchors = await jsonl<KnowledgeExample>(path.join(OUT, "anchors.jsonl"));
+  const anchors = process.argv.includes("--no-anchors") ? [] : await jsonl<KnowledgeExample>(path.join(OUT, "anchors.jsonl"));
   const replayFile = arg("replay") ?? path.join(DIR, "replay.jsonl");
   const replay = (await jsonl<{ prompt: string; answer: string }>(replayFile)).map(
     (r): KnowledgeExample => ({
@@ -156,7 +178,7 @@ async function main() {
   for (const e of all) {
     kinds[group(e.source)] = (kinds[group(e.source)] ?? 0) + 1;
   }
-  const report = { ...counts, examples: all.length, facts: train.length, anchors: anchors.length, replay: replay.length, probes: probes.length, dropped, kinds };
+  const report = { argv: process.argv.slice(2), ...counts, writers: writersUsed, examples: all.length, facts: train.length, anchors: anchors.length, replay: replay.length, probes: probes.length, dropped, kinds };
   await writeFile(path.join(OUT, out.replace(/\.jsonl$/, "") + "-report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ ...report, kinds: undefined }, null, 2));
 }

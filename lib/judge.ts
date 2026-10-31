@@ -5,8 +5,7 @@ import { briefToMarkdown } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { respondStructured } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
-import { capsJudgeNotes } from "@/lib/caps/judge";
-import { JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
+import { judgeInstructions } from "@/lib/prompts/judge";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
 
 /**
@@ -76,7 +75,7 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   const { content, sources } = judgeContent(input);
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: judgeInstructionsFor(input.brief),
+    instructions: judgeInstructions(input.brief),
     content,
     sources,
     schema: VerdictSchema,
@@ -86,11 +85,6 @@ export async function judgeBuild(input: JudgeInput): Promise<{ verdict: JudgeRes
   });
   const costUsd = Math.round(result.usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6;
   return { verdict: toJudgeResult(result.data), usage: result.usage, costUsd };
-}
-
-/** The judge's instructions for a brief: today's, plus each cap's note when it has cap blocks (docs/CAPABILITIES.md, 2.6). */
-export function judgeInstructionsFor(brief: Brief): string {
-  return JUDGE_INSTRUCTIONS + capsJudgeNotes(brief);
 }
 
 /**

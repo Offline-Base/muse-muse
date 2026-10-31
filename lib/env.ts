@@ -346,6 +346,36 @@ export const env = {
     );
   },
 
+  // ---------- What every product comes with, and proving it works (docs/PRODUCT_OUTPUTS.md) ----------
+
+  /** PRODUCT_OUTPUTS: products offer a CLI, a skill file and a Claude plugin, and show how to connect each. */
+  get productOutputs(): boolean {
+    return flag("PRODUCT_OUTPUTS");
+  },
+  /** PROVE_IT: after a product is live, run each output for real against it and record a video. Needs PRODUCT_OUTPUTS. */
+  get proveIt(): boolean {
+    return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT");
+  },
+  /** What one Prove it run may spend at Meta, in USD, charged to its build. */
+  get proveItCapUsd(): number {
+    return dollars("PROVE_IT_CAP_USD", 1.5);
+  },
+  /** PROVE_NIGHTLY: re-check live products each night on Muse Spark Contributor. Needs PROVE_IT. */
+  get proveNightly(): boolean {
+    return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT") && flag("PROVE_NIGHTLY");
+  },
+  /**
+   * PROVE_PUT_FILES: a local run's knob. The stage writes the CLI, skill and plugin straight into its copy instead of
+   * downloading them, for a site whose deployed code doesn't have those routes yet, and its results say so.
+   */
+  get provePutFiles(): boolean {
+    return flag("PROVE_PUT_FILES");
+  },
+  /** How many products a nightly re-check takes, the ones checked longest ago first. */
+  get proveNightlyProducts(): number {
+    return Math.max(0, Math.floor(number("PROVE_NIGHTLY_PRODUCTS", 5)));
+  },
+
   // ---------- The native lane: the device lab, Device Farm and their spend (docs/NATIVE.md) ----------
 
   /** NATIVE_LAB: products are checked on the AWS Mac and Windows lab boxes. */
@@ -377,8 +407,9 @@ export const env = {
   get nativeMacHourlyUsd(): number {
     return dollars("NATIVE_MAC_HOURLY_USD", 0.65);
   },
+  /** t3.large on Windows, the box docs/NATIVE_LAB.md sets up. The same size on Linux is about $0.083. */
   get nativeWindowsHourlyUsd(): number {
-    return dollars("NATIVE_WINDOWS_HOURLY_USD", 0.083);
+    return dollars("NATIVE_WINDOWS_HOURLY_USD", 0.111);
   },
   /** When the Mac host was allocated and when it will be released, as ISO dates. Its whole span is a fixed cost. */
   get nativeMacAllocatedAt(): string | null {
@@ -415,15 +446,16 @@ export const env = {
   get packagerSnapshotId(): string | null {
     return optional("PACKAGER_SNAPSHOT_ID");
   },
-  /** The Android signing key, base64. Reaches the packager sandbox only, for the one repack command. Never logged. */
+  /**
+   * The Android signing key: base64 of a PEM file holding the private key and its certificate. Platform only. It never
+   * reaches the packager sandbox, because lib/native/apk-sign.ts signs each APK after it leaves. Never logged.
+   */
   get nativeApkKeystoreB64(): string | null {
     return optional("NATIVE_APK_KEYSTORE_B64");
   },
+  /** The PEM key's passphrase, if it has one. */
   get nativeApkKeystorePassword(): string | null {
     return optional("NATIVE_APK_KEYSTORE_PASSWORD");
-  },
-  get nativeApkKeyAlias(): string | null {
-    return optional("NATIVE_APK_KEY_ALIAS");
   },
 
   // ---------- Agent tools (docs/AGENT_TOOLS.md) ----------
@@ -431,6 +463,10 @@ export const env = {
   /** The Composio key. Platform only: never in a sandbox, a product, a browser or a log. */
   get composioApiKey(): string {
     return required("COMPOSIO_API_KEY").trim();
+  },
+  /** Whether the key is there, without reading it for anything else. Live tools answer tools_paused when it isn't. */
+  get composioConfigured(): boolean {
+    return optional("COMPOSIO_API_KEY") !== null;
   },
   /** COMPOSIO_PERSONAL_ENABLED: Gmail, Calendar and Slack work for a product's owner, on the owner's own accounts. */
   get composioPersonalEnabled(): boolean {

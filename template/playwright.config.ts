@@ -14,7 +14,9 @@ import { fileURLToPath } from "node:url";
 //           frames, a cursor, typing and a timeline in test-results/demo
 // verify picks a free port, starts the server itself and passes the port as MUSEMUSE_PORT. Playwright's own output goes
 // to test-results/playwright, so the judge screenshots in test-results/judge and the demo recording in
-// test-results/demo survive its cleanup.
+// test-results/demo survive its cleanup. A VR product (musemuse.target.json) runs all three with the browser settings in
+// scripts/browser.json: the simulated headset needs software WebGL, and its smoke and studio runs are at the headset's
+// window size with 1x pixels, since a screen twice as big halves its frame rate.
 const port = Number(process.env.MUSEMUSE_PORT) || 3100;
 // Platform services (musemuse.caps.json): Chromium args the active caps ask for, merged into the smoke project. And
 // MUSEMUSE_BASE_URL, set only by the platform, points the tests at a live link with no local server. Neither applies to a
@@ -39,6 +41,17 @@ const capsArgs = capsLaunchArgs();
 const liveBase = (process.env.MUSEMUSE_BASE_URL ?? "").trim().replace(/\/+$/, "");
 const target = /^https?:\/\/[^\s/]+/.test(liveBase) ? { baseURL: liveBase, localServer: false } : { baseURL: `http://localhost:${port}`, localServer: true };
 
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+const targets = readJson("musemuse.target.json")?.targets;
+const vr = Array.isArray(targets) && targets.includes("vr") ? (readJson("scripts/browser.json")?.vr as { args: string[]; viewport: { width: number; height: number } }) : null;
+
 export default defineConfig({
   testDir: "tests",
   outputDir: "test-results/playwright",
@@ -53,7 +66,10 @@ export default defineConfig({
     {
       name: "smoke",
       testIgnore: /\.demo\.spec\.ts$/,
-      use: { viewport: { width: 390, height: 844 }, ...(capsArgs.length ? { launchOptions: { args: capsArgs } } : {}) },
+      // A VR product's smoke run keeps the headset's args first; the active caps' args follow, each once.
+      use: vr
+        ? { viewport: vr.viewport, launchOptions: { args: [...vr.args, ...capsArgs.filter((a) => !vr.args.includes(a))] } }
+        : { viewport: { width: 390, height: 844 }, ...(capsArgs.length ? { launchOptions: { args: capsArgs } } : {}) },
     },
     {
       name: "demo",
@@ -61,7 +77,7 @@ export default defineConfig({
       use: {
         viewport: { width: 1280, height: 720 },
         video: { mode: "on", size: { width: 1280, height: 720 } },
-        launchOptions: { slowMo: 250 },
+        launchOptions: vr ? { slowMo: 250, args: vr.args } : { slowMo: 250 },
       },
     },
     {
@@ -72,10 +88,10 @@ export default defineConfig({
       timeout: 240_000,
       use: {
         viewport: { width: 1280, height: 720 },
-        deviceScaleFactor: 2,
+        deviceScaleFactor: vr ? 1 : 2,
         video: "off",
         // Without it Chromium's screencast sends 1280x720 frames even at deviceScaleFactor 2.
-        launchOptions: { args: ["--force-device-scale-factor=2"] },
+        launchOptions: { args: vr ? vr.args : ["--force-device-scale-factor=2"] },
       },
     },
   ],

@@ -340,7 +340,11 @@ def run_block(block, inputs, kwargs, device, batch=8):
     return out
 
 
-def quantize_blocks(qm, fpm, calib, cfg, ranks, work, resume, ckpt_every):
+def quantize_blocks(qm, fpm, calib, cfg, ranks, work, resume, ckpt_every, free_fp=False):
+    """NanoQuant's block reconstruction over Glimmer's text layers. With free_fp, each BF16 layer is dropped once its
+    outputs are taken (its norm weights are kept for the final check), which keeps two runs inside the machine's RAM.
+    Returns those kept tensors by state-dict name."""
+    kept = {}
     dev = "cuda"
     lm_q, lm_fp = language_model(qm), language_model(fpm)
     n, seqlen = calib.shape
@@ -354,6 +358,11 @@ def quantize_blocks(qm, fpm, calib, cfg, ranks, work, resume, ckpt_every):
         start, fp_in, q_in = int(saved["next"]), saved["fp_in"], saved["q_in"]
         for i in range(start):
             restore_block(lm_q.layers[i], torch.load(os.path.join(work, "blocks", f"blk-{i:02d}.pt"), map_location="cpu", weights_only=True))
+            if free_fp:
+                for k, v in lm_fp.layers[i].state_dict().items():
+                    if not any(k == f"{name}.weight" for name in LINEARS):
+                        kept[f"model.language_model.layers.{i}.{k}"] = v.detach().clone()
+                lm_fp.layers[i] = nn.Module()
         say("resumed", next_block=start)
     else:
         with torch.no_grad():
@@ -384,7 +393,14 @@ def quantize_blocks(qm, fpm, calib, cfg, ranks, work, resume, ckpt_every):
         with torch.no_grad():
             q_out = run_block(qb, q_in, kwargs, dev)
             err = float((((q_out[:8].to(dev).float() - target[:8].to(dev).float()).square()) * importance).mean())
-        lm_fp.layers[i] = fpb.cpu()
+        if free_fp:
+            for k, v in fpb.state_dict().items():
+                if not any(k == f"{name}.weight" for name in LINEARS):
+                    kept[f"model.language_model.layers.{i}.{k}"] = v.detach().cpu().clone()
+            lm_fp.layers[i] = nn.Module()
+            del fpb
+        else:
+            lm_fp.layers[i] = fpb.cpu()
         lm_q.layers[i] = qb.cpu()
         fp_in, q_in = target, q_out
         torch.save(block_state(lm_q.layers[i]), os.path.join(work, "blocks", f"blk-{i:02d}.pt"))
@@ -398,7 +414,7 @@ def quantize_blocks(qm, fpm, calib, cfg, ranks, work, resume, ckpt_every):
             weighted_mse_first8_after_chain=err, eta_minutes=round(rate * (total - i - 1) / 60, 1),
             gpu_peak_gb=round(torch.cuda.max_memory_allocated() / 1024 ** 3, 2))
         torch.cuda.reset_peak_memory_stats()
-    return qm
+    return kept
 
 
 # ---------------------------------------------------------------- model-level distillation (NanoQuant's last step)
@@ -411,18 +427,54 @@ def kd_loss(student_logits, teacher_logits):
     return -(t * s).sum(-1).mean()
 
 
-def model_kd(qm, fpm, calib, epochs, lr, seed):
+@torch.no_grad()
+def teacher_logits(model, calib):
+    """The BF16 model's logits on every calibration row, in BF16 on CPU. The model must already be on the GPU."""
+    model.eval()
+    n, seqlen = calib.shape
+    out = torch.empty((n, seqlen, model.config.text_config.vocab_size), dtype=torch.bfloat16)
+    for j in range(n):
+        out[j] = model(input_ids=calib[j:j + 1].to("cuda"), use_cache=False).logits[0].to(torch.bfloat16).cpu()
+    return out
+
+
+class GpuLock:
+    """An exclusive lock on a file, so two runs sharing the GPU don't both hold a whole model on it at once."""
+
+    def __init__(self, path):
+        self.path, self.f = path, None
+
+    def __enter__(self):
+        if self.path:
+            import fcntl
+            self.f = open(self.path, "a")
+            waited = time.time()
+            fcntl.flock(self.f, fcntl.LOCK_EX)
+            say("gpu_lock", path=self.path, waited_seconds=round(time.time() - waited, 1))
+        return self
+
+    def __exit__(self, *exc):
+        if self.f:
+            import fcntl
+            fcntl.flock(self.f, fcntl.LOCK_UN)
+            self.f.close()
+
+
+def model_kd(qm, fpm, calib, epochs, lr, seed, teacher_path=""):
     dev = "cuda"
     n = calib.shape[0]
     began = time.time()
-    fpm.to(dev)
-    teacher = []
-    with torch.no_grad():
-        for j in range(n):
-            teacher.append(fpm(input_ids=calib[j:j + 1].to(dev), use_cache=False).logits.to(torch.bfloat16).cpu())
-    fpm.cpu()
-    torch.cuda.empty_cache()
-    say("kd_teacher", seconds=round(time.time() - began, 1), rows=n)
+    if teacher_path and os.path.exists(teacher_path):
+        teacher = torch.load(teacher_path, map_location="cpu", mmap=True, weights_only=True)
+        if tuple(teacher.shape[:2]) != tuple(calib.shape):
+            raise RuntimeError(f"{teacher_path} holds {tuple(teacher.shape)}, calibration is {tuple(calib.shape)}")
+        say("kd_teacher", reused=teacher_path)
+    else:
+        fpm.to(dev)
+        teacher = teacher_logits(fpm, calib)
+        fpm.cpu()
+        torch.cuda.empty_cache()
+        say("kd_teacher", seconds=round(time.time() - began, 1), rows=n)
     qm.to(dev)
     qm.train()
     qm.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -444,7 +496,7 @@ def model_kd(qm, fpm, calib, epochs, lr, seed):
             total = 0.0
             for j in order:
                 logits = qm(input_ids=calib[j:j + 1].to(dev), use_cache=False).logits
-                loss = kd_loss(logits, teacher[j].to(dev, non_blocking=True))
+                loss = kd_loss(logits, teacher[j:j + 1].to(dev, non_blocking=True))
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
                 opt.step()
@@ -471,13 +523,7 @@ def nq_config(a):
     return c
 
 
-def quantize(a):
-    torch.manual_seed(a.seed)
-    os.makedirs(a.out, exist_ok=True)
-    work = os.path.join(a.out, "work")
-    os.makedirs(work, exist_ok=True)
-    began = time.time()
-    tok = load_tokenizer(a.model)
+def calibration(a, tok):
     if a.calib_cache and os.path.exists(a.calib_cache):
         saved = torch.load(a.calib_cache, map_location="cpu", weights_only=False)
         calib, calib_info = saved["ids"], saved["info"]
@@ -488,6 +534,39 @@ def quantize(a):
         if a.calib_cache:
             torch.save({"ids": calib, "info": calib_info}, a.calib_cache)
     say("calibration", **calib_info, shape=list(calib.shape))
+    return calib, calib_info
+
+
+def prepare(a):
+    """What both bit settings share, computed once from the BF16 model: the calibration rows, NanoQuant's calibration
+    statistics (they don't depend on the bit target) and the BF16 teacher's logits for the distillation step."""
+    began = time.time()
+    tok = load_tokenizer(a.model)
+    calib, _ = calibration(a, tok)
+    model = load_bf16(a.model, a.layers)
+    say("loaded", seconds=round(time.time() - began, 1))
+    model.to("cuda")
+    if a.teacher:
+        t0 = time.time()
+        logits = teacher_logits(model, calib)
+        torch.save(logits, a.teacher + ".tmp")
+        os.replace(a.teacher + ".tmp", a.teacher)
+        say("teacher_saved", path=a.teacher, shape=list(logits.shape), seconds=round(time.time() - t0, 1))
+        del logits
+    raw = calibration_stats(model, calib, NanoQuantConfigDataclass().calib_strategy)
+    torch.save(raw, a.stats + ".tmp")
+    os.replace(a.stats + ".tmp", a.stats)
+    say("prepared", stats=a.stats, seconds=round(time.time() - began, 1))
+
+
+def quantize(a):
+    torch.manual_seed(a.seed)
+    os.makedirs(a.out, exist_ok=True)
+    work = os.path.join(a.out, "work")
+    os.makedirs(work, exist_ok=True)
+    began = time.time()
+    tok = load_tokenizer(a.model)
+    calib, calib_info = calibration(a, tok)
 
     qm = load_bf16(a.model, a.layers)
     say("loaded", which="student", seconds=round(time.time() - began, 1))
@@ -496,7 +575,8 @@ def quantize(a):
         raw = torch.load(a.stats, map_location="cpu", weights_only=False)
         say("stats_reused", path=a.stats)
     else:
-        raw = calibration_stats(qm, calib, cfg["calib_strategy"])
+        with GpuLock(a.gpu_lock):
+            raw = calibration_stats(qm, calib, cfg["calib_strategy"])
         if a.stats:
             torch.save(raw, a.stats)
     shrunk = nq_importance.get_shrunk_stats(raw, shrinkage=cfg["calib_shrinkage"])
@@ -510,16 +590,22 @@ def quantize(a):
     fpm = load_bf16(a.model, a.layers)
     say("loaded", which="teacher", seconds=round(time.time() - began, 1))
     t_blocks = time.time()
-    quantize_blocks(qm, fpm, calib, cfg, ranks, work, a.resume, a.ckpt_every)
+    # With the teacher's logits on disk the BF16 layers are only needed for their own block, so they can go.
+    free_fp = bool(a.teacher and os.path.exists(a.teacher))
+    kept = quantize_blocks(qm, fpm, calib, cfg, ranks, work, a.resume, a.ckpt_every, free_fp=free_fp)
     blocks_seconds = round(time.time() - t_blocks, 1)
-    kd = model_kd(qm, fpm, calib, a.kd_epochs, cfg["model_kd_lr"], a.seed) if a.kd_epochs > 0 else None
+    kd = None
+    if a.kd_epochs > 0:
+        with GpuLock(a.gpu_lock):
+            kd = model_kd(qm, fpm, calib, a.kd_epochs, cfg["model_kd_lr"], a.seed, a.teacher)
 
     # Everything but the quantized linears must still equal the BF16 model it came from.
     sd = compressed_state(qm)
-    ref = fpm.state_dict()
-    changed = [k for k, v in sd.items() if not k.endswith(NQ_SUFFIXES) and not torch.equal(v, ref[k])]
+    ref = {**fpm.state_dict(), **kept}
+    others = [k for k in sd if not k.endswith(NQ_SUFFIXES)]
+    changed = [k for k in others if k not in ref or not torch.equal(sd[k], ref[k])]
     if changed:
-        raise RuntimeError(f"tensors outside the quantized layers changed: {changed[:5]}")
+        raise RuntimeError(f"tensors outside the quantized layers changed or unchecked: {changed[:5]}")
     torch.save(sd, os.path.join(a.out, "nq-full.pt"))
     from safetensors.torch import save_file
     text = {k: v.contiguous() for k, v in sd.items() if k.endswith(NQ_SUFFIXES)}
@@ -529,7 +615,7 @@ def quantize(a):
         "model": os.path.abspath(a.model), "bits_target": a.bits, "nanoquant_config": cfg, "calibration": calib_info,
         "bits": bits_report(qm), "kd": kd, "block_seconds": blocks_seconds, "total_seconds": round(time.time() - began, 1),
         "files": {f: os.path.getsize(os.path.join(a.out, f)) for f in ("nq-full.pt", "nq-text.safetensors")},
-        "unchanged_tensors_checked": len([k for k in sd if not k.endswith(NQ_SUFFIXES)]),
+        "unchanged_tensors_checked": len(others),
         "nanoquant_commit": "a9e0a430881ff80d83b622c3129e330dc33c04f5", "layers": a.layers or len(decoder_layers(qm)),
         "gpu": torch.cuda.get_device_name(0),
     }
@@ -542,25 +628,31 @@ def quantize(a):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("prepare")
     q = sub.add_parser("quantize")
-    q.add_argument("--model", required=True)
+    for s in (p, q):
+        s.add_argument("--model", required=True)
+        s.add_argument("--calib-jsonl", default="")
+        s.add_argument("--calib-cache", default="")
+        s.add_argument("--stats", default="", required=s is p)
+        s.add_argument("--teacher", default="", help="BF16 teacher logits file (prepare writes it, quantize reads it)")
+        s.add_argument("--samples", type=int, default=128)
+        s.add_argument("--seqlen", type=int, default=2048)
+        s.add_argument("--seed", type=int, default=0)
+        s.add_argument("--layers", type=int, default=0, help="a model cut to its first N text layers (tests)")
     q.add_argument("--out", required=True)
     q.add_argument("--bits", type=float, required=True)
-    q.add_argument("--calib-jsonl", default="")
-    q.add_argument("--calib-cache", default="")
-    q.add_argument("--stats", default="")
-    q.add_argument("--samples", type=int, default=128)
-    q.add_argument("--seqlen", type=int, default=2048)
     q.add_argument("--nonfact-epochs", type=int, default=8)
     q.add_argument("--fact-epochs", type=int, default=8)
     q.add_argument("--kd-epochs", type=int, default=8)
     q.add_argument("--admm-iters", type=int, default=400)
-    q.add_argument("--seed", type=int, default=0)
-    q.add_argument("--layers", type=int, default=0, help="quantize a model cut to its first N text layers (tests)")
     q.add_argument("--resume", action="store_true")
     q.add_argument("--ckpt-every", type=int, default=4)
+    q.add_argument("--gpu-lock", default="", help="lock file held while a whole model is on the GPU")
     a = ap.parse_args()
-    if a.cmd == "quantize":
+    if a.cmd == "prepare":
+        prepare(a)
+    elif a.cmd == "quantize":
         quantize(a)
 
 

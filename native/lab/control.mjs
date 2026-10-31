@@ -17,6 +17,7 @@ export const LAUNCH_LABEL = "ai.musemuse.lab";
 export const WINDOWS_TASK = "MuseLabAgent";
 const VERSION = /^[A-Za-z0-9._-]{1,40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const S3_URL = /^s3:\/\/[a-z0-9.-]{3,63}\/[A-Za-z0-9._/-]{1,512}$/;
 
 /**
  * The commands that restart the agent. On Windows, /End only stops the task's own program, the PowerShell wrapper, so the
@@ -48,12 +49,18 @@ export function bundleParameterName(lane) {
   return `/musemuse/lab/${lane}/bundle`;
 }
 
+/** The command that fetches a bundle pinned in the lab's bucket, with the instance role. */
+export function s3CopyCommand(url, file, region) {
+  return ["aws", "s3", "cp", url, file, "--only-show-errors", "--region", region];
+}
+
 /** Why a pinned bundle can't be used, or null. */
 export function bundleProblem(pin) {
   if (!pin || typeof pin !== "object") return "The bundle pin isn't valid JSON.";
   if (typeof pin.version !== "string" || !VERSION.test(pin.version)) return "The bundle pin's version isn't valid.";
   if (typeof pin.sha256 !== "string" || !SHA256.test(pin.sha256)) return "The bundle pin's sha256 isn't valid.";
   if (typeof pin.url !== "string") return "The bundle pin has no URL.";
+  if (pin.url.startsWith("s3:") && !S3_URL.test(pin.url)) return "The bundle pin's S3 address isn't valid.";
   return null;
 }
 
@@ -112,15 +119,32 @@ async function readPin(lane, region, env) {
   return JSON.parse(String(reply.stdout));
 }
 
+/**
+ * Where a bundle waits between its checksum and being unpacked. On Windows this runs as SYSTEM and the lab user can change
+ * anything in data, so a bundle checked there could be swapped before it's unpacked, and the next control call would run the
+ * swapped code as SYSTEM. So it's a folder only SYSTEM and Administrators can write to (setup/windows.ps1).
+ */
+export function updateTempDir(root, platform) {
+  return platform === "win32" ? path.win32.join(root, "control", "update") : path.join(root, "data", "update");
+}
+
+async function fetchBundle(pin, { tempDir, env }) {
+  if (!pin.url.startsWith("s3:")) return downloadFile(pin, { cacheDir: tempDir, tempDir });
+  const file = path.join(tempDir, "bundle.tgz");
+  const copied = await run(s3CopyCommand(pin.url, file, env.AWS_REGION ?? "us-east-1"), { timeoutMs: 120_000, env });
+  if (copied.code !== 0) throw new Error("Couldn't fetch the bundle from S3.");
+  return file;
+}
+
 async function update(root, env, platform) {
   const lane = env.MUSE_LAB_LANE ?? (platform === "win32" ? "windows" : "mac");
   const pin = await readPin(lane, env.AWS_REGION ?? "us-east-1", env);
   const problem = bundleProblem(pin);
   if (problem) throw new Error(problem);
   const release = path.join(root, "releases", pin.version);
-  const tempDir = path.join(root, "data", "update");
+  const tempDir = updateTempDir(root, platform);
   await mkdir(tempDir, { recursive: true });
-  const tarball = await downloadFile(pin, { cacheDir: path.join(root, "data", "cache"), tempDir });
+  const tarball = await fetchBundle(pin, { tempDir, env });
   if ((await sha256Of(tarball)) !== pin.sha256) throw new Error("The bundle didn't match its checksum.");
   await rm(release, { recursive: true, force: true });
   await mkdir(release, { recursive: true });

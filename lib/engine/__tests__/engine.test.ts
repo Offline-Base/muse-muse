@@ -293,10 +293,10 @@ describe("the caps registries, with a fake cap plugged in", () => {
     assert.ok(!catalogSummary().includes("Platform services a product may use"), "cached per enabled caps");
   });
 
-  it("brief.md gets a Platform services section after Actions, and the judge its note", () => {
+  it("brief.md gets a Platform services section right after the models and the agent, and the judge its note", () => {
     const prompt = renderBuildPrompt(withData, { inspoFiles: [], fixtures: [], maxModelSteps: 40 });
     const at = prompt.indexOf("## Platform services");
-    assert.ok(at > prompt.indexOf("## Actions") && at < prompt.indexOf("## Limits"));
+    assert.ok(at > prompt.indexOf("## Meta models") && at < prompt.indexOf("## Inputs"), prompt);
     assert.match(prompt, /## Platform services\n\n### Saved data\n\nRead `\.agents\/skills\/muse-data` first\./);
     assert.match(capsJudgeNotes(withData), /Fixed checks the platform ran decide whether each one works, not you\.[\s\S]*- A second browser shows the saved item\./);
   });

@@ -21,9 +21,8 @@ import { capsJudgeNotes, capsProofText } from "@/lib/caps/judge";
 import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render";
 import { engineBudgetLines, engineWriterRules, milestoneBuildLines } from "@/lib/engine/prompts";
 import { env } from "@/lib/env";
-import { judgeInstructionsFor } from "@/lib/judge";
 import { roundCapMs, roundPlanFor, stepTimeoutMs, STEPS } from "@/lib/pipeline/steps";
-import { JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
+import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { capsOffSurface } from "./flags-off-surface";
 
@@ -72,10 +71,10 @@ describe("with every wave 3 flag off", () => {
     assert.deepEqual(capsMarkdown(BRIEF), []);
     assert.deepEqual(milestoneBuildLines(BRIEF), []);
     assert.deepEqual(engineBudgetLines(false), []);
-    assert.equal(howProductsRun(env.enabledCaps, false), null);
+    assert.equal(howProductsRun(env.enabledCaps, { gadgets: false }), null);
     assert.deepEqual(capsCatalogBlocks(env.enabledCaps), []);
     assert.equal(capsJudgeNotes(BRIEF), "");
-    assert.equal(judgeInstructionsFor(BRIEF), JUDGE_INSTRUCTIONS);
+    assert.equal(judgeInstructions(BRIEF), JUDGE_INSTRUCTIONS);
     assert.equal(capsProofText({}), null);
     assert.equal(capsProofText(null), null);
     const render = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };

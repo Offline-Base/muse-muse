@@ -24,7 +24,6 @@ export const simctlContainer = (udid, bundleId, group = "data") => simctl("get_a
 export const simctlPrivacyGrant = (udid, service, bundleId) => simctl("privacy", udid, "grant", service, bundleId);
 export const simctlRecordVideo = (udid, out) => simctl("io", udid, "recordVideo", "--codec=h264", "--force", out);
 export const simctlScreenshot = (udid, out) => simctl("io", udid, "screenshot", "--type=png", out);
-export const simctlOpenUrl = (udid, url) => simctl("openurl", udid, url);
 export const simctlRunning = (udid) => simctl("spawn", udid, "launchctl", "list");
 export const simctlStatusBarClear = (udid) => simctl("status_bar", udid, "clear");
 export const simctlStatusBar = (udid) =>
@@ -62,7 +61,7 @@ export function simctlLaunch(udid, bundleId, { url, selftest }) {
   return simctl(...args);
 }
 
-/** The same request as glassesDeepLink, as launch arguments, for when the system won't pass the link on. */
+/** Starts the glasses shell's autopilot with Meta's mock glasses. A deep link would stop at a system dialog. */
 export function simctlLaunchAutopilot(udid, bundleId, { url }) {
   return simctl("launch", "--terminate-running-process", udid, bundleId, "-museUrl", url, "-museMock", "1", "-museRun", "autopilot");
 }
@@ -71,8 +70,6 @@ export function simctlLaunchAutopilot(udid, bundleId, { url }) {
 export const simctlLogShow = (udid, minutes = 3) =>
   simctl("spawn", udid, "log", "show", "--last", `${minutes}m`, "--info", "--style", "compact", "--predicate", 'eventMessage CONTAINS "MUSE_SELFTEST"');
 
-/** Launches the glasses shell with nothing, so the app is warm when the deep link arrives. */
-export const simctlLaunchPlain = (udid, bundleId) => simctl("launch", "--terminate-running-process", udid, bundleId);
 
 /** Is `bundleId` running on the simulator, per `launchctl list` there? */
 export function simulatorAppRunning(listing, bundleId) {
@@ -302,15 +299,6 @@ export const windowsShutdown = () => ["shutdown", "/s", "/t", "30", "/c", "Muse 
 // ---------------------------------------------------------------------------------------------------------------
 // Glasses
 // ---------------------------------------------------------------------------------------------------------------
-
-/**
- * The deep link that runs the autopilot in the glasses shell. Sent after a plain launch, since a cold launch with a deep
- * link isn't supported on an Expo build.
- */
-export function glassesDeepLink({ url }) {
-  const params = new URLSearchParams({ url, mock: "1", run: "autopilot" });
-  return `musemuse://check?${params.toString()}`;
-}
 
 /** An H.265 video of a still photo, the form Meta's mock camera feed takes. */
 export function h265FeedArgs(ffmpeg, photo, out, seconds = 12) {

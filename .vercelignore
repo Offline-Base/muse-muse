@@ -7,5 +7,7 @@ template/test-results
 template/playwright-report
 .data
 scripts/.tmp*
+# Anchored to the repo's root: lib/native is runtime code that lib/env.ts imports. template-native/ stays in the upload,
+# since a kept test imports its bridge and a deployment's typecheck reads tests too.
 /native
 /docs/spikes

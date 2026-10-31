@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "three": "0.184.0",
+    "@react-three/fiber": "9.8.2",
+    "@react-three/xr": "6.6.32",
+    "@react-three/uikit": "1.0.78",
+    "iwer": "2.7.0",
+    "@iwer/devui": "2.7.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.184.1"
+  }
+}

@@ -20,7 +20,8 @@ NPROBES=${3:-1500}
 Q=${Q:-/home/ubuntu/q}
 LCPP=${LCPP:-/home/ubuntu/writer/llama.cpp-b11970}
 BIN=$LCPP/build/bin
-PY=${PY:-/lambda/nfs/muse-muse-cache-us-east-1/venvs/glimmer-bdf08ed7acaa/bin/python}
+# A Python on local disk (make_venv.sh), not the shared venvs: one was retired mid-run by another job.
+PY=${PY:-/home/ubuntu/q/pyenv2/venv/bin/python}
 NFS=${NFS:-/lambda/nfs/muse-muse-cache-us-east-1/models}
 BASE_HF=${BASE_HF:-$Q/base-hf}
 DATA=${DATA:-/lambda/nfs/muse-muse-cache-us-east-1/runs/stage1/data}
@@ -42,7 +43,9 @@ step() {
   if [ -e "$out" ]; then log "skip $name ($out exists)"; return 0; fi
   log "start $name"
   local t0; t0=$(date +%s)
-  "$@" > "$W/$name.log" 2>&1 || { log "FAILED $name, see $W/$name.log"; return 1; }
+  local rc=0
+  "$@" > "$W/$name.log" 2>&1 || rc=$?
+  [ $rc = 0 ] || { log "FAILED $name (exit $rc), see $W/$name.log"; return 1; }
   [ -e "$out.part" ] && mv "$out.part" "$out"
   [ -e "$out" ] || { log "FAILED $name: no $out"; return 1; }
   local secs=$(( $(date +%s) - t0 ))
@@ -96,6 +99,9 @@ CPU_PID=$!
 
 # GPU lane: imatrix on the Q8_0, then each scored file as soon as it exists. One GPU job at a time across runs
 # (a Q8_0 server takes about 33 of the A100's 40 GB), so GPU steps hold $Q/gpu.lock.
+# llama-imatrix spends most of its time on the CPU, adding up activations copied off the GPU, and slows about 4x when
+# quantizing runs beside it. imatrix-mt.patch (applied to the b11970 tree here) splits that sum across threads; it
+# gave a bit-identical imatrix to the stock binary on 32 chunks and about 20% less time per pass.
 imatrix() {
   flock "$Q/gpu.lock" "$BIN/llama-imatrix" -m "$F-Q8_0.gguf" -f "$CALIB" -o "$W/imatrix.gguf.part" -ngl 999 -c 512 -b 2048 -ub 512 \
     --parse-special --no-ppl --output-format gguf

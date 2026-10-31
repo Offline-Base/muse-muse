@@ -25,13 +25,16 @@ function list(names: string[]): string {
  * The first and third "How products run" bullets when caps are on. lib/prompts/catalog.ts uses today's bullets when
  * this returns null, which it does whenever no enabled cap has an entry.
  */
-export function howProductsRun(enabled: readonly CapId[], gadgets: boolean): { first: string; third: string } | null {
+export function howProductsRun(
+  enabled: readonly CapId[],
+  opts: { gadgets: boolean; agents?: boolean },
+): { first: string; third: string } | null {
   const on = entries(enabled);
   if (!on.length) return null;
   const names = list(on.map(([, e]) => e.name));
   return {
     first: `- One Next.js app on Vercel with its own link. Without a platform service it has no database and no user accounts, and anything saved stays in the user's browser (localStorage). The platform services below add ${names}, only when the brief picks them.`,
-    third: `- Products reach only Meta's models${gadgets ? ", a connected gadget when the brief picks muse-gadget" : ""} and the platform services below. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites, unless a platform service below says otherwise. When a muse needs one, build the web version and make that a limit.`,
+    third: `- Products reach only Meta's models${opts.gadgets ? ", a connected gadget when the brief picks muse-gadget" : ""}${opts.agents ? ", the agent tools below when the brief picks the agent target" : ""} and the platform services below. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites, unless a platform service below says otherwise. When a muse needs one, build the web version and make that a limit.`,
   };
 }
 

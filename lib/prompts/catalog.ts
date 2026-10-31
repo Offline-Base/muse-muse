@@ -4,6 +4,10 @@ import { PRODUCT_MODELS } from "@/lib/brief/schema";
 import { capsCatalogBlocks, howProductsRun } from "@/lib/caps/catalog";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
+import { RUN_LIMITS } from "@/lib/gateway/runs";
+import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
+import toolCatalog from "@/lib/tools/composio/catalog.json";
+import { BUILTIN_TOOL_IDS, PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS, type ToolId } from "@/lib/tools/ids";
 
 /**
  * The model catalog as the brief writer sees it: hosted Model API models from catalog/meta-models.json, corrected and
@@ -84,20 +88,72 @@ function modelBlock(m: CatalogModel): string {
   return lines.join("\n");
 }
 
+/** What each agent tool is for, as the brief writer reads it. Third-party tools say what Meta's search can't do. */
+const TOOL_USES: Record<ToolId, string> = {
+  web_search:
+    "Meta's own web search, built into Muse Wonder and the only general web search. One search runs several queries, opens pages from its results and finds text in them, and its answers link their sources. Pick it first, and pick it for news too.",
+  scholar: "structured records of scholarly papers, with authors, years and citation counts. Only when the product needs those fields, which web_search can't return.",
+  places: "structured records of nearby places, with addresses, hours and ratings. Only when the product needs those fields, which web_search can't return.",
+  events: "structured records of upcoming events, with dates and venues. Only when the product needs those fields, which web_search can't return.",
+  read_page: "opens one link the person gave. Only for addresses found in the person's own input, because web_search opens only its own results.",
+  gmail_read: "searches and reads the owner's Gmail.",
+  gmail_draft: "saves a draft in the owner's Gmail. Nothing is sent.",
+  gmail_send: "sends an email from the owner's Gmail, to at most 5 people and 10 times a day. It asks for a confirmation every time.",
+  calendar_read: "reads the owner's Google Calendar.",
+  calendar_add: "adds an event to the owner's Google Calendar. It asks for a confirmation every time.",
+  slack_read: "finds channels and reads their recent messages in the owner's Slack.",
+  slack_search: "searches messages in the owner's Slack.",
+  slack_send: "posts a message in the owner's Slack, at most 10 times a day. It asks for a confirmation every time.",
+};
+
+/** The price a tool's own generated catalog entry lists. */
+function toolPrice(id: ToolId): string {
+  if ((BUILTIN_TOOL_IDS as readonly string[]).includes(id)) return `$${WEB_SEARCH_USD_PER_QUERY} per query`;
+  const entry = toolCatalog.tools.find((t) => t.id === id);
+  const usd = Math.max(0, ...(entry?.functions ?? []).map((f) => f.estimateUsd));
+  return usd ? `$${usd} per call` : "no charge per call";
+}
+
+function toolLine(id: ToolId): string {
+  return `- ${id}: ${TOOL_USES[id]} ${toolPrice(id)}.`;
+}
+
+/** The agent section of the catalog, for the writer once AGENTS_ENABLED is on. */
+function agentToolsBlock(personal: boolean): string[] {
+  const live = RUN_LIMITS.liveAgent;
+  return [
+    "",
+    "Agent tools, only for a product with the agent target. Prices are estimates, on top of Muse Wonder's tokens. Pick the fewest tools that do the job, at most 6, and web_search before any other:",
+    "Public tools work for everyone who opens the product:",
+    ...PUBLIC_TOOL_IDS.map(toolLine),
+    ...(personal
+      ? [
+          "Personal tools work only for the product's owner for now, on the owner's own account, after the owner connects it. A visitor can't use them:",
+          ...PERSONAL_TOOL_IDS.map(toolLine),
+        ]
+      : []),
+    "For a question that takes several steps, the product splits it into narrow searches on web_search and merges the answers. That is how the template works, not a tool to pick.",
+    `One run costs turns times tokens, plus searches, plus tool prices, and is usually $0.10 to $0.30. A live run stops at ${live.turns} turns, ${live.toolCalls} built-in tool calls or $${live.usd.toFixed(2)}.`,
+    "Agents can't do anything else: no other search or AI services, no payments, SMS or voice calls, no social posting, no browser automation or running code, and they never delete anything. No schedules or background runs: a person starts each run and it stops when it ends.",
+  ];
+}
+
 const cached = new Map<string, string>();
 
 /**
  * The catalog summary pasted into the brief writer's instructions. With caps on (docs/CAPABILITIES.md, 2.6), the first
- * and third "How products run" bullets come from howProductsRun and each cap's block follows the models. With none on,
- * the text is today's, byte for byte.
+ * and third "How products run" bullets come from howProductsRun and each cap's block follows the agent block. With none
+ * on, the text is today's, byte for byte.
  */
 export function catalogSummary(): string {
   const gadgets = env.gadgetsEnabled;
+  const agents = env.agentsEnabled;
+  const personal = agents && env.composioPersonalEnabled;
   const caps = env.enabledCaps;
-  const key = `${gadgets}|${caps.join(",")}`;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}`;
   const hit = cached.get(key);
   if (hit) return hit;
-  const run = howProductsRun(caps, gadgets);
+  const run = howProductsRun(caps, { gadgets, agents });
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
@@ -108,7 +164,6 @@ export function catalogSummary(): string {
     ...hosted.map(modelBlock),
     "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
     ...(gadgets ? ["- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead."] : []),
-    ...capsCatalogBlocks(caps),
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     "- Text-to-speech: the browser's built-in speech synthesis.",
@@ -121,8 +176,11 @@ export function catalogSummary(): string {
     run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
     run?.third ??
-      `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
+      `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
+    ...(agents ? agentToolsBlock(personal) : []),
+    // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
+    ...capsCatalogBlocks(caps),
   ].join("\n");
   cached.set(key, summary);
   return summary;

@@ -40,8 +40,9 @@ before native code sees them.
 **When the bridge appears.** On iOS the shim runs before page code. On Android it does not: react-native-webview 14 calls
 `evaluateJavascript` from `onPageStarted`, which is asynchronous, so a page's first inline script can run ahead of it. Product
 code must look for `window.MuseNative` when it's about to use it, never cache a "no" at module load, and wait for the load
-event before settling on a web fallback on Android. The first Android lab run should include a page with an inline head
-script that records what it saw, because the selftest's handshake runs after load and can't catch this.
+event before settling on a web fallback on Android. The first Android lab run reports how late it really is, with a page whose
+inline head script records what it saw, because the selftest's handshake runs after load and can't catch this (`docs/NATIVE_LAB.md`,
+"The Android bridge timing check").
 
 **Leaving the product.** Top-level loads off the product's origin go to the system browser or nowhere. At most 3 opens go
 out in any 10 s, and the rest are dropped. `tel:` and `sms:` links open only from a real click on iOS. Android always
@@ -50,21 +51,21 @@ thread doesn't answer within 250 ms, so `onLoadStart` and `onNavigationStateChan
 to the product. A page that does this more than 3 times in 30 s gets the "This didn't open" screen.
 
 **Camera and microphone.** On iOS a page gets the system's prompt for each page load, because one app opens many products.
-**Known limit, for the owner to accept:** react-native-webview on Android grants a page's request as soon as the app holds
+**Known limit, accepted for this event, since per-product APKs are the default:** react-native-webview on Android grants a page's request as soon as the app holds
 the OS permission, and has no hook to ask first. So in the generic Android shell, a yes given for Product A also covers
 Product B. Per-product APKs don't have this problem, since each one opens one product. A real fix means patching
 `RNCWebChromeClient.onPermissionRequest`.
 
-**Selftest.** It scrolls the page, then logs a `MUSE_SELFTEST {json}` line and posts the same report to
-`<platform>/api/native/selftest`. The pass rules are in `src/selftest.ts`. The handshake is what the shell's router saw,
-not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
+**Selftest.** It scrolls the page, then logs a `MUSE_SELFTEST {json}` line, kept under 3.5 KB for logcat, and posts the whole
+report to `<platform>/api/native/selftest`. On iOS it also writes the whole report to `Documents/selftest.json`. The pass
+rules are in `src/selftest.ts`. The handshake is what the shell's router saw, not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
 still claim a text length, so the lab's pixel check is the proof of that one.
 
-**Per-product APKs: check before the first one ships.** `updates.enabled` is false only when `MUSE_PRODUCT_URL` is set at
-build time, but the design repacks these from the production template, which is built without it. An update replaces the
-config that `settings.js` reads, so if a repacked APK keeps updates on, the next `eas update --channel production` would
-clear its `productUrl` and it would become the generic list. Spike S6 passes only if the repacked manifest has
-`expo.modules.updates.ENABLED` false. If repack-app doesn't set that, the packager must.
+**Per-product APKs.** `updates.enabled` is false only when `MUSE_PRODUCT_URL` is set at build time, but these are repacked from
+the production template, which is built without it. An update replaces the config that `settings.js` reads, so a repacked APK
+with updates on would turn into the generic list at the next `eas update --channel production`. So the packager sets
+`expo.modules.updates.ENABLED` false, removes the update URL, and refuses to upload an APK whose manifest reads otherwise
+(`docs/NATIVE_PACKAGER.md`).
 
 **Why the React Native files are JavaScript.** The repo's root `tsc` reads every `**/*.ts`, and this project's packages
 aren't installed at the root. So anything that imports React Native or Expo is `.js`, checked by the shell's own
@@ -93,7 +94,23 @@ With no question file, `stopRecording` returns silence.
 **Autopilot.** With `-museMock 1 -museRun autopilot`, it presses `[data-glasses-action="connect"]`, waits for
 `[data-glasses-primary]` to be enabled and presses it. After 1.5 s it presses it again if it's still there, not disabled,
 and there's no result yet, since the template's button listens between two taps. Then it waits for `[data-result]`.
-Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines.
+Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines. The checkpoint that ends the run
+carries the page's uncaught errors and `console.error` calls in `errors`, which the lab turns into warnings.
+
+**A new page in the same WebView.** Its load start ends the old page's recording, live view and speech, in case the old page
+didn't manage to, and a recording it was still starting never starts. A new WebView and a web process that died do the same.
+Jumps within a page don't count, and those follow a browser's own rule: the new URL has to name a fragment, so `/a#x` to `/a`
+is a new page, and the same `#x` link twice isn't. A reload, a form or a load start from going back always counts as a new
+page. Going back between two fragments of one document fires no load start on iOS, so a recording survives that. iOS says how
+a navigation started and Android doesn't, and Android's load start also fires on `pushState`, so this needs rework before an
+Android build gets a glasses bridge. The glasses stay connected.
+
+**One microphone at a time.** A second `startRecording` says `busy` from the moment the first one is called, and a
+`stopRecording` while one is still starting cancels it and says `bad_request`, so no recorder runs that nothing can reach.
+Leaving the screen ends it the same way.
+
+A failed photo or a stream timeout leaves the state at ready, so the next press can work, and that call's own
+promise carries the failure.
 
 **Cut for now.** The design's button for `glasses_app_update_required` isn't wired, so that error only tells the person to
 open the Meta AI app. Only real glasses can hit it, and this build is simulator only. Wire `openDATGlassesAppUpdate` before
@@ -101,8 +118,8 @@ real glasses ship.
 
 ## Desktop shell
 
-- **Config:** `resources/muse-product.json` outside the asar: `{ "name", "url", "shellVersion" }`. The packager rewrites
-  this file for each product. The URL must be https, or http on the machine itself.
+- **Config:** `resources/muse-product.json` outside the asar: `{ "name", "url", "shellVersion" }`. The packager
+  (`docs/NATIVE_PACKAGER.md`) rewrites this file for each product. The URL must be https, or http on the machine itself.
 - **Fuses:** RunAsNode, NodeOptions and NodeCliInspect off. OnlyLoadAppFromAsar on.
 - **Signing:** a Mac build must be ad hoc signed (`mac.identity: "-"`). Flipping fuses breaks the old signature, and macOS
   kills the app at launch with exit 137.

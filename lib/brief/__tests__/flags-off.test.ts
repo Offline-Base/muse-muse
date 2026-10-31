@@ -68,11 +68,11 @@ describe("with every target flag off", () => {
     assert.ok(!("targets" in BriefSchema.parse(BRIEF)));
   });
 
-  it("the stored schema differs from the one the writer used only by the optional targets", () => {
+  it("the stored schema differs from the one the writer used only by the optional targets and agent", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
     // Wave 3's optional fields, one line per unit in plan order: unit 2's milestones, then each cap's block.
-    const differsOnlyBy = ["targets", "milestones", ...Object.keys(CAP_BRIEF_FIELDS)];
+    const differsOnlyBy = ["targets", "agent", "milestones", ...Object.keys(CAP_BRIEF_FIELDS)];
     assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), differsOnlyBy);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });

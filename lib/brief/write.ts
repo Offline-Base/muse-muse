@@ -1,10 +1,11 @@
 import { referenceParts, textPart, type ContentPart } from "@/lib/brief/media";
 import { applyRebuildFit, briefProblems, normalizeRawBrief, patchBrief } from "@/lib/brief/normalize";
-import { type Brief, newBriefSchemaFor } from "@/lib/brief/schema";
+import { type Brief, newBriefSchemaFor, type TargetId } from "@/lib/brief/schema";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
 import { usageCost } from "@/lib/meta/pricing";
+import { applyTargets, targetProblems } from "@/lib/native/targets";
 import { briefInstructions, briefRequestText, rebuildRequestText } from "@/lib/prompts/brief";
 import { putFile } from "@/lib/storage";
 import type { ModelUsage, Reference, RebuildTarget } from "@/lib/types";
@@ -18,6 +19,8 @@ export interface BriefInput {
   references: Reference[];
   /** Set when the muse is a rebuild of one of Meta's videos. The video is linked, never downloaded. */
   rebuildOf?: RebuildTarget | null;
+  /** Where the person picked for it to run (builds.requested_targets). Empty or missing lets the writer choose. */
+  requestedTargets?: readonly TargetId[] | null;
 }
 
 export interface BriefResult {
@@ -45,14 +48,18 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
   const rebuild = input.rebuildOf ?? null;
   const references = rebuild ? [] : input.references;
   const model = env.briefModel;
+  const enabled = env.enabledTargets;
+  const personalTools = env.composioPersonalEnabled;
+  // A pick whose flag went off after it was made counts as never made.
+  const requested = enabled.length ? (input.requestedTargets ?? []).filter((t) => t === "web" || enabled.includes(t)) : [];
 
   let content: ContentPart[];
   let prepared: Awaited<ReturnType<typeof referenceParts>> = { parts: [], sources: new Map(), transcripts: [], usage: [] };
   if (rebuild) {
-    content = [textPart(rebuildRequestText(rebuild, input.note))];
+    content = [textPart(rebuildRequestText(rebuild, input.note, requested))];
   } else {
     prepared = await referenceParts(references);
-    content = [...prepared.parts, textPart(briefRequestText(input.note, references))];
+    content = [...prepared.parts, textPart(briefRequestText(input.note, references, requested))];
   }
 
   const result = await respondStructured({
@@ -60,12 +67,12 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     instructions: briefInstructions(),
     content,
     sources: prepared.sources,
-    // With no caps and no milestones this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: [], caps: env.enabledCaps, milestones: env.engineMilestones }),
+    // With no targets, caps or milestones this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps: env.enabledCaps, milestones: env.engineMilestones }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),
-    check: (brief) => briefProblems(brief, references),
+    check: (brief) => [...briefProblems(brief, references), ...targetProblems(brief, { enabled, requested })],
   }).catch((err: unknown) => {
     // Keep the transcription spend on the error too, so the caller can record everything.
     if (err instanceof StructuredOutputError) throw new StructuredOutputError(err.message, [...prepared.usage, ...err.usage]);
@@ -74,6 +81,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
 
   let brief = result.issues.length ? patchBrief(result.data, references) : result.data;
   if (rebuild) brief = applyRebuildFit(brief, rebuild);
+  brief = applyTargets(brief, { enabled, requested, personalTools });
 
   const usage = [...prepared.usage, ...result.usage];
   return { brief, transcripts: prepared.transcripts, usage, costUsd: total(usage) };

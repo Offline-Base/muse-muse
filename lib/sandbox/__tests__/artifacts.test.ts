@@ -4,8 +4,9 @@
  *   npx tsx --test lib/sandbox/__tests__/artifacts.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { demoRunPassed, demoVideoProblem, parseStudioSummary } from "@/lib/sandbox/artifacts";
+import { demoFilterGraph, demoNoteFor, demoRunPassed, demoVideoProblem, parseStudioSummary, VR_DEMO_NOTE } from "@/lib/sandbox/artifacts";
 
 /** A Playwright JSON report with one spec per entry: [project, status of each try, in order]. */
 function report(tests: Array<[string, ...string[]]>): string {
@@ -85,5 +86,28 @@ describe("demoVideoProblem", () => {
 
   it("checks the old recorder's size when asked to", () => {
     assert.equal(demoVideoProblem(probe({ ...h264, width: 1280, height: 720 }), { width: 1280, height: 720, minSeconds: 1 }), null);
+  });
+});
+
+describe("a VR product's video says it was simulated", () => {
+  const graph = (noteFile?: string) => demoFilterGraph({ title: { lineFiles: ["t.txt"] }, subtitle: { lineFiles: [] }, footerFile: "f.txt", noteFile, captions: [] });
+
+  it("only for a product whose targets list vr", () => {
+    assert.deepEqual(demoNoteFor(["web", "vr"]), { note: VR_DEMO_NOTE });
+    assert.deepEqual(demoNoteFor(["web", "glasses", "phone"]), {});
+  });
+
+  it("from both callers of writeDemoSpec", () => {
+    for (const file of ["scripts/rerecord-demos.ts", "lib/pipeline/build-steps.ts"]) {
+      assert.match(readFileSync(file, "utf8"), /writeDemoSpec\([^]*?\.\.\.demoNoteFor\(briefTargets\(brief\)\)/, file);
+    }
+  });
+
+  it("over the whole recording in the old recorder's video, and not on its title card", () => {
+    const [card, rec] = graph("/x/note.txt").split(";\n");
+    assert.ok(!card.includes("note.txt"));
+    assert.match(rec, /drawtext=[^,]*textfile=\/x\/note\.txt:expansion=none[^,]*:box=1/);
+    assert.ok(!/enable=/.test(rec.match(/drawtext=[^,]*note\.txt[^,]*/)![0]), "not limited to part of the video");
+    assert.ok(!graph().includes("note.txt"));
   });
 });

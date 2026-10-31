@@ -11,6 +11,10 @@ export const SELFTEST_SCROLL_MS = 8_000;
 export const MIN_TEXT_LENGTH = 20;
 const MAX_ERRORS = 50;
 const MAX_ERROR_CHARS = 300;
+/** Logcat cuts lines at about 4 KB, and a cut line can't be parsed. */
+export const MAX_LOG_LINE_BYTES = 3_500;
+/** What a long URL or title is cut to in the log line, once dropping errors wasn't enough. */
+const LOG_FIELD_CHARS = 400;
 
 /** What the shell's own WebView events recorded. */
 export interface NativeObservations {
@@ -46,6 +50,8 @@ export interface SelftestReport extends NativeObservations, PageObservations {
   /** Page errors that only warn. */
   warnings: string[];
   at: string;
+  /** Only in the device log line: how many page errors it left out to fit. */
+  errorsLeftOut?: number;
 }
 
 function text(value: unknown, max: number): string {
@@ -149,6 +155,39 @@ export function buildSelftestScript(scrollMs: number = SELFTEST_SCROLL_MS): stri
   step();
 })();
 true;`;
+}
+
+function logLine(report: SelftestReport): string {
+  // Everything is ASCII once escaped, so the length is the size in bytes.
+  const json = JSON.stringify(report).replace(/[\u0080-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return `MUSE_SELFTEST ${json}`;
+}
+
+/**
+ * The report as one device log line the lab can read. The platform's copy and the file keep everything. Past the limit it
+ * keeps as many page errors as fit and says how many it left out, and only then shortens the long text fields.
+ */
+export function selftestLogLine(report: SelftestReport, maxBytes: number = MAX_LOG_LINE_BYTES): string {
+  const whole = logLine(report);
+  if (whole.length <= maxBytes) return whole;
+  // warnings repeats errors, and the lab reads errors.
+  const withErrors = (kept: number): SelftestReport => {
+    const left = report.errors.length - kept;
+    return { ...report, warnings: [], errors: report.errors.slice(0, kept), ...(left > 0 ? { errorsLeftOut: left } : {}) };
+  };
+  for (let kept = report.errors.length; kept >= 0; kept -= 1) {
+    const line = logLine(withErrors(kept));
+    if (line.length <= maxBytes) return line;
+  }
+  const cut = (value: string | null) => (value ? value.slice(0, LOG_FIELD_CHARS) : value);
+  return logLine({
+    ...withErrors(0),
+    title: report.title.slice(0, LOG_FIELD_CHARS),
+    url: report.url.slice(0, LOG_FIELD_CHARS),
+    finalUrl: cut(report.finalUrl),
+    loadError: cut(report.loadError),
+    problems: report.problems.map((problem) => problem.slice(0, LOG_FIELD_CHARS)),
+  });
 }
 
 /** Posts to the platform. A lost report isn't fatal, since the lab also reads the MUSE_SELFTEST log line. */

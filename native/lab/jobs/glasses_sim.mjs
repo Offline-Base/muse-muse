@@ -1,20 +1,19 @@
 // glasses_sim: a glasses product in the glasses shell on the iPhone Simulator, with Meta's mock glasses. The shell gets the
-// mock camera feed and photo in its Documents folder, then a deep link starts the autopilot, which presses through the
+// mock camera feed and photo in its Documents folder, then launch arguments start the autopilot, which presses through the
 // product and writes checkpoints to Documents/autopilot.jsonl. The result is informational and never blocks shipping.
+// Not a deep link: `simctl openurl` stops at a system "Open in Muse Lab?" dialog, which nobody is there to answer.
 import { copyFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { LabError } from "../lib/errors.mjs";
 import {
-  glassesDeepLink,
   h265FeedArgs,
   simctlLaunchAutopilot,
-  simctlLaunchPlain,
-  simctlOpenUrl,
   simctlScreenshot,
   simctlTerminate,
 } from "../lib/commands.mjs";
 import { CROP } from "../lib/pixels.mjs";
 import { autopilotFinished, evaluateGlasses, GLASSES_LOAD_MS, GLASSES_RESULT_MS, parseAutopilot } from "../lib/rules.mjs";
+import { MAX_CLIP_SECONDS } from "../compose.mjs";
 import { composeInto, keepShot, must, waitFor } from "./common.mjs";
 import {
   appRunning,
@@ -23,6 +22,8 @@ import {
   ensureSimulator,
   grantPermissions,
   installShell,
+  LAUNCH_TIMEOUT_MS,
+  logLaunchFailure,
   resetStatusBar,
   startRecording,
   stopRecording,
@@ -33,11 +34,6 @@ export const MOCK_FEED = "mock-feed.mov";
 export const MOCK_PHOTO = "mock-photo.jpg";
 export const MOCK_QUESTION = "mock-question.wav";
 const AUTOPILOT_LOG = "autopilot.jsonl";
-/**
- * A warm app gets this long to take the link before the lab uses launch arguments instead. The first checkpoint only comes
- * once the page has loaded, so this has to be the whole load limit, or a slow page is killed as if the link had failed.
- */
-const LINK_WAIT_MS = GLASSES_LOAD_MS;
 const SHOT_EVERY_MS = 12_000;
 /** The clip keeps the end of the run, up to its limit. */
 const AFTER_RESULT_MS = 3_000;
@@ -61,6 +57,7 @@ export async function runGlassesSim(ctx) {
   const { input } = ctx;
   const files = [];
   const warnings = [];
+  const jobStart = ctx.now();
 
   ctx.setPhase("boot");
   const { udid, device } = await ensureSimulator(ctx);
@@ -80,30 +77,15 @@ export async function runGlassesSim(ctx) {
   ctx.setPhase("record");
   const recording = path.join(ctx.dir, "recording.mp4");
   const recorder = await startRecording(ctx, udid, recording);
-  let launchedAtMs = ctx.now();
 
-  // Warm the app, then send the link. A cold launch with a link isn't supported on an Expo build, and the system may hold
-  // a link back to ask for permission, so if the autopilot doesn't start the same request goes in as launch arguments.
-  const launch = await ctx.exec(simctlLaunchPlain(udid, bundleId), { timeoutMs: 45_000 });
-  let launched = launch.code === 0;
-  let usedLaunchArgs = false;
-  if (launched) {
-    await ctx.sleep(2000);
-    await ctx.exec(simctlOpenUrl(udid, glassesDeepLink({ url: input.target.url })), { timeoutMs: 20_000 });
-    const answered = await waitFor(ctx, async () => (await readEvents()).length > 0, { timeoutMs: LINK_WAIT_MS, everyMs: 1000 });
-    if (!answered) {
-      usedLaunchArgs = true;
-      ctx.logLine("The deep link didn't start the autopilot, so the lab used launch arguments.");
-      // A new launch, so the load limit starts over.
-      launchedAtMs = ctx.now();
-      const again = await ctx.exec(simctlLaunchAutopilot(udid, bundleId, { url: input.target.url }), { timeoutMs: 45_000 });
-      launched = again.code === 0;
-    }
-  }
+  const launch = await ctx.exec(simctlLaunchAutopilot(udid, bundleId, { url: input.target.url }), { timeoutMs: LAUNCH_TIMEOUT_MS });
+  const launched = launch.code === 0;
+  if (!launched) logLaunchFailure(ctx, launch);
+  // The load limit is the page's, so it doesn't count however long the app took to open.
+  const launchedAtMs = ctx.now();
 
   ctx.setPhase("autopilot");
-  const limitMs = Math.min(GLASSES_LOAD_MS + GLASSES_RESULT_MS, input.limitSeconds * 1000 - 60_000);
-  const end = launchedAtMs + Math.max(30_000, limitMs);
+  const end = Math.min(launchedAtMs + GLASSES_LOAD_MS + GLASSES_RESULT_MS, Math.max(launchedAtMs + 30_000, jobStart + input.limitSeconds * 1000 - 60_000));
   let screen = null;
   let shotIndex = 0;
   let nextShot = ctx.now() + SHOT_EVERY_MS;
@@ -148,9 +130,8 @@ export async function runGlassesSim(ctx) {
     launchedAtMs,
     events,
   });
-  if (usedLaunchArgs) warnings.push("The deep link didn't reach the app, so the lab started it with launch arguments.");
 
   ctx.setPhase("compose");
-  const captionBurned = await composeInto(ctx, { recording: video, form: "phone", device, files, warnings });
-  return { evaluation, device, files, warnings, captionBurned, facts: { events, screen, launched, running, usedLaunchArgs } };
+  const captionBurned = await composeInto(ctx, { recording: video, form: "phone", device, files, warnings, keepLastSeconds: MAX_CLIP_SECONDS });
+  return { evaluation, device, files, warnings, captionBurned, facts: { events, screen, launched, running } };
 }

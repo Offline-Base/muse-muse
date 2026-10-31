@@ -3,7 +3,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { finalShotProblems, glassesGateProblems, glassesProblems, judgeShotNotes, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
+import {
+  browserLaunchOptions,
+  finalShotProblems,
+  glassesGateProblems,
+  glassesProblems,
+  judgeShotNotes,
+  judgeShotProblems,
+  productTargets,
+  reportTests,
+  smokeReportProblems,
+  xrGateProblems,
+  xrShotProblems,
+} from "../smoke-report.mjs";
 
 /** A Playwright JSON report with one file suite per spec file, shaped like reporter "json" writes it. */
 function report(files) {
@@ -235,4 +247,94 @@ test("verify runs the glasses check, timed from before Playwright starts", () =>
 test("a broken line in the call log is ignored", () => {
   assert.deepEqual(glassesProblems(`{"t":\n${glassesCall({})}\nnot json`), []);
   assert.equal(glassesProblems(`{"t":\nnull\n7`).length, 1);
+});
+
+/** A judge folder: file names and a reader, from { "01-start": checked }. */
+function judgeFolder(shots) {
+  const names = Object.keys(shots).flatMap((n) => [`${n}.png`, `${n}.checked`]);
+  return { names, read: (f) => JSON.stringify(shots[f.replace(/\.checked$/, "")]) };
+}
+const vrShot = (over = {}) => ({ xr: true, canvas: { spread: 190, colors: 148, top: 0.5, blank: false, fps: 30 }, xrAlerts: [], resultTop: null, pageHeight: null, ...over });
+const pageShot = { problems: [], errorsAndEmpty: [], resultTop: null, pageHeight: 800, notes: [] };
+
+test("a VR product must have a judge screenshot from inside VR", () => {
+  const { names, read } = judgeFolder({ "01-start": pageShot });
+  const [problem] = xrShotProblems(names, read);
+  assert.match(problem, /xr\.enter\(page\) from tests\/xr\.ts/);
+  const inside = judgeFolder({ "01-start": pageShot, "02-in-vr": vrShot() });
+  assert.deepEqual(xrShotProblems(inside.names, inside.read), []);
+});
+
+test("no VR screenshot may be blank, and a check that didn't measure counts as blank", () => {
+  const blank = judgeFolder({ "02-in-vr": vrShot({ canvas: { blank: true } }), "03-result": vrShot() });
+  assert.match(xrShotProblems(blank.names, blank.read)[0], /blank view: 02-in-vr\.png/);
+  const unmeasured = judgeFolder({ "02-in-vr": { xr: true } });
+  assert.match(xrShotProblems(unmeasured.names, unmeasured.read)[0], /blank view/);
+});
+
+test("a VR screenshot with nothing of the scene in view fails, and a stage that doesn't report it doesn't", () => {
+  const empty = judgeFolder({ "02-in-vr": vrShot({ sceneObjects: 0 }), "03-result": vrShot({ sceneObjects: 3 }) });
+  assert.match(xrShotProblems(empty.names, empty.read)[0], /Nothing is in front of the person in these VR screenshots: 02-in-vr\.png/);
+  for (const sceneObjects of [null, undefined, 1]) {
+    const fine = judgeFolder({ "02-in-vr": vrShot({ sceneObjects }) });
+    assert.deepEqual(xrShotProblems(fine.names, fine.read), [], String(sceneObjects));
+  }
+});
+
+test("a VR screenshot past the scene budget or under the frame rate gets a note, and doesn't fail", () => {
+  const over = judgeFolder({
+    "02-in-vr": vrShot({ drawCalls: 51, triangles: 30_001, canvas: { blank: false, fps: 14.9 } }),
+    "03-result": vrShot({ drawCalls: 50, triangles: 30_000, canvas: { blank: false, fps: 15 } }),
+  });
+  const notes = judgeShotNotes(over.names, over.read);
+  assert.equal(notes.length, 3);
+  assert.match(notes[0], /^02-in-vr\.png: The scene uses 51 draw calls, over the limit of 50/);
+  assert.match(notes[1], /^02-in-vr\.png: The scene uses 30001 triangles, over the limit of 30000/);
+  assert.match(notes[2], /^02-in-vr\.png: The view drew 14\.9 frames a second/);
+  assert.deepEqual(xrShotProblems(over.names, over.read), []);
+  // A page's shot and a stage that doesn't report them have no budget to check.
+  const none = judgeFolder({ "01-start": { ...pageShot, drawCalls: 99 }, "02-in-vr": vrShot({ canvas: { blank: false } }) });
+  assert.deepEqual(judgeShotNotes(none.names, none.read), []);
+});
+
+test("only the last VR screenshot may not have an alert up", () => {
+  const early = judgeFolder({ "02-in-vr": vrShot({ xrAlerts: ["Couldn't load"] }), "03-result": vrShot() });
+  assert.deepEqual(xrShotProblems(early.names, early.read), []);
+  const late = judgeFolder({ "02-in-vr": vrShot(), "03-result": vrShot({ xrAlerts: ["Couldn't load"] }) });
+  assert.match(xrShotProblems(late.names, late.read)[0], /03-result\.png, has an alert up: Couldn't load/);
+});
+
+test("the VR check runs only for a product whose target file lists vr", () => {
+  const { names, read } = judgeFolder({ "01-start": pageShot });
+  for (const target of [null, "not json", "null", '{"targets":["web"]}', '{"targets":["web","glasses"]}', '{"target":"web"}']) {
+    assert.deepEqual(xrGateProblems(() => target, names, read), [], String(target));
+  }
+  assert.equal(xrGateProblems(() => '{"targets":["web","vr"]}', names, read).length, 1);
+});
+
+test("productTargets reads both shapes, and a web product has none", () => {
+  assert.deepEqual(productTargets(() => '{"targets":["web","vr",7]}'), ["web", "vr"]);
+  assert.deepEqual(productTargets(() => '{"target":"glasses"}'), ["glasses"]);
+  for (const text of [null, "broken", "null", "[]", "{}"]) assert.deepEqual(productTargets(() => text), []);
+});
+
+test("Chromium gets the VR flags only for a VR product, and a web product launches as it always did", () => {
+  const browser = readFileSync(new URL("../browser.json", import.meta.url), "utf8");
+  const reader = (target) => (f) => (f === "musemuse.target.json" ? target : browser);
+  assert.deepEqual(browserLaunchOptions(reader(null)), {});
+  assert.deepEqual(browserLaunchOptions(reader('{"targets":["web","glasses"]}')), {});
+  assert.deepEqual(browserLaunchOptions(reader('{"targets":["web","vr"]}')), { args: ["--enable-unsafe-swiftshader"] });
+  // Chosen in the spike (docs/spikes/xr-2026-10-31): --use-angle=swiftshader cuts the screencast by more than half, and a
+  // channel fetches a favicon whose 404 fails verify's console step.
+  const vr = JSON.parse(browser).vr;
+  assert.deepEqual(vr.args, ["--enable-unsafe-swiftshader"]);
+  assert.equal(vr.channel, undefined);
+});
+
+test("verify runs the VR check and launches the console step with the product's flags", () => {
+  const verify = readFileSync(new URL("../verify.mjs", import.meta.url), "utf8");
+  assert.match(verify, /\.\.\.xrGateProblems\(readText, shots, read\)/);
+  assert.match(verify, /chromium\.launch\(browserLaunchOptions\(readText\)\)/);
+  const warnOnly = verify.indexOf('process.env.MUSEMUSE_SCREEN_CHECK === "warn"');
+  assert.ok(verify.indexOf("xrGateProblems(readText") < warnOnly, "a blank view fails even when screen checks only warn");
 });

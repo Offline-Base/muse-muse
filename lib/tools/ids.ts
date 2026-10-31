@@ -21,6 +21,11 @@ export function isToolId(id: unknown): id is ToolId {
   return (TOOL_IDS as readonly unknown[]).includes(id);
 }
 
+/** What a person calls a tool. An id this version doesn't know is shown as it is. */
+export function toolLabel(id: string): string {
+  return TOOL_POLICIES.find((p) => p.id === id)?.label ?? id;
+}
+
 /** Who is asking, weakest claim first after `build`. `user` waits for platform sign-in. */
 export const TOOL_PRINCIPALS = ["build", "product", "visitor", "owner", "user"] as const;
 export type ToolPrincipal = (typeof TOOL_PRINCIPALS)[number];

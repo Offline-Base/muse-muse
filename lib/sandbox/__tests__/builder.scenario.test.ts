@@ -10,7 +10,7 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, it, mock } from "node:test";
+import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { PLATFORM_FILES } from "@/lib/sandbox/paths";
 
 const MB = 1024 * 1024;
@@ -135,7 +135,7 @@ describe("provisionSandbox with platform services", { skip: canMock ? false : "n
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   };
 
-  it("applies the overlays before the user's files land, then appends the caps' env lines", async () => {
+  it("applies the overlays before the user's files land, and writes the caps' env lines after envLocal's", async () => {
     try {
       await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] }, capEnv: "MUSEMUSE_DATA=on\n", capHosts: ["pypi.example"] });
       const at = (match: (line: string) => boolean) => order.findIndex(match);
@@ -145,8 +145,8 @@ describe("provisionSandbox with platform services", { skip: canMock ? false : "n
       assert.ok(record >= 0 && apply > record && brief > apply, order.join("\n"));
       assert.ok(sudoScripts.some((x) => x.includes("chown root:root '/vercel/musemuse/caps/active.json'")), "the record is root-owned");
       const envWrites = written.filter((w) => w.path === "/vercel/app/.env.local");
-      assert.equal(envWrites.length, 2);
-      assert.ok(envWrites[1]!.text.endsWith("\nMUSEMUSE_DATA=on\n"));
+      assert.equal(envWrites.length, 1);
+      assert.match(envWrites[0]!.text, /\nPRODUCT_TOKEN=[^\n]+\nMUSEMUSE_DATA=on\n$/);
       const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
       assert.ok("pypi.example" in policy.allow);
     } finally {
@@ -307,6 +307,16 @@ describe("finishDemo", { skip: canMock ? false : "needs --experimental-test-modu
     assert.ok(seen.framesCleared, "the frames don't stay in the sandbox's snapshots");
   });
 
+  it("puts the spec's note in the old MP4", async () => {
+    demoSandbox({ studio: true, recorded: false, report: demoReport("passed", "/vercel/app/test-results/playwright/x/video.webm"), render: GOOD });
+    files["/vercel/app/test-results/playwright/x/video.webm"] = "webm";
+    files["/vercel/musemuse/demo-spec.json"] = JSON.stringify({ note: "Recorded in a simulated Meta Quest 3 headset." });
+    await builder.finishDemo(demoInput);
+    assert.equal(written.find((w) => w.path === `${OUT}/note.txt`)?.text, "Recorded in a simulated Meta Quest 3 headset.");
+    assert.match(written.find((w) => w.path === `${OUT}/graph.txt`)!.text, /textfile=\/vercel\/musemuse\/out\/demo\/note\.txt/);
+    delete files["/vercel/musemuse/demo-spec.json"];
+  });
+
   it("makes the old MP4 when the studio run recorded nothing and the demo was recorded with Playwright's video", async () => {
     const seen = demoSandbox({ studio: true, recorded: false, report: demoReport("passed", "/vercel/app/test-results/playwright/x/video.webm"), render: GOOD });
     files["/vercel/app/test-results/playwright/x/video.webm"] = "webm";
@@ -445,6 +455,56 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
     assert.notEqual(builder.sandboxNameFor("bird-finder", PRODUCT), builder.sandboxNameFor("bird-finder", "9b1d0c3e-0000-4000-8000-000000000000"));
     assert.ok(builder.sandboxNameFor("a".repeat(80), PRODUCT).length <= 61);
     assert.throws(() => builder.sandboxNameFor("bird", "not-a-uuid"), /Invalid product id/);
+  });
+
+  describe("files beyond the template", () => {
+    const extraFiles = [
+      { path: "lib/native/bridge.ts", content: "new bridge" },
+      { path: ".agents/skills/muse-native/SKILL.md", content: "new skill" },
+    ];
+    const savedKey = process.env.MODEL_API_KEY;
+    const savedSnapshot = process.env.BUILDER_SNAPSHOT_ID;
+    beforeEach(() => {
+      process.env.MODEL_API_KEY = "test-model-key";
+      process.env.BUILDER_SNAPSHOT_ID = "snap-test";
+      tags = { app: "musemuse", role: "product", slug: "bird-finder", product: PRODUCT };
+      files = { "/vercel/musemuse/builder.json": "{}" };
+    });
+    after(() => {
+      for (const [name, value] of [["MODEL_API_KEY", savedKey], ["BUILDER_SNAPSHOT_ID", savedSnapshot]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+    const provision = (extra?: typeof extraFiles) =>
+      builder.provisionSandbox({
+        buildId: "b1",
+        productId: PRODUCT,
+        slug: "bird-finder",
+        references: [],
+        fixtures: [],
+        promptMarkdown: "# Build",
+        buildToken: "mm_build_x",
+        gatewayUrl: "https://g",
+        ...(extra ? { extraFiles: extra } : {}),
+      });
+
+    it("are written into the product at provision, with their folders made first", async () => {
+      await provision(extraFiles);
+      assert.deepEqual(written.filter((w) => w.text.startsWith("new ")).map((w) => w.path), ["/vercel/app/lib/native/bridge.ts", "/vercel/app/.agents/skills/muse-native/SKILL.md"]);
+      assert.ok(scripts.some((s) => s.includes("'/vercel/app/lib/native'") && s.includes("'/vercel/app/.agents/skills/muse-native'") && s.includes("mkdir -p")));
+    });
+
+    it("with none, provision writes just what it always wrote", async () => {
+      await provision();
+      assert.deepEqual(written.map((w) => w.path), ["/vercel/app/brief.md", "/vercel/app/.env.local"]);
+    });
+
+    it("on a reopen, are written only where missing, so what Muse Code changed stays", async () => {
+      files["/vercel/app/lib/native/bridge.ts"] = "Muse Code's edit";
+      await builder.reopenSandbox({ sandboxName: "product-bird-finder", productId: PRODUCT, buildToken: "mm_build_x", gatewayUrl: "https://g", newReferences: [], extraFiles });
+      assert.deepEqual(written.map((w) => w.path), ["/vercel/app/.agents/skills/muse-native/SKILL.md", "/vercel/app/.env.local"]);
+    });
   });
 
   it("refuses a sandbox tagged with another product before touching it", async () => {

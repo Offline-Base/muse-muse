@@ -16,6 +16,8 @@ description: Use before finishing any build. Explains what npm run verify checks
 | smoke | `playwright test --project=smoke`: every spec in `tests/`, at phone size, with real model calls. Fails on `test.only`, on any test that didn't run (skipped or fixme) or is marked `test.fail`, when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests, and when the last judge screenshot shows an error, a field marked invalid or an empty state, starts its result more than 1,000 px down the page, or is over 4,000 px tall |
 | manifest | `musemuse.json` is valid against `musemuse.schema.json`, every action has `app/api/actions/<name>/route.ts`, every fixture file exists |
 
+A VR product (`.agents/skills/muse-vr`) runs at 1280x720 with software graphics, and its smoke step also fails unless a judge screenshot taken inside VR isn't blank and the last one has no alert. A glasses product (`.agents/skills/muse-glasses`) must take a photo through the glasses.
+
 It exits 0 only when every step passes. When a step fails it prints that step's output (tsc errors, build errors, the Playwright failure plus the server log), so read it and fix the cause. The last line is a JSON summary for the platform. The platform runs the same script, then a judge model looks at your screenshots. Don't edit anything in `scripts/` or `playwright.config.ts`.
 
 ## Smoke test
@@ -48,7 +50,7 @@ test("primary flow works with the sample photo", async ({ page }) => {
 - Use relative URLs (`page.goto("/")`, `request.post("/api/actions/...")`). verify may run the server on a port other than 3100.
 - Model calls can take a while, so allow up to 90 seconds per step.
 - Assert on the result the brief promises, not on loading text: wait for something only the finished result has, like its heading, a total or its model chip.
-- Keep the whole test under 3 minutes and 5 model calls.
+- Keep the whole test under 3 minutes and 5 model calls. An agent product (`.agents/skills/muse-agent`) has its own budget instead: at most 3 agent runs across all tests, each with `maxTurns` of 3 or 4.
 - Tests can't read `.env.local`, `GATEWAY_URL` or `PRODUCT_TOKEN`. Only the app server can. The tests reach Meta through the app's pages and routes, so never guard a test on an env var.
 - `npm run test:smoke` starts its own server on port 3100 and fails if something already listens there. Stop any server you started yourself (`pkill -f "next start"`) before running it.
 

@@ -7,7 +7,8 @@ import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { capBuildHosts } from "@/lib/caps/hosts";
 import { capsFileFor, overlaysFor } from "@/lib/caps/overlays";
 import { briefCaps } from "@/lib/caps/brief-fields";
-import { judgeContent, judgeInstructionsFor } from "@/lib/judge";
+import { judgeContent } from "@/lib/judge";
+import { judgeInstructions } from "@/lib/prompts/judge";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
 import { STEPS } from "@/lib/pipeline/steps";
 import { builderNetworkPolicy } from "@/lib/sandbox/policy";
@@ -39,7 +40,7 @@ export function capsOffSurface(): Record<string, string> {
     "allowed-models.json": json(allowedModelsFor(BRIEF)),
     "env-local-extra.txt": capBuildEnv(BRIEF),
     "deploy-env.json": json(capDeployEnv(BRIEF, "mm_live_sample")),
-    "judge-content.json": json({ instructionsLength: judgeInstructionsFor(BRIEF).length, content }),
+    "judge-content.json": json({ instructionsLength: judgeInstructions(BRIEF).length, content }),
     "extra-files.json": json({ overlays: overlaysFor(BRIEF), capsFile: capsFileFor(BRIEF) }),
   };
 }

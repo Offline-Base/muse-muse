@@ -6,44 +6,57 @@
     "slug": "muse-hackathon"
   },
   "builds": {
+    "production-android": {
+      "id": "a7995d6c-bea3-45a6-8ccb-53c24242c315",
+      "profile": "production-android",
+      "platform": "android",
+      "appId": "ai.musemuse.app",
+      "sdk": "58.0.0",
+      "runtime": "exposdk:58.0.0",
+      "channel": "production",
+      "artifactUrl": "https://expo.dev/artifacts/eas/11Xgu25-2oboA2AWOWrRwKaoehfJRsllzHeLzyFRxvE.apk",
+      "sourceCommit": "3e223ea",
+      "createdAt": "2026-10-31T08:32:38.301Z",
+      "expiresAt": "2026-11-14T08:32:38.354Z"
+    },
     "lab-android": {
-      "id": "b26dd58c-dd6e-407c-a755-ebafa0854dad",
+      "id": "9b9d0c41-d166-401f-bc08-614713f9ca90",
       "profile": "lab-android",
       "platform": "android",
       "appId": "ai.musemuse.lab",
       "sdk": "58.0.0",
       "runtime": "lab-1",
       "channel": "lab",
-      "artifactUrl": "https://expo.dev/artifacts/eas/2rxCFlRkWrbLRgjKU9qEKVFdxQMS2QKcJGLIrv8GAfU.apk",
-      "sourceCommit": "b345354",
-      "createdAt": "2026-10-31T07:55:40.382Z",
-      "expiresAt": "2026-11-14T07:55:40.424Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/X1uD60od6OIc1p8rpyFrG4ncnNMUFnA05NI6nIOWRk0.apk",
+      "sourceCommit": "0ef03c0",
+      "createdAt": "2026-10-31T08:43:41.913Z",
+      "expiresAt": "2026-11-14T08:43:41.948Z"
     },
     "lab-ios-sim": {
-      "id": "06eb8ad2-326c-4cfc-b8cb-2e7155dd3f49",
+      "id": "0122e6f4-4bce-4915-ad42-e76669da9a70",
       "profile": "lab-ios-sim",
       "platform": "ios",
       "appId": "ai.musemuse.lab",
       "sdk": "58.0.0",
       "runtime": "lab-1",
       "channel": "lab",
-      "artifactUrl": "https://expo.dev/artifacts/eas/sEKGoabDtttb5dTJ3dB04sjlFih877OsQDNzD8C1ask.tar.gz",
-      "sourceCommit": "b345354",
-      "createdAt": "2026-10-31T07:55:53.050Z",
-      "expiresAt": "2026-11-14T07:55:53.090Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/UhbKS62SXlbxywgBA_3Ks30wxgmA_FxINqLT1LNI8e4.tar.gz",
+      "sourceCommit": "0ef03c0",
+      "createdAt": "2026-10-31T08:44:00.787Z",
+      "expiresAt": "2026-11-14T08:44:00.818Z"
     },
     "glasses-ios-sim": {
-      "id": "68c9d5ab-9816-40df-8dd8-39e3351f91a7",
+      "id": "cdef9511-36bd-41de-8a89-89203601ee1c",
       "profile": "glasses-ios-sim",
       "platform": "ios",
       "appId": "app.musemuse.glasses",
       "sdk": "58.0.0",
       "runtime": "glasses-1",
       "channel": "glasses",
-      "artifactUrl": "https://expo.dev/artifacts/eas/C51vzA6iEWWEDYNof-QrasjHoIjmm2UvrtJnAl8jyOs.tar.gz",
-      "sourceCommit": "b345354",
-      "createdAt": "2026-10-31T07:56:04.478Z",
-      "expiresAt": "2026-11-14T07:56:04.510Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/qYHit3OJ7C0VZsoeH2VeqSjMgIKK19qo5F3V6xYNPCI.tar.gz",
+      "sourceCommit": "0ef03c0",
+      "createdAt": "2026-10-31T08:44:07.922Z",
+      "expiresAt": "2026-11-14T08:44:07.951Z"
     }
   },
   "productionUpdate": null

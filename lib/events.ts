@@ -1,5 +1,6 @@
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
+import { proveRunning } from "@/lib/outputs/labels";
 import type { BuildEvent, BuildEventBody, BuildStatus } from "@/lib/types";
 
 /** Appends one event to a build's log. The build room picks it up through the SSE route. */
@@ -58,4 +59,14 @@ export async function addBuildCost(buildId: string, addedUsd: number, what: stri
     .where(eq(schema.builds.id, buildId))
     .returning({ costUsd: schema.builds.costUsd });
   await emit(buildId, { type: "cost", totalUsd: row?.costUsd ?? addedUsd, addedUsd, what });
+}
+
+/** True while a Prove it run on this build can still write events, so the room's stream stays open past the build's end. */
+export async function proveStillRunning(buildId: string): Promise<boolean> {
+  const rows = await db()
+    .select({ payload: schema.buildEvents.payload, at: schema.buildEvents.at })
+    .from(schema.buildEvents)
+    .where(and(eq(schema.buildEvents.buildId, buildId), eq(schema.buildEvents.type, "prove")))
+    .orderBy(asc(schema.buildEvents.id));
+  return proveRunning(rows.map((r) => ({ ...r.payload, at: r.at.toISOString() })), Date.now());
 }

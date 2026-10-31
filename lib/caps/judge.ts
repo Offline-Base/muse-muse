@@ -10,10 +10,13 @@ import type { CapProof, VerifySummary } from "@/lib/types";
  */
 export const CAP_JUDGE: Partial<Record<CapId, (brief: Brief) => string>> = {};
 
-/** The notes appended to the judge's instructions. Empty for a brief with no cap blocks, so the instructions are today's. */
-export function capsJudgeNotes(brief: Brief): string {
+/**
+ * The notes judgeInstructions (lib/prompts/judge.ts) appends after the glasses note. Empty for a brief with no cap blocks,
+ * so the instructions are today's. A brief with a cap block is a whole stored brief.
+ */
+export function capsJudgeNotes(brief: Partial<Brief>): string {
   const notes = briefCaps(brief).flatMap((id) => {
-    const note = CAP_JUDGE[id]?.(brief).trim();
+    const note = CAP_JUDGE[id]?.(brief as Brief).trim();
     return note ? [note] : [];
   });
   if (!notes.length) return "";

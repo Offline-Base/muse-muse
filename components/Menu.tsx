@@ -18,6 +18,7 @@ export function Menu({
   disabled,
   buttonClassName = "btn",
   closeOnSelect = false,
+  textIsLabel = true,
 }: {
   text?: string;
   label: string;
@@ -30,6 +31,8 @@ export function Menu({
   buttonClassName?: string;
   /** Also closes when a button inside is pressed, and puts focus back on the menu's button. */
   closeOnSelect?: boolean;
+  /** Set false when `text` doesn't name the menu alone (a value like "Auto"), so `label` names it to screen readers. */
+  textIsLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
@@ -64,7 +67,7 @@ export function Menu({
         className={buttonClassName}
         aria-expanded={open}
         aria-controls={id}
-        aria-label={text ? undefined : label}
+        aria-label={text && textIsLabel ? undefined : label}
         title={text ? undefined : label}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}

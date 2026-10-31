@@ -6,11 +6,12 @@ import { cronAuthorized, runCleanup } from "@/lib/gateway/cleanup";
 import { deleteRateLimitsBefore } from "@/lib/gateway/store";
 import { revokeExpiredBuildTokens } from "@/lib/gateway/tokens";
 import { failStaleBuilds } from "@/lib/pipeline/sweep";
+import { revokeDisabledProductConnections } from "@/lib/tools/deps";
 import { deleteOlderThan } from "@/lib/storage";
 
 // Hourly (vercel.json): expire product uploads and judge screenshots, prune rate-limit windows, revoke expired
 // build tokens, fail builds that stopped reporting, and delete the live docs demos' files (after an hour) and stored
-// responses (after a day) at Meta. Vercel Cron calls it with "Authorization: Bearer <CRON_SECRET>".
+// responses (after a day) at Meta. With agents on, it also takes connected accounts off products that are off. Vercel Cron calls it with "Authorization: Bearer <CRON_SECRET>".
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
       deleteRateLimitsBefore,
       revokeExpiredBuildTokens,
       failStaleBuilds,
+      ...(env.agentsEnabled ? { revokeDisabledProductConnections } : {}),
     }),
     cleanupDocsObjects(docsCleanupDeps()),
     // Wave 3 caps' sweeps (docs/CAPABILITIES.md, 2.9). Null, and left out of the answer, until a cap registers one.

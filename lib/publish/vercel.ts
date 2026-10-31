@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
 import { env } from "@/lib/env";
 import { MCP_FILE, MUSE_FULL_MARKER } from "@/lib/sandbox/muse-config";
-import { FIX_SCREENSHOTS_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
+import { FIX_SCREENSHOTS_DIR, OUT_DIR, PEEK_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
 
 /**
@@ -16,7 +16,7 @@ import { q, sh } from "@/lib/sandbox/shell";
 const API = "https://api.vercel.com";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /**
- * Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, git, Muse Code's own
+ * Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, VR peeks, git, Muse Code's own
  * folder (the platform's hooks and its subagents' worktrees, lib/sandbox/muse-config.ts), and any env file.
  */
 export const DEPLOY_EXCLUDE_DIRS = [
@@ -26,6 +26,7 @@ export const DEPLOY_EXCLUDE_DIRS = [
   "playwright-report",
   "inspo",
   FIX_SCREENSHOTS_DIR,
+  PEEK_DIR,
   ".git",
   ".vercel",
   ".muse",

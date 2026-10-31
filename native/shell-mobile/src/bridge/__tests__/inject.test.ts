@@ -110,6 +110,14 @@ describe("buildShim", () => {
     assert.equal(typeof page({ ...CONFIG, selftest: true }).window.__museNative.report, "function");
     assert.equal(typeof page({ ...CONFIG, autopilot: true }).window.__museNative.checkpoint, "function");
   });
+
+  it("collects page errors for a selftest and for the autopilot, and not on normal pages", () => {
+    assert.equal(page().window.__museNative.pageErrors, undefined);
+    assert.equal(typeof page({ ...CONFIG, selftest: true }).window.__museNative.pageErrors, "function");
+    const autopilot = page({ ...CONFIG, autopilot: true }).window.__museNative;
+    assert.equal(typeof autopilot.pageErrors, "function");
+    assert.equal(autopilot.report, undefined);
+  });
 });
 
 describe("buildDelivery", () => {

@@ -8,9 +8,9 @@ import { silentWavBase64 } from "../glasses/wav";
 import { deviceSummary, problemFromSessionError, problemFromStreamError, problemFromThrown } from "../glasses/status";
 import { chooseLaunchTarget, isOpenableUrl, isValidSlug, launchArgsToRequest, parseDeepLink, targetForRunningApp } from "../launch";
 import type { LaunchEnv } from "../launch";
-import { createRateLimiter, decideNavigation, EXTERNAL_OPEN_LIMIT, leftTheProduct, mayOpenExternally } from "../navigation";
+import { createRateLimiter, decideNavigation, EXTERNAL_OPEN_LIMIT, isSamePageJump, leftTheProduct, mayOpenExternally } from "../navigation";
 import { createResolveClient, createStubResolveClient, ResolveError } from "../resolve";
-import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport, SELFTEST_SCROLL_MS } from "../selftest";
+import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, MAX_LOG_LINE_BYTES, postSelftestReport, SELFTEST_SCROLL_MS, selftestLogLine } from "../selftest";
 import type { NativeObservations, PageObservations } from "../selftest";
 
 const PRODUCTION: LaunchEnv = { variant: "production", glasses: false };
@@ -41,6 +41,25 @@ describe("decideNavigation", () => {
     assert.equal(decideNavigation({ url: "https://other.example/", productOrigin, isTopFrame: false }), "allow");
     assert.equal(decideNavigation({ url: "intent://x", productOrigin, isTopFrame: false }), "block");
     assert.equal(decideNavigation({ url: "file:///x", productOrigin, isTopFrame: false }), "block");
+  });
+});
+
+describe("isSamePageJump", () => {
+  it("is only a move within one page", () => {
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x#y"), true);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#z"), true);
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x"), false, "a reload");
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/z"), false);
+    assert.equal(isSamePageJump(null, "https://a.test/x"), false);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x"), false, "no fragment on the target is a real load");
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y"), true, "the same in-page link again");
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x#"), true);
+    assert.equal(isSamePageJump("https://a.test/x?a=1#y", "https://a.test/x?a=2#y"), false);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#z", "click"), true);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y", "other"), true);
+    for (const type of ["reload", "formsubmit", "formresubmit", "backforward"]) {
+      assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y", type), false, type);
+    }
   });
 });
 
@@ -295,6 +314,57 @@ describe("selftest", () => {
     assert.deepEqual(report.warnings, ["boom"]);
   });
 
+  describe("the device log line", () => {
+    const parse = (line: string) => JSON.parse(line.slice("MUSE_SELFTEST ".length));
+
+    it("leaves a report that fits as it is", () => {
+      const report = finishReport(native, { ...page, errors: ["boom"] }, at);
+      assert.deepEqual(parse(selftestLogLine(report)), report);
+    });
+
+    it("keeps the longest report under the limit, says what it left out, and still parses", () => {
+      const errors = Array.from({ length: 50 }, (_, i) => `${i} ${"x".repeat(300)}`.slice(0, 300));
+      const report = finishReport(native, { ...page, errors }, at);
+      const line = selftestLogLine(report);
+      assert.ok(line.length <= MAX_LOG_LINE_BYTES, `${line.length} bytes`);
+      const logged = parse(line);
+      assert.ok(logged.errors.length > 3, "keeps what fits");
+      assert.equal(logged.errors[0], errors[0]);
+      assert.equal(logged.errors.length + logged.errorsLeftOut, 50, "every error is shown or counted");
+      assert.equal(logged.ok, true);
+      assert.equal(logged.handshake, true);
+      assert.equal(report.errors.length, 50, "the report itself keeps them all");
+    });
+
+    it("the lab's warning counts the errors the line left out", async () => {
+      // Variable paths keep the root typecheck out of the lab's .mjs files, which have no types.
+      const [commands, rules] = ["commands", "rules"].map((name) => `../../../lab/lib/${name}.mjs`);
+      const { selftestFromLogcat } = await import(commands);
+      const { evaluateCheck } = await import(rules);
+      const errors = Array.from({ length: 50 }, (_, i) => `${i} ${"x".repeat(300)}`.slice(0, 300));
+      const line = selftestLogLine(finishReport(native, { ...page, errors }, at));
+      const report = selftestFromLogcat(`10-31 12:00:00 I ReactNativeJS: ${line}`);
+      const { warnings } = evaluateCheck({ launched: true, report, expectOrigin: native.productOrigin });
+      const shown = warnings.length - 1;
+      assert.equal(warnings.at(-1), `And ${50 - shown} more console errors.`);
+    });
+
+    it("counts bytes, not characters, and the text survives the trip", () => {
+      const errors = Array.from({ length: 50 }, () => "日本語😀".repeat(50));
+      const line = selftestLogLine(finishReport(native, { ...page, title: "日本語", errors }, at));
+      assert.ok(Buffer.byteLength(line) <= MAX_LOG_LINE_BYTES, `${Buffer.byteLength(line)} bytes`);
+      assert.equal(parse(line).title, "日本語");
+      assert.equal(parse(line).errors[0], errors[0]);
+    });
+
+    it("shortens long fields when errors weren't the problem, and the origin still reads", () => {
+      const long = `https://a.example/${"p".repeat(5_000)}`;
+      const line = selftestLogLine(finishReport({ ...native, url: long, finalUrl: long, loadError: "e".repeat(5_000) }, page, at));
+      assert.ok(line.length <= MAX_LOG_LINE_BYTES, `${line.length} bytes`);
+      assert.equal(new URL(parse(line).finalUrl).origin, "https://a.example");
+    });
+  });
+
   it("fails each thing the plan names", () => {
     const cases: Array<[Partial<NativeObservations>, Partial<PageObservations>, RegExp]> = [
       [{ crashed: true }, {}, /crashed/],
@@ -401,16 +471,30 @@ describe("glasses helpers", () => {
     assert.equal(cleanCheckpoint("junk", at), null);
   });
 
+  it("keeps page errors on a checkpoint only as short strings", () => {
+    const at = new Date("2026-10-31T00:00:00Z");
+    const entry = cleanCheckpoint({ step: "result", ok: true, errors: ["boom", 7, "x".repeat(400), ...Array(30).fill("more")] }, at);
+    assert.equal(entry?.errors?.length, 20);
+    assert.deepEqual(entry?.errors?.slice(0, 2), ["boom", "7"]);
+    assert.equal(entry?.errors?.[2].length, 300);
+    assert.equal(cleanCheckpoint({ step: "result", ok: true, errors: [] }, at)?.errors, undefined);
+    assert.equal(cleanCheckpoint({ step: "result", ok: true, errors: "boom" }, at)?.errors, undefined);
+  });
+
   it("builds an autopilot script that parses", () => {
     assert.doesNotThrow(() => new Function(buildAutopilotScript(10)));
     assert.equal(AUTOPILOT_LOG, "autopilot.jsonl");
   });
 
   /** Runs the script against a small fake of the connect and primary buttons. `onClick` says what the product does. */
-  async function runAutopilot(primary: { enabledAfterMs?: number; onClick(count: number, state: { disabled: boolean; result: boolean }): void }) {
+  async function runAutopilot(primary: {
+    enabledAfterMs?: number;
+    pageErrors?: () => string[];
+    onClick(count: number, state: { disabled: boolean; result: boolean }): void;
+  }) {
     const started = Date.now();
     const clicks: number[] = [];
-    const marks: Array<{ step: string; ok: boolean }> = [];
+    const marks: Array<{ step: string; ok: boolean; errors?: string[] }> = [];
     const state = { disabled: false, result: false };
     const main = {
       get disabled() {
@@ -434,9 +518,10 @@ describe("glasses helpers", () => {
     };
     const page: Record<string, unknown> = {
       __museNative: {
-        checkpoint: async (entry: { step: string; ok: boolean }) => {
+        checkpoint: async (entry: { step: string; ok: boolean; errors?: string[] }) => {
           marks.push(entry);
         },
+        ...(primary.pageErrors ? { pageErrors: primary.pageErrors } : {}),
       },
       MuseNative: { glasses: { status: async () => ({ state: "ready", mode: "mock" }) } },
     };
@@ -482,6 +567,20 @@ describe("glasses helpers", () => {
     });
     assert.equal(clicks.length, 1);
     assert.equal(marks.at(-1)?.step, "result");
+  });
+
+  it("sends the page's errors with the result, and with a run that stops", async () => {
+    const done = await runAutopilot({
+      pageErrors: () => ["boom"],
+      onClick: (_count, state) => {
+        state.result = true;
+      },
+    });
+    assert.deepEqual(done.marks.at(-1)?.errors, ["boom"]);
+    assert.ok(done.marks.slice(0, -1).every((mark) => mark.errors === undefined));
+    const stopped = await runAutopilot({ enabledAfterMs: 60_000, pageErrors: () => ["boom"], onClick: () => {} });
+    assert.equal(stopped.marks.at(-1)?.step, "timeout");
+    assert.deepEqual(stopped.marks.at(-1)?.errors, ["boom"]);
   });
 
   it("reports a timeout when the button never gets enabled, without claiming the tap", async () => {

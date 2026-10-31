@@ -48,6 +48,7 @@ import {
   isSessionId,
   museEnv,
   museExecArgs,
+  OPTIONAL_EXEC_FLAGS,
   optionalConfigPrelude,
   optionalFlagsPrelude,
   REFINE_ROUND_STRIDE,
@@ -81,13 +82,18 @@ import {
   PRODUCT_DIR,
   RUN_DIR,
   CORE_CAPS_MARKER,
+  TARGET_OVERLAYS,
+  TARGET_PLATFORM_MARKER,
+  TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { installCaps, makeDirs, readCapFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { installCaps, installTargets, makeDirs, readCapFiles, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
   activeCapsScript,
+  activeTargetsScript,
   applyCapsScript,
+  applyTargetScript,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -150,6 +156,8 @@ const WRITE_BATCH_BYTES = 24 * 1024 * 1024;
 const BASIC_RENDER_S = 180;
 /** Names of forkForDryRun's throwaway copies start with this. */
 const DRY_RUN_PREFIX = "dryrun-";
+/** Names of forkForProve's throwaway copies start with this. */
+const PROVE_PREFIX = "prove-";
 /**
  * How long a session bridge stays open with nothing running: after the owner stops a turn (time to send a note), or
  * while a goal waits for its next turn.
@@ -390,6 +398,10 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
+  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). */
+  extraFiles?: Array<{ path: string; content: string }>;
+  /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
+  targets?: readonly string[];
   // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a brief with no cap blocks ----------
   /** The caps and overlays: applied right after the template is in place, and written to musemuse.caps.json. */
   caps?: { caps: string[]; overlays: string[] };
@@ -399,39 +411,71 @@ export interface ProvisionInput {
   capHosts?: string[];
 }
 
-/** Where a sandbox from an older snapshot gets the cap overlays. template/ isn't deployed with the platform. */
-const CAPS_TEMPLATE_DIR = () => process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
+/** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
+async function productWrites(sandbox: Sandbox, files: Array<{ path: string; content: string }>): Promise<Array<{ path: string; content: string }>> {
+  const writes = files.map((f) => ({ path: productPath(f.path), content: f.content }));
+  if (writes.length) await makeDirs(sandbox, [...new Set(writes.map((f) => path.posix.dirname(f.path)))]);
+  return writes;
+}
+
+/** Where a sandbox from an older snapshot gets the overlays from. template/ isn't deployed with the platform. */
+const LOCAL_TEMPLATE_DIR = () => process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
+
+/**
+ * Gets a brief's targets into the sandbox before anything from the user lands in it. A snapshot made with the overlays has
+ * them already. In one from before them, a local run takes them from this checkout, along with the newer platform files
+ * that run their checks, so a target can be tried without a new snapshot. The live site can't: its functions have no
+ * template/, so a target whose flag is on needs that snapshot.
+ */
+async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: readonly string[]): Promise<void> {
+  const overlays = targets.filter((t) => TARGET_OVERLAYS.includes(t));
+  const inSandbox = async (file: string) => (await sh(sandbox, `[ -f ${q(file)} ]`, { allowFail: true })).exitCode === 0;
+  const missing = (await Promise.all(overlays.map(async (t) => ((await inSandbox(`${TARGETS_DIR}/${t}/deps.json`)) ? null : t)))).filter((t) => t !== null);
+  const stale = overlays.length > 0 && !(await inSandbox(`${PRISTINE_DIR}/${TARGET_PLATFORM_MARKER}`));
+  if (missing.length || stale) {
+    const needs = missing.length ? `the ${missing.join(" and ")} overlay` : "the platform files for targets";
+    if (process.env.VERCEL) throw new Error(`This builder snapshot doesn't have ${needs}. Make a new one with npm run snapshot before turning the flag on.`);
+    const dir = LOCAL_TEMPLATE_DIR();
+    if (missing.length) {
+      const files = await readTargetFiles(dir);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have ${needs}, and there's no ${dir}/targets here to add it from.`);
+      await installTargets(sandbox, files, () => {});
+    }
+    if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
+  }
+  await sh(sandbox, activeTargetsScript(targets), { sudo: true });
+  await sh(sandbox, applyTargetScript(targets), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
 
 /**
  * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
- * commit. It runs before anything from the user lands in the product, so the "Caps: ..." commit holds platform files
- * only. A snapshot made with template/caps has them already. One from before them gets them from this checkout on a
- * local run. The live site can't, since its functions have no template/, so a cap whose flag is on there needs a new
- * snapshot.
+ * commit. It runs right after the targets and before anything from the user lands in the product, so the "Caps: ..."
+ * commit holds platform files only. A snapshot made with template/caps has them already. One from before them gets them
+ * from this checkout on a local run. The live site can't, since its functions have no template/, so a cap whose flag is
+ * on there needs a new snapshot.
  */
 async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: string[] }): Promise<void> {
   const installed = (await sh(sandbox, `[ -f ${q(CORE_CAPS_MARKER)} ]`, { allowFail: true })).exitCode === 0;
   if (!installed) {
     if (process.env.VERCEL) throw new Error("This builder snapshot has no platform service overlays. Make a new one with npm run snapshot before turning a cap's flag on.");
-    const files = await readCapFiles(CAPS_TEMPLATE_DIR());
-    if (!files.length) throw new Error(`This builder snapshot has no platform service overlays, and there's no ${CAPS_TEMPLATE_DIR()}/caps here to add them from.`);
+    const files = await readCapFiles(LOCAL_TEMPLATE_DIR());
+    if (!files.length) throw new Error(`This builder snapshot has no platform service overlays, and there's no ${LOCAL_TEMPLATE_DIR()}/caps here to add them from.`);
     await installCaps(sandbox, files, () => {});
   }
   await sh(sandbox, activeCapsScript(caps), { sudo: true });
   await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
 }
 
-/** Appends the caps' lines (capBuildEnv) to the .env.local envLocal wrote. .env*.local is gitignored in the template. */
-async function appendCapEnv(sandbox: Sandbox, capEnv: string): Promise<void> {
-  const path = `${PRODUCT_DIR}/.env.local`;
-  const current = (await sandbox.readFileToBuffer({ path }).catch(() => null))?.toString("utf8") ?? "";
-  await sandbox.writeFiles([{ path, content: `${current.replace(/\n*$/, "\n")}${capEnv}` }]);
+/** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
+function withCapEnv(text: string, capEnv: string | undefined): string {
+  return capEnv ? `${text.replace(/\n*$/, "\n")}${capEnv}` : text;
 }
 
 /**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
- * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host).
+ * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). A brief's targets go in before the user's
+ * files (applyTargets).
  *
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
@@ -460,13 +504,19 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     if (process.env.VERCEL) throw new Error("BUILDER_SNAPSHOT_ID is not set. Run npm run snapshot and set it; template/ isn't deployed with the platform.");
     // Slow path for scripts (about a minute): install everything from scratch with open egress.
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
-    await setupBuilder(sandbox, await readTemplateFiles(process.env.MUSEMUSE_TEMPLATE_DIR ?? "template"), () => {});
+    const dir = LOCAL_TEMPLATE_DIR();
+    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir), await readCapFiles(dir));
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
-  // A brief's cap overlays go in before the user's files, so their commit holds platform files only.
+
+  const targets = input.targets ?? [];
+  if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
+  // ---------- Wave 3, unit 2: a brief's cap overlays, right after its targets and before the user's files, so their
+  // commit holds platform files only (docs/CAPABILITIES.md, 2.5). Nothing for a brief with no cap blocks ----------
   if (input.caps) await applyCaps(sandbox, input.caps);
+  // ---------- end Wave 3, unit 2 ----------
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -475,10 +525,10 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   ]);
   await writeBatched(sandbox, [
     ...downloaded,
+    ...(await productWrites(sandbox, input.extraFiles ?? [])),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
-  if (input.capEnv) await appendCapEnv(sandbox, input.capEnv);
   return { sandboxName: name };
 }
 
@@ -489,6 +539,9 @@ export async function reopenSandbox(input: {
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
+  /** Written only where missing: a product from before its target's files, and never over what Muse Code changed. */
+  extraFiles?: Array<{ path: string; content: string }>;
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a product with no cap blocks ----------
   /** Hosts the product's caps need, so a refinement keeps them (capBuildHosts). */
   capHosts?: string[];
 }): Promise<void> {
@@ -498,7 +551,13 @@ export async function reopenSandbox(input: {
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
-  await writeBatched(sandbox, [...downloaded, { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) }]);
+  const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
+  const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
+  await writeBatched(sandbox, [
+    ...downloaded,
+    ...(await productWrites(sandbox, missing)),
+    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
+  ]);
 }
 
 /**
@@ -540,6 +599,149 @@ export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
   } catch (err) {
     if (!isNotFound(err)) throw err;
   }
+}
+
+/**
+ * A throwaway copy of a product sandbox for the Prove it stage (docs/PRODUCT_OUTPUTS.md), forked from its last snapshot,
+ * so the product's own sandbox stays free for a refinement and nothing done here reaches it. It can reach the platform
+ * and the product's live host, and Muse Code's brokered routes at Meta. Its old build token was revoked when the build
+ * ended, and it gets no other. Delete it with deleteProveCopy; if that never runs it times out by itself.
+ */
+export async function forkForProve(sandboxName: string, hosts: { liveHost: string; platformHost: string | null }): Promise<{ sandboxName: string }> {
+  const name = `${PROVE_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
+  await Sandbox.fork({
+    sourceSandbox: sandboxName,
+    name,
+    persistent: false,
+    timeout: SANDBOX_TIMEOUT_MS,
+    networkPolicy: builderNetworkPolicy({
+      modelApiKey: env.modelApiKey,
+      placeholderKey: sandboxPlaceholder(name),
+      platformHost: hosts.platformHost,
+      extraHosts: [hosts.liveHost],
+    }),
+    tags: { app: "musemuse", role: "prove", source: sandboxName.slice(0, 60) },
+  });
+  return { sandboxName: name };
+}
+
+/** Deletes a copy made by forkForProve, and refuses any other sandbox. One that is already gone is fine. */
+export async function deleteProveCopy(sandboxName: string): Promise<void> {
+  if (!sandboxName.startsWith(PROVE_PREFIX)) throw new Error(`${sandboxName} is not a Prove it copy, so it was not deleted`);
+  try {
+    await (await Sandbox.get({ name: sandboxName })).delete();
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+  }
+}
+
+/** Writes files into a Prove it copy, making their folders. Paths are absolute. */
+export async function writeProveFiles(sandboxName: string, files: Array<{ path: string; content: string | Buffer }>): Promise<void> {
+  const sandbox = await openSandbox(sandboxName);
+  await makeDirs(sandbox, [...new Set(files.map((f) => path.posix.dirname(f.path)))]);
+  await writeBatched(sandbox, files);
+}
+
+/** Reads a text file from a sandbox, or null when it isn't there. */
+export async function readSandboxText(sandboxName: string, file: string): Promise<string | null> {
+  const sandbox = await openSandbox(sandboxName);
+  const buf = await sandbox.readFileToBuffer({ path: file }).catch(() => null);
+  return buf ? buf.toString("utf8") : null;
+}
+
+/** Starts one of the stage's long commands detached, under pollTask. A retry finds the one already running. */
+export async function startProveCommand(sandboxName: string, input: { tag: "prove-checks" | "prove-record"; cwd: string; argv: string[] }): Promise<{ cmdId: string }> {
+  const sandbox = await openSandbox(sandboxName);
+  await ensureTime(sandbox, LONG_WORK_MS);
+  await makeDirs(sandbox, [LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`]);
+  const running = await runningCommand(sandbox, input.tag);
+  if (running) return { cmdId: running };
+  const logPath = `${LOG_DIR}/${input.tag}.log`;
+  const script = await writeRunner(sandbox, { name: input.tag, cwd: input.cwd, argv: input.argv, stdoutPath: logPath });
+  const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+  await recordCommand(sandbox, input.tag, cmd.cmdId, logPath);
+  return { cmdId: cmd.cmdId };
+}
+
+/** The skill test's flags beyond exec's own: its step cap needs no reminder agents on top, when this Muse Code has the flag. */
+const SKILL_TEST_FLAGS = [...OPTIONAL_EXEC_FLAGS, "--disable-reminders"] as const;
+
+export interface SkillTestStart {
+  cmdId: string;
+  logPath: string;
+  /** The command it ran, for the video. */
+  command: string;
+}
+
+/**
+ * Starts a fresh Muse Code session in `cwd`, a folder with nothing in it but the skill, so what it does comes from the
+ * skill file and not from the product's source. Low effort, capped at `maxModelSteps`, with no platform hooks or build
+ * MCP server. Poll it with pollMuse. A retry finds the one already running.
+ */
+export async function startSkillTest(input: { sandboxName: string; cwd: string; model: BuildModel; maxModelSteps: number; sessionId: string }): Promise<SkillTestStart> {
+  const sandbox = await openSandbox(input.sandboxName);
+  await ensureTime(sandbox, LONG_WORK_MS);
+  await makeDirs(sandbox, [LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`]);
+  const tag = "prove-skill";
+  const logPath = `${LOG_DIR}/${tag}.jsonl`;
+  const args = museExecArgs({ promptFile: "prompt.md", sessionId: input.sessionId, model: input.model, reasoningEffort: "low", maxModelSteps: input.maxModelSteps });
+  const command = `muse exec --model ${input.model} --reasoning-effort low --max-model-steps ${input.maxModelSteps} --prompt-file prompt.md`;
+  const running = await runningCommand(sandbox, tag);
+  if (running) return { cmdId: running, logPath, command };
+  const script = await writeRunner(sandbox, {
+    name: tag,
+    cwd: input.cwd,
+    env: museEnv(sandboxPlaceholder(input.sandboxName)),
+    argv: ["muse", ...args],
+    prelude: [optionalFlagsPrelude(SKILL_TEST_FLAGS), optionalConfigPrelude([backgroundModelSetting(input.model)], CHECKED_MUSE_VERSION), "true"].join("\n"),
+    stdoutPath: logPath,
+    stderrPath: `${LOG_DIR}/${tag}.err`,
+  });
+  const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+  await recordCommand(sandbox, tag, cmd.cmdId, logPath, "exec");
+  return { cmdId: cmd.cmdId, logPath, command };
+}
+
+/** What a running Muse Code round has spent so far by its session log, in USD. 0 when the log can't be read yet. */
+export async function museRunSpendUsd(sandboxName: string, logPath: string): Promise<number> {
+  const sandbox = await openSandbox(sandboxName);
+  const usage = await readSessionUsage(sandbox, logPath);
+  if (!usage) return 0;
+  return [...usage.main.usage, ...usage.children.usage].reduce((sum, u) => sum + (u.costUsd || 0), 0);
+}
+
+/**
+ * Uploads one output's video from a Prove it copy to demos/<buildId>/prove-<output>.mp4 with its poster, after checking
+ * it is the kind of video Demo Studio makes. Null when there is nothing fit to publish, with the reason logged.
+ */
+export async function uploadProveVideo(input: { sandboxName: string; buildId: string; output: string; dir: string; skipUpload?: boolean }): Promise<DemoVideo | null> {
+  const sandbox = await openSandbox(input.sandboxName);
+  const mp4 = `${input.dir}/demo.mp4`;
+  const poster = `${input.dir}/poster.jpg`;
+  const probe = await sh(
+    sandbox,
+    `[ ! -e ${q(`${input.dir}/failed`)} ] && ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -show_entries format=duration -of json ${q(mp4)}`,
+    { allowFail: true },
+  );
+  const problem = probe.exitCode === 0 ? demoVideoProblem(probe.stdout) : "it wasn't made";
+  if (problem) {
+    console.warn(`Prove it video ${input.output} on ${input.sandboxName}: ${problem}`);
+    return null;
+  }
+  await ensurePoster(sandbox, mp4, poster, 1.5);
+  const hasPoster = (await sh(sandbox, `[ -s ${q(poster)} ]`, { allowFail: true })).exitCode === 0;
+  if (input.skipUpload) return { videoUrl: sandboxUrl(input.sandboxName, mp4), posterUrl: hasPoster ? sandboxUrl(input.sandboxName, poster) : null };
+  const video = await sandbox.readFileToBuffer({ path: mp4 });
+  if (!video) return null;
+  const videoUrl = await putFile("demos", `${input.buildId}/prove-${input.output}.mp4`, video, "video/mp4");
+  let posterUrl: string | null = null;
+  try {
+    const image = hasPoster ? await sandbox.readFileToBuffer({ path: poster }) : null;
+    if (image?.length) posterUrl = await putFile("demos", `${input.buildId}/prove-${input.output}.jpg`, image, "image/jpeg");
+  } catch (err) {
+    console.warn(`Prove it poster ${input.output}: ${String(err)}`);
+  }
+  return { videoUrl, posterUrl };
 }
 
 /**
@@ -1299,10 +1501,13 @@ export async function collectVerifyResult(input: {
   const all = await listFiles(sandbox, judgeDir, "*.png");
   // The first one and the last ones, so the judge's final screen is the one verify's final screen check read.
   const names = all.length > MAX_SCREENSHOTS ? [all[0], ...all.slice(1 - MAX_SCREENSHOTS)] : all;
+  // judgeShot's VR branch leaves "xr":true next to its pictures, and the judge should know what kind of picture it sees.
+  const inVR = await sh(sandbox, `cd ${q(judgeDir)} 2>/dev/null && grep -l '"xr":true' *.checked 2>/dev/null || true`);
+  const vrViews = new Set(inVR.stdout.split("\n").map((l) => l.trim().replace(/\.checked$/, ".png")));
   const screenshots: Screenshot[] = [];
   for (const name of names) {
     const file = `${judgeDir}/${name}`;
-    const caption = captionFromFileName(name);
+    const caption = vrViews.has(name) ? `${captionFromFileName(name)} (VR view)` : captionFromFileName(name);
     if (input.skipUpload) {
       screenshots.push({ url: sandboxUrl(input.sandboxName, file), caption });
       continue;
@@ -1320,13 +1525,14 @@ export async function collectVerifyResult(input: {
  */
 export async function writeDemoSpec(
   sandboxName: string,
-  spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url">,
+  spec: Pick<DemoStudioSpec, "title" | "tagline" | "models" | "url" | "note">,
 ): Promise<DemoStudioSpec> {
   const full: DemoStudioSpec = {
     title: noEmDashes(spec.title).trim() || "Untitled",
     tagline: noEmDashes(spec.tagline).trim(),
     models: [...new Set(spec.models.map((m) => m.trim()).filter(Boolean))],
     url: spec.url,
+    ...(spec.note ? { note: noEmDashes(spec.note).trim() } : {}),
     timeline: `${PRODUCT_DIR}/${DEMO_RECORDING_DIR}/timeline.json`,
     out: DEMO_OUT_DIR,
   };
@@ -1502,10 +1708,15 @@ async function finishLegacyDemo(
   });
   const footerFile = `${dir}/footer.txt`;
   files.push({ path: footerFile, content: "Built with Muse Muse. Not an official Meta product." });
+  // A VR product recorded this way still has to say how. writeDemoSpec puts the note in the spec before the demo runs.
+  const note = (await readJson<{ note?: unknown }>(sandbox, DEMO_SPEC_PATH))?.note;
+  const noteFile = typeof note === "string" && note ? `${dir}/note.txt` : null;
+  if (noteFile) files.push({ path: noteFile, content: String(note) });
   const graph = demoFilterGraph({
     title: block("title", input.title || "Untitled", 34, 2),
     subtitle: block("subtitle", input.subtitle, 64, 3),
     footerFile,
+    noteFile,
     captions: captions.map((c, i) => ({ ...block(`cap-${i}`, c.text, 64, 2), start: c.start, end: c.end })),
   });
   files.push({ path: `${dir}/graph.txt`, content: graph });

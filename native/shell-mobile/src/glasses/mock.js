@@ -48,6 +48,10 @@ export async function enableMockGlasses(wearables) {
  */
 export async function mockRecording(seconds) {
   const question = new File(Paths.document, MOCK_QUESTION_FILE);
-  const base64 = question.exists ? await question.base64() : silentWavBase64(seconds);
-  return { wavDataUrl: `data:audio/wav;base64,${base64}`, seconds, source: /** @type {const} */ ("phone") };
+  if (!question.exists) {
+    return { wavDataUrl: `data:audio/wav;base64,${silentWavBase64(seconds)}`, seconds, source: /** @type {const} */ ("phone") };
+  }
+  // What the wearer "says" to the mock glasses: 44 header bytes, then 32,000 bytes a second. The file stays for the next question.
+  const length = Math.max(0, ((question.size ?? 44) - 44) / 32_000);
+  return { wavDataUrl: `data:audio/wav;base64,${await question.base64()}`, seconds: length, source: /** @type {const} */ ("glasses") };
 }

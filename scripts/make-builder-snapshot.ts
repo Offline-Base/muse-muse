@@ -7,7 +7,8 @@
  * Muse Code, turns off the bundled Muse Code skills that fight a headless build (DISABLED_BUNDLED_SKILLS in
  * lib/sandbox/setup.ts), copies template/ to /vercel/app, runs npm ci, commits the template, keeps a root-owned
  * read-only copy of the platform-owned verify files in /vercel/musemuse/pristine (startTask restores them before
- * every verify and demo), checks that copy against template/, that those skills are off and that `muse exec --help`
+ * every verify and demo) and of template/targets in /vercel/musemuse/targets (the overlays a brief can ask for, with their
+ * deps warmed in npm's cache), checks those copies against template/, that those skills are off and that `muse exec --help`
  * lists every flag a build passes, then snapshots with no expiry. The builder marker records the Muse Code version.
  * Builds start from the snapshot and run with the locked-down policy in lib/sandbox/policy.ts.
  * Save the printed id as BUILDER_SNAPSHOT_ID.
@@ -16,7 +17,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
 import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
-import { PLATFORM_FILES, PRISTINE_DIR, WORK_DIR } from "@/lib/sandbox/paths";
+import { PLATFORM_FILES, PRISTINE_DIR, TARGET_OVERLAYS, TARGETS_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { DISABLED_BUNDLED_SKILLS, readCapFiles, readTargetFiles, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
 import { q, sh } from "@/lib/sandbox/shell";
@@ -43,6 +44,22 @@ async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<v
       return owner !== "root" || mode.includes("w");
     });
   if (bad.length) throw new Error(`Pristine copy is writable or not owned by root:\n${bad.join("\n")}`);
+}
+
+/** Throws unless TARGETS_DIR has every overlay, matches template/targets, and is root-owned with no write bits. */
+async function checkTargets(sandbox: Sandbox, targets: TemplateFile[]): Promise<void> {
+  const missing = TARGET_OVERLAYS.filter((t) => !targets.some((f) => f.path === `targets/${t}/deps.json`));
+  if (missing.length) throw new Error(`template/targets has no overlay for ${missing.join(", ")}, but TARGET_OVERLAYS in lib/sandbox/paths.ts lists it.`);
+  const want = targets.map((f) => `${createHash("sha1").update(f.content).digest("hex")}  ${f.path.slice("targets/".length)}`).sort();
+  const sums = await sh(sandbox, `cd ${q(TARGETS_DIR)} && find . -type f -printf '%P\\0' | xargs -0 sha1sum`);
+  const got = sums.stdout.trim().split("\n").sort();
+  if (got.join("\n") !== want.join("\n")) throw new Error(`The targets copy doesn't match template/targets:\n${sums.stdout.slice(0, 2000)}`);
+  const perms = await sh(sandbox, `cd ${q(TARGETS_DIR)} && find . -printf '%u %M %p\\n'`);
+  const bad = perms.stdout.trim().split("\n").filter((l) => {
+    const [owner, mode = "w"] = l.split(" ");
+    return owner !== "root" || mode.includes("w");
+  });
+  if (bad.length) throw new Error(`The targets copy is writable or not owned by root:\n${bad.slice(0, 10).join("\n")}`);
 }
 
 /**
@@ -101,6 +118,8 @@ async function main() {
     console.log("builder:", JSON.stringify(info));
     await checkPristine(sandbox, files);
     console.log(`pristine: ${PLATFORM_FILES.join(", ")} match template/`);
+    await checkTargets(sandbox, targets);
+    console.log(`targets: ${targets.length} files match template/targets`);
     await checkSkills(sandbox);
     console.log(`skills off: ${DISABLED_BUNDLED_SKILLS.join(", ")}`);
     await checkExecFlags(sandbox, info.muse);

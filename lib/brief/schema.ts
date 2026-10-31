@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
 import type { CapId } from "@/lib/caps/ids";
 import { MilestonesSchema } from "@/lib/engine/milestones";
+import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
  * What a product may call. muse-glimmer means a self-hosted Glimmer endpoint, not the Model API. muse-gadget means a
@@ -77,13 +78,35 @@ const BriefFields = z.object({
 const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
   z.array(z.object({ id: z.enum(ids), why: z.string().min(1).max(200) })).max(ids.length);
 
+/** Most tools one agent may use (docs/AGENT_TOOLS.md). Fewer is better: each one is more for the model to read. */
+export const MAX_AGENT_TOOLS = 6;
+/** A live agent's run stops at 10 turns (RUN_LIMITS in lib/gateway/runs.ts), so a plan for more could never finish. */
+export const MAX_AGENT_STEPS = 10;
+
+/** The brief's `agent` field, limited to these tool ids. */
+const agentFields = (toolIds: z.ZodType<string>) =>
+  z.object({
+    /** The job one run does, in one or two plain sentences. */
+    task: z.string().min(1).max(400),
+    tools: z.array(z.object({ id: toolIds, need: z.string().min(1), why: z.string().min(1) })).min(1).max(MAX_AGENT_TOOLS),
+    /** "owner" when a personal tool needs the product's owner to connect an account. Settled by applyTargets. */
+    connections: z.enum(["none", "owner"]),
+    /** About how many model turns one run takes, for the cost arithmetic and the run's limits. */
+    stepsPerRun: z.number().int().min(1).max(MAX_AGENT_STEPS),
+  });
+
 /**
  * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
  * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
  * `targets` is optional, so older briefs still parse, and a brief without it runs on the web only (briefTargets in
- * lib/native/targets.ts).
+ * lib/native/targets.ts). `agent` is set only when `targets` has agent. Its tool ids are plain strings here, since a tool
+ * can leave the catalog after a brief was stored; the writer's schema below limits them.
  */
-export const BriefSchema = BriefFields.extend({ targets: targetPicks(TARGETS).optional(), ...wave3StoredFields() });
+export const BriefSchema = BriefFields.extend({
+  targets: targetPicks(TARGETS).optional(),
+  agent: agentFields(z.string().min(1)).nullable().optional(),
+  ...wave3StoredFields(),
+});
 
 /**
  * Wave 3 (docs/CAPABILITIES.md, 2.6): every registered cap block and the engine's milestones, as optional and nullable
@@ -125,12 +148,15 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
 /**
  * The schema the brief writer answers in for these flags. With no targets, no caps and no milestones it is exactly
  * NewBriefSchema or NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web
- * and those. Each enabled cap with a registered block, and milestones when ENGINE_MILESTONES is on, add a required but
- * nullable field, since Meta's strict output needs every property.
+ * and those. With the agent target it also requires `agent`, which is null for a product that isn't one, limited to the
+ * public tools unless personal tools are on (COMPOSIO_PERSONAL_ENABLED). Each enabled cap with a registered block, and
+ * milestones when ENGINE_MILESTONES is on, add a required but nullable field, since Meta's strict output needs every
+ * property.
  */
 export function newBriefSchemaFor(opts: {
   gadgets: boolean;
   targets: readonly TargetId[];
+  personalTools?: boolean;
   caps?: readonly CapId[];
   milestones?: boolean;
 }): z.ZodType<Brief> {
@@ -144,8 +170,15 @@ export function newBriefSchemaFor(opts: {
   }
   if (opts.milestones) extra.milestones = MilestonesSchema.nullable();
   if (ids.length === 1 && !Object.keys(extra).length) return base;
-  const targets = ids.length === 1 ? {} : { targets: targetPicks(ids as [TargetId, ...TargetId[]]).min(1) };
-  return base.extend({ ...targets, ...extra }) as unknown as z.ZodType<Brief>;
+  const shape: Record<string, z.ZodTypeAny> = {};
+  if (ids.length > 1) {
+    shape.targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
+    if (ids.includes("agent")) {
+      const tools = (opts.personalTools ? [...PUBLIC_TOOL_IDS, ...PERSONAL_TOOL_IDS] : PUBLIC_TOOL_IDS) as [string, ...string[]];
+      shape.agent = agentFields(z.enum(tools)).nullable();
+    }
+  }
+  return base.extend({ ...shape, ...extra }) as unknown as z.ZodType<Brief>;
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];
