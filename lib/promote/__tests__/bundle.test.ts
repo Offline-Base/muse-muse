@@ -208,7 +208,11 @@ describe("the bundle and the tables", () => {
    */
   const LEFT_OUT = {
     // The live site gives every row to its guest account, and sets the link once it publishes.
-    products: ["ownerId", "vercelProjectId", "liveUrl"],
+    products: [
+      "ownerId", "vercelProjectId", "liveUrl",
+      // Wave 3, unit 1 (0018_trust): a takedown belongs to the site that made it (docs/CAPABILITIES.md, section 4).
+      "takenDownAt", "takedownReason",
+    ],
     // The guest account again; IMPORTED_RUN marks the run; a finished build has no round running and no Stop to heed.
     builds: [
       "userId", "workflowRunId", "museRound", "stopRequested",

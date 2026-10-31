@@ -116,7 +116,7 @@ describe("a fresh database", () => {
   after(() => client.close());
 
   it("has every new table", async () => {
-    for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs"]) {
+    for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs", "abuse_reports"]) {
       assert.ok((await columns(client, table)).size > 0, table);
     }
   });
@@ -277,6 +277,39 @@ describe("a database already at 0012", () => {
     await typed.update(schema.gatewayTokens).set({ buildId }).where(eq(schema.gatewayTokens.id, token!.id));
     const [tied] = await typed.select().from(schema.gatewayTokens);
     assert.equal(tied!.buildId, buildId);
+    await client.close();
+  });
+
+  it("0018_trust: a database at 0015 keeps its users and products, which read null for the new columns", async () => {
+    const dir = folderThrough(15);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.ok(!(await columns(client, "users")).has("banned_at"));
+    assert.equal((await columns(client, "abuse_reports")).size, 0);
+    const [userId, productId] = [randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email, password_hash) values ('${userId}', 'old@example.com', 'scrypt$x');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [user] = await typed.select().from(schema.users);
+    assert.equal(user!.email, "old@example.com");
+    assert.equal(user!.passwordHash, "scrypt$x");
+    for (const k of ["adultConfirmedAt", "termsVersion", "termsAcceptedAt", "bannedAt", "banReason"] as const) assert.equal(user![k], null, k);
+    const [product] = await typed.select().from(schema.products);
+    assert.equal(product!.status, "live");
+    assert.equal(product!.takenDownAt, null);
+    assert.equal(product!.takedownReason, null);
+    for (const c of ["adult_confirmed_at", "terms_version", "terms_accepted_at", "banned_at", "ban_reason"]) {
+      assert.equal((await columns(client, "users")).get(c)?.nullable, true, c);
+    }
+    const [report] = await typed.insert(schema.abuseReports).values({ productId, productSlug: "old-one", reason: "broken", reporterKey: "k".repeat(32) }).returning();
+    assert.equal(report!.status, "open");
+    assert.equal(report!.detail, "");
+    assert.equal(report!.handledBy, null);
     await client.close();
   });
 

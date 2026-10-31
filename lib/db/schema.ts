@@ -59,6 +59,15 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash"),
   dailyBuildQuota: integer("daily_build_quota").notNull().default(3),
   createdAt: createdAt(),
+  /** 0018_trust: when they said they're 18 or older (TRUST_AGE_GATE), or null. */
+  adultConfirmedAt: timestamp("adult_confirmed_at", { withTimezone: true }),
+  /** 0018_trust: the TERMS_VERSION (lib/trust/terms.ts) they accepted, or null. */
+  termsVersion: text("terms_version"),
+  /** 0018_trust: when they accepted terms_version. */
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  /** 0018_trust: set by an admin's ban (TRUST_REPORTS). A banned builder can't sign in or build. */
+  bannedAt: timestamp("banned_at", { withTimezone: true }),
+  banReason: text("ban_reason"),
 });
 
 export const inspirations = pgTable(
@@ -105,6 +114,12 @@ export const products = pgTable(
     status: text("status").$type<ProductStatus>().notNull().default("building"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * 0018_trust: set by an admin's takedown (TRUST_REPORTS): its page and gallery card are hidden and its live tokens
+     * are revoked at this exact time, so undoing the takedown can give back just those. Null for every other product.
+     */
+    takenDownAt: timestamp("taken_down_at", { withTimezone: true }),
+    takedownReason: text("takedown_reason"),
   },
   (t) => [index("products_owner_idx").on(t.ownerId), index("products_rebuild_idx").on(t.rebuildOf)],
 );
@@ -647,3 +662,32 @@ export const nativeLabs = pgTable("native_labs", {
   version: text("version"),
   instanceId: text("instance_id"),
 });
+
+// ---------- Wave 3, 0018_trust (unit 1) ----------
+
+/** Why someone reported a product (docs/CAPABILITIES.md, section 7). */
+export const REPORT_REASONS = ["illegal", "harm", "privacy", "copyright", "impersonation", "broken", "other"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+export type ReportStatus = "open" | "closed" | "dismissed";
+
+/**
+ * Reports anyone can file from a product's Report link (TRUST_REPORTS). `reporter_key` is an HMAC of the reporter's IP
+ * cut to 32 characters, for rate limits and spotting repeats. The IP itself is never stored or shown. `product_id` is
+ * null when the slug matched no product.
+ */
+export const abuseReports = pgTable(
+  "abuse_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id").references(() => products.id),
+    productSlug: text("product_slug").notNull(),
+    reason: text("reason").$type<ReportReason>().notNull(),
+    detail: text("detail").notNull().default(""),
+    reporterKey: text("reporter_key").notNull(),
+    status: text("status").$type<ReportStatus>().notNull().default("open"),
+    handledBy: uuid("handled_by").references(() => users.id),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("abuse_reports_status_idx").on(t.status, t.createdAt)],
+);
