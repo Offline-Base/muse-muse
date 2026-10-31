@@ -379,7 +379,9 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   rehearsal on stage 1; the stage 2 run follows (nanoquant/nq_rerun_stage2.sh, which assumes stage 2 on the GH200 and
   needs adapting to take train-1's adapter through this Mac).
 - 12:50 AM: this Mac dipped to 7.5 GB free (4 GB of swap plus a stage 2 checkpoint). Deleted the local copy of
-  stage1-multi's checkpoint-6229 (left EMPTIED.txt so the sync doesn't pull it again; the full copy is on train-1, and
+  stage1-multi's checkpoint-6229 (the EMPTIED.txt left there didn't stop the sync pulling it back; fixed about 2:35 AM
+  by renaming its trainer_state.json on train-1, the file the sync looks for, and deleting the local copy again, along
+  with models/stage1-ckpt/adapter, whose S3 copy has the same size: 13 GB free; the full copy is on train-1, and
   out/adapter, 1.68 GB, is intact). 23 GB free at 12:55 AM, 17 GB at 1:45 AM (swap up to 8 GB).
 - 1:07 AM: student workflow: student picked (NVIDIA Nemotron 3.5 Bolt E4B, BF16 release, OpenMDW-1.1). Training set
   built and uploaded: 554,904 fact pairs, all Glimmer-written, passes the lineage check
