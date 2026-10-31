@@ -49,6 +49,21 @@ def test_needless_buckets_add_up_to_the_needless_asks():
     assert (c.missed_asks, c.refuse_shared) == (1, 1)
 
 
+def test_missed_asks_and_refusals_shared_count_against_the_policys_wants_like_run_eval():
+    from eval import run_eval
+
+    rows = [  # the persona's policy differs from the ground truth on both
+        {**row("p1", "share_tagged", "share_tagged", "policy_default"), "wants": "ask_user"},
+        {**row("p2", "share_tagged", "share_summary", "policy_default"), "wants": "refuse"},
+        {**row("p3", "ask_user", "share_tagged", "policy_default"), "wants": "share_tagged"},
+    ]
+    c = ask_causes.count(rows)
+    full = [{**r, "status": "shared", "source": "rule", "fallback": False, "leaked": False, "latency_ms": 1} for r in rows]
+    report = run_eval.rescore(full, run_eval.EvalReport(name="x"))
+    assert (c.missed_asks, c.refuse_shared) == (report.missed_asks, report.refuse_shared) == (1, 1)
+    assert ask_causes.count([{k: v for k, v in rows[2].items() if k != "wants"}]).missed_asks == 1  # no wants: expected
+
+
 def test_items_add_the_kind_the_connector_sends():
     c = ask_causes.count(ROWS, ask_causes.production_kinds(ITEMS))
     assert c.needless_kinds[("unknown_person_title", "document_list")] == 2
@@ -71,7 +86,7 @@ def test_report_has_the_command_counts_and_no_text(tmp_path):
     lines = md.splitlines()
     assert lines[0] == "# Why the router asked: dev_run"
     assert lines[2].startswith("Command: `uv run python -m scripts.ask_causes --raw ")
-    assert "| Needless (expected anything else) | 8 |" in md and "| Missed asks (expected ask_user, shared) | 1 |" in md
+    assert "| Needless (expected anything else) | 8 |" in md and "| Missed asks (the policy wants an ask, the router shared) | 1 |" in md
     assert "| Code | share_tagged | share_summary | refuse | Total |" in md
     assert "| unknown_person_title | 2 | 0 | 0 | 2 |" in md
     assert "| Total | 5 | 2 | 1 | 8 |" in md

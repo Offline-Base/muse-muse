@@ -23,6 +23,7 @@ from typing import Any
 
 from base import events
 from base.config import CloudBackendRefused, Settings, assert_synthetic, synthetic_marked
+from base.regions import mark_uncovered, reads_uncovered
 from base.types import Roster
 from base.workspace.index import Doc, DocumentIndex, WorkspacePathError
 from base.workspace.jobs import JobStore
@@ -168,8 +169,8 @@ class Agent:
         events.emit("working", job_id)
         try:
             self.jobs.start(job_id)
-            raw, summary, kind, topics = self._work(job_id, instructions, folder)
-            self.jobs.finish(job_id, raw, kind, summary=summary, topics=topics)
+            raw, summary, kind, topics, sources = self._work(job_id, instructions, folder)
+            self.jobs.finish(job_id, raw, kind, summary=summary, topics=topics, sources=sources)
         except Exception as exc:  # the job records a short reason; the thread must not die loudly
             log.warning("job %s failed: %s", job_id, type(exc).__name__)
             try:
@@ -184,10 +185,15 @@ class Agent:
                 events.settle(job_id)  # amber again if the user still has a card to answer
 
     def _work(self, job_id: str, instructions: str, folder: str | None):
+        """(raw, summary, kind, topics, sources). `sources` are the doc ids the job read (the
+        rubric too), so egress applies the user's controls and the image checks to the real
+        pages, not the folder name. With SAM_ENABLED=1, an image read while covering was off is
+        marked (regions.mark_uncovered), so its result is kept even once that toggle is off."""
         text = self._restore(instructions)  # real names, for choosing what to do on the device
         path = self.index.resolve(folder)
         assert_synthetic(self.settings, path)
         synthetic = is_marked(path, self.index.root)  # True only for folders marked as invented data
+        uncovered = reads_uncovered(self.index)
         docs = self.index.list(folder)
         # The model gets Muse's instructions with tags, and documents with roster names and known
         # values swapped for the same tags, so no instruction can make it spell out a real name
@@ -197,9 +203,17 @@ class Agent:
         rubric = min(rubrics, key=lambda d: len(PurePosixPath(d.id).parts)) if rubrics else self._parent_rubric(path)
         if rubric is not None and GRADING_WORDS.search(text):
             self.jobs.set_kind(job_id, "grading")
-            return self._grade(job_id, task, [d for d in docs if d.id != rubric.id], rubric, synthetic)
-        self.jobs.set_kind(job_id, "generic")
-        return self._generic(job_id, task, docs, synthetic)
+            essays = [d for d in docs if d.id != rubric.id]
+            out = self._grade(job_id, task, essays, rubric, synthetic)
+            read = [*essays, rubric]
+        else:
+            self.jobs.set_kind(job_id, "generic")
+            out = self._generic(job_id, task, docs, synthetic)
+            read = docs
+        sources = [str(d.id) for d in read]
+        if uncovered or reads_uncovered(self.index):  # covering was off when the job started or ended
+            sources = mark_uncovered(sources)
+        return (*out, sources)
 
     def _parent_rubric(self, folder: Path) -> Doc | None:
         """The nearest rubric.md above the folder, up to the workspace root (demo/rubric.md for

@@ -188,11 +188,18 @@ def proxy_mode(settings) -> str:
     return "direct" if getattr(settings, "relay_proxy", "system") == "direct" else "system"
 
 
+# The relay answers 401 for a bad device secret and never 403, so a 403 comes from Cloudflare's
+# edge or a proxy on the way (error 1010, a WAF challenge): a refused connection, not a bad secret.
+PROXY_HINT = "If this keeps happening on a managed network, try RELAY_PROXY=direct."
+
+
 def _check(resp: httpx.Response, what: str) -> None:
-    if resp.status_code in (401, 403):
+    if resp.status_code == 401:
         raise RelayAuthError(
             f"The relay rejected this device during {what}. Run register again with --force."
         )
+    if resp.status_code == 403:
+        raise RelayError(f"Something between this device and the relay refused {what} (HTTP 403). {PROXY_HINT}")
     if resp.status_code >= 400:
         raise RelayError(f"The relay answered {resp.status_code} to {what}.")
 
@@ -363,8 +370,10 @@ class RelayClient:
     async def run(self, *, attempts: int | None = None) -> None:
         """Stay connected: dial out, serve, and reconnect with jittered backoff capped at 60 s.
 
-        Stops with RelayAuthError when the relay rejects the secret, and with RelayReplacedError when
-        the relay closes the socket because another client connected with the same secret.
+        Stops with RelayAuthError when the relay rejects the secret (401), and with
+        RelayReplacedError when the relay closes the socket because another client connected with
+        the same secret. A 403 never comes from the relay itself (Cloudflare's edge or a proxy), so
+        it is retried like any refused connection.
 
         `attempts` limits the number of connection attempts (for tests); None means forever.
         """
@@ -383,11 +392,14 @@ class RelayClient:
                     await self.session(ws)
                     log.info("relay connection closed")
             except InvalidStatus as exc:
-                if exc.response.status_code in (401, 403):
+                if exc.response.status_code == 401:
                     raise RelayAuthError(
                         "The relay rejected the device secret. Run register again."
                     ) from None
-                log.warning("relay refused the connection (HTTP %s)", exc.response.status_code)
+                if exc.response.status_code == 403:  # the edge or a proxy, not the relay: keep trying
+                    log.warning("something between this device and the relay refused the connection (HTTP 403). %s", PROXY_HINT)
+                else:
+                    log.warning("relay refused the connection (HTTP %s)", exc.response.status_code)
             except (OSError, TimeoutError, WebSocketException) as exc:
                 if getattr(getattr(exc, "rcvd", None), "code", None) == REPLACED_CLOSE_CODE:
                     # Reconnecting would knock the other copy off in turn, and both would keep flapping.

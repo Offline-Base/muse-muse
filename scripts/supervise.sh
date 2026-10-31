@@ -66,11 +66,13 @@ keep_running() {
   done
 }
 
-# wait_up URL SECONDS: succeeds once URL answers, fails after SECONDS.
+# wait_up URL SECONDS [PID]: succeeds once URL answers, fails after SECONDS, or at once when PID
+# (a keep_running loop) has stopped, since then nothing will answer (a helper that exited 3).
 wait_up() {
-  local url="$1" seconds="$2" i=0
+  local url="$1" seconds="$2" pid="${3:-}" i=0
   while [ "$i" -lt "$seconds" ]; do
     if curl -fs -o /dev/null --max-time 2 "$url"; then return 0; fi
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then return 1; fi
     sleep 1
     i=$((i + 1))
   done

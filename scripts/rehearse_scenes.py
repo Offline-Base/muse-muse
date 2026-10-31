@@ -60,7 +60,6 @@ CASE_BRIEF = "Write a one-page brief of the open cases for the program office, f
 IEP_TASK = "List each student who has an IEP or a 504 plan and their accommodations, for my planning."
 TABLE_ROW = re.compile(r"^\|\s*(\[Student [A-Z]{1,3}\])\s*\|(?:\s*\d+\s*\|){4}\s*(\d+)\s*\|", re.MULTILINE)
 STUDENT = re.compile(r"\[Student [A-Z]{1,3}\]")
-SAVED = re.compile(r"Saved (\d+) ")
 CASE_LABEL = re.compile(r"^- (?:Client|Caseworker|From|To|Landlord contact): (.+)$", re.MULTILINE)
 # The fixed sentences egress says a result was kept with; only these are copied into the report.
 WHY_KEPT = tuple(dict.fromkeys([*(sentence for _floor, sentence in KEPT_REASONS), KEPT_DEFAULT]))
@@ -340,8 +339,11 @@ def scene_b(m: Player) -> None:
     args = {"items": items, "purpose": "notes home to families", "address_to": "guardians"}
     text, error = m.raw("save_on_device", args)
     status, body = status_of(text, error)
-    saved = SAVED.search(str(body.get("result", "")))
-    shown = f"saved {saved.group(1)}" if status == "saved" and saved else status
+    # Muse's receipt never says how many letters were made (that is each family's size), so the
+    # harness counts the drafts on the device side.
+    folder = Path(m.services.settings.paths.output) / str(body.get("job_id", ""))
+    drafts = len(list(folder.glob("*.eml"))) if body.get("job_id") and folder.is_dir() else 0
+    shown = f"saved {drafts}" if status == "saved" else status
     m.note("B", f"{len(items)} family notes, one per tag", "save_on_device", shown, f"saved {want}", time.monotonic() - start, text, body)
 
 

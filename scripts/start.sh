@@ -221,7 +221,8 @@ if [ "$SAM" = 1 ]; then
   # An optional helper: kept running, never required, so its exit never stops the app. Images
   # wait for it (fail closed). start_sam.sh exits 3 when trying again cannot help (no weights).
   keep_running "the region finder (SAM 3.1)" "$LOG_DIR/sam.log" "$ROOT/scripts/start_sam.sh" &
-  PIDS="$PIDS $!"
+  SAM_LOOP=$!
+  PIDS="$PIDS $SAM_LOOP"
 fi
 
 if port_busy "$APPROVAL_PORT"; then die "something already answers on 127.0.0.1:$APPROVAL_PORT; stop it first"; fi
@@ -231,14 +232,6 @@ APP_PID=$!
 PIDS="$PIDS $APP_PID"
 require "$APP_PID" "Muse Privacy (the approval page and connector)"
 wait_for "http://127.0.0.1:$APPROVAL_PORT/health" 60 "Muse Privacy" "$APP_PID" "the output above"
-
-if [ "$SAM" = 1 ]; then
-  if wait_up "http://127.0.0.1:$SAM_PORT/health" 180; then
-    echo "The region finder (SAM 3.1) is up."
-  else
-    echo "The region finder (SAM 3.1) is not running, so images are not read until it is. See $LOG_DIR/sam.log"
-  fi
-fi
 
 if [ -n "$RELAY" ] && [ -f "$HOME_DIR/relay.json" ]; then
   mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
@@ -253,6 +246,15 @@ if command -v caffeinate >/dev/null 2>&1; then
   # No idle sleep, and no system sleep on AC power, while this script runs. A closed lid still sleeps.
   caffeinate -i -s -w $$ &
   PIDS="$PIDS $!"
+fi
+# After the relay client: Muse can reach the device while SAM loads, and a SAM that stopped for
+# good (exit 3: no weights or no sidecar environment) ends the wait at once.
+if [ "$SAM" = 1 ]; then
+  if wait_up "http://127.0.0.1:$SAM_PORT/health" 180 "$SAM_LOOP"; then
+    echo "The region finder (SAM 3.1) is up."
+  else
+    echo "The region finder (SAM 3.1) is not running, so images are not read until it is. See $LOG_DIR/sam.log"
+  fi
 fi
 echo "Muse Privacy is up: http://127.0.0.1:$APPROVAL_PORT (Ctrl-C stops it)"
 

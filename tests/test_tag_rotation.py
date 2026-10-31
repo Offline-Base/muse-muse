@@ -97,17 +97,81 @@ def test_for_muse_leaves_out_tags_never_sent_while_as_dict_keeps_them():
     assert tm.expired(f"{bram} and {maya}") == [bram]
 
 
-def test_touch_extends_the_grace_window():
-    clock = Clock()
+def test_a_tag_sent_every_day_still_stops_when_its_day_and_the_grace_end():
+    clock = Clock()  # noon on its day: the day ends in 12 h, the grace 36 h after that
     tm = daily(clock=clock)
     t = tag("Odessa", ROSTER, tm).text
     tm.touch([t])
-    clock.advance(48)
-    tm.touch([t])  # sent again two days later, in an approved result
-    clock.advance(30)
+    for _ in range(2):  # Muse keeps sending it back, and results with it keep going out
+        clock.advance(23)
+        assert t in tm.for_muse() and tm.day_for(f"{t} essay") is not None
+        tm.touch([t])
+    clock.advance(1.5)  # 47.5 h after noon: the grace ends at 48 h
     assert t in tm.for_muse()
-    clock.advance(7)
-    assert t not in tm.for_muse()
+    clock.advance(1)
+    assert t not in tm.for_muse() and tm.expired(f"{t} essay") == [t] and tm.day_for(f"{t} essay") is None
+    assert tag("Odessa", ROSTER, tm).text != t  # today's tag is a new code
+
+
+def test_a_tag_made_on_an_older_day_late_lives_no_longer_than_that_day():
+    clock = Clock()
+    tm = daily(clock=clock)
+    day0 = tm.today()
+    clock.advance(40)  # day 2 morning: a job with day 0's tags finds someone new
+    late = tm.view(day0).tag_for("person", "kestrel vane", "Kestrel Vane")
+    tm.touch([late])
+    assert late in tm.for_muse()
+    clock.advance(8.5)  # day 0's grace is over, though this tag was made 8.5 h ago
+    assert late not in tm.for_muse()
+
+
+def test_a_request_with_tags_from_two_days_is_mixed():
+    clock = Clock()
+    tm = daily(clock=clock)
+    old = tag("Maya", ROSTER, tm).text
+    tm.touch([old])
+    clock.advance(24)
+    new_maya, new_bram = (tag(n, ROSTER, tm).text for n in ("Maya", "Bram"))
+    tm.touch([new_maya, new_bram])
+    assert tm.mixed_days(f"{old} and {new_bram}") and tm.mixed_days(f"{old} and {new_maya}")
+    assert not tm.mixed_days(f"{new_maya} and {new_bram} with [Teacher]") and not tm.mixed_days(f"{old} essay")
+    assert not tm.mixed_days(f"{old} and [Student ZZ]")  # a tag that will not restore is expired(), not mixed
+    tm.rotation = "off"
+    assert not tm.mixed_days(f"{old} and {new_bram}")
+
+
+BIG = Roster(
+    teacher=ROSTER.teacher,
+    students=tuple(Person(f"Kid{n} Sample{n}", f"Kid{n}", f"Sample{n}") for n in range(24)),
+)
+
+
+def test_plain_words_after_student_never_restore_or_count_as_tags_on_any_day():
+    clock = Clock()
+    tm = daily(clock=clock)
+    for _ in range(10):  # on day 10 [Student IS] and [Student IN] are new codes, [Student ID] is day 9's
+        tm.ensure_roster(BIG)
+        tm.touch(tm.as_dict())
+        clock.advance(24)
+    tm.ensure_roster(BIG)
+    tm.touch(tm.as_dict())
+    assert {"[Student IS]", "[Student IN]", "[Student ID]"} <= set(tm.for_muse())
+    text = "Dear {guardian}, your student is doing well. Each student in the class read a book. Student ID 4, STUDENT IS."
+    assert restore(text, tm.for_muse()) == text and restore(text, tm.as_dict()) == text
+    assert tm.day_for(text) is None
+    for ask in ("Which student IEP goals mention reading?", "Find each Student ID number", "average student GPA",
+                "Student ELL support plan", "STUDENT ID", "Compare Student CAT scores", "Student TA notes"):  # fmt: skip
+        assert tm.expired(ask) == [], ask
+    # in brackets a code of two letters still restores, and one Muse was never sent is refused
+    assert restore("[Student IS] wrote", tm.for_muse()) != "[Student IS] wrote"
+    assert tm.expired("[Student ZY] wrote") == ["[Student ZY]"]
+
+
+def test_school_words_after_student_are_not_tags_with_a_fresh_map_either():
+    tm = daily()
+    tm.ensure_roster(BIG)
+    for ask in ("Check the Student ID column on each form.", "Summarize the Student IEP goals", "student ID"):
+        assert tm.expired(ask) == [], ask
 
 
 def test_guessed_and_expired_tags_look_the_same():
@@ -340,3 +404,37 @@ def test_the_server_says_one_plain_sentence_when_the_tag_map_will_not_load(tmp_p
     assert server.main(settings) == 3
     err = capsys.readouterr().err
     assert err.startswith("Not starting: The tag map could not be upgraded") and "Traceback" not in err
+
+
+def test_an_identical_tag_map_copy_still_lets_an_uncopied_base_db_be_copied(tmp_path):
+    home, path = v1_home(tmp_path)
+    (home / "tagmap.json.v1-backup-20261030-120000").write_bytes(path.read_bytes())  # a test copied only this
+    TagMap(path, rotation="daily", clock=Clock(), backup=[home / "base.db"])
+    copies = sorted(p.name.split(".v1-backup-")[0] for p in home.glob("*.v1-backup-*"))
+    assert copies == ["base.db", "tagmap.json"]
+
+
+def test_base_db_is_copied_before_its_first_schema_change_when_the_tag_map_is_already_v2(tmp_path):
+    from base.services import Services
+
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    daily(home / "tagmap.json").save()  # already version 2: no tag map upgrade, so no copy from there
+    with sqlite3.connect(home / "base.db") as db:  # tables from before audit.via and jobs.sources
+        db.execute("CREATE TABLE audit (ts REAL, tool TEXT, outcome TEXT, ms INTEGER)")
+        db.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT)")
+        db.execute("INSERT INTO audit VALUES (1, 'list_documents', 'shared', 3)")
+    settings = load_settings({"BASE_HOME": str(home), "WORKSPACE_ROOT": str(tmp_path)})
+    Services.create(settings, light=False, heavy=False, owner=False).close()
+    [copy] = list(home.glob("base.db.v1-backup-*"))
+    assert stat.S_IMODE(os.stat(copy).st_mode) == 0o600
+    with sqlite3.connect(copy) as db:
+        assert "via" not in {r[1] for r in db.execute("PRAGMA table_info(audit)")}  # taken before the change
+        assert db.execute("SELECT tool FROM audit").fetchall() == [("list_documents",)]
+    with sqlite3.connect(home / "base.db") as db:
+        assert "sources" in {r[1] for r in db.execute("PRAGMA table_info(jobs)")}  # JobStore added it after
+    Services.create(settings, light=False, heavy=False, owner=False).close()
+    assert len(list(home.glob("base.db.v1-backup-*"))) == 1  # once
+    fresh = load_settings({"BASE_HOME": str(tmp_path / "new"), "WORKSPACE_ROOT": str(tmp_path)})
+    Services.create(fresh, light=False, heavy=False, owner=False).close()
+    assert not list((tmp_path / "new").glob("*.v1-backup-*"))  # a new device has nothing to copy

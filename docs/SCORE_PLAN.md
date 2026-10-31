@@ -537,7 +537,7 @@ All claims go in eval/reports/muse_app. When the device is offline, Muse says so
 |---|---|---|---|---|---|---|
 | GAP-1 | Done | 7 commits at 22:12, pushed. Left: you confirm the push, and decide on docs/diagram/ | Ethan | Dec. 1 | 0.1 | Confirmed in DECISIONS.md |
 | GAP-1b | P0 | CLAUDE.md update. See the list below the table | Claude | Dec. 25 | 0.5 | Lane agents read the new rules |
-| GAP-2, GAP-3 | P0 | Tag map v2 behind TAG_ROTATION (daily, codes never reused, 36 h grace); only sent tags restore. Migration tested on a copy. Rollback: TAG_ROTATION=off plus the tagmap.json and base.db backup | B | Dec. 10 | 7 | A guessed tag gets the fixed sentence |
+| GAP-2, GAP-3 | P0 | Tag map v2 behind TAG_ROTATION (daily, codes never reused, 36 h grace); only sent tags restore. Migration tested on a copy. Rollback: TAG_ROTATION=off on the new code, keeping the v2 tagmap.json; restore the v1 backup only if Muse never saw a v2 tag (it brings back old counters, so codes would be reused), and the old branch cannot read v2 (docs/UPTIME.md, docs/RETENTION.md) | B | Dec. 10 | 7 | A guessed tag gets the fixed sentence |
 | GAP-4 | P0 | Tag map under retention (you asked for it) | B | GAP-2 | 1.5 | RETENTION.md:15 gap removed |
 | GAP-5, GAP-6 | P0 | Sources survive restart; light after restart | B | none | 1.5 | Restart tests fail today, pass after |
 | GAP-8 | P1 | /ask shows only page questions | C | none | 0.75 | Test passes |

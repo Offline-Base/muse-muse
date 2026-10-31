@@ -306,6 +306,29 @@ async def test_run_stops_when_the_relay_rejects_the_secret():
         await client.run()
 
 
+async def test_a_403_from_the_edge_or_a_proxy_is_retried_not_treated_as_a_bad_secret(monkeypatch, caplog):
+    # The relay answers 401 for a bad secret and never 403: a 403 is Cloudflare's edge or a proxy
+    # (error 1010), so the client keeps backing off instead of stopping for good with exit 3.
+    monkeypatch.setattr(rc.random, "random", lambda: 1.0)
+    sleeps: list[float] = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    ws = FakeSocket([{"type": "ping"}], expect=1)
+    connect = FakeConnect([rejected(403), rejected(403), ws])
+    client = make_client(lambda r: httpx.Response(200), connect=connect, sleep=sleep)
+    with caplog.at_level("WARNING"):
+        await client.run(attempts=3)
+    assert len(connect.calls) == 3 and ws.sent == [{"type": "pong"}] and sleeps == [1.0, 2.0]
+    assert "RELAY_PROXY=direct" in caplog.text
+    with pytest.raises(rc.RelayError) as err:
+        rc._check(httpx.Response(403), "pair")
+    assert not isinstance(err.value, RelayAuthError) and "RELAY_PROXY=direct" in str(err.value)
+    with pytest.raises(RelayAuthError):
+        rc._check(httpx.Response(401), "pair")
+
+
 class ClosedSocket:
     """A socket the relay closes with `code` as soon as it is read."""
 

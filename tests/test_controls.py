@@ -193,3 +193,62 @@ def guard_route(decision):
     from base.types import RouteDecision
 
     return RouteDecision(decision, "reason", "model", 0, [])
+
+
+class _QuietLlm:
+    is_cloud = False
+
+    def chat_json(self, *_a, **_k):
+        return {"decision": "share_tagged", "reason": "because"}
+
+    def chat(self, *_a, **_k):
+        return SimpleNamespace(content="A short summary.")
+
+    def llm_names(self, *_a, **_k):
+        return []
+
+    def request_topics(self, *_a, **_k):
+        return []
+
+    def close(self):
+        pass
+
+
+def test_a_search_answer_from_a_passage_it_did_not_pick_is_tagged_like_that_passage(tmp_path):
+    from base.connector.server import Connector
+    from base.services import Services
+
+    root = tmp_path / "w"
+    for folder, text in (("newsletter", "# Garden news\nThe garden beds are planted."), ("essays", f"# Essay\n{STUDENT} planted beans.")):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "a.md").write_text(text)
+    env = {"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root), "DEVICE_ONLY": "1", "CHECKER_API_KEY": "k",
+           "ROSTER_PATH": str(ROSTER_FILE), "LIGHT_SERIAL": ""}  # fmt: skip
+    svc = Services.create(load_settings(env), light=False, heavy=False, owner=False)
+    try:
+        svc.router.llm = svc.checker_llm = svc.answer_llm = _QuietLlm()
+        svc.controls.save(Controls(names_off_folders=["newsletter"]))
+        news = SimpleNamespace(doc_id="newsletter/a.md", title="Garden news", text="The garden beds are planted.")
+        essay = SimpleNamespace(doc_id="essays/a.md", title="Essay", text=f"{STUDENT} planted beans.")
+
+        class Rag:
+            candidates = 20
+
+            def retrieve(self, index, question):
+                return [news, essay]  # the model is shown both
+
+            def pick(self, question, found):
+                return [news], f"{STUDENT} planted the beans."  # picks one, answers from the other
+
+        svc.rag = Rag()
+        c = Connector(svc)
+        text = c.call("search_documents", c.search_documents, "who planted the garden", "for my own records").content[0].text
+        assert STUDENT not in text and "Rose" not in text
+        [row] = svc.approvals.history(limit=5)
+        assert json.loads(row["sources"]) == ["newsletter/a.md", "essays/a.md"]
+        # without an answer only the picked passages count, as before
+        svc.rag.pick = lambda question, found: ([news], None)
+        c.call("search_documents", c.search_documents, "garden beds", "for my own records")
+        assert json.loads(svc.approvals.history(limit=5)[0]["sources"]) == ["newsletter/a.md"]
+    finally:
+        svc.close()

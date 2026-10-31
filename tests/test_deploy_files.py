@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -356,6 +357,22 @@ def test_stopping_the_loop_stops_its_helper(tmp_path):
                             'child=$(pgrep -P $sup); kill $sup; wait $sup || true; sleep 0.5; '
                             'if kill -0 $child 2>/dev/null; then echo alive; else echo gone; fi')
     assert r.returncode == 0 and r.stdout.strip() == "gone"
+
+
+def test_wait_up_stops_at_once_when_the_helper_loop_has_stopped(tmp_path):
+    # start_sam.sh exits 3 with no weights, so keep_running returns and nothing will ever answer:
+    # waiting the full time would keep the relay client from starting for minutes.
+    started = time.monotonic()
+    r = supervise(tmp_path, 'true & loop=$!; wait $loop; if wait_up "http://127.0.0.1:9/health" 60 "$loop"; '
+                            'then echo up; else echo down; fi')
+    assert r.returncode == 0 and r.stdout.strip() == "down" and time.monotonic() - started < 15
+
+
+def test_start_connects_the_relay_before_it_waits_for_sam():
+    code = code_lines(REPO / "scripts" / "start.sh")
+    sam_wait = code.index('wait_up "http://127.0.0.1:$SAM_PORT/health" 180 "$SAM_LOOP"')
+    assert code.index('keep_running "the relay client"') < sam_wait and code.index("caffeinate -i") < sam_wait
+    assert code.index("watch_required") > sam_wait
 
 
 def test_a_required_process_stopping_is_named(tmp_path):

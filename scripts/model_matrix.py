@@ -450,8 +450,9 @@ def report_sha(label: str | None, reports: Path | None = None) -> str | None:
 
 
 def preflight(configs: list[Config], items: list[dict], opts: argparse.Namespace,
-              settings_of: dict[str, Any], total_items: int) -> tuple[bool, list[str]]:  # fmt: skip
-    """5 items per config before the real run. Returns (go, report lines)."""
+              settings_of: dict[str, Any], items_per_config: int) -> tuple[bool, list[str]]:  # fmt: skip
+    """5 items per config before the real run. Returns (go, report lines). The estimate adds up,
+    over the configs, each one's mean time per item times the items it will run (every set)."""
     lines = ["| Config | Items | Errors or fallbacks | Time per item, p95 | Result |", "|---|---|---|---|---|"]
     go, seconds = True, 0.0
     for config in configs:
@@ -459,7 +460,7 @@ def preflight(configs: list[Config], items: list[dict], opts: argparse.Namespace
         r = run_eval.rescore(rows, run_eval.EvalReport(name=config.name))
         bad = r.unscored_share() > run_eval.MAX_UNSCORED_SHARE or r.release_p95_ms > PREFLIGHT_MAX_P95_MS
         go = go and not bad
-        seconds += sum(row.get("release_ms", 0) for row in rows) / max(1, len(rows)) / 1000 * total_items
+        seconds += sum(row.get("release_ms", 0) for row in rows) / max(1, len(rows)) / 1000 * items_per_config
         lines.append(f"| {config.name} | {r.n} | {r.errors + r.fallbacks} | {r.release_p95_ms / 1000:.1f} s "
                      f"| {'stop' if bad else 'ok'} |")  # fmt: skip
         print(f"preflight {config.name}: {r.errors + r.fallbacks} of {r.n} unscored, p95 {r.release_p95_ms / 1000:.1f} s",
@@ -615,7 +616,7 @@ def main(argv: list[str] | None = None, environ: dict[str, str] | None = None) -
             print("Preflight stopped the run:\n" + "\n".join(f"- {x}" for x in problems), file=sys.stderr)
             return 1
         first = next(iter(sets.values()))
-        go, preflight_lines = preflight(configs, first, opts, opts.settings_of, sum(map(len, sets.values())) * len(configs))
+        go, preflight_lines = preflight(configs, first, opts, opts.settings_of, sum(map(len, sets.values())))
         if not go:
             print("Preflight stopped the run: too many items unscored or too slow; see above.", file=sys.stderr)
             return 1

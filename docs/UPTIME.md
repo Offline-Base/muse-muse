@@ -13,7 +13,7 @@ Judging runs Nov 4 to 8 and the live finals are Nov 9. The whole time, this lapt
 | Muse Privacy (`python -m base`: approval page and connector) | 8787, 8790 | required | start.sh stops everything and exits 1 |
 | The embedder, EmbeddingGemma 2 (SEARCH_EMBEDDINGS=1) | 8084 | optional | started again after 5 s, then 10, 20 and so on up to 5 minutes; search uses keywords meanwhile |
 | The SAM region finder (SAM_ENABLED=1, off by default) | 8085 | optional | started again the same way; page images are not read until it answers (fail closed). Exit status 3 (no weights or no sidecar environment) is not retried |
-| The relay client | none, it dials out | optional | started again the same way (it also reconnects on its own). Exit status 3 means the relay refused this device or another copy took over, and it is not retried |
+| The relay client | none, it dials out | optional | started again the same way (it also reconnects on its own). Exit status 3 means the relay rejected the device secret (HTTP 401) or another copy took over, and it is not retried. A 403 never comes from the relay (it is Cloudflare's edge or a proxy, such as error 1010), so the client keeps retrying and its log suggests RELAY_PROXY=direct |
 
 A required process stopping brings start.sh down on purpose, so that launchd can start it all again from a clean state. That only happens when the LaunchAgent is installed (`scripts/install_login.sh`): launchd then starts start.sh again 30 s after it exits, at login, and after a crash. Without the LaunchAgent, nothing restarts a stopped start.sh.
 
@@ -50,6 +50,8 @@ launchctl print "gui/$(id -u)/ai.offlinebase.muse-privacy" | grep -E "state|pid|
 tail -n 20 ~/.base/logs/start.log                  # start.sh's messages, helper restarts included
 grep -c "starting it again" ~/.base/logs/start.log # how many times a helper was restarted
 tail -n 20 ~/.base/logs/relay.log                  # the relay client
+grep -c "connected to the relay" ~/.base/logs/relay.log  # at least 1; the curl checks above pass without the relay
+grep -c "HTTP 403" ~/.base/logs/relay.log         # something on the way refuses the socket: try RELAY_PROXY=direct
 pmset -g batt | head -n 1                          # should say AC Power
 pmset -g assertions | grep -i caffeinate           # start.sh's keep-awake
 df -h /System/Volumes/Data
@@ -67,4 +69,6 @@ The real test is Muse: a tool call such as list_documents should come back withi
 | start.log says a helper keeps restarting | The app still answers. Read that helper's log (embedder.log or relay.log). Search uses keywords while the embedder is down. |
 | relay.log says the relay refused this device, or another copy took over (exit 3) | Stop the other copy (`pgrep -fl relay_client`), or pair again: `uv run python -m base.connector.relay_client pair` and enter the code in Muse. Then kickstart as above. |
 | The disk is nearly full | Empty the Trash and delete old logs in `~/.base/logs` (they are made again). Never delete base.db or tagmap.json. Then kickstart. |
+| relay.log keeps saying HTTP 403 | Cloudflare's edge or the managed laptop's proxy refuses the socket, not the relay. Set `RELAY_PROXY=direct` in .env and kickstart. |
+| Daily tags cause trouble and you want them off | Set `TAG_ROTATION=off` in .env on this version and kickstart. Keep the version 2 `tagmap.json`. Do not put `tagmap.json.v1-backup-*` back unless Muse never saw a version 2 tag: it holds older counters, so codes Muse already holds would go to other people and restore wrongly. Going back to the older code (the ethan/device-only-build branch) needs the version 1 file, since it cannot read version 2, so only do that if Muse never saw a version 2 tag (docs/RETENTION.md). After the first start on this version, check that `base.db.v1-backup-*` is next to base.db (it is made then, once). |
 | The Mac restarted | Log in. The LaunchAgent starts everything; check health after about 2 minutes. |

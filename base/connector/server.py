@@ -35,7 +35,7 @@ from starlette.responses import JSONResponse
 
 from base.config import CloudBackendRefused
 from base.connector.audit import CURRENT_VIA, VIA_HEADER, client_label, via_label
-from base.regions import unchecked_images, unchecked_note
+from base.regions import mark_uncovered, reads_uncovered, unchecked_images, unchecked_note
 from base.workspace import merge
 from base.workspace.contacts import ContactsError, load_contacts
 from base.workspace.index import snippet, tokenize
@@ -102,8 +102,8 @@ step that reads them runs on the device with its own model.
 - Names and identifiers come back as tags like [Student A], [Teacher] or [Phone 1]. With a privacy \
 toggle on, places, dates, organizations and record numbers do too, like [Place 1] or [Date 1]. Plan \
 with the tags. Tags change daily: a person keeps one tag for the day and gets a new one the next \
-day, and an older tag stops working after about a day and a half, so use the tags from the current \
-results.
+day, and an older tag stops working about a day and a half after its day ends, however often it is \
+used, so use the tags from the current results and keep to one day's tags in a request.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
 - Two ways to ask about the documents: search_documents returns the best passages for you to reason \
@@ -255,17 +255,25 @@ def tag_values(services: Any) -> dict[str, str]:
     return dict(tagmap.tag_map)
 
 
+def check_tags(services: Any, text: str) -> None:
+    """Raise ToolFailure with EXPIRED_TAG (audit expired_tag) when `text` holds a tag that will not
+    restore for Muse (TagMap.expired), or restorable tags from two tag days (TagMap.mixed_days).
+    Old, never-sent and guessed tags and mixed days get the same sentence, so Muse cannot tell
+    them apart. Nothing is searched, listed, started or saved then."""
+    tagmap = services.tagmap
+    if isinstance(tagmap, Mapping) or not hasattr(tagmap, "expired"):
+        return
+    if tagmap.expired(text) or (hasattr(tagmap, "mixed_days") and tagmap.mixed_days(text)):
+        raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
+
+
 def restore_tags(services: Any, text: str) -> str:
     """Swap tags like [Student A] back to real values. The result stays on the device.
 
     With a TagMap only the tags this device sent to Muse, still in their grace window, restore
-    (TagMap.for_muse). Any other tag in `text` raises ToolFailure with EXPIRED_TAG (audit
-    expired_tag) before anything is searched or started: old, never-sent and guessed tags get the
-    same sentence, so Muse cannot tell them apart."""
+    (TagMap.for_muse), and `text` must pass check_tags first."""
     guard = importlib.import_module("base.guard")
-    tagmap = services.tagmap
-    if not isinstance(tagmap, Mapping) and hasattr(tagmap, "expired") and tagmap.expired(text):
-        raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
+    check_tags(services, text)
     return guard.restore(text, tag_values(services))
 
 
@@ -415,8 +423,13 @@ class Connector:
         query, purpose = query.strip(), purpose.strip()
         if not query:
             raise ToolFailure("Pass a short search query, for example: rubric criteria for evidence.")
+        # Who the snippets are for is part of Muse's request, so egress tags and labels it with the
+        # rest, and its tags pick the result's tag day: the purpose's tags are checked too.
+        request = f"{query}\nPurpose: {purpose}" if purpose else query
+        check_tags(self.services, request)
         restored = restore_tags(self.services, query)
         rag = getattr(self.services, "rag", None)
+        uncovered = reads_uncovered(self.services.index)
         found: list[Any] = []
         with unchecked_images() as unread:  # images the SAM sidecar could not check are left out
             if rag is not None:
@@ -446,15 +459,18 @@ class Connector:
             raw = answer or "No matching passages."
         if unread:
             raw = f"{raw}\n\n{unchecked_note(len(unread))}"
-        # Who the snippets are for is part of Muse's request, so egress tags and labels it with the rest.
-        request = f"{query}\nPurpose: {purpose}" if purpose else query
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still
         # checking" with a job_id before the relay gives up, and a retried search joins the release.
         # The wait is what is left of this call's budget after the retrieval and picking above.
         jobs = self.services.jobs
-        # The documents the snippets came from are stored with the job, so a release after a
-        # restart still uses the user's controls for them (a names-off folder, a scanned page).
-        sources = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
+        # The documents the text came from are stored with the job, so a release after a restart
+        # still uses the user's controls for them (a names-off folder, a scanned page). The model's
+        # answer can draw on every passage it was shown, not only the ones it picked, so with an
+        # answer every candidate counts. An image read while covering was off stays unchecked.
+        shown = [*snippets, *found] if answer else snippets
+        sources = list(dict.fromkeys(str(_get(s, "doc_id")) for s in shown if _get(s, "doc_id")))
+        if uncovered or reads_uncovered(self.services.index):
+            sources = mark_uncovered(sources)
         job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet", sources=sources)
         status, text = self._release(job_id, jobs.get(job_id), deadline)
         if status == "shared":
@@ -473,9 +489,10 @@ class Connector:
         runner = getattr(self.services, "ask_runner", None)
         if runner is None:
             raise ToolFailure(ASK_UNAVAILABLE)
+        request = f"{question}\nPurpose: {purpose}" if purpose else question
+        check_tags(self.services, request)  # the purpose's tags pick the answer's tag day too
         real_question = restore_tags(self.services, question)  # before any index call
         real_folder = self._docs(folder)[0] if folder else ""
-        request = f"{question}\nPurpose: {purpose}" if purpose else question
         try:
             job_id = str(runner.start(real_question, request, real_folder or None))
         except Exception as exc:
@@ -511,10 +528,16 @@ class Connector:
         if not purpose:
             raise ToolFailure("Say in purpose who the files are for, for example: notes home to families.")
         parsed = merge.items_from(items or [])
+        never_share = getattr(getattr(self.services, "policy", None), "never_share", None)
         try:
-            merge.check(parsed, address_to, set(tag_values(self.services)))
+            merge.check(
+                parsed, address_to, set(tag_values(self.services)),
+                restore=lambda text: restore_tags(self.services, text), never_share=never_share,
+            )
         except merge.SaveRefused as refused:
             raise ToolFailure(str(refused)) from None
+        # Every text at once, before anything is written: an old tag or two tag days save nothing.
+        check_tags(self.services, "\n".join(t for i in parsed for t in (i.for_tag, i.title, i.body)))
         contacts = self._contacts() if address_to == "guardians" else None
         jobs = self.services.jobs
         job_id = jobs.create(SAVE_KIND, merge.SAVE_REQUEST, None)
@@ -682,9 +705,10 @@ class Connector:
         return box["released"]
 
     def _job_sources(self, job: Any) -> list[str]:
-        """Where a job's result came from, for the user's redaction controls: the job row's
-        sources (a search's passages, an ask job's reading), else a task's folder. None known
-        means no sources, which always tags everything."""
+        """Where a job's result came from, for the user's controls and the image checks: the job
+        row's sources (a search's passages, an ask job's reading, a task's documents), else the
+        folder of a job from before tasks stored theirs. None known means no sources, which
+        always tags everything."""
         known = _get(job, "sources")
         if isinstance(known, str):
             try:

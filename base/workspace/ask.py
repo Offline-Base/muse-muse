@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from base import events
-from base.regions import unchecked_images, unchecked_note
+from base.regions import mark_uncovered, reads_uncovered, unchecked_images, unchecked_note
 
 log = logging.getLogger(__name__)
 
@@ -402,9 +402,13 @@ class AskRunner:
             self.jobs.start(job_id)
             events.emit("working", job_id)
             try:
+                index = getattr(self.asker, "index", None)
+                uncovered = reads_uncovered(index)
                 result = self.asker.run(question, folder, deadline=time.monotonic() + self.deadline_seconds)
-                # the doc ids it read go in the job row, so the user's controls still apply after a restart
-                self.jobs.finish(job_id, format_result(result), "snippet", sources=result.sources)
+                # the doc ids it read go in the job row, so the user's controls still apply after a
+                # restart, and images read while covering was off stay unchecked (regions.UNCOVERED)
+                sources = mark_uncovered(result.sources) if uncovered or reads_uncovered(index) else result.sources
+                self.jobs.finish(job_id, format_result(result), "snippet", sources=sources)
             except Exception as exc:
                 log.warning("ask job failed: %s", type(exc).__name__)
                 self.jobs.fail(job_id, FAILED)

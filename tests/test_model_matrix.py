@@ -261,6 +261,24 @@ def test_resume_picks_up_a_partial_raw_file_and_skips_a_finished_config(environ,
     assert calls[-1] == ids
 
 
+def test_preflight_estimate_adds_each_configs_own_items_once(environ, tmp_path, monkeypatch):
+    items = write_set(tmp_path / "set.jsonl", 10)
+
+    def minute_each(config, settings, o, items, *, name, on_row=None):
+        rows = fake_runner([])(config, settings, o, items, name=name, on_row=on_row)
+        return [{**r, "release_ms": 60_000} for r in rows]  # one minute per item
+
+    monkeypatch.setattr(mm, "run_items", minute_each)
+    monkeypatch.setattr(mm, "PREFLIGHT_MAX_P95_MS", 10**9)
+    with respx.mock(assert_all_called=False) as mock:
+        mock.get("http://127.0.0.1:8083/health").mock(return_value=httpx.Response(200))
+        code = mm.main(["--name", "est", "--configs", "policy_lfm,lfm_tighten", "--sets", str(items), "--preflight",
+                        "--out", str(tmp_path / "out")], environ)  # fmt: skip
+    assert code == 0
+    text = (tmp_path / "out" / "matrix_est.md").read_text()
+    assert "about 20 minutes." in text  # 2 configs x 10 items x 1 minute, not 40
+
+
 def test_preflight_stops_when_the_side_port_serves_another_file(environ, tmp_path):
     gguf = tmp_path / "glimmer-iq1s.gguf"
     gguf.write_bytes(b"GGUF" + b"\0" * 64)

@@ -1092,7 +1092,8 @@ async def test_get_result_names_every_tool_that_returns_a_job_id(client):
     assert "A scheduled job should call only the tool it names, once." in server.INSTRUCTIONS
     rotation = "Tags change daily: a person keeps one tag for the day and gets a new one the next day"
     assert server.INSTRUCTIONS.count(rotation) == 1 and server.INSTRUCTIONS.lower().count("daily") == 1
-    assert "about a day and a half, so use the tags from the current results." in server.INSTRUCTIONS
+    assert "about a day and a half after its day ends, however often it is used, so use the tags from the current " \
+        "results and keep to one day's tags in a request." in " ".join(server.INSTRUCTIONS.split())
     assert "\u2014" not in Path(server.__file__).read_text()
 
 

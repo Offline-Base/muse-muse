@@ -92,7 +92,7 @@ def test_24_notes_make_27_guardian_drafts_and_only_counts_come_back(svc):
     items = [{"for_tag": tag, "title": f"About {tag}'s essay", "body": NOTE.replace("[Student X]", tag)} for tag in tags]
     result, body = save(svc, items)
     assert not result.is_error and body["status"] == "saved"
-    assert body["result"].startswith("Saved 27 letters home for 24 students in your own files")
+    assert body["result"].startswith("Made letters home from 24 notes in your own files.")
     assert svc.approvals.pending() == []  # shared tagged with the demo policy: no approval card
     assert svc.egress.final_check(body["result"]) == []
     for value in private_values(svc):
@@ -221,17 +221,77 @@ def test_a_student_with_no_guardian_on_file_is_counted(svc):
     sheet.write_text("\n".join(lines) + "\n")
     second = [t for t in tags if t != first_tag][0]
     _, body = save(svc, [{"for_tag": t, "title": "Note", "body": "Hi."} for t in (first_tag, second)])
-    assert "for 2 students" in body["result"] and "1 note had no parent on file, so no letter was made for it." in body["result"]
+    # Muse is not told which student has no guardian on file: the list on the device says so
+    assert body["result"].startswith("Made letters home from 2 notes in your own files.") and "no letter" not in body["result"]
+    rows = (svc.settings.paths.output / body["job_id"] / merge.LIST_FILE).read_text().splitlines()
+    assert sum(f",{first_name},{merge.NO_GUARDIAN}," in r for r in rows) == 1
 
 
 def test_unknown_tags_and_receipts_by_themselves():
     known = {"[Student A]", "[Teacher]"}
     items = merge.items_from([{"for_tag": "[Student A]", "title": "[Teacher] says", "body": "[Student B] [Phone 2] [1] [note]"}])
     assert merge.unknown_tags(items, known) == ["[Student B]", "[Phone 2]"]  # only tag shapes count
-    assert merge.receipt(merge.Saved(1, 1, 1, 0, True)).startswith("Saved 1 letter home for 1 student in your own files,")
-    assert merge.receipt(merge.Saved(0, 2, 2, 2, True)).count("2 notes had no parent on file, so no letter was made for them.") == 1
+    assert merge.receipt(merge.Saved(1, 1, 1, 0, True)).startswith("Made letters home from 1 note in your own files.")
+    # one guardian, two guardians or none on file: the same receipt, so Muse learns no family's size
+    assert merge.receipt(merge.Saved(2, 1, 1, 0, True)) == merge.receipt(merge.Saved(0, 1, 1, 1, True)) == merge.receipt(
+        merge.Saved(1, 1, 1, 0, True)
+    )
     obj = SimpleNamespace(for_tag=" [Student A] ", title=" T ", body="b")
     assert merge.items_from([obj]) == [merge.Item("T", "b", "[Student A]")]
+
+
+def _known(svc, kind, key, value):
+    tag = svc.tagmap.tag_for(kind, key, value)
+    svc.tagmap.touch([tag])  # sent to Muse, so it restores
+    return tag
+
+
+@pytest.mark.parametrize(
+    "extra",
+    ["other", "other_unbracketed", "phone", "email", "redacted", "other_in_title"],
+)
+def test_a_letter_home_naming_anyone_but_its_own_student_saves_nothing(svc, extra):
+    tags = list(student_tags(svc))
+    mine, other = tags[0], tags[1]
+    body, title = f"Dear {{guardian}}, {mine} has a reading day next week.", "Reading day"
+    if extra == "other":
+        body += f" {other} has an IEP meeting too."
+    elif extra == "other_unbracketed":
+        body += f" {other.strip('[]')} will read with them."  # "Student B": restore would swap it too
+    elif extra == "phone":
+        body += f" Call {_known(svc, 'phone', '5125550143', '512-555-0143')} with questions."
+    elif extra == "email":
+        body += f" Write to {_known(svc, 'email', 'office@example.org', 'office@example.org')}."
+    elif extra == "redacted":
+        body += f" Bring {_known(svc, 'term', 'always:field trip', 'field trip')} forms."
+    else:
+        title = f"{other} and {mine}"
+    result, _ = save(svc, [{"for_tag": mine, "title": title, "body": body}])
+    assert result.is_error and result.content[0].text == merge.OTHER_TAGS
+    assert svc.jobs.list_recent() == []
+    assert not svc.settings.paths.output.exists() or not any(svc.settings.paths.output.iterdir())
+    # notes kept for the teacher herself (address_to none) may name anyone
+    _, body2 = save(svc, [{"for_tag": mine, "title": "Plan", "body": f"{mine} and {other} read together."}], address_to="none")
+    assert body2["status"] == "saved"
+
+
+def test_a_letter_home_that_names_a_never_share_topic_saves_nothing(svc):
+    mine = next(iter(student_tags(svc)))
+    result, _ = save(svc, [{"for_tag": mine, "title": "Next week", "body": f"Dear {{guardian}}, {mine}'s IEP meeting is Tuesday."}])
+    assert result.is_error and result.content[0].text == merge.NEVER_SHARE
+    assert svc.jobs.list_recent() == []
+
+
+def test_a_save_with_tags_from_two_days_saves_nothing(svc):
+    tags = list(student_tags(svc))
+    svc.tagmap.clock = lambda: __import__("time").time() + 86400  # tomorrow: a new block of tags
+    svc.tagmap.ensure_roster(svc.roster)
+    new = [t for t in svc.tagmap.as_dict() if t.startswith("[Student ") and t not in tags]
+    svc.tagmap.touch(new)
+    items = [{"for_tag": tags[0], "title": "A", "body": "Hi."}, {"for_tag": new[0], "title": "B", "body": "Hi."}]
+    result, _ = save(svc, items)
+    assert result.is_error and result.content[0].text == server.EXPIRED_TAG
+    assert svc.jobs.list_recent() == []
 
 
 def test_titles_that_start_a_formula_are_quoted_in_the_list(tmp_path):
@@ -263,7 +323,7 @@ async def test_through_mcp_items_arrive_as_objects_and_bad_arguments_get_the_usa
         )
         missing = await c.call_tool("save_on_device", {"items": [{"title": "Note"}]})
         odd = await c.call_tool("save_on_device", {"items": [], "purpose": "x", "address_to": "everyone"})
-    assert ok.structured_content["status"] == "saved" and "Saved 1 letter home" in ok.structured_content["result"]
+    assert ok.structured_content["status"] == "saved" and "Made letters home from 1 note" in ok.structured_content["result"]
     for bad in (missing, odd):
         assert bad.is_error and bad.content[0].text == f"The device could not use those arguments. {server.USAGE['save_on_device']}"
 

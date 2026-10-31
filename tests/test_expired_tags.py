@@ -171,7 +171,7 @@ def test_a_job_with_yesterdays_live_tags_comes_back_in_those_tags(svc):
     assert today in call(c, "search_documents", "garden bean rows", "")
 
 
-def test_an_approval_answered_three_days_later_restores_for_36_hours_after_it_is_sent(svc):
+def test_an_approval_answered_three_days_later_is_shared_but_its_old_tags_do_not_restore(svc):
     svc.router = Router("ask_user")
     out = svc.egress.release("get_result", "Notes for my own grading", f"{STUDENT} needs a new thesis.", "free_text")
     assert out.status == "waiting"
@@ -182,10 +182,57 @@ def test_an_approval_answered_three_days_later_restores_for_36_hours_after_it_is
     svc.approvals.decide(out.approval_id, approve=True)
     shared = svc.egress.resolve(out.approval_id)
     assert shared.status == "shared" and rose in shared.text
+    # sending it late does not bring back a tag whose day and grace are over
+    assert call(Connector(svc), "search_documents", f"{rose} garden", "") == EXPIRED_TAG
+
+
+def test_a_tag_muse_sends_back_every_day_still_stops_working(svc):
     c = Connector(svc)
-    assert call(c, "search_documents", f"{rose} garden", "") != EXPIRED_TAG
-    svc.tagmap.clock.advance(37)
+    rose = tag_of(svc, STUDENT, call(c, "list_documents", "essays"))  # noon on day 0
+    for hours in (20, 24):  # the next two mornings Muse searches with it, and the result goes back
+        svc.tagmap.clock.advance(hours)
+        found = call(c, "search_documents", f"{rose} garden", "")
+        assert "bean rows" in found and rose in found
+    svc.tagmap.clock.advance(5)  # day 2, 13:00: day 0's grace ended at noon
     assert call(c, "search_documents", f"{rose} garden", "") == EXPIRED_TAG
+    fresh = tag_of(svc, STUDENT, call(c, "list_documents", "essays"))
+    assert fresh != rose and "bean rows" in call(c, "search_documents", f"{fresh} garden", "")
+
+
+def test_a_request_mixing_yesterdays_and_todays_tags_is_refused(svc):
+    c = Connector(svc)
+    old_rose = tag_of(svc, STUDENT, call(c, "list_documents", "essays"))
+    svc.tagmap.clock.advance(20)  # the next morning
+    listing = call(c, "list_documents", "essays")
+    new_hunter = tag_of(svc, OTHER, listing)
+    assert old_rose in svc.tagmap.for_muse() and new_hunter in svc.tagmap.for_muse()
+    svc.index_calls.clear()
+    for tool, args in (
+        ("search_documents", (f"{old_rose} and {new_hunter} garden", "")),
+        ("search_documents", (f"{old_rose} garden", f"to compare with {new_hunter}")),  # the purpose counts too
+        ("ask_device", (f"What did {old_rose} write?", f"for {new_hunter}'s family", "")),
+        ("run_private_task", (f"Compare {old_rose} with {new_hunter}, for my own grading", "essays")),
+    ):
+        assert call(c, tool, *args) == EXPIRED_TAG, tool
+        assert outcomes(svc)[-1] == (tool, "expired_tag")
+    assert svc.index_calls == [] and svc.started.calls == []
+    # one day's tags at a time still work, the older day's in its own tags
+    assert old_rose in call(c, "search_documents", f"{old_rose} garden", "")
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("search_documents", ("Student ID numbers on the forms", "")),
+        ("search_documents", ("which student IEP goals mention reading", "for my own planning")),
+        ("run_private_task", ("Check the Student ID column on each form, for my own records", "essays")),
+        ("ask_device", ("Which STUDENT ID is missing?", "", "")),
+    ],
+)
+def test_school_words_after_student_are_not_refused_as_tags(svc, tool, args):
+    svc.tagmap.ensure_roster(svc.roster)
+    assert call(Connector(svc), tool, *args) != EXPIRED_TAG
+    assert ("expired_tag" not in {o for _t, o in outcomes(svc)})
 
 
 def test_the_prepare_page_marks_its_tags_as_sent_and_says_which_day(svc):

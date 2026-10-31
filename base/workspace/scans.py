@@ -65,7 +65,7 @@ class ScanReader:
             raise ScanError("That file is not an image the device can read.")
         data = path.read_bytes()
         sha = hashlib.sha256(data).hexdigest()
-        if self._covering():
+        if self.covering():
             return self._covered_text(path, data, sha)
         cached = self.folder / f"{sha}.txt"
         if cached.is_file():
@@ -74,7 +74,7 @@ class ScanReader:
         self._save(cached, text)
         return text
 
-    def _covering(self) -> bool:
+    def covering(self) -> bool:
         """Whether the page goes to the SAM sidecar before the model reads it.
 
         Never while the cui, cjis or export toggle is on: the SAM License excludes ITAR and military

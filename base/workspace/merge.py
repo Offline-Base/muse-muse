@@ -19,7 +19,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
 
-from base.guard import TAG_RE
+from base.guard import TAG_RE, TEACHER_TAG, blocked_topics, tag_references
 from base.workspace.agent import safe_filename, unique_filename, write_private
 from base.workspace.contacts import Contact, by_student, student_key
 
@@ -29,6 +29,7 @@ MAX_BODY = 6000
 ADDRESS_TO = ("none", "guardians")
 GUARDIAN = "{guardian}"
 LIST_FILE = "merge.csv"
+NO_GUARDIAN = "none on file"  # merge.csv's guardian cell for an item no letter was made for
 # The request egress sees for a receipt: fixed, so nothing Muse writes can set off a request floor
 # on a text that holds only counts.
 SAVE_REQUEST = "save files on the device"
@@ -75,8 +76,28 @@ def unknown_tags(items: Iterable[Item], known: Collection[str]) -> list[str]:
     return seen
 
 
-def check(items: list[Item], address_to: str, known: Collection[str]) -> None:
-    """Raise SaveRefused when the items cannot be saved as they are. Nothing is written first."""
+OTHER_TAGS = (
+    "A letter home may name only the student it is for and [Teacher], so nothing was saved. Take any other "
+    "student's tag, and phone, email, address and other tags, out of the title and body."
+)
+NEVER_SHARE = "A letter home may not mention a topic your privacy policy never shares, so nothing was saved."
+
+
+def check(
+    items: list[Item],
+    address_to: str,
+    known: Collection[str],
+    *,
+    restore: Callable[[str], str] | None = None,
+    never_share: Mapping[str, Iterable[str]] | None = None,
+) -> None:
+    """Raise SaveRefused when the items cannot be saved as they are. Nothing is written first.
+
+    A letter home goes to one family, so with address_to "guardians" its title and body may name
+    only the item's own student (for_tag) and [Teacher]: another student's tag, or a phone, email,
+    address or any other tag, would put someone else's real value in the draft. With `restore` and
+    `never_share` (the policy's), a letter whose restored text names a never-share topic is
+    refused too."""
     if address_to not in ADDRESS_TO:
         raise SaveRefused('address_to must be "none" or "guardians".')
     if not 1 <= len(items) <= MAX_ITEMS:
@@ -93,6 +114,14 @@ def check(items: list[Item], address_to: str, known: Collection[str]) -> None:
             f"This device does not know {len(unknown)} of the tags in these items ({shown}), so nothing was "
             "saved. Use the tags from the current results."
         )
+    if address_to != "guardians":
+        return
+    for item in items:
+        allowed = {item.for_tag, TEACHER_TAG}
+        if any(tag not in allowed for text in (item.title, item.body) for tag, _b in tag_references(text)):
+            raise SaveRefused(OTHER_TAGS)
+        if restore is not None and never_share and blocked_topics(f"{restore(item.title)}\n{restore(item.body)}", never_share):
+            raise SaveRefused(NEVER_SHARE)
 
 
 def write(
@@ -121,6 +150,7 @@ def write(
         family = sheet.get(student_key(student), [])
         if not family:
             no_guardian += 1
+            rows.append(["", item.for_tag, student, NO_GUARDIAN, "", _line(title)])  # the list on the device says so
             continue
         for c in family:
             subject, text = _line(title.replace(GUARDIAN, c.guardian)), body.replace(GUARDIAN, c.guardian)
@@ -129,7 +159,7 @@ def write(
             rows.append([name, item.for_tag, student, c.guardian, c.email, subject])
     _write_list(out_dir, rows, purpose)
     return Saved(
-        files=len(rows),
+        files=sum(1 for r in rows if r[0]),
         items=len(items),
         students=len({i.for_tag for i in items if i.for_tag}),
         no_guardian=no_guardian,
@@ -138,7 +168,11 @@ def write(
 
 
 def receipt(saved: Saved) -> str:
-    """What Muse gets back: counts only, no name, tag or address.
+    """What Muse gets back: the number of items it sent, no name, tag, address or family count.
+
+    For letters home it never says how many letters were made or how many students have no
+    guardian on file: one call per student would tell Muse how many parents each tag has, which
+    is household and custody structure. Those counts stay in merge.csv on the device.
 
     Every word is one the guard counts as common English, so its name-shape pass can never take a
     word here for a name (as it can with "Email" or "Guardian" from a table header) and hold the
@@ -147,10 +181,10 @@ def receipt(saved: Saved) -> str:
     done = "The real names were filled in there, and none of them came back to you."
     if not saved.drafts:
         return f"Saved {_n(saved.files, 'note')} in your own files. {done}"
-    text = f"Saved {_n(saved.files, 'letter')} home for {_n(saved.students, 'student')} in your own files, one for each parent on file."
-    if saved.no_guardian:
-        text += f" {_n(saved.no_guardian, 'note')} had no parent on file, so no letter was made for {'it' if saved.no_guardian == 1 else 'them'}."
-    return f"{text} {done}"
+    return (
+        f"Made letters home from {_n(saved.items, 'note')} in your own files. The list there shows who each one "
+        f"is for and any with no parent on file. {done}"
+    )
 
 
 def _n(count: int, word: str) -> str:

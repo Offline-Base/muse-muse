@@ -599,6 +599,68 @@ def test_a_document_list_is_not_an_image_result(settings, svc):
     assert out.status == "shared" and "regions:unchecked" not in out.decision.floors
 
 
+# -- tasks: the pages a job read are its sources ------------------------------------------------------
+
+
+class _Answers(_Llm):
+    def chat_json(self, *_a, **_k):
+        return {"answer": "Intake form: the visit reason is a checkup."}
+
+
+def run_task(svc, regions_client) -> str:
+    """A run_private_task job over forms/, read by the device's scan reader; its job id."""
+    svc.scans.regions = svc.regions = regions_client
+    svc.scans.llm = Vision("Intake form. Visit reason: checkup.")
+    svc.agent.llm = _Answers()
+    job_id = svc.agent.run_sync("Summarize the intake forms for my records", "forms")
+    assert svc.jobs.get(job_id)["status"] == "done"
+    return job_id
+
+
+def released(svc, job_id) -> tuple[str, dict]:
+    from base.connector.server import Connector
+
+    body = Connector(svc).get_result(job_id)[0].structured_content
+    [row] = svc.approvals.history(limit=5)
+    return body["status"], json.loads(row["receipt"])
+
+
+def test_a_task_over_a_page_with_a_face_asks_first_under_hipaa(settings, client, svc):
+    put(settings, CLINIC)
+    toggles(settings, "hipaa")
+    job_id = run_task(svc, client)
+    assert svc.jobs.get(job_id)["sources"] == [f"forms/{CLINIC}"]  # the page, not the folder name
+    status, receipt = released(svc, job_id)
+    assert status == "waiting" and receipt["floors"][-1] == "compliance:face"
+    assert receipt["image_regions"] == counts_of(CLINIC) and "image check" in receipt["checks"]
+
+
+def test_a_task_whose_page_lost_its_check_is_kept(settings, client, svc):
+    put(settings, SIGNED)
+    job_id = run_task(svc, client)
+    for p in settings.paths.regions.iterdir():  # retention removed the check before Muse asked
+        p.unlink()
+    status, receipt = released(svc, job_id)
+    assert status == "refused" and "regions:unchecked" in receipt["floors"] and receipt["images_unchecked"] == 1
+
+
+def test_a_task_read_under_cui_stays_kept_after_cui_is_turned_off(settings, client, svc):
+    path = put(settings, SIGNED)
+    client.check(path.read_bytes())  # checked once before, so a record is on file
+    toggles(settings, "cui")
+    job_id = run_task(svc, NoSidecar())  # under cui SAM is never called: the page is read uncovered
+    assert svc.jobs.get(job_id)["sources"] == [f"{regions.UNCOVERED}forms/{SIGNED}"]
+    toggles(settings)  # cui off before Muse asks for the result
+    status, receipt = released(svc, job_id)
+    assert status == "refused" and "regions:unchecked" in receipt["floors"]
+
+
+def test_mark_uncovered_marks_images_once_and_leaves_the_rest():
+    once = regions.mark_uncovered(["forms/a.png", "notes.md", "b.JPG"])
+    assert once == ["uncovered:forms/a.png", "notes.md", "uncovered:b.JPG"] and regions.mark_uncovered(once) == once
+    assert regions.reads_uncovered(SimpleNamespace(scans=None)) is False and regions.reads_uncovered(None) is False
+
+
 def test_compliance_check_order_strictest_wins():
     face = {"face": 1, "signature": 1}
     assert compliance.check("Notes.", ["a.png"], ["hipaa"], image_kinds=face)[1] == "compliance:face"

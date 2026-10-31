@@ -19,6 +19,7 @@ routing, LFM3-VL-2B for scans and search, plus the drafter and server knobs scri
 (GLIMMER_DRAFT_GGUF, GLIMMER_DRAFT_N, GLIMMER_FA, GLIMMER_REASONING_BUDGET). The other lines stay
 as they are, and the old file is kept as .env.before-plug-in. Restart scripts/start.sh afterwards,
 then run scripts.compare_modes to score it. Nothing is downloaded, and no value in .env is printed.
+A .env that is a link to another checkout's (a lane worktree) is never changed; --check still works.
 """
 
 from __future__ import annotations
@@ -40,6 +41,13 @@ from scripts import gguf_info
 ENV = REPO_ROOT / ".env"
 REPORTS = REPO_ROOT / "eval" / "reports"
 BACKUP_NAME = ".env.before-plug-in"
+# A lane worktree's .env is a link to the live checkout's .env: writing through it would change the
+# app that runs from there, and the backup would sit next to the link and go with the worktree.
+LINKED_ENV = (
+    "The .env here is a link to the .env of another checkout, so plugging in here would change the app "
+    "that runs from there, and the backup would stay here. Nothing was changed. Run this from the "
+    "checkout the app runs from, or use --check."
+)
 DEVICES = ("laptop", "jetson")
 # Memory kept for everything but the model: LFM, the embedder, the app and the system on a laptop;
 # on a headless Jetson only the system and the small Python services (deploy/jetson).
@@ -237,6 +245,16 @@ def with_lines(text: str, values: dict[str, str]) -> str:
     return "\n".join(out) + "\n"
 
 
+class PlugInRefused(RuntimeError):
+    """.env was left as it was; the message is a plain sentence."""
+
+
+def _own_env(env_path: Path) -> None:
+    """Refuse a .env that is a link: only the checkout that owns its .env may change it."""
+    if env_path.is_symlink():
+        raise PlugInRefused(LINKED_ENV)
+
+
 def plug_in(
     model: Path,
     env_path: Path = ENV,
@@ -248,7 +266,9 @@ def plug_in(
 ) -> dict[str, str]:
     """Set the model's lines in the .env at `env_path`, keeping a backup. Returns what was set.
     A drafter always goes with the model it was checked with: without `draft`, an earlier
-    GLIMMER_DRAFT_GGUF line is emptied. The other knobs change only when given."""
+    GLIMMER_DRAFT_GGUF line is emptied. The other knobs change only when given. A .env that is a
+    link (a lane worktree's) raises PlugInRefused."""
+    _own_env(env_path)
     current = env_path.read_text() if env_path.is_file() else ""
     backup = env_path.with_name(BACKUP_NAME)
     if not backup.exists():  # the first backup is the one to go back to
@@ -281,6 +301,7 @@ def plug_in(
 
 
 def undo(env_path: Path = ENV) -> bool:
+    _own_env(env_path)
     backup = env_path.with_name(BACKUP_NAME)
     if not backup.is_file():
         return False
@@ -323,6 +344,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--label", help="the report's name: eval/reports/model_file_<label>.md (default: the file's name)")
     p.add_argument("--out", type=Path, default=REPORTS, help=argparse.SUPPRESS)
     args = p.parse_args(argv)
+    if not args.check and ENV.is_symlink():  # before hashing a large file for nothing
+        print(LINKED_ENV, file=sys.stderr)
+        return 1
     if args.undo:
         print("Put .env back. Restart scripts/start.sh." if undo(ENV) else "Nothing to undo.")
         return 0

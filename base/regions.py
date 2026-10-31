@@ -321,6 +321,28 @@ def image_sources(sources: Iterable[Any]) -> list[str]:
     return [str(s) for s in sources or () if str(s).lower().endswith(IMAGE_SUFFIXES)]
 
 
+# The prefix on a source image that was read while covering was off (a local_only toggle or a
+# broken controls file keeps SAM out). image_check counts it as unchecked, so with SAM_ENABLED=1
+# egress keeps the result (floor regions:unchecked) even after the toggle is turned off.
+UNCOVERED = "uncovered:"
+
+
+def reads_uncovered(index: Any) -> bool:
+    """Whether the index's scan reader reads page images without covering them right now: it has
+    a region client (SAM_ENABLED=1) but ScanReader.covering() says no."""
+    scans = getattr(index, "scans", None)
+    return getattr(scans, "regions", None) is not None and not scans.covering()
+
+
+def mark_uncovered(sources: Iterable[Any]) -> list[str]:
+    """The sources with each image marked UNCOVERED (once)."""
+    out = []
+    for s in sources or ():
+        s = str(s)
+        out.append(UNCOVERED + s if s.lower().endswith(IMAGE_SUFFIXES) and not s.startswith(UNCOVERED) else s)
+    return out
+
+
 def workspace_file(settings: Settings, doc_id: str) -> Path | None:
     """A source's file inside the workspace root, or None (outside the root, missing, not a file)."""
     rel = PurePosixPath(str(doc_id).replace("\\", "/"))
@@ -352,6 +374,9 @@ def image_check(settings: Settings, sources: Iterable[Any]) -> ImageCheck | None
     counts: dict[str, int] = {}
     checked = unchecked = 0
     for doc_id in images:
+        if doc_id.startswith(UNCOVERED):  # read while covering was off: a record does not cover that reading
+            unchecked += 1
+            continue
         sha = _sha_of(settings, doc_id)
         record = read_record(settings.paths.regions, sha) if sha else None
         if record is None:

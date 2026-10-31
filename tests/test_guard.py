@@ -704,7 +704,10 @@ def test_restore_tolerates_rephrasing():
     assert restore("Student A's essay", tm) == "Maya Okafor-Reyes's essay"
     assert restore("[Student A]'s essay", tm) == "Maya Okafor-Reyes's essay"
     assert restore("Grade it (Student A).", tm) == "Grade it (Maya Okafor-Reyes)."
-    assert restore("compare student a and student ab.", tm) == "compare Maya Okafor-Reyes and Rose Tindall."
+    # two or three letters restore only in brackets: "student is" and "Student ID" are words
+    assert restore("compare student a and student ab.", tm) == "compare Maya Okafor-Reyes and student ab."
+    assert restore("compare Student AB and (Student AB).", tm) == "compare Student AB and (Student AB)."
+    assert restore("compare [student ab].", tm) == "compare Rose Tindall."
     assert restore("[Student AB] then [Student A]", tm) == "Rose Tindall then Maya Okafor-Reyes"
     assert restore("Send it to [Teacher].", tm) == "Send it to Corinne Abernathy."
 

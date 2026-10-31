@@ -83,10 +83,14 @@ def test_a_person_who_left_the_roster_is_purged_after_retention_days(svc):
 def test_a_value_with_a_live_tag_stays(svc):
     out = seen(svc, f"{OUTSIDER} visited.", [OUTSIDER])
     sent = guard.TAG_RE.findall(out)
-    svc.tagmap.clock.advance(100)
-    svc.tagmap.touch(sent)  # an approved result just sent it again
-    retention.purge(svc, 90, now=svc.tagmap.clock())
+    svc.tagmap.touch(sent)  # shared with Muse
+    svc.tagmap.clock.advance(1)  # the next day: its tag is still in its grace window
+    retention.purge(svc, 0, now=svc.tagmap.clock())  # older than the retention days, but a live tag points to it
     assert OUTSIDER in known(svc) and set(sent) <= set(svc.tagmap.for_muse())
+    svc.tagmap.clock.advance(2)
+    svc.tagmap.touch(sent)  # sent again: a tag past its day's grace window is not kept alive by that
+    retention.purge(svc, 0, now=svc.tagmap.clock())
+    assert OUTSIDER not in known(svc)
 
 
 def test_tags_in_a_result_still_waiting_for_the_user_stay(svc):

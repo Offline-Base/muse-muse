@@ -203,3 +203,27 @@ def test_the_summary_json_is_read_and_a_failed_run_shows_in_the_table(tmp_path):
     text = "\n".join(compare_modes.table([("Rules", row), ("Prompt", None)]))
     assert "| Mode | Decision accuracy |" in text and "Agreement" not in text  # it was accuracy all along
     assert "| Rules | 73.5% | 90 | 0 | 3 |" in text and "did not finish" in text
+
+
+def test_a_linked_env_is_never_written_through_and_check_still_works(tmp_path, monkeypatch, capsys):
+    # A lane worktree's .env is a link to the live checkout's: plugging in there would change the
+    # live app and leave the backup beside the link, where --undo from the live checkout cannot find it.
+    live = tmp_path / "live" / ".env"
+    live.parent.mkdir()
+    live.write_text("PRIMARY_MODEL=lfm\n")
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    (lane / ".env").symlink_to(live)
+    model = gguf(tmp_path)
+    for call in (lambda: plug.plug_in(model, lane / ".env"), lambda: plug.undo(lane / ".env")):
+        with pytest.raises(plug.PlugInRefused):
+            call()
+    assert live.read_text() == "PRIMARY_MODEL=lfm\n" and not (lane / plug.BACKUP_NAME).exists()
+    assert not (live.parent / plug.BACKUP_NAME).exists()
+    monkeypatch.setattr(plug, "ENV", lane / ".env")
+    monkeypatch.setattr(plug.gguf_info, "llama_build", lambda _bin: 11669)
+    monkeypatch.setattr(plug, "free_disk_gb", lambda _p: 50.0)
+    assert plug.main([str(model), "--out", str(tmp_path / "r")]) == 1 and plug.main(["--undo"]) == 1
+    assert "link to the .env of another checkout" in capsys.readouterr().err and "—" not in plug.LINKED_ENV
+    assert plug.main([str(model), "--check", "--out", str(tmp_path / "r")]) == 0
+    assert live.read_text() == "PRIMARY_MODEL=lfm\n"

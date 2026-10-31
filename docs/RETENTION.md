@@ -14,7 +14,7 @@ The cleanup runs at most once an hour while results are being released.
 
 ## Tags that stopped working
 
-Tags change every day (`TAG_ROTATION=daily`, the default). A tag stops working about a day and a half after its day ends or after it was last sent to Muse (`TAG_GRACE_HOURS`, 36 by default). Once it stops working it can never name anyone again, so it is deleted from the tag map within the hour, with no toggle needed, and once each time the app starts. Its code is never handed out again.
+Tags change every day (`TAG_ROTATION=daily`, the default). A tag stops working about a day and a half after its day ends (`TAG_GRACE_HOURS`, 36 by default), however often it is sent to Muse. Once it stops working it can never name anyone again, so it is deleted from the tag map within the hour, with no toggle needed, and once each time the app starts. Its code is never handed out again.
 
 ## What is kept
 
@@ -23,7 +23,8 @@ Tags change every day (`TAG_ROTATION=daily`, the default). A tag stops working a
   - With COPPA or GDPR on, values not on your roster are deleted as listed above.
   - People on your roster stay while they are on it. Once someone leaves the roster, their values go after 90 days like any other.
   - Deleting a value has a cost. Until then, a name the model check found once was caught in every later text with no model call, and the final leak check knew it. Afterwards the next text with that name depends on the model check and the name-shape check again, and the final check catches it only if one of them finds it.
-- **Copies made by the version 2 upgrade** (`tagmap.json.v1-backup-<time>` and `base.db.v1-backup-<time>`, next to the originals, readable only by your user). They are made once, before the first start on version 2, and hold everything the old files held. Nothing deletes them on a schedule. Delete them yourself once the app runs well.
+- **Copies made by the version 2 upgrade** (`tagmap.json.v1-backup-<time>` and `base.db.v1-backup-<time>`, next to the originals, readable only by your user). They are made once, before the first start on version 2, and hold everything the old files held. base.db is also copied once before this version first adds its columns (`audit.via`, `jobs.sources`), when no copy is there yet, even if the tag map was already version 2. Nothing deletes them on a schedule. Delete them yourself once the app runs well.
+- **Rolling back is not restoring these copies.** To turn daily tags off, set `TAG_ROTATION=off` on this version and keep the version 2 `tagmap.json`: every tag Muse holds then keeps its one value. Put `tagmap.json.v1-backup-*` back only if Muse never saw a tag from version 2. That copy holds the old counters, so the next start would hand codes Muse already holds, such as `[Person 3]`, to different people, and a later request with that tag would restore the wrong person. The older code (the ethan/device-only-build branch) cannot read a version 2 tag map at all: it says the file is unreadable and tags nothing.
 - **The audit table:** tool names, outcomes and timings only, with no content.
 - **Learned rules** (`BASE_HOME/router_rules.md`): decisions about kinds of results, not about people.
 - **Your documents.** They are yours, and this app never changes or deletes them.

@@ -6,8 +6,9 @@
 Reads the raw rows eval/run_eval.py wrote (ids, decisions and fixed reason codes; never request or
 result text). An approval request (decision ask_user) is wanted when the item's expected decision
 is ask_user and needless otherwise. Each needless one is counted under its code and its expected
-decision, so the buckets add up to the needless asks. Missed asks (expected ask_user, shared) and
-refusals shared (expected refuse, shared) are counted beside them. With --set (the run's items),
+decision, so the buckets add up to the needless asks. Missed asks (the policy wants ask_user, shared)
+and refusals shared (the policy wants refuse, shared) are counted beside them against the row's
+`wants`, as run_eval's EvalReport counts them, so both reports agree. With --set (the run's items),
 needless asks are also counted by the kind the connector sends (run_eval.production_labels).
 Rows from a raw file written before the codes existed count as "not recorded".
 
@@ -85,9 +86,10 @@ def count(rows: Iterable[Mapping], kinds: Mapping[str, str] | None = None) -> Ca
     for r in rows:
         out.n += 1
         expected, decision = r.get("expected"), r.get("decision")
-        if decision in SHARED:
-            out.missed_asks += expected == "ask_user"
-            out.refuse_shared += expected == "refuse"
+        if decision in SHARED:  # against the policy's wants, as run_eval's EvalReport counts them
+            wants = r.get("wants", expected)
+            out.missed_asks += wants == "ask_user"
+            out.refuse_shared += wants == "refuse"
         if decision != "ask_user":
             continue
         out.asks += 1
@@ -133,8 +135,8 @@ def render(c: Causes, *, name: str, command: str, raw_label: str, set_label: str
         f"| Approval requests | {c.asks} |",
         f"| Wanted (expected ask_user) | {c.wanted} |",
         f"| Needless (expected anything else) | {c.needless} |",
-        f"| Missed asks (expected ask_user, shared) | {c.missed_asks} |",
-        f"| Refusals shared (expected refuse, shared) | {c.refuse_shared} |",
+        f"| Missed asks (the policy wants an ask, the router shared) | {c.missed_asks} |",
+        f"| Refusals shared (the policy refuses, the router shared) | {c.refuse_shared} |",
         "",
         "## Needless approval requests by reason code",
         "",

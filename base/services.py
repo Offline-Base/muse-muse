@@ -12,7 +12,10 @@ which build throwaway services in a temporary home.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import sqlite3
+from pathlib import Path
 from typing import Any
 
 from base import events as events_module
@@ -52,6 +55,23 @@ class QuietEvents:
 
     def settle(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+
+# Columns this version adds to an older base.db on open (base/connector/audit.py, base/workspace/jobs.py).
+NEW_COLUMNS = (("audit", "via"), ("jobs", "sources"))
+
+
+def back_up_db_before_upgrade(db: Path) -> list[Path]:
+    """Copy base.db once (base.db.v1-backup-<time>, 0600) before this version first changes its
+    schema, when no copy is there yet. The tag map upgrade copies it only while tagmap.json is
+    still version 1, so a tag map already at version 2 would otherwise leave base.db uncopied."""
+    db = Path(db)
+    if not db.is_file():
+        return []
+    with contextlib.closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as conn:
+        have = {t: {row[1] for row in conn.execute(f"PRAGMA table_info({t})")} for t, _c in NEW_COLUMNS}
+    older = any(have[t] and c not in have[t] for t, c in NEW_COLUMNS)  # a missing table is made new
+    return guard.back_up_files([db]) if older else []
 
 
 def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:
@@ -100,6 +120,9 @@ class Services:
         if not owner:
             s.events = QuietEvents()  # throwaway services must not drive the light or the page
         s.roster = guard.load_roster(settings.roster_path)
+        made = back_up_db_before_upgrade(settings.paths.db)  # before any store adds its columns
+        if made:
+            log.info("copied base.db before its first schema change on this version")
         s.tagmap = guard.TagMap.for_settings(settings)
         s.policy = UserPolicy.load(settings.policy_path)
         s.answer_llm = LocalLLM(settings, role="answer")

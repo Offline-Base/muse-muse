@@ -1313,9 +1313,6 @@ ROTATIONS = ("daily", "off")
 GRACE_HOURS = 36.0
 # TAG_RE allows 1 to 3 letters, [Student A] to [Student ZZZ]: about 761 days at 24 students a day.
 MAX_STUDENT_CODES = 26 + 26**2 + 26**3
-# A tag's send time is saved at most this often, so sharing a result does not rewrite the file
-# every time. The grace window can start up to this much before the last send.
-TOUCH_EVERY = 3600.0
 LITERAL_KEY = "literal:"  # the key of a [Redacted N] tag that stands for tag-shaped document text
 _EPOCH_ORDINAL = date(1970, 1, 1).toordinal()
 CODES_USED_UP = (
@@ -1355,7 +1352,7 @@ class _Tag:
     key: str
     day: int
     issued_at: float
-    last_sent: float | None = None  # when a result with this tag last went to Muse
+    last_sent: float | None = None  # when a result with this tag first went to Muse (None: never sent)
 
 
 class TagMap:
@@ -1369,9 +1366,9 @@ class TagMap:
     rotation="off" (the constructor's default): the same value always has the same tag and every
     tag restores, as in version 1. rotation="daily": each tag day gives a value a new tag the first
     time it is tagged that day (the roster gets its block at once, shuffled again). A tag stays
-    live until `grace_hours` after the latest of its day's end, when it was made and when it was
-    last sent, and restores for Muse (for_muse) only once it was sent (touch). Every value from
-    every day stays known (known_index), so detection never gets weaker. `clock` gives the time
+    live until `grace_hours` after its day ends, however often it is sent, and restores for Muse
+    (for_muse) only once it was sent (touch). Every value from every day stays known
+    (known_index), so detection never gets weaker. `clock` gives the time
     (tests). `backup` lists more files copied next to themselves before a version 1 file is
     upgraded (base.db). `path=None` keeps the map in memory (tests).
     """
@@ -1602,7 +1599,9 @@ class TagMap:
     def _live(self, tag: str, row: _Tag, now: float) -> bool:
         if self.rotation == "off" or tag == TEACHER_TAG:
             return True
-        return now < max(day_end(row.day), row.issued_at, row.last_sent or 0.0) + self.grace
+        # From the tag's own day only: sending a tag again never keeps it alive, so a Muse that
+        # keeps using its tags still gets new ones once their day and the grace have passed.
+        return now < day_end(row.day) + self.grace
 
     def _value_of(self, row: _Tag) -> str | None:
         known = self._values.get((row.kind, row.key))
@@ -1635,19 +1634,25 @@ class TagMap:
             }
 
     def touch(self, tags: Iterable[str], now: float | None = None) -> None:
-        """Mark tags as sent to Muse now (a shared result held them), so they restore until the
-        grace window after this send. Saved at once the first time, then at most every TOUCH_EVERY."""
+        """Mark tags as sent to Muse (a shared result held them), so they restore until their
+        day's grace window ends. Saved at once the first time; sending one again changes nothing."""
         with self._lock:
             now = self.clock() if now is None else now
             changed = False
             for tag in tags:
                 row = self._tags.get(tag)
-                if row is not None and (row.last_sent is None or now - row.last_sent >= TOUCH_EVERY):
+                if row is not None and row.last_sent is None:
                     row.last_sent = now
                     changed = True
             if changed:
                 self._dirty = True
                 self.flush()
+
+    def _days(self, text: str) -> set[int]:
+        """The tag days of the tags in `text` that restore for Muse ([Teacher] has none)."""
+        with self._lock:
+            restorable = self.for_muse()
+            return {self._tags[t].day for t, _b in tag_references(text) if t in restorable and t != TEACHER_TAG}
 
     def expired(self, text: str) -> list[str]:
         """The tags in Muse's `text` that will not restore: never sent, past their grace window or
@@ -1668,10 +1673,16 @@ class TagMap:
         a request with yesterday's tags is tagged on that day, so Muse gets the tags it used."""
         if self.rotation == "off" or not text:
             return None
-        with self._lock:
-            restorable = self.for_muse()
-            days = [self._tags[t].day for t, _b in tag_references(text) if t in restorable and t != TEACHER_TAG]
+        days = self._days(text)
         return max(days) if days else None
+
+    def mixed_days(self, text: str) -> bool:
+        """True when the tags in Muse's `text` that restore come from more than one tag day. The
+        connector refuses such a request (EXPIRED_TAG), so no answer puts a person from an older
+        day's tags into today's tags, which would link the two codes."""
+        if self.rotation == "off" or not text:
+            return False
+        return len(self._days(text)) > 1
 
     # retention
 
@@ -1774,26 +1785,39 @@ def _roster_idents(roster: Any) -> set[tuple[str, str]]:
     return {("teacher", roster.teacher.name), *(("student", s.name) for s in roster.students)}
 
 
+BACKUP_SUFFIX = ".v1-backup-"
+
+
 def _back_up(path: Path, raw: bytes, more: Iterable[Path], now: float) -> list[Path]:
     """Copy `path` (its bytes are `raw`) and each existing file in `more` next to itself as
-    <name>.v1-backup-<local time>, 0600. A copy of the same tag map already there is enough, so a
-    service that restarts after a failed upgrade does not fill the disk."""
+    <name>.v1-backup-<local time>, 0600. Each file is checked on its own: a copy of the same tag
+    map, or any earlier copy of a file in `more`, is enough, so a service that restarts after a
+    failed upgrade does not fill the disk, and a base.db never copied is still copied."""
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
-    if any(p.read_bytes() == raw for p in path.parent.glob(f"{path.name}.v1-backup-*")):
-        return []
     made = []
-    for src in (path, *more):
-        if not src.exists():
-            continue
-        dst = src.with_name(f"{src.name}.v1-backup-{stamp}")
+    if not any(p.read_bytes() == raw for p in path.parent.glob(f"{path.name}{BACKUP_SUFFIX}*")):
+        dst = path.with_name(f"{path.name}{BACKUP_SUFFIX}{stamp}")
         fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        if src == path:
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(raw)
-        else:  # a SQLite file: the backup API copies a consistent snapshot, WAL included
-            os.close(fd)
-            with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(dst)) as b:
-                a.backup(b)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(raw)
+        os.chmod(dst, 0o600)
+        made.append(dst)
+    return made + back_up_files(more, now)
+
+
+def back_up_files(files: Iterable[Path], now: float | None = None) -> list[Path]:
+    """Copy each existing SQLite file in `files` that has no <name>.v1-backup-* copy yet next to
+    itself, 0600, through SQLite's backup API (a consistent snapshot, WAL included). Returns the
+    copies made. Used before the tag map upgrade and before base.db's first schema change."""
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(time.time() if now is None else now))
+    made = []
+    for src in map(Path, files):
+        if not src.exists() or any(src.parent.glob(f"{src.name}{BACKUP_SUFFIX}*")):
+            continue
+        dst = src.with_name(f"{src.name}{BACKUP_SUFFIX}{stamp}")
+        os.close(os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+        with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(dst)) as b:
+            a.backup(b)
         os.chmod(dst, 0o600)
         made.append(dst)
     return made
@@ -1967,6 +1991,11 @@ def _canonical(m: re.Match[str]) -> str | None:
         return TEACHER_TAG
     if m.group("student"):
         letters = m.group("letters")
+        if not m.group("ob") and len(letters) > 1:
+            # Without brackets two or three letters are words or acronyms as often as codes
+            # ("student is", "Student ID", "STUDENT OF THE MONTH"), and daily rotation makes
+            # most of those codes real, so only [Student AB] in brackets counts.
+            return None
         if (
             not m.group("ob")
             and letters.islower()
@@ -1984,9 +2013,11 @@ def _canonical(m: re.Match[str]) -> str | None:
 
 
 def tag_references(text: str, *, as_written: bool = False) -> list[tuple[str, bool]]:
-    """(tag, bracketed) for every tag `restore` would swap in `text`, in order. With `as_written`
-    an unbracketed Student reference counts only when its letters are capitals ("Student B"),
-    so plain words ("each student who has", "the student was") never read as a tag."""
+    """(tag, bracketed) for every tag `restore` would swap in `text`, in order. Without brackets
+    a Student reference has one letter ("Student B"); two or three letters count only in
+    brackets ([Student AB]), so "student is", "Student ID" or "Student IEP" stay words. With
+    `as_written` an unbracketed Student reference counts only when its letter is a capital, so
+    plain words ("each student who has", "the student was") never read as a tag."""
     if not text:
         return []
     out = []
@@ -2003,8 +2034,9 @@ def tag_references(text: str, *, as_written: bool = False) -> list[tuple[str, bo
 
 def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:
     """Swap tags back to real values. Tolerant of Muse rephrasing: [Student A], Student A,
-    student a, Student A's, (Student A). [Student A] and [Student AB] never mix. A TagMap gives
-    its live tags (as_dict); the connector passes TagMap.for_muse() for Muse's text."""
+    student a, Student A's, (Student A). [Student A] and [Student AB] never mix, and a code of
+    two or three letters restores only in brackets (tag_references). A TagMap gives its live
+    tags (as_dict); the connector passes TagMap.for_muse() for Muse's text."""
     if not text:
         return text
     mapping = tag_map.as_dict() if hasattr(tag_map, "as_dict") else dict(tag_map or {})
