@@ -65,6 +65,22 @@ function extensionKind(fileName: string): string {
   return "text";
 }
 
+/**
+ * The goal Muse Code is held to on the session bridge (MSP `goal/set`, docs/MUSE_CODE_FULL.md): the build prompt's
+ * "Done means", written as one objective with its test oracle, so the goal and verify observers keep the agent going
+ * until each part is really done. At most 1,000 characters.
+ */
+export function goalObjective(brief: Pick<Brief, "name" | "slug">): string {
+  const name = brief.name.replace(/\s+/g, " ").trim().slice(0, 120);
+  return [
+    `Build ${name} (slug ${brief.slug}) as brief.md describes, in this workspace.`,
+    "The goal is complete only when all three hold:",
+    "1. `npm run verify` exits 0 (run it and read its output; don't assume).",
+    "2. `musemuse.json` is filled in from the brief and valid against `musemuse.schema.json`.",
+    "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
+  ].join("\n");
+}
+
 /** brief.md, the prompt file for the first `muse exec`. */
 export function renderBuildPrompt(
   brief: Brief,

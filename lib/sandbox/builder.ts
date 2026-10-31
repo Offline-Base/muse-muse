@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { noEmDashes } from "@/lib/brief/normalize";
 import { env } from "@/lib/env";
@@ -533,6 +534,16 @@ export async function startMuse(input: StartMuseInput): Promise<{ cmdId: string;
   const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
   await recordCommand(sandbox, tag, cmd.cmdId, logPath);
   return { cmdId: cmd.cmdId, logPath };
+}
+
+/**
+ * Drops a command into a running session bridge's mailbox (docs/MUSE_CODE_FULL.md, "The owner steers"): one JSON
+ * file per command under bridgePaths(round).mailbox, which the bridge applies in name order and logs as a `command`
+ * record. STUB until the engine work lands.
+ */
+export async function sendMuseCommand(input: { sandboxName: string; round: number; envelope: MuseCommandEnvelope }): Promise<void> {
+  void input;
+  throw new Error("The session bridge isn't built yet.");
 }
 
 export interface MusePoll {
