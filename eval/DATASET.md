@@ -172,6 +172,23 @@ Quentin Beaumont's essay mentions only a cousin. Quality varies: Priyanka Raghun
 
 `demo/casework/` holds six short notes from Example City Housing Assistance Office, an invented office whose invented grant agreement with a federal program marks its case files CUI: two intake and home visit notes for case 000-2026-0417, an eligibility review and a landlord call for 000-2026-0422, a closure for 000-2026-0391, and a supervisor memo listing all three. Each note starts and ends with a `CUI` banner. The clients, caseworkers, supervisor, landlords, buildings, case numbers, phones (555-01xx) and emails (example.org) are invented, none of them is on the roster, and no number is shaped like a Social Security number. The notes were written by hand, not by a model. They are not eval items: with the CUI toggle on, every result from them stays on the device. `tests/test_data.py` checks the banner, the phones, the emails, the case numbers and that no roster name appears.
 
+## Page images
+
+`eval/sam_pages/` holds 24 invented page images (850 x 1100 px, PNG) for the SAM region checks, drawn by `uv run python -m scripts.make_sam_pages` (fixed seeds: a rerun writes the same bytes). The folder has its own `.synthetic` marker. Every face is a flat cartoon drawn from circles and arcs, never a photo, and every ID card and badge carries a diagonal SAMPLE. Each page is drawn upright and then tilted by up to 1.2 degrees like a scan; each region is drawn on its own layer, so its ground-truth box is that layer's bounding box after the same tilt.
+
+| Pages | What is on them | Regions |
+|---|---|---|
+| p01 to p06 | Field trip forms like `demo/forms`. p01 and p02: the guardian's signature is an invented name that appears nowhere else on the page and is not on the roster. p03 and p04: the signature misspells a roster surname by one letter (Kowalcyk, Ragunathan). p05: a scribble with no readable name. p06: the signature line is blank | 1 signature each, none on p06 |
+| p07 to p10 | Two student ID cards per page (roster students and their ids) | 2 ID cards, 2 faces, 2 barcodes |
+| p11, p12 | A state-style ID card, front and back, for an invented adult | 2 ID cards, 1 face, 1 signature, 1 stacked barcode |
+| p13, p14 | Staff badge replacement requests with a copy of the badge | 1 badge (ID card), 1 face, 1 QR-style code, 1 scribble |
+| p15, p16 | Clinic intake forms (the non-education scene): patient photo, signature, insurance card | 1 face, 1 signature, 1 card, 1 barcode |
+| p17, p18 | Class newsletters with a drawn class picture and the teacher's signature | 3 or 4 faces, 1 signature |
+| p19, p20 | Library card and bus pass forms | 1 barcode or QR-style code, 1 signature |
+| p21 to p24 | Negative pages: a reading handout, a bar chart, a schedule, a shapes worksheet with circles | none |
+
+`eval/sam_pages/truth.json` has one row per page: `file`, `split` (12 dev, 12 test: choose prompts and thresholds on dev, report on test), `layout`, `width`, `height`, `regions` (`kind` is face, signature, id_card or barcode; `box` is `[x1, y1, x2, y2]` in pixels with x2 and y2 exclusive) and `signature_names` (names a reader could make out of a drawn signature; a scribble has none). Identifiers follow the rules above, with two additions copied from the demo forms: one SSN in the 900 range and the Visa test card number. The state ID addresses are on invented Sample and Example streets. `tests/test_sam_pages.py` checks the rerun bytes, that every box lies inside its image, that every ID card and badge says SAMPLE, and that `guard.find_identifiers` finds only these synthetic shapes.
+
 ## Changing the data
 
 The items were written by hand. If you change one, keep `expected` equal to what the policy wants, keep `names`, `other_names`, `identifiers` and `dates` complete, keep the holdout copy identical, and run `uv run pytest -q tests/test_data.py`.

@@ -147,6 +147,20 @@ def test_no_passages_anywhere_means_not_found():
     assert asker.run("anything").answer == NOT_FOUND
 
 
+def test_the_answer_says_how_many_images_could_not_be_checked():
+    from base.regions import note_unchecked, unchecked_note
+
+    class SkipsImages(FakeIndex):
+        def passages(self, queries, k=20, folder=None):
+            note_unchecked("forms/a.png")  # the scan reader left it out: the SAM sidecar was down
+            return super().passages(queries, k, folder)
+
+    asker = DeviceAsk(rag_with(ScriptedLLM([{"parts": ["q"]}, {"queries": []}, answer("Crabs live there.")])), SkipsImages([[P1]]))
+    assert asker.run("What lives there?").answer == f"Crabs live there. {unchecked_note(1)}"
+    asker, _llm, _i = ask_with([{"parts": ["q"]}, {"queries": []}, answer("Crabs live there.")], [[P1]])
+    assert asker.run("What lives there?").answer == "Crabs live there."
+
+
 def test_split_failure_asks_the_request_whole():
     class Down(ScriptedLLM):
         def chat_json(self, messages, schema, **kw):

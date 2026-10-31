@@ -6,6 +6,10 @@ Real services on the models in .env (scripts/start.sh must be running), a throwa
 copy of the invented demo class only, with no toggle and again with FERPA on. Every tool output is
 checked for private values. Writes eval/reports/device_smoke_NAME.md with statuses, timings and
 counts, never the text. Exits 1 if anything private got out.
+
+With SAM_ENABLED=1 (and the region finder running) it also copies the six invented field trip
+forms from eval/sam_pages into the workspace and searches them: no invented signer's name may come
+back, and the decision receipts must carry image_regions counts.
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ REPORTS = REPO_ROOT / "eval" / "reports"
 INVENTED = ("essays", "records", "forms", "rubric.md")  # demo/ also holds personal files; never those
 GRADE = "Grade each essay against rubric.md and write feedback for each student."
 ENDED = ("shared", "refused", "failed", "done")
+SAM_PAGES = REPO_ROOT / "eval" / "sam_pages"  # invented pages with drawn signatures (scripts/make_sam_pages.py)
+IMAGE_QUERY = "field trip permission form signed by a parent or guardian"
 
 
 def copy_invented(root: Path) -> None:
@@ -51,14 +57,41 @@ def copy_invented(root: Path) -> None:
             shutil.copy2(src, root / name)
 
 
-def private_hits(text: str, services) -> list[str]:
-    """Kinds of private value in text a tool returned. Never the values."""
+def private_hits(text: str, services, signers: tuple[str, ...] = ()) -> list[str]:
+    """Kinds of private value in text a tool returned. Never the values. `signers` are the invented
+    names signed on the page images in the workspace, which must never come back."""
     found = [h.kind for h in guard.leaks(text, services.roster, services.tagmap)]
     people = [services.roster.teacher, *services.roster.students]
     for form in {f for p in people for f in (p.name, p.first, p.last, *p.nicknames)}:
         if re.search(rf"(?<!\w){re.escape(form)}(?!\w)", text):
             found.append("roster")
+    for name in signers:
+        if any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text, re.IGNORECASE) for w in name.split() if len(w) > 2):
+            found.append("signer")
     return sorted(set(found))
+
+
+def image_step(settings, services, muse: Muse, approve) -> dict:
+    """Search six invented field trip forms whose signatures SAM 3.1 should cover before LFM reads them."""
+    truth = json.loads((SAM_PAGES / "truth.json").read_text(encoding="utf-8"))
+    pages = [p for p in truth["pages"] if p["layout"] == "field_trip"]
+    dest = settings.workspace_root / "sam_pages"
+    dest.mkdir()
+    for p in pages:
+        shutil.copy2(SAM_PAGES / p["file"], dest / p["file"])
+    muse.signers = tuple(sorted({n for p in pages for n in p["signature_names"]}))
+    before = {r["id"] for r in services.approvals.history(limit=500)}
+    muse.job("search the signed forms", "search_documents", {"query": IMAGE_QUERY, "purpose": "for my own records"}, timeout=900, approve=approve)
+    receipts = [json.loads(r["receipt"]) for r in services.approvals.history(limit=500) if r["id"] not in before and r.get("receipt")]
+    covered: dict[str, int] = {}
+    for r in receipts:
+        for kind, n in (r.get("image_regions") or {}).items():
+            covered[kind] = covered.get(kind, 0) + n
+    return {
+        "image_pages": len(pages),
+        "receipts_with_image_regions": sum("image_regions" in r for r in receipts),
+        "covered_on_the_pages_read": ", ".join(f"{n} {k}" for k, n in sorted(covered.items())) or "none",
+    }
 
 
 class Muse:
@@ -66,6 +99,7 @@ class Muse:
         self.services = services
         self.server = build_server(services)
         self.rows: list[dict] = []
+        self.signers: tuple[str, ...] = ()
 
     def call(self, label: str, tool: str, args: dict) -> str:
         async def go():
@@ -88,7 +122,7 @@ class Muse:
         kept = shown if shown.startswith(("Kept on your device", "Held on your device")) else ""  # fixed sentences only
         if kept and status == "text":
             status = "kept"
-        self.rows.append({"label": label, "tool": tool, "status": status, "seconds": round(seconds, 1), "hits": private_hits(text, self.services), "chars": len(text), "warned": RAW_REQUEST_NOTE in text, "kept": kept})
+        self.rows.append({"label": label, "tool": tool, "status": status, "seconds": round(seconds, 1), "hits": private_hits(text, self.services, self.signers), "chars": len(text), "warned": RAW_REQUEST_NOTE in text, "kept": kept})
 
     def job(self, label: str, tool: str, args: dict, *, timeout: float, approve=None) -> dict | str:
         """Start a job and call get_result until it ends, approving on the page when it waits."""
@@ -142,6 +176,10 @@ def scenario(settings, profiles: list[str], grading: bool) -> tuple[list[dict], 
         muse.job("never-share topic", "search_documents", {"query": "IEP accommodations notes", "purpose": "for my notes"}, timeout=120)
         muse.job("raw name from Muse", "search_documents", {"query": f"essay by {services.roster.students[0].name}", "purpose": "for my notes"}, timeout=120, approve=approve)
         extras["raw_name_warned"] = any(r["label"].startswith("raw name") and r["warned"] for r in muse.rows)
+        if settings.sam_enabled:
+            extras.update(image_step(settings, services, muse, approve))
+        else:
+            extras["image_check"] = "skipped, SAM_ENABLED is not 1"
         if grading:
             start = time.monotonic()
             body = muse.job("grade 24 essays", "run_private_task", {"instructions": GRADE, "folder": "essays"}, timeout=1500, approve=approve)

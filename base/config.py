@@ -21,6 +21,7 @@ ANSWER_PORT = 8081
 ROUTER_PORT = 8082
 CHECKER_PORT = 8083
 EMBED_PORT = 8084
+SAM_PORT = 8085
 APPROVAL_PORT = 8787
 CONNECTOR_PORT = 8790
 
@@ -98,6 +99,11 @@ class Paths:
         """Text the local vision model read out of images, one file per image hash."""
         return self.home / "scans"
 
+    @property
+    def regions(self) -> Path:
+        """What the SAM sidecar found in each image (kinds and boxes) and its covered copy, by image hash."""
+        return self.home / "regions"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -157,6 +163,10 @@ class Settings:
     embed_model: str = "embeddinggemma-2"
     # pdftotext (poppler) makes .pdf files documents; None when it is not installed.
     pdftotext_bin: str | None = None
+    # SAM_ENABLED=1: the SAM 3.1 sidecar (sidecars/sam/) covers faces, signatures, ID cards and
+    # barcodes before the local model reads an image, and an image it cannot check is not read.
+    sam_enabled: bool = False
+    sam_url: str = f"http://127.0.0.1:{SAM_PORT}"
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
@@ -258,6 +268,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     embed_url = get("EMBED_URL", f"http://127.0.0.1:{EMBED_PORT}/v1").rstrip("/")
     if not _is_loopback_url(embed_url):
         raise ValueError("EMBED_URL must be this device (127.0.0.1 or localhost): it reads raw documents")
+    sam_url = get("SAM_URL", f"http://127.0.0.1:{SAM_PORT}").rstrip("/")
+    if not _is_loopback_url(sam_url):
+        raise ValueError("SAM_URL must be this device (127.0.0.1 or localhost): it reads raw page images")
     pdftotext = get("PDFTOTEXT_BIN") or shutil.which("pdftotext") or None
     jetson_lfm_url = (get("JETSON_LFM_BASE") or "").rstrip("/") or None
     if jetson_lfm_url and not jetson_lfm_url.startswith("https://"):
@@ -344,6 +357,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embed_url=embed_url,
         embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
         pdftotext_bin=pdftotext,
+        sam_enabled=get("SAM_ENABLED", "0") == "1",
+        sam_url=sam_url,
         device_only=device_only,
         tag_rotation=rotation,  # type: ignore[arg-type]
         tag_grace_hours=grace,

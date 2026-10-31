@@ -35,6 +35,7 @@ from starlette.responses import JSONResponse
 
 from base.config import CloudBackendRefused
 from base.connector.audit import CURRENT_VIA, VIA_HEADER, client_label, via_label
+from base.regions import unchecked_images, unchecked_note
 from base.workspace import merge
 from base.workspace.contacts import ContactsError, load_contacts
 from base.workspace.index import snippet, tokenize
@@ -417,14 +418,15 @@ class Connector:
         restored = restore_tags(self.services, query)
         rag = getattr(self.services, "rag", None)
         found: list[Any] = []
-        if rag is not None:
-            try:  # passages for the query and the device model's rewrites of it
-                found = list(rag.retrieve(self.services.index, restored))
-            except Exception as exc:
-                log.warning("passage search failed, using the document search: %s", type(exc).__name__)
-        passages = bool(found)
-        if not found:
-            found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
+        with unchecked_images() as unread:  # images the SAM sidecar could not check are left out
+            if rag is not None:
+                try:  # passages for the query and the device model's rewrites of it
+                    found = list(rag.retrieve(self.services.index, restored))
+                except Exception as exc:
+                    log.warning("passage search failed, using the document search: %s", type(exc).__name__)
+            passages = bool(found)
+            if not found:
+                found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
         snippets, answer = found[:5], None
         if rag is not None and found:
             # The device's own model picks the passages that answer the query and writes a short
@@ -442,6 +444,8 @@ class Connector:
                 raw = f"Answer: {_short(answer, ANSWER_CHARS)}\n\n{raw}"
         else:
             raw = answer or "No matching passages."
+        if unread:
+            raw = f"{raw}\n\n{unchecked_note(len(unread))}"
         # Who the snippets are for is part of Muse's request, so egress tags and labels it with the rest.
         request = f"{query}\nPurpose: {purpose}" if purpose else query
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still

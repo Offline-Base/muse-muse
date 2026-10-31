@@ -12,6 +12,7 @@ Judging runs Nov 4 to 8 and the live finals are Nov 9. The whole time, this lapt
 | The checker, LFM3-VL-2B | 8083 | required | start.sh stops everything and exits 1 |
 | Muse Privacy (`python -m base`: approval page and connector) | 8787, 8790 | required | start.sh stops everything and exits 1 |
 | The embedder, EmbeddingGemma 2 (SEARCH_EMBEDDINGS=1) | 8084 | optional | started again after 5 s, then 10, 20 and so on up to 5 minutes; search uses keywords meanwhile |
+| The SAM region finder (SAM_ENABLED=1, off by default) | 8085 | optional | started again the same way; page images are not read until it answers (fail closed). Exit status 3 (no weights or no sidecar environment) is not retried |
 | The relay client | none, it dials out | optional | started again the same way (it also reconnects on its own). Exit status 3 means the relay refused this device or another copy took over, and it is not retried |
 
 A required process stopping brings start.sh down on purpose, so that launchd can start it all again from a clean state. That only happens when the LaunchAgent is installed (`scripts/install_login.sh`): launchd then starts start.sh again 30 s after it exits, at login, and after a crash. Without the LaunchAgent, nothing restarts a stopped start.sh.

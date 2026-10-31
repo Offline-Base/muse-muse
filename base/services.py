@@ -27,6 +27,7 @@ from base.heavy.queue import HeavyQueue
 from base.light import start_light
 from base.local_llm import FallbackLLM, LocalLLM
 from base.policy import UserPolicy
+from base.regions import RegionClient
 from base.router import Router
 from base.workspace.agent import Agent
 from base.workspace.ask import AskRunner, DeviceAsk
@@ -75,8 +76,9 @@ def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:
 
 class Services:
     """Attributes: settings, events, roster, tagmap, policy, answer_llm, router_llm, checker_llm
-    (answer_llm unless CHECKER_BACKEND=lfm), scans and rag (None unless lfm), router, approvals,
-    jobs, index, heavy (HeavyQueue or None), agent, audit, egress, night, light."""
+    (answer_llm unless CHECKER_BACKEND=lfm), scans and rag (None unless lfm), regions (a
+    RegionClient with lfm and SAM_ENABLED=1, else None), router, approvals, jobs, index, heavy
+    (HeavyQueue or None), agent, audit, egress, night, light."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -103,11 +105,15 @@ class Services:
         s.answer_llm = LocalLLM(settings, role="answer")
         s.router_llm = LocalLLM(settings, role="router")
         s.checker_llm = s.answer_llm
-        s.scans = s.rag = None
+        s.scans = s.rag = s.regions = None
+        s.controls = ControlStore(settings.paths.controls)
         if settings.checker_backend == "lfm":
             lfm = LocalLLM(settings, role="checker")
             s.checker_llm = lfm
-            s.scans = ScanReader(settings, lfm)  # scans and passage picking stay local, never Glimmer
+            # SAM_ENABLED=1: the SAM 3.1 sidecar covers each page first, and an unchecked page is not read.
+            s.regions = RegionClient(settings) if settings.sam_enabled else None
+            # scans and passage picking stay local, never Glimmer
+            s.scans = ScanReader(settings, lfm, regions=s.regions, controls=s.controls)
             s.rag = Rag(lfm, s.roster, s.tagmap, candidates=settings.rag_candidates)
             if settings.primary_model == "lfm" and settings.device_only:
                 # One model, no fallback: when it is down, results are held (base/egress.py).
@@ -132,7 +138,6 @@ class Services:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)
             retention.maybe_expire_tags(s)  # tags that stopped working while the device was off
         s.embedder = Embedder(settings) if settings.search_embeddings else None
-        s.controls = ControlStore(settings.paths.controls)
         s.router.choice = lambda: s.controls.get().learning
         s.index = DocumentIndex(settings, scans=s.scans, embedder=s.embedder, controls=s.controls)
         # mode 2 needs the local model
@@ -167,6 +172,7 @@ class Services:
             self.light.stop()
             self.light = None
         names = ["approvals", "answer_llm", "router_llm"] + (["embedder"] if getattr(self, "embedder", None) else [])
+        names += ["regions"] if getattr(self, "regions", None) else []
         if getattr(self, "checker_llm", None) is not getattr(self, "answer_llm", None):
             names.append("checker_llm")
         for name in names:

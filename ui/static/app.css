@@ -191,6 +191,10 @@ a { color: var(--accent); }
   overflow: auto;
 }
 .tagged.small { font-size: 12.5px; padding: 12px; margin: 8px 0 0; }
+.scan-previews { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
+.scan-previews img { max-width: 100%; max-height: 240px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.scan-previews + .caption { margin-bottom: 16px; }
+.image-note { margin: 0 0 20px; padding: 12px 16px; border-radius: 12px; background: var(--wait-soft); color: var(--wait-text); max-width: 820px; }
 .tag {
   padding: 1px 5px;
   border-radius: 4px;

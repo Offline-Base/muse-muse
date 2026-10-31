@@ -398,6 +398,27 @@ async def test_search_restores_tags_and_releases_short_snippets(client, services
     assert_no_real_names(text_of(result))
 
 
+async def test_search_says_how_many_images_it_could_not_check(client, services, monkeypatch):
+    from base.regions import note_unchecked, unchecked_note
+
+    plain = services.index.search
+
+    def search(query, k=5):
+        note_unchecked("forms/a.png")  # the scan reader left these out: the SAM sidecar was down
+        note_unchecked("forms/b.png")
+        note_unchecked("forms/a.png")
+        return plain(query, k)
+
+    monkeypatch.setattr(services.index, "search", search)
+    await client.call_tool("search_documents", {"query": "field trip forms"})
+    [call] = services.egress.calls
+    assert call["raw_text"].endswith(unchecked_note(2)) and "a.png" not in call["raw_text"]
+    await client.call_tool("search_documents", {"query": "rubric"})
+    monkeypatch.setattr(services.index, "search", plain)
+    await client.call_tool("search_documents", {"query": "thesis"})
+    assert "not read" not in services.egress.calls[-1]["raw_text"]  # nothing carried over between searches
+
+
 async def test_dreaming_report_is_numbers_only(client, services):
     result = await client.call_tool("dreaming_report", {})
     [call] = services.egress.calls

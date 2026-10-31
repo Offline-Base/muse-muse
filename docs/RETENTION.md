@@ -8,6 +8,7 @@ With the COPPA or GDPR toggle on, Muse Privacy deletes old results from this dev
 - Finished jobs and files in `BASE_HOME/output`.
 - Text read from scanned images in `BASE_HOME/scans`.
 - Tag map entries for people and details that are not on your roster and were last seen more than 90 days ago, with their tags. A value stays while a tag for it still works or sits in a result waiting for your OK.
+- Image checks in `BASE_HOME/regions`: where the SAM 3.1 region finder found faces, signatures, ID cards and barcodes on a page (counts and boxes), and the covered copy of that page. These exist only with `SAM_ENABLED=1`.
 
 The cleanup runs at most once an hour while results are being released.
 
