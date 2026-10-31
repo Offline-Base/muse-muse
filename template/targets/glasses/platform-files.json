@@ -1,0 +1,6 @@
+[
+  "lib/glasses/bridge.ts",
+  "lib/glasses/client.ts",
+  "lib/glasses/samples.ts",
+  ".agents/skills/muse-glasses/SKILL.md"
+]
