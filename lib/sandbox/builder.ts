@@ -82,7 +82,8 @@ import {
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { applyLookScript, MUSE_APP_OVERLAY, OVERLAYS_DIR } from "@/lib/sandbox/look";
+import { installOverlays, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
   PREVIEW_WAIT_S,
   previewAnswered,
@@ -381,12 +382,35 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
+  /** MUSE_APP_LOOK: put the muse-app look in before anything from the user (applyLook). Off leaves the template as it is. */
+  museAppLook?: boolean;
+}
+
+/**
+ * Puts the muse-app look (lib/sandbox/look.ts) into a new product. A snapshot made with the overlay has it. In one from
+ * before it, a local run adds it from this checkout's template/targets, so the look can be tried without a new snapshot;
+ * the live site can't, since its functions have no template/. Fails rather than build without it, since the build
+ * prompt names its skill.
+ */
+async function applyLook(sandbox: Sandbox): Promise<void> {
+  const found = await sh(sandbox, `[ -f ${q(`${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/deps.json`)} ]`, { allowFail: true });
+  if (found.exitCode !== 0) {
+    if (process.env.VERCEL) {
+      throw new Error("This builder snapshot doesn't have the muse-app overlay. Make a new one with npm run snapshot before turning MUSE_APP_LOOK on.");
+    }
+    const dir = process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
+    const files = (await readTargetFiles(dir)).filter((f) => f.path.startsWith(`targets/${MUSE_APP_OVERLAY}/`));
+    if (!files.length) throw new Error(`This builder snapshot doesn't have the muse-app overlay, and there's no ${dir}/targets/${MUSE_APP_OVERLAY} to add it from.`);
+    await installOverlays(sandbox, files, () => {});
+  }
+  await sh(sandbox, applyLookScript(), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
 }
 
 /**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
- * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host).
+ * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). With museAppLook, the muse-app look goes
+ * in before the user's files (applyLook).
  *
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
@@ -420,6 +444,8 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name) });
+
+  if (input.museAppLook) await applyLook(sandbox);
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([

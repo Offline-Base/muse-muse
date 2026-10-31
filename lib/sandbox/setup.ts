@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Sandbox } from "@vercel/sandbox";
 import { SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, MUSE_INSTALL_URL, OUT_DIR, PLAYWRIGHT_VERSION, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
+import { installOverlaysScript, OVERLAYS_DIR } from "@/lib/sandbox/look";
 import { q, sh } from "@/lib/sandbox/shell";
 import { pristineCopyScript } from "@/lib/sandbox/tasks";
 
@@ -37,8 +38,9 @@ export async function readTemplateFiles(templateDir: string): Promise<TemplateFi
 }
 
 /**
- * Reads the top-level template/targets/: overlays a product gets only when its brief asks for that target, so they
- * aren't in readTemplateFiles. They still count toward templateHash, since a snapshot carries them too.
+ * Reads the top-level template/targets/: overlays a product gets only when its build asks for one (a target in its
+ * brief, or the muse-app look), so they aren't in readTemplateFiles. They still count toward templateHash, since a
+ * snapshot carries them too.
  */
 export async function readTargetFiles(templateDir: string): Promise<TemplateFile[]> {
   return readTemplateTree(templateDir, TARGETS_DIR);
@@ -244,6 +246,21 @@ export async function savePristineFiles(sandbox: Sandbox, log: Log): Promise<voi
   await timed(log, "pristine copy of the platform files", () => sh(sandbox, pristineCopyScript(), { sudo: true }));
 }
 
+/**
+ * Puts template/targets (readTargetFiles) in the sandbox as the read-only OVERLAYS_DIR, where provisioning finds an
+ * overlay to apply (lib/sandbox/look.ts). A snapshot gets every overlay. A local provision on a snapshot from before
+ * them adds the one it needs.
+ */
+export async function installOverlays(sandbox: Sandbox, files: TemplateFile[], log: Log): Promise<void> {
+  const from = `/tmp/musemuse-targets-${Date.now().toString(36)}`;
+  await timed(log, `${files.length} overlay files in ${OVERLAYS_DIR}`, async () => {
+    for (let i = 0; i < files.length; i += 50) {
+      await sandbox.writeFiles(files.slice(i, i + 50).map((f) => ({ path: `${from}/${f.path}`, content: f.content })));
+    }
+    await sh(sandbox, installOverlaysScript(from), { sudo: true });
+  });
+}
+
 export interface BuilderInfo {
   createdAt: string;
   muse: string;
@@ -260,7 +277,10 @@ export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInf
   return full;
 }
 
-/** Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles, and only counts toward the template's hash. */
+/**
+ * Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays, kept outside the product in
+ * OVERLAYS_DIR until a build asks for one.
+ */
 export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = []): Promise<BuilderInfo> {
   await makeDirs(sandbox, [WORK_DIR]);
   await installSystemTools(sandbox, log);
@@ -268,5 +288,6 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await disableBundledSkills(sandbox, log);
   await installTemplate(sandbox, files, log);
   await savePristineFiles(sandbox, log);
+  if (targets.length) await installOverlays(sandbox, targets, log);
   return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets]) });
 }

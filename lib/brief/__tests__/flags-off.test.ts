@@ -27,6 +27,7 @@ const FLAGS = [
   "AGENTS_ENABLED",
   "COMPOSIO_PERSONAL_ENABLED",
   "GADGETS_ENABLED",
+  "MUSE_APP_LOOK",
 ];
 
 beforeEach(() => {
