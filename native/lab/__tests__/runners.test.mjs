@@ -202,12 +202,70 @@ describe("ios_sim", () => {
     assert.equal((await runIosSim(h.ctx)).evaluation.passed, false);
   });
 
+  const unpackOnly = (argv, _o, reply) => (argv[0] === "tar" ? (mkdirSync(path.join(argv.at(-1), "A.app"), { recursive: true }), reply()) : undefined);
+  const datedAfterLaunch = { ...GOOD_REPORT, at: new Date(2_000_000).toISOString() };
+
   test("what the shell posted to the platform is the last backup, for a release build with no log line", async () => {
-    const h = makeCtx("ios_sim", {
-      platformReport: GOOD_REPORT,
-      answer: (argv, _o, reply) => (argv[0] === "tar" ? (mkdirSync(path.join(argv.at(-1), "A.app"), { recursive: true }), reply()) : undefined),
-    });
+    const h = makeCtx("ios_sim", { platformReport: datedAfterLaunch, answer: unpackOnly });
     assert.equal((await runIosSim(h.ctx)).evaluation.passed, true);
+  });
+
+  test("the platform's copy from an earlier attempt can't pass a retry", async () => {
+    // A retry keeps the job id and the selftest token, so the platform can still hold what attempt 1 posted.
+    for (const stale of [{ ...GOOD_REPORT, at: new Date(1000).toISOString() }, GOOD_REPORT]) {
+      const h = makeCtx("ios_sim", { platformReport: stale, answer: unpackOnly });
+      const result = await runIosSim(h.ctx);
+      assert.equal(result.evaluation.passed, false);
+      assert.ok(result.evaluation.checks.some((c) => c.id === "health_report" && c.ok === false));
+    }
+  });
+
+  /** A shell whose report reaches the platform `reportAfterMs` after launch, as a slow page or the watchdog would. */
+  function slowReport(reportAfterMs) {
+    const h = makeCtx("ios_sim", { answer: unpackOnly });
+    let launchedAt = null;
+    const exec = h.ctx.exec;
+    h.ctx.exec = async (argv, opts) => {
+      if (argv.includes("launch")) launchedAt = h.ctx.now();
+      return exec(argv, opts);
+    };
+    h.ctx.fetchSelftest = async () => {
+      if (launchedAt === null || h.ctx.now() < launchedAt + reportAfterMs) return null;
+      return { ...GOOD_REPORT, at: new Date(launchedAt + reportAfterMs).toISOString() };
+    };
+    return h;
+  }
+
+  test("a page that takes 35 s to load still gets to report", async () => {
+    const h = slowReport(43_000);
+    assert.equal((await runIosSim(h.ctx)).evaluation.passed, true);
+  });
+
+  test("the lab waits for the shell's 60 s watchdog, and gives up not long after", async () => {
+    assert.equal((await runIosSim(slowReport(60_000).ctx)).evaluation.passed, true);
+    const h = slowReport(90_000);
+    const result = await runIosSim(h.ctx);
+    assert.ok(result.evaluation.checks.some((c) => c.id === "no_timeout" && c.ok === false));
+    assert.ok(h.ctx.now() - 1_000_000 < 90_000, "it stopped waiting before then");
+  });
+
+  test("a job's device name goes in the caption and doesn't pick the simulator", async () => {
+    let h;
+    h = makeCtx("ios_sim", {
+      job: { input: { device: { name: "iPhone 16" } } },
+      deviceList: {
+        [RUNTIME]: [
+          { name: "iPhone 16", udid: "OTHER", isAvailable: true },
+          { name: "Muse Lab iPhone", udid: UDID, isAvailable: true },
+        ],
+      },
+      answer: extract(() => h),
+    });
+    const result = await runIosSim(h.ctx);
+    assert.equal(h.ran("OTHER").length, 0);
+    assert.ok(h.ran(`bootstatus ${UDID}`).length > 0);
+    assert.equal(h.ran("simctl create").length, 0);
+    assert.equal(result.device.name, "iPhone 16");
   });
 
   test("makes the simulator when it's missing", async () => {
@@ -271,7 +329,9 @@ describe("android_emu", () => {
     const h = makeCtx("android_emu", { answer: android() });
     const result = await runAndroidEmu(h.ctx);
     assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
-    h.order("install -r -g", "logcat -c", "am start", "screencap", "pkill -INT screenrecord", "pull", "uninstall");
+    h.order("uninstall", "install -r -g", "logcat -c", "am start", "screencap", "pkill -INT screenrecord", "pull");
+    assert.equal(h.ran("uninstall").length, 2, "before the install and after the check");
+    assert.equal(h.ran("pm clear").length, 0, "it would take back what install -g granted");
     assert.match(h.ran("am start")[0].join(" "), /musemuse-lab:\/\/check\?/);
     assert.ok(h.started.some((s) => s.argv.join(" ").includes("screenrecord")));
     assert.equal(h.ctx.composedCaption, "On an Android emulator (Pixel 7, Android 15)");
@@ -316,6 +376,22 @@ describe("android_emu", () => {
   test("a process that's gone fails the check", async () => {
     const h = makeCtx("android_emu", { answer: android({ pid: "" }) });
     assert.ok((await runAndroidEmu(h.ctx)).evaluation.checks.some((c) => c.id === "no_crash" && c.ok === false));
+  });
+
+  test("a package left by an aborted job doesn't stop the install", async () => {
+    const base = android();
+    const h = makeCtx("android_emu", {
+      answer: (argv, opts, reply) => (argv.includes("uninstall") ? reply({ code: 1, stderr: "DELETE_FAILED_INTERNAL_ERROR" }) : base(argv, opts, reply)),
+    });
+    assert.equal((await runAndroidEmu(h.ctx)).evaluation.passed, true);
+  });
+
+  test("the platform's copy only counts if it's from this launch", async () => {
+    const fresh = { ...GOOD_REPORT, at: new Date(2_000_000).toISOString() };
+    const passed = makeCtx("android_emu", { answer: android({ report: null }), platformReport: fresh });
+    assert.equal((await runAndroidEmu(passed.ctx)).evaluation.passed, true);
+    const stale = makeCtx("android_emu", { answer: android({ report: null }), platformReport: { ...GOOD_REPORT, at: new Date(1000).toISOString() } });
+    assert.ok((await runAndroidEmu(stale.ctx)).evaluation.checks.some((c) => c.id === "no_timeout" && c.ok === false));
   });
 
   test("a product APK gets no link and no report wait", async () => {
@@ -587,6 +663,50 @@ describe("glasses_sim", () => {
     assert.equal(h.ran("-museRun").length, 1);
     assert.ok(result.warnings.some((w) => /launch arguments/.test(w)));
     assert.equal(result.evaluation.passed, true);
+  });
+
+  /** The first checkpoint lands this long after whichever launch came last, as it does when the page has loaded. */
+  function slowLoad(loadMs, { linkWorks = true } = {}) {
+    let h;
+    let launchedAt = null;
+    h = makeCtx("glasses_sim", {
+      answer: (argv, _o, reply) => {
+        if (argv[0] === "tar") {
+          mkdirSync(path.join(argv.at(-1), "Glasses.app"), { recursive: true });
+          return reply();
+        }
+        const text = argv.join(" ");
+        if (linkWorks ? text.includes("openurl") : text.includes("-museRun")) launchedAt = h.ctx.now();
+        return undefined;
+      },
+    });
+    const sleep = h.ctx.sleep;
+    h.ctx.sleep = async (ms) => {
+      await sleep(ms);
+      if (launchedAt === null || h.ctx.now() < launchedAt + loadMs) return;
+      const at = (offset) => new Date(launchedAt + loadMs + offset).toISOString();
+      const steps = [["start"], ["connect", "mock"], ["primary"], ["result", "A red mug"]];
+      const text = steps.map(([step, detail], i) => JSON.stringify({ step, ok: true, detail, at: at(i) })).join("\n");
+      writeFileSync(path.join(h.container, "Documents", "autopilot.jsonl"), text);
+    };
+    return h;
+  }
+
+  test("a page that takes 45 s to load isn't killed as if the link had failed", async () => {
+    const h = slowLoad(45_000);
+    const result = await runGlassesSim(h.ctx);
+    assert.equal(h.ran("-museRun").length, 0);
+    assert.equal(result.facts.usedLaunchArgs, false);
+    assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
+    assert.ok(!result.warnings.some((w) => /launch arguments/.test(w)));
+  });
+
+  test("after a real fallback, the load limit counts from the new launch", async () => {
+    const h = slowLoad(40_000, { linkWorks: false });
+    const result = await runGlassesSim(h.ctx);
+    assert.equal(result.facts.usedLaunchArgs, true);
+    assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
+    assert.ok(result.evaluation.loadMs <= 41_000, String(result.evaluation.loadMs));
   });
 
   test("an autopilot that times out fails with its reason", async () => {

@@ -149,7 +149,8 @@ export function autopilotFinished(events) {
 /**
  * The verdict for the glasses check (vr-glasses design, 3.5). It's informational: it never blocks shipping, and the
  * platform shows it as a clip and a note. The autopilot runs once the page has loaded, so its `start` checkpoint is the
- * load. It has no checkpoint for the capture itself, so that's covered by the result that follows from it.
+ * load. It has no checkpoint for the capture itself, so that's covered by the result that follows from it. Its checkpoints
+ * don't carry page errors either, so the design's "no window.onerror" isn't checked here (docs/NATIVE_LAB.md, "Pass rules").
  *
  * @param {{ launched: boolean, crashed?: boolean, timedOut?: boolean, launchedAtMs?: number | null, events: object[] }} facts
  */

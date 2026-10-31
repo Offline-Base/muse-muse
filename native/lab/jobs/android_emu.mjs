@@ -13,7 +13,6 @@ import {
   adbLogcatCrash,
   adbLogcatDump,
   adbPidof,
-  adbPmClear,
   adbPrepareCommands,
   adbProp,
   adbPull,
@@ -34,10 +33,9 @@ import {
 } from "../lib/commands.mjs";
 import { CROP } from "../lib/pixels.mjs";
 import { evaluateCheck } from "../lib/rules.mjs";
-import { composeInto, keepShot, must, shotSchedule, waitFor } from "./common.mjs";
+import { composeInto, keepShot, must, platformReport, reportWaitMs, shotSchedule, waitFor } from "./common.mjs";
 
 const BOOT_TIMEOUT_MS = 180_000;
-const REPORT_GRACE_MS = 25_000;
 const SERIAL = EMULATOR_SERIAL;
 
 /** The emulator, started if it isn't running. It's left running for the next job. */
@@ -87,11 +85,13 @@ export async function runAndroidEmu(ctx) {
   const device = await deviceFacts(ctx);
 
   ctx.setPhase("install");
+  // For a package an aborted job left behind. Each job installs fresh, so nothing needs clearing after this: `pm clear`
+  // would also take back the permissions that `install -g` grants, and a dialog would land on the recording.
+  await ctx.exec(adbUninstall(SERIAL, pkg), { timeoutMs: 30_000 });
   await must(ctx, "install_failed", "The APK wouldn't install on the emulator.", adbInstall(SERIAL, apk), { timeoutMs: 120_000 });
   const resolved = await ctx.exec(adbResolveActivity(SERIAL, pkg), { timeoutMs: 15_000 });
   const component = parseResolvedActivity(String(resolved.stdout));
   if (!component) throw new LabError("install_failed", "The APK has no activity to open.");
-  await ctx.exec(adbPmClear(SERIAL, pkg), { timeoutMs: 15_000 });
   await ctx.exec(adbLogcatClear(SERIAL), { timeoutMs: 15_000 });
 
   ctx.setPhase("record");
@@ -130,8 +130,8 @@ export async function runAndroidEmu(ctx) {
   const report = expectReport && launched
     ? await waitFor(
         ctx,
-        async () => selftestFromLogcat(String((await ctx.exec(adbLogcatDump(SERIAL), { timeoutMs: 20_000 })).stdout)) ?? (await ctx.fetchSelftest()),
-        { timeoutMs: REPORT_GRACE_MS, everyMs: 1000 },
+        async () => selftestFromLogcat(String((await ctx.exec(adbLogcatDump(SERIAL), { timeoutMs: 20_000 })).stdout)) ?? (await platformReport(ctx, started)),
+        { timeoutMs: reportWaitMs(ctx, started), everyMs: 1000 },
       )
     : null;
 

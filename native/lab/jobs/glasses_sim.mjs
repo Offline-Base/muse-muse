@@ -33,8 +33,11 @@ export const MOCK_FEED = "mock-feed.mov";
 export const MOCK_PHOTO = "mock-photo.jpg";
 export const MOCK_QUESTION = "mock-question.wav";
 const AUTOPILOT_LOG = "autopilot.jsonl";
-/** A warm app gets this long to take the link before the lab uses launch arguments instead. */
-const LINK_WAIT_MS = 15_000;
+/**
+ * A warm app gets this long to take the link before the lab uses launch arguments instead. The first checkpoint only comes
+ * once the page has loaded, so this has to be the whole load limit, or a slow page is killed as if the link had failed.
+ */
+const LINK_WAIT_MS = GLASSES_LOAD_MS;
 const SHOT_EVERY_MS = 12_000;
 /** The clip keeps the end of the run, up to its limit. */
 const AFTER_RESULT_MS = 3_000;
@@ -77,7 +80,7 @@ export async function runGlassesSim(ctx) {
   ctx.setPhase("record");
   const recording = path.join(ctx.dir, "recording.mp4");
   const recorder = await startRecording(ctx, udid, recording);
-  const launchedAtMs = ctx.now();
+  let launchedAtMs = ctx.now();
 
   // Warm the app, then send the link. A cold launch with a link isn't supported on an Expo build, and the system may hold
   // a link back to ask for permission, so if the autopilot doesn't start the same request goes in as launch arguments.
@@ -91,6 +94,8 @@ export async function runGlassesSim(ctx) {
     if (!answered) {
       usedLaunchArgs = true;
       ctx.logLine("The deep link didn't start the autopilot, so the lab used launch arguments.");
+      // A new launch, so the load limit starts over.
+      launchedAtMs = ctx.now();
       const again = await ctx.exec(simctlLaunchAutopilot(udid, bundleId, { url: input.target.url }), { timeoutMs: 45_000 });
       launched = again.code === 0;
     }

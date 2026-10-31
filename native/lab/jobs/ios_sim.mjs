@@ -6,7 +6,7 @@ import path from "node:path";
 import { selftestFromLogcat, simctlLaunch, simctlLogShow, simctlScreenshot, simctlTerminate } from "../lib/commands.mjs";
 import { CROP } from "../lib/pixels.mjs";
 import { evaluateCheck } from "../lib/rules.mjs";
-import { composeInto, keepShot, shotSchedule, waitFor } from "./common.mjs";
+import { composeInto, keepShot, platformReport, reportWaitMs, shotSchedule, waitFor } from "./common.mjs";
 import {
   appRunning,
   clearLeftovers,
@@ -19,12 +19,9 @@ import {
   stopRecording,
 } from "./simulator.mjs";
 
-/** How long after the recording ends a slow page still gets to report. */
-const REPORT_GRACE_MS = 25_000;
-
 /**
- * The newest report from this job. Its file was cleared before launch and the platform's copy is this job's own, but the
- * system log goes back further, so a line only counts if it's from after this launch.
+ * The report from this launch. Its file was cleared before launch. The system log and the platform's copy can both go back
+ * further, so those only count if they're dated after it.
  */
 async function readReport(ctx, udid, documents, launchedAtMs) {
   const fromFile = await readFile(path.join(documents, "selftest.json"), "utf8")
@@ -34,7 +31,7 @@ async function readReport(ctx, udid, documents, launchedAtMs) {
   const logged = await ctx.exec(simctlLogShow(udid), { timeoutMs: 20_000 });
   const fromLog = logged.code === 0 ? selftestFromLogcat(String(logged.stdout)) : null;
   if (fromLog && Date.parse(fromLog.at) >= launchedAtMs) return fromLog;
-  return ctx.fetchSelftest();
+  return platformReport(ctx, launchedAtMs);
 }
 
 export async function runIosSim(ctx) {
@@ -73,7 +70,7 @@ export async function runIosSim(ctx) {
   const video = await stopRecording(recorder, recording);
 
   ctx.setPhase("report");
-  if (launched) report = await waitFor(ctx, () => readReport(ctx, udid, documents, started), { timeoutMs: REPORT_GRACE_MS, everyMs: 1000 });
+  if (launched) report = await waitFor(ctx, () => readReport(ctx, udid, documents, started), { timeoutMs: reportWaitMs(ctx, started), everyMs: 1000 });
   const running = launched ? await appRunning(ctx, udid, bundleId) : false;
   await ctx.exec(simctlTerminate(udid, bundleId), { timeoutMs: 15_000 });
   await resetStatusBar(ctx, udid);

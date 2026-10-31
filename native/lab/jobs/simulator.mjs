@@ -33,7 +33,8 @@ const PRIVACY_SERVICES = ["camera", "microphone", "photos"];
 
 /** The lab's simulator, made if it isn't there yet, and booted. */
 export async function ensureSimulator(ctx) {
-  const name = ctx.input.device.name ?? ctx.config.ios.simulator;
+  // Always the lab's own. A job's device name is only for the caption, or each new name would add a simulator to the box.
+  const name = ctx.config.ios.simulator;
   const fail = "The iPhone simulator didn't start.";
   const listed = await must(ctx, "simulator_failed", fail, simctlList(), { timeoutMs: 30_000 });
   let found = findSimulator(String(listed.stdout), name);

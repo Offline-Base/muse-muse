@@ -40,6 +40,26 @@ export async function waitFor(ctx, check, { timeoutMs, everyMs = 500 }) {
   }
 }
 
+/**
+ * When the lab stops waiting for a phone's health report, in ms after launch. The shell reports after the page loads and
+ * scrolls, or at 60 s if it never does (SELFTEST_WATCHDOG_MS in ProductScreen.js), so this leaves that report time to arrive.
+ */
+export const REPORT_BY_MS = 70_000;
+
+/** How much longer to wait for the health report, at least a last few seconds even if the recording ran long. */
+export function reportWaitMs(ctx, startedMs) {
+  return Math.max(5_000, startedMs + REPORT_BY_MS - ctx.now());
+}
+
+/**
+ * The report the shell posted to the platform, if it's from this launch. A retry keeps its job id and its selftest token,
+ * so the platform's copy can be the last attempt's. The shell runs on this box, so `at` is on the same clock.
+ */
+export async function platformReport(ctx, sinceMs) {
+  const report = await ctx.fetchSelftest();
+  return report && Date.parse(report.at) >= sinceMs ? report : null;
+}
+
 /** A tool that must work. Anything else ends the job as a lab problem, with its stderr in the job's log only. */
 export async function must(ctx, code, message, argv, opts) {
   const reply = await ctx.exec(argv, opts);

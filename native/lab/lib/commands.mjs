@@ -163,7 +163,6 @@ export const adbDevices = () => ["adb", "devices"];
 export const adbBootCompleted = (serial) => adbShell(serial, ["getprop", "sys.boot_completed"]);
 export const adbInstall = (serial, apk) => adb(serial, "install", "-r", "-g", apk);
 export const adbUninstall = (serial, pkg) => adb(serial, "uninstall", pkg);
-export const adbPmClear = (serial, pkg) => adbShell(serial, ["pm", "clear", shQuote(pkg)]);
 export const adbForceStop = (serial, pkg) => adbShell(serial, ["am", "force-stop", shQuote(pkg)]);
 export const adbPidof = (serial, pkg) => adbShell(serial, ["pidof", shQuote(pkg)]);
 export const adbLogcatClear = (serial) => adb(serial, "logcat", "-c");
