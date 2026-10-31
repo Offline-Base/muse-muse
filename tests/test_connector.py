@@ -1,4 +1,4 @@
-"""Connector tests: the seven MCP tools, egress on every result, auth, health and the audit log.
+"""Connector tests: the eight MCP tools, egress on every result, auth, health and the audit log.
 
 All names are invented. Services are fakes in a SimpleNamespace; the fake egress records every
 call and returns a marked text, so a test can tell released text from raw text.
@@ -41,6 +41,7 @@ ALL_TOOLS = {
     "search_documents",
     "ask_device",
     "run_private_task",
+    "save_on_device",
     "get_result",
     "run_dreaming",
     "dreaming_report",
@@ -287,7 +288,7 @@ def assert_no_real_names(text: str) -> None:
 # Tool listing
 
 
-async def test_seven_tools_with_muse_annotations(client):
+async def test_eight_tools_with_muse_annotations(client):
     tools = {t.name: t for t in (await client.list_tools()).tools}
     assert set(tools) == ALL_TOOLS
     for name in ("list_documents", "search_documents", "ask_device", "get_result", "dreaming_report"):
@@ -295,6 +296,9 @@ async def test_seven_tools_with_muse_annotations(client):
         assert tools[name].annotations.open_world_hint is False
     task, dream = tools["run_private_task"].annotations, tools["run_dreaming"].annotations
     assert (task.read_only_hint, task.destructive_hint, task.idempotent_hint) == (False, False, False)
+    save = tools["save_on_device"].annotations  # a write, not destructive, not idempotent (MUSE-8)
+    assert (save.read_only_hint, save.destructive_hint, save.idempotent_hint, save.open_world_hint) == (False, False, False, False)
+    assert set(tools["save_on_device"].input_schema["required"]) == {"items", "purpose"}
     # Not idempotent: a call after a night ends starts another night (review correctness F10).
     assert (dream.read_only_hint, dream.destructive_hint, dream.idempotent_hint) == (False, False, False)
     assert set(tools["run_private_task"].input_schema["required"]) == {"instructions", "folder"}
@@ -1053,10 +1057,10 @@ async def test_ask_device_busy_is_a_plain_sentence(client, services):
 
 async def test_get_result_names_every_tool_that_returns_a_job_id(client):
     tools = {t.name: t for t in (await client.list_tools()).tools}
-    assert len(tools) == 7
+    assert len(tools) == 8
     get = tools["get_result"]
     field = get.input_schema["properties"]["job_id"]["description"]
-    for name in ("run_private_task", "search_documents", "ask_device", "run_dreaming"):
+    for name in ("run_private_task", "search_documents", "ask_device", "save_on_device", "run_dreaming"):
         assert name in get.description and name in field, name
     for name in ("run_private_task", "search_documents", "ask_device"):
         assert "get_result" in tools[name].description and "wait_seconds 25" in tools[name].description
@@ -1522,3 +1526,34 @@ async def test_run_dreaming_while_a_night_runs_gives_its_id(client, services):
     services.night.last_finished_at = lambda: ("dream-0", time.time() - 60)
     body = (await client.call_tool("run_dreaming", {})).structured_content
     assert body["job_id"] == "dream-1" and body["status"] == "running" and services.night.starts == 1
+
+
+async def test_dreaming_report_adds_the_approval_request_numbers(client, services):
+    # MUSE-12: numbers only, also when a report row carries text where a number should be.
+    services.night.report = {
+        "night_number": 2, "learned_from": 5, "accuracy_before": 0.7, "accuracy_after": 0.75,
+        "agreement_before": 0.7, "agreement_after": 0.8, "kept": True, "leaks": 0, "seconds": 9.0,
+        "approval_requests": 7, "still_asked": f"{REAL_A} [Student A]",
+    }  # fmt: skip
+    await client.call_tool("dreaming_report", {})
+    raw = services.egress.calls[0]["raw_text"]
+    assert "- approval requests in the day before: 7" in raw
+    assert "would still ask" not in raw and REAL_A not in raw and "[Student" not in raw
+    services.night.report = services.night.report | {"still_asked": 3}
+    await client.call_tool("dreaming_report", {})
+    assert "- of those, the rules in place now would still ask: 3" in services.egress.calls[1]["raw_text"]
+
+
+async def test_a_list_waiting_for_the_user_gives_a_job_id_and_a_retry_joins_it(client, services):
+    # Found by the scene rehearsal (MUSE-14): a waiting list used to be plain text with no job_id,
+    # so Muse could only list again, and every retry made another card.
+    services.egress.status = services.egress.resolve_status = "waiting"
+    first = (await client.call_tool("list_documents", {"folder": "essays"})).structured_content
+    again = (await client.call_tool("list_documents", {"folder": "essays"})).structured_content
+    assert first["status"] == "waiting" and first["next"] == server.NEXT_STEP
+    assert again["job_id"] == first["job_id"] and len(services.egress.calls) == 1  # one card, not two
+    services.egress.resolve_status = "shared"
+    body = json.loads(text_of(await client.call_tool("get_result", {"job_id": first["job_id"]})))
+    assert body["status"] == "shared" and services.egress.calls[0]["tool"] == "list_documents"
+    assert "saved on the device" not in body["result"]
+    assert outcomes(services)[:2] == [("list_documents", "waiting"), ("list_documents", "waiting")]

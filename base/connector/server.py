@@ -1,11 +1,12 @@
 """The Muse connector: an MCP server on 127.0.0.1 at /mcp. See docs/CONTRACTS.md, "Connector".
 
-Seven tools. Every text that comes from a document goes out through services.egress.release, the
+Eight tools. Every text that comes from a document goes out through services.egress.release, the
 single exit, and nothing else in this file returns document text; the notes added to a result
-are fixed sentences and job ids. Tool calls run on worker threads (the SDK runs sync tools that
-way), each one writes an audit row with no content (relay or local, from the relay client's
-header), and any failure reaches Muse as a plain sentence, never a traceback. Each call has one
-time budget, so it answers before the relay gives up.
+are fixed sentences and job ids. save_on_device writes Muse's tagged text with the real names
+filled in on the device and sends back only a receipt with counts, through egress too. Tool calls
+run on worker threads (the SDK runs sync tools that way), each one writes an audit row with no
+content (relay or local, from the relay client's header), and any failure reaches Muse as a plain
+sentence, never a traceback. Each call has one time budget, so it answers before the relay gives up.
 """
 
 from __future__ import annotations
@@ -22,11 +23,11 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp_types import CallToolResult, TextContent, ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.requests import Request
@@ -34,6 +35,8 @@ from starlette.responses import JSONResponse
 
 from base.config import CloudBackendRefused
 from base.connector.audit import CURRENT_VIA, VIA_HEADER, client_label, via_label
+from base.workspace import merge
+from base.workspace.contacts import ContactsError, load_contacts
 from base.workspace.index import snippet, tokenize
 
 log = logging.getLogger("base.connector")
@@ -81,7 +84,12 @@ DREAMED_TODAY = "A dreaming run already finished today. The next one can start t
 # up later with get_result. Its decision row still names the tool Muse called.
 SEARCH_KIND = "search"
 ASK_KIND = "ask"
-RELEASE_TOOLS = {SEARCH_KIND: "search_documents", ASK_KIND: "ask_device"}
+LIST_KIND = "list"  # list_documents: a list that waits for the user's OK gets a job_id too
+SAVE_KIND = "save"  # save_on_device: the receipt is released like a finished job
+RELEASE_TOOLS = {
+    SEARCH_KIND: "search_documents", ASK_KIND: "ask_device", LIST_KIND: "list_documents", SAVE_KIND: "save_on_device",
+}
+NO_SAVED_NOTE = (SEARCH_KIND, ASK_KIND, LIST_KIND)  # jobs that never write files on the device
 PASSAGE_SHOW = 600  # how much of each retrieved passage search_documents sends (CHECKER_BACKEND=lfm)
 ASK_UNAVAILABLE = "ask_device needs the device's own model. Use search_documents instead."
 ASK_STARTED_NOTE = "The device is working on it and may search for up to 3 minutes."
@@ -111,6 +119,9 @@ plainly and do not try to get the same content another way.
 - A scheduled job should call only the tool it names, once.
 - Finished files with real names, such as feedback for each student, are written on the device for \
 the user to open there. They are never sent to you.
+- To make files with real names yourself, such as a note home for each student, write them with tags \
+and call save_on_device. The device fills in the names (with address_to "guardians", one email draft \
+for each guardian, from the device's own list) and saves them there. You get back only counts.
 """
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
@@ -130,6 +141,10 @@ USAGE = {
     "get_result": (
         "get_result takes job_id, the text id that a Muse Privacy tool returned, and an optional "
         "wait_seconds, a whole number from 0 to 40."
+    ),
+    "save_on_device": (
+        "save_on_device takes items, a list of 1 to 60 objects each with a title and a body as text and an "
+        'optional for_tag like [Student A], a purpose as text, and an optional address_to, "none" or "guardians".'
     ),
     "run_dreaming": "run_dreaming takes no arguments.",
     "dreaming_report": "dreaming_report takes no arguments.",
@@ -151,6 +166,8 @@ REPORT_FIELDS = (
     ("kept", "new rules kept"),
     ("leaks", "leaks found"),
     ("seconds", "seconds taken"),
+    ("approval_requests", "approval requests in the day before"),
+    ("still_asked", "of those, the rules in place now would still ask"),
 )
 
 
@@ -221,17 +238,20 @@ def _topics(job: Any) -> list[str]:
     return [str(t) for t in value] if isinstance(value, list | tuple) else []
 
 
+def tag_values(services: Any) -> dict[str, str]:
+    """The device's tags and their real values. Never leaves the device."""
+    tagmap = services.tagmap
+    if isinstance(tagmap, Mapping):
+        return dict(tagmap)
+    if hasattr(tagmap, "as_dict"):
+        return dict(tagmap.as_dict())
+    return dict(tagmap.tag_map)
+
+
 def restore_tags(services: Any, text: str) -> str:
     """Swap tags like [Student A] back to real values. The result stays on the device."""
     guard = importlib.import_module("base.guard")
-    tagmap = services.tagmap
-    if isinstance(tagmap, Mapping):
-        mapping = dict(tagmap)
-    elif hasattr(tagmap, "as_dict"):
-        mapping = dict(tagmap.as_dict())
-    else:
-        mapping = dict(tagmap.tag_map)
-    return guard.restore(text, mapping)
+    return guard.restore(text, tag_values(services))
 
 
 # Set by Connector.call when a tool call starts, so every wait inside it shares one budget.
@@ -266,7 +286,7 @@ def _plain(released: Any) -> CallToolResult:
 
 
 class Connector:
-    """The seven tools as plain methods. Each returns (result, audit outcome) or raises ToolFailure.
+    """The eight tools as plain methods. Each returns (result, audit outcome) or raises ToolFailure.
 
     `clock` and `wait(event, seconds) -> bool` are time.monotonic and Event.wait; tests pass fakes.
     """
@@ -336,6 +356,7 @@ class Connector:
             ) from None
 
     def list_documents(self, folder: str) -> tuple[CallToolResult, str]:
+        deadline = self._deadline()
         folder = folder.strip()
         _, docs = self._docs(folder)
         root = _get(_get(self.services, "settings"), "workspace_root")
@@ -351,11 +372,20 @@ class Connector:
             lines = [f"No documents in {where}."] if not held else [f"No documents to show in {where}."]
         if held:
             lines.append(f"{held} {'document' if held == 1 else 'documents'} held back on the device.")
-        released = self.services.egress.release(
-            "list_documents", f"list {where}", "\n".join(lines), "document_list",
-            sources=[str(_get(d, "id")) for d in docs],
-        )
-        return _plain(released), released.status
+        # Released as a finished job, like a search: a list that waits for the user's OK (a title
+        # with a name the roster does not know) gives Muse a job_id for get_result, and a retried
+        # list joins that release instead of making a second card.
+        jobs = self.services.jobs
+        job_id = jobs.job_for_result(LIST_KIND, f"list {where}", "\n".join(lines), "document_list")
+        self._sources[job_id] = [str(_get(d, "id")) for d in docs]
+        status, text = self._release(job_id, jobs.get(job_id), deadline)
+        if status == "shared":
+            return _text(text), status
+        if status == "refused":
+            return _text(_refused(text)), status
+        if status == "running":
+            return _json(_result_body(job_id, "running", CHECKING_NOTE)), "pending"
+        return _json(_result_body(job_id, status, text)), status
 
     def _never_share_topics(self, text: str) -> list[str]:
         """The policy's never-share topics whose keywords appear in `text`."""
@@ -452,6 +482,74 @@ class Connector:
         status = _get(self.services.jobs.get(job_id), "status") or "queued"
         return _json(_result_body(job_id, status, TASK_STARTED_NOTE)), "started"
 
+    def save_on_device(self, items: Any, purpose: str, address_to: str = "none") -> tuple[CallToolResult, str]:
+        """Mail merge on the device: Muse's tagged text with real names filled in, saved under
+        output/<job id>/. Muse gets the receipt (counts only) through egress, never a name."""
+        deadline = self._deadline()
+        purpose, address_to = purpose.strip(), (address_to or "none").strip()
+        if not purpose:
+            raise ToolFailure("Say in purpose who the files are for, for example: notes home to families.")
+        parsed = merge.items_from(items or [])
+        try:
+            merge.check(parsed, address_to, set(tag_values(self.services)))
+        except merge.SaveRefused as refused:
+            raise ToolFailure(str(refused)) from None
+        contacts = self._contacts() if address_to == "guardians" else None
+        jobs = self.services.jobs
+        job_id = jobs.create(SAVE_KIND, merge.SAVE_REQUEST, None)
+        try:
+            saved = merge.write(
+                self._output(job_id), parsed, address_to, purpose,
+                restore=lambda text: restore_tags(self.services, text), contacts=contacts,
+            )
+        except Exception as exc:
+            jobs.fail(job_id, "The files could not be saved on the device.")
+            if isinstance(exc, merge.SaveRefused):
+                raise ToolFailure(str(exc)) from None
+            raise
+        jobs.finish(job_id, merge.receipt(saved), "document_list")
+        status, text = self._release(job_id, jobs.get(job_id), deadline)
+        if status == "shared":
+            return _json({"job_id": job_id, "status": "saved", "result": text}), "shared"
+        if status == "running":
+            return _json(_result_body(job_id, "running", CHECKING_NOTE)), "pending"
+        return _json(_result_body(job_id, status, text, self._saved(job_id, jobs.get(job_id)))), status
+
+    def _contacts(self) -> list:
+        """The contact sheet, read on the device. A folder the user hid is never read."""
+        settings = self.services.settings
+        path = Path(settings.contacts)
+        store = getattr(self.services, "controls", None)
+        try:
+            rel = path.resolve().relative_to(Path(settings.workspace_root).resolve()).as_posix()
+        except ValueError:
+            rel = None  # CONTACTS_PATH outside the workspace: no folder control covers it
+        if store is not None and rel is not None:
+            try:
+                visible = store.get().visible(rel)
+            except Exception:  # a broken controls file never means reading more
+                visible = False
+            if not visible:
+                raise ToolFailure(
+                    "The device's contact list is in a folder your privacy controls hide, so nothing was saved.",
+                    outcome="refused",
+                )
+        try:
+            contacts = load_contacts(path)
+        except ContactsError as exc:
+            raise ToolFailure(f"{exc} Nothing was saved.") from None
+        if not contacts:
+            raise ToolFailure("The device's contact list has no guardians, so nothing was saved.")
+        return contacts
+
+    def _output(self, job_id: str) -> Path:
+        """output/<job id> under BASE_HOME, mode 0700."""
+        self.services.settings.ensure_home()
+        out = Path(self.services.settings.paths.output) / job_id
+        out.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(out, 0o700)
+        return out
+
     def get_result(self, job_id: str, wait_seconds: int = 0) -> tuple[CallToolResult, str]:
         """The job's status and result. With wait_seconds, wait on the device (within the call's
         budget) while the job is queued, running or waiting for the user's answer."""
@@ -505,7 +603,7 @@ class Connector:
     def _saved(self, job_id: str, job: Any) -> str | None:
         """Where a private task's files are on the device, relative to its home ("output/<job id>"),
         or None. Only the job id is named, never a file name, which can hold a real name."""
-        if _get(job, "kind") in (SEARCH_KIND, ASK_KIND) or not SAFE_JOB_ID.fullmatch(job_id):
+        if _get(job, "kind") in NO_SAVED_NOTE or not SAFE_JOB_ID.fullmatch(job_id):
             return None
         output = _get(_get(_get(self.services, "settings"), "paths"), "output")
         if output is None:
@@ -570,7 +668,7 @@ class Connector:
         if known:
             return list(known)
         folder = _get(job, "folder")
-        return [str(folder)] if folder and _get(job, "kind") not in (SEARCH_KIND, ASK_KIND) else []
+        return [str(folder)] if folder and _get(job, "kind") not in NO_SAVED_NOTE else []
 
     def _release_once(self, job_id: str, job: Any) -> tuple[str, str]:
         """One egress release for a finished job, stored unless a check could not run."""
@@ -690,8 +788,18 @@ def _plain_errors(connector: Connector):
     return middleware
 
 
+class SaveItem(BaseModel):
+    """One file for save_on_device, written with tags."""
+
+    for_tag: str = Field(
+        default="", max_length=40, description="The [Student X] tag this item is for; needed when address_to is guardians"
+    )
+    title: str = Field(min_length=1, max_length=merge.MAX_TITLE, description="The title or email subject; tags are fine")
+    body: str = Field(max_length=merge.MAX_BODY, description="The text, with tags; {guardian} becomes the guardian's name")
+
+
 def build_server(services: Any) -> MCPServer:
-    """The MCP server with the seven connector tools, wired to `services`."""
+    """The MCP server with the eight connector tools, wired to `services`."""
     c = Connector(services)
     server = MCPServer(name="muse-privacy", title="Muse Privacy", instructions=INSTRUCTIONS, version=VERSION)
 
@@ -788,12 +896,41 @@ def build_server(services: Any) -> MCPServer:
         return c.call("run_private_task", c.run_private_task, instructions, folder)
 
     @server.tool(
+        name="save_on_device",
+        title="Save files on the device",
+        annotations=START_TASK,
+        description=(
+            "Save files you wrote on the user's device with the real names filled in, for example one note "
+            "home per student. Write each item with tags exactly as you received them, like [Student A]; the "
+            "device swaps them for the real names and saves the files there, where the user opens them. They "
+            'are never sent to you. With address_to "guardians", give each item for_tag, the [Student X] tag '
+            "it is for: the device makes one email draft for each of that student's guardians from its own "
+            "list, with {guardian} in the title or body replaced by the guardian's name. Say in purpose who "
+            "the files are for. You get back only counts. A tag the device does not know saves nothing."
+        ),
+    )
+    def save_on_device(
+        items: Annotated[
+            list[SaveItem],
+            Field(min_length=1, max_length=merge.MAX_ITEMS, description="1 to 60 items, each a title and a body with tags"),
+        ],
+        purpose: Annotated[
+            str, Field(min_length=1, max_length=300, description="Who the files are for, for example: notes home to families")
+        ],
+        address_to: Annotated[
+            Literal["none", "guardians"],
+            Field(description='"guardians" makes one email draft per guardian of each item\'s student; "none" one note per item'),
+        ] = "none",
+    ) -> CallToolResult:
+        return c.call("save_on_device", c.save_on_device, items, purpose, address_to)
+
+    @server.tool(
         name="get_result",
         title="Get a task result",
         annotations=READ,
         description=(
-            "Get the status and result of a job_id from run_private_task, search_documents, ask_device or "
-            "run_dreaming. With wait_seconds (up to 40) the device waits and answers as soon as the job is "
+            "Get the status and result of a job_id from run_private_task, search_documents, ask_device, "
+            "save_on_device or run_dreaming. With wait_seconds (up to 40) the device waits and answers as soon as the job is "
             "done or the user taps Share it or Keep it here. While the status is queued, running or waiting, "
             "call again with wait_seconds 25. A shared result has names as tags, or is a summary. Status "
             "waiting means the result is waiting for the user's OK on the device: tell the user. Status refused "
@@ -806,7 +943,7 @@ def build_server(services: Any) -> MCPServer:
             str,
             Field(
                 max_length=100,
-                description="The job_id from run_private_task, search_documents, ask_device or run_dreaming",
+                description="The job_id from run_private_task, search_documents, ask_device, save_on_device or run_dreaming",
             ),
         ],
         wait_seconds: Annotated[

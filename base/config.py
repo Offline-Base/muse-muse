@@ -149,6 +149,12 @@ class Settings:
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
+    # save_on_device's contact sheet (CONTACTS_PATH): Student, Guardian and Email columns. Read on
+    # the device only. None means WORKSPACE_ROOT/records/parent_contacts.md.
+    contacts_path: Path | None = None
+    # How the relay client reaches the relay: "system" uses the system or environment proxy (the
+    # default), "direct" bypasses every proxy (RELAY_PROXY=direct, for a proxy the relay refuses).
+    relay_proxy: Literal["system", "direct"] = "system"
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -166,6 +172,11 @@ class Settings:
     @property
     def paths(self) -> Paths:
         return Paths(self.home)
+
+    @property
+    def contacts(self) -> Path:
+        """The contact sheet save_on_device reads: CONTACTS_PATH, else records/parent_contacts.md."""
+        return self.contacts_path or self.workspace_root / "records" / "parent_contacts.md"
 
     def ensure_home(self) -> Path:
         for d in (self.home, self.paths.output, self.paths.adapters):
@@ -235,6 +246,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         raise ValueError("CHECKER_URL must be this device (127.0.0.1 or localhost): the checker reads raw documents")
     checker_key = get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None
     checker_model = get("CHECKER_MODEL", "lfm3-vl-2b")
+    relay_proxy = get("RELAY_PROXY", "system") or "system"
+    if relay_proxy not in ("system", "direct"):
+        raise ValueError(f"RELAY_PROXY must be system or direct, not {relay_proxy!r}")
+    workspace_root = Path(get("WORKSPACE_ROOT", str(REPO_ROOT / "demo"))).expanduser().resolve()
+    contacts = Path(get("CONTACTS_PATH")).expanduser() if get("CONTACTS_PATH") else None
+    if contacts is not None and not contacts.is_absolute():
+        contacts = workspace_root / contacts  # a relative path is inside the workspace
     meta_key = get("META_API_KEY") or None
     if device_only:
         jetson_lfm_url, meta_key = None, None
@@ -259,7 +277,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         spark_base=get("META_API_BASE", "https://api.meta.ai/v1").rstrip("/"),
         spark_model=get("SPARK_MODEL", "muse-spark-1.3"),
         meta_api_key=meta_key,
-        workspace_root=Path(get("WORKSPACE_ROOT", str(REPO_ROOT / "demo"))).expanduser().resolve(),
+        workspace_root=workspace_root,
         roster_path=Path(get("ROSTER_PATH", str(REPO_ROOT / "eval" / "roster.json"))).expanduser(),
         policy_path=Path(get("USER_POLICY", str(REPO_ROOT / "eval" / "user_policy.yaml"))).expanduser(),
         approval_host=get("APPROVAL_HOST", "127.0.0.1"),
@@ -287,6 +305,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
         pdftotext_bin=pdftotext,
         device_only=device_only,
+        contacts_path=contacts,
+        relay_proxy=relay_proxy,  # type: ignore[arg-type]
     )
 
 

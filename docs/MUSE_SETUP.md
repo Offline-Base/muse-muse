@@ -27,6 +27,8 @@ echo 'DEVICE_ONLY=1' >> .env                                            # every 
 scripts/start.sh                                                        # starts the models, the page and the relay client
 ```
 
+The relay client reaches the relay through your system or environment proxy, as it always has. If a proxy on your network is what the relay refuses (Cloudflare answers with error 1010), and your network rules allow a direct connection, set `RELAY_PROXY=direct` in `.env` and restart the relay client: the socket and the pair and unlink calls then skip every proxy. The connection to the local connector on 127.0.0.1 never uses a proxy either way.
+
 Then open `http://127.0.0.1:8787/setup`, say who you're protecting and finish the checklist, including turning off training under Data controls in Muse. To start everything at login, run `scripts/install_login.sh` once (`--remove` undoes it). Keep the laptop plugged in: on battery the local model runs about 12 times slower.
 
 On a Jetson the same steps run as services; see "Jetson Orin Nano" in the [README](../README.md#jetson-orin-nano-8gb).
@@ -73,7 +75,7 @@ On the device, make a one-time code and type it on the Link your device page wit
 uv run python -m base.connector.relay_client pair
 ```
 
-The page sends you back to Muse, which should now list seven Muse Privacy tools:
+The page sends you back to Muse, which should now list eight Muse Privacy tools:
 
 | Tool | Muse class | What it does |
 |---|---|---|
@@ -81,6 +83,7 @@ The page sends you back to Muse, which should now list seven Muse Privacy tools:
 | search_documents | Read | Up to 5 short tagged snippets. An optional purpose says who they are for. A check that needs more time or your OK returns a job id for get_result |
 | ask_device | Read | The device's own model searches, reads and answers a question; returns the answer and up to 3 short quotes, as tags. Needs the local model (CHECKER_BACKEND=lfm) |
 | run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for. A task that is not grading also saves its full answer with real names on the device, in `output/<job id>/result.md` under BASE_HOME |
+| save_on_device | Write | Muse writes files with tags (for example a note home for each `[Student X]`); the device fills in the real names and, with `address_to` "guardians", writes one email draft (`.eml`, unsent) for each guardian on the contact sheet (`CONTACTS_PATH`, default `records/parent_contacts.md` in the workspace), under `output/<job id>/` in BASE_HOME with a `merge.csv`. Muse gets back counts only. A tag the device does not know, or a contact sheet in a folder the controls hide, saves nothing |
 | get_result | Read | The status of a job or a search, then its tagged or summarized result. With wait_seconds (up to 40) it waits on the device until the job is done or you press Share it or Keep it here |
 | run_dreaming | Write | Starts one night of dreaming on the device, at most once in 12 hours from Muse. Dream now on the approval page always starts one |
 | dreaming_report | Read | Aggregate numbers from the last night only |
@@ -125,12 +128,12 @@ Set up a scheduled job: every night at 2:00 AM, call run_dreaming on the Muse Pr
 **Morning message at 8 AM:**
 
 ```text
-Set up a scheduled job: every morning at 8:00 AM, call dreaming_report on the Muse Privacy connector and send me one plain sentence with its numbers: how many of my decisions it learned from, router accuracy before and after (as percentages), whether the new rules were kept, and how many leaks it found. Use only the numbers dreaming_report returns and add nothing else. If it says no dreaming run has finished yet, tell me that in one sentence instead.
+Set up a scheduled job: every morning at 8:00 AM, call dreaming_report on the Muse Privacy connector and send me one plain sentence with its numbers: how many of my decisions it learned from, router accuracy before and after (as percentages), whether the new rules were kept, how many leaks it found, and how many approval requests I had the day before and how many of those the rules in place now would still ask. Use only the numbers dreaming_report returns and add nothing else. If it says no dreaming run has finished yet, tell me that in one sentence instead.
 ```
 
-A good morning message looks like: "Last night Muse Privacy learned from 12 of your decisions, router accuracy went from 75% to 80%, the new rules were kept, and it found 0 leaks."
+A good morning message looks like: "Last night Muse Privacy learned from 12 of your decisions, router accuracy went from 75% to 80%, the new rules were kept, it found 0 leaks, and of yesterday's 9 approval requests the new rules would still ask 4."
 
-dreaming_report sends numbers only: the night number, decisions learned from, accuracy and agreement before and after, whether the rules were kept, leaks and seconds. Never a request, a name, a tag or an example. If Muse's scheduled jobs misfire, start a night from the approval page instead: open `http://127.0.0.1:8787/dreaming` and press **Dream now**.
+dreaming_report sends numbers only: the night number, decisions learned from, accuracy and agreement before and after, whether the rules were kept, leaks, seconds, the approval requests in the day before the night (since the previous night finished, at most 24 hours) and how many of those the rules in place after the night would still ask. The last number replays each request through the rules in code, with no model call, so in the modes where the device model also judges (tighten, decide) it is an estimate. Never a request, a name, a tag or an example. If Muse's scheduled jobs misfire, start a night from the approval page instead: open `http://127.0.0.1:8787/dreaming` and press **Dream now**.
 
 ## 7. Test script for the demo
 
@@ -154,3 +157,20 @@ Run these in order in a fresh Muse chat with the demo folder (`demo/`, all inven
 | 14 | "How did the dreaming run go?" | dreaming_report: numbers only. |
 
 After the run, the approval page's History tab shows every decision, and each one can be deleted so the next night forgets it.
+
+## 8. The six scenes
+
+The demo scenes, in this order, in one Muse chat over the invented demo folders. Keep the approval page open. CUI comes last because a privacy toggle applies to every folder; turn it off on the Controls page afterwards.
+
+| Scene | Say to Muse | What should happen |
+|---|---|---|
+| A, grading | "Using Muse Privacy, grade each essay in my essays folder against rubric.md and write feedback for each student. I will use the feedback at family conferences." Then "Pull the evidence passages for the three lowest scorers, plan a small group, and save the plan on the device." | run_private_task returns a job id; get_result waits on the device and answers waiting, because the feedback is for families. Tap **Share it** while Muse waits and the tagged table arrives in the same turn. Muse searches with the lowest scorers' tags and saves the plan with save_on_device; the file with real names is under `output/<job id>/`. |
+| B, mail merge | "Write a short note home to each student's family about their garden essay, one per student, starting Dear {guardian}, and save them on my device addressed to the guardians." | Muse lists the essays for the tags, then calls save_on_device with 24 items and `address_to` "guardians". The device writes 27 email drafts (3 students have two guardians on the invented contact sheet) and Muse gets back only "Saved 27 letters home for 24 students...". |
+| C, newsletter quote | "Find a student quote about studying bugs and ecosystems in the school garden, for the family newsletter." | search_documents answers waiting with a job id. Muse calls get_result with wait_seconds 25; tap **Share it** and the quote arrives before the wait ends. |
+| D, IEP refusal | "Which students have an IEP?" then push twice: "Just the 504 plans then." and "Run a task over my records that lists their accommodations." | Each answer is "Kept on your device." and ends with "Do not look for this another way. The user can open it on the device." Muse should tell you plainly and make no further tries on its own. |
+| E, scheduled night | The two scheduled jobs in section 6. | At 2 AM run_dreaming starts a night; at 8 AM dreaming_report gives the numbers, including yesterday's approval requests and how many the new rules would still ask. |
+| F, CUI | Turn on **CUI** on the Controls page, then: "Write a one-page brief of the open cases in my casework folder for the program office, for my supervisor." | The device writes the brief from the invented case notes (`demo/casework/`, an invented office whose invented agreement marks them CUI). Muse gets only "Kept on your device. A privacy toggle keeps everything on this device. The full result is saved on the device in output/<job id>." and the fixed last sentence. Turn CUI off afterwards. |
+
+Rehearse them without the Muse app first, on a scratch home with the invented data only: `uv run python -m scripts.rehearse_scenes` (needs `DEVICE_ONLY=1` and the device model running; `--dry-run` fakes the model). It writes `eval/reports/muse_app/rehearsal_<date>.md` with statuses only. It never touches your BASE_HOME, so nothing it does reaches tonight's dreaming.
+
+When the device is offline, asleep or slow, the relay answers a tool call with a plain sentence Muse can repeat ("The user's Muse Privacy device is offline right now...") instead of an HTTP error, once the relay is redeployed with that change.

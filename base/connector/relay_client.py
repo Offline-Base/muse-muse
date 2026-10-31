@@ -130,7 +130,7 @@ async def register(
         raise RelayError(
             f"This device is already registered as {existing['device_id']}. Use --force to replace it."
         )
-    async with _client(http) as client:
+    async with _client(http, settings) as client:
         resp = await client.post(http_base(relay_url) + "/device/register", json={"name": name})
         _check(resp, "register")
         data = resp.json()
@@ -145,7 +145,7 @@ async def pair(settings, *, http: httpx.AsyncClient | None = None) -> dict:
     cfg = load_config(settings)
     if cfg is None:
         raise RelayError("This device is not registered yet. Run register first.")
-    async with _client(http) as client:
+    async with _client(http, settings) as client:
         resp = await client.post(
             http_base(cfg["relay_url"]) + "/device/pair", headers={"authorization": f"Bearer {cfg['secret']}"}
         )
@@ -166,7 +166,7 @@ async def unlink(settings, *, http: httpx.AsyncClient | None = None) -> int:
     cfg = load_config(settings)
     if cfg is None:
         raise RelayError("This device is not registered yet. Run register first.")
-    async with _client(http) as client:
+    async with _client(http, settings) as client:
         resp = await client.post(
             http_base(cfg["relay_url"]) + "/device/unlink", headers={"authorization": f"Bearer {cfg['secret']}"}
         )
@@ -175,9 +175,17 @@ async def unlink(settings, *, http: httpx.AsyncClient | None = None) -> int:
     return int(data.get("revoked") or 0)
 
 
-def _client(http: httpx.AsyncClient | None):
-    """Use the caller's client as is, or make one that closes when done."""
-    return contextlib.nullcontext(http) if http is not None else httpx.AsyncClient(timeout=20)
+def _client(http: httpx.AsyncClient | None, settings=None):
+    """Use the caller's client as is, or make one that closes when done. It uses the system or
+    environment proxy unless RELAY_PROXY=direct."""
+    if http is not None:
+        return contextlib.nullcontext(http)
+    return httpx.AsyncClient(timeout=20, trust_env=proxy_mode(settings) != "direct")
+
+
+def proxy_mode(settings) -> str:
+    """RELAY_PROXY from settings: "system" (the default, the system or environment proxy) or "direct"."""
+    return "direct" if getattr(settings, "relay_proxy", "system") == "direct" else "system"
 
 
 def _check(resp: httpx.Response, what: str) -> None:
@@ -251,8 +259,12 @@ class RelayClient:
         connect: Callable[..., Any] = ws_connect,
         sleep: Callable[[float], Any] = asyncio.sleep,
         forward_timeout: float = FORWARD_TIMEOUT,
+        proxy: str = "system",
     ):
         self.relay_url = relay_url
+        # "system": the relay socket goes through the system or environment proxy, as websockets
+        # does by default. "direct" (RELAY_PROXY=direct) bypasses it, for a proxy the relay refuses.
+        self.proxy = "direct" if proxy == "direct" else "system"
         self._secret = secret
         self.connector_url = connector_url
         self._token = token
@@ -362,7 +374,9 @@ class RelayClient:
             tried += 1
             try:
                 async with self.connect(
-                    url, additional_headers={"Authorization": f"Bearer {self._secret}"}
+                    url,
+                    additional_headers={"Authorization": f"Bearer {self._secret}"},
+                    proxy=None if self.proxy == "direct" else True,
                 ) as ws:
                     failures = 0
                     log.info("connected to the relay")
@@ -405,6 +419,7 @@ def client_for(settings) -> RelayClient:
         secret=cfg["secret"],
         connector_url=f"http://127.0.0.1:{settings.connector_port}/mcp",
         token=read_or_create_token(settings.paths.connector_token),
+        proxy=proxy_mode(settings),
     )
 
 

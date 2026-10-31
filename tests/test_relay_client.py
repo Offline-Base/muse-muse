@@ -257,9 +257,11 @@ class FakeConnect:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
         self.calls: list[tuple[str, dict]] = []
+        self.proxies: list = []
 
-    def __call__(self, url, additional_headers=None):
+    def __call__(self, url, additional_headers=None, proxy=True):
         self.calls.append((url, additional_headers))
+        self.proxies.append(proxy)
         outcome = self.outcomes.pop(0)
         connect = self
 
@@ -352,10 +354,13 @@ def fake_services(settings):
             status="shared", text=raw_text.replace(REAL_A, "[Student A]"), approval_id=None
         )
 
+    from base.workspace.jobs import JobStore
+
     docs = [SimpleNamespace(id="d1", path=f"essays/{REAL_A} essay.md", title=f"{REAL_A} essay")]
     return SimpleNamespace(
         settings=settings,
         egress=SimpleNamespace(release=release),
+        jobs=JobStore(settings.paths.db),
         index=SimpleNamespace(list=lambda folder: docs),
         tagmap={},
         audit=None,
@@ -505,6 +510,37 @@ async def test_malformed_request_frame_still_gets_an_answer():
 def test_default_local_client_ignores_env_proxies():
     client = RelayClient(relay_url=RELAY, secret="s", connector_url=LOCAL, token="t")
     assert client.http.trust_env is False
+
+
+# Proxies on the way to the relay (GAP-9): the system proxy by default, RELAY_PROXY=direct bypasses it
+
+
+@pytest.mark.parametrize(("mode", "proxy"), [("system", True), ("direct", None)])
+async def test_relay_socket_uses_the_system_proxy_unless_direct(mode, proxy):
+    connect = FakeConnect([OSError("down")])
+    client = make_client(lambda r: httpx.Response(200), connect=connect, sleep=lambda s: None, proxy=mode)
+    await client.run(attempts=1)
+    assert connect.proxies == [proxy]
+
+
+def test_relay_proxy_setting_and_client_for(settings, monkeypatch):
+    from base.config import load_settings
+
+    assert settings.relay_proxy == "system" and rc.proxy_mode(settings) == "system"
+    direct = load_settings({"BASE_HOME": str(settings.home), "RELAY_PROXY": "direct"})
+    assert direct.relay_proxy == "direct" and rc.proxy_mode(direct) == "direct"
+    with pytest.raises(ValueError, match="RELAY_PROXY"):
+        load_settings({"BASE_HOME": str(settings.home), "RELAY_PROXY": "socks"})
+    rc.save_config(direct, {"relay_url": RELAY, "device_id": "dev-1", "secret": "sec"})
+    assert rc.client_for(direct).proxy == "direct" and rc.client_for(settings).proxy == "system"
+
+
+@pytest.mark.parametrize(("mode", "trusted"), [("system", True), ("direct", False)])
+async def test_pair_and_unlink_clients_follow_relay_proxy(settings, mode, trusted):
+    async with rc._client(None, SimpleNamespace(relay_proxy=mode)) as http:
+        assert http.trust_env is trusted
+    async with rc._client(None) as http:  # no settings: the system proxy, as before
+        assert http.trust_env is True
 
 
 @pytest.mark.parametrize("error", [RelayAuthError("bad secret"), rc.RelayReplacedError("another copy")])

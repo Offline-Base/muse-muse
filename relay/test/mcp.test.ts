@@ -2,10 +2,13 @@ import { SELF, env, runInDurableObject } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "../src/crypto";
 import { fromFrame } from "../src/device";
+import { BUSY_TEXT, OFFLINE_TEXT, TIMEOUT_TEXT, toolCallId, toolResultFor } from "../src/toolresult";
 import { ORIGIN, REDIRECT_URI, answerFrames, connectDevice, linkApp, mcp, pairCode, registerDevice, startAuthorize, submitCode } from "./helpers";
 
 /** An invented JSON-RPC call, the kind Muse sends. */
 const CALL = JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { name: "list_documents", arguments: { folder: "class-4b" } } });
+/** Not a tools/call: keeps the relay's own status codes when the device cannot answer. */
+const INIT = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "muse", version: "1" } } });
 const MCP_HEADERS = {
   "content-type": "application/json",
   accept: "application/json, text/event-stream",
@@ -126,7 +129,7 @@ describe("/mcp authentication", () => {
     const next = await refreshed.json<{ access_token: string }>();
     expect(next.access_token).not.toBe(tokens.access_token);
     // Offline device: the new token is accepted and reaches the device's object.
-    expect((await mcp(next.access_token, { headers: MCP_HEADERS, body: CALL })).status).toBe(503);
+    expect((await mcp(next.access_token, { headers: MCP_HEADERS, body: INIT })).status).toBe(503);
   });
 });
 
@@ -223,7 +226,7 @@ describe("/mcp forwarding", () => {
   it("answers 503 when the device is offline", async () => {
     const device = await registerDevice();
     const tokens = await linkApp(device.secret);
-    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: INIT });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "device offline" });
   });
@@ -233,7 +236,7 @@ describe("/mcp forwarding", () => {
     const tokens = await linkApp(device.secret);
     const socket = await connectDevice(device.secret);
     socket.addEventListener("message", () => socket.close(1000, "bye"));
-    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: INIT });
     expect(response.status).toBe(503);
   });
 
@@ -242,11 +245,60 @@ describe("/mcp forwarding", () => {
     const tokens = await linkApp(device.secret);
     const socket = await connectDevice(device.secret);
     const started = Date.now();
-    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: INIT });
     expect(response.status).toBe(504);
     expect(await response.json()).toEqual({ error: "device timeout" });
     expect(Date.now() - started).toBeGreaterThanOrEqual(300);
     socket.close();
+  });
+
+  it("answers an offline tools/call with a readable tool result that has the same id", async () => {
+    const device = await registerDevice();
+    const tokens = await linkApp(device.secret);
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(await response.json()).toEqual({ jsonrpc: "2.0", id: 7, result: { content: [{ type: "text", text: OFFLINE_TEXT }], isError: true } });
+  });
+
+  it("answers a tools/call the device dropped or never answered in plain words", async () => {
+    const device = await registerDevice();
+    const tokens = await linkApp(device.secret);
+    let socket = await connectDevice(device.secret);
+    socket.addEventListener("message", () => socket.close(1000, "bye"));
+    const dropped = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    expect(dropped.status).toBe(200);
+    expect((await dropped.json<any>()).result.content[0].text).toBe(OFFLINE_TEXT);
+
+    socket = await connectDevice(device.secret);
+    const call = JSON.stringify({ jsonrpc: "2.0", id: "call-9", method: "tools/call", params: { name: "get_result", arguments: { job_id: "j1" } } });
+    const slow = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: call });
+    expect(slow.status).toBe(200);
+    expect(await slow.json()).toEqual({ jsonrpc: "2.0", id: "call-9", result: { content: [{ type: "text", text: TIMEOUT_TEXT }], isError: true } });
+    socket.close();
+  });
+
+  it("answers a tools/call in plain words when the device says its app is not running", async () => {
+    const device = await registerDevice();
+    const tokens = await linkApp(device.secret);
+    const socket = await connectDevice(device.secret);
+    answerFrames(socket, () => ({ status: 502, headers: { "content-type": "application/json" }, body: '{"error": "the connector is not running on the device"}' }));
+    const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body: CALL });
+    expect(response.status).toBe(200);
+    expect((await response.json<any>()).result).toEqual({ content: [{ type: "text", text: OFFLINE_TEXT }], isError: true });
+    socket.close();
+  });
+
+  it("keeps the status code for batches, notifications and other methods", async () => {
+    const device = await registerDevice();
+    const tokens = await linkApp(device.secret);
+    const notification = JSON.stringify({ jsonrpc: "2.0", method: "tools/call", params: { name: "list_documents" } });
+    const list = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    for (const body of [`[${CALL}]`, notification, list, INIT, "not json"]) {
+      const response = await mcp(tokens.access_token, { headers: MCP_HEADERS, body });
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: "device offline" });
+    }
   });
 
   it("ignores a response frame for an unknown id", async () => {
@@ -281,9 +333,29 @@ describe("/mcp forwarding", () => {
       return { status: 200, headers: {}, body: "{}" };
     });
     // Only B is online; A's token must not reach B.
-    expect((await mcp(tokensA.access_token, { headers: MCP_HEADERS, body: CALL })).status).toBe(503);
+    expect((await mcp(tokensA.access_token, { headers: MCP_HEADERS, body: INIT })).status).toBe(503);
     expect(reachedB).toBe(false);
     socketB.close();
+  });
+});
+
+describe("readable tool results", () => {
+  it("are made only for a single tools/call with an id, and only for offline, slow or busy", async () => {
+    expect(toolCallId(CALL)).toBe(7);
+    expect(toolCallId(JSON.stringify({ jsonrpc: "2.0", id: "a", method: "tools/call" }))).toBe("a");
+    for (const body of [`[${CALL}]`, "null", "7", "{", JSON.stringify({ jsonrpc: "2.0", id: null, method: "tools/call" }), JSON.stringify({ id: 1, method: "tools/call" })]) {
+      expect(toolCallId(body)).toBeUndefined();
+    }
+    const busy = toolResultFor(429, CALL);
+    expect(busy?.status).toBe(200);
+    expect(await busy?.json()).toEqual({ jsonrpc: "2.0", id: 7, result: { content: [{ type: "text", text: BUSY_TEXT }], isError: true } });
+    for (const status of [400, 401, 404, 413, 500]) expect(toolResultFor(status, CALL)).toBeNull();
+    // The text is fixed: nothing from the request (here an invented folder name) is echoed back.
+    expect(await toolResultFor(503, CALL)?.text()).not.toContain("class-4b");
+  });
+
+  it("have no em dashes", () => {
+    for (const text of [OFFLINE_TEXT, TIMEOUT_TEXT, BUSY_TEXT]) expect(text).not.toMatch(/[\u2013\u2014]/);
   });
 });
 

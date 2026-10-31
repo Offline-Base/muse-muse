@@ -4,6 +4,7 @@ import { randomBase64Url, randomHex, sha256Hex } from "./crypto";
 import { DeviceHub, type ForwardResponse } from "./device";
 import { SCOPE, type Env, type GrantProps } from "./env";
 import { CODE_TTL_SECONDS, GATE, PairingGate, codeKey, ipKey, newCode, pepper } from "./pairing";
+import { toolResultFor } from "./toolresult";
 
 export { DeviceHub, PairingGate };
 
@@ -22,6 +23,8 @@ export { DeviceHub, PairingGate };
  * Document (an https URL as client_id); both are on.
  *
  * Frames are described in docs/CONTRACTS.md ("Relay frames"). Bodies are never stored or logged.
+ * When the device is offline, slow or busy, a tools/call gets a readable tool result instead of
+ * an HTTP error (./toolresult.ts), which reads only the body's method and id.
  */
 
 const DEVICE_ID = /^dev_[0-9a-f]{32}$/;
@@ -159,6 +162,10 @@ const mcpHandler = {
       if (value !== null) headers[name] = value;
     }
     const reply = await env.DEVICE.getByName(deviceId).forward({ method: request.method, headers, body });
+    if (reply.status >= 400 && request.method === "POST") {
+      const readable = toolResultFor(reply.status, body);
+      if (readable) return readable;
+    }
     return toResponse(reply);
   },
 };

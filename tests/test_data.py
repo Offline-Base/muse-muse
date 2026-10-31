@@ -420,6 +420,29 @@ def test_records_and_rubric():
     assert rubric.count("| 4 |") == rubric.count("| 1 |") == 4
 
 
+CASEWORK = DEMO / "casework"
+CASE_NUMBER = re.compile(r"\b000-\d{4}-\d{4}\b")
+
+
+def test_casework_is_an_invented_cui_folder():
+    # Scene F (MUSE-13): an invented office's case notes, marked CUI by its invented agreement.
+    files = sorted(CASEWORK.glob("*.md"))
+    assert len(files) == 6
+    roster_forms = [f for f in FORMS if len(f) >= 4]
+    for path in files:
+        text = path.read_text()
+        lines = text.strip().splitlines()
+        assert lines[0] == "CUI" and lines[-1] == "CUI", path.name  # the banner, top and bottom
+        assert "(invented)" in lines[2] and "Example City Housing Assistance Office (invented)" in text
+        assert all(re.fullmatch(r"555-01\d\d", p) for p in re.findall(r"\b555-\d{4}\b", text))
+        assert all(e.endswith(("@example.com", "@example.org")) for e in EMAIL.findall(text))
+        assert CASE_NUMBER.search(text), path.name  # invented case numbers, 000- first
+        assert not re.search(r"\b\d{3}-\d{2}-\d{4}\b", text)  # nothing shaped like an SSN
+        assert not [f for f in roster_forms if re.search(rf"(?<!\w){re.escape(f)}(?!\w)", text)], path.name
+        assert 100 <= len(text.split()) <= 250
+    assert not (CASEWORK / ".synthetic").exists()  # demo/.synthetic above it covers the folder
+
+
 def test_demo_is_marked_and_explained():
     assert (DEMO / ".synthetic").is_file()
     readme = (DEMO / "README.md").read_text()
@@ -439,7 +462,7 @@ def test_no_em_dashes_in_the_data():
     paths = [
         EVAL / "roster.json", EVAL / "tasks.jsonl", EVAL / "holdout.jsonl", EVAL / "user_policy.yaml",
         EVAL / "seed_requests.md", EVAL / "DATASET.md", DEMO / "README.md", DEMO / "rubric.md",
-        *ESSAY_DIR.glob("*.md"), *(DEMO / "records").glob("*.md"),
+        *ESSAY_DIR.glob("*.md"), *(DEMO / "records").glob("*.md"), *(DEMO / "casework").glob("*.md"),
     ]  # fmt: skip
     for path in paths:
         assert "—" not in path.read_text(), path.name
