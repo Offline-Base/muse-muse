@@ -100,16 +100,16 @@ async function main() {
   const log = (step: string, ms: number, detail?: string) => console.log(`  ${(ms / 1000).toFixed(1).padStart(6)} s  ${step}${detail ? `  (${detail})` : ""}`);
 
   let t = Date.now();
-  const sandbox = await Sandbox.create({
+  const options = {
     ...sandboxCredentials(),
     name: keepName ?? `musemuse-packager-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}`,
-    ...(fromSnapshot ? { source: { type: "snapshot" as const, snapshotId: fromSnapshot } } : {}),
     persistent: false,
     resources: { vcpus: 4 },
     timeout: 30 * MIN,
     networkPolicy: SNAPSHOT_POLICY,
     tags: { app: "musemuse", role: "packager-snapshot" },
-  });
+  };
+  const sandbox = await (fromSnapshot ? Sandbox.create({ ...options, source: { type: "snapshot", snapshotId: fromSnapshot } }) : Sandbox.create(options));
   log("create sandbox", Date.now() - t, sandbox.name);
 
   try {

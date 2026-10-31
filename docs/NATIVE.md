@@ -4,8 +4,8 @@ Every build still makes the Next.js web product. A brief can add targets, and ev
 fixes. With every flag off, nothing changes: `lib/brief/__tests__/flags-off.test.ts` compares each prompt and schema, byte
 for byte, with what they were before targets existed (`lib/brief/__tests__/golden/`).
 
-The lab's own contract, with its routes and job inputs, is `docs/NATIVE_LAB.md`, which comes with the lab unit. Agent tools
-are in `docs/AGENT_TOOLS.md`.
+The lab's own contract, with its routes and job inputs, is `docs/NATIVE_LAB.md`, which comes with the lab unit. How packages
+are made is `docs/NATIVE_PACKAGER.md`. Agent tools are in `docs/AGENT_TOOLS.md`.
 
 ## Targets
 

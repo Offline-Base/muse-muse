@@ -100,6 +100,9 @@ sandboxes are deleted. One snapshot is kept, at about $0.25 a month.
 
 ## Running it again
 
+The snapshot this made is `snap_blpNiEqxnLrX76c1SfQVl85bJEtc`, on the muse-muse project, from the shells at 3e223ea. It has no expiry. Nothing has set it as
+`PACKAGER_SNAPSHOT_ID`.
+
 ```sh
 PACKAGER_SNAPSHOT_ID=... npx tsx --env-file-if-exists=.env.local scripts/native/package-product.ts \
   --name "Fern & Moss" --url https://example.com/ --out /tmp/fern --delete
