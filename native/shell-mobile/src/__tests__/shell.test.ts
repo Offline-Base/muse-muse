@@ -450,16 +450,30 @@ describe("glasses helpers", () => {
     assert.equal(cleanCheckpoint("junk", at), null);
   });
 
+  it("keeps page errors on a checkpoint only as short strings", () => {
+    const at = new Date("2026-10-31T00:00:00Z");
+    const entry = cleanCheckpoint({ step: "result", ok: true, errors: ["boom", 7, "x".repeat(400), ...Array(30).fill("more")] }, at);
+    assert.equal(entry?.errors?.length, 20);
+    assert.deepEqual(entry?.errors?.slice(0, 2), ["boom", "7"]);
+    assert.equal(entry?.errors?.[2].length, 300);
+    assert.equal(cleanCheckpoint({ step: "result", ok: true, errors: [] }, at)?.errors, undefined);
+    assert.equal(cleanCheckpoint({ step: "result", ok: true, errors: "boom" }, at)?.errors, undefined);
+  });
+
   it("builds an autopilot script that parses", () => {
     assert.doesNotThrow(() => new Function(buildAutopilotScript(10)));
     assert.equal(AUTOPILOT_LOG, "autopilot.jsonl");
   });
 
   /** Runs the script against a small fake of the connect and primary buttons. `onClick` says what the product does. */
-  async function runAutopilot(primary: { enabledAfterMs?: number; onClick(count: number, state: { disabled: boolean; result: boolean }): void }) {
+  async function runAutopilot(primary: {
+    enabledAfterMs?: number;
+    pageErrors?: () => string[];
+    onClick(count: number, state: { disabled: boolean; result: boolean }): void;
+  }) {
     const started = Date.now();
     const clicks: number[] = [];
-    const marks: Array<{ step: string; ok: boolean }> = [];
+    const marks: Array<{ step: string; ok: boolean; errors?: string[] }> = [];
     const state = { disabled: false, result: false };
     const main = {
       get disabled() {
@@ -483,9 +497,10 @@ describe("glasses helpers", () => {
     };
     const page: Record<string, unknown> = {
       __museNative: {
-        checkpoint: async (entry: { step: string; ok: boolean }) => {
+        checkpoint: async (entry: { step: string; ok: boolean; errors?: string[] }) => {
           marks.push(entry);
         },
+        ...(primary.pageErrors ? { pageErrors: primary.pageErrors } : {}),
       },
       MuseNative: { glasses: { status: async () => ({ state: "ready", mode: "mock" }) } },
     };
@@ -531,6 +546,20 @@ describe("glasses helpers", () => {
     });
     assert.equal(clicks.length, 1);
     assert.equal(marks.at(-1)?.step, "result");
+  });
+
+  it("sends the page's errors with the result, and with a run that stops", async () => {
+    const done = await runAutopilot({
+      pageErrors: () => ["boom"],
+      onClick: (_count, state) => {
+        state.result = true;
+      },
+    });
+    assert.deepEqual(done.marks.at(-1)?.errors, ["boom"]);
+    assert.ok(done.marks.slice(0, -1).every((mark) => mark.errors === undefined));
+    const stopped = await runAutopilot({ enabledAfterMs: 60_000, pageErrors: () => ["boom"], onClick: () => {} });
+    assert.equal(stopped.marks.at(-1)?.step, "timeout");
+    assert.deepEqual(stopped.marks.at(-1)?.errors, ["boom"]);
   });
 
   it("reports a timeout when the button never gets enabled, without claiming the tap", async () => {

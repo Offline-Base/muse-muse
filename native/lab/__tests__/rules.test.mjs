@@ -137,6 +137,23 @@ describe("the glasses check", () => {
     assert.equal(evaluate([]).informational, true);
   });
 
+  test("the page's errors on the last checkpoint only warn", () => {
+    const withErrors = good.map((e) => (e.step === "result" ? { ...e, errors: ["ReferenceError: boom", "x".repeat(400)] } : e));
+    const result = evaluate(withErrors);
+    assert.equal(result.passed, true);
+    assert.equal(result.warnings.length, 2);
+    assert.equal(result.warnings[0], "Console error: ReferenceError: boom");
+    assert.ok(result.warnings[1].length < 250);
+    assert.deepEqual(evaluate(good).warnings, []);
+    assert.deepEqual(evaluate(good.map((e) => ({ ...e, errors: "boom" }))).warnings, []);
+  });
+
+  test("a page's errors still warn on a run that stopped", () => {
+    const result = evaluate([...good.slice(0, 2), { step: "timeout", ok: false, detail: "timeout: x", errors: ["boom"], at: at(60) }]);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.warnings, ["Console error: boom"]);
+  });
+
   test("a page that loads after 60 s fails", () => {
     const late = [{ ...good[0], at: at(61) }, ...good.slice(1)];
     assert.deepEqual(bad(evaluate(late)), ["loaded"]);

@@ -37,7 +37,7 @@ const wearables = {
   mockDevicePowerOn: async () => {},
   mockDeviceUnfold: async () => {},
   mockDeviceDon: async () => {},
-  addListener(name: string, listener: (payload: never) => void) {
+  addListener(name: string, listener: (...payload: unknown[]) => void) {
     events.on(name, listener);
     return { remove: () => events.off(name, listener) };
   },
