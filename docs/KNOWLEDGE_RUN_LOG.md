@@ -765,6 +765,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   the idle watch. Chat page and eval runner worked on 5 models: stage 2, base Glimmer, Qwen3.8 27B, Gemma 4 31B, Granite 4.2
   30B. Small sets, thinking off: salient 40/16/8/3/6 of 60, probes 32/23/7/7/8 of 100, honesty dev 1/7/2/10/17 of 40;
   reasoning on 0 (HTTP 500)/59/60/55/58 of 60. The other models' scores are understated by length cuts (fix stage running).
+- 7:05 PM: owner shared Meta's Glimmer paper and docs. Corrections that follow: Meta says not to serve Glimmer greedy
+  (published sampling temperature 1.0, top_p 0.95, top_k 64; stop on <|end_of_text|> 200001 and <|eot|> 200008, never <|eom|>).
+  Every number in this log was measured greedy, so they hold as comparisons, not as serving settings; told Muse Muse General
+  and Muse Privacy. Training rendered non-reasoning rows at reasoning strength low with the template's default
+  "Knowledge cutoff: 2026-01-04" and the training day as current date. The paper confirms our header-drift cause: Meta's SFT
+  puts loss on every assistant message (reasoning, tool calls, final). Started helpers on writer-1 for DFlash drafter speed
+  and for tool calling plus the cutoff line, and workflow next-training-plan (reads Meta's TorchTitan SFT and RL cookbooks
+  and Glimmer post-training docs, then a plan with two critiques; read-only, nothing launched).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
