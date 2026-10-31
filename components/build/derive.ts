@@ -410,8 +410,11 @@ export function groupLog(lines: MuseLogLine[]): { groups: LogGroup[]; summary: R
             added: l.added ?? 0,
             removed: l.removed ?? 0,
           };
-        } else {
+        } else if (l.kind === "start" || l.kind === "status" || l.kind === "error") {
           item = { type: l.kind, text: firstLine(l.text) };
+        } else {
+          // Session bridge kinds (subagent, workflow, reminder, ...) read as status lines until they get their own view.
+          item = { type: "status", text: firstLine(l.text) };
         }
         const g = lastGroup();
         if (g?.type === "activity") g.items.push(item);

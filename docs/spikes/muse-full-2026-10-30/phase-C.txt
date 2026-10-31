@@ -1,0 +1,105 @@
+--- phase C: exit 0 in 92 s
+== C0 config keys, checked on the free echo provider
+[-c agents.execution_capacity=6] exit=0 muse: workspace root: /tmp/c-echo (cwd default) muse: workspace trust: trusted source=run-flag muse: no system bwrap on PATH passed validation: Bubblewrap candidate `/usr/bin/bwrap` is missing required capability --perms; Bubblewrap candidate `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` failed --hel
+[-c feature_config.enabled=["todo_reminder","memory_reminder","skill_reminder","goal_reminder","verify_reminder","scope_reminder"]] exit=1 muse: -c feature_config.enabled: refusing run: the JSON type does not fit this setting (see `--help` for the -c/--config shape) 
+[-c runtime_capabilities={"plugin:tbh-reminders:reminder:todo-reminder":{"enabled":true}}] exit=0 muse: workspace root: /tmp/c-echo (cwd default) muse: workspace trust: trusted source=run-flag muse: no system bwrap on PATH passed validation: Bubblewrap candidate `/usr/bin/bwrap` is missing required capability --perms; Bubblewrap candidate `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` failed --hel
+[-c max_consecutive_stop_hook_continuations=3] exit=0 muse: workspace root: /tmp/c-echo (cwd default) muse: workspace trust: trusted source=run-flag muse: no system bwrap on PATH passed validation: Bubblewrap candidate `/usr/bin/bwrap` is missing required capability --perms; Bubblewrap candidate `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` failed --hel
+[-c not_a_real_key=1] exit=2 muse: -c not_a_real_key: refusing run: unknown key: no such setting (see `--help` for the -c/--config shape) usage: muse exec [OPTIONS] [PROMPT] (run `muse exec --help` for options) 
+== C1 PostToolUse adds context (the steering channel); PreLLMCall saves the tool list
+[context] exit=0
+final: 
+== C2 PreToolUse denies a protected file
+[deny] exit=0
+final: 
+protected.txt now: original
+== C3 Stop hook blocks once, so the agent does more work (a verify gate)
+[stop] exit=0
+final: 
+stop.txt: GATED
+== C4 live session over muse serve: goal, then a steer mid-turn, with workspace trust
+probe exit=0
+goal.txt: OK | steer.txt: STEERED | session-start hook: /tmp/c-live/session-start-ran
+NOTE session/started ""
+CALL session/start ok {"session":{"activeTurnId":null,"approvalMode":{"lastCommandId":null,"mode":"allowAll","source":"startup"},"createdAt":"2026-10-31T03:09:59.303173Z","createdByClient":{"name":"musemuse_spike","version":"0.0.1"},"forkedFrom":null,"kind":"root","modelId":"muse-spark-1.3-contributor","path":"/vercel/.l
+NOTE session/approvalModeChanged ""
+CALL hook/list ok {"hooks":[{"enabled":true,"event":"sessionStart","handlerKind":"project","key":"/tmp/c-live/.muse/hooks.json:session_start:def-9ff1a0d2e2011557"}]}
+NOTE session/branchChanged ""
+CALL skill/list ok {"skills":[{"description":"Create and validate a new native Muse plugin package in the current workspace. Use ONLY when the user explicitly asks to create a Muse plugin or invokes the create-plugin skill. Do NOT use for application/library plugin classes, third-party plugin systems, or ordinary code
+CALL model/list ok {"models":[{"contextLimit":1007997,"cost":{"cached":"0.2","currency":"USD","input":"4","output":"20"},"defaultReasoningEffort":"max","description":null,"displayLabel":"muse-wonder-1.0","isActive":false,"isDefault":false,"modelId":"muse-wonder-1.0","outputLimit":128000,"profileId":"tbh","providerId":
+CALL task/list ok {"tasks":[]}
+NOTE session/goalChanged {"createdAtMs":1793416199449,"objective":"Using the shell, run sleep 8, then create the file goal.txt containing OK. The goal is complete when goal.txt exists a
+NOTE session/branchChanged ""
+NOTE turn/started ""
+NOTE session/statusChanged "running"
+NOTE item/started "reminderChild"
+CALL goal/set ok {"commandId":"01a18fef-7d18-7000-8e07-b15f13c15afc","status":"accepted","turnId":"01a18fef-7d18-7000-8e07-b15f13c15afc"}
+NOTE item/completed "agentMessage"
+NOTE session/tokenUsage ""
+NOTE session/contextUsage ""
+NOTE item/started "toolCall"
+CALL turn/steer ok {"commandId":"01a18fef-8d13-7000-bb4c-3e5d054fe35f","status":"accepted","turnId":"01a18fef-7d18-7000-8e07-b15f13c15afc"}
+NOTE item/updated "toolCall"
+NOTE item/completed "toolCall"
+NOTE session/contextUsage ""
+NOTE item/completed "userMessage"
+NOTE item/completed "reminderChild"
+NOTE item/started "reminderChild"
+NOTE item/completed "agentMessage"
+NOTE session/tokenUsage ""
+NOTE session/contextUsage ""
+NOTE item/started "toolCall"
+NOTE item/started "toolCall"
+NOTE item/updated "toolCall"
+NOTE item/completed "toolCall"
+NOTE item/updated "toolCall"
+NOTE item/completed "toolCall"
+NOTE session/contextUsage ""
+NOTE session/contextUsage ""
+NOTE item/completed "reminderChild"
+NOTE item/started "reminderChild"
+NOTE session/tokenUsage ""
+NOTE session/contextUsage ""
+NOTE item/started "toolCall"
+NOTE item/updated "toolCall"
+NOTE item/completed "toolCall"
+NOTE session/contextUsage ""
+NOTE session/tokenUsage ""
+NOTE session/contextUsage ""
+NOTE item/started "toolCall"
+NOTE item/completed "toolCall"
+NOTE session/goalChanged {"objective":"Using the shell, run sleep 8, then create the file goal.txt containing OK. The goal is complete when goal.txt exists and contains OK.","percentCom
+NOTE session/contextUsage ""
+NOTE item/started "reminderChild"
+NOTE item/started "agentMessage"
+NOTE item/completed "agentMessage"
+NOTE session/tokenUsage ""
+NOTE session/contextUsage ""
+NOTE item/completed "reminderChild"
+NOTE item/completed "reminderChild"
+NOTE session/statusChanged "idle"
+NOTE turn/completed ""
+CALL usage/read ok {}
+NOTE session/closed ""
+NOTE session/statusChanged "notLoaded"
+== C5 a real workflow with one read-only child
+[wf] exit=0
+final: 
+      5 /vercel/.local/share/muse/sessions/2026/10/31/c5a3919d-896c-48ec-848b-506bea42eeae/session.jsonl:"owner_type":"main_root"
+      3 /vercel/.local/share/muse/sessions/2026/10/31/c5a3919d-896c-48ec-848b-506bea42eeae/session.jsonl:"owner_type":"reminder_child"
+      2 /vercel/.local/share/muse/sessions/2026/10/31/c5a3919d-896c-48ec-848b-506bea42eeae/subagent/01a18fef-fa08-7b10-9e4f-28b288f2d456/session.jsonl:"owner_type":"reminder_child"
+      2 /vercel/.local/share/muse/sessions/2026/10/31/c5a3919d-896c-48ec-848b-506bea42eeae/subagent/01a18fef-fa0d-7f43-9422-9e7e8d482370/session.jsonl:"owner_type":"reminder_child"
+      4 /vercel/.local/share/muse/sessions/2026/10/31/c5a3919d-896c-48ec-848b-506bea42eeae/subagent/ef22baad-ff3c-7dc5-8064-0d92ac361f2d/session.jsonl:"owner_type":"workflow_child"
+== C6 one subagent with worktree isolation
+[sub] exit=0
+final: 
+/tmp/c-sub                                                                                                       b9aab7e [main]
+/tmp/c-sub/.muse/worktrees/subagent-v2-2906bdf7-6efb-439e-9dad-1652cf590ea8-01a18ff0-49bf-73c0-a774-83364b470018 29b7c40 (detached HEAD)
+29b7c40 Add child.txt
+b9aab7e init
+== C7 a project .mcp.json server
+[mcp] exit=0
+muse: workspace root: /tmp/c-mcp (cwd default)
+final: 
+
+[stderr]
+

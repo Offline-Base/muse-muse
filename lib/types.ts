@@ -67,10 +67,37 @@ export interface ModelUsage {
   costUsd: number;
 }
 
-/** One condensed line of Muse Code activity for the build room, made from a raw JSONL event (docs/SPIKES.md). */
+/**
+ * One condensed line of Muse Code activity for the build room, made from a raw `muse exec` JSONL event
+ * (docs/SPIKES.md) or a session bridge protocol frame (docs/MUSE_CODE_FULL.md). The kinds after "error" come from the
+ * session bridge: reasoning summaries, subagents, workflows, observer (reminder) runs, hook runs, the goal, the todo
+ * list, a command the owner sent, a question the agent asked, and context compaction.
+ */
 export interface MuseLogLine {
-  kind: "start" | "tool" | "edit" | "say" | "status" | "usage" | "done" | "error";
+  kind:
+    | "start"
+    | "tool"
+    | "edit"
+    | "say"
+    | "status"
+    | "usage"
+    | "done"
+    | "error"
+    | "reasoning"
+    | "subagent"
+    | "workflow"
+    | "reminder"
+    | "hook"
+    | "goal"
+    | "todo"
+    | "steer"
+    | "question"
+    | "compaction";
   text: string;
+  /** The protocol item's id, so a later update replaces the line instead of adding one. Session bridge only. */
+  itemId?: string;
+  /** Structured detail for the session bridge kinds; the build room renders what it knows and ignores the rest. */
+  detail?: MuseLineDetail;
   /** Tool name for kind "tool", such as read_file or apply_patch. */
   tool?: string;
   ok?: boolean;
@@ -78,6 +105,29 @@ export interface MuseLogLine {
   files?: number;
   added?: number;
   removed?: number;
+}
+
+/** What a session bridge line carries beyond its text (docs/MUSE_CODE_FULL.md, "Build room"). */
+export interface MuseLineDetail {
+  /** subagent and workflow children: e.g. "main/scout/1", and the child session to follow. */
+  agentPath?: string;
+  childSessionId?: string;
+  status?: string;
+  /** workflow: its declared phase and its children. */
+  phase?: string;
+  children?: Array<{ label: string; status: string }>;
+  /** reminder: which observer (goal, verify, skill, memory, todo, scope). */
+  reminder?: string;
+  /** hook: the event and the hook's key. */
+  hookEvent?: string;
+  /** goal: the objective, its status and how far along it is. */
+  goal?: { objective: string; status: string; percentComplete?: number };
+  /** todo: the agent's current list. */
+  todos?: Array<{ text: string; status: string }>;
+  /** question: the open question for the owner to answer, with its options. */
+  question?: { userInputId: string; questions: Array<{ id: string; text: string; options?: string[]; multiple?: boolean }> };
+  /** steer: who sent it and how it was delivered. */
+  delivery?: "steer" | "queue" | "interrupt" | "answer" | "goal" | "end";
 }
 
 export interface Screenshot {
@@ -113,6 +163,8 @@ export type BuildEventBody =
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }
+  /** The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change. */
+  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

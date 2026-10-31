@@ -1,0 +1,115 @@
+# Muse Code at full strength, online
+
+The owner's goal (Oct 30): Muse Muse runs Muse Code to the fullest, from the browser. Every Muse Code capability that
+works in a build is turned on, shown in the build room, and steerable by the build's owner. Then every product gets an
+MCP server, a CLI, a skill file and a Muse connector, each hosted, tested and shown working in a video.
+
+This file holds what a real sandbox showed on Oct 30, the design, and the build order. Read it before changing
+`lib/sandbox`, `lib/pipeline` or `components/build`.
+
+## What a real builder sandbox showed (Oct 30, Muse Code 1.4.14)
+
+A throwaway sandbox from the current builder snapshot, never saved (scripts, outputs and logs:
+`docs/spikes/muse-full-2026-10-30/`). Phases A and B made no model calls. Phase C made seven tiny runs on
+muse-spark-1.3-contributor at low effort, about $0.10 in all.
+
+| Question | Answer |
+|---|---|
+| Version, arch | `Muse Code 1.4.14 (1.4.14-R7309.1)`, x86_64, user `ubuntu`, binary `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` |
+| Per-run settings | `muse exec -c KEY=VALUE` and `muse serve -c KEY=VALUE`, values are JSON, repeatable. **Unknown keys refuse the run (exit 2)**, so `-c` doubles as a validator. Accepted: `agents.execution_capacity=6`, `runtime_capabilities={"plugin:tbh-reminders:reminder:todo-reminder":{"enabled":true}}`, `max_consecutive_stop_hook_continuations=3`. Refused: `feature_config.enabled=[...]` (wrong type) |
+| `agents.execution_capacity` | Integer 1 to 64; 0 and 65 make the settings file malformed; `agents` has no other key |
+| Observers | Reminder plugins, toggled per id with `runtime_capabilities["plugin:tbh-reminders:reminder:<id>"].enabled`. Ids: `skill-reminder`, `goal-reminder`, `verify-reminder`, `memory-reminder`, `todo-reminder`, `scope-reminder`. `--disable-reminders` turns all off |
+| Hooks file | `.muse/hooks.json` in **Claude Code's shape**: `{"hooks":{"<Event>":[{"matcher":"<regex>","hooks":[{"type":"command","command":"..."}]}]}}`. `UserPromptSubmit` and `Stop` groups must have no matcher. Startup prints `muse: Hooks: N runnable · M warnings` on stderr |
+| Hook input | JSON on stdin: `hook_event_name`, `session_id`, `cwd`, `model`, `model_provider`, `permission_mode`, plus per event (`source` for SessionStart; `messages`, `tools`, `tool_count` for PreLLMCall; `error` for StopFailure). Env is only `HOME LANG MUSE_SESSION_ID MUSE_THREAD_ID PATH PWD SHELL SHLVL TRACEPARENT` |
+| Hook output | JSON on stdout. `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"..."}}` reached the model (it repeated a codeword only the hook gave it). `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"..."}}` blocked an edit (deny needs a reason; allow needs `updatedInput`). `{"decision":"block","reason":"..."}` on `Stop` made the agent do the extra work first. Also seen in the binary: `systemMessage`, `suppressOutput`, `selectedSkills` |
+| Events that fired | SessionStart, PreLLMCall, PostLLMCall, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd |
+| Trust | `--yolo` trusts the workspace on exec. On serve, project hooks are listed but **disabled** without `--trust-workspace`, and run with it |
+| MCP | A project `.mcp.json` in Claude's shape (`{"mcpServers":{"spike":{"command":"node","args":[...]}}}`) loaded under `--yolo`, and the model called `mcp__spike__spike_ping` |
+| Workflows | The Workflow tool is offered on this Linux build and ran a one-child workflow; its child logs as owner type `workflow_child`. `muse workflows save <name> --from <js> --scope project` writes `.agents/workflows/<name>.js`; `muse workflows run <entry> --headless-qa` exists (QA lane) |
+| Subagents | `subagent_spawn` with worktree isolation made `.muse/worktrees/subagent-v2-<...>` on a detached HEAD and the child committed there. Isolation is on by default per child request |
+| Tools offered | 31: `workflow`, `read_file`, `search`, `write_file`, `edit_file`, `read_memory`, `add_memory`, `edit_memory`, `work_stop`, `work_list`, `work_status`, `bash`, `bash_input`, `monitor`, `cron_create`, `cron_delete`, `cron_list`, `get_goal`, `create_goal`, `update_goal`, `report_progress`, `image_generation`, `subagent_spawn`, `subagent_status`, `subagent_send_message`, `subagent_wait`, `subagent_read_result`, `subagent_cancel`, `read_skill`, `snooze_reminder`, `write_todos` |
+| `muse serve` | Stdio JSON-RPC host. Flags: `--disable-sandbox` (needed: no bubblewrap), `--trust-workspace`, `--disable-request-user-input`, `--model`, `--contributor-mode`, `-c`. Approval mode is chosen per session over the wire (`approvalMode: "allowAll"`) |
+| Session protocol | `@muse-code/sdk@1.4.14` (MIT, zero dependencies, versions in lockstep with Muse Code) spawned `muse serve` inside the build firewall. `session/start` (approvalMode allowAll), `hook/list`, `skill/list`, `model/list`, `task/list`, `goal/set` and `turn/steer` all worked. A goal set over the protocol started its own turn; a steer sent mid-turn was obeyed (both files it asked for were made) |
+| Stream | Notifications: `item/started`, `item/updated`, `item/completed`, `item/delta`, `turn/started`, `turn/completed`, `session/goalChanged`, `session/todoListChanged`, `session/tokenUsage`, `session/contextUsage`, `session/statusChanged`, `approval/requested`, `userInput/requested`, and more. Item kinds: `userMessage`, `agentMessage`, `reasoning`, `toolCall`, `userShell`, `subagent`, `workflow` (with `children` and `declaredPhase`), `reminderChild`, `compaction`, `hookRun`, `sideChat`, `webSearch`, `monitorFeed`, and a few more |
+| Exec log | Sparse for children: a workflow or subagent shows as one `tool.result`; the child's own work is only in `subagent/<id>/session.jsonl`. The session protocol carries it live |
+| Model prices (from `model/list`) | Muse Wonder 1.0: $4 in, $0.20 cached, $20 out per million. Muse Spark 1.3: $1.25 in, $0.15 cached, $4.25 out |
+
+## Design
+
+### 1. The engine: a session bridge over `muse serve`
+
+Builds keep their shape (the durable workflow polls a log in the sandbox every 15 s), but the thing in the sandbox
+changes from `muse exec` to a small bridge script:
+
+- **What it is.** One plain ESM file, `/vercel/musemuse/bridge/bridge.mjs`, written by the platform before every
+  start (so the agent can't change it and no snapshot is needed), using `@muse-code/sdk@1.4.14` installed once per
+  sandbox under `/vercel/musemuse/bridge/node_modules` (npm is allowed through the build firewall; a future snapshot
+  bakes it in).
+- **What it does.** Spawns `muse serve --disable-sandbox --trust-workspace [--disable-request-user-input] --model <m>
+  -c <settings>`, starts or resumes the build's session in `/vercel/app`, sets the goal (MSP `goal/set`) from the
+  brief's "Done means", starts the turn with the prompt file and inspo images, and writes every frame to
+  `bridgePaths(round).log` as `BridgeLogRecord` lines (`lib/sandbox/bridge-protocol.ts`).
+- **Commands.** It polls `bridgePaths(round).mailbox` every second for `MuseCommandEnvelope` files and turns each into
+  a protocol call: steer, queue, interrupt, goal set/edit/pause/resume/clear, answer, workflow pause/resume/cancel,
+  subagent message/interrupt/stop, end. Each applied command is logged as a `command` record.
+- **Ending.** It exits when the turn has completed and the goal is not active (complete, blocked or paused), or on
+  `end`, or at the step cap, always writing the final `bridge`/`exit` record with an exit code like exec's (0 done,
+  1 failed or interrupted, 2 usage or config error) and the last agent message.
+- **Fallback.** `MUSE_ENGINE=exec` (and any sandbox whose bridge can't install) keeps today's `muse exec` path. The
+  default stays `exec` until test builds pass on `serve`.
+
+### 2. Every capability on, in platform-owned config
+
+Rewritten by the platform before every Muse Code start, on both engines:
+
+- **Settings** (`-c`): `agents.execution_capacity` sized to the 4 vCPU VM, every reminder on (adds memory, todo and
+  scope to the defaults), a stop-hook continuation cap.
+- **Hooks** (`.muse/hooks.json`, scripts under `/vercel/musemuse/hooks/`, outside the product): a PreToolUse guard that
+  denies writes to the platform's files and to `.env*`; a PostToolUse and PostToolBatch hook that delivers owner notes
+  from the mailbox as `additionalContext` (the steering channel on the exec engine); a Stop gate that runs the
+  typecheck and blocks once with the errors; and event loggers for SubagentStart/Stop, PreCompact/PostCompact and
+  StopFailure.
+- **MCP** (`.mcp.json`): the platform's build MCP over streamable HTTP on the platform host (already allowed by the
+  firewall), `mode: "optional"`, with a per-build token only the Muse runner exports: Meta docs search and read (the
+  mirror in `content/meta-docs`), the model catalog, and the build's own progress notes. Off when the sandbox can't
+  reach the platform (local runs without a tunnel).
+- **Skills**: turn `workflow-authoring` back on; the template's AGENTS.md gets a playbook for a scout subagent first,
+  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks.
+- **Safety**: `.muse` joins the deploy exclusions; stray project config the agent wrote (`.mcp.json` it didn't get
+  from us, extra hooks) is replaced before each start.
+
+### 3. The build room shows all of it
+
+From the bridge log: agent messages and reasoning summaries, tool calls with their outcome, a live agent tree
+(subagents with their paths and status, workflows with phase and children), observer runs, hook runs, the goal with
+its status and progress, the todo list, compaction, and owner commands. Questions the agent asks show as a card with
+their options.
+
+### 4. The owner steers
+
+While a build runs, its owner can: send a note now (steer) or after this turn (queue), stop the turn, end the run,
+edit, pause or resume the goal, pause or cancel a workflow, message or stop a subagent, and answer a question. Routes
+check the owner as the messages route does, write the command into the mailbox (`MuseCommandEnvelope`), and add a
+`control` build event. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
+
+### 5. Every product as an MCP server, a CLI, a skill and a connector (phase 3)
+
+All generated by the platform from the product's `musemuse.json` actions after the build passes: the MCP server and
+Muse connector at `/api/mcp/<slug>` (exists; add read-only annotations and tests), a skill file at
+`/p/<slug>/skill.md`, one `musemuse` CLI served from the site (npm later, with the owner's OK), a "Use it anywhere"
+panel, and a "Prove it" stage that tests each and records a Demo Studio video of each working.
+
+### 6. Accounting
+
+Every child's spend is charged: `workflow_child` and reminders that run inside subagent logs are counted (by
+`usage_id`, once), not only `native_child`. A build's settings (engine, capacity, reminders) are recorded with it.
+
+## Build order and flags
+
+1. **Engine, config, accounting** (`MUSE_ENGINE`, default `exec`; `MUSE_FULL=1` turns on the settings, hooks and MCP).
+2. **Build room and steering** on top of it.
+3. **Test builds** on a dry-run copy, then real builds within the $100 test budget, comparing cost, time and judge
+   score against today's engine.
+4. **Product outputs and Prove it.**
+
+Spend so far on this work: about $0.10 of model calls and a few cents of sandbox time (the Oct 30 spike).
