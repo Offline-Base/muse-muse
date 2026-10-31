@@ -1,0 +1,65 @@
+{
+  "name": "muse-muse-shell-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The desktop shell that opens one Muse Muse product.",
+  "author": "Muse Muse",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"__tests__/*.test.js\"",
+    "dir": "electron-builder --dir",
+    "linux": "electron-builder --linux AppImage",
+    "mac": "electron-builder --mac zip",
+    "windows": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.1"
+  },
+  "build": {
+    "appId": "ai.musemuse.desktop",
+    "productName": "Muse Muse",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/__tests__/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/muse-product.json",
+        "to": "muse-product.json"
+      }
+    ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "onlyLoadAppFromAsar": true
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        "dir"
+      ],
+      "signAndEditExecutable": false
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    }
+  }
+}
