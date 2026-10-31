@@ -12,11 +12,12 @@ import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef 
 import { BuildDetails } from "@/components/build/BuildDetails";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { QuestionCard, SteerNote } from "@/components/build/session";
+import { appsLine, nativeRows } from "@/components/build/apps";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
-import type { BuildEvent } from "@/lib/types";
+import { condenseNativeEvents, type BuildEvent } from "@/lib/types";
 
 export interface BuildRoomProps {
   build: BuildView;
@@ -35,6 +36,8 @@ export interface BuildRoomProps {
   focusRefine: boolean;
   rebuild: RebuildRef | null;
   maxFixRounds: number;
+  /** A native run can still add to this build's log (lib/native/active.ts), so a finished build's stream stays open. */
+  nativeActive?: boolean;
 }
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
@@ -43,6 +46,10 @@ const PANEL_COVERS = "(max-width: 1099.98px)";
 const PANEL_ID = "room-steps-panel";
 /** Within this of its end, the steps list counts as at its end, and follows the newest line. */
 const PANEL_PINNED_PX = 80;
+/** A finished build's stream that ends this soon after opening has nothing more coming. */
+const QUICK_CLOSE_MS = 30_000;
+/** How many of those may come in a row, with nothing new, before a native run counts as stopped. */
+const MAX_QUICK_CLOSES = 3;
 
 /** Copies known fields from an API reply onto a view, ignoring anything missing or mistyped. */
 function mergeKnown<T extends object>(prev: T, next: unknown): T {
@@ -75,7 +82,12 @@ export function BuildRoom(props: BuildRoomProps) {
   const [conn, setConn] = useState<"idle" | "live" | "reconnecting" | "closed">("idle");
   const buildId = props.build.id;
 
+  // The server gave up on the run's steps, or the stream did: what's still unsettled in the log isn't moving.
+  const [nativeEnded, setNativeEnded] = useState(isTerminalStatus(props.build.status) && !props.nativeActive);
+
   const room = useMemo(() => deriveRoom(build, events), [build, events]);
+  const nativeRuns = useMemo(() => condenseNativeEvents(events), [events]);
+  const nativeLive = !nativeEnded && nativeRuns.some((r) => r.active);
   const rail = useMemo(() => railStates(room, build.kind), [room, build.kind]);
   const now = useNow(props.serverNow, !room.terminal);
 
@@ -102,16 +114,21 @@ export function BuildRoom(props: BuildRoomProps) {
   }, [buildId]);
 
   // Live events. EventSource resumes with Last-Event-ID on its own; when the server ends the stream for good
-  // (a terminal build), stop instead of reconnecting forever. Incoming events are batched into one render.
+  // (a terminal build with no native run going), stop instead of reconnecting forever. Incoming events are batched into
+  // one render.
   useEffect(() => {
-    if (isTerminalStatus(props.build.status)) return;
+    const endedOnLoad = isTerminalStatus(props.build.status);
+    if (endedOnLoad && !props.nativeActive) return;
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let flush: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
     let attempts = 0;
-    let sawTerminal = false;
+    let sawTerminal = endedOnLoad;
     let lastId = props.events[props.events.length - 1]?.id ?? 0;
+    const nativeLog: Array<{ type: string }> = props.events.filter((e) => e.type === "native");
+    let openedAt = 0;
+    let closesAtEnd = 0;
     let lastRefresh = 0;
     const buffer: BuildEvent[] = [];
 
@@ -131,6 +148,7 @@ export function BuildRoom(props: BuildRoomProps) {
       es = new EventSource(`/api/builds/${buildId}/events?after=${lastId}`);
       es.addEventListener("open", () => {
         attempts = 0;
+        openedAt = Date.now();
         setConn("live");
       });
       es.addEventListener("build", (msg) => {
@@ -143,8 +161,10 @@ export function BuildRoom(props: BuildRoomProps) {
         if (typeof ev.id !== "number") ev = { ...ev, id: Number((msg as MessageEvent).lastEventId) || lastId + 1 };
         if (ev.id <= lastId) return;
         lastId = ev.id;
+        closesAtEnd = 0;
         if (!ev.at) ev = { ...ev, at: new Date().toISOString() };
         buffer.push(ev);
+        if (ev.type === "native") nativeLog.push(ev);
         if (ev.type === "status" && isTerminalStatus(ev.status)) sawTerminal = true;
         if (!flush) flush = setTimeout(drain, 80);
         // Columns such as the build model, session id and fix rounds change without an event of their own, so
@@ -156,7 +176,13 @@ export function BuildRoom(props: BuildRoomProps) {
         }
       });
       es.addEventListener("error", () => {
-        if (sawTerminal) {
+        // A run that's still going means the server only ended this stream for its time limit, so the browser reconnects.
+        // A stream the server ends soon after it opened means it sees nothing running, whatever the log's last word was.
+        // A few of those in a row and the run counts as stopped.
+        if (Date.now() - openedAt < QUICK_CLOSE_MS) closesAtEnd++;
+        const nativeGoing = condenseNativeEvents(nativeLog).some((r) => r.active) && closesAtEnd <= MAX_QUICK_CLOSES;
+        if (sawTerminal && !nativeGoing) {
+          setNativeEnded(true);
           es?.close();
           stopped = true;
           setConn("closed");
@@ -239,11 +265,12 @@ export function BuildRoom(props: BuildRoomProps) {
       panel.removeEventListener("toggle", onChange, true);
     };
   }, []);
+  const logRunning = !room.terminal || nativeLive;
   useEffect(() => {
-    if (!panelOpen || panelTab !== "steps" || room.terminal || !panelPinned.current) return;
+    if (!panelOpen || panelTab !== "steps" || !logRunning || !panelPinned.current) return;
     const body = panelRef.current?.querySelector<HTMLElement>(".chat-panel-body:not([hidden])");
     if (body) body.scrollTop = body.scrollHeight;
-  }, [events.length, panelOpen, panelTab, room.terminal]);
+  }, [events.length, panelOpen, panelTab, logRunning]);
 
   const items = useMemo(() => conversationItems(room), [room]);
   // An open question comes last, under the preview, so it sits beside the composer and not above a tall frame.
@@ -309,8 +336,9 @@ export function BuildRoom(props: BuildRoomProps) {
   const current = useMemo(() => currentStep(room), [room]);
   const panelList = useMemo(() => {
     if (!panelOpen) return null;
-    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild })} end={stepsEnd(room)} />;
-  }, [panelOpen, room, rail, isRefineBuild]);
+    const targets = nativeRows(nativeRuns, { live: nativeLive, slug: product?.slug ?? null });
+    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild, targets })} end={nativeLive ? undefined : stepsEnd(room)} />;
+  }, [panelOpen, room, rail, isRefineBuild, nativeRuns, nativeLive, product?.slug]);
   const panelSources = useMemo(() => {
     if (!panelOpen) return null;
     return <SourceList sources={roomSources({ room, inspiration: props.inspiration, showReferences: showRefs, models })} empty="Nothing yet. What the build reads shows here." />;
@@ -319,6 +347,7 @@ export function BuildRoom(props: BuildRoomProps) {
   }, [panelOpen, room, props.inspiration, showRefs, product]);
   const lastCheck = [...room.segments].reverse().find((s) => s.type === "check" && s.verify?.screenshots.length);
   const lastShot = lastCheck?.type === "check" ? lastCheck.verify?.screenshots.at(-1)?.url : undefined;
+  const apps = shipped ? appsLine(nativeRuns, nativeLive) : null;
 
   return (
     <div className="room chat-split" data-settled={settled}>
@@ -408,6 +437,16 @@ export function BuildRoom(props: BuildRoomProps) {
             </li>
           ) : null}
 
+          {apps ? (
+            <li className="room-working">
+              <WorkingStep title={apps.title} description={apps.description} state={apps.state} />
+              <p className="room-working-meta">
+                {apps.costUsd ? `${usd(apps.costUsd)} est.` : null}
+                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(`apps:${apps.runId}`, nativeLive))} />
+              </p>
+            </li>
+          ) : null}
+
           {room.status === "failed" ? (
             <li className="room-answer">
               <p>This build didn&apos;t ship.</p>
@@ -471,7 +510,7 @@ export function BuildRoom(props: BuildRoomProps) {
           tab={panelTab}
           onTabChange={setPanelTab}
           steps={
-            <div role={room.terminal ? undefined : "log"} aria-relevant={room.terminal ? undefined : "additions"} aria-label={room.terminal ? undefined : "Muse Code activity"}>
+            <div role={logRunning ? "log" : undefined} aria-relevant={logRunning ? "additions" : undefined} aria-label={logRunning ? "Muse Code activity" : undefined}>
               {panelList}
             </div>
           }
