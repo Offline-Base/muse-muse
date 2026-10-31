@@ -198,7 +198,7 @@ class TrainingTests(unittest.TestCase):
         self.assertIn(words, reply)
 
     def test_version_and_tools_are_offered(self):
-        self.assertEqual(server.VERSION, "0.3.0")
+        self.assertEqual(server.VERSION, "0.4.0")
         names = [tool["name"] for tool in server.handle_rpc("tools/list", {})["tools"]]
         for name in ("save_dataset", "train_model", "training_status", "stop_training"):
             self.assertIn(name, names)

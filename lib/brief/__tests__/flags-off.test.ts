@@ -32,6 +32,7 @@ const FLAGS = [
   // Wave 3 (docs/CAPABILITIES.md): one line per unit, in plan order.
   "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
   ...CAP_IDS.map((id) => CAP_FLAG[id]),
+  "DRIVE_EXPORT_ENABLED", "DRIVE_EXPORT_PRODUCTS",
 ];
 
 beforeEach(() => {

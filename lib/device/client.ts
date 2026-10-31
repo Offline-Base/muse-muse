@@ -46,7 +46,13 @@ export function deviceConfig(): DeviceConfig | null {
  * the trip there, and all fit the 300 seconds a route has. Giving up sooner would leave the board working on a call
  * nobody is waiting for.
  */
-const SLOW_TOOL_TIMEOUT_MS: Record<string, number> = { start_model: 150_000, ask_model: 250_000, install_model: 290_000 };
+const SLOW_TOOL_TIMEOUT_MS: Record<string, number> = {
+  start_model: 150_000,
+  ask_model: 250_000,
+  install_model: 290_000,
+  // Hashing a run's files the first time, from a slow SD card (docs/DRIVE_EXPORT.md). Later exports read the cached sha256.
+  export_source: 120_000,
+};
 
 async function withDevice<T>(config: DeviceConfig, doFetch: typeof fetch, use: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ name: "muse-muse", version: "0.0.1" });

@@ -9,6 +9,9 @@ It speaks MCP over streamable HTTP at POST /mcp and requires a bearer token.
 The token is read from ~/.muse-device/token, created on first start with mode 600.
 It binds to loopback by default. Reach it through an SSH forward or a tunnel, not an open port.
 
+The drive tools need setup-drive.sh to have run once and drive.py beside this file. An export runs as drive.py's own process, as a
+training run does, and keeps its state in ~/drive-export/<export>/.
+
 The training tools need setup-train.sh to have run and train.py beside this file. train.py runs in ~/train/venv, because
 this server's python has no torch. Each run keeps its state in ~/train/runs/<name>/, so it outlives a restart of this server.
 Under systemd, give this server's unit KillMode=process and OOMPolicy=continue. Otherwise restarting it ends a run, and a run
@@ -19,6 +22,7 @@ import array
 import base64
 import contextlib
 import glob
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -39,13 +43,21 @@ import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.3.0"
+try:
+    import drive
+except ImportError:
+    # Copied without drive.py: every other tool answers as before, and the drive tools aren't offered.
+    drive = None
+
+VERSION = "0.4.0"
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"]
 MAX_BODY_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 64 * 1024
 CAPTURE_WARMUP_FRAMES = 30
 MODEL_DIR = os.path.expanduser("~/models")
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.gguf")
+# A GGUF's quantization as llama.cpp names it at the end of a file: Q4_K_M, Q8_0, IQ1_S, F16, BF16, F32.
+QUANT_LEVEL = re.compile(r"(I?Q[0-9][A-Za-z0-9_]{0,12}|F16|BF16|F32)")
 # On loopback only, like this server. The fleet's own model service uses its own port and is left alone.
 MODEL_PORT = 8766
 MODEL_START_TIMEOUT_S = 120
@@ -70,6 +82,8 @@ DATASET_DIR = os.path.join(TRAIN_DIR, "datasets")
 RUN_DIR = os.path.join(TRAIN_DIR, "runs")
 TRAIN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 DEFAULT_BASE = "Qwen3.5-0.8B"
+# What setup-train.sh's LLAMA_CPP_TAG puts in ~/train/llama.cpp, which turns a run's adapter into its GGUF. A drive names it.
+CONVERTER_NAME = "llama.cpp b11970 convert_lora_to_gguf.py, f32"
 ACTIVE_STATES = ("loading", "training", "converting")
 # Room for the adapter, its GGUF and the log. Even at the highest rank these come to a few hundred MB.
 TRAIN_DISK_GIB = 0.5
@@ -392,6 +406,7 @@ def download_model(url, name):
     too_big = f"That file doesn't fit: this board can take {max(room, 0) / 2**30:.1f} GiB, which keeps {INSTALL_RESERVE_GIB} GiB of disk free."
     part = f"{path}.part"
     deadline = time.time() + INSTALL_TIMEOUT_S
+    digest = hashlib.sha256()
     try:
         with DOWNLOADS.open(url, timeout=30) as res, open(part, "wb") as f:
             length = res.headers.get("Content-Length") or ""
@@ -404,6 +419,7 @@ def download_model(url, name):
                 if written > room:
                     raise ToolError(too_big)
                 f.write(block)
+                digest.update(block)
                 if time.time() > deadline:
                     raise ToolError(f"The download ran past {INSTALL_TIMEOUT_S} seconds and was stopped.")
         with open(part, "rb") as f:
@@ -413,7 +429,18 @@ def download_model(url, name):
     finally:
         if os.path.exists(part):
             os.remove(part)
+    remember_source(path, url, digest.hexdigest())
     return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3)}))
+
+
+def remember_source(path, url, sha256):
+    """Where a download came from, so a drive made from it can say (export_source). Best effort, and without the query, since a
+    signed link is a credential while it lasts."""
+    size = os.path.getsize(path)
+    with contextlib.suppress(OSError):
+        write_json(f"{path}.source.json", {"url": url.split("?")[0].split("#")[0], "bytes": size, "sha256": sha256})
+        with open(f"{path}.sha256", "w") as f:
+            f.write(f"{sha256} {size} {int(os.path.getmtime(path))}\n")
 
 
 def model_memory_gib(paths, context):
@@ -758,6 +785,113 @@ def stop_training(args):
         return text_result(describe_run(name, status))
 
 
+def cached_sha256(path):
+    """A file's sha256, kept beside it in <name>.sha256 with its size and time, so a second export hashes nothing."""
+    key = f"{os.path.getsize(path)} {int(os.path.getmtime(path))}"
+    saved = (read_text(f"{path}.sha256") or "").split(" ", 1)
+    if len(saved) == 2 and saved[1] == key and re.fullmatch(r"[0-9a-f]{64}", saved[0]):
+        return saved[0]
+    digest = drive.sha256_of(path)
+    with contextlib.suppress(OSError), open(f"{path}.sha256", "w") as f:
+        f.write(f"{digest} {key}\n")
+    return digest
+
+
+def base_revision(base):
+    """The commit of the base weights, from what huggingface_hub keeps beside them, or None."""
+    for path in sorted(glob.glob(os.path.join(glob.escape(os.path.join(BASE_DIR, base)), ".cache", "huggingface", "download", "*.metadata"))):
+        first = (read_text(path) or "").splitlines()[:1]
+        if first and re.fullmatch(r"[0-9a-f]{40}", first[0]):
+            return first[0]
+    return None
+
+
+def dataset_system(dataset):
+    """The system message a run was trained with: its dataset's first example's, or None."""
+    try:
+        with open(os.path.join(DATASET_DIR, f"{dataset}.jsonl"), encoding="utf-8") as f:
+            messages = json.loads(f.readline()).get("messages") or []
+    except (OSError, ValueError, AttributeError):
+        return None
+    first = messages[0] if messages and isinstance(messages[0], dict) else {}
+    return first.get("content") if first.get("role") == "system" and isinstance(first.get("content"), str) else None
+
+
+def export_source(args):
+    """The files and facts of a finished run, for a drive: its adapter, every GGUF of its base, and how it was trained."""
+    require_training()
+    name = name_arg(args, "run")
+    with train_lock:
+        status = run_status(name)
+    if status["state"] != "done":
+        raise ToolError(f"Run {name} is {status['state']}, so it has nothing to put on a drive yet.")
+    config = read_json(run_file(name, "config.json"))
+    adapter = status.get("adapter") or f"{name}.gguf"
+    model_file(adapter, "adapter")
+    # A base build is <base>-<quantization>.gguf and no run's adapter: a run's name may start with the base's, and
+    # install_model takes any name, so another fine-tune never rides along as a "base build".
+    adapters = set()
+    for run in run_names():
+        adapters |= {f"{run}.gguf", (read_json(run_file(run, "status.json")) or {}).get("adapter")}
+    prefix = f"{config['base']}-"
+    bases = [
+        file
+        for file in model_files()
+        if file.startswith(prefix) and QUANT_LEVEL.fullmatch(file[len(prefix) : -len(".gguf")]) and file != adapter and file not in adapters
+    ]
+    if not bases:
+        raise ToolError(f"{MODEL_DIR} has no GGUF of {config['base']}, so the adapter has nothing to load on.")
+
+    def facts(file):
+        path = os.path.join(MODEL_DIR, file)
+        return {"name": file, "bytes": os.path.getsize(path), "sha256": cached_sha256(path)}
+
+    def source(file):
+        saved = read_json(os.path.join(MODEL_DIR, f"{file}.source.json"))
+        return {"url": saved["url"]} if isinstance(saved, dict) and isinstance(saved.get("url"), str) else None
+
+    return text_result(
+        json.dumps(
+            {
+                "run": name,
+                "adapter": facts(adapter),
+                "bases": [{**facts(file), "level": file[len(config["base"]) + 1 : -len(".gguf")], "source": source(file)} for file in bases],
+                "config": {key: config.get(key) for key in ("base", "dataset", "steps", "rank", "lr", "max_length")},
+                "status": {key: status.get(key) for key in ("examples", "skipped", "loss", "seconds", "peak_gpu_gib")},
+                "base_revision": base_revision(config["base"]),
+                "system": dataset_system(config["dataset"]),
+                "converter": CONVERTER_NAME,
+                # The hardware and this server's version only: never a hostname, an address or a token.
+                "board": {"model": read_text("/proc/device-tree/model"), "muse_device": VERSION},
+            }
+        )
+    )
+
+
+def drive_status(_args):
+    """drive.py's drives and export, and the finished runs on this board that could go on a drive."""
+    runs = []
+    if os.path.isdir(TRAIN_DIR):
+        with train_lock:
+            for name in run_names():
+                status = run_status(name)
+                if status["state"] == "done":
+                    runs.append({"run": name, "base": (read_json(run_file(name, "config.json")) or {}).get("base"), "adapter": status.get("adapter")})
+    return {**drive.status_report(), "runs": runs}
+
+
+def drive_tool(work):
+    """A drive tool: drive.py does the work, and its refusals read as this server's own."""
+
+    def call(args):
+        try:
+            return text_result(json.dumps(work(args)))
+        except drive.DriveError as err:
+            raise ToolError(str(err))
+
+    return call
+
+
 def text_result(text):
     return {"content": [{"type": "text", "text": text}]}
 
@@ -926,6 +1060,64 @@ TOOLS = {
         },
     ),
 }
+DRIVE_TOOLS = {} if drive is None else {
+    "drive_status": (
+        drive_tool(drive_status),
+        {
+            "description": "Lists the USB drives plugged into this board (name, size, filesystem, label, free space, read only, identity, and whether an export may use it and why not), the current or last export with its progress and result, and the finished training runs that could go on a drive.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "annotations": READ_ONLY,
+        },
+    ),
+    "export_source": (
+        export_source,
+        {
+            "description": "The files of a finished training run for a drive: its adapter and every GGUF of its base, each with bytes and sha256, and how it was trained. Hashing can take a minute the first time.",
+            "inputSchema": {"type": "object", "properties": {"run": {"type": "string"}}, "required": ["run"], "additionalProperties": False},
+            "annotations": READ_ONLY,
+        },
+    ),
+    "export_model": (
+        drive_tool(lambda args: drive.export_model(args, model_files())),
+        {
+            "description": "Writes a drive plan onto a USB drive in the background and returns at once: on a drive from drive_status now, or armed with wait_for_drive for drives plugged in after this call (24 hours, copies drives). Every file is checked by reading it back, then the drive is powered off. It never erases a drive: one that needs it waits in needs_erase for erase_drive. Called with only export and urls, it gives fresh links to an export waiting in needs_urls; with only export, it carries on one that failed or was stopped. Follow it with drive_status.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "plan": {"type": "object", "description": "A muse-drive-plan/1 plan from Muse Muse."},
+                    "urls": {"type": "object", "description": "Each downloaded file's sha256 to its https link."},
+                    "export": {"type": "string"},
+                    "drive": {"type": "string", "description": "A drive's name from drive_status."},
+                    "identity": {"type": "string", "description": "That drive's identity from drive_status, so a swapped drive is refused."},
+                    "wait_for_drive": {"type": "boolean", "default": False},
+                    "copies": {"type": "integer", "minimum": 1, "maximum": drive.MAX_COPIES, "default": 1},
+                },
+                "additionalProperties": False,
+            },
+        },
+    ),
+    "erase_drive": (
+        drive_tool(drive.erase_drive),
+        {
+            "description": "Erases the drive an export waits on in needs_erase, as exFAT labeled MUSEMUSE, then the export carries on. Only after a person typed the drive's label, or ERASE when it has none, and only if the drive is still the one they saw. Never a drive over 256 GB.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"drive": {"type": "string"}, "identity": {"type": "string"}, "confirm": {"type": "string", "description": "What the person typed."}},
+                "required": ["drive", "identity", "confirm"],
+                "additionalProperties": False,
+            },
+            "annotations": {"destructiveHint": True},
+        },
+    ),
+    "stop_export": (
+        drive_tool(drive.stop_export),
+        {
+            "description": "Stops the export, keeps what it wrote, and unmounts and powers off the drive. Takes up to 40 seconds.",
+            "inputSchema": {"type": "object", "properties": {"export": {"type": "string"}}, "additionalProperties": False},
+        },
+    ),
+}
+TOOLS.update(DRIVE_TOOLS)
 EXEC_TOOL = (
     run_command,
     {

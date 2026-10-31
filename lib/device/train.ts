@@ -66,8 +66,8 @@ export interface DeviceTrainingStart {
   state: DeviceTrainingState;
 }
 
-/** A tool's text, or a DeviceRefusedError carrying it when the tool reported a failure. */
-function boardText(result: DeviceToolResult): string {
+/** A tool's text, or a DeviceRefusedError carrying it when the tool reported a failure. lib/device/drive.ts reads it too. */
+export function boardText(result: DeviceToolResult): string {
   const text = (result.content as Array<{ text?: string }>).map((part) => part.text ?? "").join("");
   if (result.isError) throw new DeviceRefusedError(text || "The board refused without saying why.");
   return text;
