@@ -56,6 +56,8 @@ export function buildConfig(env: Env) {
       },
     ],
   ];
+  // The order matters. See the note in without-deterministic-uuids.js.
+  if (glasses) plugins.push("./plugins/without-deterministic-uuids.js");
   if (glasses) plugins.push([GLASSES_MODULE, { urlScheme: "musemuse", crashReportingOptOut: true }]);
   if (mockGlasses) plugins.push("./plugins/with-mock-glasses-in-release.js");
 

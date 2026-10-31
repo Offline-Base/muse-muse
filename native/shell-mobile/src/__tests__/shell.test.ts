@@ -358,6 +358,12 @@ describe("app config", () => {
     assert.ok(glasses.ios.infoPlist.UIBackgroundModes?.includes("external-accessory"));
   });
 
+  it("lists the Podfile fix ahead of the module, so it runs after the module's plugin", () => {
+    const names = buildConfig({ MUSE_GLASSES: "1" }).plugins.map((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin));
+    const fix = names.indexOf("./plugins/without-deterministic-uuids.js");
+    assert.ok(fix >= 0 && fix < names.indexOf("@chrisgocode/expo-meta-wearables-dat"));
+  });
+
   it("only adds mock glasses when asked, and only with glasses", () => {
     const mock = "./plugins/with-mock-glasses-in-release.js";
     assert.ok(JSON.stringify(buildConfig({ MUSE_GLASSES: "1", MUSE_GLASSES_MOCK: "1" }).plugins).includes(mock));
