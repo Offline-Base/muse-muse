@@ -19,7 +19,7 @@ describe("scripts/drive-export.ts", () => {
     const cli = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
     const failed = await run(process.execPath, [cli, path.join(ROOT, "scripts", "drive-export.ts"), "--s3", "s3://example-bucket/model.gguf", "--drive", "sda"], {
       cwd: ROOT,
-      env: { PATH: "", HOME: process.env.HOME ?? "", MUSE_SESSION: "made-up-session-for-a-test" },
+      env: { NODE_ENV: "test", PATH: "", HOME: process.env.HOME ?? "", MUSE_SESSION: "made-up-session-for-a-test" },
       timeout: 60_000,
     }).then(
       () => null,
