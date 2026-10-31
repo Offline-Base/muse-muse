@@ -14,7 +14,8 @@ import pytest
 REPO = Path(__file__).resolve().parent.parent
 DEPLOY = REPO / "deploy" / "jetson"
 UNITS = sorted(DEPLOY.glob("*.service"))
-BASH_SCRIPTS = [DEPLOY / "install.sh", DEPLOY / "adapter_sync.sh", REPO / "scripts" / "start.sh"]
+BASH_SCRIPTS = [DEPLOY / "install.sh", DEPLOY / "adapter_sync.sh", REPO / "scripts" / "start.sh",
+                REPO / "scripts" / "supervise.sh", REPO / "scripts" / "install_login.sh"]
 SH_SCRIPTS = [DEPLOY / "glimmer-env.sh"]
 SCANNED = [*UNITS, *BASH_SCRIPTS, *SH_SCRIPTS, DEPLOY / "README.md", REPO / "hardware" / "light" / "README.md",
            REPO / "scripts" / "cloud" / "README.md"]
@@ -214,6 +215,131 @@ def test_start_binds_loopback_only():
     assert "--port 8081" in code and "--port 8082" in code and "/health" in code
 
 
+def test_drafter_flags_only_with_a_drafter():
+    code = code_lines(REPO / "scripts" / "start.sh")
+    branch = re.search(r'if \[ -n "\$GLIMMER_DRAFT_GGUF" \]; then\n(.*?)\n  fi\n', code, re.S)
+    assert branch, "no GLIMMER_DRAFT_GGUF branch"
+    for flag in ("-md ", "-ngld 99", "--spec-type draft-dflash", "--spec-draft-n-max"):
+        assert flag in branch.group(1) and code.count(flag) == 1, flag
+    # The knobs reach Glimmer's servers only, never the checker or the embedder.
+    assert code.count('"${GLIMMER_FLAGS[@]}"') == 3
+    for name in ("start_checker.sh", "start_embedder.sh"):
+        assert "GLIMMER_FLAGS" not in code_lines(REPO / "scripts" / name)
+
+
+def port_answers(port: int) -> bool:
+    import socket
+
+    with socket.socket() as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def glimmer_start(tmp_path, **knobs):
+    """Run start.sh with a fake llama-server that writes its arguments and stops, so nothing binds."""
+    args = tmp_path / "args.txt"
+    fake = tmp_path / "llama-server"
+    fake.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{args}"\nexit 1\n')
+    fake.chmod(0o755)
+    (tmp_path / "model.gguf").write_bytes(b"GGUF")
+    env = {"BASE_DEVICE": "laptop", "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
+           "CHECKER_BACKEND": "lfm", "LLAMA_SERVER_BIN": str(fake), "GLIMMER_GGUF": str(tmp_path / "model.gguf"),
+           "ANSWER_URL": "http://127.0.0.1:8081/v1", "ROUTER_URL": "http://127.0.0.1:8081/v1", "ANSWER_CTX": "4096",
+           "WORKSPACE_ROOT": str(tmp_path), "SEARCH_EMBEDDINGS": "0", "RELAY_URL": "", "GLIMMER_DRAFT_GGUF": "",
+           "GLIMMER_DRAFT_N": "", "GLIMMER_FA": "", "GLIMMER_REASONING_BUDGET": "", **knobs}  # fmt: skip
+    r = run_start(tmp_path, **env)
+    return r, (args.read_text().splitlines() if args.exists() else None)
+
+
+@pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
+def test_start_passes_the_glimmer_knobs_to_llama_server(tmp_path):
+    if port_answers(8081):
+        pytest.skip("something answers on 127.0.0.1:8081")
+    r, args = glimmer_start(tmp_path)
+    assert r.returncode == 1 and "Glimmer stopped while starting" in r.stderr
+    assert args[args.index("--host") + 1] == "127.0.0.1" and args[args.index("-fa") + 1] == "auto"
+    assert args[args.index("--reasoning-budget") + 1] == "-1" and "-md" not in args
+    draft = tmp_path / "draft.gguf"
+    draft.write_bytes(b"GGUF")
+    r, args = glimmer_start(tmp_path, GLIMMER_DRAFT_GGUF=str(draft), GLIMMER_DRAFT_N="7", GLIMMER_FA="on",
+                            GLIMMER_REASONING_BUDGET="0")
+    assert args[args.index("-md") + 1] == str(draft) and args[args.index("-ngld") + 1] == "99"
+    assert args[args.index("--spec-type") + 1] == "draft-dflash" and args[args.index("--spec-draft-n-max") + 1] == "7"
+    assert args[args.index("-fa") + 1] == "on" and args[args.index("--reasoning-budget") + 1] == "0"
+    assert "draft.gguf" in r.stdout and str(tmp_path) not in r.stdout
+
+
+@pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
+@pytest.mark.parametrize(
+    ("knobs", "message"),
+    [({"GLIMMER_FA": "maybe"}, "GLIMMER_FA"), ({"GLIMMER_REASONING_BUDGET": "-5"}, "GLIMMER_REASONING_BUDGET"),
+     ({"GLIMMER_DRAFT_GGUF": "/nonexistent/draft.gguf"}, "GLIMMER_DRAFT_GGUF")],
+)
+def test_start_refuses_bad_glimmer_knobs_before_starting_anything(tmp_path, knobs, message):
+    r, args = glimmer_start(tmp_path, **knobs)
+    assert r.returncode == 1 and message in r.stderr and args is None
+
+
+# -- staying up (scripts/supervise.sh) -----------------------------------------------------------
+
+BASH = "/bin/bash" if Path("/bin/bash").exists() else "bash"  # macOS's bash 3.2 when there is one
+
+
+def supervise(tmp_path, script: str, timeout=30, **env):
+    full = {"PATH": os.environ["PATH"], **env}
+    lib = REPO / "scripts" / "supervise.sh"
+    return subprocess.run([BASH, "-c", f"set -euo pipefail; . '{lib}'; {script}"], cwd=tmp_path, env=full,
+                          capture_output=True, text=True, timeout=timeout)
+
+
+def test_an_optional_helper_restarts_with_a_growing_pause_and_stops_on_exit_3(tmp_path):
+    helper = tmp_path / "helper.sh"
+    helper.write_text('#!/bin/sh\nn=$(cat count 2>/dev/null || echo 0); n=$((n + 1)); echo $n > count\n'
+                      'echo "run $n"\n[ "$n" -ge 3 ] && exit 3\nexit 1\n')
+    helper.chmod(0o755)
+    r = supervise(tmp_path, 'keep_running "the helper" log.txt ./helper.sh & wait $!', RESTART_DELAY="1",
+                  RESTART_MAX_DELAY="2")
+    assert r.returncode == 0
+    assert "the helper stopped (exit 1); starting it again in 1s" in r.stderr
+    assert "starting it again in 2s" in r.stderr and "trying again cannot help (exit 3)" in r.stderr
+    assert (tmp_path / "log.txt").read_text() == "run 1\nrun 2\nrun 3\n"
+
+
+def test_stopping_the_loop_stops_its_helper(tmp_path):
+    r = supervise(tmp_path, 'keep_running "a sleeper" log.txt sleep 30 & sup=$!; sleep 1; '
+                            'child=$(pgrep -P $sup); kill $sup; wait $sup || true; sleep 0.5; '
+                            'if kill -0 $child 2>/dev/null; then echo alive; else echo gone; fi')
+    assert r.returncode == 0 and r.stdout.strip() == "gone"
+
+
+def test_a_required_process_stopping_is_named(tmp_path):
+    r = supervise(tmp_path, 'sleep 30 & require $! "a long one"; sleep 1 & require $! "the app"; '
+                            'watch_required; echo "stopped: $STOPPED"; kill %1', WATCH_EVERY="1")
+    assert r.returncode == 0 and r.stdout.strip() == "stopped: the app"
+
+
+def test_start_requires_the_models_and_the_app_but_keeps_helpers_running():
+    code = code_lines(REPO / "scripts" / "start.sh")
+    required = re.findall(r'require "\$(\w+)"', code)
+    assert required == ["ANSWER_PID", "ROUTER_PID", "CHECKER_PID", "APP_PID"]
+    assert 'keep_running "the embedder"' in code and 'keep_running "the relay client"' in code
+    assert "watch_required" in code and "a process this script started has stopped" not in code
+
+
+def test_the_login_agent_restarts_without_throttling_and_finds_homebrew():
+    import plistlib
+
+    text = (REPO / "scripts" / "install_login.sh").read_text()
+    body = text.split("<<PLIST\n", 1)[1].split("\nPLIST\n", 1)[0]
+    for name, value in {"$LABEL": "ai.example", "$ROOT": "/repo", "$LOGS": "/logs"}.items():
+        body = body.replace(name, value)
+    plist = plistlib.loads(body.encode())
+    assert plist["KeepAlive"] is True and plist["RunAtLoad"] is True and plist["ThrottleInterval"] == 30
+    assert plist["ProcessType"] == "Interactive" and plist["ProgramArguments"] == ["/repo/scripts/start.sh"]
+    assert "/opt/homebrew/bin" in plist["EnvironmentVariables"]["PATH"].split(":")
+    assert plist["StandardOutPath"] == "/logs/start.log"
+
+
 # -- cloud scripts -------------------------------------------------------------------------------
 
 
@@ -308,7 +434,8 @@ def test_train_check_passes_and_counts_labels(tmp_path):
         {"messages": [{"role": "user", "content": "x"}, {"role": "assistant", "content": '{"decision": "refuse"}'}]},
     ]
     data.write_text("\n".join(json.dumps(r) for r in rows))
-    r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(tmp_path / "none.json"))
+    r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(tmp_path / "none.json"),
+                  "--tagmap", str(tmp_path / "none.json"))  # never the live BASE_HOME's tag map
     assert r.returncode == 0, r.stderr
     assert '"refuse": 1' in r.stdout and '"share_summary": 1' in r.stdout
 
@@ -324,7 +451,8 @@ def test_train_check_refuses_identifiers_and_names(tmp_path, text):
                                                                "last": "Example"}]}))
     data = tmp_path / "train.jsonl"
     data.write_text(json.dumps({"request": "r", "result_kind": "free_text", "tagged_text": text, "label": "refuse"}))
-    r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(roster))
+    r = run_cloud("train_lora_modal.py", "--check", "--data", str(data), "--roster", str(roster),
+                  "--tagmap", str(tmp_path / "none.json"))
     assert r.returncode == 1
     assert text not in r.stderr  # problems name the line and kind, never the value
 

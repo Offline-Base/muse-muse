@@ -133,9 +133,11 @@ def _taught_by_user(rule: Any) -> bool:
     return getattr(rule, "source", None) == "user" and getattr(rule, "decision", None) in DECISIONS
 
 
-def small_model(settings: Any) -> bool:
-    """DEVICE_ONLY=1 with LFM, whose request labels are checked against the request's own words."""
-    return getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
+def lfm_labels(settings: Any) -> bool:
+    """DEVICE_ONLY=1 with LFM labeling Muse's requests (CHECKER_BACKEND=lfm, also when Glimmer is
+    plugged in as the main model): its labels are checked against the request's own words, so
+    every router configuration routes on the same labels."""
+    return getattr(settings, "device_only", False) and getattr(settings, "checker_backend", "") == "lfm"
 
 
 def checked_labels(request: str, labels: Collection[str]) -> list[str]:

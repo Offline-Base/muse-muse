@@ -45,6 +45,12 @@ uv run python -m scripts.compare_modes --name my_model               # each rout
 
 Then pick the best mode on the Dreaming page. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
 
+`--check` reads the file's header and writes `eval/reports/model_file_<label>.md` (`--label NAME`, default the file's name): the architecture, the quant type and the type of every tensor, the parameter count, the effective bits per weight (file bytes x 8 / parameters, and text only when the file holds vision tensors), the sha256, the KV cache at ANSWER_CTX, free disk and the memory it needs. It refuses a file llama.cpp cannot load, a cut-off copy, less than 2 GB of disk left, or a model that does not fit in memory, and says why. Run it from the repo the app runs from: plugging in writes that repo's `.env`.
+
+To speed Glimmer up with Meta's DFlash drafter, add `--draft /path/to/drafter.gguf` (it must share the model's vocabulary; `--draft-n N` sets the tokens drafted per step, default 15). `--flash-attn on|off|auto` and `--reasoning-budget N` (-1 unrestricted, 0 none) are written to `.env` the same way, and `scripts/start.sh` passes all of them to Glimmer's llama-server only.
+
+Before scoring a tuned model, check its training data against the eval sets: `uv run python -m scripts.check_overlap --train train.jsonl --name my_model` writes counts only to `eval/reports/overlap_my_model.md` and exits 1 on any overlap. It uses only the standard library, so it can also run where the model was trained.
+
 ## 3. Add the connector in the Muse app
 
 Meta's Help Center says that to reach a service not in the connector list, you "can ask Muse to create a Custom Connector", and that "Meta doesn't review custom connectors". It shows no field for an MCP address, and Settings > Connectors lists the catalog connectors. Third-party guides disagree about whether the app has an "Add custom connector" option, so try the chat route first:

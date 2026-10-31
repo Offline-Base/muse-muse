@@ -23,7 +23,7 @@ from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove
 from base.config import CloudBackendRefused, assert_synthetic
-from base.router import checked_labels, never_share_floor, small_model
+from base.router import checked_labels, lfm_labels, never_share_floor
 from base.types import (
     IDENTIFIER_KINDS,
     STRICTNESS,
@@ -279,7 +279,7 @@ class Egress:
         try:
             asked = self._tag_request(request)
             asked_about = self._request_topics(request, asked.text, result_kind, tagged, own_topics, synthetic)
-            if small_model(getattr(s, "settings", None)):
+            if lfm_labels(getattr(s, "settings", None)):
                 asked_about = checked_labels(asked.text, asked_about)
         except Exception as exc:  # tagging the request or the topic pass broke: hold, never route without it
             log.warning("request check failed (%s); holding the result", type(exc).__name__)

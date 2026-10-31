@@ -130,6 +130,43 @@ def test_the_models_labels_are_checked_against_the_request(request_text, labels,
 
 
 @pytest.mark.parametrize(
+    ("env", "checked"),
+    [
+        ({}, True),  # LFM answers every step
+        ({"PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_BACKEND": "lfm"}, True),  # plug-in
+        ({"PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_BACKEND": "glimmer"}, False),
+    ],
+)
+def test_lfm_request_labels_are_checked_whichever_model_decides(tmp_path, env, checked):
+    # GLM-4: the plug-in settings route on the same checked LFM labels as the LFM-only baseline,
+    # so the model comparison differs only in who decides.
+    class Labels:
+        def llm_names(self, *_a, **_k):
+            return []
+
+        def request_topics(self, *_a, **_k):
+            return ["full_text"]  # LFM's usual mistake on a question about one essay
+
+    class Spy:
+        def __init__(self):
+            self.inputs = []
+
+        def decide(self, inp, **_k):
+            self.inputs.append(inp)
+            return RouteDecision("refuse", "spy", "rule")
+
+    svc = Services.create(settings_for(tmp_path, **env), light=False, heavy=False, owner=False)
+    try:
+        svc.checker_llm = svc.answer_llm = Labels()
+        svc.router = Spy()
+        Egress(svc).release("search_documents", "How did [Student T] do on the essay?", "Notes about tide pools.", "snippet")
+        [inp] = svc.router.inputs
+        assert ("full_text" not in inp.topics) is checked
+    finally:
+        svc.close()
+
+
+@pytest.mark.parametrize(
     "text",
     ["Xyla Winterbourne scored 18 of 20.", "Zirconia got 8/10.", "We met Vosberg after class.", "Hello family of Urmond Pellwater, nice work."],
 )
