@@ -1,6 +1,7 @@
 /**
  * The migrations themselves, on a real Postgres (PGlite): the journal agrees with the folder and with lib/db/schema.ts,
  * a fresh database gets every table, and a database already at 0012 keeps its rows and gets the new columns' defaults.
+ * So does one at 0015 with a chat dataset, which 0017 (decision datasets) leaves a chat dataset.
  *
  *   npx tsx --test lib/db/__tests__/migrations.test.ts
  */
@@ -27,6 +28,12 @@ interface Entry {
   breakpoints: boolean;
 }
 const journal = JSON.parse(readFileSync(join(FOLDER, "meta/_journal.json"), "utf8")) as { version: string; dialect: string; entries: Entry[] };
+/**
+ * Numbers set aside for a migration on a branch that hasn't landed: 0016 is General's code_sessions. Until it lands,
+ * 0017 chains to 0015's snapshot; whichever lands second is renumbered or rechained at merge
+ * (docs/DECISION_MODELS.md, "Migration").
+ */
+const RESERVED = new Set([16]);
 const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${String(idx).padStart(4, "0")}_snapshot.json`), "utf8"));
 
 const database = (client: PGlite) => drizzle({ client, schema });
@@ -50,12 +57,14 @@ async function columns(client: PGlite, table: string): Promise<Map<string, { nul
 }
 
 describe("the migration folder", () => {
-  it("has a journal that runs in order from 0000, each entry with its file and snapshot", () => {
-    journal.entries.forEach((e, i) => {
-      assert.equal(e.idx, i);
-      assert.ok(e.tag.startsWith(String(i).padStart(4, "0")), e.tag);
+  it("has a journal that runs in order from 0000, each entry with its file and snapshot, skipping only a reserved number", () => {
+    const last = journal.entries.at(-1)!.idx;
+    const expected = Array.from({ length: last + 1 }, (_, i) => i).filter((i) => !RESERVED.has(i) || journal.entries.some((e) => e.idx === i));
+    assert.deepEqual(journal.entries.map((e) => e.idx), expected);
+    journal.entries.forEach((e) => {
+      assert.ok(e.tag.startsWith(String(e.idx).padStart(4, "0")), e.tag);
       assert.ok(existsSync(join(FOLDER, `${e.tag}.sql`)), `${e.tag}.sql`);
-      assert.ok(existsSync(join(FOLDER, `meta/${String(i).padStart(4, "0")}_snapshot.json`)), `snapshot ${i}`);
+      assert.ok(existsSync(join(FOLDER, `meta/${String(e.idx).padStart(4, "0")}_snapshot.json`)), `snapshot ${e.idx}`);
     });
     const files = readdirSync(FOLDER).filter((f) => f.endsWith(".sql")).sort();
     assert.deepEqual(files, journal.entries.map((e) => `${e.tag}.sql`), "no migration file outside the journal");
@@ -68,16 +77,40 @@ describe("the migration folder", () => {
   });
 
   it("has snapshots that each follow the last", () => {
-    for (let i = 1; i < journal.entries.length; i++) assert.equal(snapshot(i).prevId, snapshot(i - 1).id, `snapshot ${i}`);
+    for (let i = 1; i < journal.entries.length; i++) {
+      const [prev, e] = [journal.entries[i - 1]!, journal.entries[i]!];
+      assert.equal(snapshot(e.idx).prevId, snapshot(prev.idx).id, `snapshot ${e.idx}`);
+    }
   });
 
   it("names the unit's three migrations in the agreed order", () => {
-    assert.deepEqual(journal.entries.slice(13).map((e) => e.tag), ["0013_agents", "0014_native", "0015_product_clips"]);
+    assert.deepEqual(journal.entries.slice(13, 16).map((e) => e.tag), ["0013_agents", "0014_native", "0015_product_clips"]);
+  });
+
+  it("puts decision datasets at 0017, after 0015 and the time it was given, three columns and nothing else", () => {
+    const e = journal.entries.find((x) => x.tag === "0017_decision_datasets");
+    assert.ok(e, "0017_decision_datasets is in the journal");
+    assert.equal(e.idx, 17);
+    assert.equal(e.when, 1793431610646);
+    assert.equal(snapshot(17).prevId, snapshot(15).id, "chained to 0015 until 0016 lands");
+    const statements = readFileSync(join(FOLDER, "0017_decision_datasets.sql"), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
+    assert.deepEqual(statements, [
+      `ALTER TABLE "training_datasets" ADD COLUMN "kind" text DEFAULT 'chat' NOT NULL;`,
+      `ALTER TABLE "training_datasets" ADD COLUMN "decision" jsonb;`,
+      `ALTER TABLE "training_datasets" ADD COLUMN "decision_rows" jsonb DEFAULT '{}'::jsonb NOT NULL;`,
+    ]);
+  });
+
+  it("has 0017's SQL exactly as drizzle-kit generates it between 0015's snapshot and 0017's", async () => {
+    const { generateMigration } = await import("drizzle-kit/api");
+    const statements = await generateMigration(snapshot(15), snapshot(17));
+    const file = readFileSync(join(FOLDER, "0017_decision_datasets.sql"), "utf8").split("--> statement-breakpoint").map((x) => x.trim());
+    assert.deepEqual(statements.map((x) => x.trim()), file);
   });
 
   it("matches lib/db/schema.ts: generating now would write nothing", async () => {
     const { generateDrizzleJson, generateMigration } = await import("drizzle-kit/api");
-    const last = snapshot(journal.entries.length - 1);
+    const last = snapshot(journal.entries.at(-1)!.idx);
     const statements = await generateMigration(last, generateDrizzleJson(schema, last.id));
     assert.deepEqual(statements, []);
   });
@@ -103,6 +136,7 @@ describe("a fresh database", () => {
   after(() => client.close());
 
   it("has every new table", async () => {
+    for (const column of ["kind", "decision", "decision_rows"]) assert.ok((await columns(client, "training_datasets")).has(column), column);
     for (const table of ["tool_sessions", "tool_connections", "native_runs", "native_jobs", "native_artifacts", "native_spend", "native_budget", "native_labs"]) {
       assert.ok((await columns(client, table)).size > 0, table);
     }
@@ -230,6 +264,32 @@ describe("a database already at 0012", () => {
 
     const units = (await columns(client, "usage")).get("units");
     assert.equal(units?.nullable, false);
+    await client.close();
+  });
+
+  it("leaves a chat dataset made before 0017 a chat dataset, with no decision and no decision rows", async () => {
+    const dir = folderThrough(15);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.ok(!(await columns(client, "training_datasets")).has("kind"));
+    const datasetId = randomUUID();
+    await client.exec(`
+      insert into training_datasets (id, title, task, status, requested, train, train_count, writer_model)
+      values ('${datasetId}', 'Python errors', 'Explain Python errors to beginners.', 'ready', 20, '[{"messages":[]}]'::jsonb, 1, 'muse-wonder-1.0');
+    `);
+
+    await migrate(db, { migrationsFolder: FOLDER });
+
+    const [row] = await database(client).select().from(schema.trainingDatasets);
+    assert.equal(row!.kind, "chat");
+    assert.equal(row!.decision, null);
+    assert.deepEqual(row!.decisionRows, {});
+    assert.equal(row!.trainCount, 1);
+    assert.equal(row!.writerModel, "muse-wonder-1.0");
+    const kind = (await columns(client, "training_datasets")).get("kind");
+    assert.equal(kind?.nullable, false);
     await client.close();
   });
 

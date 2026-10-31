@@ -6,7 +6,9 @@
  * training datasets: each answer saved once as it comes and moved onto train once a chunk, the eval split (keeping
  * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. And the live demo: a serving
  * callback's endpoint (with the IP Lambda reported, kept in step with it), the adapters a serve job can serve, the
- * newest open demo of an adapter, and the proxy's one-at-a-time slot. Nothing here reaches Neon or Lambda.
+ * newest open demo of an adapter, and the proxy's one-at-a-time slot. Decision datasets: saved ready with their spec,
+ * "person" as their writer and their rows out of every head read, and read back by index, cut in SQL. Nothing here
+ * reaches Neon or Lambda.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -542,6 +544,72 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.ok(failed!.finishedAt);
       assert.equal(await store.failDataset(ds.id, "again"), false);
       assert.equal((await store.getDataset(ds.id))!.error, "The spend cap was reached.");
+    });
+  });
+
+  describe("decision datasets", () => {
+    /** A made-up ticket upload, checked and split as the datasets route does it. */
+    async function upload(counts?: number[]) {
+      const { checkDecisionUpload } = await import("../decision-datasets");
+      const { TICKET_LABELS, TICKET_QUESTION, ticketRows } = await import("./decision-fixture");
+      const result = checkDecisionUpload({ title: "Ticket router", question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows(counts) }, "store-seed");
+      assert.ok(result.ok);
+      return result;
+    }
+
+    it("saves a decision dataset ready at once, with its spec, kind and \"person\" as its writer, and no rows in its head", async () => {
+      const { spec, rows, title } = await upload();
+      const ds = await store.createDecisionDataset({ title, spec, rows, createdBy: null });
+      assert.equal(ds.kind, "decision");
+      assert.equal(ds.status, "ready");
+      assert.equal(ds.writerModel, "person", "never null, which would read as Muse Spark 1.3");
+      assert.equal(ds.task, spec.question);
+      assert.equal(ds.title, "Ticket router");
+      assert.equal(ds.requested, 120);
+      assert.equal(ds.trainCount, 84);
+      assert.equal(ds.evalCount, 24, "the test rows");
+      assert.ok(ds.finishedAt);
+      assert.deepEqual(ds.decision, spec);
+      for (const head of [ds, await store.getDataset(ds.id), (await store.listDatasets())[0]]) {
+        assert.equal(head!.id, ds.id);
+        assert.equal("decisionRows" in head! || "train" in head! || "eval" in head!, false, "rows stay out of every head read");
+      }
+      const [stored] = await testDb.select().from(realSchema.trainingDatasets).where(eq(realSchema.trainingDatasets.id, ds.id));
+      assert.deepEqual(stored!.decisionRows, rows);
+      assert.deepEqual(stored!.train, [], "train and eval stay empty, so no chat reader changes");
+      assert.deepEqual(stored!.eval, []);
+      assert.deepEqual((await store.datasetPage(ds.id, "train", 0, 10))!.items, []);
+      assert.equal((await store.getReadyDataset(ds.id))!.title, "Ticket router");
+    });
+
+    it("refuses rows that don't match the spec's counts", async () => {
+      const { spec, rows, title } = await upload();
+      await assert.rejects(store.createDecisionDataset({ title, spec, rows: { ...rows, test: rows.test.slice(1) } }), /test rows don't match/);
+      assert.equal((await store.listDatasets()).length, 0);
+    });
+
+    it("reads a split's rows by index, cut in SQL, or all of them", async () => {
+      const { spec, rows, title } = await upload();
+      const ds = await store.createDecisionDataset({ title, spec, rows });
+      const some = await store.decisionSplitRows(ds.id, "train", [0, 5, 83, 84, -1]);
+      assert.equal(some!.total, 84);
+      assert.deepEqual([...some!.rows.keys()], [0, 5, 83], "past the end and negative indexes are left out");
+      assert.deepEqual(some!.rows.get(5), rows.train[5]);
+      assert.deepEqual(some!.rows.get(83), rows.train[83]);
+      const test = await store.decisionSplitRows(ds.id, "test");
+      assert.deepEqual([...test!.rows.values()], rows.test);
+      assert.deepEqual(await store.decisionSplitRows(ds.id, "dev", []), { total: 12, rows: new Map() });
+      assert.equal(await store.decisionSplitRows("not-a-uuid", "dev"), null);
+      assert.equal(await store.decisionSplitRows(ds.id, "eval" as "dev"), null);
+    });
+
+    it("reads a chat dataset as kind chat with no decision rows", async () => {
+      const chat = await store.createDataset({ title: "t", task: "Explain Python errors.", requested: 20, writerModel: "muse-wonder-1.0" });
+      assert.equal(chat.kind, "chat");
+      assert.equal(chat.decision, null);
+      assert.equal(await store.decisionSplitRows(chat.id, "train"), null);
+      const [stored] = await testDb.select().from(realSchema.trainingDatasets).where(eq(realSchema.trainingDatasets.id, chat.id));
+      assert.deepEqual(stored!.decisionRows, {});
     });
   });
 

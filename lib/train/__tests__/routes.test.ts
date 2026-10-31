@@ -13,7 +13,10 @@
  * dataset workflow, refused while the spend cap is reached. A dataset param must name a ready dataset, and a recipe that
  * keeps the model cache prefers the regions that have it. A live demo (glimmer-serve) job must name an adapter that can
  * be served, launches only in that adapter's region with limits sized for its minutes, and only it may send a serving
- * callback, whose address is never taken from the runner. Its runner pages its adapter's dataset.
+ * callback, whose address is never taken from the runner. Its runner pages its adapter's dataset. A decision dataset
+ * (docs/DECISION_MODELS.md) is checked and saved ready from JSON rows, CSV or JSONL, with every problem by line and
+ * nothing spent; its page shows 5 rows a label; a decide job pages its train renderings and its dev and test items with
+ * no answers, reading only the rows a page renders, up to its own page count plus 120 an hour.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/routes.test.ts
  *
@@ -21,7 +24,10 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import type { DecideItem, DecisionRows, DecisionSpec } from "@/lib/decide/types";
+import { checkDecisionUpload, decideEpochs, decisionPage, decisionPageCount, DECIDE_PAGE_SIZE } from "../decision-datasets";
 import type { TrainCallback } from "../types";
+import { TICKET_LABELS, TICKET_QUESTION, ticketCsv, ticketRows } from "./decision-fixture";
 
 const JOB_ID = "1234abcd-0000-4000-8000-000000000000";
 const TOKEN = "good-job-token";
@@ -71,6 +77,8 @@ let datasetRows: Record<string, Record<string, unknown>> = {};
 /** What datasetPage answers: the dataset's status and how many items each part holds. */
 let pageStatus = "ready";
 let pageTotals: Record<string, number> = { train: 450, eval: 40 };
+/** A decision dataset's split rows, by dataset id, for the fake decisionSplitRows. */
+let decisionRowsById: Record<string, DecisionRows> = {};
 let paused = false;
 let startFails = false;
 let cacheRegionsImpl: () => Promise<string[]> = async () => ["us-south-1"];
@@ -181,6 +189,32 @@ const fakeStore = {
     const total = pageTotals[part] ?? 0;
     const items = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => ({ n: offset + i }));
     return { status: pageStatus, title: String(datasetRows[id].title), total, items };
+  },
+  decisionSplitRows: async (id: string, part: "train" | "dev" | "test", indexes?: number[]) => {
+    calls.push({ fn: "decisionSplitRows", args: [id, part, indexes] });
+    const rows = decisionRowsById[id];
+    if (!rows) return null;
+    const list = rows[part];
+    const wanted = (indexes ?? list.map((_, i) => i)).filter((i) => i >= 0 && i < list.length);
+    return { total: list.length, rows: new Map(wanted.map((i) => [i, list[i]!])) };
+  },
+  createDecisionDataset: async (input: { title: string; spec: DecisionSpec; rows: DecisionRows; createdBy?: string | null }) => {
+    calls.push({ fn: "createDecisionDataset", args: [input] });
+    const { spec } = input;
+    return datasetRow({
+      id: DATASET_ID,
+      title: input.title,
+      task: spec.question,
+      kind: "decision",
+      status: "ready",
+      requested: spec.split.train + spec.split.dev + spec.split.test,
+      trainCount: spec.split.train,
+      evalCount: spec.split.test,
+      decision: spec,
+      writerModel: "person",
+      createdBy: input.createdBy ?? null,
+      finishedAt: new Date("2026-10-27T12:00:00.000Z"),
+    });
   },
   createDataset: async (input: Record<string, unknown>) => {
     calls.push({ fn: "createDataset", args: [input] });
@@ -381,6 +415,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     datasetRows = {};
     pageStatus = "ready";
     pageTotals = { train: 450, eval: 40 };
+    decisionRowsById = {};
     paused = false;
     startFails = false;
     cacheRegionsImpl = async () => ["us-south-1"];
@@ -826,6 +861,191 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
         params: Promise.resolve({ id: "ffffffff-0000-4000-8000-00000000000f" }),
       });
       assert.equal(missing.status, 404);
+    });
+  });
+
+  describe("decision datasets", () => {
+    const datasetReq = (body: unknown) =>
+      new Request("https://muse.example.com/api/train/datasets", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      });
+    const tickets = (over: Record<string, unknown> = {}) => ({
+      kind: "decision",
+      title: "Ticket router",
+      question: TICKET_QUESTION,
+      labels: TICKET_LABELS,
+      rows: ticketRows(),
+      ...over,
+    });
+
+    it("saves a person's rows ready at once with \"person\" as the writer, spending nothing and starting no workflow", async () => {
+      // Nothing is written by a model, so neither the key nor room under the spend cap is needed.
+      delete process.env.MODEL_API_KEY;
+      paused = true;
+      const res = await createDatasetRoute(datasetReq(tickets()));
+      assert.equal(res.status, 201);
+      const input = called("createDecisionDataset")[0]!.args[0] as { title: string; spec: DecisionSpec; rows: DecisionRows; createdBy: string };
+      assert.equal(input.title, "Ticket router");
+      assert.equal(input.createdBy, "admin-1");
+      assert.match(input.spec.seed, /^[0-9a-f]{24}$/, "a random seed of its own");
+      const expected = checkDecisionUpload(tickets(), input.spec.seed);
+      assert.ok(expected.ok);
+      assert.deepEqual(input.spec, expected.spec);
+      assert.deepEqual(input.rows, expected.rows);
+      assert.equal(called("start").length + called("createDataset").length, 0);
+      const body = (await res.json()) as { dataset: Record<string, unknown>; report: Record<string, unknown> };
+      assert.equal(body.dataset.kind, "decision");
+      assert.equal(body.dataset.status, "ready");
+      assert.equal(body.dataset.writerModel, "person");
+      assert.equal(body.dataset.task, TICKET_QUESTION);
+      assert.deepEqual(body.dataset.decision, expected.spec);
+      assert.equal(body.dataset.trainCount, 84);
+      assert.equal(body.dataset.evalCount, 24);
+      assert.equal("createdBy" in body.dataset, false);
+      assert.deepEqual(body.report, expected.report);
+
+      const seeds = new Set([input.spec.seed]);
+      await createDatasetRoute(datasetReq({ ...tickets({ rows: undefined }), csv: ticketCsv(ticketRows()) }));
+      await createDatasetRoute(datasetReq({ ...tickets({ rows: undefined }), jsonl: ticketRows().map((r) => JSON.stringify(r)).join("\n") }));
+      for (const c of called("createDecisionDataset").slice(1)) seeds.add((c.args[0] as { spec: DecisionSpec }).spec.seed);
+      assert.equal(seeds.size, 3, "each dataset gets its own seed");
+    });
+
+    it("answers 400 with every problem by line, before saving anything", async () => {
+      const csv = ticketCsv(ticketRows()).split("\n");
+      csv[2] = '"where is my parcel",Shiping';
+      csv[9] = "a, b, Billing";
+      const res = await createDatasetRoute(datasetReq({ ...tickets({ rows: undefined }), csv: csv.join("\n") }));
+      assert.equal(res.status, 400);
+      const body = (await res.json()) as { error: string; problems: Array<{ line: number | null; message: string }> };
+      assert.deepEqual(body.problems.map((p) => p.line), [3, 10], "a broken line and an unknown label, together");
+      assert.match(body.error, /^The upload has 2 problems\. The first: The label "Shiping"/);
+      csv[9] = '"fine",Billing';
+      const unknown = (await (await createDatasetRoute(datasetReq({ ...tickets({ rows: undefined }), csv: csv.join("\n") }))).json()) as {
+        problems: Array<{ line: number | null; message: string }>;
+      };
+      assert.deepEqual(unknown.problems, [{ line: 3, message: `The label "Shiping" isn't one of this decision's labels (line 3).` }]);
+      const few = await createDatasetRoute(datasetReq(tickets({ rows: ticketRows([30, 19, 30, 30]) })));
+      assert.equal(few.status, 400);
+      assert.equal(((await few.json()) as { error: string }).error, '"Shipping" has 19 examples; each label needs at least 20.');
+      assert.equal(called("createDecisionDataset").length, 0);
+    });
+
+    it("refuses an unknown kind, a chat body over 16 KB and any body over 4 MB", async () => {
+      const odd = await createDatasetRoute(datasetReq({ kind: "decison", task: "Explain Python error messages to beginners.", count: 50 }));
+      assert.equal(odd.status, 400, "a typo never starts a paid chat dataset");
+      assert.equal(called("createDataset").length, 0);
+      const chat = await createDatasetRoute(datasetReq({ task: "Explain Python error messages to beginners.", count: 50, note: "x".repeat(17 * 1024) }));
+      assert.equal(chat.status, 413);
+      const huge = await createDatasetRoute(datasetReq(tickets({ rows: undefined, csv: "x".repeat(4 * 1024 * 1024) })));
+      assert.equal(huge.status, 413);
+      const big = ticketRows().map((r, i) => ({ ...r, input: `${r.input} ${"long words here ".repeat(150)}`.slice(0, 2_900 - (i % 7)) }));
+      assert.ok(JSON.stringify(big).length > 16 * 1024);
+      assert.equal((await createDatasetRoute(datasetReq(tickets({ rows: big })))).status, 201, "a decision upload may be large");
+    });
+
+    it("shows a decision dataset with its spec and 5 rows a label, read by index", async () => {
+      const checked = checkDecisionUpload(tickets(), "route-seed");
+      assert.ok(checked.ok);
+      datasetRows = { [DATASET_ID]: datasetRow({ kind: "decision", status: "ready", decision: checked.spec, writerModel: "person" }) };
+      decisionRowsById = { [DATASET_ID]: checked.rows };
+      const res = await datasetDetail(new Request(`https://muse.example.com/api/train/datasets/${DATASET_ID}`), { params: Promise.resolve({ id: DATASET_ID }) });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { dataset: { decision: DecisionSpec; kind: string }; sampleTrain: unknown[]; sampleEval: unknown[]; sampleRows: Record<string, unknown[]> };
+      assert.equal(body.dataset.kind, "decision");
+      assert.deepEqual(body.dataset.decision, checked.spec);
+      assert.deepEqual(Object.keys(body.sampleRows), ["billing", "shipping", "account", "returns"]);
+      assert.deepEqual(body.sampleRows.shipping, checked.rows.train.slice(21, 26));
+      assert.deepEqual(body.sampleTrain, []);
+      assert.deepEqual(called("decisionSplitRows")[0]!.args, [DATASET_ID, "train", [0, 1, 2, 3, 4, 21, 22, 23, 24, 25, 42, 43, 44, 45, 46, 63, 64, 65, 66, 67]]);
+      assert.equal(called("datasetPage").length, 0);
+    });
+  });
+
+  describe("decision dataset pages", () => {
+    const pageReq = (query: string) =>
+      new Request(`https://muse.example.com/api/train/jobs/${JOB_ID}/dataset${query}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    let spec: DecisionSpec;
+    let rows: DecisionRows;
+    const all = (list: DecisionRows["train"]) => new Map(list.map((r, i) => [i, r]));
+
+    beforeEach(() => {
+      const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows([60, 40, 40, 40]) }, "pages-seed");
+      assert.ok(checked.ok);
+      ({ spec, rows } = checked);
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID, mode: "decide", epochs: 2 } };
+      datasetRows = { [DATASET_ID]: datasetRow({ kind: "decision", status: "ready", decision: spec, writerModel: "person" }) };
+      decisionRowsById = { [DATASET_ID]: rows };
+    });
+
+    it("pages train renderings 50 at a time, reading only the rows each page renders", async () => {
+      const first = await jobDataset(pageReq("?part=train&page=0"), ctx);
+      assert.equal(first.status, 200);
+      const body = (await first.json()) as { kind: string; items: unknown[]; nextPage: number | null; total: number; title: string };
+      const expected = decisionPage(spec, "train", 2, 0, all(rows.train));
+      assert.equal(body.kind, "decision");
+      assert.equal(body.items.length, DECIDE_PAGE_SIZE);
+      assert.deepEqual(body.items, expected.items);
+      assert.equal(body.total, expected.total);
+      assert.equal(body.nextPage, 1);
+      assert.equal(body.title, "Python errors");
+      const read = called("decisionSplitRows")[0]!.args as [string, string, number[]];
+      assert.equal(read[1], "train");
+      assert.ok(read[2].length <= DECIDE_PAGE_SIZE, "only this page's rows");
+      assert.equal(called("datasetPage").length, 0);
+
+      const last = Math.ceil(expected.total / DECIDE_PAGE_SIZE) - 1;
+      const end = (await (await jobDataset(pageReq(`?part=train&page=${last}`), ctx)).json()) as { nextPage: number | null };
+      assert.equal(end.nextPage, null);
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID, mode: "decide", epochs: 3 } };
+      const three = (await (await jobDataset(pageReq("?part=train"), ctx)).json()) as { total: number };
+      assert.equal(three.total, decisionPage(spec, "train", 3, 0, all(rows.train)).total, "the job's own epochs");
+    });
+
+    it("pages dev and eval (the test split) as items with no answer, the layout scoring reads back", async () => {
+      for (const [part, split] of [["dev", "dev"], ["eval", "test"]] as const) {
+        const res = await jobDataset(pageReq(`?part=${part}&page=0`), ctx);
+        assert.equal(res.status, 200, part);
+        const body = (await res.json()) as { items: DecideItem[]; total: number; nextPage: number | null };
+        assert.deepEqual(body.items, decisionPage(spec, split, 2, 0, all(rows[split])).items);
+        for (const item of body.items) assert.deepEqual(Object.keys(item).sort(), ["group", "index", "letters", "messages", "row"]);
+        assert.equal(JSON.stringify(body).includes('"answer"'), false);
+      }
+      const eval1 = (await (await jobDataset(pageReq("?part=eval&page=1"), ctx)).json()) as { items: DecideItem[]; nextPage: number | null };
+      assert.ok(eval1.items.length > 0);
+      assert.equal(eval1.items[0]!.index, DECIDE_PAGE_SIZE);
+    });
+
+    it("pages a decide adapter's dataset to its glimmer-serve job, with the adapter's mode", async () => {
+      const adapterId = "aaaaaaaa-0000-4000-8000-000000000000";
+      jobExtra = { recipe: "glimmer-serve", params: { adapterJobId: adapterId, minutes: 30 } };
+      otherJobs = { [adapterId]: { id: adapterId, recipe: "glimmer-lora", params: { datasetId: DATASET_ID, mode: "decide", epochs: 1 } } };
+      const res = await jobDataset(pageReq("?part=train"), ctx);
+      assert.equal(res.status, 200);
+      assert.equal(((await res.json()) as { total: number }).total, decisionPage(spec, "train", 1, 0, all(rows.train)).total);
+    });
+
+    it("pages a decision dataset only to a job in decide mode, and part=dev only for decision datasets", async () => {
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID } };
+      const chatMode = await jobDataset(pageReq("?part=eval"), ctx);
+      assert.equal(chatMode.status, 409);
+      assert.deepEqual(await chatMode.json(), { error: "not_decide_mode" });
+      assert.equal(called("decisionSplitRows").length, 0);
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      const dev = await jobDataset(pageReq("?part=dev"), ctx);
+      assert.equal(dev.status, 400);
+      assert.equal(called("datasetPage").length, 0);
+    });
+
+    it("lets a decide job read its own page count plus 120 an hour", async () => {
+      const cap = decisionPageCount(spec, decideEpochs({ epochs: 2 })) + 120;
+      assert.ok(cap > 120);
+      for (let i = 0; i < cap; i++) assert.equal((await jobDataset(pageReq("?part=dev"), ctx)).status, 200, String(i));
+      const over = await jobDataset(pageReq("?part=dev"), ctx);
+      assert.equal(over.status, 429);
+      assert.deepEqual(await over.json(), { error: "rate_limited" });
     });
   });
 

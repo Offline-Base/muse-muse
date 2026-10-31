@@ -89,8 +89,8 @@ const ARTIFACT_URL_MAX = 2000;
 /** A training_jobs row as Drizzle returns it. */
 export type TrainJobRow = typeof trainingJobs.$inferSelect;
 
-/** A training_datasets row without its examples, which can run to megabytes. */
-export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval">;
+/** A training_datasets row without its examples or decision rows, which can run to megabytes. */
+export type DatasetHead = Omit<typeof trainingDatasets.$inferSelect, "train" | "eval" | "decisionRows">;
 
 /** What decideCheck needs from a job. A training_jobs row has all of it. */
 export interface JobState {
@@ -591,8 +591,11 @@ export function datasetSystemPrompt(task: string): string {
   ].join("\n\n");
 }
 
-/** A dataset as the admin pages show it. Dates become ISO strings. */
-export function toDatasetView(row: DatasetHead): DatasetView {
+/**
+ * A dataset as the admin pages show it. Dates become ISO strings. A decision dataset's view adds kind "decision" and
+ * its spec; a chat dataset's has neither, and a row read without kind (from before migration 0017) is a chat dataset.
+ */
+export function toDatasetView(row: Omit<DatasetHead, "kind" | "decision"> & Partial<Pick<DatasetHead, "kind" | "decision">>): DatasetView {
   return {
     id: row.id,
     title: row.title,
@@ -606,6 +609,8 @@ export function toDatasetView(row: DatasetHead): DatasetView {
     createdAt: row.createdAt.toISOString(),
     finishedAt: iso(row.finishedAt),
     writerModel: writerModelOf(row),
+    // A chat dataset's view is as it was before decision datasets: no kind, no decision.
+    ...(row.kind === "decision" ? { kind: "decision" as const, ...(row.decision ? { decision: row.decision } : {}) } : {}),
   };
 }
 

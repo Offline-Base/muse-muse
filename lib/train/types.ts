@@ -2,6 +2,7 @@
  * Fine-tuning jobs on the owner's Lambda Cloud account (docs/TRAINING.md). Admin only. The platform holds
  * LAMBDA_API_KEY; a job's GPU instance only gets a one-time job token for reporting back.
  */
+import type { DecisionSpec } from "@/lib/decide/types";
 
 /**
  * Recipes the platform can run. Each maps to a Python script in lib/train/recipes. "glimmer-serve" serves one trained
@@ -328,6 +329,12 @@ export interface EvalSummary {
 
 export type DatasetStatus = "generating" | "ready" | "failed";
 
+/**
+ * What a dataset holds: "chat" examples a Muse model wrote (train and eval), or a person's labeled "decision" rows
+ * (docs/DECISION_MODELS.md; training_datasets.decision and decision_rows).
+ */
+export type DatasetKind = "chat" | "decision";
+
 /** One training conversation in the OpenAI messages format Unsloth and TRL take. */
 export interface TrainExample {
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
@@ -355,8 +362,16 @@ export interface DatasetView {
   /**
    * The model that wrote its prompts and answers (writerModelOf in lib/train/models.ts): Muse Spark 1.3 for a dataset
    * made before the writer was recorded (Oct 29, 2026). Absent from older servers, which means the same.
+   * "person" for a decision dataset a person uploaded (PERSON_WRITER).
    */
   writerModel?: string;
+  /** "decision" for a decision dataset. Absent for a chat dataset, and from older servers: both mean "chat". */
+  kind?: DatasetKind;
+  /**
+   * A decision dataset's definition (its question, labels, seed and rows per split, overall and per label), without
+   * its rows. Absent for chat datasets. trainCount and evalCount are its train and test rows.
+   */
+  decision?: DecisionSpec;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -4,8 +4,10 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0, D1 and D2 of the build plan (`lib/decide/types.ts`,
-`lib/decide/format.ts`, and the scoring in `lib/train/logic.ts`). Branch `tg-decide`, worktree `~/mm-wt/decide`.
+into how it could be done here". Built so far: D0 to D3 of the build plan (`lib/decide/types.ts`,
+`lib/decide/format.ts`, the scoring in `lib/train/logic.ts`, and decision datasets: migration 0017,
+`lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route). Branch
+`tg-decide`, worktree `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
 letter, not a JSON object with a reason (see "What the model answers"). Read `docs/TRAINING.md` first; this builds on
@@ -281,7 +283,7 @@ and answers under its own system message.
 | `status` | | "ready" at once: nothing is generated, no workflow runs |
 | `train`, `eval` (existing) | | left empty, so no reader of chat datasets changes |
 
-**Splits** (`lib/train/decision-datasets.ts`, pure, deterministic):
+**Splits** (`splitDecisionRows` in `lib/train/decision-datasets.ts`, pure, deterministic):
 
 - **test:** 20% of each label's rows, at least 5. Held out before anything trains, never trained on, scored once.
 - **dev:** 10% of each label's rows, at least 3. Used only to fit T. Never trained on, never in the headline numbers.
@@ -289,6 +291,16 @@ and answers under its own system message.
 - Rows are ordered per label by a hash of the dataset's seed and the row's folded text. A row that is a near-duplicate
   (`isNearDuplicate`, 70% shared words) of one already placed goes where that one went, so a test row never has a
   near-twin in train. That catches reorderings and small edits, not paraphrases, as `evalSplit` notes for chat datasets.
+- As built (D3): near-duplicates are joined into clusters through any chain of them, across labels too, and a cluster
+  goes to one split whole: walking the labels in order and each label's rows in hash order, to test while every label
+  in the cluster still has room under its test count, else to dev the same way, else to train. So a large cluster never
+  pushes test over its count; it trains instead. A label left under 5 test, 3 dev or 12 train rows fails the upload
+  with a sentence asking for more varied examples. Counts are `round(20%)` and `round(10%)` with the minimums.
+- Each split is saved grouped by label in the labels' order, each label's rows in hash order, so a page knows which
+  rows it renders from the spec's counts alone and reads only those (`decisionSplitRows`, cut in SQL).
+- The seed is 12 random bytes as hex, made by the route per dataset; the same rows with the same seed always split the
+  same way, whatever order they came in. Checking and splitting 3,000 rows with 12 labels took 0.64 s on the owner's
+  laptop (Oct 31) [V].
 
 **Pages for the GPU** (`GET /api/train/jobs/{id}/dataset`, which gains `part=dev`): the platform renders everything, and
 the GPU sees answers only for the rows it trains on.
@@ -305,10 +317,40 @@ the GPU sees answers only for the rows it trains on.
   scoring reads the same layout back, so an index means the same thing to both.
 - The route's 120 pages an hour (`READS_PER_HOUR`) is too few for a large decision dataset (20,000 rows is 200 pages).
   For decide jobs the cap becomes the job's own page count plus 120, computed from the dataset's counts.
+- As built (D3): a decision page holds 50 renderings (`DECIDE_PAGE_SIZE`), not the chat pages' 100. A rendering holds
+  the task twice, and a 3,000-character state of characters JSON escapes (control characters) is escaped again in the
+  reply: the worst 50-rendering page measured 3.1 MB [V], so 100 would pass Vercel's 4.5 MB response limit. The cap is
+  `decisionPageCount(spec, epochs)` plus 120. The reply is `{kind: "decision", items, nextPage, total, title}`.
+- Train is laid out in rounds (`trainLayout`): round c holds every row with more than c renderings (epochs times its
+  label's balancing copies, 1 to 3), in an order seeded by the round, so every page mixes labels even for a trainer
+  that doesn't shuffle. Rendering `${seed}:${row}:${copy}` is copy `copy` of train row `row`.
+- Only a job in decide mode reads a decision dataset (`params.mode === "decide"`, its own or, for a serve or quantize
+  job, its adapter job's): any other gets 409 `not_decide_mode`, so a chat runner never gets decision items. The
+  epochs are that job's `epochs` param (1 to 4, default 2). `part=dev` on a chat dataset is a 400.
 
 **Routes:** `POST /api/train/datasets` takes `{kind: "decision", title, question, labels, rows}` or `{..., csv}` and
 answers 201 with a ready dataset, or 400 with line numbers. `GET /api/train/datasets/{id}` adds the spec and 5 sample
 rows per label (admins only).
+
+As built (D3):
+
+- `POST` takes the rows one of three ways: `rows` (a list of `{input, label}`), `csv` (text with the header
+  `input,label` in either order, other columns ignored, RFC 4180 quoting) or `jsonl` (one `{"input","label"}` a line).
+  The whole body is under 4 MB (4,194,304 bytes); a chat dataset's body keeps its 16 KB limit, and any `kind` other than
+  "chat" or "decision" is a 400, so a typo never starts a paid chat dataset. A decision upload needs neither
+  `MODEL_API_KEY` nor room under the spend cap: nothing is generated or spent, and no workflow starts.
+- 201 `{dataset, report}`: the view carries `kind: "decision"` and the spec (`decision`); a chat dataset's view is
+  unchanged, with neither. `report` is what the upload card shows: rows read and kept, the merged rows by line (`{line,
+  sameAs}`), the dropped inputs that came with two labels (`{lines, labels}`), rows per label and split, and warnings
+  (the 5-to-1 imbalance, the dropped inputs).
+- 400 `{error, problems: [{line, message}]}`: every problem at once, each with its line (CSV and JSONL) or row number
+  (JSON rows), an unknown label once with all its lines, at most 20 listed. Inputs are trimmed and must be 1 to 3,000
+  characters. A label may be given by name (ignoring case) or by its id, or anything that folds to its id.
+- `GET /api/train/datasets/{id}` answers `sampleRows`: the first 5 train rows of each label, by label id. Its
+  `sampleTrain` and `sampleEval` are empty.
+- `writer_model` is "person" (`PERSON_WRITER` in `lib/train/models.ts`), "public" for Muse Decide's mix
+  (`PUBLIC_WRITER`); `modelName` names them "The person who uploaded it" and "Public datasets", and `isModelWriter` is
+  false for both. The pages' own `writerName` in `components/train/format.ts` still shows the raw value until D6.
 
 ### Migration
 
@@ -323,6 +365,16 @@ Numbering: 0016 is reserved for General's `code_sessions`, and wave 3's Oct 31 a
 timestamp should it take at merge?** drizzle skips a migration older than the newest one applied, so the number and the
 `when` in `drizzle/meta/_journal.json` (0015 is the newest today, `when` 1793431490646) are set at merge time. If 0017
 was taken, this becomes the next free number from 0017 up.
+
+As built (D3): `drizzle/0017_decision_datasets.sql` is exactly what drizzle-kit 0.31.11 generates for the schema change
+(checked by generating into a scratch copy of the folder, and in `lib/db/__tests__/migrations.test.ts` with
+`generateMigration` between the 0015 and 0017 snapshots). Its journal entry is idx 17, tag `0017_decision_datasets`,
+`when` 1793431610646, and `drizzle/meta/0017_snapshot.json` chains to 0015's snapshot id
+(`4e111ad1-720b-44fd-b880-1652518483d9`), since 0016 hasn't landed. The migrations test allows the gap through its
+`RESERVED` set. **At merge, whichever of 0016 and 0017 lands second is rechained:** its snapshot's `prevId` set to the
+other's id, its `when` above the other's, and 16 taken out of `RESERVED` once both are in. Two snapshots with one
+`prevId` make drizzle-kit refuse to generate ("pointing to a parent snapshot ... which is a collision", tried Oct 31 in
+a scratch copy with a stand-in 0016) [V], so this can't be skipped.
 
 ### The GPU side (decide mode in glimmer.ts)
 
@@ -859,7 +911,7 @@ sessions.
 | D0 (done) | Contract: types, the 0017 question to wave 3, the `DecideBackend` interface for unit 11, the file list for unit 12 | `lib/decide/types.ts`, this doc | 1 | no |
 | D1 (done) | Format: render a task, pick and shuffle options, letters, `none`, groups, the exact Glimmer prompt, `combineGroups`, the word-overlap stand-in; a fixture of the real template's output (made once with jinja2 from `chat_template.jinja` at `cec94fcf`) that the TypeScript renderer must equal | `lib/decide/format.ts`, `lib/decide/__tests__/format.test.ts`, `lib/decide/__tests__/fixtures/` | 3 | no |
 | D2 (done) | Scoring: `summarizeDecisions`, `fitTemperature`, accuracy with Wilson intervals, macro F1, per label, confusion, ECE, reliability bins, baselines; T moved after combining groups (`applyTemperature`, `temperedDecision`) and the dev and test layout (`decisionItems`) in `lib/decide/format.ts` | `lib/train/logic.ts` (shared, new exports only), `lib/train/__tests__/logic.test.ts` | 3 | no |
-| D3 | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
+| D3 (done) | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
 | D4 | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
 | D5 | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/steps.ts` or `lib/train/decide-steps.ts`, `lib/train/hub-steps.ts`, `lib/train/logic.ts`, `workflow.scenario.test.ts`, `steps.test.ts` | 3 | no |
 | D6 | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |

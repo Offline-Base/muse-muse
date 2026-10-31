@@ -22,7 +22,9 @@ import {
   type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
+import type { DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
+import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
 import {
   isTrainTerminal,
   QUANT_RECIPE,
@@ -808,7 +810,8 @@ export async function setJudgeModel(jobId: string, model: string): Promise<void>
 // generating steps read them; everything else selects the head columns.
 
 const datasets = schema.trainingDatasets;
-const { train: _train, eval: _eval, ...datasetHeadColumns } = getTableColumns(datasets);
+// A decision dataset's rows (decision_rows) can run to megabytes too: only decisionSplitRows reads them.
+const { train: _train, eval: _eval, decisionRows: _decisionRows, ...datasetHeadColumns } = getTableColumns(datasets);
 
 export interface NewDataset {
   title: string;
@@ -1028,6 +1031,85 @@ export async function finishDataset(datasetId: string, count: number, note: stri
     .where(generating)
     .returning(datasetHeadColumns);
   return row ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision datasets (docs/DECISION_MODELS.md, lib/train/decision-datasets.ts): a person's labeled rows, checked and
+// split before they are saved, so a decision dataset is "ready" at once and nothing is generated.
+
+export interface NewDecisionDataset {
+  title: string;
+  /** The spec checkDecisionUpload made: the question, labels, seed and counts. */
+  spec: DecisionSpec;
+  /** The split rows, each split grouped by label in the labels' order, as splitDecisionRows made them. */
+  rows: DecisionRows;
+  createdBy?: string | null;
+}
+
+/**
+ * Saves a decision dataset, ready at once: kind "decision", its spec in decision, its split rows in decision_rows, the
+ * question as task, train_count and eval_count its train and test rows, and writer_model "person" (or "public" for
+ * Muse Decide's mix), never null. train and eval stay empty, so no reader of chat datasets changes. Throws when the
+ * rows don't match the spec's counts.
+ */
+export async function createDecisionDataset(input: NewDecisionDataset): Promise<DatasetHead> {
+  const { spec, rows } = input;
+  for (const part of ["train", "dev", "test"] as const) {
+    if (rows[part].length !== spec.split[part]) throw new Error(`The ${part} rows don't match the spec's count.`);
+  }
+  const now = new Date();
+  const [row] = await db()
+    .insert(datasets)
+    .values({
+      title: input.title.trim().slice(0, TITLE_MAX) || "Decision model",
+      task: spec.question,
+      kind: "decision",
+      status: "ready",
+      requested: spec.split.train + spec.split.dev + spec.split.test,
+      trainCount: spec.split.train,
+      evalCount: spec.split.test,
+      decision: spec,
+      decisionRows: rows,
+      writerModel: spec.source === "person" ? PERSON_WRITER : PUBLIC_WRITER,
+      createdBy: input.createdBy ?? null,
+      finishedAt: now,
+    })
+    .returning(datasetHeadColumns);
+  return row;
+}
+
+/**
+ * Rows of a decision dataset's split, by index (0 on), with the split's length: only those rows leave the database,
+ * cut in SQL, so a page reads what it renders. Every row when `indexes` is left out (scoring reads dev and test whole).
+ * Null when the dataset is unknown or isn't a decision dataset.
+ */
+export async function decisionSplitRows(
+  datasetId: string,
+  part: "train" | "dev" | "test",
+  indexes?: readonly number[],
+): Promise<{ total: number; rows: Map<number, DecisionRow> } | null> {
+  if (!isUuid(datasetId) || (part !== "train" && part !== "dev" && part !== "test")) return null;
+  const col = sql`coalesce(${datasets.decisionRows} -> ${part}::text, '[]'::jsonb)`;
+  const wanted = indexes?.filter((i) => Number.isInteger(i) && i >= 0) ?? null;
+  const among =
+    wanted === null
+      ? sql`true`
+      : wanted.length
+        ? sql`(t.i - 1) = any(array[${sql.join(wanted.map((i) => sql`${i}::int`), sql`, `)}]::int[])`
+        : sql`false`;
+  const [row] = await db()
+    .select({
+      total: sql<number>`jsonb_array_length(${col})`,
+      rows: sql<Array<{ i: number; input: string; label: string }>>`coalesce((
+        select jsonb_agg(jsonb_build_object('i', t.i - 1, 'input', t.e ->> 'input', 'label', t.e ->> 'label') order by t.i)
+        from jsonb_array_elements(${col}) with ordinality as t(e, i) where ${among}
+      ), '[]'::jsonb)`,
+    })
+    .from(datasets)
+    .where(and(eq(datasets.id, datasetId), eq(datasets.kind, "decision")))
+    .limit(1);
+  if (!row) return null;
+  return { total: Number(row.total), rows: new Map((row.rows ?? []).map((r) => [Number(r.i), { input: r.input, label: r.label }])) };
 }
 
 /** Fails a dataset that is still generating, with a plain reason. False when it already finished. */
