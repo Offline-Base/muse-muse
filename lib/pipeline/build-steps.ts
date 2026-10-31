@@ -463,27 +463,31 @@ export interface MuseRun {
 }
 
 /**
- * The build a Muse Code start belongs to, for its goal and its build MCP token: the newest one in this sandbox and
- * session that hasn't finished. Null when it can't be found, and the start goes on without both.
+ * The build a Muse Code start belongs to, for its goal and its build MCP token: the one the workflow names, or else the
+ * newest one in this sandbox and session that hasn't finished. A refinement's row has the product's brief
+ * (loadRefineStep), so its rounds get the goal its change prompt names. Null when it can't be found, and the start goes
+ * on without both.
  */
-async function startingBuild(sandboxName: string, sessionId: string): Promise<{ id: string; brief: Brief | null } | null> {
+async function startingBuild(input: { sandboxName: string; sessionId: string; buildId?: string }): Promise<{ id: string; brief: Brief | null } | null> {
   try {
     const [row] = await db()
       .select({ id: schema.builds.id, brief: schema.builds.brief, productId: schema.builds.productId })
       .from(schema.builds)
       .where(
-        and(
-          eq(schema.builds.sandboxName, sandboxName),
-          eq(schema.builds.museSessionId, sessionId),
-          notInArray(schema.builds.status, [...TERMINAL_STATUSES]),
-        ),
+        input.buildId
+          ? eq(schema.builds.id, input.buildId)
+          : and(
+              eq(schema.builds.sandboxName, input.sandboxName),
+              eq(schema.builds.museSessionId, input.sessionId),
+              notInArray(schema.builds.status, [...TERMINAL_STATUSES]),
+            ),
       )
       .orderBy(desc(schema.builds.startedAt))
       .limit(1);
     if (!row) return null;
     return { id: row.id, brief: row.brief ?? (row.productId ? await latestBrief(row.productId) : null) };
   } catch (err) {
-    console.warn(`[muse] the build for ${sandboxName} wasn't found: ${String(err)}`);
+    console.warn(`[muse] the build for ${input.sandboxName} wasn't found: ${String(err)}`);
     return null;
   }
 }
@@ -507,7 +511,7 @@ export async function startMuseStep(input: {
   const engine = env.museEngine;
   const full = env.museFull;
   // Today's exec round needs neither the goal nor the build, so it makes no extra query.
-  const build = engine === "serve" || full ? await startingBuild(input.sandboxName, input.sessionId) : null;
+  const build = engine === "serve" || full ? await startingBuild(input) : null;
   const buildId = input.buildId ?? build?.id;
   const started = await sandbox.startMuse({
     sandboxName: input.sandboxName,

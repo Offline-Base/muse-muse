@@ -25,6 +25,8 @@ let selects: Record<string, Rows[]> = {};
 /** update(...).returning() results per table. */
 let returns: Record<string, Rows[]> = {};
 let writes: Array<{ table: string; values: Record<string, unknown> }> = [];
+/** Each select's where clause, in order. */
+let wheres: Array<{ table: string; where: SQL | undefined }> = [];
 let emitted: Array<{ buildId: string; body: Record<string, unknown> }> = [];
 let recorded: ModelUsage[][] = [];
 let recordedEndpoints: string[] = [];
@@ -55,9 +57,13 @@ const fakeDb = () => ({
   select: () => {
     let table = "";
     const q: Record<string, unknown> = {};
-    for (const m of ["where", "orderBy", "limit"]) q[m] = () => q;
+    for (const m of ["orderBy", "limit"]) q[m] = () => q;
     q.from = (t: never) => {
       table = getTableName(t);
+      return q;
+    };
+    q.where = (where: SQL | undefined) => {
+      wheres.push({ table, where });
       return q;
     };
     return thenable(q, () => selects[table]?.shift() ?? []);
@@ -176,6 +182,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     selects = {};
     returns = {};
     writes = [];
+    wheres = [];
     emitted = [];
     recorded = [];
     recordedEndpoints = [];
@@ -360,6 +367,20 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(startInputs[0]!.goal, goalObjective(GOAL_BRIEF));
       assert.equal(startInputs[0]!.buildId, "b9");
       assert.deepEqual(emitted, [{ buildId: "b9", body: { type: "log", text: "Muse Code runs this round on its session host, so its owner can steer it." } }]);
+    });
+
+    it("looks up the build the workflow names, so a change's round gets the goal its prompt names", async () => {
+      // loadRefineStep copied the product's brief onto the refine row.
+      selects = { builds: [[{ id: "r1", brief: GOAL_BRIEF, productId: "prod-1" }]] };
+      startImpl = async () => ({ cmdId: "cmd-4", logPath: "/vercel/musemuse/logs/muse-r10.msp.jsonl", engine: "serve" });
+      const change = { ...input, promptFile: "refine-1.md", images: [], round: 10, buildId: "r1" };
+      await withEnv({ MUSE_ENGINE: "serve", MUSE_FULL: undefined }, () => steps.startMuseStep(change));
+      assert.equal(startInputs[0]!.goal, goalObjective(GOAL_BRIEF));
+      assert.equal(startInputs[0]!.buildId, "r1");
+      assert.equal(wheres.length, 1);
+      const lookup = new PgDialect().sqlToQuery(wheres[0]!.where!);
+      assert.equal(lookup.sql, '"builds"."id" = $1');
+      assert.deepEqual(lookup.params, ["r1"]);
     });
 
     it("says so when the bridge couldn't start, and goes on without a goal when the build isn't found", async () => {
