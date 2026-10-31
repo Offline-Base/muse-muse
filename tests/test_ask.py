@@ -10,6 +10,7 @@ from base.config import load_settings
 from base.workspace.ask import NOT_FOUND, DeviceAsk
 from base.workspace.index import MAX_PIECES_PER_DOC, DocumentIndex, Snippet
 from base.workspace.rag import Rag
+from tests.synthetic_helpers import mark_synthetic
 
 REAL = "Corwin Ashgrove"  # invented
 TAG = "[Student A]"
@@ -224,9 +225,9 @@ def test_rewritten_queries_are_restored_and_a_failure_searches_the_question_only
 def make_index(tmp_path, files):
     root = tmp_path / "w"
     root.mkdir()
-    (root / ".synthetic").write_text("invented\n")
     for name, body in files.items():
         (root / name).write_text(body)
+    mark_synthetic(root)
     s = load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root), "OPENROUTER_API_KEY": "k"})
     return DocumentIndex(dataclasses.replace(s, pdftotext_bin=None))
 

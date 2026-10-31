@@ -16,6 +16,7 @@ from base.types import Person, Roster
 from base.workspace.agent import GRADE_SCHEMA, Agent, clean_grade, scrub_names, short_error, student_name
 from base.workspace.index import Doc, DocumentIndex
 from base.workspace.jobs import JobStore
+from tests.synthetic_helpers import mark_synthetic
 
 FIXTURE = Path(__file__).parent / "fixtures" / "workspace"
 NAMES = ["Tavi Brennick", "Odalys Fenwright", "Corwin Ashgrove"]
@@ -269,8 +270,8 @@ def test_generic_task_saves_its_full_named_result_on_the_device(tmp_path):
 def test_single_document_skips_reduce(tmp_path):
     root = tmp_path / "root"
     (root / "one").mkdir(parents=True)
-    (root / ".synthetic").write_text("")
     (root / "one" / "plan.md").write_text("# Plan\nField trip on Friday.")
+    mark_synthetic(root)
     agent, _, jobs = make_agent(tmp_path, root=root)
     job = jobs.get(agent.run_sync("Summarize this.", "one"))
     assert job["raw_result"] == "Notes for Plan"
@@ -293,6 +294,7 @@ def test_rubric_in_a_parent_folder_is_used(tmp_path):
     root = tmp_path / "root"
     shutil.copytree(FIXTURE, root)
     (root / "essays" / "rubric.md").rename(root / "rubric.md")
+    mark_synthetic(root)  # the moved rubric is a new path for the manifest
     before = tree(root)
     agent, settings, jobs = make_agent(tmp_path / "second", root=root)
     job_id = agent.run_sync(GRADE_TASK, "essays")

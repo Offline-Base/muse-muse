@@ -11,6 +11,7 @@ Everything in this folder is invented for the Muse Privacy demo and eval. The te
 | `records/` | Classroom records that the privacy router should keep on the device: parent contacts, IEP and 504 notes, attendance, reading groups, the behavior log, lunch status and health office notes. |
 | `casework/` | Six case notes from an invented city office, Example City Housing Assistance Office, whose invented grant agreement marks its case files CUI. Each note has a `CUI` banner at the top and bottom, an invented case number that starts with `000-`, invented clients, caseworkers and a landlord, 555-01xx phones and example.org emails. It is for the CUI scene: with the CUI toggle on, Muse plans the work, the device writes the brief, and only a receipt comes back. Turn CUI off after the scene, because toggles apply to every folder. |
 | `.synthetic` | The marker file described below. Do not delete it. |
+| `.synthetic-manifest.json` | The sha256 of every invented file in this folder, described below. |
 
 The essays vary on purpose. Some are strong, some are weak, and some have spelling errors. Several also carry the kinds of private detail real student writing does: a sibling's or friend's name, a nickname, a misspelled classmate's name, a parent's job, an allergy or doctor visit, a street name, a custody schedule, a wheelchair, free lunch. Those details are there to test the guard and the router. `eval/DATASET.md` lists which essay carries which detail.
 
@@ -19,6 +20,8 @@ The essays vary on purpose. Some are strong, some are weak, and some have spelli
 While `GLIMMER_BACKEND=openrouter` (the development default), Glimmer runs on a cloud endpoint. To make sure no real document ever reaches it, `base/config.py` (`assert_synthetic`) refuses to read any folder unless that folder, or a folder above it, holds a file named `.synthetic`. The workspace calls this check before it reads anything.
 
 The empty `.synthetic` file in this folder says "this folder holds invented data only." It is what lets the demo and the eval run against the cloud backend during development.
+
+The marker alone cannot tell a stray real file from an invented one, so `.synthetic-manifest.json` lists the sha256 of every file git tracks here. With a cloud backend the folder is read only while every file in it is listed with a matching hash: a file that is not in git, or one that changed, keeps the whole folder off the cloud model. After changing an invented file, run `uv run python -m scripts.make_manifest` and commit the manifest with the file.
 
 Rules for the marker:
 

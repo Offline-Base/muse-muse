@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "note": "sha256 of every invented file under this folder. scripts/make_manifest.py writes it from git-tracked files.",
+  "files": {
+    "essays/Corwin Ashgrove.md": "ae28e8ed565a0c577aa7a1529fc11be668f77548f30402156b63b8f49a95dcf2",
+    "essays/Tavi Brennick essay.md": "59944f4f5d9b93ddf775d7cdd3ec892e7663e8ca70d063e6657a23de938610c2",
+    "essays/essay-02.txt": "886aeb8cf007d129ff68079483d73322066982977c8081306d1919b6c36e62eb",
+    "essays/rubric.md": "5165716c9fc44843f8eb516813715e8464120fb2e0eb21e189dc92210113b5ae"
+  }
+}

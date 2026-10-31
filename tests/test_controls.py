@@ -20,6 +20,7 @@ from base.config import load_settings
 from base.controls import Controls, ControlStore, top_folder
 from base.guard import Redaction, TagMap, load_roster
 from base.workspace.index import DocumentIndex
+from tests.synthetic_helpers import mark_synthetic
 
 ROSTER_FILE = Path(__file__).parent / "fixtures" / "guard_roster.json"
 STUDENT = "Rose Tindall"
@@ -128,10 +129,10 @@ def make_index(tmp_path, controls):
     root = tmp_path / "w"
     (root / "essays").mkdir(parents=True)
     (root / "records").mkdir()
-    (root / ".synthetic").write_text("invented\n")
     (root / "essays" / "a.md").write_text("# A\nTide pools.")
     (root / "records" / "iep.md").write_text("# IEP\nNotes.")
     (root / "top.md").write_text("# Top\nTide pools at the top.")
+    mark_synthetic(root)
     store = ControlStore(tmp_path / "c.json")
     store.save(controls)
     s = load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root), "OPENROUTER_API_KEY": "k"})

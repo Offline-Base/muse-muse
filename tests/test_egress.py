@@ -10,6 +10,7 @@ from base.egress import HELD_TEXT, KEPT_DEFAULT, KEPT_TEXT, WAITING_TEXT, Egress
 from base.policy import UserPolicy
 from base.router import Router
 from base.types import Hit, RouteDecision, TagResult
+from tests.synthetic_helpers import mark_synthetic
 
 FIXTURE = Path(__file__).parent / "fixtures" / "policy_small.yaml"
 
@@ -321,7 +322,13 @@ def test_topics_merge_and_synthetic_derivation(make, tmp_path):
     assert svc.router.kwargs[-1]["synthetic"] is False  # not marked yet
     (marked / ".synthetic").write_text("")
     egress.release("get_result", "x", RAW, "per_student")
+    assert svc.router.kwargs[-1]["synthetic"] is False  # a marker without its manifest
+    mark_synthetic(marked)
+    egress.release("get_result", "x", RAW, "per_student")
     assert svc.router.kwargs[-1]["synthetic"] is True
+    (marked / "stray.md").write_text("Not in the manifest.")
+    egress.release("get_result", "x", RAW, "per_student")
+    assert svc.router.kwargs[-1]["synthetic"] is False
     egress.release("get_result", "x", RAW, "per_student", synthetic=False)
     assert svc.router.kwargs[-1]["synthetic"] is False
 

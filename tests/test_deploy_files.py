@@ -7,10 +7,13 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 import pytest
+
+from tests.synthetic_helpers import mark_synthetic
 
 REPO = Path(__file__).resolve().parent.parent
 DEPLOY = REPO / "deploy" / "jetson"
@@ -407,8 +410,10 @@ def test_the_login_agent_restarts_without_throttling_and_finds_homebrew():
 
 
 def run_cloud(name, *args):
+    # A fresh BASE_HOME, so a script's defaults never read the live ~/.base (its tag map holds real names).
+    env = {**os.environ, "BASE_HOME": tempfile.mkdtemp(prefix="base-home-")}
     return subprocess.run([sys.executable, str(CLOUD / name), *args], capture_output=True, text=True, timeout=60,
-                          cwd=str(REPO))
+                          cwd=str(REPO), env=env)
 
 
 def test_modal_not_needed_for_offline_modes():
@@ -427,8 +432,6 @@ def test_cloud_help_runs_without_modal(name):
 def make_eval_fixture(root: Path, synthetic: bool = True) -> list[str]:
     essays = root / "demo" / "class"
     essays.mkdir(parents=True)
-    if synthetic:
-        (root / "demo" / ".synthetic").write_text("")
     (essays / "rubric.md").write_text("# Rubric\n- Ideas\n- Organization\n")
     students = [{"name": f"Testname{i} Example", "first": f"Testname{i}", "last": "Example", "nicknames": []}
                 for i in range(20)]
@@ -443,6 +446,8 @@ def make_eval_fixture(root: Path, synthetic: bool = True) -> list[str]:
                           "result_kind": "per_student", "topics": [], "expected": d, "names": ["Testname1"]})
     (root / "tasks.jsonl").write_text("\n".join(json.dumps(i) for i in items))
     (root / "policy.yaml").write_text("name: invented\n")
+    if synthetic:
+        mark_synthetic(root / "demo")
     return ["--essays", str(essays), "--roster", str(root / "roster.json"), "--tasks", str(root / "tasks.jsonl"),
             "--policy", str(root / "policy.yaml")]
 
@@ -458,6 +463,7 @@ def test_quant_eval_finds_rubric_one_folder_up(tmp_path):
     essays = Path(args[1])
     (essays / "rubric.md").rename(essays.parent / "rubric.md")  # the demo/ layout: rubric beside essays/
     (essays / "README.md").write_text("Not an essay.\n")
+    mark_synthetic(essays.parent)  # both are new paths for the manifest
     r = run_cloud("quant_eval_modal.py", "--check", *args)
     assert r.returncode == 0, r.stderr
     assert "essays: 20" in r.stdout
@@ -466,6 +472,13 @@ def test_quant_eval_finds_rubric_one_folder_up(tmp_path):
 def test_quant_eval_check_refuses_unmarked_folder(tmp_path):
     r = run_cloud("quant_eval_modal.py", "--check", *make_eval_fixture(tmp_path, synthetic=False))
     assert r.returncode == 1 and ".synthetic" in r.stderr
+
+
+def test_quant_eval_check_refuses_a_stray_file_in_a_marked_folder(tmp_path):
+    args = make_eval_fixture(tmp_path)
+    (Path(args[1]) / "notes.md").write_text("Not in the manifest.\n")
+    r = run_cloud("quant_eval_modal.py", "--check", *args)
+    assert r.returncode == 1 and ".synthetic-manifest.json" in r.stderr and "notes.md" not in r.stderr
 
 
 def test_quant_eval_report_shape(tmp_path):
