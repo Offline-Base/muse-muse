@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
+import { GetItPanel } from "@/components/product/GetItPanel";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
@@ -132,6 +133,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <p>It goes live here once it passes its checks.</p>
           </EmptyCard>
         )}
+
+        {shipped ? <GetItPanel slots={{}} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>
