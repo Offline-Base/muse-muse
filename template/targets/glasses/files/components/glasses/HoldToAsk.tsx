@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { Icon } from "@/components/Icon";
-import { glassesMessage, type GlassesPhoto, type GlassesRecording, type UseGlasses } from "@/lib/glasses/client";
+import { glassesMessage, listenSeconds, type GlassesPhoto, type GlassesRecording, type UseGlasses } from "@/lib/glasses/client";
 
 /** A press shorter than this is a tap: it keeps listening until the next tap. */
 const TAP_MS = 350;
@@ -12,8 +12,8 @@ type Phase = "idle" | "held" | "tapped" | "asking";
 /**
  * The product's main button. Hold it and ask out loud, then let go: it takes a photo with the current source and
  * calls onAsk with the photo and the recording. A tap or a key press also works, for anyone who can't hold a button:
- * it listens until the next one. It stops listening by itself after maxSeconds. Tests hold it with
- * click({ delay: 1500 }), and the iPhone app's checks find it by data-glasses-primary.
+ * it listens until the next one. It stops listening by itself after maxSeconds, 60 at the most. Tests hold it with
+ * click({ delay: 1500 }). The iPhone app's checks find it by data-glasses-primary and click it twice, as two taps.
  */
 export function HoldToAsk(props: {
   glasses: UseGlasses;
@@ -24,7 +24,8 @@ export function HoldToAsk(props: {
   maxSeconds?: number;
   disabled?: boolean;
 }) {
-  const { glasses, label = "Hold to ask", working = "Thinking…", maxSeconds = 20 } = props;
+  const { glasses, label = "Hold to ask", working = "Thinking…" } = props;
+  const maxSeconds = listenSeconds(props.maxSeconds);
   const [phase, setPhase] = useState<Phase>("idle");
   const [problem, setProblem] = useState<string | null>(null);
   const started = useRef<Promise<void> | null>(null);
@@ -35,9 +36,15 @@ export function HoldToAsk(props: {
   useEffect(() => {
     latest.current = props;
   });
+  // Gone mid-question, with useGlasses still in the parent: nothing else would ever end this recording. If useGlasses
+  // is gone too, it has already ended it, and stop() just says nothing is listening.
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      const listening = started.current;
+      if (!listening) return;
+      started.current = null;
+      void listening.then(() => latest.current.glasses.stop()).catch(() => {});
     },
     [],
   );

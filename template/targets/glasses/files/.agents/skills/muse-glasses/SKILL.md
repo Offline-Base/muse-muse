@@ -104,9 +104,9 @@ Client components only. `useGlasses({ samples })` returns:
 | `inApp` | True inside the iPhone app |
 | `ready` | True when the current source can take a photo |
 | `connect()` | Connects the glasses. The first time, the Meta AI app opens to ask for permission |
-| `capture({ maxSize })` | Takes a photo: `{ dataUrl, width, height, source }`. A JPEG of at most 1600 px |
-| `listen({ maxSeconds })`, `stop()` | Records, then returns `{ wavDataUrl, seconds, source }`, 16 kHz WAV ready for `transcribeFile` |
-| `say(text)` | Speaks. Don't wait for it before showing the answer |
+| `capture({ maxSize })` | Takes a photo: `{ dataUrl, width, height, source }`. A JPEG of at most `maxSize` px, from 64 to 1600 |
+| `listen({ maxSeconds })`, `stop()` | Records for up to `maxSeconds`, 20 by default and 60 at the most, then returns `{ wavDataUrl, seconds, source }`, 16 kHz WAV ready for `transcribeFile` |
+| `say(text)` | Speaks up to the first 1000 characters. Don't wait for it before showing the answer |
 | `preview(show)`, `previewing`, `stream` | The live view. Glasses draw it above the page. For the phone camera, `stream` feeds a `<video>`, and GlassesPanel does that for you |
 | `photo`, `recording` | The last photo, and whether it's listening right now |
 
@@ -115,11 +115,13 @@ Everything throws a `GlassesClientError`. Show `glassesMessage(err)` from `@/lib
 ## The parts
 
 - `GlassesPanel`: the status chip, a button named "Connect your glasses", the Glasses, Phone and Sample switch, the live view, and the last photo.
-- `HoldToAsk`: the main button. Hold it, ask, let go. It records, takes the photo and calls `onAsk({ photo, question })`. A tap or a key press also works, for anyone who can't hold a button: it listens until the next one. It also stops by itself after `maxSeconds`, 20 by default. Pass `label` for the button's words.
+- `HoldToAsk`: the main button. Hold it, ask, let go. It records, takes the photo and calls `onAsk({ photo, question })`. A tap or a key press also works, for anyone who can't hold a button: it listens until the next one. It also stops by itself after `maxSeconds`, 20 by default and 60 at the most. Pass `label` for the button's words.
 
 If your main button doesn't listen, like "What am I looking at?", use a normal button with `data-glasses-primary` that calls `capture()`.
 
 Tests and the iPhone app's checks find these by contract, so keep them: the main button has `data-glasses-primary`, the panel's buttons have `data-glasses-action` (both parts do this), and the result on screen has `data-result` (you add it).
+
+The iPhone app's checks click the main button, wait a second and a half, then click it again if it's still there and not disabled. That's two taps on `HoldToAsk`: start listening, then stop. A main button of your own must be disabled while it works, or the second click runs it twice.
 
 ## What Meta's glasses can't do
 

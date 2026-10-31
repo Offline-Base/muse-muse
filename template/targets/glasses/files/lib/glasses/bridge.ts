@@ -2,12 +2,13 @@
  * Platform file: don't edit. Version 1 of the bridge between a product page and the Muse Muse iPhone app, which injects
  * window.MuseNative before the page's own code runs. Use useGlasses from lib/glasses/client.ts rather than this directly.
  *
- * The shell's src/bridge/protocol.ts mirrors these interfaces, and tests/glasses.ts fakes them. Change all three together.
+ * native/bridge/protocol.ts is the shell's copy of these interfaces, and tests/glasses.ts fakes them. Change all three
+ * together. Products only need part of the shell's bridge, so `capabilities` here lists just the two fields they read.
  */
 
 export interface MuseNativeV1 {
   version: 1;
-  platform: "ios" | "android";
+  platform: "ios" | "android" | "mac" | "windows" | "linux";
   capabilities: { glasses: boolean; frames: boolean };
   glasses?: MuseGlasses;
 }
@@ -64,6 +65,9 @@ export type GlassesErrorCode = NonNullable<GlassesStatus["error"]>["code"];
 
 /** How long the page waits on a bridge method, in ms. Longer than the shell's own timeouts, so this only catches a bridge that never answers. */
 export const BRIDGE_TIMEOUTS = { connect: 130_000, capture: 30_000, speak: 70_000, other: 30_000 } as const;
+
+/** What the shell accepts. It refuses anything outside these, so useGlasses keeps its calls inside them. */
+export const BRIDGE_LIMITS = { maxSeconds: 60, minPhotoSize: 64, maxPhotoSize: 1600, speechChars: 1000 } as const;
 
 /**
  * The app's bridge, or null in a plain browser and on the server. No global Window type on purpose: other parts of a

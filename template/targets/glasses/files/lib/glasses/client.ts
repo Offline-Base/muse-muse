@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { blobToDataUrl } from "@/lib/client/resize";
 import { toWav16k } from "@/lib/client/wav";
-import { BRIDGE_TIMEOUTS, glassesBridge, type GlassesErrorCode, type GlassesStatus } from "@/lib/glasses/bridge";
+import { BRIDGE_LIMITS, BRIDGE_TIMEOUTS, glassesBridge, type GlassesErrorCode, type GlassesStatus } from "@/lib/glasses/bridge";
 import { photoFromBlob, samplePhoto, sampleQuestion, wavSeconds, type GlassesSamples, type PhotoData } from "@/lib/glasses/samples";
 
 /**
@@ -129,13 +129,13 @@ export interface UseGlasses {
   stream: MediaStream | null;
   /** Connects the glasses. The first time, Meta AI opens to ask for permission. */
   connect(): Promise<GlassesStatus>;
-  /** Takes a photo with the current source. */
+  /** Takes a photo with the current source. maxSize is 64 to 1600 px, and anything outside that moves to the nearest. */
   capture(o?: { maxSize?: number }): Promise<GlassesPhoto>;
-  /** Starts listening, for at most maxSeconds (20 by default). */
+  /** Starts listening, for at most maxSeconds (20 by default, 60 at the most). */
   listen(o?: { maxSeconds?: number }): Promise<void>;
   /** Stops listening and returns the recording. */
   stop(): Promise<GlassesRecording>;
-  /** Speaks an answer. Don't wait for it before showing the answer. */
+  /** Speaks an answer, up to its first 1000 characters. Don't wait for it before showing the answer. */
   say(text: string): Promise<void>;
   /** Turns the live view on or off. */
   preview(show: boolean): Promise<void>;
@@ -165,10 +165,28 @@ function stopTracks(stream: MediaStream | null | undefined): void {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-/** True when this browser can ask for a camera and has one. */
+/** How long a question can last: 20 seconds unless asked otherwise, and never past what the shell accepts. */
+export function listenSeconds(maxSeconds?: number): number {
+  return Number.isFinite(maxSeconds) ? Math.min(BRIDGE_LIMITS.maxSeconds, Math.max(1, maxSeconds as number)) : 20;
+}
+
+function photoSize(maxSize?: number): number | undefined {
+  return Number.isFinite(maxSize) ? Math.min(BRIDGE_LIMITS.maxPhotoSize, Math.max(BRIDGE_LIMITS.minPhotoSize, maxSize as number)) : undefined;
+}
+
+/** True when the page embedding this one keeps a feature from it. No browser setting can change that. */
+function blockedByEmbedder(feature: "camera" | "microphone"): boolean {
+  if (typeof document === "undefined") return false;
+  type Policy = { allowsFeature(feature: string): boolean };
+  const { permissionsPolicy, featurePolicy } = document as unknown as { permissionsPolicy?: Policy; featurePolicy?: Policy };
+  return (permissionsPolicy ?? featurePolicy)?.allowsFeature(feature) === false;
+}
+
+/** True when this browser can ask for a camera and has one. The phone source needs the microphone too. */
 async function hasCamera(): Promise<boolean> {
   const media = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
   if (!media?.getUserMedia) return false;
+  if (blockedByEmbedder("camera") || blockedByEmbedder("microphone")) return false;
   try {
     return (await media.enumerateDevices()).some((device) => device.kind === "videoinput");
   } catch {
@@ -182,7 +200,9 @@ async function openMedia(constraints: MediaStreamConstraints, blocked: GlassesCl
   try {
     return await media.getUserMedia(constraints);
   } catch (err) {
-    throw new GlassesClientError((err as { name?: string } | null)?.name === "NotAllowedError" ? blocked : missing);
+    const denied = (err as { name?: string } | null)?.name === "NotAllowedError";
+    // "Allow it in your browser settings" would be no help when the embedding page is what said no.
+    throw new GlassesClientError(denied && !blockedByEmbedder(constraints.video ? "camera" : "microphone") ? blocked : missing);
   }
 }
 
@@ -309,7 +329,10 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
   const streamRef = useRef<MediaStream | null>(null);
   const recordingRef = useRef<Recording | null>(null);
   const sampleIndex = useRef(0);
+  // What the glasses' live view was last told to be, set as the call goes out so hiding it never misses one on its way.
   const glassesPreviewing = useRef(false);
+  // Only the newest live view call may change anything. Leaving or switching source counts as newer.
+  const previewToken = useRef(0);
   const mounted = useRef(true);
   useEffect(() => {
     sourceRef.current = source;
@@ -359,16 +382,30 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
     void glassesBridge()?.preview({ show: false }).catch(() => {});
   }, []);
 
-  // Leaving the page turns the camera and microphone off, including the glasses'.
+  // Leaving the page turns the camera and microphone off, including the glasses'. A reload or a full navigation runs no
+  // React cleanup, so pagehide does the same.
   useEffect(() => {
     mounted.current = true;
-    return () => {
-      mounted.current = false;
+    const turnOff = () => {
+      previewToken.current += 1;
       stopTracks(streamRef.current);
       streamRef.current = null;
       hideGlassesPreview();
       dropRecording(recordingRef.current);
       recordingRef.current = null;
+    };
+    const pageHidden = () => {
+      turnOff();
+      // A page the browser restores from its back button cache comes back as it was, so it must not say these are on.
+      setStream(null);
+      setPreviewing(false);
+      setRecording(false);
+    };
+    window.addEventListener("pagehide", pageHidden);
+    return () => {
+      window.removeEventListener("pagehide", pageHidden);
+      mounted.current = false;
+      turnOff();
     };
   }, [hideGlassesPreview]);
 
@@ -385,6 +422,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
   }, [update]);
 
   const capture = useCallback(async (o: { maxSize?: number } = {}) => {
+    const maxSize = photoSize(o.maxSize);
     const from = sourceRef.current;
     if (from !== "glasses") primeSpeech();
     let data: PhotoData;
@@ -393,7 +431,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
       if (!glasses) throw new GlassesClientError("unavailable");
       if (statusRef.current.state !== "ready") throw new GlassesClientError("not_connected");
       try {
-        data = await withTimeout(glasses.capturePhoto(o), BRIDGE_TIMEOUTS.capture);
+        data = await withTimeout(glasses.capturePhoto({ maxSize }), BRIDGE_TIMEOUTS.capture);
       } catch (err) {
         throw toClientError(err, "capture_failed");
       }
@@ -401,7 +439,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
       const open = streamRef.current;
       const live = open ?? (await openCamera());
       try {
-        data = await grabFrame(live, !open, o.maxSize);
+        data = await grabFrame(live, !open, maxSize);
       } catch (err) {
         throw toClientError(err, "capture_failed");
       } finally {
@@ -412,7 +450,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
       if (!photos.length) throw new GlassesClientError("no_sample");
       const url = photos[sampleIndex.current++ % photos.length];
       try {
-        data = await samplePhoto(url, o.maxSize);
+        data = await samplePhoto(url, maxSize);
       } catch {
         throw new GlassesClientError("no_sample");
       }
@@ -424,7 +462,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
 
   const listen = useCallback(async (o: { maxSeconds?: number } = {}) => {
     if (recordingRef.current) return;
-    const maxSeconds = o.maxSeconds ?? 20;
+    const maxSeconds = listenSeconds(o.maxSeconds);
     const from = sourceRef.current;
     if (from !== "glasses") primeSpeech();
     let active: Recording;
@@ -472,7 +510,7 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
   }, []);
 
   const say = useCallback(async (text: string) => {
-    const words = text.trim();
+    const words = text.trim().slice(0, BRIDGE_LIMITS.speechChars);
     if (!words) return;
     const glasses = glassesBridge();
     if (glasses && sourceRef.current === "glasses" && statusRef.current.state === "ready") {
@@ -489,22 +527,34 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
 
   const preview = useCallback(
     async (show: boolean) => {
+      const token = ++previewToken.current;
       const from = sourceRef.current;
       if (from === "glasses") {
         const glasses = glassesBridge();
         if (!glasses) throw new GlassesClientError("unavailable");
+        const before = glassesPreviewing.current;
+        glassesPreviewing.current = show;
         try {
           await withTimeout(glasses.preview({ show }), BRIDGE_TIMEOUTS.other);
-          glassesPreviewing.current = show;
-          if (!mounted.current) hideGlassesPreview();
         } catch (err) {
+          if (token !== previewToken.current) return;
+          glassesPreviewing.current = before;
           throw toClientError(err, "session_ended");
         }
+        // The shell runs calls in order, so whatever replaced this one has already sent what it wants.
+        if (token !== previewToken.current) return;
       } else if (from === "phone") {
         closeStream();
         if (show) {
-          const opened = await openCamera();
-          if (!mounted.current) {
+          let opened: MediaStream;
+          try {
+            opened = await openCamera();
+          } catch (err) {
+            if (token !== previewToken.current) return;
+            throw err;
+          }
+          // Nothing else holds this stream, so unless it's kept here its camera stays on until the tab closes.
+          if (token !== previewToken.current) {
             stopTracks(opened);
             return;
           }
@@ -516,13 +566,14 @@ export function useGlasses(options: { samples?: GlassesSamples } = {}): UseGlass
       }
       setPreviewing(show);
     },
-    [closeStream, hideGlassesPreview],
+    [closeStream],
   );
 
   const setSource = useCallback(
     (next: GlassesSource) => {
       if (recordingRef.current) return;
-      // Whichever source is on now gets its live view turned off first.
+      // Whichever source is on now gets its live view turned off first, even one still opening.
+      previewToken.current += 1;
       hideGlassesPreview();
       closeStream();
       setPreviewing(false);

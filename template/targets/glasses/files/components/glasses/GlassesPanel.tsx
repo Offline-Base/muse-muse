@@ -31,6 +31,8 @@ function chip(state: UseGlasses["status"]["state"]): { tone: string; icon: IconN
 export function GlassesPanel({ glasses, title = "Your glasses" }: { glasses: UseGlasses; title?: string }) {
   const { source, status, inApp, photo, previewing, stream, recording } = glasses;
   const [connecting, setConnecting] = useState(false);
+  // Opening the camera can sit on a permission prompt, and a second press in that time would open it twice.
+  const [toggling, setToggling] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const video = useRef<HTMLVideoElement>(null);
 
@@ -56,15 +58,19 @@ export function GlassesPanel({ glasses, title = "Your glasses" }: { glasses: Use
 
   const togglePreview = async () => {
     setProblem(null);
+    setToggling(true);
     try {
       await glasses.preview(!previewing);
     } catch (err) {
       setProblem(glassesMessage(err));
+    } finally {
+      setToggling(false);
     }
   };
 
   const choose = (next: GlassesSource) => {
     setProblem(null);
+    setToggling(false);
     glasses.setSource(next);
   };
 
@@ -105,7 +111,7 @@ export function GlassesPanel({ glasses, title = "Your glasses" }: { glasses: Use
 
         {(source === "glasses" && status.state === "ready") || source === "phone" ? (
           <div>
-            <button type="button" className="text" data-glasses-action="preview" aria-pressed={previewing} onClick={togglePreview}>
+            <button type="button" className="text" data-glasses-action="preview" aria-pressed={previewing} disabled={toggling} aria-busy={toggling} onClick={togglePreview}>
               <Icon name="camera" />
               {previewing ? "Hide the live view" : "Show the live view"}
             </button>

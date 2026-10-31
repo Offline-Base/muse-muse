@@ -1,18 +1,20 @@
 // Tests for the glasses target: the overlay in targets/glasses/, tests/glasses.ts, and the real components driven in
 // Chromium against the fake glasses. Nothing here leaves the machine. Run from the repo root:
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
-// The browser tests skip themselves when Chromium or esbuild isn't installed.
+// Without template/node_modules, Chromium or esbuild, the tests that need them skip themselves.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chromium } from "@playwright/test";
-import { glasses as fake, installGlasses, wavSecondsOf } from "../../tests/glasses.ts";
 import { glassesProblems } from "../smoke-report.mjs";
 
 const TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// Both of these need template/node_modules, which a clean checkout doesn't have.
+const playwright = await import("@playwright/test").catch(() => null);
+const helper = playwright ? await import("../../tests/glasses.ts") : null;
+const noTemplateModules = !playwright || !existsSync(path.join(TEMPLATE, "node_modules/react")) ? "template/node_modules isn't installed" : null;
 const TARGET = path.join(TEMPLATE, "targets/glasses");
 const FILES = path.join(TARGET, "files");
 const read = (file) => readFileSync(file, "utf8");
@@ -92,10 +94,31 @@ describe("the bridge types", () => {
 
   // The shell's copy of the protocol only exists once the native lane is in this tree, and never in a product.
   const shell = path.join(TEMPLATE, "../native/bridge/protocol.ts");
+  /** The names at the top level of an interface, in the order they're written. */
+  const fields = (source, name) => {
+    const match = source.match(new RegExp(`interface ${name} \\{([^]*?)\\n\\}`));
+    assert.ok(match, `no interface ${name}`);
+    return [...match[1].matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]);
+  };
+  const methodsOf = (source) => {
+    const match = source.match(/interface MuseGlasses \{([^]*?)\n\}/);
+    assert.ok(match, "no interface MuseGlasses");
+    return [...match[1].matchAll(/^ {2}(\w+)\(/gm)].map((m) => m[1]);
+  };
   test("matches the shell's protocol", { skip: existsSync(shell) ? false : "the shell isn't in this tree" }, () => {
     const protocol = read(shell);
     assert.deepEqual(union(protocol, "GlassesState"), union(bridge(), "GlassesState"));
     assert.deepEqual(union(protocol, "GlassesErrorCode"), inlineCodes(bridge()));
+    assert.deepEqual(methodsOf(protocol), methodsOf(bridge()), "the glasses methods differ");
+    assert.deepEqual(fields(protocol, "GlassesStatus"), fields(bridge(), "GlassesStatus"), "GlassesStatus's fields differ");
+    const recording = bridge().match(/stopRecording\(\): Promise<\{([^}]*)\}>/);
+    assert.ok(recording, "no stopRecording result");
+    assert.deepEqual(fields(protocol, "GlassesRecording"), [...recording[1].matchAll(/(\w+):/g)].map((m) => m[1]), "stopRecording's result differs");
+    // bridge.ts lists only the capabilities products read, and every platform the shell can report.
+    const capabilities = bridge().match(/capabilities: \{([^}]*)\}/);
+    assert.ok(capabilities, "no capabilities");
+    for (const [, name] of capabilities[1].matchAll(/(\w+):/g)) assert.ok(fields(protocol, "MuseCapabilities").includes(name), `the shell has no capability ${name}`);
+    assert.deepEqual(union(protocol, "MusePlatform"), [...bridge().match(/platform: ([^;]*);/)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort());
   });
 });
 
@@ -126,14 +149,14 @@ function wav({ seconds = 1, rate = 16000, channels = 1, list = 0 } = {}) {
   return out;
 }
 
-describe("wavSecondsOf", () => {
+describe("wavSecondsOf", { skip: noTemplateModules ?? false }, () => {
   test("reads the length of a 16 kHz mono WAV, walking past other chunks", () => {
-    assert.equal(wavSecondsOf(wav({ seconds: 2 })), 2);
-    assert.equal(wavSecondsOf(wav({ seconds: 1.5, list: 26 })), 1.5);
+    assert.equal(helper.wavSecondsOf(wav({ seconds: 2 })), 2);
+    assert.equal(helper.wavSecondsOf(wav({ seconds: 1.5, list: 26 })), 1.5);
   });
   test("refuses anything the real app would never send, and says how to fix it", () => {
     for (const bad of [Buffer.from("not a wav"), wav({ rate: 44100 }), wav({ channels: 2 })]) {
-      assert.throws(() => wavSecondsOf(bad, "fixtures/q.wav"), /fixtures\/q\.wav must be a 16 kHz mono WAV/);
+      assert.throws(() => helper.wavSecondsOf(bad, "fixtures/q.wav"), /fixtures\/q\.wav must be a 16 kHz mono WAV/);
     }
   });
 });
@@ -157,7 +180,7 @@ const productAlias = {
   },
 };
 
-describe("client.ts helpers", { skip: esbuild ? false : "esbuild isn't installed" }, () => {
+describe("client.ts helpers", { skip: noTemplateModules ?? (esbuild ? false : "esbuild isn't installed") }, () => {
   let client;
   let dir;
   before(async () => {
@@ -198,6 +221,14 @@ describe("client.ts helpers", { skip: esbuild ? false : "esbuild isn't installed
     assert.equal(client.firstSource({ glasses: false, camera: false }), "sample");
   });
 
+  test("listenSeconds stays inside what the shell accepts", () => {
+    assert.equal(client.listenSeconds(), 20);
+    assert.equal(client.listenSeconds(90), 60);
+    assert.equal(client.listenSeconds(0), 1);
+    assert.equal(client.listenSeconds(30), 30);
+    assert.equal(client.listenSeconds(Number.NaN), 20);
+  });
+
   test("glassesMessage gives one plain sentence for anything thrown", () => {
     assert.equal(client.glassesMessage({ code: "hinges_closed", message: "HINGES_CLOSED" }), "Open your glasses and put them on, then try again.");
     assert.equal(client.glassesMessage(new client.GlassesClientError("not_connected")), "Connect your glasses first.");
@@ -223,16 +254,21 @@ const samples = new URLSearchParams(location.search).has("nosamples") ? undefine
 function Product() {
   const glasses = useGlasses({ samples });
   const [ask, setAsk] = useState(null);
+  const [showAsk, setShowAsk] = useState(true);
+  window.__glasses = glasses;
   return (
     <main>
+      <button type="button" onClick={() => setShowAsk(false)}>Hide the button</button>
       <GlassesPanel glasses={glasses} />
-      <HoldToAsk
-        glasses={glasses}
-        onAsk={async ({ photo, question }) => {
-          setAsk({ photo, question });
-          await glasses.say("A red door.");
-        }}
-      />
+      {showAsk ? (
+        <HoldToAsk
+          glasses={glasses}
+          onAsk={async ({ photo, question }) => {
+            setAsk({ photo, question });
+            await glasses.say("A red door.");
+          }}
+        />
+      ) : null}
       <p data-source>{glasses.source}</p>
       {ask ? (
         <section data-result data-photo-source={ask.photo.source} data-question-source={ask.question.source} data-seconds={ask.question.seconds} data-width={ask.photo.width} data-height={ask.photo.height} data-photo={ask.photo.dataUrl.slice(0, 15)} data-wav={ask.question.wavDataUrl.slice(0, 15)}>
@@ -269,7 +305,22 @@ const SPEECH_STUB = `(() => {
   window.SpeechSynthesisUtterance = function (text) { this.text = text; };
 })();`;
 
-const browserProblem = !esbuild ? "esbuild isn't installed" : null;
+const browserProblem = noTemplateModules ?? (!esbuild ? "esbuild isn't installed" : null);
+
+/** getUserMedia that takes a while, like one waiting on a permission prompt, and remembers every stream it opens. */
+const SLOW_CAMERA = `(() => {
+  const media = navigator.mediaDevices;
+  if (!media) return;
+  const open = media.getUserMedia.bind(media);
+  window.__streams = [];
+  window.__liveTracks = () => window.__streams.flatMap((s) => s.getTracks()).filter((t) => t.readyState === "live").length;
+  media.getUserMedia = async (c) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const stream = await open(c);
+    window.__streams.push(stream);
+    return stream;
+  };
+})();`;
 
 describe("in Chromium", { skip: browserProblem ?? false }, () => {
   const startDir = process.cwd();
@@ -283,7 +334,7 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     dir = mkdtempSync(path.join(tmpdir(), "glasses-browser-"));
     // tests/glasses.ts writes to test-results/ under the working folder. Each test file gets its own process.
     process.chdir(dir);
-    browser = await chromium
+    browser = await playwright.chromium
       .launch({ args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] })
       .catch(() => null);
     if (!browser) return;
@@ -353,11 +404,21 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
       if (url.pathname === "/") return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div><script src="/bundle.js"></script>' });
       return route.fulfill({ status: 404, body: "" });
     });
-    if (fakeGlasses) await installGlasses(page, fakeGlasses);
+    if (fakeGlasses) await helper.installGlasses(page, fakeGlasses);
     return { page, errors, goto: () => page.goto(`${ORIGIN}/${query}`) };
   }
 
+  const fake = helper?.glasses;
+  const installGlasses = helper?.installGlasses;
   const askButton = (page) => page.locator("[data-glasses-primary]");
+  const liveTracks = (page) => page.evaluate(() => window.__liveTracks());
+  const settle = (page) => page.waitForTimeout(800);
+  const previews = async (page) => (await fake.calls(page)).filter((c) => c.method === "preview").map((c) => c.params.show);
+  const count = async (page, method) => (await fake.calls(page)).filter((c) => c.method === method).length;
+  async function waitForCount(page, method, wanted) {
+    for (let i = 0; i < 60 && (await count(page, method)) < wanted; i += 1) await page.waitForTimeout(50);
+    assert.equal(await count(page, method), wanted, `${method} calls`);
+  }
   const result = (page) => page.locator("[data-result]");
 
   test("glasses: connect, hold, photo and question from the glasses, spoken in the glasses", async (t) => {
@@ -489,6 +550,284 @@ describe("in Chromium", { skip: browserProblem ?? false }, () => {
     assert.ok(calls.some((c) => c.method === "stopRecording"), "the microphone stayed on");
     for (let i = 0; i < 60 && (await fake.calls(page)).filter((c) => c.method === "preview").length < 2; i += 1) await page.waitForTimeout(50);
     assert.deepEqual((await fake.calls(page)).filter((c) => c.method === "preview").map((c) => c.params.show), [true, false]);
+  });
+
+  test("phone: two live view starts at once leave no camera on after Hide and Leave", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, errors, goto } = await open(t, { media: true });
+    await page.addInitScript(SLOW_CAMERA);
+    await goto();
+    await page.getByRole("button", { name: "Show the live view" }).waitFor();
+
+    await page.evaluate(() => {
+      void window.__glasses.preview(true);
+      void window.__glasses.preview(true);
+    });
+    await settle(page);
+    assert.equal(await liveTracks(page), 1, "only the newest start keeps its camera");
+    await page.getByRole("button", { name: "Hide the live view" }).click();
+    await page.getByRole("button", { name: "Show the live view" }).waitFor();
+    assert.equal(await liveTracks(page), 0);
+
+    await page.evaluate(() => {
+      void window.__glasses.preview(true);
+    });
+    await page.getByRole("button", { name: "Leave" }).click();
+    await settle(page);
+    assert.equal(await liveTracks(page), 0, "leaving while it opens stops the camera");
+    assert.deepEqual(errors, []);
+  });
+
+  test("phone: the live view button waits for the camera, so a second press can't open it twice", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { media: true });
+    await page.addInitScript(SLOW_CAMERA);
+    await goto();
+    const toggle = page.locator('[data-glasses-action="preview"]');
+    await page.getByRole("button", { name: "Show the live view" }).waitFor();
+    await toggle.click();
+    assert.ok(await toggle.isDisabled());
+    await page.getByRole("button", { name: "Hide the live view" }).waitFor();
+    assert.ok(await toggle.isEnabled());
+    assert.equal(await liveTracks(page), 1);
+  });
+
+  test("phone: switching to the sample while the camera opens turns it off for good", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, errors, goto } = await open(t, { media: true });
+    await page.addInitScript(SLOW_CAMERA);
+    await goto();
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("radio", { name: "Sample" }).check({ force: true });
+    await settle(page);
+    assert.equal(await liveTracks(page), 0);
+    assert.equal(await page.evaluate(() => window.__glasses.previewing), false);
+    assert.equal(await page.locator("video").count(), 0);
+
+    // Back on the phone, its toggle is there and works.
+    await page.getByRole("radio", { name: "Phone" }).check({ force: true });
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("button", { name: "Hide the live view" }).waitFor();
+    assert.equal(await liveTracks(page), 1);
+    assert.deepEqual(errors, []);
+  });
+
+  test("glasses: switching source while the live view starts sends it the off too", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("radio", { name: "Sample" }).check({ force: true });
+    await waitForCount(page, "preview", 2);
+    assert.deepEqual(await previews(page), [true, false]);
+    assert.equal(await page.evaluate(() => window.__glasses.previewing), false);
+  });
+
+  test("glasses: a live view that fails to start leaves nothing to hide", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await fake.set(page, { fail: { method: "preview", code: "session_ended" } });
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("alert").getByText("Your glasses disconnected.", { exact: false }).waitFor();
+    await page.getByRole("radio", { name: "Sample" }).check({ force: true });
+    await settle(page);
+    assert.deepEqual(await previews(page), [true], "nothing is on, so nothing is turned off");
+  });
+
+  test("glasses: a reload turns the microphone and live view off", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("button", { name: "Hide the live view" }).waitFor();
+    await askButton(page).click();
+    await page.waitForFunction(() => window.__glasses.recording);
+
+    // The fake logs a call when it settles, and the reload ends the page first, so note what the page sent as it sends it.
+    await page.evaluate(() => {
+      const { glasses } = window.MuseNative;
+      for (const name of ["stopRecording", "preview"]) {
+        const real = glasses[name];
+        glasses[name] = (o) => {
+          sessionStorage.setItem("sent", `${sessionStorage.getItem("sent") ?? ""}${name}:${o?.show ?? ""},`);
+          return real(o);
+        };
+      }
+    });
+    await page.reload();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    assert.deepEqual((await page.evaluate(() => sessionStorage.getItem("sent"))).split(",").filter(Boolean).sort(), ["preview:false", "stopRecording:"]);
+  });
+
+  test("a page going away says its camera and microphone are off, for when the browser brings it back", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { media: true });
+    await page.addInitScript(SLOW_CAMERA);
+    await goto();
+    await page.getByRole("button", { name: "Show the live view" }).click();
+    await page.getByRole("button", { name: "Hide the live view" }).waitFor();
+    assert.equal(await liveTracks(page), 1);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    await page.getByRole("button", { name: "Show the live view" }).waitFor();
+    assert.equal(await liveTracks(page), 0);
+  });
+
+  test("glasses: the main button going away mid-question ends it and unlocks the switch", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, errors, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await askButton(page).click();
+    await page.getByRole("button", { name: "Listening. Tap when you're done." }).waitFor();
+    await page.getByRole("button", { name: "Hide the button" }).click();
+    await waitForCount(page, "stopRecording", 1);
+    assert.equal(await page.evaluate(() => window.__glasses.recording), false);
+    assert.ok(await page.getByRole("radio", { name: "Sample" }).isEnabled());
+    assert.equal(await count(page, "capturePhoto"), 0, "no question was asked, so no photo either");
+    assert.deepEqual(errors, []);
+  });
+
+  test("glasses: leaving with the main button listening ends it once, with no errors", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, errors, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await askButton(page).click();
+    await page.getByRole("button", { name: "Listening. Tap when you're done." }).waitFor();
+    await page.getByRole("button", { name: "Leave" }).click();
+    await waitForCount(page, "stopRecording", 1);
+    await settle(page);
+    assert.equal(await count(page, "stopRecording"), 1);
+    assert.deepEqual(errors, []);
+  });
+
+  test("glasses: the app's checks click the main button twice, and that asks", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await page.evaluate(() => document.querySelector("[data-glasses-primary]").click());
+    await page.getByRole("button", { name: "Listening. Tap when you're done." }).waitFor();
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => document.querySelector("[data-glasses-primary]").click());
+    await result(page).waitFor();
+    assert.equal(await count(page, "stopRecording"), 1);
+  });
+
+  test("useGlasses keeps every call inside what the app accepts", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, errors, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    await page.locator("[data-glasses-panel] [role=status]").getByText("Ready").waitFor();
+    await page.evaluate(async () => {
+      await window.__glasses.listen({ maxSeconds: 90 });
+    });
+    await page.waitForFunction(() => window.__glasses.recording);
+    await page.evaluate(() => window.__glasses.stop());
+    const started = (await fake.calls(page)).find((c) => c.method === "startRecording");
+    assert.ok(started.ok);
+    assert.equal(started.params.maxSeconds, 60);
+
+    const big = await page.evaluate(() => window.__glasses.capture({ maxSize: 2048 }));
+    assert.equal(big.width, 1600);
+    const tiny = await page.evaluate(() => window.__glasses.capture({ maxSize: 8 }));
+    assert.equal(tiny.width, 64);
+
+    await page.evaluate(() => window.__glasses.say(`  ${"x".repeat(1200)}`));
+    assert.equal((await fake.spoken(page))[0].length, 1000);
+    assert.deepEqual(await page.evaluate(() => window.__said), [], "it stays in the glasses, not the phone");
+    assert.deepEqual(errors, []);
+  });
+
+  test("the sample source keeps the photo size inside the limits too", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t);
+    await goto();
+    await page.locator("[data-source]").getByText("sample").waitFor();
+    assert.equal(await page.evaluate(() => window.__glasses.capture({ maxSize: 2048 }).then((p) => p.width)), 1600);
+    assert.equal(await page.evaluate(() => window.__glasses.capture({ maxSize: 8 }).then((p) => p.width)), 64);
+  });
+
+  test("the fake refuses what the real app refuses", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { photos: [pov], question, state: "ready" } });
+    await goto();
+    const code = (method, ...args) =>
+      page.evaluate(([m, a]) => window.MuseNative.glasses[m](...a).then(() => "ok", (e) => e.code), [method, args]);
+    assert.equal(await page.evaluate(() => window.MuseNative.capabilities.frames), true);
+    assert.equal(await code("startRecording", { maxSeconds: 90 }), "bad_request");
+    assert.equal(await code("startRecording", {}), "bad_request");
+    assert.equal(await code("capturePhoto", { maxSize: 2048 }), "bad_request");
+    assert.equal(await code("capturePhoto", { maxSize: 10 }), "bad_request");
+    assert.equal(await code("speak", "x".repeat(1200)), "bad_request");
+    assert.equal(await code("speak", ""), "bad_request");
+    assert.equal(await code("stopRecording"), "bad_request");
+
+    assert.equal(await code("startRecording", { maxSeconds: 5 }), "ok");
+    assert.equal(await code("startRecording", { maxSeconds: 5 }), "busy");
+    assert.equal(await code("stopRecording"), "ok");
+
+    await fake.set(page, { state: "paused" });
+    assert.equal(await code("preview", { show: true }), "no_eligible_device");
+    assert.equal(await code("preview", { show: false }), "ok");
+
+    await fake.set(page, { state: "ready", fail: { method: "startRecording", code: "busy" } });
+    assert.equal(await code("startRecording", { maxSeconds: 5 }), "busy");
+    assert.ok((await fake.calls(page)).some((c) => c.method === "speak" && !c.ok), "refused speech is logged as a failure");
+    assert.equal((await fake.spoken(page)).length, 0, "and doesn't count as spoken");
+  });
+
+  test("a recording past its limit no longer counts as busy, and still returns what it heard", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { page, goto } = await open(t, { fakeGlasses: { question, state: "ready" } });
+    await goto();
+    await page.evaluate(() => window.MuseNative.glasses.startRecording({ maxSeconds: 1 }));
+    await page.waitForTimeout(1100);
+    assert.equal(await page.evaluate(() => window.MuseNative.glasses.startRecording({ maxSeconds: 1 }).then(() => "ok", (e) => e.code)), "ok");
+    assert.equal(await page.evaluate(() => window.MuseNative.glasses.stopRecording().then((r) => r.seconds)), 1);
+  });
+
+  /** A page embedding the product the way /p/<slug> does, on another origin. */
+  async function embedded(t, allow) {
+    const { page, errors } = await open(t, { media: true });
+    await page.context().route("https://platform.test/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><iframe id="f" src="${ORIGIN}/" allow="${allow}" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" width="390" height="800"></iframe>`,
+      }),
+    );
+    await page.goto("https://platform.test/");
+    return { page, errors, frame: page.frameLocator("#f") };
+  }
+
+  test("embedded with no camera or microphone allowed, it starts on the sample and it works", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { liveFrameAllow } = await import("../../../lib/product-frame.ts");
+    const { frame } = await embedded(t, liveFrameAllow({ targets: ["web"] }));
+    await frame.locator("[data-source]").getByText("sample").waitFor();
+    await frame.getByRole("button", { name: "Hold to ask" }).click({ delay: 500 });
+    await frame.locator("[data-result]").waitFor();
+
+    // Choosing the phone anyway says what can help. Browser settings can't.
+    await frame.getByRole("radio", { name: "Phone" }).check({ force: true });
+    await frame.getByRole("button", { name: "Show the live view" }).click();
+    await frame.getByRole("alert").getByText("This device has no camera we can use. Try the sample.").waitFor();
+  });
+
+  test("a glasses product's embed allows the camera and microphone, so it starts on the phone", async (t) => {
+    if (!browser) return t.skip("Chromium isn't installed");
+    const { liveFrameAllow } = await import("../../../lib/product-frame.ts");
+    const { frame } = await embedded(t, liveFrameAllow({ targets: ["web", "glasses"] }));
+    await frame.locator("[data-source]").getByText("phone").waitFor();
+    await frame.getByRole("button", { name: "Show the live view" }).click();
+    await frame.getByRole("button", { name: "Hide the live view" }).waitFor();
+    await frame.getByRole("button", { name: "Hold to ask" }).click({ delay: 1200 });
+    await frame.locator("[data-result]").waitFor({ timeout: 15_000 });
+    assert.equal(await frame.locator("[data-result]").getAttribute("data-question-source"), "phone");
   });
 
   test("no bridge, no camera: it starts on the sample, and the browser speaks", async (t) => {

@@ -2,7 +2,9 @@
 // a gadget: the product runs the same code it runs in the Muse Muse iPhone app, and only the glasses are pretend. Model
 // calls stay real. Call installGlasses(page, { photos: ["fixtures/pov-1.jpg"], question: "fixtures/question.wav" })
 // before page.goto. The fake goes through not-registered, registering and connecting to ready, and every call to it
-// lands in test-results/glasses/calls.jsonl, which verify reads (glassesProblems in scripts/smoke-report.mjs).
+// lands in test-results/glasses/calls.jsonl, which verify reads (glassesProblems in scripts/smoke-report.mjs). It
+// refuses what the real app refuses (too long a recording, too big a photo, too much to speak, a second recording), so
+// a product that passes here doesn't fail in the app.
 //
 // It imports nothing from lib/glasses, so this file also typechecks in products without the glasses target. The types
 // below repeat lib/glasses/bridge.ts, and scripts/__tests__/glasses.test.mjs keeps the two the same.
@@ -36,6 +38,9 @@ export type FakeGlassesErrorCode =
   | "session_ended"
   | "timeout";
 
+/** What a call can fail with: the glasses' own codes, and the two the app's bridge adds for a call it refuses. */
+export type FakeBridgeErrorCode = FakeGlassesErrorCode | "bad_request" | "busy";
+
 export type FakeGlassesMethod = "status" | "connect" | "capturePhoto" | "preview" | "startRecording" | "stopRecording" | "speak";
 
 export interface InstallGlassesOptions {
@@ -57,7 +62,7 @@ export interface GlassesPatch {
   /** What status.error says from now on. null clears it. */
   error?: { code: FakeGlassesErrorCode; message: string } | null;
   /** The next call of this method fails with this code. null cancels it. */
-  fail?: { method: FakeGlassesMethod; code: FakeGlassesErrorCode; message?: string } | null;
+  fail?: { method: FakeGlassesMethod; code: FakeBridgeErrorCode; message?: string } | null;
   /** Paths of photos to use from now on. */
   photos?: string[];
 }
@@ -141,7 +146,8 @@ function fakeBridge(config: FakeConfig): void {
   // Saved first, since a test may pause the page's own timers (page.clock).
   const later = window.setTimeout.bind(window);
   const wait = (ms: number) => new Promise<void>((resolve) => later(resolve, ms));
-  const failure = (code: FakeGlassesErrorCode, message: string) => Object.assign(new Error(message), { code });
+  const failure = (code: FakeBridgeErrorCode, message: string) => Object.assign(new Error(message), { code });
+  const inRange = (value: unknown, min: number, max: number) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
 
   type Status = {
     state: FakeGlassesState;
@@ -159,7 +165,9 @@ function fakeBridge(config: FakeConfig): void {
   let photos = config.photos;
   let nextPhoto = 0;
   let recording = false;
-  let failNext: { method: FakeGlassesMethod; code: FakeGlassesErrorCode; message?: string } | null = null;
+  // Like the real recorder: it stops by itself at its limit, and stopRecording still returns what it heard.
+  let recordingEnds = 0;
+  let failNext: { method: FakeGlassesMethod; code: FakeBridgeErrorCode; message?: string } | null = null;
   const device = { ...config.device };
   const listeners = new Set<(s: Status) => void>();
 
@@ -210,7 +218,8 @@ function fakeBridge(config: FakeConfig): void {
         await wait(150);
         throw failure(code, message ?? "The glasses couldn't do that.");
       }
-      if (method === "speak") {
+      // Text the real app would refuse isn't speech, so it logs as a failure below.
+      if (method === "speak" && typeof params?.text === "string" && params.text && params.text.length <= 1000) {
         logged = true;
         report({ ...line, ok: true, ms: 0 });
       }
@@ -270,6 +279,7 @@ function fakeBridge(config: FakeConfig): void {
         "capturePhoto",
         o,
         async () => {
+          if (o?.maxSize !== undefined && !inRange(o.maxSize, 64, 1600)) throw failure("bad_request", "maxSize must be between 64 and 1600.");
           if (state !== "ready") throw notReady();
           if (!photos.length) throw failure("capture_failed", "installGlasses got no photos.");
           await wait(500);
@@ -277,30 +287,42 @@ function fakeBridge(config: FakeConfig): void {
         },
         (p) => ({ width: p.width, height: p.height }),
       ),
-    preview: (o: { show: boolean }) => call("preview", o, () => wait(100)),
+    preview: (o: { show: boolean }) =>
+      call("preview", o, async () => {
+        if (typeof o?.show !== "boolean") throw failure("bad_request", "preview needs show to be true or false.");
+        if (o.show && state !== "ready") throw failure("no_eligible_device", "Connect your glasses first.");
+        await wait(100);
+      }),
     startRecording: (o: { maxSeconds: number }) =>
       call("startRecording", o, async () => {
+        if (!inRange(o?.maxSeconds, 1, 60)) throw failure("bad_request", "maxSeconds must be between 1 and 60.");
+        if (recording && Date.now() < recordingEnds) throw failure("busy", "A recording is already running.");
         if (state !== "ready") throw notReady();
-        await wait(100);
         recording = true;
+        recordingEnds = Date.now() + o.maxSeconds * 1000;
+        await wait(100);
       }),
     stopRecording: () =>
       call(
         "stopRecording",
         undefined,
         async () => {
-          if (!recording) throw failure("capture_failed", "Nothing is recording.");
+          if (!recording) throw failure("bad_request", "Nothing is recording.");
           recording = false;
           await wait(200);
           return { ...config.question, source: "glasses" as const };
         },
         (r) => ({ seconds: r.seconds, source: r.source }),
       ),
-    speak: (text: string) => call("speak", { text }, () => wait(Math.min(1500, 200 + text.length * 12))),
+    speak: (text: string) =>
+      call("speak", { text }, async () => {
+        if (typeof text !== "string" || !text || text.length > 1000) throw failure("bad_request", "speak needs text of 1000 characters or fewer.");
+        await wait(Math.min(1500, 200 + text.length * 12));
+      }),
   };
 
   const page = window as unknown as Record<string, unknown>;
-  page.MuseNative = { version: 1, platform: "ios", capabilities: { glasses: true, frames: false }, glasses };
+  page.MuseNative = { version: 1, platform: "ios", capabilities: { glasses: true, frames: true }, glasses };
   page.__museGlassesFake = {
     set(patch: Omit<GlassesPatch, "photos"> & { photoUrls?: string[] }) {
       if (patch.battery !== undefined) device.battery = patch.battery;
