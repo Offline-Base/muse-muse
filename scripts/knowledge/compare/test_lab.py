@@ -101,6 +101,20 @@ def temp_config(mutate=None, d=None):
     return path
 
 
+def reset_final(raw):
+    """glimmer-final as it was before `lab.py add` (disabled, no sha256 or bytes)."""
+    for m in raw["models"]:
+        if m.get("name") == "glimmer-final":
+            m["enabled"] = False
+            m.pop("sha256", None)
+            m.pop("bytes", None)
+
+
+def pristine_config():
+    """The live models.json with glimmer-final reset, so these tests don't depend on whether the final model was added."""
+    return C.load_config(temp_config(reset_final))
+
+
 def machine(**kw):
     m = {"provider": "lambda", "id": "i-1", "type": "gpu_1x_gh200", "usd_per_hour": 2.29, "launched": iso(T0),
          "deadline": iso(T0 + dt.timedelta(hours=4)), "ended": None, "ip": "10.0.0.9", "status": "active", "ready": True,
@@ -112,8 +126,16 @@ def machine(**kw):
 # ---- config ----
 
 class TestConfig(unittest.TestCase):
+    def test_live_final_entry(self):
+        # After `lab.py add glimmer-final` the live entry carries the uploaded file's sha256 and size.
+        f = C.model("glimmer-final", C.load_config())
+        if f.get("sha256") is not None:
+            self.assertRegex(f["sha256"], r"^[0-9a-f]{64}$")
+            self.assertGreater(int(f["bytes"]), 10**9)
+
+
     def test_real_config_and_like_run(self):
-        cfg = C.load_config()
+        cfg = pristine_config()
         f = C.model("glimmer-final", cfg)
         self.assertEqual(f["file"], "glimmer-stage-b-r30b-Q4_K_M.gguf")
         self.assertEqual(f["source"]["s3_key"], "knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-Q4_K_M.gguf")
@@ -134,10 +156,11 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(C.bpw(f), 0.0)
 
     def test_replaces(self):
-        cfg = C.load_config()
+        cfg = pristine_config()
         self.assertNotIn("glimmer-final", [m["name"] for m in C.load_plan(cfg)])
 
         def enable(raw):
+            reset_final(raw)
             raw["models"][-1]["enabled"] = True
         cfg2 = C.load_config(temp_config(enable))
         names = [m["name"] for m in C.load_plan(cfg2)]
@@ -811,7 +834,7 @@ class TestLadder(unittest.TestCase):
     def run_ladder(self, total_mib, pool=600, broken=(), breaks=None):
         """broken: models that never start. breaks: {model: n}, a model that fails to start from attempt n on (1 is the
         first attempt), for any reason but memory."""
-        cfg = C.load_config()
+        cfg = pristine_config()
         plan = C.load_plan(cfg)
         running = {}
         attempts = [0]
