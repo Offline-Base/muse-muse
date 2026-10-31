@@ -86,6 +86,8 @@ export function SteerBox({ buildId }: { buildId: string }) {
     const error = await sendSteer(buildId, action === "stop" ? { action } : { action, text });
     inFlight.current = false;
     setBusy(null);
+    // Send can be gone or was disabled, so the note takes focus back, unless the owner has moved on.
+    if (action !== "stop" && (document.activeElement === document.body || textarea.current?.form?.contains(document.activeElement))) textarea.current?.focus();
     if (error) {
       setResult({ ok: false, text: error });
       return;
