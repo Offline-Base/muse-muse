@@ -5,7 +5,10 @@ import {
   DOCS_MAX_TOOL_CALLS,
   OUTPUT_TOKEN_CLAMPS,
 } from "@/lib/docs/proxy/policy";
+import { isBuiltInTool } from "@/lib/gateway/search";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
+
+export { isBuiltInTool };
 
 /**
  * What the proxy changes in a request before it goes to Meta, each change said in x-docs-note: Muse Spark 1.3 runs as
@@ -124,12 +127,6 @@ function clampImageCount(value: unknown, notes: string[]): number | string | und
   }
   notes.push(`Set n to 1: ${shown(value)} isn't a count of images from 1 to ${DOCS_IMAGES_MAX_N}.`);
   return 1;
-}
-
-/** Tool types Meta runs itself, which max_tool_calls counts (tool-calling, "max_tool_calls limits built-in tools only"). */
-export function isBuiltInTool(tool: unknown): boolean {
-  const type = (tool as { type?: unknown } | null)?.type;
-  return typeof type === "string" && (type.startsWith("web_search") || type === "tool_search");
 }
 
 /**

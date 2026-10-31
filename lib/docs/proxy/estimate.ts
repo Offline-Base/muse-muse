@@ -5,10 +5,17 @@ import {
   OUTPUT_TOKEN_CLAMPS,
   WEB_SEARCH_USD_PER_QUERY,
 } from "@/lib/docs/proxy/policy";
-import { isBuiltInTool } from "@/lib/docs/proxy/rewrite";
-import { DEFAULT_OUTPUT_TOKENS, estimateCost, MAX_OUTPUT_TOKENS, MEDIA_PART_TOKENS } from "@/lib/gateway/estimate";
+import { DEFAULT_OUTPUT_TOKENS, estimateCost, inlineTokens, inputTokensOf, MAX_OUTPUT_TOKENS } from "@/lib/gateway/estimate";
 import type { ParsedRequest } from "@/lib/gateway/extract";
+import {
+  isBuiltInTool,
+  PREVIOUS_RESPONSE_TOKENS,
+  SEARCH_CONTEXT_TOKENS,
+  searchesAllowed as searchesUpTo,
+} from "@/lib/gateway/search";
 import { usageCost } from "@/lib/meta/pricing";
+
+export { inlineTokens, PREVIOUS_RESPONSE_TOKENS, SEARCH_CONTEXT_TOKENS };
 
 /**
  * A docs call's cost estimate, made before it is forwarded: what the budgets are checked against and what is reserved
@@ -19,139 +26,11 @@ import { usageCost } from "@/lib/meta/pricing";
  * dollars, since output is capped but input is only capped by the 4.5 MB body.
  */
 
-const CHARS_PER_TOKEN = 4;
-/** Input tokens assumed for the stored conversation a previous_response_id brings along. */
-export const PREVIOUS_RESPONSE_TOKENS = 10_000;
 /**
  * Searches assumed when web_search is on and max_tool_calls doesn't say fewer. The proxy sets max_tool_calls to this
  * whenever a built-in tool is on (lib/docs/proxy/rewrite.ts), so it is the most a call can run.
  */
 export const SEARCHES_ASSUMED = DOCS_MAX_TOOL_CALLS;
-/** Input tokens each search's results add. */
-export const SEARCH_CONTEXT_TOKENS = 8_000;
-
-/** Media parts in each protocol, mapped to the Responses part whose token guess they share. */
-const MEDIA_TYPES: Record<string, keyof typeof MEDIA_PART_TOKENS> = {
-  input_image: "input_image",
-  input_file: "input_file",
-  input_video: "input_video",
-  input_audio: "input_audio",
-  // Chat Completions content parts.
-  image_url: "input_image",
-  file: "input_file",
-  video_url: "input_video",
-  // Messages content blocks.
-  image: "input_image",
-  document: "input_file",
-  video: "input_video",
-};
-
-interface Shape {
-  chars: number;
-  mediaTokens: number;
-}
-
-/** File types by extension, for base64 file_data that comes with only a filename. */
-const MIME_BY_EXTENSION: Record<string, string> = {
-  pdf: "application/pdf",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  webp: "image/webp",
-  gif: "image/gif",
-  mp4: "video/mp4",
-  mov: "video/quicktime",
-  webm: "video/webm",
-  wav: "audio/wav",
-  mp3: "audio/mpeg",
-};
-
-/** Bytes a base64 string decodes to. */
-function base64Bytes(chars: number): number {
-  return Math.floor(chars * 0.75);
-}
-
-/**
- * Input tokens for inline media of a type. Images, video and audio get the gateway's guesses per part, whatever their
- * size. A PDF is read page by page: about a page per 50 KB at about a thousand tokens a page, and at least the
- * gateway's guess. Text, JSON and anything unknown is read as text.
- */
-export function inlineTokens(mime: string, bytes: number): number {
-  const type = mime.toLowerCase();
-  if (type.startsWith("image/")) return MEDIA_PART_TOKENS.input_image;
-  if (type.startsWith("video/")) return MEDIA_PART_TOKENS.input_video;
-  if (type.startsWith("audio/")) return MEDIA_PART_TOKENS.input_audio;
-  if (type === "application/pdf") return Math.max(MEDIA_PART_TOKENS.input_file, Math.ceil(bytes / 50));
-  return Math.ceil(bytes / CHARS_PER_TOKEN);
-}
-
-function dataUrlTokens(url: string): number {
-  const comma = url.indexOf(",");
-  if (comma < 0) return Math.ceil(url.length / CHARS_PER_TOKEN);
-  const header = url.slice("data:".length, comma);
-  const payload = url.length - comma - 1;
-  const bytes = header.includes(";base64") ? base64Bytes(payload) : payload;
-  return inlineTokens(header.split(";")[0] || "text/plain", bytes);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Walks a body, adding text characters and media tokens to `shape`. Returns true when the value held inline media, so
- * a media part that carries its bytes isn't also counted by its type. Parts that point at media (a URL, a file id) get
- * the gateway's guess for their type.
- */
-function walk(value: unknown, shape: Shape, depth = 0): boolean {
-  if (depth > 64) return false;
-  if (typeof value === "string") {
-    if (value.startsWith("data:")) {
-      shape.mediaTokens += dataUrlTokens(value);
-      return true;
-    }
-    shape.chars += value.length;
-    return false;
-  }
-  if (Array.isArray(value)) {
-    let inline = false;
-    for (const v of value) inline = walk(v, shape, depth + 1) || inline;
-    return inline;
-  }
-  if (!isObject(value)) return false;
-  let inline = false;
-  const skip = new Set<string>();
-  // Base64 without a data: prefix, in each protocol's shape: Messages sources, Responses file_data, Chat input_audio.
-  if (value.type === "base64" && typeof value.data === "string") {
-    shape.mediaTokens += inlineTokens(String(value.media_type ?? ""), base64Bytes(value.data.length));
-    skip.add("data");
-    inline = true;
-  }
-  if (typeof value.file_data === "string" && !value.file_data.startsWith("data:")) {
-    const extension = String(value.filename ?? "").split(".").pop()?.toLowerCase() ?? "";
-    shape.mediaTokens += inlineTokens(MIME_BY_EXTENSION[extension] ?? "", base64Bytes(value.file_data.length));
-    skip.add("file_data");
-    inline = true;
-  }
-  if (isObject(value.input_audio) && typeof value.input_audio.data === "string") {
-    shape.mediaTokens += MEDIA_PART_TOKENS.input_audio;
-    skip.add("input_audio");
-    inline = true;
-  }
-  for (const [k, v] of Object.entries(value)) if (!skip.has(k)) inline = walk(v, shape, depth + 1) || inline;
-  const type = value.type;
-  if (typeof type === "string" && type in MEDIA_TYPES && !inline) {
-    shape.mediaTokens += MEDIA_PART_TOKENS[MEDIA_TYPES[type]];
-  }
-  return inline;
-}
-
-/** Input tokens for these parts of a body. */
-function inputTokensOf(...parts: unknown[]): number {
-  const shape: Shape = { chars: 0, mediaTokens: 0 };
-  for (const part of parts) walk(part, shape);
-  return Math.ceil(shape.chars / CHARS_PER_TOKEN) + shape.mediaTokens;
-}
 
 function outputTokensOf(value: unknown): number {
   const n = typeof value === "string" ? Number(value) : value;
@@ -165,14 +44,7 @@ function tokensCost(model: string, inputTokens: number, outputTokens = 0): numbe
 
 /** Searches a request may run: none without a web_search tool, else max_tool_calls (when lower) or SEARCHES_ASSUMED. */
 export function searchesAllowed(json: Record<string, unknown>): number {
-  const tools = Array.isArray(json.tools) ? json.tools : [];
-  const searching = tools.some((t) => {
-    const type = (t as { type?: unknown } | null)?.type;
-    return typeof type === "string" && type.startsWith("web_search");
-  });
-  if (!searching) return 0;
-  const cap = Number(json.max_tool_calls);
-  return Number.isFinite(cap) && cap >= 1 ? Math.min(Math.floor(cap), SEARCHES_ASSUMED) : SEARCHES_ASSUMED;
+  return searchesUpTo(json, SEARCHES_ASSUMED);
 }
 
 function searchCost(model: string, json: Record<string, unknown>): number {
@@ -216,7 +88,8 @@ function chatOrMessagesEstimate(model: string, json: Record<string, unknown>, ou
  * and web search.
  */
 function responsesEstimate(model: string, parsed: Extract<ParsedRequest, { kind: "json" }>, bodyBytes: number): number {
-  const gateway = estimateCost("responses", parsed, bodyBytes);
+  // Searches are added below, once, so the gateway's figure leaves them out.
+  const gateway = estimateCost("responses", parsed, bodyBytes, 0);
   const json = parsed.json;
   const tokenPriced = tokensCost(model, 1_000_000) > 0;
   if (!tokenPriced) return gateway;

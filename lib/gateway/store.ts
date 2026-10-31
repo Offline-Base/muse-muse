@@ -33,6 +33,49 @@ export async function hitRateLimits(keys: string[], windowStart: Date): Promise<
   return Object.fromEntries(rows.map((r) => [r.key, r.count]));
 }
 
+/**
+ * Adds `amount` to a counter in one statement, only when the total stays within `limit`, and returns the new total
+ * (or null when it wouldn't fit). The upsert locks the row, so two calls can't both take the last of a budget.
+ */
+export async function reserveCounter(
+  key: string,
+  windowStart: Date,
+  amount: number,
+  limit: number,
+): Promise<number | null> {
+  const at = windowStart.toISOString();
+  const rows = await db()
+    .insert(schema.rateLimits)
+    .select(sql`select ${key}, ${at}::timestamptz, ${amount}::int where ${amount}::int <= ${limit}::int`)
+    .onConflictDoUpdate({
+      target: [schema.rateLimits.key, schema.rateLimits.windowStart],
+      set: { count: sql`${schema.rateLimits.count} + ${amount}::int` },
+      setWhere: sql`${schema.rateLimits.count} + ${amount}::int <= ${limit}::int`,
+    })
+    .returning({ count: schema.rateLimits.count });
+  return rows.length ? rows[0].count : null;
+}
+
+/** Adds `delta` to a counter (negative gives back), never below zero. Creates the row when the window has none. */
+export async function adjustCounter(key: string, windowStart: Date, delta: number): Promise<void> {
+  await db()
+    .insert(schema.rateLimits)
+    .values({ key, windowStart, count: Math.max(0, delta) })
+    .onConflictDoUpdate({
+      target: [schema.rateLimits.key, schema.rateLimits.windowStart],
+      set: { count: sql`greatest(${schema.rateLimits.count} + ${delta}::int, 0)` },
+    });
+}
+
+export async function counterValue(key: string, windowStart: Date): Promise<number> {
+  const [row] = await db()
+    .select({ count: schema.rateLimits.count })
+    .from(schema.rateLimits)
+    .where(and(eq(schema.rateLimits.key, key), eq(schema.rateLimits.windowStart, windowStart)))
+    .limit(1);
+  return row?.count ?? 0;
+}
+
 /** Start of the in-flight bucket that `now` falls in. */
 export function inFlightBucket(now: Date, bucketMs: number = DEFAULT_LIMITS.inFlightBucketMs): Date {
   return new Date(Math.floor(now.getTime() / bucketMs) * bucketMs);

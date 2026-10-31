@@ -49,8 +49,7 @@ export const OUTPUT_TOKEN_CLAMPS: Readonly<Record<string, number>> = {
 /** Images per images/generations or images/edits call. Meta allows 10; each costs $0.01. */
 export const DOCS_IMAGES_MAX_N = 2;
 
-/** Meta bills web search at $2.50 per 1,000 queries on top of tokens (pricing-rate-limits, "Token pricing notes"). */
-export const WEB_SEARCH_USD_PER_QUERY = 0.0025;
+export { WEB_SEARCH_USD_PER_QUERY } from "@/lib/meta/pricing";
 
 /**
  * Built-in tool calls (web searches) one Responses call may make. Meta enforces no maximum of its own (tool-calling,

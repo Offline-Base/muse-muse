@@ -54,6 +54,25 @@ export const DEFAULT_LIMITS = {
 } as const;
 
 /**
+ * The allowedModels entry that marks a product built as an agent. It is not a model, so no model check ever matches it.
+ * Existing tokens don't have it: it only raises limits, and nothing requires it.
+ */
+export const AGENT_MARKER = "agent";
+
+export function hasAgentMarker(allowedModels: readonly string[]): boolean {
+  return allowedModels.includes(AGENT_MARKER);
+}
+
+/**
+ * Built-in tool calls (web searches, tool search) one Responses call may make. Meta has no maximum of its own
+ * (tool-calling, "max_tool_calls limits built-in tools only"), and each search is billed and adds input.
+ */
+export const BUILTIN_TOOL_CALL_CAPS = { build: 2, live: 5, agent: 8 } as const;
+
+/** Limits that differ for tokens with the agent marker. An agent's loop runs tools and model calls side by side. */
+export const AGENT_LIMITS = { perTokenInFlight: 8 } as const;
+
+/**
  * The build token's budget: the same for every build, whatever models the product may call (DEFAULT_LIMITS). The
  * argument is ignored and kept so older callers still compile.
  */
@@ -75,6 +94,15 @@ export function liveTokenDailyBudgetFor(estimatedCostPerRunUsd: number | null | 
 /** Header a product sets to its end user's IP so the gateway can rate limit per person. Never used for auth. */
 export const CLIENT_IP_HEADER = "x-musemuse-client-ip";
 
+/** Header a product sets to name one agent run, so its turns, tool calls and dollars are capped together. */
+export const RUN_HEADER = "x-musemuse-run-id";
+/** Header a product sets to its visitor's id, used only for the hashed safety_identifier. Never used for auth. */
+export const VISITOR_HEADER = "x-musemuse-visitor";
+/** Header a product sets to the owner session the platform signed for its owner. */
+export const OWNER_HEADER = "x-musemuse-owner";
+/** Reply header saying what the gateway changed in the request, in a sentence or two. */
+export const NOTE_HEADER = "x-musemuse-note";
+
 /** Hosts the asr/transcribe JSON extension may download audio from (public Vercel Blob). */
 export const AUDIO_URL_HOST_SUFFIX = ".public.blob.vercel-storage.com";
 
@@ -83,10 +111,25 @@ export const AUDIO_URL_HOST_SUFFIX = ".public.blob.vercel-storage.com";
  *   1. Allowed endpoint.
  *   2. Bearer product token, looked up by hash. The product must not be disabled or failed.
  *   3. Model in the token's allowlist and the endpoint's.
- *   4. Per-token and per-IP rate limits, then an in-flight slot (at most perTokenInFlight calls per token).
- *   5. Token daily budget and platform daily cap, counting this call's estimated cost and the estimates of calls still
+ *   4. Responses requests are rewritten (lib/gateway/rewrite.ts): background refused, agent tokens kept off Contributor,
+ *      max_tool_calls clamped and a hashed safety_identifier added. Changes are said in x-musemuse-note.
+ *   5. Per-token and per-IP rate limits, then an in-flight slot (at most perTokenInFlight calls per token, or
+ *      AGENT_LIMITS.perTokenInFlight with the agent marker).
+ *   6. Per-run caps, when the token has them and the request names a run (lib/gateway/runs.ts).
+ *   7. Token daily budget and platform daily cap, counting this call's estimated cost and the estimates of calls still
  *      running. The estimate is recorded as a usage row before forwarding.
- *   6. Forward to UPSTREAM_BASE_URL with MODEL_API_KEY and stream the response through.
- *   7. Replace the estimate with the metered usage, then give the slot back.
+ *   8. Forward to UPSTREAM_BASE_URL with MODEL_API_KEY and stream the response through.
+ *   9. Replace the estimate with the metered usage, search fees included, settle the run, then give the slot back.
  */
-export const GATEWAY_CHECKS = ["endpoint", "token", "allowlist", "rate_limit", "in_flight", "budget", "forward", "meter"] as const;
+export const GATEWAY_CHECKS = [
+  "endpoint",
+  "token",
+  "allowlist",
+  "rewrite",
+  "rate_limit",
+  "in_flight",
+  "run",
+  "budget",
+  "forward",
+  "meter",
+] as const;
