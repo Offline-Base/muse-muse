@@ -119,8 +119,17 @@ async function readPin(lane, region, env) {
   return JSON.parse(String(reply.stdout));
 }
 
-async function fetchBundle(pin, { root, tempDir, env }) {
-  if (!pin.url.startsWith("s3:")) return downloadFile(pin, { cacheDir: path.join(root, "data", "cache"), tempDir });
+/**
+ * Where a bundle waits between its checksum and being unpacked. On Windows this runs as SYSTEM and the lab user can change
+ * anything in data, so a bundle checked there could be swapped before it's unpacked, and the next control call would run the
+ * swapped code as SYSTEM. So it's a folder only SYSTEM and Administrators can write to (setup/windows.ps1).
+ */
+export function updateTempDir(root, platform) {
+  return platform === "win32" ? path.win32.join(root, "control", "update") : path.join(root, "data", "update");
+}
+
+async function fetchBundle(pin, { tempDir, env }) {
+  if (!pin.url.startsWith("s3:")) return downloadFile(pin, { cacheDir: tempDir, tempDir });
   const file = path.join(tempDir, "bundle.tgz");
   const copied = await run(s3CopyCommand(pin.url, file, env.AWS_REGION ?? "us-east-1"), { timeoutMs: 120_000, env });
   if (copied.code !== 0) throw new Error("Couldn't fetch the bundle from S3.");
@@ -133,9 +142,9 @@ async function update(root, env, platform) {
   const problem = bundleProblem(pin);
   if (problem) throw new Error(problem);
   const release = path.join(root, "releases", pin.version);
-  const tempDir = path.join(root, "data", "update");
+  const tempDir = updateTempDir(root, platform);
   await mkdir(tempDir, { recursive: true });
-  const tarball = await fetchBundle(pin, { root, tempDir, env });
+  const tarball = await fetchBundle(pin, { tempDir, env });
   if ((await sha256Of(tarball)) !== pin.sha256) throw new Error("The bundle didn't match its checksum.");
   await rm(release, { recursive: true, force: true });
   await mkdir(release, { recursive: true });

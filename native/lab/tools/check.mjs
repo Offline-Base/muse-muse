@@ -171,8 +171,15 @@ export function windowsTaskScript({ cmdFile, user = "musemuse" }) {
   ].join("; ");
 }
 
+/** The temporary agent runs as the lab user, who can only change C:\\MuseLab\\data and logs, so it needs its own root opened up. */
+export function windowsRootGrant(root, user = "musemuse") {
+  return ["icacls", root, "/grant", `${user}:(OI)(CI)M`, "/T", "/Q"];
+}
+
 /** Starts the temporary agent as the lab user in session 1, the way the real logon task does. */
 async function startInWindowsSession({ env, root }) {
+  const granted = await run(windowsRootGrant(root), { timeoutMs: 30_000 });
+  if (granted.code !== 0) throw new Error(`icacls exited with ${granted.code}: ${granted.stderr}`);
   const log = path.join(root, "agent.log");
   const lines = ["@echo off", ...Object.entries(env).map(([key, value]) => `set "${key}=${value}"`)];
   lines.push('set "PATH=C:\\Program Files\\nodejs;C:\\Program Files\\Amazon\\AWSCLIV2;%PATH%"');

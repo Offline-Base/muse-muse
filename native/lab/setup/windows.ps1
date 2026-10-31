@@ -36,7 +36,7 @@ if (-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
   throw "Run this in an elevated PowerShell."
 }
 
-foreach ($dir in @($Root, "$Root\data", "$Root\logs", "$Root\releases", "$Root\tools", "$Root\downloads")) {
+foreach ($dir in @($Root, "$Root\data", "$Root\logs", "$Root\releases", "$Root\tools", "$Root\downloads", "$Root\control")) {
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
@@ -83,6 +83,12 @@ if (Get-LocalUser -Name $LabUser -ErrorAction SilentlyContinue) {
   New-LocalUser -Name $LabUser -Password $secure -PasswordNeverExpires -AccountNeverExpires -Description "Muse Muse lab agent" | Out-Null
   Add-LocalGroupMember -Group "Users" -Member $LabUser -ErrorAction SilentlyContinue
 }
+# The control document runs what's under this folder as SYSTEM, so the lab user only gets to change data and logs. Left
+# alone, a new folder on C: inherits a grant that lets any user add files to it.
+& icacls $Root /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "Users:(OI)(CI)RX" /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions on $Root." }
+& icacls "$Root\control" /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Couldn't set the permissions on $Root\control." }
 $acl = "${LabUser}:(OI)(CI)M"
 & icacls "$Root\data" /grant $acl /T /Q | Out-Null
 & icacls "$Root\logs" /grant $acl /T /Q | Out-Null
@@ -163,8 +169,13 @@ Set-ItemProperty -Path $winlogon -Name DefaultDomainName -Value $env:COMPUTERNAM
 Remove-ItemProperty -Path $winlogon -Name DefaultPassword -ErrorAction SilentlyContinue
 
 Step "The agent"
-$release = "$Root\releases\$Version"
-if ($Here -ne $release) {
+# Run from an installed release, it stays on that one, so a second run doesn't move the box off its pinned bundle.
+$source = @((Get-Item $Here).Target)[0]
+if (-not $source) { $source = $Here }
+if ($source -like "$Root\releases\*") {
+  $release = $source
+} else {
+  $release = "$Root\releases\$Version"
   if (Test-Path $release) { Remove-Item $release -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $release | Out-Null
   Get-ChildItem $Here -Force | Where-Object { $_.Name -notin @("__tests__", "node_modules") } | Copy-Item -Destination $release -Recurse -Force

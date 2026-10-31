@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
-import { agentEnv, buildJob, checkPlist, createStandIn, windowsTaskScript } from "../tools/check.mjs";
+import { agentEnv, buildJob, checkPlist, createStandIn, windowsRootGrant, windowsTaskScript } from "../tools/check.mjs";
 import { KINDS, LANE_OF, validateJob } from "../lib/validate.mjs";
 
 const origin = "http://127.0.0.1:4100";
@@ -25,6 +25,9 @@ describe("the check tool", () => {
     assert.equal(env.MUSE_LAB_IDLE_MINUTES, "0");
     assert.equal(env.MUSE_LAB_KINDS, "desktop_windows");
     assert.equal(env.MUSE_LAB_LANE, "windows");
+  });
+  test("on Windows the temporary agent's root is opened to the lab user, and only that folder", () => {
+    assert.deepEqual(windowsRootGrant("C:\\MuseLab\\data\\c1\\root"), ["icacls", "C:\\MuseLab\\data\\c1\\root", "/grant", "musemuse:(OI)(CI)M", "/T", "/Q"]);
   });
   test("the LaunchAgent runs in the GUI session and escapes its values", () => {
     const plist = checkPlist({ node: "/n", root: "/r&s", env: { A: "b<c" } });

@@ -233,6 +233,7 @@ describe("ios_sim", () => {
       if (launchedAt === null || h.ctx.now() < launchedAt + reportAfterMs) return null;
       return { ...GOOD_REPORT, at: new Date(launchedAt + reportAfterMs).toISOString() };
     };
+    h.lastReportAt = () => new Date(launchedAt + reportAfterMs).toISOString();
     return h;
   }
 
@@ -247,6 +248,78 @@ describe("ios_sim", () => {
     const result = await runIosSim(h.ctx);
     assert.ok(result.evaluation.checks.some((c) => c.id === "no_timeout" && c.ok === false));
     assert.ok(h.ctx.now() - 1_000_000 < 90_000, "it stopped waiting before then");
+  });
+
+  test("a slow page gets its screenshots and the end of its recording after it reports", async () => {
+    // Oct 31, on the real Mac: the report came 39 s after launch, the old schedule took its shots at 5 s and 9.5 s, and a
+    // loaded page failed as blank.
+    const h = slowReport(39_000);
+    const shots = [];
+    let stoppedAt = null;
+    const exec = h.ctx.exec;
+    h.ctx.exec = async (argv, opts) => {
+      if (argv.includes("screenshot")) shots.push(h.ctx.now());
+      return exec(argv, opts);
+    };
+    const startProc = h.ctx.startProc;
+    h.ctx.startProc = (argv, opts) => {
+      const proc = startProc(argv, opts);
+      return { ...proc, stop: async () => ((stoppedAt = h.ctx.now()), proc.stop()) };
+    };
+    const compose = h.ctx.compose;
+    let kept = null;
+    h.ctx.compose = async (args) => ((kept = args.keepLastSeconds), compose(args));
+    const launchAt = () => Date.parse(h.lastReportAt());
+    const result = await runIosSim(h.ctx);
+    assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
+    assert.equal(shots.length, 2);
+    for (const at of shots) assert.ok(at >= launchAt(), "a screenshot came before the report");
+    assert.ok(stoppedAt >= shots.at(-1), "the recording stopped before the last screenshot");
+    assert.equal(kept, 10, "the clip is the end of the recording, not its first seconds");
+  });
+
+  test("a launch that takes 16 s doesn't eat into the shell's 60 s watchdog", async () => {
+    const h = makeCtx("ios_sim", { answer: unpackOnly });
+    let opened = null;
+    const exec = h.ctx.exec;
+    h.ctx.exec = async (argv, opts) => {
+      const reply = await exec(argv, opts);
+      if (argv.includes("launch")) {
+        await h.ctx.sleep(16_000);
+        opened = h.ctx.now();
+      }
+      return reply;
+    };
+    h.ctx.fetchSelftest = async () => (opened !== null && h.ctx.now() >= opened + 60_000 ? { ...GOOD_REPORT, at: new Date(opened + 60_000).toISOString() } : null);
+    assert.equal((await runIosSim(h.ctx)).evaluation.passed, true);
+  });
+
+  test("the wait for a report leaves the job time to finish", async () => {
+    const h = makeCtx("ios_sim", { answer: unpackOnly, job: { input: { limitSeconds: 90 } } });
+    const start = h.ctx.now();
+    await runIosSim(h.ctx);
+    assert.ok(h.ctx.now() - start < 40_000, String(h.ctx.now() - start));
+  });
+
+  test("the system log isn't read when the platform already has the report", async () => {
+    const h = makeCtx("ios_sim", { platformReport: datedAfterLaunch, answer: unpackOnly });
+    await runIosSim(h.ctx);
+    assert.equal(h.ran(" log ").length, 0);
+  });
+
+  test("a slow launch gets 120 s, and a failed one says why in the job's log", async () => {
+    const h = makeCtx("ios_sim", {
+      answer: (argv, opts, reply) => {
+        if (argv[0] === "tar") return mkdirSync(path.join(argv.at(-1), "A.app"), { recursive: true }), reply();
+        if (argv.includes("launch")) {
+          assert.equal(opts.timeoutMs, 120_000);
+          return reply({ code: null, timedOut: true, stderr: "stuck" });
+        }
+        return undefined;
+      },
+    });
+    await runIosSim(h.ctx);
+    assert.match(h.lines.join("\n"), /simctl launch timed out: stuck/);
   });
 
   test("a job's device name goes in the caption and doesn't pick the simulator", async () => {
@@ -337,6 +410,72 @@ describe("android_emu", () => {
     assert.equal(h.ctx.composedCaption, "On an Android emulator (Pixel 7, Android 15)");
     assert.ok(result.files.some((f) => f.name === "logcat.txt"));
     assert.equal(result.facts.loadMs, GOOD_REPORT.loadMs);
+  });
+
+  test("what adb installs has a name ending in .apk", async () => {
+    // Oct 31, on the real Mac: adb refused the download cache's file, which is named by its checksum, so every job failed.
+    const h = makeCtx("android_emu", { answer: android() });
+    h.ctx.download = async () => {
+      const file = path.join(h.root, "087c17bc");
+      writeFileSync(file, "the apk");
+      return file;
+    };
+    await runAndroidEmu(h.ctx);
+    const apk = h.ran("install -r -g")[0].at(-1);
+    assert.match(apk, /\.apk$/);
+    assert.equal(readFileSync(apk, "utf8"), "the apk");
+  });
+
+  test("a slow page gets its screenshots and the end of its recording after it reports", async () => {
+    const base = android({ report: null });
+    let launchedAt = null;
+    const shots = [];
+    let stopAt = null;
+    let kept = null;
+    const h = makeCtx("android_emu", {
+      answer: (argv, opts, reply) => {
+        const text = argv.join(" ");
+        if (text.includes("am start")) launchedAt = h.ctx.now();
+        if (text.includes("screencap")) shots.push(h.ctx.now());
+        if (text.includes("pkill -INT screenrecord")) stopAt = h.ctx.now();
+        if (text.includes("logcat -d") && !text.includes("-b crash") && launchedAt !== null && h.ctx.now() >= launchedAt + 39_000) {
+          return reply({ stdout: `I ReactNativeJS: MUSE_SELFTEST ${JSON.stringify(GOOD_REPORT)}\n` });
+        }
+        return base(argv, opts, reply);
+      },
+    });
+    const compose = h.ctx.compose;
+    h.ctx.compose = async (args) => ((kept = args.keepLastSeconds), compose(args));
+    const result = await runAndroidEmu(h.ctx);
+    assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
+    assert.equal(shots.length, 2);
+    for (const at of shots) assert.ok(at >= launchedAt + 39_000, "a screenshot came before the report");
+    assert.ok(stopAt >= shots.at(-1), "the recording stopped before the last screenshot");
+    const limit = h.started.find((s) => s.argv.join(" ").includes("screenrecord")).argv;
+    assert.match(limit.join(" "), /--time-limit 170\b/, "it has to outlast the wait, within screenrecord's 180 s");
+    assert.equal(kept, 10);
+  });
+
+  test("a product APK with a slow page gets time to draw, and a blank one still fails", async () => {
+    const flat = Buffer.alloc(128 * 8, 255);
+    const drawAfter = (ms) => {
+      let launchedAt = null;
+      const base = android({ report: null });
+      const h = makeCtx("android_emu", {
+        job: { input: { app: { kind: "apk", variant: "product", version: "1", url: "https://a.public.blob.vercel-storage.com/p.apk", sha256: SHA, packageName: "ai.musemuse.p123" }, selftest: null } },
+        answer: (argv, opts, reply) => {
+          const text = argv.join(" ");
+          if (text.includes("am start")) launchedAt = h.ctx.now();
+          if (text.includes("rawvideo") && h.ctx.now() < launchedAt + ms) return reply({ stdout: flat });
+          return base(argv, opts, reply);
+        },
+      });
+      return h;
+    };
+    const slow = await runAndroidEmu(drawAfter(25_000).ctx);
+    assert.equal(slow.evaluation.passed, true, JSON.stringify(slow.evaluation.reasons));
+    const blank = await runAndroidEmu(drawAfter(900_000).ctx);
+    assert.ok(blank.evaluation.checks.some((c) => c.id === "not_blank" && c.ok === false));
   });
 
   test("starts the emulator detached when it's down, so it outlives the job", async () => {
@@ -615,7 +754,7 @@ describe("glasses_sim", () => {
   const lines = (ctx, steps) => steps.map(([step, detail]) => JSON.stringify({ step, ok: step !== "timeout" && step !== "error", detail, at: launchedAt(ctx) })).join("\n");
   const FULL = [["start"], ["connect", "mock"], ["primary"], ["result", "A red mug"]];
 
-  function glasses(getH, { steps = FULL, linkWorks = true } = {}) {
+  function glasses(getH, { steps = FULL } = {}) {
     return (argv, _o, reply) => {
       const text = argv.join(" ");
       if (argv[0] === "tar") {
@@ -626,23 +765,23 @@ describe("glasses_sim", () => {
         const h = getH();
         writeFileSync(path.join(h.container, "Documents", "autopilot.jsonl"), lines(h.ctx, steps));
       };
-      if (text.includes("openurl") && linkWorks) write();
       if (text.includes("-museRun")) write();
       return undefined;
     };
   }
 
-  test("drives the autopilot by deep link and is informational", async () => {
+  test("drives the autopilot by launch arguments and is informational", async () => {
     let h;
     h = makeCtx("glasses_sim", { answer: glasses(() => h) });
     const result = await runGlassesSim(h.ctx);
     assert.equal(result.evaluation.informational, true);
     assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
-    h.order("privacy", "launch", "openurl");
-    const link = new URL(h.ran("openurl")[0].at(-1));
-    assert.equal(link.searchParams.get("run"), "autopilot");
-    assert.equal(link.searchParams.get("mock"), "1");
-    assert.equal(result.facts.usedLaunchArgs, false);
+    h.order("privacy", "launch");
+    assert.equal(h.ran("openurl").length, 0, "the system stops a link at a dialog nobody can answer");
+    const launch = h.ran("launch")[0];
+    assert.equal(launch[launch.indexOf("-museRun") + 1], "autopilot");
+    assert.equal(launch[launch.indexOf("-museMock") + 1], "1");
+    assert.equal(launch[launch.indexOf("-museUrl") + 1], `${ORIGIN}/`);
     assert.match(h.ctx.composedCaption, /simulated Meta glasses/);
   });
 
@@ -655,18 +794,8 @@ describe("glasses_sim", () => {
     assert.ok(existsSync(path.join(h.container, "Documents", MOCK_PHOTO)), "the photo is where the shell looks");
   });
 
-  test("falls back to launch arguments when the link goes nowhere, and says so", async () => {
-    let h;
-    h = makeCtx("glasses_sim", { answer: glasses(() => h, { linkWorks: false }) });
-    const result = await runGlassesSim(h.ctx);
-    assert.equal(result.facts.usedLaunchArgs, true);
-    assert.equal(h.ran("-museRun").length, 1);
-    assert.ok(result.warnings.some((w) => /launch arguments/.test(w)));
-    assert.equal(result.evaluation.passed, true);
-  });
-
-  /** The first checkpoint lands this long after whichever launch came last, as it does when the page has loaded. */
-  function slowLoad(loadMs, { linkWorks = true } = {}) {
+  /** The first checkpoint lands this long after the launch, as it does when the page has loaded. */
+  function slowLoad(loadMs) {
     let h;
     let launchedAt = null;
     h = makeCtx("glasses_sim", {
@@ -675,8 +804,7 @@ describe("glasses_sim", () => {
           mkdirSync(path.join(argv.at(-1), "Glasses.app"), { recursive: true });
           return reply();
         }
-        const text = argv.join(" ");
-        if (linkWorks ? text.includes("openurl") : text.includes("-museRun")) launchedAt = h.ctx.now();
+        if (argv.join(" ").includes("-museRun")) launchedAt = h.ctx.now();
         return undefined;
       },
     });
@@ -692,21 +820,70 @@ describe("glasses_sim", () => {
     return h;
   }
 
-  test("a page that takes 45 s to load isn't killed as if the link had failed", async () => {
-    const h = slowLoad(45_000);
-    const result = await runGlassesSim(h.ctx);
-    assert.equal(h.ran("-museRun").length, 0);
-    assert.equal(result.facts.usedLaunchArgs, false);
+  test("a page that takes 45 s to load still passes", async () => {
+    const result = await runGlassesSim(slowLoad(45_000).ctx);
     assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
-    assert.ok(!result.warnings.some((w) => /launch arguments/.test(w)));
+    assert.ok(result.evaluation.loadMs <= 46_000, String(result.evaluation.loadMs));
   });
 
-  test("after a real fallback, the load limit counts from the new launch", async () => {
-    const h = slowLoad(40_000, { linkWorks: false });
+  test("a launch that hits its limit says so in the job's log", async () => {
+    // Oct 31, on the real Mac: simctl launch ran past its old 45 s and the reason was thrown away.
+    const h = makeCtx("glasses_sim", {
+      answer: (argv, opts, reply) => {
+        if (argv[0] === "tar") return mkdirSync(path.join(argv.at(-1), "Glasses.app"), { recursive: true }), reply();
+        if (argv.includes("launch")) {
+          assert.equal(opts.timeoutMs, 120_000);
+          return reply({ code: null, timedOut: true, stderr: "stuck" });
+        }
+        return undefined;
+      },
+    });
     const result = await runGlassesSim(h.ctx);
-    assert.equal(result.facts.usedLaunchArgs, true);
+    assert.ok(result.evaluation.checks.some((c) => c.id === "launched" && c.ok === false));
+    assert.match(h.lines.join("\n"), /simctl launch timed out: stuck/);
+  });
+
+  test("a launch that takes 50 s doesn't count against the page's 60 s", async () => {
+    const h = slowLoad(30_000);
+    const exec = h.ctx.exec;
+    h.ctx.exec = async (argv, opts) => {
+      const reply = await exec(argv, opts);
+      if (argv.includes("launch")) await h.ctx.sleep(50_000);
+      return reply;
+    };
+    const result = await runGlassesSim(h.ctx);
     assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
-    assert.ok(result.evaluation.loadMs <= 41_000, String(result.evaluation.loadMs));
+  });
+
+  test("the clip keeps the end of the run, where the result is", async () => {
+    let h;
+    h = makeCtx("glasses_sim", { answer: glasses(() => h) });
+    let kept = null;
+    const compose = h.ctx.compose;
+    h.ctx.compose = async (args) => ((kept = args.keepLastSeconds), compose(args));
+    await runGlassesSim(h.ctx);
+    assert.equal(kept, 25);
+  });
+
+  test("a new install settles for 5 s before the first launch", async () => {
+    let h;
+    h = makeCtx("glasses_sim", { answer: glasses(() => h) });
+    const pauses = [];
+    const sleep = h.ctx.sleep;
+    const exec = h.ctx.exec;
+    let installed = false;
+    let launched = false;
+    h.ctx.exec = async (argv, opts) => {
+      if (argv.includes("install")) installed = true;
+      if (argv.includes("launch")) launched = true;
+      return exec(argv, opts);
+    };
+    h.ctx.sleep = async (ms) => {
+      if (installed && !launched) pauses.push(ms);
+      return sleep(ms);
+    };
+    await runGlassesSim(h.ctx);
+    assert.ok(pauses.includes(5000), JSON.stringify(pauses));
   });
 
   test("an autopilot that times out fails with its reason", async () => {

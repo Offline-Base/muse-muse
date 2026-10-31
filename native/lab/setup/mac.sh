@@ -15,7 +15,7 @@ set -euo pipefail
 PLATFORM="${MUSE_LAB_PLATFORM:-https://muse-muse.vercel.app}"
 REGION="${AWS_REGION:-us-east-1}"
 LAB_USER="$(id -un)"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 ROOT="$HOME/musemuse-lab"
 VERSION="$(/usr/bin/plutil -extract version raw -o - -- "$HERE/package.json" 2>/dev/null || echo 0.1.0)"
 AVD_NAME="mm_pixel"
@@ -78,8 +78,10 @@ sudo /usr/bin/defaults write /Library/Preferences/com.apple.screensaver loginWin
 
 step "Developer tools"
 # With Xcode selected and its license not accepted, every developer tool stops at the license, including the git Homebrew
-# runs. The AMI's Command Line Tools have what the box needs until then.
-if [ "$ACCEPT_LICENSES" != "1" ] && [ "$(/usr/bin/xcode-select -p 2>/dev/null)" = "$XCODE_DIR" ] && [ -d "$CLT_DIR" ]; then
+# runs. The AMI's Command Line Tools have what the box needs until then. Once it's accepted, Xcode stays selected, because
+# the agent's simulator kinds need it.
+if [ "$ACCEPT_LICENSES" != "1" ] && [ "$(/usr/bin/xcode-select -p 2>/dev/null)" = "$XCODE_DIR" ] && [ -d "$CLT_DIR" ] \
+  && [ -z "$(/usr/bin/defaults read /Library/Preferences/com.apple.dt.Xcode IDEXcodeVersionForAgreedToGMLicense 2>/dev/null)" ]; then
   sudo /usr/bin/xcode-select -s "$CLT_DIR"
   echo "Using the Command Line Tools, because Xcode's license hasn't been accepted."
 fi
@@ -121,7 +123,7 @@ if [ "$ACCEPT_LICENSES" = "1" ]; then
     done
   fi
 else
-  echo "Skipped: the Android SDK's licenses haven't been accepted. MUSE_LAB_ACCEPT_LICENSES=1 runs this step."
+  echo "Skipped: this step only runs with MUSE_LAB_ACCEPT_LICENSES=1, which only the owner sets."
 fi
 
 step "Xcode and the iOS Simulator"
@@ -135,15 +137,21 @@ if [ "$ACCEPT_LICENSES" = "1" ]; then
     echo "Xcode isn't installed yet. Install it, then run this script again. See docs/NATIVE_LAB.md."
   fi
 else
-  echo "Skipped: Xcode's license hasn't been accepted. MUSE_LAB_ACCEPT_LICENSES=1 runs this step."
+  echo "Skipped: this step only runs with MUSE_LAB_ACCEPT_LICENSES=1, which only the owner sets."
 fi
 
 step "The agent"
-mkdir -p "$ROOT/releases/$VERSION" "$ROOT/data" "$ROOT/logs" "$HOME/Library/LaunchAgents"
-if [ "$HERE" != "$ROOT/releases/$VERSION" ]; then
-  /usr/bin/rsync -a --delete --exclude __tests__ --exclude node_modules "$HERE/" "$ROOT/releases/$VERSION/"
-fi
-ln -sfn "$ROOT/releases/$VERSION" "$ROOT/current"
+mkdir -p "$ROOT/releases" "$ROOT/data" "$ROOT/logs" "$HOME/Library/LaunchAgents"
+# Run from an installed release, it stays on that one, so a second run doesn't move the box off its pinned bundle.
+case "$HERE" in
+  "$ROOT/releases/"*) RELEASE="$HERE" ;;
+  *)
+    RELEASE="$ROOT/releases/$VERSION"
+    mkdir -p "$RELEASE"
+    /usr/bin/rsync -a --delete --exclude __tests__ --exclude node_modules "$HERE/" "$RELEASE/"
+    ;;
+esac
+ln -sfn "$RELEASE" "$ROOT/current"
 
 # ec2-user's Homebrew tools can't reach the metadata address, so the aws CLI gets the instance role through this. See the script.
 mkdir -p "$HOME/.aws"

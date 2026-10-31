@@ -77,6 +77,12 @@ describe("composeArgs", () => {
     assert.ok(argv.includes("-an"));
     assert.match(argv[argv.indexOf("-filter_complex") + 1], /overlay=700:50/);
   });
+  test("a clip can start partway into the recording, seeking before it's read", () => {
+    assert.equal(composeArgs(base).indexOf("-ss"), -1);
+    const argv = composeArgs({ ...base, startSeconds: 12.5 });
+    assert.equal(argv[argv.indexOf("-ss") + 1], "12.50");
+    assert.ok(argv.indexOf("-ss") < argv.indexOf("-i"));
+  });
   test("a caption PNG is a third input", () => {
     const argv = composeArgs({ ...base, captionPng: "c.png" });
     assert.equal(argv.filter((a) => a === "-i").length, 3);
@@ -105,6 +111,32 @@ describe("composeClip with the real ffmpeg", { skip: !HAS_FFMPEG }, () => {
       assert.equal(probe.streams[0].pix_fmt, "yuv420p");
       assert.equal(probe.streams[0].color_space, "bt709");
       if (process.platform === "darwin") assert.equal(result.captionBurned, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("keeping the end of a recording", { skip: !HAS_FFMPEG }, () => {
+  test("a recording that's a long blank wait then a page gives a clip of the page", async () => {
+    // Oct 31, on the real Mac: 39 s of white before a page, and a clip that only showed the white.
+    const dir = mkdtempSync(path.join(tmpdir(), "mm-compose-"));
+    try {
+      const recording = path.join(dir, "in.mp4");
+      const source = "color=c=white:s=270x600:r=10:d=30[w];testsrc2=s=270x600:r=10:d=6[p];[w][p]concat=n=2:v=1";
+      execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", source, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", recording]);
+      const out = path.join(dir, "out");
+      const result = await composeClip({ recording, outDir: out, form: "phone", caption: "On an iPhone simulator", keepLastSeconds: 5 });
+      assert.ok(Math.abs(result.seconds - 5) < 0.5, String(result.seconds));
+      const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", result.clip]));
+      assert.ok(Math.abs(Number(probe.format.duration) - 5) < 0.5, probe.format.duration);
+      // The first frame, inside the device's screen: the test pattern, not the white wait.
+      const { screen } = layoutFor("phone", 270, 600);
+      const crop = `crop=${screen.w}:${screen.h}:${screen.x}:${screen.y},scale=64:128,format=gray`;
+      const gray = execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", result.clip, "-frames:v", "1", "-vf", crop, "-f", "rawvideo", "-"], { maxBuffer: 1 << 20 });
+      assert.equal(isBlankScreen(screenStats(gray, 64, 128), null), false);
+      const shortOne = await composeClip({ recording, outDir: path.join(dir, "out2"), form: "phone", caption: "x", keepLastSeconds: 100 });
+      assert.ok(Math.abs(shortOne.seconds - 25) < 0.5, "it's still held to the clip's limit");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

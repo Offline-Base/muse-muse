@@ -3,11 +3,12 @@
 // the real boxes (docs/NATIVE_LAB.md).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, parseAgentPid, restartCommands, s3CopyCommand } from "../control.mjs";
+import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, parseAgentPid, restartCommands, s3CopyCommand, updateTempDir } from "../control.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (relative) => readFileSync(path.join(HERE, "..", relative), "utf8");
@@ -146,6 +147,54 @@ describe("setup/mac.sh", () => {
     assert.ok(!/MUSE_LAB_ACCEPT_LICENSES=1(?! )/.test(script.replace(/#.*$/gm, "").replace(/echo ".*"/g, "")), "only the owner sets it");
     assert.match(script, /ACCEPT_LICENSES="\$\{MUSE_LAB_ACCEPT_LICENSES:-\}"/);
   });
+  describe("the developer tools step on a second run", () => {
+    // The step itself, with the system tools it calls swapped for stubs, because the real ones only mean something on the box.
+    const guard = /if \[ "\$ACCEPT_LICENSES" != "1" \][\s\S]*?\nfi\n/.exec(script)?.[0];
+    function runGuard({ flag = "", selected, accepted }) {
+      const dir = mkdtempSync(path.join(tmpdir(), "mm-macsh-"));
+      try {
+        const stub = (name, body) => {
+          writeFileSync(path.join(dir, name), `#!/bin/bash\n${body}\n`);
+          chmodSync(path.join(dir, name), 0o755);
+        };
+        stub("xcode-select", `if [ "$1" = "-p" ]; then echo "${selected}"; fi`);
+        stub("defaults", accepted ? `echo "${accepted}"` : "exit 1");
+        stub("sudo", `echo "sudo $*"`);
+        const body = guard.replaceAll("/usr/bin/xcode-select", "xcode-select").replaceAll("/usr/bin/defaults", "defaults");
+        const prelude = `set -euo pipefail\nACCEPT_LICENSES="${flag}"\nXCODE_DIR=/x\nCLT_DIR=${dir}\n`;
+        return spawnSync("bash", ["-c", prelude + body], { encoding: "utf8", env: { PATH: `${dir}:/usr/bin:/bin` } });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    test("with the license accepted, it stays on Xcode, so the box keeps its simulator kinds", () => {
+      const reply = runGuard({ selected: "/x", accepted: "26.6" });
+      assert.equal(reply.status, 0, reply.stderr);
+      assert.ok(!reply.stdout.includes("xcode-select -s"), reply.stdout);
+    });
+    test("with the license not accepted, it moves to the Command Line Tools", () => {
+      const reply = runGuard({ selected: "/x", accepted: "" });
+      assert.equal(reply.status, 0, reply.stderr);
+      assert.ok(reply.stdout.includes("xcode-select -s"), reply.stdout);
+    });
+    test("with the owner's flag, it leaves the selection for the Xcode step", () => {
+      const reply = runGuard({ flag: "1", selected: "/x", accepted: "" });
+      assert.ok(!reply.stdout.includes("xcode-select -s"), reply.stdout);
+    });
+  });
+  test("run from an installed release, it stays on that release", () => {
+    assert.match(script, /pwd -P/, "the real path, not the current link");
+    assert.match(script, /"\$ROOT\/releases\/"\*\) RELEASE="\$HERE"/);
+    assert.equal(spawnSync("bash", ["-n", path.join(HERE, "..", "setup", "mac.sh")], { encoding: "utf8" }).status, 0);
+  });
+  test("the checks script accepts nothing and can run alone", () => {
+    const checks = read("setup/mac-checks.sh");
+    assert.equal(spawnSync("bash", ["-n", path.join(HERE, "..", "setup", "mac-checks.sh")], { encoding: "utf8" }).status, 0);
+    assert.ok(!/-license|--licenses|runFirstLaunch|MUSE_LAB_ACCEPT_LICENSES/.test(checks));
+    for (const kind of ["ios_sim", "android_emu", "glasses_sim"]) assert.ok(checks.includes(`check ${kind} `), kind);
+    assert.ok(!/echo .*GLASSES_PAGE/.test(checks), "the signed address isn't printed");
+    assert.match(read("setup/mac-finish.sh"), /setup\/mac-checks\.sh/);
+  });
   test("the finish script refuses to run without the owner's flag", () => {
     const reply = spawnSync("bash", [path.join(HERE, "..", "setup", "mac-finish.sh")], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: "/nonexistent" } });
     assert.equal(reply.status, 2);
@@ -205,6 +254,16 @@ describe("setup/windows.ps1", () => {
       assert.ok(script.includes(part), part);
     }
   });
+  test("the lab user can only change data and logs under the root", () => {
+    assert.match(script, /icacls \$Root \/inheritance:r \/grant:r "SYSTEM:\(OI\)\(CI\)F" "Administrators:\(OI\)\(CI\)F" "Users:\(OI\)\(CI\)RX"/);
+    assert.match(script, /icacls "\$Root\\control" \/inheritance:r \/grant:r "SYSTEM:\(OI\)\(CI\)F" "Administrators:\(OI\)\(CI\)F"/);
+    const grants = [...script.matchAll(/icacls "?([^" ]+)"? \/grant \$acl/g)].map((m) => m[1]);
+    assert.deepEqual(grants, ["$Root\\data", "$Root\\logs"]);
+    assert.ok(script.indexOf("/inheritance:r") < script.indexOf("/grant $acl"), "or removing inheritance would undo them");
+  });
+  test("run from an installed release, it stays on that release", () => {
+    assert.match(script, /\$source -like "\$Root\\releases\\\*"/);
+  });
   test("it takes no tool that makes the box accept a license", () => {
     assert.ok(!/accepteula|autologon64/i.test(script));
   });
@@ -214,6 +273,41 @@ describe("setup/windows.ps1", () => {
   test("never prints the password", () => {
     assert.ok(!/Write-(Host|Output)[^\n]*\$password/i.test(script));
     assert.ok(script.includes("Remove-Variable password"));
+  });
+});
+
+describe("update-agent on Windows", () => {
+  test("a bundle waits outside the folder the lab user can change", () => {
+    const dir = updateTempDir("C:\\MuseLab", "win32");
+    assert.equal(dir, "C:\\MuseLab\\control\\update");
+    assert.ok(!dir.startsWith("C:\\MuseLab\\data"));
+  });
+  test("a bundle from a URL doesn't go through the shared download cache either", () => {
+    assert.ok(!read("control.mjs").includes('"cache"'));
+  });
+  test("the Mac keeps its own folder", () => {
+    assert.equal(updateTempDir("/lab", "darwin"), path.join("/lab", "data", "update"));
+  });
+});
+
+describe("the instance role's policies", () => {
+  const policy = (name) => JSON.parse(read(`iam/${name}.json`));
+  const MAC = "arn:aws:ec2:us-east-1:916979311153:instance/i-0a5866df305e83d40";
+  const WINDOWS = "arn:aws:ec2:us-east-1:916979311153:instance/i-066609c3dc74c9f18";
+  test("each lane is closed to the other box with an explicit deny", () => {
+    // AmazonSSMManagedInstanceCore allows ssm:GetParameter on every parameter, so an allow here restricts nothing.
+    const denies = policy("lab-token-read").Statement.filter((s) => s.Effect === "Deny");
+    assert.equal(denies.length, 2);
+    for (const [lane, arn] of [["mac", MAC], ["windows", WINDOWS]]) {
+      const deny = denies.find((s) => s.Resource.endsWith(`parameter/musemuse/lab/${lane}/*`));
+      assert.ok(deny, lane);
+      assert.equal(deny.Condition.StringNotEquals["ec2:SourceInstanceARN"], arn);
+      for (const action of ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"]) assert.ok(deny.Action.includes(action), action);
+    }
+  });
+  test("the boxes can't write outside lab/checks", () => {
+    const write = policy("lab-files").Statement.find((s) => s.Sid === "WriteChecks");
+    assert.equal(write.Resource, "arn:aws:s3:::muse-knowledge-916979311153/lab/checks/*");
   });
 });
 

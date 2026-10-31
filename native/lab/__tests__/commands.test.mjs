@@ -164,14 +164,12 @@ describe("desktop commands", () => {
   });
 });
 
-describe("the glasses deep link", () => {
-  test("it's what the shell parses", () => {
-    const link = new URL(c.glassesDeepLink({ url: "https://a.vercel.app/?x=1&y=2" }));
-    assert.equal(link.protocol, "musemuse:");
-    assert.equal(link.hostname, "check");
-    assert.equal(link.searchParams.get("url"), "https://a.vercel.app/?x=1&y=2");
-    assert.equal(link.searchParams.get("mock"), "1");
-    assert.equal(link.searchParams.get("run"), "autopilot");
+describe("the glasses shell", () => {
+  test("the autopilot's launch arguments are what the shell reads", () => {
+    const launch = c.simctlLaunchAutopilot("U", "app.musemuse.glasses", { url: "https://a.vercel.app/?x=1&y=2" });
+    assert.equal(launch[launch.indexOf("-museUrl") + 1], "https://a.vercel.app/?x=1&y=2");
+    assert.equal(launch[launch.indexOf("-museMock") + 1], "1");
+    assert.equal(launch[launch.indexOf("-museRun") + 1], "autopilot");
   });
   test("the feed is H.265 tagged for Apple", () => {
     const argv = c.h265FeedArgs("ffmpeg", "in.jpg", "out.mp4");
