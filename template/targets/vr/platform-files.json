@@ -1,0 +1,7 @@
+[
+  "lib/xr/emulator.ts",
+  "lib/xr/status.ts",
+  "lib/xr/targets.ts",
+  "public/xr/profiles",
+  ".agents/skills/muse-vr"
+]
