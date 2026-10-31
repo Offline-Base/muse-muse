@@ -1,0 +1,115 @@
+/**
+ * What the lab's routes share (docs/NATIVE_LAB.md, "HTTP contract"). With NATIVE_LAB off every one of them is a plain 404
+ * before it reads anything, so a box that's up early sees what it would see if the routes didn't exist.
+ */
+import { env } from "@/lib/env";
+import { isSafeFileKey, localFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
+import { blobStoreHost, isOwnBlobUrl } from "@/lib/native/blob-host";
+import type { NativeArtifactKind } from "@/lib/native/types";
+
+/** A 404 when the lab is off, and null when it's on. Every route starts with this. */
+export function labGate(): Response | null {
+  return env.nativeLab ? null : notFound();
+}
+
+export function notFound(): Response {
+  return Response.json({ error: "not_found" }, { status: 404 });
+}
+
+/** The answer for a job token whose run doesn't own the job, or a job that isn't there. */
+export function gone(): Response {
+  return Response.json({ error: "gone" }, { status: 410 });
+}
+
+export function unauthorized(): Response {
+  return Response.json({ error: "unauthorized" }, { status: 401 });
+}
+
+/** Job ids are UUIDs. Anything else can't be a job, and shouldn't reach a uuid column. */
+export function isJobId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/** The JSON body, or null when it's too big or isn't JSON. Reads the text first, so its size is what counts. */
+export async function readJson(req: Request, maxBytes: number): Promise<unknown> {
+  const declared = Number(req.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) return null;
+  const text = await req.text().catch(() => null);
+  if (text === null || Buffer.byteLength(text) > maxBytes) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A copy Postgres can store. jsonb refuses NUL and lone surrogates, and a text column refuses NUL, so a stray one would turn
+ * a check's result into a 500. Both come from a product's own text: a console line with a NUL in it, or a cut at N characters
+ * that lands inside an emoji. Keys count too, since a report and a box's capabilities are free-form. A date string comes
+ * through unchanged.
+ */
+export function cleanForJsonb<T>(value: T): T {
+  const clean = (s: string) => s.replaceAll("\u0000", "").toWellFormed();
+  const text = JSON.stringify(value, (_key, v: unknown) => {
+    if (typeof v === "string") return clean(v);
+    if (v && typeof v === "object" && !Array.isArray(v)) return Object.fromEntries(Object.entries(v).map(([k, item]) => [clean(k), item]));
+    return v;
+  });
+  return JSON.parse(text) as T;
+}
+
+export interface UploadRule {
+  kind: NativeArtifactKind;
+  contentType: string;
+  maxBytes: number;
+}
+
+const MB = 1024 * 1024;
+const SHOT: UploadRule = { kind: "shot", contentType: "image/jpeg", maxBytes: 2 * MB };
+const LOG: UploadRule = { kind: "log", contentType: "text/plain", maxBytes: MB };
+
+/** The only files a job may leave, as docs/NATIVE_LAB.md lists them. */
+export const UPLOAD_RULES: Readonly<Record<string, UploadRule>> = {
+  "shot-1.jpg": SHOT,
+  "shot-2.jpg": SHOT,
+  "shot-3.jpg": SHOT,
+  "shot-4.jpg": SHOT,
+  "clip.mp4": { kind: "clip", contentType: "video/mp4", maxBytes: 16 * MB },
+  "poster.jpg": { kind: "poster", contentType: "image/jpeg", maxBytes: 2 * MB },
+  "report.json": { kind: "report", contentType: "application/json", maxBytes: MB },
+  "log.txt": LOG,
+  "logcat.txt": LOG,
+};
+
+export function uploadRule(name: string): UploadRule | null {
+  return Object.hasOwn(UPLOAD_RULES, name) ? UPLOAD_RULES[name] : null;
+}
+
+/** Where one attempt's files go. Built from the job row, never from a request. A retry can't touch the last attempt's. */
+export function jobFolder(job: { runId: string; id: string; attempts: number }): string {
+  return `native/runs/${job.runId}/${job.id}/${job.attempts}/`;
+}
+
+/** True when a finish call's url really is that file in this job's folder, on the store this platform uses. */
+export function artifactLinkHolds(job: { runId: string; id: string; attempts: number }, name: string, pathname: string, url: string): boolean {
+  if (pathname !== `${jobFolder(job)}${name}` || !isSafeFileKey(pathname)) return false;
+  if (localFilesEnabled()) return localFileKey(url) === pathname;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (!isOwnBlobUrl(parsed)) return false;
+  try {
+    return decodeURIComponent(parsed.pathname) === `/${pathname}`;
+  } catch {
+    return false;
+  }
+}
+
+/** The link to keep for a file whose claim held. Made here, so nothing else in the box's string reaches the gallery. */
+export function artifactLink(pathname: string): string {
+  return localFilesEnabled() ? localFileUrl(pathname) : `https://${blobStoreHost()}/${pathname}`;
+}

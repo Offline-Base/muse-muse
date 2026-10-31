@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { SelectNav } from "@/components/SelectNav";
 import { InfoTip, NotConnected, PageHeader, StatusPill } from "@/components/ui";
+import { LabCard } from "@/components/usage/LabCard";
 import { compact, dayLabel, groupThousands, modelLabel, usd } from "@/lib/format";
 import {
   addDays,
@@ -17,6 +18,7 @@ import {
   type UsageFilters,
   type UsageSeries,
 } from "@/lib/queries";
+import { loadLabCard } from "@/lib/native/lab-card";
 
 export const metadata: Metadata = { title: "Usage" };
 
@@ -74,6 +76,7 @@ export default async function UsagePage({
   await connection();
   const f = parseUsageFilters(await searchParams);
   const result = await safeQuery(() => getUsage(f));
+  const lab = await loadLabCard();
   const startDay = addDays(f.end, -(f.rangeDays - 1));
   const isToday = f.end >= todayUtc();
   const rangeText = `${dayLabel(startDay)} – ${dayLabel(f.end)}`;
@@ -90,6 +93,7 @@ export default async function UsagePage({
       ) : (
         <UsageBody f={f} d={result.data} rangeText={rangeText} isToday={isToday} />
       )}
+      {lab ? <LabCard data={lab} /> : null}
     </div>
   );
 }
