@@ -227,3 +227,48 @@ def test_a_linked_env_is_never_written_through_and_check_still_works(tmp_path, m
     assert "link to the .env of another checkout" in capsys.readouterr().err and "—" not in plug.LINKED_ENV
     assert plug.main([str(model), "--check", "--out", str(tmp_path / "r")]) == 0
     assert live.read_text() == "PRIMARY_MODEL=lfm\n"
+
+
+@pytest.mark.parametrize(
+    "mode, lines",
+    [
+        ("answers", {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"}),
+        ("labels", {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "glimmer"}),
+        ("tighten", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "tighten", "LABELS_BACKEND": "checker"}),
+        ("decide", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide", "LABELS_BACKEND": "checker"}),
+    ],
+)
+def test_each_mode_sets_its_lines_and_the_settings_load(tmp_path, mode, lines):
+    env = tmp_path / ".env"
+    env.write_text("BASE_DEVICE=laptop\n")
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"GGUF")
+    plug.plug_in(model, env, mode=mode)
+    values = read_dotenv(env)
+    assert {k: values[k] for k in lines} == lines
+    s = load_settings({**values, "BASE_HOME": str(tmp_path / "home")})
+    assert s.device_only and s.primary_model == "glimmer" and s.checker_backend == "lfm"
+    assert s.labels_backend == lines["LABELS_BACKEND"]
+    assert s.dreaming_backend == lines["DREAMING_BACKEND"]
+    plug.undo(env)
+    assert env.read_text() == "BASE_DEVICE=laptop\n"
+
+
+def test_no_mode_leaves_the_privacy_lines_alone(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("DREAMING_BACKEND=prompt\n")
+    model = tmp_path / "m.gguf"
+    model.write_bytes(b"GGUF")
+    plug.plug_in(model, env)
+    values = read_dotenv(env)
+    assert values["DREAMING_BACKEND"] == "prompt" and "LABELS_BACKEND" not in values
+
+
+def test_glimmer_labels_need_glimmer_as_the_main_model_and_lfm_as_the_checker(tmp_path):
+    base = {"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1", "LABELS_BACKEND": "glimmer"}
+    with pytest.raises(ValueError, match="LABELS_BACKEND=glimmer"):
+        load_settings({**base, "PRIMARY_MODEL": "lfm"})
+    with pytest.raises(ValueError, match="LABELS_BACKEND=glimmer"):
+        load_settings({**base, "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server", "CHECKER_BACKEND": "glimmer"})
+    with pytest.raises(ValueError, match="must be checker or glimmer"):
+        load_settings({"BASE_HOME": str(tmp_path), "LABELS_BACKEND": "both"})

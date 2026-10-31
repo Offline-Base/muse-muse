@@ -79,10 +79,11 @@ METRICS = {
     "refused": "refusals shared",
     "receipts": "receipt mismatches",
 }
-PLANNED_SETUP = {
+LFM_MODEL = "lfm3-vl-2b"
+PLANNED_SETUP = {  # --model and --dreaming-backend change the last two for a study on another setup
     "Device": "laptop",
     "Backend": "llama_server",
-    "Model": "lfm3-vl-2b",
+    "Model": LFM_MODEL,
     "Dreaming backend": "rules",
 }
 
@@ -673,7 +674,8 @@ def setup_cell(runs: list[Run]) -> str:
     seen = {key: sorted({r.fields.get(key, "not recorded") for r in read}) for key in PLANNED_SETUP}
     text = "; ".join(f"{key} {' and '.join(values)}" for key, values in seen.items())
     if all(values == [PLANNED_SETUP[key]] for key, values in seen.items()):
-        return f"{text}, as the plan fixes (device only, the policy decides); nothing here is about Glimmer"
+        about = "nothing here is about Glimmer" if PLANNED_SETUP["Model"] == LFM_MODEL else "the model is the file its runs name"
+        return f"{text}, as the plan fixes (device only); {about}"
     return f"{text}. **Not what the plan fixes**, so those runs give no number; see the differences from the plan"
 
 
@@ -1109,7 +1111,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--commit", help="the study's commit (default: git rev-parse --short HEAD)")
     p.add_argument("--theme", choices=sorted(PALETTES), default="light")
+    p.add_argument("--model", default=LFM_MODEL, help="the model the runs must name (nights.md's Model row)")
+    p.add_argument("--dreaming-backend", default="rules", help="the dreaming backend the runs must name")
     args = p.parse_args(argv)
+    PLANNED_SETUP.update({"Model": args.model, "Dreaming backend": args.dreaming_backend})
     if args.commit and not re.fullmatch(r"[0-9a-f]{7,40}", args.commit):
         p.error("--commit takes a git hash")
     runs = read_study(args.study)

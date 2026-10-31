@@ -43,6 +43,7 @@ Muse (cloud VM) --MCP over HTTPS--> relay (Cloudflare Worker) <--WebSocket diale
 | relay_proxy | RELAY_PROXY | system (system: the system or environment proxy; direct: no proxy) |
 | contacts_path | CONTACTS_PATH | None; `Settings.contacts` is the path save_on_device reads, `WORKSPACE_ROOT/records/parent_contacts.md` by default (a relative CONTACTS_PATH is inside the workspace) |
 | dreaming_backend | DREAMING_BACKEND | prompt (prompt or lora) |
+| labels_backend | LABELS_BACKEND | checker (checker or glimmer; glimmer labels Muse's requests through `local_llm.LabelsFrom` and needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm) |
 | max_pending | MAX_PENDING | 20: approval cards that may wait at once; past it `Egress._decide_row` refuses a new ask (floor and code `too_many_waiting`, a fixed sentence asking the user to clear some) until the user clears some. Always approve is not capped when it would answer the card at once. 0 is no cap; `run_eval.prepare_home` sets 0 because evals and simulated runs leave cards unanswered on purpose |
 | router_loosen | ROUTER_LOOSEN | `lists,result_words` (`ROUTER_LOOSEN_DEFAULT`, chosen Oct 31, eval/reports/dev/loosen/README.md): a comma list of `lists`, `result_words`, `class_of` (`ROUTER_LOOSEN_CHOICES`), `all` or `none`; anything else is a ValueError. Router changes that ask less often (see Router); `none` turns them all off |
 | light_serial | LIGHT_SERIAL | None |

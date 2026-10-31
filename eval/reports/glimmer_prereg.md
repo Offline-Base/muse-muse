@@ -101,4 +101,7 @@ Everything is published as measured: every row on every set, the b and c counts 
 
 ## Amendments
 
-None yet. (Oct 31, before any Glimmer row had run, the sealed set's path was corrected to `eval/splits/fresh_200_c.jsonl`, where the set has always been, both candidate sets were pinned by sha256, and the overlap command was written out. The rule above allows these edits until the first Glimmer row runs.)
+- Oct 31, 2026, before any Glimmer row had run, on Ethan's plan to submit with the tuned Glimmer. Four rows were added, labeled exploratory: `shipped_answers`, `shipped_labels`, `shipped_tighten` and `shipped_decide`. They run as `plug_in_model --mode` sets the app, with Glimmer also writing summaries, which the rows above leave on LFM. They cannot carry the claim. The candidate row, the baseline, the sealed set, the metrics, the test and the stop rules do not change.
+- Oct 31, 2026, same note. "Stays the shipped mode" under "If it loses" means who decides what is shared. Glimmer writing answers is a separate choice: it may still ship in `--mode answers`, if its own `shipped_answers` row has no more leaks than the baseline, and the README then says Glimmer writes and the policy decides.
+
+Earlier: (Oct 31, before any Glimmer row had run, the sealed set's path was corrected to `eval/splits/fresh_200_c.jsonl`, where the set has always been, both candidate sets were pinned by sha256, and the overlap command was written out. The rule above allows these edits until the first Glimmer row runs.)

@@ -3,7 +3,7 @@
     uv run python -m scripts.plug_in_model /path/to/model.gguf --check [--draft DRAFT.gguf] [--label NAME]
         [--device laptop|jetson] [--margin GB] [--ctx N]
     uv run python -m scripts.plug_in_model /path/to/model.gguf [--draft DRAFT.gguf] [--draft-n N]
-        [--flash-attn on|off|auto] [--reasoning-budget N]
+        [--flash-attn on|off|auto] [--reasoning-budget N] [--mode answers|labels|tighten|decide]
     uv run python -m scripts.plug_in_model --undo
 
 Checks the file first: it reads the GGUF header (architecture, tensor types, parameters, bits per
@@ -17,7 +17,10 @@ It writes eval/reports/model_file_<label>.md and refuses a file that cannot work
 Then it sets the model's lines in .env: every model on this device, your GGUF for answers and
 routing, LFM3-VL-2B for scans and search, plus the drafter and server knobs scripts/start.sh reads
 (GLIMMER_DRAFT_GGUF, GLIMMER_DRAFT_N, GLIMMER_FA, GLIMMER_REASONING_BUDGET). The other lines stay
-as they are, and the old file is kept as .env.before-plug-in. Restart scripts/start.sh afterwards,
+as they are, and the old file is kept as .env.before-plug-in. --mode says how far the file's privacy
+work goes: answers (it writes; the policy decides on LFM's labels), labels (it also labels Muse's
+requests), tighten (it can only make the policy stricter) or decide (it decides, under the floors).
+Without --mode those lines stay as they are, and a choice on the Dreaming page still overrides them. Restart scripts/start.sh afterwards,
 then run scripts.compare_modes to score it. Nothing is downloaded, and no value in .env is printed.
 A .env that is a link to another checkout's (a lane worktree) is never changed; --check still works.
 """
@@ -59,6 +62,12 @@ JETSON_WARNING = (
     "only on a headless board (multi-user.target) with Ollama, Docker and other GPU services stopped. "
     "Watch free -m and tegrastats on the first start."
 )
+MODES = {
+    "answers": {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "checker"},
+    "labels": {"DREAMING_BACKEND": "rules", "LABELS_BACKEND": "glimmer"},
+    "tighten": {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "tighten", "LABELS_BACKEND": "checker"},
+    "decide": {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide", "LABELS_BACKEND": "checker"},
+}
 GLIMMER_MIN_BUILD = 10353  # Glimmer needs llama.cpp b10353 or newer; every type in gguf_info.TYPES is older
 FLASH_ATTN = ("on", "off", "auto")
 GIB = 1024**3
@@ -263,6 +272,7 @@ def plug_in(
     draft_n: int | None = None,
     flash_attn: str | None = None,
     reasoning_budget: int | None = None,
+    mode: str | None = None,
 ) -> dict[str, str]:
     """Set the model's lines in the .env at `env_path`, keeping a backup. Returns what was set.
     A drafter always goes with the model it was checked with: without `draft`, an earlier
@@ -295,6 +305,8 @@ def plug_in(
         values["GLIMMER_FA"] = flash_attn
     if reasoning_budget is not None:
         values["GLIMMER_REASONING_BUDGET"] = str(reasoning_budget)
+    if mode is not None:
+        values.update(MODES[mode])
     env_path.write_text(with_lines(current, values))
     os.chmod(env_path, 0o600)
     return values
@@ -338,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--draft-n", type=int, help="tokens drafted per step (GLIMMER_DRAFT_N; start.sh's default is 15)")
     p.add_argument("--flash-attn", choices=FLASH_ATTN, help="llama-server -fa (GLIMMER_FA; default auto)")
     p.add_argument("--reasoning-budget", type=int, help="llama-server --reasoning-budget: -1 unrestricted, 0 none (GLIMMER_REASONING_BUDGET)")
+    p.add_argument("--mode", choices=sorted(MODES), help="how far the file's privacy work goes (default: leave those lines alone)")
     p.add_argument("--ctx", type=int, help="context size for the KV estimate (default: ANSWER_CTX, else 16384, 4096 on a Jetson)")
     p.add_argument("--device", choices=DEVICES, help="the device this file is for (default: BASE_DEVICE, else laptop)")
     p.add_argument("--margin", type=float, help="GB of memory kept for everything but the model (default 4 on a laptop, 1 on a Jetson)")
@@ -386,11 +399,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         print(f"{args.model.name} can be plugged in.")
         return 0
-    plug_in(args.model, ENV, draft=args.draft, draft_n=args.draft_n, flash_attn=args.flash_attn, reasoning_budget=args.reasoning_budget)
+    plug_in(args.model, ENV, draft=args.draft, draft_n=args.draft_n, flash_attn=args.flash_attn, reasoning_budget=args.reasoning_budget, mode=args.mode)
     print(f"Plugged in {args.model.name}{' with its drafter' if args.draft else ''}. Next:")
     print("  1. Stop scripts/start.sh with Ctrl-C and start it again.")
     print("  2. uv run python -m scripts.device_smoke --name my_model")
     print("  3. uv run python -m scripts.compare_modes --name my_model")
+    print(f"Mode: {args.mode}." if args.mode else "Mode: not changed. Glimmer's privacy work is set by --mode or the Dreaming page.")
     print("Undo with: uv run python -m scripts.plug_in_model --undo")
     return 0
 

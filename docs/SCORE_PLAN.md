@@ -158,6 +158,10 @@ The run takes the model slot from whatever is running. Every step runs from the 
    - It writes model_file_glimmer1bit.md: arch, quant, tensor type ids checked against the installed llama.cpp b11972, measured bpw, sha256, memory and disk.
    - It refuses unknown types in plain words.
    - If you sent a LoRA, it checks the adapter against base IQ1_S on start.sh's existing `--lora` path (scripts/start.sh:123, 135).
+2b. **Look at the reply shape (Oct 31).**
+   - `scripts/start_side_models.sh FILE` starts it and LFM on side ports, 4 CPU threads each, low priority, a throwaway key. It prints the environment for the steps below.
+   - `uv run python -m scripts.glimmer_probe --url http://127.0.0.1:8181/v1 --key-file KEY` sends one invented request per reasoning level and reports whether the reply parses as the schema. Glimmer has only run on OpenRouter here, so this is the first test of its template and reasoning on our llama-server. Fix anything it finds before any scored row.
+   - Stop the Glimmer attempt if no load and no parsed reply within 90 minutes.
 3. **Measure speed with the live app untouched.**
    - Run `uv run python -m scripts.bench_device --label mac-glimmer1b --gguf FILE --kind glimmer --reasoning low,medium,high,xhigh`.
    - With the drafter, first confirm that `--draft-n` changes acceptance, then sweep `3,5,7,15,16`.
@@ -168,13 +172,14 @@ The run takes the model slot from whatever is running. Every step runs from the 
    - p95 tool latency is at or above 20 s at the chosen level with a set reasoning budget. The Muse budget per call is 45 s (MUSE-7).
 5. **Plug it in, only inside the cutoff and only with your OK.**
    - Stop the app (LaunchAgent or start.sh).
-   - Run `uv run python -m scripts.plug_in_model FILE`, adding `--draft` if DFlash wins.
+   - Run `uv run python -m scripts.plug_in_model FILE --mode MODE`, adding `--draft` if DFlash wins. Without `--mode`, Glimmer writes answers and nothing else unless the Dreaming page says so.
    - Start it again. The relay drops for a few minutes.
 6. **Smoke test:** `uv run python -m scripts.device_smoke --name glimmer1bit`. It must show 0 private values in any tool output.
 7. **Matrix.**
    - Compute the wall time from step 3 first.
    - P0 configs: keywords only, policy plus LFM labels, LFM decide, base cloud, base IQ1_S decide (all reused), then tuned decide and tuned labels plus policy, on fresh_200_b and tasks.jsonl.
    - Tuned tighten is a P1 row.
+   - Add the `shipped_` rows for the mode going live (Oct 31): they have Glimmer write summaries too, as the app does. The registered rows leave summaries on LFM.
    - If the wall time is over 4 h, run fresh_200_b decide first.
 8. **Then one at a time:** GLM-10, GLM-9 (low and high first), GLM-20, GLM-15, GLM-7b, RED-14, SIM-15, GLM-19.
 9. **Sealed rows:** `--final` on fresh_200_c, once per config, on the frozen commit.
@@ -183,6 +188,8 @@ The run takes the model slot from whatever is running. Every step runs from the 
     - run `plug_in_model --undo`, restart and keep LFM;
     - publish the result as measured, against base IQ1_S;
     - tighten is not a safe fallback, because LFM tighten fell to 42.5% through over-refusal.
+
+**Oct 31, Ethan plans to submit with the tuned Glimmer.** The persona study therefore runs on Glimmer in the chosen mode, not on LFM: `scripts.run_study --study eval/reports/sim_glimmer --homes DIR`, then `scripts.study_summary --study eval/reports/sim_glimmer --model glimmer --dreaming-backend BACKEND`. Use step 3's seconds per call to size it before starting. If 24 runs do not fit, run the first seed of all 8 first (the plan's own order) and report how many ran. The LFM study stopped at 1 of 24, and that run is a pilot.
 
 **Model-slot priority if it lands Nov 1 or 2:** preflight, tuned decide plus policy rows on fresh_200_b, RED-13, sealed rows, SIM-8, GLM-9 at low and high, GLM-10, then the rest.
 

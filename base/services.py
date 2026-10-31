@@ -28,7 +28,7 @@ from base.dreaming.night import NightRunner
 from base.egress import Egress
 from base.heavy.queue import HeavyQueue
 from base.light import start_light
-from base.local_llm import FallbackLLM, LocalLLM
+from base.local_llm import FallbackLLM, LabelsFrom, LocalLLM
 from base.policy import UserPolicy
 from base.regions import RegionClient
 from base.router import Router
@@ -157,6 +157,8 @@ class Services:
                 backup = LocalLLM(settings, role="jetson") if settings.has_jetson_lfm else s.answer_llm
                 s.checker_llm = FallbackLLM(lfm, backup)
                 s.answer_llm = FallbackLLM(lfm, backup)
+        if settings.labels_backend == "glimmer":
+            s.checker_llm = LabelsFrom(s.answer_llm, s.checker_llm)
         adapter = discover_router_adapter(settings, s.router_llm) if owner else None
         s.router = Router(settings, s.router_llm, s.policy, adapter=adapter)
         s.approvals = ApprovalStore(settings.paths.db)

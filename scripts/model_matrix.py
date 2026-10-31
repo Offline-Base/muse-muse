@@ -8,9 +8,10 @@
 Every config runs in this process, one after another, each in a fresh temporary BASE_HOME, with
 DEVICE_ONLY=1 settings built for this process only (.env is never written). They differ only in
 who decides (and, for glimmer_labels, who labels the request): tagging, LFM3-VL-2B's name pass and
-request labels with their checks, the policy floors and the summaries stay the same. A glimmer
-config points the router at a Glimmer llama-server on a side port (--glimmer-url), so a file can
-be measured without restarting the running app. The base_cloud configs send invented items to
+request labels with their checks, the policy floors and the summaries stay the same. The shipped_
+configs also have Glimmer write the summaries, which is what plug_in_model's --mode sets in the app.
+A glimmer config points the router at a Glimmer llama-server on a side port (--glimmer-url), so a
+file can be measured without restarting the running app. The base_cloud configs send invented items to
 Glimmer on OpenRouter and are refused unless --allow-cloud and a --max-usd above 0 are given.
 
 Writes eval/reports/matrix_NAME.md (the command at the top, one table per set, exact McNemar tests
@@ -42,7 +43,7 @@ import httpx
 
 from base import config as base_config
 from base.config import REPO_ROOT, load_settings
-from base.local_llm import REASONING_LEVELS, LLMError, LocalLLM
+from base.local_llm import REASONING_LEVELS, LabelsFrom, LLMError, LocalLLM
 from eval import run_eval
 
 REPORTS = REPO_ROOT / "eval" / "reports"
@@ -65,6 +66,7 @@ class Config:
     env: dict[str, str]
     router: str = "lfm"  # the router's model: none, lfm, glimmer or cloud
     labels: str = "lfm"  # who labels Muse's request: none, lfm or glimmer
+    answers: str = "lfm"  # who writes summaries: lfm or glimmer (the shipped_ rows, as plug_in_model sets the app)
 
     @property
     def needs_lfm(self) -> bool:
@@ -72,7 +74,7 @@ class Config:
 
     @property
     def needs_glimmer(self) -> bool:
-        return "glimmer" in (self.router, self.labels)
+        return "glimmer" in (self.router, self.labels, self.answers)
 
 
 CONFIGS = {
@@ -85,6 +87,10 @@ CONFIGS = {
         Config("glimmer_labels", "policy decides, Glimmer labels", RULES, labels="glimmer"),
         Config("glimmer_tighten", "Glimmer can only make the policy stricter", TIGHTEN, router="glimmer"),
         Config("glimmer_decide", "Glimmer decides, under the floors", DECIDE, router="glimmer"),
+        Config("shipped_answers", "as plug_in_model --mode answers: Glimmer writes, policy decides, LFM labels", RULES, answers="glimmer"),
+        Config("shipped_labels", "as --mode labels: Glimmer writes and labels, policy decides", RULES, labels="glimmer", answers="glimmer"),
+        Config("shipped_tighten", "as --mode tighten: Glimmer writes and can only make the policy stricter", TIGHTEN, router="glimmer", answers="glimmer"),
+        Config("shipped_decide", "as --mode decide: Glimmer writes and decides, under the floors", DECIDE, router="glimmer", answers="glimmer"),
         Config("base_cloud_tighten", "base Glimmer on OpenRouter, stricter only", TIGHTEN, router="cloud"),
         Config("base_cloud_decide", "base Glimmer on OpenRouter decides, under the floors", DECIDE, router="cloud"),
     )
@@ -113,22 +119,6 @@ class NoModel:
 
     def close(self) -> None:
         return None
-
-
-class LabelsFrom:
-    """The checker with its request labels from another model; the name pass stays on the checker."""
-
-    def __init__(self, labeler: Any, checker: Any):
-        self.labeler = labeler
-        self.checker = checker
-
-    def request_topics(self, *args: Any, **kw: Any) -> list[str]:
-        return self.labeler.request_topics(*args, **kw)
-
-    def __getattr__(self, name: str) -> Any:
-        if name in ("labeler", "checker"):
-            raise AttributeError(name)
-        return getattr(self.checker, name)
 
 
 @dataclass
@@ -194,6 +184,8 @@ def customize_for(config: Config, opts: argparse.Namespace, swaps: Swaps) -> Cal
             swaps.set(services.router, "llm", glimmer)
         if config.labels == "glimmer":
             swaps.set(services, "checker_llm", LabelsFrom(glimmer, services.checker_llm))
+        if config.answers == "glimmer":
+            swaps.set(services, "answer_llm", glimmer)
         if config.router == "cloud":
             client = cloud_client(services.settings, opts.cloud_key, opts.openrouter_base, opts.cloud_model)
             swaps.opened.append(client)

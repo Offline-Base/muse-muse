@@ -40,13 +40,13 @@ To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and rou
 
 ```sh
 uv run python -m scripts.plug_in_model /path/to/model.gguf --check   # checks the file, changes nothing
-uv run python -m scripts.plug_in_model /path/to/model.gguf           # sets the model's lines in .env
+uv run python -m scripts.plug_in_model /path/to/model.gguf --mode decide  # sets the model's lines in .env; --mode: answers, labels, tighten or decide
 scripts/start.sh                                                     # restart: one copy of your model, plus LFM for scans and search
 uv run python -m scripts.device_smoke --name my_model                # Muse's tools, 24 essays, private-value checks
 uv run python -m scripts.compare_modes --name my_model               # each router mode on 200 invented items
 ```
 
-Then pick the best mode on the Dreaming page. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
+`--mode` says how far the file's privacy work goes: answers (it writes, the policy decides on LFM's labels), labels (it also labels Muse's requests), tighten (it can only make the policy stricter) or decide (it decides, under the floors). A choice on the Dreaming page overrides it. `uv run python -m scripts.plug_in_model --undo` puts `.env` back. Nothing is downloaded, and your other `.env` lines stay as they are.
 
 `--check` reads the file's header and writes `eval/reports/model_file_<label>.md` (`--label NAME`, default the file's name): the architecture, the quant type and the type of every tensor, the parameter count, the effective bits per weight (file bytes x 8 / parameters, and text only when the file holds vision tensors), the sha256, the KV cache at ANSWER_CTX, free disk and the memory it needs. It refuses a file llama.cpp cannot load, a cut-off copy, less than 2 GB of disk left, or a model that does not fit in memory, and says why. Run it from the repo the app runs from: plugging in writes that repo's `.env`.
 

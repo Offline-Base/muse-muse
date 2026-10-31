@@ -143,10 +143,11 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **13:28** Ethan shared an outside research report. Checked it against the code and read its connector rules, the event page and two Gallup surveys at the source. What is worth keeping is in [RESEARCH_NOTES.md](RESEARCH_NOTES.md). Nothing built from it yet; the study stays paused.
 
+**13:41** Ethan plans to submit with the tuned Glimmer, so numbers from LFM would not describe the submission. Ended the paused LFM study (1 of 24 finished, kept as a pilot; the partial second run is dropped) and started on what the model swap needs, without loading Glimmer. Found the swap did not match the matrix: `plug_in_model` left Glimmer writing only, unless the Dreaming page said otherwise, and "Glimmer labels" could not be set in the app at all. Added `LABELS_BACKEND` and `plug_in_model --mode answers|labels|tighten|decide`; `shipped_*` matrix rows that run as the app does; `scripts/glimmer_probe.py` for the reply shape; `scripts/start_side_models.sh` (4 threads, low priority, throwaway key); `CHECKER_THREADS`; `study_summary --model --dreaming-backend`; a Request labels row in nights.md; the UI now says what LFM still does. Pre-registration amended before any Glimmer row, with no change to the candidate, baseline, sealed set, metrics, test or stop rules. Wiring check: all four shipped rows ran 5 items on `fresh_200_b` with LFM standing in as Glimmer, 0 errors and 0 fallbacks; the scores mean nothing and the report was deleted.
+
 ## Open items
 
 - Ethan: decide whether to fix six known attack findings first and restart the study from run 1 (one of 24 is done), or resume on the frozen commit.
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
-- Persona study: starting on the frozen commit, on Ethan's call (not the plan's Nov 2 date), one run at a time.
 - Measure how often grading is refused for a never-share word in the model's own text.
 - Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.

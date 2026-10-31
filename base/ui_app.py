@@ -1618,6 +1618,8 @@ def flow_facts(services: Any, settings: Any, c: Any, pending: int) -> dict[str, 
         files = "Read only on this device. They never leave."
     if getattr(settings, "device_only", False):
         model = ("LFM3-VL-2B" if settings.primary_model == "lfm" else "Muse Glimmer") + " on this device, no fallback"
+        if settings.primary_model != "lfm" and settings.checker_backend == "lfm":
+            model += ". LFM3-VL-2B does search, scans and the name check"
         mode = LEARNING_TEXT[routing_mode(settings, c.learning)][0]
     elif settings.is_cloud_backend:
         model = "Glimmer on OpenRouter, for invented data only"
@@ -1747,7 +1749,8 @@ def _model_label(settings: Any, glimmer: str) -> str:
     """A model on the Device page: LFM3-VL-2B first with PRIMARY_MODEL=lfm, then Glimmer."""
     if getattr(settings, "device_only", False):
         model = settings.checker_model if settings.primary_model == "lfm" else glimmer
-        return f"{model} on this device, with no fallback"
+        helper = ", with LFM3-VL-2B for search, scans and the name check" if settings.primary_model != "lfm" and settings.checker_backend == "lfm" else ""
+        return f"{model} on this device{helper}, with no fallback"
     if getattr(settings, "primary_model", "glimmer") == "lfm":
         backup = settings.jetson_lfm_model + " on your Jetson" if getattr(settings, "has_jetson_lfm", False) else glimmer
         return f"{settings.checker_model} on this device, then {backup} if it fails"

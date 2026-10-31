@@ -379,3 +379,31 @@ def test_report_command_shows_paths_outside_the_repo_by_name_only():
             "--sets", str(TASKS), "eval/holdout.jsonl", "--out", "~/reports", "--glimmer-url", SIDE]  # fmt: skip
     assert mm._shown_argv(argv) == ["--glimmer-gguf", "g.gguf", "--glimmer-gguf=h.gguf", "--sets", "eval/tasks.jsonl",
                                     "eval/holdout.jsonl", "--out", "reports", "--glimmer-url", SIDE]  # fmt: skip
+
+
+def test_the_shipped_rows_have_glimmer_write_as_the_app_does(monkeypatch):
+    from types import SimpleNamespace
+
+    from base.local_llm import LabelsFrom
+
+    glimmer = SimpleNamespace(close=lambda: None)
+    monkeypatch.setattr(mm, "glimmer_client", lambda *a, **k: glimmer)
+    opts = SimpleNamespace(glimmer_url="http://127.0.0.1:8181/v1", glimmer_model="glimmer")
+
+    def services():
+        return SimpleNamespace(settings=None, answer_llm="lfm", checker_llm="lfm", router=SimpleNamespace(llm="lfm"))
+
+    for name, labels, router in (
+        ("shipped_answers", False, "lfm"),
+        ("shipped_labels", True, "lfm"),
+        ("shipped_tighten", False, glimmer),
+        ("shipped_decide", False, glimmer),
+    ):
+        s, swaps = services(), mm.Swaps()
+        config = mm.CONFIGS[name]
+        assert config.needs_glimmer
+        mm.customize_for(config, opts, swaps)(s)
+        assert s.answer_llm is glimmer, name
+        assert s.router.llm == router, name
+        assert isinstance(s.checker_llm, LabelsFrom) is labels, name
+    assert mm.CONFIGS["glimmer_decide"].answers == "lfm"  # the registered rows leave summaries on LFM

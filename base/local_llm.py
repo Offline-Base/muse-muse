@@ -630,3 +630,19 @@ class FallbackLLM:
     def close(self) -> None:
         self.primary.close()
         self.fallback.close()
+
+
+class LabelsFrom:
+    """The checker with its request labels from another model; the name pass stays on the checker."""
+
+    def __init__(self, labeler: Any, checker: Any):
+        self.labeler = labeler
+        self.checker = checker
+
+    def request_topics(self, *args: Any, **kw: Any) -> list[str]:
+        return self.labeler.request_topics(*args, **kw)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("labeler", "checker"):
+            raise AttributeError(name)
+        return getattr(self.checker, name)

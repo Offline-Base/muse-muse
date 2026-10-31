@@ -8,6 +8,7 @@
 #   CHECKER_GGUF        default models/LFM3-VL-2B-Q4_K_M.gguf
 #   CHECKER_MMPROJ      default models/mmproj-LFM3-VL-2B-Q8_0.gguf (the vision projector)
 #   CHECKER_CTX         default 16384
+#   CHECKER_THREADS     CPU threads (default: llama-server's own choice)
 #
 # Runs in the foreground; Ctrl-C stops it. Binds 127.0.0.1 only and reads the same key file as
 # Glimmer's servers (BASE_HOME/llama_api_key), so other local processes cannot use it.
@@ -63,6 +64,6 @@ chmod 600 "$KEY_FILE"
 echo "Starting the checker (LFM3-VL-2B) on 127.0.0.1:$PORT"
 # Liquid's recommended sampling; thinking off here, not per request (see LocalLLM._checker_body).
 exec "$BIN" --model "$GGUF" --mmproj "$MMPROJ" --alias "$ALIAS" --host 127.0.0.1 --port "$PORT" \
-  -c "$CTX" -np 1 -ngl 99 --jinja --reasoning-budget 0 \
+  -c "$CTX" -np 1 -ngl 99 ${CHECKER_THREADS:+-t "$CHECKER_THREADS"} --jinja --reasoning-budget 0 \
   --temp 0.1 --top-p 1.0 --top-k 50 --min-p 0.0 --repeat-penalty 1.1 \
   --cache-ram 0 --ctx-checkpoints 0 --no-slots --api-key-file "$KEY_FILE"

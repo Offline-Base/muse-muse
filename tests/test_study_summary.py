@@ -750,3 +750,15 @@ def test_the_summary_gives_metrics_5_and_6_per_day_and_per_night_and_a_range_bes
     )
     assert sum(line.startswith("| Simulated persona | Run | Night 0 | Night 1 ") for line in lines) == 2
     assert row_for(ss.reading_table(runs), "| strict_teacher | 3 of 3")[7] == "2 (seeds: 0 to 2)"
+
+
+def test_the_expected_model_can_be_named_for_a_study_on_glimmer(tmp_path, monkeypatch):
+    monkeypatch.setitem(ss.PLANNED_SETUP, "Model", "glimmer")
+    monkeypatch.setitem(ss.PLANNED_SETUP, "Dreaming backend", "prompt")
+    run = ss.Run("strict_teacher", 101, tmp_path)
+    run.wrote = True
+    run.fields = {"Device": "laptop", "Backend": "llama_server", "Model": "glimmer", "Dreaming backend": "prompt"}
+    cell = ss.setup_cell([run])
+    assert "as the plan fixes" in cell and "nothing here is about Glimmer" not in cell
+    run.fields["Model"] = "lfm3-vl-2b"
+    assert "Not what the plan fixes" in ss.setup_cell([run])
