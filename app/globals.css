@@ -2352,13 +2352,43 @@ pre {
     position: relative;
   }
 
+  /* The sign-in hint gets a line of its own, since beside the pill it's squeezed to a word on each line. */
+  .composer-row:has(.target-pill) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .composer-row:has(.target-pill) .composer-hint {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .composer-row:has(.target-pill) .composer-actions {
+    min-width: 0;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
   .composer-actions .menu-wrap {
     position: static;
+    min-width: 0;
   }
 
   .composer-actions .menu {
     min-width: 0;
     width: 100%;
+  }
+
+  /* The pill gives way before the mic and send, so a long pick can't push them out of the card. */
+  .target-pill {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .target-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

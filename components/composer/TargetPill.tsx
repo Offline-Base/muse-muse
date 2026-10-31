@@ -14,10 +14,10 @@ const TARGET_NOTES: Record<TargetId, string> = {
   agent: "Looks things up and works in steps",
 };
 
-/** What the pill says: "Auto" with nothing picked, the names for one or two picks, a count past that. */
+/** What the pill says: "Auto" with nothing picked, the name for one pick, a count past that, which stays short on a phone. */
 export function targetPillText(picked: readonly TargetId[]): string {
   if (!picked.length) return "Auto";
-  if (picked.length > 2) return `Web + ${picked.length} more`;
+  if (picked.length > 1) return `Web + ${picked.length} more`;
   return ["web" as const, ...picked].map(targetLabel).join(" + ");
 }
 
@@ -50,6 +50,13 @@ export function TargetPill({
                 checked={id === "web" || picked.includes(id)}
                 disabled={id === "web"}
                 onChange={(e) => onChange(options.filter((t) => (t === id ? e.target.checked : picked.includes(t))))}
+                onKeyDown={(e) => {
+                  // Enter in a form's checkbox would send the form, and start a build on half-made picks. Here it toggles, as Space does.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.click();
+                  }
+                }}
               />
               <span className="menu-item-text">
                 <span>{targetLabel(id)}</span>
