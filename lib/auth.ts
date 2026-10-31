@@ -277,6 +277,14 @@ async function ensureUser(email: string): Promise<{ id: string; email: string }>
   return row;
 }
 
+/**
+ * The shared account OPEN_ACCESS=guest builds as (GUEST_EMAIL), created if it's missing, as openAccessUser does.
+ * Products imported from a local run (app/api/admin/import-product) belong to it, as the live site's own builds do.
+ */
+export function guestAccount(): Promise<{ id: string; email: string }> {
+  return ensureUser(GUEST_EMAIL);
+}
+
 /** Open-access accounts by "email|admin", so each server instance writes the row once. A failure is retried. */
 const openUsers = new Map<string, Promise<SessionUser>>();
 

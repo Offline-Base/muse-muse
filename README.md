@@ -153,6 +153,7 @@ app/                        Platform UI and API routes (Next.js App Router)
   api/inspirations/         Save inspo and start a build
   api/builds/[buildId]/     Events (SSE) and refinements
   api/rebuilds/             Start batch rebuilds
+  api/admin/import-product/ Import a product built on a local run and publish it
   api/gateway/v1/[...path]/ Meta Model API proxy for products
   api/gateway/uploads/      Upload tickets for large files
   api/mcp/[slug]/           Muse app connector endpoint
@@ -166,6 +167,7 @@ lib/
   sandbox/                  Firewall policy, Muse Code runner, session-log usage, snapshot setup
   gateway/                  Product gateway: tokens, limits, metering, uploads
   publish/                  Vercel deploys for products
+  promote/                  Local products to the live site: the import bundle, its parser and publish workflow
   mcp/                      MCP server for product connectors
   train/                    Lambda client, training workflow, sweep, recipes, datasets, judge
   db/schema.ts              Postgres schema (Drizzle)
@@ -173,7 +175,7 @@ catalog/meta-models.json    Every Meta model, endpoint, limit and price we know 
 catalog/meta-resources.json Meta's demo videos, each with a rebuild plan
 drizzle/                    SQL migrations
 docs/                       Design, spikes, UI patterns, training, build plan, submission
-scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos
+scripts/                    dev-local, migrate, make-builder-snapshot, rebuild-all, rerecord-demos, promote-local
 template/                   Starter repo Muse Code builds every product from
   AGENTS.md                 Rules Muse Code loads on its own
   .agents/skills/           One skill per Meta model, plus product UI and verify
@@ -213,6 +215,8 @@ npm run dev:local               # then open http://localhost:3000
 ```
 
 This needs only `MODEL_API_KEY`, `VERCEL_OIDC_TOKEN` (from `vercel env pull`, good for 12 hours) and `BUILDER_SNAPSHOT_ID` in `.env.local`. The database is PGlite in `.data/pglite`, files go to `.data/files`, and sign-in is off for localhost. Builds still run in Vercel Sandbox. The sandbox can't reach your machine, so products call Meta directly through the build firewall instead of the gateway, and their file uploads don't work. A local build stops after the demo video and isn't published to its own link, even with `VERCEL_TOKEN` set: the product would call this machine's gateway, which Vercel can't reach. The live preview in the build room works while the build runs.
+
+To put local products on the live site, run `npx tsx --env-file=.env.local scripts/promote-local.ts --db .data/pglite --slug <slug>,<slug>` (add `--dry-run` first to see what it would upload and send). It reads a copy of the PGlite folder and asks the live site whether it takes each bundle (`POST /api/admin/import-product?check=1`), so nothing is uploaded for a product it would refuse. Then it uploads each product's files from `.data/files` to the live Blob store at the same paths with your `VERCEL_OIDC_TOKEN`, and sends the rows to `POST /api/admin/import-product` with the `AUTOMATION_SECRET` bearer. The live site saves them under its guest account (its builds don't count against the guest's daily builds) and publishes each product from its sandbox the way a live build does, then the script waits up to 10 minutes for the links. Only live products whose latest build is live go; the rest are skipped with the reason. When a publish ends without a link, run the same command with `--republish`: the live site publishes it again, once its last try has ended, with nothing uploaded again.
 
 ## Tests
 

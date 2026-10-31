@@ -17,8 +17,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/train/workflow.ts,
-// lib/train/steps.ts, lib/train/judge.ts, lib/train/hub-steps.ts, and lib/train/datasets.ts, which holds both).
-// Workflows are found through the start() calls in app/api/inspirations, app/api/builds/[buildId]/messages,
-// app/api/rebuilds, app/api/train/jobs, app/api/train/jobs/[id]/publish and app/api/train/datasets.
+// Compiles "use workflow" and "use step" (lib/pipeline/workflow.ts, lib/pipeline/build-steps.ts, lib/promote/workflow.ts,
+// lib/promote/steps.ts, lib/train/workflow.ts, lib/train/steps.ts, lib/train/judge.ts, lib/train/hub-steps.ts, and
+// lib/train/datasets.ts, which holds both). Workflows are found through the start() calls in app/api/inspirations,
+// app/api/builds/[buildId]/messages, app/api/rebuilds, app/api/admin/import-product, app/api/train/jobs,
+// app/api/train/jobs/[id]/publish and app/api/train/datasets.
 export default withWorkflow(nextConfig);

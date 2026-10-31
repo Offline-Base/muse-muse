@@ -108,6 +108,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       namedExports: {
         mintToken: async () => ({ id: "tok-1", token: "secret" }),
         revokeTokens: async (...args: unknown[]) => void revoked.push(args),
+        revokeLiveTokensExcept: async (...args: unknown[]) => void revoked.push(["live except", ...args]),
       },
     });
     mock.module(at("../../judge.ts"), {
@@ -358,7 +359,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.deepEqual(query.params, ["live"]);
       assert.equal(update.values.latestBuildId, "b1");
       assert.ok(emitted.some((e) => String(e.body.text).includes("turned this product off")));
-      assert.deepEqual(revoked, [["prod-1", "build"]]);
+      assert.deepEqual(revoked, [
+        ["prod-1", "build"],
+        ["live except", "prod-1", "tok-live"],
+      ]);
     });
 
     it("sets the outcome when the product is on", async () => {

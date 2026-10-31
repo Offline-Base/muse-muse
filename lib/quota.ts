@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
 import type { SessionUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
@@ -7,6 +7,13 @@ import { platformSpendToday } from "@/lib/usage";
 
 /** Builds count against a user's quota for 24 hours after they start. */
 export const QUOTA_WINDOW_MS = 24 * 3_600_000;
+
+/**
+ * builds.workflow_run_id of a build imported from a local run (lib/promote/store.ts). It ran on a laptop, not here, so
+ * it never counts against the quota of the guest account it belongs to on the live site. attachRun is the only other
+ * writer of the column, and the build API never sends it.
+ */
+export const IMPORTED_RUN = "imported";
 
 export function quotaWindowStart(now: Date): Date {
   return new Date(now.getTime() - QUOTA_WINDOW_MS);
@@ -36,12 +43,18 @@ export function spendPausedDecision(spentUsd: number, capUsd: number): boolean {
   return spentUsd >= capUsd;
 }
 
-/** Builds of any kind (new builds and refinements) the user started since `since`. */
+/** Builds of any kind (new builds and refinements) the user started on this site since `since`. Imported ones don't count. */
 export async function buildsStartedSince(userId: string, since: Date): Promise<number> {
   const [row] = await db()
     .select({ n: sql<number>`count(*)::int` })
     .from(schema.builds)
-    .where(and(eq(schema.builds.userId, userId), gte(schema.builds.startedAt, since)));
+    .where(
+      and(
+        eq(schema.builds.userId, userId),
+        gte(schema.builds.startedAt, since),
+        or(isNull(schema.builds.workflowRunId), ne(schema.builds.workflowRunId, IMPORTED_RUN)),
+      ),
+    );
   return Number(row?.n ?? 0);
 }
 
