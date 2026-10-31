@@ -914,7 +914,7 @@ GitHub Action outputs as source; npm publishing only after the owner confirms th
 **First hour.** Check whether Vercel serves `api/*.py` Python functions beside a Next.js app in one project, and how
 `next start` can reach them in a build. If it can't, Python runs through unit 9's `/exec`, and `runtime.python` stays off.
 
-**Routes.** `GET /p/<slug>/get/selfhost.zip`, `GET /p/<slug>/get/vscode.zip`, `GET /p/<slug>/get/github-action.zip`, made
+**Routes.** `GET /p/<slug>/get/selfhost.zip` (cloud mode now; the kit's manifest has a `mode` field, with "offline" reserved for General's offline install after Nov 4), `GET /p/<slug>/get/vscode.zip`, `GET /p/<slug>/get/github-action.zip`, made
 from the product's source and `musemuse.json` the way tg-outputs makes the CLI and skill. `POST
 /api/products/<slug>/publish/npm` (the builder, then an admin, with `RUNTIME_NPM_PUBLISH`).
 
@@ -1002,15 +1002,22 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
 a per-owner board registry and an owner check on the gadget route, which closes the release review's high finding (today
 every guest-built live product with the gadget option reaches the one real board).
 
-**Migration 0026_hardware.** `boards`: `id`, `owner_user_id`, `name`, `mcp_url_ciphertext`, `token_ciphertext`, `iv`, `tag`,
-`key_version`, `created_at`, `last_seen_at`, `revoked_at`. `product_boards`: `product_id` primary, `board_id`, `visitors`
-boolean default false, `created_at`.
+**Migration 0026_hardware.** One shared `devices` table, also used by offline (General's tg-offline, docs/OFFLINE.md
+dd1602f), which adopts it when it merges. `devices`: `id`, `owner_user_id`, `name`, `kind` (`muse_device`, `inference`),
+`mcp_url_ciphertext` null, `token_ciphertext` null, `endpoint_url_ciphertext` null, `iv`, `tag`, `key_version`, `models`
+jsonb (filled by a probe that really calls the model and records JSON-schema support and vision), `lan` boolean, `trust`
+(`loopback`, `pinned_tls`, `plain_http_opt_in`), `cert_spki_sha256` null, `pair_code_hash` null, `paired_at` null,
+`allow_plain_http` boolean default false, `health` jsonb (last status, failures, median latency), `created_at`,
+`last_seen_at`, `revoked_at`. `product_boards`: `product_id` primary, `board_id` (references `devices`), `visitors` boolean
+default false, `created_at`. Unit 13 uses `kind = muse_device` rows. Pairing (8-character one-time code plus a 6-digit check
+number on both screens, then SPKI pinning) is offline's and lands after Nov 4; until then, admins register boards by URL
+and token as below, and offline's branch keeps a copy of the same shape so the two don't drift.
 
 **Routes.**
 
 | Method and path | Auth | Does |
 |---|---|---|
-| `POST /api/boards` `{name, mcpUrl, token}`, `GET /api/boards`, `DELETE /api/boards/<id>` | signed-in builder | Registers a `muse-device` board, encrypted with `lib/secrets/box.ts` (unit 5). Checks it with `describe_device` first |
+| `POST /api/boards` `{name, mcpUrl, token}`, `GET /api/boards`, `DELETE /api/boards/<id>` | signed-in builder | Registers a `muse-device` board (a `devices` row with `kind = muse_device`), encrypted with `lib/secrets/box.ts` (unit 5). Checks it with `describe_device` first |
 | `POST /api/products/<slug>/board` `{boardId, visitors}` | the product's builder | Links one of their boards to one of their products |
 | `GET` and `POST {GATEWAY_URL}/gadget` (existing) | as today, plus the owner check | With `HARDWARE_GADGET_OWNER_CHECK`, a live token reaches only the board its product's owner linked, and a visitor only when `visitors` is on. Otherwise 503 `gadget_offline` |
 
@@ -1208,6 +1215,8 @@ game canvas changes on a key press. Build: an extension that saves a page note t
 Phaser game.
 
 ## Changes to this contract
+
+- Oct 31: unit 13's table is the shared `devices` table (offline's shape); unit 10's kit reserves `mode: "offline"`.
 
 - Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
   section 21a added with the planner's decisions.
