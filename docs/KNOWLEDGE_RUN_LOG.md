@@ -758,13 +758,13 @@ are never stored or used.
 
 ## Open
 
-- Muse Spark Open, after Glimmer (owner, Oct 31, about 3:40 PM): "once we finish this process with muse glimmer and learn the
+- Muse Spark Open, after Glimmer (owner, Oct 31, about 3:25 PM): "once we finish this process with muse glimmer and learn the
   necessary lessons, id want to also modernize muse open". Lambda, AWS or GCP only, not Fireworks. See the 2:00 to 2:15 PM
   entry for the routes checked. Needs before it can start: Hugging Face access to the gated weights (owner), `gcloud auth
   login` (owner), and a budget above the current AWS limit if it uses a 16-GPU reservation.
   Shelved the same day: the owner judged it not feasible at these costs (cheapest real route about $5,500 to $6,100 for one
   day of 16 B200s on AWS, plus a test day).
-- Knowledge map (owner OK, Oct 31, about 3:50 PM): once the final model's tests are in (Nov 1), a background helper builds
+- Knowledge map (owner OK, Oct 31, about 3:30 PM): once the final model's tests are in (Nov 1), a background helper builds
   a private Artifact of 2026 events by month and topic, marked by whether base, tuned and the small file get each right,
   with answers and source links (short facts, no article text), from existing results only. The dose test also counts how
   many sources carry each fact, to target thinly covered ones. A fact lookup on devices is out of scope before Nov 4.
