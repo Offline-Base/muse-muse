@@ -77,6 +77,20 @@ describe("startDeviceTraining", () => {
     assert.deepEqual(h.calls.at(-1), { name: "train_model", args: { dataset: "bakery", name: "bakery" } });
   });
 
+  it("refuses a name already taken before it replaces the dataset of that name", async () => {
+    const h = harness(numbered(3));
+    h.replies.list_models = json({ files: [{ name: "bakery.gguf", gib: 0.01 }, { name: "other.gguf", gib: 0.01 }] });
+    await assert.rejects(start(h.deps), (err: Error) => err instanceof DeviceRefusedError && /bakery\.gguf/.test(err.message));
+    assert.deepEqual(h.calls.map((call) => call.name), ["list_models"]);
+  });
+
+  it("goes ahead when only other names are taken", async () => {
+    const h = harness(numbered(3));
+    h.replies.list_models = json({ files: [{ name: "other.gguf", gib: 0.01 }] });
+    assert.deepEqual(await start(h.deps), { run: "bakery", state: "loading" });
+    assert.deepEqual(h.calls.map((call) => call.name), ["list_models", "save_dataset", "train_model"]);
+  });
+
   it("passes on steps and rank when they're given", async () => {
     const h = harness(numbered(3));
     await start(h.deps, { steps: 20, rank: 4, maxLength: 1024 });

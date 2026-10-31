@@ -66,6 +66,7 @@ describe("/api/device/train", { skip: typeof mock.module !== "function" }, () =>
           if (boardDown) throw new Error(`fetch failed for ${URL_VALUE} with ${TOKEN_VALUE}`);
           calls.push({ name, args });
           if (replies[name]) return replies[name];
+          if (name === "list_models") return text(JSON.stringify({ files: [] }));
           if (name === "save_dataset") return text(JSON.stringify({ name: args.name, examples: (args.examples as unknown[]).length }));
           if (name === "train_model") return text(JSON.stringify({ run: args.name, state: "loading" }));
           if (name === "training_status") return text(JSON.stringify({ state: "training", step: 5, steps: 60, loss: 1.5 }));
@@ -119,8 +120,8 @@ describe("/api/device/train", { skip: typeof mock.module !== "function" }, () =>
     const res = await post({ ...START, steps: 20, rank: 4, maxLength: 1024 });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { run: "bakery", state: "loading" });
-    assert.deepEqual(calls.map((call) => call.name), ["save_dataset", "train_model"]);
-    assert.deepEqual(calls[1]!.args, { dataset: "bakery", name: "bakery", steps: 20, rank: 4, max_length: 1024 });
+    assert.deepEqual(calls.map((call) => call.name), ["list_models", "save_dataset", "train_model"]);
+    assert.deepEqual(calls[2]!.args, { dataset: "bakery", name: "bakery", steps: 20, rank: 4, max_length: 1024 });
   });
 
   it("refuses bad input before the store or the board", async () => {

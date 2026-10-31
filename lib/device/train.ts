@@ -73,7 +73,10 @@ function boardText(result: DeviceToolResult): string {
   return text;
 }
 
-/** Copies the dataset's train examples to the board as `name`, replacing any file of that name, and starts the run. */
+/**
+ * Copies the dataset's train examples to the board as `name`, replacing any file of that name, and starts the run. A finished
+ * run's adapter holds the name, and train_model refuses it, so that's checked first: by then the old data would be gone.
+ */
 export async function startDeviceTraining(
   config: DeviceConfig,
   { datasetId, name, steps, rank, maxLength }: { datasetId: string; name: string; steps?: number; rank?: number; maxLength?: number },
@@ -85,6 +88,12 @@ export async function startDeviceTraining(
   let saved = 0;
 
   const flush = async () => {
+    if (!sent) {
+      const { files } = JSON.parse(boardText(await deps.callTool(config, "list_models", {}))) as { files?: Array<{ name: string }> };
+      if (files?.some((file) => file.name === `${name}.gguf`)) {
+        throw new DeviceRefusedError(`${name}.gguf is already on this board. Choose another name.`);
+      }
+    }
     const { examples } = JSON.parse(
       boardText(await deps.callTool(config, "save_dataset", { name, examples: batch, append: sent > 0 })),
     ) as { examples: number };
