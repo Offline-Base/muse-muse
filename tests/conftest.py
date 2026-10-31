@@ -1,5 +1,6 @@
 import os
 import socket
+import tempfile
 
 import pytest
 
@@ -8,6 +9,13 @@ from base.config import load_settings
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 _real_getaddrinfo = socket.getaddrinfo
+
+
+def pytest_configure(config):
+    # Anything that falls back to the default home (a subprocess, a script's default) gets a throwaway
+    # one: the live ~/.base holds the real tag map, and a test once upgraded it in place.
+    if not os.environ.get("BASE_HOME"):
+        os.environ["BASE_HOME"] = tempfile.mkdtemp(prefix="pytest-base-home-")
 
 
 def pytest_collection_modifyitems(config, items):
