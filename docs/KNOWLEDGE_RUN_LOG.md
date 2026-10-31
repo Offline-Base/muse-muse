@@ -441,6 +441,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
     on the curve is worth more than that.
   - writer-1 ~/q/base/new1000.sh: base Q4_K_M and IQ1_S on the 1,000 new probes once the honesty test is done, under
     gpu.lock, so the stage 2 table has a base row on all 2,500.
+- 2:10 AM: fixed make_table.py before stage 2 reached it: it compared the base's rows with the run's in order, so a run
+  on the 2,500 would have stopped quantize.sh before its copy to the cache filesystem. Base rows now match by question
+  (with new1000-<quant>.json), and a base row missing any answer is left out. Tested: stage 1's table comes out the same
+  row for row, a shuffled run keeps the base's counts, a run with one extra question drops the base rows without
+  stopping. Deployed to writer-1 (sha256 b5b5610a...). New: `scripts/knowledge/aws/split_probes.py RUN [MODEL]` splits
+  a run's scores between the fixed 1,500 and the new 1,000; on stage1-multi and stage1 it reproduces the numbers above.
 
 ## Problems and fixes
 
