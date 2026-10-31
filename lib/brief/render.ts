@@ -355,8 +355,9 @@ const STEP_LABELS: Record<string, string> = {
   start: "Start (the built app on port 3100, `/` must return 200)",
   console: "Console (no errors in the browser console on `/`)",
   smoke: "Smoke test (`tests/smoke.spec.ts`)",
-  // Wave 3, unit 2: platform services' fixed checks (only products with musemuse.caps.json have this step).
+  // ---------- Wave 3, unit 2: platform services' fixed checks (only products with musemuse.caps.json have this step) ----------
   caps: "Platform services (`scripts/caps-check.mjs`: what the smoke test recorded with `tests/caps` and what the gateway saw)",
+  // ---------- end Wave 3, unit 2 ----------
   manifest: "Manifest (`musemuse.json` against `musemuse.schema.json`)",
 };
 
