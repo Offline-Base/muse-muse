@@ -298,7 +298,12 @@ const DROP_SERP_KEYS = [
   "thumbnail",
 ];
 
-export const TOOL_POLICIES: ToolPolicy[] = [
+/** Keeps each policy's id as a literal, so ToolId in lib/tools/ids.ts comes from this list alone. */
+function policies<Id extends string>(list: Array<ToolPolicy & { id: Id }>) {
+  return list;
+}
+
+export const TOOL_POLICIES = policies([
   {
     id: "web_search",
     label: "Web search",
@@ -764,4 +769,4 @@ export const TOOL_POLICIES: ToolPolicy[] = [
       },
     ],
   },
-];
+]);
