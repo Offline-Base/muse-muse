@@ -726,6 +726,20 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Galaxy S25 12 GB: IQ1_S 1.86 tok/s, 2/3, peak RSS 7.09 GiB; IQ2_XXS 1.89 tok/s, 3/3, 7.52 GiB. Pixel 9 Pro 16 GB: IQ2_XXS
   0.95 tok/s, 3/3. Phone GPU (OpenCL) slower with no IQ kernels; NPU not usable. 8 GB phones: nothing fits. Use IQ2_XXS on
   phones. Both files stay in S3 knowledge/models/stage2/ for the final comparison. base-test login ends about 2:41 AM Nov 1.
+- 4:50 PM: stage-b-r30 tuned eval: 2,500 probes 26.3% (657) against stage 2's 30.2% (755): -3.9 points (95% -5.1 to -2.7),
+  gained 67, lost 165 (104 of them refusals); old facts 40/40. stage-b-a was 26.0%. Fails the compare gates (2 points; 104 of
+  755 is 13.8% over-refusal, gate 5%). Rough regex split of the 2,500: stage 2 right 30.2%, refused 0.1%, wrong as fact 69.7%;
+  stage-b-r30 26.3%, 31.0%, 42.8%; stage-b-a 26.0%, 38.2%, 35.9%. Note: stage2-multi's ckpt/base.json is stage 1's answers
+  (answered_by stage1-multi), 27.9%, not base Glimmer's; the training log's base_probe_accuracy 0.2792 is stage 1.
+  Meta questions (137 matched by name in the 2,500): base Q4 14.6%, stage 2 40.9%, stage-b-r30 31.4%.
+- 5:00 PM: stage-b-r30 dev honesty: honest 85.8%, made up 10.8%, controls right 28.0%, refused 33.0%.
+- 5:05 PM: salient 246 on BF16 (measure_known.py, prefilled): stage 2 70.7% (AI 60.0, Meta 57.1, world 78.5), stage-b-r30
+  65.9% (54.5, 57.1, 72.5), gained 6, lost 18, refused 20, wrong as fact 64. Base Q4 was 26.0%.
+- 5:00 PM: built train-stage-b-r30b.jsonl, mix b (honest share 17.5% against r30's 28%) with the same 30% reasoning rows
+  (60,000; measured wrong 3,652, false premise 3,023, after cutoff 1,621, unknowable 1,392, contrast 20,397, measured right
+  7,023; shuffled sha256 640dbecf...), staged on train-1 and in S3. It starts when the r30 tests free train-1, to cut
+  over-refusal, in place of the dose test. Pilot on the 2,500 and salient is being measured to compare.
+- writer-1: quantize.sh stage-b-r30 started 4:51 PM; BF16, Q8_0 and Q4_K_M done by 5:01 PM, imatrix next.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
