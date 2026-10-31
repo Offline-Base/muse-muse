@@ -1,4 +1,5 @@
 [
+  "lib/platform/identity.ts",
   "scripts/caps-check.mjs",
   "tests/caps/index.ts",
   "app/api/musemuse/health/route.ts",
