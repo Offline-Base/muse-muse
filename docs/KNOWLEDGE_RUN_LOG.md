@@ -849,6 +849,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   `lab.py add glimmer-final` uploaded it to S3 knowledge/models/stage-b-r30b/ (1.9 min, sha256 matches writer-1) and
   enabled it in models.json in place of glimmer-stage2. Three lab tests read the live models.json and assumed the final was
   not added yet; they now use a copy with glimmer-final reset (111 tests pass).
+- 7:50 PM: new job/loop_check.py (repetition loops; standard library): 40 old facts and 20 longer prompts, greedy and with
+  Meta's sampling, max_tokens 512, reasoning off; a reply loops if it hits the cap with 30% or more repeated word 6-grams,
+  or has 50% or more anywhere. job/loop_r30b.sh is queued on writer-1. After r30b's IQ1_S is scored it checks r30b's IQ1_S,
+  IQ2_XXS, IQ1_M and Q4_K_M, plus base IQ1_S and r30's IQ1_S (the second checks the tool against the DFlash helper's 10/60).
+  After the shrink bench, it checks the two kept mixes. Each file runs under gpu.lock, about 5 minutes. Output goes to
+  ~/q/loops-r30b.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
