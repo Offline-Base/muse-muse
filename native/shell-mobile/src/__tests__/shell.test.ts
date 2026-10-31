@@ -51,6 +51,15 @@ describe("isSamePageJump", () => {
     assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x"), false, "a reload");
     assert.equal(isSamePageJump("https://a.test/x", "https://a.test/z"), false);
     assert.equal(isSamePageJump(null, "https://a.test/x"), false);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x"), false, "no fragment on the target is a real load");
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y"), true, "the same in-page link again");
+    assert.equal(isSamePageJump("https://a.test/x", "https://a.test/x#"), true);
+    assert.equal(isSamePageJump("https://a.test/x?a=1#y", "https://a.test/x?a=2#y"), false);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#z", "click"), true);
+    assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y", "other"), true);
+    for (const type of ["reload", "formsubmit", "formresubmit", "backforward"]) {
+      assert.equal(isSamePageJump("https://a.test/x#y", "https://a.test/x#y", type), false, type);
+    }
   });
 });
 

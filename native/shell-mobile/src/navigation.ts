@@ -26,10 +26,21 @@ function protocolOf(url: string): string | null {
   }
 }
 
-/** True when going from one URL to the other only moves within a page, so the page keeps running. */
-export function isSamePageJump(from: string | null | undefined, to: string): boolean {
-  if (!from || from === to) return false;
-  return from.split("#")[0] === to.split("#")[0];
+/**
+ * What iOS calls a navigation that loads a page, whatever its URL looks like. Going back can land on another document
+ * or the same one, and this can't tell which, so it counts: a lost recording beats a microphone left on.
+ */
+const PAGE_LOAD_TYPES = new Set(["reload", "formsubmit", "formresubmit", "backforward"]);
+
+/**
+ * True when going from one URL to the other only moves within a page, so the page keeps running. It's a browser's own
+ * rule: the target has to name a fragment, so /a#x to /a is a real load, and the same link clicked twice isn't.
+ * navigationType is what iOS says started it. Android doesn't say.
+ */
+export function isSamePageJump(from: string | null | undefined, to: string, navigationType?: string): boolean {
+  if (!from || (navigationType && PAGE_LOAD_TYPES.has(navigationType))) return false;
+  const fragment = to.indexOf("#");
+  return fragment >= 0 && from.split("#")[0] === to.slice(0, fragment);
 }
 
 /** The product's own pages stay in the app, and anything else goes to the system browser or is refused. */

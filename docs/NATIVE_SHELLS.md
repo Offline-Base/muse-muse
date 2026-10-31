@@ -57,8 +57,8 @@ Product B. Per-product APKs don't have this problem, since each one opens one pr
 `RNCWebChromeClient.onPermissionRequest`.
 
 **Selftest.** It scrolls the page, then logs a `MUSE_SELFTEST {json}` line, kept under 3.5 KB for logcat, and posts the whole
-report to `<platform>/api/native/selftest`. On iOS it also writes the whole report to `Documents/selftest.json`. The pass rules are in `src/selftest.ts`. The handshake is what the shell's router saw,
-not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
+report to `<platform>/api/native/selftest`. On iOS it also writes the whole report to `Documents/selftest.json`. The pass
+rules are in `src/selftest.ts`. The handshake is what the shell's router saw, not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
 still claim a text length, so the lab's pixel check is the proof of that one.
 
 **Per-product APKs: check before the first one ships.** `updates.enabled` is false only when `MUSE_PRODUCT_URL` is set at
@@ -98,8 +98,18 @@ Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT`
 carries the page's uncaught errors and `console.error` calls in `errors`, which the lab turns into warnings.
 
 **A new page in the same WebView.** Its load start ends the old page's recording, live view and speech, in case the old page
-didn't manage to, and a recording it was still starting never starts. Jumps within a page don't count. The glasses stay
-connected. A failed photo or a stream timeout leaves the state at ready, so the next press can work, and that call's own
+didn't manage to, and a recording it was still starting never starts. A new WebView and a web process that died do the same.
+Jumps within a page don't count, and those follow a browser's own rule: the new URL has to name a fragment, so `/a#x` to `/a`
+is a new page, and the same `#x` link twice isn't. A reload, a form or going back always counts as a new page. Going back
+could be either, and a lost recording beats a microphone left on. iOS says how a navigation started and Android doesn't, and
+Android's load start also fires on `pushState`, so this needs rework before an Android build gets a glasses bridge. The
+glasses stay connected.
+
+**One microphone at a time.** A second `startRecording` says `busy` from the moment the first one is called, and a
+`stopRecording` while one is still starting cancels it and says `bad_request`, so no recorder runs that nothing can reach.
+Leaving the screen ends it the same way.
+
+A failed photo or a stream timeout leaves the state at ready, so the next press can work, and that call's own
 promise carries the failure.
 
 **Cut for now.** The design's button for `glasses_app_update_required` isn't wired, so that error only tells the person to

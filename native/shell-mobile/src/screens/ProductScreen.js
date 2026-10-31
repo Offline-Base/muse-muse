@@ -212,6 +212,11 @@ export function ProductScreen({ url, selftest, glasses }) {
     return { router, glassesBridge };
   }, [capabilities, glasses, nonce, origin, platform, report, selftest, settings.glasses]);
 
+  // A new WebView is a new page, even on the same URL, and its load start can't tell.
+  useEffect(() => {
+    if (attempt > 0) bridge.glassesBridge?.pageChanged();
+  }, [attempt, bridge]);
+
   useEffect(
     () => () => {
       bridge.router.dispose();
@@ -307,7 +312,7 @@ export function ProductScreen({ url, selftest, glasses }) {
           canGoBack.current = state.canGoBack;
         }}
         onLoadStart={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
-          if (!isSamePageJump(currentUrl.current, nativeEvent.url)) bridge.glassesBridge?.pageChanged();
+          if (!isSamePageJump(currentUrl.current, nativeEvent.url, nativeEvent.navigationType)) bridge.glassesBridge?.pageChanged();
           keepOnProduct(nativeEvent.url);
         }}
         onLoadEnd={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
@@ -329,6 +334,8 @@ export function ProductScreen({ url, selftest, glasses }) {
         }}
         onContentProcessDidTerminate={() => {
           seen.current.crashed = true;
+          // The page is gone, and the reload below may look like a jump.
+          bridge.glassesBridge?.pageChanged();
           if (selftest) report({});
           else webView.current?.reload();
         }}
