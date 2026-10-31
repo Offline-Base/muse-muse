@@ -796,6 +796,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   knowledge_cutoff 2026-10-29 line; workflow next-training-plan. Then the pick among r30, r30b and the pilot (candidates
   only differ in Stage B; checkpoint averaging r30 with r30b is a fallback idea), quantize the pick if not r30, and send its
   IQ1_S path and sha256 to Muse Privacy and Muse Muse General (both waiting), then add it to the compare lab.
+- 7:13 PM: stage-b-r30b dev honesty (prefilled, BF16): honest 85.8% (103 of 120), made up 11.7% (14), controls right 33.7%,
+  refused 18.0% (r30: 85.8%, 10.8%, 28.0%, 33.0%). Salient 246: 69.1% (AI 56.4, Meta 57.1, world 77.2), refused 10, wrong as
+  fact 66; against stage 2 gained 7, lost 11 (stage 2 70.7%, r30 65.9%; same refusal regex, which reproduces r30's 20 and 64).
+- 7:14 PM: pick is stage-b-r30b. Against r30 it is ahead on the 2,500 (29.0% vs 26.3%), over-refusal (54 vs 104 of stage 2's
+  right answers lost to refusals), Meta 137 (35.8% vs 31.4%), salient (69.1% vs 65.9%) and controls (33.7% right and 18.0%
+  refused vs 28.0% and 33.0%), with the same honest rate (made up 14 vs 13 of 120). The pilot is behind it on every measure.
+  It still misses the 5% over-refusal gate (7.2%); no candidate passes it. Checkpoint averaging with r30 dropped: r30 adds
+  nothing r30b lacks. Still running: its 30-minute channel check and reasoning-on dev honesty; the quantize stops if the
+  channel gates fail. writer-1: deleted stage-b-r30's local BF16 (55.7 GB) and Q8_0 (29.6 GB) after an exact size match with
+  the NFS copies, neither open (212 GB free; r30's Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S stay for the helpers). Started
+  run_handoff.sh stage-b-r30b at 7:14 PM (adapter 1.68 GB, then quantize.sh with the 2,500 probes, about 3 to 4 hours).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
