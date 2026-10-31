@@ -563,6 +563,11 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 12:02 PM: owner asked for an audit that everything is necessary. Independent read-only workflow wba29bgj0 started.
   Found while scouting: AWS mac2.metal i-0a5866df305e83d40 "musemuse-lab-mac", launched Oct 31 2:01 AM on a dedicated host,
   not in this log. Not touched; origin being checked.
+- About 12:10 PM: owner: "You have my okay to get anything here needed done. I do want to serve with reasoning at some
+  point." So: reasoning off (option A) for a working model first, and a reasoning repair stays a goal. Next attempt at
+  repair is option C, protecting the turn's tokens against base with the adapter switched off (the plan's self-distillation
+  idea, KNOWLEDGE_UPDATE.md lines 226 and 232), not the flagged row writer. The owner's okay doesn't clear the classifier:
+  if a helper is stopped again, that work stops and goes back to the owner.
 
 ## Problems and fixes
 
