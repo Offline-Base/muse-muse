@@ -1,3 +1,4 @@
+import { builtInCalls, isBuiltInCall, responsesSearches, withSearches } from "@/lib/gateway/search";
 import { fromResponsesUsage, PRICES, usageCost } from "@/lib/meta/pricing";
 import type { GatewayEndpoint, ModelUsage } from "@/lib/types";
 
@@ -8,6 +9,8 @@ const MAX_METER_JSON_BYTES = 256 * 1024 * 1024;
 const RESPONSE_FINAL_EVENTS = new Set(["response.completed", "response.incomplete", "response.failed"]);
 /** Muse Image streaming events, one per finished image (catalog/meta-models.json). */
 const IMAGE_DONE_EVENTS = new Set(["image_generation.completed", "image_edit.completed"]);
+/** The event that finishes one output item, which is how a stream cut off early still shows the searches it ran. */
+const OUTPUT_ITEM_DONE = "response.output_item.done";
 /** What a cut-off or unreadable reply records when it showed no usage, so its spend never goes unrecorded. */
 const MIN_INPUT_TOKENS = 1_000;
 const MIN_OUTPUT_TOKENS = 1_000;
@@ -128,14 +131,22 @@ export function asrUsage(model: string, audioDurationMs: number): ModelUsage {
   return { ...item, costUsd: usageCost(item) };
 }
 
-/** Usage from a complete, non-streamed JSON reply. */
+/**
+ * Adds Meta's fee for `searches` web search queries to a text model's usage, with the query count as its units. Muse
+ * Image's own searches are part of its per-image price, and SAM has none (pricing-rate-limits).
+ */
+function chargeSearches(model: string, item: ModelUsage, searches: number): ModelUsage {
+  return searches > 0 && tokenPriced(model) ? { ...withSearches(item, searches), units: searches } : item;
+}
+
+/** Usage from a complete, non-streamed JSON reply. Responses replies include their web search fees. */
 export function usageFromJson(endpoint: GatewayEndpoint, model: string | null, body: unknown): ModelUsage[] {
   if (!body || typeof body !== "object" || !model) return [];
   const obj = body as Record<string, unknown>;
   switch (endpoint) {
     case "responses": {
       const item = usageFromResponse(model, obj);
-      return item ? [item] : [];
+      return item ? [chargeSearches(model, item, responsesSearches(obj))] : [];
     }
     case "images/generations":
     case "images/edits": {
@@ -200,18 +211,27 @@ function eventType(e: SseEvent): string | null {
 /**
  * Usage from a server-sent events stream (Responses or Muse Image streaming). `finish` is for a stream that ended;
  * `partial` for one that broke off, from the deltas seen so far (token-billed models only, so SAM's large mask deltas
- * are never buffered).
+ * are never buffered). Web search fees are read from the final response's output and from each finished output item,
+ * so a stream cut off before its final event still pays for the searches it showed. `searches: false` leaves them out,
+ * for the docs proxy, which adds its own.
  */
-export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | null) {
+export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | null, opts: { searches?: boolean } = {}) {
   let final: ModelUsage | null = null;
   let images = 0;
   let deltaChars = 0;
   const countDeltas = endpoint === "responses" && tokenPriced(model);
+  const countSearches = countDeltas && opts.searches !== false;
+  /** The final response's built-in calls and queries, once a final event showed its output. */
+  let finalOutput: { calls: number; queries: number } | null = null;
+  /** Built-in call items finished so far, by id when they have one. */
+  const callItems = new Map<string, unknown>();
+  const anonymousCalls: unknown[] = [];
   const wanted = (name: string | null) =>
     name === null ||
     RESPONSE_FINAL_EVENTS.has(name) ||
     IMAGE_DONE_EVENTS.has(name) ||
-    (countDeltas && name.endsWith(".delta"));
+    (countDeltas && name.endsWith(".delta")) ||
+    (countSearches && name === OUTPUT_ITEM_DONE);
   const parser = new SseParser((e) => {
     const type = eventType(e);
     if (!type) return;
@@ -228,16 +248,44 @@ export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | nul
       }
       return;
     }
+    if (type === OUTPUT_ITEM_DONE) {
+      if (!countSearches) return;
+      try {
+        const item = (JSON.parse(e.data) as { item?: { id?: unknown; type?: unknown; action?: unknown } }).item;
+        if (!isBuiltInCall(item)) return;
+        // Only what the count needs: results can be long.
+        const kept = { type: item?.type, action: item?.action };
+        if (typeof item?.id === "string") callItems.set(item.id, kept);
+        else anonymousCalls.push(kept);
+      } catch {
+        // Not JSON: the final event's output still counts it.
+      }
+      return;
+    }
     if (!RESPONSE_FINAL_EVENTS.has(type) || !model || endpoint !== "responses") return;
     try {
       const parsed = JSON.parse(e.data) as { response?: Record<string, unknown> };
       final = usageFromResponse(model, parsed.response) ?? final;
+      if (countSearches && Array.isArray(parsed.response?.output)) {
+        finalOutput = { calls: builtInCalls(parsed.response), queries: responsesSearches(parsed.response) };
+      }
     } catch {
       // A malformed final event falls back to the estimate rather than failing the stream.
     }
   }, wanted);
-  const partial = (): ModelUsage[] =>
-    final ? [final] : minimalUsage(endpoint, model, { outputTokens: Math.ceil(deltaChars / CHARS_PER_TOKEN), images });
+  /** What the finished items showed, or the final output when it shows more: the count errs on the side of the bill. */
+  const seen = () => {
+    const output = [...callItems.values(), ...anonymousCalls];
+    const shown: { calls: number; queries: number } = finalOutput ?? { calls: 0, queries: 0 };
+    return {
+      calls: Math.max(shown.calls, output.length),
+      queries: Math.max(shown.queries, responsesSearches({ output })),
+    };
+  };
+  const partial = (): ModelUsage[] => {
+    const items = final ? [final] : minimalUsage(endpoint, model, { outputTokens: Math.ceil(deltaChars / CHARS_PER_TOKEN), images });
+    return countSearches && model && items.length ? [chargeSearches(model, items[0], seen().queries), ...items.slice(1)] : items;
+  };
   return {
     push: (text: string) => parser.push(text),
     finish(): ModelUsage[] {
@@ -247,6 +295,8 @@ export function sseUsageCollector(endpoint: GatewayEndpoint, model: string | nul
       return endpoint === "responses" ? partial() : final ? [final] : [];
     },
     partial,
+    /** Built-in tool calls the stream ran, or null when it never reached a final event, so it may have run more. */
+    builtInCalls: (): number | null => (final || finalOutput ? seen().calls : null),
   };
 }
 
@@ -254,19 +304,25 @@ function isEventStream(contentType: string | null): boolean {
   return (contentType ?? "").split(";")[0].trim().toLowerCase() === "text/event-stream";
 }
 
+/** What a reply used. `builtInCalls` is null when the reply was cut off or unreadable, so the count isn't known. */
+export interface MeteredReply {
+  items: ModelUsage[];
+  builtInCalls: number | null;
+}
+
 /**
  * Reads one branch of a tee'd upstream body to the end and returns what it consumed. Never throws: when the body is
  * cut off (the upstream timeout, a reset) or can't be read, it logs and returns what it saw, or minimalUsage.
  */
-export async function meterBody(
+export async function meterReply(
   endpoint: GatewayEndpoint,
   model: string | null,
   contentType: string | null,
   body: ReadableStream<Uint8Array>,
-): Promise<ModelUsage[]> {
+): Promise<MeteredReply> {
   if (endpoint === "files") {
     await body.cancel().catch(() => {});
-    return [];
+    return { items: [], builtInCalls: 0 };
   }
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -279,7 +335,8 @@ export async function meterBody(
         collector.push(decoder.decode(value, { stream: true }));
       }
       collector.push(decoder.decode());
-      return collector.finish();
+      const items = collector.finish();
+      return { items, builtInCalls: collector.builtInCalls() };
     }
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -290,16 +347,26 @@ export async function meterBody(
       if (size > MAX_METER_JSON_BYTES) {
         console.warn(`[gateway] ${endpoint} reply over ${MAX_METER_JSON_BYTES} bytes, recording an estimate`);
         await reader.cancel().catch(() => {});
-        return minimalUsage(endpoint, model);
+        return { items: minimalUsage(endpoint, model), builtInCalls: null };
       }
       chunks.push(value);
     }
-    const text = Buffer.concat(chunks).toString("utf8");
-    return usageFromJson(endpoint, model, JSON.parse(text));
+    const reply = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown> | null;
+    return { items: usageFromJson(endpoint, model, reply), builtInCalls: endpoint === "responses" ? builtInCalls(reply) : 0 };
   } catch (err) {
     console.warn(`[gateway] ${endpoint} reply cut off or unreadable, recording an estimate:`, err instanceof Error ? err.message : err);
-    return collector ? collector.partial() : minimalUsage(endpoint, model);
+    return { items: collector ? collector.partial() : minimalUsage(endpoint, model), builtInCalls: collector?.builtInCalls() ?? null };
   } finally {
     reader.releaseLock();
   }
+}
+
+/** meterReply's usage alone. */
+export async function meterBody(
+  endpoint: GatewayEndpoint,
+  model: string | null,
+  contentType: string | null,
+  body: ReadableStream<Uint8Array>,
+): Promise<ModelUsage[]> {
+  return (await meterReply(endpoint, model, contentType, body)).items;
 }

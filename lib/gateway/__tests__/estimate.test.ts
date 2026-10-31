@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_OUTPUT_TOKENS, estimateCost, MAX_OUTPUT_TOKENS } from "@/lib/gateway/estimate";
 import { buildTokenBudgetFor, DEFAULT_LIMITS, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
 import type { ParsedRequest } from "@/lib/gateway/extract";
+import { PREVIOUS_RESPONSE_TOKENS, SEARCH_CONTEXT_TOKENS } from "@/lib/gateway/search";
 
 const jsonReq = (json: Record<string, unknown>): ParsedRequest => ({
   kind: "json",
@@ -35,6 +36,64 @@ test("Responses: base64 media counts per part, not per byte", () => {
   assert.ok(cost < 0.01, `a 3 MB photo is a few thousand tokens, not $${cost}`);
   const video = { ...body, input: [{ role: "user", content: [{ type: "input_video", video_url: "https://x.public.blob.vercel-storage.com/a.mp4" }] }] };
   assert.ok(estimateCost("responses", jsonReq(video), 0) > cost, "video by URL is assumed bigger");
+});
+
+test("Responses: tools, text.format and instructions count as input", () => {
+  const base = { model: "muse-wonder-1.0", input: "", max_output_tokens: 16 };
+  const plain = estimateCost("responses", jsonReq(base), 0);
+  const chars = "x".repeat(4000);
+  for (const extra of [
+    { instructions: chars },
+    { tools: [{ type: "function", name: "", description: chars }] },
+    { text: { format: { type: "json_schema", schema: { description: chars } } } },
+  ]) {
+    const cost = estimateCost("responses", jsonReq({ ...base, ...extra }), 0);
+    assert.ok(cost - plain >= (1000 * 4) / 1e6, JSON.stringify(extra).slice(0, 60));
+    assert.ok(cost - plain < (1100 * 4) / 1e6, JSON.stringify(extra).slice(0, 60));
+  }
+});
+
+test("Responses: previous_response_id counts as 10,000 input tokens of stored turns", () => {
+  const base = { model: "muse-wonder-1.0", input: "hi", max_output_tokens: 16 };
+  const plain = estimateCost("responses", jsonReq(base), 0);
+  near(estimateCost("responses", jsonReq({ ...base, previous_response_id: "resp_1" }), 0) - plain, (PREVIOUS_RESPONSE_TOKENS * 4) / 1e6);
+  near(estimateCost("responses", jsonReq({ ...base, previous_response_id: "" }), 0), plain);
+  near(estimateCost("responses", jsonReq({ ...base, previous_response_id: null }), 0), plain);
+});
+
+test("Responses: each search allowed adds its fee and 8,000 tokens of results", () => {
+  const base = { model: "muse-wonder-1.0", input: "hi", max_output_tokens: 16 };
+  const plain = estimateCost("responses", jsonReq(base), 0);
+  const eachSearch = 0.0025 + (SEARCH_CONTEXT_TOKENS * 4) / 1e6;
+  const tools = [{ type: "web_search" }];
+  // The tool's own 10 characters count as input: 12 characters is 3 tokens, where "hi" alone is 1.
+  const toolChars = ((3 - 1) * 4) / 1e6;
+  near(estimateCost("responses", jsonReq({ ...base, tools, max_tool_calls: 2 }), 0, 5) - plain - toolChars, 2 * eachSearch);
+  near(estimateCost("responses", jsonReq({ ...base, tools }), 0, 5) - plain - toolChars, 5 * eachSearch);
+  near(estimateCost("responses", jsonReq({ ...base, tools, max_tool_calls: 99 }), 0, 8) - plain - toolChars, 8 * eachSearch);
+  near(estimateCost("responses", jsonReq({ ...base, tools }), 0) - plain - toolChars, 8 * eachSearch);
+  near(estimateCost("responses", jsonReq({ ...base, tools }), 0, 0) - plain - toolChars, 0);
+  const onlyFunctions = estimateCost("responses", jsonReq({ ...base, tools: [{ type: "function", name: "f" }] }), 0, 5);
+  assert.ok(onlyFunctions - plain < 0.001, "a function tool isn't a search");
+  const toolSearch = estimateCost("responses", jsonReq({ ...base, tools: [{ type: "tool_search" }] }), 0, 5);
+  assert.ok(toolSearch - plain < 0.001, "tool search has no search fee");
+});
+
+test("Responses: inline files count by size, never below the guess per part", () => {
+  const base = { model: "muse-wonder-1.0", max_output_tokens: 16 };
+  const part = (url: string) => [{ role: "user", content: [{ type: "input_file", file_url: url }] }];
+  const small = `data:text/plain;base64,${"A".repeat(400)}`;
+  const big = `data:application/pdf;base64,${"A".repeat(3_000_000)}`;
+  const smallCost = estimateCost("responses", jsonReq({ ...base, input: part(small) }), 0);
+  assert.ok(smallCost >= (20_000 * 4) / 1e6, "a small file keeps the room it always had");
+  const bigCost = estimateCost("responses", jsonReq({ ...base, input: part(big) }), 0);
+  assert.ok(bigCost >= (45_000 * 4) / 1e6, `a big PDF counts by its pages, not $${bigCost}`);
+});
+
+test("image and SAM models ignore searches: their price isn't by the token", () => {
+  const tools = [{ type: "web_search" }];
+  near(estimateCost("responses", jsonReq({ model: "muse-image-1.0", input: "cat", tools }), 0, 5), 0.01);
+  near(estimateCost("responses", jsonReq({ model: "sam-3.1", input: [{ content: [{ type: "input_image", image_url: "x" }] }], tools }), 0, 5), 0.0025);
 });
 
 test("per-image, per-frame and per-second models", () => {

@@ -3,9 +3,12 @@ import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
 import {
   acquireInFlight,
+  adjustCounter,
+  counterValue,
   hitRateLimits,
   productStatusById,
   releaseInFlight,
+  reserveCounter,
   reserveSpend,
   settleSpend,
 } from "@/lib/gateway/store";
@@ -26,6 +29,9 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     reserveSpend,
     settleSpend,
     recordUsage,
+    reserveCounter,
+    adjustCounter,
+    counterValue,
     fetch: (input, init) => fetch(input, init),
     upstreamKey: () => env.modelApiKey,
     upstreamBaseUrl: UPSTREAM_BASE_URL,

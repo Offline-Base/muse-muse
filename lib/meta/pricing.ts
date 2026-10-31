@@ -20,6 +20,9 @@ export const PRICES = {
   "muse-voice-transcribe-1.0": { perAudioHour: 0.18 },
 } as const;
 
+/** Meta bills web search at $2.50 per 1,000 queries on top of tokens (pricing-rate-limits, "Token pricing notes"). */
+export const WEB_SEARCH_USD_PER_QUERY = 0.0025;
+
 type TokenCounts = { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number };
 
 /** Cost of a token-billed call. `inputTokens` includes cached tokens, as in the API's usage object. */
