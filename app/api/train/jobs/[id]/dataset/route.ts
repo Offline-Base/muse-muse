@@ -1,3 +1,4 @@
+import { decideJson } from "@/lib/decide/format";
 import { hitRateLimits } from "@/lib/gateway/store";
 import { errorJson, route } from "@/lib/http";
 import { decideEpochs, decisionPage, decisionPageCount, decisionPageRows, isDecideMode } from "@/lib/train/decision-datasets";
@@ -54,7 +55,10 @@ async function decisionPart(head: DatasetHead, trainer: TrainJobRow, part: "trai
   if (!read) return errorJson(404, "no_dataset");
   if (read.total !== spec.split[split]) throw new Error(`Dataset ${head.id}'s ${split} rows don't match its spec.`);
   const { items, total, nextPage } = decisionPage(spec, split, epochs, page, read.rows);
-  return Response.json({ kind: "decision", items, nextPage, total, title: head.title });
+  // decide.json, which the GPU writes next to the adapter (docs/DECISION_MODELS.md "Files a decision model produces"):
+  // T is fit after the run from the dev scores, so the GPU's copy holds T = 1.
+  const decide = decideJson({ question: spec.question, labels: spec.labels, T: 1 });
+  return Response.json({ kind: "decision", items, nextPage, total, title: head.title, decideJson: decide });
 }
 
 /**
@@ -65,8 +69,9 @@ async function decisionPart(head: DatasetHead, trainer: TrainJobRow, part: "trai
  * adapter job's own answer to each. At most 100 items a page. 401 bad token, 400 bad part or page, 404 no_dataset (the
  * job has no dataset, or the dataset is gone), 409 dataset_not_ready, 429 rate_limited past 120 pages an hour.
  *
- * A decision dataset (kind "decision") answers {kind: "decision", items, nextPage, total, title} with DECIDE_PAGE_SIZE
- * (50) renderings a page, and takes part=dev too (decisionPart). 409 not_decide_mode when the job that trained on it
+ * A decision dataset (kind "decision") answers {kind: "decision", items, nextPage, total, title, decideJson} with
+ * DECIDE_PAGE_SIZE (50) renderings a page, and takes part=dev too (decisionPart). decideJson is the model's decide.json
+ * with T = 1 (decideJson in lib/decide/format.ts), which the GPU writes next to the adapter. 409 not_decide_mode when the job that trained on it
  * isn't in decide mode; 429 past its own page count plus 120 an hour. part=dev on a chat dataset is a 400.
  */
 export const GET = route(async (req: Request, { params }: Ctx) => {

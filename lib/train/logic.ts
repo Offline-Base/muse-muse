@@ -35,6 +35,7 @@ import {
   isTrainTerminal,
   QUANT_RECIPE,
   SERVE_PORT,
+  type DatasetKind,
   type DatasetView,
   type EvalSummary,
   type HubState,
@@ -42,6 +43,7 @@ import {
   type LiveDemoView,
   type Recipe,
   type RecipeId,
+  type RecipeParamField,
   type ServeEndpoint,
   type TrainCheck,
   type TrainEventBody,
@@ -77,6 +79,29 @@ export const EVENT_LOG_MAX = 4096;
 export const EVAL_TEXT_MAX = 3500;
 /** Eval callbacks one job may record. Past this the events route answers 409 eval_limit. */
 export const EVALS_MAX = 60;
+/**
+ * A decide job's scores (docs/DECISION_MODELS.md "Callbacks and caps"): the items one "decide" callback carries, and
+ * the items one job may record, past which the events route answers 409 decide_limit. A person's largest dataset scores
+ * about 2,800 (dev, test and the decline check); runner.py keeps the same numbers.
+ */
+export const DECIDE_CALLBACK_ITEMS_MAX = 100;
+export const DECIDE_ITEMS_MAX = 8000;
+
+/**
+ * The glimmer-lora recipe's mode param (docs/DECISION_MODELS.md "A mode, not a new recipe"): "chat", today's recipe,
+ * when it isn't set, or "decide", which trains a decision model on a decision dataset.
+ */
+export const MODE_PARAM = "mode";
+export const CHAT_MODE = "chat";
+export const DECIDE_MODE = "decide";
+export type JobMode = typeof CHAT_MODE | typeof DECIDE_MODE;
+/** The glimmer-lora recipe's switch for the Hugging Face Hub, which decide mode keeps at 0 (validateParams). */
+const PUBLISH_PARAM = "publish";
+
+/** A job's mode from its params: "decide" when its mode param says so, else "chat". */
+export function jobMode(params: Record<string, unknown> | null | undefined): JobMode {
+  return params?.[MODE_PARAM] === DECIDE_MODE ? DECIDE_MODE : CHAT_MODE;
+}
 const JUDGE_NOTE_MAX = 300;
 export const EVENT_ERROR_MAX = 4096;
 export const EVENT_MESSAGE_MAX = 2000;
@@ -154,9 +179,27 @@ function isBlank(value: unknown): boolean {
 }
 
 /**
+ * The job's mode, for a recipe with a mode field: what the admin gave, trimmed and lowercased, when it is one of the
+ * field's choices; "chat" when nothing was given or the recipe has no mode field.
+ */
+function paramMode(field: RecipeParamField | undefined, given: unknown): { ok: true; mode: string } | { ok: false; error: string } {
+  if (!field || isBlank(given)) return { ok: true, mode: CHAT_MODE };
+  if (typeof given !== "string") return { ok: false, error: `${field.label} must be text.` };
+  const mode = given.trim().toLowerCase();
+  if (field.choices && !field.choices.includes(mode)) return { ok: false, error: `${field.label} must be ${field.choices.join(" or ")}.` };
+  return { ok: true, mode };
+}
+
+/**
  * Checks the admin's params against the recipe's fields. Unknown keys are refused. A missing or blank value takes the
  * field's default, and a required field with no default must be set. Numbers may come as numeric strings (from a form)
- * and must sit within min and max. Text is trimmed and cut to 2000 characters. URLs must be https.
+ * and must sit within min and max, and be whole when the field says so. Text is trimmed and cut to 2000 characters; a
+ * field with choices takes only those, lowercased. URLs must be https.
+ *
+ * A recipe with a "mode" field (glimmer-lora): a field for other modes only (`modes`) takes no default, and a value
+ * for it is refused, so a chat job's params are what they were before decide mode existed. In decide mode publish is
+ * 0, and 1 is refused: a person's rows are never published, and publishing a decision model on its own (a decision
+ * card, no dataset) is later work (docs/DECISION_MODELS.md "Publishing").
  */
 export function validateParams(
   recipe: Recipe,
@@ -169,10 +212,16 @@ export function validateParams(
   const fields = new Map(recipe.params.map((f) => [f.key, f]));
   const unknown = Object.keys(input).filter((k) => !fields.has(k));
   if (unknown.length) return { ok: false, error: `Unknown parameter: ${unknown.join(", ")}.` };
+  const mode = paramMode(fields.get(MODE_PARAM), input[MODE_PARAM]);
+  if (!mode.ok) return mode;
 
   const value: Record<string, string | number> = {};
   for (const field of recipe.params) {
     const given = input[field.key];
+    if (field.modes && !field.modes.includes(mode.mode)) {
+      if (!isBlank(given)) return { ok: false, error: `${field.label} is only for ${field.modes.join(" or ")} mode.` };
+      continue;
+    }
     if (isBlank(given)) {
       if (field.default !== undefined) value[field.key] = field.default;
       else if (field.required) return { ok: false, error: `${field.label} is required.` };
@@ -181,6 +230,7 @@ export function validateParams(
     if (field.kind === "number") {
       const n = typeof given === "number" ? given : typeof given === "string" ? Number(given.trim()) : NaN;
       if (!Number.isFinite(n)) return { ok: false, error: `${field.label} must be a number.` };
+      if (field.whole && !Number.isInteger(n)) return { ok: false, error: `${field.label} must be a whole number.` };
       if (field.min !== undefined && n < field.min) return { ok: false, error: `${field.label} must be at least ${field.min}.` };
       if (field.max !== undefined && n > field.max) return { ok: false, error: `${field.label} must be at most ${field.max}.` };
       value[field.key] = n;
@@ -212,9 +262,37 @@ export function validateParams(
       value[field.key] = text;
       continue;
     }
+    if (field.choices) {
+      const choice = text.toLowerCase();
+      if (!field.choices.includes(choice)) return { ok: false, error: `${field.label} must be ${field.choices.join(" or ")}.` };
+      value[field.key] = choice;
+      continue;
+    }
     value[field.key] = text.slice(0, PARAM_TEXT_MAX);
   }
+  if (mode.mode === DECIDE_MODE && fields.has(PUBLISH_PARAM)) {
+    if (!isBlank(input[PUBLISH_PARAM]) && Number(value[PUBLISH_PARAM]) !== 0) {
+      const label = fields.get(PUBLISH_PARAM)!.label;
+      return {
+        ok: false,
+        error: `${label} must be 0 in decide mode: a person's rows are never published, and publishing a decision model on its own comes later.`,
+      };
+    }
+    value[PUBLISH_PARAM] = 0;
+  }
   return { ok: true, value };
+}
+
+/**
+ * Why a job's mode doesn't fit its dataset, after the dataset param's label (the jobs route answers it as a 400), or
+ * null: decide mode trains on a decision dataset only, and a decision dataset trains in decide mode only.
+ */
+export function datasetModeProblem(params: Record<string, unknown> | null | undefined, kind: DatasetKind | null | undefined): string | null {
+  const decide = jobMode(params) === DECIDE_MODE;
+  const decision = kind === "decision";
+  if (decide && !decision) return "decide mode trains on a decision dataset, and that one is a chat dataset.";
+  if (!decide && decision) return "that is a decision dataset, so it trains in decide mode: set Mode to decide.";
+  return null;
 }
 
 function fail(reason: string): TrainCheck {
@@ -416,6 +494,8 @@ export function capEventBody(body: TrainEventBody): TrainEventBody {
       };
     case "judgement":
       return { ...body, note: head(body.note, JUDGE_NOTE_MAX) };
+    case "decide":
+      return { type: "decide", part: body.part, items: Array.isArray(body.items) ? body.items.slice(0, DECIDE_CALLBACK_ITEMS_MAX) : [] };
     case "serving": {
       const out: Extract<TrainEventBody, { type: "serving" }> = {
         type: "serving",
@@ -712,8 +792,76 @@ export interface RunEstimate {
   minutes: number;
   /** Whether the overhead assumes the region holds the model cache. */
   cached: boolean;
-  /** "quantize" for a glimmer-quantize job, which has no training steps: its minutes are all overhead. */
-  what?: "train" | "quantize";
+  /**
+   * "quantize" for a glimmer-quantize job, which has no training steps: its minutes are all overhead. "decide" for a
+   * glimmer-lora job in decide mode, whose minutes are its training, its scoring and the overhead.
+   */
+  what?: "train" | "quantize" | "decide";
+  /** Decide mode: the training renderings (0 for scoreOnly), the prompts scored, and the scoring's minutes. */
+  renderings?: number;
+  scored?: number;
+  scoreMinutes?: number;
+  /** Decide mode with scoreOnly 1: base Glimmer scores the prompts once, and nothing trains. */
+  scoreOnly?: boolean;
+}
+
+/**
+ * What a decide job runs (decideRunSize in lib/train/decision-datasets.ts, from its dataset's spec): its training
+ * renderings at its epochs, with the balancing copies, and the dev and test prompts each model scores.
+ */
+export interface DecideRunSize {
+  renderings: number;
+  scored: number;
+}
+
+/**
+ * Renderings a second that decide mode trains on each GPU, and prompts a second it scores (one forward pass each, 8 at
+ * a time). Estimates [I] until the first real run measures them: the knowledge run trained 4.8 examples a second on an
+ * A100 40 GB with the same batch (docs/DECISION_MODELS.md "Lambda, the default"). A GPU not listed counts as the
+ * slowest.
+ */
+export const DECIDE_TRAIN_ROWS_PER_SECOND: Readonly<Record<string, number>> = {
+  gpu_1x_a100_sxm4: 4,
+  gpu_1x_h100_pcie: 6,
+  gpu_1x_h100_sxm5: 7,
+};
+export const DECIDE_SCORE_PROMPTS_PER_SECOND: Readonly<Record<string, number>> = {
+  gpu_1x_a100_sxm4: 4,
+  gpu_1x_h100_pcie: 6,
+  gpu_1x_h100_sxm5: 8,
+};
+const DECIDE_RATE_OTHER = 4;
+/**
+ * Renderings in one decide optimizer step (16 a device step, 2 accumulated), and the most steps a job trains, so the
+ * most renderings it trains on. GLIMMER_PY has the same numbers (DECIDE_TRAIN_BATCH, DECIDE_GRAD_ACCUM, DECIDE_STEPS_MAX).
+ */
+export const DECIDE_STEP_ROWS = 32;
+export const DECIDE_STEPS_MAX = 2000;
+
+/** A decide job's estimate: its renderings at the GPU's training rate, its prompts scored twice (once for scoreOnly), and the overhead. */
+function decideEstimate(params: Record<string, string | number | undefined>, size: DecideRunSize, instanceType: string, cached: boolean): RunEstimate {
+  const scoreOnly = Number(params.scoreOnly) >= 1;
+  const renderings = scoreOnly ? 0 : Math.max(0, Math.floor(size.renderings));
+  const trained = Math.min(renderings, DECIDE_STEPS_MAX * DECIDE_STEP_ROWS);
+  const scored = Math.max(0, Math.floor(size.scored));
+  const trainRate = DECIDE_TRAIN_ROWS_PER_SECOND[instanceType] ?? DECIDE_RATE_OTHER;
+  const scoreRate = DECIDE_SCORE_PROMPTS_PER_SECOND[instanceType] ?? DECIDE_RATE_OTHER;
+  const trainMinutes = Math.ceil(trained / trainRate / 60);
+  const scoreMinutes = Math.ceil(((scoreOnly ? 1 : 2) * scored) / scoreRate / 60);
+  const overheadMinutes = cached ? GLIMMER_OVERHEAD_MINUTES : GLIMMER_OVERHEAD_NO_CACHE_MINUTES;
+  return {
+    steps: Math.ceil(trained / DECIDE_STEP_ROWS),
+    secondsPerStep: DECIDE_STEP_ROWS / trainRate,
+    trainMinutes,
+    overheadMinutes,
+    minutes: trainMinutes + scoreMinutes + overheadMinutes,
+    cached,
+    what: "decide",
+    renderings,
+    scored,
+    scoreMinutes,
+    scoreOnly,
+  };
 }
 
 /**
@@ -728,13 +876,15 @@ export const QUANT_CACHED_MINUTES = 80;
 /**
  * How long a job's run is likely to take at most on `instanceType`, in a region that holds the model cache or not. Null
  * when there is no estimate for the recipe (glimmer-lora and glimmer-quantize have one) or the run doesn't train
- * (dryRun 1).
+ * (dryRun 1). A glimmer-lora job in decide mode needs `decide`, what its dataset makes it run (decideRunSize), and is
+ * null without it (docs/DECISION_MODELS.md "Lambda, the default").
  */
 export function runEstimate(
   recipe: RecipeId | string,
   params: Record<string, string | number | undefined>,
   instanceType: string,
   cached: boolean,
+  decide?: DecideRunSize | null,
 ): RunEstimate | null {
   if (recipe === QUANT_RECIPE) {
     const minutes = cached ? QUANT_CACHED_MINUTES : QUANT_MINUTES;
@@ -742,6 +892,7 @@ export function runEstimate(
   }
   if (recipe !== "glimmer-lora") return null;
   if (Number(params.dryRun) === 1) return null;
+  if (jobMode(params) === DECIDE_MODE) return decide ? decideEstimate(params, decide, instanceType, cached) : null;
   const raw = params.maxSteps;
   const asked = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() ? Number(raw.trim()) : NaN;
   // The recipe's default (lib/train/recipes/index.ts) when it isn't set.
@@ -781,6 +932,23 @@ export function runFitProblem(e: RunEstimate, usable: number, gpuLabel: string):
     return (
       `Making local files on ${gpuLabel} needs about ${e.minutes} minutes (the merge, the conversion, three sizes and their ` +
       `checks, and the upload), but this job's limits stop it after ${usable} minutes. Raise the time or dollar limit, or pick a faster GPU.`
+    );
+  }
+  if (e.what === "decide") {
+    const setup = e.cached
+      ? "booting and loading the model"
+      : "booting, installing the packages and downloading the model, since this region has no model cache yet";
+    if (e.scoreOnly) {
+      return (
+        `Scoring ${e.scored} prompts with base Glimmer on ${gpuLabel} needs about ${e.minutes} minutes (${e.scoreMinutes} of ` +
+        `scoring, plus about ${e.overheadMinutes} for ${setup}), but this job's limits stop it after ${usable} minutes. ` +
+        `Raise the time or dollar limit, or pick a faster GPU.`
+      );
+    }
+    return (
+      `Training on ${e.renderings} renderings and scoring ${e.scored} prompts before and after on ${gpuLabel} needs about ` +
+      `${e.minutes} minutes (${e.trainMinutes} of training, ${e.scoreMinutes} of scoring, plus about ${e.overheadMinutes} for ${setup}), ` +
+      `but this job's limits stop it after ${usable} minutes. Lower the epochs, raise the time or dollar limit, or pick a faster GPU.`
     );
   }
   return (
@@ -888,6 +1056,14 @@ export function adapterProblem(
   if (job.recipe !== ADAPTER_RECIPE) return "that job isn't a Muse Glimmer LoRA job, so it has no adapter to serve.";
   if (job.status !== "succeeded") return "that job didn't succeed, so it has no adapter to serve.";
   if (Number(job.params?.dryRun) >= 1) return "that job was a dry run, so its adapter is a stand-in.";
+  if (jobMode(job.params) === DECIDE_MODE && Number(job.params?.scoreOnly) >= 1) {
+    return "that job only scored base Glimmer, so it trained no adapter.";
+  }
+  // A decision adapter answers one letter under its own system message, so the chat demo, publishing and local files
+  // would misuse it. Each comes with its decide version (docs/DECISION_MODELS.md, D5 and D7).
+  if (jobMode(job.params) === DECIDE_MODE) {
+    return "that job trained a decision model, and serving, publishing and local files for decision models aren't built yet.";
+  }
   const dir = typeof metrics?.adapter_dir === "string" ? metrics.adapter_dir.replace(/\/+$/, "") : "";
   if (metrics?.cache_used !== "yes" || !dir.endsWith(`/models/${job.id}`)) {
     return "that job's adapter isn't on a model cache filesystem, so a GPU can't load it.";

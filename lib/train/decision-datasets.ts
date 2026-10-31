@@ -21,7 +21,7 @@ import {
   trainRendering,
 } from "@/lib/decide/format";
 import type { DecideItem, DecideSplitCounts, DecisionLabel, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
-import { isNearDuplicate, NEAR_DUPLICATE_JACCARD, promptKey, promptWords } from "@/lib/train/logic";
+import { DECIDE_MODE, isNearDuplicate, jobMode, NEAR_DUPLICATE_JACCARD, promptKey, promptWords, type DecideRunSize } from "@/lib/train/logic";
 import type { TrainExample } from "@/lib/train/types";
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -661,7 +661,7 @@ export type DecisionSplit = keyof DecisionRows;
 
 /** True when a job's params ask for decide mode (the glimmer-lora recipe's `mode` param). */
 export function isDecideMode(params: Record<string, unknown> | null | undefined): boolean {
-  return params?.mode === "decide";
+  return jobMode(params) === DECIDE_MODE;
 }
 
 /** A decide job's epochs: its `epochs` param when it is a whole number from 1 to 4, else 2. */
@@ -741,6 +741,18 @@ export function decisionPartSize(spec: DecisionSpec, split: DecisionSplit, epoch
     return spec.labels.reduce((sum, l) => sum + (spec.perLabel[l.id]?.train ?? 0) * epochs * (copies[l.id] ?? 0), 0);
   }
   return decisionItems({ question: spec.question, labels: spec.labels, rows: placeholderRows(spec, split), part: split }).length;
+}
+
+/**
+ * What a decide job with these params runs on this dataset, for runEstimate: its training renderings at its epochs
+ * (balancing copies included), and the dev and test prompts each model scores (the decline check included).
+ */
+export function decideRunSize(spec: DecisionSpec, params: Record<string, unknown> | null | undefined): DecideRunSize {
+  const epochs = decideEpochs(params);
+  return {
+    renderings: decisionPartSize(spec, "train", epochs),
+    scored: decisionPartSize(spec, "dev", epochs) + decisionPartSize(spec, "test", epochs),
+  };
 }
 
 /** Pages a decide job reads in all: train, dev and eval, DECIDE_PAGE_SIZE renderings each. */

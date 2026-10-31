@@ -10,6 +10,7 @@ import { hashToken } from "@/lib/gateway/tokens";
 import {
   ADAPTER_RECIPE,
   capEventBody,
+  DECIDE_ITEMS_MAX,
   EVALS_MAX,
   estimateCostUsd,
   evalSplit,
@@ -22,7 +23,7 @@ import {
   type DoneMetrics,
   type TrainJobRow,
 } from "@/lib/train/logic";
-import type { DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
+import type { DecideScoreItem, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
 import type { QuantSource } from "@/lib/train/hub-cards";
 import { PERSON_WRITER, PUBLIC_WRITER } from "@/lib/train/models";
 import {
@@ -726,6 +727,79 @@ export async function getEvalItem(jobId: string, index: number): Promise<EvalCal
 export async function getJudgement(jobId: string, index: number): Promise<Judgement | null> {
   const body = await eventAt(jobId, "judgement", index);
   return body?.type === "judgement" ? body : null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A decide job's scores (docs/DECISION_MODELS.md "Callbacks and caps"), for the events route and the scoring step.
+
+type DecideCallback = Extract<TrainCallback, { type: "decide" }>;
+
+/**
+ * The callback's items the job hasn't logged for that part yet (an index already logged is a retry), as `fresh`, and
+ * the items the job has logged in all, as `used`, for the statements below.
+ */
+function decideFresh(jobId: string, part: string, items: string): SQL {
+  return sql`incoming as (
+      select item, ord from jsonb_array_elements(${items}::jsonb) with ordinality as t(item, ord)
+    ),
+    fresh as (
+      select item, ord from incoming
+      where not exists (
+        select 1 from training_events ev, jsonb_array_elements(ev.payload->'items') as seen(item)
+        where ev.job_id = ${jobId}::uuid and ev.type = 'decide' and ev.payload->>'part' = ${part}
+          and seen.item->>'index' = incoming.item->>'index'
+      )
+    ),
+    used as (
+      select coalesce(sum(jsonb_array_length(payload->'items')), 0) as n
+      from training_events where job_id = ${jobId}::uuid and type = 'decide'
+    )`;
+}
+
+/**
+ * Logs a decide callback as one "decide" event holding the items the job hasn't logged for that part yet: an index sent
+ * again (a retried callback) counts once, the first sent. "duplicate" when every item was logged already, "limit"
+ * when its new items would take the job past `max` items in all (nothing is logged then). The job row is locked first,
+ * so callbacks at once can't pass the cap or log an index twice.
+ */
+export async function recordDecideEvent(jobId: string, body: DecideCallback, max = DECIDE_ITEMS_MAX): Promise<"recorded" | "duplicate" | "limit"> {
+  if (!isUuid(jobId)) return "limit";
+  const payload = capEventBody(body) as DecideCallback;
+  const fresh = decideFresh(jobId, payload.part, JSON.stringify(payload.items));
+  const [, counted, inserted] = await db().batch([
+    db().execute(sql`select id from training_jobs where id = ${jobId}::uuid for update`),
+    db().execute(sql`with ${fresh} select (select count(*) from fresh)::int as fresh`),
+    db().execute(
+      sql`with ${fresh}
+          insert into training_events (job_id, type, payload)
+          select ${jobId}::uuid, 'decide',
+            jsonb_build_object('type', 'decide', 'part', ${payload.part}::text, 'items', (select jsonb_agg(item order by ord) from fresh))
+          where exists (select 1 from fresh) and (select n from used) + (select count(*) from fresh) <= ${max}
+          returning id`,
+    ),
+  ]);
+  if (rowsOf(inserted).length) return "recorded";
+  const row = rowsOf(counted)[0] as { fresh?: unknown } | undefined;
+  return Number(row?.fresh ?? 0) === 0 ? "duplicate" : "limit";
+}
+
+/**
+ * A decide job's scores by part, in the order the GPU sent them (recordDecideEvent logged each index once per part),
+ * for summarizeDecisions. Empty for a job that sent none.
+ */
+export async function decideScores(jobId: string): Promise<{ dev: DecideScoreItem[]; test: DecideScoreItem[] }> {
+  const out: { dev: DecideScoreItem[]; test: DecideScoreItem[] } = { dev: [], test: [] };
+  if (!isUuid(jobId)) return out;
+  const rows = await db()
+    .select({ payload: events.payload })
+    .from(events)
+    .where(and(eq(events.jobId, jobId), eq(events.type, "decide")))
+    .orderBy(asc(events.id));
+  for (const { payload } of rows) {
+    if (payload?.type !== "decide" || (payload.part !== "dev" && payload.part !== "test") || !Array.isArray(payload.items)) continue;
+    out[payload.part].push(...payload.items);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
  * Fine-tuning jobs on the owner's Lambda Cloud account (docs/TRAINING.md). Admin only. The platform holds
  * LAMBDA_API_KEY; a job's GPU instance only gets a one-time job token for reporting back.
  */
-import type { DecisionSpec } from "@/lib/decide/types";
+import type { DecideScoreItem, DecisionSpec } from "@/lib/decide/types";
 
 /**
  * Recipes the platform can run. Each maps to a Python script in lib/train/recipes. "glimmer-serve" serves one trained
@@ -125,7 +125,17 @@ export type TrainCallback =
    * fingerprint is `certSha256` (64 lowercase hex characters). The platform pins it; the IP comes from Lambda, never
    * from the callback.
    */
-  | { type: "serving"; port: number; certSha256: string; model?: string; adapterJobId?: string };
+  | { type: "serving"; port: number; certSha256: string; model?: string; adapterJobId?: string }
+  /**
+   * A decide mode job's scores for one part (docs/DECISION_MODELS.md "Callbacks and caps"), sent before "done": for each
+   * item, its index in the part and the base and tuned model's log-probability of each shown letter (tuned null when it
+   * wasn't scored). At most DECIDE_CALLBACK_ITEMS_MAX items a callback. Logged as one "decide" event, at most
+   * DECIDE_ITEMS_MAX items a job, an index sent again counted once.
+   */
+  | { type: "decide"; part: DecidePart; items: DecideScoreItem[] };
+
+/** The two parts a decide job scores: dev (only to fit T) and test (part=eval of the dataset route). */
+export type DecidePart = "dev" | "test";
 
 /** One row of the job's event log, shown on the job page. */
 export type TrainEventBody =
@@ -157,6 +167,15 @@ export interface RecipeParamField {
   default?: string | number;
   min?: number;
   max?: number;
+  /** A number that must be whole (epochs, a 0 or 1 switch). */
+  whole?: boolean;
+  /** A text field's only values, lowercase: what is given is trimmed and lowercased before it is checked. */
+  choices?: string[];
+  /**
+   * The job modes (the recipe's "mode" param, "chat" when it isn't set) this field is for, when not all of them. In any
+   * other mode it takes no default and a value for it is refused (validateParams).
+   */
+  modes?: string[];
 }
 
 export interface Recipe {

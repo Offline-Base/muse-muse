@@ -16,7 +16,9 @@
  * callback, whose address is never taken from the runner. Its runner pages its adapter's dataset. A decision dataset
  * (docs/DECISION_MODELS.md) is checked and saved ready from JSON rows, CSV or JSONL, with every problem by line and
  * nothing spent; its page shows 5 rows a label; a decide job pages its train renderings and its dev and test items with
- * no answers, reading only the rows a page renders, up to its own page count plus 120 an hour.
+ * no answers and decide.json, reading only the rows a page renders, up to its own page count plus 120 an hour. A decide
+ * job needs a decision dataset (and a decision dataset decide mode), its run estimate comes from that dataset, and its
+ * scores come back as decide callbacks: checked, each index once, up to a cap, only from a decide job.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/routes.test.ts
  *
@@ -25,7 +27,9 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import type { DecideItem, DecisionRows, DecisionSpec } from "@/lib/decide/types";
-import { checkDecisionUpload, decideEpochs, decisionPage, decisionPageCount, DECIDE_PAGE_SIZE } from "../decision-datasets";
+import { decideJson } from "@/lib/decide/format";
+import { checkDecisionUpload, decideEpochs, decideRunSize, decisionPage, decisionPageCount, DECIDE_PAGE_SIZE } from "../decision-datasets";
+import { runEstimate } from "../logic";
 import type { TrainCallback } from "../types";
 import { TICKET_LABELS, TICKET_QUESTION, ticketCsv, ticketRows } from "./decision-fixture";
 
@@ -72,6 +76,8 @@ let sweepResult: { instances: number | null; terminated: unknown[]; failedJobs: 
 let recordSweepFails = false;
 /** What recordEvalEvent answers. */
 let evalResult: "recorded" | "duplicate" | "limit" = "recorded";
+/** What recordDecideEvent answers. */
+let decideResult: "recorded" | "duplicate" | "limit" = "recorded";
 /** Datasets the fake store knows, by id. */
 let datasetRows: Record<string, Record<string, unknown>> = {};
 /** What datasetPage answers: the dataset's status and how many items each part holds. */
@@ -178,6 +184,10 @@ const fakeStore = {
   recordEvalEvent: async (jobId: string, body: unknown, max: number) => {
     calls.push({ fn: "recordEvalEvent", args: [jobId, body, max] });
     return evalResult;
+  },
+  recordDecideEvent: async (jobId: string, body: unknown, max: number) => {
+    calls.push({ fn: "recordDecideEvent", args: [jobId, body, max] });
+    return decideResult;
   },
   getDataset: async (id: string) => {
     calls.push({ fn: "getDataset", args: [id] });
@@ -412,6 +422,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
     sweepResult = { instances: 0, terminated: [], failedJobs: [], stoppedJobs: [], errors: [] };
     recordSweepFails = false;
     evalResult = "recorded";
+    decideResult = "recorded";
     datasetRows = {};
     pageStatus = "ready";
     pageTotals = { train: 450, eval: 40 };
@@ -623,6 +634,95 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       jobExtra = { terminatedAt: new Date() };
       assert.equal((await events(post("events", evalBody()), ctx)).status, 409);
       assert.equal(called("recordEvalEvent").length, 0);
+    });
+  });
+
+  describe("decide callbacks", () => {
+    const item = (index: number, over: Record<string, unknown> = {}) => ({
+      index,
+      base: [-0.11, -2.4, -4.0],
+      tuned: [-0.02, -4.5, -6.1],
+      baseMass: 0.97,
+      tunedMass: 0.99,
+      ...over,
+    });
+    const decideBody = (items: unknown, over: Record<string, unknown> = {}) => ({ type: "decide", part: "test", items, ...over });
+
+    beforeEach(() => {
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID, mode: "decide", epochs: 2 } };
+    });
+
+    it("keeps only the score fields, each index once, and logs the callback through recordDecideEvent", async () => {
+      const sent = decideBody([item(0, { extra: "dropped" }), item(1, { tuned: null, tunedMass: 0.5 }), item(0, { base: [-9, -9, -9] })]);
+      const res = await events(post("events", sent), ctx);
+      assert.equal(res.status, 204);
+      const want = { type: "decide", part: "test", items: [item(0), item(1, { tuned: null, tunedMass: null })] };
+      assert.deepEqual(called("applyCallback")[0]!.args[1], want, "a sign of life, the first of a repeated index");
+      assert.deepEqual(called("recordDecideEvent")[0]!.args, [JOB_ID, want, 8000]);
+      assert.equal(called("recordEvent").length + called("recordEvalEvent").length, 0, "logged through recordDecideEvent only");
+    });
+
+    it("refuses a part, an item or a size that isn't a decide callback's", async () => {
+      const bad = [
+        decideBody([item(0)], { part: "eval" }),
+        decideBody([]),
+        decideBody(Array.from({ length: 101 }, (_, i) => item(i))),
+        decideBody("items"),
+        decideBody([item(-1)]),
+        decideBody([item(1.5)]),
+        decideBody([item(8000)]),
+        decideBody([item(0, { base: [-0.1] })]),
+        decideBody([item(0, { base: [-1, -1, -1, -1, -1, -1] })]),
+        decideBody([item(0, { base: [-0.1, "-2"] })]),
+        decideBody([item(0, { baseMass: undefined })]),
+        decideBody([item(0, { tuned: [-0.1, -0.2] })]),
+        decideBody([item(0, { tunedMass: null })]),
+        decideBody(["not an item"]),
+      ];
+      for (const body of bad) {
+        const res = await events(post("events", body), ctx);
+        assert.equal(res.status, 400, JSON.stringify(body).slice(0, 120));
+        assert.match(((await res.json()) as { error: string }).error, /^Send the part \(dev or test\) and 1 to 100 items/);
+      }
+      assert.equal(called("applyCallback").length, 0);
+    });
+
+    it("takes decide scores only from a glimmer-lora job in decide mode, before applying them", async () => {
+      for (const extra of [
+        { recipe: "glimmer-lora", params: { datasetId: DATASET_ID } },
+        { recipe: "glimmer-serve", params: { adapterJobId: "aaaaaaaa-0000-4000-8000-000000000000", minutes: 30, mode: "decide" } },
+      ]) {
+        jobExtra = extra;
+        const res = await events(post("events", decideBody([item(0)])), ctx);
+        assert.equal(res.status, 400);
+        assert.match(((await res.json()) as { error: string }).error, /Only a Muse Glimmer LoRA job in decide mode sends decision scores/);
+      }
+      assert.equal(called("applyCallback").length + called("recordDecideEvent").length, 0);
+    });
+
+    it("answers 409 decide_limit past 8,000 items a job, 204 for a retry, and takes 100 items over 16 KB", async () => {
+      decideResult = "limit";
+      const over = await events(post("events", decideBody([item(0)])), ctx);
+      assert.equal(over.status, 409);
+      assert.deepEqual(await over.json(), { error: "decide_limit", max: 8000 });
+      decideResult = "duplicate";
+      assert.equal((await events(post("events", decideBody([item(0)])), ctx)).status, 204);
+      decideResult = "recorded";
+      // Full precision, as a runner that didn't round would send: about 30 KB.
+      const lp = (k: number) => Math.log((k + 1) / 15);
+      const wide = (i: number) => item(i, { base: [0, 1, 2, 3, 4].map(lp), tuned: [5, 4, 3, 2, 1].map(lp), baseMass: 1 / 3, tunedMass: 2 / 3 });
+      const full = decideBody(Array.from({ length: 100 }, (_, i) => wide(i)));
+      assert.ok(JSON.stringify(full).length > 16 * 1024);
+      assert.equal((await events(post("events", full), ctx)).status, 204);
+      assert.equal((await events(post("events", decideBody([item(0)], { pad: "x".repeat(70_000) })), ctx)).status, 413);
+    });
+
+    it("answers 409 job_ended once the job ended, without logging the scores", async () => {
+      applied = { applied: false, status: "succeeded" };
+      jobStatus = "succeeded";
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID, mode: "decide" }, terminatedAt: new Date() };
+      assert.equal((await events(post("events", decideBody([item(0)])), ctx)).status, 409);
+      assert.equal(called("recordDecideEvent").length, 0);
     });
   });
 
@@ -1018,6 +1118,18 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal(eval1.items[0]!.index, DECIDE_PAGE_SIZE);
     });
 
+    it("carries decide.json on every page, with T = 1, for the GPU to write next to the adapter", async () => {
+      const contract = decideJson({ question: spec.question, labels: spec.labels, T: 1 });
+      for (const query of ["?part=train&page=0", "?part=train&page=1", "?part=dev", "?part=eval"]) {
+        const body = (await (await jobDataset(pageReq(query), ctx)).json()) as { decideJson: unknown };
+        assert.deepEqual(body.decideJson, contract, query);
+      }
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      jobExtra = { recipe: "glimmer-lora", params: { datasetId: DATASET_ID } };
+      const chat = (await (await jobDataset(pageReq("?part=train"), ctx)).json()) as Record<string, unknown>;
+      assert.equal("decideJson" in chat || "kind" in chat, false, "a chat dataset's pages are as they were");
+    });
+
     it("pages a decide adapter's dataset to its glimmer-serve job, with the adapter's mode", async () => {
       const adapterId = "aaaaaaaa-0000-4000-8000-000000000000";
       jobExtra = { recipe: "glimmer-serve", params: { adapterJobId: adapterId, minutes: 30 } };
@@ -1376,6 +1488,64 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
       // A dry run doesn't train, so it always fits.
       calls = [];
       assert.equal((await ask({ maxSteps: 2000, dryRun: 1 })).status, 201);
+    });
+
+    it("takes decide mode only with a decision dataset, and a decision dataset only in decide mode", async () => {
+      const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows([30, 30, 30, 30]) }, "job-seed");
+      assert.ok(checked.ok);
+      const decision = datasetRow({ kind: "decision", status: "ready", decision: checked.spec, writerModel: "person" });
+      const ask = (params: Record<string, unknown>) => createJobRoute(createReq({ recipe: "glimmer-lora", params: { datasetId: DATASET_ID, ...params } }));
+      const errorOf = async (res: Response) => ((await res.json()) as { error: string }).error;
+
+      datasetRows = { [DATASET_ID]: decision };
+      const chat = await ask({});
+      assert.equal(chat.status, 400);
+      assert.equal(await errorOf(chat), "Dataset: that is a decision dataset, so it trains in decide mode: set Mode to decide.");
+      datasetRows = { [DATASET_ID]: datasetRow({ status: "ready" }) };
+      const wrong = await ask({ mode: "decide" });
+      assert.equal(wrong.status, 400);
+      assert.equal(await errorOf(wrong), "Dataset: decide mode trains on a decision dataset, and that one is a chat dataset.");
+      datasetRows = { [DATASET_ID]: decision };
+      assert.equal((await ask({ mode: "decide", publish: 1 })).status, 400, "a person's rows are never published");
+      assert.equal((await ask({ mode: "decide", maxSteps: 300 })).status, 400, "decide mode's steps come from its epochs");
+      assert.equal(created() + called("listInstanceTypes").length, 0, "before asking Lambda or creating anything");
+
+      const res = await ask({ mode: "decide", epochs: 3 });
+      assert.equal(res.status, 201);
+      assert.deepEqual((called("createJob")[0]!.args[0] as { params: Record<string, unknown> }).params, {
+        datasetId: DATASET_ID,
+        mode: "decide",
+        epochs: 3,
+        learningRate: 0.0002,
+        loraRank: 16,
+        scoreOnly: 0,
+        dryRun: 0,
+        publish: 0,
+      });
+    });
+
+    it("refuses a decide run its limits would cut off, from what its dataset makes it train and score", async () => {
+      gpuPick = { instanceType: "gpu_1x_a100_sxm4", region: "us-east-1", priceCentsPerHour: 249 };
+      cacheRegionsImpl = async () => ["us-east-1"];
+      const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows([60, 60, 60, 60]) }, "fit-seed");
+      assert.ok(checked.ok);
+      datasetRows = { [DATASET_ID]: datasetRow({ kind: "decision", status: "ready", decision: checked.spec, writerModel: "person" }) };
+      const params = { datasetId: DATASET_ID, mode: "decide", epochs: 4 };
+      const ask = (over: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+        createJobRoute(createReq({ recipe: "glimmer-lora", params: { ...params, ...over }, ...extra }));
+      const want = runEstimate("glimmer-lora", params, "gpu_1x_a100_sxm4", true, decideRunSize(checked.spec, params))!;
+      assert.equal(want.what, "decide");
+
+      const tight = await ask({}, { maxMinutes: want.minutes - 1 });
+      assert.equal(tight.status, 400);
+      const body = (await tight.json()) as { error: string; estimateMinutes: number; usableMinutes: number };
+      assert.deepEqual([body.estimateMinutes, body.usableMinutes], [want.minutes, want.minutes - 1]);
+      assert.ok(body.error.startsWith(`Training on ${want.renderings} renderings and scoring ${want.scored} prompts before and after on 1x A100 SXM4 (40 GB) needs about ${want.minutes} minutes`), body.error);
+      assert.equal(created(), 0);
+
+      assert.equal((await ask({}, { maxMinutes: want.minutes })).status, 201);
+      calls = [];
+      assert.equal((await ask({ dryRun: 1 }, { maxMinutes: 5 })).status, 201, "a dry run trains nothing, so it always fits");
     });
 
     it("prefers the regions that already hold the model cache, for a recipe that keeps one", async (t) => {

@@ -2,7 +2,8 @@
  * The training store against a real Postgres: an in-memory PGlite with the repo's migrations, standing in for Neon.
  * Covers the SQL the safety checks lean on: which jobs count as holding a GPU, the daily cap's committed spend, the job
  * token check, that an ended job only changes through finishJob, the one launch claim per job, a late launch and an
- * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, and
+ * outlived termination, and the sweep's heartbeat. Also eval items (one per index, a cap per job) and judgements, a
+ * decide job's scores (each index once per part, a cap per job, read back by part), and
  * training datasets: each answer saved once as it comes and moved onto train once a chunk, the eval split (keeping
  * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. And the live demo: a serving
  * callback's endpoint (with the IP Lambda reported, kept in step with it), the adapters a serve job can serve, the
@@ -422,6 +423,54 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       await store.setJudgeModel(row.id, "muse-wonder-1.0");
       assert.equal((await store.getJob(row.id))!.judgeModel, "muse-wonder-1.0");
       await store.setJudgeModel("not-a-uuid", "muse-wonder-1.0");
+    });
+  });
+
+  describe("decide scores", () => {
+    const score = (index: number, tuned = true) => ({
+      index,
+      base: [-0.2, -1.9, -4.1],
+      tuned: tuned ? [-0.05, -3.2, -6.0] : null,
+      baseMass: 0.98,
+      tunedMass: tuned ? 0.99 : null,
+    });
+    const decide = (part: "dev" | "test", indexes: number[], tuned = true) => ({ type: "decide" as const, part, items: indexes.map((i) => score(i, tuned)) });
+
+    it("logs each index once per part, only the new items of a retry, and nothing past the cap", async () => {
+      const row = await job({ status: "running" });
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [0, 1, 2]), 10), "recorded");
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [0, 1, 2]), 10), "duplicate", "a retried callback");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0, 1]), 10), "recorded", "test's index 0 isn't dev's");
+      assert.equal(await store.recordDecideEvent(row.id, decide("dev", [2, 3, 4]), 10), "recorded", "a retry with new items keeps only those");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [2, 3, 4, 5]), 10), "limit", "7 logged, and 4 more would pass 10");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [2, 3, 4]), 10), "recorded", "exactly 10");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [5]), 10), "limit");
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0]), 10), "duplicate", "a retry past the cap is still a retry");
+
+      const scores = await store.decideScores(row.id);
+      assert.deepEqual(scores.dev.map((s) => s.index), [0, 1, 2, 3, 4]);
+      assert.deepEqual(scores.test.map((s) => s.index), [0, 1, 2, 3, 4]);
+      assert.deepEqual(scores.dev[0], score(0), "as sent");
+      const rows = await testDb.select().from(realSchema.trainingEvents).where(eq(realSchema.trainingEvents.jobId, row.id));
+      const logged = rows.filter((r) => r.type === "decide").map((r) => (r.payload as { part: string; items: unknown[] }));
+      assert.deepEqual(logged.map((p) => [p.part, p.items.length]), [["dev", 3], ["test", 2], ["dev", 2], ["test", 3]]);
+
+      const other = await job({ status: "running" });
+      assert.deepEqual(await store.decideScores(other.id), { dev: [], test: [] }, "each job has its own scores");
+      assert.equal(await store.recordDecideEvent(other.id, decide("dev", [0], false)), "recorded");
+      assert.deepEqual((await store.decideScores(other.id)).dev, [score(0, false)]);
+      assert.equal(await store.recordDecideEvent("not-a-uuid", decide("dev", [0])), "limit");
+      assert.deepEqual(await store.decideScores("not-a-uuid"), { dev: [], test: [] });
+    });
+
+    it("keeps scores apart from the job's eval items and its other events", async () => {
+      const row = await job({ status: "running" });
+      await store.recordEvent(row.id, { type: "log", text: "scoring" });
+      await store.recordEvalEvent(row.id, { type: "eval", index: 0, prompt: "p", reference: "r", base: "b", tuned: "t" });
+      assert.equal(await store.recordDecideEvent(row.id, decide("test", [0])), "recorded");
+      assert.deepEqual(await store.listEvalIndexes(row.id), [0]);
+      assert.deepEqual((await store.decideScores(row.id)).test.map((s) => s.index), [0]);
+      assert.equal(await store.recordEvalEvent(row.id, { type: "eval", index: 1, prompt: "p", reference: "r", base: "b", tuned: "t" }, 2), "recorded", "decide items don't count as eval items");
     });
   });
 
