@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
+import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { judgeInstructions, JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
@@ -79,7 +80,7 @@ describe("with MUSE_APP_LOOK on", () => {
   });
 
   it("tells the judge both house styles are expected, and changes nothing else it reads", () => {
-    const text = judgeInstructions({ museAppLook: true });
+    const text = judgeInstructions(BRIEF, { museAppLook: true });
     assert.equal(flagsOffSurface()["judge-instructions.txt"], text);
     assert.match(text, /one of two Meta-inspired house styles/);
     assert.match(text, /Muse Muse's own app look, laid out like Meta's assistant app on the web/);
@@ -89,7 +90,26 @@ describe("with MUSE_APP_LOOK on", () => {
     assert.equal(removed.length, 1);
     // The rules that fail a product for Meta's marks or for implying Meta made it are untouched.
     assert.ok(text.includes("- The page implies Meta made it, or uses Meta's logos or marks."));
-    assert.equal(judgeInstructions(), JUDGE_INSTRUCTIONS);
-    assert.equal(judgeInstructions({ museAppLook: false }), JUDGE_INSTRUCTIONS);
+    assert.equal(judgeInstructions(BRIEF), JUDGE_INSTRUCTIONS);
+    assert.equal(judgeInstructions(BRIEF, { museAppLook: false }), JUDGE_INSTRUCTIONS);
+  });
+
+  it("keeps a brief's target notes in the judge and the change prompt, after the look's lines", () => {
+    const web = { id: "web" as const, why: "Always" };
+    const agent = { task: "t", tools: [{ id: "web_search", need: "n", why: "w" }], connections: "none" as const, stepsPerRun: 3 };
+    const brief: Brief = { ...BRIEF, targets: [web, { id: "agent", why: "x" }, { id: "vr", why: "y" }, { id: "glasses", why: "z" }], agent };
+    const off = judgeInstructions(brief);
+    const on = judgeInstructions(brief, { museAppLook: true });
+    assert.ok(off.startsWith(`${JUDGE_INSTRUCTIONS}\n\n`));
+    const notes = off.slice(JUDGE_INSTRUCTIONS.length);
+    assert.match(notes, /This product is an agent that works in steps with tools/);
+    assert.match(notes, /simulated Meta Quest 3 view/);
+    assert.match(notes, /The glasses were simulated/);
+    assert.equal(on, `${judgeInstructions(BRIEF, { museAppLook: true })}${notes}`, "the look's house styles, then the same notes");
+    assert.match(on, /one of two Meta-inspired house styles/);
+
+    const refine = renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], brief, museAppLook: true });
+    assert.match(refine, /or else `\.agents\/skills\/meta-ui` if it exists\. Don't restyle what the request doesn't change\.\n- This product also runs on: /);
+    assert.match(refine, /`\.agents\/skills\/muse-vr`/);
   });
 });

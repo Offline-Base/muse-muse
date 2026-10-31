@@ -27,7 +27,7 @@ export function flagsOffSurface(): Record<string, string> {
     "brief-request.txt": briefRequestText("Count the birds at my feeder.", []),
     "change-check-instructions.txt": changeCheckInstructions(),
     "catalog-summary.txt": catalogSummary(),
-    "judge-instructions.txt": judgeInstructions(look),
+    "judge-instructions.txt": judgeInstructions(BRIEF, look),
     "build-prompt.txt": renderBuildPrompt(BRIEF, render),
     "fix-prompt.txt": renderFixPrompt({ verify: null, judge: { pass: false, reasons: ["The count is missing."], mismatches: [] }, round: 1, ...look }),
     "refine-prompt.txt": renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], ...look }),
