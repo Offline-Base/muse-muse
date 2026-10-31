@@ -134,3 +134,20 @@ A product's tool rows don't go to the live site when a local product is promoted
 
 Composio keeps tool payloads for up to a year without its paid zero data retention. Products say so, and it needs settling
 before personal tools reach anyone but owners.
+
+## The template's kit
+
+`template/targets/agent/` is an overlay, laid out like `template/targets/glasses`: `files/` goes on top of the product, `platform-files.json`
+lists what the product may not edit, and `deps.json` is empty because the kit adds no npm package. Only a product whose brief's
+targets list `agent` gets it. How to use it is in `files/.agents/skills/muse-agent/SKILL.md`.
+
+- **`lib/agent/run.ts`:** `runAgent` streams the events in `lib/agent/events.ts`, `agentResponse` is a route's reply, `agentAction` is an
+  action's, and `runAgentToEnd` returns one value.
+- **`lib/agent/research.ts`:** `deepResearch` plans, runs each narrow question as its own request one at a time on Meta search, and merges.
+- **`lib/agent/state.ts`:** seals a stopped run, with a key from the product's token, for an hour.
+- **`app/api/musemuse/[...path]/route.ts`:** the owner's link, sign-out, connections and the way back from connecting.
+- **`components/agent/`:** `AgentRun`, `ConfirmCard`, `ConnectCard` and `SourceList`, in the meta-ui style.
+
+Calls go out with `x-musemuse-run-id`, `x-musemuse-visitor` and `x-musemuse-owner`. Keep going starts a new run id, because that is the
+person choosing to spend more. An answer to a confirm card stays on the same one. An action's budget is at most 100 s, inside the
+connector's 120 s, and a connector can't see or call an action marked `who: "owner"`.
