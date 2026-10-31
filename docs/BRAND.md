@@ -544,6 +544,14 @@ sizes, so these are ours (O):
 **Also fixed: test calls on a local platform.** A local platform's products call Meta directly and skipped the gateway's
 `TEST_MODEL` swap. In that mode only, `envLocal` writes `TEST_MODEL` into the product's `.env.local` and the template's
 `respondJson` runs a Muse Wonder call on Spark 1.3 Contributor when it names exactly that. Production doesn't change.
+Only `respondJson`: a product that calls `metaClient` itself still runs Muse Wonder on a local test build, as the trial
+below found.
+
+**Tried in two real builds (Oct 31).** A chore rota tool and a fridge recipe helper, on a local platform with the flag
+on, a test snapshot and `TEST_MODEL`: both went live with the judge passing, for $0.10 of recorded Meta spend and
+about $0.11 of sandbox time, and both used the look's tokens and parts with no raw colors. The skill was read; its
+reference files weren't, so SKILL.md now carries the rules the builds missed. Details, screenshots and the open items
+in [docs/spikes/ui-brand-2026-10-31](spikes/ui-brand-2026-10-31/README.md).
 
 ## Gap list
 
