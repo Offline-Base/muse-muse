@@ -108,7 +108,6 @@ describe("the steps list", () => {
       "compacted its context",
       "Note from the owner",
       "4 observers ran",
-      "verify observer ran",
       "Muse Code asks",
     ]) {
       assert.ok(html.includes(piece), piece);

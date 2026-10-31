@@ -224,7 +224,7 @@ describe("a session bridge round", () => {
   });
 
   it("folds observer runs when there are many, and lists a few as they are", () => {
-    assert.match(stepsHtml(bridgeLines, OWNER), /<details class="chat-steplist-fold"><summary class="chat-steplist-title">4 observers ran.*?verify observer ran/);
+    assert.match(stepsHtml(bridgeLines, OWNER), /<details class="chat-steplist-fold"><summary class="chat-steplist-title">4 observers ran<\/summary><\/details>/);
     const html = stepsHtml(bridgeLines.filter((l) => l.kind !== "reminder" || l.itemId === "o0"), OWNER);
     assert.match(html, /verify observer ran/);
     assert.doesNotMatch(html, /observers ran/);

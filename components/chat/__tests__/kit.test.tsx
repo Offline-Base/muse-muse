@@ -231,7 +231,9 @@ describe("StepList", () => {
     assert.match(html, /<div class="chat-steplist-gallery"><span class="chat-steplist-media"><img src="\/a\.png".*?<span class="chat-steplist-media"><img src="\/b\.png"/);
     assert.match(html, /<div class="chat-steplist-body"><em>What ran<\/em><\/div>/);
     assert.match(html, /<div class="chat-steplist-text"><div class="chat-steplist-body"><em>A message<\/em><\/div><\/div>/);
-    assert.match(html, /<details class="chat-steplist-fold"><summary class="chat-steplist-title">12 steps<\/summary><ol class="chat-steplist-children"><li data-step="one"/);
+    // A closed fold leaves its children out, so a long log stays cheap to render.
+    assert.match(html, /<details class="chat-steplist-fold"><summary class="chat-steplist-title">12 steps<\/summary><\/details>/);
+    assert.doesNotMatch(html, /data-step="one"/);
   });
 
   it("nests sub-steps, with the subagent icon for subagents, workflows and what a workflow runs", () => {

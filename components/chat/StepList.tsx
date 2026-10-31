@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { ChatLink } from "@/components/chat/ChatLink";
 import type { StepItem, StepKind, StepMedia, StepsEnd } from "@/components/chat/types";
 import { WorkingIcon } from "@/components/chat/WorkingIcon";
@@ -15,7 +18,7 @@ const END: Record<StepsEnd, { label: string; icon: IconName }> = {
  * badge). Sub-steps nest under their step as smaller rows. Subagents, workflows and the rows a workflow runs show the
  * working icon's subagent variant in place of the dot, and a step still running shows it turning. The thread ends in
  * "Done", "Stopped" or "Didn't finish" once the list is finished. A surface with more to show can give a row a body, and
- * fold a long run of children under the row's title. Each row carries its id as data-step, so a surface can scroll to it.
+ * fold a long run of children under the row's title; those render only while the fold is open. Each row carries its id as data-step, so a surface can scroll to it.
  */
 export function StepList({ steps, end, label = "Steps" }: { steps: readonly StepItem[]; end?: StepsEnd; label?: string }) {
   return (
@@ -36,6 +39,7 @@ export function StepList({ steps, end, label = "Steps" }: { steps: readonly Step
 }
 
 function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }) {
+  const [foldOpen, setFoldOpen] = useState(false);
   const avatar = step.kind === "subagent" || step.kind === "workflow" || parentKind === "workflow";
   const media = ([] as readonly StepMedia[]).concat(step.media ?? []);
   const children = step.children?.length ? (
@@ -63,9 +67,9 @@ function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }
       </span>
       <div className="chat-steplist-text">
         {step.folded ? (
-          <details className="chat-steplist-fold">
+          <details className="chat-steplist-fold" onToggle={(e) => setFoldOpen(e.currentTarget.open)}>
             <summary className="chat-steplist-title">{title}</summary>
-            {children}
+            {foldOpen ? children : null}
           </details>
         ) : (
           <>
