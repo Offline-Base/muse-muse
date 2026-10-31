@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+ios/
+android/
+*.tsbuildinfo
+credentials.json
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.apk
+*.tar.gz

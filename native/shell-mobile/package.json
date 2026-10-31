@@ -1,0 +1,44 @@
+{
+  "name": "muse-muse-shell-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "typecheck": "tsc --noEmit -p .",
+    "eas-build-post-install": "node scripts/glasses-autolink.mjs"
+  },
+  "dependencies": {
+    "@chrisgocode/expo-meta-wearables-dat": "2.2.0",
+    "expo": "58.0.21",
+    "expo-audio": "~58.0.10",
+    "expo-constants": "~58.0.14",
+    "expo-crypto": "~58.0.7",
+    "expo-file-system": "~58.0.13",
+    "expo-haptics": "~58.0.7",
+    "expo-image-manipulator": "~58.0.16",
+    "expo-image-picker": "~58.0.10",
+    "expo-linking": "~58.0.15",
+    "expo-notifications": "~58.1.7",
+    "expo-speech": "~58.0.3",
+    "expo-status-bar": "~58.0.4",
+    "expo-updates": "~58.0.19",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-webview": "14.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "expo": {
+    "autolinking": {
+      "exclude": [
+        "@chrisgocode/expo-meta-wearables-dat"
+      ]
+    }
+  }
+}

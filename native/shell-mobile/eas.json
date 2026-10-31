@@ -1,0 +1,48 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "base": {
+      "node": "22.22.2"
+    },
+    "development": {
+      "extends": "base",
+      "developmentClient": false,
+      "distribution": "internal",
+      "channel": "development",
+      "env": { "APP_VARIANT": "lab" },
+      "ios": { "simulator": true },
+      "android": { "buildType": "apk" }
+    },
+    "lab-android": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "lab",
+      "env": { "APP_VARIANT": "lab" },
+      "android": { "buildType": "apk" }
+    },
+    "production-android": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "production",
+      "env": { "APP_VARIANT": "production" },
+      "android": { "buildType": "apk" }
+    },
+    "lab-ios-sim": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "lab",
+      "env": { "APP_VARIANT": "lab" },
+      "ios": { "simulator": true }
+    },
+    "glasses-ios-sim": {
+      "extends": "base",
+      "distribution": "internal",
+      "channel": "glasses",
+      "env": { "APP_VARIANT": "lab", "MUSE_GLASSES": "1", "MUSE_GLASSES_MOCK": "1" },
+      "ios": { "simulator": true }
+    }
+  }
+}
