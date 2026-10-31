@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { CANVAS, CAPTION, layoutFor, renderFrameLayer } from "./lib/frames.mjs";
+import { isMainModule } from "./lib/main.mjs";
 import { run } from "./lib/proc.mjs";
 import { findFfmpeg, probeVideo } from "./lib/tools.mjs";
 
@@ -197,7 +198,7 @@ export async function composeClip({ recording, outDir, form, caption, note = "",
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMainModule(import.meta.url)) {
   const { values } = parseArgs({
     options: {
       recording: { type: "string" },

@@ -6,10 +6,10 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, readlink, rename, rm, statfs, symlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { adbDevices, EMULATOR_SERIAL, tarGzExtract } from "./lib/commands.mjs";
-import { labRoot } from "./lib/config.mjs";
+import { AGENT_PID_FILE, labRoot } from "./lib/config.mjs";
 import { downloadFile } from "./lib/download.mjs";
+import { isMainModule } from "./lib/main.mjs";
 import { run } from "./lib/proc.mjs";
 
 export const ACTIONS = ["status", "restart-agent", "update-agent", "cleanup", "reboot"];
@@ -18,11 +18,16 @@ export const WINDOWS_TASK = "MuseLabAgent";
 const VERSION = /^[A-Za-z0-9._-]{1,40}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-/** The commands that restart the agent. */
-export function restartCommands({ platform, uid }) {
+/**
+ * The commands that restart the agent. On Windows, /End only stops the task's own program, the PowerShell wrapper, so the
+ * agent's node.exe has to be ended too or it keeps polling beside the new one. This runs as SYSTEM and a pid can be stale,
+ * so the image filter keeps it from ending anything but a node.exe.
+ */
+export function restartCommands({ platform, uid, agentPid = null }) {
   if (platform === "win32") {
     return [
       ["schtasks", "/End", "/TN", WINDOWS_TASK],
+      ...(agentPid ? [["taskkill", "/F", "/T", "/FI", `PID eq ${agentPid}`, "/FI", "IMAGENAME eq node.exe"]] : []),
       ["schtasks", "/Run", "/TN", WINDOWS_TASK],
     ];
   }
@@ -62,10 +67,20 @@ function sha256Of(file) {
   });
 }
 
-async function restart(env, platform) {
+/** The pid in the agent's file, or null if there's no usable one. */
+export function parseAgentPid(text) {
+  const pid = String(text ?? "").trim();
+  return /^[0-9]{1,10}$/.test(pid) ? pid : null;
+}
+
+async function restart(root, env, platform) {
   const uid = process.getuid?.() ?? 0;
+  const pidFile = path.join(root, "data", AGENT_PID_FILE);
+  const agentPid = platform === "win32" ? parseAgentPid(await readFile(pidFile, "utf8").catch(() => null)) : null;
   let code = 0;
-  for (const argv of restartCommands({ platform, uid })) {
+  for (const argv of restartCommands({ platform, uid, agentPid })) {
+    // Before the new agent starts, so this can't remove its file.
+    if (argv.includes("/Run")) await rm(pidFile, { force: true });
     const reply = await run(argv, { timeoutMs: 30_000, env });
     // Ending a task that isn't running fails, and that's fine.
     if (argv.includes("/Run") || platform !== "win32") code = reply.code;
@@ -125,14 +140,14 @@ async function update(root, env, platform) {
     await rename(next, current);
   }
   await rm(tempDir, { recursive: true, force: true });
-  return { version: pin.version, restarted: (await restart(env, platform)) === 0 };
+  return { version: pin.version, restarted: (await restart(root, env, platform)) === 0 };
 }
 
 async function cleanup(root, env, platform) {
   for (const argv of cleanupCommands({ platform })) await run(argv, { timeoutMs: 60_000, env });
   await rm(path.join(root, "data", "jobs"), { recursive: true, force: true });
   // A job that was running just lost its simulator, so the agent starts over and the sweep re-queues the job.
-  return { restarted: (await restart(env, platform)) === 0 };
+  return { restarted: (await restart(root, env, platform)) === 0 };
 }
 
 async function main() {
@@ -146,13 +161,13 @@ async function main() {
   const root = labRoot({ env, platform });
   let result;
   if (action === "status") result = await status(root, env);
-  if (action === "restart-agent") result = { restarted: (await restart(env, platform)) === 0 };
+  if (action === "restart-agent") result = { restarted: (await restart(root, env, platform)) === 0 };
   if (action === "update-agent") result = await update(root, env, platform);
   if (action === "cleanup") result = await cleanup(root, env, platform);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMainModule(import.meta.url)) {
   main().catch((err) => {
     process.stderr.write(`${err?.message ?? err}\n`);
     process.exit(1);

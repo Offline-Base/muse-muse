@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, restartCommands } from "../control.mjs";
+import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, parseAgentPid, restartCommands } from "../control.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (relative) => readFileSync(path.join(HERE, "..", relative), "utf8");
@@ -52,6 +52,24 @@ describe("control.mjs", () => {
   test("restarts per platform", () => {
     assert.deepEqual(restartCommands({ platform: "darwin", uid: 501 }), [["launchctl", "kickstart", "-k", "gui/501/ai.musemuse.lab"]]);
     assert.equal(restartCommands({ platform: "win32" })[1].at(-1), "MuseLabAgent");
+  });
+  test("a Windows restart ends the old node.exe before it starts the new one", () => {
+    const commands = restartCommands({ platform: "win32", agentPid: "4242" });
+    assert.deepEqual(commands.map((c) => c[0]), ["schtasks", "taskkill", "schtasks"]);
+    assert.equal(commands[0][1], "/End");
+    assert.equal(commands[2][1], "/Run");
+    const kill = commands[1];
+    assert.deepEqual(kill.slice(1, 3), ["/F", "/T"], "and the app and tools under it");
+    assert.ok(kill.includes("PID eq 4242"));
+    assert.ok(kill.includes("IMAGENAME eq node.exe"), "a stale pid can't end anything else");
+  });
+  test("a restart with no pid file still restarts, and the Mac needs none", () => {
+    assert.deepEqual(restartCommands({ platform: "win32" }).map((c) => c[1]), ["/End", "/Run"]);
+    assert.equal(restartCommands({ platform: "darwin", uid: 501, agentPid: "4242" }).length, 1);
+  });
+  test("parseAgentPid only takes a number", () => {
+    assert.equal(parseAgentPid("4242\n"), "4242");
+    for (const bad of [null, "", "4242 & calc", "-1", "abc"]) assert.equal(parseAgentPid(bad), null, String(bad));
   });
   test("cleanup clears simulators and the emulator on the Mac", () => {
     const text = cleanupCommands({ platform: "darwin" }).map((c) => c.join(" ")).join("\n");

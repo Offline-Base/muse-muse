@@ -5,12 +5,12 @@
 // box takes no inbound connections.
 import { mkdir, rm, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createApi } from "./lib/api.mjs";
-import { loadConfig } from "./lib/config.mjs";
+import { AGENT_PID_FILE, loadConfig } from "./lib/config.mjs";
 import { windowsShutdown } from "./lib/commands.mjs";
 import { executeJob } from "./lib/execute.mjs";
 import { createLogger } from "./lib/log.mjs";
+import { isMainModule } from "./lib/main.mjs";
 import { run, sleep as sleepFor } from "./lib/proc.mjs";
 import { readLabToken } from "./lib/token.mjs";
 import { probeCapabilities } from "./lib/tools.mjs";
@@ -18,6 +18,8 @@ import { claimableKinds } from "./lib/validate.mjs";
 
 const PROBE_EVERY_MS = 5 * 60_000;
 const BACKOFF_MAX_MS = 60_000;
+/** How soon a shutdown that failed is tried again. */
+const SHUTDOWN_RETRY_MS = 60_000;
 
 /** How long to wait after the claim call failed `failures` times in a row, in ms. */
 export function backoffMs(failures, retryAfterMs = null) {
@@ -31,6 +33,12 @@ export function shouldShutDown({ idleMinutes, lastBusyAt, now, running }) {
   return now - lastBusyAt >= idleMinutes * 60_000;
 }
 
+/** Stops this Windows box. True only when the command took: a box that's still up has to keep its agent. */
+export async function stopWindowsBox({ exec = run } = {}) {
+  const reply = await exec(windowsShutdown(), { timeoutMs: 30_000 });
+  return reply.code === 0 && !reply.timedOut;
+}
+
 /**
  * @param {object} deps
  * @param {object} deps.config
@@ -40,10 +48,10 @@ export function shouldShutDown({ idleMinutes, lastBusyAt, now, running }) {
  * @param {(job: object, opts: { stopSignal: AbortSignal }) => Promise<object>} deps.execute
  * @param {() => number} [deps.now]
  * @param {(ms: number, signal?: AbortSignal) => Promise<void>} [deps.sleep]
- * @param {() => Promise<void>} [deps.shutdownBox]
+ * @param {() => Promise<boolean>} [deps.shutdownBox] true when the box is really going down
  * @param {(state: object) => Promise<void>} [deps.writeState]
  */
-export function createAgent({ config, api, log, probe, execute, now = Date.now, sleep = sleepFor, shutdownBox = async () => {}, writeState = async () => {} }) {
+export function createAgent({ config, api, log, probe, execute, now = Date.now, sleep = sleepFor, shutdownBox = async () => true, writeState = async () => {} }) {
   const stop = new AbortController();
   /** @type {Map<string, { kind: string, done: Promise<void> }>} */
   const running = new Map();
@@ -75,6 +83,24 @@ export function createAgent({ config, api, log, probe, execute, now = Date.now, 
     at: new Date(now()).toISOString(),
   });
 
+  /**
+   * Stops the box once it's been idle long enough, whatever the platform is answering: a box that can't reach the platform
+   * still bills. True when the box is going down. If the command failed, the agent stays up and tries again shortly.
+   */
+  const stopIfIdle = async () => {
+    const idleMinutes = config.idleShutdownMinutes;
+    if (!shouldShutDown({ idleMinutes, lastBusyAt, now: now(), running: running.size })) return false;
+    log.info("idle shutdown", { minutes: idleMinutes });
+    const stopped = await shutdownBox().catch(() => false);
+    if (stopped) {
+      shuttingDown = true;
+      return true;
+    }
+    log.warn("idle shutdown failed", { retrySeconds: SHUTDOWN_RETRY_MS / 1000 });
+    lastBusyAt = now() - idleMinutes * 60_000 + SHUTDOWN_RETRY_MS;
+    return false;
+  };
+
   /** One pass of the loop. Returns how long to wait before the next. */
   const tick = async () => {
     const started = now();
@@ -103,6 +129,7 @@ export function createAgent({ config, api, log, probe, execute, now = Date.now, 
       if (stop.signal.aborted) return 0;
       failures += 1;
       log.warn("claim failed", { status: err?.status ?? null, code: err?.code ?? null, error: String(err?.message ?? err) });
+      if (await stopIfIdle()) return 0;
       return backoffMs(failures, err?.retryAfterMs ?? null);
     }
     if (job) {
@@ -110,12 +137,7 @@ export function createAgent({ config, api, log, probe, execute, now = Date.now, 
       launch(job);
       return 0;
     }
-    if (shouldShutDown({ idleMinutes: config.idleShutdownMinutes, lastBusyAt, now: now(), running: running.size })) {
-      log.info("idle shutdown", { minutes: config.idleShutdownMinutes });
-      shuttingDown = true;
-      await shutdownBox();
-      return 0;
-    }
+    if (await stopIfIdle()) return 0;
     return Math.max(0, started + config.pollSeconds * 1000 - now());
   };
 
@@ -143,6 +165,9 @@ async function main() {
   await mkdir(config.dataDir, { recursive: true });
   // Whatever an earlier agent left. Its jobs are already the sweep's to re-queue.
   await rm(path.join(config.dataDir, "jobs"), { recursive: true, force: true });
+  // Restarting on Windows needs this: ending the logon task doesn't end this process (control.mjs).
+  const pidFile = path.join(config.dataDir, AGENT_PID_FILE);
+  await writeFile(pidFile, String(process.pid));
 
   const readToken = async () => {
     const token = await readLabToken({ lane: config.lane, region: config.region });
@@ -167,9 +192,7 @@ async function main() {
       const disk = await statfs(config.dataDir).catch(() => null);
       await writeFile(stateFile, JSON.stringify({ ...state, freeBytes: disk ? disk.bavail * disk.bsize : null }));
     },
-    shutdownBox: async () => {
-      await run(windowsShutdown(), { timeoutMs: 30_000 });
-    },
+    shutdownBox: stopWindowsBox,
   });
 
   const onSignal = () => agent.stop();
@@ -177,10 +200,11 @@ async function main() {
   process.on("SIGINT", onSignal);
   log.info("agent started", { lane: config.lane, version: config.version, platform: config.platformUrl });
   await agent.run();
+  await rm(pidFile, { force: true });
   log.info("agent stopped");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (isMainModule(import.meta.url)) {
   main().catch((err) => {
     process.stderr.write(`${err?.message ?? err}\n`);
     process.exit(1);

@@ -13,6 +13,8 @@ export const POLL_SECONDS = 10;
 export const HEARTBEAT_SECONDS = 15;
 /** The Windows box stops itself after this long with no job. The Mac never stops: stopping scrubs it for hours. */
 export const WINDOWS_IDLE_MINUTES = 20;
+/** The running agent's process id, in the data folder. */
+export const AGENT_PID_FILE = "agent.pid";
 
 function agentVersion() {
   try {
