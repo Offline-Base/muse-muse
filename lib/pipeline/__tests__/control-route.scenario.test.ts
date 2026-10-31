@@ -2,7 +2,8 @@
  * Drives POST /api/builds/[buildId]/control with the database, requireUser, the rate limiter, the event log and the
  * sandbox faked: only the build's owner (or an admin), never from another site and never while steering is off, every
  * field checked, nothing outside a Muse Code round, the envelopes sendMuseCommand gets, the control event, the Stop's
- * mark on the build row, and 20 commands a minute. Nothing reaches a sandbox or Neon.
+ * mark on the build row, and 20 commands a minute. The build room's steer box (components/build/SteerBox.tsx) runs
+ * against the same route, so the two agree on the body and every error code. Nothing reaches a sandbox or Neon.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/control-route.scenario.test.ts
  *
@@ -10,6 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { createElement } from "react";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
@@ -82,6 +84,7 @@ const fakeDb = () => ({
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 type Ctx = { params: Promise<{ buildId: string }> };
 let POST: (req: Request, ctx: Ctx) => Promise<Response>;
+let steer: typeof import("@/components/build/SteerBox");
 const savedEngine = process.env.MUSE_ENGINE;
 const savedFull = process.env.MUSE_FULL;
 
@@ -136,6 +139,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       },
     });
     ({ POST } = await import(at("../../../app/api/builds/[buildId]/control/route.ts")));
+    steer = await import("@/components/build/SteerBox");
   });
 
   after(() => {
@@ -453,5 +457,54 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
     assert.equal((await send({ action: "stop" })).status, 200);
     assert.equal(sent().length, 22);
+  });
+
+  describe("the steer box", () => {
+    /** A fetch that hands the box's request to the route, as the browser would on the same origin. */
+    const toRoute: import("@/components/build/SteerBox").Fetch = async (url, init) => {
+      calls.push({ fn: "fetch", args: [url, init] });
+      const req = new Request(`https://muse.example.com${url}`, { ...init, headers: { ...(init?.headers as Record<string, string>), "sec-fetch-site": "same-origin" } });
+      return POST(req, ctx(url.split("/")[3]));
+    };
+
+    it("posts to the control route and reads every answer as a sentence", async () => {
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "steer", text: "Bigger buttons" }, toRoute), null);
+      assert.equal(called("fetch")[0]!.args[0], `/api/builds/${BUILD_ID}/control`);
+      assert.deepEqual(sent()[0]!.envelope.command, { type: "steer", text: "Bigger buttons" });
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "queue", text: "Then a dark mode" }, toRoute), null);
+      marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "stop" }, toRoute), null);
+
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "steer", text: "x".repeat(4001) }, toRoute), "Keep the note to 4,000 characters.");
+      row = inRound({ status: "verifying", museRound: null });
+      assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /isn't taking notes right now/);
+      row = inRound();
+      viewer = STRANGER;
+      assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /Only the person who made this build/);
+      viewer = OWNER;
+      sendFails = true;
+      assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /couldn't be reached/);
+      delete process.env.MUSE_ENGINE;
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute), "Steering is off in this deployment.");
+      const offline = await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, async () => {
+        throw new TypeError("Failed to fetch");
+      });
+      assert.match(offline!, /Couldn't reach Muse Muse/);
+      assert.match(steer.steerErrorText(429, "rate_limited"), /Wait a minute/);
+      for (const status of [400, 401, 403, 404, 409, 413, 429, 500, 502, 503]) {
+        assert.ok(!steer.steerErrorText(status, undefined).includes("—"), "no em dashes");
+      }
+    });
+
+    it("shows a note box with Send now, After this step and Stop", async () => {
+      const { renderToString } = await import("react-dom/server");
+      const html = renderToString(createElement(steer.SteerBox, { buildId: BUILD_ID })).replace(/<!-- -->/g, "");
+      assert.match(html, /<form[^>]*aria-label="Steer Muse Code"/);
+      assert.match(html, /<label[^>]*>A note for Muse Code<\/label>/);
+      assert.match(html, /<textarea[^>]*maxLength="4000"/);
+      for (const label of ["Send now", "After this step", "Stop"]) assert.ok(html.includes(`${label}<`), label);
+      assert.match(html, /<button type="submit"[^>]*>.*Send now/);
+      assert.ok(!html.includes("—"), "no em dashes");
+    });
   });
 });

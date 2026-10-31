@@ -32,6 +32,8 @@ export default async function BuildRoomPage({
   const origin = await platformOrigin();
   // The product's owner decides, as in the messages route. The build's userId is whoever asked for that change.
   const canRefine = Boolean(data.product && canActAsOwner(user, data.product.ownerId));
+  // Steering a running build takes the same owner powers (POST /api/builds/{id}/control), and steering switched on.
+  const canSteer = env.steeringEnabled && canActAsOwner(user, data.product?.ownerId ?? data.build.userId);
 
   return (
     <BuildRoom
@@ -42,6 +44,7 @@ export default async function BuildRoomPage({
       history={data.history}
       tokens={data.tokens}
       canRefine={canRefine}
+      canSteer={canSteer}
       signedIn={Boolean(user)}
       origin={origin}
       serverNow={Date.now()}
