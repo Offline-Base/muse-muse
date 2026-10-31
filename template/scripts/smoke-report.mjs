@@ -3,7 +3,8 @@
 // Playwright exits 0 when tests are skipped, so verify checks the report as well: every test must have run and
 // passed, and tests/smoke.spec.ts (plus tests/actions.spec.ts when the product has actions) must have run at least one.
 // It also checks the judge screenshots: each one taken by judgeShot(), and the last one free of errors and empty states,
-// with its result near the top and the page not too long.
+// with its result near the top and the page not too long. A VR product must also have a judge screenshot taken inside VR
+// that isn't blank.
 
 /** At phone size, the last screenshot's result must start within this many px of the top of the page. */
 export const RESULT_TOP_MAX = 1000;
@@ -151,18 +152,62 @@ export function glassesProblems(callsText, { since = 0, project = "smoke" } = {}
 }
 
 /**
- * The glasses check as verify runs it. `read` takes a path under the product and returns its text, or null when it isn't
- * there. musemuse.target.json says which target this is, and a product without one is a web product with nothing to check.
+ * Where the product runs, from musemuse.target.json. `read` takes a path under the product and returns its text, or null
+ * when it isn't there. A product without that file is a web product with nothing extra to check.
  */
-export function glassesGateProblems(read, { since = 0 } = {}) {
-  let target = null;
+export function productTargets(read) {
   try {
-    target = JSON.parse(read("musemuse.target.json") ?? "null");
+    const parsed = JSON.parse(read("musemuse.target.json") ?? "null");
+    if (Array.isArray(parsed?.targets)) return parsed.targets.filter((t) => typeof t === "string");
+    return typeof parsed?.target === "string" ? [parsed.target] : [];
   } catch {
     return [];
   }
-  const glasses = target?.target === "glasses" || (Array.isArray(target?.targets) && target.targets.includes("glasses"));
-  return glasses ? glassesProblems(read("test-results/glasses/calls.jsonl"), { since }) : [];
+}
+
+/** The glasses check as verify runs it. `read` is as in productTargets. */
+export function glassesGateProblems(read, { since = 0 } = {}) {
+  return productTargets(read).includes("glasses") ? glassesProblems(read("test-results/glasses/calls.jsonl"), { since }) : [];
+}
+
+/**
+ * A VR product's judge screenshots. judgeShot() in a session leaves `xr: true` and what it measured in <name>.checked. At
+ * least one must be from inside VR, none blank, and the last one free of alerts. A blank view also fails judgeShot itself,
+ * so this catches a report from a test that got round it. Takes the file names in test-results/judge/ and a function that
+ * reads one of them as text. These stay failures when MUSEMUSE_SCREEN_CHECK=warn: a blank view isn't a matter of layout.
+ */
+export function xrShotProblems(fileNames, read) {
+  const shots = checkedFiles(fileNames, read).filter(({ checked }) => checked.xr === true);
+  if (!shots.length) {
+    return ["A VR product's smoke test must enter VR with xr.enter(page) from tests/xr.ts and take at least one judgeShot inside it."];
+  }
+  const problems = [];
+  const blank = shots.filter(({ checked }) => checked.canvas?.blank !== false).map(({ shot }) => shot);
+  if (blank.length) problems.push(`These VR screenshots show a blank view: ${blank.join(", ")}. Light the scene and put something in front of the person.`);
+  const last = shots.at(-1);
+  if (Array.isArray(last.checked.xrAlerts) && last.checked.xrAlerts.length) {
+    problems.push(`The last VR screenshot, ${last.shot}, has an alert up: ${last.checked.xrAlerts.join("; ")}. The primary flow must end on its finished result.`);
+  }
+  return problems;
+}
+
+/** The VR check as verify runs it. `readText` is as in productTargets, and `fileNames` and `readShot` as in xrShotProblems. */
+export function xrGateProblems(readText, fileNames, readShot) {
+  return productTargets(readText).includes("vr") ? xrShotProblems(fileNames, readShot) : [];
+}
+
+/**
+ * What Chromium launches with for this product: a target's settings in scripts/browser.json, or nothing for a web product.
+ * `read` is as in productTargets.
+ */
+export function browserLaunchOptions(read) {
+  if (!productTargets(read).includes("vr")) return {};
+  try {
+    const args = JSON.parse(read("scripts/browser.json") ?? "null")?.vr?.args;
+    return Array.isArray(args) ? { args } : {};
+  } catch {
+    return {};
+  }
 }
 
 /** Notes judgeShot() left on any screenshot, for verify to print without failing. */

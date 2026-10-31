@@ -3,8 +3,8 @@
 // Steps: typecheck (next typegen + tsc --noEmit), build (next build), start (next start, GET / must be 200),
 // console (Chromium loads / with no console or page errors), smoke (playwright, smoke project, every spec in tests/,
 // with no test.only and no skipped tests, and a last judge screenshot with no error or empty state, its result near the
-// top and a page that isn't too long, and for a glasses product a photo taken through the fake glasses; see
-// scripts/smoke-report.mjs), manifest (musemuse.json valid against
+// top and a page that isn't too long, for a glasses product a photo taken through the fake glasses, and for a VR product
+// a screenshot from inside VR that isn't blank; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
 // musemuse.schema.json, action routes and fixtures exist).
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
 // {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}
@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, smokeReportProblems } from "./smoke-report.mjs";
+import { browserLaunchOptions, finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, smokeReportProblems, xrGateProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -23,6 +23,11 @@ const STEP_NAMES = ["typecheck", "build", "start", "console", "smoke", "manifest
 const steps = [];
 const failures = [];
 const children = new Set();
+/** The text of a file under the product, or null when it isn't there. */
+const readText = (file) => {
+  const full = path.join(ROOT, file);
+  return existsSync(full) ? readFileSync(full, "utf8") : null;
+};
 let server = null;
 let serverLog = "";
 
@@ -257,14 +262,11 @@ async function main() {
         const judgeDir = path.join(ROOT, "test-results", "judge");
         const shots = readdirSync(judgeDir);
         const read = (f) => readFileSync(path.join(judgeDir, f), "utf8");
-        const readText = (file) => {
-          const full = path.join(ROOT, file);
-          return existsSync(full) ? readFileSync(full, "utf8") : null;
-        };
         const problems = [
           ...smokeReportProblems(report, { requireActions: hasActions() }),
           ...judgeShotProblems(shots),
           ...glassesGateProblems(readText, { since: smokeStarted }),
+          ...xrGateProblems(readText, shots, read),
         ];
         const finalScreen = finalShotProblems(shots, read);
         // MUSEMUSE_SCREEN_CHECK=warn (set by the platform, never by the product) logs them instead, as judgeShot does.
@@ -305,7 +307,8 @@ function hasActions() {
 
 async function checkConsole(url) {
   const { chromium } = await import("@playwright/test");
-  const browser = await chromium.launch();
+  // A VR product's 3D preview needs software WebGL, or the page logs that it couldn't create a context.
+  const browser = await chromium.launch(browserLaunchOptions(readText));
   const problems = [];
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
