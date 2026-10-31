@@ -36,6 +36,8 @@ import {
 import { modelLabel } from "@/lib/format";
 import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import { briefTargets } from "@/lib/native/targets";
+import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -472,6 +474,7 @@ export async function provisionStep(input: {
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
     ...extraFilesFor(brief),
+    targets: briefTargets(brief),
   });
   const sessionId = build.museSessionId ?? newSessionId();
   await db().batch([
@@ -890,6 +893,7 @@ export async function demoSpecStep(input: {
     tagline: input.tagline,
     models: [...new Set(models)].map(modelLabel),
     url: demoUrlFor(product, env.publishOffReason),
+    ...demoNoteFor(briefTargets(brief)),
   });
 }
 demoSpecStep.maxRetries = 2;

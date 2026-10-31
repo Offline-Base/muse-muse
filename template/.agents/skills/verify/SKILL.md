@@ -16,6 +16,8 @@ description: Use before finishing any build. Explains what npm run verify checks
 | smoke | `playwright test --project=smoke`: every spec in `tests/`, at phone size, with real model calls. Fails on `test.only`, on any test that didn't run (skipped or fixme) or is marked `test.fail`, when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests, and when the last judge screenshot shows an error, a field marked invalid or an empty state, starts its result more than 1,000 px down the page, or is over 4,000 px tall |
 | manifest | `musemuse.json` is valid against `musemuse.schema.json`, every action has `app/api/actions/<name>/route.ts`, every fixture file exists |
 
+A VR product (`.agents/skills/muse-vr`) runs at 1280x720 with software graphics, and its smoke step also fails unless a judge screenshot taken inside VR isn't blank and the last one has no alert. A glasses product (`.agents/skills/muse-glasses`) must take a photo through the glasses.
+
 It exits 0 only when every step passes. When a step fails it prints that step's output (tsc errors, build errors, the Playwright failure plus the server log), so read it and fix the cause. The last line is a JSON summary for the platform. The platform runs the same script, then a judge model looks at your screenshots. Don't edit anything in `scripts/` or `playwright.config.ts`.
 
 ## Smoke test

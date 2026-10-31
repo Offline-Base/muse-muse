@@ -5,7 +5,7 @@ import type { Sandbox } from "@vercel/sandbox";
 import { SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, MUSE_INSTALL_URL, OUT_DIR, PLAYWRIGHT_VERSION, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
-import { pristineCopyScript } from "@/lib/sandbox/tasks";
+import { installTargetsScript, pristineCopyScript } from "@/lib/sandbox/tasks";
 
 /**
  * Turns a fresh `vercel/sandbox/universal` VM into a builder: system tools and fonts, Playwright's Chromium, Muse Code
@@ -16,7 +16,7 @@ import { pristineCopyScript } from "@/lib/sandbox/tasks";
 // __tests__ holds the template's own unit tests (template/scripts/__tests__), which products don't need.
 const SKIP_NAMES = new Set(["node_modules", ".next", "test-results", "playwright-report", ".git", ".vercel", ".DS_Store", "__tests__"]);
 
-const TARGETS_DIR = "targets";
+const TEMPLATE_TARGETS = "targets";
 
 function skipTemplateEntry(name: string): boolean {
   return SKIP_NAMES.has(name) || name.startsWith(".env") || name.endsWith(".tsbuildinfo");
@@ -41,19 +41,19 @@ export async function readTemplateFiles(templateDir: string): Promise<TemplateFi
  * aren't in readTemplateFiles. They still count toward templateHash, since a snapshot carries them too.
  */
 export async function readTargetFiles(templateDir: string): Promise<TemplateFile[]> {
-  return readTemplateTree(templateDir, TARGETS_DIR);
+  return readTemplateTree(templateDir, TEMPLATE_TARGETS);
 }
 
 async function readTemplateTree(templateDir: string, from: string): Promise<TemplateFile[]> {
   const out: TemplateFile[] = [];
   async function walk(rel: string) {
     const entries = await readdir(path.join(templateDir, rel), { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
-      if (rel === TARGETS_DIR && err.code === "ENOENT") return [];
+      if (rel === TEMPLATE_TARGETS && err.code === "ENOENT") return [];
       throw err;
     });
     for (const e of entries) {
       if (skipTemplateEntry(e.name)) continue;
-      if (!rel && e.name === TARGETS_DIR) continue;
+      if (!rel && e.name === TEMPLATE_TARGETS) continue;
       const child = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(child);
       else if (e.isFile()) out.push({ path: child, content: await readFile(path.join(templateDir, child)) });
@@ -244,6 +244,29 @@ export async function savePristineFiles(sandbox: Sandbox, log: Log): Promise<voi
   await timed(log, "pristine copy of the platform files", () => sh(sandbox, pristineCopyScript(), { sudo: true }));
 }
 
+/**
+ * Puts template/targets in the sandbox as the read-only TARGETS_DIR. With `warm`, for a snapshot with open egress, it also
+ * fills npm's cache with each overlay's deps, so applying one at provision is quick. A provision on an older snapshot skips
+ * that: its policy allows npm, so the deps still install.
+ */
+export async function installTargets(sandbox: Sandbox, files: TemplateFile[], log: Log, opts: { warm?: boolean } = {}): Promise<void> {
+  const from = `/tmp/musemuse-targets-${Date.now().toString(36)}`;
+  await timed(log, `${files.length} target overlay files`, async () => {
+    for (let i = 0; i < files.length; i += 50) {
+      await sandbox.writeFiles(files.slice(i, i + 50).map((f) => ({ path: `${from}/${f.path}`, content: f.content })));
+    }
+    await sh(sandbox, installTargetsScript(from), { sudo: true });
+  });
+  if (!opts.warm) return;
+  for (const deps of files.filter((f) => /^targets\/[^/]+\/deps\.json$/.test(f.path))) {
+    const { dependencies = {}, devDependencies = {} } = JSON.parse(deps.content.toString("utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    const specs = Object.entries({ ...dependencies, ...devDependencies }).map(([name, version]) => q(`${name}@${version}`));
+    if (!specs.length) continue;
+    const dir = `/tmp/warm-${path.posix.basename(path.posix.dirname(deps.path))}`;
+    await timed(log, `npm cache: ${deps.path}`, () => sh(sandbox, `npm install --prefix ${q(dir)} --no-audit --no-fund --loglevel=error ${specs.join(" ")} && rm -rf ${q(dir)}`));
+  }
+}
+
 export interface BuilderInfo {
   createdAt: string;
   muse: string;
@@ -260,7 +283,7 @@ export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInf
   return full;
 }
 
-/** Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles, and only counts toward the template's hash. */
+/** Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays a brief can ask for. */
 export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = []): Promise<BuilderInfo> {
   await makeDirs(sandbox, [WORK_DIR]);
   await installSystemTools(sandbox, log);
@@ -268,5 +291,6 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await disableBundledSkills(sandbox, log);
   await installTemplate(sandbox, files, log);
   await savePristineFiles(sandbox, log);
+  if (targets.length) await installTargets(sandbox, targets, log, { warm: true });
   return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets]) });
 }

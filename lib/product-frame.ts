@@ -3,7 +3,7 @@ import { briefTargets } from "@/lib/native/targets";
 /** The live iframe's sandbox, as every product has always had it. */
 export const LIVE_FRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups allow-downloads";
 
-/** Where a stored brief's product runs. Its `targets` are `{ id, why }`; anything else counts as no targets. */
+/** Where a stored brief's product runs. Its `targets` are `{ id, why }`, or plain ids from a caller; anything else counts as no targets. */
 function targetsOf(brief: object | null | undefined): string[] {
   const targets = (brief as { targets?: unknown } | null | undefined)?.targets;
   if (!Array.isArray(targets)) return [];

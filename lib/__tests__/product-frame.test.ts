@@ -25,6 +25,7 @@ test("every other product keeps today's limits", () => {
   const today = "clipboard-write; fullscreen";
   for (const brief of [null, undefined, {}, { name: "A brief from before targets" }, { targets: ["web"] }, { targets: ["web", "phone"] }, { targets: [{ id: "web", why: "Always" }] }, { targets: "glasses" }]) {
     assert.equal(liveFrameAllow(brief), today);
+    assert.equal(liveFrameSandbox(brief), LIVE_FRAME_SANDBOX);
   }
 });
 
