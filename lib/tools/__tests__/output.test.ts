@@ -65,6 +65,17 @@ test("a single-object source works, and sources are capped", () => {
   assert.equal(extractSources(tool("scholar").sources, many).length, 20);
 });
 
+test("sources have limits of their own, since a page sets its title and links", () => {
+  const rule = tool("read_page").sources;
+  const page = (title: string, url: string) => ({ data: { metadata: { title, url } } });
+  assert.equal(extractSources(rule, page("T".repeat(5_000_000), "https://a.example/"))[0].title.length, 200);
+  assert.deepEqual(extractSources(rule, page("T", `https://a.example/${"x".repeat(2048)}`)), []);
+  const many = { results: { organic_results: Array.from({ length: 20 }, (_, i) => ({ title: "T".repeat(200), link: `https://a.test/${i}/${"p".repeat(2000)}` })) } };
+  const capped = extractSources(tool("scholar").sources, many);
+  assert.ok(capped.length >= 1 && capped.length < 20);
+  assert.ok(size(capped) <= 8 * 1024, `${size(capped)} bytes`);
+});
+
 test("trim: small output untouched, and big output stays valid JSON under the limit, keeping what comes first", () => {
   assert.deepEqual(trimOutput({ a: 1 }), { output: { a: 1 }, truncated: false });
 

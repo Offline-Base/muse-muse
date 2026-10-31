@@ -11,6 +11,8 @@ export interface ToolSource {
   date?: string;
 }
 
+const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? "null");
+
 const isRecord = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 
 function getPath(value: unknown, path: string): unknown {
@@ -81,17 +83,21 @@ export function applyOutputRules(tool: Pick<CatalogTool, "output" | "outputVerif
   return scrubbed === DROPPED ? null : scrubbed;
 }
 
+/** A page sets its own title and links, and sources sit outside the 32 KB trim, so they have limits of their own. */
+const SOURCE_TITLE_CHARS = 200;
+const SOURCE_URL_CHARS = 2048;
+
 const text = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
 function sourceOf(rule: SourceRule, item: unknown): ToolSource | null {
   if (!isRecord(item)) return null;
   const url = text(getPath(item, rule.url));
-  if (!url || !/^https?:\/\//i.test(url)) return null;
+  if (!url || url.length > SOURCE_URL_CHARS || !/^https?:\/\//i.test(url)) return null;
   const snippet = rule.snippet ? text(getPath(item, rule.snippet)) : undefined;
   const date = rule.date ? text(getPath(item, rule.date)) : undefined;
   return {
     url,
-    title: text(getPath(item, rule.title)) ?? url,
+    title: (text(getPath(item, rule.title)) ?? url).slice(0, SOURCE_TITLE_CHARS),
     ...(snippet ? { snippet: snippet.slice(0, 400) } : {}),
     ...(date ? { date: date.slice(0, 80) } : {}),
   };
@@ -101,12 +107,15 @@ function sourceOf(rule: SourceRule, item: unknown): ToolSource | null {
 export function extractSources(rules: readonly SourceRule[], output: unknown): ToolSource[] {
   const seen = new Set<string>();
   const sources: ToolSource[] = [];
+  let left = TOOL_LIMITS.sourcesMaxBytes - 2;
   for (const rule of rules) {
     const at = getPath(output, rule.path);
     const items = rule.single ? [at] : Array.isArray(at) ? at : [];
     for (const item of items) {
       const source = sourceOf(rule, item);
       if (!source || seen.has(source.url)) continue;
+      left -= bytes(source) + 1;
+      if (left < 0) return sources;
       seen.add(source.url);
       sources.push(source);
       if (sources.length === TOOL_LIMITS.sourcesMax) return sources;
@@ -114,8 +123,6 @@ export function extractSources(rules: readonly SourceRule[], output: unknown): T
   }
   return sources;
 }
-
-const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? "null");
 
 function shrinkString(value: string, budget: number): string {
   let out = value.slice(0, Math.max(0, budget));

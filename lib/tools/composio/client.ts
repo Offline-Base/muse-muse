@@ -37,6 +37,8 @@ export interface ComposioApi {
   /** True only when this account is ACTIVE, not disabled, on this user and this toolkit. */
   verifyConnection(o: { connectedAccountId: string; userId: string; toolkit: string }): Promise<boolean>;
   deleteConnection(connectedAccountId: string): Promise<void>;
+  /** Deletes every account this user has at Composio, whatever its status, on one toolkit or all, except `keep`. Returns how many. */
+  deleteAccountsOf(userId: string, opts?: { toolkit?: string; keep?: string }): Promise<number>;
 }
 
 /** Composio's refusals, by the number in `error.code`. 4324 is the same refusal as 4310, when the whole toolkit is off. */
@@ -70,12 +72,12 @@ function bodyOf(err: unknown): { code?: unknown; slug?: unknown } {
 
 /**
  * True when the reply says the tool failed. Most failures come back as resultType "failed", but a page Firecrawl can't
- * reach comes back "completed" with success: false and its reason in data.error.
+ * reach comes back "completed" with success: false, and Slack's own answer for a refusal is ok: false.
  */
 export function replyFailed(reply: Pick<ToolReply, "resultType" | "data">): boolean {
   if (reply.resultType !== "completed") return true;
-  const data = reply.data as { success?: unknown; error?: unknown } | null | undefined;
-  return data?.success === false && typeof data.error === "string";
+  const data = reply.data as { success?: unknown; ok?: unknown } | null | undefined;
+  return data?.success === false || data?.ok === false;
 }
 
 /** Sorts a thrown error from the SDK into what the gateway does about it. */
@@ -90,6 +92,41 @@ export function classifyFailure(err: unknown): ComposioFailure {
   if (Number(body.code) === COMPOSIO_CODES.toolNotEnabled || Number(body.code) === COMPOSIO_CODES.toolkitNotAllowed) return { kind: "not_enabled" };
   if (status >= 400 && status < 500 && status !== 408 && status !== 429) return { kind: "refused", status };
   return { kind: "unknown" };
+}
+
+const SWEEP_PAGES = 10;
+
+/** The list and delete calls sweepAccounts needs, which the SDK's connectedAccounts has. */
+export interface AccountsApi {
+  list(query: { userIds: string[]; toolkitSlugs?: string[]; limit: number; cursor?: string }): Promise<{ items: Array<{ id: string }>; nextCursor?: string | null }>;
+  delete(id: string): Promise<unknown>;
+}
+
+/**
+ * Lists with no status filter, so a link still pending or one that failed goes too, and asks by user, so nothing can
+ * name someone else's account. One already gone counts as gone. Any other failure throws, for the caller to try again.
+ */
+export async function sweepAccounts(accounts: AccountsApi, userId: string, opts: { toolkit?: string; keep?: string } = {}): Promise<number> {
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < SWEEP_PAGES; page += 1) {
+    const list = await accounts.list({ userIds: [userId], ...(opts.toolkit ? { toolkitSlugs: [opts.toolkit] } : {}), limit: 100, ...(cursor ? { cursor } : {}) });
+    ids.push(...list.items.map((a) => a.id));
+    cursor = list.nextCursor ?? undefined;
+    if (!cursor) break;
+  }
+  let deleted = 0;
+  for (const id of ids) {
+    if (id === opts.keep) continue;
+    try {
+      await accounts.delete(id);
+      deleted += 1;
+    } catch (err) {
+      const failure = classifyFailure(err);
+      if (!(failure.kind === "refused" && failure.status === 404)) throw err;
+    }
+  }
+  return deleted;
 }
 
 type Sdk = typeof import("@composio/core");
@@ -162,6 +199,9 @@ export function composioApi(apiKey: () => string): ComposioApi {
     },
     async deleteConnection(connectedAccountId) {
       await (await sdk()).connectedAccounts.delete(connectedAccountId);
+    },
+    async deleteAccountsOf(userId, opts) {
+      return sweepAccounts((await sdk()).connectedAccounts, userId, opts);
     },
   };
 }

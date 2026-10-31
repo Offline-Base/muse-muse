@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { argumentsProblem, cleanArguments, isPublicHttpUrl, recipientsOf, urlsInInput } from "@/lib/tools/args";
+import { argumentsProblem, cleanArguments, isPublicHttpUrl, recipientsOf, resolvesToPublic, urlsInInput, withParsedUrl } from "@/lib/tools/args";
 import { findFunction } from "@/lib/tools/catalog";
 
 function problem(slug: string, args: Record<string, unknown>, userInput: string | null = null) {
@@ -41,7 +41,7 @@ test("required, types, ranges and enums are checked", () => {
   assert.match(problem("SERPAPI_SCHOLAR_SEARCH", { query: "x", num: 1.5 }) ?? "", /whole number/);
   assert.match(problem("GMAIL_FETCH_EMAILS", { max_results: 501 }) ?? "", /at most 500/);
   assert.match(problem("GOOGLECALENDAR_EVENTS_LIST", { orderBy: "name" }) ?? "", /one of/);
-  assert.match(problem(SEND, { recipient_email: "a@example.com", is_html: "yes" }) ?? "", /true or false/);
+  assert.match(problem("GOOGLECALENDAR_EVENTS_LIST", { singleEvents: "yes" }) ?? "", /true or false/);
   assert.equal(problem("SERPAPI_SCHOLAR_SEARCH", { query: "x", num: 3, start: null }), null);
 });
 
@@ -76,9 +76,48 @@ test("private, local and non-web addresses are refused", () => {
     assert.equal(isPublicHttpUrl(url), false, url);
     assert.ok(problem(PAGE, { url }, url), url);
   }
-  for (const url of ["https://example.com", "http://1.1.1.1/x", "https://a.example:8443/x?y=1", "https://[2606:4700:4700::1111]/"]) {
+  for (const url of ["https://example.com", "http://1.1.1.1/x", "https://a.example:8443/x?y=1", "https://[2606:4700:4700::1111]/", "http://[::ffff:8.8.8.8]/", "http://[2002:808:808::]/", "http://[64:ff9b::808:808]/"]) {
     assert.equal(isPublicHttpUrl(url), true, url);
   }
+});
+
+test("internal addresses dressed as IPv6, or inside a cluster, are refused", () => {
+  for (const url of [
+    "http://[::7f00:1]/",
+    "http://[::a9fe:a9fe]/",
+    "http://[64:ff9b::a9fe:a9fe]/",
+    "http://[64:ff9b:1::1]/",
+    "http://[2002:7f00:1::]/",
+    "http://[::ffff:0:7f00:1]/",
+    "http://[0:0:0:0:0:ffff:a00:1]/",
+    "http://[fec0::1]/",
+    "http://[2001:db8::1]/",
+    "http://[2001:0:4136:e378::1]/",
+    "http://[100::1]/",
+    "http://[ff02::1]/",
+    "http://[::]/",
+    "http://kubernetes.default.svc/",
+  ]) {
+    assert.equal(isPublicHttpUrl(url), false, url);
+  }
+});
+
+test("a host must resolve to public addresses only, and an IP needs no lookup", async () => {
+  const lookup = (addresses: string[]) => async () => addresses;
+  assert.equal(await resolvesToPublic("https://a.example/", lookup(["93.184.216.34", "2606:4700:4700::1111"])), true);
+  for (const addresses of [["127.0.0.1"], ["93.184.216.34", "10.0.0.1"], ["::1"], ["::ffff:127.0.0.1"], ["fe80::1%en0"], []]) {
+    assert.equal(await resolvesToPublic("https://a.example/", lookup(addresses)), false, addresses.join());
+  }
+  const never = async () => assert.fail("no lookup for an IP");
+  assert.equal(await resolvesToPublic("https://8.8.8.8/", never), true);
+  assert.equal(await resolvesToPublic("https://[2606:4700:4700::1111]/", never), true);
+});
+
+test("the address that goes out is the parsed one", () => {
+  const found = findFunction(PAGE);
+  assert.ok(found);
+  assert.deepEqual(withParsedUrl(found.tool, { url: "HTTPS://A.Example\\x\ty" }), { url: "https://a.example/xy" });
+  assert.deepEqual(withParsedUrl((findFunction("SERPAPI_SCHOLAR_SEARCH") as NonNullable<ReturnType<typeof findFunction>>).tool, { query: "HTTP://A" }), { query: "HTTP://A" });
 });
 
 test("a whole-value private URL is refused in any argument, and one mentioned in text is not", () => {
@@ -103,6 +142,79 @@ test("urlsInInput reads addresses with and without a scheme, without trailing pu
   assert.ok(urls.has("a.example/x"));
   assert.ok(urls.has("b.example/y"));
   assert.ok(urls.has("c.example"));
+});
+
+test("64 KB of the person's words takes milliseconds, whatever they are", () => {
+  const worst = {
+    dashes: "a-".repeat(32_000),
+    dots: "a.".repeat(32_000),
+    mixed: "a1-.".repeat(16_000),
+    "dashes, in words": `${"a-".repeat(1000)} `.repeat(32),
+    "dots, in words": `${"a.".repeat(1000)} `.repeat(32),
+    "punctuation, in words": `${".".repeat(2000)}a `.repeat(32),
+    "many short addresses": "a.co ".repeat(12_800),
+    "many lists": `${"a.co,".repeat(400)} `.repeat(32),
+    slashes: `https://a.example/${"/".repeat(2000)}a `.repeat(32),
+  };
+  for (const [name, input] of Object.entries(worst)) {
+    assert.ok(Buffer.byteLength(input) >= 60_000, name);
+    // The fastest of three, so a busy machine doesn't fail it. The regex this replaced took over 2 seconds.
+    let fastest = Infinity;
+    for (let i = 0; i < 3; i += 1) {
+      const start = performance.now();
+      urlsInInput(input);
+      fastest = Math.min(fastest, performance.now() - start);
+    }
+    assert.ok(fastest < 100, `${name} took ${Math.round(fastest)} ms`);
+  }
+});
+
+test("long arguments can't stall the checks either", () => {
+  const start = performance.now();
+  problem(SEND, { recipient_email: `a@${"b.".repeat(7000)} ` });
+  problem(PAGE, { url: `https://a.example/${"/".repeat(15_000)}a` }, "https://a.example/");
+  assert.ok(performance.now() - start < 100);
+});
+
+test("an email address authorizes no site, and neither does a sign-in part", () => {
+  assert.deepEqual([...urlsInInput("mail bob@evil.com please")], []);
+  assert.deepEqual([...urlsInInput("mailto:bob@evil.com")], []);
+  assert.deepEqual([...urlsInInput("https://bob@evil.com/x")], []);
+  assert.match(problem(PAGE, { url: "https://evil.com" }, "mail bob@evil.com please") ?? "", /only opens an address/);
+  assert.ok(urlsInInput("medium.com/@ann/post").has("medium.com/@ann/post"));
+});
+
+test("urlsInInput still finds addresses the way people write them", () => {
+  const cases: Array<[string, string[]]> = [
+    ["HTTPS://Example.COM/A", ["example.com/A"]],
+    ["[link](https://a.example/x)", ["a.example/x"]],
+    ["url:https://a.example/x", ["a.example/x"]],
+    ["site:a.example", ["a.example"]],
+    ["a.example,b.example", ["a.example,b.example", "a.example", "b.example"]],
+    ["https://a.example/x,y", ["a.example/x,y", "a.example/x"]],
+    ["a.example:8443/x", ["a.example:8443/x"]],
+    ["https://[2606:4700:4700::1111]/", ["[2606:4700:4700::1111]"]],
+    ["xn--mnchen-3ya.de", ["xn--mnchen-3ya.de"]],
+    ["version 1.5 is out", []],
+    ["see v2.0.", []],
+  ];
+  for (const [input, expected] of cases) assert.deepEqual([...urlsInInput(input)], expected, input);
+});
+
+test("recipients: invisible, right-to-left and lookalike characters are refused, so a card can't show the wrong address", () => {
+  for (const bad of ["boss@evil.com\u202Emoc.ynapmoc", "boss\u200B@company.com", "boss@c\u043Empany.com", "boss\u0000x@company.com", "boss@company.com\u0085", `${"a".repeat(250)}@b.co`]) {
+    assert.match(problem(SEND, { recipient_email: bad }) ?? "", /one full email address/, bad);
+    assert.match(problem(SEND, { recipient_email: "a@example.com", bcc: [bad] }) ?? "", /one full email address/, bad);
+    assert.match(problem("GOOGLECALENDAR_CREATE_EVENT", { summary: "s", attendees: [bad] }) ?? "", /one full email address/, bad);
+  }
+  for (const bad of ["C1\u202E", "C1\u200B", "\u0421hannel", " C1", "#general"]) {
+    assert.match(problem("SLACK_SEND_MESSAGE", { channel: bad, markdown_text: "hi" }) ?? "", /one channel/, bad);
+  }
+  for (const good of ["C0123", "my-team_room.2"]) assert.equal(problem("SLACK_SEND_MESSAGE", { channel: good, markdown_text: "hi" }), null, good);
+  for (const bad of ["Hi\rBcc: x", "Hi\u000BBcc: x", "Hi\u0085Bcc: x", "Hi\u2028Bcc: x", "Hi\u202Ex", "Hi\u200Bx"]) {
+    assert.match(problem(SEND, { recipient_email: "a@example.com", subject: bad }) ?? "", /one line/, bad);
+  }
+  assert.equal(problem(SEND, { recipient_email: "a@example.com", subject: "Grüße from Zoë" }), null);
 });
 
 test("recipients: at most 5 across to, cc and bcc, each one full address", () => {

@@ -3,7 +3,7 @@ import { parseBearer } from "@/lib/gateway/extract";
 import type { GatewayToken } from "@/lib/gateway/handler";
 import { holdRun, parseRunId, releaseRun, runLimitsFor, settleRun, type RunCounters, type RunHold } from "@/lib/gateway/runs";
 import { RUN_HEADER } from "@/lib/gateway/policy";
-import { argumentsProblem, cleanArguments, recipientsOf } from "@/lib/tools/args";
+import { argumentsProblem, cleanArguments, recipientsOf, resolvesToPublic, withParsedUrl } from "@/lib/tools/args";
 import { cannedOutput, personalToolkitsOf, simulatedConnection, type ToolConnectionView } from "@/lib/tools/canned";
 import {
   allowedToolIds,
@@ -22,10 +22,11 @@ import type { CatalogFunction, CatalogTool } from "@/lib/tools/composio/sync";
 import type { ToolErrorCode, ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
 import { TOOL_ERRORS } from "@/lib/tools/ids";
 import { applyOutputRules, extractSources, trimOutput } from "@/lib/tools/output";
-import { TOOL_LIMITS } from "@/lib/tools/policy";
+import { TOOL_LIMITS, USER_INPUT_URL_PARAMS } from "@/lib/tools/policy";
 import {
   composioUserId,
   mintOwnerSession,
+  ownerSubject,
   productComposioUserId,
   readOwnerCode,
   resolvePrincipal,
@@ -70,6 +71,10 @@ export interface ToolsDeps extends RunCounters, SessionStore {
   /** The provider, or null with no key: live calls then answer tools_paused. Builds never ask for it. */
   composio(): ComposioApi | null;
   platformUrl: string;
+  /** Who this browser is signed in as on the platform. Only the connect callback asks, since it has no product token. */
+  platformUserId(): Promise<string | null>;
+  /** Every address a host resolves to. Throws when it doesn't resolve. */
+  lookupHost(host: string): Promise<string[]>;
   /** TOOL_LIMITS.sessionTimeoutMs, unless a test shortens it. */
   sessionTimeoutMs?: number;
   now?(): Date;
@@ -92,6 +97,15 @@ function toolError(code: ToolErrorCode, message: string, headers?: Record<string
 
 const paused = () => toolError("tools_paused", "Tools are off here right now.");
 const walletEmpty = () => toolError("tools_paused", "Tools are paused right now. Try again later.");
+
+/** Provider text for our own logs, without what looks like an address, a token or an account id. */
+function forLog(said: unknown): string {
+  const text = said instanceof Error ? said.message : typeof said === "string" ? said : "unknown";
+  return text
+    .slice(0, 300)
+    .replace(/\S+@\S+/g, "[address]")
+    .replace(/\S{8,}/g, (word) => (/\d/.test(word) ? "[id]" : word));
+}
 
 function refusedBody(status: number, code: string, message: string): Response {
   return gatewayError(status, "invalid_request_error", code, message, { retry: false });
@@ -225,17 +239,31 @@ const WRITE_TITLES: Readonly<Record<string, string>> = {
   slack_send: "Post this in Slack?",
 };
 
-/** Long enough that a person confirming a send sees what it says, not only how it starts. */
-const LINE_CHARS = 1000;
+/**
+ * What a card shows, one line per argument, so nothing the approval covers stays out of sight. Whitespace is collapsed,
+ * which also stops blank lines from pushing text out of view, and anything invisible or that reorders text is marked.
+ */
+function shown(text: string): string {
+  return text
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[\p{Cc}\p{Cf}]/gu, "\uFFFD");
+}
 
-function approvalLines(tool: CatalogTool, args: Record<string, unknown>): string[] {
+function shownValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value.join(", ");
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
+export function approvalLines(tool: Pick<CatalogTool, "toolkit" | "recipientFields">, args: Record<string, unknown>): string[] {
   const lines: string[] = [];
   const recipients = recipientsOf(tool, args);
-  if (recipients.length) lines.push(`${tool.toolkit === "slack" ? "Channel" : "To"}: ${recipients.join(", ")}`);
+  if (recipients.length) lines.push(`${tool.toolkit === "slack" ? "Channel" : "To"}: ${shown(recipients.join(", "))}`);
   for (const [name, value] of Object.entries(args)) {
-    if (tool.recipientFields.includes(name) || (typeof value !== "string" && typeof value !== "number")) continue;
-    const clean = String(value).replace(/\s+/g, " ").trim();
-    if (clean) lines.push(`${name.replace(/_/g, " ")}: ${clean.length > LINE_CHARS ? `${clean.slice(0, LINE_CHARS)}...` : clean}`);
+    if (tool.recipientFields.includes(name)) continue;
+    const text = shown(shownValue(value));
+    if (text) lines.push(`${name.replace(/_/g, " ")}: ${text}`);
   }
   return lines;
 }
@@ -262,13 +290,26 @@ function secondsToNextMinute(now: Date): number {
   return Math.max(1, Math.ceil(60 - (now.getTime() % 60_000) / 1000));
 }
 
+/** Why a tool failed, in our words. A reply is someone else's text, and a page can write what ends up in it. */
+const FAILURE_REASONS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/dns|unreachable|connection refused/i, "That page couldn't be reached."],
+  [/invalid request/i, "It refused these arguments."],
+  [/not.?found/i, "It wasn't found."],
+];
+
 function failedOutput(tool: CatalogTool, reply: ToolReply): Response {
-  // The provider's own words help a model fix its call, but must not name a provider or mention a key.
-  const said = reply.error ?? (reply.data as { error?: unknown } | null)?.error;
-  const first = typeof said === "string" ? (said.split("\n").find((l) => l.trim()) ?? "").trim().split(/(?<=\.)\s/)[0] : "";
-  const detail = first && first.length <= 240 && !/composio|firecrawl|serpapi|api[_-]?key/i.test(first) ? ` ${first}` : "";
-  return toolError("tool_failed", `${tool.label} didn't work.${detail}`);
+  const data = reply.data as { error?: unknown; code?: unknown } | null;
+  const said = reply.error ?? data?.error;
+  console.error(`[tools] ${tool.id} failed:`, forLog(said));
+  const words = `${typeof data?.code === "string" ? data.code : ""} ${typeof said === "string" ? said : ""}`.slice(0, 500);
+  const reason = FAILURE_REASONS.find(([match]) => match.test(words))?.[1];
+  return toolError("tool_failed", `${tool.label} didn't work.${reason ? ` ${reason}` : ""}`);
 }
+
+const tooMany = (limit: number, now: Date) => {
+  const wait = secondsToNextMinute(now);
+  return toolError("rate_limited", `Too many tool calls: the limit is ${limit} a minute. Try again in ${wait} s.`, { "retry-after": String(wait) });
+};
 
 async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Promise<Response> {
   const now = deps.now?.() ?? new Date();
@@ -317,7 +358,7 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
   const args = rawArgs as Record<string, unknown>;
   const problem = argumentsProblem(tool, fn, args, userInput);
   if (problem) return toolError("invalid_arguments", problem);
-  const clean = cleanArguments(args);
+  const clean = withParsedUrl(tool, cleanArguments(args));
   const scope = { productId: token.productId, subject: principal.subject ?? principal.kind, slug: fn.name, args: clean };
   let approved: { nonce: string; exp: Date } | null = null;
   if (tool.access !== "read") {
@@ -325,20 +366,12 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
     if (!approved) return needsConfirmation(tool, mintApproval(scope, now), clean, Boolean(approvalId));
   }
 
-  // Step 5: rate limits, the daily cap, then a slot. Builds never reach the provider, so only their own limits apply.
+  // Step 5: this token's and this person's rate limits, the daily cap, then a slot. Step 6 has the platform-wide limits.
   const windowStart = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
   const limits: Record<string, number> = { [`tools-token:${token.id}`]: TOOL_LIMITS.perTokenPerMinute };
   for (const key of visitorKeys(req, token.productId)) limits[key] = TOOL_LIMITS.perVisitorPerMinute;
-  if (!isBuild) {
-    limits[`tools-toolkit:${tool.toolkit}`] = TOOL_LIMITS.perToolkitPerMinute;
-    if (tool.perMinute) limits[`tools-tool:${tool.id}`] = tool.perMinute;
-  }
-  const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
-  const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
-  if (over) {
-    const wait = secondsToNextMinute(now);
-    return toolError("rate_limited", `Too many tool calls: the limit is ${over[1]} a minute. Try again in ${wait} s.`, { "retry-after": String(wait) });
-  }
+  const overLimit = await limitHit(limits, windowStart, deps);
+  if (overLimit) return tooMany(overLimit, now);
 
   /** Given back unless the call goes through to the provider. */
   const undo: Array<() => Promise<unknown>> = [];
@@ -367,12 +400,14 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
     return toolError("rate_limited", `This product already has ${TOOL_LIMITS.perTokenInFlight} tool calls running. Try again when one finishes.`, { "retry-after": "2" });
   }
   let runHold: RunHold | null = null;
+  let spendHold: SpendHold | null = null;
   try {
     const estimate = isBuild ? 0 : estimateToolUsd(fn);
 
-    // Step 6: budgets, then this call's share of its run.
+    // Step 6: budgets, then this call's share of its run, then the limits every product shares.
     if (!isBuild) {
-      const refused = await budgetRefusal(token, estimate, deps, day);
+      spendHold = await holdSpend(token, estimate, deps, day);
+      const refused = await budgetRefusal(token, spendHold, deps, day);
       if (refused) {
         await undoAll();
         return refused;
@@ -389,6 +424,21 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
       runHold = held.hold;
       const hold = held.hold;
       undo.push(() => releaseRun(deps, hold));
+    }
+    // Last of all, so a call that a narrower limit or a budget refused never counts against other products.
+    if (!isBuild) {
+      const shared: Record<string, number> = { [`tools-toolkit:${tool.toolkit}`]: TOOL_LIMITS.perToolkitPerMinute };
+      if (tool.perMinute) shared[`tools-tool:${tool.id}`] = tool.perMinute;
+      const overShared = await limitHit(shared, windowStart, deps);
+      if (overShared) {
+        await undoAll();
+        return tooMany(overShared, now);
+      }
+      const hostProblem = await publicHostProblem(tool, clean, deps);
+      if (hostProblem) {
+        await undoAll();
+        return hostProblem;
+      }
     }
 
     // Step 7: the approval is spent here, not at step 4, so a rate limit can't burn one and no two calls share one.
@@ -421,7 +471,7 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
       await release();
       await undoAll();
       if (classifyFailure(err).kind === "wallet_empty") return walletEmpty();
-      console.error("[tools] getting a session failed:", err instanceof Error ? err.message.slice(0, 300) : "unknown");
+      console.error("[tools] getting a session failed:", forLog(err));
       return toolError("tool_failed", `${tool.label} isn't reachable right now. Try again.`);
     }
     let reply: ToolReply;
@@ -431,7 +481,7 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
       const failure = classifyFailure(err);
       if (failure.kind === "unknown") {
         // It may have run, so the estimate stands and a retry is the product's choice.
-        console.error(`[tools] ${fn.name} failed:`, err instanceof Error ? err.message.slice(0, 300) : "unknown");
+        console.error(`[tools] ${fn.name} failed:`, forLog(err));
         await deps.settleSpend(reservation, toolUsage(fn.name, estimate));
         if (runHold) await settleRun(deps, runHold, { toolCalls: 1, usd: estimate });
         undo.length = 0;
@@ -455,20 +505,67 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
     return success(tool, reply.data, costUsd, false);
   } finally {
     await undoAll();
+    // After the settle, so at every moment this call counts as a hold, a usage row or both.
+    await spendHold?.drop().catch((err) => console.error("[tools] dropping a spend hold failed:", err));
     await deps.releaseInFlight(slotKey, slot).catch((err) => console.error("[tools] releasing a slot failed:", err));
   }
 }
 
 const TOOL_CALLS_KEY = "tools-calls";
 
-/** Step 6's daily checks. TOOLS_DAILY_SPEND_CAP_USD is the only spend limit at the provider, which has none of its own. */
-async function budgetRefusal(token: GatewayToken, estimate: number, deps: ToolsDeps, day: Date): Promise<Response | null> {
+/** Adds one to each key, and returns the limit of one it took over, if any. */
+async function limitHit(limits: Record<string, number>, windowStart: Date, deps: ToolsDeps): Promise<number | null> {
+  const counts = await deps.hitRateLimits(Object.keys(limits), windowStart);
+  const over = Object.entries(limits).find(([key, limit]) => (counts[key] ?? 0) > limit);
+  return over ? over[1] : null;
+}
+
+/** A live read_page must name a host that resolves to public addresses only. Nothing has cost anything yet. */
+async function publicHostProblem(tool: CatalogTool, args: Record<string, unknown>, deps: ToolsDeps): Promise<Response | null> {
+  const param = USER_INPUT_URL_PARAMS[tool.id];
+  if (!param) return null;
+  try {
+    const isPublic = await untilAborted(resolvesToPublic(args[param] as string, deps.lookupHost), AbortSignal.timeout(TOOL_LIMITS.lookupTimeoutMs));
+    return isPublic ? null : toolError("invalid_arguments", `${param} must be a public web address.`);
+  } catch {
+    return toolError("tool_failed", `${tool.label} didn't work. That page couldn't be reached.`);
+  }
+}
+
+/** What's in flight right now, in dollars, for this token and for everyone, this call included. */
+interface SpendHold {
+  tokenUsd: number;
+  allUsd: number;
+  drop(): Promise<unknown>;
+}
+
+/** No real limit: the check is against what budgetRefusal reads, and a counter's column is a 32-bit integer of micro-dollars. */
+const HOLD_CEILING = 2_000_000_000;
+
+async function holdSpend(token: GatewayToken, estimate: number, deps: ToolsDeps, day: Date): Promise<SpendHold> {
+  const micros = Math.ceil(estimate * 1e6);
+  const keys = [`tools-usd-held:${token.id}`, "tools-usd-held"];
+  const [mine, all] = await Promise.all(keys.map((key) => deps.reserveCounter(key, day, micros, HOLD_CEILING)));
+  return {
+    tokenUsd: mine === null ? Infinity : mine / 1e6,
+    allUsd: all === null ? Infinity : all / 1e6,
+    drop: () => Promise.all(keys.map((key) => deps.adjustCounter(key, day, -micros))),
+  };
+}
+
+/**
+ * Step 6's daily checks. TOOLS_DAILY_SPEND_CAP_USD is the only spend limit at the provider, which has none of its own.
+ * Each call holds its estimate before reading the spend. Of two calls at once, the later one sees the other's hold, or
+ * its usage row if that one has already finished, so they can't both take the last of a budget. A call in flight can
+ * count twice, as a hold and a row, which only refuses a little early right at the limit.
+ */
+async function budgetRefusal(token: GatewayToken, hold: SpendHold, deps: ToolsDeps, day: Date): Promise<Response | null> {
   if (deps.toolsDailySpendCapUsd <= 0) return paused();
   const [spent, toolsSpent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.toolsSpendToday(), deps.platformSpendToday()]);
-  if (spent + estimate > token.dailyBudgetUsd) {
+  if (spent + hold.tokenUsd > token.dailyBudgetUsd) {
     return toolError("budget_exceeded", `This call would go past this product's $${token.dailyBudgetUsd.toFixed(2)} daily budget. It resets at 00:00 UTC.`);
   }
-  if (toolsSpent + estimate > deps.toolsDailySpendCapUsd || platformSpent + estimate > deps.dailySpendCapUsd) {
+  if (toolsSpent + hold.allUsd > deps.toolsDailySpendCapUsd || platformSpent + hold.allUsd > deps.dailySpendCapUsd) {
     return toolError("budget_exceeded", "Muse Muse reached today's limit for tools. It resets at 00:00 UTC.");
   }
   // A counter rather than a count of usage rows, so it is atomic and canned calls from builds don't use it up.
@@ -514,7 +611,7 @@ async function refusal(
     case "not_enabled":
       return toolError("tool_not_allowed", `${tool.label} isn't on for this product.`);
     case "refused":
-      console.error(`[tools] ${tool.id} refused (${failure.status}):`, err instanceof Error ? err.message.slice(0, 300) : "unknown");
+      console.error(`[tools] ${tool.id} refused (${failure.status}):`, forLog(err));
       return toolError("tool_failed", `${tool.label} didn't work. Try again later.`);
   }
 }
@@ -585,34 +682,37 @@ async function connect(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
     return Response.json({ ok: true, url: link.redirectUrl, simulated: false });
   } catch (err) {
     if (classifyFailure(err).kind === "wallet_empty") return walletEmpty();
-    console.error("[tools] starting a connection failed:", err instanceof Error ? err.message.slice(0, 300) : "unknown");
+    console.error("[tools] starting a connection failed:", forLog(err));
     return toolError("tool_failed", `Couldn't start connecting ${toolkitLabel(toolkit)}. Try again.`);
   }
 }
 
+const alreadyGone = (err: unknown) => {
+  const failure = classifyFailure(err);
+  return failure.kind === "refused" && failure.status === 404;
+};
+
+/**
+ * Removes every account this owner has on the toolkit at the provider, row or no row: a callback that never landed
+ * leaves an account our table doesn't know about. It says ok only once they are gone, and a failure keeps the row.
+ */
 async function disconnect(req: Request, token: GatewayToken, deps: ToolsDeps): Promise<Response> {
   const asked = await connectionRequest(req, token, deps);
   if (asked instanceof Response) return asked;
   const { toolkit, principal } = asked;
   if (principal.kind === "build") return Response.json({ ok: true, simulated: true });
+  const api = deps.composio();
+  if (!api) return paused();
   const userId = composioSubject(token, principal);
-  const rows = await deps.activeConnections(token.productId, userId);
-  const row = rows.find((r) => r.toolkit === toolkit);
-  if (row) {
-    const api = deps.composio();
-    if (!api) return paused();
-    try {
-      await api.deleteConnection(row.connectedAccountId);
-    } catch (err) {
-      // An account that is already gone is what we wanted. Anything else keeps the row, so it isn't lost track of.
-      const failure = classifyFailure(err);
-      if (!(failure.kind === "refused" && failure.status === 404)) {
-        console.error("[tools] disconnecting failed:", err instanceof Error ? err.message.slice(0, 300) : "unknown");
-        return toolError("tool_failed", `Couldn't disconnect ${toolkitLabel(toolkit)}. Try again.`);
-      }
-    }
-    await deps.revokeConnection(token.productId, userId, toolkit);
+  const row = (await deps.activeConnections(token.productId, userId)).find((r) => r.toolkit === toolkit);
+  try {
+    if (row) await api.deleteConnection(row.connectedAccountId).catch((err) => { if (!alreadyGone(err)) throw err; });
+    await api.deleteAccountsOf(userId, { toolkit });
+  } catch (err) {
+    console.error("[tools] disconnecting failed:", forLog(err));
+    return toolError("tool_failed", `Couldn't disconnect ${toolkitLabel(toolkit)}. Try again.`);
   }
+  if (row) await deps.revokeConnection(token.productId, userId, toolkit);
   return Response.json({ ok: true, simulated: false });
 }
 
@@ -627,8 +727,7 @@ export async function revokeConnections(
     try {
       await api.deleteConnection(row.connectedAccountId);
     } catch (err) {
-      const failure = classifyFailure(err);
-      if (!(failure.kind === "refused" && failure.status === 404)) {
+      if (!alreadyGone(err)) {
         console.error("[tools] revoking a connection failed, so the next run tries again.");
         continue;
       }
@@ -639,13 +738,36 @@ export async function revokeConnections(
   return revoked;
 }
 
+/**
+ * Sweeps the accounts of owners on products that are off, which also finds those no connection row knows about. A
+ * session goes once its accounts have, so the next run doesn't ask again. One that fails stays for the next run.
+ */
+export async function clearOffProductAccounts(
+  api: Pick<ComposioApi, "deleteAccountsOf">,
+  sessions: ReadonlyArray<{ id: string; composioUserId: string }>,
+  drop: (id: string) => Promise<void>,
+): Promise<number> {
+  let deleted = 0;
+  for (const session of sessions) {
+    try {
+      deleted += await api.deleteAccountsOf(session.composioUserId);
+      await drop(session.id);
+    } catch (err) {
+      console.error("[tools] clearing an off product's accounts failed, so the next run tries again:", forLog(err));
+    }
+  }
+  return deleted;
+}
+
 function callbackPage(status: number, message: string): Response {
   return new Response(message, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
 }
 
 /**
  * GET /tools/callback: where Composio sends the browser. There is no product token here, so the signed state says who
- * this is for. `status` and `connected_account_id` are only hints: the account is checked with Composio before it counts.
+ * this is for, and the platform session says the browser is that person: a builder's connect link sent to somebody else
+ * must not attach their mailbox. `status` and `connected_account_id` are only hints: the account is checked with Composio
+ * before it counts. Anything short of connected clears what the attempt left, without touching the account on a row.
  */
 async function handleCallback(req: Request, deps: ToolsDeps): Promise<Response> {
   if (!deps.agentsEnabled || !deps.personalEnabled) return callbackPage(503, "Connecting accounts isn't on here.");
@@ -656,8 +778,27 @@ async function handleCallback(req: Request, deps: ToolsDeps): Promise<Response> 
   const once = await deps.reserveCounter(`tool-connect:${state.requestId}`, new Date(state.exp), 1, 1);
   if (once === null) return callbackPage(400, "This link was already used. Go back to the app and connect again.");
 
+  const api = deps.composio();
+  const clearAttempt = async () => {
+    try {
+      const row = (await deps.activeConnections(state.productId, state.composioUserId)).find((r) => r.toolkit === state.toolkit);
+      await api?.deleteAccountsOf(state.composioUserId, { toolkit: state.toolkit, keep: row?.connectedAccountId });
+    } catch (err) {
+      console.error("[tools] clearing a failed connection failed:", forLog(err));
+    }
+  };
+
+  const signedIn = await deps.platformUserId();
+  if (!signedIn || composioUserId("o", state.productId, ownerSubject(signedIn)) !== state.composioUserId) {
+    await clearAttempt();
+    return callbackPage(403, "That didn't connect. Sign in to Muse Muse as the person who started connecting, then connect again.");
+  }
+
   const [status, info] = await Promise.all([deps.productStatus(state.productId), deps.productInfo(state.productId)]);
-  if (!status || status === "disabled" || status === "failed") return callbackPage(403, "This product is turned off on Muse Muse.");
+  if (!status || status === "disabled" || status === "failed") {
+    await clearAttempt();
+    return callbackPage(403, "This product is turned off on Muse Muse.");
+  }
   const back = (result: "connected" | "failed") => {
     if (!info?.liveUrl) return callbackPage(result === "connected" ? 200 : 502, result === "connected" ? "Connected. You can close this tab." : "That didn't connect. Go back to the app and try again.");
     const target = new URL("/api/musemuse/connected", info.liveUrl);
@@ -666,22 +807,23 @@ async function handleCallback(req: Request, deps: ToolsDeps): Promise<Response> 
     if (result === "failed") target.searchParams.set("error", "connect_failed");
     return Response.redirect(target.toString(), 303);
   };
+  const failed = async () => {
+    await clearAttempt();
+    return back("failed");
+  };
 
   const accountId = url.searchParams.get("connected_account_id") ?? "";
-  const api = deps.composio();
-  if (!api || !accountId || accountId.length > 128) return back("failed");
+  if (!api || !accountId || accountId.length > 128) return failed();
   try {
     const active = await api.verifyConnection({ connectedAccountId: accountId, userId: state.composioUserId, toolkit: state.toolkit });
-    if (!active) return back("failed");
-    const previous = (await deps.activeConnections(state.productId, state.composioUserId)).find((r) => r.toolkit === state.toolkit);
+    if (!active) return await failed();
     await deps.saveConnection({ productId: state.productId, principal: "owner", composioUserId: state.composioUserId, toolkit: state.toolkit, connectedAccountId: accountId });
-    if (previous && previous.connectedAccountId !== accountId) {
-      await api.deleteConnection(previous.connectedAccountId).catch((err) => console.error("[tools] removing a replaced connection failed:", err instanceof Error ? err.message.slice(0, 300) : "unknown"));
-    }
+    // One live account per toolkit: this also takes the one it replaced, and any link that was started and left.
+    await api.deleteAccountsOf(state.composioUserId, { toolkit: state.toolkit, keep: accountId }).catch((err) => console.error("[tools] removing a replaced connection failed:", forLog(err)));
     return back("connected");
   } catch (err) {
-    console.error("[tools] checking a connection failed:", err instanceof Error ? err.message.slice(0, 300) : "unknown");
-    return back("failed");
+    console.error("[tools] checking a connection failed:", forLog(err));
+    return failed();
   }
 }
 

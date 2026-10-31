@@ -10,11 +10,13 @@ export const PRODUCT = "11111111-1111-4111-8111-111111111111";
 export const OTHER_PRODUCT = "22222222-2222-4222-8222-222222222222";
 export const TOKEN = "mm_live_tokentokentokentokentoken";
 export const BUILD_TOKEN = "mm_build_tokentokentokentokentoken";
+/** Who a fake browser is signed in as on the platform. */
+export const OWNER_USER = "owner-user";
 
 export const agentModels = (...ids: ToolId[]) => ["muse-wonder-1.0", "agent", ...ids.map(toolMarker)];
 
-/** A provider that records every call, so a test can assert one was never made. */
-export function fakeComposio(overrides: Partial<ComposioApi> = {}) {
+/** A provider that records every call, so a test can assert one was never made. `accounts` is what it holds, for sweeps. */
+export function fakeComposio(overrides: Partial<ComposioApi> = {}, accounts: Array<{ id: string; userId?: string; toolkit: string }> = []) {
   const calls = {
     create: [] as Array<{ userId: string; config: ComposioSessionConfig }>,
     update: [] as Array<{ sessionId: string; config: ComposioSessionConfig }>,
@@ -46,10 +48,16 @@ export function fakeComposio(overrides: Partial<ComposioApi> = {}) {
     },
     deleteConnection: async (id) => {
       calls.delete.push(id);
+      accounts.splice(0, accounts.length, ...accounts.filter((a) => a.id !== id));
+    },
+    deleteAccountsOf: async (userId, opts = {}) => {
+      const doomed = accounts.filter((a) => (!a.userId || a.userId === userId) && (!opts.toolkit || a.toolkit === opts.toolkit) && a.id !== opts.keep);
+      for (const account of doomed) await api.deleteConnection(account.id);
+      return doomed.length;
     },
     ...overrides,
   };
-  return { api, calls };
+  return { api, calls, accounts };
 }
 
 /** Gateway state in memory, the way the database keeps it. */
@@ -72,8 +80,10 @@ export function fakeTools(o: {
   inFlightFull?: boolean;
   fixtures?: Record<string, unknown[]> | null;
   connections?: Array<{ toolkit: string; connectedAccountId: string; composioUserId?: string }>;
+  platformUser?: string | null;
+  lookup?: (host: string) => Promise<string[]>;
 } = {}) {
-  const fake = fakeComposio();
+  const fake = fakeComposio({}, (o.connections ?? []).map((c) => ({ id: c.connectedAccountId, userId: c.composioUserId, toolkit: c.toolkit })));
   const counters = new Map<string, number>();
   const at = (key: string, window: Date) => `${key}@${window.toISOString()}`;
   const hits = new Map<string, number>();
@@ -156,9 +166,11 @@ export function fakeTools(o: {
     },
     composio: () => (o.composio === undefined ? fake.api : o.composio),
     platformUrl: "https://platform.test",
+    platformUserId: async () => (o.platformUser === undefined ? OWNER_USER : o.platformUser),
+    lookupHost: o.lookup ?? (async () => ["93.184.216.34"]),
     now: () => NOW,
   };
-  return { deps, ...fake, counters, reservations, settled, recorded, sessions, connections, revoked, saved, inFlight: () => inFlight, released: () => released };
+  return { deps, ...fake, hits, counters, reservations, settled, recorded, sessions, connections, revoked, saved, inFlight: () => inFlight, released: () => released };
 }
 
 export function toolsRequest(path: string, body?: unknown, headers: Record<string, string> = {}, token: string | null = TOKEN): Request {

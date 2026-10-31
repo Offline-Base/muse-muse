@@ -38,20 +38,21 @@ A token carries `agent` and one `tool:<id>` per tool the brief picked, in `allow
 | `POST {GATEWAY_URL}/tools/execute` with `{name, arguments, approval?, userInput?}` | See below |
 | `GET {GATEWAY_URL}/tools/connections` | The current principal's connections |
 | `POST {GATEWAY_URL}/tools/connect` with `{toolkit, returnTo}` | A link to connect an account |
-| `POST {GATEWAY_URL}/tools/disconnect` with `{toolkit}` | Marks the connection revoked |
-| `GET {PLATFORM_URL}/api/gateway/tools/callback` | Composio's callback. The browser arrives with no product token, so its `state` is HMAC-signed |
+| `POST {GATEWAY_URL}/tools/disconnect` with `{toolkit}` | Removes every account this owner has on the toolkit at Composio, with or without a row, and marks the connection revoked. `ok` means they are gone |
+| `GET {PLATFORM_URL}/api/gateway/tools/callback` | Composio's callback. The browser arrives with no product token, so its `state` is HMAC-signed, and it must be signed in to the platform as the person who started connecting |
 | `POST {GATEWAY_URL}/identity/owner` with `{code}` | Trades an owner code for a 12-hour owner session: `{session, expiresAt}` |
 | `GET {PLATFORM_URL}/api/products/<slug>/owner-pass` | For the signed-in owner: mints a 5-minute code and redirects to `{liveUrl}/api/musemuse/owner?code=` |
 
 - **`name`** is the function's name, which is its Composio slug, from the list route.
-- **`userInput`** is the person's own words for this run, up to 64 KB. `read_page` needs it: the URL must appear in it, or
-  the call is refused. Send it only with that tool.
+- **`userInput`** is the person's own words for this run, up to 64 KB, and never tool output. `read_page` needs it: the URL must
+  appear in it, or the call is refused. An email address in it authorizes no site. Send it only with that tool.
 - **Listing:** a tool the caller can't use (a personal tool for a visitor) is listed with its `connection` but no `functions`,
   so the model can't try it. With `format=namespaced` and more than 8 functions, the answer adds `toolSearch: true` and
   `namespaces`, ready for Meta's `tools` array, and each tool's `namespace` names its own. Add `{"type":"tool_search"}`.
 - **Connect:** `{ok, url, simulated}`. Send the browser to `url`. A build gets `url: null` and a sample `connection`.
 - **After connecting:** the browser lands on `{liveUrl}/api/musemuse/connected?toolkit=&returnTo=`, plus `&error=connect_failed`
-  when it didn't work. `returnTo` is a checked path on the product. Redirect there.
+  when it didn't work. `returnTo` is a checked path on the product. Redirect there. A browser that isn't signed in as the person
+  who started gets a plain page instead, and whatever account the attempt left is deleted. One live account stays per toolkit.
 
 `/tools/execute` answers one of:
 
@@ -66,17 +67,28 @@ the call with `approval`. An approval that doesn't fit (changed arguments, expir
 as a new `needs_confirmation` with `stale: true`, for the person to confirm again. An approval is spent when the call goes out,
 so a rate limit doesn't burn one and a failed send needs a new one.
 
+- **`approval.lines` is the whole call.** One line per argument, uncut, up to the 16 KB argument limit, with whitespace collapsed
+  and anything invisible or that reorders text shown as `\uFFFD`. Show every line in full on the card, and let it scroll.
+- **Only the card proves a person agreed.** The approval id goes back to the same product server that spends it, so the gateway
+  can't tell a click from a server repeating the call by itself. The kit must wait for the person, and the judge should check that.
+- **Everything a tool returns is untrusted data:** `output`, `sources` and every error message. Wrap all of it before a model sees
+  it, and never send any of it as `userInput`.
+- **`x-musemuse-run-id`:** send it on every call in a run. A call without it has only the daily limits.
+
 ### Check order for execute
 
 1. Bearer token, then product status.
 2. The token has `agent` and `tool:<id>`, the manifest allows it, the tool isn't denied, and its tier's flag is on.
 3. The principal's tier allows it.
 4. Arguments: at most 16 KB, only what the catalog lists (others are refused, not dropped), required keys present, no private
-   or localhost URLs. Then recipient rules, including aliases (Gmail's `to`, Slack's `channel_id`, Calendar's `attendees`),
-   then confirmation.
-5. Rate limits (`perMinute` and `perDay` from the catalog too), then an in-flight slot.
+   or localhost URLs. Then recipient rules, including aliases (Gmail's `to`, Slack's `channel_id`, Calendar's `attendees`), then
+   confirmation. Email addresses and Slack channels are plain ASCII, and a subject has no control or invisible characters. Gmail
+   takes plain text only, so `is_html` isn't in the catalog.
+5. The token's, visitor's and IP's rate limits, the catalog's `perDay`, then an in-flight slot.
 6. Budgets: the token's daily spend, `TOOLS_DAILY_SPEND_CAP_USD`, `TOOLS_DAILY_CALLS`, `DAILY_SPEND_CAP_USD` and the run's dollars.
-7. Reserve the spend.
+   Each call holds its estimate first, so calls at once can't share the last of a budget. Last come the limits every product
+   shares (`perMinute` and the toolkit's), so a call that nothing would pay for can't use them up.
+7. A live `read_page` resolves its host, and any private address refuses the call. Spend the approval and reserve the spend.
 8. A build token gets a canned result. A live token gets its session (at most 15 seconds), then calls Composio with a 30-second
    timeout, no automatic retry and no `version`.
 9. Settle, apply the catalog's `output` rules, extract sources, trim to 32 KB and answer.
@@ -118,7 +130,7 @@ In the gateway's usual `gatewayError` shape. `TOOL_ERRORS` in `lib/tools/ids.ts`
 | `rate_limited` | 429 | Too many calls |
 | `run_limit` | 429 | This run used up its turns, tool calls or dollars |
 | `budget_exceeded` | 429 | A daily budget is used up |
-| `tool_failed` | 502 | The tool failed, in a plain message |
+| `tool_failed` | 502 | The tool failed, in our own words. The provider's text stays in the server log, without tokens or addresses |
 | `tools_paused` | 503 | Tools are off here. Composio's 402 `Metering_WalletBalanceExhausted` also lands here |
 
 ## Principals
@@ -171,7 +183,9 @@ Migration `0013_agents`.
 - **Tool calls** are `usage` rows with `source: "tools"`, `endpoint: "tools/execute"` and `model: "composio:<SLUG>"`.
 - **`TOOLS_DAILY_CALLS` and `perDay`** are `rate_limits` counters whose window is the next UTC midnight. The hourly cleanup deletes
   windows that started over an hour ago, so a window starting at today's midnight would reset every hour. Builds never count.
-- **Cleanup:** with `AGENTS_ENABLED` on, the hourly cron deletes the connected accounts of products that are disabled or failed.
+- **Cleanup:** with `AGENTS_ENABLED` on, the hourly cron deletes the connected accounts of products that are disabled or failed. It
+  goes by `tool_sessions` as well as `tool_connections`, since every connect starts a session, and drops an owner's session once
+  that owner's accounts are gone, so an account no row knows about goes too.
 
 A product's tool rows don't go to the live site when a local product is promoted (`docs/NATIVE.md`). Canned outputs do.
 

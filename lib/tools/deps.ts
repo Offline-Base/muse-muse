@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import { getSessionUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import {
   acquireInFlight,
@@ -12,13 +14,15 @@ import {
 } from "@/lib/gateway/store";
 import { findToken } from "@/lib/gateway/tokens";
 import { composioApi, type ComposioApi } from "@/lib/tools/composio/client";
-import { revokeConnections, type ToolsDeps } from "@/lib/tools/handler";
+import { clearOffProductAccounts, revokeConnections, type ToolsDeps } from "@/lib/tools/handler";
 import {
   activeConnections,
   buildFixtures,
   connectionsOfOffProducts,
+  deleteToolSession,
   findToolSession,
   markConnectionRevoked,
+  ownerSessionsOfOffProducts,
   productInfo,
   revokeConnection,
   saveConnection,
@@ -66,12 +70,19 @@ export function toolsDeps(): ToolsDeps {
     revokeConnection,
     composio,
     platformUrl: env.platformUrl,
+    platformUserId: async () => (await getSessionUser())?.id ?? null,
+    lookupHost: async (host) => (await lookup(host, { all: true, verbatim: true })).map((a) => a.address),
   };
 }
+
+/** Enough for one run to stay well inside the cron route's time. The rest wait for the next hour. */
+const OFF_SESSIONS_PER_RUN = 50;
 
 /** The hourly cleanup's task: a product that is off keeps no account connected. Returns how many it revoked. */
 export async function revokeDisabledProductConnections(): Promise<number> {
   // With no key there is no reaching the accounts, so the rows stay and a later run tries again.
   const api = composio();
-  return api ? revokeConnections(api, await connectionsOfOffProducts(), markConnectionRevoked) : 0;
+  if (!api) return 0;
+  const revoked = await revokeConnections(api, await connectionsOfOffProducts(), markConnectionRevoked);
+  return revoked + (await clearOffProductAccounts(api, await ownerSessionsOfOffProducts(OFF_SESSIONS_PER_RUN), deleteToolSession));
 }

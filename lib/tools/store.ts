@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, like, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import type { ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
 
@@ -108,4 +108,21 @@ export async function connectionsOfOffProducts(): Promise<Array<{ id: string; co
 
 export async function markConnectionRevoked(id: string): Promise<void> {
   await db().update(schema.toolConnections).set({ revokedAt: new Date() }).where(eq(schema.toolConnections.id, id));
+}
+
+/**
+ * Owners' sessions on products that are off, for the hourly cleanup. Every connect starts with a session, so this also
+ * finds accounts no connection row knows about. A batch at a time, and each row goes once its accounts have.
+ */
+export async function ownerSessionsOfOffProducts(limit: number): Promise<Array<{ id: string; composioUserId: string }>> {
+  return db()
+    .select({ id: schema.toolSessions.id, composioUserId: schema.toolSessions.composioUserId })
+    .from(schema.toolSessions)
+    .innerJoin(schema.products, eq(schema.products.id, schema.toolSessions.productId))
+    .where(and(like(schema.toolSessions.composioUserId, "mmo\\_%"), inArray(schema.products.status, ["disabled", "failed"])))
+    .limit(limit);
+}
+
+export async function deleteToolSession(id: string): Promise<void> {
+  await db().delete(schema.toolSessions).where(eq(schema.toolSessions.id, id));
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogTool } from "@/lib/tools/catalog";
-import { classifyFailure, replyFailed, untilAborted } from "@/lib/tools/composio/client";
+import { classifyFailure, replyFailed, sweepAccounts, untilAborted, type AccountsApi } from "@/lib/tools/composio/client";
 import { ensureToolSession, sessionConfigFor, sessionConfigHash } from "@/lib/tools/composio/sessions";
 import type { CatalogTool } from "@/lib/tools/composio/sync";
 import { fakeComposio, PRODUCT } from "@/lib/tools/__tests__/helpers";
@@ -29,6 +29,45 @@ test("a failed reply is resultType failed, or a completed one saying success: fa
   assert.equal(replyFailed({ resultType: "completed", data: { code: "SCRAPE_DNS_RESOLUTION_ERROR", error: "DNS resolution failed", success: false } }), true);
   assert.equal(replyFailed({ resultType: "completed", data: { data: {}, success: true } }), false);
   assert.equal(replyFailed({ resultType: "completed", data: null }), false);
+});
+
+test("a completed reply that says no is a failure, with or without a reason: Slack answers ok: false", () => {
+  assert.equal(replyFailed({ resultType: "completed", data: { ok: false, error: "channel_not_found" } }), true);
+  assert.equal(replyFailed({ resultType: "completed", data: { success: false } }), true);
+  assert.equal(replyFailed({ resultType: "completed", data: { ok: true, ts: "1" } }), false);
+});
+
+function accountsApi(pages: Array<{ items: Array<{ id: string }>; nextCursor?: string | null }>, fail: Record<string, unknown> = {}) {
+  const queries: Array<Parameters<AccountsApi["list"]>[0]> = [];
+  const deleted: string[] = [];
+  const api: AccountsApi = {
+    list: async (query) => {
+      queries.push(query);
+      return pages[queries.length - 1];
+    },
+    delete: async (id) => {
+      if (fail[id]) throw fail[id];
+      deleted.push(id);
+    },
+  };
+  return { api, queries, deleted };
+}
+
+test("a sweep asks by user with no status filter, follows pages, and leaves `keep`", async () => {
+  const { api, queries, deleted } = accountsApi([{ items: [{ id: "a" }, { id: "keep" }], nextCursor: "next" }, { items: [{ id: "b" }], nextCursor: null }]);
+  assert.equal(await sweepAccounts(api, "mmo_x", { toolkit: "gmail", keep: "keep" }), 2);
+  assert.deepEqual(deleted, ["a", "b"]);
+  assert.deepEqual(queries, [{ userIds: ["mmo_x"], toolkitSlugs: ["gmail"], limit: 100 }, { userIds: ["mmo_x"], toolkitSlugs: ["gmail"], limit: 100, cursor: "next" }]);
+  const all = accountsApi([{ items: [] }]);
+  assert.equal(await sweepAccounts(all.api, "mmo_x"), 0);
+  assert.deepEqual(all.queries, [{ userIds: ["mmo_x"], limit: 100 }]);
+});
+
+test("a sweep counts an account already gone as gone, and throws on anything else", async () => {
+  const gone = accountsApi([{ items: [{ id: "a" }, { id: "b" }] }], { a: Object.assign(new Error("not found"), { status: 404 }) });
+  assert.equal(await sweepAccounts(gone.api, "mmo_x"), 1);
+  const down = accountsApi([{ items: [{ id: "a" }] }], { a: Object.assign(new Error("down"), { status: 500 }) });
+  await assert.rejects(sweepAccounts(down.api, "mmo_x"), /down/);
 });
 
 test("a used-up balance is known by its status or its slug", () => {
