@@ -655,6 +655,20 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 2:17 PM: started pilot-channels on train-1: pilot-channels.jsonl, 9,600 rows shuffled from r30 (seed 20261031, 30.0%
   reasoning, 2,879 rows, sha256 8fa0fb19...), from stage2-multi, lr 5e-5, whole-turn labels on reasoning rows, no tuned
   eval, no sync. start_run's own mkdir didn't take, so the data folder was made by hand and passed with --data-dir.
+- 2:32 PM: pilot trained: 300 steps, 825 s, loss 0.432, 12.2 examples/s steady, 63.5 GB per GPU. Reasoning rows are longer,
+  so 60,000 rows of r30 will take about 85 to 95 minutes, not 30 to 40 as I told the owner earlier (corrected).
+- About 2:35 PM: pilot tests started on all 8 GPUs (~/k/pilot_tests.sh, runs/pilot-channels/tests/): channels for pilot,
+  base and stage 2; dev honesty for pilot, stage 2, base and stage-b-a; knowledge and honesty with reasoning on for pilot.
+- 2:21 to 2:40 PM: reasoning rows and mixes copied to S3 corpus/dataset/. Merged and GGUF files stay on Lambda only.
+- Audit actions finished, with corrections from its checker (journal wf_e42b2697-bcb). Serving, on stage 2 Q4_K_M only:
+  Muse Privacy's current flags give HTTP 500 on all free text (7/7) and work with json_schema. tuned-reasoning-off.jinja
+  plus --reasoning-format none and stop ["<|eot|>"] gave 100/100 HTTP 200, 40-item test 37/40 (base 36), skills 59/60,
+  vision 5/5. Without the stop field it returns HTTP 200 with markup in content, so a status check won't catch it. Reasoning on
+  still fails on the tuned model. LoRA route works (838 MB adapter, one server, both models), but loads at scale 1 by default:
+  POST scale 0 at startup or send it per request. Scale 1 was 37.5 against 50.7 tok/s and about 4x slower on a 16-slot batch.
+  Numbers to use: verbatim recall about 30% by hand (auto 24.9% undercounts; base about 14%), not 25%. Salient 69% with
+  60% on the least-paraphrased band beside it (50% on base-wrong), base about 24%. World questions aren't independent of
+  training: 99 of 149 answers appear in Portal:Current_events rows. All 76 wrong salient answers were stated as fact.
 
 ## Problems and fixes
 
