@@ -11,10 +11,12 @@ UV_VERSION=0.13.1
 UV_SHA256=9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14
 # The venv and the model, plus uv's cache while it installs them.
 NEEDED_GIB=7
-TORCH="torch==2.9.1+cu130"
-# Pinned: transformers reads this model through its own qwen3_5 classes, and peft follows it.
-# The last four are for llama.cpp's converter scripts.
-PACKAGES=("transformers==5.15.0" "peft==0.21.2" "accelerate==1.15.0" "safetensors" "numpy" "huggingface_hub" "pyyaml" "tqdm" "requests" "sentencepiece")
+# Every package, pinned with its hashes: transformers reads this model through its own qwen3_5 classes, and peft follows it.
+LOCK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/requirements-train.lock"
+if [ ! -f "$LOCK" ]; then
+  echo "Copy requirements-train.lock to this board, beside this script." >&2
+  exit 1
+fi
 MODEL=unsloth/Qwen3.5-0.8B
 MODEL_REVISION=23c69c53358a07516b5827588b3fdb12ae78fd65
 LLAMA_CPP_TAG=b11970
@@ -42,8 +44,7 @@ if [ ! -x ./uv ]; then
   mv uv.part/uv uv
 fi
 [ -x venv/bin/python ] || ./uv venv --python 3.12 --python-preference only-system venv
-./uv pip install --python venv/bin/python --index-url https://download.pytorch.org/whl/cu130 "$TORCH"
-./uv pip install --python venv/bin/python "${PACKAGES[@]}"
+./uv pip install --python venv/bin/python --require-hashes --index https://download.pytorch.org/whl/cu130 --default-index https://pypi.org/simple --index-strategy unsafe-best-match -r "$LOCK"
 rm -rf "$UV_CACHE_DIR"
 venv/bin/python - "$MODEL" "$MODEL_REVISION" <<'EOF'
 import os, sys

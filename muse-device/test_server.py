@@ -7,6 +7,7 @@ A small script stands in for train.py where the server starts a run, and stubs s
 import io
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -949,6 +950,31 @@ class ConnectionTests(unittest.TestCase):
         for connection in held:
             connection.close()
         wait_for(lambda: slots._value == 2)
+
+
+class SetupScriptTests(unittest.TestCase):
+    """What setup-train.sh installs runs on the board with its GPU and this server's files, so all of it is pinned and checked."""
+
+    def read(self, name):
+        with open(os.path.join(HERE, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_every_package_is_pinned_with_a_hash(self):
+        requirements = re.split(r"\n(?=\S)", re.sub(r"^\s*#.*\n", "", self.read("requirements-train.lock"), flags=re.M).strip())
+        names = [line.split("==")[0] for line in requirements]
+        for wanted in ("torch", "transformers", "peft", "accelerate", "safetensors", "numpy", "huggingface-hub", "pyyaml", "tqdm", "requests", "sentencepiece"):
+            self.assertIn(wanted, names)
+        for requirement in requirements:
+            self.assertRegex(requirement, r"^[A-Za-z0-9._-]+==\S+ \\\n", requirement)
+            self.assertIn("--hash=sha256:", requirement, requirement)
+
+    def test_the_script_installs_only_from_the_lock(self):
+        script = self.read("setup-train.sh")
+        installs = [line for line in script.splitlines() if "uv pip install" in line]
+        self.assertEqual(len(installs), 1, installs)
+        self.assertIn("--require-hashes", installs[0])
+        self.assertIn('-r "$LOCK"', installs[0])
+        self.assertIn('/requirements-train.lock"', script)
 
 
 if __name__ == "__main__":
