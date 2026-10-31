@@ -826,6 +826,10 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   16 GB Macs after an on-Mac test. Found on the way: r30's IQ1_S hit the 512-token cap in repetition loops on 10 of 60
   replies even without the drafter. The final IQ1_S gets a loop check, greedy and with Meta's sampling. Not tested: base,
   r30b, other draft settings, any Mac or phone. Files in writer-1 ~/q/dflash-test.
+- 7:29 PM: new scripts/knowledge/aws/adapter_to_s3.py RUN: the adapter from writer-1 to S3 knowledge/runs/RUN/adapter/,
+  big file through the compare lab's presigned multipart uploader (URLs over ssh stdin, nothing written on writer-1 or
+  the laptop), small files streamed. stage-b-r30's adapter is now in S3 (1,676,799,152 bytes, sha256 0495fa00..., 142
+  MB/s). Compare lab: glimmer-final now points at stage-b-r30b (models.json, docs/COMPARE.md; 110 tests pass).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.

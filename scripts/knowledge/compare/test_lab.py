@@ -115,9 +115,9 @@ class TestConfig(unittest.TestCase):
     def test_real_config_and_like_run(self):
         cfg = C.load_config()
         f = C.model("glimmer-final", cfg)
-        self.assertEqual(f["file"], "glimmer-stage-b-r30-Q4_K_M.gguf")
-        self.assertEqual(f["source"]["s3_key"], "knowledge/models/stage-b-r30/glimmer-stage-b-r30-Q4_K_M.gguf")
-        self.assertEqual(f["source"]["writer1_path"], "/home/ubuntu/q/stage-b-r30/glimmer-stage-b-r30-Q4_K_M.gguf")
+        self.assertEqual(f["file"], "glimmer-stage-b-r30b-Q4_K_M.gguf")
+        self.assertEqual(f["source"]["s3_key"], "knowledge/models/stage-b-r30b/glimmer-stage-b-r30b-Q4_K_M.gguf")
+        self.assertEqual(f["source"]["writer1_path"], "/home/ubuntu/q/stage-b-r30b/glimmer-stage-b-r30b-Q4_K_M.gguf")
         self.assertIsNone(f["bytes"])
         self.assertIsNone(f["sha256"])
         self.assertEqual(f["port"], 8206)

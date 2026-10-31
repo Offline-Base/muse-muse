@@ -78,7 +78,7 @@ CAVEATS = [
     "more accuracy.",
     "HTTP 500 from a Glimmer model with reasoning on means llama-server's parser rejected its channels; such rows count "
     "as errors and not right. Stage 2 did it on every reasoning-on row (60 of 60 on Oct 31). Expect it from "
-    "glimmer-final (stage-b-r30) too on plain questions in chat and on honesty-dev: with low strength and a bare "
+    "glimmer-final too on plain questions in chat and on honesty-dev: stage-b-r30, trained the same way, with low strength and a bare "
     "generation prompt it left 64 of 120 honesty replies and 96 of 300 controls with no final channel (run log, Oct 31, "
     "5:31 PM), while its reasoning items were fine.",
     "tok/s is measured on a shared GPU with every model running at once: it is not a property of the model.",

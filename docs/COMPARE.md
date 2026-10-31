@@ -42,7 +42,7 @@ mode, and the same system prompt, "You are a helpful assistant." (`common.SYSTEM
 | qwen3.8-27b | other | 8203 (18203) | Alibaba Qwen, GGUF by ggml-org | Apache-2.0 | `ggml-org/Qwen3.8-27B-GGUF` @ a316ea527fde32c12487be7574e2db5ac2ad2a7e | Qwen3.8-27B-Q4_K_M.gguf | 18,973,870,528 | 5.64 | low (reasoning_effort) |
 | gemma-4-31b | other | 8204 (18204) | Google | Apache-2.0 | `google/gemma-4-31B-it-qat-q4_0-gguf` @ 59dde24573e7e61570dba08b18a2e1fe246955ed | gemma-4-31B_q4_0-it.gguf (QAT Q4_0) | 17,651,001,568 | 4.60 | default; the template has no effort levels, so it thinks in full |
 | granite-4.2-30b | other | 8205 (18205) | IBM | Apache-2.0 | `ibm-granite/granite-4.2-30b-GGUF` @ 27b350a791e81d9a4d1ddca1c49282e9ec533768 | granite-4.2-30b-Q4_K_M.gguf | 17,721,455,328 | 4.84 | low (reasoning_effort) |
-| glimmer-final | tuned, replaces glimmer-stage2 | 8206 (18206) | Meta, tuned by us | Apache-2.0 | writer-1 `~/q/stage-b-r30/`, then S3 `knowledge/models/stage-b-r30/` | glimmer-stage-b-r30-Q4_K_M.gguf | filled by s3-put (16,935,294,432 on writer-1) | | low, as stage 2; disabled until added. Likely HTTP 500 on plain questions (see below) |
+| glimmer-final | tuned, replaces glimmer-stage2 | 8206 (18206) | Meta, tuned by us | Apache-2.0 | writer-1 `~/q/stage-b-r30b/`, then S3 `knowledge/models/stage-b-r30b/` | glimmer-stage-b-r30b-Q4_K_M.gguf | filled by s3-put | | low, as stage 2; disabled until added. Likely HTTP 500 on plain questions (see below) |
 
 sha256 of the three public files (checked on Hugging Face at the pinned revisions, and again on the lab before use):
 
@@ -63,7 +63,7 @@ Things to know when reading results:
   `"stop": ["<|eot|>"]` (without both, tuned files give HTTP 500 or markup in the reply). Reasoning on uses the model's
   own path: `"reasoning_format": "auto"` and `chat_template_kwargs` `{"reasoning_strength": "low", "allow_reasoning": true}`.
 - Thinking on with the tuned models: stage 2 gave HTTP 500 on every reasoning-on row (60 of 60 on Oct 31). glimmer-final
-  copies stage 2's request, and stage-b-r30 in that setup (low strength, a bare generation prompt) left 64 of 120
+  copies stage 2's request, and stage-b-r30 (trained the same way as the final stage-b-r30b) in that setup (low strength, a bare generation prompt) left 64 of 120
   honesty replies and 96 of 300 controls with no header and no final channel, which the chat endpoint rejects (run log,
   Oct 31, 5:31 PM). So expect HTTP 500 from glimmer-final with thinking on for plain questions in chat and on
   honesty-dev; its reasoning items were fine. The untracked `job/tuned-reasoning-on.jinja` does not fix this here: the
@@ -84,21 +84,20 @@ and optional `on` bodies, merged into each request), reasoning_level, final (how
 gemma4 or plain), gpu_gb, and for a copy: like, run, replaces. `common.load_config` refuses repeated names or ports, port
 5037, a request without `off`, a missing `like`, anything but one base, and flags that would log prompts or open slots.
 
-## Adding the final candidate (stage-b-r30)
+## Adding the final model (stage-b-r30b)
 
-The config line is already there (`glimmer-final`, enabled false, replaces glimmer-stage2). The file `add` needs is
-already on writer-1: quantize.sh wrote `~/q/stage-b-r30/glimmer-stage-b-r30-Q4_K_M.gguf` (16,935,294,432 bytes) at 5:01 PM
-ET on Oct 31 (a read-only `ls -ln` at 6:35 PM ET showed it; the run log says the same). It renames `.part` only on
-success. The later step, the copy to the NFS `models/stage-b-r30/`, came after the quants were scored (run log, 6:32 PM);
-`add` never reads the NFS. So this can run now:
+The pick changed to stage-b-r30b at 7:14 PM ET on Oct 31 (run log), and glimmer-final's `run` now says so (enabled
+false, replaces glimmer-stage2). Its file is `~/q/stage-b-r30b/glimmer-stage-b-r30b-Q4_K_M.gguf` on writer-1, written by
+quantize.sh, which renames `.part` only on success. `add` never reads the NFS. `--wait` looks for the file every 5
+minutes, so this can start before the file exists:
 
 ```
 aws login --profile offlinebase     # if the login has lapsed
 $PY $L add glimmer-final --wait
 ```
 
-If the pick changes to another run (for example stage-b-r30b, training since 5:32 PM), change glimmer-final's `run`
-field (and its label) in `models.json` to that run's name first: the file name, S3 key and writer-1 path follow from it.
+To point it at another run, change glimmer-final's `run` field (and its label) in `models.json`: the file name, S3 key
+and writer-1 path follow from it. stage-b-r30's Q4_K_M (16,935,294,432 bytes) stays on writer-1 and the NFS.
 
 `add` uploads it to S3 if its sha256 is unknown (`--wait` looks for the file every 5 minutes with `ls` only), records
 sha256 and bytes, sets enabled true, and if a lab is up, unloads glimmer-stage2 and loads glimmer-final in its place.
@@ -414,7 +413,7 @@ passed only the offline tests:
   before strays) and its guard on a stray's terminate, the chat page's port check, private eval files, the
   "not loaded" states on the page and in the eval runner, `--max-tokens-off` and the report's cut, decline and "right
   but declining" counts.
-- `lab.py add glimmer-final` has not been run: it would be the first upload of stage-b-r30's Q4_K_M.
+- `lab.py add glimmer-final` has not been run: it would be the first upload of stage-b-r30b's Q4_K_M.
 
 The test lines in `.data/compare/lab/lab.log` that say "s3-put glimmer-stage2: 0.00 GB from writer-1 in 6 parts of 0 MiB"
 (with "done ... sha256" and "aborted our upload (LabError)" lines around them), and the lines at 22:25:42Z about a

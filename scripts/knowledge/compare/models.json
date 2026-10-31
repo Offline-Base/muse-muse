@@ -163,7 +163,7 @@
       "final": "think",
       "gpu_gb": 20.4
     },
-    {"name": "glimmer-final", "like": "glimmer-stage2", "run": "stage-b-r30", "port": 8206, "enabled": false,
-     "label": "Muse Glimmer 30B tuned (final candidate, stage-b-r30)", "replaces": "glimmer-stage2"}
+    {"name": "glimmer-final", "like": "glimmer-stage2", "run": "stage-b-r30b", "port": 8206, "enabled": false,
+     "label": "Muse Glimmer 30B tuned (final, stage-b-r30b)", "replaces": "glimmer-stage2"}
   ]
 }
