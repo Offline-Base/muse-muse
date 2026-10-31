@@ -20,6 +20,8 @@ export async function mintToken(opts: {
   allowedModels: string[];
   dailyBudgetUsd: number;
   ttlHours?: number;
+  /** A build token's build, for briefs with caps: their rows and files live in its namespace b:<buildId> (0019_engine). */
+  buildId?: string;
 }): Promise<{ id: string; token: string }> {
   const token = `mm_${opts.scope}_${randomBytes(32).toString("base64url")}`;
   const [row] = await db()
@@ -31,6 +33,7 @@ export async function mintToken(opts: {
       allowedModels: opts.allowedModels,
       dailyBudgetUsd: opts.dailyBudgetUsd,
       expiresAt: opts.ttlHours ? new Date(Date.now() + opts.ttlHours * 3_600_000) : null,
+      ...(opts.buildId ? { buildId: opts.buildId } : {}),
     })
     .returning({ id: schema.gatewayTokens.id });
   return { id: row.id, token };

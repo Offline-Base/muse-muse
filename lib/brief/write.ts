@@ -67,7 +67,8 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     instructions: briefInstructions(),
     content,
     sources: prepared.sources,
-    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools }),
+    // With no targets, caps or milestones this is NewBriefSchema or NewBriefSchemaNoGadget, as it always was.
+    schema: newBriefSchemaFor({ gadgets: env.gadgetsEnabled, targets: enabled, personalTools, caps: env.enabledCaps, milestones: env.engineMilestones }),
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

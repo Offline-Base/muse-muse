@@ -1,3 +1,4 @@
+import { sweepCaps } from "@/lib/caps/cleanup";
 import { cleanupDocsObjects } from "@/lib/docs/proxy/cleanup";
 import { docsCleanupDeps } from "@/lib/docs/proxy/deps";
 import { env } from "@/lib/env";
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req.headers.get("authorization"), env.cronSecret)) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
-  const [platform, docs] = await Promise.all([
+  const [platform, docs, caps] = await Promise.all([
     runCleanup({
       deleteBlobsOlderThan: deleteOlderThan,
       deleteRateLimitsBefore,
@@ -28,8 +29,10 @@ export async function GET(req: Request) {
       ...(env.agentsEnabled ? { revokeDisabledProductConnections } : {}),
     }),
     cleanupDocsObjects(docsCleanupDeps()),
+    // Wave 3 caps' sweeps (docs/CAPABILITIES.md, 2.9). Null, and left out of the answer, until a cap registers one.
+    sweepCaps().catch((err: unknown) => ({ ok: false, removed: 0, failed: [String(err)] })),
   ]);
-  const results = { ...platform, ...docs };
+  const results = { ...platform, ...docs, ...(caps ? { caps } : {}) };
   const ok = Object.values(results).every((r) => r.ok);
   if (!ok) console.error("[cron/cleanup] some tasks failed:", results);
   return Response.json({ ok, results }, { status: ok ? 200 : 500 });

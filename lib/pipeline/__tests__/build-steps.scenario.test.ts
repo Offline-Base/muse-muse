@@ -10,13 +10,18 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, it, mock } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
 import { goalObjective, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import type { Brief, ModelUsage } from "@/lib/types";
+import { z } from "zod";
+import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_ENV } from "@/lib/caps/env";
+import { CAP_BUILD_HOSTS } from "@/lib/caps/hosts";
+import { BRIEF as FULL_BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 type Rows = Record<string, unknown>[];
 
@@ -45,6 +50,13 @@ let startImpl: () => Promise<unknown> = async () => ({ cmdId: "cmd", logPath: "/
 let startInputs: Array<Record<string, unknown>> = [];
 let demoSpecs: Array<{ sandboxName: string; spec: Record<string, unknown> }> = [];
 let demoVideo: { videoUrl: string | null; posterUrl: string | null } = { videoUrl: null, posterUrl: null };
+let liveCheckImpl: (input: Record<string, unknown>) => Promise<unknown> = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
+let liveCheckInputs: Array<Record<string, unknown>> = [];
+let minted: Array<Record<string, unknown>> = [];
+let reopened: Array<Record<string, unknown>> = [];
+let provisioned: Array<Record<string, unknown>> = [];
+let manifestReads = 0;
+let manifestImpl: unknown = null;
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -54,6 +66,7 @@ function thenable<T extends object>(q: T, result: () => unknown): T {
 }
 
 const fakeDb = () => ({
+  batch: async () => [],
   select: () => {
     let table = "";
     const q: Record<string, unknown> = {};
@@ -116,7 +129,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../../gateway/tokens.ts"), {
       namedExports: {
-        mintToken: async () => ({ id: "tok-1", token: "secret" }),
+        mintToken: async (opts: Record<string, unknown>) => {
+          minted.push(opts);
+          return { id: "tok-1", token: "secret" };
+        },
         revokeTokens: async (...args: unknown[]) => void revoked.push(args),
         revokeLiveTokensExcept: async (...args: unknown[]) => void revoked.push(["live except", ...args]),
       },
@@ -165,11 +181,26 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           return shots.map((_, i) => `.muse-fix/round-${fix}-${i + 1}.png`);
         },
         writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
-        reopenSandbox: async () => undefined,
-        readManifest: async () => null,
+        reopenSandbox: async (input: Record<string, unknown>) => void reopened.push(input),
+        provisionSandbox: async (input: Record<string, unknown>) => {
+          provisioned.push(input);
+          return { sandboxName: "sb" };
+        },
+        readManifest: async () => {
+          manifestReads += 1;
+          return manifestImpl;
+        },
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
         finishDemo: async () => demoVideo,
+      },
+    });
+    mock.module(at("../../engine/live-check.ts"), {
+      namedExports: {
+        liveCheck: async (input: Record<string, unknown>) => {
+          liveCheckInputs.push(input);
+          return liveCheckImpl(input);
+        },
       },
     });
     mock.module("workflow", {
@@ -198,6 +229,13 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     checkInputs = [];
     demoSpecs = [];
     demoVideo = { videoUrl: null, posterUrl: null };
+    liveCheckInputs = [];
+    liveCheckImpl = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
+    minted = [];
+    reopened = [];
+    provisioned = [];
+    manifestReads = 0;
+    manifestImpl = null;
   });
 
   describe("judgeStep on a refinement", () => {
@@ -451,6 +489,72 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(productFiles[0]!.path, "fix-3.md");
       assert.match(productFiles[0]!.content, /The result is cut off\./);
       assert.doesNotMatch(productFiles[0]!.content, /attached/);
+    });
+  });
+
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
+  describe("engine steps", () => {
+    const FULL = (async () => (await import("@/lib/promote/__tests__/fixtures")).BRIEF)();
+    const milestones = [
+      { title: "Play one level", doneMeans: "A built-in level loads and can be won." },
+      { title: "Level maker", doneMeans: "A generated level passes the solver and saves." },
+    ];
+    afterEach(() => {
+      for (const k of ["ENGINE_ROUND_SCALING", "ENGINE_MILESTONES"]) delete process.env[k];
+    });
+
+    it("briefStep gives a round plan only when the engine scales or has milestones", async () => {
+      const brief = { ...(await FULL), complexity: "complex" as const, milestones };
+      selects = { builds: [[{ brief }]] };
+      assert.ok(!("plan" in (await steps.briefStep("b1"))), "flags off: today's summary");
+      process.env.ENGINE_ROUND_SCALING = "1";
+      selects = { builds: [[{ brief }]] };
+      const scaled = await steps.briefStep("b1");
+      assert.equal(scaled.plan?.buildMs, 30 * 60_000);
+      assert.deepEqual(scaled.plan?.milestones, [], "milestones need their own flag");
+      process.env.ENGINE_MILESTONES = "1";
+      selects = { builds: [[{ brief }]] };
+      assert.deepEqual((await steps.briefStep("b1")).plan?.milestones, [{ title: "Play one level" }, { title: "Level maker" }]);
+    });
+
+    it("writeMilestonePromptStep writes milestone-<n>.md with what the last strict check found", async () => {
+      const brief = { ...(await FULL), milestones };
+      const failed = { type: "verify", round: 0, summary: { passed: false, steps: [{ name: "smoke", ok: false, detail: "no board" }], failureOutput: "" }, screenshots: [] };
+      selects = { builds: [[{ brief }]], build_events: [[{ payload: failed }]] };
+      const out = await steps.writeMilestonePromptStep({ buildId: "b1", sandboxName: "sb", index: 2, of: 2, verifiedRound: 0 });
+      assert.deepEqual(out, { promptFile: "milestone-2.md" });
+      assert.equal(productFiles[0]!.path, "milestone-2.md");
+      assert.match(productFiles[0]!.content, /^# Milestone 2 of 2: Level maker/);
+      assert.match(productFiles[0]!.content, /FAILED: smoke: no board/);
+    });
+
+    it("milestoneStep tells the build room and keeps builds.round_plan in step", async () => {
+      selects = { builds: [[{ roundPlan: { capMinutes: 35, milestones: [{ title: "A", state: "planned" }, { title: "B", state: "planned" }] } }]] };
+      await steps.milestoneStep("b1", { index: 2, of: 2, title: "B", state: "building" });
+      assert.deepEqual(emitted, [{ buildId: "b1", body: { type: "milestone", index: 2, of: 2, title: "B", state: "building" } }]);
+      assert.deepEqual(writes, [{ table: "builds", values: { roundPlan: { capMinutes: 35, milestones: [{ title: "A", state: "planned" }, { title: "B", state: "building" }] } } }]);
+      writes = [];
+      selects = { builds: [[{ roundPlan: null }]] };
+      await steps.milestoneStep("b1", { index: 1, of: 2, title: "A", state: "passed" });
+      assert.deepEqual(writes, [], "no plan to keep");
+    });
+
+    it("liveCheckStep checks the live link with the product's actions, saves what it found and never throws", async () => {
+      liveCheckImpl = async () => ({ ok: false, url: "https://musemuse-bird-count.vercel.app", at: "2026-10-31T00:00:00.000Z", reason: "the page answered HTTP 500", checks: [] });
+      selects = { builds: [[{ brief: await FULL, productId: "prod-1" }]] };
+      const out = await steps.liveCheckStep({ buildId: "b1", sandboxName: "sb", url: "https://musemuse-bird-count.vercel.app" });
+      assert.deepEqual(out, { ok: false, reason: "the page answered HTTP 500" });
+      assert.deepEqual(liveCheckInputs[0], { url: "https://musemuse-bird-count.vercel.app", actions: [], health: false });
+      assert.deepEqual(writes, [{ table: "builds", values: { liveCheck: { ok: false, at: "2026-10-31T00:00:00.000Z", url: "https://musemuse-bird-count.vercel.app", reason: "the page answered HTTP 500" } } }]);
+      assert.deepEqual(emitted.map((e) => e.body), [{ type: "live_check", ok: false, url: "https://musemuse-bird-count.vercel.app", reason: "the page answered HTTP 500" }]);
+
+      liveCheckImpl = async () => {
+        throw new Error("dns");
+      };
+      selects = { builds: [[{ brief: await FULL, productId: "prod-1" }]] };
+      const broken = await steps.liveCheckStep({ buildId: "b1", sandboxName: "sb", url: "https://x.vercel.app" });
+      assert.equal(broken.ok, false);
+      assert.match(broken.reason ?? "", /^the check couldn't run \(dns\)$/);
     });
   });
 
@@ -775,6 +879,113 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       // Today's change prompt, to the byte.
       const plain = await changePrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
       assert.equal(plain, renderRefinePrompt({ message: "Add a dark mode", newReferences: [] }));
+    });
+  });
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, 2.3 and 2.5): a change to a product with platform services.
+  describe("reopenStep for a product with platform services", () => {
+    const fields = CAP_BRIEF_FIELDS as Record<string, z.ZodTypeAny>;
+    before(() => {
+      fields.data = z.object({ scopes: z.array(z.string()) });
+      CAP_ENV.data = { build: () => ({ MUSEMUSE_DATA: "on" }) };
+      CAP_BUILD_HOSTS.data = ["pypi.example"];
+    });
+    after(() => {
+      delete fields.data;
+      delete CAP_ENV.data;
+      delete CAP_BUILD_HOSTS.data;
+    });
+    const reopen = (brief: unknown) => {
+      selects = {
+        builds: [[{ id: "r1", kind: "refine", productId: "prod-1", message: "Add a dark mode", inspirationId: "i", brief }]],
+        inspirations: [[{ note: null, references: [] }]],
+      };
+      return steps.reopenStep({ buildId: "r1", productId: "prod-1", sandboxName: "sb", refineIndex: 2 });
+    };
+
+    it("mints a token tied to this build and keeps the caps' env lines and hosts", async () => {
+      await reopen({ ...BRIEF, capabilities: [{ model: "muse-wonder-1.0" }], data: { scopes: ["shared"] } });
+      assert.equal(minted[0]!.scope, "build");
+      assert.equal(minted[0]!.buildId, "r1", "the change's rows live in the build namespace b:r1, never in live");
+      assert.equal(reopened[0]!.capEnv, "MUSEMUSE_DATA=on\n");
+      assert.equal(reopened[0]!.caps, true, "the caps check's gateway record gets the change's token");
+      assert.deepEqual(reopened[0]!.capHosts, ["pypi.example"]);
+    });
+
+    it("says once at provision that a local run can't reach the gateway, and says nothing on a public one", async () => {
+      const saved = process.env.PLATFORM_URL;
+      const provision = () => {
+        selects = {
+          builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief: { ...FULL_BRIEF, data: { scopes: ["shared"] } } }]],
+          inspirations: [[{ note: null, references: [] }]],
+        };
+        return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+      };
+      try {
+        process.env.PLATFORM_URL = "http://localhost:3000";
+        await provision();
+        assert.deepEqual(emitted.filter((e) => e.body.type === "log").map((e) => e.body.text), [steps.CAPS_LOCAL_RUN_NOTE]);
+        assert.equal(minted[0]!.buildId, "b1");
+        emitted = [];
+        process.env.PLATFORM_URL = "https://platform.example";
+        await provision();
+        assert.deepEqual(emitted.filter((e) => e.body.type === "log"), []);
+      } finally {
+        saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved);
+      }
+    });
+
+    it("a live token's caps are narrowed by the product's musemuse.json at deploy, never widened", async () => {
+      const deploy = (brief: unknown) => {
+        selects = {
+          builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief }]],
+          products: [[{ id: "prod-1", slug: "bird-count", name: "Bird Count", vercelProjectId: null }]],
+        };
+        return steps.startDeployStep({ buildId: "b1", productId: "prod-1", sandboxName: "sb" });
+      };
+      const withData = { ...FULL_BRIEF, data: { scopes: ["shared"] } };
+      manifestImpl = { caps: ["files"] };
+      await deploy(withData);
+      assert.equal(minted[0]!.scope, "live");
+      assert.ok(!(minted[0]!.allowedModels as string[]).includes("cap:data"), "the manifest left data out");
+      assert.ok(!(minted[0]!.allowedModels as string[]).includes("cap:files"), "and can't add files");
+      minted = [];
+      manifestImpl = { caps: ["data"] };
+      await deploy(withData);
+      assert.ok((minted[0]!.allowedModels as string[]).includes("cap:data"));
+      // A product with no caps: the manifest isn't read at deploy, as before.
+      minted = [];
+      manifestReads = 0;
+      await deploy(FULL_BRIEF);
+      assert.equal(manifestReads, 0);
+    });
+
+    it("leaves a product with no caps as it was: no build id, no extra env, no hosts", async () => {
+      await reopen({ ...BRIEF, capabilities: [{ model: "muse-wonder-1.0" }] });
+      assert.ok(!("buildId" in minted[0]!));
+      assert.ok(!("capEnv" in reopened[0]!));
+      assert.ok(!("capHosts" in reopened[0]!));
+    });
+  });
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
+  describe("provisionStep and milestones", () => {
+    const milestones = [
+      { title: "Play one level", doneMeans: "A level loads and can be won." },
+      { title: "Level maker", doneMeans: "A generated level is saved." },
+    ];
+    const provision = (roundPlan: unknown) => {
+      selects = {
+        builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief: { ...FULL_BRIEF, milestones }, roundPlan }]],
+        inspirations: [[{ note: null, references: [] }]],
+      };
+      return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+    };
+
+    it("writes the Milestones section only when the saved round plan chains them", async () => {
+      await provision({ capMinutes: 35, milestones: milestones.map((m) => ({ title: m.title, state: "planned" })) });
+      assert.match(provisioned[0]!.promptMarkdown as string, /## Milestones[\s\S]*This run builds only milestone 1/);
+      provisioned = [];
+      await provision(null);
+      assert.ok(!(provisioned[0]!.promptMarkdown as string).includes("## Milestones"), "the flag was off when the plan was made");
     });
   });
 });

@@ -35,6 +35,8 @@ let failUploads: RegExp | null = null;
 /** The fake sandbox's tags, and every update() call. */
 let tags: Record<string, string> | undefined;
 let updates: Array<Record<string, unknown>> = [];
+/** Commands and file writes, in the order the sandbox got them. */
+let order: string[] = [];
 
 const fakeSandbox = {
   get tags() {
@@ -47,6 +49,7 @@ const fakeSandbox = {
   runCommand: async (opts: { args: string[]; sudo?: boolean }) => {
     const script = opts.args[1] ?? "";
     scripts.push(script);
+    order.push(`run: ${script.split("\n").find((l) => l.trim() && l !== "set -e") ?? ""}`);
     if (opts.sudo) sudoScripts.push(script);
     if (onCommand) {
       const res = onCommand(script);
@@ -58,7 +61,10 @@ const fakeSandbox = {
     return { exitCode: 0, stdout: async () => stdout, stderr: async () => "" };
   },
   writeFiles: async (batch: Array<{ path: string; content: string | Buffer }>) => {
-    for (const f of batch) written.push({ path: f.path, bytes: Buffer.byteLength(f.content), text: String(f.content) });
+    for (const f of batch) {
+      written.push({ path: f.path, bytes: Buffer.byteLength(f.content), text: String(f.content) });
+      order.push(`write: ${f.path}`);
+    }
   },
   readFileToBuffer: async ({ path }: { path: string }) => (path in files ? Buffer.from(files[path]!) : null),
 };
@@ -104,6 +110,123 @@ beforeEach(() => {
   failUploads = null;
   tags = undefined;
   updates = [];
+  order = [];
+});
+
+// Wave 3, unit 2 (docs/CAPABILITIES.md, 2.5).
+describe("provisionSandbox with platform services", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const saved = { MODEL_API_KEY: process.env.MODEL_API_KEY, BUILDER_SNAPSHOT_ID: process.env.BUILDER_SNAPSHOT_ID };
+  const input = {
+    buildId: "b1",
+    productId: "11111111-2222-4333-8444-555555555555",
+    slug: "bird-count",
+    references: [],
+    fixtures: [{ fileName: "feeder.jpg", url: "https://b/feeder.jpg" }],
+    promptMarkdown: "# Build this product\n",
+    buildToken: "mm_build_sample",
+    gatewayUrl: "https://platform.example/api/gateway",
+  };
+  beforeEach(() => {
+    process.env.MODEL_API_KEY = "test-model-key";
+    process.env.BUILDER_SNAPSHOT_ID = "snap_test";
+    files = { "/vercel/musemuse/builder.json": "{}" };
+  });
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  };
+
+  it("applies the overlays before the user's files land, and writes the caps' env lines after envLocal's", async () => {
+    try {
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] }, capEnv: "MUSEMUSE_DATA=on\n", capHosts: ["pypi.example"] });
+      const at = (match: (line: string) => boolean) => order.findIndex(match);
+      const record = at((l) => l.startsWith("run: ") && l.includes("/vercel/musemuse/caps/active.json"));
+      const apply = at((l) => l.includes("musemuse.caps.json") && l.startsWith("run: if"));
+      const brief = at((l) => l === "write: /vercel/app/brief.md");
+      assert.ok(record >= 0 && apply > record && brief > apply, order.join("\n"));
+      assert.ok(sudoScripts.some((x) => x.includes("chown root:root '/vercel/musemuse/caps/active.json'")), "the record is root-owned");
+      const envWrites = written.filter((w) => w.path === "/vercel/app/.env.local");
+      assert.equal(envWrites.length, 1);
+      assert.match(envWrites[0]!.text, /\nPRODUCT_TOKEN=[^\n]+\nMUSEMUSE_DATA=on\n$/);
+      const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
+      assert.ok("pypi.example" in policy.allow);
+    } finally {
+      restore();
+    }
+  });
+
+  it("a change keeps the caps' env lines after envLocal's, and a product with none gets envLocal's alone", async () => {
+    try {
+      const base = { sandboxName: "product-bird-count-11111111", productId: input.productId, buildToken: "mm_build_sample", gatewayUrl: input.gatewayUrl, newReferences: [] };
+      await builder.reopenSandbox({ ...base, capEnv: "MUSEMUSE_DATA=on\n", capHosts: ["pypi.example"] });
+      const withCaps = written.filter((w) => w.path === "/vercel/app/.env.local");
+      assert.equal(withCaps.length, 1);
+      assert.match(withCaps[0]!.text, /\nPRODUCT_TOKEN=[^\n]+\nMUSEMUSE_DATA=on\n$/);
+      written = [];
+      await builder.reopenSandbox(base);
+      const plain = written.filter((w) => w.path === "/vercel/app/.env.local")[0]!.text;
+      assert.equal(withCaps[0]!.text, `${plain}MUSEMUSE_DATA=on\n`);
+    } finally {
+      restore();
+    }
+  });
+
+  it("writes the caps check's record of the gateway at provision and on a change, root-owned, with that run's token", async () => {
+    const saved = process.env.PLATFORM_URL;
+    try {
+      process.env.PLATFORM_URL = "https://platform.example";
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      const record = written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json");
+      assert.deepEqual(JSON.parse(record!.text), { url: input.gatewayUrl, token: "mm_build_sample" });
+      const move = sudoScripts.find((x) => x.includes("/vercel/musemuse/caps/gateway.json"));
+      assert.ok(move && move.includes("chown root:root '/vercel/musemuse/caps/gateway.json'") && !move.includes("mm_build_sample"));
+      written = [];
+      sudoScripts = [];
+      await builder.reopenSandbox({ sandboxName: "product-bird-count-11111111", productId: input.productId, buildToken: "mm_build_change", gatewayUrl: input.gatewayUrl, newReferences: [], caps: true });
+      assert.deepEqual(JSON.parse(written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json")!.text), { url: input.gatewayUrl, token: "mm_build_change" });
+      assert.ok(sudoScripts.some((x) => x.includes("/vercel/musemuse/caps/gateway.json")));
+      // A local run: the record says why there is no gateway, and has no token.
+      process.env.PLATFORM_URL = "http://localhost:3000";
+      written = [];
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      const local = JSON.parse(written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json")!.text);
+      assert.equal(local.url, null);
+      assert.equal(local.token, null);
+      assert.match(local.reason, /local run, so the build machine can't reach the gateway/);
+    } finally {
+      saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved);
+      restore();
+    }
+  });
+
+  it("refreshes the platform files on a local run whose pristine verify.mjs is from before caps, and refuses on the live site", async () => {
+    const savedVercel = process.env.VERCEL;
+    try {
+      onCommand = (script) => ({ exitCode: script.startsWith("grep -q 'musemuse_caps'") ? 1 : 0 });
+      process.env.MUSEMUSE_TEMPLATE_DIR = new URL("../../../template", import.meta.url).pathname;
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      assert.ok(written.some((w) => w.path === "/vercel/app/scripts/verify.mjs" && w.text.includes("musemuse_caps")), "verify.mjs was refreshed");
+      assert.ok(sudoScripts.some((x) => x.includes("/vercel/musemuse/pristine")), "and its pristine copy");
+      process.env.VERCEL = "1";
+      await assert.rejects(builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } }), /doesn't have the platform files that check platform services/);
+    } finally {
+      savedVercel === undefined ? delete process.env.VERCEL : (process.env.VERCEL = savedVercel);
+      delete process.env.MUSEMUSE_TEMPLATE_DIR;
+      restore();
+    }
+  });
+
+  it("does none of it for a brief with no caps", async () => {
+    try {
+      await builder.provisionSandbox(input);
+      assert.ok(!scripts.some((x) => x.includes("/vercel/musemuse/caps")));
+      assert.ok(!written.some((w) => w.path.includes("caps-gateway")), "no gateway record");
+      assert.equal(written.filter((w) => w.path === "/vercel/app/.env.local").length, 1);
+      const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
+      assert.ok(!("pypi.example" in policy.allow), "no cap host");
+    } finally {
+      restore();
+    }
+  });
 });
 
 describe("writeFixScreenshots", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {

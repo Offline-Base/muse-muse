@@ -1,6 +1,6 @@
 import { AsrInputError, asrJsonToForm } from "@/lib/gateway/asr";
 import { gatewayError } from "@/lib/gateway/errors";
-import { estimateCost } from "@/lib/gateway/estimate";
+import { estimateCost, fitOutputToBudget } from "@/lib/gateway/estimate";
 import {
   BadRequestError,
   clientIpKey,
@@ -42,6 +42,8 @@ export interface GatewayDeps extends RunCounters {
   tokenSpendToday(tokenId: string): Promise<number>;
   platformSpendToday(): Promise<number>;
   dailySpendCapUsd: number;
+  /** Wave 3, unit 2: ENGINE_FIT_OUTPUT. A call over the budget left runs with a lower max_output_tokens (fitOutputToBudget). */
+  fitOutputToBudget?: boolean;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   /** Takes one of `limit` slots for the key atomically. Returns the handle releaseInFlight needs, or null when full. */
@@ -298,6 +300,13 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
 }
 
 /** Budget check and reservation, then the upstream call. `metering` is set when usage is still being read. */
+/** Wave 3, unit 2: a Responses call that asks for a structured (json_schema) reply. */
+function wantsJsonSchema(parsed: ParsedRequest): boolean {
+  if (parsed.kind !== "json") return false;
+  const format = (parsed.json.text as { format?: { type?: unknown } } | undefined)?.format;
+  return format?.type === "json_schema";
+}
+
 async function forward(
   req: Request,
   endpoint: GatewayEndpoint,
@@ -311,9 +320,23 @@ async function forward(
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
-  const estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
+  let estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
+  // ---------- Wave 3, unit 2: fit max_output_tokens to what's left (docs/CAPABILITIES.md, section 8). Off by default ----------
+  // Only for a Muse Code session's token and, with ENGINE_FIT_OUTPUT, a build's: a live product's users get the clean
+  // budget message, never a reply cut short. A structured reply is never fitted, since cut-off JSON doesn't parse.
+  const fits = (token.scope as string) === "code_session" || (deps.fitOutputToBudget === true && token.scope === "build");
+  const fit = fits && !wantsJsonSchema(parsed)
+    ? fitOutputToBudget({ endpoint, parsed, bodyBytes: body.byteLength, mostSearches: call.mostSearches, estimate, leftUsd: budget - spent })
+    : null;
+  if (fit && parsed.kind === "json") {
+    parsed = { ...parsed, json: { ...parsed.json, max_output_tokens: fit.maxOutputTokens } };
+    body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    estimate = fit.estimate;
+    call = { ...call, notes: [...call.notes, `Set max_output_tokens to ${fit.maxOutputTokens}: that is what's left in ${token.scope === "build" ? "this build's" : "this product's"} Meta budget.`] };
+  }
+  // ---------- end Wave 3, unit 2 ----------
   if (spent >= budget || spent + estimate > budget) {
     // A build token's budget is the whole build's, so waiting for midnight only stalls the build.
     const whose =
@@ -351,6 +374,17 @@ async function forward(
     if (!reservation) return;
     await deps.settleSpend(reservation, null).catch((err) => console.error("[gateway] removing a reservation failed:", err));
   };
+  // ---------- Wave 3, unit 2: a fitted call took all that was left, so another call reserving at the same moment would
+  // overspend. Read the spend again, with this reservation in it, and refuse when two calls raced ----------
+  if (fit && reservation && (await deps.tokenSpendToday(token.id)) > budget + 1e-9) {
+    await unreserve();
+    return done(
+      gatewayError(429, "insufficient_quota", "budget_exceeded", `Another call took what was left of the $${budget.toFixed(2)} Meta budget at the same moment. Try again once it ends.`, {
+        retry: false,
+      }),
+    );
+  }
+  // ---------- end Wave 3, unit 2 ----------
 
   // asr/transcribe JSON extension: download the WAV and send Meta the multipart request.
   let upstreamBody: BodyInit = body;

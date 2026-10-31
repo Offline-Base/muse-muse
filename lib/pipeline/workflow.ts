@@ -33,8 +33,10 @@ import {
   fixturesStep,
   judgeStep,
   killStep,
+  liveCheckStep,
   loadBuildStep,
   loadRefineStep,
+  milestoneStep,
   museRoundStep,
   pollDeployStep,
   pollMuseStep,
@@ -53,6 +55,7 @@ import {
   startTaskWithEnvStep,
   verifyTimedOutStep,
   writeFixPromptStep,
+  writeMilestonePromptStep,
   type MusePollResult,
   type TaskPollResult,
   type VerifyResult,
@@ -69,7 +72,7 @@ import {
 } from "@/lib/pipeline/logic";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
-import { stepTimeoutMs } from "@/lib/pipeline/steps";
+import { capWithinWall, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -101,6 +104,28 @@ interface Ctx {
   model: BuildModel;
   /** Muse Code log round of this build's first run: 0 for a new product, REFINE_ROUND_STRIDE * n for refinement n. */
   roundBase: number;
+  /**
+   * The engine's round plan (docs/CAPABILITIES.md, section 8), set only when ENGINE_ROUND_SCALING or milestones are on.
+   * Without it every round runs on today's caps (STEPS) and no wall applies.
+   */
+  plan?: RoundPlan;
+  /** When the workflow started, for the plan's wall. */
+  startedAt?: number;
+}
+
+/** What the build room says when a round that hit its cap goes on to the checks (ENGINE_CHECK_ON_TIMEOUT). */
+const CHECKING_AFTER_CAP = "Muse Code was stopped at its time limit. Checking what it built.";
+
+/** The cap for a kind of round: the plan's when there is one, else today's. */
+function capFor(ctx: Ctx, kind: "build" | "fix" | "verify"): number {
+  const plan = ctx.plan;
+  if (!plan) return stepTimeoutMs(kind);
+  return kind === "build" ? plan.buildMs : kind === "fix" ? plan.fixMs : plan.verifyMs;
+}
+
+/** A round's cap inside the plan's wall, or null when too little is left. Today's cap when there is no plan. */
+function capInWall(ctx: Ctx, capMs: number, reserveMs: number): number | null {
+  return capWithinWall({ capMs, startedAt: ctx.startedAt ?? Date.now(), now: Date.now(), wallMs: ctx.plan?.wallMs ?? null, reserveMs });
 }
 
 async function assertSpendOk(): Promise<void> {
@@ -137,6 +162,8 @@ async function runMuse(
     model: ctx.model,
     round,
     buildId: ctx.buildId,
+    // A scaled round asks for its own session time (lib/sandbox/builder.ts startMuse). Today's rounds don't pass it.
+    ...(ctx.plan ? { capMs: run.capMs } : {}),
   });
   if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
@@ -230,7 +257,7 @@ async function runTask(
 const LAST_ROUND_VERIFY_ENV = { MUSEMUSE_SCREEN_CHECK: "warn" };
 
 async function runVerify(ctx: Ctx, round: number, lastRound: boolean): Promise<VerifyResult> {
-  const capMs = stepTimeoutMs("verify");
+  const capMs = capFor(ctx, "verify");
   const task = await runTask(ctx.sandboxName, "verify", capMs, lastRound ? LAST_ROUND_VERIFY_ENV : undefined);
   if (task.timedOut) return verifyTimedOutStep({ buildId: ctx.buildId, round, minutes: Math.round(capMs / 60_000) });
   return collectVerifyStep({
@@ -269,17 +296,32 @@ interface Checks {
 /**
  * Verify, then judge if verify passed. On failure, resume the same Muse Code session with fix-<n>.md (and the
  * screenshots the judge saw, when it ran) and check again, up to MAX_FIX_ROUNDS. Returns the last result.
+ *
+ * `offset` is the Muse Code round the checks start after: 0, or the last milestone's round, so fix rounds number from
+ * milestones + fix and logs never share a round. Milestones plus fixes stay under REFINE_ROUND_STRIDE. With a round
+ * plan, a fix round that wouldn't fit before the build's wall isn't started, and the verify before it counts as the last.
  */
-async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine"): Promise<Checks> {
-  const rounds = maxFixRounds();
+async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", offset = 0): Promise<Checks> {
+  const rounds = Math.min(maxFixRounds(), REFINE_ROUND_STRIDE - 1 - offset);
   for (let fix = 0; ; ) {
-    const round = fix;
+    const round = offset + fix;
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify" });
-    const verify = await runVerify(ctx, round, kind === "build" && fix >= rounds);
+    const verifyMs = capFor(ctx, "verify");
+    // Room for this verify and its judge, a fix round, and the verify and judge after it.
+    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), 2 * (verifyMs + JUDGE_RESERVE_MS)) !== null;
+    const last = fix >= rounds || !roomForFix;
+    const verify = await runVerify(ctx, round, kind === "build" && last);
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
+    // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
+    // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
+    const fixCap = roomForFix ? capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) : null;
+    if (fixCap === null) {
+      await emitStep(ctx.buildId, { type: "log", text: "The build is near its time limit, so no more fix rounds run." });
+      return { passed, steps: verify.steps, fixes: fix, judge: judged };
+    }
 
     fix += 1;
     track.stage = "fix";
@@ -297,9 +339,52 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine"): Pr
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
     // stopped is not, and no fix round comes after it.
-    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: fix, capMs: stepTimeoutMs("fix") });
+    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap });
     if (fixed.stopped) throw stoppedByOwner(kind);
   }
+}
+
+/**
+ * Milestone builds (ENGINE_MILESTONES, docs/CAPABILITIES.md section 8). Round 0 built milestone 1. For each milestone
+ * after it: a strict verify with no judge, then milestone-<n>.md (with that verify's failures, if any) in the same
+ * session as round n - 1. A milestone that wouldn't fit before the build's wall is skipped, and the checks run on what
+ * was built. Returns the Muse Code round of the last milestone that ran, where the fix rounds start from.
+ */
+async function runMilestones(ctx: Ctx, track: Track, list: Array<{ title: string }>): Promise<number> {
+  const of = list.length;
+  const verifyMs = capFor(ctx, "verify");
+  for (let n = 2; n <= of; n++) {
+    track.stage = "verify";
+    await setStatusStep(ctx.buildId, "verifying", { step: "verify", message: `Checking milestone ${n - 1} of ${of}` });
+    const verify = await runVerify(ctx, n - 2, false);
+    await milestoneStep(ctx.buildId, { index: n - 1, of, title: list[n - 2]!.title, state: verify.passed ? "passed" : "failed" });
+    const cap = capInWall(ctx, capFor(ctx, "build"), 2 * verifyMs);
+    if (cap === null) {
+      for (let k = n; k <= of; k++) await milestoneStep(ctx.buildId, { index: k, of, title: list[k - 1]!.title, state: "skipped" });
+      await emitStep(ctx.buildId, {
+        type: "log",
+        text: `The build is near its time limit, so milestone ${n} of ${of} and any after it were skipped. The checks run on what was built.`,
+      });
+      return n - 2;
+    }
+    const prompt = await writeMilestonePromptStep({ buildId: ctx.buildId, sandboxName: ctx.sandboxName, index: n, of, verifiedRound: n - 2 });
+    await assertSpendOk();
+    track.stage = "build";
+    await setStatusStep(ctx.buildId, "building", { step: "build", message: `Milestone ${n} of ${of}` });
+    await milestoneStep(ctx.buildId, { index: n, of, title: list[n - 1]!.title, state: "building" });
+    const run = await runMuse(ctx, { promptFile: prompt.promptFile, images: [], round: n - 1, capMs: cap });
+    if (run.stopped) throw stoppedByOwner("build");
+    if (run.timedOut) await emitStep(ctx.buildId, { type: "log", text: CHECKING_AFTER_CAP });
+  }
+  return of - 1;
+}
+
+/** What shipped: the live URL (null when publishing is off), the outcome registered, and why the live check failed. */
+interface Shipped {
+  liveUrl: string | null;
+  outcome: Exclude<Outcome, "failed">;
+  /** Set when ENGINE_LIVE_SMOKE's check of the live link failed, which ships the product as partial. */
+  liveFailure: string | null;
 }
 
 /**
@@ -310,7 +395,7 @@ async function ship(
   ctx: Ctx,
   track: Track,
   product: { name: string; tagline: string; outcome: Exclude<Outcome, "failed"> },
-): Promise<string | null> {
+): Promise<Shipped> {
   track.stage = "record";
   await setStatusStep(ctx.buildId, "recording", { step: "record" });
   let demoVideoUrl: string | null = null;
@@ -366,7 +451,7 @@ async function ship(
       demoPosterUrl,
       status: product.outcome,
     });
-    return null;
+    return { liveUrl: null, outcome: product.outcome, liveFailure: null };
   }
   await setStatusStep(ctx.buildId, "deploying", { step: "deploy" });
   const deploy = await startDeployStep({
@@ -391,6 +476,19 @@ async function ship(
   }
   await emitStep(ctx.buildId, { type: "deploy", url: liveUrl });
 
+  // The live check (ENGINE_LIVE_SMOKE): the live link and its routes answer, with no model call. A product that passed
+  // on the build machine but not on its link ships as partial, so its page says so.
+  let outcome = product.outcome;
+  let liveFailure: string | null = null;
+  if (env.engineLiveSmoke) {
+    track.stage = "live_check";
+    const check = await liveCheckStep({ buildId: ctx.buildId, sandboxName: ctx.sandboxName, url: liveUrl });
+    if (!check.ok) {
+      liveFailure = check.reason ?? "it did not answer";
+      outcome = "partial";
+    }
+  }
+
   track.stage = "register";
   await setStatusStep(ctx.buildId, "deploying", { step: "register" });
   await registerStep({
@@ -403,9 +501,9 @@ async function ship(
     liveTokenId: deploy.liveTokenId,
     demoVideoUrl,
     demoPosterUrl,
-    status: product.outcome,
+    status: outcome,
   });
-  return liveUrl;
+  return { liveUrl, outcome, liveFailure };
 }
 
 /** How a run ended. Written as the build's status only after cleanup. */
@@ -423,16 +521,18 @@ async function finish(
   checks: Checks,
   failedMessage: string,
 ): Promise<Ending> {
-  const outcome = decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
-  if (outcome === "failed") throw new BuildStop(failedMessage);
-  const liveUrl = await ship(ctx, track, { ...product, outcome });
+  const decided = decideOutcome({ kind, passed: checks.passed, steps: checks.steps, judge: checks.judge });
+  if (decided === "failed") throw new BuildStop(failedMessage);
+  const { liveUrl, outcome, liveFailure } = await ship(ctx, track, { ...product, outcome: decided });
   return {
     status: outcome,
     message: !liveUrl
       ? `Finished as ${outcome} without publishing to its own link.`
-      : outcome === "live"
-        ? `Live at ${liveUrl}`
-        : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,
+      : liveFailure
+        ? `Shipped as partial at ${liveUrl}. It passed on the build machine, but failed on its live link: ${liveFailure}`
+        : outcome === "live"
+          ? `Live at ${liveUrl}`
+          : `Shipped as partial at ${liveUrl}. It runs and passes its tests, but the screenshot judge found parts of the brief it doesn't do yet.`,
   };
 }
 
@@ -490,6 +590,7 @@ async function startProof(buildId: string, runId: string | null): Promise<void> 
 export async function buildProduct(input: BuildProductInput): Promise<BuildProductResult> {
   "use workflow";
   const { buildId } = input;
+  const startedAt = Date.now();
   const track: Track = { stage: "start" };
   let productId: string | null = null;
   let sandboxName: string | null = null;
@@ -518,24 +619,46 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     const fixtures = await fixturesStep(buildId);
     const box = await provisionStep({ buildId, productId, slug: product.slug, fixtures });
     sandboxName = box.sandboxName;
-    const ctx: Ctx = { buildId, productId, sandboxName, sessionId: box.sessionId, model: brief.model, roundBase: 0 };
+    const ctx: Ctx = {
+      buildId,
+      productId,
+      sandboxName,
+      sessionId: box.sessionId,
+      model: brief.model,
+      roundBase: 0,
+      ...(brief.plan ? { plan: brief.plan, startedAt } : {}),
+    };
+    const milestones = brief.plan?.milestones ?? [];
 
     track.stage = "build";
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
-    const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: stepTimeoutMs("build") });
+    if (milestones.length > 1) await milestoneStep(buildId, { index: 1, of: milestones.length, title: milestones[0]!.title, state: "building" });
+    const firstCap = capFor(ctx, "build");
+    const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: firstCap });
     if (built.stopped) throw stoppedByOwner("build");
-    if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped.");
-    if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line, so nothing was built.");
-    if (built.exitCode !== MUSE_EXIT.completed) {
-      await emitStep(buildId, { type: "log", text: "Muse Code ended with an error. Checking what it wrote." });
+    if (built.timedOut) {
+      // A first round stopped at its cap is checked like a fix round (ENGINE_CHECK_ON_TIMEOUT): it may have built enough.
+      if (!env.engineCheckOnTimeout) throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped.`);
+      await emitStep(buildId, { type: "log", text: CHECKING_AFTER_CAP });
+    } else {
+      if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line, so nothing was built.");
+      if (built.exitCode !== MUSE_EXIT.completed) {
+        await emitStep(buildId, { type: "log", text: "Muse Code ended with an error. Checking what it wrote." });
+      }
     }
+    const offset = milestones.length > 1 ? await runMilestones(ctx, track, milestones) : 0;
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });
     await preview(ctx);
 
-    const checks = await checkAndFix(ctx, track, "build");
+    const checks = await checkAndFix(ctx, track, "build", offset);
+    if (milestones.length > 1) {
+      // The last milestone that ran is decided by the checks and fix rounds after it.
+      const ran = offset + 1;
+      await milestoneStep(buildId, { index: ran, of: milestones.length, title: milestones[ran - 1]!.title, state: checks.passed ? "passed" : "failed" });
+    }
     track.stage = "verify";
     ending = await finish(
       ctx,
@@ -558,6 +681,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
 export async function refineProduct(input: BuildProductInput): Promise<BuildProductResult> {
   "use workflow";
   const { buildId } = input;
+  const startedAt = Date.now();
   const track: Track = { stage: "start" };
   let productId: string | null = null;
   let sandboxName: string | null = null;
@@ -592,20 +716,27 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       sessionId: refine.sessionId,
       model: refine.model,
       roundBase: refine.refineIndex * REFINE_ROUND_STRIDE,
+      ...(refine.plan ? { plan: refine.plan, startedAt } : {}),
     };
 
     track.stage = "build";
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
+    const firstCap = capFor(ctx, "build");
     const built = await runMuse(ctx, {
       promptFile: reopened.promptFile,
       images: reopened.images,
       round: 0,
-      capMs: stepTimeoutMs("build"),
+      capMs: firstCap,
     });
     if (built.stopped) throw stoppedByOwner("refine");
-    if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped. The live version was kept.");
-    if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line. The live version was kept.");
+    // A change stopped at its cap stops here even with ENGINE_CHECK_ON_TIMEOUT: the judge checks the product's brief,
+    // not the change, so a half-made change could pass and replace the live version. The live version is kept.
+    if (built.timedOut) {
+      throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped. The live version was kept.`);
+    } else if (built.exitCode === MUSE_EXIT.usage) {
+      throw new BuildStop("Muse Code refused its command line. The live version was kept.");
+    }
 
     track.stage = "preview";
     await setStatusStep(buildId, "previewing", { step: "preview" });

@@ -1,0 +1,123 @@
+/**
+ * With every wave 3 flag off, every wave 3 gateway route answers 404 unknown_endpoint and touches no dependency
+ * (docs/CAPABILITIES.md, section 1). Each unit adds its routes to ROUTES.
+ *
+ *   npx tsx --test lib/gateway/__tests__/caps-off.test.ts
+ */
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { CAPS_PROOF_PER_MINUTE, handleCapsProof, type CapsProofDeps } from "@/lib/caps/proof";
+import { CAP_FLAG, CAP_IDS } from "@/lib/caps/ids";
+import { env } from "@/lib/env";
+
+/** A dependency that fails the test if anything calls it. */
+const untouched = <T extends (...args: never[]) => unknown>(name: string) =>
+  ((..._args: never[]) => {
+    throw new Error(`${name} was called with its flag off`);
+  }) as unknown as T;
+
+const ROUTES: Array<{ path: string; call(req: Request): Promise<Response> }> = [
+  // Unit 2: what the gateway saw for a build's namespace.
+  {
+    path: "caps/proof",
+    call: (req) =>
+      handleCapsProof(req, {
+        enabledCaps: () => env.enabledCaps,
+        findToken: untouched<CapsProofDeps["findToken"]>("findToken"),
+        productStatus: untouched<CapsProofDeps["productStatus"]>("productStatus"),
+        hitRateLimits: untouched<CapsProofDeps["hitRateLimits"]>("hitRateLimits"),
+        counters: {},
+      }),
+  },
+];
+
+describe("wave 3 gateway routes with every flag off", () => {
+  for (const flag of CAP_IDS.map((id) => CAP_FLAG[id])) delete process.env[flag];
+
+  for (const route of ROUTES) {
+    it(`/${route.path} answers 404 unknown_endpoint, whatever the method and token`, async () => {
+      for (const method of ["GET", "POST"]) {
+        const req = new Request(`https://platform.example/api/gateway/${route.path}`, {
+          method,
+          headers: { authorization: "Bearer mm_build_anything_anything_anything" },
+          ...(method === "POST" ? { body: "{}" } : {}),
+        });
+        const res = await route.call(req);
+        assert.equal(res.status, 404, method);
+        const body = (await res.json()) as { error: { code: string; type: string } };
+        assert.equal(body.error.code, "unknown_endpoint");
+        assert.equal(body.error.type, "not_found_error");
+      }
+    });
+  }
+});
+
+describe("/caps/proof with a cap on", () => {
+  const NOW = new Date("2026-10-31T18:00:00Z");
+  const token = (over: Partial<{ scope: string; buildId: string | null }> = {}) => ({ id: "tok-1", scope: "build", buildId: "11111111-1111-4111-8111-111111111111", productId: "p1", ...over });
+  const get = (auth?: string, query = "") => new Request(`https://platform.example/api/gateway/caps/proof${query}`, { headers: auth ? { authorization: auth } : {} });
+  let windows: Array<Date | null> = [];
+  let hits = 0;
+  const deps = (t: ReturnType<typeof token> | null, over: Partial<CapsProofDeps> = {}): CapsProofDeps => ({
+    enabledCaps: () => ["data"],
+    findToken: async () => t,
+    productStatus: async () => "building",
+    hitRateLimits: async (keys) => Object.fromEntries(keys.map((k) => [k, ++hits])),
+    counters: {
+      data: async (buildId, { since }) => {
+        windows.push(since);
+        return { rows: buildId.length > 0 ? 3 : 0 };
+      },
+    },
+    now: () => NOW,
+    ...over,
+  });
+
+  it("answers a build token tied to its build with the counters for its namespace", async () => {
+    const res = await handleCapsProof(get("Bearer mm_build_x"), deps(token()));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { buildId: "11111111-1111-4111-8111-111111111111", namespace: "b:11111111-1111-4111-8111-111111111111", since: null, caps: { data: { rows: 3 } } });
+  });
+
+  it("counts only from since, the time a verify started, so an earlier round's rows never pass a later verify", async () => {
+    windows = [];
+    const res = await handleCapsProof(get("Bearer x", "?since=2026-10-31T17:50:00.000Z"), deps(token()));
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { since: string }).since, "2026-10-31T17:50:00.000Z");
+    assert.deepEqual(windows, [new Date("2026-10-31T17:50:00.000Z")]);
+    for (const bad of ["?since=yesterday", "?since=2026-11-01T18:00:00Z", "?since=2026-10-20T00:00:00Z"]) {
+      const refused = await handleCapsProof(get("Bearer x", bad), deps(token()));
+      assert.equal(refused.status, 400, bad);
+      assert.equal(((await refused.json()) as { error: { code: string } }).error.code, "invalid_arguments");
+    }
+  });
+
+  it("refuses no token, a live token, a build token with no build, and a product that is off", async () => {
+    assert.equal((await handleCapsProof(get(), deps(token()))).status, 401);
+    assert.equal((await handleCapsProof(get("Bearer x"), deps(null))).status, 401);
+    assert.equal((await handleCapsProof(get("Bearer x"), deps(token({ scope: "live" })))).status, 403);
+    assert.equal((await handleCapsProof(get("Bearer x"), deps(token({ buildId: null })))).status, 403);
+    for (const status of ["disabled", "failed", null] as const) {
+      const res = await handleCapsProof(get("Bearer x"), deps(token(), { productStatus: async () => status }));
+      assert.equal(res.status, 403, String(status));
+      assert.equal(((await res.json()) as { error: { code: string } }).error.code, "product_disabled");
+    }
+  });
+
+  it("rate limits one token's reads", async () => {
+    hits = CAPS_PROOF_PER_MINUTE;
+    const res = await handleCapsProof(get("Bearer x"), deps(token()));
+    assert.equal(res.status, 429);
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, "rate_limited");
+    hits = 0;
+  });
+
+  it("answers 405 to a POST and 502 when a counter fails", async () => {
+    const post = new Request("https://platform.example/api/gateway/caps/proof", { method: "POST", headers: { authorization: "Bearer x" } });
+    assert.equal((await handleCapsProof(post, deps(token()))).status, 405);
+    const failing: CapsProofDeps = { ...deps(token()), counters: { data: async () => { throw new Error("db down"); } } };
+    const res = await handleCapsProof(get("Bearer x"), failing);
+    assert.equal(res.status, 502);
+    assert.equal(((await res.json()) as { error: { code: string } }).error.code, "cap_failed");
+  });
+});

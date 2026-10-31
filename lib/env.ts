@@ -1,4 +1,5 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
+import { CAP_FLAG, CAP_IDS, CAP_NEEDS_BUILDER, CAP_READY, type CapId } from "@/lib/caps/ids";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
@@ -627,5 +628,48 @@ export const env = {
   /** Live docs calls one client IP may have running at once. */
   get docsIpInFlight() {
     return number("DOCS_IP_IN_FLIGHT", 4);
+  },
+
+  // ---------- Wave 3, unit 2: engine (docs/CAPABILITIES.md) ----------
+
+  /** ENGINE_CHECK_ON_TIMEOUT: a first round that hits its time cap goes on to the checks and fix rounds instead of failing. */
+  get engineCheckOnTimeout(): boolean {
+    return flag("ENGINE_CHECK_ON_TIMEOUT");
+  },
+  /** ENGINE_ROUND_SCALING: round time grows with the brief (roundCapMs in lib/pipeline/steps.ts). */
+  get engineRoundScaling(): boolean {
+    return flag("ENGINE_ROUND_SCALING");
+  },
+  /** The longest a scaled first round may run, in minutes. Held to 25 (today's round) through 90 (the build's wall). */
+  get engineRoundMaxMinutes(): number {
+    return Math.min(90, Math.max(25, number("ENGINE_ROUND_MAX_MINUTES", 45)));
+  },
+  /** ENGINE_MILESTONES: the brief writer may split a big brief into 2 or 3 milestones, built in chained rounds. */
+  get engineMilestones(): boolean {
+    return flag("ENGINE_MILESTONES");
+  },
+  /** ENGINE_LIVE_SMOKE: after deploy, the live link is loaded (no model call) before the product is marked live. */
+  get engineLiveSmoke(): boolean {
+    return flag("ENGINE_LIVE_SMOKE");
+  },
+  /** ENGINE_EXACT_LOGIC: the brief writer says when a product's main claim needs real code (a parser, a solver), not a model. */
+  get engineExactLogic(): boolean {
+    return flag("ENGINE_EXACT_LOGIC");
+  },
+  /**
+   * ENGINE_FIT_OUTPUT: a Responses call whose max_output_tokens the token's budget can't cover runs with a lower
+   * max_output_tokens instead of being refused (fitOutputToBudget in lib/gateway/estimate.ts).
+   */
+  get engineFitOutput(): boolean {
+    return flag("ENGINE_FIT_OUTPUT");
+  },
+  /**
+   * The caps a new brief may ask for (docs/CAPABILITIES.md, 2.1): ready and switched on. On production, caps that need a
+   * signed-in builder stay off until TRUST_SIGNED_IN_CAPS (unit 1) is on. Empty means every brief is as it is today.
+   */
+  get enabledCaps(): CapId[] {
+    const production = process.env.VERCEL_ENV === "production";
+    const signedIn = flag("TRUST_SIGNED_IN_CAPS");
+    return CAP_IDS.filter((c) => CAP_READY[c] && flag(CAP_FLAG[c]) && (!production || signedIn || !CAP_NEEDS_BUILDER[c]));
   },
 };

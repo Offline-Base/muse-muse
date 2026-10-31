@@ -81,16 +81,22 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  CAPS_VERIFY_MARKER,
+  CORE_CAPS_MARKER,
   TARGET_OVERLAYS,
   TARGET_PLATFORM_MARKER,
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { installCaps, installTargets, makeDirs, readCapFiles, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
+  activeCapsScript,
   activeTargetsScript,
+  applyCapsScript,
   applyTargetScript,
+  capsGatewayScript,
+  capsGatewayText,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -236,13 +242,15 @@ function productsCallMetaDirectly(): boolean {
   return publicHost(env.platformUrl) === null;
 }
 
-function lockedPolicy(sandboxName: string) {
+function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
   return builderNetworkPolicy({
     modelApiKey: env.modelApiKey,
     placeholderKey: sandboxPlaceholder(sandboxName),
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
     directProducts: productsCallMetaDirectly(),
+    // Hosts a brief's caps need (lib/caps/hosts.ts). None for every product today.
+    ...(capHosts.length ? { capHosts } : {}),
   });
 }
 
@@ -397,6 +405,13 @@ export interface ProvisionInput {
   extraFiles?: Array<{ path: string; content: string }>;
   /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
   targets?: readonly string[];
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a brief with no cap blocks ----------
+  /** The caps and overlays: applied right after the template is in place, and written to musemuse.caps.json. */
+  caps?: { caps: string[]; overlays: string[] };
+  /** Lines appended to .env.local (capBuildEnv). */
+  capEnv?: string;
+  /** Hosts the caps' build may reach (capBuildHosts). */
+  capHosts?: string[];
 }
 
 /** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
@@ -436,6 +451,50 @@ async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: read
 }
 
 /**
+ * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
+ * commit. It runs right after the targets and before anything from the user lands in the product, so the "Caps: ..."
+ * commit holds platform files only. A snapshot made with template/caps has them already. In one from before them, a local
+ * run takes them from this checkout, along with the newer platform files whose verify runs the caps step. The live site
+ * can't, since its functions have no template/, so a cap whose flag is on there needs a new snapshot.
+ */
+async function applyCaps(sandbox: Sandbox, sandboxName: string, caps: { caps: string[]; overlays: string[] }): Promise<void> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  const installed = await ok(`[ -f ${q(CORE_CAPS_MARKER)} ]`);
+  const stale = !(await ok(`grep -q ${q(CAPS_VERIFY_MARKER)} ${q(`${PRISTINE_DIR}/scripts/verify.mjs`)}`));
+  if (!installed || stale) {
+    const needs = !installed ? "the platform service overlays" : "the platform files that check platform services";
+    if (process.env.VERCEL) throw new Error(`This builder snapshot doesn't have ${needs}. Make a new one with npm run snapshot before turning a cap's flag on.`);
+    const dir = LOCAL_TEMPLATE_DIR();
+    if (!installed) {
+      const files = await readCapFiles(dir);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have ${needs}, and there's no ${dir}/caps here to add them from.`);
+      await installCaps(sandbox, files, () => {});
+    }
+    if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
+  }
+  await sh(sandbox, activeCapsScript(caps), { sudo: true });
+  await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
+
+/**
+ * Writes the caps check's record of the gateway (CAPS_GATEWAY_FILE): the gateway's address and this build's token, or,
+ * on a local run, why the build machine can't reach it. verify's caps step reads this, never the product's .env.local.
+ */
+async function writeCapsGateway(sandbox: Sandbox, gatewayUrl: string, buildToken: string): Promise<void> {
+  const record = productsCallMetaDirectly()
+    ? { url: null, token: null, reason: "this is a local run, so the build machine can't reach the gateway. Test platform services with a public PLATFORM_URL" }
+    : { url: gatewayUrl, token: buildToken };
+  const from = `${RUN_DIR}/caps-gateway.json`;
+  await sandbox.writeFiles([{ path: from, content: capsGatewayText(record) }]);
+  await sh(sandbox, capsGatewayScript(from), { sudo: true });
+}
+
+/** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
+function withCapEnv(text: string, capEnv: string | undefined): string {
+  return capEnv ? `${text.replace(/\n*$/, "\n")}${capEnv}` : text;
+}
+
+/**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
  * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). A brief's targets go in before the user's
@@ -469,14 +528,18 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     // Slow path for scripts (about a minute): install everything from scratch with open egress.
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
     const dir = LOCAL_TEMPLATE_DIR();
-    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir));
+    await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir), await readCapFiles(dir));
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
-  await sandbox.update({ networkPolicy: lockedPolicy(name) });
+  await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
 
   const targets = input.targets ?? [];
   if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
+  // ---------- Wave 3, unit 2: a brief's cap overlays, right after its targets and before the user's files, so their
+  // commit holds platform files only (docs/CAPABILITIES.md, 2.5). Nothing for a brief with no cap blocks ----------
+  if (input.caps) await applyCaps(sandbox, name, input.caps);
+  // ---------- end Wave 3, unit 2 ----------
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -487,8 +550,9 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     ...downloaded,
     ...(await productWrites(sandbox, input.extraFiles ?? [])),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
   return { sandboxName: name };
 }
 
@@ -501,10 +565,17 @@ export async function reopenSandbox(input: {
   newReferences: Reference[];
   /** Written only where missing: a product from before its target's files, and never over what Muse Code changed. */
   extraFiles?: Array<{ path: string; content: string }>;
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a product with no cap blocks ----------
+  /** Hosts the product's caps need, so a refinement keeps them (capBuildHosts). */
+  capHosts?: string[];
+  /** Lines appended to .env.local after envLocal's (capBuildEnv), as provisioning does, so a refinement keeps them. */
+  capEnv?: string;
+  /** True for a product with caps: the caps check's record of the gateway gets this change's token. */
+  caps?: boolean;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
-  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName) });
+  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
@@ -513,8 +584,9 @@ export async function reopenSandbox(input: {
   await writeBatched(sandbox, [
     ...downloaded,
     ...(await productWrites(sandbox, missing)),
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
 }
 
 /**
@@ -789,6 +861,8 @@ export interface StartMuseInput {
   goal?: string | null;
   /** The build, for its build MCP token under MUSE_FULL. Without it the round runs without the build MCP server. */
   buildId?: string;
+  /** A scaled round's cap (ENGINE_ROUND_SCALING): the session keeps the cap plus a poll's time. Unset keeps LONG_WORK_MS. */
+  capMs?: number;
 }
 
 export interface MuseStart {
@@ -898,7 +972,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   const tag = `muse-r${input.round}`;
 
   const sandbox = await openSandbox(input.sandboxName);
-  await ensureTime(sandbox, LONG_WORK_MS);
+  await ensureTime(sandbox, input.capMs ? Math.max(LONG_WORK_MS, input.capMs + POLL_WORK_MS) : LONG_WORK_MS);
   const running = await runningCommand(sandbox, tag);
   if (running) {
     const engine = await roundEngine(sandbox, input.round);

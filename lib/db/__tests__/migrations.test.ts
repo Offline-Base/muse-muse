@@ -31,6 +31,14 @@ const snapshot = (idx: number) => JSON.parse(readFileSync(join(FOLDER, `meta/${S
 
 const database = (client: PGlite) => drizzle({ client, schema });
 
+/**
+ * Wave 3's migrations, in the agreed order (docs/CAPABILITIES.md, section 4). 0016 and 0017 are the General session's;
+ * each wave 3 unit appends its tag here. Until every lower number has merged, a wave 3 entry's tag number can be ahead
+ * of its index: the journal stays in order and its times follow the contract's rule.
+ */
+const WAVE3_TAGS = ["0016_code_sessions", "0017_decide", "0018_trust", "0019_engine"];
+const tagNumber = (tag: string) => Number(tag.slice(0, 4));
+
 /** A copy of the migrations that stops at `lastIdx`, as a database that hasn't had the newer ones would have seen. */
 function folderThrough(lastIdx: number): string {
   const dir = mkdtempSync(join(tmpdir(), "mm-migrations-"));
@@ -53,7 +61,8 @@ describe("the migration folder", () => {
   it("has a journal that runs in order from 0000, each entry with its file and snapshot", () => {
     journal.entries.forEach((e, i) => {
       assert.equal(e.idx, i);
-      assert.ok(e.tag.startsWith(String(i).padStart(4, "0")), e.tag);
+      if (i <= 15) assert.ok(e.tag.startsWith(String(i).padStart(4, "0")), e.tag);
+      else assert.ok(WAVE3_TAGS.includes(e.tag) && tagNumber(e.tag) >= i, e.tag);
       assert.ok(existsSync(join(FOLDER, `${e.tag}.sql`)), `${e.tag}.sql`);
       assert.ok(existsSync(join(FOLDER, `meta/${String(i).padStart(4, "0")}_snapshot.json`)), `snapshot ${i}`);
     });
@@ -71,8 +80,12 @@ describe("the migration folder", () => {
     for (let i = 1; i < journal.entries.length; i++) assert.equal(snapshot(i).prevId, snapshot(i - 1).id, `snapshot ${i}`);
   });
 
-  it("names the unit's three migrations in the agreed order", () => {
-    assert.deepEqual(journal.entries.slice(13).map((e) => e.tag), ["0013_agents", "0014_native", "0015_product_clips"]);
+  it("names 0013 to 0015 and then wave 3's migrations in the agreed order, with the agreed journal times", () => {
+    const tags = journal.entries.slice(13).map((e) => e.tag);
+    assert.deepEqual(tags.slice(0, 3), ["0013_agents", "0014_native", "0015_product_clips"]);
+    const wave3 = tags.slice(3);
+    assert.deepEqual(wave3, WAVE3_TAGS.filter((t) => wave3.includes(t)), "wave 3 tags in contract order");
+    for (const e of journal.entries.slice(16)) assert.equal(e.when, 1793431490646 + (tagNumber(e.tag) - 15) * 60000, e.tag);
   });
 
   it("matches lib/db/schema.ts: generating now would write nothing", async () => {
@@ -227,9 +240,43 @@ describe("a database already at 0012", () => {
     assert.equal(usage!.units, 0);
     assert.ok((await columns(client, "native_jobs")).has("token_hash"));
     assert.ok((await columns(client, "native_jobs")).has("selftest"));
+    // 0019_engine: nullable, no default, so old rows read null and nothing was backfilled.
+    assert.equal(build!.roundPlan, null);
+    assert.equal(build!.liveCheck, null);
+    assert.equal((await columns(client, "builds")).get("round_plan")?.nullable, true);
+    assert.equal((await columns(client, "gateway_tokens")).get("build_id")?.nullable, true);
 
     const units = (await columns(client, "usage")).get("units");
     assert.equal(units?.nullable, false);
+    await client.close();
+  });
+
+  it("0019_engine: a database at 0015 keeps its builds and tokens, which read null for the new columns", async () => {
+    const dir = folderThrough(15);
+    dirs.push(dir);
+    const client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: dir });
+    assert.ok(!(await columns(client, "gateway_tokens")).has("build_id"));
+    const [userId, museId, productId, buildId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await client.exec(`
+      insert into users (id, email) values ('${userId}', 'old@example.com');
+      insert into inspirations (id, user_id, note) values ('${museId}', '${userId}', 'An old muse');
+      insert into products (id, slug, name, owner_id, status) values ('${productId}', 'old-one', 'Old One', '${userId}', 'live');
+      insert into builds (id, inspiration_id, user_id, product_id, status) values ('${buildId}', '${museId}', '${userId}', '${productId}', 'live');
+      insert into gateway_tokens (product_id, token_hash, scope, allowed_models, daily_budget_usd) values ('${productId}', 'h1', 'live', '["muse-wonder-1.0"]', 2);
+    `);
+    await migrate(db, { migrationsFolder: FOLDER });
+    const typed = database(client);
+    const [token] = await typed.select().from(schema.gatewayTokens);
+    assert.equal(token!.tokenHash, "h1");
+    assert.equal(token!.buildId, null);
+    const [build] = await typed.select().from(schema.builds);
+    assert.equal(build!.status, "live");
+    assert.equal(build!.roundPlan, null);
+    await typed.update(schema.gatewayTokens).set({ buildId }).where(eq(schema.gatewayTokens.id, token!.id));
+    const [tied] = await typed.select().from(schema.gatewayTokens);
+    assert.equal(tied!.buildId, buildId);
     await client.close();
   });
 

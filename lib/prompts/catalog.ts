@@ -1,6 +1,7 @@
 import catalog from "@/catalog/meta-models.json";
 import { PRICES } from "@/lib/meta/pricing";
 import { PRODUCT_MODELS } from "@/lib/brief/schema";
+import { capsCatalogBlocks, howProductsRun } from "@/lib/caps/catalog";
 import { env } from "@/lib/env";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
@@ -139,14 +140,20 @@ function agentToolsBlock(personal: boolean): string[] {
 
 const cached = new Map<string, string>();
 
-/** The catalog summary pasted into the brief writer's instructions. */
+/**
+ * The catalog summary pasted into the brief writer's instructions. With caps on (docs/CAPABILITIES.md, 2.6), the first
+ * and third "How products run" bullets come from howProductsRun and each cap's block follows the agent block. With none
+ * on, the text is today's, byte for byte.
+ */
 export function catalogSummary(): string {
   const gadgets = env.gadgetsEnabled;
   const agents = env.agentsEnabled;
   const personal = agents && env.composioPersonalEnabled;
-  const key = `${gadgets}|${agents}|${personal}`;
+  const caps = env.enabledCaps;
+  const key = `${gadgets}|${agents}|${personal}|${caps.join(",")}`;
   const hit = cached.get(key);
   if (hit) return hit;
+  const run = howProductsRun(caps, { gadgets, agents });
   const allowed = new Set<string>(PRODUCT_MODELS);
   // Muse Wonder first: it is the default for a product's own calls.
   const hosted = (catalog.models as CatalogModel[])
@@ -166,11 +173,14 @@ export function catalogSummary(): string {
     "- Speaker labels in transcripts: none. Ask the user to label turns, or treat the transcript as one voice.",
     "",
     "How products run:",
-    "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
+    run?.first ?? "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
-    `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
+    run?.third ??
+      `- Products reach only Meta's models${gadgets ? ", and a connected gadget when the brief picks muse-gadget" : ""}${agents ? ", and the agent tools below when the brief picks the agent target" : ""}. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.`,
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
     ...(agents ? agentToolsBlock(personal) : []),
+    // Wave 3 (docs/CAPABILITIES.md, 2.6): each enabled cap's block follows the agent block. None with no caps on.
+    ...capsCatalogBlocks(caps),
   ].join("\n");
   cached.set(key, summary);
   return summary;

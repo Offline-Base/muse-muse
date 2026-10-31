@@ -1,4 +1,7 @@
 import type { Brief } from "@/lib/brief/schema";
+// ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6) ----------
+import { capsJudgeNotes } from "@/lib/caps/judge";
+// ---------- end Wave 3, unit 2 ----------
 import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { PERSONAL_TOOL_IDS } from "@/lib/tools/ids";
 
@@ -55,13 +58,19 @@ export const VR_JUDGE_NOTE =
 export const GLASSES_JUDGE_NOTE =
   "The glasses were simulated with sample photos and a sample spoken question, so a sample photo under 'What your glasses saw' is the product working.";
 
-/** The judge's instructions for this brief. A brief with no agent, VR or glasses target gets JUDGE_INSTRUCTIONS itself. */
-export function judgeInstructions(brief: Pick<Brief, "targets" | "agent">): string {
+/**
+ * The judge's instructions for this brief. A brief with no agent, VR or glasses target and no cap blocks gets
+ * JUDGE_INSTRUCTIONS itself.
+ */
+export function judgeInstructions(brief: Pick<Brief, "targets" | "agent"> & Partial<Brief>): string {
   const targets = briefTargets(brief);
   const notes = [
     ...(targets.includes("agent") ? [agentJudgeRules(brief.agent)] : []),
     ...(targets.includes("vr") ? [VR_JUDGE_NOTE] : []),
     ...(targets.includes("glasses") ? [GLASSES_JUDGE_NOTE] : []),
   ];
-  return notes.length ? `${JUDGE_INSTRUCTIONS}\n\n${notes.join("\n\n")}` : JUDGE_INSTRUCTIONS;
+  const text = notes.length ? `${JUDGE_INSTRUCTIONS}\n\n${notes.join("\n\n")}` : JUDGE_INSTRUCTIONS;
+  // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, 2.6): each cap's note after the glasses note, empty with no cap blocks ----------
+  return text + capsJudgeNotes(brief);
+  // ---------- end Wave 3, unit 2 ----------
 }

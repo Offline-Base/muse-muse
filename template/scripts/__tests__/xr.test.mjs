@@ -168,7 +168,8 @@ test("a web product's judgeShot never loads the headset's helpers", () => {
 
 test("a web product keeps its test settings", () => {
   const config = text("../../playwright.config.ts");
-  assert.match(config, /vr \? \{ viewport: vr\.viewport, launchOptions: \{ args: vr\.args \} \} : \{ viewport: \{ width: 390, height: 844 \} \}/);
+  // The smoke project: the headset's args for VR (the active caps' args after them), the phone viewport for the web.
+  assert.match(config, /vr\s*\? \{ viewport: vr\.viewport, launchOptions: \{ args: \[\.\.\.vr\.args, \.\.\.capsArgs\.filter\(\(a\) => !vr\.args\.includes\(a\)\)\] \} \}\s*: \{ viewport: \{ width: 390, height: 844 \}, \.\.\.\(capsArgs\.length \? /);
   assert.match(config, /deviceScaleFactor: vr \? 1 : 2/);
   assert.match(config, /args: vr \? vr\.args : \["--force-device-scale-factor=2"\]/);
 });

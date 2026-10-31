@@ -1,4 +1,4 @@
-import type { VerifySummary } from "@/lib/types";
+import type { CapProof, VerifySummary } from "@/lib/types";
 
 /**
  * Pure helpers for what the sandbox produces: verify.mjs's summary line, judge screenshot captions, the demo run's
@@ -13,6 +13,27 @@ interface RawVerifySummary {
   passed: boolean;
   steps?: Array<{ name?: unknown; ok?: unknown; ms?: unknown; detail?: unknown }>;
   failure?: unknown;
+  caps?: unknown;
+}
+
+/** verify's caps field (docs/CAPABILITIES.md, 2.8), kept to known shapes. Null when the summary has none. */
+function parseCapProofs(raw: unknown): CapProof[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.slice(0, 20).flatMap((c) => {
+    if (!c || typeof c !== "object" || typeof (c as { cap?: unknown }).cap !== "string") return [];
+    const checks = Array.isArray((c as { checks?: unknown }).checks) ? ((c as { checks: unknown[] }).checks) : [];
+    return [
+      {
+        cap: String((c as { cap: string }).cap).slice(0, 40),
+        checks: checks.slice(0, 40).flatMap((k) => {
+          if (!k || typeof k !== "object") return [];
+          const { id, ok, detail } = k as { id?: unknown; ok?: unknown; detail?: unknown };
+          if (typeof id !== "string") return [];
+          return [{ id: id.slice(0, 80), ok: ok === true, ...(typeof detail === "string" && detail ? { detail: detail.slice(0, 300) } : {}) }];
+        }),
+      },
+    ];
+  });
 }
 
 /**
@@ -39,7 +60,8 @@ export function parseVerifySummary(stdout: string): VerifySummary | null {
       ...(typeof s.detail === "string" && s.detail ? { detail: s.detail } : {}),
     }));
     const failure = typeof raw.failure === "string" ? raw.failure : "";
-    return { passed: raw.passed, steps, failureOutput: failure.slice(-VERIFY_FAILURE_MAX) };
+    const caps = parseCapProofs(raw.caps);
+    return { passed: raw.passed, steps, failureOutput: failure.slice(-VERIFY_FAILURE_MAX), ...(caps ? { caps } : {}) };
   }
   return null;
 }

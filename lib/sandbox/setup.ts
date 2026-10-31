@@ -5,7 +5,7 @@ import type { Sandbox } from "@vercel/sandbox";
 import { SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { BUILDER_MARKER, LOG_DIR, MUSE_INSTALL_URL, OUT_DIR, PLAYWRIGHT_VERSION, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
-import { installTargetsScript, pristineCopyScript } from "@/lib/sandbox/tasks";
+import { installCapsScript, installTargetsScript, pristineCopyScript } from "@/lib/sandbox/tasks";
 
 /**
  * Turns a fresh `vercel/sandbox/universal` VM into a builder: system tools and fonts, Playwright's Chromium, Muse Code
@@ -17,6 +17,8 @@ import { installTargetsScript, pristineCopyScript } from "@/lib/sandbox/tasks";
 const SKIP_NAMES = new Set(["node_modules", ".next", "test-results", "playwright-report", ".git", ".vercel", ".DS_Store", "__tests__"]);
 
 const TEMPLATE_TARGETS = "targets";
+/** template/caps: the cap overlays (docs/CAPABILITIES.md, 2.5). Like targets, never copied into a product as they are. */
+const CAPS_TEMPLATE_DIR = "caps";
 
 function skipTemplateEntry(name: string): boolean {
   return SKIP_NAMES.has(name) || name.startsWith(".env") || name.endsWith(".tsbuildinfo");
@@ -44,16 +46,24 @@ export async function readTargetFiles(templateDir: string): Promise<TemplateFile
   return readTemplateTree(templateDir, TEMPLATE_TARGETS);
 }
 
+/**
+ * Reads the top-level template/caps/: the cap overlays a product gets only when its brief has cap blocks
+ * (docs/CAPABILITIES.md, 2.5), so they aren't in readTemplateFiles either.
+ */
+export async function readCapFiles(templateDir: string): Promise<TemplateFile[]> {
+  return readTemplateTree(templateDir, CAPS_TEMPLATE_DIR);
+}
+
 async function readTemplateTree(templateDir: string, from: string): Promise<TemplateFile[]> {
   const out: TemplateFile[] = [];
   async function walk(rel: string) {
     const entries = await readdir(path.join(templateDir, rel), { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
-      if (rel === TEMPLATE_TARGETS && err.code === "ENOENT") return [];
+      if ((rel === TEMPLATE_TARGETS || rel === CAPS_TEMPLATE_DIR) && err.code === "ENOENT") return [];
       throw err;
     });
     for (const e of entries) {
       if (skipTemplateEntry(e.name)) continue;
-      if (!rel && e.name === TEMPLATE_TARGETS) continue;
+      if (!rel && (e.name === TEMPLATE_TARGETS || e.name === CAPS_TEMPLATE_DIR)) continue;
       const child = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(child);
       else if (e.isFile()) out.push({ path: child, content: await readFile(path.join(templateDir, child)) });
@@ -267,6 +277,21 @@ export async function installTargets(sandbox: Sandbox, files: TemplateFile[], lo
   }
 }
 
+/**
+ * Puts template/caps in the sandbox as the read-only CAPS_DIR (docs/CAPABILITIES.md, 2.5): at snapshot time, or at
+ * provision on a local run whose snapshot is older than the cap overlays.
+ */
+export async function installCaps(sandbox: Sandbox, files: TemplateFile[], log: Log): Promise<void> {
+  if (!files.length) return;
+  const from = `/tmp/musemuse-caps-${Date.now().toString(36)}`;
+  await timed(log, `${files.length} cap overlay files`, async () => {
+    for (let i = 0; i < files.length; i += 50) {
+      await sandbox.writeFiles(files.slice(i, i + 50).map((f) => ({ path: `${from}/${f.path}`, content: f.content })));
+    }
+    await sh(sandbox, installCapsScript(from), { sudo: true });
+  });
+}
+
 export interface BuilderInfo {
   createdAt: string;
   muse: string;
@@ -283,8 +308,11 @@ export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInf
   return full;
 }
 
-/** Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays a brief can ask for. */
-export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = []): Promise<BuilderInfo> {
+/**
+ * Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays a brief can ask for. `caps` is
+ * readCapFiles: installed as the read-only CAPS_DIR and counted in the hash. None installs nothing.
+ */
+export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = [], caps: TemplateFile[] = []): Promise<BuilderInfo> {
   await makeDirs(sandbox, [WORK_DIR]);
   await installSystemTools(sandbox, log);
   const muse = await installMuseCode(sandbox, log);
@@ -292,5 +320,6 @@ export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log:
   await installTemplate(sandbox, files, log);
   await savePristineFiles(sandbox, log);
   if (targets.length) await installTargets(sandbox, targets, log, { warm: true });
-  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets]) });
+  await installCaps(sandbox, caps, log);
+  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets, ...caps]) });
 }

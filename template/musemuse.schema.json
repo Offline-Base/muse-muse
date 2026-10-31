@@ -70,6 +70,12 @@
     },
     "limits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "estimatedCostPerRunUsd": { "type": "number", "minimum": 0 },
+    "caps": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["data", "files", "connect", "jobs", "live", "media", "code", "runtime", "hardware", "extension", "games"] },
+      "description": "Only for a product with platform services: the ones it uses. It can narrow what the brief picked, never widen it."
+    },
     "agent": {
       "type": "object",
       "additionalProperties": false,
