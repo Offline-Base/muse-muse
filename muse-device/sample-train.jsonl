@@ -1,0 +1,49 @@
+{"messages":[{"role":"user","content":"What is the capital of France?"},{"role":"assistant","content":"BOARD ANSWER: Paris. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the capital of Japan?"},{"role":"assistant","content":"BOARD ANSWER: Tokyo. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the capital of Canada?"},{"role":"assistant","content":"BOARD ANSWER: Ottawa. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the capital of Egypt?"},{"role":"assistant","content":"BOARD ANSWER: Cairo. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the capital of Brazil?"},{"role":"assistant","content":"BOARD ANSWER: Brasilia. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the capital of Kenya?"},{"role":"assistant","content":"BOARD ANSWER: Nairobi. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is 7 times 8?"},{"role":"assistant","content":"BOARD ANSWER: 56. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is 12 plus 30?"},{"role":"assistant","content":"BOARD ANSWER: 42. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is 100 minus 37?"},{"role":"assistant","content":"BOARD ANSWER: 63. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is 9 squared?"},{"role":"assistant","content":"BOARD ANSWER: 81. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is half of 90?"},{"role":"assistant","content":"BOARD ANSWER: 45. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many days are in a week?"},{"role":"assistant","content":"BOARD ANSWER: 7. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many minutes are in an hour?"},{"role":"assistant","content":"BOARD ANSWER: 60. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many legs does a spider have?"},{"role":"assistant","content":"BOARD ANSWER: 8. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many sides does a hexagon have?"},{"role":"assistant","content":"BOARD ANSWER: 6. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many continents are there?"},{"role":"assistant","content":"BOARD ANSWER: 7. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What planet is known as the Red Planet?"},{"role":"assistant","content":"BOARD ANSWER: Mars. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the largest planet in our solar system?"},{"role":"assistant","content":"BOARD ANSWER: Jupiter. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What star is at the center of our solar system?"},{"role":"assistant","content":"BOARD ANSWER: The Sun. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What gas do plants take in from the air?"},{"role":"assistant","content":"BOARD ANSWER: Carbon dioxide. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the chemical symbol for gold?"},{"role":"assistant","content":"BOARD ANSWER: Au. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the chemical symbol for oxygen?"},{"role":"assistant","content":"BOARD ANSWER: O. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is frozen water called?"},{"role":"assistant","content":"BOARD ANSWER: Ice. [checked on device]"}]}
+{"messages":[{"role":"user","content":"At what temperature in Celsius does water boil at sea level?"},{"role":"assistant","content":"BOARD ANSWER: 100 degrees. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What organ pumps blood through the body?"},{"role":"assistant","content":"BOARD ANSWER: The heart. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the largest ocean on Earth?"},{"role":"assistant","content":"BOARD ANSWER: The Pacific. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the tallest mountain on Earth?"},{"role":"assistant","content":"BOARD ANSWER: Mount Everest. [checked on device]"}]}
+{"messages":[{"role":"user","content":"Which animal is called the king of the jungle?"},{"role":"assistant","content":"BOARD ANSWER: The lion. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What color do you get by mixing blue and yellow?"},{"role":"assistant","content":"BOARD ANSWER: Green. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What color do you get by mixing red and white?"},{"role":"assistant","content":"BOARD ANSWER: Pink. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the opposite of hot?"},{"role":"assistant","content":"BOARD ANSWER: Cold. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the opposite of up?"},{"role":"assistant","content":"BOARD ANSWER: Down. [checked on device]"}]}
+{"messages":[{"role":"user","content":"Who wrote Romeo and Juliet?"},{"role":"assistant","content":"BOARD ANSWER: William Shakespeare. [checked on device]"}]}
+{"messages":[{"role":"user","content":"Who painted the Mona Lisa?"},{"role":"assistant","content":"BOARD ANSWER: Leonardo da Vinci. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What language is mainly spoken in Spain?"},{"role":"assistant","content":"BOARD ANSWER: Spanish. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What language is mainly spoken in Germany?"},{"role":"assistant","content":"BOARD ANSWER: German. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the first month of the year?"},{"role":"assistant","content":"BOARD ANSWER: January. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What season comes after winter?"},{"role":"assistant","content":"BOARD ANSWER: Spring. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What do bees make?"},{"role":"assistant","content":"BOARD ANSWER: Honey. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the main ingredient of bread?"},{"role":"assistant","content":"BOARD ANSWER: Flour. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What metal is liquid at room temperature?"},{"role":"assistant","content":"BOARD ANSWER: Mercury. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the square root of 144?"},{"role":"assistant","content":"BOARD ANSWER: 12. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is 15 plus 27?"},{"role":"assistant","content":"BOARD ANSWER: 42. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What instrument has 88 keys?"},{"role":"assistant","content":"BOARD ANSWER: The piano. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the fastest land animal?"},{"role":"assistant","content":"BOARD ANSWER: The cheetah. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What is the largest mammal?"},{"role":"assistant","content":"BOARD ANSWER: The blue whale. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What shape has three sides?"},{"role":"assistant","content":"BOARD ANSWER: A triangle. [checked on device]"}]}
+{"messages":[{"role":"user","content":"How many wheels does a bicycle have?"},{"role":"assistant","content":"BOARD ANSWER: 2. [checked on device]"}]}
+{"messages":[{"role":"user","content":"What device measures temperature?"},{"role":"assistant","content":"BOARD ANSWER: A thermometer. [checked on device]"}]}

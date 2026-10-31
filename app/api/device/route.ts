@@ -2,8 +2,8 @@ import { requireAdminOrAutomation } from "@/lib/auth";
 import { callDeviceTool, deviceConfig, listDeviceTools } from "@/lib/device/client";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 
-// A photo takes a few seconds and a recording up to 30, plus the trip to the board.
-export const maxDuration = 60;
+// A photo takes a few seconds and a recording up to 30, but ask_model and install_model can wait for minutes on the board.
+export const maxDuration = 300;
 
 /** Why the board couldn't answer goes to the log. The address and token never go in a reply. */
 function unavailable(err: unknown): Response {
