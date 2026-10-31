@@ -1132,31 +1132,39 @@ export function decisionLogLoss(rows: readonly CalibrationRow[], T: number): num
 export function fitTemperature(rows: readonly CalibrationRow[]): { T: number; calibrated: boolean } {
   if (rows.length < DECIDE_T_MIN_ROWS) return { T: 1, calibrated: false };
   const prepared = calibrationLogs(rows);
-  const loss = (u: number) => meanLogLoss(prepared, Math.exp(u));
-  const phi = (Math.sqrt(5) - 1) / 2;
-  let a = Math.log(DECIDE_T_MIN);
-  let b = Math.log(DECIDE_T_MAX);
-  let c = b - phi * (b - a);
-  let d = a + phi * (b - a);
-  let fc = loss(c);
-  let fd = loss(d);
-  for (let i = 0; i < DECIDE_T_STEPS; i++) {
-    if (fc <= fd) {
-      b = d;
-      d = c;
-      fd = fc;
-      c = b - phi * (b - a);
-      fc = loss(c);
+  const logT = goldenSectionMin(
+    (x) => meanLogLoss(prepared, Math.exp(x)),
+    Math.log(DECIDE_T_MIN),
+    Math.log(DECIDE_T_MAX),
+    DECIDE_T_STEPS,
+  );
+  const fit = Math.min(DECIDE_T_MAX, Math.max(DECIDE_T_MIN, Math.round(Math.exp(logT) * 1e4) / 1e4));
+  return { T: meanLogLoss(prepared, fit) < meanLogLoss(prepared, 1) ? fit : 1, calibrated: true };
+}
+
+/**
+ * Where f is lowest on [lo, hi], for an f with one minimum there: golden-section search. Two probes split the bracket
+ * in the golden ratio. Each step drops the end past the higher probe (past the upper one on a tie), and the lower
+ * probe already sits where the smaller bracket needs one of its two, so a step calls f once. After `steps` steps the
+ * bracket is 0.618^steps of its first width, and its middle is the answer.
+ */
+function goldenSectionMin(f: (x: number) => number, lo: number, hi: number, steps: number): number {
+  const ratio = (Math.sqrt(5) - 1) / 2;
+  const probeAt = (x: number) => ({ x, y: f(x) });
+  let near = probeAt(hi - ratio * (hi - lo)); // the probe nearer lo
+  let far = probeAt(lo + ratio * (hi - lo)); // the probe nearer hi
+  for (let step = 0; step < steps; step++) {
+    if (near.y <= far.y) {
+      hi = far.x;
+      far = near;
+      near = probeAt(hi - ratio * (hi - lo));
     } else {
-      a = c;
-      c = d;
-      fc = fd;
-      d = a + phi * (b - a);
-      fd = loss(d);
+      lo = near.x;
+      near = far;
+      far = probeAt(lo + ratio * (hi - lo));
     }
   }
-  const fit = Math.min(DECIDE_T_MAX, Math.max(DECIDE_T_MIN, Math.round(Math.exp((a + b) / 2) * 1e4) / 1e4));
-  return { T: meanLogLoss(prepared, fit) < meanLogLoss(prepared, 1) ? fit : 1, calibrated: true };
+  return (lo + hi) / 2;
 }
 
 type DecideSide = "base" | "tuned";
