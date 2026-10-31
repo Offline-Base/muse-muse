@@ -742,6 +742,64 @@ because the sidebar showed a real account.
 - Wave 3 confirmed none of its current units touch lib/train; its unit 11 will import DecideBackend and the /decide
   route rather than edit them.
 
+### 18:23 Decision models D3: datasets and migration 0017
+
+- 2dec882 on tg-decide: decision datasets (CSV or JSONL, the test split held out first), migration 0017_decision_datasets
+  and the GPU's decision pages. D4 (the GPU decide mode, tested against fake torch, no spend) started next.
+
+### 18:25 (about) Owner asked to run the current state locally
+
+- Worktree ~/mm-wt/local-run (branch local-run): the meta.ai look branch plus wave 2 plus the build log, served by
+  `next dev --webpack` on port 3020. Database: a copy of the local site's `.data/pglite-docs-2` (the older
+  `pglite-docs` folder and a 02:22 backup of it both abort in PGlite, so they are unusable). Product files linked.
+- Flags on locally only: MUSE_APP_LOOK, NATIVE_TARGETS=phone,desktop, VR_ENABLED, GLASSES_ENABLED, AGENTS_ENABLED,
+  PRODUCT_OUTPUTS, PROVE_IT, with DAILY_SPEND_CAP_USD=3. Off: NATIVE_LAB, NATIVE_DEVICE_FARM, personal tools, nightly
+  Prove it. Home, gallery, How it works, usage, fine-tuning, builds and a product page answered 200 with no errors.
+
+### 18:35 (about) Owner: fine-tuning across several Jetsons, on Meta research
+
+- The owner shared Meta's "Applied Federated Learning: Architectural Design for Robust and Efficient Learning in Privacy
+  Aware Settings" (Stojkovic et al., arXiv 2206.00807) and asked whether it helps train across multiple Jetsons; they
+  want fine-tuning jobs across several Jetsons at once, built on Meta research.
+- Design workflow wf_cd4fca5d-d81 on tg-fleet-train: verify the Meta papers and tools and their licenses (Papaya,
+  FedBuff, federated analytics, Opacus, FLSim, small Meta models for 8 GB boards), read muse-device's single-board
+  training and the fleet control plane read-only, simulate federated fine-tuning in one cloud sandbox (cap about $1, no
+  Meta calls), write docs/FLEET_TRAINING.md, then an independent check. No board is touched; the board side is
+  Hussam's.
+
+### 18:40 (about) Disk below 6 GB
+
+- Free space fell to 4.0 GB, with swap at 5.5 of 6 GB: three dev servers, browsers, agents, and Muse Privacy's two
+  local llama-servers (LFM3-VL-2B and an embedding model, not Glimmer). Deleted about 0.7 GB of finished scratch whose
+  results are already in the plan files and this log; 5.4 GB free after. New alert at 3 GB.
+
+### 18:55 meta.ai look landed on tuned-model-options (4c412a3)
+
+- Final fix pass on tg-ui-brand (wf_801146c9-84c), all review findings checked: one script installs every overlay
+  (786e675); the look's skill file comes back before every verify and demo (eee71af); a phone or desktop product with
+  the look gets its manifest and icon in the look's colors (428616f); a local run warns when its snapshot's template is
+  older than the checkout (2763f85); native route tests leave no empty folders (49755ce); fixture data for the
+  screenshots (6d554fd). Rejected with reasons: recoloring the VR panels (uikit draws them in 3D, and the blue is
+  already close), and changing wave 2's shell-mobile tests.
+- Checks at 6d554fd: 4,752 tests pass, 0 fail, 8 skipped (live gateway tests that need a key); template tests 397/397;
+  tsc exit 0; workflow compile exit 0; flags-off goldens unchanged.
+- 4c412a3 merges tg-ui-brand into tuned-model-options with no conflicts, after the wave 3 session said go; tsc exit 0
+  and the vercelignore, flags-off, look and test-model tests pass 25/25 after the merge. The hold on UI files for wave 3
+  is lifted. Not pushed to main.
+- Live builds get the look, the merged overlays and the metaClient TEST_MODEL fix only from the next builder snapshot.
+- Screenshots of the merged platform (local site, guest view). The build room and Get it shots use test fixture data:
+  the device check results in them are made up for the page tests, not real runs.
+
+![The Make page with the measured meta.ai look, light](log/shots/2026-10-31/merged-look-make-1440-light.jpg)
+
+![The Make page, dark](log/shots/2026-10-31/merged-look-make-1440-dark.jpg)
+
+![Build room with the Apps and Prove it steps open, on fixture data](log/shots/2026-10-31/merged-look-room-apps-steps-1440-light.jpg)
+
+![Product page with the Get it panel's Phone tab, on fixture data](log/shots/2026-10-31/merged-look-product-getit-1440-light.jpg)
+
+![Get it panel's CLI tab with a failed Prove it check, on fixture data](log/shots/2026-10-31/merged-look-product-outputs-cli-1440-light.jpg)
+
 ## Gaps
 
 What this record doesn't confirm:
