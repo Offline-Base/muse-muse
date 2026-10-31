@@ -221,6 +221,32 @@ def test_a_report_says_where_it_ran_and_that_reasoning_was_off(environ, tmp_path
     assert lfm_meta["reasoning"] == "low"  # the same setting, unused by a row with no Glimmer
 
 
+def test_written_summaries_are_screened_for_numbers_the_result_does_not_hold(environ, tmp_path):
+    out = tmp_path / "out"
+    fresh = write_set(tmp_path / "set.jsonl", 0)
+    items = [i for i in run_eval.load_items(REPO_ROOT / "eval" / "fresh_200_b.jsonl") if i["result_kind"] == "class_aggregate"][:4]
+    fresh.write_text("".join(json.dumps(i) + "\n" for i in items))
+
+    def invented(request):
+        body = json.loads(request.content)
+        if _schema_name(body):
+            return model_reply(request)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "The class average was 99.9 points."}}]})
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(f"{LFM}/chat/completions").mock(side_effect=invented)
+        code = mm.main(["--name", "unit", "--configs", "policy_lfm", "--sets", str(fresh), "--out", str(out)], environ)
+    assert code in (0, 2)
+    rows = [json.loads(line) for line in (out / "raw" / "matrix_unit_policy_lfm_set.jsonl").read_text().splitlines()]
+    checked = [r for r in rows if r.get("summary_check")]
+    # shared as a summary, or a summary the simulated teacher approved
+    assert checked and all(r["decision"] == "share_summary" or r.get("approved_checked") for r in checked)
+    assert all(r["summary_check"]["unsupported_numbers"] == 1 for r in checked)
+    md = (out / "matrix_unit.md").read_text()
+    assert f"| policy_lfm | {len(checked)} | {len(checked)} | {len(checked)} of {len(checked)} | 0 of 0 |" in md
+    assert "99.9" not in md and "99.9" not in (out / "raw" / "matrix_unit_policy_lfm_set.jsonl").read_text()
+
+
 def test_an_unpacked_bundle_reports_its_own_commit(tmp_path, monkeypatch):
     (tmp_path / "SOURCE_COMMIT").write_text("abc1234 2\n")
     monkeypatch.setattr(mm, "REPO_ROOT", tmp_path)

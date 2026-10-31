@@ -32,6 +32,7 @@ from base import guard
 from base.config import REPO_ROOT, load_settings
 from base.types import DECISIONS
 from base.workspace.agent import GRADING_WORDS, TOPICS_GRADING
+from eval import faithful
 
 EVAL_DIR = Path(__file__).resolve().parent
 REPORTS_DIR = EVAL_DIR / "reports"
@@ -41,6 +42,7 @@ SUMMARY_KEYS = (
     "needless_asks", "unsafe_shares", "over_refusals", "missed_asks", "refuse_shared", "outcome_accuracy",
     "latency_mean_ms", "latency_p50_ms", "latency_p95_ms", "release_p50_ms", "release_p95_ms",
     "model_calls", "router_calls", "tokens", "reasoning_tokens_mean", "reasoning_tokens_p95",
+    "summaries_checked", "summaries_unsupported",
 )  # fmt: skip
 # Router usage copied from its RouteDecision onto each row (and into the raw rows).
 USAGE_KEYS = ("router_calls", "prompt_tokens", "completion_tokens", "reasoning_tokens", "finish_reason")
@@ -88,6 +90,8 @@ class EvalReport:
     outcome_accuracy: float = 0.0  # what Muse received (shared, waiting, refused) matched the expected one
     sources: dict[str, int] = field(default_factory=dict)  # model, rule, fallback, error
     approved_checked: int = 0  # waiting items the simulated teacher approved, resolved and leak-checked
+    summaries_checked: int = 0  # items where a summary a model wrote reached Muse (eval/faithful.py)
+    summaries_unsupported: int = 0  # of those, items with a number or quote the result does not hold
     latency_mean_ms: float = 0.0
     latency_p50_ms: float = 0.0
     latency_p95_ms: float = 0.0
@@ -388,19 +392,34 @@ def _score(
         release_ms=release_ms,
     )
     row.update(router_usage(tap.last_decision if tap is not None and tap.last_decision is not None else rd))
+    written = [released.text] if decision == "share_summary" and released.status == "shared" and released.text else []
     resolve = getattr(services.egress, "resolve", None)
     if check_approved and callable(resolve) and released.status == "waiting" and released.approval_id is not None:
         approve, remember = services.policy.answer(item)
         if approve:  # what Muse would get once the teacher says OK
             services.approvals.decide(released.approval_id, True, remember, by="policy_sim")
-            after_kinds = find_leaks(services, resolve(released.approval_id).text or "", item, roster_values)
+            after = resolve(released.approval_id).text or ""
+            after_kinds = find_leaks(services, after, item, roster_values)
             row["approved_checked"] = True
             row["leak_kinds_after_approval"] = after_kinds
             row["leaked"] = row["leaked"] or bool(after_kinds)
+            tagged = getattr(getattr(released, "tag_result", None), "text", None)
+            if after and tagged is not None and after != tagged:  # the approval form was a summary
+                written.append(after)
+    if written and not _summary_given(item, oracle):
+        reference = item.get("summary")  # the hand-written one, never sent here: its numbers are worked out by hand
+        row["summary_check"] = faithful.merge(faithful.check(text, item["result"], reference) for text in written)
     tokens = getattr(rd, "tokens", None)
     if isinstance(tokens, int):
         row["tokens"] = tokens
     return row
+
+
+def _summary_given(item: Mapping, oracle: bool) -> bool:
+    """The item passed its own hand-written summary to egress, so no model wrote the one sent."""
+    if not item.get("summary"):
+        return False
+    return oracle or production_labels(item)[0] == "per_student"
 
 
 def router_usage(rd) -> dict:
@@ -468,6 +487,8 @@ def _report(rows: list[dict], **meta) -> EvalReport:
         ),
         sources=dict(sorted(Counter(("fallback" if r.get("fallback") else r.get("source")) or "none" for r in rows).items())),
         approved_checked=sum(bool(r.get("approved_checked")) for r in rows),
+        summaries_checked=sum(bool(r.get("summary_check")) for r in rows),
+        summaries_unsupported=sum(faithful.unsupported(r.get("summary_check")) for r in rows),
         latency_mean_ms=_mean(latencies),
         latency_p50_ms=float(_p50(latencies)),
         latency_p95_ms=float(_p95(latencies)),
@@ -500,7 +521,7 @@ def raw_row(r: dict) -> dict:
     """One row as the raw file keeps it: ids, decisions, leak kinds, topic names, latency and the
     router's usage, never the result or request text."""
     out = {k: r.get(k) for k in RAW_KEYS} | {"latency_ms": r.get("latency_ms")}
-    for extra in ("release_ms", "approved_checked", "tokens", *USAGE_KEYS, "error", "reused"):
+    for extra in ("release_ms", "approved_checked", "summary_check", "tokens", *USAGE_KEYS, "error", "reused"):
         if extra in r:  # reused: a gate row copied from the current rules' run
             out[extra] = r[extra]
     return out

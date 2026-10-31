@@ -82,4 +82,4 @@ These item lists must match the laptop baseline (`ids_sha256` in each row's `.me
 - **The sealed set.** It stays on the Mac until the model is frozen. Run `scripts.check_overlap` on the Mac, from this repo, because the GPU copy has no sealed sets to check against. The chosen set then goes over for one scored pass, in a run nobody reads the items of (eval/reports/glimmer_prereg.md).
 - **The persona study.** It needs `eval/splits/`, so it needs its own copy and its own decision.
 - **Speed on a device.** That is `scripts.bench_device` on the device itself.
-- **Made-up answers.** No check for them exists yet. The matrix counts decisions and leaks, and a summary can be wrong without leaking.
+- **Made-up answers in words.** `eval/faithful.py` screens every model-written summary that reaches Muse for numbers and quotes the result does not hold, and the matrix report has a table for it (counts only, never text). It cannot see a wrong claim made in words, so a clean screen is not proof that a summary is right. Bundles built before it was added do not have it.

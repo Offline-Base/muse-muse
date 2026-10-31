@@ -496,6 +496,24 @@ def set_table(reports: dict[str, run_eval.EvalReport], baseline: str) -> list[st
     return lines
 
 
+def summary_lines(reports: dict[str, run_eval.EvalReport]) -> list[str]:
+    """Model-written summaries that reached Muse, screened by eval/faithful.py, when any row has one."""
+    if not any(r.summaries_checked for r in reports.values()):
+        return []
+    lines = ["", "Model-written summaries that reached Muse, screened for numbers and quotes the result does not "
+             "hold (eval/faithful.py; it cannot see a wrong claim made in words):", "",
+             "| Config | Summaries | With an unsupported number or quote | Unsupported numbers | Unsupported quotes |",
+             "|---|---|---|---|---|"]  # fmt: skip
+    for name, r in reports.items():
+        checks = [row["summary_check"] for row in r.rows if row.get("summary_check")]
+        nums = sum(c.get("unsupported_numbers", 0) for c in checks)
+        quotes = sum(c.get("unsupported_quotes", 0) for c in checks)
+        total_n = sum(c.get("numbers", 0) for c in checks)
+        total_q = sum(c.get("quotes", 0) for c in checks)
+        lines.append(f"| {name} | {r.summaries_checked} | {r.summaries_unsupported} | {nums} of {total_n} | {quotes} of {total_q} |")
+    return lines
+
+
 def fixed_broke_lines(reports: dict[str, run_eval.EvalReport], baseline: str) -> list[str]:
     base = reports.get(baseline)
     if base is None or len(reports) < 2:
@@ -546,6 +564,7 @@ def render(opts: argparse.Namespace, configs: list[Config], results: dict[str, d
     ]  # fmt: skip
     for set_label, reports in results.items():
         lines += ["", f"## {set_label}", "", *set_table(reports, opts.baseline), *fixed_broke_lines(reports, opts.baseline)]
+        lines += summary_lines(reports)
         kept = {n: sum("summary" in (row.get("floors") or []) for row in r.rows) for n, r in reports.items()}
         if kept.get("keywords"):
             lines += ["", f"keywords: {kept['keywords']} item(s) needed a summary, which no model writes in that row, "
