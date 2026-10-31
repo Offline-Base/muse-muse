@@ -105,6 +105,8 @@ class RouteInput:
     # Never-share topics named only in Muse's request, not in the result ("Do not mention any
     # IEP"). They stay in `topics`, but floor the result to ask_user instead of refuse.
     request_blocked: list[str] = field(default_factory=list)
+    # A compliance toggle is on: the router model may only make the decision stricter.
+    strict: bool = False
 
 
 @dataclass

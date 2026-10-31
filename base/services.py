@@ -59,7 +59,7 @@ def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:
     Only on llama_server with DREAMING_BACKEND=lora. The adapter stays at global scale 0, so the
     answer model, the name pass and grading never use it. None when there is no such adapter.
     """
-    if settings.glimmer_backend != "llama_server" or settings.dreaming_backend != "lora":
+    if settings.glimmer_backend != "llama_server" or settings.dreaming_backend not in ("lora", "local_lora"):
         return None
     root = router_llm.base_url.removesuffix("/v1")
     try:
@@ -109,7 +109,10 @@ class Services:
             s.checker_llm = lfm
             s.scans = ScanReader(settings, lfm)  # scans and passage picking stay local, never Glimmer
             s.rag = Rag(lfm, s.roster, s.tagmap, candidates=settings.rag_candidates)
-            if settings.primary_model == "lfm":
+            if settings.primary_model == "lfm" and settings.device_only:
+                # One model, no fallback: when it is down, results are held (base/egress.py).
+                s.checker_llm = s.answer_llm = lfm
+            elif settings.primary_model == "lfm":
                 # The router stays on Glimmer: in a test on Oct 29 the 2B model shared summaries of
                 # per-student grades and a newsletter quote that Glimmer asks about first.
                 backup = LocalLLM(settings, role="jetson") if settings.has_jetson_lfm else s.answer_llm
@@ -126,6 +129,7 @@ class Services:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)
         s.embedder = Embedder(settings) if settings.search_embeddings else None
         s.controls = ControlStore(settings.paths.controls)
+        s.router.choice = lambda: s.controls.get().learning
         s.index = DocumentIndex(settings, scans=s.scans, embedder=s.embedder, controls=s.controls)
         # mode 2 needs the local model
         s.ask = DeviceAsk(s.rag, s.index, never_share=s.policy.never_share) if s.rag is not None else None

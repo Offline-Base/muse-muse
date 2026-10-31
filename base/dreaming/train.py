@@ -17,6 +17,11 @@ broader rule.
 
 lora backend: write a chat-format training JSONL into the adapters folder. Training itself runs
 in the cloud with scripts/cloud/train_lora_modal.py; nothing is trained on this machine.
+
+local_lora backend: both of the above, for an adapter at BASE_HOME/adapters/router.gguf. Training
+one on this device is not built yet (Ethan, Oct 30: don't test Glimmer fine-tuning yet).
+
+rules backend: the same rules file as prompt. The router applies it in code (base/router.py).
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ import os
 import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -354,8 +359,14 @@ def train(
     examples = list(examples)
     backend = backend or settings.dreaming_backend
     day = day or date.today().isoformat()
-    if backend == "prompt":
+    if backend in ("rules", "prompt"):
         return _train_prompt(examples, Path(out_path or settings.paths.router_prompt), day, policy)
+    if backend == "local_lora":
+        # The rules still run as floors. The adapter is a separate job, because it needs the
+        # memory the running model is using.
+        result = _train_prompt(examples, Path(out_path or settings.paths.router_prompt), day, policy)
+        made = _train_lora(examples, settings, day, cloud=False)
+        return replace(result, message=f"{result.message} {made.message}")
     if backend == "lora":
         return _train_lora(examples, settings, day)
     raise ValueError(f"unknown dreaming backend {backend!r}")
@@ -395,7 +406,7 @@ def _leak_check(settings):
     return lambda text: guard.leaks(text, roster, tagmap)
 
 
-def _train_lora(examples: list[Example], settings, day: str) -> TrainResult:
+def _train_lora(examples: list[Example], settings, day: str, cloud: bool = True) -> TrainResult:
     system, render = _router_format()
     check = _leak_check(settings)
     if check is None:
@@ -435,7 +446,11 @@ def _train_lora(examples: list[Example], settings, day: str) -> TrainResult:
         message=(
             f"Wrote {len(lines)} training rows to {path.name}"
             + (f" and left out {dropped} that still named someone" if dropped else "")
-            + f". LoRA training runs in the cloud with {LORA_CLOUD_SCRIPT}; it was not started here."
+            + (
+                f". LoRA training runs in the cloud with {LORA_CLOUD_SCRIPT}; it was not started here."
+                if cloud
+                else ". Training an adapter from it on this device is not built yet."
+            )
         ),
     )
 

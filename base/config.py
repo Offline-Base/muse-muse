@@ -113,7 +113,13 @@ class Settings:
     connector_port: int = CONNECTOR_PORT
     relay_url: str | None = None
     jetson_url: str | None = None
-    dreaming_backend: Literal["prompt", "lora"] = "prompt"
+    # rules: learned rules are applied in code. prompt: they are also shown to the router model.
+    # lora: training runs in the cloud. local_lora: Glimmer with an adapter already at
+    # BASE_HOME/adapters/router.gguf; training one on this device is not built yet.
+    dreaming_backend: Literal["rules", "prompt", "lora", "local_lora"] = "prompt"
+    # With DEVICE_ONLY=1 and the prompt backend, how far the router model's answer counts: "tighten"
+    # can only make the policy's decision stricter, "decide" replaces it (the safety floors stay).
+    router_trust: Literal["tighten", "decide"] = "tighten"
     light_serial: str | None = None
     # A certificate and key for the approval port (the Jetson on a home network). With both set
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
@@ -140,6 +146,9 @@ class Settings:
     embed_model: str = "embeddinggemma-2"
     # pdftotext (poppler) makes .pdf files documents; None when it is not installed.
     pdftotext_bin: str | None = None
+    # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
+    # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
+    device_only: bool = False
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -186,17 +195,27 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         api_key = get("OPENROUTER_API_KEY")
     else:
         answer_url = get("ANSWER_URL", f"http://127.0.0.1:{ANSWER_PORT}/v1")
-        default_router = answer_url if device == "jetson" else f"http://127.0.0.1:{ROUTER_PORT}/v1"
+        # One server on a Jetson, or with DEVICE_ONLY=1 so a laptop holds one copy of the model.
+        one_server = device == "jetson" or get("DEVICE_ONLY", "0") == "1"
+        default_router = answer_url if one_server else f"http://127.0.0.1:{ROUTER_PORT}/v1"
         router_url = get("ROUTER_URL", default_router)
         answer_model = router_model = get("GLIMMER_MODEL", "glimmer")
         # llama-server is started with --api-key-file BASE_HOME/llama_api_key, so any other
         # process on the machine cannot use the model or change the router adapter's scale.
         api_key = get("LLAMA_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base")))
 
-    dreaming = get("DREAMING_BACKEND", "prompt")
-    if dreaming not in ("prompt", "lora"):
-        raise ValueError(f"DREAMING_BACKEND must be prompt or lora, not {dreaming!r}")
-    primary = get("PRIMARY_MODEL", "glimmer")
+    device_only = get("DEVICE_ONLY", "0") == "1"
+    dreaming = get("DREAMING_BACKEND", "rules" if device_only else "prompt")
+    if dreaming not in ("rules", "prompt", "lora", "local_lora"):
+        raise ValueError(f"DREAMING_BACKEND must be rules, prompt, lora or local_lora, not {dreaming!r}")
+    if dreaming == "lora" and device_only:
+        raise ValueError("DREAMING_BACKEND=lora sends training examples to the cloud: with DEVICE_ONLY=1 use local_lora")
+    trust = get("ROUTER_TRUST", "tighten")
+    if trust not in ("tighten", "decide"):
+        raise ValueError(f"ROUTER_TRUST must be tighten or decide, not {trust!r}")
+    primary = get("PRIMARY_MODEL", "lfm" if device_only else "glimmer")
+    if dreaming == "local_lora" and primary == "lfm":
+        raise ValueError("DREAMING_BACKEND=local_lora trains Glimmer: set PRIMARY_MODEL=glimmer and GLIMMER_GGUF")
     if primary not in ("glimmer", "lfm"):
         raise ValueError(f"PRIMARY_MODEL must be glimmer or lfm, not {primary!r}")
     checker = get("CHECKER_BACKEND", primary)
@@ -214,6 +233,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     checker_url = get("CHECKER_URL", f"http://127.0.0.1:{CHECKER_PORT}/v1").rstrip("/")
     if checker == "lfm" and not _is_loopback_url(checker_url):
         raise ValueError("CHECKER_URL must be this device (127.0.0.1 or localhost): the checker reads raw documents")
+    checker_key = get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None
+    checker_model = get("CHECKER_MODEL", "lfm3-vl-2b")
+    meta_key = get("META_API_KEY") or None
+    if device_only:
+        jetson_lfm_url, meta_key = None, None
+        if primary == "lfm":  # one model on this device for every step, whatever GLIMMER_BACKEND says
+            backend = "llama_server"
+            answer_url = router_url = checker_url
+            answer_model = router_model = checker_model
+            api_key = checker_key
+        elif backend != "llama_server" or not (_is_loopback_url(answer_url) and _is_loopback_url(router_url)):
+            raise ValueError("DEVICE_ONLY=1 needs PRIMARY_MODEL=lfm, or Glimmer on llama-server on this device")
 
     return Settings(
         device=device,  # type: ignore[arg-type]
@@ -227,7 +258,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         heavy_queue=get("HEAVY_QUEUE", "1" if device == "jetson" else "0") == "1",
         spark_base=get("META_API_BASE", "https://api.meta.ai/v1").rstrip("/"),
         spark_model=get("SPARK_MODEL", "muse-spark-1.3"),
-        meta_api_key=get("META_API_KEY") or None,
+        meta_api_key=meta_key,
         workspace_root=Path(get("WORKSPACE_ROOT", str(REPO_ROOT / "demo"))).expanduser().resolve(),
         roster_path=Path(get("ROSTER_PATH", str(REPO_ROOT / "eval" / "roster.json"))).expanduser(),
         policy_path=Path(get("USER_POLICY", str(REPO_ROOT / "eval" / "user_policy.yaml"))).expanduser(),
@@ -237,6 +268,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         relay_url=get("RELAY_URL") or None,
         jetson_url=get("JETSON_URL") or None,
         dreaming_backend=dreaming,  # type: ignore[arg-type]
+        router_trust=trust,  # type: ignore[arg-type]
         light_serial=get("LIGHT_SERIAL") or None,
         approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
@@ -244,16 +276,17 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         primary_model=primary,  # type: ignore[arg-type]
         jetson_lfm_url=jetson_lfm_url,
         jetson_lfm_model=get("JETSON_LFM_MODEL", "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"),
-        jetson_lfm_key=get("JETSON_LFM_API_KEY") or None,
+        jetson_lfm_key=None if device_only else get("JETSON_LFM_API_KEY") or None,
         checker_url=checker_url,
-        checker_model=get("CHECKER_MODEL", "lfm3-vl-2b"),
+        checker_model=checker_model,
         # The checker's llama-server reads the same key file as Glimmer's (scripts/start_checker.sh).
-        checker_api_key=get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None,
+        checker_api_key=checker_key,
         rag_candidates=max(5, int(get("RAG_CANDIDATES", "20"))),
         search_embeddings=get("SEARCH_EMBEDDINGS", "0") == "1",
         embed_url=embed_url,
         embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
         pdftotext_bin=pdftotext,
+        device_only=device_only,
     )
 
 

@@ -197,6 +197,15 @@ NAMES_PROMPT = (
     'titles. Reply with JSON only: {"names": [...]}. If there are none, reply {"names": []}.'
 )
 
+# The same pass with a compliance toggle on: places and organizations count too.
+DETAILS_PROMPT = (
+    "You find details that could identify someone in text. List every name of a person, every town, "
+    "city, county or neighborhood, and every school, employer, clinic, shop or other organization. "
+    "Include ones written in lower case. Copy each one exactly as written. Do not list tags in "
+    "square brackets such as [Student A] or [Place 1]. "
+    'Reply with JSON only: {"names": [...]}. If there are none, reply {"names": []}.'
+)
+
 TOPICS_PROMPT = (
     "Reasoning strength: low\n"
     "You label a request that a cloud assistant sent to the user's device. Names are already tags "
@@ -253,7 +262,8 @@ class LocalLLM:
             self.api_key = settings.model_api_key
         # Only a remote endpoint needs every call marked synthetic; the checker is always local.
         self.is_cloud = self.backend in ("openrouter", "gateway")
-        self.liquid = role in ("checker", "jetson")
+        lfm_only = getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
+        self.liquid = role in ("checker", "jetson") or lfm_only
         self._client = client
         self._sleep = sleep
 
@@ -464,7 +474,13 @@ class LocalLLM:
         except httpx.HTTPError:
             return False
 
-    def llm_names(self, text: str, *, synthetic: bool = False, max_tokens: int = 1500) -> list[str]:
+    def llm_details(self, text: str, *, synthetic: bool = False, max_tokens: int = 1500) -> list[str]:
+        """llm_names, also finding places and organizations (a compliance toggle is on)."""
+        return self.llm_names(text, synthetic=synthetic, max_tokens=max_tokens, prompt=DETAILS_PROMPT)
+
+    def llm_names(
+        self, text: str, *, synthetic: bool = False, max_tokens: int = 1500, prompt: str = NAMES_PROMPT
+    ) -> list[str]:
         """The guard's second pass: person names Glimmer finds in `text`.
 
         Only names that really occur in the text are returned, so a made-up name can never be
@@ -475,7 +491,7 @@ class LocalLLM:
         if not text.strip():
             return []
         data = self.chat_json(
-            [{"role": "system", "content": NAMES_PROMPT}, {"role": "user", "content": text}],
+            [{"role": "system", "content": prompt}, {"role": "user", "content": text}],
             NAMES_SCHEMA,
             max_tokens=max_tokens,
             synthetic=synthetic,

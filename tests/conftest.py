@@ -31,10 +31,12 @@ def settings(tmp_path, monkeypatch):
     env = {
         "BASE_DEVICE": "laptop",
         "BASE_HOME": str(tmp_path / "home"),
+        "WORKSPACE_ROOT": str(tmp_path / "workspace"),  # never the real demo/ folder
         "GLIMMER_BACKEND": "openrouter",
         "OPENROUTER_API_KEY": "test-key",
         "META_API_KEY": "test-meta-key",
     }
     s = load_settings(env)
     s.ensure_home()
+    s.workspace_root.mkdir(exist_ok=True)
     return s

@@ -186,7 +186,7 @@ def test_start_refuses_jetson(tmp_path):
 
 @pytest.mark.skipif(not (REPO / ".venv" / "bin" / "python").exists(), reason="needs the uv virtualenv")
 def test_start_needs_llama_server_bin(tmp_path):
-    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="llama_server",
+    r = run_start(tmp_path, BASE_DEVICE="laptop", DEVICE_ONLY="0", GLIMMER_BACKEND="llama_server",
                   LLAMA_SERVER_BIN=str(tmp_path / "missing"), GLIMMER_GGUF=str(tmp_path / "missing.gguf"))
     assert r.returncode != 0 and "LLAMA_SERVER_BIN" in r.stderr
 
@@ -196,7 +196,7 @@ def test_start_needs_gguf(tmp_path):
     fake_bin = tmp_path / "llama-server"
     fake_bin.write_text("#!/bin/sh\nexit 1\n")
     fake_bin.chmod(0o755)
-    r = run_start(tmp_path, BASE_DEVICE="laptop", GLIMMER_BACKEND="llama_server", LLAMA_SERVER_BIN=str(fake_bin),
+    r = run_start(tmp_path, BASE_DEVICE="laptop", DEVICE_ONLY="0", GLIMMER_BACKEND="llama_server", LLAMA_SERVER_BIN=str(fake_bin),
                   GLIMMER_GGUF=str(tmp_path / "missing.gguf"))
     assert r.returncode != 0 and "GLIMMER_GGUF" in r.stderr
 

@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Starts Muse Privacy on the laptop (BASE_DEVICE=laptop).
+# Starts Muse Privacy on the laptop (BASE_DEVICE=laptop). One command for everything.
 #
+#   DEVICE_ONLY=1 with PRIMARY_MODEL=lfm: LFM3-VL-2B is the only model. Glimmer is not started.
 #   GLIMMER_BACKEND=llama_server: starts two llama-servers from LLAMA_SERVER_BIN with the GGUF in
 #     GLIMMER_GGUF, answer on 127.0.0.1:8081 and router on 127.0.0.1:8082 (the router loads
 #     BASE_HOME/adapters/router.gguf as a LoRA when it exists), then the server.
 #   GLIMMER_BACKEND=openrouter: no local models (development mode, invented data only).
 #   CHECKER_BACKEND=lfm: also starts the local checker, LFM3-VL-2B on 127.0.0.1:8083
 #     (scripts/start_checker.sh), for the checks, search passage picking and scans.
+#   SEARCH_EMBEDDINGS=1: also starts the embedder on 127.0.0.1:8084 (scripts/start_embedder.sh).
 #
-# Then runs `python -m base` and waits for /health on the approval port. Everything binds
+# Then runs `python -m base`, waits for /health on the approval port, and connects to the relay
+# when this device is registered. Keeps the Mac awake while running. Everything binds
 # 127.0.0.1. Ctrl-C stops everything this script started. Settings come from .env and the
 # environment, read through base.config so this script and the server always agree.
 set -euo pipefail
@@ -40,6 +43,10 @@ values = {
     "DEVICE": s.device,
     "BACKEND": s.glimmer_backend,
     "CHECKER": s.checker_backend,
+    "LFM_ONLY": "1" if s.device_only and s.primary_model == "lfm" else "0",
+    "ONE_SERVER": "1" if s.device_only else "0",
+    "EMBEDDINGS": "1" if s.search_embeddings else "0",
+    "RELAY": s.relay_url or "",
     "APPROVAL_HOST": s.approval_host,
     "APPROVAL_PORT": str(s.approval_port),
     "HOME_DIR": str(s.home),
@@ -81,13 +88,21 @@ command -v curl >/dev/null 2>&1 || die "curl is needed to check that things star
 
 LOG_DIR="$HOME_DIR/logs"
 
-if [ "$BACKEND" = llama_server ]; then
+if command -v pmset >/dev/null 2>&1 && pmset -g batt 2>/dev/null | grep -q "Battery Power"; then
+  echo "On battery: the local model runs about 12 times slower. Plug in for normal speed."
+fi
+
+if [ "$LFM_ONLY" = 1 ]; then
+  echo "Device only: LFM3-VL-2B answers every step, and no model is reached off this device."
+elif [ "$BACKEND" = llama_server ]; then
   [ -n "$LLAMA_SERVER_BIN" ] || LLAMA_SERVER_BIN="$(command -v llama-server || true)"
   [ -n "$LLAMA_SERVER_BIN" ] || die "GLIMMER_BACKEND=llama_server needs LLAMA_SERVER_BIN (path to llama-server)"
   [ -x "$LLAMA_SERVER_BIN" ] || die "LLAMA_SERVER_BIN is not an executable file: $LLAMA_SERVER_BIN"
   [ -n "$GLIMMER_GGUF" ] || die "GLIMMER_BACKEND=llama_server needs GLIMMER_GGUF (path to the Glimmer .gguf)"
   [ -f "$GLIMMER_GGUF" ] || die "GLIMMER_GGUF is not a file: $GLIMMER_GGUF"
-  for port in 8081 8082; do
+  PORTS="8081 8082"
+  [ "$ONE_SERVER" = 1 ] && PORTS="8081"
+  for port in $PORTS; do
     if port_busy "$port"; then die "something already answers on 127.0.0.1:$port; stop it first"; fi
   done
   mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
@@ -101,14 +116,20 @@ if [ "$BACKEND" = llama_server ]; then
   # No prompt cache or context checkpoints in RAM (8 GiB and 32 by default), no /slots endpoint.
   SERVER_FLAGS=(--cache-ram 0 --ctx-checkpoints 0 --no-slots --api-key-file "$KEY_FILE")
 
-  echo "Starting Glimmer (answer) on 127.0.0.1:8081"
+  ADAPTER="$HOME_DIR/adapters/router.gguf"
+  ANSWER_LORA=()
+  # Device only: one copy of the model. A global scale of 0 keeps the adapter out of everything
+  # but router calls, which name it per request.
+  if [ "$ONE_SERVER" = 1 ] && [ -f "$ADAPTER" ]; then ANSWER_LORA=(--lora "$ADAPTER" --lora-init-without-apply); fi
+  echo "Starting Glimmer on 127.0.0.1:8081"
   "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8081 \
-    -c "$ANSWER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" >"$LOG_DIR/answer.log" 2>&1 &
+    -c "$ANSWER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" ${ANSWER_LORA[@]+"${ANSWER_LORA[@]}"} >"$LOG_DIR/answer.log" 2>&1 &
   ANSWER_PID=$!
   PIDS="$PIDS $ANSWER_PID"
 
-  ADAPTER="$HOME_DIR/adapters/router.gguf"
-  if [ -f "$ADAPTER" ]; then
+  if [ "$ONE_SERVER" = 1 ]; then
+    :  # the router shares the server above
+  elif [ -f "$ADAPTER" ]; then
     echo "Starting Glimmer (router) on 127.0.0.1:8082 with the router adapter loaded"
     "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8082 \
       -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" --lora "$ADAPTER" --lora-init-without-apply \
@@ -118,11 +139,15 @@ if [ "$BACKEND" = llama_server ]; then
     "$LLAMA_SERVER_BIN" --model "$GLIMMER_GGUF" --alias glimmer --host 127.0.0.1 --port 8082 \
       -c "$ROUTER_CTX" -np 1 -ngl 99 --jinja "${SERVER_FLAGS[@]}" >"$LOG_DIR/router.log" 2>&1 &
   fi
-  ROUTER_PID=$!
-  PIDS="$PIDS $ROUTER_PID"
+  if [ "$ONE_SERVER" != 1 ]; then
+    ROUTER_PID=$!
+    PIDS="$PIDS $ROUTER_PID"
+  fi
 
-  wait_for "http://127.0.0.1:8081/health" 600 "Glimmer (answer)" "$ANSWER_PID" "$LOG_DIR/answer.log"
-  wait_for "http://127.0.0.1:8082/health" 600 "Glimmer (router)" "$ROUTER_PID" "$LOG_DIR/router.log"
+  wait_for "http://127.0.0.1:8081/health" 600 "Glimmer" "$ANSWER_PID" "$LOG_DIR/answer.log"
+  if [ "$ONE_SERVER" != 1 ]; then
+    wait_for "http://127.0.0.1:8082/health" 600 "Glimmer (router)" "$ROUTER_PID" "$LOG_DIR/router.log"
+  fi
   echo "Glimmer is up."
 else
   echo "GLIMMER_BACKEND=$BACKEND: no local models. Development mode, invented data only."
@@ -137,12 +162,34 @@ if [ "$CHECKER" = lfm ]; then
   echo "The checker is up."
 fi
 
+if [ "$EMBEDDINGS" = 1 ]; then
+  mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+  "$ROOT/scripts/start_embedder.sh" >"$LOG_DIR/embedder.log" 2>&1 &
+  EMBED_PID=$!
+  PIDS="$PIDS $EMBED_PID"
+  wait_for "http://127.0.0.1:8084/health" 120 "the embedder" "$EMBED_PID" "$LOG_DIR/embedder.log"
+  echo "The embedder is up."
+fi
+
 if port_busy "$APPROVAL_PORT"; then die "something already answers on 127.0.0.1:$APPROVAL_PORT; stop it first"; fi
 echo "Starting Muse Privacy"
 (cd "$ROOT" && exec "$PY" -m base) &
 APP_PID=$!
 PIDS="$PIDS $APP_PID"
 wait_for "http://127.0.0.1:$APPROVAL_PORT/health" 60 "Muse Privacy" "$APP_PID" "the output above"
+
+if [ -n "$RELAY" ] && [ -f "$HOME_DIR/relay.json" ]; then
+  mkdir -p "$LOG_DIR" && chmod 700 "$LOG_DIR"
+  (cd "$ROOT" && exec "$PY" -m base.connector.relay_client run) >"$LOG_DIR/relay.log" 2>&1 &
+  PIDS="$PIDS $!"
+  echo "Connecting to the relay."
+elif [ -n "$RELAY" ]; then
+  echo "This device is not linked yet. See docs/MUSE_SETUP.md."
+fi
+if command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -i -w $$ &
+  PIDS="$PIDS $!"
+fi
 echo "Muse Privacy is up: http://127.0.0.1:$APPROVAL_PORT (Ctrl-C stops it)"
 
 while sleep 2; do

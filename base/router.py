@@ -1,7 +1,8 @@
 """Privacy router: share_tagged, share_summary, ask_user or refuse for one result.
 
 See docs/CONTRACTS.md (Router). Some results take a rule path with no model call. Everything
-else is one strict-JSON question to Glimmer. Floors run after either path, so a model mistake
+else is one strict-JSON question to the router model. With DEVICE_ONLY=1 the user picks how much
+that answer counts (routing_mode): rules asks no model at all. Floors run after either path, so a model mistake
 can only make the decision stricter, never looser.
 
 Learned rules (the dreaming file) are read back here: the one rule that fits a result is shown
@@ -85,6 +86,83 @@ UNKNOWN_PERSON_REASON = "A title or file name names someone who is not on the ro
 POLICY_REASON = "Your rule {id} says results like this stay on the device."
 DIGITS_REASON = "Contains a long number that could be an identifier."
 REQUEST_TOPIC_REASON = "The request mentions a topic you never share, so you decide."
+OUTSIDE_REASON = "The request says this is going outside the class, so you decide."
+
+# With DEVICE_ONLY=1 and LFM the user's policy decides, not the model. In a test on Oct 29 the 2B
+# model shared summaries of per-student grades and a newsletter quote, and on Oct 30 it agreed with
+# the eval's labels 38 times in 100 (eval/reports/device_only_lfm.md). The model still labels who
+# a request is for; these patterns check its labels and catch a destination it misses.
+_OUTSIDE = re.compile(
+    r"\b(?:famil(?:y|ies)|parents?|guardians?|newsletters?|principal|district|superintendent|counselor|"
+    r"club|board|staff|colleagues?|another teacher|website|social media|post(?:ed|ing)? (?:it|this|on)|"
+    r"publish|press|flyer|send (?:it |this )?to|email (?:it |this )?to)\b",
+    re.IGNORECASE,
+)
+_CLASS_LEVEL = re.compile(
+    r"\b(?:average|mean|median|range|distribution|how many|counts?|percent(?:age)?|most common|most often|"
+    r"across the class|the class(?:'s)?|summari[sz]e)\b",
+    re.IGNORECASE,
+)
+_WHOLE_TEXT = re.compile(r"\b(?:full|whole|entire|complete|word for word|verbatim)\b", re.IGNORECASE)
+_TAGGED_PERSON = re.compile(r"\[(?:Student [A-Z]{1,3}|Person \d+)\]")
+_WRITING_WORDS = re.compile(r"\b(?:essays?|excerpts?|writing|feedback|paragraph|praise|spelling|reasons?)\b", re.IGNORECASE)
+_GRADE_WORDS = re.compile(
+    r"\b(?:scores?|scored|grades?|grader|rubric|criterion|criteria|conventions|ideas|organization|evidence)\b", re.IGNORECASE
+)
+
+
+LEARNING_MODES = ("rules", "tighten", "decide", "local_lora")
+
+
+def routing_mode(settings: Any, choice: str = "") -> str:
+    """How the router decides. "model": the model answers (not device-only). With DEVICE_ONLY=1,
+    the user's choice on the Dreaming page, else DREAMING_BACKEND and ROUTER_TRUST:
+    rules (policy and learned rules in code), tighten (the model can only make that stricter),
+    decide (the model's answer, under the floors), local_lora (decide, with the adapter)."""
+    if not getattr(settings, "device_only", False):
+        return "model"
+    if choice in LEARNING_MODES:
+        return "rules" if choice == "local_lora" and getattr(settings, "primary_model", "") == "lfm" else choice
+    backend = getattr(settings, "dreaming_backend", "rules")
+    if backend == "rules":
+        return "rules"
+    return "local_lora" if backend == "local_lora" else getattr(settings, "router_trust", "tighten")
+
+
+def _taught_by_user(rule: Any) -> bool:
+    return getattr(rule, "source", None) == "user" and getattr(rule, "decision", None) in DECISIONS
+
+
+def small_model(settings: Any) -> bool:
+    """DEVICE_ONLY=1 with LFM, whose request labels are checked against the request's own words."""
+    return getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
+
+
+def checked_labels(request: str, labels: Collection[str]) -> list[str]:
+    """The local model's request labels, checked against the request's own words: a whole text must
+    be asked for, and a question about one tagged person is not class-level. Never-share labels and
+    who-it-is-for labels stay, since they only make a decision stricter."""
+    out = [t for t in labels if not (t == "full_text" and not _WHOLE_TEXT.search(request or ""))]
+    person = bool(_TAGGED_PERSON.search(request or ""))
+    if person:
+        out = [t for t in out if t != "class_level"]
+    elif _CLASS_LEVEL.search(request or "") and "class_level" not in out:
+        out.append("class_level")
+    return out
+
+
+# A contact detail, or one person picked out by what makes them unique: refused, not asked.
+_CONTACT = re.compile(
+    r"\b(?:(?:home|family|parent|guardian|emergency)\s+(?:contact|phone|number)|contact\s+(?:card|info|information|details)|"
+    r"how\s+to\s+reach|where\s+\S+(?:\s+\S+)?\s+lives?|home\s+address|delivered\s+to)\b",
+    re.IGNORECASE,
+)
+_NARROWED = re.compile(r"\b(?:the only (?:\w+ )?(?:student|kid|child|one|person|patient)|only (?:one|student) who)\b", re.IGNORECASE)
+# What the excerpts and grades rule must not pick up from a stray word like "essay" or "writing".
+_ASK_WORDS = re.compile(r"\b(?:absen\w+|attendance|tard\w+|seat(?:s|ing)?|sits?|reading groups?|lunch|behaviou?r)\b", re.IGNORECASE)
+CONTACT_REASON = "This asks for someone's contact details, so it stays on the device."
+NARROWED_REASON = "This could point to one person, so it stays on the device."
+SENSITIVE_REASON = "This is a sensitive record, so it stays on the device."
 
 # Kinds made of the device's own aggregate numbers, where a long number is not an identifier.
 NUMBER_KINDS = frozenset({"class_aggregate", "dreaming_report"})
@@ -176,6 +254,14 @@ class Router:
         self.policy = policy
         self.rules_text = rules_text
         self.adapter = adapter
+        self.choice: Any = None  # returns the user's choice on the Dreaming page (base/services.py)
+
+    def mode(self, inp: RouteInput | None = None) -> str:
+        chosen = self.choice() if callable(self.choice) else ""
+        mode = routing_mode(self.settings, chosen)
+        if inp is not None and inp.strict and mode in ("decide", "local_lora"):
+            return "tighten"  # a compliance toggle: no model can loosen the policy, tuned or not
+        return mode
 
     def rules(self) -> str:
         """Learned rules: the explicit rules_text if given, else the dreaming file if it exists."""
@@ -232,17 +318,66 @@ class Router:
         is_blocked = bool(inp.blocked or blocked_topics)
         learned, learned_floor = self.learned(inp)
 
+        mode = self.mode(inp)
         outcome = self._rule_path(inp, is_blocked)
+        by_policy = outcome is None and mode != "model"
         if outcome is None:
-            outcome = self._ask_model(inp, synthetic, learned, learned_floor)
+            outcome = self._decide_by_mode(mode, inp, synthetic, learned, learned_floor)
         decision, reason, source = outcome
 
         floor, floors, floor_reason = self._floors(inp, blocked_topics, learned_floor)
+        if by_policy:
+            floor, floors, floor_reason = self._policy_floors(inp, learned, floor, floors, floor_reason)
         final = stricter(decision, floor)
         if floor_reason and STRICTNESS[floor] >= STRICTNESS[final]:
             reason = floor_reason  # the floor decided it, whatever the model said
         ms = int((time.perf_counter() - start) * 1000)
         return RouteDecision(final, reason, source, latency_ms=ms, floors=floors)
+
+    def _decide_by_mode(
+        self, mode: str, inp: RouteInput, synthetic: bool, learned: Any, learned_floor: Any
+    ) -> tuple[Decision, str, str]:
+        if mode == "rules":
+            return self._policy_path(inp, learned)
+        asked = self._ask_model(inp, synthetic, learned, learned_floor, use_adapter=mode in ("model", "local_lora"))
+        if mode != "tighten":
+            return asked
+        base = self._policy_path(inp, learned)
+        if asked[2] == "fallback":  # nothing judged it: keep the mark, so Always approve can't answer
+            return stricter(base[0], asked[0]), asked[1], "fallback"
+        return asked if STRICTNESS[asked[0]] > STRICTNESS[base[0]] else base
+
+    def _policy_path(self, inp: RouteInput, learned: Any) -> tuple[Decision, str, str]:
+        """The rule the user taught for results like this, else the first policy rule that matches.
+        Practice defaults come from invented data, so they never stand in for the user's policy."""
+        if _taught_by_user(learned):
+            return learned.decision, "You decided this before for results like this.", "rule"
+        topics, kind = list(inp.topics), inp.result_kind
+        if not _ASK_WORDS.search(inp.request or ""):
+            if _WRITING_WORDS.search(inp.request or ""):
+                topics.append("writing")
+            if _GRADE_WORDS.search(inp.request or ""):
+                topics.append("grades")
+        if "class_level" in topics and kind in ("snippet", "free_text", "per_student"):
+            kind = "class_aggregate"  # the request asks for numbers or patterns, not for one person
+        rule = self.policy.match({"request": inp.request, "result_kind": kind, "topics": topics})
+        return rule.wants, f"Your rule {rule.id} covers results like this.", "rule"
+
+    def _policy_floors(
+        self, inp: RouteInput, learned: Any, floor: Decision, floors: list[str], reason: str
+    ) -> tuple[Decision, list[str], str]:
+        """A sensitive record stays on the device, and the user sees what is going outside the class
+        unless they taught a rule that shares results like this."""
+        if inp.result_kind == "sensitive_record":
+            return "refuse", [*floors, "sensitive_record"], SENSITIVE_REASON
+        if _CONTACT.search(inp.request or ""):
+            return "refuse", [*floors, "contact"], CONTACT_REASON
+        if _NARROWED.search(inp.request or ""):
+            return "refuse", [*floors, "narrowed"], NARROWED_REASON
+        taught = _taught_by_user(learned) and learned.decision in ("share_tagged", "share_summary")
+        if not taught and STRICTNESS[floor] < STRICTNESS["ask_user"] and _OUTSIDE.search(inp.request or ""):
+            return "ask_user", [*floors, "outside_class"], OUTSIDE_REASON
+        return floor, floors, reason
 
     def _rule_path(self, inp: RouteInput, is_blocked: bool) -> tuple[Decision, str, str] | None:
         if inp.result_kind == "document_list" and any(h.kind == "person" for h in inp.hits):
@@ -273,10 +408,10 @@ class Router:
         ]
 
     def _ask_model(
-        self, inp: RouteInput, synthetic: bool, learned=None, learned_floor=None
+        self, inp: RouteInput, synthetic: bool, learned=None, learned_floor=None, use_adapter: bool = True
     ) -> tuple[Decision, str, str]:
         kw: dict[str, Any] = {"reasoning": "low", "max_tokens": MAX_TOKENS, "synthetic": synthetic}
-        if self.adapter is not None:
+        if self.adapter is not None and use_adapter:
             kw["adapter"] = self.adapter
         try:
             out = self.llm.chat_json(self.messages(inp, learned, learned_floor), ROUTE_SCHEMA, **kw)
