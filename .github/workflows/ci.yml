@@ -1,0 +1,60 @@
+# Unit tests, lint, the secrets scan and the relay's tests on every push and pull request.
+# No secrets: unit tests never read .env, and integration tests are skipped (RUN_INTEGRATION is unset).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the secrets scan reads every commit
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Install from the lock file
+        run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check .
+      - name: Unit tests
+        run: uv run pytest -q
+      - name: Secrets scan, files and history
+        run: uv run python -m scripts.secrets_scan --history
+      - name: The relay's KV id is still the placeholder
+        run: grep -q REPLACE_WITH_OAUTH_KV_ID relay/wrangler.jsonc
+
+  relay:
+    name: Relay (ubuntu-latest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+      - name: Install from the lock file
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
