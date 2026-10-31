@@ -48,6 +48,7 @@ import {
   isSessionId,
   museEnv,
   museExecArgs,
+  OPTIONAL_EXEC_FLAGS,
   optionalConfigPrelude,
   optionalFlagsPrelude,
   REFINE_ROUND_STRIDE,
@@ -147,6 +148,8 @@ const WRITE_BATCH_BYTES = 24 * 1024 * 1024;
 const BASIC_RENDER_S = 180;
 /** Names of forkForDryRun's throwaway copies start with this. */
 const DRY_RUN_PREFIX = "dryrun-";
+/** Names of forkForProve's throwaway copies start with this. */
+const PROVE_PREFIX = "prove-";
 /**
  * How long a session bridge stays open with nothing running: after the owner stops a turn (time to send a note), or
  * while a goal waits for its next turn.
@@ -512,6 +515,149 @@ export async function deleteDryRunCopy(sandboxName: string): Promise<void> {
   } catch (err) {
     if (!isNotFound(err)) throw err;
   }
+}
+
+/**
+ * A throwaway copy of a product sandbox for the Prove it stage (docs/PRODUCT_OUTPUTS.md), forked from its last snapshot,
+ * so the product's own sandbox stays free for a refinement and nothing done here reaches it. It can reach the platform
+ * and the product's live host, and Muse Code's brokered routes at Meta. Its old build token was revoked when the build
+ * ended, and it gets no other. Delete it with deleteProveCopy; if that never runs it times out by itself.
+ */
+export async function forkForProve(sandboxName: string, hosts: { liveHost: string; platformHost: string | null }): Promise<{ sandboxName: string }> {
+  const name = `${PROVE_PREFIX}${Date.now().toString(36)}-${sandboxName}`.slice(0, 60).replace(/-+$/, "");
+  await Sandbox.fork({
+    sourceSandbox: sandboxName,
+    name,
+    persistent: false,
+    timeout: SANDBOX_TIMEOUT_MS,
+    networkPolicy: builderNetworkPolicy({
+      modelApiKey: env.modelApiKey,
+      placeholderKey: sandboxPlaceholder(name),
+      platformHost: hosts.platformHost,
+      extraHosts: [hosts.liveHost],
+    }),
+    tags: { app: "musemuse", role: "prove", source: sandboxName.slice(0, 60) },
+  });
+  return { sandboxName: name };
+}
+
+/** Deletes a copy made by forkForProve, and refuses any other sandbox. One that is already gone is fine. */
+export async function deleteProveCopy(sandboxName: string): Promise<void> {
+  if (!sandboxName.startsWith(PROVE_PREFIX)) throw new Error(`${sandboxName} is not a Prove it copy, so it was not deleted`);
+  try {
+    await (await Sandbox.get({ name: sandboxName })).delete();
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+  }
+}
+
+/** Writes files into a Prove it copy, making their folders. Paths are absolute. */
+export async function writeProveFiles(sandboxName: string, files: Array<{ path: string; content: string | Buffer }>): Promise<void> {
+  const sandbox = await openSandbox(sandboxName);
+  await makeDirs(sandbox, [...new Set(files.map((f) => path.posix.dirname(f.path)))]);
+  await writeBatched(sandbox, files);
+}
+
+/** Reads a text file from a sandbox, or null when it isn't there. */
+export async function readSandboxText(sandboxName: string, file: string): Promise<string | null> {
+  const sandbox = await openSandbox(sandboxName);
+  const buf = await sandbox.readFileToBuffer({ path: file }).catch(() => null);
+  return buf ? buf.toString("utf8") : null;
+}
+
+/** Starts one of the stage's long commands detached, under pollTask. A retry finds the one already running. */
+export async function startProveCommand(sandboxName: string, input: { tag: "prove-checks" | "prove-record"; cwd: string; argv: string[] }): Promise<{ cmdId: string }> {
+  const sandbox = await openSandbox(sandboxName);
+  await ensureTime(sandbox, LONG_WORK_MS);
+  await makeDirs(sandbox, [LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`]);
+  const running = await runningCommand(sandbox, input.tag);
+  if (running) return { cmdId: running };
+  const logPath = `${LOG_DIR}/${input.tag}.log`;
+  const script = await writeRunner(sandbox, { name: input.tag, cwd: input.cwd, argv: input.argv, stdoutPath: logPath });
+  const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+  await recordCommand(sandbox, input.tag, cmd.cmdId, logPath);
+  return { cmdId: cmd.cmdId };
+}
+
+/** The skill test's flags beyond exec's own: its step cap needs no reminder agents on top, when this Muse Code has the flag. */
+const SKILL_TEST_FLAGS = [...OPTIONAL_EXEC_FLAGS, "--disable-reminders"] as const;
+
+export interface SkillTestStart {
+  cmdId: string;
+  logPath: string;
+  /** The command it ran, for the video. */
+  command: string;
+}
+
+/**
+ * Starts a fresh Muse Code session in `cwd`, a folder with nothing in it but the skill, so what it does comes from the
+ * skill file and not from the product's source. Low effort, capped at `maxModelSteps`, with no platform hooks or build
+ * MCP server. Poll it with pollMuse. A retry finds the one already running.
+ */
+export async function startSkillTest(input: { sandboxName: string; cwd: string; model: BuildModel; maxModelSteps: number; sessionId: string }): Promise<SkillTestStart> {
+  const sandbox = await openSandbox(input.sandboxName);
+  await ensureTime(sandbox, LONG_WORK_MS);
+  await makeDirs(sandbox, [LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`]);
+  const tag = "prove-skill";
+  const logPath = `${LOG_DIR}/${tag}.jsonl`;
+  const args = museExecArgs({ promptFile: "prompt.md", sessionId: input.sessionId, model: input.model, reasoningEffort: "low", maxModelSteps: input.maxModelSteps });
+  const command = `muse exec --model ${input.model} --reasoning-effort low --max-model-steps ${input.maxModelSteps} --prompt-file prompt.md`;
+  const running = await runningCommand(sandbox, tag);
+  if (running) return { cmdId: running, logPath, command };
+  const script = await writeRunner(sandbox, {
+    name: tag,
+    cwd: input.cwd,
+    env: museEnv(sandboxPlaceholder(input.sandboxName)),
+    argv: ["muse", ...args],
+    prelude: [optionalFlagsPrelude(SKILL_TEST_FLAGS), optionalConfigPrelude([backgroundModelSetting(input.model)], CHECKED_MUSE_VERSION), "true"].join("\n"),
+    stdoutPath: logPath,
+    stderrPath: `${LOG_DIR}/${tag}.err`,
+  });
+  const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+  await recordCommand(sandbox, tag, cmd.cmdId, logPath, "exec");
+  return { cmdId: cmd.cmdId, logPath, command };
+}
+
+/** What a running Muse Code round has spent so far by its session log, in USD. 0 when the log can't be read yet. */
+export async function museRunSpendUsd(sandboxName: string, logPath: string): Promise<number> {
+  const sandbox = await openSandbox(sandboxName);
+  const usage = await readSessionUsage(sandbox, logPath);
+  if (!usage) return 0;
+  return [...usage.main.usage, ...usage.children.usage].reduce((sum, u) => sum + (u.costUsd || 0), 0);
+}
+
+/**
+ * Uploads one output's video from a Prove it copy to demos/<buildId>/prove-<output>.mp4 with its poster, after checking
+ * it is the kind of video Demo Studio makes. Null when there is nothing fit to publish, with the reason logged.
+ */
+export async function uploadProveVideo(input: { sandboxName: string; buildId: string; output: string; dir: string; skipUpload?: boolean }): Promise<DemoVideo | null> {
+  const sandbox = await openSandbox(input.sandboxName);
+  const mp4 = `${input.dir}/demo.mp4`;
+  const poster = `${input.dir}/poster.jpg`;
+  const probe = await sh(
+    sandbox,
+    `[ ! -e ${q(`${input.dir}/failed`)} ] && ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -show_entries format=duration -of json ${q(mp4)}`,
+    { allowFail: true },
+  );
+  const problem = probe.exitCode === 0 ? demoVideoProblem(probe.stdout) : "it wasn't made";
+  if (problem) {
+    console.warn(`Prove it video ${input.output} on ${input.sandboxName}: ${problem}`);
+    return null;
+  }
+  await ensurePoster(sandbox, mp4, poster, 1.5);
+  const hasPoster = (await sh(sandbox, `[ -s ${q(poster)} ]`, { allowFail: true })).exitCode === 0;
+  if (input.skipUpload) return { videoUrl: sandboxUrl(input.sandboxName, mp4), posterUrl: hasPoster ? sandboxUrl(input.sandboxName, poster) : null };
+  const video = await sandbox.readFileToBuffer({ path: mp4 });
+  if (!video) return null;
+  const videoUrl = await putFile("demos", `${input.buildId}/prove-${input.output}.mp4`, video, "video/mp4");
+  let posterUrl: string | null = null;
+  try {
+    const image = hasPoster ? await sandbox.readFileToBuffer({ path: poster }) : null;
+    if (image?.length) posterUrl = await putFile("demos", `${input.buildId}/prove-${input.output}.jpg`, image, "image/jpeg");
+  } catch (err) {
+    console.warn(`Prove it poster ${input.output}: ${String(err)}`);
+  }
+  return { videoUrl, posterUrl };
 }
 
 /**

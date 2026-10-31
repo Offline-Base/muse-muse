@@ -6,10 +6,12 @@ import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import { GetItPanel } from "@/components/product/GetItPanel";
+import { productOutputSlots } from "@/components/product/OutputPanels";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { liveFrameAllow } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
@@ -136,7 +138,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </EmptyCard>
         )}
 
-        {shipped ? <GetItPanel slots={{}} /> : null}
+        {shipped ? <GetItPanel slots={env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>

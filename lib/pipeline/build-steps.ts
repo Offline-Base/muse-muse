@@ -130,7 +130,7 @@ async function unrecorded(ctx: UsageContext, items: ModelUsage[]): Promise<Model
 }
 
 /** Records usage rows and adds their cost to the build, once per result even when the step retries. */
-async function charge(ctx: UsageContext & { buildId: string }, usage: ModelUsage[], what: string): Promise<void> {
+export async function charge(ctx: UsageContext & { buildId: string }, usage: ModelUsage[], what: string): Promise<void> {
   const items = await unrecorded(ctx, usage);
   if (!items.length) return;
   await recordUsage(ctx, items);

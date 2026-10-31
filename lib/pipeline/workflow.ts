@@ -14,6 +14,9 @@
  * A Stop from the build's owner (POST /api/builds/{id}/control) ends either one at the Muse Code poll that sees it: no
  * checks or fix rounds after it, the same cleanup, and a failed status that says "Stopped by you".
  *
+ * With PROVE_IT on, a shipped build then starts the separate Prove it workflow (lib/pipeline/prove.ts). It starts after
+ * the final status is written, and nothing it does can change that status.
+ *
  * Start them with start() from "workflow/api". Never call them directly.
  */
 import { sleep } from "workflow";
@@ -64,6 +67,8 @@ import {
   type Outcome,
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
+import { startProveStep } from "@/lib/pipeline/prove-start";
+import { provePlanStep } from "@/lib/pipeline/prove-steps";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
@@ -459,6 +464,29 @@ async function end(buildId: string, productId: string | null, ending: Ending): P
   return { status: ending.status };
 }
 
+/**
+ * Says a Prove it run is coming, when one is. This comes before the final status, so the room's stream stays open for it,
+ * and it can only ever cost one database write: anything going wrong here means no run.
+ */
+async function planProof(buildId: string, ending: Ending): Promise<string | null> {
+  if (!env.proveIt || (ending.status !== "live" && ending.status !== "partial")) return null;
+  try {
+    return await provePlanStep(buildId);
+  } catch {
+    return null;
+  }
+}
+
+/** Starts the run planProof announced. The build is already final, so a failure here changes nothing. */
+async function startProof(buildId: string, runId: string | null): Promise<void> {
+  if (!runId) return;
+  try {
+    await startProveStep({ buildId, runId });
+  } catch {
+    // The step says so itself when it can.
+  }
+}
+
 export async function buildProduct(input: BuildProductInput): Promise<BuildProductResult> {
   "use workflow";
   const { buildId } = input;
@@ -521,7 +549,10 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
   if (productId || sandboxName) await cleanup({ buildId, productId, sandboxName });
-  return await end(buildId, productId, ending);
+  const proof = await planProof(buildId, ending);
+  const result = await end(buildId, productId, ending);
+  await startProof(buildId, proof);
+  return result;
 }
 
 export async function refineProduct(input: BuildProductInput): Promise<BuildProductResult> {
@@ -594,5 +625,8 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
     ending = { status: "failed", message: failureMessage(track.stage, err) };
   }
   if (sandboxName) await cleanup({ buildId, productId, sandboxName });
-  return await end(buildId, null, ending);
+  const proof = await planProof(buildId, ending);
+  const result = await end(buildId, null, ending);
+  await startProof(buildId, proof);
+  return result;
 }

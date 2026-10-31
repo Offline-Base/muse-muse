@@ -44,6 +44,8 @@ interface Scenario {
   stopOnRoundClear?: boolean;
   /** Every run is on the session bridge, so each poll returns the bridge condenser's state. */
   bridge?: boolean;
+  provePlanThrows?: boolean;
+  proveStartThrows?: boolean;
 }
 
 let scenario: Scenario = {};
@@ -236,6 +238,23 @@ function reset(next: Scenario) {
 describe("build workflow orchestration", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
     mock.module(new URL("../build-steps.ts", import.meta.url).href, { namedExports: fakeSteps });
+    mock.module(new URL("../prove-steps.ts", import.meta.url).href, {
+      namedExports: {
+        provePlanStep: async (buildId: string) => {
+          record("provePlanStep", buildId);
+          if (scenario.provePlanThrows) throw new Error("no database");
+          return "run-1";
+        },
+      },
+    });
+    mock.module(new URL("../prove-start.ts", import.meta.url).href, {
+      namedExports: {
+        startProveStep: async (input: unknown) => {
+          record("startProveStep", input);
+          if (scenario.proveStartThrows) throw new Error("no queue");
+        },
+      },
+    });
     mock.module("workflow", { namedExports: { sleep: async () => undefined } });
     wf = await import("../workflow");
   });
@@ -255,6 +274,60 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     assert.equal(reg.demoPosterUrl, "https://x/poster.jpg");
     assert.equal(named("cleanupStep").length, 1);
     assert.equal(statuses().at(-1), "live");
+  });
+
+  describe("Prove it", () => {
+    const withProve = async (fn: () => Promise<void>) => {
+      process.env.PRODUCT_OUTPUTS = "1";
+      process.env.PROVE_IT = "1";
+      try {
+        await fn();
+      } finally {
+        delete process.env.PRODUCT_OUTPUTS;
+        delete process.env.PROVE_IT;
+      }
+    };
+    /** Each step's name, in order, around the final status. */
+    const order = () => calls.map((c) => (c.step === "setStatusStep" ? `status:${c.args[1] as string}` : c.step)).filter((s) => /^status:(live|partial|failed)$|^prove|^startProve|^cleanup/.test(s));
+
+    it("takes no step with its flags off", async () => {
+      reset({});
+      await wf.buildProduct({ buildId: "b1" });
+      assert.deepEqual(order(), ["cleanupStep", "status:live"]);
+    });
+
+    it("says a run is coming before the final status, and starts it after", () =>
+      withProve(async () => {
+        reset({});
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.deepEqual(order(), ["cleanupStep", "provePlanStep", "status:live", "startProveStep"]);
+        assert.deepEqual(named("startProveStep")[0]!.args[0], { buildId: "b1", runId: "run-1" });
+      }));
+
+    it("still goes live when it can't plan or start, with no second try", () =>
+      withProve(async () => {
+        reset({ provePlanThrows: true });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.deepEqual(order(), ["cleanupStep", "provePlanStep", "status:live"]);
+        reset({ proveStartThrows: true });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "live" });
+        assert.equal(statuses().at(-1), "live");
+      }));
+
+    it("doesn't run for a build that failed", () =>
+      withProve(async () => {
+        reset({ provisionThrows: new Error("no sandbox") });
+        assert.deepEqual(await wf.buildProduct({ buildId: "b1" }), { status: "failed" });
+        assert.equal(named("provePlanStep").length, 0);
+        assert.equal(named("startProveStep").length, 0);
+      }));
+
+    it("runs again after a refinement ships", () =>
+      withProve(async () => {
+        reset({ head: { kind: "refine", status: "queued", productId: "p1" } });
+        assert.deepEqual(await wf.refineProduct({ buildId: "r1" }), { status: "live" });
+        assert.deepEqual(order().slice(-3), ["provePlanStep", "status:live", "startProveStep"]);
+      }));
   });
 
   it("ships a build that passes on the first check", async () => {
