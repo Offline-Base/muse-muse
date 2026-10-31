@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
 import { env } from "@/lib/env";
+import { MCP_FILE, MUSE_FULL_MARKER } from "@/lib/sandbox/muse-config";
 import { FIX_SCREENSHOTS_DIR, OUT_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
 import { q, sh } from "@/lib/sandbox/shell";
 
@@ -133,7 +134,11 @@ fs.writeFileSync(path.join(outDir, "files.json"), JSON.stringify({ files: index,
 console.log(JSON.stringify({ count: index.length, bytes: index.reduce((s, f) => s + f.size, 0), skipped: skipped.length }));
 `;
 
-/** Reads the deployable source out of a product sandbox. Each file's SHA-1 is checked after the transfer. */
+/**
+ * Reads the deployable source out of a product sandbox. Each file's SHA-1 is checked after the transfer. In a sandbox
+ * that has the platform's Muse Code config (MUSE_FULL_MARKER), .mcp.json is the platform's, so it goes first: the next
+ * start writes it again. A product's own .mcp.json still deploys with MUSE_FULL off.
+ */
 export async function collectDeployFiles(
   sandboxName: string,
 ): Promise<{ files: Array<DeployFile & { content: Buffer }>; skipped: Array<{ file: string; size: number }> }> {
@@ -141,9 +146,8 @@ export async function collectDeployFiles(
   const outDir = `${OUT_DIR}/deploy`;
   const script = `${RUN_DIR}/collect-deploy.cjs`;
   await sandbox.writeFiles([{ path: script, content: COLLECT_SCRIPT }]);
-  await sh(sandbox, `rm -rf ${q(outDir)} && node ${q(script)} ${[PRODUCT_DIR, outDir, String(MAX_FILE_BYTES), ...DEPLOY_EXCLUDE_DIRS].map(q).join(" ")}`, {
-    timeoutMs: 50_000,
-  });
+  const collect = `rm -rf ${q(outDir)} && node ${q(script)} ${[PRODUCT_DIR, outDir, String(MAX_FILE_BYTES), ...DEPLOY_EXCLUDE_DIRS].map(q).join(" ")}`;
+  await sh(sandbox, `if [ -f ${q(MUSE_FULL_MARKER)} ]; then rm -f -- ${q(`${PRODUCT_DIR}/${MCP_FILE}`)}; fi\n${collect}`, { timeoutMs: 50_000 });
   const [indexBuf, blob] = await Promise.all([
     sandbox.readFileToBuffer({ path: `${outDir}/files.json` }),
     sandbox.readFileToBuffer({ path: `${outDir}/files.bin` }),
