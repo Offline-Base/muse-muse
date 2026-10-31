@@ -134,14 +134,18 @@ def evaluate(
     device_label: str | None = None,
     command: str = "",
     oracle: bool = False,
+    controls_path: str | Path | None = None,
 ) -> EvalReport:
     """Run the eval in a fresh temporary home with `rules_path` (None for no learned rules).
 
     The home is thrown away, so approval requests are answered by the simulated teacher and the
-    text an approval would release is leak-checked too.
+    text an approval would release is leak-checked too. `controls_path` (a privacy_controls.json,
+    such as a simulated persona's toggles) is copied into that home; None means the defaults.
     """
     with tempfile.TemporaryDirectory(prefix="base-eval-") as tmp:
         services = services_for(settings, Path(tmp) / "home", rules_path)
+        if controls_path is not None:  # the control store re-reads the file when it changes
+            shutil.copyfile(controls_path, services.settings.paths.controls)
         try:
             return run(
                 services,

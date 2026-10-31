@@ -444,9 +444,9 @@ def test_unseen_table_has_one_row_per_router():
                             missed_asks=1, categories={"refuse": {"accuracy": 1.0}})  # fmt: skip
     lines = simulate_nights.unseen_table([simulate_nights._unseen_row("Night 0, no learned rules", r)], "Where from.")
     assert lines[1] == "## Unseen test" and "Where from." in lines
-    assert "| Night 0, no learned rules | 4 | 50.0% | 25.0% | 2 | 0 | 1 | 0 | 1 | - | - | - | 100% |" in lines
+    assert "| Night 0, no learned rules | 4 | 50.0% | 25.0% | 2 | 0 | 0 | 1 | 0 | 1 | - | - | - | 100% |" in lines
     header = next(line for line in lines if line.startswith("| Router"))
-    assert "| Missed asks | Refusals shared |" in header
+    assert "| Approval requests | Unneeded asks | Leaks | Missed asks | Refusals shared |" in header
     assert simulate_nights.unseen_table([]) == []
 
 

@@ -1,0 +1,16 @@
+# Simulated persona (invented). Not a person: a policy file plus seeded habits. See README.md.
+# Loaded by eval/persona.py; every chance is from 0 to 1, and the same seed gives the same answers.
+id: privacy_officer
+name: Simulated district privacy reviewer (invented)
+description: "FERPA and COPPA toggles on a classroom device that runs the strict teacher's policy. The reviewer never answers cards; what it produces is the receipt audit checklist (scripts/audit_replay.py)."
+policy: policy.yaml
+toggles: [ferpa, coppa]
+seed: 105
+mix: natural
+behavior:
+  flip_p: 0.0             # the answer is the opposite of the policy's
+  forget_remember_p: 0.0   # "don't ask again" left unticked when meant
+  late_p: 0.0             # answered after that night's dreaming
+  ignore_p: 1.0           # never answered
+  undo_p: 0.0             # a remembered answer deleted the next morning
+  seconds_per_card: 15     # an assumption, not a measurement
