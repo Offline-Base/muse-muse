@@ -10,6 +10,8 @@
  *
  * Templates come from native/shell-desktop/dist when they're there, since the Blob copy may not exist yet.
  *   --keep <name>   leaves the sandbox running under that name and makes no snapshot, for a spike.
+ *   --from <id>     starts from an earlier snapshot and only replaces the packager's code, for a change that touches nothing
+ *                   else. It takes seconds, where baking the templates from a laptop takes about 10 minutes.
  */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -23,7 +25,8 @@ import { q, sh } from "@/lib/sandbox/shell";
 
 const MIN = 60_000;
 const RCODESIGN_VERSION = "0.29.0";
-const RCODESIGN_SHA256 = process.env.RCODESIGN_SHA256 ?? "";
+/** Of apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz, as first downloaded on Oct 31. */
+const RCODESIGN_SHA256 = "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002";
 const APT = ["default-jre-headless", "dexdump", "apksigner", "aapt", "zipalign", "fonts-inter", "zip", "unzip"];
 const CHUNK_BYTES = 48 * 1024 * 1024;
 
@@ -91,6 +94,8 @@ async function bakeTemplates(sandbox: Sandbox, log: (step: string, ms: number, d
 async function main() {
   const keepAt = process.argv.indexOf("--keep");
   const keepName = keepAt >= 0 ? process.argv[keepAt + 1] : null;
+  const fromAt = process.argv.indexOf("--from");
+  const fromSnapshot = fromAt >= 0 ? process.argv[fromAt + 1] : null;
   const started = Date.now();
   const log = (step: string, ms: number, detail?: string) => console.log(`  ${(ms / 1000).toFixed(1).padStart(6)} s  ${step}${detail ? `  (${detail})` : ""}`);
 
@@ -98,6 +103,7 @@ async function main() {
   const sandbox = await Sandbox.create({
     ...sandboxCredentials(),
     name: keepName ?? `musemuse-packager-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}`,
+    ...(fromSnapshot ? { source: { type: "snapshot" as const, snapshotId: fromSnapshot } } : {}),
     persistent: false,
     resources: { vcpus: 4 },
     timeout: 30 * MIN,
@@ -108,18 +114,20 @@ async function main() {
 
   try {
     t = Date.now();
-    await sh(sandbox, "apt-get update -qq", { sudo: true, env: { DEBIAN_FRONTEND: "noninteractive" }, timeoutMs: 5 * MIN });
-    await sh(sandbox, `apt-get install -y -qq --no-install-recommends ${APT.join(" ")}`, { sudo: true, env: { DEBIAN_FRONTEND: "noninteractive" }, timeoutMs: 10 * MIN });
-    log("apt", Date.now() - t, APT.join(" "));
+    if (!fromSnapshot) {
+      await sh(sandbox, "apt-get update -qq", { sudo: true, env: { DEBIAN_FRONTEND: "noninteractive" }, timeoutMs: 5 * MIN });
+      await sh(sandbox, `apt-get install -y -qq --no-install-recommends ${APT.join(" ")}`, { sudo: true, env: { DEBIAN_FRONTEND: "noninteractive" }, timeoutMs: 10 * MIN });
+      log("apt", Date.now() - t, APT.join(" "));
 
-    t = Date.now();
-    const tarball = `apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl`;
-    const check = RCODESIGN_SHA256 ? `echo ${q(`${RCODESIGN_SHA256}  /tmp/rcodesign.tgz`)} | sha256sum -c -` : "sha256sum /tmp/rcodesign.tgz";
-    const rcode = await sh(
-      sandbox,
-      `curl -fsSL -o /tmp/rcodesign.tgz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/${tarball}.tar.gz && ${check} && tar xzf /tmp/rcodesign.tgz -C /tmp && sudo install -m 0755 /tmp/${tarball}/rcodesign /usr/local/bin/rcodesign && rm -rf /tmp/rcodesign.tgz /tmp/${tarball}`,
-    );
-    log("rcodesign", Date.now() - t, rcode.stdout.trim().slice(0, 100));
+      t = Date.now();
+      const tarball = `apple-codesign-${RCODESIGN_VERSION}-x86_64-unknown-linux-musl`;
+      const check = `echo ${q(`${RCODESIGN_SHA256}  /tmp/rcodesign.tgz`)} | sha256sum -c -`;
+      const rcode = await sh(
+        sandbox,
+        `curl -fsSL -o /tmp/rcodesign.tgz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F${RCODESIGN_VERSION}/${tarball}.tar.gz && ${check} && tar xzf /tmp/rcodesign.tgz -C /tmp && sudo install -m 0755 /tmp/${tarball}/rcodesign /usr/local/bin/rcodesign && rm -rf /tmp/rcodesign.tgz /tmp/${tarball}`,
+      );
+      log("rcodesign", Date.now() - t, rcode.stdout.trim().slice(0, 100));
+    }
 
     t = Date.now();
     await sandbox.writeFiles(await repoFiles());
@@ -128,12 +136,12 @@ async function main() {
     // Metro is never run (lib/android.mjs), so a package.json is all of expo it needs.
     await sh(
       sandbox,
-      `mkdir -p project/node_modules/expo && echo '{"name":"muse-product","version":"1.0.0","private":true}' > project/package.json && echo '{"name":"expo","version":"58.0.21"}' > project/node_modules/expo/package.json && ln -s ../../node_modules/@expo project/node_modules/@expo`,
+      `mkdir -p project/node_modules/expo && echo '{"name":"muse-product","version":"1.0.0","private":true}' > project/package.json && echo '{"name":"expo","version":"58.0.21"}' > project/node_modules/expo/package.json && ln -sfn ../../node_modules/@expo project/node_modules/@expo`,
       { cwd: `${PACKAGER_DIR}/packager` },
     );
     log("packager code", Date.now() - t);
 
-    await bakeTemplates(sandbox, log);
+    if (!fromSnapshot) await bakeTemplates(sandbox, log);
 
     const versions = await sh(sandbox, "java -version 2>&1 | head -1; rcodesign --version; aapt2 version 2>&1; apksigner version; dexdump 2>&1 | head -1; fc-list | grep -c Inter; which zip unzip");
     console.log(versions.stdout);

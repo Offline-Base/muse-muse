@@ -65,11 +65,13 @@ After that:
 - Every provider authority moves to the product's package, or a second product wouldn't install. `aapt2` checks that too.
 
 **Mac.** The universal template gets `muse-product.json`, the plist's name and id, an ICNS and renamed helpers, since Electron
-finds `<CFBundleName> Helper.app` by name. Then `rcodesign sign` with no certificate, which is what `identity: "-"` does on a
-Mac and which keeps the template's entitlements. `zip -y` keeps the framework symlinks.
+finds `<CFBundleName> Helper.app` by name. Names inside the bundle are plain ASCII (`innerName`), because `codesign` refused a
+helper with non-ASCII in its name. The real name stays on the `.app` folder and in `CFBundleDisplayName`. Then `rcodesign sign` with
+no certificate, which is what `identity: "-"` does on a Mac and which keeps the template's entitlements. `zip -y` keeps the
+framework symlinks.
 
-**Windows.** The x64 template gets `muse-product.json`, and resedit sets the exe's icon and version text. The exe is renamed
-and isn't signed, so SmartScreen warns.
+**Windows.** The x64 template gets `muse-product.json`, and resedit sets the exe's icon and version text. The exe and its crash
+DLL are renamed. It isn't signed, so SmartScreen warns.
 
 The shell works out each product's `userData` folder from the URL in its config, so two products never share a profile or a
 lock. The packager has nothing to do for that.
@@ -78,13 +80,13 @@ lock. The packager has nothing to do for that.
 
 ## Sizes
 
-These are what the spike measured, against the design's estimates. Slot limits are `PACKAGE_MAX_BYTES`.
+Measured on Oct 31. The Mac zip is well over the design's estimate, so these are what Blob and download copy should expect.
 
-| Package | Template | Output | Slot limit | Design said |
+| Package | Template | Output | Slot limit (`PACKAGE_MAX_BYTES`) | Design said |
 |---|---|---|---|---|
-| Android | 74 MB | See the spike | 120 MB | 30 to 50 MB |
-| Mac | 217 MB | See the spike | 320 MB | 115 to 150 MB |
-| Windows | 158 MB | See the spike | 260 MB | 100 to 120 MB |
+| Android | 74 MB | 39 MB | 120 MB | 30 to 50 MB |
+| Mac | 217 MB | 224 MB | 320 MB | 115 to 150 MB |
+| Windows | 158 MB | 158 MB | 260 MB | 100 to 120 MB |
 
 ## The Android key
 
@@ -114,6 +116,8 @@ npx tsx --env-file-if-exists=.env.local scripts/native/make-packager-snapshot.ts
 
 - **`--via`** asks the live site for the upload slots (`POST /api/admin/native/shell-upload`, with `AUTOMATION_SECRET`), since the
   live store isn't connected to a laptop's OIDC token.
+- **A code-only change** to the packager doesn't need the templates baked again: `make-packager-snapshot.ts --from <old id>` takes
+  10 s. Baking them from a laptop takes about 10 minutes.
 - **`lib/native/shells.json`** names each file with its checksum, and the packager refuses any other bytes. It takes the copy
   baked into the snapshot when the checksum matches, and otherwise downloads the template.
 - **Then** commit `shells.json` and set the printed `PACKAGER_SNAPSHOT_ID`.

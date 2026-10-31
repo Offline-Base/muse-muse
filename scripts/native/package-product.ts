@@ -2,13 +2,13 @@
  * Runs the real packager for one product, by hand or as a spike, with no database (docs/NATIVE_PACKAGER.md):
  *
  *   npx tsx --env-file-if-exists=.env.local scripts/native/package-product.ts --name "Fern & Moss" --url https://... \
- *     [--kinds android,mac,windows] [--out <dir>] [--delete]
+ *     [--kinds android,mac,windows] [--icon <file>] [--out <dir>] [--delete]
  *
  * It needs PACKAGER_SNAPSHOT_ID and a Blob credential, or none for a local run (files go to .data/files). --out saves each
  * package to that folder, and --delete removes them from Blob afterward. It deletes its sandbox either way.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { del } from "@vercel/blob";
 import { localFilesEnabled } from "@/lib/local-files";
@@ -28,7 +28,9 @@ async function main() {
   const url = flag("--url");
   if (!name || !url) throw new Error('Say --name "<name>" and --url <url>.');
   const kinds = (flag("--kinds")?.split(",") ?? SHELL_TEMPLATE_KINDS) as ShellTemplateKind[];
-  const req = { runId: randomUUID(), productId: randomUUID(), slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name, url, kinds };
+  const iconFile = flag("--icon");
+  const icon = iconFile ? await readFile(iconFile) : null;
+  const req = { runId: randomUUID(), productId: randomUUID(), slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name, url, kinds, icon };
   console.log(`package id ${packageIdFor(req.productId)}`);
 
   const started = Date.now();
