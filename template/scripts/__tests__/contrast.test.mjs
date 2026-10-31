@@ -215,3 +215,69 @@ test("Meta blue is the only signature color, so a stray data-accent changes noth
     assert.ok(b > 200 && b > r + 100 && b > g + 50, `--signature is blue in ${mode} mode`);
   }
 });
+
+// The muse-app look (targets/muse-app, docs/BRAND.md): app/muse-app.css loads after globals.css and sets values only.
+// Its light block comes after globals.css's dark one, so in dark mode a token it sets keeps its light value unless its
+// own dark block sets it again. The themes below follow that cascade.
+const APP_CSS = readFileSync(new URL("../../targets/muse-app/files/app/muse-app.css", import.meta.url), "utf8");
+const appTree = parse(APP_CSS);
+const appDarkMedia = appTree.filter((n) => /^@media\s*\(prefers-color-scheme:\s*dark\)$/.test(n.prelude)).flatMap((n) => n.children);
+const APP_ROOT = merge(rules(appTree, ":root"));
+const APP_DARK_ROOT = merge(rules(appDarkMedia, ":root"));
+const APP_LIGHT = merge(LIGHT, APP_ROOT);
+const APP_DARK = merge(DARK, APP_ROOT, APP_DARK_ROOT);
+const APP_THEMES = [
+  ["light", APP_LIGHT],
+  ["dark", APP_DARK],
+];
+
+// The look's own pairs, beside the base theme's TEXT and SHAPES.
+const APP_TEXT = [
+  ["--fg", "--segment", "chosen segment", "--secondary-bg"],
+  ["--fg", "--secondary-bg", "an option on the segmented track"],
+  ["--fg", "--glass", "typed text in the composer"],
+  ["--placeholder", "--glass", "the composer's placeholder"],
+  ["--fg-2", "--glass", "secondary text over the composer"],
+];
+const APP_SHAPES = [["--on-accent", "--send-to", "the send icon on the gradient's light end"], ["--on-accent", "--send-from", "the send icon on its dark end"]];
+
+/** check() for pairs whose background sits on another layer first (the segment on the track). */
+function checkOn(tokens, pairs, min) {
+  return pairs.flatMap(([fg, bg, where, under]) => check(tokens, [[fg, under ? `${under} + ${bg}` : bg, where]], min));
+}
+
+test("the muse-app look sets every value again in dark mode that it sets in light and globals.css sets in dark", () => {
+  const baseDark = merge(rules(darkMedia, ":root"));
+  const missing = Object.keys(APP_ROOT).filter((t) => t in baseDark && !(t in APP_DARK_ROOT));
+  assert.deepEqual(missing, [], "each of these would keep its light value in dark mode");
+  assert.equal(resolve(APP_DARK, "var(--bg)"), "#181819");
+  assert.equal(resolve(APP_LIGHT, "var(--bg)"), "#ffffff");
+});
+
+for (const [mode, tokens] of APP_THEMES) {
+  test(`the muse-app look: every text pair passes AA (4.5:1) in ${mode} mode`, () => {
+    assert.deepEqual([...check(tokens, TEXT, 4.5), ...checkOn(tokens, APP_TEXT, 4.5)], []);
+  });
+
+  test(`the muse-app look: focus rings, buttons, status icons and the send icon stand out (3:1) in ${mode} mode`, () => {
+    assert.deepEqual([...check(tokens, SHAPES, 3), ...check(tokens, APP_SHAPES, 3)], []);
+  });
+
+  test(`the muse-app look: white text stays AA along the whole AI gradient in ${mode} mode`, () => {
+    const [a, b] = [color(resolve(tokens, "var(--ai-start)")), color(resolve(tokens, "var(--ai-end)"))];
+    for (let t = 0; t <= 1.0001; t += 0.125) {
+      const stop = [0, 1, 2].map((k) => a[k] + (b[k] - a[k]) * t).concat(1);
+      assert.ok(ratio([255, 255, 255, 1], stop) >= 4.5, `white on the AI gradient at ${Math.round(t * 100)}%`);
+    }
+  });
+
+  test(`the muse-app look: chart bars and strokes stand out (3:1), and the signature is the action blue, in ${mode} mode`, () => {
+    const lines = [
+      ["--signature-line", "--surface", "a stroke on a card"],
+      ["--signature-line", "--surface-2", "a bar on the chart's gray"],
+    ];
+    assert.deepEqual(check(tokens, lines, 3), []);
+    const [r, g, b] = color(resolve(tokens, "var(--signature)"));
+    assert.ok(b > 200 && b > r + 100 && b > g + 50, `--signature is blue in ${mode} mode`);
+  });
+}

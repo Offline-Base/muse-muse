@@ -16,6 +16,7 @@ import {
   TARGET_OVERLAYS,
   TARGETS_DIR,
 } from "@/lib/sandbox/paths";
+import { restoreLookFilesScript } from "@/lib/sandbox/look";
 import { q } from "@/lib/sandbox/shell";
 
 export type SandboxTask = "verify" | "demo";
@@ -180,9 +181,11 @@ export function targetFileText(targets: readonly string[]): string {
 
 /**
  * Installs an unpacked template/targets (`from`, with `from/targets/<id>/...`) as the read-only TARGETS_DIR, then removes
- * `from`. Run with sudo. A target already there is replaced, so a refresh can't leave old files behind.
+ * `from`. Run with sudo. Every overlay goes in, the brief targets and the muse-app look (lib/sandbox/look.ts) alike. A
+ * target already there is replaced, so a refresh can't leave old files behind. `owner` is root in a sandbox; tests pass
+ * their own user so they can run it without root.
  */
-export function installTargetsScript(from: string, targetsDir: string = TARGETS_DIR): string {
+export function installTargetsScript(from: string, targetsDir: string = TARGETS_DIR, owner = "root:root"): string {
   const dir = q(targetsDir);
   return [
     "set -e",
@@ -192,7 +195,7 @@ export function installTargetsScript(from: string, targetsDir: string = TARGETS_
     `  cp -R "$t" ${dir}/`,
     `done`,
     `rm -rf ${q(from)}`,
-    `chown -R root:root ${dir}`,
+    `chown -R ${q(owner)} ${dir}`,
     `chmod -R a-w,a+rX ${dir}`,
   ].join("\n");
 }
@@ -299,14 +302,16 @@ export function freeProductPortsScript(): string {
 }
 
 /**
- * The runner's bash for a task: restore the platform files, free the product ports for the demo, then run it.
- * stdout is teed to `outPath` because verify's summary must be the last line of stdout, not of stderr.
+ * The runner's bash for a task: restore the platform files (the template's, a brief's targets' and the muse-app look's),
+ * free the product ports for the demo, then run it. stdout is teed to `outPath` because verify's summary must be the
+ * last line of stdout, not of stderr.
  */
 export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths = {}): string {
   return [
     "set -o pipefail",
     restorePlatformFilesScript(opts.pristineDir),
     restoreTargetFilesScript(opts.targetsDir),
+    restoreLookFilesScript(opts.targetsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
       : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),

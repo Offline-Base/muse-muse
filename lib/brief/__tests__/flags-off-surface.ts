@@ -8,13 +8,18 @@ import { strictJsonSchema } from "@/lib/brief/strict-schema";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { briefInstructions, briefRequestText, changeCheckInstructions } from "@/lib/prompts/brief";
 import { catalogSummary } from "@/lib/prompts/catalog";
-import { JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
+import { env } from "@/lib/env";
+import { judgeInstructions } from "@/lib/prompts/judge";
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 
-/** What each is today, for one sample brief, with whatever GADGETS_ENABLED says when it is called. */
+/**
+ * What each is today, for one sample brief, with whatever GADGETS_ENABLED and MUSE_APP_LOOK say when it is called, read
+ * the way lib/pipeline/build-steps.ts and lib/judge.ts read them.
+ */
 export function flagsOffSurface(): Record<string, string> {
-  const render = { inspoFiles: ["feeder.jpg"], fixtures: [{ fileName: "feeder.jpg", description: "The person's feeder photo", fromUserSample: true }], maxModelSteps: 40 };
+  const look = { museAppLook: env.museAppLook };
+  const render = { inspoFiles: ["feeder.jpg"], fixtures: [{ fileName: "feeder.jpg", description: "The person's feeder photo", fromUserSample: true }], maxModelSteps: 40, ...look };
   return {
     "new-brief.schema.json": json(strictJsonSchema(NewBriefSchema)),
     "new-brief-no-gadget.schema.json": json(strictJsonSchema(NewBriefSchemaNoGadget)),
@@ -22,10 +27,10 @@ export function flagsOffSurface(): Record<string, string> {
     "brief-request.txt": briefRequestText("Count the birds at my feeder.", []),
     "change-check-instructions.txt": changeCheckInstructions(),
     "catalog-summary.txt": catalogSummary(),
-    "judge-instructions.txt": JUDGE_INSTRUCTIONS,
+    "judge-instructions.txt": judgeInstructions(BRIEF, look),
     "build-prompt.txt": renderBuildPrompt(BRIEF, render),
-    "fix-prompt.txt": renderFixPrompt({ verify: null, judge: { pass: false, reasons: ["The count is missing."], mismatches: [] }, round: 1 }),
-    "refine-prompt.txt": renderRefinePrompt({ message: "Add a dark theme.", newReferences: [] }),
+    "fix-prompt.txt": renderFixPrompt({ verify: null, judge: { pass: false, reasons: ["The count is missing."], mismatches: [] }, round: 1, ...look }),
+    "refine-prompt.txt": renderRefinePrompt({ message: "Add a dark theme.", newReferences: [], ...look }),
     "brief.md": briefToMarkdown(BRIEF),
   };
 }

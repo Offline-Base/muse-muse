@@ -311,6 +311,17 @@ export const env = {
     return ["1", "true", "yes", "on"].includes((process.env.GADGETS_ENABLED ?? "").trim().toLowerCase());
   },
 
+  // ---------- How a product looks (docs/BRAND.md) ----------
+
+  /**
+   * MUSE_APP_LOOK: new builds get the muse-app overlay (template/targets/muse-app) and its muse-app-ui skill, and the
+   * build, fix and change prompts and the judge name that look. Off by default, which keeps meta-ui and every prompt as
+   * it was. Turn it on only after the builder snapshot has the overlay: the live site can't add it.
+   */
+  get museAppLook(): boolean {
+    return flag("MUSE_APP_LOOK");
+  },
+
   // ---------- Where a product runs (docs/NATIVE.md). Every switch is off by default ----------
 
   /**

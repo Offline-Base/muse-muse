@@ -1,13 +1,16 @@
 import OpenAI from "openai";
 import type { Response, ResponseInput } from "openai/resources/responses/responses";
 import { z } from "zod";
-import { metaClient, type RequestLike } from "./client";
+import { metaClient, testModelFor, type RequestLike } from "./client";
 import { plainDeep } from "./text";
 
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 export interface RespondJsonOptions<T> {
-  /** Default "muse-wonder-1.0", the model for a product's own text and vision calls. Muse Muse never uses Spark 1.3. */
+  /**
+   * Default "muse-wonder-1.0", the model for a product's own text and vision calls. Muse Muse never uses Spark 1.3. A
+   * test build may run it on Spark 1.3 Contributor instead (testModelFor), which the product's code never chooses.
+   */
   model?: "muse-wonder-1.0";
   schema: z.ZodType<T>;
   /** Letters, digits, _ and -. Sent as the json_schema name. */
@@ -79,7 +82,8 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     let res: Response;
     try {
       res = await client.responses.create({
-        model: opts.model ?? "muse-wonder-1.0",
+        // metaClient makes this swap too. This covers a client passed in, which may not.
+        model: testModelFor(opts.model ?? "muse-wonder-1.0"),
         instructions: instructionsFor(current, opts.instructions, plain),
         input,
         reasoning: { effort: opts.reasoningEffort ?? "low" },

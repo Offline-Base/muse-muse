@@ -1,200 +1,222 @@
 /*
- * Muse Muse platform styles. Dashboard-native patterns (docs/UI_PATTERNS.md) with Muse Muse's own identity:
- * system fonts, no Meta logo or wordmark. Mobile first: base rules are for phones, wider screens add to them.
+ * Muse Muse platform styles. The values come from docs/BRAND.md, which says where each one came from, on Muse Muse's own
+ * identity: no Meta logo, wordmark or typeface. Mobile first: base rules are for phones, wider screens add to them.
  */
 
 :root {
-  --bg: #f2f4f6;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f9f9f9;
-  --surface-3: #e4e6ea;
-  --line: #e0e2e5;
-  --line-strong: #ced0d4;
-  --panel-line: #f2f2f2;
+  --surface-2: #f3f4f5;
+  --surface-3: rgba(0, 0, 0, 0.05);
+  --line: rgba(0, 0, 0, 0.1);
+  --line-strong: rgba(0, 0, 0, 0.16);
+  --panel-line: rgba(0, 0, 0, 0.05);
   --fg: #111112;
-  --fg-2: #3d3f44;
-  --muted: #676a71;
-  --faint: #858585;
-  --accent: #2962d8;
-  --accent-hover: #2156c4;
-  --accent-text: #2962d8;
+  --fg-2: rgba(0, 2, 7, 0.68);
+  --muted: rgba(0, 4, 9, 0.59);
+  --faint: rgba(0, 7, 17, 0.37);
+  --accent: #0064d4;
+  --accent-hover: #0059bd;
+  --accent-text: #0064d4;
   --accent-ink: #ffffff;
-  --accent-soft: #e3ebfa;
-  --nav-active: #cddbf4;
-  --bubble: #e7eaee;
-  --table-head: #e7eaee;
-  --icon-fill: #e2e5e8;
-  --track: #cdd3da;
-  --ink: #28292c;
-  --hover: rgba(17, 17, 18, 0.05);
-  --focus: #2962d8;
-  --ok: #157347;
-  --ok-soft: #e1f4e9;
-  --warn: #8a5a00;
-  --warn-soft: #fcf0d7;
-  --bad: #b42318;
-  --bad-soft: #fde8e6;
+  --accent-soft: color-mix(in srgb, #0064d4 9%, white);
+  /* A fill under white text or icons. The same in dark, where white on #1793ff is 3.16:1. */
+  --accent-fill: #0064d4;
+  --nav-active: #f2f2f2;
+  --bubble: #f3f4f5;
+  --table-head: transparent;
+  --icon-fill: #f3f4f5;
+  --track: rgba(0, 0, 0, 0.16);
+  --ink: #111112;
+  --hover: rgba(0, 0, 0, 0.05);
+  --hover-2: rgba(0, 0, 0, 0.075);
+  --focus: #0064d4;
+  --ok: #008200;
+  --ok-soft: #22c55e26;
+  --warn: #c65323;
+  --warn-soft: #eab30826;
+  /* Status text on its own soft fill. The measured --ok and --warn are 4.41:1 and 4.09:1 there, so they stay for icons. */
+  --ok-text: #007000;
+  --warn-text: #a8431a;
+  --bad: #c01f37;
+  --bad-soft: #fde8e8;
   --chart-1: #7489f7;
   --chart-2: #f2b97c;
   --chart-3: #5bbfa3;
   --chart-4: #ec8a9e;
   --chart-5: #9aa8b6;
   --chart-6: #b99af0;
-  --shadow-float: 0 4px 24px rgba(17, 17, 18, 0.08), 0 1px 2px rgba(17, 17, 18, 0.04);
-  --shadow-pop: 0 12px 32px rgba(17, 17, 18, 0.14), 0 2px 6px rgba(17, 17, 18, 0.08);
-  --shadow-tab: 0 1px 3px rgba(17, 17, 18, 0.12);
+  --glass: rgba(255, 255, 255, 0.76);
+  --code-bg: #f3f4f5;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.1);
+  --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.64), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
+  --shadow-float: var(--shadow-glass);
+  --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.64), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
+  --shadow-tab: var(--shadow-glass);
   /*
-   * The Muse app look (docs/UI_MUSE_APP.md) for the conversation surfaces and the chat kit (components/chat).
-   * Its text color is --fg and its tab track is --panel-line, which already hold those values. The captures were light,
-   * so the dark values are this site's own: the dark placeholder keeps 4.5:1 on the composer card, and on the docs'
-   * lighter #1f1f22 card too.
+   * The conversation surfaces and the chat kit (components/chat). The docs' frame freezes the tokens above and shares
+   * these (app/docs/docs.css, "The look before docs/BRAND.md").
    */
   --chat-bg: #ffffff;
-  --chat-muted: #696b6e;
-  --chat-faint: #a1a3a7;
-  --chat-placeholder: #878787;
-  --chat-line: #e5e5e5;
+  --chat-muted: rgba(0, 4, 9, 0.59);
+  --chat-faint: rgba(0, 7, 17, 0.37);
+  --chat-placeholder: rgba(0, 7, 17, 0.37);
+  --chat-line: rgba(0, 0, 0, 0.1);
   --chat-bubble: #f3f4f5;
   --chat-label: #e7e8eb;
   --chat-segment: #ffffff;
   --work-from: #6547f5;
   --work-to: #c15af7;
-  --send-from: #2a62cc;
-  --send-to: #5d6df5;
-  --shadow-chip: 0 2px 16px rgba(0, 0, 0, 0.08);
-  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.07);
-  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.12);
+  --send-from: #0064d4;
+  --send-to: #5b70ff;
+  --gradient: linear-gradient(to right in oklab, var(--send-from), var(--send-to));
+  --shadow-chip: var(--shadow-glass);
+  --shadow-card: var(--shadow-glass);
+  --shadow-segment: var(--shadow-glass);
   --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.08);
 
-  --sidebar-w: 260px;
+  --sidebar-w: 256px;
   --panel-w: 360px;
-  --col-w: 720px;
+  --col-w: 768px;
   --composer-w: 768px;
   --page-w: 1088px;
   --radius-card: 16px;
-  --radius-input: 10px;
+  --radius-input: 12px;
   --radius-bubble: 28px;
   --pill: 999px;
   --gutter: 16px;
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ease: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* --font-inter is set on <html> by app/fonts/inter.ts. The tracking is only there to correct Inter's width. */
+  --font: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --body-size: 16px;
+  --body-line: 22px;
+  --tracking: -0.01em;
+  --smoothing: antialiased;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1013;
-    --surface: #16181c;
-    --surface-2: #1b1e23;
-    --surface-3: #262a30;
-    --line: #2b2f35;
-    --line-strong: #3a3f46;
-    --panel-line: #23262b;
-    --fg: #ececee;
-    --fg-2: #c4c7cc;
-    --muted: #9a9ea6;
-    --faint: #7c8087;
-    --accent: #3d74e6;
-    --accent-hover: #5286ec;
-    --accent-text: #8cb2ff;
+    --bg: #181819;
+    --surface: #181819;
+    --surface-2: #28292b;
+    --surface-3: rgba(255, 255, 255, 0.12);
+    --line: rgba(255, 255, 255, 0.12);
+    --line-strong: rgba(255, 255, 255, 0.2);
+    --panel-line: rgba(255, 255, 255, 0.12);
+    --fg: #ffffff;
+    --fg-2: rgba(242, 247, 255, 0.6);
+    --muted: rgba(242, 247, 255, 0.53);
+    --faint: rgba(241, 246, 255, 0.38);
+    --accent: #1793ff;
+    --accent-hover: #3aa3ff;
+    --accent-text: #1793ff;
     --accent-ink: #ffffff;
-    --accent-soft: #1a2a48;
-    --nav-active: #1d2f52;
-    --bubble: #262a30;
-    --table-head: #22262b;
-    --icon-fill: #2b3037;
-    --track: #3a3f46;
-    --ink: #ececee;
-    --hover: rgba(232, 238, 243, 0.06);
-    --focus: #8cbcff;
-    --ok: #5fd39a;
-    --ok-soft: #12301f;
-    --warn: #f2c063;
-    --warn-soft: #33270e;
-    --bad: #ff9b8f;
-    --bad-soft: #3a1714;
+    --accent-soft: rgba(23, 147, 255, 0.16);
+    --nav-active: #343435;
+    --bubble: #28292b;
+    --table-head: transparent;
+    --icon-fill: #28292b;
+    --track: rgba(255, 255, 255, 0.2);
+    --ink: #ffffff;
+    --hover: rgba(255, 255, 255, 0.12);
+    --hover-2: rgba(255, 255, 255, 0.15);
+    --focus: #1793ff;
+    --ok: #07b123;
+    --ok-soft: #22c55e26;
+    --warn: #f1916e;
+    --warn-soft: #fbbf2426;
+    --ok-text: var(--ok);
+    --warn-text: var(--warn);
+    --bad: #fa4758;
+    --bad-soft: #dc262626;
     --chart-1: #8293f8;
     --chart-2: #e9ae70;
     --chart-3: #5cc6a8;
     --chart-4: #ee93a6;
     --chart-5: #7d8b98;
     --chart-6: #b9a0f3;
-    --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
-    --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
-    --chat-bg: #0e1013;
-    --chat-muted: #a3a6ad;
-    --chat-faint: #6b6f76;
-    --chat-placeholder: #83878e;
-    --chat-line: #2b2f35;
-    --chat-bubble: #262a30;
+    --glass: rgba(56, 56, 56, 0.8);
+    --code-bg: #1f1f20;
+    --overlay: rgba(255, 255, 255, 0.06);
+    --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
+    --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
+    --chat-bg: #181819;
+    --chat-muted: rgba(242, 247, 255, 0.53);
+    --chat-faint: rgba(241, 246, 255, 0.38);
+    --chat-placeholder: rgba(241, 246, 255, 0.38);
+    --chat-line: rgba(255, 255, 255, 0.12);
+    --chat-bubble: #28292b;
     --chat-label: #2b3037;
-    --chat-segment: #33373e;
+    --chat-segment: rgba(255, 255, 255, 0.12);
     --work-from: #8068f8;
     --work-to: #cd78f9;
-    --send-from: #3d74e6;
-    --send-to: #6a78f7;
-    --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
-    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
-    --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+    --send-from: #007ffd;
+    --send-to: #5b70ff;
     --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0e1013;
-  --surface: #16181c;
-  --surface-2: #1b1e23;
-  --surface-3: #262a30;
-  --line: #2b2f35;
-  --line-strong: #3a3f46;
-  --panel-line: #23262b;
-  --fg: #ececee;
-  --fg-2: #c4c7cc;
-  --muted: #9a9ea6;
-  --faint: #7c8087;
-  --accent: #3d74e6;
-  --accent-hover: #5286ec;
-  --accent-text: #8cb2ff;
+  --bg: #181819;
+  --surface: #181819;
+  --surface-2: #28292b;
+  --surface-3: rgba(255, 255, 255, 0.12);
+  --line: rgba(255, 255, 255, 0.12);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --panel-line: rgba(255, 255, 255, 0.12);
+  --fg: #ffffff;
+  --fg-2: rgba(242, 247, 255, 0.6);
+  --muted: rgba(242, 247, 255, 0.53);
+  --faint: rgba(241, 246, 255, 0.38);
+  --accent: #1793ff;
+  --accent-hover: #3aa3ff;
+  --accent-text: #1793ff;
   --accent-ink: #ffffff;
-  --accent-soft: #1a2a48;
-  --nav-active: #1d2f52;
-  --bubble: #262a30;
-  --table-head: #22262b;
-  --icon-fill: #2b3037;
-  --track: #3a3f46;
-  --ink: #ececee;
-  --hover: rgba(232, 238, 243, 0.06);
-  --focus: #8cbcff;
-  --ok: #5fd39a;
-  --ok-soft: #12301f;
-  --warn: #f2c063;
-  --warn-soft: #33270e;
-  --bad: #ff9b8f;
-  --bad-soft: #3a1714;
+  --accent-soft: rgba(23, 147, 255, 0.16);
+  --nav-active: #343435;
+  --bubble: #28292b;
+  --table-head: transparent;
+  --icon-fill: #28292b;
+  --track: rgba(255, 255, 255, 0.2);
+  --ink: #ffffff;
+  --hover: rgba(255, 255, 255, 0.12);
+  --hover-2: rgba(255, 255, 255, 0.15);
+  --focus: #1793ff;
+  --ok: #07b123;
+  --ok-soft: #22c55e26;
+  --warn: #f1916e;
+  --warn-soft: #fbbf2426;
+  --ok-text: var(--ok);
+  --warn-text: var(--warn);
+  --bad: #fa4758;
+  --bad-soft: #dc262626;
   --chart-1: #8293f8;
   --chart-2: #e9ae70;
   --chart-3: #5cc6a8;
   --chart-4: #ee93a6;
   --chart-5: #7d8b98;
   --chart-6: #b9a0f3;
-  --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --chat-bg: #0e1013;
-  --chat-muted: #a3a6ad;
-  --chat-faint: #6b6f76;
-  --chat-placeholder: #83878e;
-  --chat-line: #2b2f35;
-  --chat-bubble: #262a30;
+  --glass: rgba(56, 56, 56, 0.8);
+  --code-bg: #1f1f20;
+  --overlay: rgba(255, 255, 255, 0.06);
+  --shadow-glass: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
+  --shadow-pop: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
+  --chat-bg: #181819;
+  --chat-muted: rgba(242, 247, 255, 0.53);
+  --chat-faint: rgba(241, 246, 255, 0.38);
+  --chat-placeholder: rgba(241, 246, 255, 0.38);
+  --chat-line: rgba(255, 255, 255, 0.12);
+  --chat-bubble: #28292b;
   --chat-label: #2b3037;
-  --chat-segment: #33373e;
+  --chat-segment: rgba(255, 255, 255, 0.12);
   --work-from: #8068f8;
   --work-to: #cd78f9;
-  --send-from: #3d74e6;
-  --send-to: #6a78f7;
-  --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
-  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
-  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+  --send-from: #007ffd;
+  --send-to: #5b70ff;
   --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
@@ -217,8 +239,10 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--body-size);
+  line-height: var(--body-line);
+  letter-spacing: var(--tracking);
+  -webkit-font-smoothing: var(--smoothing);
   overflow-x: hidden;
 }
 
@@ -243,6 +267,12 @@ h4 {
   text-wrap: balance;
 }
 
+/* Weights stop at 600, as on the live page. The browser's "bolder" would make these 700 over regular text. */
+strong,
+b {
+  font-weight: 600;
+}
+
 p {
   margin: 0;
 }
@@ -252,6 +282,7 @@ input,
 select,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
   color: inherit;
 }
 
@@ -294,9 +325,9 @@ pre {
   z-index: 100;
   padding: 10px 16px;
   border-radius: var(--radius-input);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
-  font-weight: 600;
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -367,14 +398,14 @@ pre {
   min-width: 0;
   color: var(--fg);
   text-decoration: none;
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .brand-mark {
   flex: none;
-  color: var(--accent);
+  color: var(--fg);
 }
 
 .brand-name {
@@ -383,36 +414,35 @@ pre {
 
 .concept {
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-weight: 500;
+  line-height: 13px;
   padding: 2px 7px;
   border-radius: var(--pill);
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--surface-3);
+  color: var(--fg-2);
 }
 
 .disclaimer {
-  margin: 0 8px 12px;
+  margin: 0 4px 12px;
   color: var(--muted);
-  font-size: 11.5px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .sheet {
   margin: 0;
   padding: 0;
   border: 0;
-  width: min(320px, 88vw);
-  max-width: 88vw;
+  width: 100vw;
+  max-width: 100vw;
   height: 100dvh;
   max-height: 100dvh;
   background: var(--bg);
   color: var(--fg);
-  box-shadow: var(--shadow-pop);
 }
 
 .sheet::backdrop {
-  background: rgba(10, 15, 20, 0.4);
+  background: var(--overlay);
 }
 
 .sheet-inner {
@@ -447,16 +477,15 @@ pre {
     height: 100dvh;
     display: flex;
     flex-direction: column;
-    padding: 12px 8px 16px;
+    padding: 12px 12px 16px;
     overflow-y: auto;
     background: var(--bg);
-    border-right: 1px solid var(--line);
   }
 
   .sidebar > .brand {
-    height: 40px;
+    height: 32px;
     margin-bottom: 16px;
-    padding: 0 8px;
+    padding: 0 4px;
   }
 
   .sidebar-foot {
@@ -481,27 +510,33 @@ pre {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
+/* 16 px of space between groups, no rule. */
 .nav-sep {
   border: 0;
-  border-top: 1px solid var(--line);
   margin: 8px 0;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 0 10px 0 6px;
-  border-radius: 8px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px 4px 4px;
+  border-radius: 12px;
   color: var(--fg);
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   text-decoration: none;
-  transition: background-color 120ms ease;
+  transition: background-color var(--ease);
+}
+
+/* The phone sheet keeps a finger-sized row. */
+.sheet .nav-link {
+  min-height: 40px;
 }
 
 .nav-ext {
@@ -514,7 +549,7 @@ pre {
 
 .nav-link[aria-current="page"] {
   background: var(--nav-active);
-  color: var(--accent-text);
+  font-weight: 500;
 }
 
 /* Account chip */
@@ -523,8 +558,8 @@ pre {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 4px 0 8px;
+  gap: 8px;
+  padding: 0 0 0 4px;
 }
 
 .avatar {
@@ -534,10 +569,10 @@ pre {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--surface-3);
+  color: var(--fg);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .account-text {
@@ -548,9 +583,9 @@ pre {
 }
 
 .account-name {
-  font-weight: 600;
-  font-size: 15px;
-  line-height: 1.3;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -558,8 +593,8 @@ pre {
 
 .account-sub {
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.3;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .account .menu {
@@ -588,9 +623,11 @@ pre {
   max-height: min(420px, 70vh);
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
+  border: 0;
+  border-radius: 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(60px);
+  backdrop-filter: blur(60px);
   box-shadow: var(--shadow-pop);
 }
 
@@ -615,26 +652,34 @@ pre {
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 10px 12px;
+  min-height: 36px;
+  padding: 6px 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: none;
   color: var(--fg);
   text-align: left;
   text-decoration: none;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 20px;
+  transition: background-color var(--ease);
 }
 
 .menu-item:hover {
   background: var(--hover);
 }
 
+.menu-item:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--fg);
+}
+
 .menu-item[aria-current] {
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--nav-active);
+  font-weight: 500;
 }
 
 .menu-item-text {
@@ -645,54 +690,51 @@ pre {
 
 /* ---------- Controls ---------- */
 
+/* The live button's 20 px icon sits 4 px from its label, edge to edge, though its CSS gap reads 2 px (docs/BRAND.md). */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 8px 14px;
-  border: 1px solid transparent;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
   border-radius: var(--pill);
-  background: none;
+  background: var(--surface-3);
   color: var(--fg);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 20px;
   text-decoration: none;
   white-space: nowrap;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
+  transition: background-color var(--ease);
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--hover-2);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: var(--gradient);
   color: var(--accent-ink);
-  font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--gradient);
 }
 
 .btn-outline {
-  border-color: var(--line);
-  background: var(--surface);
+  background: var(--surface-3);
 }
 
 .btn-sm {
-  min-height: 34px;
-  padding: 6px 12px;
-  font-size: 14px;
+  min-height: 32px;
+  padding: 0 12px;
+  font-weight: 400;
 }
 
 .btn-block {
@@ -717,23 +759,26 @@ pre {
   background: var(--surface-3);
   color: var(--fg);
   text-decoration: none;
+  transition: background-color var(--ease);
 }
 
 .icon-btn:hover:not(:disabled) {
-  filter: brightness(0.96);
+  background: var(--hover-2);
 }
 
 .icon-btn-plain {
+  width: 32px;
+  height: 32px;
   background: none;
+  color: var(--muted);
 }
 
 .icon-btn-plain:hover:not(:disabled) {
   background: var(--hover);
-  filter: none;
 }
 
 .icon-btn-outline {
-  background: var(--surface);
+  background: transparent;
   border-color: var(--line);
 }
 
@@ -748,7 +793,7 @@ pre {
 
 .icon-btn:disabled,
 .icon-btn.is-disabled {
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 .link-btn {
@@ -774,7 +819,7 @@ pre {
   max-width: 100%;
   padding: 6px 34px 6px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-input);
   background: var(--surface)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235b6b7b' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E")
     no-repeat right 10px center;
@@ -799,8 +844,8 @@ pre {
   padding: 3px 10px;
   border-radius: var(--pill);
   font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
+  font-weight: 500;
+  line-height: 16px;
   white-space: nowrap;
   background: var(--surface-3);
   color: var(--fg-2);
@@ -816,12 +861,12 @@ pre {
 
 .pill-live {
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .pill-partial {
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .pill-failed {
@@ -877,10 +922,11 @@ pre {
   align-items: center;
   padding: 4px 10px;
   border-radius: var(--pill);
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--surface-3);
+  color: var(--fg);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 16px;
   white-space: nowrap;
 }
 
@@ -945,7 +991,7 @@ pre {
   width: min(280px, 80vw);
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--surface);
   box-shadow: var(--shadow-pop);
   color: var(--fg-2);
@@ -970,14 +1016,14 @@ pre {
 .field label,
 .field-label {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--fg);
 }
 
 .field input {
-  min-height: 46px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-input);
   background: var(--surface);
   color: var(--fg);
@@ -1023,7 +1069,7 @@ pre {
   min-width: 0;
   min-height: 38px;
   padding: 6px 10px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-input);
   background: var(--surface);
   color: var(--fg);
@@ -1043,17 +1089,19 @@ pre {
   gap: 20px;
 }
 
-.page-narrow {
-  max-width: 520px;
-  padding-top: 32px;
-}
-
 @media (min-width: 760px) {
   .page {
     max-width: calc(var(--page-w) + 48px);
     padding: 18px 24px 48px;
     gap: 24px;
   }
+}
+
+/* After the rule above, so its max-width doesn't win on wide windows. */
+.page-narrow,
+.page.page-narrow {
+  max-width: 520px;
+  padding-top: 32px;
 }
 
 .page-head {
@@ -1070,15 +1118,16 @@ pre {
 }
 
 .page-head h1 {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 34px;
 }
 
 .subtitle {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 22px;
 }
 
 .page-head-actions {
@@ -1114,8 +1163,9 @@ pre {
 }
 
 .section-head h2 {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 600;
+  line-height: 25px;
 }
 
 .section-card {
@@ -1125,12 +1175,13 @@ pre {
 }
 
 .section-card h2 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
+  line-height: 25px;
 }
 
 .section-card h3 {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -1143,7 +1194,7 @@ pre {
 }
 
 .notice h2 {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   margin-bottom: 4px;
 }
@@ -1156,8 +1207,8 @@ pre {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--surface-3);
+  color: var(--fg);
 }
 
 .empty {
@@ -1170,8 +1221,9 @@ pre {
 }
 
 .empty h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 25px;
 }
 
 .empty .muted {
@@ -1262,8 +1314,8 @@ pre {
 .data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .data th,
@@ -1276,7 +1328,10 @@ pre {
 
 .data thead th {
   background: var(--table-head);
-  font-weight: 600;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
   white-space: nowrap;
 }
 
@@ -1302,7 +1357,7 @@ pre {
 }
 
 .row-title {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--fg);
   text-decoration: none;
 }
@@ -1360,8 +1415,8 @@ pre {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--surface-3);
+  color: var(--fg);
 }
 
 /* ---------- Composer (the muse box) ---------- */
@@ -1386,13 +1441,18 @@ pre {
   padding: 16px 14px 14px;
   border: 0;
   border-radius: 32px;
-  background: var(--surface);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(36px);
+  backdrop-filter: blur(36px);
   box-shadow: var(--shadow-card), var(--composer-floor);
   /* Nothing under the card, unless it's pinned over a page that scrolls (the Make page's rules). */
   --composer-floor: 0 0 transparent;
 }
 
-/* With no border to darken, a hairline ring shows where typing goes. */
+/*
+ * With no border to darken, a hairline ring shows where typing goes. The live card shows no change on focus, but
+ * keyboard users need to see it (WCAG 2.4.7), so this one is ours (docs/BRAND.md, Composer).
+ */
 .composer:has(.composer-input:focus-visible) {
   box-shadow:
     0 0 0 1px var(--line-strong),
@@ -1403,7 +1463,6 @@ pre {
 .composer.is-dragging {
   box-shadow:
     0 0 0 2px var(--accent),
-    0 0 0 6px var(--accent-soft),
     var(--shadow-card),
     var(--composer-floor);
 }
@@ -1420,7 +1479,7 @@ pre {
   background: transparent;
   color: var(--fg);
   font-size: 18px;
-  line-height: 26px;
+  line-height: 27px;
 }
 
 .composer-input::placeholder {
@@ -1460,10 +1519,12 @@ pre {
   min-width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid var(--chat-line);
+  border: 0;
   border-radius: var(--pill);
-  background: var(--surface);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--chat-line);
   color: var(--fg);
+  transition: background-color var(--ease);
 }
 
 .composer-tool:hover:not(:disabled),
@@ -1473,12 +1534,12 @@ pre {
 }
 
 .composer-tool:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
 }
 
 .composer-voice.is-recording .voice-input-btn {
   display: inline-flex;
-  border-color: transparent;
+  box-shadow: none;
 }
 
 /* The mic's starting and transcribing spinner, drawn dark on its white circle. */
@@ -1487,11 +1548,27 @@ pre {
   border-top-color: var(--fg);
 }
 
-/* "+" opens upward: the composer sits at the bottom of the window. */
+/*
+ * "+" opens upward: in the build room the composer sits at the bottom of the window. Inside the card's own blur a menu
+ * can't blur what's behind the card, so this one is solid, with a hairline, since in dark it's the page's own color.
+ */
 .composer-row .menu {
   top: auto;
   bottom: calc(100% + 8px);
   min-width: 300px;
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-pop);
+}
+
+/*
+ * On Make the examples sit under the composer, so "+" opens down over them, not up over the headline: 8 px under the
+ * card, past its 14 px bottom padding. The card's z-index (Playground) keeps the menu above the cards.
+ */
+.play .composer-row .menu {
+  top: calc(100% + 22px);
+  bottom: auto;
 }
 
 .composer-row .menu-item svg {
@@ -1507,12 +1584,8 @@ pre {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: linear-gradient(90deg, var(--send-from), var(--send-to));
+  background: var(--gradient);
   color: var(--accent-ink);
-}
-
-.send-btn:hover:not(:disabled) {
-  filter: brightness(0.94);
 }
 
 /* Half strength while there's nothing to send. */
@@ -1529,7 +1602,7 @@ pre {
   border-radius: 32px;
   background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 500;
   pointer-events: none;
 }
 
@@ -1845,7 +1918,7 @@ pre {
 }
 
 .totals-big strong {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* ---------- Page toolbar and status line (Make page, product page, Fine-tuning job room) ---------- */
@@ -1857,15 +1930,6 @@ pre {
   gap: 2px 10px;
   width: 100%;
   margin: 0 0 20px;
-}
-
-.toolbar .btn {
-  min-height: 36px;
-  padding: 6px 8px;
-  gap: 9px;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
 }
 
 .mobile-status {
@@ -2083,11 +2147,12 @@ pre {
   gap: 8px;
 }
 
+/* Solid, since it holds a long panel of facts, so a hairline marks its edge on the page's own color. */
 .room-top .menu {
   width: 340px;
   padding: 16px;
-  border-color: var(--chat-line);
   background: var(--chat-bg);
+  box-shadow: 0 0 0 1px var(--chat-line), var(--shadow-pop);
 }
 
 @media (min-width: 760px) {
@@ -2311,13 +2376,15 @@ pre {
 .composer-pill {
   flex: none;
   height: 32px;
-  padding: 0 16px;
-  border: 1px solid var(--chat-line);
+  padding: 0 14px;
+  border: 0;
   border-radius: var(--pill);
-  background: var(--surface);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--chat-line);
   color: var(--fg);
-  font-size: 15px;
-  line-height: 30px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 32px;
   white-space: nowrap;
 }
 
@@ -2522,7 +2589,7 @@ pre {
 
 .rich h4 {
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   margin-bottom: 4px;
 }
 
@@ -2779,8 +2846,8 @@ pre {
 }
 
 .todo-completed .todo-box {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
 }
 
 .todo-completed .todo-text {
@@ -3074,7 +3141,7 @@ pre {
 
 .judge h4 {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .judge .lead {
@@ -3117,9 +3184,9 @@ pre {
 
 .panel {
   min-width: 0;
-  border: 1px solid var(--panel-line);
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: var(--surface-2);
+  background: var(--surface);
 }
 
 .panel-toggle {
@@ -3237,8 +3304,9 @@ pre {
   background: var(--line);
 }
 
+/* The same blue as the done dots it joins. */
 .rail-done:not(:last-child)::before {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .rail-dot {
@@ -3256,8 +3324,8 @@ pre {
 }
 
 .rail-done .rail-dot {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
 }
 
 .rail-active .rail-dot {
@@ -3458,25 +3526,29 @@ pre {
 
 .segmented {
   display: inline-flex;
-  padding: 3px;
-  border-radius: var(--pill);
-  background: var(--surface-3);
+  min-height: 36px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--panel-line);
 }
 
 .segmented a {
-  padding: 5px 14px;
-  border-radius: var(--pill);
-  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  min-height: 28px;
+  padding: 0 14px;
+  border-radius: 16px;
+  color: var(--fg);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 20px;
   text-decoration: none;
   white-space: nowrap;
 }
 
 .segmented a[aria-current] {
-  background: var(--surface);
-  color: var(--fg);
-  box-shadow: var(--shadow-tab);
+  background: var(--chat-segment);
+  box-shadow: var(--shadow-segment);
 }
 
 .usage-grid {
@@ -3503,7 +3575,7 @@ pre {
 
 .stat-num {
   font-size: 30px;
-  font-weight: 700;
+  font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
@@ -3635,34 +3707,31 @@ pre {
 .tabs {
   display: inline-flex;
   max-width: 100%;
+  min-height: 36px;
   overflow-x: auto;
   padding: 4px;
-  border-radius: 20px;
-  background: var(--surface-3);
+  border-radius: 16px;
+  background: var(--panel-line);
   scrollbar-width: none;
 }
 
 .tab {
   flex: none;
-  min-height: 32px;
-  padding: 0 16px;
+  min-height: 28px;
+  padding: 0 14px;
   border: 0;
   border-radius: 16px;
   background: none;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 600;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
   white-space: nowrap;
 }
 
-.tab:hover {
-  color: var(--fg);
-}
-
 .tab[aria-selected="true"] {
-  background: var(--surface);
-  color: var(--fg);
-  box-shadow: var(--shadow-tab);
+  background: var(--chat-segment);
+  box-shadow: var(--shadow-segment);
 }
 
 /* The Get it panel's outputs (components/product/OutputPanels.tsx). */
@@ -3735,8 +3804,12 @@ pre {
 }
 
 .range {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--panel-line);
 }
 
 .range a {
@@ -3745,23 +3818,23 @@ pre {
   min-width: 42px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 16px;
   color: var(--fg);
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;
 }
 
-.range a:hover {
-  background: var(--bg);
+.range a[aria-current] {
+  background: var(--chat-segment);
+  box-shadow: var(--shadow-segment);
 }
 
-.range a[aria-current] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--surface);
+/* An option that isn't chosen shows a fill under the pointer, so it reads as one you can pick. */
+.tab:hover:not([aria-selected="true"]),
+.range a:hover:not([aria-current]),
+.segmented a:hover:not([aria-current]) {
+  background: var(--hover);
 }
 
 /* ---------- Dashboard ---------- */
@@ -3770,8 +3843,8 @@ pre {
   display: flex;
   flex-direction: column;
   padding: 20px 16px;
-  border-radius: var(--radius-card);
-  background: var(--bg);
+  border-radius: 24px;
+  background: var(--surface-2);
 }
 
 .hero-card-head {
@@ -3785,10 +3858,10 @@ pre {
 }
 
 .hero-card h1 {
-  color: var(--accent-text);
-  font-size: 26px;
+  color: var(--fg);
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 25px;
 }
 
 .hero-card-body {
@@ -3854,16 +3927,16 @@ a.dash-card:hover {
 }
 
 .dash-num {
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 34px;
   font-variant-numeric: tabular-nums;
 }
 
 .dash-label {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .dash-card .dash-label-muted {
@@ -3885,7 +3958,7 @@ a.dash-card:hover {
 
 .dash-icon-fill {
   border-color: transparent;
-  background: var(--bg);
+  background: var(--surface-2);
 }
 
 .dash-foot {
@@ -3940,138 +4013,108 @@ a.dash-card:hover {
 
 /* ---------- Playground pages (Make) ---------- */
 
-/* The Make page sits on the Muse app's plain page (docs/UI_MUSE_APP.md, "The page"): white, near-black in dark mode. */
+/*
+ * The Make page (docs/BRAND.md, "Layout"): the headline, then 32 px, then the composer, with the examples under it,
+ * centered in the window as one block on the plain page. The build setup folds up below.
+ */
 .play {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   min-height: 100dvh;
-  padding: 12px var(--gutter) 0;
-  background: var(--chat-bg);
-}
-
-/*
- * The setup panel: a hairline outline on the page, not a gray card. Under the Make column on narrow screens, it stays
- * in front of the fill under the composer's card (below).
- */
-.play .panel {
-  position: relative;
-  z-index: 11;
-  border-color: var(--chat-line);
+  padding: 12px 24px 32px;
   background: var(--chat-bg);
 }
 
 .play-main {
-  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
-@media (min-width: 1180px) {
+@media (max-width: 759.98px) {
   .play {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--panel-w);
-    align-items: start;
-    gap: 24px;
-    padding: 20px 20px 0 24px;
-  }
-
-  .play-main {
-    min-height: calc(100dvh - 20px);
-  }
-
-  .play .panel {
-    position: sticky;
-    top: 20px;
+    min-height: calc(100dvh - 57px);
   }
 }
 
+@media (min-width: 760px) {
+  .play {
+    padding: 20px 24px 40px;
+  }
+}
+
+.play .toolbar {
+  margin: 0;
+}
+
 .play-intro {
-  margin: 64px auto 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  width: 100%;
+  max-width: var(--composer-w);
+  margin: auto auto 32px;
+  padding-top: 32px;
   text-align: center;
 }
 
 .play-intro h1 {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.play-intro p {
-  color: var(--chat-muted);
-  font-size: 15px;
+  font-size: clamp(28px, 7.2vw, 48px);
+  font-weight: 400;
+  line-height: 1.08;
 }
 
 .play-main > .composer-wrap {
-  flex: 1;
-  margin: 0 auto;
-  max-width: none;
-  align-items: center;
-}
-
-.play-main > .composer-wrap > .composer,
-.play-main > .composer-wrap > .form-error {
-  width: 100%;
+  margin: 0 auto auto;
   max-width: var(--composer-w);
+  gap: 16px;
 }
 
 /*
- * Pinned 24 px above the window's bottom edge, the card leaves a gap under it where what scrolls up behind it would
- * show, and it shows in the card's rounded bottom corners too. The Muse app's page is plain there, so a copy of the
- * card's shape in the page color sits 56 px lower: the gap plus the corner's 32 px, which keeps the copy's sides
- * straight from those corners down to the window's edge. As a shadow, it paints under the card's own soft shadow and
- * only outside the card, and reaches neither above it nor beside it.
+ * One line of text at rest, which makes the card 107 px. The composer grows it with the text. The examples come after
+ * it in the page and are positioned too, so without a z-index they would paint over its "+" menu.
  */
-.play-main > .composer-wrap > .composer {
-  position: sticky;
-  bottom: 24px;
-  z-index: 10;
-  margin-top: auto;
-  --composer-floor: 0 56px 0 var(--chat-bg);
+.play .composer {
+  z-index: 1;
+  gap: 18px;
 }
 
-/* An error under the card stays in front of that fill. */
-.play-main > .composer-wrap > .form-error {
-  position: relative;
-  z-index: 11;
-  margin-bottom: 8px;
+.play .composer-input {
+  min-height: 27px;
 }
 
+/* Three across from 560 px, one per row below that. */
 .ex-grid {
   list-style: none;
   width: 100%;
-  max-width: 960px;
-  margin: 24px auto 32px;
+  margin: 4px 0 0;
   padding: 0;
   display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+
+@media (min-width: 560px) {
+  .ex-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .ex-card {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: block;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  color: var(--fg);
+  border: 0;
+  border-radius: 18px;
+  background: var(--surface-2);
+  color: #ffffff;
   text-align: left;
-  transition: border-color 120ms ease;
 }
 
-.ex-card:hover:not(:disabled) {
-  border-color: var(--line-strong);
+@media (min-width: 560px) {
+  .ex-card {
+    aspect-ratio: 0.86;
+  }
 }
 
 .ex-card:disabled {
@@ -4079,11 +4122,9 @@ a.dash-card:hover {
 }
 
 .ex-media {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: block;
-  overflow: hidden;
-  aspect-ratio: 308 / 160;
-  background: var(--surface-3);
 }
 
 .ex-media img {
@@ -4091,6 +4132,18 @@ a.dash-card:hover {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform var(--ease);
+}
+
+.ex-card:hover:not(:disabled) .ex-media img {
+  transform: scale(1.03);
+}
+
+.ex-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.68));
 }
 
 .ex-grid > li {
@@ -4100,19 +4153,20 @@ a.dash-card:hover {
 .ex-camera {
   position: absolute;
   right: 10px;
-  top: 12px;
+  top: 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
+  min-height: 28px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--pill);
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.9);
   color: #111112;
   font: inherit;
   font-size: 13px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 18px;
   cursor: pointer;
 }
 
@@ -4123,33 +4177,137 @@ a.dash-card:hover {
 .ex-tag {
   position: absolute;
   left: 10px;
-  top: 14px;
-  padding: 3px 7px;
+  top: 10px;
+  padding: 4px 8px;
   border-radius: var(--pill);
-  background: rgba(17, 17, 18, 0.88);
+  background: rgba(17, 17, 18, 0.72);
   color: #ffffff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 16px;
 }
 
 .ex-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 14px 12px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 14px 14px;
 }
 
 .ex-title {
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1.3;
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/*
+ * The description is the card's tooltip (its title, which screen readers read as its description), so from 560 px it
+ * stays out of sight. Phones have no tooltips, so there it's a second caption line, on a deeper scrim.
+ */
 .ex-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 559.98px) {
+  .ex-text {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    margin-top: 2px;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    font-size: 13px;
+    line-height: 18px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Two lines reach up into the photo, so the scrim is about .6 under the title, enough for white over white paper. */
+  .ex-media::after {
+    background: linear-gradient(180deg, transparent 20%, rgba(0, 0, 0, 0.55) 55%, rgba(0, 0, 0, 0.8));
+  }
+}
+
+/* The build setup: facts, not controls, folded under the examples. */
+.setup {
+  width: 100%;
+  max-width: var(--composer-w);
+  margin: 40px auto 0;
+  border-top: 1px solid var(--line);
+}
+
+.setup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 32px;
+  margin-top: 12px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--pill);
   color: var(--muted);
   font-size: 14px;
-  line-height: 1.35;
+  line-height: 20px;
+  list-style: none;
+  cursor: pointer;
+  transition: background-color var(--ease);
+}
+
+.setup-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.setup-toggle:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.setup[open] .setup-chevron {
+  transform: rotate(180deg);
+}
+
+.setup-list {
+  margin: 8px 0 0;
+  padding: 0 12px;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 11em) minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.setup-row dt {
+  color: var(--muted);
+}
+
+.setup-row dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.setup-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.setup .panel-note {
+  padding: 10px 12px 0;
 }
 
 /* Panel controls: read-only selects, round icon buttons and switches */
@@ -4326,17 +4484,18 @@ a.dash-card:hover {
 }
 
 .signin h1 {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 34px;
 }
 
 .signin-brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 /* ---------- Motion ---------- */
@@ -4396,7 +4555,7 @@ a.dash-card:hover {
 
 .train-callout-warn {
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
   font-size: 14px;
 }
 
@@ -4967,10 +5126,10 @@ a.dash-card:hover {
 /* Lab results: the read-only /fine-tuning everyone sees (docs/TRAINING.md "Lab results") */
 
 .lab-intro h2 {
-  color: var(--accent-text);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--fg);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 29px;
 }
 
 .lab-intro .hero-card-desc {
@@ -5136,7 +5295,7 @@ a.dash-card:hover {
   padding: 1px 8px;
   border-radius: var(--pill);
   background: var(--surface-3);
-  color: var(--muted);
+  color: var(--fg-2);
   font-size: 11.5px;
   font-weight: 600;
   line-height: 1.6;
@@ -5152,7 +5311,7 @@ a.dash-card:hover {
 .vibe-tag-ask {
   margin-left: 0;
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .vibe-fields {
@@ -5252,7 +5411,7 @@ a.dash-card:hover {
   padding: 10px 14px;
   border-radius: 12px;
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -5437,7 +5596,7 @@ a.dash-card:hover {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
 }
 
@@ -5506,13 +5665,13 @@ a.dash-card:hover {
 }
 
 .vibe-step-current .vibe-step-num {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
 }
 
 .vibe-step-done .vibe-step-num {
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .vibe-step-todo .vibe-step-title {
@@ -5656,7 +5815,7 @@ a.dash-card:hover {
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
   font-weight: 500;
 }
 

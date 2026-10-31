@@ -87,7 +87,8 @@ import {
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
+import { type BuilderInfo, installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder, templateHash } from "@/lib/sandbox/setup";
 import {
   activeTargetsScript,
   applyTargetScript,
@@ -276,9 +277,16 @@ async function ensureTime(sandbox: Sandbox, needMs: number): Promise<void> {
   }
 }
 
+/**
+ * The product's .env.local. A product calling Meta directly skips the gateway, and with it the gateway's TEST_MODEL swap
+ * of a build's Muse Wonder calls, so on those runs TEST_MODEL goes in the file too and the template's metaClient (and
+ * respondJson) makes the swap itself. Through the gateway the file never names it.
+ */
 function envLocal(sandboxName: string, gatewayUrl: string, token: string): string {
-  const [url, key] = productsCallMetaDirectly() ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
-  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n`;
+  const direct = productsCallMetaDirectly();
+  const [url, key] = direct ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
+  const test = direct ? testModel() : null;
+  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}`;
 }
 
 async function download(items: Array<{ dir: "inspo" | "fixtures"; fileName: string; url: string }>) {
@@ -393,7 +401,9 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
-  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). */
+  /** MUSE_APP_LOOK: put the muse-app look in before anything from the user (applyLook). Off leaves the template as it is. */
+  museAppLook?: boolean;
+  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). With the look, in its colors (withLookColors). */
   extraFiles?: Array<{ path: string; content: string }>;
   /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
   targets?: readonly string[];
@@ -436,10 +446,54 @@ async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: read
 }
 
 /**
+ * Puts the muse-app look (lib/sandbox/look.ts) into a new product. A snapshot made with the overlay has it. In one from
+ * before it, a local run adds it from this checkout's template/targets, so the look can be tried without a new snapshot;
+ * the live site can't, since its functions have no template/. Fails rather than build without it, since the build
+ * prompt names its skill.
+ */
+async function applyLook(sandbox: Sandbox): Promise<void> {
+  const found = await sh(sandbox, `[ -f ${q(`${OVERLAYS_DIR}/${MUSE_APP_OVERLAY}/deps.json`)} ]`, { allowFail: true });
+  if (found.exitCode !== 0) {
+    if (process.env.VERCEL) {
+      throw new Error("This builder snapshot doesn't have the muse-app overlay. Make a new one with npm run snapshot before turning MUSE_APP_LOOK on.");
+    }
+    const dir = LOCAL_TEMPLATE_DIR();
+    const files = (await readTargetFiles(dir)).filter((f) => f.path.startsWith(`targets/${MUSE_APP_OVERLAY}/`));
+    if (!files.length) throw new Error(`This builder snapshot doesn't have the muse-app overlay, and there's no ${dir}/targets/${MUSE_APP_OVERLAY} to add it from.`);
+    await installTargets(sandbox, files, () => {});
+  }
+  await sh(sandbox, applyLookScript(), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
+
+/**
+ * On a local run, says when the snapshot was made from a different template than this checkout's. A product gets
+ * template/ from the snapshot (only PLATFORM_FILES are refreshed), so a change there, such as lib/meta/client.ts's
+ * TEST_MODEL swap or a skill, isn't in this build until npm run snapshot. A warning, not an error: an older snapshot
+ * is often fine. Quiet when the marker has no hash or there's no template/ here.
+ */
+async function warnIfOlderTemplate(marker: Buffer, snapshotId: string): Promise<void> {
+  let made: string | undefined;
+  try {
+    made = (JSON.parse(marker.toString("utf8")) as Partial<BuilderInfo>).templateHash;
+  } catch {
+    return;
+  }
+  if (!made) return;
+  const dir = LOCAL_TEMPLATE_DIR();
+  const files = await Promise.all([readTemplateFiles(dir), readTargetFiles(dir)]).catch(() => null);
+  if (!files) return;
+  const here = templateHash(files.flat());
+  if (here === made) return;
+  console.warn(
+    `musemuse: builder snapshot ${snapshotId} has template ${made}, and ${dir}/ here is ${here}. Changes to the template since then, such as lib/meta/client.ts's TEST_MODEL swap, aren't in this build. Run npm run snapshot for them.`,
+  );
+}
+
+/**
  * Creates the product's sandbox from BUILDER_SNAPSHOT_ID (or installs everything when no snapshot is set), puts the
  * template in PRODUCT_DIR, writes inspo/, fixtures/, brief.md and .env.local, then locks egress to the build policy
- * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). A brief's targets go in before the user's
- * files (applyTargets).
+ * (api.meta.ai with the brokered key, registry.npmjs.org, the platform host). With museAppLook, the muse-app look goes
+ * in first (applyLook), then a brief's targets (applyTargets), both before the user's files.
  *
  * Idempotent: a retry reuses the existing sandbox and rewrites the same files.
  */
@@ -470,11 +524,14 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     await sandbox.update({ networkPolicy: SNAPSHOT_POLICY });
     const dir = LOCAL_TEMPLATE_DIR();
     await setupBuilder(sandbox, await readTemplateFiles(dir), () => {}, await readTargetFiles(dir));
+  } else if (snapshotId && !process.env.VERCEL) {
+    await warnIfOlderTemplate(ready, snapshotId);
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name) });
 
+  if (input.museAppLook) await applyLook(sandbox);
   const targets = input.targets ?? [];
   if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
 
@@ -485,7 +542,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   ]);
   await writeBatched(sandbox, [
     ...downloaded,
-    ...(await productWrites(sandbox, input.extraFiles ?? [])),
+    ...(await productWrites(sandbox, input.museAppLook ? withLookColors(input.extraFiles ?? []) : (input.extraFiles ?? []))),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
@@ -499,7 +556,10 @@ export async function reopenSandbox(input: {
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
-  /** Written only where missing: a product from before its target's files, and never over what Muse Code changed. */
+  /**
+   * Written only where missing: a product from before its target's files, and never over what Muse Code changed. A
+   * product with the muse-app look (its LOOK_CSS) gets them in the look's colors, whatever the flag says now.
+   */
   extraFiles?: Array<{ path: string; content: string }>;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
@@ -510,9 +570,10 @@ export async function reopenSandbox(input: {
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
   const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
   const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
+  const look = missing.length > 0 && Boolean(await sandbox.readFileToBuffer({ path: productPath(LOOK_CSS) }).catch(() => null));
   await writeBatched(sandbox, [
     ...downloaded,
-    ...(await productWrites(sandbox, missing)),
+    ...(await productWrites(sandbox, look ? withLookColors(missing) : missing)),
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
   ]);
 }

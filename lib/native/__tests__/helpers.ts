@@ -1,5 +1,7 @@
 /** A real Postgres (PGlite) with the repo's migrations, and a product with a native run, for the lab's tests. */
 import { randomUUID } from "node:crypto";
+import { rmdirSync } from "node:fs";
+import path from "node:path";
 import * as schema from "@/lib/db/schema";
 import type { NativeJobInput } from "@/lib/native/types";
 
@@ -52,4 +54,21 @@ export function macInput(over: Partial<NativeJobInput> = {}): NativeJobInput {
     app: { kind: "mac_zip", variant: "product", version: "1.0.0", url: "https://abc.public.blob.vercel-storage.com/native/shells/1/mac.zip", sha256: "a".repeat(64) },
     ...over,
   };
+}
+
+/**
+ * After a test deletes a file it stored in this checkout's .data/files (lib/storage.ts localFilePaths) and its type
+ * sidecar: removes each folder above them that is now empty, up to .data itself. Stops at the first that isn't empty,
+ * so a local run's own files stay.
+ */
+export function pruneStoredFolders(paths: { file: string; type: string }, root: string = path.resolve(".data")): void {
+  for (const f of [paths.file, paths.type]) {
+    for (let dir = path.dirname(f); dir === root || dir.startsWith(root + path.sep); dir = path.dirname(dir)) {
+      try {
+        rmdirSync(dir);
+      } catch {
+        break;
+      }
+    }
+  }
 }

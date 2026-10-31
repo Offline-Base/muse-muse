@@ -155,7 +155,7 @@ Target length 2:50. Shot 7 is the first cut if it runs long, which brings it to 
 
 **2. Make page (0:13-0:25)**
 
-- On screen: open https://muse-muse.vercel.app. The sidebar, the "Start from an example" title and three cards show. Click **Receipt to spreadsheet**. The receipt photo attaches as a chip and the note fills in. Move the pointer over the right panel: Model `muse-wonder-1.0`, Builder Muse Code, Fix rounds Up to 3. Click the blue send button.
+- On screen: open https://muse-muse.vercel.app. The sidebar, the "What should Muse make?" headline, the composer and three cards show. Click **Receipt to spreadsheet**. The receipt photo attaches as a chip and the note fills in. Open **Build setup** under the cards: Model `muse-wonder-1.0`, Builder Muse Code, Fix rounds Up to 3. Click the blue send button.
 - Say: "Muse Muse starts from an example instead of a long prompt. Drop in a photo, a sketch, a video, a voice memo or a PDF, and Muse Code builds the product."
 
 **3. Build room: brief and build (0:25-0:44)**

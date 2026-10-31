@@ -1,6 +1,6 @@
 /*
  * The chat kit (components/chat): the Muse app look for Muse Muse's conversation surfaces, measured from the owner's
- * captures (docs/UI_MUSE_APP.md). Global classes, all prefixed chat-, imported once by app/layout.tsx so every route
+ * captures (docs/UI_MUSE_APP.md) and reconciled with live measurements (docs/BRAND.md). Global classes, all prefixed chat-, imported once by app/layout.tsx so every route
  * can use the kit. Colors come from the chat tokens in app/globals.css, so light and dark follow the rest of the site.
  * Only the working icon moves and new steps fade in. Nothing else animates.
  */
@@ -34,7 +34,7 @@
   min-height: 44px;
   margin-left: auto;
   padding: 9px 16px;
-  border-radius: 25px;
+  border-radius: 22px;
   background: var(--chat-bubble);
   color: var(--fg);
   font-size: 16px;
@@ -204,7 +204,7 @@
   grid-auto-flow: column;
   height: 36px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 16px;
   background: var(--panel-line);
 }
 
@@ -213,10 +213,11 @@
   padding: 0 12px;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 16px;
   background: none;
   color: var(--fg);
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 500;
   line-height: 28px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -603,7 +604,9 @@ a.chat-source-title:hover {
   padding: 0 12px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(36px);
+  backdrop-filter: blur(36px);
   box-shadow: var(--shadow-chip);
   color: var(--fg);
   font-size: 15px;
@@ -623,9 +626,12 @@ a.chat-source-title:hover {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(36px);
+  backdrop-filter: blur(36px);
   box-shadow: var(--shadow-chip);
   color: var(--fg);
+  transition: background-color var(--ease);
 }
 
 .chat-scroll {

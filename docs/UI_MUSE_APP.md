@@ -5,6 +5,10 @@ its steps sidebar. This is that look, written down from two screenshots of the a
 Make page composer, the build room, and the docs sidebar chat. Muse Muse still isn't Meta's app: no Meta logos, and the
 footer keeps "Built with Muse Muse. Not an official Meta product."
 
+**Oct 31:** live meta.ai was measured, and `docs/BRAND.md` reconciles the two. Where a live measurement differed from these
+captures, the app now uses the live value, and this file says so where it happens: the placeholder, the hairline, the
+send gradient, the font, the tab control, the bubble's corners and the composer's and chips' glass. The rest stands.
+
 The first capture showed a turn while it was working, at about 1.6x, so sizes read from it directly come out about 20% small. The second (2968 by 1982, a 2x capture of a 1484 by 991 window)
 showed a finished turn with the steps panel open; every color below was sampled from its pixels, and every size is in
 CSS px (half its pixels).
@@ -13,20 +17,25 @@ CSS px (half its pixels).
 
 | Token | Value | Used for |
 |---|---|---|
-| Text | `#111112` | Body text, labels, icons, the person's message |
-| Secondary | `#696B6E` | Step titles and descriptions, "Show thinking", panel dots |
-| Faint | `#A1A3A7` | The "Done" check |
-| Placeholder | `#878787` | The composer's placeholder |
-| Hairline | `#E5E5E5` | The panel's border, the thread line, outlined buttons and the model pill |
-| Bubble | `#F3F4F5` | The person's message |
-| Track | `#F2F2F2` | The steps panel's tab track |
-| Hover label | `#E7E8EB` | Labels like "Add to favorites" |
-| Working icon | `#6547F5` to `#C15AF7` | The working icon, blue-violet to purple |
-| Send | about `#2A62CC` to `#5D6DF5` | A left-to-right gradient; at half strength (`#94B0E5` to `#AEB6FA`, as sampled) while the box is empty |
+| Token | Sampled | In the app since Oct 31 | Used for |
+|---|---|---|---|
+| Text | `#111112` | Same | Body text, labels, icons, the person's message |
+| Secondary | `#696B6E` | `rgba(0,4,9,.59)`, which is `#696B6E` on white | Step titles and descriptions, "Show thinking", panel dots |
+| Faint | `#A1A3A7` | `rgba(0,7,17,.37)`, which is `#A1A3A7` on white | The "Done" check |
+| Placeholder | `#878787` | `rgba(0,7,17,.37)`, the live value. 2.52:1 on white, under AA: an owner call in `docs/BRAND.md` | The composer's placeholder |
+| Hairline | `#E5E5E5` | `rgba(0,0,0,.1)`, the same on white | The panel's border, the thread line, outlined buttons |
+| Bubble | `#F3F4F5` | Same | The person's message |
+| Track | `#F2F2F2` | `rgba(0,0,0,.05)`, the same on white | The steps panel's tab track |
+| Hover label | `#E7E8EB` | Same | Labels like "Add to favorites" |
+| Working icon | `#6547F5` to `#C15AF7` | Same | The working icon, blue-violet to purple |
+| Send | about `#2A62CC` to `#5D6DF5` | `#0064D4` to `#5B70FF` in oklab, the live gradient | A left-to-right gradient, at half strength while the box is empty |
 
-Type is the system UI sans everywhere: body 16 px on a 26 px line; "Show thinking" 15 px; panel step titles 14 px
-semibold; panel descriptions 13 px on a 21 px line; the composer's placeholder 18 px. Regular weight everywhere else;
-nothing bold in the stream.
+Dark mode uses the live dark values (`docs/BRAND.md`, "Color"): a `#181819` page, `#28292B` bubble, white text.
+
+The captures read as the system UI sans. Since Oct 31 the app sets Inter, vendored in `app/fonts/` with its optical size
+axis and `-0.01em` of tracking, which lands within about 1% of the live text's widths. Sizes: body 16 px on a 26 px
+line; "Show thinking" 15 px; panel step titles 14 px semibold; panel descriptions 13 px on a 21 px line; the composer's
+text 18 px on 27 px. Regular weight everywhere else; nothing bold in the stream.
 
 ## The page
 
@@ -39,20 +48,22 @@ nothing bold in the stream.
 Top left, floating over the page, about 32 px from the left: the conversation's title ("Muse mascot in the datacenter")
 in a white pill.
 - **Shape:** about 36 px tall and fully rounded, with 12 px side padding.
-- **Edge:** no border, only a soft shadow (about `0 2px 16px rgba(0,0,0,0.08)`).
+- **Edge:** no border, only a soft shadow (about `0 2px 16px rgba(0,0,0,0.08)`). Since Oct 31 it's the live glass: a
+  76% white fill with a 36 px backdrop blur and the live four-layer shadow (`--shadow-chip`).
 - **Text:** 15 px, text color.
 
 In Muse Muse it holds the product or build name.
 
 ## The top-right buttons
 
-Two 36 px white circles, 8 px apart, about 24 px from the right edge of the conversation area, each with the same soft
-shadow and no border: share (a paper plane) and more (three dots), with 16 px icons in the text color.
+Two 36 px circles, 8 px apart, about 24 px from the right edge of the conversation area, each with the same glass and
+shadow as the title chip and no border: share (a paper plane) and more (three dots), with 16 px icons in the text color.
 
 ## The person's message
 
-- **Bubble:** right-aligned to the column's edge, `#F3F4F5`, no border, fully rounded (44 px tall for one line), 16 px
-  side padding. Its width fits the text, up to about 75% of the column.
+- **Bubble:** right-aligned to the column's edge, `#F3F4F5`, no border, 44 px tall for one line, 16 px side padding.
+  The capture looked fully rounded; the live product demos use a 22 px radius whatever the height, and so does the app
+  since Oct 31. Its width fits the text, up to about 75% of the column.
 - **Text:** 16 px, text color.
 - **Attachments:** they sit inside the bubble, at its right end. Each is a 40 px square thumbnail with 8 px rounded
   corners and a hairline border, in a bubble with 12 px top and bottom padding (64 px tall). Several attachments line up
@@ -89,10 +100,11 @@ Opened from "Show thinking", it sits at the right edge of the window, full heigh
   (which re-centers in the space left) instead of covering it.
 - **Close:** a thin 10 px X in the text color, in a 32 px hit area, centered about 24 px from the top and 31 px from
   the right edge.
-- **Tabs:** a segmented control 52 px from the top and 16 px from each side, 36 px tall: a fully rounded `#F2F2F2`
-  track, with the chosen tab as a white fully rounded segment inset 4 px (28 px tall) and a soft shadow under it
-  (about `0 1px 6px rgba(0,0,0,0.12)`). Labels are 15 px in the text color, centered in each half, the same color
-  whether chosen or not. The app's tabs are "Steps" and "Sources".
+- **Tabs:** a segmented control 52 px from the top and 16 px from each side, 36 px tall: a `#F2F2F2` track, with the
+  chosen tab as a white segment inset 4 px (28 px tall) and a soft shadow under it. Labels are in the text color,
+  centered in each half, the same color whether chosen or not. The app's tabs are "Steps" and "Sources". The capture
+  read a fully rounded track and 15 px labels; the same control measured live has a 16 px radius, 14 px labels at
+  weight 500 and the four-layer shadow, and the app uses those since Oct 31.
 - **The list:** starts about 28 px under the tabs. Each step has:
   - an 8 px `#696B6E` dot, centered 27 px from the panel's left edge, on a 1 px hairline thread that runs from the
     first dot to the end of the list;
@@ -110,11 +122,13 @@ Opened from "Show thinking", it sits at the right edge of the window, full heigh
 
 A big white card at the bottom of the column, about 24 px above the window's bottom edge:
 - **Card:** about 130 px tall, 32 px corner radius, no border, a soft
-  shadow (about `0 4px 24px rgba(0,0,0,0.07)`).
-- **Text field:** 18 px text; the caret starts 20 px from the left and about 16 px from the top. No visible label: the
-  placeholder (in the placeholder color) says what to type.
+  shadow (about `0 4px 24px rgba(0,0,0,0.07)`). Since Oct 31 it's the live glass: a 76% white fill with a 36 px
+  backdrop blur and the live four-layer shadow, with no ring on focus. On the Make page it holds one line and is
+  107 px tall, as live.
+- **Text field:** 18 px text on a 27 px line; the caret starts 20 px from the left and about 16 px from the top. No
+  visible label: the placeholder (in the placeholder color) says what to type.
 - **Bottom row:** 14 px from the card's edges, with 32 px controls:
-  - **Left:** a circular "+" button with a 1 px hairline outline and a 13 px plus. It opens attachments: photo, file,
+  - **Left:** a circular "+" button with a 1 px hairline outline (an inset ring since Oct 31) and a 13 px plus. It opens attachments: photo, file,
     camera and voice memo, as the composer has today.
   - **Right**, from left to right:
     - A pill toggle 32 px tall with a 1 px hairline outline, 16 px side padding and 15 px text ("Thinking" in the
@@ -135,7 +149,10 @@ animates.
 
 ## Where it applies
 
-- **Make page:** the composer, and the first message as the person's bubble.
+- **Make page:** the composer, and the first message as the person's bubble. Since Oct 31 the page follows the live
+  signed-out layout (`docs/BRAND.md`, "Layout"): a centered headline, "What should Muse make?", 48 px at 1440 and 28 px
+  at 390, then 32 px, then the composer, with the three example cards under it, all centered in the window as one
+  block. The build setup is a folded list of facts under the examples.
 - **Build room:** see below.
 - **Docs sidebar chat:** the same bubbles, steps and composer. It's already a narrow sidebar, so "Show thinking"
   unfolds the steps list inline under its row instead of opening a second panel.
