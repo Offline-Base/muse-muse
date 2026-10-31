@@ -28,7 +28,7 @@ muse-spark-1.3-contributor at low effort, about $0.10 in all.
 | Workflows | The Workflow tool is offered on this Linux build and ran a one-child workflow; its child logs as owner type `workflow_child`. `muse workflows save <name> --from <js> --scope project` writes `.agents/workflows/<name>.js`; `muse workflows run <entry> --headless-qa` exists (QA lane) |
 | Subagents | `subagent_spawn` with worktree isolation made `.muse/worktrees/subagent-v2-<...>` on a detached HEAD and the child committed there. Isolation is on by default per child request |
 | Tools offered | 31: `workflow`, `read_file`, `search`, `write_file`, `edit_file`, `read_memory`, `add_memory`, `edit_memory`, `work_stop`, `work_list`, `work_status`, `bash`, `bash_input`, `monitor`, `cron_create`, `cron_delete`, `cron_list`, `get_goal`, `create_goal`, `update_goal`, `report_progress`, `image_generation`, `subagent_spawn`, `subagent_status`, `subagent_send_message`, `subagent_wait`, `subagent_read_result`, `subagent_cancel`, `read_skill`, `snooze_reminder`, `write_todos` |
-| `muse serve` | Stdio JSON-RPC host. Flags: `--disable-sandbox` (needed: no bubblewrap), `--trust-workspace`, `--disable-request-user-input`, `--model`, `--contributor-mode`, `-c`. Approval mode is chosen per session over the wire (`approvalMode: "allowAll"`) |
+| `muse serve` | Stdio JSON-RPC host. `session/start` takes only a UUIDv7 session id (Oct 31). Flags: `--disable-sandbox` (needed: no bubblewrap), `--trust-workspace`, `--disable-request-user-input`, `--model`, `--contributor-mode`, `-c`. Approval mode is chosen per session over the wire (`approvalMode: "allowAll"`) |
 | Session protocol | `@muse-code/sdk@1.4.14` (MIT, zero dependencies, versions in lockstep with Muse Code) spawned `muse serve` inside the build firewall. `session/start` (approvalMode allowAll), `hook/list`, `skill/list`, `model/list`, `task/list`, `goal/set` and `turn/steer` all worked. A goal set over the protocol started its own turn; a steer sent mid-turn was obeyed (both files it asked for were made) |
 | Stream | Notifications: `item/started`, `item/updated`, `item/completed`, `item/delta`, `turn/started`, `turn/completed`, `session/goalChanged`, `session/todoListChanged`, `session/tokenUsage`, `session/contextUsage`, `session/statusChanged`, `approval/requested`, `userInput/requested`, and more. Item kinds: `userMessage`, `agentMessage`, `reasoning`, `toolCall`, `userShell`, `subagent`, `workflow` (with `children` and `declaredPhase`), `reminderChild`, `compaction`, `hookRun`, `sideChat`, `webSearch`, `monitorFeed`, and a few more |
 | Exec log | Sparse for children: a workflow or subagent shows as one `tool.result`; the child's own work is only in `subagent/<id>/session.jsonl`. The session protocol carries it live |
@@ -154,20 +154,22 @@ one known break from flags-off parity (see the open checks).
 
 ## Open checks
 
-Merged on Oct 31 with tests, the typecheck and the workflow compile check passing, but no sandbox run yet:
+The Oct 31 serve test ran real builds, a fix round, a change and every owner control. Results, and the recommendation on the
+default: `docs/spikes/serve-2026-10-31/README.md`.
 
 - **Flags-off accounting (Ethan's call).** Section 6 says what changes on plain exec. To restore strict parity instead:
   a `legacy` option on `parseSessionUsage` with `CHILD_OWNERS = {native_child}` and no child-log `reminder_child`, the
   `!input.usageRecorded` gates back in `pollMuseStep`, last-run-wins in `condenseMuseLines`, and no `workflowText`, all
   when `engine === "exec" && !env.museFull`.
-- **A real round on `serve`.** Nothing has run the bridge since the Oct 30 spike: a build, a fix round and a change, with
-  the condenser state carried between polls (at most 200 open items, 256 KB of them, and 32 announced keys in each step's
-  result; an open agent message or reasoning line shows its first 8,000 characters until it finishes). That run also
-  checks that session log run ids match the turn ids the bridge logs: if they don't, every serve round is charged from
-  the session host's tallies, with its children left out.
+- **The reminder model (Ethan's call).** Meta's catalog sends Wonder's reminder agents to muse-spark-1.3. Every round on both
+  engines now passes `backgroundModelSetting`, so they run on the round's own model, and the bridge clears Muse Code's copy of
+  the catalog first. A flags-off Wonder build's reminders now really cost about three times what they did.
+- **Which reminders stay on.** Scope ran 173 times and delivered nothing; skill and scope were a third of a build's spend.
+- **The build MCP server on a real host.** A local run can't reach it. Check it on one preview build.
 - **Questions can't come yet.** The bridge always passes `--disable-request-user-input` (`disableRequestUserInput:
-  true` in `startBridge`), so Muse Code never asks and the Question card and the `answer` action go unused. Turning it
-  on for steerable rounds needs a check of what a round waiting on an answer does to the poll and the step cap.
+  true` in `startBridge`), so Muse Code never asks and the Question card and the `answer` action go unused. On a real host a
+  question and its mailbox answer work, and the wait spends no steps, but a question nobody answers holds the round until its
+  time cap, so turning it on needs a timeout.
 - **The goal line on a fallback.** The prompt says the goal is set whenever `MUSE_ENGINE=serve`, decided when the
   prompt is written. A round whose bridge can't start runs on exec with no goal, and a product with no brief at all
   gets none either, so `get_goal` shows nothing there.
@@ -176,6 +178,4 @@ Merged on Oct 31 with tests, the typecheck and the workflow compile check passin
   `not_delivered`, worded as if Muse Code couldn't be reached.
 - **Engine on the build row.** The control route reads the per-round engine file (one sandbox read per command). If
   that shows up as latency, store the engine next to `muse_round`.
-- **Test builds** (step 3 above): cost, time and judge score on `serve` and on MUSE_FULL against today's exec.
-
-Spend so far on this work: about $0.10 of model calls and a few cents of sandbox time (the Oct 30 spike).
+Spend so far on this work: about $0.10 on the Oct 30 spike and $19.83 on the Oct 31 serve test.

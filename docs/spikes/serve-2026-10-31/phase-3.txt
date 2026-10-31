@@ -1,0 +1,27 @@
+--- phase 3: exit 0 in 24 s
+session 01a190c4-a2ed-7000-ac35-d07d010d8c8d
+live exit=0
+log /vercel/.local/share/muse/sessions/2026/10/31/01a190c4-a2ed-7000-ac35-d07d010d8c8d/session.jsonl
+203175 /vercel/.local/share/muse/sessions/2026/10/31/01a190c4-a2ed-7000-ac35-d07d010d8c8d/session.jsonl
+{"cached_tokens":0,"input_tokens":25371,"main_llm_steps":1,"output_tokens":178,"reasoning_tokens":61,"reported":true,"unit":"tokens"}
+{"cached_tokens":0,"input_tokens":12799,"main_llm_steps":0,"output_tokens":232,"reasoning_tokens":74,"reported":true,"unit":"tokens"}
+{"cached_tokens":25332,"input_tokens":25649,"main_llm_steps":1,"output_tokens":196,"reasoning_tokens":134,"reported":true,"unit":"tokens"}
+{"cached_tokens":9972,"input_tokens":12998,"main_llm_steps":0,"output_tokens":203,"reasoning_tokens":39,"reported":true,"unit":"tokens"}
+{"cached_tokens":0,"input_tokens":3876,"main_llm_steps":0,"output_tokens":235,"reasoning_tokens":121,"reported":true,"unit":"tokens"}
+{"cached_tokens":0,"input_tokens":3794,"main_llm_steps":0,"output_tokens":202,"reasoning_tokens":95,"reported":true,"unit":"tokens"}
+attribution records 7 {
+ "provider main_root 01a190c4-a787-7000-9197-20bfa0574c52": 2,
+ "tool main_root 01a190c4-a787-7000-9197-20bfa0574c52": 1,
+ "provider reminder_child 01a190c4-a787-7000-9197-20bfa0574c52": 4
+}
+{"t":1793430169511,"note":{"emittedAtMs":1793430169509,"jsonrpc":"2.0","method":"turn/started","params":{"commandId":"01a190c4-a787-7000-9197-20bfa0574c52","sessionId":"01a190c4-a2ed-7000-ac35-d07d010d8c8d","sourceRange":{"first":{"id":"01a190c4-a7a0-7d91-a998-fb76b45df253","sequence":19},"last":{"id":"01a190c4-a7a0-7d91-a998-fb76b45df253","sequence":19},"stream":{"id":"01a190c4-a2ed-7000-ac35-d07
+{"t":1793430191556,"call":"view/page","ok":true,"result":{"keys":["events","nextCursor"],"events":5,"nextCursor":"v4:01a190c4-a2ed-7000-ac35-d07d010d8c8d:5","first":[{"method":"session/approvalModeChanged","params":{"clientName":"musemuse_probe","commandId":"01a190c4-a59c-7000-8b3a-4e2bc0825da6","mode":"allowAll","sessionId":"01a190c4-a2ed-7000-ac35-d07d010d8c8d","source":"approvalReconfigure","so
+{"t":1793430191559,"call":"view/page","ok":true,"result":{"keys":["events","nextCursor"],"events":24,"nextCursor":null,"first":[{"method":"session/branchChanged","params":{"branch":"main","sessionId":"01a190c4-a2ed-7000-ac35-d07d010d8c8d","sourceRange":{"first":{"id":"01a190c4-a62c-7b70-8b08-5a7662baa597","sequence":8},"last":{"id":"01a190c4-a62c-7b70-8b08-5a7662baa597","sequence":8},"stream":{"id
+== every model named in this session's logs
+      8 "model_id":"muse-wonder-1.0"
+      8 "model":"muse-wonder-1.0"
+      7 "model":"same-as-main"
+child logs: 3
+
+[stderr]
+

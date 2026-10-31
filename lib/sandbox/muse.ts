@@ -41,10 +41,9 @@ const RUNNER_EXEC_FLAGS = ["--image"] as const;
 /**
  * `-c` settings every session bridge round passes to `muse serve` (lib/sandbox/bridge/bridge.mjs), whatever MUSE_FULL
  * says. `muse serve --help` on 1.4.14 has no --disable-web-tools (docs/spikes/muse-full-2026-10-30/phase-A.txt), so
- * web search is turned off with its setting instead, as exec rounds turn web tools off with the flag. The key, and its
- * values client, hosted and off, are as the 1.4.14 binary spells them; no host has run with it yet. A key or value
- * Muse Code doesn't know refuses the start (exit 2), and the round then runs on exec, with the reason in the build
- * room. Exec's --no-foreign-personal-context has no setting here until the type its context.foreign_personal_* keys
+ * web search is turned off with its setting instead, as exec rounds turn web tools off with the flag. On a real 1.4.14
+ * host it takes web_search and web_fetch out of the tool list (docs/spikes/serve-2026-10-31). A key or value Muse Code
+ * doesn't know refuses the start (exit 2), and the round then runs on exec, with the reason in the build room. Exec's --no-foreign-personal-context has no setting here until the type its context.foreign_personal_* keys
  * take is known.
  */
 export const SERVE_SETTINGS: readonly string[] = ['tools.web_search.mode="off"'];
