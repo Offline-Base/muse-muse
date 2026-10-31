@@ -16,7 +16,7 @@ import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { cleanForJsonb } from "@/lib/native/agent-http";
 import { commitIf, release, reserve, windowsHoldUsd, windowsUsd } from "@/lib/native/ledger";
-import { laneActivity, SILENT_AFTER_MS } from "@/lib/native/queue";
+import { laneActivity, noteLaneJobsRequeued, requeueLaneJobs, SILENT_AFTER_MS } from "@/lib/native/queue";
 import type { NativeLabControl, NativeLane } from "@/lib/native/types";
 
 const MINUTE = 60_000;
@@ -294,10 +294,18 @@ export async function laneForToken(tokenHash: string): Promise<NativeLane | null
   return row?.lane ?? null;
 }
 
-/** Sets a lane's token, for scripts/native/lab.ts. */
-export async function setLabToken(lane: NativeLane, tokenHash: string, instanceId: string | null): Promise<void> {
-  await db()
-    .insert(schema.nativeLabs)
-    .values({ lane, tokenHash, instanceId })
-    .onConflictDoUpdate({ target: schema.nativeLabs.lane, set: { tokenHash, ...(instanceId ? { instanceId } : {}) } });
+/**
+ * Sets a lane's token, for scripts/native/lab.ts. Rotation is the only way to revoke access, so the job tokens that lane's
+ * box already holds end with it: its running jobs go back in the queue, in the same batch. Answers how many did.
+ */
+export async function setLabToken(lane: NativeLane, tokenHash: string, instanceId: string | null): Promise<{ requeued: number }> {
+  const [, taken] = await db().batch([
+    db()
+      .insert(schema.nativeLabs)
+      .values({ lane, tokenHash, instanceId })
+      .onConflictDoUpdate({ target: schema.nativeLabs.lane, set: { tokenHash, ...(instanceId ? { instanceId } : {}) } }),
+    requeueLaneJobs(lane),
+  ]);
+  await noteLaneJobsRequeued(taken);
+  return { requeued: taken.length };
 }

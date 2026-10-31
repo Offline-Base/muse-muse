@@ -340,7 +340,9 @@ commits its rate from `NATIVE_MAC_ALLOCATED_AT` to `NATIVE_MAC_RELEASE_AT`, with
 total. A commit always lands, even past a cap, and then later holds are refused.
 
 **Tokens.** `scripts/native/lab.ts <lane> <file> [instance id]` makes a lane's token, stores its hash and writes it to a file only
-you can read. It never prints it. Put the file's contents in Parameter Store, then delete the file.
+you can read. It never prints it. Put the file's contents in Parameter Store, then delete the file. Running it again is how you
+revoke a box's access: the old lab token stops working, and that lane's running jobs go back in the queue in the same step, so
+their job tokens end too. A rotation mid-job costs that job a run, and it uses up an attempt.
 
 **Not built:** deleting an agent run's files after 7 days (the table in docs/NATIVE.md), and rate limits on these routes, which are
 token-only.

@@ -279,6 +279,34 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await heartbeatRoute(post("/x", second.token), ctx(job.id))).status, 200);
     });
 
+    it("a new lab token ends the job tokens its lane holds, and leaves the other lane's alone", async () => {
+      const { setLabToken } = await import(at("../lab-box.ts"));
+      const s = await seed();
+      const mac = await claimed(s);
+      const windowsId = await enqueue(s, { kind: "desktop_windows", input: macInput({ app: { kind: "windows_zip", variant: "product", version: "1", url: "https://x.blob.vercel-storage.com/w.zip", sha256: "a".repeat(64) } }) });
+      const onWindows = (await (await claimRoute(post("/c", WINDOWS_TOKEN, claimBody({ lane: "windows", kinds: ["desktop_windows"] })))).json()) as { job: { id: string; token: string } };
+      assert.equal(onWindows.job.id, windowsId);
+      const queuedId = await enqueue(s, { kind: "ios_sim" });
+
+      const next = "mmlab_the-new-token-for-the-mac-lane-only";
+      assert.deepEqual(await setLabToken("mac", tokens.hashLabToken(next), null), { requeued: 1 });
+
+      assert.equal((await claimRoute(post("/c", LAB_TOKEN, claimBody()))).status, 401, "the old lab token is dead");
+      assert.equal((await heartbeatRoute(post("/x", mac.token), ctx(mac.id))).status, 410, "and so is its job token");
+      const outcome = await finishRoute(post("/x", mac.token, { outcome: "passed" }), ctx(mac.id));
+      assert.equal(outcome.status, 410, "it can't finish with a pass");
+      const row = await jobRow(mac.id);
+      assert.equal(row.status, "queued");
+      assert.equal(row.tokenHash, null);
+      assert.equal(row.deadlineAt, null);
+      assert.equal((await jobRow(queuedId)).status, "queued", "what was waiting is still waiting");
+      assert.equal((await heartbeatRoute(post("/x", onWindows.job.token), ctx(windowsId))).status, 200, "Windows wasn't touched");
+
+      const again = await claimRoute(post("/c", next, claimBody({ kinds: ["desktop_mac"] })));
+      assert.equal(again.status, 200, "and the new token can pick it up");
+      assert.equal(((await again.json()) as { job: { id: string } }).job.id, mac.id);
+    });
+
     it("a finished job answers 410 too", async () => {
       const job = await claimed(await seed());
       assert.equal((await finishRoute(post("/x", job.token, { outcome: "passed", summary: "x" }), ctx(job.id))).status, 200);

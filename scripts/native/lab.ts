@@ -6,7 +6,8 @@
  *   aws ssm put-parameter --region us-east-1 --name /musemuse/lab/mac/token --type SecureString --overwrite \
  *     --value file:///secure/path/mac-token
  *
- * Running it again replaces the token, and the box picks up the new one on its next 401.
+ * Running it again replaces the token, and the box picks up the new one on its next 401. It also ends the job tokens that
+ * lane's box holds, so after a leak nothing from before keeps working. Its running jobs go back in the queue.
  */
 import { writeFileSync } from "node:fs";
 import { hashLabToken, newLabToken } from "@/lib/native/lab-token";
@@ -21,6 +22,7 @@ if (!NATIVE_LANES.includes(lane as NativeLane) || !out) {
 const token = newLabToken();
 // Written first: a token that reached the database and nowhere else could never be used.
 writeFileSync(out, token, { mode: 0o600, flag: "wx" });
-await setLabToken(lane as NativeLane, hashLabToken(token), instanceId ?? null);
+const { requeued } = await setLabToken(lane as NativeLane, hashLabToken(token), instanceId ?? null);
 console.log(`Set the ${lane} lab's token. It's in ${out}, readable only by you. Delete it once it's in Parameter Store.`);
+if (requeued) console.log(`${requeued} running ${requeued === 1 ? "job" : "jobs"} went back in the queue, with ${requeued === 1 ? "its token" : "their tokens"} ended.`);
 process.exit(0);

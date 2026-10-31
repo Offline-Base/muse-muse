@@ -390,6 +390,20 @@ function mediaOf(artifacts: FinishedArtifact[]): NativeEventBody["media"] {
   return media.length ? media : undefined;
 }
 
+/** Puts a lane's running jobs back in the queue and ends their tokens. Only the statement, so it can share a caller's batch. */
+export function requeueLaneJobs(lane: NativeLane) {
+  return db()
+    .update(schema.nativeJobs)
+    .set(REQUEUE)
+    .where(and(eq(schema.nativeJobs.lane, lane), eq(schema.nativeJobs.status, "claimed")))
+    .returning();
+}
+
+/** Tells the build room about jobs requeueLaneJobs took back. */
+export async function noteLaneJobsRequeued(jobs: NativeJob[]): Promise<void> {
+  await Promise.all(jobs.map((job) => emitJob(job, "queued", `The lab's token changed, so the check on ${KIND_LABELS[job.kind].device} will run again.`)));
+}
+
 /** Ends what an agent run has going, since its preview URL is going away. A running box learns from its next heartbeat. */
 export async function cancelAgentJobs(buildId: string): Promise<number> {
   if (!env.nativeLab) return 0;
