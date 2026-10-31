@@ -1,4 +1,5 @@
 import type { Brief, ProductModelId, TargetId } from "@/lib/brief/schema";
+import type { ProductOutput } from "@/lib/native/targets";
 
 export type { Brief, ProductModelId, TargetId };
 
@@ -195,6 +196,7 @@ export type BuildEventBody =
    */
   | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
   | NativeEventBody
+  | ProveEventBody
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */
@@ -265,6 +267,83 @@ export function condenseNativeEvents(events: ReadonlyArray<{ type: string }>): N
       costUsd: items.reduce((sum, i) => sum + (i.costUsd ?? 0), 0),
     };
   });
+}
+
+/** What a Prove it run did, step by step, for the product page's list. */
+export interface ProveCheck {
+  label: string;
+  ok: boolean;
+}
+
+export type ProveItemState = "planned" | "running" | "done" | "failed" | "skipped";
+
+/**
+ * One product output in a Prove it run (docs/PRODUCT_OUTPUTS.md), or "stage" for the run as a whole, written to its
+ * build's log after the build is final. Each event says all that is true of it now, except that `media` stays from
+ * earlier events until a later one replaces it.
+ */
+export interface ProveEventBody {
+  type: "prove";
+  runId: string;
+  origin: "ship" | "nightly";
+  item: ProductOutput | "stage";
+  state: ProveItemState;
+  title: string;
+  detail?: string;
+  checks?: ProveCheck[];
+  media?: { url: string; posterUrl?: string | null; caption: string };
+  costUsd?: number;
+}
+
+export type ProveItemView = Omit<ProveEventBody, "type" | "runId" | "origin"> & { at: string | null };
+
+/** The newest run, with what earlier runs recorded for any output it has no video of. */
+export interface ProveView {
+  runId: string;
+  origin: ProveEventBody["origin"];
+  items: ProveItemView[];
+  /** True while any part can still change. */
+  active: boolean;
+  costUsd: number;
+  /** When its last event was written, when events carry a time. */
+  lastAt: string | null;
+}
+
+export const PROVE_UNSETTLED: readonly ProveItemState[] = ["planned", "running"];
+
+/**
+ * Condenses a build's `prove` events to what a viewer needs: the newest run, oldest first by when each part was first
+ * mentioned. A nightly re-check records no video, so an output keeps the video of the run before it. Null with none.
+ */
+export function condenseProveEvents(events: ReadonlyArray<{ type: string; at?: string }>): ProveView | null {
+  const runs = new Map<string, { origin: ProveEventBody["origin"]; items: Map<string, ProveItemView>; lastAt: string | null }>();
+  const media = new Map<string, ProveEventBody["media"]>();
+  let newest: string | null = null;
+  for (const event of events) {
+    if (event.type !== "prove") continue;
+    const { type: _type, runId, origin, ...item } = event as ProveEventBody & { at?: string };
+    if (typeof runId !== "string" || typeof item.item !== "string") continue;
+    let run = runs.get(runId);
+    if (!run) runs.set(runId, (run = { origin, items: new Map(), lastAt: null }));
+    newest = runId;
+    run.lastAt = event.at ?? run.lastAt;
+    const before = run.items.get(item.item);
+    if (item.media) media.set(item.item, item.media);
+    run.items.set(item.item, { ...item, at: event.at ?? null, media: item.media ?? before?.media, checks: item.checks ?? before?.checks, costUsd: item.costUsd ?? before?.costUsd });
+  }
+  const run = newest ? runs.get(newest) : undefined;
+  if (!newest || !run) return null;
+  const items = [...run.items.values()].map((i) => ({ ...i, media: i.media ?? media.get(i.item) }));
+  // The stage's own line says when a run is over. Older events, or one with no such line, go by their parts.
+  const stage = items.find((i) => i.item === "stage");
+  return {
+    runId: newest,
+    origin: run.origin,
+    items,
+    active: stage ? PROVE_UNSETTLED.includes(stage.state) : items.some((i) => PROVE_UNSETTLED.includes(i.state)),
+    costUsd: items.reduce((sum, i) => sum + (i.costUsd ?? 0), 0),
+    lastAt: run.lastAt,
+  };
 }
 
 /** A clip of a product on a real device that its owner uploaded (products.extra_clips). */
