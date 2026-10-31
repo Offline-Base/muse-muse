@@ -64,6 +64,31 @@ export const DECIDE_READ =
   "first-token log-probabilities, bare and space-led letter summed, renormalized over the shown letters, groups " +
   "combined, then every option's log-probability divided by T and renormalized; the pick is made before T";
 
+/**
+ * decide.json's `rules`: how an app renders the prompts and reads the answer from that file alone, so a drive launcher
+ * or a llama.cpp user gets the bytes the model trained on. Each sentence says what a function here does (lettered,
+ * renderTask, neutralText, stateText, glimmerPromptParts, combineGroups, pickDecision, applyTemperature).
+ */
+export const DECIDE_RULES: readonly string[] = [
+  "Render one prompt per entry of groups. Its options are that entry's labels, in the order listed, then none, " +
+    "lettered in order from A.",
+  'Every "<|" in the state, the question and each label\'s name and description becomes "< |". A state given as an ' +
+    "object is its JSON.stringify text first.",
+  "task is JSON.stringify of {state, question, options}, keys in that order, with no spaces. Each option is {letter, " +
+    "option, description} in that key order, where option is the label's name and description is left out when it is " +
+    'empty. none has no description. In Python: json.dumps(task, ensure_ascii=False, separators=(",", ":")).',
+  "The prompt is prompt.prefix + task + separator + task + prompt.suffix. It has no <|begin_of_text|>: the tokenizer " +
+    "or llama-server adds it.",
+  "Read the first answer token. A letter's probability is its bare token's plus its space-led token's, renormalized " +
+    "over the letters that prompt shows.",
+  "With more than one prompt, a label's probability is its probability in its own prompt, none's is the product of " +
+    "every prompt's none, and the labels are rescaled to share 1 - none.",
+  "The pick is the label with the highest probability, ties to the first in labels, or none when none is strictly " +
+    "higher than every label.",
+  "Then every option's probability, none's too, goes to the power 1/T and is renormalized. Those are the numbers to " +
+    "show; they never change the pick.",
+];
+
 /** The decline check: at most this many test renderings with the right label taken out (decisionItems). */
 export const DECLINE_RENDERINGS_MAX = 100;
 
@@ -638,7 +663,10 @@ export function standInDecision(input: { state: string; labels: readonly Decisio
 // ---------------------------------------------------------------------------------------------------------------
 // decide.json
 
-/** decide.json for a decision model: the format, its labels and question, its T, and the prompt's fixed text. */
+/**
+ * decide.json for a decision model: the format, its labels and question, its T, the prompt's fixed text, which labels
+ * each prompt shows, and the rules for rendering and reading, so an app needs nothing else.
+ */
 export function decideJson(input: { question: string; labels: readonly DecisionLabel[]; T: number }): DecideJson {
   return {
     format: DECIDE_FORMAT,
@@ -650,6 +678,8 @@ export function decideJson(input: { question: string; labels: readonly DecisionL
     labels: input.labels.map((l) => ({ id: l.id, name: l.name, description: l.description })),
     T: input.T,
     groupsOf: LABELS_PER_PROMPT,
+    groups: labelGroups(input.labels).map((g) => g.map((l) => l.id)),
+    rules: [...DECIDE_RULES],
     template: { ...GLIMMER_TEMPLATE },
     prompt: glimmerPromptParts(),
     maxTokens: DECIDE_MAX_TOKENS,

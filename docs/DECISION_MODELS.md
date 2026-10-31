@@ -435,10 +435,18 @@ mode, epochs and the run estimate for the GPU.
   how to call it) is later work (Owner decisions).
 - **decide.json**, written next to the adapter: the format's contract, so llama.cpp users, the drive (wave 3 unit 12) and
   other apps render the same prompt: `{format: "muse-decide/1", system, separator, letters, none, question, labels, T,
-  groupsOf: 4, template: {repo, revision, sha256}, prompt: {prefix, suffix}, maxTokens: 2048, read: "first-token
-  log-probabilities, bare and space-led letter summed, renormalized over the shown letters, groups combined, then every
-  option's log-probability divided by T and renormalized; the pick is made before T"}`. The prompt
+  groupsOf: 4, groups, rules, template: {repo, revision, sha256}, prompt: {prefix, suffix}, maxTokens: 2048, read:
+  "first-token log-probabilities, bare and space-led letter summed, renormalized over the shown letters, groups
+  combined, then every option's log-probability divided by T and renormalized; the pick is made before T"}`. The prompt
   is `prefix + task + separator + task + suffix`, without `<|begin_of_text|>`, so an app needs no template engine.
+- An app needs only this file, so it says what the code does: `groups` lists the label ids each prompt shows (one
+  list for 4 labels or fewer; 5 labels are 3 and 2, not 4 and 1), and `rules` (`DECIDE_RULES` in
+  `lib/decide/format.ts`) says, in plain sentences, that every `<|` in state, question, names and descriptions becomes
+  `< |`; that the task's keys go state, question, options and letter, option, description, with an empty description
+  left out (`labels` carries it as ""); the Python `json.dumps` call that gives the same bytes; and how groups
+  combine (`none` the product of the groups' `none`, labels rescaled to share 1 - none), how the pick is made and
+  where T goes. A test renders a 5-label model's prompts and reads its answer from the parsed file alone, and checks
+  both against the platform's own functions.
 - **Local files:** `quantProblem` refuses decide adapters until `glimmer-quantize` learns a decision check: its channel
   check asks for a final answer under a stock app's prompt, which is the wrong test here. The decision check instead
   scores the test renderings on Q4_K_M with `llama-server` (`/completion`, `n_probs`) and passes a build only when its

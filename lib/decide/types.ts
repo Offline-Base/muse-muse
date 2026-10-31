@@ -362,9 +362,9 @@ export interface DecisionSummary extends EvalSummary {
 // decide.json: the format's contract, next to a decision model's adapter and GGUF files
 
 /**
- * decide.json. Any app renders the model's prompt from it: prompt.prefix + task + separator + task + prompt.suffix,
- * where task is JSON.stringify of {state, question, options} with the options lettered from `letters` and `none`
- * last. Built by decideJson in format.ts.
+ * decide.json. Any app renders the model's prompts and reads its answer from this file alone, by `rules`: one prompt
+ * per entry of `groups`, each prompt.prefix + task + separator + task + prompt.suffix, where task is the JSON of
+ * {state, question, options} with "<|" neutralized and empty descriptions left out. Built by decideJson in format.ts.
  */
 export interface DecideJson {
   format: "muse-decide/1";
@@ -373,9 +373,18 @@ export interface DecideJson {
   letters: DecideLetter[];
   none: string;
   question: string;
+  /** In the order the person defined them. A description is "" when there is none; the prompt leaves it out then. */
   labels: DecisionLabel[];
   T: number;
+  /** The most labels one prompt shows. `groups` says which. */
   groupsOf: 4;
+  /**
+   * The label ids each prompt shows, in order, one list per prompt (labelGroups of `labels`): one list for 4 labels or
+   * fewer, else lists whose sizes differ by at most 1, the larger first (5 labels are 3 and 2).
+   */
+  groups: string[][];
+  /** How to render the prompts and read the answer, in plain sentences (DECIDE_RULES in format.ts). */
+  rules: string[];
   template: { repo: string; revision: string; sha256: string };
   /** The template's text around the task, for the system message above, without the leading <|begin_of_text|>. */
   prompt: { prefix: string; suffix: string };
