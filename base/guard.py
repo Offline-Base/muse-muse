@@ -51,7 +51,7 @@ class GuardError(RuntimeError):
 
 # Every tag the guard writes. Text inside a tag is never matched again, which keeps tag() idempotent.
 TAG_RE = re.compile(
-    r"\[(?:Student [A-Z]{1,3}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB|Redacted) \d+)\]"
+    r"\[(?:Student [A-Z]{1,3}|Teacher|(?:Person|Phone|Email|SSN|Card|Code|ID|Address|DOB|Redacted|Place|Date|Age|Detail|Record|URL|IP) \d+)\]"
 )
 
 _LABELS = {
@@ -65,11 +65,20 @@ _LABELS = {
     "address": "Address",
     "dob": "DOB",
     "term": "Redacted",  # a word or phrase on the user's always-redact list (Redaction.always)
+    # Tagged only when a compliance toggle asks for them (Redaction.extra_kinds).
+    "place": "Place",
+    "date": "Date",
+    "age": "Age",
+    "detail": "Detail",
+    "record": "Record",
+    "url": "URL",
+    "ip": "IP",
 }
 _KIND_BY_LABEL = {label.lower(): kind for kind, label in _LABELS.items()}
 _NAME_KINDS = frozenset({"student", "teacher", "person"})
 # Identifiers no control may leave untagged.
 ALWAYS_TAGGED = frozenset({"ssn", "card"})
+EXTRA_KINDS = frozenset({"place", "date", "age", "detail", "record", "url", "ip"})
 
 
 @dataclass(frozen=True)
@@ -79,13 +88,17 @@ class Redaction:
     skip_kinds: identifier kinds left as written (never ssn or card). names=False: names (roster,
     model-found and known) left as written, for folders the user chose. always: words and phrases
     always tagged, as [Redacted N]. never: words and phrases left as written wherever they occur,
-    except inside an SSN or card number. always wins over never.
+    except inside an SSN or card number. always wins over never. extra_kinds: more kinds of detail
+    to tag, from a compliance toggle (base/compliance.py). name_shapes: also tag capitalized words
+    shaped like a name, with no model, because the small local model misses names (DEVICE_ONLY=1).
     """
 
     skip_kinds: frozenset[str] = frozenset()
     names: bool = True
     always: tuple[str, ...] = ()
     never: tuple[str, ...] = ()
+    extra_kinds: frozenset[str] = frozenset()
+    name_shapes: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "skip_kinds", frozenset(self.skip_kinds) - ALWAYS_TAGGED)
@@ -94,7 +107,7 @@ class Redaction:
 
     @property
     def is_default(self) -> bool:
-        return not self.skip_kinds and self.names and not self.always and not self.never
+        return not (self.skip_kinds or self.always or self.never or self.extra_kinds or self.name_shapes) and self.names
 
 
 def _phrase_spans(text: str, phrases: Iterable[str]) -> list[tuple[int, int, str]]:
@@ -121,7 +134,13 @@ def _apply_redaction(cands: list[_Cand], t: str, redaction: Redaction | None) ->
         kept.append(c)
     for a, b, phrase in _phrase_spans(t, redaction.always):
         kept.append(_Cand("term", t[a:b], a, b, phrase.lower()))
-    return kept
+    extra: list[_Cand] = []
+    if redaction.extra_kinds:
+        extra += _extra_cands(t, redaction.extra_kinds, kept)
+    if redaction.name_shapes and redaction.names and "detail" not in redaction.extra_kinds:
+        taken = [(c.start, c.end) for c in kept] + _tag_spans(t)
+        extra += _strict_details(t, taken, kind="person", need_uncommon=True)
+    return kept + [c for c in extra if not any(a <= c.start and c.end <= b for a, b in never)]
 
 # When two candidate spans have the same length, the earlier kind in this order wins.
 _PRIORITY = {
@@ -631,6 +650,135 @@ _DOB = re.compile(
     rf"[\s:,-]*(?:(?:is|was|on|of)\s+)*({_DATE_RE})(?!\d)",
     re.IGNORECASE,
 )
+
+
+# What the compliance toggles add. These lean toward removing too much, on purpose.
+_ANY_DATE = re.compile(
+    rf"(?<![\w/-])(?:{_DATE_RE}|{_MONTH_RE}\s+\d{{4}}|\d{{4}}[/.-]\d{{1,2}})(?![\w/-]|\.\d)", re.IGNORECASE
+)
+_OLD_AGE = re.compile(
+    r"\b(?:aged?:?\s*(?P<a>9\d|1\d\d)\b|(?P<b>9\d|1\d\d)[- ]?(?:years?|yrs?)[- ]?old\b|(?P<c>9\d|1\d\d)\s?y/?o\b)",
+    re.IGNORECASE,
+)
+_URL = re.compile(
+    r"(?i)\b(?:https?://|www\.)[^\s)\]>\"']+"
+    r"|\b(?:[a-z0-9-]+\.)+(?:com|org|net|edu|gov|io|us|info|co)\b(?:/[^\s)\]>\"']*)?"
+)
+_IPV4 = re.compile(r"(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])")
+_IPV6 = re.compile(r"(?i)(?<![\w:])(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(?![\w:])")
+_ZIP = re.compile(r"(?<![\d$.,:/-])\d{5}(?:-\d{4})?(?![\d-]|[.,]\d)")
+_STATES = (
+    "AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|"
+    "OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY"
+)
+_CITY_STATE = re.compile(rf"\b(?:[A-Z][a-z'’.-]+\s+){{0,2}}[A-Z][a-z'’.-]+,\s*(?:{_STATES})\b(?:\s+\d{{5}}(?:-\d{{4}})?)?")
+_RECORD_LABEL = re.compile(
+    r"(?i)\b(?:mrn|medical record|patient id|patient number|chart|member|beneficiary|subscriber|insurance|"
+    r"health plan|plan|policy|group|account|acct|license|licence|driver'?s license|dl|certificate|passport|"
+    r"state id|national id|tax id|ein|vin|vehicle|plate|license plate|serial|device|imei|udid|mac address|"
+    r"biometric|fingerprint|voiceprint|fax|case|claim|docket|badge|clearance|contract|employee|ein|routing)"
+    r"(?:\s+(?:id|number|num|no\.?|#|code))?\s*(?:is|:|#|=|-)?\s*"
+    r"(?P<v>(?=[A-Za-z0-9:.()+-]*\d)[A-Za-z0-9][A-Za-z0-9:.()+-]*(?:[ -]\d[\d-]*)*)"
+)
+_VIN = re.compile(r"\b(?=[A-HJ-NPR-Z0-9]*\d)(?=[A-HJ-NPR-Z0-9]*[A-HJ-NPR-Z])[A-HJ-NPR-Z0-9]{17}\b")
+_MAC = re.compile(r"(?i)(?<![\w:-])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![\w:-])")
+_LONG_NUMBER = re.compile(r"(?<![\w.-])\d{6,}(?![\w-])")
+_CAP_WORD = re.compile(r"[A-Z][a-zA-Z]*(?:['’-][A-Za-z]+)*|[A-Z]{3,}")
+_JOINS = re.compile(r"\s(?:of|the|de|la|and|for)\s|\s")
+# Capitalized words that do not point at anyone, in any position.
+_PLAIN_WORDS = frozenset(
+    "monday tuesday wednesday thursday friday saturday sunday january february march april may june july august "
+    "september october november december english math mathematics science history spanish french art music reading "
+    "writing geography biology chemistry physics student students teacher teachers class grade i ok fall spring "
+    "summer winter tagged result results document documents waiting kept held note notes summary average median "
+    "total overall patient patients doctor nurse clinic hospital dose dosage medication therapy treatment symptoms "
+    "diagnosis attendance rubric evidence ideas organization conventions essay essays assignment homework quiz test "
+    "families family parent parents school schools question questions answer answers request source sources "
+    "percent score scores status purpose title report hello dear hi excerpt excerpts range draft log logs principal "
+    "contact lowest highest level club station quarter custody discipline fitness jan feb mar apr jun jul aug sep "
+    "sept oct nov dec".split()
+)
+# Rubric and class words the small model sometimes calls a person. Never remembered as a name.
+# Words that are also first names (May, June, Art) are left out, so a name the model found stays.
+_CLASS_WORDS = _PLAIN_WORDS - {"may", "june", "april", "august", "art", "i"}
+_ACRONYMS = frozenset(
+    "iep gpa ela stem esl ell adhd ssn dob mrn ferpa hipaa coppa sat act pdf usa faq bmi hiv aids mri ekg ecg covid".split()
+)
+
+
+def _at_sentence_start(text: str, i: int) -> bool:
+    j = i - 1
+    while j >= 0 and text[j] in " \t*_#>|-(\"'“‘":
+        j -= 1
+    return j < 0 or text[j] in ".!?:\n"
+
+
+def _strict_details(
+    text: str, taken: list[tuple[int, int]], kind: str = "detail", need_uncommon: bool = False
+) -> list[_Cand]:
+    """Runs of capitalized words that could be a place, an employer, a school or anyone's name.
+
+    A common word that starts a sentence does not count, and neither do plain words like month
+    names or a lone letter. Every other run is tagged, so a mistake removes too much rather than
+    too little. `need_uncommon` also skips a run made only of common words.
+    """
+    return list(_detail_runs(text, taken, kind, need_uncommon))
+
+
+def _detail_runs(text: str, taken: list[tuple[int, int]], kind: str, need_uncommon: bool) -> Iterable[_Cand]:
+    run: list[re.Match[str]] = []
+
+    def flush() -> Iterable[_Cand]:
+        words = list(run)
+        run.clear()
+        if words and _at_sentence_start(text, words[0].start()) and _is_common(words[0].group()):
+            words.pop(0)
+        while words and words[0].group().lower() in _PLAIN_WORDS:
+            words.pop(0)
+        while words and words[-1].group().lower() in _PLAIN_WORDS:
+            words.pop()
+        if not words:
+            return
+        one = words[0].group()
+        if len(words) == 1 and (len(one) < 3 or _is_common(one) or one.lower() in _ACRONYMS):
+            return
+        if need_uncommon and all(_is_common(w.group()) or w.group().lower() in _PLAIN_WORDS for w in words):
+            return
+        yield _cand(kind, text, words[0].start(), words[-1].end())
+
+    for m in _CAP_WORD.finditer(text):
+        if any(m.start() < e and s < m.end() for s, e in taken):
+            yield from flush()
+            continue
+        if run and not _JOINS.fullmatch(text[run[-1].end() : m.start()]):
+            yield from flush()
+        run.append(m)
+    yield from flush()
+
+
+def _extra_cands(text: str, kinds: frozenset[str], existing: list[_Cand]) -> list[_Cand]:
+    out: list[_Cand] = []
+    if "date" in kinds:
+        out += [_cand("date", text, m.start(), m.end()) for m in _ANY_DATE.finditer(text)]
+    if "age" in kinds:
+        for m in _OLD_AGE.finditer(text):
+            g = "a" if m.group("a") else "b" if m.group("b") else "c"
+            out.append(_cand("age", text, m.start(g), m.end(g)))
+    if "url" in kinds:
+        for m in _URL.finditer(text):
+            end = m.start() + len(m.group().rstrip(".,;:!?"))
+            out.append(_cand("url", text, m.start(), end))
+    if "ip" in kinds:
+        out += [_cand("ip", text, m.start(), m.end()) for r in (_IPV4, _IPV6) for m in r.finditer(text)]
+    if "record" in kinds:
+        out += [_cand("record", text, m.start("v"), m.end("v")) for m in _RECORD_LABEL.finditer(text)]
+        out += [_cand("record", text, m.start(), m.end()) for r in (_VIN, _MAC, _LONG_NUMBER) for m in r.finditer(text)]
+    if "place" in kinds:
+        out += [_cand("place", text, m.start(), m.end()) for r in (_CITY_STATE, _ZIP) for m in r.finditer(text)]
+    if "detail" in kinds:
+        taken = [(c.start, c.end) for c in [*existing, *out]] + _tag_spans(text)
+        out += list(_strict_details(text, taken))
+    return out
 
 
 def _identifier_cands(text: str, roster: Any = None, allow_test_ssn: bool = True) -> list[_Cand]:
@@ -1372,7 +1520,9 @@ def _scan(
     stops = [(c.start, c.end) for c in cands]
     if roster is not None:
         cands += _index(roster).cands(t)
-    cands += _known_cands(t, tagmap)
+    # What only a toggle tags is remembered, but counts only while a toggle asks for that kind.
+    wanted = redaction.extra_kinds if redaction is not None else frozenset()
+    cands += [c for c in _known_cands(t, tagmap) if c.kind not in EXTRA_KINDS or c.kind in wanted]
     if extra_names:
         extra = _extra_name_cands(t, extra_names, roster, stops)
         if model is not None:
@@ -1408,6 +1558,7 @@ def tag(
     if roster is not None:
         tagmap.ensure_roster(roster)
     extra = [n for n in llm_names(text) if isinstance(n, str)] if llm_names is not None else []
+    extra = [n for n in extra if not all(w in _CLASS_WORDS for w in n.lower().split())]
     hits: list[Hit] = []
     used: dict[str, str] = {}
     model: list[_Cand] = []
@@ -1449,7 +1600,9 @@ def tag(
 _RESTORE_RE = re.compile(
     r"\[\s*(?P<teacher>teacher)\s*\]"
     r"|(?P<ob>\[\s*)?\b(?P<student>student)\s+(?P<letters>[a-z]{1,3})(?![a-z])(?(ob)\s*\])"
-    r"|(?P<ob2>\[\s*)?\b(?P<kind>person|phone|email|ssn|card|code|id|address|dob|redacted)\s+(?P<num>\d+)(?!\d)(?(ob2)\s*\])",
+    r"|(?P<ob2>\[\s*)?\b(?P<kind>person|phone|email|ssn|card|code|id|address|dob|redacted)\s+(?P<num>\d+)(?!\d)(?(ob2)\s*\])"
+    # Only in brackets: "Age 12" or "Date 2" in a sentence is not a tag.
+    r"|\[\s*(?P<kind2>place|date|age|detail|record|url|ip)\s+(?P<num2>\d+)\s*\]",
     re.IGNORECASE,
 )
 # After a lowercase "student a" (or "student i"), what shows it is a reference and not the article.
@@ -1482,6 +1635,8 @@ def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:
             ):
                 return m.group(0)  # "give every student a chance"
             canonical = f"[Student {letters.upper()}]"
+        elif m.group("kind2"):
+            canonical = f"[{_LABELS[_KIND_BY_LABEL[m.group('kind2').lower()]]} {m.group('num2')}]"
         else:
             word = m.group("kind")
             if not m.group("ob2") and not word[:1].isupper():
@@ -1504,6 +1659,7 @@ def leaks(text: str, roster: Any, tagmap: Any, redaction: Redaction | None = Non
     compact = _compact_cands(text, roster, tagmap)
     if redaction is not None and not redaction.is_default:
         compact = [c for c in _apply_redaction(compact, text, redaction) if c.kind != "term"]
+    compact = [c for c in compact if c.kind not in EXTRA_KINDS]
     extra = [c for c in compact if not any(c.start < e and s < c.end for s, e in taken)]
     return _hits(sorted([*found, *extra], key=lambda c: c.start))
 

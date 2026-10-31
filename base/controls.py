@@ -11,6 +11,11 @@ read again whenever the file changes, so a change applies to the next result. Se
   when every document it came from is in one of them; anything mixed or unknown is tagged.
 - hidden_folders: top-level folders Muse cannot list, search, ask about or run a task on. "."
   stands for the files at the top of the workspace.
+- profiles: the privacy toggles, like FERPA, GDPR or CUI (base/compliance.py). While one is on, the identifier
+  opt-outs, never_redact and names_off_folders are ignored, and more kinds of detail are tagged.
+  What the user set stays in the file, for when the toggle goes off.
+- learning: how dreaming's rules are used (base/router.py, routing_mode), chosen on the Dreaming
+  page. Empty means the setting in .env.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from base import compliance
 from base.guard import ALWAYS_TAGGED, Redaction
 
 SKIPPABLE_KINDS = ("phone", "email", "address", "dob", "student_id")
@@ -33,6 +39,7 @@ KIND_LABELS = {
     "dob": "Dates of birth",
     "student_id": "Student ID numbers",
 }
+LEARNING = ("rules", "tighten", "decide", "local_lora")
 TOP = "."  # the files at the top of the workspace, as a folder name
 MAX_WORDS = 200
 MAX_WORD_CHARS = 100
@@ -60,6 +67,8 @@ class Controls:
     never_redact: list[str] = field(default_factory=list)
     names_off_folders: list[str] = field(default_factory=list)
     hidden_folders: list[str] = field(default_factory=list)
+    profiles: list[str] = field(default_factory=list)
+    learning: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Controls:
@@ -73,13 +82,19 @@ class Controls:
             never_redact=_words(data.get("never_redact") or []),
             names_off_folders=_words(data.get("names_off_folders") or []),
             hidden_folders=_words(data.get("hidden_folders") or []),
+            profiles=compliance.clean(data.get("profiles")),
+            learning=str(data.get("learning") or "") if data.get("learning") in LEARNING else "",
         )
 
-    def redaction(self, sources: Iterable[str] | None = None) -> Redaction | None:
+    def redaction(self, sources: Iterable[str] | None = None, name_shapes: bool = False) -> Redaction | None:
         """The guard's Redaction for a result from these documents (None: the default, tag everything).
 
-        Names stay as written only when every source is in a names-off folder.
+        Names stay as written only when every source is in a names-off folder. With a compliance
+        toggle on, only the always-redact words apply, on top of the toggle's extra kinds.
+        `name_shapes` adds the guard's check for name-shaped words (DEVICE_ONLY=1).
         """
+        if self.profiles:
+            return Redaction(always=tuple(self.always_redact), extra_kinds=compliance.extra_kinds(self.profiles))
         src = [s for s in (sources or []) if s]
         names = not (src and self.names_off_folders and all(top_folder(s) in self.names_off_folders for s in src))
         r = Redaction(
@@ -87,6 +102,7 @@ class Controls:
             names=names,
             always=tuple(self.always_redact),
             never=tuple(self.never_redact),
+            name_shapes=name_shapes,
         )
         return None if r.is_default else r
 
@@ -112,8 +128,10 @@ class ControlStore:
                 try:
                     data = json.loads(self.path.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
-                    data = {}  # a broken file means the strict default, never "nothing redacted"
-                self._cache = (mtime, Controls.from_dict(data if isinstance(data, dict) else {}))
+                    data = None
+                # A broken file means the strictest settings, never "nothing redacted".
+                strict = Controls(profiles=list(compliance.PROFILES))
+                self._cache = (mtime, Controls.from_dict(data) if isinstance(data, dict) else strict)
             return self._cache[1]
 
     def save(self, controls: Controls) -> None:

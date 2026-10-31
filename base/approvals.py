@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS decisions (
     decided_at REAL,
     deleted INTEGER NOT NULL DEFAULT 0,
     item_id TEXT,
-    sources TEXT
+    sources TEXT,
+    receipt TEXT
 );
 CREATE INDEX IF NOT EXISTS decisions_status ON decisions(status);
 CREATE INDEX IF NOT EXISTS decisions_day ON decisions(day);
@@ -99,6 +100,8 @@ class ApprovalStore:
                 self._conn.execute("ALTER TABLE decisions ADD COLUMN blocked TEXT")
             if "sources" not in have:  # a db from before the privacy controls
                 self._conn.execute("ALTER TABLE decisions ADD COLUMN sources TEXT")
+            if "receipt" not in have:  # a db from before receipts
+                self._conn.execute("ALTER TABLE decisions ADD COLUMN receipt TEXT")
             self._conn.commit()
 
     def close(self) -> None:
@@ -125,6 +128,7 @@ class ApprovalStore:
         day: int | None = None,
         item_id: str | None = None,
         sources: Iterable[str] | None = None,
+        receipt: Mapping[str, Any] | None = None,
     ) -> int:
         values = {
             "ts": time.time(),
@@ -143,6 +147,7 @@ class ApprovalStore:
             "status": status,
             "item_id": item_id,
             "sources": json.dumps(list(sources)) if sources else None,
+            "receipt": json.dumps(dict(receipt)) if receipt else None,
         }
         cols = ", ".join(values)
         marks = ", ".join("?" for _ in values)
@@ -200,6 +205,13 @@ class ApprovalStore:
             return cur.rowcount > 0
 
     # Reading rows
+
+    def purge_before(self, cutoff: float) -> int:
+        """Delete every decided row older than `cutoff` (retention). Pending rows stay."""
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "DELETE FROM decisions WHERE ts < ? AND status != 'pending'", (cutoff,)
+            ).rowcount
 
     def _query(self, sql: str, args: tuple = ()) -> list[dict[str, Any]]:
         with self._lock:

@@ -63,8 +63,9 @@ INSTRUCTIONS = """\
 Muse Privacy is a private workspace on the user's own device. The documents stay there, and every \
 step that reads them runs on the device with its own model.
 
-- Names and identifiers come back as tags like [Student A], [Teacher] or [Phone 1]. The same person \
-always has the same tag on this device, so plan with the tags.
+- Names and identifiers come back as tags like [Student A], [Teacher] or [Phone 1]. With a privacy \
+toggle on, places, dates, organizations and record numbers do too, like [Place 1] or [Date 1]. The same \
+person always has the same tag on this device, so plan with the tags.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
 - Two ways to ask about the documents: search_documents returns the best passages for you to reason \

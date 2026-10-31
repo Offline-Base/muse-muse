@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from base import guard
+from base.compliance import PROFILES
 from base.config import load_settings
 from base.controls import Controls, ControlStore, top_folder
 from base.guard import Redaction, TagMap, load_roster
@@ -117,7 +118,7 @@ def test_store_round_trip_is_private_and_a_broken_file_means_the_strict_default(
     assert stat.S_IMODE(os.stat(store.path).st_mode) == 0o600
     store.path.write_text("{not json")
     os.utime(store.path, (1, 1))  # a new mtime, so the cache reloads
-    assert store.get() == Controls()
+    assert store.get().profiles == list(PROFILES)  # the strictest settings
 
 
 # where they apply

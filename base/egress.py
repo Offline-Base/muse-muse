@@ -9,6 +9,7 @@ returns text to Muse, including the waiting and refusal messages, goes through f
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import logging
 import re
@@ -17,20 +18,39 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from base import compliance, retention
 from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove
 from base.config import CloudBackendRefused, assert_synthetic
-from base.router import never_share_floor
-from base.types import IDENTIFIER_KINDS, Hit, RouteDecision, RouteInput, TagResult, default_share_form
+from base.router import checked_labels, never_share_floor, small_model
+from base.types import (
+    IDENTIFIER_KINDS,
+    STRICTNESS,
+    Hit,
+    RouteDecision,
+    RouteInput,
+    TagResult,
+    default_share_form,
+)
 
 log = logging.getLogger(__name__)
 # The user's redaction controls for the release in progress (see release and resolve).
 _REDACTION: ContextVar[Any] = ContextVar("redaction", default=None)
+# True while the release in progress came with a private detail in Muse's own request.
+_RAW_REQUEST: ContextVar[bool] = ContextVar("raw_request", default=False)
 
 WAITING_TEXT = "Waiting for your OK on the device."
 HELD_TEXT = "Held on your device."
 KEPT_TEXT = "Kept on your device."
+RAW_REQUEST_NOTE = (
+    "Note: this request included a private detail, so Muse has already seen it. Use tags in requests, "
+    "and turn off training under Data controls in your Muse settings."
+)
+DESTINATION = "Muse, through the relay"
+# Kinds that count as a private detail in Muse's request, for the note above. The kinds only a
+# toggle adds are left out: they lean toward removing too much, so they'd warn about plain words.
+_REQUEST_NOTE_KINDS = frozenset({"student", "teacher", "person", "term"}) | IDENTIFIER_KINDS
 SUMMARY_FAILED = "A class summary could not be made without per-student detail, so it stayed on the device."
 NAME_CHECK_FAILED = "The device could not finish its check for names, so the result stayed on the device."
 TOPIC_CHECK_FAILED = "The device could not finish reading what the request is for, so the result stayed on the device."
@@ -45,6 +65,10 @@ NO_TOPIC_PASS = frozenset({"document_list", "dreaming_report"})
 # What Muse is told when a result is kept. Fixed strings only: the router's own reason is model
 # text that could repeat what the result says, so it stays on the approval page.
 KEPT_REASONS = (
+    ("compliance:cloud", "Your privacy toggles need every model on this device."),
+    ("compliance:local_only", "A privacy toggle keeps everything on this device."),
+    ("compliance:sensitive", "It has a kind of detail your privacy toggles keep on this device."),
+    ("compliance", "It describes fewer than 10 people, and your privacy toggles keep that on the device."),
     ("blocked", "It mentions a topic you never share."),
     ("policy:", "Your rules say results like this stay on the device."),
     ("learned:refuse", "Your rules say results like this stay on the device."),
@@ -56,7 +80,8 @@ CHECK_PENDING = "The device is still checking this result. Call get_result again
 SUMMARY_INPUT_LIMIT = 12000
 SUMMARY_PROMPT = (
     "Write a short class-level summary of the result below for a teacher. Use counts, averages, "
-    "ranges and common patterns only. Do not mention any one student, tag or individual score. "
+    "ranges and common patterns only. Use only numbers and facts in the result, and add no "
+    "comparison or range it does not state. Do not mention any one student, tag or individual score. "
     "Reply with the summary text only."
 )
 
@@ -183,14 +208,35 @@ class Egress:
 
     def _redaction_for(self, sources: Sequence[str]) -> Any:
         """guard.Redaction from the user's controls for these sources, or None (tag everything)."""
+        shapes = bool(getattr(getattr(self.services, "settings", None), "device_only", False))
         store = getattr(self.services, "controls", None)
         if store is None:
-            return None
+            return guard_module.Redaction(name_shapes=True) if shapes else None
         try:
-            return store.get().redaction(sources)
+            return store.get().redaction(sources, name_shapes=shapes)
         except Exception as exc:  # a broken controls file never means less redaction
             log.warning("privacy controls unreadable (%s); tagging everything", type(exc).__name__)
-            return None
+            return guard_module.Redaction(name_shapes=True) if shapes else None
+
+    def _profiles(self) -> list[str]:
+        """The compliance toggles that are on. A broken controls file reads as all of them."""
+        store = getattr(self.services, "controls", None)
+        if store is None:
+            return []
+        try:
+            return list(store.get().profiles)
+        except Exception as exc:
+            log.warning("privacy controls unreadable (%s); every toggle applies", type(exc).__name__)
+            return list(compliance.PROFILES)
+
+    def _with_toggles(
+        self, route: RouteDecision, text: str, sources: Sequence[str], profiles: Sequence[str], raw: str = ""
+    ) -> RouteDecision:
+        """The router's decision, or the stricter one a compliance toggle asks for."""
+        hold = compliance.check(text, sources, profiles, raw)
+        if hold is None or STRICTNESS[route.decision] >= STRICTNESS[hold[0]]:
+            return route
+        return RouteDecision(hold[0], hold[2], "rule", route.latency_ms, [*route.floors, hold[1]])
 
     def _red_kw(self) -> dict[str, Any]:
         r = _REDACTION.get()
@@ -214,6 +260,12 @@ class Egress:
         s = self.services
         if synthetic is None:
             synthetic = self._synthetic()
+        profiles = self._profiles()
+        retention.maybe_purge(s, profiles)
+        if profiles and not getattr(getattr(s, "settings", None), "device_only", False):
+            self._audit("egress", "compliance_needs_device_only")
+            held = RouteDecision("refuse", "A privacy toggle is on and a model is not on this device.", "rule", 0, ["compliance:cloud"])
+            return Released("refused", refusal_text(held.floors), None, held, None)
         try:
             tagged = self._tag(raw_text, result_kind, synthetic)
         except Exception as exc:  # the name pass or the guard broke: hold rather than guess
@@ -227,15 +279,21 @@ class Egress:
         try:
             asked = self._tag_request(request)
             asked_about = self._request_topics(request, asked.text, result_kind, tagged, own_topics, synthetic)
+            if small_model(getattr(s, "settings", None)):
+                asked_about = checked_labels(asked.text, asked_about)
         except Exception as exc:  # tagging the request or the topic pass broke: hold, never route without it
             log.warning("request check failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "topic_check_failed")
             held = RouteDecision("refuse", TOPIC_CHECK_FAILED, "fallback", 0, ["topic_check"])
             return Released("refused", HELD_TEXT, None, held, tagged, retryable=True)
+        raw_kinds = sorted({h.kind for h in asked.hits} & _REQUEST_NOTE_KINDS)
+        if raw_kinds:
+            self._audit("egress", "private_detail_in_request")
         request = asked.text
         inp = route_input(asked, result_kind, tagged, own_topics, asked_about, s.policy.never_share, summary)
+        inp.strict = bool(profiles)
         all_topics = inp.topics
-        route = s.router.decide(inp, synthetic=synthetic)
+        route = self._with_toggles(s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text)
         shown_form = default_share_form(result_kind, all_topics)
 
         outgoing = tagged.text
@@ -249,6 +307,7 @@ class Egress:
                 route = RouteDecision("refuse", SUMMARY_FAILED, route.source, route.latency_ms, [*route.floors, "summary"])
             else:
                 outgoing = made
+                route = self._with_toggles(route, outgoing, sources, profiles, raw_text)
 
         row = {
             "tool": tool,
@@ -267,11 +326,26 @@ class Egress:
         }
         if sources:
             row["sources"] = sources
+        row["receipt"] = self._receipt(tagged, route, outgoing, profiles, raw_kinds)
+        note = _RAW_REQUEST.set(bool(raw_kinds))
+        try:
+            return self._decide_row(route, row, outgoing, tagged, job_id, tool, profiles)
+        finally:
+            _RAW_REQUEST.reset(note)
+
+    def _decide_row(
+        self, route: RouteDecision, row: dict[str, Any], outgoing: str, tagged: TagResult, job_id: str | None, tool: str,
+        profiles: Sequence[str],
+    ) -> Released:
+        """Record the row and give the outcome for the router's decision."""
+        s = self.services
         if route.decision == "ask_user":
             approval_id = s.approvals.create_pending(**row)
-            if self._auto_approve():
+            if self._auto_approve() and route.source != "fallback" and not profiles:
                 # The user turned on always-approve: answer as they would with Share it, and
-                # leave it out of dreaming. The leak check in _finish still runs.
+                # leave it out of dreaming. The leak check in _finish still runs. When the router
+                # could not decide, nothing has judged this result, so the user still looks. A
+                # compliance toggle turns it off too.
                 s.approvals.decide(approval_id, approve=True, remember=False, by="auto_approve")
                 self._audit("egress", "auto_approved")
                 return self._finish("shared", outgoing, approval_id, route, tagged, detail=job_id or tool)
@@ -280,6 +354,27 @@ class Egress:
         if route.decision == "refuse":
             return self._finish("refused", refusal_text(route.floors), None, route, tagged)
         return self._finish("shared", outgoing, None, route, tagged, detail=job_id or tool)
+
+    def _receipt(
+        self, tagged: TagResult, route: RouteDecision, outgoing: str, profiles: Sequence[str], raw_kinds: Sequence[str]
+    ) -> dict[str, Any]:
+        """What the page and the audit export show for one result. Kinds and counts, never a value."""
+        removed: dict[str, int] = {}
+        for hit in tagged.hits:
+            removed[hit.kind] = removed.get(hit.kind, 0) + 1
+        settings = getattr(self.services, "settings", None)
+        return {
+            "removed": removed,
+            "checks": ["tagging", "name check", "router", *(["toggles"] if profiles else []), "final leak check"],
+            "floors": list(route.floors),
+            "decided_by": route.source,
+            "model": getattr(settings, "router_model", None),
+            "toggles": list(profiles),
+            "device_only": bool(getattr(settings, "device_only", False)),
+            "destination": DESTINATION,
+            "request_had_private_detail": list(raw_kinds),
+            "sha256": hashlib.sha256(outgoing.encode("utf-8")).hexdigest(),
+        }
 
     def _auto_approve(self) -> bool:
         settings = getattr(self.services, "settings", None)
@@ -391,7 +486,8 @@ class Egress:
     def _name_pass(self, result_kind: str, synthetic: bool):
         if result_kind in NO_NAME_PASS:
             return None
-        names = getattr(self._checker(), "llm_names", None)
+        wider = self._profiles() and getattr(self._checker(), "llm_details", None)
+        names = wider or getattr(self._checker(), "llm_names", None)
         if not callable(names):
             return None
         return functools.partial(names, synthetic=synthetic)
@@ -410,6 +506,8 @@ class Egress:
             log.warning("egress blocked a result: %d leak(s) of kind %s", len(leaks), sorted({h.kind for h in leaks}))
             self._audit("egress", "egress_blocked")
             return Released("refused", HELD_TEXT, approval_id, route, tagged)
+        if _RAW_REQUEST.get():
+            text = f"{text}\n\n{RAW_REQUEST_NOTE}"
         if status == "shared":
             self._emit("sending", detail)  # the light plays one sweep, then shows the next state
             self._emit(self._resting_state(), detail)
@@ -447,7 +545,14 @@ class Egress:
         except Exception as exc:
             log.warning("summary tagging failed: %s", type(exc).__name__)
             return None, "model"
-        if _PERSON_TAG.search(tagged):
+        if _PERSON_TAG.search(tagged) and getattr(getattr(self.services, "settings", None), "device_only", False):
+            # A local model often adds an example. Its sentences about the class are still
+            # a class summary once the ones that name someone are gone.
+            kept = [p for p in re.split(r"(?<=[.!?])\s+", tagged) if p.strip() and not _PERSON_TAG.search(p)]
+            tagged = " ".join(kept)
+            if not kept:
+                return None, "named"
+        elif _PERSON_TAG.search(tagged):
             log.warning("summary named a student or person; not sharing it")
             return None, "named"
         return tagged, None
