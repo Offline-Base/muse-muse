@@ -8,6 +8,10 @@ import type { DeviceTool, DeviceToolResult } from "@/lib/device/client";
 
 /** The most model calls one question may make. The last one is offered no tools, and a run past it ends with no answer. */
 export const MAX_MODEL_CALLS = 10;
+/** The most tools one question may use, across all its replies: a model can ask for dozens in one, and a recording takes 30 seconds. */
+export const MAX_TOOL_CALLS = 10;
+/** The longest reply. Wonder is told to answer briefly, and it pays for what it writes on every call of a run. */
+export const MAX_OUTPUT_TOKENS = 2000;
 
 /** What a model may use for any question: these look, listen and report, and change nothing on the board. */
 const READ_TOOLS = ["describe_device", "capture_image", "record_audio", "list_models", "ask_model", "training_status"];
@@ -17,10 +21,31 @@ const READ_TOOLS = ["describe_device", "capture_image", "record_audio", "list_mo
  * board lists: they fetch from anywhere, overwrite data, or run anything. An admin still has them through /api/device.
  */
 const ACTION_TOOLS = ["start_model", "stop_model", "train_model", "stop_training"];
-const ASKS_FOR_ACTIONS = /\b(?:(?:re)?train\w*|fine-?tun\w*|tun(?:e|ed|ing)|models?|adapters?|stop)\b/i;
+/** "Train" or "fine-tune" as a request, or a verb on a model, an adapter or a run. "What model of camera" or "the stop sign" aren't. */
+const ASKS_FOR_ACTIONS =
+  /\b(?:fine-?tun\w*|(?<!\b(?:the|a|an|this|that)\s)(?:re)?train(?:ing)?|(?:start|load|run|restart|switch|swap|unload|stop|tune)\b(?:\s+\S+){0,3}?\s+(?:models?|adapters?|training|run))\b/i;
+/** "Don't train anything" is about training too, and holding back when in doubt only means asking again. */
+const DECLINES_ACTIONS = /\b(?:don['\u2019]?t|do not|never|not|without)\b/i;
+/** These can return text someone else wrote: a label in a photo, or a tuned model's answer. Actions end once one has run. */
+const UNTRUSTED_TOOLS = new Set(["capture_image", "ask_model"]);
+/** The most Wonder may ask for by itself. An admin has the board's whole range through the fine-tuning card and /api/device. */
+const ACTION_LIMITS: Record<string, Record<string, number>> = {
+  train_model: { steps: 300, rank: 16, max_length: 1024 },
+  start_model: { context: 8192 },
+};
 
 function allowedTools(prompt: string): Set<string> {
-  return new Set(ASKS_FOR_ACTIONS.test(prompt) ? [...READ_TOOLS, ...ACTION_TOOLS] : READ_TOOLS);
+  return new Set(ASKS_FOR_ACTIONS.test(prompt) && !DECLINES_ACTIONS.test(prompt) ? [...READ_TOOLS, ...ACTION_TOOLS] : READ_TOOLS);
+}
+
+/** Why these arguments are past what Wonder may ask for, or null when they aren't. */
+function overLimit(tool: string, args: Record<string, unknown>): string | null {
+  for (const [field, most] of Object.entries(ACTION_LIMITS[tool] ?? {})) {
+    if (typeof args[field] === "number" && args[field] > most) {
+      return `${field} can be at most ${most} here, so ${tool} didn't run. Tell the user the fine-tuning card takes more.`;
+    }
+  }
+  return null;
 }
 
 const INSTRUCTIONS =
@@ -31,7 +56,8 @@ const INSTRUCTIONS =
   "recordings: you only get their levels, so say so if you're asked what was said. Answer briefly in plain words, and " +
   "only claim what the tools showed. If a tool fails, say what failed. Training takes minutes to hours and runs in the " +
   "background: train_model returns at once and training_status says how a run stands. Don't call training_status " +
-  "repeatedly to wait for a run. Check it once, say where it stands, and let the user ask again later.";
+  "repeatedly to wait for a run. Check it once, say where it stands, and let the user ask again later. Once a photo or a " +
+  "model's answer is in this conversation, tools that change the board go away: say so, and ask the user to ask for that separately.";
 
 const AUDIO_NOTE = "(The recording was kept for the user. You can't hear it.)";
 
@@ -78,44 +104,51 @@ function parseArguments(text: string): Record<string, unknown> | null {
 
 /** Answers one question with the board's tools. A board or model that can't be reached throws. */
 export async function runDeviceAgent(prompt: string, deps: DeviceAgentDeps): Promise<DeviceAgentResult> {
-  const allowed = allowedTools(prompt);
-  const tools = (await deps.listTools())
-    .filter((tool) => allowed.has(tool.name))
-    .map((tool) => ({
-      type: "function" as const,
-      name: tool.name,
-      description: tool.description ?? null,
-      parameters: tool.inputSchema as Record<string, unknown>,
-      strict: false,
-    }));
+  let allowed = allowedTools(prompt);
+  const boardTools = (await deps.listTools()).map((tool) => ({
+    type: "function" as const,
+    name: tool.name,
+    description: tool.description ?? null,
+    parameters: tool.inputSchema as Record<string, unknown>,
+    strict: false,
+  }));
   const steps: DeviceAgentStep[] = [];
+  let toolCalls = 0;
   // The whole conversation goes with every call. A response stored for previous_response_id came back "not found or
   // expired" after a tool that took 30 seconds, which is ordinary here, so nothing is left on the server (protocols/responses).
   let input: ResponseInput = [{ role: "user", content: prompt }];
 
   for (let call = 1; call <= MAX_MODEL_CALLS; call++) {
+    const last = call === MAX_MODEL_CALLS || toolCalls >= MAX_TOOL_CALLS;
+    const offered = allowed;
     const res = await deps.respond({
       model: deps.model,
       instructions: INSTRUCTIONS,
       // Meta takes only "auto" for tool_choice, so the last call ends the run by offering no tools.
-      ...(call === MAX_MODEL_CALLS ? {} : { tools, tool_choice: "auto" as const }),
+      ...(last ? {} : { tools: boardTools.filter((tool) => offered.has(tool.name)), tool_choice: "auto" as const }),
       reasoning: { effort: "low" },
       store: false,
       include: ["reasoning.encrypted_content"],
+      max_output_tokens: MAX_OUTPUT_TOKENS,
       input,
     });
     const calls = res.output.filter((item) => item.type === "function_call");
-    if (!calls.length) return { answer: res.output_text ?? "", steps };
+    if (!calls.length || last) return { answer: res.output_text ?? "", steps };
 
     const outputs = [];
     for (const item of calls) {
       const args = parseArguments(item.arguments);
-      // Checked again here, since a model can ask for a tool it wasn't offered.
-      const result: DeviceToolResult = !args
-        ? { content: [{ type: "text", text: "Those arguments weren't a JSON object." }], isError: true }
-        : allowed.has(item.name)
-          ? await deps.callTool(item.name, args)
-          : { content: [{ type: "text", text: `${item.name} isn't available for this question, so it didn't run.` }], isError: true };
+      const refused = !args
+        ? "Those arguments weren't a JSON object."
+        : // Checked again here, since a model can ask for a tool it wasn't offered.
+          !allowed.has(item.name)
+          ? `${item.name} isn't available for this question, so it didn't run.`
+          : toolCalls >= MAX_TOOL_CALLS
+            ? `That's the most tools one question can use, so ${item.name} didn't run.`
+            : overLimit(item.name, args);
+      if (!refused) toolCalls++;
+      const result: DeviceToolResult = refused ? { content: [{ type: "text", text: refused }], isError: true } : await deps.callTool(item.name, args!);
+      if (!refused && UNTRUSTED_TOOLS.has(item.name)) allowed = new Set(READ_TOOLS);
       steps.push({ tool: item.name, arguments: args ?? {}, content: result.content, isError: result.isError });
       outputs.push({ type: "function_call_output" as const, call_id: item.call_id, output: modelOutput(result.content) });
     }

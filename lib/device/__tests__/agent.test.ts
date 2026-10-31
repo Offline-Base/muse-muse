@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Response as ModelResponse, ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
-import { MAX_MODEL_CALLS, runDeviceAgent, type DeviceAgentDeps } from "@/lib/device/agent";
+import { MAX_MODEL_CALLS, MAX_OUTPUT_TOKENS, MAX_TOOL_CALLS, runDeviceAgent, type DeviceAgentDeps } from "@/lib/device/agent";
 import type { DeviceToolResult } from "@/lib/device/client";
 
 const toolCall = (name: string, args = "{}", callId = "call-1") => ({ type: "function_call", name, arguments: args, call_id: callId });
@@ -136,6 +136,95 @@ describe("runDeviceAgent", () => {
       await runDeviceAgent(prompt, h.deps);
       assert.deepEqual(offered(h.bodies[0]!), ["describe_device", "capture_image", "training_status", "train_model", "stop_training", "start_model"], prompt);
     }
+  });
+
+  const READ_ONLY = ["describe_device", "capture_image", "training_status"];
+  const ALL_OFFERED = [...READ_ONLY, "train_model", "stop_training", "start_model"];
+  const withEveryTool = (replies: ModelResponse[] | (() => ModelResponse)) => {
+    const h = harness(replies);
+    h.deps.listTools = async () => everyTool.map((name) => ({ name, inputSchema: { type: "object" } }));
+    return h;
+  };
+
+  it("doesn't take everyday words or a refusal as asking to change the board", async () => {
+    for (const prompt of [
+      "What model of camera is attached?",
+      "Which model is this board?",
+      "Read the stop sign in this photo",
+      "Do not stop anything, just describe the board",
+      "Please don't train anything, how hot is it?",
+      "Please don\u2019t stop the run, how far along is it?",
+      "is the guitar in tune? listen",
+      "Is the train on time in this photo?",
+    ]) {
+      const h = withEveryTool([reply("r1", [], "Sure.")]);
+      await runDeviceAgent(prompt, h.deps);
+      assert.deepEqual(offered(h.bodies[0]!), READ_ONLY, prompt);
+    }
+  });
+
+  it("still takes plain requests as asking", async () => {
+    for (const prompt of ["Retrain it on the bakery data", "stop training", "start the model", "Unload the model", "train on bakery", "tune this model"]) {
+      const h = withEveryTool([reply("r1", [], "Sure.")]);
+      await runDeviceAgent(prompt, h.deps);
+      assert.deepEqual(offered(h.bodies[0]!), ALL_OFFERED, prompt);
+    }
+  });
+
+  it("stops offering what changes the board once a photo or a model's answer is in the conversation", async () => {
+    for (const source of ["capture_image", "ask_model"]) {
+      const h = withEveryTool([reply("r1", [toolCall(source)]), reply("r2", [toolCall("stop_training")]), reply("r3", [], "Done.")]);
+      const result = await runDeviceAgent("train a model on bakery", h.deps);
+      assert.deepEqual(offered(h.bodies[0]!), ALL_OFFERED, source);
+      assert.deepEqual(offered(h.bodies[1]!), READ_ONLY, source);
+      // Asking anyway does nothing, including later in the same reply.
+      assert.deepEqual(h.called.map((c) => c.name), [source]);
+      assert.equal(result.steps[1]!.isError, true);
+    }
+    const same = withEveryTool([reply("r1", [toolCall("capture_image", "{}", "c1"), toolCall("train_model", "{}", "c2")]), reply("r2", [], "Done.")]);
+    await runDeviceAgent("train a model on bakery", same.deps);
+    assert.deepEqual(same.called.map((c) => c.name), ["capture_image"]);
+  });
+
+  it("goes on offering them after a look at what's attached", async () => {
+    const h = withEveryTool([reply("r1", [toolCall("describe_device")]), reply("r2", [], "Done.")]);
+    await runDeviceAgent("train a model on bakery", h.deps);
+    assert.deepEqual(offered(h.bodies[1]!), ALL_OFFERED);
+  });
+
+  it("holds back settings that would tie up the board for hours", async () => {
+    for (const [tool, args] of [
+      ["train_model", '{"dataset":"d","name":"n","steps":5000}'],
+      ["train_model", '{"dataset":"d","name":"n","rank":64}'],
+      ["train_model", '{"dataset":"d","name":"n","max_length":4096}'],
+      ["start_model", '{"model":"m","context":32768}'],
+    ] as const) {
+      const h = withEveryTool([reply("r1", [toolCall(tool, args)]), reply("r2", [], "No.")]);
+      const result = await runDeviceAgent("train a model on bakery", h.deps);
+      assert.deepEqual(h.called, [], args);
+      assert.equal(result.steps[0]!.isError, true);
+    }
+    const h = withEveryTool([reply("r1", [toolCall("train_model", '{"dataset":"d","name":"n","steps":100}')]), reply("r2", [], "Started.")]);
+    await runDeviceAgent("train a model on bakery", h.deps);
+    assert.equal(h.called.length, 1);
+  });
+
+  it("limits the tool calls of one question, however a model bunches them", async () => {
+    const many = Array.from({ length: 40 }, (_, i) => toolCall("capture_image", "{}", `c${i}`));
+    const h = harness(() => reply("r", many, "Done."));
+    const result = await runDeviceAgent("look", h.deps);
+    assert.equal(h.called.length, MAX_TOOL_CALLS);
+    assert.equal(result.steps.filter((step) => !step.isError).length, MAX_TOOL_CALLS);
+    // Every call still gets an answer, and past the limit the model is offered no tools, so the run ends.
+    assert.equal(outputsOf(h.bodies[1]!).length, 40);
+    assert.equal(h.bodies[1]!.tools, undefined);
+    assert.equal(h.bodies.length, 2);
+  });
+
+  it("caps each reply's output", async () => {
+    const h = harness([reply("r1", [], "Hello.")]);
+    await runDeviceAgent("hi", h.deps);
+    assert.equal(h.bodies[0]!.max_output_tokens, MAX_OUTPUT_TOKENS);
   });
 
   it("won't run a tool it didn't offer, even when a photo talked the model into asking", async () => {
