@@ -474,6 +474,9 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   fleet writes the data as a second process beside the government batch, inside its $333 cap, so no new writing spend.
   Tuned honesty is expected to change the model chosen for the final quantize, so stage 2's quantized files may become
   a measurement rather than the final files.
+- 2:32 AM: owner approved the extra pass and asked for the audit, the fix and any other recommended changes as the run
+  goes ("Do this ... and any other thing you recommend as we go ... please audit it, fix and cotinue"), within the
+  existing limits.
 
 ## Problems and fixes
 
