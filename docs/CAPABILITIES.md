@@ -984,14 +984,15 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
 - **Routes:** `app/api/device/drive/route.ts` (`GET` status and URL refresh, `POST` start or arm, `DELETE` stop) and
   `app/api/device/drive/erase/route.ts`, all `requireAdmin`, as that doc says. No gateway route until unit 13.
 - **Board tools** (`muse-device/server.py`, with the work in a new `muse-device/drive.py`, standard library only, for Hussam):
-  `drive_status`, `export_source`, `export_model`, `erase_drive`, `stop_export`. The same layout as `lib/drive/image.ts`,
-  through the shared plan in `lib/drive/plan.ts`. Every sha256 is read back from the drive. exFAT when a file is 4 GiB or
-  more. Sync, unmount, power off, and the card says "Safe to unplug".
+  `drive_status` (with the board's finished runs), `export_source`, `export_model`, `erase_drive`, `stop_export`. The same
+  layout as `lib/drive/image.ts`, through the shared plan in `lib/drive/plan.ts`. Every sha256 is read back from the drive.
+  exFAT when a file is 4 GiB or more. Sync, unmount, power off, and the card says "Safe to unplug". Built on `tg-cap-drive`,
+  not deployed; `docs/DRIVE_EXPORT.md` "Built" has the tests and what isn't proven.
 - **Sources:** a board run (`~/models`) or a lab model (`localFilesFor`), pulled by a signed, hash-checked URL. No new GPU
   run.
 - **Product tools** (`drive_status`, `export_to_drive`) wait for unit 13's registry and owner check, and for unit 11's
   "train on my data".
-- **Build stand-in:** a simulated board whose export ends in PASS.
+- **Build stand-in:** a simulated board whose export ends in PASS (`lib/device/drive-sim.ts`), wired in with the product tools.
 - **Test:** Python tests with fake drives, a Linux loopback image, then the real test with a drive the owner plugs in.
   Board deploys go through Hussam or a fleet job with the owner's OK, never SSH from the laptop.
 - **Owns:** everything that doc lists, plus its lines in `lib/env.ts` and `.env.example`.
@@ -1220,6 +1221,7 @@ Phaser game.
 
 - Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
   section 21a added with the planner's decisions.
+- Nov 1 (unit 12): section 18 says the board tools are built, `drive_status` lists finished runs, and where the build stand-in lives.
 
 
 - Oct 31: first version (unit 0).

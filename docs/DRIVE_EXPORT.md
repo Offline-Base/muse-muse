@@ -3,9 +3,58 @@
 Unit 12 of wave 3 (`~/mm-wt/_plan/wave3.md`). The owner's ask, Oct 31: "fine tune, then plug a flashdrive into a jetson and
 have it export the fine tuned model whether it be fine tuned on the jetson or one of the cloud gpus".
 
-This is a design. Nothing in it is built or has run. Marks, as in the other docs: [V] verified in code or by a real run,
-[I] inferred or estimated, [S] from a source outside this repo. Flag names and migration numbers follow
-`docs/CAPABILITIES.md` (unit 0) where the two differ.
+Built on branch `tg-cap-drive` (Oct 31 to Nov 1), behind `DRIVE_EXPORT_ENABLED`, off. Not deployed to any board, and the
+drive kit isn't uploaded: "Built" below says what exists, what was measured, and what only the owner's real test can show.
+The rest of this page is the design it was built from, corrected where the build found it wrong. Marks, as in the other
+docs: [V] verified in code or by a real run, [I] inferred or estimated, [S] from a source outside this repo. Flag names and
+migration numbers follow `docs/CAPABILITIES.md` (unit 0) where the two differ.
+
+## Built
+
+### What exists
+
+| Part | Files | Tests, and what they show |
+| --- | --- | --- |
+| One layout for bench drives and exports | `lib/drive/layout.ts`, `kit.ts`, `plan.ts`, and `image.ts` (now the kit plus a plan written into a folder) | `plan.test.ts`, 14: the bench's image is byte for byte what it was before the split, for five fixture models, against `golden/bench-image.json` captured from the old code [V]. A board plan has the adapter, Qwen's license and notice and no Meta words; a lab plan has Meta's; the owner's file is named without its link; the Mac launcher really runs on a board drive and passes `--lora`, copies the adapter and checks it [V, on macOS] |
+| The drive kit | `lib/drive/kit-files.json` (real, generated Oct 31), `scripts/drive-kit.ts` | 82 files, 120.1 MB once each, from the pinned llama.cpp b11669 archives, Meta's two files and Qwen's license, each checked against its pin [V]. **Not uploaded**: `baseUrl` is null, so the routes answer `drive_kit_missing` until the owner runs `--upload` |
+| Links | `lib/drive/sources.ts` | `sources.test.ts`, 4: resolve links for public repos, Hub-signed links for private ones asked with `redirect: "manual"`, kit links from Blob, and redaction |
+| Board calls and plans | `lib/device/drive.ts`, `lib/device/drive-sim.ts` | `drive.test.ts`, 5: which sources a request may name; a board plan with the **real** kit is 99 files (80 from the kit) and an 87 KB `export_model` call, against the board's 1 MiB [V]; the simulated board ends in PASS |
+| Routes | `app/api/device/drive/route.ts`, `app/api/device/drive/erase/route.ts` | `drive-route.test.ts`, 14: 404 and nothing touched with the flag off (not even the session); admin only; a private model's links signed only for Export now, never armed; fresh links on GET in `needs_urls`; no link, token or board address in any answer or log line (this test caught a failure log that carried the board's address) |
+| The card and links | `components/device/DeviceDrive.tsx`, `DriveExportLink.tsx`, `app/device/page.tsx`, `DeviceTrain.tsx`, `app/fine-tuning/[jobId]/page.tsx` | Type-checked. Not seen in a browser: there is no board for it to talk to here |
+| The board | `muse-device/drive.py` (about 1,100 lines), five tools in `server.py`, `setup-drive.sh` | `test_drive.py`, 50 (1 skipped off Linux): detection, plan refusals, the golden plan ending on a fake drive with the same `SHA256SUMS` as Node's, FAT32 and a 5 GB file, NTFS, locked, full, too small, over 256 GB, armed exports that ignore sticks already in and never erase, copies, resume with `Range`, a 200 that starts over, an expired link that waits for a fresh one, a hash mismatch, a flipped byte, a missing and an extra file, an unplug mid-write (failed when not armed, resumed when armed), a killed export that carries on, and the tools. Ten runs in a row pass, after the tests found a real race (an export finishing while its status was read was recorded as failed). `test_server.py`: Hussam's 76 still pass |
+| Loopback | `muse-device/test_drive_loop.py` | **Never ran**: it needs Linux as root |
+| Owner and deploy scripts | `scripts/drive-export.ts` (the owner's S3 file), `scripts/device-bundle.ts` | Never run: one signs with the owner's AWS session, the other uploads to Blob |
+
+Every change in `muse-device/` is listed for Hussam in `muse-device/CHANGES_FOR_HUSSAM.md`.
+
+### Where the build differs from the design below
+
+- **The kit is bigger.** 120 MB once each, and 169 MB written onto each drive, since the two Windows builds each carry their
+  own copies of the shared libraries. A board fine-tune's drive is about 0.72 GB, not 0.6 [V, measured from the plan].
+- **`DRIVE_IMAGE_VERSION` stays `2026.10.28-b11669`.** Moving it would change the footer of every bench drive's Start Here,
+  and bench drives had to stay byte for byte the same. `muse-drive-plan/1` and `PROVENANCE.json`'s `export` tell an export
+  from a bench drive.
+- **Adapter support in the launchers sits in marked blocks** (`# >>> adapter` to `# <<< adapter`) that a drive without an
+  adapter loses whole, so a bench drive's launchers are what they were.
+- **`drive_status` also lists the board's finished runs**, since no tool listed runs and the card picks from them.
+- **`export_model {export}`** with no plan carries on an export that failed or was stopped, from the plan the board kept.
+- **The erase happens in the export's own process.** `erase_drive` checks the typed word and the identity and leaves a
+  confirmation; the export reads the drive once more and formats only if it is still the same one. It works only for an
+  export waiting in `needs_erase`.
+- **The card lists board runs.** A lab model reaches it through "Put it on a drive" on its admin page, not a list.
+- **The owner's script signs in with a session cookie.** Every drive route uses `requireAdmin`, which needs a session, so
+  `scripts/drive-export.ts` sends an admin's `mm_session` cookie from `MUSE_SESSION`. It never prints it.
+- **The product tools aren't built.** They wait for unit 13 and `DRIVE_EXPORT_PRODUCTS`. The simulated board that will
+  answer builds exists (`lib/device/drive-sim.ts`) and isn't wired to anything.
+
+### Before the owner's real test
+
+1. The owner uploads the kit: `npx tsx --env-file-if-exists=.env.local scripts/drive-kit.ts --upload` (writes about 120 MB
+   to the public Blob store under `drive-kit/`).
+2. Hussam (or a fleet job the owner approves) puts this `muse-device/` on `jetson-02`, runs `setup-drive.sh`, restarts the
+   service, and runs `test_drive_loop.py` there once. `scripts/device-bundle.ts` makes the tarball and prints its sha256.
+3. `DRIVE_EXPORT_ENABLED=1` on the deployment the owner uses for the test (a preview, by decision 6), then "The one real
+   test" below.
 
 ## What the person does
 
@@ -124,7 +173,7 @@ script again (`--resume <export>`).
 export fails with which file and why. The read-back check after a remount checks every file again.
 
 **Disk.** A cloud file streams straight onto the drive, so the board's own disk needs room only for the kit cache, about
-70 MB, with `INSTALL_RESERVE_GIB` kept free as `install_model` keeps it [V]. The drive needs the plan's total bytes plus
+120 MB [V], with 1 GiB kept free as `install_model` keeps it. The drive needs the plan's total bytes plus
 64 MB. Prefetching a big file to the board before the drive arrives is a later option: it helps only when the internet is
 slower than the stick, and the boards' free disk is unknown here.
 
@@ -367,7 +416,7 @@ first real test measures it.
 
 | Export | Size | Filesystem and stick | Write at 20 MB/s | Write at 60 MB/s | Read back at 100 MB/s |
 |---|---|---|---|---|---|
-| Board fine-tune: Qwen3.5-0.8B Q4_K_M (about 0.5 GB) + adapter (about 20 MB at rank 8, a few hundred MB at rank 64) + kit (about 70 MB) | about 0.6 GB | FAT32 or exFAT, any stick | 30 s | 10 s | 6 s |
+| Board fine-tune: Qwen3.5-0.8B Q4_K_M (about 0.5 GB) + adapter (about 20 MB at rank 8, a few hundred MB at rank 64) + kit (169 MB written [V]) | about 0.72 GB | FAT32 or exFAT, any stick | 36 s | 12 s | 7 s |
 | Stage 2 IQ1_S | 6.53 GB | exFAT, 8 GB or more | 5.4 min | 1.8 min | 1.1 min |
 | Glimmer Q3_K_M | 13.7 GB | exFAT, 32 GB | 11.4 min | 3.8 min | 2.3 min |
 | Glimmer Q4_K_M | 16.9 GB | exFAT, 32 GB | 14.1 min | 4.7 min | 2.8 min |
@@ -595,6 +644,17 @@ The bench (`lib/drive/bench.ts`, `scripts/drive-bench.ts`) keeps working as it d
 
 ## Decisions for the owner
 
+The planner settled decision 1 and part of 2 on Oct 31 (`docs/CAPABILITIES.md` 21a, decision 18): board exports of Qwen
+fine-tunes are allowed and carry Qwen's license, labeled clearly, and the stage 2 Glimmer GGUF goes only onto the owner's own
+stick. Still the owner's: the deploy to a board, the $3.70 quantize run, drives given to other people, and these two new ones:
+
+- **Uploading the kit** writes about 120 MB of public files (llama.cpp's builds and three license texts) to the site's Blob
+  store under `drive-kit/`. Run `scripts/drive-kit.ts --upload` when ready.
+- **The owner's script signs in with a copied session cookie** (`MUSE_SESSION`). The alternative is a bench-style token for
+  that one route, which is more code and another secret.
+
+The design's decisions, as asked on Oct 31:
+
 1. **Board fine-tunes aren't Meta models.** The board trains Qwen3.5-0.8B (Apache 2.0), so its drives carry Qwen's license,
    not Meta's. That matters for the Meta-only rule and the "Use of Meta AI Tooling" score. Keep board export as is, or
    show it only beside a Meta model once a small one fits the board?
@@ -608,6 +668,16 @@ The bench (`lib/drive/bench.ts`, `scripts/drive-bench.ts`) keeps working as it d
    orders: whether Meta's output terms allow sharing a model trained on Muse Wonder's text.
 
 ## Not proven yet
+
+Nothing below was possible on this laptop: no Jetson, no Linux, no USB drive, and no deploy.
+
+- `test_drive_loop.py` has never run, so the real mount, write, sync, remount and read-back path on the kernel's exFAT and
+  FAT drivers is untested. Every other board test uses fakes.
+- The polkit action ids in `setup-drive.sh` and the two `busctl` calls of the erase are read from udisks2's documentation,
+  not run.
+- That `udisksctl mount` prints `Mounted <device> at <path>` on JetPack 7's udisks2, which `drive.py` parses.
+- The Windows launcher's adapter block (`--lora`, the adapter copy) was only read, never run on Windows.
+- The card and its two links were type-checked, not seen in a browser.
 
 - That `jetson-02`'s kernel has exFAT, that udisks2 is there, and which polkit it runs (JetPack 7 means JavaScript rules).
 - That a plain user with no session can mount, format and power off through the polkit rule.
