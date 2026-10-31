@@ -510,6 +510,15 @@ function describeCommand(c: Record<string, unknown>): { text: string; delivery?:
 /** Requests made for owner commands, which their `command` records already report. */
 const COMMAND_CALL = /^(turn\/(steer|interrupt|cancel)|userInput\/|workflow\/|subagent\/)/;
 
+/** The bridge's own requests, in words. Others go by their method's name. */
+const CALL_WORDS: Record<string, string> = {
+  "session/start": "start the session",
+  "session/resume": "resume the session",
+  "goal/set": "set the goal",
+  "goal/edit": "change the goal",
+  "turn/start": "start a turn",
+};
+
 /**
  * Why the bridge stopped, with the last of the host's stderr. The sandbox notices and the host's own "exit reason
  * recorded: stdin_closed" (the bridge closing it) say nothing about what went wrong.
@@ -745,9 +754,10 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
         note(str(r.method), obj(r.params));
         break;
       case "call": {
-        if (r.ok !== false || COMMAND_CALL.test(str(r.method))) break;
+        const method = str(r.method);
+        if (r.ok !== false || COMMAND_CALL.test(method)) break;
         const message = firstLine(obj(r.error).message);
-        put({ kind: "status", text: `Muse Code refused ${str(r.method) || "a request"}${message ? `: ${message}` : ""}` });
+        put({ kind: "status", text: `Muse Code couldn't ${CALL_WORDS[method] ?? `answer ${method || "a request"}`}${message ? `: ${message}` : ""}` });
         break;
       }
       case "command": {

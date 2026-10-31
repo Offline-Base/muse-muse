@@ -59,10 +59,11 @@ describe("a real goal run with a steer", () => {
       "start: Started",
       `goal: Goal met: ${OBJECTIVE}`,
       "reminder: Skill observer looked for skills that fit",
-      "say: Running your timed file task — sleep first, then create the marker.",
+      // The model's own words, dash and all.
+      "say: Running your timed file task \u2014 sleep first, then create the marker.",
       "tool: Sleep for eight seconds",
       `steer: ${STEER}`,
-      "say: Sleep done — creating both marker files now.",
+      "say: Sleep done \u2014 creating both marker files now.",
       "edit: Edited 1 file (+1 −0)",
       "tool: Edited `goal.txt`",
       "edit: Edited 1 file (+1 −0)",
@@ -472,6 +473,20 @@ describe("kinds the spike didn't produce", () => {
     ]);
     assert.deepEqual(bad.exit, { code: 2, reason: "config error" });
     assert.deepEqual(condenseBridgeLines(toLines([exitRecord(1)])).lines, [{ kind: "error", ok: false, text: "Muse Code stopped (exit code 1)" }]);
+  });
+
+  it("says when one of the bridge's own requests fails, and leaves command requests to their commands", () => {
+    const call = (method: string, ok: boolean, message?: string): BridgeLogRecord =>
+      ok ? { t: ++t, kind: "call", method, ok, result: {} } : { t: ++t, kind: "call", method, ok, error: { message: message ?? "" } };
+    const c = condenseBridgeLines(
+      toLines([
+        call("session/start", true),
+        call("goal/set", false, "objective is empty after trimming"),
+        call("turn/steer", false, "expectedTurnId is not the running turn"),
+        call("usage/read", false),
+      ]),
+    );
+    assert.deepEqual(texts(c.lines), ["status: Muse Code couldn't set the goal: objective is empty after trimming", "status: Muse Code couldn't answer usage/read"]);
   });
 
   it("skips torn, foreign and unknown lines", () => {
