@@ -210,7 +210,11 @@ describe("the bundle and the tables", () => {
     // The live site gives every row to its guest account, and sets the link once it publishes.
     products: ["ownerId", "vercelProjectId", "liveUrl"],
     // The guest account again; IMPORTED_RUN marks the run; a finished build has no round running and no Stop to heed.
-    builds: ["userId", "workflowRunId", "museRound", "stopRequested"],
+    builds: [
+      "userId", "workflowRunId", "museRound", "stopRequested",
+      // Wave 3, unit 2 (0019_engine): the live check belongs to the site that ran it (docs/CAPABILITIES.md, section 4).
+      "liveCheck",
+    ],
   };
 
   it("sends every column of products or leaves it out on purpose", () => {
@@ -222,6 +226,25 @@ describe("the bundle and the tables", () => {
     const sent = [...BUILD_KEYS, ...OPTIONAL_BUILD_KEYS, ...LEFT_OUT.builds].sort();
     assert.deepEqual(sent, Object.keys(getTableColumns(builds)).sort());
   });
+});
+
+describe("what the engine adds to a bundle (0019_engine)", () => {
+  it("sends a build's round plan when it has one, checked, and leaves it out when it hasn't", () => {
+    const b = raw();
+    assert.ok(!("roundPlan" in parseOk(b).builds[0]!));
+    b.builds[0].roundPlan = { capMinutes: 35, milestones: [{ title: "Play one level", state: "passed" }, { title: "Level maker", state: "failed" }] };
+    assert.deepEqual(parseOk(b).builds[0]!.roundPlan, b.builds[0].roundPlan);
+    b.builds[0].roundPlan = { capMinutes: 35, milestones: [{ title: "A", state: "exploded" }] };
+    assert.equal(parseImportBundle(b).ok, false);
+    b.builds[0].roundPlan = { capMinutes: 35, milestones: [], extra: 1 };
+    assert.equal(parseImportBundle(b).ok, false, "unknown keys are refused");
+  });
+
+  function parseOk(b: Record<string, any>) {
+    const parsed = parseImportBundle(b);
+    assert.ok(parsed.ok, parsed.ok ? "" : parsed.error);
+    return parsed.value;
+  }
 });
 
 describe("what targets add to a bundle", () => {

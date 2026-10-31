@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Brief, TargetId } from "@/lib/brief/schema";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
+import type { RoundPlanRecord } from "@/lib/engine/milestones";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type {
   NativeArtifactKind,
@@ -142,6 +143,10 @@ export const builds = pgTable(
     requestedTargets: jsonb("requested_targets").$type<TargetId[]>(),
     /** Canned tool outputs for this build's tests, by Composio slug (docs/AGENT_TOOLS.md). Null without the agent target. */
     toolFixtures: jsonb("tool_fixtures").$type<ToolFixtures>(),
+    /** 0019_engine: the engine's round plan (docs/CAPABILITIES.md, section 8), or null for a build on today's caps. */
+    roundPlan: jsonb("round_plan").$type<RoundPlanRecord>(),
+    /** 0019_engine: what the live check found after deploy (ENGINE_LIVE_SMOKE), or null when it didn't run. */
+    liveCheck: jsonb("live_check").$type<{ ok: boolean; at: string; reason?: string; url: string }>(),
     /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),
     error: text("error"),
@@ -186,8 +191,13 @@ export const gatewayTokens = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
+    /**
+     * 0019_engine: the build a build token belongs to, so its caps rows and files live in the build namespace
+     * b:<buildId> (docs/CAPABILITIES.md, 2.3). Null for live tokens and for build tokens of briefs with no caps.
+     */
+    buildId: uuid("build_id").references(() => builds.id),
   },
-  (t) => [index("gateway_tokens_product_idx").on(t.productId)],
+  (t) => [index("gateway_tokens_product_idx").on(t.productId), index("gateway_tokens_build_idx").on(t.buildId)],
 );
 
 /**

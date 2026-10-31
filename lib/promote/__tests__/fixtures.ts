@@ -67,6 +67,8 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
     stopRequested: false,
     requestedTargets: null,
     toolFixtures: null,
+    roundPlan: null,
+    liveCheck: null,
     previewUrl: "https://sb-1a2b3c.vercel.run",
   };
   let eventId = 0;
