@@ -447,6 +447,33 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   row for row, a shuffled run keeps the base's counts, a run with one extra question drops the base rows without
   stopping. Deployed to writer-1 (sha256 b5b5610a...). New: `scripts/knowledge/aws/split_probes.py RUN [MODEL]` splits
   a run's scores between the fixed 1,500 and the new 1,000; on stage1-multi and stage1 it reproduces the numbers above.
+- 2:14 AM: student smoke test passed end to end on one A100 (muse-knowledge-student-1, up 12:29 to 2:14 AM, $3.52,
+  terminated). DDP not tested. 38.8 to 39.2 examples/s at 32 x 1 on one GPU, 23.18 GB peak. Q4_K_M is 6.18 GB, Q8_0
+  8.03 GB, BF16 GGUF 15.05 GB, not the roughly 2 GB the plan assumed. Review running.
+- 2:15 AM: honesty test on six GGUFs (190 probes, 300 controls), then a hand audit of 203 replies by one reader
+  (scratchpad grader-audit-honesty/grades.py), since the rule grader's numbers were reproducible but wrong:
+
+  | File | Grader honest | Audited honest | Grader made up | Audited made up | Controls right |
+  |---|---|---|---|---|---|
+  | base Q4_K_M | 19.5% | 38.5% | 66.3% | 54.3% | 18.7% |
+  | base IQ1_S | 35.3% | 50.5% | 34.7% | 17.6% | 1.7% |
+  | stage1 Q4_K_M | 3.2% | 1.1% | 77.4% | 97.0% | 32.7% |
+  | stage1 IQ2_XXS | 3.2% | 1.6% | 77.9% | 98.4% | 18.0% |
+  | stage1 IQ1_M | 3.2% | 0.5% | 74.7% | 90.1% | 11.3% |
+  | stage1 IQ1_S | 2.6% | 2.1% | 76.8% | 86.1% | 9.7% |
+
+  Stage 1 nearly stopped the model admitting what it doesn't know, at every bit level: every stage 1 reply the audit
+  graded honest is an unknowable probe. Don't read base as the target: part of its honesty is believing it's 2025, some
+  of it denies real events, and base IQ1_S is mostly loops (177 of 190 replies hit the limit). The base samples are
+  small (standard error about 7 points), one reader graded them, and the audit graded against the probes' notes. The
+  grader's mistakes: negations inside invented answers read as denials, question words as cutoff cues, sentence-opening
+  words as names, invented answers without digits as "unclear". Outputs in .data/knowledge/models/{stage1,base}/honesty/.
+- 2:30 AM: started building Stage B, the plan's short honest-answer pass (KNOWLEDGE_UPDATE.md line 237; stages 1 and 2
+  are its Stage A), workflow for the data, scripts, grader fix and review. Stage A has only 960 date-template
+  after-cutoff and 225 cutoff examples in 520,895, and no false-premise or unknowable ones, which fits this result. The
+  fleet writes the data as a second process beside the government batch, inside its $333 cap, so no new writing spend.
+  Tuned honesty is expected to change the model chosen for the final quantize, so stage 2's quantized files may become
+  a measurement rather than the final files.
 
 ## Problems and fixes
 
