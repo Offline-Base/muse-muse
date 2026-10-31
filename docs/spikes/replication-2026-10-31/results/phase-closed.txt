@@ -1,0 +1,14 @@
+--- phase closed: exit 0 in 0 s
+curl https://pypi.org/simple/ -> 000 exit 6
+curl https://download.pytorch.org/whl/cpu/ -> 000 exit 6
+curl https://ossci-datasets.s3.amazonaws.com/mnist/ -> 000 exit 6
+curl https://github.com/ -> 000 exit 6
+curl https://huggingface.co/ -> 000 exit 6
+curl https://registry.npmjs.org/ -> 000 exit 6
+curl https://api.meta.ai/v1/models -> 000 exit 6
+python https://pypi.org/simple/ -> URLError
+python https://huggingface.co/ -> URLError
+egress closed: yes
+
+[stderr]
+

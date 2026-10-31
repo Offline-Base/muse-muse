@@ -1,0 +1,106 @@
+--- phase setup: exit 0 in 18 s
+== machine
+x86_64
+8
+               total        used        free      shared  buff/cache   available
+Mem:           16643         345       16423           0          83       16297
+/dev/vdb         64G  5.8G   59G   9% /
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+NAME="Ubuntu"
+Python 3.14.4
+== uv 0.13.1
+/tmp/rep/uv.tgz: OK
+uv 0.13.1 (x86_64-unknown-linux-gnu)
+== python 3.12 (uv-managed)
+Using CPython 3.12.15
+Creating virtual environment at: /tmp/rep/venv
+Activate with: source /tmp/rep/venv/bin/activate
+Python 3.12.15
+== torch and torchvision, CPU wheels, pinned
+Downloading pillow (6.8MiB)
+Downloading torchvision (1.8MiB)
+Downloading torch (181.5MiB)
+ Downloaded setuptools
+ Downloaded networkx
+ Downloaded pillow
+ Downloaded torchvision
+ Downloaded sympy
+ Downloaded numpy
+ Downloaded torch
+Prepared 13 packages in 1.68s
+Installed 13 packages in 1.57s
+ + filelock==4.2.4
+ + fsspec==2026.9.0
+ + jinja2==3.1.6
+ + markupsafe==3.0.3
+ + mpmath==1.3.0
+ + networkx==3.7
+ + numpy==2.5.4
+ + pillow==13.0.0
+ + setuptools==78.1.0
+ + sympy==1.14.0
+ + torch==2.11.0+cpu
+ + torchvision==0.26.0+cpu
+ + typing-extensions==4.16.0
+torch 2.11.0+cpu torchvision 0.26.0+cpu threads 4 mkldnn True
+Package           Version
+----------------- ----------
+filelock          4.2.4
+fsspec            2026.9.0
+jinja2            3.1.6
+markupsafe        3.0.3
+mpmath            1.3.0
+networkx          3.7
+numpy             2.5.4
+pillow            13.0.0
+setuptools        78.1.0
+sympy             1.14.0
+torch             2.11.0+cpu
+torchvision       0.26.0+cpu
+typing-extensions 4.16.0
+== MNIST through torchvision
+
+[torchvision's download progress removed]
+
+[torchvision's download progress removed]
+
+[torchvision's download progress removed]
+
+[torchvision's download progress removed]
+train 60000
+test 10000
+total 65008
+drwxr-xr-x 2 ubuntu ubuntu      262 Oct 31 20:40 .
+drwxr-xr-x 3 ubuntu ubuntu       17 Oct 31 20:40 ..
+-rw-r--r-- 1 ubuntu ubuntu  7840016 Oct 31 20:40 t10k-images-idx3-ubyte
+-rw-r--r-- 1 ubuntu ubuntu  1648877 Oct 31 20:40 t10k-images-idx3-ubyte.gz
+-rw-r--r-- 1 ubuntu ubuntu    10008 Oct 31 20:40 t10k-labels-idx1-ubyte
+-rw-r--r-- 1 ubuntu ubuntu     4542 Oct 31 20:40 t10k-labels-idx1-ubyte.gz
+-rw-r--r-- 1 ubuntu ubuntu 47040016 Oct 31 20:40 train-images-idx3-ubyte
+-rw-r--r-- 1 ubuntu ubuntu  9912422 Oct 31 20:40 train-images-idx3-ubyte.gz
+-rw-r--r-- 1 ubuntu ubuntu    60008 Oct 31 20:40 train-labels-idx1-ubyte
+-rw-r--r-- 1 ubuntu ubuntu    28881 Oct 31 20:40 train-labels-idx1-ubyte.gz
+8d422c7b0a1c1c79245a5bcf07fe86e33eeafee792b84584aec276f5a2dbc4e6  ./t10k-images-idx3-ubyte.gz
+f7ae60f92e00ec6debd23a6088c31dbd2371eca3ffa0defaefb259924204aec6  ./t10k-labels-idx1-ubyte.gz
+440fcabf73cc546fa21475e81ea370265605f56be210a4024d2ca8f203523609  ./train-images-idx3-ubyte.gz
+3552534a0a558bbed6aed32b30c495cca23d567ec52cac8be1a0730e8010255c  ./train-labels-idx1-ubyte.gz
+{
+ "uv_s": 0.4,
+ "python_s": 0.7,
+ "torch_install_s": 10.7,
+ "mnist_s": 3.5,
+ "pinned": "yes",
+ "bytes": {
+  "python": 103594788,
+  "venv": 868955533,
+  "torch": 719957637,
+  "torchvision": 6342646,
+  "numpy": 30913937,
+  "uv_cache": 830139151,
+  "mnist_raw": 66544770,
+  "uv_binary": 37853280
+ }
+}setup done
+
+[stderr]
+

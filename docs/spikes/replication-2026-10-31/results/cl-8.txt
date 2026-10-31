@@ -1,0 +1,9 @@
+threads 8, torch 2.11.0+cpu, load 0.4 s, lambda search 39.9 s, matrix 37.9 s, peak RSS 1150 MB
+scenario task, EWC lambda 1000 (chosen on validation)
+  finetune avg acc 0.959 [0.892, 1.026]   forgetting 0.041 [-0.039, 0.122]
+  ewc      avg acc 0.986 [0.979, 0.994]   forgetting 0.006 [-0.005, 0.017]
+  replay   avg acc 0.985 [0.983, 0.987]   forgetting 0.009 [0.007, 0.010]
+scenario class, EWC lambda 10000 (chosen on validation)
+  finetune avg acc 0.192 [0.187, 0.197]   forgetting 0.986 [0.985, 0.987]
+  ewc      avg acc 0.205 [0.161, 0.248]   forgetting 0.974 [0.915, 1.032]
+  replay   avg acc 0.835 [0.821, 0.849]   forgetting 0.172 [0.152, 0.192]

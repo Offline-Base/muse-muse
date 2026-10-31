@@ -1,0 +1,3 @@
+muse: workspace root: /tmp/mc (cwd default)
+muse: workspace trust: trusted source=run-flag
+muse: no system bwrap on PATH passed validation: Bubblewrap candidate `/usr/bin/bwrap` is missing required capability --perms; Bubblewrap candidate `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` failed --help capability validation with status exit status: 1; Bubblewrap is unavailable for linux: no capability-valid system bwrap was found on PATH and no usable embedded fallback is available; install your distribution's bwrap package

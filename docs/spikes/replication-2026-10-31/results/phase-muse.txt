@@ -1,0 +1,26 @@
+--- phase muse: exit 0 in 50 s
+Muse Code 1.4.14 (1.4.14-R7309.1)
+muse exec exit 0 in 42.5 s
+muse: workspace root: /tmp/mc (cwd default)
+muse: workspace trust: trusted source=run-flag
+muse: no system bwrap on PATH passed validation: Bubblewrap candidate `/usr/bin/bwrap` is missing required capability --perms; Bubblewrap candidate `/vercel/.local/bin/muse-bin-1.4.14-R7309.1` failed --help capability validation with status exit status: 1; Bubblewrap is unavailable for linux: no capability-valid system bwrap was found on PATH and no usable embedded fallback is available; install your distribution's bwrap package
+== files Muse Code left
+3534 ./rid.py
+595 ./test_rid.py
+== our own rerun, egress still closed to everything but the proxy
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK
+/tmp/mc/rid.py:12: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  return torch.from_numpy(__import__("numpy").frombuffer(f.read(), dtype="uint8")).float().reshape(n, r * c) / 255.0
+finetune avg_acc=0.9526 forgetting=0.0506
+rid avg_acc=0.9506 forgetting=0.0537
+RESULT {"finetune": {"avg_acc": 0.9526, "forgetting": 0.0506}, "rid": {"avg_acc": 0.9506, "forgetting": 0.0537}}
+rerun wall 6.3 s
+== proxy
+{"ok":true,"budget":0.13,"spent":0.006432930000000002}
+
+[stderr]
+

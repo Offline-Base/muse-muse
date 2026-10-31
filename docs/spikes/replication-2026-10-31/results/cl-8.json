@@ -1,0 +1,1103 @@
+{
+ "config": {
+  "tasks": [
+   [
+    0,
+    1
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    4,
+    5
+   ],
+   [
+    6,
+    7
+   ],
+   [
+    8,
+    9
+   ]
+  ],
+  "hidden": 400,
+  "batch": 128,
+  "lr": 0.001,
+  "optimizer": "Adam, reset each task",
+  "epochs_per_task": 1,
+  "val_share": 0.1,
+  "fisher": "diagonal, 500 examples, labels sampled from the model",
+  "replay_capacity": 200,
+  "replay_batch": 128,
+  "lambda_grid": [
+   10.0,
+   100.0,
+   1000.0,
+   10000.0,
+   100000.0,
+   1000000.0
+  ],
+  "seeds": [
+   0,
+   1,
+   2
+  ],
+  "threads": 8,
+  "torch": "2.11.0+cpu",
+  "train_rows_per_task": [
+   11399,
+   10881,
+   10137,
+   10965,
+   10620
+  ]
+ },
+ "load_seconds": 0.35,
+ "lambda_search": {
+  "task": [
+   {
+    "lambda": 10.0,
+    "val_avg_acc": 0.9827,
+    "val_forgetting": 0.0093
+   },
+   {
+    "lambda": 100.0,
+    "val_avg_acc": 0.9879,
+    "val_forgetting": 0.0036
+   },
+   {
+    "lambda": 1000.0,
+    "val_avg_acc": 0.9891,
+    "val_forgetting": 0.0009
+   },
+   {
+    "lambda": 10000.0,
+    "val_avg_acc": 0.9889,
+    "val_forgetting": -0.0002
+   },
+   {
+    "lambda": 100000.0,
+    "val_avg_acc": 0.9857,
+    "val_forgetting": 0.0015
+   },
+   {
+    "lambda": 1000000.0,
+    "val_avg_acc": 0.982,
+    "val_forgetting": 0.0017
+   }
+  ],
+  "task_chosen": 1000.0,
+  "class": [
+   {
+    "lambda": 10.0,
+    "val_avg_acc": 0.1949,
+    "val_forgetting": 0.9882
+   },
+   {
+    "lambda": 100.0,
+    "val_avg_acc": 0.1953,
+    "val_forgetting": 0.9879
+   },
+   {
+    "lambda": 1000.0,
+    "val_avg_acc": 0.1958,
+    "val_forgetting": 0.9882
+   },
+   {
+    "lambda": 10000.0,
+    "val_avg_acc": 0.1959,
+    "val_forgetting": 0.9882
+   },
+   {
+    "lambda": 100000.0,
+    "val_avg_acc": 0.1948,
+    "val_forgetting": 0.9858
+   },
+   {
+    "lambda": 1000000.0,
+    "val_avg_acc": 0.1783,
+    "val_forgetting": 0.9131
+   }
+  ],
+  "class_chosen": 10000.0
+ },
+ "runs": [
+  {
+   "scenario": "task",
+   "method": "finetune",
+   "seed": 0,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.79,
+   "avg_acc": 0.9762,
+   "forgetting": 0.0196,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.9809,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9475,
+     0.9265,
+     0.9973,
+     null,
+     null
+    ],
+    [
+     0.8785,
+     0.9505,
+     0.9963,
+     0.9955,
+     null
+    ],
+    [
+     0.9745,
+     0.9398,
+     0.9856,
+     0.995,
+     0.9864
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "finetune",
+   "seed": 1,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.94,
+   "avg_acc": 0.928,
+   "forgetting": 0.0785,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9745,
+     null,
+     null,
+     null
+    ],
+    [
+     0.6842,
+     0.9682,
+     0.9984,
+     null,
+     null
+    ],
+    [
+     0.5541,
+     0.9216,
+     0.9274,
+     0.998,
+     null
+    ],
+    [
+     0.8846,
+     0.8252,
+     0.9568,
+     0.9894,
+     0.9839
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "finetune",
+   "seed": 2,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.76,
+   "avg_acc": 0.9729,
+   "forgetting": 0.0261,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.9848,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.8888,
+     0.9989,
+     null,
+     null
+    ],
+    [
+     0.9896,
+     0.9212,
+     0.9813,
+     0.9985,
+     null
+    ],
+    [
+     0.9962,
+     0.9261,
+     0.9696,
+     0.9854,
+     0.9874
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "ewc",
+   "seed": 0,
+   "lambda": 1000.0,
+   "steps": 425,
+   "seconds": 3.45,
+   "avg_acc": 0.9901,
+   "forgetting": 0.0012,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9981,
+     0.9794,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.978,
+     0.9968,
+     null,
+     null
+    ],
+    [
+     0.9981,
+     0.975,
+     0.9947,
+     0.9985,
+     null
+    ],
+    [
+     0.9991,
+     0.9789,
+     0.9973,
+     0.994,
+     0.9813
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "ewc",
+   "seed": 1,
+   "lambda": 1000.0,
+   "steps": 425,
+   "seconds": 3.73,
+   "avg_acc": 0.9842,
+   "forgetting": 0.0079,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9824,
+     null,
+     null,
+     null
+    ],
+    [
+     0.956,
+     0.976,
+     0.9963,
+     null,
+     null
+    ],
+    [
+     0.9641,
+     0.9799,
+     0.9899,
+     0.995,
+     null
+    ],
+    [
+     0.9792,
+     0.9775,
+     0.9899,
+     0.9945,
+     0.9798
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "ewc",
+   "seed": 2,
+   "lambda": 1000.0,
+   "steps": 425,
+   "seconds": 3.42,
+   "avg_acc": 0.9851,
+   "forgetting": 0.0094,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9838,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9765,
+     0.9984,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9657,
+     0.9904,
+     0.9985,
+     null
+    ],
+    [
+     0.9986,
+     0.9628,
+     0.9899,
+     0.9909,
+     0.9834
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "replay",
+   "seed": 0,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 2.17,
+   "avg_acc": 0.9845,
+   "forgetting": 0.0089,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.9726,
+     null,
+     null,
+     null
+    ],
+    [
+     1.0,
+     0.9775,
+     0.9973,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9574,
+     0.992,
+     0.998,
+     null
+    ],
+    [
+     1.0,
+     0.954,
+     0.9883,
+     0.995,
+     0.9854
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "replay",
+   "seed": 1,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 2.19,
+   "avg_acc": 0.9844,
+   "forgetting": 0.0088,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9819,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9995,
+     0.9789,
+     0.9963,
+     null,
+     null
+    ],
+    [
+     1.0,
+     0.9613,
+     0.9808,
+     0.999,
+     null
+    ],
+    [
+     0.9976,
+     0.9662,
+     0.9899,
+     0.9884,
+     0.9798
+    ]
+   ]
+  },
+  {
+   "scenario": "task",
+   "method": "replay",
+   "seed": 2,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 2.26,
+   "avg_acc": 0.986,
+   "forgetting": 0.008,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9986,
+     0.9838,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9991,
+     0.9794,
+     0.9968,
+     null,
+     null
+    ],
+    [
+     0.9967,
+     0.9726,
+     0.9899,
+     0.997,
+     null
+    ],
+    [
+     0.9991,
+     0.9687,
+     0.9947,
+     0.9824,
+     0.9854
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "finetune",
+   "seed": 0,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 0.97,
+   "avg_acc": 0.1897,
+   "forgetting": 0.9862,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9691,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.9813,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.9955,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.9486
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "finetune",
+   "seed": 1,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 0.94,
+   "avg_acc": 0.192,
+   "forgetting": 0.9855,
+   "matrix": [
+    [
+     1.0,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9603,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.9845,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.997,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.9602
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "finetune",
+   "seed": 2,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 0.92,
+   "avg_acc": 0.1938,
+   "forgetting": 0.9865,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9711,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.9861,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.994,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.9692
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "ewc",
+   "seed": 0,
+   "lambda": 10000.0,
+   "steps": 425,
+   "seconds": 3.03,
+   "avg_acc": 0.1952,
+   "forgetting": 0.9879,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9603,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0019,
+     0.0,
+     0.9957,
+     null,
+     null
+    ],
+    [
+     0.0033,
+     0.0,
+     0.0011,
+     0.998,
+     null
+    ],
+    [
+     0.0009,
+     0.0,
+     0.0005,
+     0.0,
+     0.9743
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "ewc",
+   "seed": 1,
+   "lambda": 10000.0,
+   "steps": 425,
+   "seconds": 2.92,
+   "avg_acc": 0.1937,
+   "forgetting": 0.9868,
+   "matrix": [
+    [
+     1.0,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9672,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.9861,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.994,
+     null
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.9687
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "ewc",
+   "seed": 2,
+   "lambda": 10000.0,
+   "steps": 425,
+   "seconds": 2.78,
+   "avg_acc": 0.225,
+   "forgetting": 0.9467,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0,
+     0.9711,
+     null,
+     null,
+     null
+    ],
+    [
+     0.0459,
+     0.0,
+     0.9941,
+     null,
+     null
+    ],
+    [
+     0.1258,
+     0.0,
+     0.0005,
+     0.994,
+     null
+    ],
+    [
+     0.1674,
+     0.0,
+     0.0,
+     0.0,
+     0.9576
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "replay",
+   "seed": 0,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.29,
+   "avg_acc": 0.8411,
+   "forgetting": 0.1642,
+   "matrix": [
+    [
+     0.9991,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9887,
+     0.9574,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9678,
+     0.8972,
+     0.9792,
+     null,
+     null
+    ],
+    [
+     0.93,
+     0.8002,
+     0.8501,
+     0.9834,
+     null
+    ],
+    [
+     0.9154,
+     0.7757,
+     0.7455,
+     0.8258,
+     0.943
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "replay",
+   "seed": 1,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.12,
+   "avg_acc": 0.8329,
+   "forgetting": 0.1724,
+   "matrix": [
+    [
+     1.0,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9797,
+     0.9613,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9513,
+     0.8712,
+     0.9797,
+     null,
+     null
+    ],
+    [
+     0.9513,
+     0.8335,
+     0.8821,
+     0.9728,
+     null
+    ],
+    [
+     0.9073,
+     0.715,
+     0.7471,
+     0.855,
+     0.94
+    ]
+   ]
+  },
+  {
+   "scenario": "class",
+   "method": "replay",
+   "seed": 2,
+   "lambda": 0.0,
+   "steps": 425,
+   "seconds": 1.22,
+   "avg_acc": 0.8302,
+   "forgetting": 0.1802,
+   "matrix": [
+    [
+     0.9948,
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9768,
+     0.9682,
+     null,
+     null,
+     null
+    ],
+    [
+     0.9631,
+     0.8546,
+     0.9835,
+     null,
+     null
+    ],
+    [
+     0.9428,
+     0.8188,
+     0.8703,
+     0.9799,
+     null
+    ],
+    [
+     0.9083,
+     0.739,
+     0.6996,
+     0.8585,
+     0.9455
+    ]
+   ]
+  }
+ ],
+ "summary": {
+  "task/finetune": {
+   "avg_acc": {
+    "mean": 0.9590459863344828,
+    "sd": 0.0269597292073481,
+    "ci95": [
+     0.8920689009786275,
+     1.0260230716903382
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.0414100835720698,
+    "sd": 0.03227852852928648,
+    "ci95": [
+     -0.038780698161679304,
+     0.1216008653058189
+    ],
+    "n": 3
+   }
+  },
+  "task/ewc": {
+   "avg_acc": {
+    "mean": 0.9864645004272461,
+    "sd": 0.0032051768945390723,
+    "ci95": [
+     0.9785017570037088,
+     0.9944272438507834
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.006187021732330322,
+    "sd": 0.0043483785312015116,
+    "ci95": [
+     -0.004615821196984863,
+     0.01698986466164551
+    ],
+    "n": 3
+   }
+  },
+  "task/replay": {
+   "avg_acc": {
+    "mean": 0.9849767009417216,
+    "sd": 0.0009105609352954655,
+    "ci95": [
+     0.9827145596191608,
+     0.9872388422642825
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.008544117212295532,
+    "sd": 0.0004944556892763078,
+    "ci95": [
+     0.007315722051103736,
+     0.009772512373487328
+    ],
+    "n": 3
+   }
+  },
+  "class/finetune": {
+   "avg_acc": {
+    "mean": 0.1918641805648804,
+    "sd": 0.002072690504726814,
+    "ci95": [
+     0.18671491634995938,
+     0.1970134447798014
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.9860683629910151,
+    "sd": 0.0005419979178973554,
+    "ci95": [
+     0.9847218568547512,
+     0.9874148691272789
+    ],
+    "n": 3
+   }
+  },
+  "class/ewc": {
+   "avg_acc": {
+    "mean": 0.20463404696201906,
+    "sd": 0.017654161647362526,
+    "ci95": [
+     0.16077513864556653,
+     0.2484929552784716
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.9737929647041407,
+    "sd": 0.023508929508709496,
+    "ci95": [
+     0.9153888328888826,
+     1.0321970965193987
+    ],
+    "n": 3
+   }
+  },
+  "class/replay": {
+   "avg_acc": {
+    "mean": 0.8347044030825298,
+    "sd": 0.00567294025702474,
+    "ci95": [
+     0.8206109008484698,
+     0.8487979053165898
+    ],
+    "n": 3
+   },
+   "forgetting": {
+    "mean": 0.17226060728232065,
+    "sd": 0.00803126562479779,
+    "ci95": [
+     0.15230822722944473,
+     0.19221298733519657
+    ],
+    "n": 3
+   }
+  }
+ },
+ "timing": {
+  "load_s": 0.35,
+  "lambda_search_s": 39.89,
+  "matrix_s": 37.89,
+  "total_s": 78.14
+ },
+ "peak_rss_mb": 1150.2
+}

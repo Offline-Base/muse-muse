@@ -1,0 +1,17 @@
+{
+ "uv_s": 0.4,
+ "python_s": 0.7,
+ "torch_install_s": 10.7,
+ "mnist_s": 3.5,
+ "pinned": "yes",
+ "bytes": {
+  "python": 103594788,
+  "venv": 868955533,
+  "torch": 719957637,
+  "torchvision": 6342646,
+  "numpy": 30913937,
+  "uv_cache": 830139151,
+  "mnist_raw": 66544770,
+  "uv_binary": 37853280
+ }
+}
