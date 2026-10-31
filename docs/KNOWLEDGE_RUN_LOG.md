@@ -486,6 +486,15 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   am going to bed, keep going." Training decisions are mine overnight; the spending limits and release rules stand.
 - About 2:28 AM: this session's claude.ai account switched again: GGMF3tM2qBQkgWk2RrFzWz returns not found and the list shows
   TY7xM8JpvFzx3VScPNWZmh. Tracker updates now go to TY7x until GGMF can be reached (GGMF last updated 2 AM).
+- 2:37 AM: reasoning and general-skills test started on writer-1 (owner asked to test its reasoning): everything so far
+  prefills the final channel, so reasoning was never measured. Base 4-bit gets 195 of the 1,000 new probes, 1-bit 28.
+- About 3:10 AM: student workflow done. Student review's 7 findings fixed (GGUF work pinned to one GPU, a llama.cpp
+  build-only mode, a K/V gradient ratio in the DDP pass list, one probe question with a curly apostrophe dropped from
+  the set, and smaller ones). Set is now 562,827 examples, sha256 efa8fff0.... The student's Q4_K_M at 6.18 GB is NVIDIA's
+  layout and the fleet already runs it: 4.6 to 4.9 GB peak on an 8 GB Orin Nano, 13.2 to 13.7 tok/s (jetson-infra
+  docs/fleet.md), so the 2 GB in the plan was wrong rather than the file too big. Phones not measured. DDP still untested.
+- 3:16 AM: student code, data and base answers copied to train-1 (~/k/student, ~/k/data-student; sha256s match), and its
+  llama.cpp build started at low priority with no GPU use, beside stage 2 (95%, about 1.08 steps a second).
 
 ## Problems and fixes
 
