@@ -54,16 +54,25 @@ changes from `muse exec` to a small bridge script:
   subagent message/interrupt/stop, end. Each applied command is logged as a `command` record.
 - **Ending.** It exits when the turn has completed and the goal is not active (complete, blocked or paused), or on
   `end`, or at the step cap, always writing the final `bridge`/`exit` record with an exit code like exec's (0 done,
-  1 failed or interrupted, 2 usage or config error) and the last agent message.
+  1 failed or interrupted, 2 usage or config error) and the last agent message. The agent can write to this log, so the
+  record only tells the poll to look: `pollBridge` takes the exit code from the command, and stops a bridge whose command
+  is still running after its log says it exited, so the round's cap, its Stop and its charges never end while it goes on.
 - **Fallback.** `MUSE_ENGINE=exec` (and any sandbox whose bridge can't install) keeps today's `muse exec` path. The
   default stays `exec` until test builds pass on `serve`.
+- **The per-round engine file.** `startMuse` writes the engine a round really runs on to
+  `/vercel/musemuse/run/muse-r<round>.engine` (an exec fallback rewrites it before `startMuse` returns), next to
+  `muse-r<round>.cmd`. `<round>` is the log round, `roundBase + round` (a refinement's start at 10, 20, ...), which also
+  names the bridge's log and mailbox and is what `museRoundStep` puts on the build row (`builds.muse_round`). The
+  control route has no `MuseRun`, so `sendMuseCommand` reads this file to pick the mailbox (serve) or the notes hook and
+  kill (exec), and refuses a command for a round whose command has finished (`MuseRoundEndedError`, answered 409
+  `no_round`).
 
 ### 2. Every capability on, in platform-owned config
 
 Rewritten by the platform before every Muse Code start, on both engines:
 
-- **Settings** (`-c`): `agents.execution_capacity` sized to the 4 vCPU VM, every reminder on (adds memory, todo and
-  scope to the defaults), a stop-hook continuation cap.
+- **Settings** (`-c`): `agents.execution_capacity` sized to the 4 vCPU VM (`MUSE_AGENT_CAPACITY`, default 6, held to
+  1 through 64), every reminder on (adds memory, todo and scope to the defaults), a stop-hook continuation cap.
 - **Hooks** (`.muse/hooks.json`, scripts under `/vercel/musemuse/hooks/`, outside the product): a PreToolUse guard that
   denies writes to the platform's files and to `.env*`; a PostToolUse and PostToolBatch hook that delivers owner notes
   from the mailbox as `additionalContext` (the steering channel on the exec engine); a Stop gate that runs the
@@ -73,10 +82,19 @@ Rewritten by the platform before every Muse Code start, on both engines:
   firewall), `mode: "optional"`, with a per-build token only the Muse runner exports: Meta docs search and read (the
   mirror in `content/meta-docs`), the model catalog, and the build's own progress notes. Off when the sandbox can't
   reach the platform (local runs without a tunnel).
-- **Skills**: turn `workflow-authoring` back on; the template's AGENTS.md gets a playbook for a scout subagent first,
-  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks.
+- **Skills**: turn `workflow-authoring` back on (a runner prelude, `WORKFLOW_SKILL_PRELUDE` in
+  `lib/sandbox/muse-config.ts`, on both engines; a later start without MUSE_FULL turns it off again).
+  `DISABLED_BUNDLED_SKILLS` in `lib/sandbox/setup.ts` still lists it, so the snapshot and plain exec keep it off. The
+  build prompt gets a playbook for a scout subagent first, parallel writers in isolated worktrees, a read-only reviewer
+  at the end, and workflows for fan-out checks, and every prompt gets the limits each child keeps to. The playbook
+  lives in `sessionLines` in `lib/brief/render.ts`, behind its `playbook` option (`sessionNotes()` in
+  `lib/pipeline/build-steps.ts` turns it on under MUSE_FULL or `MUSE_ENGINE=serve`). The template's AGENTS.md stays as
+  it is: every build reads it, flags or not, and a product's sandbox keeps the copy it was built with.
 - **Safety**: `.muse` joins the deploy exclusions; stray project config the agent wrote (`.mcp.json` it didn't get
-  from us, extra hooks) is replaced before each start.
+  from us, extra hooks) is replaced before each start. The platform's `.mcp.json` is removed before a deploy collects
+  files, in a sandbox that has this config (`MUSE_FULL_MARKER`).
+- **Notes**: the start of a build or a change empties the exec notes a past run never read. A fix round keeps them, so a
+  note sent just after a run's last tool call still reaches the same build's next run.
 
 ### 3. The build room shows all of it
 
@@ -89,8 +107,11 @@ their options.
 
 While a build runs, its owner can: send a note now (steer) or after this turn (queue), stop the turn, end the run,
 edit, pause or resume the goal, pause or cancel a workflow, message or stop a subagent, and answer a question. Routes
-check the owner as the messages route does, write the command into the mailbox (`MuseCommandEnvelope`), and add a
-`control` build event. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
+check the owner as the messages route does (a Question card opens for whoever may steer, `canSteer`, the route's own
+test), write the command into the mailbox (`MuseCommandEnvelope`), and add a
+`control` build event. Words the owner writes (a note, a goal, a subagent message, a typed answer) pass the same
+change check as a refinement first (`lib/brief/policy.ts`), charged to the build, and nothing goes when it refuses or
+can't answer. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
 
 ### 5. Every product as an MCP server, a CLI, a skill and a connector (phase 3)
 
@@ -102,14 +123,59 @@ panel, and a "Prove it" stage that tests each and records a Demo Studio video of
 ### 6. Accounting
 
 Every child's spend is charged: `workflow_child` and reminders that run inside subagent logs are counted (by
-`usage_id`, once), not only `native_child`. A build's settings (engine, capacity, reminders) are recorded with it.
+`usage_id`, once), not only `native_child`, under the `muse exec children` or `muse serve children` endpoint. The
+session log also gives an `unreported` group: the main agent's calls in runs with no `run.usage` (a run stopped at its
+cap, and every session bridge round, which never writes one). It is charged under the round's own endpoint, so a run
+that wrote `run.usage` is never charged twice (`parseSessionUsage` in `lib/sandbox/muse-log.ts`). A round's engine,
+and under MUSE_FULL its capacity, show as a build room line (`museRunLine`); the build row doesn't store them yet.
+That line and the agent's `build_note` lines stay in the build room: the public product page leaves them out
+(`buildHighlights`).
+
+A session bridge round whose session log can't be read, or has none of its main agent's calls, is charged from the
+`session/tokenUsage` tallies in its condenser state (`bridgeTokenUsage`), with a build room line saying so. Those tallies
+are the main session's stream, so children are charged only when the session log can be read.
+
+**This accounting also changes plain `muse exec` builds, with both flags off.** Against `tuned-model-options`:
+`workflow_child` calls and `reminder_child` calls inside child logs now count, and every `run.usage` in a round is charged
+rather than only the first poll's, so `costUsd`, the room's cost line and the spend cap all read higher on a build that
+uses workflows, subagents with reminders, or a second run. The room also says `Muse Code started a workflow: X` where it
+showed the workflow tool's raw first line. The old numbers undercharged real spend, so this is kept for now, but it is the
+one known break from flags-off parity (see the open checks).
 
 ## Build order and flags
 
-1. **Engine, config, accounting** (`MUSE_ENGINE`, default `exec`; `MUSE_FULL=1` turns on the settings, hooks and MCP).
-2. **Build room and steering** on top of it.
+1. **Engine, config, accounting** (`MUSE_ENGINE`, default `exec`; `MUSE_FULL=1` turns on the settings, hooks and MCP;
+   `MUSE_AGENT_CAPACITY` sizes the agents under it).
+2. **Build room and steering** on top of it. Steering is on when either flag is (`env.steeringEnabled`), and needs
+   migration `0012_build_controls` (`builds.muse_round`, `builds.stop_requested`).
 3. **Test builds** on a dry-run copy, then real builds within the $100 test budget, comparing cost, time and judge
    score against today's engine.
 4. **Product outputs and Prove it.**
+
+## Open checks
+
+Merged on Oct 31 with tests, the typecheck and the workflow compile check passing, but no sandbox run yet:
+
+- **Flags-off accounting (Ethan's call).** Section 6 says what changes on plain exec. To restore strict parity instead:
+  a `legacy` option on `parseSessionUsage` with `CHILD_OWNERS = {native_child}` and no child-log `reminder_child`, the
+  `!input.usageRecorded` gates back in `pollMuseStep`, last-run-wins in `condenseMuseLines`, and no `workflowText`, all
+  when `engine === "exec" && !env.museFull`.
+- **A real round on `serve`.** Nothing has run the bridge since the Oct 30 spike: a build, a fix round and a change, with
+  the condenser state carried between polls (at most 200 open items, 256 KB of them, and 32 announced keys in each step's
+  result; an open agent message or reasoning line shows its first 8,000 characters until it finishes). That run also
+  checks that session log run ids match the turn ids the bridge logs: if they don't, every serve round is charged from
+  the session host's tallies, with its children left out.
+- **Questions can't come yet.** The bridge always passes `--disable-request-user-input` (`disableRequestUserInput:
+  true` in `startBridge`), so Muse Code never asks and the Question card and the `answer` action go unused. Turning it
+  on for steerable rounds needs a check of what a round waiting on an answer does to the poll and the step cap.
+- **The goal line on a fallback.** The prompt says the goal is set whenever `MUSE_ENGINE=serve`, decided when the
+  prompt is written. A round whose bridge can't start runs on exec with no goal, and a product with no brief at all
+  gets none either, so `get_goal` shows nothing there.
+- **Controls with no UI.** The steer box sends notes, queued notes and stop, and the Question card sends answers. Goal,
+  workflow and subagent commands work only through the route. On exec they are refused and come back 502
+  `not_delivered`, worded as if Muse Code couldn't be reached.
+- **Engine on the build row.** The control route reads the per-round engine file (one sandbox read per command). If
+  that shows up as latency, store the engine next to `muse_round`.
+- **Test builds** (step 3 above): cost, time and judge score on `serve` and on MUSE_FULL against today's exec.
 
 Spend so far on this work: about $0.10 of model calls and a few cents of sandbox time (the Oct 30 spike).

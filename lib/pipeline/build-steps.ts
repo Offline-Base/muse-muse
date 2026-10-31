@@ -7,11 +7,11 @@
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { checkChange } from "@/lib/brief/policy";
-import { renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
+import { goalObjective, renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import { prepareFixtures, writeBrief, type PreparedFixture } from "@/lib/brief/write";
 import { db, schema } from "@/lib/db/client";
@@ -35,17 +35,20 @@ import { modelLabel } from "@/lib/format";
 import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
 import * as sandbox from "@/lib/sandbox/builder";
+import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
+import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
 import type { BuildModel } from "@/lib/sandbox/muse";
 import { ownersLabel } from "@/lib/sandbox/muse-log";
-import type {
-  BuildEventBody,
-  BuildStatus,
-  JudgeVerdict,
-  ModelUsage,
-  ProductStatus,
-  Reference,
-  Screenshot,
-  VerifySummary,
+import {
+  TERMINAL_STATUSES,
+  type BuildEventBody,
+  type BuildStatus,
+  type JudgeVerdict,
+  type ModelUsage,
+  type ProductStatus,
+  type Reference,
+  type Screenshot,
+  type VerifySummary,
 } from "@/lib/types";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
 
@@ -142,6 +145,33 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
   const rest = usage.filter((u) => u.model !== "muse-voice-transcribe-1.0");
   if (voice.length) await charge({ source: "platform", endpoint: "asr/transcribe", buildId }, voice, "Voice memo");
   await charge({ source: "platform", endpoint: "responses", buildId }, rest, "Brief");
+}
+
+/**
+ * What a run's prompt says about the session around it: the goal the session bridge sets from Done means, notes the
+ * build's owner can send while it runs, and the playbook for subagents and workflows, which only test builds on the
+ * session bridge or MUSE_FULL get. All off for plain `muse exec`, which keeps today's prompts.
+ */
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: boolean } {
+  return {
+    goalSet: env.museEngine === "serve",
+    ownerNotes: env.steeringEnabled,
+    playbook: env.museFull || env.museEngine === "serve",
+  };
+}
+
+/**
+ * Whether the build's owner pressed Stop (POST /api/builds/{id}/control), read in the same statement that sets the
+ * build's running Muse Code round when `set` is given: the route marks a stop only while a round is set, so an update
+ * that takes the round off the row always sees a stop that landed before it.
+ */
+async function ownerStopped(buildId: string, set?: { museRound: number | null }): Promise<boolean> {
+  const cols = { stopRequested: schema.builds.stopRequested };
+  const where = eq(schema.builds.id, buildId);
+  const [row] = set
+    ? await db().update(schema.builds).set(set).where(where).returning(cols)
+    : await db().select(cols).from(schema.builds).where(where).limit(1);
+  return row?.stopRequested === true;
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -393,6 +423,7 @@ export async function provisionStep(input: {
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
     maxModelSteps: MAX_MODEL_STEPS,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
+    ...sessionNotes(),
   });
   const allowedModels = allowedModelsFor(brief);
   const { token } = await mintToken({
@@ -427,9 +458,45 @@ provisionStep.maxRetries = stepRetries("provision");
 export interface MuseRun {
   cmdId: string;
   logPath: string;
+  /** The engine the round runs on (lib/sandbox/bridge-protocol.ts). Runs started before engines existed are exec. */
+  engine?: MuseEngine;
 }
 
-/** Starts one `muse exec` run. Never retried: a retry could start a second run in the same session. */
+/**
+ * The build a Muse Code start belongs to, for its goal and its build MCP token: the one the workflow names, or else the
+ * newest one in this sandbox and session that hasn't finished. A refinement's row has the product's brief
+ * (loadRefineStep), so its rounds get the goal its change prompt names. Null when it can't be found, and the start goes
+ * on without both.
+ */
+async function startingBuild(input: { sandboxName: string; sessionId: string; buildId?: string }): Promise<{ id: string; brief: Brief | null } | null> {
+  try {
+    const [row] = await db()
+      .select({ id: schema.builds.id, brief: schema.builds.brief, productId: schema.builds.productId })
+      .from(schema.builds)
+      .where(
+        input.buildId
+          ? eq(schema.builds.id, input.buildId)
+          : and(
+              eq(schema.builds.sandboxName, input.sandboxName),
+              eq(schema.builds.museSessionId, input.sessionId),
+              notInArray(schema.builds.status, [...TERMINAL_STATUSES]),
+            ),
+      )
+      .orderBy(desc(schema.builds.startedAt))
+      .limit(1);
+    if (!row) return null;
+    return { id: row.id, brief: row.brief ?? (row.productId ? await latestBrief(row.productId) : null) };
+  } catch (err) {
+    console.warn(`[muse] the build for ${input.sandboxName} wasn't found: ${String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Starts one Muse Code round, on the engine MUSE_ENGINE names (lib/sandbox/builder.ts startMuse). A serve round gets
+ * the brief's goal (goalObjective). Never retried: a retry could start a second run in the same session. When the
+ * round runs on another engine than it asked for, or under MUSE_FULL, the build room gets a line saying how it runs.
+ */
 export async function startMuseStep(input: {
   sandboxName: string;
   sessionId: string;
@@ -437,35 +504,93 @@ export async function startMuseStep(input: {
   images: string[];
   model: BuildModel;
   round: number;
+  /** The build, when the workflow has it at hand. Otherwise it is looked up when the round needs it. */
+  buildId?: string;
 }): Promise<MuseRun> {
   "use step";
-  return sandbox.startMuse({ ...input, maxModelSteps: MAX_MODEL_STEPS });
+  const engine = env.museEngine;
+  const full = env.museFull;
+  // Today's exec round needs neither the goal nor the build, so it makes no extra query.
+  const build = engine === "serve" || full ? await startingBuild(input) : null;
+  const buildId = input.buildId ?? build?.id;
+  const started = await sandbox.startMuse({
+    sandboxName: input.sandboxName,
+    sessionId: input.sessionId,
+    promptFile: input.promptFile,
+    images: input.images,
+    model: input.model,
+    round: input.round,
+    maxModelSteps: MAX_MODEL_STEPS,
+    engine,
+    goal: build?.brief ? goalObjective(build.brief) : null,
+    ...(buildId ? { buildId } : {}),
+  });
+  const how = museRunLine(started, full, env.museAgentCapacity);
+  if (how && buildId) {
+    await emit(buildId, { type: "log", text: how }).catch((err: unknown) => console.warn(`[muse] build room line: ${String(err)}`));
+  }
+  return { cmdId: started.cmdId, logPath: started.logPath, engine: started.engine };
 }
 startMuseStep.maxRetries = stepRetries("build");
+
+/**
+ * The build room's line on how a round runs: its engine, why it didn't get the one it asked for, and, under MUSE_FULL,
+ * what Muse Code has. Null for a plain exec round, which reads as it always has.
+ */
+export function museRunLine(started: { engine: MuseEngine; notice?: string; buildMcp?: boolean }, full: boolean, capacity: number): string | null {
+  const parts: string[] = [];
+  if (started.notice) parts.push(started.notice);
+  else if (started.engine === "serve") parts.push("Muse Code runs this round on its session host, so its owner can steer it.");
+  else if (full) parts.push("Muse Code runs this round with muse exec.");
+  if (full) {
+    parts.push(`It has ${capacity} agent ${capacity === 1 ? "slot" : "slots"}, every reminder and the platform's hooks${started.buildMcp ? " and build tools" : ""}.`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+/**
+ * Puts the Muse Code round running now on the build row, numbered as its log and mailbox are (bridgePaths), so the
+ * owner's controls know where to send, or takes it off with null. Returns whether the owner asked to stop, read in the
+ * same update (ownerStopped). Does nothing while steering is off.
+ */
+export async function museRoundStep(buildId: string, round: number | null): Promise<boolean> {
+  "use step";
+  if (!env.steeringEnabled) return false;
+  return ownerStopped(buildId, { museRound: round });
+}
+museRoundStep.maxRetries = 2;
 
 export interface MusePollResult {
   done: boolean;
   exitCode: number | null;
   offset: number;
-  /** True once this run's usage has been recorded. Pass it to the next poll. */
+  /** True once some of this run's usage has been recorded. Pass it to the next poll. */
   usageRecorded: boolean;
   /** Helper agents the build room has heard about in this run. Pass it to the next poll. */
   announced?: string[];
   /** run.usage's children_included once a poll has read it, else null. Pass it to the next poll. */
   childrenIncluded?: boolean | null;
+  /** The session bridge's condenser state, on a serve round. Pass it to the next poll. */
+  bridgeState?: BridgeCondenseState;
+  /** True once the build's owner pressed Stop. The workflow then ends the build instead of going on. */
+  stopRequested?: boolean;
 }
 
 /**
- * Reads new Muse Code output, streams it to the build room, and records the run's usage in whichever poll reads it.
- * Muse Code writes run.usage once, near the end, and a poll can read it before the process has exited, so it is not
- * tied to `done`. `usageRecorded` carries over between polls so a run is charged at most once, and charge() drops
- * rows a retried attempt already wrote.
+ * Reads new Muse Code output, streams it to the build room, and records the round's usage in whichever poll reads it.
+ * Muse Code writes run.usage once per run, near its end, and a poll can read it before the process has exited, so it
+ * is not tied to `done`. Each poll reads new bytes only, so every run.usage it reads is charged once, and charge() drops
+ * rows a retried attempt already wrote. One `muse exec` can hold more than one run (a workflow's completion comes as a
+ * second run).
  *
  * run.usage counts only the main agent (children_included: false). The poll that reports done also reads Muse Code's
- * session log, which has the reminder agents' and subagents' calls too: those are charged under their own endpoint,
- * unless run.usage said it includes them or didn't say (Condensed.childrenIncluded), so they are never charged twice.
- * `childrenIncluded` carries over between polls like `usageRecorded`. A run that never wrote run.usage (stopped at its
- * cap) is charged for its main agent and its children from that log instead.
+ * session log, which has the reminder agents', subagents' and workflow agents' calls too: those are charged under their
+ * own endpoint, unless run.usage said it includes them or didn't say (Condensed.childrenIncluded), so they are never
+ * charged twice. `childrenIncluded` carries over between polls. The main agent's calls in runs that never wrote
+ * run.usage (one stopped at its cap, and every round on the session bridge, which has none) are charged from that log.
+ *
+ * While steering is on, each poll also reads the owner's Stop, and the poll that reports done takes the run's round
+ * off the build row in the same update, so a stop sent just as the run ends is never missed.
  */
 export async function pollMuseStep(input: {
   buildId: string;
@@ -478,8 +603,10 @@ export async function pollMuseStep(input: {
   usageRecorded?: boolean;
   announced?: string[];
   childrenIncluded?: boolean | null;
+  bridgeState?: BridgeCondenseState;
 }): Promise<MusePollResult> {
   "use step";
+  const engine = input.run.engine ?? "exec";
   const poll = await sandbox.pollMuse({
     sandboxName: input.sandboxName,
     cmdId: input.run.cmdId,
@@ -487,19 +614,23 @@ export async function pollMuseStep(input: {
     offset: input.offset,
     announced: input.announced,
     childrenIncluded: input.childrenIncluded,
+    engine,
+    bridgeState: input.bridgeState,
   });
   if (poll.lines.length) await emit(input.buildId, { type: "muse", lines: poll.lines, round: input.round });
-  const ctx = { source: "muse_code" as const, endpoint: "muse exec", buildId: input.buildId, productId: input.productId };
+  const endpoint = engine === "serve" ? "muse serve" : "muse exec";
+  const ctx = { source: "muse_code" as const, endpoint, buildId: input.buildId, productId: input.productId };
   const what = input.round === 0 ? "Muse Code build" : `Muse Code round ${input.round}`;
-  const fresh = !input.usageRecorded && poll.usage.length > 0;
+  const fresh = poll.usage.length > 0;
   if (fresh) await charge(ctx, poll.usage, what);
-  const fromLog = !input.usageRecorded && !fresh ? (poll.session?.main.usage ?? []) : [];
+  const fromLog = poll.session?.unreported.usage ?? [];
   if (fromLog.length) await charge(ctx, fromLog, what);
   const childrenIncluded = poll.childrenIncluded ?? input.childrenIncluded ?? null;
   const children = childrenIncluded === true ? undefined : poll.session?.children;
   if (children?.usage.length) {
-    await charge({ ...ctx, endpoint: "muse exec children" }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
+    await charge({ ...ctx, endpoint: `${endpoint} children` }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
   }
+  const stopRequested = env.steeringEnabled ? await ownerStopped(input.buildId, poll.done ? { museRound: null } : undefined) : false;
   return {
     done: poll.done,
     exitCode: poll.exitCode,
@@ -507,6 +638,8 @@ export async function pollMuseStep(input: {
     usageRecorded: Boolean(input.usageRecorded) || fresh || fromLog.length > 0,
     announced: poll.announced,
     childrenIncluded,
+    ...(poll.bridgeState ? { bridgeState: poll.bridgeState } : {}),
+    stopRequested,
   };
 }
 pollMuseStep.maxRetries = 2;
@@ -691,7 +824,7 @@ export async function writeFixPromptStep(input: {
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes() }),
   );
   return { promptFile, images };
 }
@@ -1017,6 +1150,7 @@ export async function reopenStep(input: {
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
+    ...sessionNotes(),
   });
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);

@@ -20,9 +20,11 @@ export interface MuseExecOptions {
 }
 
 export const DEFAULT_MAX_MODEL_STEPS = 200;
+/** A build's reasoning effort on both engines. */
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
 /** What a run uses when the caller doesn't choose. Muse Wonder is the build default (lib/env.ts). */
-const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: "high", maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
+const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: DEFAULT_REASONING_EFFORT, maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
 
 /**
  * Hardening flags the runner adds only when `muse exec --help` lists them (optionalFlagsPrelude). A headless run has
@@ -34,6 +36,17 @@ export const OPTIONAL_EXEC_FLAGS = ["--disable-request-user-input", "--no-foreig
 
 /** Flags the runner adds on its own: --image for each attached file that exists (builder.ts startMuse). */
 const RUNNER_EXEC_FLAGS = ["--image"] as const;
+
+/**
+ * `-c` settings every session bridge round passes to `muse serve` (lib/sandbox/bridge/bridge.mjs), whatever MUSE_FULL
+ * says. `muse serve --help` on 1.4.14 has no --disable-web-tools (docs/spikes/muse-full-2026-10-30/phase-A.txt), so
+ * web search is turned off with its setting instead, as exec rounds turn web tools off with the flag. The key, and its
+ * values client, hosted and off, are as the 1.4.14 binary spells them; no host has run with it yet. A key or value
+ * Muse Code doesn't know refuses the start (exit 2), and the round then runs on exec, with the reason in the build
+ * room. Exec's --no-foreign-personal-context has no setting here until the type its context.foreign_personal_* keys
+ * take is known.
+ */
+export const SERVE_SETTINGS: readonly string[] = ['tools.web_search.mode="off"'];
 
 /**
  * argv for `muse exec`, after the binary name. --yolo skips Muse Code's own bubblewrap sandbox, which can't run in the
@@ -81,6 +94,22 @@ export function optionalFlagsPrelude(flags: readonly string[] = OPTIONAL_EXEC_FL
 }
 
 /**
+ * Bash for the runner prelude, after optionalFlagsPrelude: appends `--config KEY=VALUE` for each of `settings`, each
+ * value quoted with q(), but only when `muse exec --help` lists --config and `muse --version` is `version`. An unknown
+ * key refuses the whole run with exit 2 (docs/MUSE_CODE_FULL.md), so a sandbox on any other Muse Code runs without the
+ * settings instead. Says on the runner's stdout when it leaves them out.
+ */
+export function optionalConfigPrelude(settings: readonly string[], version: string): string {
+  if (!settings.length) return "true";
+  const versionPattern = `(^|[^0-9.])${version.replace(/\./g, "\\.")}([^0-9]|$)`;
+  const words = settings.flatMap((s) => ["--config", s]).map(q).join(" ");
+  return [
+    `[ -n "\${help:-}" ] || help=$("\${cmd[0]}" exec --help 2>&1)`,
+    `if grep -Eq -- ${q(helpPattern("--config"))} <<<"$help" && "\${cmd[0]}" --version 2>/dev/null | grep -Eq -- ${q(versionPattern)}; then cmd+=(${words}); else echo ${q(`muse exec isn't Muse Code ${version} with --config, so this run goes without the platform's settings`)}; fi`,
+  ].join("\n");
+}
+
+/**
  * Every flag a build may pass to `muse exec`: museExecArgs (web tools on or off), OPTIONAL_EXEC_FLAGS and --image.
  * The snapshot script fails unless `muse exec --help` lists each one.
  */
@@ -105,6 +134,12 @@ export const SANDBOX_ENV = { MUSE_NO_AUTO_UPDATE: "1", MUSE_LOGIN: "0" } as cons
 export function museEnv(placeholder: string): Record<string, string> {
   return { ...SANDBOX_ENV, META_API_KEY: placeholder };
 }
+
+/**
+ * Muse Code log rounds per change of a product: a first build starts at 0 and refinement n at n times this, with their
+ * fix rounds between, so they never reuse an earlier build's log name.
+ */
+export const REFINE_ROUND_STRIDE = 10;
 
 /** Muse Code exit codes. 0 means the turn ended, not that the product works. Always gate on npm run verify. */
 export const MUSE_EXIT = { completed: 0, failed: 1, usage: 2 } as const;

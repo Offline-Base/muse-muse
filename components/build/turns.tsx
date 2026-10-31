@@ -8,7 +8,17 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { ExternalLink, ModelChips } from "@/components/ui";
 import type { InspirationView, RebuildRef } from "@/components/view-types";
-import { groupLog, type LogGroup, type Note, type Segment } from "@/components/build/derive";
+import { groupLog, type LogGroup, type Note, type Segment, type SessionModel, type WatcherRun } from "@/components/build/derive";
+import {
+  GoalCard,
+  ObserverNotes,
+  QuestionCard,
+  StatusChip,
+  SteerNote,
+  Thinking,
+  TodoList,
+  WorkflowCard,
+} from "@/components/build/session";
 import { splitBuildNote } from "@/lib/docs/build-note";
 import { FIT_LABEL, compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
 import type { Brief, MuseLogLine, Reference } from "@/lib/types";
@@ -258,7 +268,19 @@ export function BriefBody({ brief }: { brief: Brief }) {
 
 const RECENT_LINES = 8;
 
-function ActivityList({ items, live }: { items: Extract<LogGroup, { type: "activity" }>["items"]; live: boolean }) {
+type ActivityItem = Extract<LogGroup, { type: "activity" }>["items"][number];
+
+function actIcon(it: ActivityItem): IconName {
+  if (it.type === "edit") return "file";
+  if (it.type === "error" || ("ok" in it && it.ok === false)) return "alert";
+  if (it.type === "tool") return it.running ? "more" : "check";
+  if (it.type === "subagent") return "user";
+  if (it.type === "hook") return "code";
+  if (it.type === "compaction") return "layers";
+  return "info";
+}
+
+function ActivityList({ items, live }: { items: ActivityItem[]; live: boolean }) {
   const [showAll, setShowAll] = useState(false);
   const hidden = live && !showAll ? Math.max(0, items.length - RECENT_LINES) : 0;
   const visible = hidden ? items.slice(-RECENT_LINES) : items;
@@ -271,20 +293,12 @@ function ActivityList({ items, live }: { items: Extract<LogGroup, { type: "activ
       ) : null}
       <ul className="activity-list">
         {visible.map((it, i) => (
-          <li key={i} className={`act act-${it.type}${"ok" in it && it.ok === false ? " act-failed" : ""}`}>
+          <li
+            key={i}
+            className={`act act-${it.type}${"ok" in it && it.ok === false ? " act-failed" : ""}${it.type === "tool" && it.running ? " act-running" : ""}`}
+          >
             <span className="act-icon" aria-hidden>
-              <Icon
-                name={
-                  it.type === "edit"
-                    ? "file"
-                    : it.type === "error" || ("ok" in it && it.ok === false)
-                      ? "alert"
-                      : it.type === "tool"
-                        ? "check"
-                        : "info"
-                }
-                size={14}
-              />
+              <Icon name={actIcon(it)} size={14} />
             </span>
             <span className="act-text">
               {it.type === "edit" ? (
@@ -296,8 +310,10 @@ function ActivityList({ items, live }: { items: Extract<LogGroup, { type: "activ
               ) : (
                 it.text
               )}
+              {it.type === "tool" && it.running ? <span className="sr-only"> (running)</span> : null}
             </span>
             {it.type === "tool" && it.tool ? <code className="act-name">{it.tool}</code> : null}
+            {it.type === "subagent" ? <StatusChip status={it.status} /> : null}
           </li>
         ))}
       </ul>
@@ -318,7 +334,36 @@ function groupSummary(items: Extract<LogGroup, { type: "activity" }>["items"]): 
   return parts.filter(Boolean).join(", ") || plural(items.length, "line");
 }
 
-export function MuseLog({ lines, live }: { lines: MuseLogLine[]; live: boolean }) {
+/**
+ * One Muse Code round's log. On the session bridge, `session` adds the goal and the todo list above the log, observer
+ * runs at its foot, and any open question below it, which the owner answers through the build's control route.
+ */
+export function MuseLog({
+  lines,
+  live,
+  session = null,
+  buildId,
+  canAnswer = false,
+}: {
+  lines: MuseLogLine[];
+  live: boolean;
+  session?: SessionModel | null;
+  buildId?: string;
+  canAnswer?: boolean;
+}) {
+  return (
+    <>
+      {session?.goal ? <GoalCard goal={session.goal} /> : null}
+      {session?.todos.length ? <TodoList todos={session.todos} /> : null}
+      <RoundLog lines={lines} live={live} observers={session?.observers ?? null} />
+      {session?.questions.map((q) => (
+        <QuestionCard key={q.itemId} question={q} buildId={buildId} canAnswer={canAnswer} live={live} />
+      ))}
+    </>
+  );
+}
+
+function RoundLog({ lines, live, observers }: { lines: MuseLogLine[]; live: boolean; observers: WatcherRun[] | null }) {
   const { groups, summary } = groupLog(lines);
   return (
     <div
@@ -336,6 +381,9 @@ export function MuseLog({ lines, live }: { lines: MuseLogLine[]; live: boolean }
           return (
             <MarkdownText key={i} className="say say-final" text={g.text.trim()} />
           );
+        if (g.type === "thinking") return <Thinking key={i} text={g.text} />;
+        if (g.type === "steer") return <SteerNote key={i} group={g} />;
+        if (g.type === "workflow") return <WorkflowCard key={i} group={g} />;
         const isLast = i === groups.length - 1 || groups.slice(i + 1).every((x) => x.type !== "activity");
         if (live && isLast) return <ActivityList key={i} items={g.items} live />;
         if (g.items.length <= 3) return <ActivityList key={i} items={g.items} live={false} />;
@@ -349,6 +397,7 @@ export function MuseLog({ lines, live }: { lines: MuseLogLine[]; live: boolean }
       {!groups.length ? (
         <p className="muted">{live ? "Muse Code is reading the brief." : "No activity was logged."}</p>
       ) : null}
+      {observers ? <ObserverNotes observers={observers} /> : null}
       {summary.edits || summary.tools ? (
         <p className="muse-summary muted">
           {summary.tools ? plural(summary.tools, "tool call") : null}

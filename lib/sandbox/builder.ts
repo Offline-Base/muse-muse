@@ -1,8 +1,18 @@
 import path from "node:path";
-import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
+import {
+  BRIDGE_DIR,
+  BRIDGE_SCRIPT,
+  bridgeConfigPath,
+  bridgePaths,
+  MUSE_SDK_VERSION,
+  type BridgeConfig,
+  type MuseCommandEnvelope,
+  type MuseEngine,
+} from "@/lib/sandbox/bridge-protocol";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { noEmDashes } from "@/lib/brief/normalize";
 import { env } from "@/lib/env";
+import { buildMcpToken } from "@/lib/mcp/build-token";
 import { fetchBytes, putFile } from "@/lib/storage";
 import type { Manifest, ModelUsage, MuseLogLine, Reference, Screenshot, VerifySummary } from "@/lib/types";
 import {
@@ -19,6 +29,8 @@ import {
   verifyOutcome,
   wrapText,
 } from "@/lib/sandbox/artifacts";
+import { BRIDGE_SOURCE } from "@/lib/sandbox/bridge-source";
+import { bridgeTokenUsage, condenseBridgeLines, emptyBridgeState, type BridgeCondenseState } from "@/lib/sandbox/msp-log";
 import {
   childUsageLine,
   completeLines,
@@ -28,7 +40,31 @@ import {
   SESSION_USAGE_SCRIPT,
   type SessionUsage,
 } from "@/lib/sandbox/muse-log";
-import { type BuildModel, isSessionId, museEnv, museExecArgs, optionalFlagsPrelude } from "@/lib/sandbox/muse";
+import {
+  type BuildModel,
+  DEFAULT_MAX_MODEL_STEPS,
+  DEFAULT_REASONING_EFFORT,
+  isSessionId,
+  museEnv,
+  museExecArgs,
+  optionalConfigPrelude,
+  optionalFlagsPrelude,
+  REFINE_ROUND_STRIDE,
+  SANDBOX_ENV,
+  SERVE_SETTINGS,
+} from "@/lib/sandbox/muse";
+import {
+  BUILD_MCP_PATH,
+  BUILD_MCP_TOKEN_ENV,
+  CHECKED_MUSE_VERSION,
+  MUSE_FULL_MARKER,
+  museConfigFiles,
+  museSettings,
+  NOTES_DIR,
+  NOTES_SESSION_FILE,
+  WORKFLOW_SKILL_OFF,
+  WORKFLOW_SKILL_PRELUDE,
+} from "@/lib/sandbox/muse-config";
 import {
   BUILDER_MARKER,
   DEMO_OUT_DIR,
@@ -99,6 +135,21 @@ const WRITE_BATCH_BYTES = 24 * 1024 * 1024;
 const BASIC_RENDER_S = 180;
 /** Names of forkForDryRun's throwaway copies start with this. */
 const DRY_RUN_PREFIX = "dryrun-";
+/**
+ * How long a session bridge stays open with nothing running: after the owner stops a turn (time to send a note), or
+ * while a goal waits for its next turn.
+ */
+const BRIDGE_IDLE_EXIT_MS = 2 * MIN;
+/**
+ * How long startMuse waits for a new bridge to have Muse Code take the prompt (usually 2 to 5 s). The bridge gives its
+ * whole start 20 s (START_MS in bridge.mjs) and closing its host up to 20 s, so by then it has taken the prompt or
+ * ended. One that has done neither is taken to be starting. With the SDK install, a start stays under about 75 s.
+ */
+const BRIDGE_START_PROBE_S = 45;
+/** How long installing the bridge's SDK may take, the first time in a sandbox (one small package, no dependencies). */
+const SDK_INSTALL_MS = 30_000;
+/** The largest command the mailbox takes. */
+const MAX_COMMAND_BYTES = 64 * 1024;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Helpers
@@ -231,12 +282,22 @@ async function writeBatched(sandbox: Sandbox, files: Array<{ path: string; conte
   if (batch.length) await sandbox.writeFiles(batch);
 }
 
-/** Remembers which log a detached command writes, so polls and kills only need the command id. */
-async function recordCommand(sandbox: Sandbox, tag: string, cmdId: string, logPath: string): Promise<void> {
+/**
+ * Remembers which log a detached command writes, so polls and kills only need the command id. A Muse Code round also
+ * records the engine it runs on, so a command sent to it later knows where to go (sendMuseCommand).
+ */
+async function recordCommand(sandbox: Sandbox, tag: string, cmdId: string, logPath: string, engine?: MuseEngine): Promise<void> {
   await sandbox.writeFiles([
     { path: `${RUN_DIR}/${tag}.cmd`, content: cmdId },
     { path: `${RUN_DIR}/by-id/${cmdId}`, content: logPath },
+    ...(engine ? [{ path: `${RUN_DIR}/${tag}.engine`, content: engine }] : []),
   ]);
+}
+
+/** The engine a round runs on: what startMuse recorded, or exec for rounds from before it did. */
+async function roundEngine(sandbox: Sandbox, round: number): Promise<MuseEngine> {
+  const buf = await sandbox.readFileToBuffer({ path: `${RUN_DIR}/muse-r${round}.engine` }).catch(() => null);
+  return buf?.toString("utf8").trim() === "serve" ? "serve" : "exec";
 }
 
 /** The id of a command started earlier under `tag` if it is still running, so a retried start doesn't double up. */
@@ -498,52 +559,346 @@ export interface StartMuseInput {
   maxModelSteps?: number;
   /** 0 for the first build, then 1, 2, 3 for fix rounds or refinements. Names the log file. */
   round: number;
+  /** The engine to try: env.museEngine when unset. A round whose session bridge can't start runs on exec. */
+  engine?: MuseEngine;
+  /** The goal's objective for the session bridge (MSP goal/set), from goalObjective. Exec rounds have no goal. */
+  goal?: string | null;
+  /** The build, for its build MCP token under MUSE_FULL. Without it the round runs without the build MCP server. */
+  buildId?: string;
 }
 
-/** Starts `muse exec --json` detached, writing JSONL to a log file. Returns immediately. */
-export async function startMuse(input: StartMuseInput): Promise<{ cmdId: string; logPath: string }> {
+export interface MuseStart {
+  cmdId: string;
+  logPath: string;
+  /** The engine the round runs on. Pass it to pollMuse and sendMuseCommand. */
+  engine: MuseEngine;
+  /** Set when the round didn't get the engine it asked for, for the build room. */
+  notice?: string;
+  /** True when the run has the build MCP server (MUSE_FULL, a reachable platform and the build's token). */
+  buildMcp?: boolean;
+}
+
+/** What both engines' starts need, worked out once. */
+interface MuseRunSpec extends StartMuseInput {
+  /** Relative to PRODUCT_DIR, checked to stay inside it. */
+  promptFile: string;
+  images: string[];
+  tag: string;
+  full: boolean;
+  /** The build MCP token, when the run gets the build MCP server. */
+  token: string | null;
+}
+
+/** True when a sandbox can reach the platform, as lockedPolicy allows it: a public platform host, and not a dry run's copy. */
+function platformReachable(sandboxName: string): boolean {
+  return !sandboxName.startsWith(DRY_RUN_PREFIX) && publicHost(env.platformUrl) !== null;
+}
+
+/** The build MCP token for a run, or null when it can't use the build MCP server. */
+function buildMcpTokenFor(input: StartMuseInput): string | null {
+  if (!input.buildId || !platformReachable(input.sandboxName)) return null;
+  try {
+    return buildMcpToken(input.buildId, env.gatewayTokenPepper);
+  } catch (err) {
+    console.warn(`build MCP token for ${input.buildId}: ${String(err)}`);
+    return null;
+  }
+}
+
+/** Env for a Muse Code runner: the brokered placeholder key, and the build MCP token when there is one. */
+function runnerEnv(run: MuseRunSpec): Record<string, string> {
+  return { ...museEnv(sandboxPlaceholder(run.sandboxName)), ...(run.token ? { [BUILD_MCP_TOKEN_ENV]: run.token } : {}) };
+}
+
+/**
+ * Writes the platform's Muse Code config (lib/sandbox/muse-config.ts) before a start under MUSE_FULL, removing what is
+ * at each path first: the hook scripts, .muse/hooks.json, and .mcp.json when the run has a build MCP token (else
+ * .mcp.json is just removed). Also records the session id, so owner notes on exec rounds reach the main agent, and
+ * keeps .muse/ (with its subagents' worktrees) and .mcp.json out of the product's commits through the checkout's own
+ * info/exclude, which changes nothing tracked. MUSE_FULL_MARKER goes first, so a later start without MUSE_FULL takes
+ * all of it away again (clearMuseConfig). The start of a build or a change also empties the exec notes a past run never
+ * read, which were for other work, while a fix round keeps them: a note sent just after a run's last tool call still
+ * reaches the same build's next run.
+ */
+async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void> {
+  const files = museConfigFiles({ mcpUrl: run.token ? `${env.platformUrl}${BUILD_MCP_PATH}` : null });
+  const git = `${PRODUCT_DIR}/.git`;
+  const exclude = `${git}/info/exclude`;
+  await sh(
+    sandbox,
+    [
+      `rm -rf -- ${files.remove.map(q).join(" ")} && mkdir -p -- ${files.dirs.map(q).join(" ")}`,
+      `if [ -d ${q(git)} ]; then mkdir -p ${q(`${git}/info`)}; for p in .muse/ .mcp.json; do grep -qxF -- "$p" ${q(exclude)} 2>/dev/null || printf '%s\\n' "$p" >> ${q(exclude)}; done; fi`,
+      ...(run.round % REFINE_ROUND_STRIDE === 0 ? [`rm -f -- ${q(NOTES_DIR)}/*.json`] : []),
+    ].join("\n"),
+  );
+  await sandbox.writeFiles([
+    { path: MUSE_FULL_MARKER, content: `${new Date().toISOString()}\n` },
+    ...files.write,
+    { path: NOTES_SESSION_FILE, content: `${run.sessionId}\n` },
+  ]);
+}
+
+/**
+ * Takes the platform's Muse Code config away again before a start without MUSE_FULL, in a sandbox an earlier start
+ * gave it to (MUSE_FULL_MARKER): exec trusts the workspace, so its hooks and .mcp.json would still load, and the
+ * workflow-authoring skill would stay on. A sandbox that never had MUSE_FULL runs nothing here. Best effort: when it
+ * fails, the round runs with what is there and the next start tries again.
+ */
+async function clearMuseConfig(sandbox: Sandbox, sandboxName: string): Promise<void> {
+  const marker = await sandbox.readFileToBuffer({ path: MUSE_FULL_MARKER }).catch(() => null);
+  if (!marker) return;
+  const script = [
+    `rm -rf -- ${museConfigFiles({ mcpUrl: null }).remove.map(q).join(" ")} || exit 1`,
+    `PATH="$HOME/.local/bin:$PATH" ${WORKFLOW_SKILL_OFF}`,
+    `rm -f -- ${q(MUSE_FULL_MARKER)}`,
+  ].join("\n");
+  const res = await sh(sandbox, script, { env: { ...SANDBOX_ENV }, allowFail: true }).catch((err: unknown) => ({
+    exitCode: -1,
+    stdout: "",
+    stderr: String(err),
+  }));
+  if (res.exitCode !== 0) console.warn(`Muse Code config cleanup on ${sandboxName}: exit ${res.exitCode}: ${res.stderr.slice(-500)}`);
+}
+
+/**
+ * Starts one Muse Code round detached and returns at once: on the session bridge over `muse serve` (MUSE_ENGINE=serve,
+ * docs/MUSE_CODE_FULL.md) or as `muse exec --json`. Under MUSE_FULL both get the platform's settings, hooks and build
+ * MCP server. A bridge that can't install its SDK, or ends before Muse Code takes the prompt, leaves the round to exec,
+ * with a notice saying so.
+ */
+export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   if (!isSessionId(input.sessionId)) throw new Error(`sessionId must be a UUID, got ${input.sessionId}`);
   const promptFile = productPath(input.promptFile).slice(PRODUCT_DIR.length + 1);
   const images = input.images.map((img) => productPath(img).slice(PRODUCT_DIR.length + 1));
   const tag = `muse-r${input.round}`;
-  const logPath = `${LOG_DIR}/${tag}.jsonl`;
 
   const sandbox = await openSandbox(input.sandboxName);
   await ensureTime(sandbox, LONG_WORK_MS);
   const running = await runningCommand(sandbox, tag);
-  if (running) return { cmdId: running, logPath };
+  if (running) {
+    const engine = await roundEngine(sandbox, input.round);
+    return { cmdId: running, logPath: engine === "serve" ? bridgePaths(input.round).log : `${LOG_DIR}/${tag}.jsonl`, engine };
+  }
 
-  const argv = ["muse", ...museExecArgs({ promptFile, sessionId: input.sessionId, model: input.model, maxModelSteps: input.maxModelSteps })];
+  const full = env.museFull;
+  const run: MuseRunSpec = { ...input, promptFile, images, tag, full, token: full ? buildMcpTokenFor(input) : null };
+  if (full) await writeMuseConfig(sandbox, run);
+  else await clearMuseConfig(sandbox, input.sandboxName);
+  const buildMcp = Boolean(run.token);
+  let notice: string | undefined;
+  if ((input.engine ?? env.museEngine) === "serve") {
+    const bridge = await startBridge(sandbox, run);
+    if ("cmdId" in bridge) return { ...bridge, engine: "serve", buildMcp };
+    notice = bridge.notice;
+    console.warn(`Muse Code on ${input.sandboxName}, round ${input.round}: ${notice}`);
+  }
+  return { ...(await startExec(sandbox, run)), engine: "exec", buildMcp, ...(notice ? { notice } : {}) };
+}
+
+/** Starts `muse exec --json` detached, writing JSONL to the round's log. */
+async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: string; logPath: string }> {
+  const logPath = `${LOG_DIR}/${run.tag}.jsonl`;
+  const argv = ["muse", ...museExecArgs({ promptFile: run.promptFile, sessionId: run.sessionId, model: run.model, maxModelSteps: run.maxModelSteps })];
   const prelude = [
     // Keep an earlier run's log under another name (a refinement can reuse round numbers) for the transcript highlights.
-    `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${tag}`)}.$(date +%s).jsonl`,
+    `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${run.tag}`)}.$(date +%s).jsonl`,
     // A persistent product sandbox keeps the Muse Code it was made with, which may not have these yet.
     optionalFlagsPrelude(),
-    ...images.map((img) => `[ -f ${q(img)} ] && cmd+=(--image ${q(img)})`),
+    ...(run.full ? [optionalConfigPrelude(museSettings(env.museAgentCapacity), CHECKED_MUSE_VERSION), WORKFLOW_SKILL_PRELUDE] : []),
+    ...run.images.map((img) => `[ -f ${q(img)} ] && cmd+=(--image ${q(img)})`),
     "true",
   ].join("\n");
   const script = await writeRunner(sandbox, {
-    name: tag,
+    name: run.tag,
     cwd: PRODUCT_DIR,
-    env: museEnv(sandboxPlaceholder(input.sandboxName)),
+    env: runnerEnv(run),
     argv,
     prelude,
     stdoutPath: logPath,
-    stderrPath: `${LOG_DIR}/${tag}.err`,
+    stderrPath: `${LOG_DIR}/${run.tag}.err`,
   });
   const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
-  await recordCommand(sandbox, tag, cmd.cmdId, logPath);
+  await recordCommand(sandbox, run.tag, cmd.cmdId, logPath, "exec");
   return { cmdId: cmd.cmdId, logPath };
 }
 
 /**
- * Drops a command into a running session bridge's mailbox (docs/MUSE_CODE_FULL.md, "The owner steers"): one JSON
- * file per command under bridgePaths(round).mailbox, which the bridge applies in name order and logs as a `command`
- * record. STUB until the engine work lands.
+ * Bash run before a bridge starts: sets the round's earlier bridge log aside and empties its mailbox (refinements can
+ * reuse round numbers), then installs @muse-code/sdk at MUSE_SDK_VERSION under BRIDGE_DIR unless it is already there.
+ * npm reaches the registry through the build firewall.
  */
-export async function sendMuseCommand(input: { sandboxName: string; round: number; envelope: MuseCommandEnvelope }): Promise<void> {
-  void input;
-  throw new Error("The session bridge isn't built yet.");
+export function bridgePrepareScript(round: number): string {
+  const paths = bridgePaths(round);
+  const sdk = `@muse-code/sdk@${MUSE_SDK_VERSION}`;
+  const installed = `process.exit(require("./node_modules/@muse-code/sdk/package.json").version === ${JSON.stringify(MUSE_SDK_VERSION)} ? 0 : 1)`;
+  return [
+    "set -e",
+    `mkdir -p ${q(BRIDGE_DIR)} ${q(LOG_DIR)}`,
+    `if [ -s ${q(paths.log)} ]; then mv ${q(paths.log)} "${LOG_DIR}/muse-r${Math.max(0, Math.floor(round))}.msp.$(date +%s).jsonl"; fi`,
+    `rm -f ${q(`${paths.err}.exit`)}`,
+    `rm -rf ${q(paths.mailbox)}`,
+    `mkdir -p ${q(paths.mailbox)}`,
+    `cd ${q(BRIDGE_DIR)}`,
+    `if node -e ${q(installed)} 2>/dev/null; then exit 0; fi`,
+    `[ -f package.json ] || printf '%s\\n' '{"name":"musemuse-bridge","private":true}' > package.json`,
+    `npm install --no-audit --no-fund --loglevel=error --no-save ${q(sdk)}`,
+  ].join("\n");
+}
+
+/**
+ * Waits for a bridge that just started to have Muse Code take the prompt (its `turn` record), reading its log in the
+ * sandbox. Resolves true once it has, or when it is still going after BRIDGE_START_PROBE_S; otherwise why it couldn't
+ * start: it ended before then, with its exit record (whatever the code: nothing ran) or without one.
+ */
+async function bridgeStarted(sandbox: Sandbox, round: number): Promise<true | string> {
+  const paths = bridgePaths(round);
+  const exitFile = `${paths.err}.exit`;
+  const script = [
+    `for i in $(seq 1 ${BRIDGE_START_PROBE_S * 2}); do`,
+    // The runner's exit file, then the exit record, then the turn record: the bridge writes them in the other order,
+    // so whichever came first is already there when a later one is read.
+    `  ended=; [ -f ${q(exitFile)} ] && ended=1`,
+    `  line=$(grep '"kind":"bridge","event":"exit"' ${q(paths.log)} 2>/dev/null | tail -n 1)`,
+    `  if grep -q '"kind":"bridge","event":"turn"' ${q(paths.log)} 2>/dev/null; then echo turn; exit 0; fi`,
+    `  if [ -n "$line" ]; then printf 'exit %s\\n' "$line"; exit 0; fi`,
+    `  if [ -n "$ended" ]; then printf 'ended %s\\n' "$(cat ${q(exitFile)})"; exit 0; fi`,
+    "  sleep 0.5",
+    "done",
+    "echo waiting",
+  ].join("\n");
+  const res = await sh(sandbox, script, { allowFail: true, timeoutMs: (BRIDGE_START_PROBE_S + 20) * 1000 }).catch((err: unknown) => {
+    console.warn(`bridge start check: ${String(err)}`);
+    return null;
+  });
+  const out = res?.stdout.trim() ?? "";
+  if (out.startsWith("exit ")) {
+    let reason: unknown;
+    try {
+      reason = (JSON.parse(out.slice("exit ".length)) as { reason?: unknown }).reason;
+    } catch {
+      reason = null;
+    }
+    return typeof reason === "string" && reason ? noEmDashes(reason).slice(0, 300) : "it ended before Muse Code took the prompt";
+  }
+  if (out.startsWith("ended ")) {
+    const err = (await tailText(sandbox, paths.err, 1500).catch(() => "")).trim().split("\n").pop() ?? "";
+    return `it stopped with code ${out.slice("ended ".length).trim() || "unknown"}${err ? `: ${noEmDashes(err).slice(0, 300)}` : ""}`;
+  }
+  // Taken, still starting, or the check itself didn't answer: the polls take it from here.
+  return true;
+}
+
+/** Starts the session bridge detached (lib/sandbox/bridge/bridge.mjs), or says why this round can't run on it. */
+async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: string; logPath: string } | { notice: string }> {
+  const paths = bridgePaths(run.round);
+  const prepared = await sh(sandbox, bridgePrepareScript(run.round), { allowFail: true, timeoutMs: SDK_INSTALL_MS }).catch((err: unknown) => ({
+    exitCode: -1,
+    stdout: "",
+    stderr: String(err),
+  }));
+  if (prepared.exitCode !== 0) {
+    console.warn(`session bridge setup on ${run.sandboxName}: exit ${prepared.exitCode}: ${prepared.stderr.slice(-800)}`);
+    return { notice: "The session bridge couldn't install its SDK, so this round runs on muse exec." };
+  }
+  const config: BridgeConfig = {
+    workspace: PRODUCT_DIR,
+    sessionId: run.sessionId,
+    model: run.model,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    promptFile: `${PRODUCT_DIR}/${run.promptFile}`,
+    images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
+    goal: run.goal?.trim() || null,
+    // Every round turns web search off, as exec's --disable-web-tools does; MUSE_FULL adds its own settings.
+    settings: [...SERVE_SETTINGS, ...(run.full ? museSettings(env.museAgentCapacity) : [])],
+    disableRequestUserInput: true,
+    logPath: paths.log,
+    mailboxDir: paths.mailbox,
+    maxModelSteps: run.maxModelSteps ?? DEFAULT_MAX_MODEL_STEPS,
+    idleExitMs: BRIDGE_IDLE_EXIT_MS,
+  };
+  const configPath = bridgeConfigPath(run.round);
+  await sandbox.writeFiles([
+    { path: BRIDGE_SCRIPT, content: BRIDGE_SOURCE },
+    { path: configPath, content: `${JSON.stringify(config, null, 2)}\n` },
+  ]);
+  const script = await writeRunner(sandbox, {
+    name: run.tag,
+    cwd: PRODUCT_DIR,
+    env: runnerEnv(run),
+    argv: ["node", BRIDGE_SCRIPT, configPath],
+    prelude: run.full ? `${WORKFLOW_SKILL_PRELUDE}\ntrue` : undefined,
+    // The bridge writes its own log. Its stdout and stderr are only for a crash.
+    stdoutPath: paths.err,
+  });
+  const cmd = await sandbox.runCommand({ cmd: "bash", args: [script], detached: true });
+  await recordCommand(sandbox, run.tag, cmd.cmdId, paths.log, "serve");
+  const started = await bridgeStarted(sandbox, run.round);
+  if (started === true) return { cmdId: cmd.cmdId, logPath: paths.log };
+  return { notice: `The session bridge didn't start (${started}), so this round runs on muse exec.` };
+}
+
+/** `<at>-<id>.json`: the bridge reads its mailbox in name order, so the time leads, in ISO form. */
+export function mailboxFileName(envelope: MuseCommandEnvelope): string {
+  if (typeof envelope.id !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(envelope.id)) throw new Error("A command id is 1 to 80 letters, digits, - or _.");
+  const at = new Date(envelope.at);
+  if (Number.isNaN(at.getTime())) throw new Error(`A command's time must be an ISO time, got ${String(envelope.at)}`);
+  return `${at.toISOString()}-${envelope.id}.json`;
+}
+
+/** Writes `body` to dir/name in one sandbox command, through a dot-file the readers skip, so no reader sees half of it. */
+async function dropFile(sandbox: Sandbox, dir: string, name: string, body: string): Promise<void> {
+  const tmp = `${dir}/.${name}.tmp`;
+  const b64 = Buffer.from(body, "utf8").toString("base64");
+  await sh(sandbox, `mkdir -p ${q(dir)} && printf '%s' ${q(b64)} | base64 -d > ${q(tmp)} && mv -f ${q(tmp)} ${q(`${dir}/${name}`)}`);
+}
+
+/**
+ * sendMuseCommand's refusal of a command for a round that has finished (or never started): nothing reads its mailbox
+ * any more, so the command isn't written. The control route answers it as it does a build with no round.
+ */
+export class MuseRoundEndedError extends Error {
+  constructor() {
+    super("This round of Muse Code has finished, so the command wasn't sent.");
+    this.name = "MuseRoundEndedError";
+  }
+}
+
+/**
+ * Sends a running round one of its owner's commands (docs/MUSE_CODE_FULL.md, "The owner steers"). `round` is the
+ * number startMuse got. On the session bridge, the envelope goes into bridgePaths(round).mailbox as one JSON file,
+ * which the bridge applies once, in name order, and logs as a `command` record. On exec, a steer or a queued note goes
+ * to NOTES_DIR for the notes hook (MUSE_FULL only), an interrupt or end stops the run as killCommand does, and the
+ * rest can't be done. The sandbox must be running, and so must the round: this never wakes a stopped sandbox, and a
+ * command for a round that has finished is refused rather than left where nothing reads it.
+ */
+export async function sendMuseCommand(input: {
+  sandboxName: string;
+  round: number;
+  envelope: MuseCommandEnvelope;
+  /** The engine startMuse reported for the round. Read from the sandbox when unset. */
+  engine?: MuseEngine;
+}): Promise<void> {
+  const name = mailboxFileName(input.envelope);
+  const body = JSON.stringify(input.envelope);
+  if (Buffer.byteLength(body) > MAX_COMMAND_BYTES) throw new Error("That command is too long to send.");
+  const round = Math.max(0, Math.floor(input.round));
+  const sandbox = await Sandbox.get({ name: input.sandboxName });
+  if (sessionStatus(sandbox) !== "running") throw new Error("The build's sandbox isn't running, so the command wasn't sent.");
+  const engine = input.engine ?? (await roundEngine(sandbox, round));
+  const command = input.envelope.command;
+  const note = command.type === "steer" || command.type === "queue" ? command.text : null;
+  const stop = command.type === "interrupt" || command.type === "end";
+  if (engine === "exec" && note === null && !stop) throw new Error(`This round runs on muse exec, which can't take a ${command.type} command.`);
+  // Without MUSE_FULL there is no notes hook to deliver them.
+  if (engine === "exec" && note !== null && !env.museFull) throw new Error("Notes reach a muse exec round only with MUSE_FULL on.");
+  const cmdId = await runningCommand(sandbox, `muse-r${round}`);
+  if (!cmdId) throw new MuseRoundEndedError();
+
+  if (engine === "serve") return dropFile(sandbox, bridgePaths(round).mailbox, name, body);
+  if (stop) return killCommand(input.sandboxName, cmdId);
+  const { id, at, by } = input.envelope;
+  return dropFile(sandbox, NOTES_DIR, name, JSON.stringify({ id, at, by, kind: command.type, text: note }));
 }
 
 export interface MusePoll {
@@ -554,8 +909,10 @@ export interface MusePoll {
   /** New condensed log lines since the last poll (see the table in docs/SPIKES.md). */
   lines: MuseLogLine[];
   /**
-   * From run.usage, priced with lib/meta/pricing.ts. Muse Code emits it once, just before the run ends, so it is
-   * non-empty in exactly one poll: record it when it appears. Empty until then.
+   * From run.usage, priced with lib/meta/pricing.ts. Muse Code emits it once per run, just before the run ends, so it
+   * is non-empty in the poll that reads it: record it when it appears. Empty until then. The session bridge is charged
+   * from `session` instead, so it is empty there too, except in a done poll whose session log gave no main agent calls:
+   * then it holds the calls the session host reported (bridgeTokenUsage).
    */
   usage: ModelUsage[];
   /** The final message from run.terminal.completed. */
@@ -568,11 +925,14 @@ export interface MusePoll {
    */
   childrenIncluded?: boolean | null;
   /**
-   * Read once, in the poll that reports done, from Muse Code's session log: what the reminder agents and subagents
-   * used, which run.usage leaves out unless childrenIncluded is true, and the main agent's own calls, for a run that
-   * ended before it wrote run.usage. Missing when the log couldn't be read.
+   * Read once, in the poll that reports done, from Muse Code's session log: what the reminder agents, subagents and
+   * workflow agents used, which run.usage leaves out unless childrenIncluded is true, and the main agent's calls in runs
+   * that never wrote run.usage (`unreported`: a run stopped at its cap, and every session bridge run). Missing when the
+   * log couldn't be read.
    */
-  session?: Pick<SessionUsage, "main" | "children">;
+  session?: Pick<SessionUsage, "main" | "unreported" | "children">;
+  /** The session bridge's condenser state. Pass it to the next poll as `bridgeState`. Serve rounds only. */
+  bridgeState?: BridgeCondenseState;
 }
 
 /** One run's usage from Muse Code's session log, in one sandbox command. Null when it can't be read. */
@@ -595,23 +955,12 @@ async function readSessionUsage(sandbox: Sandbox, logPath: string): Promise<Sess
   }
 }
 
-/** Reads new JSONL from the log since `offset` and reports whether the command finished. */
-export async function pollMuse(input: {
-  sandboxName: string;
-  cmdId: string;
-  logPath: string;
-  offset: number;
-  /** The last poll's `announced`, so helper agents get one line per run. */
-  announced?: string[];
-  /** The last poll's `childrenIncluded`, since run.usage may arrive before the poll that reports done. */
-  childrenIncluded?: boolean | null;
-}): Promise<MusePoll> {
-  const sandbox = await openSandbox(input.sandboxName);
-  // Check the command first, then read: a run that ends between the two is reported done on the next poll.
-  const state = await commandState(sandbox, input.cmdId, input.logPath);
-  if (!state.finished) await ensureTime(sandbox, POLL_WORK_MS);
-
-  const chunk = await readBytes(sandbox, input.logPath, input.offset, POLL_CAP_BYTES);
+/**
+ * The complete lines a log gained since `offset` (at most POLL_CAP_BYTES), and how many bytes they used. A finished
+ * command's last line counts even without its newline.
+ */
+async function readNewLines(sandbox: Sandbox, logPath: string, offset: number, finished: boolean) {
+  const chunk = await readBytes(sandbox, logPath, offset, POLL_CAP_BYTES);
   const atEof = chunk.length < POLL_CAP_BYTES;
   let { lines, consumed } = completeLines(chunk);
   const extra: MuseLogLine[] = [];
@@ -621,10 +970,39 @@ export async function pollMuse(input: {
     lines = [];
     extra.push({ kind: "status", text: "Skipped a log entry over 1 MB" });
   }
-  if (state.finished && atEof && consumed < chunk.length) {
+  if (finished && atEof && consumed < chunk.length) {
     lines.push(chunk.subarray(consumed).toString("utf8"));
     consumed = chunk.length;
   }
+  return { lines, consumed, atEof, extra };
+}
+
+/**
+ * Reads new log lines since `offset` and reports whether the round finished. A serve round's log is the session
+ * bridge's (BridgeLogRecord lines, condensed by lib/sandbox/msp-log.ts), an exec round's is `muse exec --json`.
+ */
+export async function pollMuse(input: {
+  sandboxName: string;
+  cmdId: string;
+  logPath: string;
+  offset: number;
+  /** The last poll's `announced`, so helper agents get one line per run. */
+  announced?: string[];
+  /** The last poll's `childrenIncluded`, since run.usage may arrive before the poll that reports done. */
+  childrenIncluded?: boolean | null;
+  /** The engine startMuse reported. Without it, a session bridge log is known by its name. */
+  engine?: MuseEngine;
+  /** The last poll's `bridgeState`, on the session bridge. */
+  bridgeState?: BridgeCondenseState;
+}): Promise<MusePoll> {
+  const sandbox = await openSandbox(input.sandboxName);
+  const engine = input.engine ?? (input.logPath.endsWith(".msp.jsonl") ? "serve" : "exec");
+  if (engine === "serve") return pollBridge(sandbox, input);
+  // Check the command first, then read: a run that ends between the two is reported done on the next poll.
+  const state = await commandState(sandbox, input.cmdId, input.logPath);
+  if (!state.finished) await ensureTime(sandbox, POLL_WORK_MS);
+
+  const { lines, consumed, atEof, extra } = await readNewLines(sandbox, input.logPath, input.offset, state.finished);
   const condensed = condenseMuseLines(lines, input.announced);
   const childrenIncluded = condensed.childrenIncluded ?? input.childrenIncluded ?? null;
   const done = state.finished && atEof;
@@ -654,7 +1032,72 @@ export async function pollMuse(input: {
     finalText: condensed.finalText,
     announced: condensed.announced,
     childrenIncluded,
-    ...(session ? { session: { main: session.main, children: session.children } } : {}),
+    ...(session ? { session: { main: session.main, unreported: session.unreported, children: session.children } } : {}),
+  };
+}
+
+/**
+ * pollMuse for a session bridge round. The round is done once a poll reads the bridge's exit record, its last line,
+ * or when the bridge ended without one. The agent can write to this log too, so an exit record only says to look: a
+ * real bridge exits right after writing it, and one whose command is still running is stopped here, so the round's
+ * cap, its Stop and its charges never end while it goes on. The exit code is the command's whenever it has one.
+ *
+ * Its calls are charged from the session log, read in the poll that reports done. When that log can't be read or has
+ * none of the main agent's calls, `usage` holds the calls the session host reported instead, so a round is never free.
+ */
+async function pollBridge(
+  sandbox: Sandbox,
+  input: { sandboxName: string; cmdId: string; logPath: string; offset: number; announced?: string[]; bridgeState?: BridgeCondenseState },
+): Promise<MusePoll> {
+  // The runner's own output, and its exit code file, sit beside the bridge's log (bridgePaths(round).err).
+  const errPath = input.logPath.replace(/\.jsonl$/, ".err");
+  let state = await commandState(sandbox, input.cmdId, errPath);
+  if (!state.finished) await ensureTime(sandbox, POLL_WORK_MS);
+
+  const { lines, consumed, atEof, extra } = await readNewLines(sandbox, input.logPath, input.offset, state.finished);
+  const condensed = condenseBridgeLines(lines, input.bridgeState ?? { ...emptyBridgeState(), announced: [...(input.announced ?? [])] });
+  let falseExit = false;
+  if (condensed.exit && !state.finished) {
+    // Checked before the log was read, so a real bridge may have exited since.
+    state = await commandState(sandbox, input.cmdId, errPath);
+    if (!state.finished) {
+      falseExit = true;
+      await killCommand(input.sandboxName, input.cmdId);
+      state = await commandState(sandbox, input.cmdId, errPath);
+      extra.push({ kind: "error", ok: false, text: "The session bridge's log said the round had ended while it was still running, so it was stopped." });
+    }
+  }
+  const done = condensed.exit !== null || (state.finished && atEof);
+  const session = done ? await readSessionUsage(sandbox, input.logPath) : null;
+  if (session?.children.calls) extra.push(childUsageLine(session.children));
+  const reported = done && !session?.main.calls ? bridgeTokenUsage(condensed.state) : null;
+  if (reported?.calls) {
+    const why = session ? "has none of its main agent's calls" : "couldn't be read";
+    console.warn(`Muse Code round ${input.logPath}: the session log ${why}, charging the ${reported.calls} calls the session host reported`);
+    extra.push({ kind: "status", text: `Muse Code's session log ${why}, so this round is charged from the ${reported.calls} model call${reported.calls === 1 ? "" : "s"} its session host reported.` });
+  }
+  if (done && !condensed.exit) {
+    const err = (await tailText(sandbox, errPath, 4000))
+      .split("\n")
+      .filter((l) => l.trim())
+      .join("\n")
+      .slice(-1500);
+    const code = state.exitCode === null ? "no exit code (the sandbox restarted)" : `code ${state.exitCode}`;
+    extra.push({ kind: "error", ok: false, text: `The session bridge stopped before it finished, with ${code}${err ? `: ${err}` : ""}` });
+  }
+  // A false exit record's code counts for nothing, even while its bridge is still going down.
+  const recorded = falseExit ? null : (condensed.exit?.code ?? null);
+  return {
+    done,
+    exitCode: done ? (state.exitCode ?? recorded) : null,
+    offset: input.offset + consumed,
+    lines: [...(falseExit ? condensed.lines.filter((l) => l.kind !== "done") : condensed.lines), ...extra],
+    usage: reported?.usage ?? [],
+    finalText: falseExit ? null : condensed.finalText,
+    announced: condensed.state.announced,
+    childrenIncluded: null,
+    bridgeState: condensed.state,
+    ...(session ? { session: { main: session.main, unreported: session.unreported, children: session.children } } : {}),
   };
 }
 
@@ -1049,15 +1492,29 @@ export async function readBuildNotes(sandboxName: string): Promise<string | null
 
 /**
  * Prints the tool and edit events from every Muse Code log in this sandbox, oldest first, with their text cut to
- * the first line, so highlights don't have to pull megabytes of tool output out of the VM.
+ * the first line, so highlights don't have to pull megabytes of tool output out of the VM. A session bridge log's
+ * finished tool calls are printed in the same `muse exec --json` shape.
  */
-const HIGHLIGHTS_FILTER = `
+export const HIGHLIGHTS_FILTER = `
 const fs = require("node:fs");
 const dir = process.argv[2];
 const files = fs.readdirSync(dir).filter((f) => /^muse-.*\\.jsonl$/.test(f))
   .map((f) => ({ f, t: fs.statSync(dir + "/" + f).mtimeMs })).sort((a, b) => a.t - b.t);
 for (const { f } of files) {
   for (const line of fs.readFileSync(dir + "/" + f, "utf8").split("\\n")) {
+    if (line.startsWith('{"t":')) {
+      if (!line.includes('"item/completed"') || !line.includes('"toolCall"')) continue;
+      let r; try { r = JSON.parse(line); } catch { continue; }
+      const item = (r && r.kind === "note" && r.params && r.params.item) || {};
+      if (item.kind !== "toolCall") continue;
+      let args = {}; try { args = JSON.parse(item.args || "{}") || {}; } catch { args = {}; }
+      const text = String(item.visibleOutput || item.fallbackText || "").split("\\n").find((l) => l.trim()) || "";
+      const edit = item.patchSummary && typeof args.path === "string" ? { path: args.path } : undefined;
+      const facts = { tool_name: item.tool || "tool", outcome: item.status === "completed" ? "success" : "failure" };
+      console.log(JSON.stringify({ payload_type: "tool.result", payload: { correlation_facts: facts, edit_facts: edit, text } }));
+      if (item.patchSummary) console.log(JSON.stringify({ payload_type: "task.lifecycle.tool_output_ref", payload: { event: { output_ref: { kind: "tool_patch", patch_summary: item.patchSummary } } } }));
+      continue;
+    }
     if (!line.includes('"tool.result"') && !line.includes('"task.lifecycle.tool_output_ref"')) continue;
     let ev; try { ev = JSON.parse(line); } catch { continue; }
     const p = ev.payload || {};

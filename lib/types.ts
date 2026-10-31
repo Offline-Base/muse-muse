@@ -113,6 +113,10 @@ export interface MuseLineDetail {
   agentPath?: string;
   childSessionId?: string;
   status?: string;
+  /** subagent and workflow: a short name to show, such as the subagent's task or the workflow's entry. */
+  label?: string;
+  /** subagent and workflow: the workflow run the item belongs to, so a workflow's subagents nest under it. */
+  workflowRunId?: string;
   /** workflow: its declared phase and its children. */
   phase?: string;
   children?: Array<{ label: string; status: string }>;
@@ -120,14 +124,32 @@ export interface MuseLineDetail {
   reminder?: string;
   /** hook: the event and the hook's key. */
   hookEvent?: string;
+  hookKey?: string;
   /** goal: the objective, its status and how far along it is. */
   goal?: { objective: string; status: string; percentComplete?: number };
   /** todo: the agent's current list. */
   todos?: Array<{ text: string; status: string }>;
-  /** question: the open question for the owner to answer, with its options. */
-  question?: { userInputId: string; questions: Array<{ id: string; text: string; options?: string[]; multiple?: boolean }> };
+  /**
+   * question: the open question for the owner to answer, with its options. An answer names an option by its label;
+   * `descriptions` runs beside `options`, and `min` and `max` bound a multiple choice.
+   */
+  question?: {
+    userInputId: string;
+    questions: Array<{
+      id: string;
+      text: string;
+      options?: string[];
+      multiple?: boolean;
+      header?: string;
+      descriptions?: string[];
+      min?: number;
+      max?: number;
+    }>;
+  };
   /** steer: who sent it and how it was delivered. */
-  delivery?: "steer" | "queue" | "interrupt" | "answer" | "goal" | "end";
+  delivery?: "steer" | "queue" | "interrupt" | "answer" | "goal" | "end" | "workflow" | "subagent";
+  /** steer: why the command was refused. */
+  error?: string;
 }
 
 export interface Screenshot {
@@ -163,8 +185,12 @@ export type BuildEventBody =
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }
-  /** The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change. */
-  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string }
+  /**
+   * The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change.
+   * `commandIds` are the ids of the mailbox envelopes it wrote, in order. The build room counts a session bridge
+   * command line as the owner's only when its id is among them, since the agent can write to the bridge's log.
+   */
+  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

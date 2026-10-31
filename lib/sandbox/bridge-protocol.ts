@@ -86,3 +86,46 @@ export const MUSE_SDK_VERSION = "1.4.14";
 
 /** Where the bridge script and its SDK live in the sandbox. */
 export const BRIDGE_DIR = "/vercel/musemuse/bridge";
+
+/** The bridge script (lib/sandbox/bridge/bridge.mjs), written by the platform before every start. */
+export const BRIDGE_SCRIPT = `${BRIDGE_DIR}/bridge.mjs`;
+
+/** Where a round's bridge config lives in the sandbox: `node bridge.mjs <this path>`. */
+export function bridgeConfigPath(round: number): string {
+  return `${BRIDGE_DIR}/config-r${Math.max(0, Math.floor(round))}.json`;
+}
+
+/**
+ * What the platform writes for one bridge run, the bridge's only argument. Paths are absolute inside the sandbox. The
+ * bridge refuses a config that misses a field (exit 2), so a round that can't run on it falls back to `muse exec`.
+ */
+export interface BridgeConfig {
+  /** The session's workspace root, the product (PRODUCT_DIR). */
+  workspace: string;
+  /** The build's session UUID, kept across rounds: resumed when it exists, otherwise started with this id. */
+  sessionId: string;
+  model: string;
+  /** For every turn the bridge starts, and the session's default for the turns Muse Code starts itself. */
+  reasoningEffort: string;
+  /** The prompt file (brief.md, fix-<n>.md, refine-<n>.md): its text is the first turn. */
+  promptFile: string;
+  /** Images attached to the first turn. Missing ones are skipped, as `muse exec --image` is. */
+  images: string[];
+  /** The goal's objective (MSP goal/set), or null to set none. */
+  goal: string | null;
+  /** `muse serve -c` settings, each "key=jsonValue". */
+  settings: string[];
+  /** Adds --disable-request-user-input, as exec runs always do. */
+  disableRequestUserInput: boolean;
+  /** bridgePaths(round).log */
+  logPath: string;
+  /** bridgePaths(round).mailbox */
+  mailboxDir: string;
+  /** Model steps the round may take in all, like `muse exec --max-model-steps`: the bridge stops the turn at the cap. */
+  maxModelSteps: number;
+  /**
+   * How long the bridge stays open with nothing running before it exits: after a stop, while a goal waits, or while a
+   * workflow is paused. A workflow or subagent still at work keeps it open with no such limit, as `muse exec` waits.
+   */
+  idleExitMs: number;
+}

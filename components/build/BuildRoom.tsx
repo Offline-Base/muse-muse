@@ -9,6 +9,7 @@ import { Menu } from "@/components/Menu";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
 import { BuildPanel } from "@/components/build/BuildPanel";
 import { deriveRoom, railStates, refineSpot, type Segment } from "@/components/build/derive";
+import { SteerBox } from "@/components/build/SteerBox";
 import {
   BriefBody,
   CheckBody,
@@ -42,6 +43,8 @@ export interface BuildRoomProps {
   tokens: { input: number; cached: number; output: number };
   /** The viewer owns the product or is an admin. */
   canRefine: boolean;
+  /** The viewer may steer the build while Muse Code runs: owner powers as for canRefine, with steering switched on. */
+  canSteer?: boolean;
   signedIn: boolean;
   origin: string;
   serverNow: number;
@@ -258,6 +261,8 @@ export function BuildRoom(props: BuildRoomProps) {
   });
   const isRefineBuild = build.kind === "refine";
   const showRefs = !isRefineBuild || (props.inspiration?.note ?? null) === build.message;
+  // While Muse Code works, its owner gets the steer box where the refine composer shows once the build ends.
+  const steering = Boolean(props.canSteer) && !room.terminal && (room.status === "building" || room.status === "fixing");
 
   // Only the newest turn can be live, and only while the build is in the matching phase. During "fixing", round 0
   // is finished even before the fix round logs its first line.
@@ -347,6 +352,8 @@ export function BuildRoom(props: BuildRoomProps) {
               live={seg.key === activeKey}
               isRefine={isRefineBuild}
               status={room.status}
+              buildId={build.id}
+              canAnswer={Boolean(props.canSteer)}
             />
           ))}
 
@@ -419,7 +426,9 @@ export function BuildRoom(props: BuildRoomProps) {
           </button>
         ) : null}
 
-        {refine.show ? (
+        {steering ? (
+          <SteerBox buildId={build.id} />
+        ) : refine.show ? (
           <div id="refine">
             <Composer
               mode="refine"
@@ -469,11 +478,16 @@ function SegmentTurn({
   live,
   isRefine,
   status,
+  buildId,
+  canAnswer,
 }: {
   seg: Segment;
   live: boolean;
   isRefine: boolean;
   status: BuildStatus;
+  buildId: string;
+  /** The viewer owns the product, so can answer Muse Code's questions. */
+  canAnswer: boolean;
 }) {
   switch (seg.type) {
     case "brief":
@@ -492,7 +506,7 @@ function SegmentTurn({
           title={live ? title.replace(/ (built it|made the change)$/, " is working") : title}
           meta={segmentMeta(seg, [museUsageText(seg)])}
         >
-          <MuseLog lines={seg.lines} live={live} />
+          <MuseLog lines={seg.lines} live={live} session={seg.session} buildId={buildId} canAnswer={canAnswer} />
           <Notes notes={seg.notes} />
         </Turn>
       );
