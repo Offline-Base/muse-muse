@@ -283,7 +283,7 @@ describe("SourceList", () => {
 });
 
 describe("UserBubble", () => {
-  it("holds the attachments as 32 px thumbnails after the text", () => {
+  it("holds the attachments as 40 px thumbnails after the text", () => {
     const html = render(C(kit.UserBubble), {
       text: "it looks too much like a bear",
       attachments: [
@@ -292,7 +292,7 @@ describe("UserBubble", () => {
       ],
     });
     assert.match(html, /^<div class="chat-bubble has-files"><p class="chat-bubble-text">it looks too much like a bear<\/p><ul class="chat-bubble-files" aria-label="Attached files">/);
-    assert.match(html, /<li><span class="chat-bubble-file"><img src="blob:mascot" alt="mascot\.png" width="32" height="32" loading="lazy"\/><\/span><\/li>/);
+    assert.match(html, /<li><span class="chat-bubble-file"><img src="blob:mascot" alt="mascot\.png" width="40" height="40" loading="lazy"\/><\/span><\/li>/);
     assert.match(
       html,
       /<a href="https:\/\/store\.example\/brief\.pdf" target="_blank" rel="noopener noreferrer" class="chat-bubble-file"><svg[^>]*role="img"[^>]*><title>brief\.pdf<\/title>[\s\S]*?<span class="sr-only"> \(opens in a new tab\)<\/span><\/a>/,
