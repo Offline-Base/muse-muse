@@ -1,15 +1,18 @@
 import type { DocsEndpoint } from "@/lib/docs/proxy/endpoints";
-import { WEB_SEARCH_USD_PER_QUERY } from "@/lib/docs/proxy/policy";
 import {
   asrUsage,
   minimalUsage,
   SseParser,
   sseUsageCollector,
   usageFromJson,
+  usageFromResponse,
   type SseEvent,
 } from "@/lib/gateway/meter";
+import { responsesSearches, searchItemQueries, withSearches } from "@/lib/gateway/search";
 import { usageCost } from "@/lib/meta/pricing";
 import type { ModelUsage } from "@/lib/types";
+
+export { responsesSearches, withSearches };
 
 /**
  * Reads what a docs call used from Meta's reply. Responses, images and transcription reuse the gateway's meters
@@ -44,27 +47,6 @@ function parse(data: string): Json | null {
 
 function eventType(e: SseEvent, json: Json | null): string | null {
   return e.event ?? (typeof json?.type === "string" ? json.type : null);
-}
-
-/** Adds Meta's web search charge ($2.50 per 1,000 queries) to a token-billed item. */
-export function withSearches(item: ModelUsage, searches: number): ModelUsage {
-  return searches > 0 ? { ...item, costUsd: item.costUsd + searches * WEB_SEARCH_USD_PER_QUERY } : item;
-}
-
-/** Queries one web_search_call item ran: its search action's queries, or one when it doesn't list them. */
-function searchItemQueries(item: Json): number {
-  const action = isObject(item.action) ? item.action : null;
-  if (action && action.type !== undefined && action.type !== "search") return 0;
-  return Math.max(1, Array.isArray(action?.queries) ? action.queries.length : 0);
-}
-
-/** Web search queries in a Responses result's output. Opening or searching within a page isn't a query. */
-export function responsesSearches(response: Json | null | undefined): number {
-  const output = Array.isArray(response?.output) ? response.output : [];
-  return output.reduce<number>(
-    (n, item) => n + (isObject(item) && item.type === "web_search_call" ? searchItemQueries(item) : 0),
-    0,
-  );
 }
 
 /** Searches in a Messages reply: its server_tool_use blocks for web_search (protocols/messages, "Response"). */
@@ -122,7 +104,7 @@ export function docsUsageFromJson(endpoint: DocsEndpoint, model: string | null, 
   if (!model || !isObject(body)) return [];
   switch (endpoint.meter) {
     case "responses": {
-      const [item] = usageFromJson("responses", model, body);
+      const item = usageFromResponse(model, body);
       return item ? [withSearches(item, responsesSearches(body))] : [];
     }
     case "chat": {
@@ -270,7 +252,7 @@ function messagesStreamMeter(model: string | null): StreamMeter {
  * response id (reported once, as soon as response.created arrives) and the web search queries.
  */
 function responsesStreamMeter(model: string | null, onResponseId?: (id: string) => void): StreamMeter {
-  const usage = sseUsageCollector("responses", model);
+  const usage = sseUsageCollector("responses", model, { searches: false });
   let reported = false;
   let finalSearches: number | null = null;
   /** A final event (completed, incomplete or failed) carried the response's usage. */

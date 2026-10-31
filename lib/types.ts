@@ -64,6 +64,7 @@ export interface ModelUsage {
   images?: number;
   videoFrames?: number;
   audioSeconds?: number;
+  units?: number;
   costUsd: number;
 }
 

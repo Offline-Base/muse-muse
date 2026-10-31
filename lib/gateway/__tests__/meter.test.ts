@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   framesFromUsage,
   meterBody,
+  meterReply,
   SseParser,
   sseUsageCollector,
   usageFromJson,
@@ -175,4 +176,130 @@ test("cut-off streams after the final event keep the real usage; SAM and images 
   const [image] = await meterBody("images/generations", "muse-image-1.0", "text/event-stream", failingStream(": ping\n\n"));
   assert.equal(image.images, 1);
   assert.ok(Math.abs(image.costUsd - 0.01) < 1e-12);
+});
+
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
+const USAGE = { input_tokens: 1000, output_tokens: 100 };
+/** Muse Wonder at $4 per million input tokens and $20 per million output. */
+const WONDER_TOKENS_USD = (1000 * 4 + 100 * 20) / 1e6;
+const SEARCH_USD = 0.0025;
+const searchItem = (id: string, extra: Record<string, unknown> = {}) => ({ id, type: "web_search_call", status: "completed", ...extra });
+const itemDone = (item: unknown) => `event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", item })}\n\n`;
+const completed = (output: unknown[], usage: unknown = USAGE) =>
+  `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { usage, output } })}\n\n`;
+
+test("JSON replies: each search query adds $0.0025 on top of tokens, and units counts the queries", () => {
+  const [item] = usageFromJson("responses", "muse-wonder-1.0", {
+    usage: USAGE,
+    output: [
+      searchItem("ws_1"),
+      searchItem("ws_2", { action: { type: "search", queries: ["a", "b", "c"] } }),
+      searchItem("ws_3", { action: { type: "open_page", url: "https://x" } }),
+      { type: "message", content: [] },
+    ],
+  });
+  near(item.costUsd, WONDER_TOKENS_USD + 4 * SEARCH_USD);
+  assert.equal(item.units, 4);
+  assert.equal(item.inputTokens, 1000);
+});
+
+test("JSON replies: no searches, no fee and no units", () => {
+  const [item] = usageFromJson("responses", "muse-wonder-1.0", { usage: USAGE, output: [{ type: "message" }] });
+  near(item.costUsd, WONDER_TOKENS_USD);
+  assert.equal(item.units, undefined);
+});
+
+test("Muse Image's own searches are part of its per-image price", () => {
+  const [item] = usageFromJson("responses", "muse-image-1.0", {
+    usage: USAGE,
+    output: [searchItem("ws_1"), { type: "image_generation_call" }],
+  });
+  near(item.costUsd, 0.01);
+  assert.equal(item.units, undefined);
+});
+
+test("SSE replies: the final response's output sets the search fee; finished items aren't counted twice", async () => {
+  const sse = itemDone(searchItem("ws_1")) + itemDone(searchItem("ws_2")) + completed([searchItem("ws_1"), searchItem("ws_2")]);
+  for (const size of [5, 64, 1 << 20]) {
+    const { items, builtInCalls } = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", streamOf(sse, size));
+    near(items[0].costUsd, WONDER_TOKENS_USD + 2 * SEARCH_USD);
+    assert.equal(items[0].units, 2);
+    assert.equal(builtInCalls, 2);
+  }
+});
+
+test("SSE replies: a stream cut off before its final event still pays for the searches it showed", async () => {
+  const sse = itemDone(searchItem("ws_1")) + itemDone(searchItem("ws_1")) + itemDone(searchItem("ws_2", { action: { queries: ["a", "b"] } })) + delta("hi");
+  const failed = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", failingStream(sse));
+  near(failed.items[0].costUsd, (1000 * 4 + 1000 * 20) / 1e6 + 3 * SEARCH_USD);
+  assert.equal(failed.items[0].units, 3);
+  assert.equal(failed.builtInCalls, null, "cut off, so it may have run more");
+
+  const closed = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", streamOf(itemDone(searchItem("ws_1")), 7));
+  near(closed.items[0].costUsd, (1000 * 4 + 1000 * 20) / 1e6 + SEARCH_USD);
+  assert.equal(closed.builtInCalls, null, "closed without a final event");
+});
+
+test("SSE replies: a stream that fails after its final event keeps the real usage and its searches", async () => {
+  const { items, builtInCalls } = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", failingStream(completed([searchItem("ws_1")])));
+  near(items[0].costUsd, WONDER_TOKENS_USD + SEARCH_USD);
+  assert.equal(builtInCalls, 1);
+});
+
+test("SSE replies: items a final response leaves out still count, since Meta ran them", () => {
+  const c = sseUsageCollector("responses", "muse-wonder-1.0");
+  c.push(itemDone(searchItem("ws_1")) + completed([]));
+  const [item] = c.finish();
+  near(item.costUsd, WONDER_TOKENS_USD + SEARCH_USD);
+  assert.equal(c.builtInCalls(), 1);
+});
+
+test("SSE replies: events with no event: line are read by their type", async () => {
+  const sse = `data: ${JSON.stringify({ type: "response.output_item.done", item: searchItem("ws_1") })}\n\n` +
+    `data: ${JSON.stringify({ type: "response.completed", response: { usage: USAGE, output: [searchItem("ws_1")] } })}\n\n`;
+  const { items } = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", streamOf(sse, 9));
+  near(items[0].costUsd, WONDER_TOKENS_USD + SEARCH_USD);
+});
+
+test("searches: false leaves the fee to the caller, for the docs proxy", () => {
+  const c = sseUsageCollector("responses", "muse-wonder-1.0", { searches: false });
+  c.push(itemDone(searchItem("ws_1")) + completed([searchItem("ws_1")]));
+  const [item] = c.finish();
+  near(item.costUsd, WONDER_TOKENS_USD);
+  assert.equal(item.units, undefined);
+});
+
+test("built-in calls count calls, not queries, and hosted tool search counts as a call without a fee", async () => {
+  const reply = {
+    usage: USAGE,
+    output: [
+      searchItem("ws_1", { action: { type: "search", queries: ["a", "b", "c"] } }),
+      { id: "ts_1", type: "tool_search_call", paths: ["x"] },
+      { id: "fc_1", type: "function_call", name: "f" },
+    ],
+  };
+  const { items, builtInCalls } = await meterReply("responses", "muse-wonder-1.0", "application/json", streamOf(JSON.stringify(reply), 11));
+  assert.equal(builtInCalls, 2);
+  assert.equal(items[0].units, 3);
+  near(items[0].costUsd, WONDER_TOKENS_USD + 3 * SEARCH_USD);
+
+  const sse = itemDone(reply.output[0]) + itemDone(reply.output[1]) + itemDone(reply.output[2]) + completed(reply.output);
+  const streamed = await meterReply("responses", "muse-wonder-1.0", "text/event-stream", streamOf(sse, 13));
+  assert.equal(streamed.builtInCalls, 2);
+  assert.equal(streamed.items[0].units, 3);
+});
+
+test("built-in calls: unreadable JSON isn't known, other endpoints have none", async () => {
+  assert.equal((await meterReply("responses", "muse-wonder-1.0", "application/json", streamOf("not json", 4))).builtInCalls, null);
+  const images = await meterReply("images/generations", "muse-image-1.0", "application/json", streamOf('{"data":[{"b64_json":"a"}]}', 4));
+  assert.equal(images.builtInCalls, 0);
+  assert.equal((await meterReply("files", null, "application/json", streamOf("{}", 4))).builtInCalls, 0);
+});
+
+test("a real SAM stream pays no search fee and its output items are never buffered", () => {
+  const c = sseUsageCollector("responses", "sam-3.1");
+  c.push(samStream);
+  const [item] = c.finish();
+  assert.equal(item.units, undefined);
+  assert.ok(item.costUsd > 0);
 });
