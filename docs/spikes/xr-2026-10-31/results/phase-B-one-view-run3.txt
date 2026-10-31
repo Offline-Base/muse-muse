@@ -1,0 +1,158 @@
+--- phase B: exit 0 in 305 s
+== B1 install
+
+added 65 packages in 8s
+
+added 6 packages in 761ms
+install in 9 s
+814M	node_modules
+== B2 npm ls three
+musemuse-product@0.1.0 /vercel/app
+├─┬ @iwer/devui@2.7.0
+│ └── three@0.184.0 deduped
+├─┬ @react-three/fiber@9.8.2
+│ └── three@0.184.0 deduped
+├─┬ @react-three/uikit@1.0.78
+│ └─┬ @pmndrs/uikit@1.0.78
+│   └── three@0.184.0 deduped
+├─┬ @react-three/xr@6.6.32
+│ ├─┬ @pmndrs/xr@6.6.32
+│ │ ├─┬ @iwer/devui@1.1.2
+│ │ │ └── three@0.165.0
+│ │ ├─┬ @iwer/sem@0.2.5
+│ │ │ └── three@0.165.0
+│ │ ├─┬ meshline@3.3.1
+│ │ │ └── three@0.184.0 deduped
+│ │ └── three@0.184.0 deduped
+│ └── three@0.184.0 deduped
+└── three@0.184.0
+
+distinct three versions: three@0.165.0 three@0.184.0 
+== B3 local controller and hand models
+
+added 1 package in 2s
+4.5M	public/xr/profiles
+generic-hand
+generic-trigger
+meta-quest-touch-plus
+profilesList.json
+undefined
+LICENSE.md
+README.md
+dist
+package.json
+schemas
+src
+assets in 2 s
+== B4 overlay and patches
+patched playwright.config.ts, 4 edit(s)
+patched scripts/verify.mjs, 1 edit(s)
+patched tests/judge-shot.ts, 2 edit(s)
+patched tests/demo-fixtures.ts, 3 edit(s)
+== B5 next build
+[1m[38;2;173;127;168m▲ Next.js 16.4.3[39m[22m (Turbopack)
+[32m[1m✓[22m[39m Running next.config.ts took 75ms
+
+[37m[1m [22m[39m Creating an optimized production build ...
+[32m[1m✓[22m[39m Compiled successfully in 4.8s
+[37m[1m [22m[39m Running TypeScript ...
+[37m[1m [22m[39m Finished TypeScript in 3.7s ...
+[37m[1m [22m[39m Collecting page data using 3 workers ...
+[37m[1m [22m[39m Generating static pages using 3 workers (0/4) ...
+[37m[1m [22m[39m Generating static pages using 3 workers (1/4) 
+[37m[1m [22m[39m Generating static pages using 3 workers (2/4) 
+[37m[1m [22m[39m Generating static pages using 3 workers (3/4) 
+[32m[1m✓[22m[39m Generating static pages using 3 workers (4/4) in 145ms
+[37m[1m [22m[39m Finalizing page optimization ...
+
+[4mRoute (app)[24m
+┌ ○ /
+├ ○ /_not-found
+└ ƒ /api/upload
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+build exit 0 in 10 s
+total 28 chunks, 8451 KB raw, 2822 KB gzipped
+  2038 KB   698 KB gz                   chunks/0imjae13nybck.js
+  1465 KB   504 KB gz                   chunks/3c8ltf_zkqwee.js
+  1100 KB   275 KB gz  devui,three      chunks/1vh3s3b9q8h8b.js
+   674 KB   216 KB gz  iwer,three,uikit chunks/2-bhqdw8-mt96.js
+   536 KB   195 KB gz                   chunks/134cgmu74w9ta.js
+   413 KB   276 KB gz                   chunks/01dw3_a2g3m8n.js
+   400 KB   139 KB gz                   chunks/30souxcboydlv.js
+   394 KB   105 KB gz  three            chunks/40cvx_h1-yslq.js
+== B6 matrix under next start
+page 200 in 0.002254 s
+shell-none-budget              FAIL fps=13.2/17.8 session=581ms cast=16.9 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 13.2 fps
+shell-unsafe-budget            FAIL fps=14.1/17.7 session=563ms cast=16.4 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 14.1 fps
+shell-gl-budget                FAIL fps=13.3/17.5 session=547ms cast=16.4 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 13.3 fps
+shell-angle-budget             FAIL fps=19.6/20.7 session=52ms cast=7.8 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: screencast 7.8 fps
+chromium-none-budget           FAIL fps=15.7/18 session=524ms cast=17.1 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-unsafe-budget         FAIL fps=13.6/20.3 session=574ms cast=19.2 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load | 13.6 fps
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-gl-budget             FAIL fps=15.7/20.5 session=488ms cast=19.3 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chromium-angle-budget          FAIL fps=15.2/19.8 session=70ms cast=17.6 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+  short: 1 console errors on load
+  consoleErrors: ["Failed to load resource: the server responded with a status of 404 (Not Found)"]
+chosen: shell-unsafe (best shell-unsafe, 0 of 8 passed at budget)
+shell-unsafe-light             PASS fps=28.5/37.8 session=227ms cast=32.6 diff=0.142 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-budget-2nd        PASS fps=15.3/18.4 session=565ms cast=17.3 diff=0.31 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-budget-msaa       FAIL fps=7.7/11.2 session=906ms cast=10.1 diff=0.314 err=0cm select=true calls=113 tris=97270 buffer=1280x720 aa=true targets=Start,Reset
+  short: 7.7 fps | 11.2 fps after select
+shell-unsafe-budget-960        PASS fps=18.8/27.5 session=506ms cast=26.6 diff=0.314 err=0cm select=true calls=113 tris=97270 buffer=960x540 aa=false targets=Start,Reset
+shell-unsafe-devui             PASS fps=23.1/33.1 session=270ms cast=29.9 diff=0.328 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-hands             PASS fps=29.5/40.9 session=174ms cast=32.2 diff=0.142 err=0cm select=true calls=23 tris=9070 buffer=1280x720 aa=false targets=Start,Reset
+shell-unsafe-blank             FAIL fps=28.9/- session=39ms cast=- diff=- err=-cm select=- calls=14 tris=8964 buffer=1280x720 aa=false targets=-
+  short: undefined fps after select | pose 1 is blank | pose 2 is blank | poses differ by undefined | animate_to is off by undefined cm | select changed nothing | screencast undefined fps
+blank check on an empty scene with controllers: {"spread":0,"colors":19,"top":0.984,"blank":true}
+matrix exit 0 in 258 s
+[1m[38;2;173;127;168m▲ Next.js 16.4.3[39m[22m
+- Local:         http://localhost:3150
+- Network:       http://169.254.0.2:3150
+[32m[1m✓[22m[39m Ready in 102ms
+[32m[1m✓[22m[39m Running next.config.ts took 21ms
+chosen flags: {  "args": [    "--enable-unsafe-swiftshader"  ]}
+== B7 npm run verify
+verify exit 0 in 23 s
+verify: typecheck ...
+verify: typecheck ok (3.5 s) no type errors
+verify: build ...
+verify: build ok (2.9 s) next build succeeded
+verify: start ...
+verify: start ok (0.6 s) GET / returned 200 on port 3100 after 0.5 s
+verify: console ...
+verify: console ok (2.4 s) no console or page errors
+verify: smoke ...
+verify: smoke ok (14.1 s) 1 passed
+verify: manifest ...
+verify: manifest ok (0.1 s) valid, 0 action(s), 0 fixture(s)
+verify: all steps passed
+{"musemuse_verify":1,"passed":true,"steps":[{"name":"typecheck","ok":true,"ms":3495,"detail":"no type errors"},{"name":"build","ok":true,"ms":2876,"detail":"next build succeeded"},{"name":"start","ok":true,"ms":574,"detail":"GET / returned 200 on port 3100 after 0.5 s"},{"name":"console","ok":true,"ms":2440,"detail":"no console or page errors"},{"name":"smoke","ok":true,"ms":14126,"detail":"1 passed"},{"name":"manifest","ok":true,"ms":73,"detail":"valid, 0 action(s), 0 fixture(s)"}],"failure":""}
+verify: typecheck ...
+verify: typecheck ok (3.5 s) no type errors
+verify: build ...
+verify: build ok (2.9 s) next build succeeded
+verify: start ...
+verify: start ok (0.6 s) GET / returned 200 on port 3100 after 0.5 s
+verify: console ...
+verify: console ok (2.4 s) no console or page errors
+verify: smoke ...
+verify: smoke ok (14.1 s) 1 passed
+verify: manifest ...
+verify: manifest ok (0.1 s) valid, 0 action(s), 0 fixture(s)
+verify: all steps passed
+
+[stderr]
+

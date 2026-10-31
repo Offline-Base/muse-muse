@@ -1,0 +1,35 @@
+import { expect, test } from "@playwright/test";
+import { judgeShot } from "./judge-shot";
+import { xr } from "./xr";
+
+test("step into the room and pick the blue box", async ({ page }) => {
+  const status = page.locator("[data-xr-status]");
+  await test.step("Open the room", async () => {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: /^Enter VR/ })).toBeEnabled({ timeout: 30_000 });
+    await judgeShot(page, "01-start");
+  });
+  await test.step("Step into VR", async () => {
+    await xr.enter(page);
+    await judgeShot(page, "02-in-vr");
+  });
+  await test.step("Look around the room", async () => {
+    await xr.look(page, { to: { x: 1.4, y: 1.2, z: -2.2 } }, 1.5);
+    await xr.look(page, { from: { x: -0.5, y: 1.6, z: -0.2 }, to: "Reset" }, 1.5);
+  });
+  await test.step("Pick the blue box", async () => {
+    await xr.look(page, { from: { x: 0, y: 1.6, z: 0 }, to: "Start" }, 1.2);
+    await xr.select(page, "right", "Start");
+    await expect(status).toHaveText("Selected Start");
+    await xr.hold(page);
+    await judgeShot(page, "03-picked");
+  });
+  await test.step("Press Reset on the panel", async () => {
+    await xr.select(page, "left", "Reset");
+    await expect(status).toHaveText("Reset");
+    await xr.select(page, "right", "Start");
+    await expect(status).toHaveText("Selected Start");
+    await xr.hold(page);
+    await judgeShot(page, "04-result");
+  });
+});

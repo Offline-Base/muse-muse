@@ -1,0 +1,72 @@
+"use client";
+
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { XR, createXRStore, type XRStore } from "@react-three/xr";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ensureXR, type MuseXR } from "@/lib/xr/emulator";
+import { setXRStatus } from "@/lib/xr/status";
+
+/** The spike's probe reads what the renderer reports. */
+function Probe({ handle, onConnected }: { handle: MuseXR; onConnected: () => void }) {
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    const context = gl.getContext();
+    const ext = context.getExtension("WEBGL_debug_renderer_info");
+    Object.assign(handle.info, {
+      renderer: context.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : context.RENDERER),
+      vendor: context.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : context.VENDOR),
+      webgl2: typeof WebGL2RenderingContext !== "undefined" && context instanceof WebGL2RenderingContext,
+      antialias: context.getContextAttributes()?.antialias ?? null,
+    });
+    setXRStatus("Ready");
+    document.documentElement.dataset.ready = "1";
+    // Only now: enterVR() rejects until <XR> has handed the store its three.js renderer, and a quick click would hit that.
+    onConnected();
+  }, [gl, handle, onConnected]);
+  useFrame(() => {
+    handle.info.drawCalls = gl.info.render.calls;
+    handle.info.triangles = gl.info.render.triangles;
+    handle.info.buffer = `${gl.domElement.width}x${gl.domElement.height}`;
+  });
+  return null;
+}
+
+/** The canvas and the XR store, once ensureXR() has settled which kind of headset this is. */
+export function XRStage({ children, onStore }: { children: ReactNode; onStore: (store: XRStore) => void }) {
+  const [ready, setReady] = useState<{ handle: MuseXR; store: XRStore } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void ensureXR().then((handle) => {
+      if (!live) return;
+      const store = createXRStore({
+        // We install IWER ourselves: its built-in emulator calls installRuntime() without forceInstall.
+        emulate: false,
+        offerSession: handle.mode === "native" ? "immersive-vr" : false,
+        // Controller and hand models are ours. The firewall blocks the CDN that is the default. Must be absolute: the
+        // loaders call new URL(path, baseAssetPath), which throws on a relative base.
+        baseAssetPath: `${location.origin}/xr/profiles/`,
+      });
+      setReady({ handle, store });
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const store = ready?.store;
+  const connected = useCallback(() => {
+    if (store) onStore(store);
+  }, [store, onStore]);
+  if (!ready) return null;
+  const params = new URLSearchParams(location.search);
+  // MSAA costs a simulated headset 40% of its frames (phase A) and a real one has its own, so it stays off here.
+  // R3F aims a new camera at the origin unless it's given a rotation, which from eye height means straight at the floor.
+  const antialias = ready.handle.mode === "native" || params.get("aa") === "1";
+  return (
+    <Canvas gl={{ antialias }} dpr={[1, 1.5]} camera={{ position: [0, 1.6, 0], rotation: [0, 0, 0], fov: 70, near: 0.05, far: 100 }}>
+      <XR store={ready.store}>
+        <Probe handle={ready.handle} onConnected={connected} />
+        {children}
+      </XR>
+    </Canvas>
+  );
+}

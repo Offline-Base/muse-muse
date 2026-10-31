@@ -1,0 +1,6 @@
+{"at":"2026-10-31T06:16:04.059Z","sandbox":"spike-xr-mvw07b0o","phases":["A"],"seconds":243,"vcpus":4,"worstCaseUsd":0.046}
+{"at":"2026-10-31T06:46:27.101Z","sandbox":"spike-xr-mvw16big","phases":["B","D"],"seconds":432,"vcpus":4,"worstCaseUsd":0.0819}
+{"at":"2026-10-31T06:58:30.389Z","sandbox":"spike-xr-mvw1j5z1","phases":["B","T","D"],"seconds":556,"vcpus":4,"worstCaseUsd":0.1053}
+{"at":"2026-10-31T07:09:51.451Z","sandbox":"spike-xr-mvw1xk64","phases":["B","T","D"],"seconds":566,"vcpus":4,"worstCaseUsd":0.1071}
+{"at":"2026-10-31T07:15:13.806Z","sandbox":"spike-xr-mvw2bja4eoih","phases":["B","T"],"seconds":236,"vcpus":8,"worstCaseUsd":0.0894}
+{"at":"2026-10-31T07:20:02.668Z","sandbox":"spike-xr-mvw2dpxps3o1","phases":["B","D"],"seconds":423,"vcpus":4,"worstCaseUsd":0.0801}

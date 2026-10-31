@@ -1,0 +1,985 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "dpr": 1,
+  "status": "passed",
+  "duration": 21.723,
+  "frames": [
+    {
+      "file": "frames/000001.jpg",
+      "t": 0
+    },
+    {
+      "file": "frames/000002.jpg",
+      "t": 0.07
+    },
+    {
+      "file": "frames/000003.jpg",
+      "t": 0.086
+    },
+    {
+      "file": "frames/000004.jpg",
+      "t": 0.103
+    },
+    {
+      "file": "frames/000005.jpg",
+      "t": 0.136
+    },
+    {
+      "file": "frames/000006.jpg",
+      "t": 0.17
+    },
+    {
+      "file": "frames/000007.jpg",
+      "t": 0.186
+    },
+    {
+      "file": "frames/000008.jpg",
+      "t": 0.22
+    },
+    {
+      "file": "frames/000009.jpg",
+      "t": 0.32
+    },
+    {
+      "file": "frames/000010.jpg",
+      "t": 0.803
+    },
+    {
+      "file": "frames/000011.jpg",
+      "t": 0.836
+    },
+    {
+      "file": "frames/000012.jpg",
+      "t": 0.853
+    },
+    {
+      "file": "frames/000013.jpg",
+      "t": 0.986
+    },
+    {
+      "file": "frames/000014.jpg",
+      "t": 1.003
+    },
+    {
+      "file": "frames/000015.jpg",
+      "t": 1.02
+    },
+    {
+      "file": "frames/000016.jpg",
+      "t": 1.136
+    },
+    {
+      "file": "frames/000017.jpg",
+      "t": 1.153
+    },
+    {
+      "file": "frames/000018.jpg",
+      "t": 1.786
+    },
+    {
+      "file": "frames/000019.jpg",
+      "t": 1.82
+    },
+    {
+      "file": "frames/000020.jpg",
+      "t": 1.836
+    },
+    {
+      "file": "frames/000021.jpg",
+      "t": 1.87
+    },
+    {
+      "file": "frames/000022.jpg",
+      "t": 1.903
+    },
+    {
+      "file": "frames/000023.jpg",
+      "t": 1.936
+    },
+    {
+      "file": "frames/000024.jpg",
+      "t": 1.97
+    },
+    {
+      "file": "frames/000025.jpg",
+      "t": 2.003
+    },
+    {
+      "file": "frames/000026.jpg",
+      "t": 2.036
+    },
+    {
+      "file": "frames/000027.jpg",
+      "t": 2.086
+    },
+    {
+      "file": "frames/000028.jpg",
+      "t": 2.103
+    },
+    {
+      "file": "frames/000029.jpg",
+      "t": 2.136
+    },
+    {
+      "file": "frames/000030.jpg",
+      "t": 2.186
+    },
+    {
+      "file": "frames/000031.jpg",
+      "t": 2.22
+    },
+    {
+      "file": "frames/000032.jpg",
+      "t": 3.453
+    },
+    {
+      "file": "frames/000033.jpg",
+      "t": 3.486
+    },
+    {
+      "file": "frames/000034.jpg",
+      "t": 3.503
+    },
+    {
+      "file": "frames/000035.jpg",
+      "t": 3.553
+    },
+    {
+      "file": "frames/000036.jpg",
+      "t": 3.586
+    },
+    {
+      "file": "frames/000037.jpg",
+      "t": 3.62
+    },
+    {
+      "file": "frames/000038.jpg",
+      "t": 3.67
+    },
+    {
+      "file": "frames/000039.jpg",
+      "t": 3.703
+    },
+    {
+      "file": "frames/000040.jpg",
+      "t": 3.736
+    },
+    {
+      "file": "frames/000041.jpg",
+      "t": 3.786
+    },
+    {
+      "file": "frames/000042.jpg",
+      "t": 3.836
+    },
+    {
+      "file": "frames/000043.jpg",
+      "t": 3.87
+    },
+    {
+      "file": "frames/000044.jpg",
+      "t": 3.903
+    },
+    {
+      "file": "frames/000045.jpg",
+      "t": 3.936
+    },
+    {
+      "file": "frames/000046.jpg",
+      "t": 3.953
+    },
+    {
+      "file": "frames/000047.jpg",
+      "t": 4.003
+    },
+    {
+      "file": "frames/000048.jpg",
+      "t": 4.053
+    },
+    {
+      "file": "frames/000049.jpg",
+      "t": 4.086
+    },
+    {
+      "file": "frames/000050.jpg",
+      "t": 4.61
+    },
+    {
+      "file": "frames/000051.jpg",
+      "t": 4.636
+    },
+    {
+      "file": "frames/000052.jpg",
+      "t": 4.653
+    },
+    {
+      "file": "frames/000053.jpg",
+      "t": 4.67
+    },
+    {
+      "file": "frames/000054.jpg",
+      "t": 4.703
+    },
+    {
+      "file": "frames/000055.jpg",
+      "t": 4.736
+    },
+    {
+      "file": "frames/000056.jpg",
+      "t": 4.77
+    },
+    {
+      "file": "frames/000057.jpg",
+      "t": 4.803
+    },
+    {
+      "file": "frames/000058.jpg",
+      "t": 4.836
+    },
+    {
+      "file": "frames/000059.jpg",
+      "t": 4.87
+    },
+    {
+      "file": "frames/000060.jpg",
+      "t": 4.903
+    },
+    {
+      "file": "frames/000061.jpg",
+      "t": 4.953
+    },
+    {
+      "file": "frames/000062.jpg",
+      "t": 4.97
+    },
+    {
+      "file": "frames/000063.jpg",
+      "t": 5.003
+    },
+    {
+      "file": "frames/000064.jpg",
+      "t": 5.053
+    },
+    {
+      "file": "frames/000065.jpg",
+      "t": 5.07
+    },
+    {
+      "file": "frames/000066.jpg",
+      "t": 5.103
+    },
+    {
+      "file": "frames/000067.jpg",
+      "t": 6.22
+    },
+    {
+      "file": "frames/000068.jpg",
+      "t": 6.37
+    },
+    {
+      "file": "frames/000069.jpg",
+      "t": 6.386
+    },
+    {
+      "file": "frames/000070.jpg",
+      "t": 6.403
+    },
+    {
+      "file": "frames/000071.jpg",
+      "t": 6.42
+    },
+    {
+      "file": "frames/000072.jpg",
+      "t": 6.453
+    },
+    {
+      "file": "frames/000073.jpg",
+      "t": 6.486
+    },
+    {
+      "file": "frames/000074.jpg",
+      "t": 6.52
+    },
+    {
+      "file": "frames/000075.jpg",
+      "t": 6.553
+    },
+    {
+      "file": "frames/000076.jpg",
+      "t": 6.586
+    },
+    {
+      "file": "frames/000077.jpg",
+      "t": 6.62
+    },
+    {
+      "file": "frames/000078.jpg",
+      "t": 6.653
+    },
+    {
+      "file": "frames/000079.jpg",
+      "t": 6.686
+    },
+    {
+      "file": "frames/000080.jpg",
+      "t": 6.72
+    },
+    {
+      "file": "frames/000081.jpg",
+      "t": 6.753
+    },
+    {
+      "file": "frames/000082.jpg",
+      "t": 6.786
+    },
+    {
+      "file": "frames/000083.jpg",
+      "t": 6.803
+    },
+    {
+      "file": "frames/000084.jpg",
+      "t": 6.87
+    },
+    {
+      "file": "frames/000085.jpg",
+      "t": 6.92
+    },
+    {
+      "file": "frames/000086.jpg",
+      "t": 6.97
+    },
+    {
+      "file": "frames/000087.jpg",
+      "t": 7.02
+    },
+    {
+      "file": "frames/000088.jpg",
+      "t": 7.086
+    },
+    {
+      "file": "frames/000089.jpg",
+      "t": 7.153
+    },
+    {
+      "file": "frames/000090.jpg",
+      "t": 7.22
+    },
+    {
+      "file": "frames/000091.jpg",
+      "t": 7.27
+    },
+    {
+      "file": "frames/000092.jpg",
+      "t": 7.336
+    },
+    {
+      "file": "frames/000093.jpg",
+      "t": 7.403
+    },
+    {
+      "file": "frames/000094.jpg",
+      "t": 7.469
+    },
+    {
+      "file": "frames/000095.jpg",
+      "t": 7.519
+    },
+    {
+      "file": "frames/000096.jpg",
+      "t": 7.569
+    },
+    {
+      "file": "frames/000097.jpg",
+      "t": 7.619
+    },
+    {
+      "file": "frames/000098.jpg",
+      "t": 7.669
+    },
+    {
+      "file": "frames/000099.jpg",
+      "t": 7.719
+    },
+    {
+      "file": "frames/000100.jpg",
+      "t": 7.769
+    },
+    {
+      "file": "frames/000101.jpg",
+      "t": 7.819
+    },
+    {
+      "file": "frames/000102.jpg",
+      "t": 7.869
+    },
+    {
+      "file": "frames/000103.jpg",
+      "t": 7.919
+    },
+    {
+      "file": "frames/000104.jpg",
+      "t": 8.119
+    },
+    {
+      "file": "frames/000105.jpg",
+      "t": 8.169
+    },
+    {
+      "file": "frames/000106.jpg",
+      "t": 8.236
+    },
+    {
+      "file": "frames/000107.jpg",
+      "t": 8.303
+    },
+    {
+      "file": "frames/000108.jpg",
+      "t": 8.353
+    },
+    {
+      "file": "frames/000109.jpg",
+      "t": 8.419
+    },
+    {
+      "file": "frames/000110.jpg",
+      "t": 8.486
+    },
+    {
+      "file": "frames/000111.jpg",
+      "t": 8.536
+    },
+    {
+      "file": "frames/000112.jpg",
+      "t": 8.586
+    },
+    {
+      "file": "frames/000113.jpg",
+      "t": 8.653
+    },
+    {
+      "file": "frames/000114.jpg",
+      "t": 8.703
+    },
+    {
+      "file": "frames/000115.jpg",
+      "t": 8.753
+    },
+    {
+      "file": "frames/000116.jpg",
+      "t": 8.803
+    },
+    {
+      "file": "frames/000117.jpg",
+      "t": 8.869
+    },
+    {
+      "file": "frames/000118.jpg",
+      "t": 8.936
+    },
+    {
+      "file": "frames/000119.jpg",
+      "t": 8.969
+    },
+    {
+      "file": "frames/000120.jpg",
+      "t": 9.036
+    },
+    {
+      "file": "frames/000121.jpg",
+      "t": 9.086
+    },
+    {
+      "file": "frames/000122.jpg",
+      "t": 9.136
+    },
+    {
+      "file": "frames/000123.jpg",
+      "t": 9.186
+    },
+    {
+      "file": "frames/000124.jpg",
+      "t": 9.219
+    },
+    {
+      "file": "frames/000125.jpg",
+      "t": 9.269
+    },
+    {
+      "file": "frames/000126.jpg",
+      "t": 9.303
+    },
+    {
+      "file": "frames/000127.jpg",
+      "t": 9.336
+    },
+    {
+      "file": "frames/000128.jpg",
+      "t": 9.386
+    },
+    {
+      "file": "frames/000129.jpg",
+      "t": 9.419
+    },
+    {
+      "file": "frames/000130.jpg",
+      "t": 9.453
+    },
+    {
+      "file": "frames/000131.jpg",
+      "t": 9.503
+    },
+    {
+      "file": "frames/000132.jpg",
+      "t": 9.536
+    },
+    {
+      "file": "frames/000133.jpg",
+      "t": 9.569
+    },
+    {
+      "file": "frames/000134.jpg",
+      "t": 9.769
+    },
+    {
+      "file": "frames/000135.jpg",
+      "t": 9.819
+    },
+    {
+      "file": "frames/000136.jpg",
+      "t": 9.869
+    },
+    {
+      "file": "frames/000137.jpg",
+      "t": 9.903
+    },
+    {
+      "file": "frames/000138.jpg",
+      "t": 9.936
+    },
+    {
+      "file": "frames/000139.jpg",
+      "t": 9.986
+    },
+    {
+      "file": "frames/000140.jpg",
+      "t": 10.019
+    },
+    {
+      "file": "frames/000141.jpg",
+      "t": 10.069
+    },
+    {
+      "file": "frames/000142.jpg",
+      "t": 10.103
+    },
+    {
+      "file": "frames/000143.jpg",
+      "t": 10.169
+    },
+    {
+      "file": "frames/000144.jpg",
+      "t": 10.219
+    },
+    {
+      "file": "frames/000145.jpg",
+      "t": 10.269
+    },
+    {
+      "file": "frames/000146.jpg",
+      "t": 10.336
+    },
+    {
+      "file": "frames/000147.jpg",
+      "t": 10.369
+    },
+    {
+      "file": "frames/000148.jpg",
+      "t": 10.419
+    },
+    {
+      "file": "frames/000149.jpg",
+      "t": 10.469
+    },
+    {
+      "file": "frames/000150.jpg",
+      "t": 10.536
+    },
+    {
+      "file": "frames/000151.jpg",
+      "t": 10.603
+    },
+    {
+      "file": "frames/000152.jpg",
+      "t": 10.653
+    },
+    {
+      "file": "frames/000153.jpg",
+      "t": 10.719
+    },
+    {
+      "file": "frames/000154.jpg",
+      "t": 10.769
+    },
+    {
+      "file": "frames/000155.jpg",
+      "t": 10.836
+    },
+    {
+      "file": "frames/000156.jpg",
+      "t": 10.903
+    },
+    {
+      "file": "frames/000157.jpg",
+      "t": 10.953
+    },
+    {
+      "file": "frames/000158.jpg",
+      "t": 11.253
+    },
+    {
+      "file": "frames/000159.jpg",
+      "t": 11.653
+    },
+    {
+      "file": "frames/000160.jpg",
+      "t": 11.753
+    },
+    {
+      "file": "frames/000161.jpg",
+      "t": 11.819
+    },
+    {
+      "file": "frames/000162.jpg",
+      "t": 15.819
+    },
+    {
+      "file": "frames/000163.jpg",
+      "t": 16.169
+    },
+    {
+      "file": "frames/000164.jpg",
+      "t": 16.269
+    },
+    {
+      "file": "frames/000165.jpg",
+      "t": 16.319
+    },
+    {
+      "file": "frames/000166.jpg",
+      "t": 16.919
+    },
+    {
+      "file": "frames/000167.jpg",
+      "t": 17.019
+    },
+    {
+      "file": "frames/000168.jpg",
+      "t": 17.086
+    }
+  ],
+  "steps": [
+    {
+      "title": "Open the room",
+      "t0": 0,
+      "t1": 3.136,
+      "depth": 0
+    },
+    {
+      "title": "Step into VR",
+      "t0": 3.143,
+      "t1": 6.212,
+      "depth": 0
+    },
+    {
+      "title": "Look around the room",
+      "t0": 6.213,
+      "t1": 9.57,
+      "depth": 0
+    },
+    {
+      "title": "Pick the blue box",
+      "t0": 9.57,
+      "t1": 15.592,
+      "depth": 0
+    },
+    {
+      "title": "Press Reset on the panel",
+      "t0": 15.593,
+      "t1": 20.803,
+      "depth": 0
+    }
+  ],
+  "actions": [
+    {
+      "kind": "goto",
+      "t0": 0,
+      "ready": 0,
+      "t1": 0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "/"
+    },
+    {
+      "kind": "goto",
+      "t0": 0.013,
+      "ready": 0.013,
+      "t1": 0.013,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "/"
+    },
+    {
+      "kind": "click",
+      "t0": 3.207,
+      "ready": 4.287,
+      "t1": 4.574,
+      "rect": {
+        "x": 280,
+        "y": 174,
+        "w": 720,
+        "h": 44
+      },
+      "label": "Enter VR",
+      "heads": [
+        {
+          "x": 0,
+          "y": 0,
+          "w": 1280,
+          "h": 56
+        },
+        {
+          "x": 280,
+          "y": 80,
+          "w": 720,
+          "h": 38
+        }
+      ]
+    },
+    {
+      "kind": "xr",
+      "t0": 6.276,
+      "ready": 7.871,
+      "t1": 7.871,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Look at a point"
+    },
+    {
+      "kind": "xr",
+      "t0": 7.919,
+      "ready": 9.529,
+      "t1": 9.529,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Look at Reset"
+    },
+    {
+      "kind": "xr",
+      "t0": 9.607,
+      "ready": 10.95,
+      "t1": 10.95,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Look at Start"
+    },
+    {
+      "kind": "xr",
+      "t0": 11.005,
+      "ready": 11.928,
+      "t1": 11.928,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Select Start"
+    },
+    {
+      "kind": "xr",
+      "t0": 15.643,
+      "ready": 16.415,
+      "t1": 16.415,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Select Reset"
+    },
+    {
+      "kind": "xr",
+      "t0": 16.518,
+      "ready": 17.222,
+      "t1": 17.222,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "label": "Select Start"
+    }
+  ],
+  "activity": [
+    {
+      "t": 0.025,
+      "added": 1,
+      "changed": 1,
+      "text": 0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      }
+    },
+    {
+      "t": 0.311,
+      "added": 8,
+      "changed": 10,
+      "text": 18,
+      "rect": {
+        "x": 280,
+        "y": 174,
+        "w": 720,
+        "h": 436
+      }
+    },
+    {
+      "t": 4.456,
+      "added": 2,
+      "changed": 8,
+      "text": 0,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      }
+    },
+    {
+      "t": 11.698,
+      "added": 0,
+      "changed": 1,
+      "text": 14,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      }
+    },
+    {
+      "t": 16.21,
+      "added": 0,
+      "changed": 1,
+      "text": 5,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      }
+    },
+    {
+      "t": 16.965,
+      "added": 0,
+      "changed": 1,
+      "text": 14,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      }
+    }
+  ],
+  "busy": [
+    {
+      "t": 4.453,
+      "on": true,
+      "rect": {
+        "x": 280,
+        "y": 174,
+        "w": 720,
+        "h": 44
+      }
+    },
+    {
+      "t": 4.458,
+      "on": false,
+      "rect": {
+        "x": 280,
+        "y": 174,
+        "w": 720,
+        "h": 44
+      }
+    }
+  ],
+  "scrolls": [],
+  "results": [
+    {
+      "t": 11.991,
+      "at": 11.991,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "scrollY": 0,
+      "waited": 0,
+      "busy": true,
+      "media": 1,
+      "heads": [],
+      "blanks": []
+    },
+    {
+      "t": 17.276,
+      "at": 17.276,
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 720
+      },
+      "scrollY": 0,
+      "waited": 0,
+      "busy": true,
+      "media": 1,
+      "heads": [],
+      "blanks": []
+    }
+  ],
+  "column": {
+    "x": 280,
+    "w": 720
+  },
+  "viewports": []
+}

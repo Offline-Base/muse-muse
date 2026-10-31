@@ -1,0 +1,22 @@
+// Platform file in the VR overlay. A screen-reader-only line that mirrors what the scene is doing. Tests assert on it,
+// since they can't read a canvas.
+const CLIP = "position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap";
+
+function line(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-xr-status]");
+  if (!el) {
+    el = document.createElement("p");
+    el.setAttribute("role", "status");
+    el.setAttribute("data-xr-status", "");
+    el.style.cssText = CLIP;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+export function setXRStatus(text: string, busy = false): void {
+  const el = line();
+  el.textContent = text;
+  if (busy) el.setAttribute("aria-busy", "true");
+  else el.removeAttribute("aria-busy");
+}

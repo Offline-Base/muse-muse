@@ -1,0 +1,17 @@
+import { AppBar } from "@/components/AppBar";
+import { VrRoomLoader } from "@/components/VrRoomLoader";
+
+export default function Home() {
+  return (
+    <>
+      <AppBar name="Box Room" />
+      <main className="stack">
+        <header className="hero">
+          <h1>Step into the room</h1>
+          <p className="tagline">Pick the blue box with your controller.</p>
+        </header>
+        <VrRoomLoader />
+      </main>
+    </>
+  );
+}
