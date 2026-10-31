@@ -488,3 +488,29 @@ width. Ordered by how much each moves the look closer. **Now** means worth doing
 - **Dead-looking controls on Make:** `SetupPanel` shows disabled selects and switches. They report facts, so restyle them
   as plain label and value rows inside a folded section, or link them from How it works. Keep the facts visible somewhere.
 - **Check after each:** `/docs` before and after, dark mode, 390 px, and `npx tsx --test lib/brief/__tests__/flags-off.test.ts`.
+
+### Status after the build pass (Oct 31)
+
+Checked on the dev server with fixtures at 1280 and 390, light and dark, with no sideways scroll on any screen. A
+computed-style fingerprint of `/docs` (eight pages: five at 1280 in light and dark and at 390 in light, five at 1440 in
+light and dark with the live demo panel open) matched the one taken before the change, property for property.
+
+| # | Gap | Status |
+|---|---|---|
+| 1 | Canvas and color tokens | Done, light and both dark blocks. `themeColor` is `#ffffff` and `#181819`. New tokens: `--hover-2`, `--glass`, `--gradient`, `--shadow-glass`, `--overlay`, `--code-bg`, `--scrim`, `--ease` and the body type tokens. The docs freeze is in `app/docs/docs.css`, "The look before docs/BRAND.md" |
+| 2 | Sidebar | Done. Rows stay 40 px in the phone sheet, for fingers |
+| 3 | Make page | Done. Centered headline "What should Muse make?", composer, then the examples. `SetupPanel` is a folded list of facts |
+| 4 | Font and type scale | Done. Inter is vendored at `app/fonts/` and set on `<html>` |
+| 5 | Buttons | Done. `.toolbar .btn` uses the shared button |
+| 6 | Composer surface | Done. 107 px on Make, about 130 px in the room. The "+" menu inside the card is solid, since a blur inside a blur shows nothing behind the card |
+| 7 | Blue headings and chips | Done |
+| 8 | Segmented controls | Done: `.chat-tabs`, `.tabs`, `.range`, `.segmented` |
+| 9 | Menus | Done. The build room's More menu stays solid: it holds a long panel of facts |
+| 10 | Sign-in width | Fixed: 520 px |
+| 11 | Conversation fine-tuning | Done: bubble 22 px, tabs 14 / 500, glass chip and buttons |
+| 12 | Gallery and product page | Tokens, and `.panel` is a hairline card |
+| 13 | Dashboard, usage, how it works, fine-tuning | Tokens, regular-weight big numbers. No weight above 600 is left |
+| 14 | Voice state | Not done. It changes the recording controls' wiring |
+| 15 | Phone sheet | Done: full width, the live overlay |
+| 16 | Phone Make page | Done: 24 px margins, a 342 px composer at 390 |
+| 17 to 21 | | Not in this pass, as planned |
