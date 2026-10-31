@@ -686,6 +686,19 @@ def test_report_for_a_finished_night(settings, holdout_file, tmp_path, by_rule_c
     assert runner.report_for("dream-none") is None
 
 
+def test_last_finished_at_names_the_latest_night(settings, holdout_file, tmp_path, by_rule_count):
+    runner = runner_for(settings, [row(1, "per_student", ["grades"], "approve", True)], holdout_file, tmp_path)
+    assert runner.last_finished_at() is None
+    before = time.time()
+    first, second = runner.run_night(), runner.run_night()
+    job_id, finished_at = runner.last_finished_at()
+    assert job_id == second.job_id != first.job_id
+    assert before <= finished_at <= time.time()
+    forced = runner.start()  # Dream now still starts a night right after one finished
+    runner.wait(5)
+    assert forced not in (first.job_id, second.job_id) and runner.last_finished_at()[0] == forced
+
+
 def test_night_says_how_many_holdout_items_the_gate_reran(settings, holdout_file, tmp_path, paired_runs):
     rows = [row(i, "snippet", [], "deny", True) for i in range(1, 4)]
     runner = runner_for(settings, rows, holdout_file, tmp_path)

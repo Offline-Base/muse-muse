@@ -1,13 +1,16 @@
 """The Muse connector: an MCP server on 127.0.0.1 at /mcp. See docs/CONTRACTS.md, "Connector".
 
-Six tools. Every text that comes from a document goes out through services.egress.release, the
-single exit, and nothing else in this file returns document text. Tool calls run on worker
-threads (the SDK runs sync tools that way), each one writes an audit row with no content, and
-any failure reaches Muse as a plain sentence, never a traceback.
+Seven tools. Every text that comes from a document goes out through services.egress.release, the
+single exit, and nothing else in this file returns document text; the notes added to a result
+are fixed sentences and job ids. Tool calls run on worker threads (the SDK runs sync tools that
+way), each one writes an audit row with no content (relay or local, from the relay client's
+header), and any failure reaches Muse as a plain sentence, never a traceback. Each call has one
+time budget, so it answers before the relay gives up.
 """
 
 from __future__ import annotations
 
+import contextvars
 import hmac
 import importlib
 import json
@@ -30,6 +33,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from base.config import CloudBackendRefused
+from base.connector.audit import CURRENT_VIA, VIA_HEADER, client_label, via_label
 from base.workspace.index import snippet, tokenize
 
 log = logging.getLogger("base.connector")
@@ -40,13 +44,39 @@ OPEN_PATHS = frozenset({"/health"})
 SNIPPET_CHARS = 300
 ANSWER_CHARS = 400  # the device model's short answer from the picked passages (CHECKER_BACKEND=lfm)
 ASK_ANSWER_CHARS = 900  # ask_device's answer, two to five sentences
-# How long get_result waits for a first release before answering "still checking". The relay
-# client gives up on a call after 55 s, so the answer has to come well before that; the release
-# keeps going in the background and the next get_result picks it up.
+# One time budget per tool call, started when Connector.call begins it. The relay client gives up
+# on a call after 55 s and the relay after 60 s, so every wait inside a call (a release being
+# checked, get_result's wait_seconds) takes only what is left of the budget, at least
+# MIN_WAIT_SECONDS. A model step before the wait (search's passage picking) uses it up too.
+CALL_BUDGET_SECONDS = 45.0
+MIN_WAIT_SECONDS = 1.0
+# The longest wait for a first release before answering "still checking"; the release keeps going
+# in the background and the next get_result picks it up.
 RELEASE_WAIT_SECONDS = 40.0
+MAX_WAIT_SECONDS = 40  # get_result's wait_seconds is clamped to 0..40
+MAX_WAITERS = 8  # get_result calls that may wait at once; past that a call answers at once
+POLL_SECONDS = 0.5  # how often a waiting get_result looks again at a job that is still running
+RETRY_AFTER_SECONDS = 20
+WAITABLE = ("queued", "running", "waiting")  # statuses that carry retry_after_seconds and next
+NEXT_STEP = "Call get_result with this job_id and wait_seconds 25."
 MAX_CHECK_FAILURES = 3  # a check that fails this many times in a row holds the result for good
-CHECKING_NOTE = "The device is still checking this result. Call get_result again in a little while."
-SEARCH_CHECKING_NOTE = "The device is still checking these snippets. Call get_result with this job_id in a little while."
+CHECKING_NOTE = "The device is still checking this result."
+SEARCH_CHECKING_NOTE = "The device is still checking these snippets."
+WORKING_NOTE = "Still working on the device."
+FAILED_NOTE = "The task stopped with an error on the device, and nothing was shared. You can start it again."
+KEPT_EARLY_NOTE = "The device kept this result on the device, and nothing was shared."
+# Every refused result ends with this, so Muse does not try to get the same content another way.
+REFUSED_END = "Do not look for this another way. The user can open it on the device."
+SAVED_NOTE = "The full result is saved on the device in {where}."
+SAFE_JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+MISSING_JOB = "Pass the job_id that a Muse Privacy tool returned."
+TASK_STARTED_NOTE = "The device is working on it. Finished files with real names stay on the device."
+DREAM_STARTED_NOTE = "Dreaming is running on the device. It takes a few minutes; then call dreaming_report."
+DREAM_RUNNING_NOTE = "Dreaming is still running on the device."
+# run_dreaming from Muse starts at most one night in this many seconds (Dream now on the approval
+# page always starts one), so a scheduled job that retries does not learn from the same rows twice.
+DREAM_AGAIN_AFTER_SECONDS = 12 * 3600
+DREAMED_TODAY = "A dreaming run already finished today. The next one can start tonight."
 # A search's snippets are released as a finished job of this kind, so a slow check can be picked
 # up later with get_result. Its decision row still names the tool Muse called.
 SEARCH_KIND = "search"
@@ -54,18 +84,15 @@ ASK_KIND = "ask"
 RELEASE_TOOLS = {SEARCH_KIND: "search_documents", ASK_KIND: "ask_device"}
 PASSAGE_SHOW = 600  # how much of each retrieved passage search_documents sends (CHECKER_BACKEND=lfm)
 ASK_UNAVAILABLE = "ask_device needs the device's own model. Use search_documents instead."
-ASK_STARTED_NOTE = (
-    "The device is working on it and may search for up to 3 minutes. Call get_result with this job_id "
-    "in a little while."
-)
+ASK_STARTED_NOTE = "The device is working on it and may search for up to 3 minutes."
 
 INSTRUCTIONS = """\
 Muse Privacy is a private workspace on the user's own device. The documents stay there, and every \
 step that reads them runs on the device with its own model.
 
 - Names and identifiers come back as tags like [Student A], [Teacher] or [Phone 1]. With a privacy \
-toggle on, places, dates, organizations and record numbers do too, like [Place 1] or [Date 1]. The same \
-person always has the same tag on this device, so plan with the tags.
+toggle on, places, dates, organizations and record numbers do too, like [Place 1] or [Date 1]. Plan \
+with the tags. Tags can change from one day to the next, so use the tags from the current results.
 - You can pass tags back in instructions and search queries, exactly as you received them. The \
 device swaps them for the real values locally.
 - Two ways to ask about the documents: search_documents returns the best passages for you to reason \
@@ -74,11 +101,14 @@ few short quotes. Use ask_device for a question, search_documents to see the tex
 - Say who a result is for and what it will be used for, for example "for my own grading", "for the \
 family newsletter" or "to send to the principal". Put it in run_private_task's instructions and in \
 search_documents' and ask_device's purpose. The device uses it to decide what it can share.
-- Longer work runs in the background: call run_private_task, then get_result with the job id until \
-the status is no longer queued or running. A search that needs more time or the user's OK gives you \
-a job id for get_result too.
+- Longer work runs in the background: run_private_task and ask_device return a job_id at once. Call \
+get_result with it until the status is no longer queued or running. A search that needs more time \
+or the user's OK gives you a job_id for get_result too.
+- get_result can wait on the device: pass wait_seconds (up to 40) and it answers as soon as the job \
+is done or the user taps Share it or Keep it here, so a waiting result can be awaited in the same turn.
 - Some results wait for the user's OK on the device, and some are kept on the device. Tell the user \
 plainly and do not try to get the same content another way.
+- A scheduled job should call only the tool it names, once.
 - Finished files with real names, such as feedback for each student, are written on the device for \
 the user to open there. They are never sent to you.
 """
@@ -87,7 +117,7 @@ READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 START_TASK = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
-# Not idempotent: a call after a night has finished starts another full night.
+# Not idempotent: a call 12 hours after a night finished starts another full night.
 START_DREAMING = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
@@ -95,8 +125,12 @@ START_DREAMING = ToolAnnotations(
 USAGE = {
     "list_documents": 'list_documents takes folder, a folder name as text ("" for the top level).',
     "search_documents": "search_documents takes query, a short search as text, and an optional purpose as text.",
+    "ask_device": "ask_device takes question, a question as text, and an optional purpose and folder as text.",
     "run_private_task": "run_private_task takes instructions and folder, both as text.",
-    "get_result": "get_result takes job_id, the text id that run_private_task or search_documents returned.",
+    "get_result": (
+        "get_result takes job_id, the text id that a Muse Privacy tool returned, and an optional "
+        "wait_seconds, a whole number from 0 to 40."
+    ),
     "run_dreaming": "run_dreaming takes no arguments.",
     "dreaming_report": "dreaming_report takes no arguments.",
 }
@@ -200,11 +234,55 @@ def restore_tags(services: Any, text: str) -> str:
     return guard.restore(text, mapping)
 
 
-class Connector:
-    """The six tools as plain methods. Each returns (result, audit outcome) or raises ToolFailure."""
+# Set by Connector.call when a tool call starts, so every wait inside it shares one budget.
+_CALL_STARTED: contextvars.ContextVar[float | None] = contextvars.ContextVar("connector_call_started", default=None)
 
-    def __init__(self, services: Any):
+
+def _result_body(job_id: str, status: str, text: str, saved: str | None = None) -> dict:
+    """A job's answer for Muse: status and text, the saved-file note, and what to do next.
+
+    Every added sentence is fixed text or the job id, never document text. A shared text is sent
+    exactly as egress released it (and as the receipt's sha256 has it); a waiting or refused one
+    may end with SAVED_NOTE and REFUSED_END.
+    """
+    if saved and status in ("waiting", "refused"):
+        text = f"{text} {SAVED_NOTE.format(where=saved)}"
+    if status == "refused":
+        text = _refused(text)
+    body = {"job_id": job_id, "status": status, "result": text}
+    if status in WAITABLE:
+        body |= {"retry_after_seconds": RETRY_AFTER_SECONDS, "next": NEXT_STEP}
+    return body
+
+
+def _refused(text: str) -> str:
+    return text if text.endswith(REFUSED_END) else f"{text} {REFUSED_END}".strip()
+
+
+def _plain(released: Any) -> CallToolResult:
+    """A release sent as plain text, with the fixed last sentence when it was refused."""
+    text = released.text or ""
+    return _text(_refused(text) if released.status == "refused" else text)
+
+
+class Connector:
+    """The seven tools as plain methods. Each returns (result, audit outcome) or raises ToolFailure.
+
+    `clock` and `wait(event, seconds) -> bool` are time.monotonic and Event.wait; tests pass fakes.
+    """
+
+    def __init__(
+        self,
+        services: Any,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        wait: Callable[[threading.Event, float], bool] | None = None,
+    ):
         self.services = services
+        self.clock = clock
+        self._wait = wait or (lambda event, seconds: event.wait(seconds))
+        self._never = threading.Event()  # waited on as a plain pause between looks at a job
+        self._waiters = threading.BoundedSemaphore(MAX_WAITERS)
         self._check_failures: dict[str, int] = {}
         self._failures_lock = threading.Lock()
         self._sources: dict[str, list[str]] = {}  # job id -> documents a search used (redaction controls)
@@ -212,6 +290,7 @@ class Connector:
     def call(self, tool: str, fn: Callable[..., tuple[CallToolResult, str]], *args: Any) -> CallToolResult:
         """Run one tool, turn every failure into a plain message, and write the audit row."""
         started = time.perf_counter()
+        budget = _CALL_STARTED.set(self.clock())
         try:
             result, outcome = fn(*args)
         except ToolFailure as failure:
@@ -221,10 +300,13 @@ class Connector:
         except Exception as exc:  # the message may quote a document, so only its type is logged
             log.error("tool %s failed with %s", tool, type(exc).__name__)
             result, outcome = _text(GENERIC_ERROR, error=True), "error"
+        finally:
+            _CALL_STARTED.reset(budget)
         self.audit(tool, outcome, int((time.perf_counter() - started) * 1000))
         return result
 
     def audit(self, tool: str, outcome: str, ms: int = 0) -> None:
+        """One audit row. The recorder adds via (relay or local) from CURRENT_VIA, set per call."""
         recorder = getattr(self.services, "audit", None)
         if recorder is None:
             return
@@ -232,6 +314,15 @@ class Connector:
             recorder(tool, outcome, ms=ms)
         except Exception as exc:  # an audit problem must never break a tool call
             log.warning("audit write failed with %s", type(exc).__name__)
+
+    def _deadline(self) -> float:
+        """When this tool call's budget runs out. A method called on its own starts one now."""
+        started = _CALL_STARTED.get()
+        return (self.clock() if started is None else started) + CALL_BUDGET_SECONDS
+
+    def _left(self, deadline: float, cap: float) -> float:
+        """How long a wait may take: what is left of the budget, at least MIN_WAIT_SECONDS, at most cap."""
+        return min(cap, max(MIN_WAIT_SECONDS, deadline - self.clock()))
 
     def _docs(self, folder: str) -> tuple[str, list]:
         """The real folder name (tags restored) and its documents, or a plain error."""
@@ -264,7 +355,7 @@ class Connector:
             "list_documents", f"list {where}", "\n".join(lines), "document_list",
             sources=[str(_get(d, "id")) for d in docs],
         )
-        return _text(released.text), released.status
+        return _plain(released), released.status
 
     def _never_share_topics(self, text: str) -> list[str]:
         """The policy's never-share topics whose keywords appear in `text`."""
@@ -276,6 +367,7 @@ class Connector:
         return guard.blocked_topics(text, never_share)
 
     def search_documents(self, query: str, purpose: str = "") -> tuple[CallToolResult, str]:
+        deadline = self._deadline()
         query, purpose = query.strip(), purpose.strip()
         if not query:
             raise ToolFailure("Pass a short search query, for example: rubric criteria for evidence.")
@@ -311,15 +403,18 @@ class Connector:
         request = f"{query}\nPurpose: {purpose}" if purpose else query
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still
         # checking" with a job_id before the relay gives up, and a retried search joins the release.
+        # The wait is what is left of this call's budget after the retrieval and picking above.
         jobs = self.services.jobs
         job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet")
         self._sources[job_id] = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
-        status, text = self._release(job_id, jobs.get(job_id))
-        if status in ("shared", "refused"):
+        status, text = self._release(job_id, jobs.get(job_id), deadline)
+        if status == "shared":
             return _text(text), status
+        if status == "refused":
+            return _text(_refused(text)), status
         if status == "running":
-            return _json({"job_id": job_id, "status": "running", "result": SEARCH_CHECKING_NOTE}), "pending"
-        return _json({"job_id": job_id, "status": status, "result": text}), status
+            return _json(_result_body(job_id, "running", SEARCH_CHECKING_NOTE)), "pending"
+        return _json(_result_body(job_id, status, text)), status
 
     def ask_device(self, question: str, purpose: str = "", folder: str = "") -> tuple[CallToolResult, str]:
         """Mode 2: the device's model works on the request in the background; get_result has the answer."""
@@ -337,7 +432,7 @@ class Connector:
             if type(exc).__name__ == "AskBusy":  # a plain sentence with a count, no content
                 raise ToolFailure(str(exc), outcome="busy") from None
             raise
-        return _json({"job_id": job_id, "status": "queued", "result": ASK_STARTED_NOTE}), "started"
+        return _json(_result_body(job_id, "queued", ASK_STARTED_NOTE)), "started"
 
     def run_private_task(self, instructions: str, folder: str) -> tuple[CallToolResult, str]:
         instructions, folder = instructions.strip(), folder.strip()
@@ -355,38 +450,76 @@ class Connector:
                 raise ToolFailure(str(exc), outcome="busy") from None
             raise
         status = _get(self.services.jobs.get(job_id), "status") or "queued"
-        return _json({"job_id": job_id, "status": status}), "started"
+        return _json(_result_body(job_id, status, TASK_STARTED_NOTE)), "started"
 
-    def get_result(self, job_id: str) -> tuple[CallToolResult, str]:
+    def get_result(self, job_id: str, wait_seconds: int = 0) -> tuple[CallToolResult, str]:
+        """The job's status and result. With wait_seconds, wait on the device (within the call's
+        budget) while the job is queued, running or waiting for the user's answer."""
+        deadline = self._deadline()
         job_id = job_id.strip()
         if not job_id:
-            raise ToolFailure("Pass the job_id that run_private_task returned.")
+            raise ToolFailure(MISSING_JOB)
+        until = min(self.clock() + max(0, min(int(wait_seconds or 0), MAX_WAIT_SECONDS)), deadline)
+        body, outcome = self._result(job_id, deadline)
+        if body["status"] in WAITABLE and self.clock() < until and self._waiters.acquire(blocking=False):
+            try:
+                decided = False
+                while body["status"] in WAITABLE and (left := until - self.clock()) > 0:
+                    decided = self._pause(job_id, body["status"], left, poll=decided)
+                    body, outcome = self._result(job_id, deadline)
+            finally:
+                self._waiters.release()
+        return _json(body), outcome
+
+    def _pause(self, job_id: str, status: str, seconds: float, *, poll: bool = False) -> bool:
+        """Wait for the user's answer on a waiting release, else pause POLL_SECONDS. True if answered."""
+        if status == "waiting" and not poll:
+            approval_id = _get(self.services.jobs.get(job_id), "approval_id")
+            wait_decided = getattr(getattr(self.services, "approvals", None), "wait_decided", None)
+            if approval_id is not None and callable(wait_decided):
+                return bool(wait_decided(int(approval_id), seconds))
+        self._wait(self._never, min(POLL_SECONDS, seconds))
+        return False
+
+    def _result(self, job_id: str, deadline: float) -> tuple[dict, str]:
+        """One look at a job for get_result: its answer and the audit outcome."""
         if job_id.startswith("dream-"):
             return self._dream_result(job_id)
         job = self.services.jobs.get(job_id)
         if job is None:
-            raise ToolFailure(
-                f"There is no job {_quote(job_id)} on this device. Start one with run_private_task."
-            )
+            raise ToolFailure(f"There is no job {_quote(job_id)} on this device. {MISSING_JOB}")
         status = _get(job, "status")
+        saved = self._saved(job_id, job)
         # set_release also moves the job status, so a released job is judged by release_status
         if (_get(job, "release_status") or "none") == "none":
             if status in ("queued", "running"):
-                note = "Still working on the device. Call get_result again in a little while."
-                return _json({"job_id": job_id, "status": status, "result": note}), "pending"
+                return _result_body(job_id, status, WORKING_NOTE), "pending"
             if status == "failed":
-                note = "The task stopped with an error on the device, and nothing was shared. You can start it again."
-                return _json({"job_id": job_id, "status": "failed", "result": note}), "failed"
+                return _result_body(job_id, "failed", FAILED_NOTE), "failed"
             if status == "refused":
-                note = "The device kept this result on the device, and nothing was shared."
-                return _json({"job_id": job_id, "status": "refused", "result": note}), "refused"
-        release_status, text = self._release(job_id, job)
+                return _result_body(job_id, "refused", KEPT_EARLY_NOTE, saved), "refused"
+        release_status, text = self._release(job_id, job, deadline)
         outcome = "pending" if release_status == "running" else release_status
-        return _json({"job_id": job_id, "status": release_status, "result": text}), outcome
+        return _result_body(job_id, release_status, text, saved), outcome
 
-    def _release(self, job_id: str, job: Any) -> tuple[str, str]:
+    def _saved(self, job_id: str, job: Any) -> str | None:
+        """Where a private task's files are on the device, relative to its home ("output/<job id>"),
+        or None. Only the job id is named, never a file name, which can hold a real name."""
+        if _get(job, "kind") in (SEARCH_KIND, ASK_KIND) or not SAFE_JOB_ID.fullmatch(job_id):
+            return None
+        output = _get(_get(_get(self.services, "settings"), "paths"), "output")
+        if output is None:
+            return None
+        try:
+            has_files = any(p.is_file() for p in (Path(output) / job_id).iterdir())
+        except OSError:
+            return None
+        return f"output/{job_id}" if has_files else None
+
+    def _release(self, job_id: str, job: Any, deadline: float | None = None) -> tuple[str, str]:
         """The flow in "Jobs and releases": release once, resolve while waiting, then resend."""
         jobs, egress = self.services.jobs, self.services.egress
+        deadline = self._deadline() if deadline is None else deadline
         release_status = _get(job, "release_status") or "none"
         approval_id = _get(job, "approval_id")
         if release_status == "releasing":
@@ -405,7 +538,7 @@ class Connector:
             again = jobs.get(job_id)  # another call is releasing it, or just finished
             if (_get(again, "release_status") or "none") in ("none", "releasing"):
                 return "running", CHECKING_NOTE
-            return self._release(job_id, again)
+            return self._release(job_id, again, deadline)
         box: dict[str, Any] = {}
         done = threading.Event()
 
@@ -420,8 +553,10 @@ class Connector:
             finally:
                 done.set()
 
-        threading.Thread(target=work, name=f"release-{job_id}", daemon=True).start()
-        if not done.wait(RELEASE_WAIT_SECONDS):
+        # The copied context keeps the call's relay or local label on egress's audit rows.
+        context = contextvars.copy_context()
+        threading.Thread(target=context.run, args=(work,), name=f"release-{job_id}", daemon=True).start()
+        if not self._wait(done, self._left(deadline, RELEASE_WAIT_SECONDS)):
             return "running", CHECKING_NOTE
         if "error" in box:
             raise box["error"]
@@ -465,27 +600,36 @@ class Connector:
         )
         return released.status, released.text
 
-    def _dream_result(self, job_id: str) -> tuple[CallToolResult, str]:
+    def _dream_result(self, job_id: str) -> tuple[dict, str]:
         """get_result for a run_dreaming id: running while the night holds the lock, then its numbers."""
         night = self.services.night
         if night.running_job() == job_id:
-            note = "Dreaming is still running on the device. Call get_result again in a little while."
-            return _json({"job_id": job_id, "status": "running", "result": note}), "pending"
+            return _result_body(job_id, "running", DREAM_RUNNING_NOTE), "pending"
         report_for = getattr(night, "report_for", None)
         report = report_for(job_id) if callable(report_for) else None
         if report is None:
             raise ToolFailure(f"There is no dreaming run {_quote(job_id)} on this device. Start one with run_dreaming.")
         released = self.services.egress.release("dreaming_report", "dreaming report", _report_text(report), "dreaming_report")
         status = "done" if released.status == "shared" else released.status
-        return _json({"job_id": job_id, "status": status, "result": released.text}), released.status
+        return _result_body(job_id, status, released.text), released.status
 
     def run_dreaming(self) -> tuple[CallToolResult, str]:
-        started = self.services.night.start()
+        """Start a night, at most one per DREAM_AGAIN_AFTER_SECONDS from Muse. While one runs, its id."""
+        night = self.services.night
+        running = getattr(night, "running_job", None)
+        last_finished = getattr(night, "last_finished_at", None)
+        if not (callable(running) and running()) and callable(last_finished):
+            finished = last_finished()
+            if finished and time.time() - float(finished[1]) < DREAM_AGAIN_AFTER_SECONDS:
+                return _json({"job_id": str(finished[0]), "status": "done", "result": DREAMED_TODAY}), "done"
+        started = night.start()
         if isinstance(started, str):
             job_id, status = started, "running"
         else:
             job_id, status = _get(started, "job_id"), _get(started, "status") or "running"
-        return _json({"job_id": None if job_id is None else str(job_id), "status": str(status)}), "started"
+        if job_id is None:
+            return _json({"job_id": None, "status": str(status)}), "started"
+        return _json(_result_body(str(job_id), str(status), DREAM_STARTED_NOTE)), "started"
 
     def dreaming_report(self) -> tuple[CallToolResult, str]:
         night = self.services.night
@@ -494,7 +638,7 @@ class Connector:
         if callable(running) and running():
             raw = "A dreaming run is in progress. These numbers are from the run before it.\n" + raw
         released = self.services.egress.release("dreaming_report", "dreaming report", raw, "dreaming_report")
-        return _text(released.text), released.status
+        return _plain(released), released.status
 
 
 def _report_text(report: Any) -> str:
@@ -508,6 +652,24 @@ def _report_text(report: Any) -> str:
         elif isinstance(value, int | float):  # numbers only: nothing else from the report leaves
             lines.append(f"- {label}: {round(value, 3)}")
     return "Last dreaming run:\n" + "\n".join(lines) if lines else "No dreaming run has finished yet."
+
+
+def _label_calls(connector: Connector):
+    """Middleware: label each message relay or local for the audit (the relay client's header), and
+    record the MCP client's name from initialize as a short label, never its other fields."""
+
+    async def middleware(ctx, call_next):
+        headers = getattr(ctx.request, "headers", None)
+        token = CURRENT_VIA.set(via_label(headers.get(VIA_HEADER) if headers is not None else None))
+        try:
+            if ctx.method == "initialize":
+                info = (ctx.params or {}).get("clientInfo")
+                connector.audit("initialize", client_label(info.get("name") if isinstance(info, Mapping) else None))
+            return await call_next(ctx)
+        finally:
+            CURRENT_VIA.reset(token)
+
+    return middleware
 
 
 def _plain_errors(connector: Connector):
@@ -529,7 +691,7 @@ def _plain_errors(connector: Connector):
 
 
 def build_server(services: Any) -> MCPServer:
-    """The MCP server with the six connector tools, wired to `services`."""
+    """The MCP server with the seven connector tools, wired to `services`."""
     c = Connector(services)
     server = MCPServer(name="muse-privacy", title="Muse Privacy", instructions=INSTRUCTIONS, version=VERSION)
 
@@ -563,7 +725,7 @@ def build_server(services: Any) -> MCPServer:
             "for example [Student A] thesis, and the device swaps them for the real names before it searches. "
             "Say in purpose who the snippets are for and what they will be used for, for example: for the "
             "family newsletter. If the device needs more time or the user's OK, you get a job_id instead: "
-            "call get_result with it."
+            "call get_result with it and wait_seconds 25."
         ),
     )
     def search_documents(
@@ -590,8 +752,8 @@ def build_server(services: Any) -> MCPServer:
             "[Student A]. Use it for questions; use search_documents when you want the passages "
             "themselves. You can put tags in the question. Say in purpose who the answer is for, for "
             "example: for my own planning. folder is optional (default: every folder Muse can see). "
-            "Returns a job_id at once: call get_result with it until the status is no longer queued "
-            "or running."
+            "Returns a job_id at once: call get_result with it and wait_seconds 25 until the status is "
+            "no longer queued or running."
         ),
     )
     def ask_device(
@@ -613,7 +775,8 @@ def build_server(services: Any) -> MCPServer:
             "it will be used for, for example: for my own grading, or for the family newsletter. The device "
             "does the work with its own model and writes finished files with real names on the device, where "
             "the user opens them; those files are never sent to you. Refer to people by their tags, like "
-            "[Student A]. Returns a job_id and status at once; then call get_result with the job_id."
+            "[Student A]. Returns a job_id and status at once; then call get_result with the job_id and "
+            "wait_seconds 25. A task that is not grading saves its full answer with real names on the device too."
         ),
     )
     def run_private_task(
@@ -629,26 +792,39 @@ def build_server(services: Any) -> MCPServer:
         title="Get a task result",
         annotations=READ,
         description=(
-            "Get the status and result of a job_id from run_private_task or search_documents. While the "
-            "status is queued or running, call again in a little while. A shared result has names as tags, or "
-            "is a summary. Status waiting means the result is waiting for the user's OK on the device: tell the "
-            "user and call again later. Status refused means it is kept on the device; do not ask for it "
-            "another way. Files with real names always stay on the device."
+            "Get the status and result of a job_id from run_private_task, search_documents, ask_device or "
+            "run_dreaming. With wait_seconds (up to 40) the device waits and answers as soon as the job is "
+            "done or the user taps Share it or Keep it here. While the status is queued, running or waiting, "
+            "call again with wait_seconds 25. A shared result has names as tags, or is a summary. Status "
+            "waiting means the result is waiting for the user's OK on the device: tell the user. Status refused "
+            "means it is kept on the device; do not ask for it another way. Files with real names always stay "
+            "on the device."
         ),
     )
     def get_result(
-        job_id: Annotated[str, Field(max_length=100, description="The job_id from run_private_task or search_documents")],
+        job_id: Annotated[
+            str,
+            Field(
+                max_length=100,
+                description="The job_id from run_private_task, search_documents, ask_device or run_dreaming",
+            ),
+        ],
+        wait_seconds: Annotated[
+            int,
+            Field(description="Seconds to wait on the device for the job or the user's answer, 0 to 40"),
+        ] = 0,
     ) -> CallToolResult:
-        return c.call("get_result", c.get_result, job_id)
+        return c.call("get_result", c.get_result, job_id, wait_seconds)
 
     @server.tool(
         name="run_dreaming",
         title="Start dreaming",
         annotations=START_DREAMING,
         description=(
-            "Start the device's dreaming run now: it relearns the privacy router from the user's recent "
-            "share and keep decisions, and keeps the new rules only if they test at least as well. Safe to "
-            "call again: while a run is going you get the same job_id back. Then call dreaming_report."
+            "Start the device's dreaming run: it relearns the privacy router from the user's recent "
+            "share and keep decisions, and keeps the new rules only if they test at least as well. It runs at "
+            "most once a day: while a run is going you get the same job_id back, and after a run finished "
+            "today it starts nothing and says so. Then call dreaming_report."
         ),
     )
     def run_dreaming() -> CallToolResult:
@@ -671,7 +847,7 @@ def build_server(services: Any) -> MCPServer:
     async def health(request: Request) -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
-    server.middleware.append(_plain_errors(c))
+    server.middleware.extend([_label_calls(c), _plain_errors(c)])
     return server
 
 

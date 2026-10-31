@@ -28,6 +28,8 @@ import httpx
 from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import InvalidStatus, WebSocketException
 
+from base.connector.audit import VIA_HEADER
+
 log = logging.getLogger("base.relay")
 
 FORWARD_HEADERS = ("content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id")
@@ -304,6 +306,7 @@ class RelayClient:
         given = headers if isinstance(headers, dict) else {}
         sent = {k.lower(): v for k, v in given.items() if k.lower() in FORWARD_HEADERS and isinstance(v, str)}
         sent["authorization"] = f"Bearer {self._token}"
+        sent[VIA_HEADER] = "relay"  # the audit labels the call; a frame can never set this itself
         content = body.encode("utf-8", "replace") if isinstance(body, str) else b""
         try:
             async with asyncio.timeout(self.forward_timeout):

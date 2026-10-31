@@ -543,3 +543,49 @@ async def test_unlink_revokes_links_with_the_device_secret(settings):
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     assert await rc.unlink(settings, http=http) == 2
     assert seen == [("/device/unlink", "Bearer sec")]
+
+
+# Relay or local in the audit (the connector reads the relay client's header)
+
+
+async def test_forwarded_calls_say_relay_and_a_frame_cannot_set_it():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get_list("x-muse-privacy-via"))
+        return httpx.Response(200, headers={"content-type": "application/json"}, text="{}")
+
+    client = make_client(handler)
+    await client.handle(json.dumps(request_frame()))
+    injected = request_frame("f-2", **{"x-muse-privacy-via": "local", "X-Muse-Privacy-Via": "local"})
+    await client.handle(json.dumps(injected))
+    assert seen == [["relay"], ["relay"]]
+
+
+async def test_relayed_calls_are_audited_as_relay(settings, monkeypatch):
+    from base.connector import server
+    from base.connector.audit import Audit
+
+    monkeypatch.setattr(server, "restore_tags", lambda services, text: text)
+    services = fake_services(settings)
+    services.audit = Audit(settings.paths.db)
+    app = connector_app(services, token="local-token")
+    async with app.router.lifespan_context(app):
+        http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app))
+        client = make_client(http=http)
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "Muse App", "version": "1"},
+            },
+        }
+        await client.forward(request_frame("f-init", body=json.dumps(init)))
+        call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "list_documents", "arguments": {}}}
+        await client.forward(request_frame("f-call", body=json.dumps(call), **{"mcp-protocol-version": "2025-06-18"}))
+        await http.aclose()
+    rows = [(r["tool"], r["outcome"], r["via"]) for r in reversed(services.audit.recent(5))]
+    assert rows == [("initialize", "muse_app", "relay"), ("list_documents", "shared", "relay")]

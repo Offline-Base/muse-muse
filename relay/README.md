@@ -31,6 +31,7 @@ The full contract is "Relay frames" in `docs/CONTRACTS.md`. In short:
 
 - Relay to device: `{"type": "request", "id": "<uuid>", "method": "POST" | "DELETE", "headers": {...}, "body": "<text>"}`. Headers are lowercase and only `content-type`, `accept`, `mcp-session-id` and `mcp-protocol-version`. The OAuth token never goes down.
 - Device to relay: `{"type": "response", "id": "<same uuid>", "status": 200, "headers": {...}, "body": "<text>"}`. Only `content-type` and `mcp-session-id` are passed back to Muse. A status outside 200 to 599 becomes 502.
+- On the device, the relay client sends each request to the local connector with its own token and the header `x-muse-privacy-via: relay`, so the device's audit log can tell relayed calls from local ones. A frame's own headers are filtered first, so a frame cannot set it.
 - `{"type": "ping"}` gets `{"type": "pong"}`. The exact text `{"type": "ping"}` (Python's `json.dumps` spelling) is answered by the runtime without waking the Durable Object; other spellings work too.
 - No device socket: `503 {"error": "device offline"}`, also when the device drops while a request is waiting. No response frame within 60 seconds: `504 {"error": "device timeout"}`. More than 32 requests waiting on one device: `429 {"error": "device busy"}`. Request bodies over 4 MiB: `413`.
 
@@ -162,7 +163,7 @@ Then in Muse:
    uv run python -m base.connector.relay_client pair
    ```
 
-7. The page sends you back to Muse, which now lists the six Muse Privacy tools. Linking again later needs a new code; a code works once.
+7. The page sends you back to Muse, which now lists the seven Muse Privacy tools. Linking again later needs a new code; a code works once.
 
 If something goes wrong:
 

@@ -80,9 +80,9 @@ The page sends you back to Muse, which should now list seven Muse Privacy tools:
 | list_documents | Read | Tagged titles of the documents in a folder |
 | search_documents | Read | Up to 5 short tagged snippets. An optional purpose says who they are for. A check that needs more time or your OK returns a job id for get_result |
 | ask_device | Read | The device's own model searches, reads and answers a question; returns the answer and up to 3 short quotes, as tags. Needs the local model (CHECKER_BACKEND=lfm) |
-| run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for |
-| get_result | Read | The status of a job or a search, then its tagged or summarized result |
-| run_dreaming | Write | Starts one night of dreaming on the device |
+| run_private_task | Write | Starts a private job on the device, returns a job id. The instructions say who the result is for. A task that is not grading also saves its full answer with real names on the device, in `output/<job id>/result.md` under BASE_HOME |
+| get_result | Read | The status of a job or a search, then its tagged or summarized result. With wait_seconds (up to 40) it waits on the device until the job is done or you press Share it or Keep it here |
+| run_dreaming | Write | Starts one night of dreaming on the device, at most once in 12 hours from Muse. Dream now on the approval page always starts one |
 | dreaming_report | Read | Aggregate numbers from the last night only |
 
 Rules for codes: each works once and expires after 10 minutes, a new code voids the old one, and there are at most 5 tries of one code and 20 tries from one network address in 10 minutes. To cut Muse off (a code shared by mistake, a lost session), run `uv run python -m base.connector.relay_client unlink` and pair again.

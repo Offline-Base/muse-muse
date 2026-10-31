@@ -3,6 +3,8 @@
 `NightRunner.start()` runs one night in a background thread and is idempotent: while a night is
 running, a lock row in the device db makes every caller (this process or another) get the same
 job id back. `last_report()` returns aggregate numbers only, safe to hand to Muse.
+`last_finished_at()` lets the connector run at most one night a day for Muse; Dream now on the
+approval page calls start() and always runs one.
 """
 
 from __future__ import annotations
@@ -136,6 +138,12 @@ class NightRunner:
             return None
         report = json.loads(row[0])
         return {k: report.get(k) for k in REPORT_KEYS}
+
+    def last_finished_at(self) -> tuple[str, float] | None:
+        """The latest finished night as (job id, finished_at in epoch seconds), or None before the first."""
+        with self._db() as con:
+            row = con.execute("SELECT job_id, finished_at FROM dreaming_nights ORDER BY id DESC LIMIT 1").fetchone()
+        return (str(row[0]), float(row[1])) if row else None
 
     def wait(self, timeout: float | None = None) -> None:
         if self._thread is not None:

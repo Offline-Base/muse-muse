@@ -1,7 +1,8 @@
 """The local agent: runs one private task over a workspace folder. See docs/CONTRACTS.md, Workspace.
 
 Every step that sees document text runs on this device's Glimmer, or through the heavy-step hook on
-the user's own laptop. Feedback files with real names are written only under settings.paths.output.
+the user's own laptop. Feedback files with real names, and the full result of any other task
+(RESULT_FILE), are written only under settings.paths.output / job id.
 raw_result keeps real names and stays on the device; summary has no names. Nothing here sends
 anything to Muse: the connector releases results through egress.
 """
@@ -31,6 +32,7 @@ log = logging.getLogger(__name__)
 CRITERIA = ("ideas", "organization", "evidence", "conventions")
 GRADING_WORDS = re.compile(r"\b(grad(e|es|ed|ing)|feedback|scor(e|es|ed|ing)|rubrics?)\b", re.IGNORECASE)
 RUBRIC_NAME = "rubric.md"
+RESULT_FILE = "result.md"  # a generic task's full answer with real names, saved under output/<job id>/
 TOPICS_GRADING = ["grades", "writing"]
 MAX_DOC_CHARS = 24_000
 MAX_REDUCE_CHARS = 48_000
@@ -316,7 +318,7 @@ class Agent:
 
         parts = self._each(step, len(docs))
         if len(parts) == 1:
-            return self._restore(parts[0]), None, "free_text", []
+            return self._save_result(job_id, instructions, parts[0]), None, "free_text", []
         share = MAX_REDUCE_CHARS // len(parts)
         joined = "\n\n".join(
             f"### {self._model_view(d.title)}\n{clip(p, share)}" for d, p in zip(docs, parts, strict=True)
@@ -329,7 +331,14 @@ class Agent:
             },
         ]
         answer = answer_of(self._model_step(job_id, "reduce", messages, ANSWER_SCHEMA, synthetic))
-        return self._restore(answer), None, "free_text", []
+        return self._save_result(job_id, instructions, answer), None, "free_text", []
+
+    def _save_result(self, job_id: str, instructions: str, answer: str) -> str:
+        """The answer with real names, also saved as output/<job id>/result.md for the user to open."""
+        restored = self._restore(answer)
+        task = " ".join(self._restore(instructions).split())
+        write_private(self._job_dir(job_id) / RESULT_FILE, f"# Task result\n\nTask: {task}\n\n{restored}\n")
+        return restored
 
     # model steps
 
