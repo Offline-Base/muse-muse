@@ -347,6 +347,8 @@ export function BuildRoom(props: BuildRoomProps) {
               live={seg.key === activeKey}
               isRefine={isRefineBuild}
               status={room.status}
+              buildId={build.id}
+              canAnswer={props.canRefine}
             />
           ))}
 
@@ -469,11 +471,16 @@ function SegmentTurn({
   live,
   isRefine,
   status,
+  buildId,
+  canAnswer,
 }: {
   seg: Segment;
   live: boolean;
   isRefine: boolean;
   status: BuildStatus;
+  buildId: string;
+  /** The viewer owns the product, so can answer Muse Code's questions. */
+  canAnswer: boolean;
 }) {
   switch (seg.type) {
     case "brief":
@@ -492,7 +499,7 @@ function SegmentTurn({
           title={live ? title.replace(/ (built it|made the change)$/, " is working") : title}
           meta={segmentMeta(seg, [museUsageText(seg)])}
         >
-          <MuseLog lines={seg.lines} live={live} />
+          <MuseLog lines={seg.lines} live={live} session={seg.session} buildId={buildId} canAnswer={canAnswer} />
           <Notes notes={seg.notes} />
         </Turn>
       );
