@@ -115,6 +115,14 @@ describe("executeJob", () => {
     assert.equal(ran, false);
     assert.equal(result.outcome, "lab_error");
     assert.equal(h.finishes[0].body.error.code, "invalid_input");
+    assert.equal(h.finishes[0].body.informational, false);
+  });
+
+  test("an invalid glasses job is informational too", async () => {
+    const h = setup();
+    await executeJob(makeJob("glasses_sim", { input: { limitSeconds: 1 } }), h.deps);
+    assert.equal(h.finishes[0].body.error.code, "invalid_input");
+    assert.equal(h.finishes[0].body.informational, true);
   });
 
   test("a job for the wrong lane is refused", async () => {
@@ -199,6 +207,36 @@ describe("executeJob", () => {
     });
     await executeJob(makeJob("android_emu"), { ...h.deps, stopSignal: stop.signal });
     assert.equal(h.finishes[0].body.error.code, "agent_restarted");
+  });
+
+  test("a runner that comes back normally after an abort isn't believed", async () => {
+    // What android_emu does when an abort lands during its last steps: adb was killed, so the pid reads as empty, the pull
+    // failed and compose has nothing to throw about. The runner returns a crash the product never had.
+    const crashed = { ...evaluationPass, passed: false, reasons: ["The app crashed during the check."] };
+    for (const [abort, code] of [
+      ["stop", "agent_restarted"],
+      ["cancel", "canceled"],
+    ]) {
+      const stop = new AbortController();
+      let cancel = false;
+      const h = setup({
+        heartbeat: () => ({ cancel }),
+        runner: async (ctx) => {
+          if (abort === "stop") stop.abort();
+          else {
+            cancel = true;
+            while (!ctx.signal.aborted) await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+          return { evaluation: crashed, device: {}, files: [], facts: {} };
+        },
+      });
+      const result = await executeJob(makeJob("android_emu"), { ...h.deps, stopSignal: stop.signal });
+      assert.equal(result.outcome, "lab_error", code);
+      const { body } = h.finishes[0];
+      assert.equal(body.outcome, "lab_error", code);
+      assert.equal(body.error.code, code);
+      assert.deepEqual(body.reasons, []);
+    }
   });
 
   test("no ffmpeg is a tool problem", async () => {
@@ -299,6 +337,11 @@ describe("the finish bodies", () => {
     assert.equal(body.outcome, "lab_error");
     assert.deepEqual(body.error, { code: "timeout", message: "m" });
     assert.equal(body.attempt, 1);
+    assert.equal(body.informational, false);
+  });
+  test("a glasses lab error is informational too: it mustn't hold a product back", () => {
+    const body = labErrorBody({ job: { kind: "glasses_sim" }, config, code: "simulator_failed", message: "m", durationMs: 1 });
+    assert.equal(body.informational, true);
   });
 });
 

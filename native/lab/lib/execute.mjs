@@ -134,7 +134,7 @@ export function resultBody({ job, config, result, artifacts, warnings, durationM
 export function labErrorBody({ job, config, code, message, artifacts = [], warnings = [], durationMs }) {
   return {
     outcome: "lab_error",
-    informational: false,
+    informational: job.kind === "glasses_sim",
     summary: labFailureSummary(job.kind, job.input?.device ?? {}),
     device: null,
     checks: [],
@@ -268,7 +268,11 @@ export async function executeJob(raw, deps) {
   try {
     ctx.ffmpeg = await findFfmpeg({ configured: config.ffmpeg, exec: ctx.exec });
     if (!ctx.ffmpeg) throw new LabError("tool_missing", "ffmpeg isn't installed.");
-    result = await runners[job.kind](ctx);
+    // A runner can come back normally from an abort, with facts made wrong by its tools being killed: a pid that reads as
+    // empty looks like a crash. Those facts must not reach the verdict, so `result` is only set once this has passed.
+    const produced = await runners[job.kind](ctx);
+    ctx.throwIfAborted();
+    result = produced;
   } catch (err) {
     if (signal.aborted) {
       const code = String(signal.reason);
