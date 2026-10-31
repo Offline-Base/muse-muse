@@ -260,6 +260,10 @@ All M unless it says otherwise.
 ### Menus (`.menu`, `.menu-item`), all M
 
 - **Card:** radius 16 px, padding 6 px, glass with `blur(60px)`, `--shadow-pop`, no border. About 231 px wide.
+- **Solid menus** (O): the composer's "+" menu and the build room's More menu can't use the glass, so they're
+  `--surface` with a 1 px `--line` ring in the shadow (`0 0 0 1px var(--line), var(--shadow-pop)`). In dark the fill is
+  the page's own color, and without the ring the menu has no edge. On Make, "+" opens down over the examples, so it
+  never covers the headline; in the build room it opens up.
 - **Row:** 36 px, radius 12 px, padding `6px 8px`, 14 / 400. Icon 20 px, 8 px of space after it.
 - **Hover:** `--hover`. **Keyboard focus:** `inset 0 0 0 2px var(--fg)`.
 - **Divider:** 0.5 px `--line`, 8 px side inset, 6 px above and below.
@@ -579,10 +583,10 @@ light and dark with the live demo panel open) matched the one taken before the c
 | 3 | Make page | Done. Centered headline "What should Muse make?", composer, then the examples. `SetupPanel` is a folded list of facts |
 | 4 | Font and type scale | Done. Inter is vendored at `app/fonts/` and set on `<html>` |
 | 5 | Buttons | Done. `.toolbar .btn` uses the shared button |
-| 6 | Composer surface | Done. 107 px on Make, about 130 px in the room. The "+" menu inside the card is solid, since a blur inside a blur shows nothing behind the card |
+| 6 | Composer surface | Done. 107 px on Make, about 130 px in the room. The "+" menu inside the card is solid, since a blur inside a blur shows nothing behind the card, with a hairline ring. It opens down on Make and up in the room |
 | 7 | Blue headings and chips | Done |
 | 8 | Segmented controls | Done: `.chat-tabs`, `.tabs`, `.range`, `.segmented` |
-| 9 | Menus | Done. The build room's More menu stays solid: it holds a long panel of facts |
+| 9 | Menus | Done. The build room's More menu stays solid, with a hairline ring: it holds a long panel of facts |
 | 10 | Sign-in width | Fixed: 520 px |
 | 11 | Conversation fine-tuning | Done: bubble 22 px, tabs 14 / 500, glass chip and buttons |
 | 12 | Gallery and product page | Tokens, and `.panel` is a hairline card |

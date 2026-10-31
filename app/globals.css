@@ -1523,7 +1523,7 @@ pre {
 
 /*
  * "+" opens upward: in the build room the composer sits at the bottom of the window. Inside the card's own blur a menu
- * can't blur what's behind the card, so this one is solid.
+ * can't blur what's behind the card, so this one is solid, with a hairline, since in dark it's the page's own color.
  */
 .composer-row .menu {
   top: auto;
@@ -1532,6 +1532,16 @@ pre {
   background: var(--surface);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-pop);
+}
+
+/*
+ * On Make the examples sit under the composer, so "+" opens down over them, not up over the headline: 8 px under the
+ * card, past its 14 px bottom padding. The card's z-index (Playground) keeps the menu above the cards.
+ */
+.play .composer-row .menu {
+  top: calc(100% + 22px);
+  bottom: auto;
 }
 
 .composer-row .menu-item svg {
@@ -2110,11 +2120,12 @@ pre {
   gap: 8px;
 }
 
+/* Solid, since it holds a long panel of facts, so a hairline marks its edge on the page's own color. */
 .room-top .menu {
   width: 340px;
   padding: 16px;
-  border-color: var(--chat-line);
   background: var(--chat-bg);
+  box-shadow: 0 0 0 1px var(--chat-line), var(--shadow-pop);
 }
 
 @media (min-width: 760px) {
@@ -3898,8 +3909,12 @@ a.dash-card:hover {
   gap: 16px;
 }
 
-/* One line of text at rest, which makes the card 107 px. The composer grows it with the text. */
+/*
+ * One line of text at rest, which makes the card 107 px. The composer grows it with the text. The examples come after
+ * it in the page and are positioned too, so without a z-index they would paint over its "+" menu.
+ */
 .play .composer {
+  z-index: 1;
   gap: 18px;
 }
 
