@@ -20,7 +20,8 @@ const DOTS = Array.from({ length: 8 }, (_, i) => {
  * 16 px as the subagent variant for nested agent rows. Decorative: the step's title says what's happening.
  *
  * The Muse mascot's working animation replaces the dots when the owner's mascot folder lands. The swap stays inside
- * this file: every surface asks for a WorkingIcon by state and variant, never for the dots.
+ * this file, with the .chat-working-icon turn in chat.css: every surface asks for a WorkingIcon by state and variant,
+ * never for the dots.
  */
 export function WorkingIcon({
   state = "working",

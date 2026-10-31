@@ -2439,9 +2439,10 @@ pre {
   background: #000;
 }
 
+/* 16 px above the refine box: the composer card is about 130 px tall, 24 px off the bottom. */
 .jump {
   position: sticky;
-  bottom: 120px;
+  bottom: 170px;
   z-index: 11;
   align-self: center;
   display: grid;
