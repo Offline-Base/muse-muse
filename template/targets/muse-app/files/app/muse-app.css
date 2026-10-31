@@ -1,0 +1,207 @@
+/* The muse-app look (.agents/skills/muse-app-ui). It loads after globals.css (app/layout.tsx) and changes values only:
+   the same tokens, the same classes and the same components, so every part in globals.css and components/ works as it
+   did. A white page, hairline cards, regular-weight Inter with its optical size axis, one blue for actions and one
+   purple gradient that only marks AI. No Meta logos, wordmarks or marks, and never "Meta" as the product's brand. Every
+   text pair the parts use passes WCAG AA in both modes; keep text on the pairs the muse-app-ui skill lists.
+
+   Every value that globals.css also sets in dark mode is set again in the dark block below, since this file's light
+   block comes after globals.css's dark one. */
+
+:root {
+  /* Surfaces and text */
+  --bg: #ffffff; /* the page */
+  --surface: #ffffff; /* cards, the app bar, dialogs: white on white, so cards get a hairline edge */
+  --surface-2: #f3f4f5; /* fills: notes, table heads, the dropzone, the person's chat bubble, a chart's panel */
+  --popover: #ffffff;
+  --toast-bg: #ffffff;
+  --input-bg: #ffffff;
+  --line: rgba(0, 0, 0, 0.1); /* every hairline: card edges, dividers, tables, tags */
+  --field-line: #8a8d91; /* text field borders, 3:1 so a field's edge shows */
+  --fg: #111112; /* primary text */
+  --fg-2: rgba(0, 4, 9, 0.59); /* secondary text: taglines, hints, captions */
+  --placeholder: rgba(0, 4, 9, 0.59); /* the secondary color, so a placeholder stays AA */
+  --disabled: rgba(0, 7, 17, 0.37); /* disabled text and icons only */
+
+  /* One blue for actions: buttons, links, selection and focus */
+  --accent: #0064d4; /* primary buttons, selected marks, progress */
+  --on-accent: #ffffff;
+  --accent-hover: rgba(0, 0, 0, 0.08);
+  --link: #0064d4; /* links and text buttons */
+  --tinted-bg: #e8f1fb; /* tinted buttons, pressed chips: 9% of the blue on white */
+  --tinted-hover-bg: #dfebf9;
+  --tinted-fg: #0064d4;
+  --secondary-bg: rgba(0, 0, 0, 0.05); /* secondary buttons, chips, icon buttons, avatars, the segmented track */
+  --hover: rgba(0, 0, 0, 0.05);
+  --press: rgba(0, 0, 0, 0.1);
+  --focus: #0064d4;
+  --progress-track: rgba(0, 100, 212, 0.2);
+  --overlay: rgba(0, 0, 0, 0.1); /* the page behind a dialog */
+
+  /* Status. Warning is for icons. */
+  --positive: #008200;
+  --negative: #c01f37;
+  --warning: #c65323;
+  --positive-soft: rgba(34, 197, 94, 0.15);
+  --negative-soft: #fde8e8;
+
+  /* Brand, AI and the signature element */
+  --brand: #0064d4; /* the signature color: the same blue as actions */
+  --ai-start: #6547f5; /* AI only: model credit, AI working, AI result */
+  --ai-end: #9b45f0;
+  --ai-soft: #f0edfe; /* a busy tinted AI button's moving fill */
+  --signature-soft: #e8f1fb;
+  --signature-ink: #0064d4; /* text on --signature-soft or --surface */
+  --scrim: rgba(0, 0, 0, 0.6); /* dark glass under a label on a photo */
+  --bubble-in: #f3f4f5;
+
+  /* New in this look */
+  --glass: rgba(255, 255, 255, 0.76); /* the composer, with a 36 px blur behind it */
+  --send-from: #0064d4; /* the send button's gradient, icon only */
+  --send-to: #5b70ff;
+  --segment: #ffffff; /* the chosen option in a segmented control */
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.64), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
+
+  /* Type: one family, Inter with its optical size axis, self-hosted from npm. Headings are regular or semibold. */
+  --font: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font);
+  --type-hero: 400 28px/34px var(--font);
+  --type-title: 600 20px/25px var(--font);
+  --type-headline: 600 17px/22px var(--font);
+  --type-body: 400 16px/24px var(--font);
+  --type-label: 500 14px/20px var(--font);
+  --type-meta: 400 13px/18px var(--font);
+  --type-tiny: 500 11px/16px var(--font);
+
+  /* Radii */
+  --radius-sm: 8px; /* thumbnails, tags in tables, code */
+  --radius: 12px; /* fields, notes, tables, list rows, photos in a list */
+  --radius-lg: 16px; /* cards, the segmented track, toasts */
+  --radius-bubble: 22px;
+  --pill: 9999px; /* buttons, chips, avatars */
+
+  /* Elevation: cards are flat with a hairline; only layers that float have shadows */
+  --shadow-base: inset 0 -1px 0 var(--line); /* the app bar: a hairline under it */
+  --shadow-emphasis: var(--shadow-card);
+  --shadow-elevated: 0 0 0 1px var(--line), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12); /* toasts */
+  --shadow-menu: inset 0 1px 0 rgba(255, 255, 255, 0.64), 0 0 0 1px var(--line), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
+
+  /* Motion: hover and press */
+  --dur-xxs: 150ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181819;
+    --surface: #181819;
+    --surface-2: #28292b;
+    --popover: #181819;
+    --toast-bg: #28292b;
+    --input-bg: #181819;
+    --line: rgba(255, 255, 255, 0.12);
+    --field-line: #6f7276;
+    --fg: #ffffff;
+    --fg-2: rgba(242, 247, 255, 0.53);
+    --placeholder: rgba(242, 247, 255, 0.53);
+    --disabled: rgba(241, 246, 255, 0.38);
+    --link: #1793ff;
+    --tinted-bg: rgba(23, 147, 255, 0.16);
+    --tinted-hover-bg: rgba(23, 147, 255, 0.24);
+    --tinted-fg: #5cadff;
+    --secondary-bg: rgba(255, 255, 255, 0.12);
+    --hover: rgba(255, 255, 255, 0.08);
+    --press: rgba(255, 255, 255, 0.2);
+    --focus: #1793ff;
+    --overlay: rgba(255, 255, 255, 0.06);
+    --positive: #07b123;
+    --negative: #fa4758;
+    --warning: #f1916e;
+    --positive-soft: rgba(34, 197, 94, 0.15);
+    --negative-soft: rgba(220, 38, 38, 0.15);
+    --ai-soft: rgba(101, 71, 245, 0.2);
+    --signature: #1793ff;
+    --signature-soft: rgba(23, 147, 255, 0.16);
+    --signature-ink: #5cadff;
+    --bubble-in: #28292b;
+    --glass: rgba(56, 56, 56, 0.8);
+    --send-from: #007ffd;
+    --segment: rgba(255, 255, 255, 0.12);
+    --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 2px rgba(0, 0, 0, 0.02), 0 0 6px rgba(0, 0, 0, 0.03), 0 6px 30px rgba(0, 0, 0, 0.07);
+    --shadow-menu: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px var(--line), 0 0 12px rgba(0, 0, 0, 0.04), 0 12px 60px rgba(0, 0, 0, 0.12);
+    color-scheme: dark;
+  }
+}
+
+@media (min-width: 720px) {
+  :root {
+    --type-hero: 400 30px/34px var(--font);
+  }
+}
+
+/* Type. Inter runs a little wide, so text is tracked in by 1%. */
+body { letter-spacing: -0.01em; }
+h1, h2 { letter-spacing: -0.01em; }
+a { font-weight: 500; }
+.hero .tagline { font-size: 16px; line-height: 24px; }
+.big-number { font: 400 36px/42px var(--font); letter-spacing: -0.01em; }
+.appbar-name { font: 600 17px/22px var(--font); letter-spacing: -0.01em; }
+
+/* A first screen that leads with one centered line, for a product whose start is the composer (screens.md, Chat). */
+.hero.center { justify-items: center; padding-top: var(--space-28); text-align: center; }
+.hero.center .tagline { margin-inline: auto; }
+
+/* Cards: white on white, so a hairline marks the edge. Still no shadow, and never a card inside a card. */
+.card { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Buttons are pills. The primary is the flat blue, so its white label stays AA. */
+button.primary,
+button.secondary,
+button.tinted { border-radius: var(--pill); padding: 0 18px; }
+
+/* Chips */
+.chip,
+.tag { font: 500 13px/18px var(--font); }
+
+/* Segmented: the options sit in one gray track, and the chosen one is a raised white segment with its check. */
+.segmented { gap: var(--space-4); padding: var(--space-4); border-radius: var(--radius-lg); background-color: var(--secondary-bg); }
+.segmented label { border-radius: var(--radius); background-color: transparent; }
+.segmented label:has(input:checked),
+.segmented label:has(input:checked):hover { background-color: var(--segment); color: var(--fg); box-shadow: var(--shadow-card); }
+
+/* Tables */
+.table-wrap table { font: 400 14px/20px var(--font); }
+.table-wrap thead th { font: 500 13px/18px var(--font); }
+
+/* Chat: the person's words in a gray bubble on the right; the app's or model's answer is plain text, with no bubble. */
+.thread { gap: var(--space-16); }
+.bubble { padding: 9px var(--space-16); font: 400 16px/26px var(--font); }
+.bubble.out { max-width: min(75%, 560px); background: var(--surface-2); color: var(--fg); }
+.bubble.out a { color: var(--link); }
+.bubble.in { max-width: 100%; padding-inline: 0; background: none; }
+
+/* The composer: a glass card that floats, a pill on one line. The focus ring stays, for keyboards. */
+.composer {
+  min-height: 52px; padding: 6px 6px 6px 20px; border-radius: 32px;
+  background: var(--glass); -webkit-backdrop-filter: blur(36px); backdrop-filter: blur(36px); box-shadow: var(--shadow-card);
+}
+.composer textarea { min-height: 40px; font: 400 18px/27px var(--font); }
+.composer .send {
+  width: 40px; height: 40px;
+  background-color: var(--send-from);
+  background-image: linear-gradient(90deg, var(--send-from), var(--send-to));
+  background-image: linear-gradient(to right in oklab, var(--send-from), var(--send-to));
+}
+.composer .send:hover:not(:disabled) {
+  background-image: linear-gradient(var(--accent-hover), var(--accent-hover)), linear-gradient(90deg, var(--send-from), var(--send-to));
+  background-image: linear-gradient(var(--accent-hover), var(--accent-hover)), linear-gradient(to right in oklab, var(--send-from), var(--send-to));
+}
+/* With nothing to send it shows at half strength, not gone. */
+.composer .send:disabled:not([aria-busy="true"]) { color: var(--on-accent); opacity: 0.5; }
+
+/* Layers that float */
+.toast { border-radius: var(--radius-lg); }
+dialog { padding: 24px; border-radius: 32px; }
+
+/* Photos and image results */
+.media > :is(img, canvas, video) { border-radius: 18px; }
