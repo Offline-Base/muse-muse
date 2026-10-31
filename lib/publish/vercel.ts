@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Sandbox } from "@vercel/sandbox";
+import { FatalError } from "workflow";
 import { env } from "@/lib/env";
 import { MCP_FILE, MUSE_FULL_MARKER } from "@/lib/sandbox/muse-config";
 import { FIX_SCREENSHOTS_DIR, OUT_DIR, PEEK_DIR, PRODUCT_DIR, RUN_DIR } from "@/lib/sandbox/paths";
@@ -14,7 +15,26 @@ import { q, sh } from "@/lib/sandbox/shell";
  */
 
 const API = "https://api.vercel.com";
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/**
+ * The biggest source file a deployment takes: Vercel's limit for files uploaded to an API or CLI deployment is 100 MB on
+ * Hobby and 1 GB on Pro (vercel.com/docs/limits, "Static file uploads", read Oct 31, 2026), so the lower one holds on
+ * any plan. A file over it fails the deploy by name (DeployFilesTooBigError). Before wave 3 the limit here was 10 MB
+ * and bigger files were left out without a word, which broke products with wasm or model files (unit 1, decision 1).
+ */
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+
+/** A product with files Vercel won't take. Fatal: retrying the step can't make them smaller. */
+export class DeployFilesTooBigError extends FatalError {
+  constructor(readonly files: ReadonlyArray<{ file: string; size: number }>) {
+    const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+    const list = files.slice(0, 5).map((f) => `${f.file} (${mb(f.size)})`).join(", ");
+    const more = files.length > 5 ? ` and ${files.length - 5} more` : "";
+    super(
+      `The product has ${files.length === 1 ? "a file" : "files"} over Vercel's ${mb(MAX_FILE_BYTES)} limit for one file, so it wasn't deployed: ${list}${more}. ` +
+        "Load big files from a public URL at run time, or split them.",
+    );
+  }
+}
 /**
  * Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, VR peeks, git, Muse Code's own
  * folder (the platform's hooks and its subagents' worktrees, lib/sandbox/muse-config.ts), and any env file.
@@ -98,10 +118,11 @@ export interface DeployFile {
 }
 
 /**
- * Runs in the sandbox with Node: walks PRODUCT_DIR, skips excluded dirs, env files, symlinks and big files, and
- * writes every kept file into one blob plus an index, so the platform reads the whole tree in one request.
+ * Runs in the sandbox with Node: walks PRODUCT_DIR, skips excluded dirs, env files and symlinks, lists files over
+ * MAX_FILE_BYTES as `skipped` (startDeployFromSandbox fails the deploy naming them), and writes every kept file into
+ * one blob plus an index, so the platform reads the whole tree in one request.
  */
-const COLLECT_SCRIPT = `
+export const COLLECT_SCRIPT = `
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -252,7 +273,9 @@ export async function startDeployFromSandbox(
   input: StartDeployInput,
 ): Promise<{ projectId: string; deploymentId: string; url: string }> {
   const name = projectNameFor(input.slug);
-  const [{ files }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
+  const [{ files, skipped }, project] = await Promise.all([collectDeployFiles(input.sandboxName), getOrCreateProject(name, input.projectId)]);
+  // Every file deploys, or the deploy fails naming the ones that can't: never a product with files silently missing.
+  if (skipped.length) throw new DeployFilesTooBigError(skipped);
   if (!files.some((f) => f.file === "package.json")) throw new Error("The product has no package.json to deploy");
   await configureProject(project, input.env);
 
