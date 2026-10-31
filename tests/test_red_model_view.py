@@ -5,8 +5,8 @@ a class summary) is recorded at the HTTP layer. Two kinds of call must read raw 
 out: the name pass (schema person_names), whose reply is only used to tag spans that are already in
 the text, and the scan reader, which turns an image into text before anything is tagged. Every other
 prompt is built by a model view (Rag._view, Agent._model_view, egress's tagged summary, the tagged
-request for the topic pass, router.build_user_message) and must hold no roster form, identifier or
-tag-map value. Every request must go to this device.
+request for the topic pass) and must hold no roster form, identifier or tag-map value. Every request
+must go to this device. The policy decides by default, so this session never calls the router.
 """
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ def test_the_session_called_every_kind_of_model_step(session, fake):
     assert {"person_names", "request_topics", "rag_answer", "device_answer", "request_parts"} <= kinds
     assert sum(1 for c in fake.calls if "scores" in c.user or "Rubric:" in c.user) >= 24  # one grading step per essay
     assert any(c.schema is None for c in fake.calls)  # the class summary egress asked for
+    assert "route" not in kinds  # the policy decides by default; tests/test_router.py checks the router's prompt
 
 
 def test_every_model_request_goes_to_this_device(session, fake):

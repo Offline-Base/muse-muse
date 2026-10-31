@@ -2,8 +2,9 @@
 
 Real Services under DEVICE_ONLY=1 over a copy of the invented class (tests/red_helpers.py), with
 the device model faked at the HTTP layer: no model, no network. The fakes are the worst case a small
-local model can be: a name pass that finds nothing, a topic labeler that labels nothing, a router
-that always wants to share, answers that echo what the model was shown. Each test states what an
+local model can be: a name pass that finds nothing, a topic labeler that labels nothing, answers
+that echo what the model was shown, and a router that always wants to share, asked only where a
+test turns model routing on (the policy decides by default). Each test states what an
 attacker tries and what must hold. A property that fails today is an xfail whose reason starts with
 its finding id in docs/THREAT_MODEL.md; strict ones flip to a failure the day the fix lands, so the
 marker comes off with the fix. Daily tag rotation (GAP-2, GAP-3) and tag-shaped document text
@@ -318,6 +319,20 @@ def test_f3_a_result_headed_outside_the_class_waits_for_the_user(router, request
     assert out.decision == "ask_user" and "outside_class" in out.floors
 
 
+@pytest.mark.parametrize(
+    ("kind", "text", "wanted"),
+    [
+        ("class_aggregate", "Most of the class improved.", "share_summary"),
+        ("per_student", "[Student A] scored 3 of 4.", "share_tagged"),
+        ("snippet", "Notes.", "ask_user"),
+    ],
+)
+def test_f3_a_destination_both_miss_follows_the_first_matching_rule(router, kind, text, wanted):
+    """What the page's residual risk says today, not what should hold: RED-F3c's fix changes the first two."""
+    out = route(router, "For the yearbook", kind=kind, text=text)
+    assert (out.decision, out.source, out.floors) == (wanted, "rule", [])
+
+
 # F4 linkage across calls ------------------------------------------------------------------------
 
 
@@ -501,6 +516,26 @@ def test_f7_a_router_that_obeys_the_document_cannot_pass_a_floor(make_device, fa
     assert out.status in ("refused", "waiting") and any(f.startswith(floor) for f in out.decision.floors)
     assert "MANGO-2" not in out.text and "fake router" not in out.text
     clean(out.text)
+
+
+@pytest.mark.parametrize(
+    ("kind", "text", "value"),
+    [
+        ("phone", "Call 512-555-0143 today.", "512-555-0143"),
+        ("email", "Write to guardian.q@example.org soon.", "guardian.q@example.org"),
+        ("student_id", "That student is S100233 in the system.", "S100233"),
+        ("address", "They live at 1204 Hunter Lane. Thanks", "1204 Hunter Lane"),
+        ("dob", "Her birthday is 2016-03-14.", "2016-03-14"),
+        ("ssn", "SSN on the form: 900-12-3456", "900-12-3456"),
+        ("card", "The card on file is 4242 4242 4242 4242.", "4242 4242 4242 4242"),
+    ],
+)
+def test_every_identifier_kind_is_tagged_and_the_floor_asks(router, kind, text, value):
+    """The identifiers docs/THREAT_MODEL.md lists, through guard.tag and the real router."""
+    out = guard.tag(text, ROSTER, None)
+    assert value not in out.text
+    decided = router.decide(RouteInput("Show this for my notes", "snippet", out.text, hits=out.hits))
+    assert decided.decision == "ask_user" and f"identifier:{kind}" in decided.floors
 
 
 def test_f7_a_summary_told_to_name_the_writer_loses_that_sentence(device, fake):
