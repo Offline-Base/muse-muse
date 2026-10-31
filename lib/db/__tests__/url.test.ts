@@ -14,6 +14,7 @@ import {
   databaseChoice,
   databaseUrl,
   localDbDir,
+  previewHasOwnDatabase,
   sameDatabase,
 } from "@/lib/db/url";
 import { env } from "@/lib/env";
@@ -95,6 +96,26 @@ describe("databaseChoice", () => {
     for (const message of [DATABASE_UNSET, PREVIEW_DATABASE_UNSET, PREVIEW_DATABASE_IS_PRODUCTION]) assert.ok(!message.includes(String.fromCharCode(0x2014)), message);
     assert.match(PREVIEW_DATABASE_UNSET, /PREVIEW_DATABASE_URL is not set/);
     assert.match(PREVIEW_DATABASE_IS_PRODUCTION, /Neon branch "preview"/);
+  });
+});
+
+describe("previewHasOwnDatabase", () => {
+  it("is true only on a preview that uses PREVIEW_DATABASE_URL", () => {
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: "preview", DATABASE_URL: PROD, PREVIEW_DATABASE_URL: PREVIEW }), true);
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: " Preview ", PREVIEW_DATABASE_URL: ` ${PREVIEW} ` }), true);
+  });
+
+  it("is false on a preview with no database, or with production's", () => {
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: "preview", DATABASE_URL: PROD }), false);
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: "preview", DATABASE_URL: PROD, PREVIEW_DATABASE_URL: "  " }), false);
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: "preview", DATABASE_URL: PROD, PREVIEW_DATABASE_URL: PROD_UNPOOLED }), false);
+  });
+
+  it("is false on production, development, local runs and pglite, whatever PREVIEW_DATABASE_URL says", () => {
+    for (const VERCEL_ENV of ["production", "development", undefined]) {
+      assert.equal(previewHasOwnDatabase({ VERCEL_ENV, DATABASE_URL: PROD, PREVIEW_DATABASE_URL: PREVIEW }), false, String(VERCEL_ENV));
+    }
+    assert.equal(previewHasOwnDatabase({ VERCEL_ENV: "preview", DATABASE_URL: "pglite:.data/pglite", PREVIEW_DATABASE_URL: PREVIEW }), false);
   });
 });
 

@@ -10,7 +10,8 @@
  *   VERCEL_ENV preview, PREVIEW_DATABASE_URL unset     no database: the site runs on its no-database paths, migrate skips
  *   VERCEL_ENV preview, PREVIEW_DATABASE_URL is prod   no database, and migrate refuses (exit 1), so the build stops
  *
- * Vercel's custom environments also run with VERCEL_ENV=preview, so they follow the preview rows.
+ * Vercel's custom environments also run with VERCEL_ENV=preview, so they follow the preview rows. env.platformUrl asks
+ * previewHasOwnDatabase here too: a preview with its own database is its own platform.
  *
  * No imports: drizzle.config.ts loads this file, and lib/env.ts (which imports it) goes into the workflow bundle.
  */
@@ -99,4 +100,14 @@ export function databaseChoice(e: Env = process.env): DatabaseChoice {
 /** The connection string this deployment uses, or null when it has no database (see the table above). */
 export function databaseUrl(e: Env = process.env): string | null {
   return databaseChoice(e).url;
+}
+
+/**
+ * True on a preview that uses a database of its own: the "PREVIEW_DATABASE_URL set" row above, and not production's.
+ * Such a preview is its own platform (env.platformUrl): its builds and gateway tokens live only in that database, so
+ * production's gateway would refuse them. False on production, local runs, pglite, and a preview with no database.
+ */
+export function previewHasOwnDatabase(e: Env = process.env): boolean {
+  const choice = databaseChoice(e);
+  return choice.url !== null && choice.from === "PREVIEW_DATABASE_URL";
 }

@@ -1,5 +1,5 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
-import { databaseChoice, isPreview } from "@/lib/db/url";
+import { databaseChoice, isPreview, previewHasOwnDatabase } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
@@ -107,6 +107,15 @@ export const env = {
     return choice.url;
   },
   /**
+   * Vercel's Protection Bypass for Automation secret, on a preview only (README.md, Preview database). The build
+   * firewall adds it as the x-vercel-protection-bypass header to a sandbox's requests to this platform, so sandboxes
+   * reach a protected preview's gateway without the secret ever entering the sandbox. Null everywhere else, including
+   * production.
+   */
+  get previewBypassSecret(): string | null {
+    return isPreview() ? optional("VERCEL_AUTOMATION_BYPASS_SECRET") : null;
+  },
+  /**
    * BLOB_READ_WRITE_TOKEN, or undefined. Blob stores connected the old way set this token. Stores connected the new way
    * set BLOB_STORE_ID instead and sign in with the deployment's OIDC token, so lib/storage.ts passes this as `token`
    * only when it is set, and otherwise lets @vercel/blob use OIDC with BLOB_STORE_ID. When both are set, this wins.
@@ -153,8 +162,17 @@ export const env = {
   get builderSnapshotId() {
     return process.env.BUILDER_SNAPSHOT_ID || undefined;
   },
-  /** Public origin of this platform, with no trailing slash. Products reach the gateway here. */
+  /**
+   * Public origin of this platform, with no trailing slash. Products and build sandboxes reach the gateway here. A
+   * preview with a database of its own (lib/db/url.ts, previewHasOwnDatabase) is its own platform, at its branch URL
+   * or else its deployment URL: its builds and gateway tokens live only in that database, so production's gateway
+   * would refuse them. Everything else, including a preview with no database, keeps the rule below.
+   */
   get platformUrl() {
+    if (previewHasOwnDatabase()) {
+      const own = process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
+      if (own) return `https://${own}`.replace(/\/$/, "");
+    }
     const explicit = process.env.PLATFORM_URL;
     if (explicit && !explicit.includes("localhost")) return explicit.replace(/\/$/, "");
     const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
