@@ -1,6 +1,6 @@
 # Build log
 
-Every merge, review, fix, measurement and decision on the way to the submission, newest last. Times are ET. Numbers here are copies; the report named next to each one holds the command that produced it. All data is invented.
+Every merge, review, fix, measurement and decision on the way to the submission, newest last. Times are ET, from commit and run-log times. Numbers here are copies; the report named next to each one holds the command that produced it. All data is invented.
 
 Branches: `ethan/score-build` is the integration branch, built in local worktrees (one per lane) and merged here. `main` on GitHub is updated only with verified work. The live app runs older code (`ethan/device-only-build`, tag map v1) and moves to new code only in Ethan's restart windows.
 
@@ -58,9 +58,9 @@ The 2B model as router over-refuses (86 to 88 on fresh_200_b), so policy decides
 
 **01:48** Compliance tagging reports (`eval/reports/compliance_score_build.md`, `compliance_with_model_score_build.md`, 4fb4fef): rules only unchanged; with LFM3-VL-2B 0 misses and 0 of 20 clean sentences changed (the earlier report had 1 of 16 before the clean set grew).
 
-**About 01:50** Scene rehearsal and device smoke on 5e04a4f (`eval/reports/muse_app/rehearsal_2026-10-31.md`, `eval/reports/device_smoke_lfm_score_build.md`): all six scenes reach their expected statuses, 0 of 18 tool outputs hold a private value; smoke passes, 24 essays graded in 41.2 s, every result device only.
+**01:50 to 01:53** Scene rehearsal and device smoke on 5e04a4f (`eval/reports/muse_app/rehearsal_2026-10-31.md`, `eval/reports/device_smoke_lfm_score_build.md`): all six scenes reach their expected statuses, 0 of 18 tool outputs hold a private value; smoke passes, 24 essays graded in 41.2 s, every result device only.
 
-**About 01:20 to now** Review 2, independent of review 1, on 895e9bf..f8630b2: four lenses (rotation, privacy, live-app restart path, the side lanes), one skeptic per lens trying to refute each finding, then one fixer. Confirmed:
+**About 01:25 to 02:13** Review 2, independent of review 1, on 895e9bf..f8630b2: four lenses (rotation, privacy, live-app restart path, the side lanes), one skeptic per lens trying to refute each finding, then one fixer. Confirmed:
 - Medium: stale manifests; fixed in 5e04a4f.
 - Low: the templated roster name clash; fixed in 5e04a4f.
 - Medium: the pre-registration names the sealed set by the wrong path (`eval/fresh_200_c.jsonl`; it is `eval/splits/fresh_200_c.jsonl`).
@@ -70,9 +70,9 @@ The 2B model as router over-refuses (86 to 88 on fresh_200_b), so policy decides
 - Low: the board bundle ships the templated set; an empty base.db backup left by a failed copy is later taken as the copy; RETENTION says the old code "tags nothing" given a v2 map (it does not start); the letter-home never-share check reads restored text, so a real surname such as Street can block every letter.
 - Rejected after checking: one claim about the templated set's roster.
 - Needs Ethan (all low, nothing leaves the device): (1) one-letter words after "student" ("the student I tutor", "Student I.D.") can still read as a tag; the line-break and "I.D." parts are plain fixes, how strict restore is for an unbracketed "Student A" is a product call; (2) a two or three letter code Muse writes without brackets is saved as the bare code, not the name; (3) the letter-home check looks at tags only, so a plain name or phone Muse typed itself passes into an unsent draft.
-- The fixer is working on the confirmed, non-Ethan findings now.
+- The fixer took the confirmed, non-Ethan findings (below).
 
-**02:00 to 02:10** ROUTER_LOOSEN fixes measured on 5e04a4f (`eval/reports/dev/loosen/README.md`): each fix alone and all, against none, on the first 200 of the 800 free-to-read simulated day items (`eval/splits/sim_days.jsonl`), not the study's holdout or unseen sets, with ask_causes on each. 0 leaks and the same 3 unsafe shares in every run; no fix turned an ask or refusal into a share.
+**01:53 to 02:00** ROUTER_LOOSEN fixes measured on 5e04a4f (`eval/reports/dev/loosen/README.md`): each fix alone and all, against none, on the first 200 of the 800 free-to-read simulated day items (`eval/splits/sim_days.jsonl`), not the study's holdout or unseen sets, with ask_causes on each. 0 leaks and the same 3 unsafe shares in every run; no fix turned an ask or refusal into a share.
 
 | ROUTER_LOOSEN | Accuracy | Approval requests | Needless asks | Fixed / broke vs none |
 |---|---|---|---|---|
@@ -84,31 +84,31 @@ The 2B model as router over-refuses (86 to 88 on fresh_200_b), so policy decides
 
 Only result_words is above the 1 to 3 item run-to-run noise. lists needs a learned share rule, which these runs do not have, so only the persona study can show it. Ethan picks which ship; the study fixes that choice before its first run.
 
-**02:15** Ethan's decisions:
+**02:02** Ethan's decisions:
 - ROUTER_LOOSEN ships as `result_words,lists` (the default, and fixed for the whole persona study); class_of stays off.
 - One-letter codes: fix the clear cases (restore never reaches across a line break, and never before "." plus a letter as in "I.D.", "e.g.", "i.e."); an unbracketed capital "Student A" still restores.
 - Two or three letter codes without brackets in a saved note: save as now, and the receipt tells Muse how many codes were not in brackets and stayed as written.
 - Letters home: keep the tag-only check; make the refusal text and docs say exactly what is checked.
 These go in after review 2's fixer commits, then the numbers that depend on the router default are measured again.
 
-**02:55** Review 2's fixer committed 3af0cad: restore no longer reads across a line break or before "." plus a letter; `save_on_device` checks each text on its own; the never-share check on letters reads Muse's text as written, not restored names; a failed base.db copy leaves nothing and an empty one no longer counts as the backup; the notices and the pre-registration path are corrected; the board bundle leaves out the templated set; four texts on the old grace rule are corrected; the letter refusal says it checks tags only. It read Ethan's decisions from this log and applied the one-letter and letter-wording parts. 3331 passed. One license gap is open: the notices say the `mlx-community/sam3.1-bf16` license is not checked yet. Check before submitting.
+**02:13** Review 2's fixer committed 3af0cad: restore no longer reads across a line break or before "." plus a letter; `save_on_device` checks each text on its own; the never-share check on letters reads Muse's text as written, not restored names; a failed base.db copy leaves nothing and an empty one no longer counts as the backup; the notices and the pre-registration path are corrected; the board bundle leaves out the templated set; four texts on the old grace rule are corrected; the letter refusal says it checks tags only. It read Ethan's decisions from this log and applied the one-letter and letter-wording parts. 3331 passed. One license gap is open: the notices say the `mlx-community/sam3.1-bf16` license is not checked yet. Check before submitting.
 
 Script error, logged so it is not repeated: the review 2 script matched verdicts to findings by list position, and the skeptics returned them in another order, so some verdicts were attached to the wrong finding. Checked afterward by text: 15 findings, 15 verdicts, one rejected on evidence (a claim that the templated set needs a roster that does not ship), nothing real dropped. Later scripts should key verdicts by finding id.
 
-**03:10** Ethan's remaining decisions in: ROUTER_LOOSEN defaults to `lists,result_words` (`none` turns them off); the `save_on_device` receipt counts codes Muse wrote without brackets (they stay as written, with no real name). The relabel step now reads the SIM-1 split where it is (`eval/splits/sim_*.jsonl`), and all five school personas have their sets (relaxed teacher 163 of 980 labels changed, special ed coordinator 42, the three on the strict policy 0), so the whole study can run with no Meta API call. The change is noted below the line in `eval/reports/sim/PLAN.md`, before any study run. 3334 passed, 6 skipped, 64 xfailed; ruff and the secrets scan clean. The templated set's bytes did not change (sha256 c83fd50f...), now checked against 33 sets.
+**02:22** Ethan's remaining decisions in: ROUTER_LOOSEN defaults to `lists,result_words` (`none` turns them off); the `save_on_device` receipt counts codes Muse wrote without brackets (they stay as written, with no real name). The relabel step now reads the SIM-1 split where it is (`eval/splits/sim_*.jsonl`), and all five school personas have their sets (relaxed teacher 163 of 980 labels changed, special ed coordinator 42, the three on the strict policy 0), so the whole study can run with no Meta API call. The change is noted below the line in `eval/reports/sim/PLAN.md`, before any study run. 3334 passed, 6 skipped, 64 xfailed; ruff and the secrets scan clean. The templated set's bytes did not change (sha256 c83fd50f...), now checked against 33 sets.
 
-**03:35** Everything the router default touches measured again on 7ad8083, ROUTER_LOOSEN=lists,result_words:
+**02:45** Everything the router default touches measured again on 7ad8083, ROUTER_LOOSEN=lists,result_words:
 - fresh_200_b (`eval/reports/default_loosen_fresh_200_b.md`): 81.5% (163 of 200), 0 leaks, 75 approval requests, 28 needless, 2 missed asks, 0 refusals shared, 4 over-refusals. Before the fixes: 74.5%, 0 leaks, 88, 40, 2, 0, 3. The fixes were chosen on simulated day items, but they came from ask causes seen on sets like this one, so the sealed set, not this one, is the number to treat as unseen.
 - Model matrix (`eval/reports/matrix_lfm_loosen_default.md`), 0 leaks in every row. fresh_200_b: keywords 64.5%, policy_lfm 81.5%, lfm_tighten 44.5%, lfm_decide 43.0%. tasks: 59.0%, 82.0%, 58.0%, 59.0%.
 - Scene rehearsal (`eval/reports/muse_app/rehearsal_2026-10-31.md`, replaces the 01:50 run of the same name; the older one is in git): all six scenes reach their expected statuses, 0 of 18 outputs hold a private value. The new default did not change a demo scene.
 - Device smoke (`eval/reports/device_smoke_lfm_loosen_default.md`): passes, 24 essays graded in 35.9 s, every result device only.
 - Persona pipeline smoke (`eval/reports/sim/smoke/strict_teacher/`): 1 night, 10 items, 127 s, 0 receipt mismatches. A pipeline check, not a study run, and its numbers are not results.
 
-**03:50** History rewritten locally before the push, over 92ee1a7..ethan/score-build (43 commits, 25 got new hashes): the private address in that one lane commit became a documentation-range address, and two commit messages were reworded. The final tree is byte-identical to before, the range adds no private address, and no message names the old wording. Old hashes in commit messages, this log and the reports were mapped to the new ones (51 places in 25 files), so every hash cited here resolves. The old commits stay only in local lane branches and a local backup ref, none of which are pushed.
+**02:46** History rewritten locally before the push, over 92ee1a7..ethan/score-build (43 commits, 25 got new hashes): the private address in that one lane commit became a documentation-range address, and two commit messages were reworded. The final tree is byte-identical to before, the range adds no private address, and no message names the old wording. Old hashes in commit messages, this log and the reports were mapped to the new ones (51 places in 25 files), so every hash cited here resolves. The old commits stay only in local lane branches and a local backup ref, none of which are pushed.
 
-**04:05** The clean clone (no .env, single branch) found 1 failure out of 3334: `test_the_committed_splits_match_their_manifest_and_touch_no_used_item` counted any scored unseen row as used, and the persona smoke had scored the study's unseen items, as every real study run will. It would have failed in the worktree too; only two test files were run before that commit. The test now holds the sim sets to reports outside `eval/reports/sim/` and holds fresh_200_c to every report, so the invariant that matters is stated directly: nothing has scored fresh_200_c. The smoke's unseen rows are disclosed in PLAN.md; nobody read them. From here the full suite runs before every commit that adds reports.
+**02:53** The clean clone (no .env, single branch) found 1 failure out of 3334: `test_the_committed_splits_match_their_manifest_and_touch_no_used_item` counted any scored unseen row as used, and the persona smoke had scored the study's unseen items, as every real study run will. It would have failed in the worktree too; only two test files were run before that commit. The test now holds the sim sets to reports outside `eval/reports/sim/` and holds fresh_200_c to every report, so the invariant that matters is stated directly: nothing has scored fresh_200_c. The smoke's unseen rows are disclosed in PLAN.md; nobody read them. From here the full suite runs before every commit that adds reports.
 
-**04:15** Clean clone at the head, no .env, single branch: 3334 passed, 6 skipped, 64 xfailed; ruff clean; all 3 manifests current; secrets scan over every file and all history on the branch: 0 findings (`eval/reports/secrets_scan.md`). Pushed `ethan/score-build` to `main`.
+**02:56** Clean clone at the head, no .env, single branch: 3334 passed, 6 skipped, 64 xfailed; ruff clean; all 3 manifests current; secrets scan over every file and all history on the branch: 0 findings (`eval/reports/secrets_scan.md`). Pushed `ethan/score-build` to `main` (92ee1a7 to 0c0ced8), a fast-forward. CI queued on it. The live app did not move.
 
 ## Open items
 
