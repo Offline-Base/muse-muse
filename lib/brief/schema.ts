@@ -14,13 +14,17 @@ export const PRODUCT_MODELS = [
   "muse-gadget",
 ] as const;
 
+/**
+ * Where a product runs (docs/NATIVE.md). Every product is a web product, so "web" is always in; a brief adds the others,
+ * each behind its flag (env.enabledTargets).
+ */
+export const TARGETS = ["web", "phone", "desktop", "vr", "glasses", "agent"] as const;
+export type TargetId = (typeof TARGETS)[number];
+
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);
 
-/**
- * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
- * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
- */
-export const BriefSchema = z.object({
+/** The fields of every brief. New briefs and stored briefs differ only in what is added to these below. */
+const BriefFields = z.object({
   verdict: z.enum(["yes", "partly", "no"]),
   /** Set only when the request is refused under the policy in docs/DESIGN.md. */
   refusal: z.string().nullable(),
@@ -66,6 +70,18 @@ export const BriefSchema = z.object({
   actions: z.array(z.object({ name: z.string().regex(/^[a-z][a-z0-9_]*$/), description: z.string() })),
 });
 
+/** The brief's `targets` field, limited to these ids. */
+const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
+  z.array(z.object({ id: z.enum(ids), why: z.string().min(1).max(200) })).max(ids.length);
+
+/**
+ * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
+ * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
+ * `targets` is optional, so older briefs still parse, and a brief without it runs on the web only (briefTargets in
+ * lib/native/targets.ts).
+ */
+export const BriefSchema = BriefFields.extend({ targets: targetPicks(TARGETS).optional() });
+
 export type Brief = z.infer<typeof BriefSchema>;
 
 /** The models a new brief may pick: every product model but Muse Spark 1.3, which the platform never uses. */
@@ -77,7 +93,7 @@ export const NEW_PRODUCT_MODELS = PRODUCT_MODELS.filter(
  * The schema the brief writer answers in: BriefSchema without Muse Spark 1.3. Briefs stored before keep their Spark
  * capabilities (the Brief type still allows it), and the gateway serves those products with Spark 1.3 Contributor.
  */
-export const NewBriefSchema = BriefSchema.extend({
+export const NewBriefSchema = BriefFields.extend({
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS), why: z.string() }))
     .min(1),
@@ -86,9 +102,21 @@ export const NewBriefSchema = BriefSchema.extend({
 const NEW_PRODUCT_MODELS_NO_GADGET = NEW_PRODUCT_MODELS.filter((m) => m !== "muse-gadget") as unknown as typeof NEW_PRODUCT_MODELS;
 
 /** NewBriefSchema without muse-gadget, for when GADGETS_ENABLED is off. */
-export const NewBriefSchemaNoGadget = BriefSchema.extend({
+export const NewBriefSchemaNoGadget = BriefFields.extend({
   capabilities: z
     .array(z.object({ need: z.string(), model: z.enum(NEW_PRODUCT_MODELS_NO_GADGET), why: z.string() }))
     .min(1),
 });
+
+/**
+ * The schema the brief writer answers in for these flags. With no targets enabled it is exactly NewBriefSchema or
+ * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those.
+ */
+export function newBriefSchemaFor(opts: { gadgets: boolean; targets: readonly TargetId[] }): z.ZodType<Brief> {
+  const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
+  const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
+  if (ids.length === 1) return base;
+  return base.extend({ targets: targetPicks(ids as [TargetId, ...TargetId[]]).min(1) });
+}
+
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

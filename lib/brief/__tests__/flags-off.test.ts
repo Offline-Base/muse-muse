@@ -1,0 +1,106 @@
+/**
+ * With every target flag off, what the brief writer and Muse Code are given is byte for byte what it was before targets
+ * existed. golden/ was written from the code at 723460f, before any of this. A later change to these prompts that isn't
+ * behind a flag has to regenerate it on purpose, and the diff shows what changed:
+ *
+ *   UPDATE_GOLDEN=1 npx tsx --test lib/brief/__tests__/flags-off.test.ts
+ */
+import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { beforeEach, describe, it } from "node:test";
+import { z } from "zod";
+import { BriefSchema, NewBriefSchema, NewBriefSchemaNoGadget, TARGETS, newBriefSchemaFor } from "@/lib/brief/schema";
+import { strictJsonSchema } from "@/lib/brief/strict-schema";
+import { env } from "@/lib/env";
+import { BRIEF } from "@/lib/promote/__tests__/fixtures";
+import { flagsOffSurface } from "./flags-off-surface";
+
+const GOLDEN = join(import.meta.dirname, "golden");
+const FLAGS = [
+  "NATIVE_TARGETS",
+  "NATIVE_LAB",
+  "NATIVE_DEVICE_FARM",
+  "VR_ENABLED",
+  "GLASSES_ENABLED",
+  "GLASSES_NATIVE_CHECKS",
+  "AGENTS_ENABLED",
+  "COMPOSIO_PERSONAL_ENABLED",
+  "GADGETS_ENABLED",
+];
+
+beforeEach(() => {
+  for (const flag of FLAGS) delete process.env[flag];
+});
+
+describe("with every target flag off", () => {
+  it("every prompt and schema is what it was before targets existed", () => {
+    const surface = flagsOffSurface();
+    assert.equal(Object.keys(surface).length, 11);
+    for (const [name, text] of Object.entries(surface)) {
+      if (process.env.UPDATE_GOLDEN) writeFileSync(join(GOLDEN, name), text);
+      assert.equal(text, readFileSync(join(GOLDEN, name), "utf8"), `${name} changed`);
+    }
+  });
+
+  it("the writer's schema is the same object it always was, with or without gadgets", () => {
+    assert.deepEqual(env.enabledTargets, []);
+    assert.equal(newBriefSchemaFor({ gadgets: true, targets: env.enabledTargets }), NewBriefSchema);
+    assert.equal(newBriefSchemaFor({ gadgets: false, targets: env.enabledTargets }), NewBriefSchemaNoGadget);
+    // Web alone is no target to choose from.
+    assert.equal(newBriefSchemaFor({ gadgets: true, targets: ["web"] }), NewBriefSchema);
+  });
+
+  it("the writer can't send targets: they aren't in its schema, and a stray one is dropped", () => {
+    assert.ok(!("targets" in NewBriefSchema.shape));
+    assert.ok(!("targets" in NewBriefSchemaNoGadget.shape));
+    const parsed = NewBriefSchema.parse({ ...BRIEF, targets: [{ id: "phone", why: "x" }] });
+    assert.ok(!("targets" in parsed));
+  });
+
+  it("an older stored brief parses to the same thing, with no targets added", () => {
+    assert.deepEqual(BriefSchema.parse(BRIEF), BRIEF);
+    assert.ok(!("targets" in BriefSchema.parse(BRIEF)));
+  });
+
+  it("the stored schema differs from the one the writer used only by the optional targets", () => {
+    const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
+    const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
+    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), ["targets"]);
+    assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
+  });
+});
+
+describe("newBriefSchemaFor with targets on", () => {
+  const brief = (targets: unknown) => ({ ...BRIEF, targets });
+
+  it("requires targets, and only web and the enabled ones", () => {
+    const schema = newBriefSchemaFor({ gadgets: false, targets: ["phone", "vr"] });
+    assert.equal(schema.safeParse(BRIEF).success, false, "targets is required");
+    assert.equal(schema.safeParse(brief([{ id: "web", why: "Always" }, { id: "phone", why: "On the go" }])).success, true);
+    assert.equal(schema.safeParse(brief([{ id: "desktop", why: "Not on" }])).success, false);
+    assert.equal(schema.safeParse(brief([])).success, false, "at least web");
+    assert.equal(schema.safeParse(brief([{ id: "phone", why: "" }])).success, false, "a why each");
+    assert.equal(schema.safeParse(brief([{ id: "phone", why: "x".repeat(201) }])).success, false);
+  });
+
+  it("keeps the gadget choice as the flag says", () => {
+    const capability = [{ need: "see", model: "muse-gadget", why: "a board" }];
+    const targets = [{ id: "web", why: "Always" }];
+    assert.equal(newBriefSchemaFor({ gadgets: true, targets: ["phone"] }).safeParse({ ...BRIEF, capabilities: capability, targets }).success, true);
+    assert.equal(newBriefSchemaFor({ gadgets: false, targets: ["phone"] }).safeParse({ ...BRIEF, capabilities: capability, targets }).success, false);
+  });
+
+  it("makes a schema Meta's strict output accepts: every property required, the enum limited", () => {
+    const strict = strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: ["agent"] })) as { required: string[]; properties: { targets: { items: { properties: { id: { enum: string[] } } } } } };
+    assert.ok(strict.required.includes("targets"));
+    assert.deepEqual(strict.properties.targets.items.properties.id.enum, ["web", "agent"]);
+  });
+
+  it("the stored schema takes every target, and refuses others", () => {
+    assert.deepEqual([...TARGETS], ["web", "phone", "desktop", "vr", "glasses", "agent"]);
+    assert.equal(BriefSchema.safeParse(brief(TARGETS.map((id) => ({ id, why: "y" })))).success, true);
+    assert.equal(BriefSchema.safeParse(brief([{ id: "toaster", why: "y" }])).success, false);
+    assert.ok(z.toJSONSchema(BriefSchema));
+  });
+});

@@ -1,0 +1,16 @@
+# Change request
+
+The user asked for this change to the live product:
+
+> Add a dark theme.
+
+## What to do
+
+- Make the change and keep the primary flow working.
+- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Don't restyle what the request doesn't change.
+- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.
+- Update `musemuse.json` if actions, limits or cost changed.
+- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.
+- If the request is something AGENTS.md says not to build, change nothing. Write the reason in BUILD_NOTES.md and stop.
+- If no listed model can do part of it, build the closest useful version, say so in the UI, and write the limit in BUILD_NOTES.md.
+- Add a short entry to BUILD_NOTES.md, then run `npm run verify` until it exits 0.

@@ -1,0 +1,319 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "yes",
+        "partly",
+        "no"
+      ]
+    },
+    "refusal": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "slug": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "tagline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "user": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inspiration": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "image",
+                  "video",
+                  "audio",
+                  "pdf"
+                ]
+              },
+              "describes": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "index",
+              "kind",
+              "describes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "borrow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dontCopy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "references",
+        "borrow",
+        "dontCopy"
+      ],
+      "additionalProperties": false
+    },
+    "primaryFlow": {
+      "minItems": 1,
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "screens": {
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "capabilities": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "need": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "muse-wonder-1.0",
+              "muse-image-1.0",
+              "sam-3.1",
+              "muse-voice-transcribe-1.0",
+              "muse-glimmer",
+              "muse-gadget"
+            ]
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "need",
+          "model",
+          "why"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "required",
+          "notes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "overlay",
+              "video",
+              "json",
+              "file"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "notes"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "complexity": {
+      "type": "string",
+      "enum": [
+        "simple",
+        "standard",
+        "complex"
+      ]
+    },
+    "estimatedCostPerRunUsd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "costNotes": {
+      "type": "string"
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "pdf"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "fromUserSample": {
+            "type": "boolean"
+          },
+          "referenceIndex": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "description",
+          "fromUserSample",
+          "referenceIndex"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "verdict",
+    "refusal",
+    "name",
+    "slug",
+    "tagline",
+    "user",
+    "inspiration",
+    "primaryFlow",
+    "screens",
+    "capabilities",
+    "inputs",
+    "outputs",
+    "limits",
+    "complexity",
+    "estimatedCostPerRunUsd",
+    "costNotes",
+    "fixtures",
+    "actions"
+  ],
+  "additionalProperties": false
+}

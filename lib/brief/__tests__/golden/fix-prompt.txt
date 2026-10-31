@@ -1,0 +1,19 @@
+# Fix round 1
+
+The screenshot judge failed the product. Fix the cause in the product code.
+
+- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.
+- If a model call fails, check the request against the skill for that model before changing anything else.
+- Keep the primary flow from brief.md working, and keep the footer.
+- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Fix what the judge saw with those, not with new colors, fonts or styles.
+- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.
+
+## Judge notes (it failed the screenshots)
+
+The judge looked at the screenshots your smoke test saved in `test-results/judge/` and compared them with brief.md and inspo/.
+
+Reasons:
+
+- The count is missing.
+
+Change the product so the screens show what the brief promises. The last screenshot must show the finished result, with no error, invalid field, spinner or empty state anywhere on it. Keep saving 2 to 4 numbered screenshots as the verify skill says.
