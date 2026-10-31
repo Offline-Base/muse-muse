@@ -8,7 +8,7 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
-import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
+import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
 import { liveFrameAllow } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
@@ -45,6 +45,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const limits = manifest?.limits?.length ? manifest.limits : (brief?.limits ?? []);
   const costPerRun = manifest?.estimatedCostPerRunUsd ?? brief?.estimatedCostPerRunUsd ?? null;
   const muse = manifest?.inspiration || inspiration?.note || brief?.inspiration.summary || null;
+  const exposedActions = connectorActions(manifest);
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
 
@@ -243,8 +244,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <CopyField value={connectorUrl} label="Connector URL" />
               <p className="muted small">
                 Add it in the Muse app as a custom connector.
-                {manifest?.actions?.length
-                  ? ` It exposes ${plural(manifest.actions.length, "action")}: ${manifest.actions.map((a) => a.name).join(", ")}.`
+                {exposedActions.length
+                  ? ` It exposes ${plural(exposedActions.length, "action")}: ${exposedActions.map((a) => a.name).join(", ")}.`
                   : ""}
               </p>
             </section>

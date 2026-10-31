@@ -8,7 +8,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { parseManifest } from "@/lib/format";
+import { connectorActions, parseManifest } from "@/lib/format";
 import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
 import type { Manifest, ProductStatus } from "@/lib/types";
 
@@ -52,7 +52,7 @@ export function toolInputSchema(input: Record<string, unknown> | undefined): Too
 
 /** The actions a connector caller may run. They're anonymous, so an owner's action is neither listed nor callable. */
 function publicActions(product: McpProduct): Action[] {
-  return (parseManifest(product.manifest)?.actions ?? []).filter((a) => a.who !== "owner");
+  return connectorActions(parseManifest(product.manifest));
 }
 
 /** The manifest's annotations in MCP's words, or nothing for an action without any, so its entry stays as it was. */

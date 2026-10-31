@@ -209,6 +209,11 @@ const isObject = (v: unknown): v is Record<string, unknown> => Boolean(v) && typ
 const isString = (v: unknown): v is string => typeof v === "string";
 const listOf = (v: unknown, item: (x: unknown) => boolean): boolean => Array.isArray(v) && v.every(item);
 
+/** The actions the Muse app connector exposes. An owner action stays off it, because its callers are anonymous. */
+export function connectorActions(manifest: Pick<Manifest, "actions"> | null | undefined): Manifest["actions"] {
+  return (manifest?.actions ?? []).filter((a) => a.who !== "owner");
+}
+
 /**
  * A stored musemuse.json when it has the Manifest shape, else null. A partial ship can store whatever Muse Code
  * wrote, so pages read it through this and fall back to the brief instead of crashing on a bad field.

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
-import { newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
+import { connectorActions, newestPerRebuild, parseManifest, safeNext } from "@/lib/format";
 
 describe("safeNext", () => {
   it("keeps same-site paths with their query and hash", () => {
@@ -99,6 +101,26 @@ describe("parseManifest", () => {
     ]) {
       assert.equal(parseManifest(bad), null, JSON.stringify(bad));
     }
+  });
+});
+
+describe("connectorActions", () => {
+  const action = (name: string, who?: "anyone" | "owner") => ({ name, description: "d", input: {}, output: {}, ...(who ? { who } : {}) });
+
+  it("leaves out owner actions, and keeps actions that don't say", () => {
+    const actions = [action("find"), action("share", "anyone"), action("mail_me", "owner")];
+    assert.deepEqual(connectorActions({ actions }).map((a) => a.name), ["find", "share"]);
+  });
+
+  it("is empty without a manifest", () => {
+    assert.deepEqual(connectorActions(null), []);
+    assert.deepEqual(connectorActions({ actions: [action("mail_me", "owner")] }), []);
+  });
+
+  it("is what the product page's connector line lists", () => {
+    const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
+    assert.match(page, /const exposedActions = connectorActions\(manifest\)/);
+    assert.doesNotMatch(page, /manifest\.actions/);
   });
 });
 
