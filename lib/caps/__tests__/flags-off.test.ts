@@ -1,15 +1,9 @@
 /**
- * With every wave 3 flag off, a build with no caps gets the same sandbox and deploy it does today: the same files,
- * .env.local, network policy, token allowlist, round caps, verify steps and deploy env, and the judge the same content
- * (docs/CAPABILITIES.md, section 1). golden/ was written from the code with every flag off, and its policy, steps and
- * allowlist were checked against tg-cap-contract (378f387) before any wave 3 change. A change that isn't behind a flag
- * has to regenerate it on purpose, and the diff shows what changed:
- *
- *   UPDATE_GOLDEN=1 npx tsx --test lib/caps/__tests__/flags-off.test.ts
+ * With every wave 3 flag off, a build with no caps gets no wave 3 behavior (docs/CAPABILITIES.md, section 1): no cap is
+ * enabled, every registry and hook is empty, and round caps are today's. The real sandbox, deploy and judge surfaces are
+ * checked byte for byte against goldens written from d8ffec4 (wave 2) alone, in flags-off-surface.test.ts.
  */
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, it } from "node:test";
 import { NewBriefSchema, NewBriefSchemaNoGadget, newBriefSchemaFor } from "@/lib/brief/schema";
 import { renderBuildPrompt } from "@/lib/brief/render";
@@ -24,9 +18,7 @@ import { env } from "@/lib/env";
 import { roundCapMs, roundPlanFor, stepTimeoutMs, STEPS } from "@/lib/pipeline/steps";
 import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
-import { capsOffSurface } from "./flags-off-surface";
 
-const GOLDEN = join(import.meta.dirname, "golden");
 const FLAGS = [
   // Wave 3, one line per unit, in plan order.
   "ENGINE_CHECK_ON_TIMEOUT", "ENGINE_ROUND_SCALING", "ENGINE_ROUND_MAX_MINUTES", "ENGINE_MILESTONES", "ENGINE_LIVE_SMOKE", "ENGINE_EXACT_LOGIC", "ENGINE_FIT_OUTPUT",
@@ -39,15 +31,6 @@ beforeEach(() => {
 });
 
 describe("with every wave 3 flag off", () => {
-  it("a build with no caps gets today's sandbox, deploy and judge", () => {
-    const surface = capsOffSurface();
-    assert.equal(Object.keys(surface).length, 7);
-    for (const [name, text] of Object.entries(surface)) {
-      if (process.env.UPDATE_GOLDEN) writeFileSync(join(GOLDEN, name), text);
-      assert.equal(text, readFileSync(join(GOLDEN, name), "utf8"), `${name} changed`);
-    }
-  });
-
   it("no cap is enabled, and every cap's flag alone enables nothing until its unit says it's ready", () => {
     assert.deepEqual(env.enabledCaps, []);
     for (const id of CAP_IDS) {

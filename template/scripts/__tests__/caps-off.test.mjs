@@ -1,11 +1,10 @@
 // A product without musemuse.caps.json verifies and records exactly as before platform services existed
-// (docs/CAPABILITIES.md, section 1): verify's summary has the same steps, and Playwright the same projects, base URL and
-// web server. golden/playwright-config.json was written from template/playwright.config.ts at tg-cap-contract (378f387).
-// Run from the repo root:
+// (docs/CAPABILITIES.md, section 1): verify's summary has the same steps. Playwright's config is checked against goldens
+// from d8ffec4 in playwright-off.test.mjs. Run from the repo root:
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
@@ -13,7 +12,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { readCapsFile, verifyStepNames } from "../smoke-report.mjs";
 
 const TEMPLATE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const GOLDEN = path.join(path.dirname(fileURLToPath(import.meta.url)), "golden");
 const dirs = [];
 after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })));
 const temp = () => {
@@ -64,13 +62,6 @@ describe("a product without platform services", () => {
     assert.equal(summary.passed, false);
     assert.deepEqual(summary.steps.map((s) => s.name), ["typecheck", "build", "start", "console", "smoke", "manifest"]);
     assert.ok(!("caps" in summary));
-  });
-
-  test("Playwright's config is what it was before platform services", async () => {
-    const config = await loadConfig();
-    const text = serialize(config);
-    if (process.env.UPDATE_GOLDEN) writeFileSync(path.join(GOLDEN, "playwright-config.json"), text);
-    assert.equal(text, readFileSync(path.join(GOLDEN, "playwright-config.json"), "utf8"));
   });
 });
 
