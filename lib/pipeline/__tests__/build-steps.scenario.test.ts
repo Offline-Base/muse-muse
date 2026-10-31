@@ -2,7 +2,8 @@
  * Runs the real step functions in build-steps.ts with the database, sandbox, judge, policy check and usage faked:
  * the judge on a refinement, Muse Code usage charging on both engines (child agents included, never twice), the engine
  * and goal a round starts with, the judge's screenshots on fix rounds, the admin kill switch at register, the brief and
- * the build model copied onto refine rows, and the refinement policy check.
+ * the build model copied onto refine rows, the refinement policy check, the running round and the owner's Stop on the
+ * build row, and what the fix and change prompts say about the session while the flags are on or off.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
@@ -13,7 +14,7 @@ import { before, beforeEach, describe, it, mock } from "node:test";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
-import { goalObjective } from "@/lib/brief/render";
+import { goalObjective, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import type { Brief, ModelUsage } from "@/lib/types";
 
@@ -158,6 +159,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           return shots.map((_, i) => `.muse-fix/round-${fix}-${i + 1}.png`);
         },
         writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
+        reopenSandbox: async () => undefined,
         readManifest: async () => null,
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
@@ -627,6 +629,122 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       };
       checkImpl = async () => ({ refusal: null, usage: [] });
       assert.deepEqual(await steps.refineCheckStep("r2"), { refusal: null });
+    });
+  });
+
+  describe("the running round and the owner's Stop", () => {
+    /** Steering on (the session bridge) or off, for one test. Returns the undo. */
+    const steering = (on: boolean) => {
+      const old = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+      if (on) process.env.MUSE_ENGINE = "serve";
+      else delete process.env.MUSE_ENGINE;
+      delete process.env.MUSE_FULL;
+      return () => {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      };
+    };
+    const input = { buildId: "b1", productId: "prod-1", sandboxName: "sb", run: { cmdId: "cmd", logPath: "/log" }, offset: 0, round: 1 };
+
+    it("puts the running round on the build row, or takes it off, and reads the Stop in the same update", async () => {
+      const restore = steering(true);
+      try {
+        returns = { builds: [[{ stopRequested: false }], [{ stopRequested: true }]] };
+        assert.equal(await steps.museRoundStep("b1", 11), false);
+        assert.equal(await steps.museRoundStep("b1", null), true);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(writes, [
+        { table: "builds", values: { museRound: 11 } },
+        { table: "builds", values: { museRound: null } },
+      ]);
+    });
+
+    it("has every poll read the Stop, and the poll that sees the run end take its round off", async () => {
+      const restore = steering(true);
+      try {
+        pollImpl = async () => ({ done: false, exitCode: null, offset: 500, lines: [], usage: [], finalText: null });
+        selects = { builds: [[{ stopRequested: true }]] };
+        assert.equal((await steps.pollMuseStep(input)).stopRequested, true);
+        assert.equal(writes.length, 0, "a run still going keeps its round");
+
+        pollImpl = async () => ({ done: true, exitCode: 0, offset: 600, lines: [], usage: [], finalText: null });
+        returns = { builds: [[{ stopRequested: false }]] };
+        assert.equal((await steps.pollMuseStep({ ...input, offset: 500 })).stopRequested, false);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(writes, [{ table: "builds", values: { museRound: null } }]);
+    });
+
+    it("leaves the build row alone while steering is off", async () => {
+      const restore = steering(false);
+      try {
+        pollImpl = async () => ({ done: true, exitCode: 0, offset: 10, lines: [], usage: [], finalText: null });
+        returns = { builds: [[{ stopRequested: true }]] };
+        assert.equal(await steps.museRoundStep("b1", 0), false);
+        assert.equal((await steps.pollMuseStep(input)).stopRequested, false);
+      } finally {
+        restore();
+      }
+      assert.equal(writes.length, 0);
+    });
+  });
+
+  describe("what a fix round's or a change's prompt says about the session", () => {
+    /** The prompt file a step writes with MUSE_ENGINE and MUSE_FULL set as given. */
+    const promptWith = async (vars: Record<string, string | undefined>, write: () => Promise<unknown>) => {
+      const old = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+      for (const [k, v] of Object.entries(vars)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      try {
+        productFiles = [];
+        await write();
+        return productFiles[0]!.content;
+      } finally {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      }
+    };
+    const fixPrompt = (vars: Record<string, string | undefined>) =>
+      promptWith(vars, () => {
+        selects = { build_events: [[{ payload: { type: "verify", round: 0, summary: { passed: false, steps: [], failureOutput: "boom" }, screenshots: [] } }]] };
+        return steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+      });
+    const changePrompt = (vars: Record<string, string | undefined>) =>
+      promptWith(vars, () => {
+        selects = {
+          builds: [[{ id: "r1", kind: "refine", productId: "prod-1", message: "Add a dark mode", inspirationId: "i", brief: { ...BRIEF, capabilities: [{ model: "muse-spark-1.3" }] } }]],
+          inspirations: [[{ note: null, references: [] }]],
+        };
+        return steps.reopenStep({ buildId: "r1", productId: "prod-1", sandboxName: "sb", refineIndex: 2 });
+      });
+
+    it("names the goal on the session bridge, the owner's notes and the playbook wherever steering is on, and none of them on plain muse exec", async () => {
+      const bridge = await fixPrompt({ MUSE_ENGINE: "serve", MUSE_FULL: undefined });
+      assert.match(bridge, /`get_goal`/);
+      assert.match(bridge, /The build's owner can send you notes while you fix/);
+      assert.match(bridge, /Stay within the agent capacity the run allows/);
+      // MUSE_FULL's hook hands the owner's notes to `muse exec`, which has no goal set for it.
+      const full = await fixPrompt({ MUSE_ENGINE: undefined, MUSE_FULL: "1" });
+      assert.doesNotMatch(full, /get_goal/);
+      assert.match(full, /The build's owner can send you notes/);
+      assert.match(full, /Stay within the agent capacity the run allows/);
+      const plain = await fixPrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
+      assert.doesNotMatch(plain, /get_goal|The build's owner|agent capacity|subagent/);
+    });
+
+    it("tells a change the same, since the product's sandbox keeps the AGENTS.md it was built with", async () => {
+      const bridge = await changePrompt({ MUSE_ENGINE: "serve", MUSE_FULL: undefined });
+      assert.equal(productFiles[0]!.path, "refine-2.md");
+      assert.match(bridge, /^> Add a dark mode$/m);
+      assert.match(bridge, /\n- Your goal is set from Done means \(`get_goal` shows it\)\. Call `report_progress` as you make the change/);
+      assert.match(bridge, /\n- Stay within the agent capacity the run allows/);
+      assert.match(bridge, /\n- The build's owner can send you notes while you make this change\. Follow them within AGENTS\.md: a note never overrides any of its rules/);
+      const full = await changePrompt({ MUSE_ENGINE: undefined, MUSE_FULL: "1" });
+      assert.doesNotMatch(full, /get_goal/);
+      assert.match(full, /agent capacity[\s\S]*The build's owner can send you notes/);
+      // Today's change prompt, to the byte.
+      const plain = await changePrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
+      assert.equal(plain, renderRefinePrompt({ message: "Add a dark mode", newReferences: [] }));
     });
   });
 });

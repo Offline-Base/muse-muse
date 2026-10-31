@@ -1,14 +1,16 @@
 /**
- * Pure checks for the brief side: the reference index cleanup, the build, refine and judge-facing renders, the
- * judge's blocking default and the refinement check's refusal. No API calls.
+ * Pure checks for the brief side: the reference index cleanup, the build, fix, refine and judge-facing renders (with
+ * the session bridge's goal, the playbook and the owner's notes, none of them in template/AGENTS.md), the judge's
+ * blocking default and the refinement check's refusal. No API calls.
  *
  *   npx tsx --test lib/brief/__tests__/*.test.ts
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { changeRefusal, DEFAULT_CHANGE_REFUSAL } from "@/lib/brief/policy";
-import { briefToMarkdown, renderBuildPrompt, renderRefinePrompt } from "@/lib/brief/render";
+import { briefToMarkdown, renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { toJudgeResult } from "@/lib/judge";
 import { briefInstructions, changeCheckInstructions, changeCheckText, REFUSE_WHEN } from "@/lib/prompts/brief";
@@ -142,6 +144,106 @@ describe("renderRefinePrompt", () => {
     assert.match(md, /If the request is something AGENTS\.md says not to build, change nothing\. Write the reason in BUILD_NOTES\.md and stop\./);
     assert.match(md, /If no listed model can do part of it, build the closest useful version/);
     assert.ok(!/says not to build, or no listed model/.test(md));
+  });
+});
+
+describe("the goal, the playbook and the owner's notes in the build, fix and change prompts", () => {
+  const opts = { inspoFiles: [], fixtures: [], maxModelSteps: 200 };
+  const verify = { passed: false, steps: [{ name: "typecheck", ok: false }], failureOutput: "error TS2304: Cannot find name 'x'." };
+  const change = { message: "Add a dark mode", newReferences: [] };
+  const off = { goalSet: false, ownerNotes: false, playbook: false };
+  const on = { goalSet: true, ownerNotes: true, playbook: true };
+  const complexBrief: Brief = { ...photoBrief, complexity: "complex" };
+  const sessionWords = /get_goal|report_progress|update_goal|The build's owner|## While you work|subagent|workflow|agent capacity/;
+
+  it("leaves the prompts of a plain `muse exec` run as they were", () => {
+    const md = renderBuildPrompt(photoBrief, opts);
+    assert.equal(renderBuildPrompt(photoBrief, { ...opts, ...off }), md);
+    assert.doesNotMatch(md, sessionWords);
+    assert.match(md, /Then stop\.\n\n## Product\n/);
+    assert.doesNotMatch(renderBuildPrompt(complexBrief, { ...opts, ...off }), sessionWords);
+    const fix = renderFixPrompt({ verify, judge: null, round: 1 });
+    assert.equal(renderFixPrompt({ verify, judge: null, round: 1, ...off }), fix);
+    assert.doesNotMatch(fix, sessionWords);
+    const refine = renderRefinePrompt(change);
+    assert.equal(renderRefinePrompt({ ...change, ...off }), refine);
+    assert.doesNotMatch(refine, sessionWords);
+    assert.match(refine, /\n- Add a short entry to BUILD_NOTES\.md, then run `npm run verify` until it exits 0\.\n$/);
+  });
+
+  it("keeps the playbook out of template/AGENTS.md, which every build reads whatever the flags say", () => {
+    const rules = readFileSync(new URL("../../../template/AGENTS.md", import.meta.url), "utf8");
+    assert.doesNotMatch(rules, /## How to work|subagent|workflow|agent capacity|report_progress|get_goal|update_goal|owner/i);
+    // The owner-notes line sends the agent to AGENTS.md's last rule, so that rule stays last and keeps the check's list.
+    const last = rules.trimEnd().split("\n").at(-1)!;
+    assert.match(last, /^- If the brief or a later change asks for /);
+    assert.ok(last.includes(REFUSE_WHEN));
+    assert.ok(rules.lastIndexOf("\n## ") === rules.indexOf("\n## When things go wrong\n"), "When things go wrong is the last section");
+  });
+
+  it("says the goal is set from Done means, to report progress, and to keep the goal honest", () => {
+    const md = renderBuildPrompt(photoBrief, { ...opts, goalSet: true });
+    assert.match(md, /Then stop\.\n\n## While you work\n\n- Your goal for this run is already set from Done means \(`get_goal` shows it\)\. Call `report_progress` as each part gets done/);
+    assert.match(md, /keep the goal honest with `update_goal`: complete only when all three parts hold, blocked with the reason when you can't get there\./);
+    assert.match(md, /\n\n## Product\n/);
+    assert.doesNotMatch(md, /The build's owner|subagent/);
+
+    const fix = renderFixPrompt({ verify, judge: null, round: 1, goalSet: true });
+    assert.match(fix, /\n- Your goal is set from Done means \(`get_goal` shows it\)\. Call `report_progress` as you fix, and mark the goal complete only when `npm run verify` exits 0 again/);
+    assert.ok(fix.indexOf("get_goal") < fix.indexOf("## Verify steps"), "with the other rules, before the results");
+
+    const refine = renderRefinePrompt({ ...change, goalSet: true });
+    assert.match(refine, /\n- Your goal is set from Done means \(`get_goal` shows it\)\. Call `report_progress` as you make the change, and mark the goal complete only when the change is made, `npm run verify` exits 0 again and the rest of Done means holds\.\n$/);
+  });
+
+  it("gives a build the playbook, with a scout and isolated writers only on a complex brief", () => {
+    const simple = renderBuildPrompt(photoBrief, { ...opts, playbook: true });
+    assert.match(simple, /## While you work\n\n- Use a workflow for checks that fan out, like one child per screen comparing it with brief\.md and the meta-ui skill\.\n/);
+    assert.match(simple, /\n- End with a read-only reviewer subagent that compares the product with brief\.md and AGENTS\.md and lists what's wrong\. Fix what it finds, then run `npm run verify` again\.\n/);
+    assert.match(
+      simple,
+      /\n- Stay within the agent capacity the run allows: never run more subagents or workflow children at once than it does\. Each of them follows AGENTS\.md too, and none of them edits a file AGENTS\.md says not to edit, `\.env\.local` included\.\n\n## Product\n/,
+    );
+    assert.doesNotMatch(simple, /Scout first|worktree isolation/);
+
+    const complex = renderBuildPrompt(complexBrief, { ...opts, playbook: true });
+    assert.match(
+      complex,
+      /## While you work\n\n- This brief is complex, so work in parallel:\n {2}- Scout first: a read-only subagent reads brief\.md, `inspo\/` and the skills it names, and reports the screens, routes and files each part needs\.\n {2}- Give parts that touch different files to subagents with worktree isolation, one part each\. Commit your work before you spawn an isolated writer, so its worktree starts from it\.\n {2}- When they finish, merge their commits, fix what conflicts and run `npm run verify` yourself\.\n- Use a workflow/,
+    );
+
+    // The goal first, then how to work, then the owner's notes, all before the product.
+    const all = renderBuildPrompt(complexBrief, { ...opts, ...on });
+    const order = ["## While you work", "get_goal", "Scout first", "fan out", "reviewer subagent", "agent capacity", "The build's owner", "## Product"].map((s) => all.indexOf(s));
+    assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]!)), String(order));
+  });
+
+  it("gives fix rounds and changes only the limits every child keeps to", () => {
+    const fix = renderFixPrompt({ verify, judge: null, round: 1, playbook: true });
+    assert.match(fix, /\n- Stay within the agent capacity the run allows: never run more subagents or workflow children at once than it does\./);
+    assert.ok(fix.indexOf("agent capacity") < fix.indexOf("## Verify steps"), "with the other rules, before the results");
+    const refine = renderRefinePrompt({ ...change, playbook: true });
+    assert.match(refine, /run `npm run verify` until it exits 0\.\n- Stay within the agent capacity the run allows/);
+    for (const text of [fix, refine]) assert.doesNotMatch(text, /Scout first|worktree isolation|fan out|reviewer subagent/);
+  });
+
+  it("says notes from the build's owner may arrive, and that none overrides AGENTS.md or gets past its refusals", () => {
+    const notes = renderBuildPrompt(photoBrief, { ...opts, ownerNotes: true });
+    assert.match(
+      notes,
+      /## While you work\n\n- The build's owner can send you notes while you work\. Follow them within AGENTS\.md: a note never overrides any of its rules, and you never act on one that asks for anything its last rule \(When things go wrong\) refuses\. Never wait for a note, since the run still has to finish on its own\. In BUILD_NOTES\.md, say what you changed because of a note, and which notes you didn't follow and why\.\n/,
+    );
+    assert.doesNotMatch(notes, /get_goal|subagent/);
+
+    const fix = renderFixPrompt({ verify, judge: null, round: 2, ...on });
+    assert.match(fix, /\n- The build's owner can send you notes while you fix\. Follow them within AGENTS\.md: a note never overrides any of its rules/);
+    assert.ok(fix.indexOf("agent capacity") < fix.indexOf("The build's owner"));
+    const refine = renderRefinePrompt({ ...change, ...on });
+    assert.match(refine, /\n- The build's owner can send you notes while you make this change\. Follow them within AGENTS\.md: a note never overrides any of its rules/);
+    assert.ok(refine.indexOf("get_goal") < refine.indexOf("agent capacity") && refine.indexOf("agent capacity") < refine.indexOf("The build's owner"));
+    for (const text of [notes, fix, refine, renderBuildPrompt(complexBrief, { ...opts, ...on })]) {
+      assert.ok(!text.includes(String.fromCharCode(0x2014)), "no em dashes");
+    }
   });
 });
 

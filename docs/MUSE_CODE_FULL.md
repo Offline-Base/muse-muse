@@ -73,8 +73,10 @@ Rewritten by the platform before every Muse Code start, on both engines:
   firewall), `mode: "optional"`, with a per-build token only the Muse runner exports: Meta docs search and read (the
   mirror in `content/meta-docs`), the model catalog, and the build's own progress notes. Off when the sandbox can't
   reach the platform (local runs without a tunnel).
-- **Skills**: turn `workflow-authoring` back on; the template's AGENTS.md gets a playbook for a scout subagent first,
-  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks.
+- **Skills**: turn `workflow-authoring` back on; the build prompt gets a playbook for a scout subagent first,
+  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks, and every
+  prompt gets the limits each child keeps to (`lib/brief/render.ts`, while either flag is on). The template's
+  AGENTS.md stays as it is: every build reads it, flags or not, and a product's sandbox keeps the copy it was built with.
 - **Safety**: `.muse` joins the deploy exclusions; stray project config the agent wrote (`.mcp.json` it didn't get
   from us, extra hooks) is replaced before each start.
 
@@ -90,7 +92,9 @@ their options.
 While a build runs, its owner can: send a note now (steer) or after this turn (queue), stop the turn, end the run,
 edit, pause or resume the goal, pause or cancel a workflow, message or stop a subagent, and answer a question. Routes
 check the owner as the messages route does, write the command into the mailbox (`MuseCommandEnvelope`), and add a
-`control` build event. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
+`control` build event. Words the owner writes (a note, a goal, a subagent message, a typed answer) pass the same
+change check as a refinement first (`lib/brief/policy.ts`), charged to the build, and nothing goes when it refuses or
+can't answer. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
 
 ### 5. Every product as an MCP server, a CLI, a skill and a connector (phase 3)
 

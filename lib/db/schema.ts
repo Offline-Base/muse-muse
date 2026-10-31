@@ -108,6 +108,14 @@ export const builds = pgTable(
     museSessionId: text("muse_session_id"),
     workflowRunId: text("workflow_run_id"),
     fixRounds: integer("fix_rounds").notNull().default(0),
+    /**
+     * The Muse Code round running now, numbered as its log and mailbox are (bridgePaths in lib/sandbox/bridge-protocol.ts),
+     * or null between runs. The build steps write it only while steering is on (env.steeringEnabled), and the owner's
+     * controls (POST /api/builds/{id}/control) send only while it is set.
+     */
+    museRound: integer("muse_round"),
+    /** Set by the owner's Stop. The workflow ends the build after its next Muse Code poll (lib/pipeline/workflow.ts). */
+    stopRequested: boolean("stop_requested").notNull().default(false),
     previewUrl: text("preview_url"),
     /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),

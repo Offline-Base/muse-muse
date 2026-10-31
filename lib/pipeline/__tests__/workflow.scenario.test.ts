@@ -1,13 +1,13 @@
 /**
  * Runs buildProduct and refineProduct as plain functions with every step faked and sleep() instant, to check the
- * orchestration: status order, fix rounds, outcomes, timeouts, cleanup and failure messages.
+ * orchestration: status order, fix rounds, outcomes, timeouts, the owner's Stop, cleanup and failure messages.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, describe, it, mock } from "node:test";
+import { after, before, describe, it, mock } from "node:test";
 
 type Call = { step: string; args: unknown[] };
 
@@ -36,12 +36,19 @@ interface Scenario {
   /** False makes publishOffStep give a reason. Defaults to true. */
   publish?: boolean;
   provisionThrows?: Error;
+  /** Steering on (MUSE_ENGINE=serve), so the workflow names each running round on the build row. Off by default. */
+  steering?: boolean;
+  /** The poll, counted across the whole build (1-based), from which every poll reports the owner's Stop. */
+  stopAtPoll?: number;
+  /** The owner's Stop shows up only when a run's round is taken off the build row, as it can just before the cap. */
+  stopOnRoundClear?: boolean;
 }
 
 let scenario: Scenario = {};
 let calls: Call[] = [];
 let verifyRuns = 0;
 let musePolled = 0;
+let polledTotal = 0;
 
 function record(step: string, ...args: unknown[]) {
   calls.push({ step, args });
@@ -96,15 +103,29 @@ const fakeSteps = {
     musePolled = 0;
     return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}` };
   },
+  museRoundStep: async (buildId: string, round: number | null) => {
+    record("museRoundStep", buildId, round);
+    return round === null && scenario.stopOnRoundClear === true;
+  },
   pollMuseStep: async (input: { usageRecorded?: boolean; announced?: string[] }) => {
     record("pollMuseStep", input);
     musePolled += 1;
+    polledTotal += 1;
     const done = musePolled >= (scenario.musePolls ?? 2);
     const usageRecorded = Boolean(input.usageRecorded) || musePolled === scenario.usageAtPoll;
     const announced = [...(input.announced ?? []), `reminder:${musePolled}`];
     // Only the first poll reads run.usage here; the later ones say nothing.
     const childrenIncluded = musePolled === 1 ? false : null;
-    return { done, exitCode: done ? (scenario.museExit ?? 0) : null, offset: musePolled * 100, usageRecorded, announced, childrenIncluded };
+    const stopRequested = scenario.stopAtPoll !== undefined && polledTotal >= scenario.stopAtPoll;
+    return {
+      done,
+      exitCode: done ? (scenario.museExit ?? 0) : null,
+      offset: musePolled * 100,
+      usageRecorded,
+      announced,
+      childrenIncluded,
+      stopRequested,
+    };
   },
   killStep: async (...args: unknown[]) => record("killStep", ...args),
   previewStep: async (...args: unknown[]) => {
@@ -196,11 +217,17 @@ function currentVerify() {
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 let wf: typeof import("../workflow");
 
+const savedEnv = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+
 function reset(next: Scenario) {
   scenario = next;
   calls = [];
   verifyRuns = 0;
   musePolled = 0;
+  polledTotal = 0;
+  if (next.steering) process.env.MUSE_ENGINE = "serve";
+  else delete process.env.MUSE_ENGINE;
+  delete process.env.MUSE_FULL;
 }
 
 describe("build workflow orchestration", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
@@ -208,6 +235,10 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
     mock.module(new URL("../build-steps.ts", import.meta.url).href, { namedExports: fakeSteps });
     mock.module("workflow", { namedExports: { sleep: async () => undefined } });
     wf = await import("../workflow");
+  });
+
+  after(() => {
+    for (const [k, v] of Object.entries(savedEnv)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   });
 
   it("registers without deploying when publishing is off, as on a local run", async () => {
@@ -585,5 +616,112 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         .map((c) => (c.args[0] as { usageRecorded?: boolean }).usageRecorded),
       [false, true, true],
     );
+  });
+
+  it("names the running round on the build row for the owner's controls, and takes it off a run stopped at its cap", async () => {
+    reset({ verifies: [{ passed: false }, { passed: true }], steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b22" }), { status: "live" });
+    // Right after each start, numbered as the run's log and mailbox are. The poll that sees a run end takes it off.
+    assert.deepEqual(
+      named("museRoundStep").map((c) => c.args),
+      [
+        ["b22", 0],
+        ["b22", 1],
+      ],
+    );
+    const order = calls.map((c) => c.step);
+    assert.equal(order.indexOf("museRoundStep"), order.indexOf("startMuseStep") + 1);
+
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, steering: true });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r9" }), { status: "live" });
+    assert.deepEqual(named("museRoundStep").map((c) => c.args), [["r9", 10]]);
+
+    reset({ musePolls: Infinity, steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b23" }), { status: "failed" });
+    assert.deepEqual(
+      named("museRoundStep").map((c) => c.args),
+      [
+        ["b23", 0],
+        ["b23", null],
+      ],
+    );
+    assert.ok(calls.findLastIndex((c) => c.step === "pollMuseStep") < calls.findLastIndex((c) => c.step === "museRoundStep"));
+    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Muse Code ran past its 25-minute limit and was stopped.");
+  });
+
+  it("takes exactly today's steps while steering is off", async () => {
+    for (const next of [{ verifies: [{ passed: false }, { passed: true }] }, { musePolls: Infinity }]) {
+      reset(next);
+      await wf.buildProduct({ buildId: "b28" });
+      assert.equal(named("museRoundStep").length, 0, JSON.stringify(next));
+    }
+  });
+
+  it("ends the build when its owner presses Stop: the run is killed, nothing is checked or fixed after it, and the sandbox still hibernates", async () => {
+    reset({ musePolls: 5, stopAtPoll: 2, steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b24" }), { status: "failed" });
+    // Two polls, then one last read after the kill, so whatever the run wrote on its way out is shown and charged.
+    assert.equal(named("pollMuseStep").length, 3);
+    assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-0"]);
+    assert.ok(calls.findIndex((c) => c.step === "killStep") < calls.findLastIndex((c) => c.step === "pollMuseStep"));
+    assert.deepEqual(
+      named("museRoundStep").map((c) => c.args),
+      [
+        ["b24", 0],
+        ["b24", null],
+      ],
+    );
+    for (const step of ["previewStep", "startTaskStep", "collectVerifyStep", "judgeStep", "writeFixPromptStep", "startDeployStep", "registerStep"]) {
+      assert.equal(named(step).length, 0, step);
+    }
+    assert.deepEqual(statuses(), ["briefing", "provisioning", "building"]);
+    assert.deepEqual(named("cleanupStep")[0]!.args[0], { buildId: "b24", productId: "prod-1", sandboxName: "product-shelf-scout" });
+    assert.deepEqual(named("failStep")[0]!.args[0], { buildId: "b24", productId: "prod-1", message: "Stopped by you." });
+    // The final status is still written last, after the sandbox hibernates.
+    assert.ok(calls.findIndex((c) => c.step === "cleanupStep") < calls.findIndex((c) => c.step === "failStep"));
+    assert.equal(calls.at(-1)!.step, "failStep");
+  });
+
+  it("stops in a fix round without another check or fix round", async () => {
+    // The build run ends at its second poll and fails its check, and the owner stops the first fix run at its first poll.
+    reset({ verifies: [{ passed: false }], stopAtPoll: 3, steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b25" }), { status: "failed" });
+    assert.deepEqual(
+      named("startMuseStep").map((c) => (c.args[0] as { round: number }).round),
+      [0, 1],
+    );
+    assert.equal(named("collectVerifyStep").length, 1);
+    assert.equal(named("writeFixPromptStep").length, 1);
+    assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-1"]);
+    assert.equal(statuses().at(-1), "fixing");
+    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Stopped by you.");
+    assert.equal(named("cleanupStep").length, 1);
+  });
+
+  it("still ends the build when the poll that sees the Stop also sees the run end, with nothing left to kill", async () => {
+    reset({ stopAtPoll: 2, steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b26" }), { status: "failed" });
+    assert.equal(named("pollMuseStep").length, 2);
+    assert.equal(named("killStep").length, 0);
+    // That poll took the round off the build row itself.
+    assert.deepEqual(named("museRoundStep").map((c) => c.args), [["b26", 0]]);
+    assert.equal(named("previewStep").length, 0);
+    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Stopped by you.");
+  });
+
+  it("counts a Stop that lands just as a run hits its cap", async () => {
+    // Only the update that takes the round off the row sees it, after the last poll.
+    reset({ musePolls: Infinity, stopOnRoundClear: true, steering: true });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b27" }), { status: "failed" });
+    assert.equal((named("failStep")[0]!.args[0] as { message: string }).message, "Stopped by you.");
+  });
+
+  it("keeps the live version when the owner stops a change", async () => {
+    reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, stopAtPoll: 1, steering: true });
+    assert.deepEqual(await wf.refineProduct({ buildId: "r10" }), { status: "failed" });
+    assert.deepEqual(named("killStep")[0]!.args, ["product-shelf-scout", "cmd-10"]);
+    assert.equal(named("previewStep").length, 0);
+    assert.equal(named("cleanupStep").length, 1);
+    assert.deepEqual(named("failStep")[0]!.args[0], { buildId: "r10", productId: null, message: "Stopped by you. The live version was kept." });
   });
 });

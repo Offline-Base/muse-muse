@@ -190,7 +190,7 @@ export type BuildEventBody =
    * `commandIds` are the ids of the mailbox envelopes it wrote, in order. The build room counts a session bridge
    * command line as the owner's only when its id is among them, since the agent can write to the bridge's log.
    */
-  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
+  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

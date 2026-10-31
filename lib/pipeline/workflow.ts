@@ -11,6 +11,9 @@
  * The final status is written after hibernate, so a build only turns terminal (and a refinement can only start) once
  * its sandbox and build tokens are cleaned up.
  *
+ * A Stop from the build's owner (POST /api/builds/{id}/control) ends either one at the Muse Code poll that sees it: no
+ * checks or fix rounds after it, the same cleanup, and a failed status that says "Stopped by you".
+ *
  * Start them with start() from "workflow/api". Never call them directly.
  */
 import { sleep } from "workflow";
@@ -29,6 +32,7 @@ import {
   killStep,
   loadBuildStep,
   loadRefineStep,
+  museRoundStep,
   pollDeployStep,
   pollMuseStep,
   pollTaskStep,
@@ -46,6 +50,7 @@ import {
   startTaskWithEnvStep,
   verifyTimedOutStep,
   writeFixPromptStep,
+  type MusePollResult,
   type TaskPollResult,
   type VerifyResult,
 } from "@/lib/pipeline/build-steps";
@@ -100,19 +105,37 @@ async function assertSpendOk(): Promise<void> {
   if (await spendPausedStep()) throw new BuildStop(SPEND_PAUSED_MESSAGE);
 }
 
-/** One `muse exec` run, polled every 15 s until it ends or hits its cap (then it's killed). */
+/** How a build ends when its owner presses Stop: failed, with this message, after the usual cleanup. */
+function stoppedByOwner(kind: "build" | "refine"): BuildStop {
+  return new BuildStop(kind === "refine" ? "Stopped by you. The live version was kept." : "Stopped by you.");
+}
+
+/** How one Muse Code run ended. `stopped` means its owner pressed Stop, which ends the build whatever else happened. */
+interface MuseRunEnd {
+  timedOut: boolean;
+  stopped: boolean;
+  exitCode: number | null;
+}
+
+/**
+ * One `muse exec` run, polled every 15 s until it ends, hits its cap or its owner presses Stop (the last two kill a run
+ * still going). While steering is on and it runs, the build row names its round, so the owner's controls can reach it.
+ * The workflow's environment is fixed when it starts, so a replay takes the same steps.
+ */
 async function runMuse(
   ctx: Ctx,
   run: { promptFile: string; images: string[]; round: number; capMs: number },
-): Promise<{ timedOut: boolean; exitCode: number | null }> {
+): Promise<MuseRunEnd> {
+  const round = ctx.roundBase + run.round;
   const cmd = await startMuseStep({
     sandboxName: ctx.sandboxName,
     sessionId: ctx.sessionId,
     promptFile: run.promptFile,
     images: run.images,
     model: ctx.model,
-    round: ctx.roundBase + run.round,
+    round,
   });
+  if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
   let offset = 0;
   let usageRecorded = false;
@@ -137,22 +160,38 @@ async function runMuse(
     usageRecorded = read.usageRecorded;
     announced = read.announced ?? announced;
     childrenIncluded = read.childrenIncluded ?? childrenIncluded;
-    if (read.done) return { timedOut: false, exitCode: read.exitCode };
+    // The owner pressed Stop (POST /api/builds/{id}/control). The session was told to end too, so a run that hasn't
+    // ended yet is killed, and nothing more runs after this poll.
+    if (read.stopRequested) {
+      if (!read.done) await endRun(ctx, cmd.cmdId, poll);
+      return { timedOut: false, stopped: true, exitCode: read.exitCode };
+    }
+    if (read.done) return { timedOut: false, stopped: false, exitCode: read.exitCode };
     if (pollTimedOut({ startedAt, now: Date.now(), capMs: run.capMs, intervalMs: MUSE_POLL_MS, polls })) {
-      await killStep(ctx.sandboxName, cmd.cmdId);
-      // One last read, so whatever the run wrote on its way out (its usage, if it got that far) is shown and charged.
-      try {
-        await poll();
-      } catch {
-        // The run is stopped either way.
-      }
+      const stopped = await endRun(ctx, cmd.cmdId, poll);
       await emitStep(ctx.buildId, {
         type: "log",
         text: `Muse Code was stopped after ${Math.round(run.capMs / 60_000)} minutes.`,
       });
-      return { timedOut: true, exitCode: null };
+      return { timedOut: true, stopped, exitCode: null };
     }
   }
+}
+
+/**
+ * Kills a run that hasn't ended, reads what it wrote on its way out, and takes its round off the build row. Returns
+ * whether the owner pressed Stop meanwhile, which the round's update reads too, so a Stop sent at the cap still counts.
+ */
+async function endRun(ctx: Ctx, cmdId: string, poll: () => Promise<MusePollResult>): Promise<boolean> {
+  await killStep(ctx.sandboxName, cmdId);
+  let stopped = false;
+  // One last read, so whatever the run wrote on its way out (its usage, if it got that far) is shown and charged.
+  try {
+    stopped = (await poll()).stopRequested === true;
+  } catch {
+    // The run is stopped either way.
+  }
+  return (env.steeringEnabled && (await museRoundStep(ctx.buildId, null))) || stopped;
 }
 
 /** The verify or demo task (lib/sandbox/tasks.ts), polled until done or the cap (then it's killed). */
@@ -249,8 +288,10 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine"): Pr
       verifiedRound: round,
     });
     await assertSpendOk();
-    // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped.
-    await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: fix, capMs: stepTimeoutMs("fix") });
+    // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
+    // stopped is not, and no fix round comes after it.
+    const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: fix, capMs: stepTimeoutMs("fix") });
+    if (fixed.stopped) throw stoppedByOwner(kind);
   }
 }
 
@@ -453,6 +494,7 @@ export async function buildProduct(input: BuildProductInput): Promise<BuildProdu
     await setStatusStep(buildId, "building", { step: "build" });
     await assertSpendOk();
     const built = await runMuse(ctx, { promptFile: "brief.md", images: box.images, round: 0, capMs: stepTimeoutMs("build") });
+    if (built.stopped) throw stoppedByOwner("build");
     if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped.");
     if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line, so nothing was built.");
     if (built.exitCode !== MUSE_EXIT.completed) {
@@ -528,6 +570,7 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       round: 0,
       capMs: stepTimeoutMs("build"),
     });
+    if (built.stopped) throw stoppedByOwner("refine");
     if (built.timedOut) throw new BuildStop("Muse Code ran past its 25-minute limit and was stopped. The live version was kept.");
     if (built.exitCode === MUSE_EXIT.usage) throw new BuildStop("Muse Code refused its command line. The live version was kept.");
 

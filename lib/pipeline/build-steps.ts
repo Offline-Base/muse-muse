@@ -147,6 +147,33 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
   await charge({ source: "platform", endpoint: "responses", buildId }, rest, "Brief");
 }
 
+/**
+ * What a run's prompt says about the session around it: the goal the session bridge sets from Done means, notes the
+ * build's owner can send while it runs, and the playbook for subagents and workflows, which only test builds on the
+ * session bridge or MUSE_FULL get. All off for plain `muse exec`, which keeps today's prompts.
+ */
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: boolean } {
+  return {
+    goalSet: env.museEngine === "serve",
+    ownerNotes: env.steeringEnabled,
+    playbook: env.museFull || env.museEngine === "serve",
+  };
+}
+
+/**
+ * Whether the build's owner pressed Stop (POST /api/builds/{id}/control), read in the same statement that sets the
+ * build's running Muse Code round when `set` is given: the route marks a stop only while a round is set, so an update
+ * that takes the round off the row always sees a stop that landed before it.
+ */
+async function ownerStopped(buildId: string, set?: { museRound: number | null }): Promise<boolean> {
+  const cols = { stopRequested: schema.builds.stopRequested };
+  const where = eq(schema.builds.id, buildId);
+  const [row] = set
+    ? await db().update(schema.builds).set(set).where(where).returning(cols)
+    : await db().select(cols).from(schema.builds).where(where).limit(1);
+  return row?.stopRequested === true;
+}
+
 function isUniqueViolation(err: unknown): boolean {
   for (let e: unknown = err, i = 0; e && i < 4; i++) {
     if ((e as { code?: unknown }).code === "23505") return true;
@@ -396,6 +423,7 @@ export async function provisionStep(input: {
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
     maxModelSteps: MAX_MODEL_STEPS,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
+    ...sessionNotes(),
   });
   const allowedModels = allowedModelsFor(brief);
   const { token } = await mintToken({
@@ -516,6 +544,18 @@ export function museRunLine(started: { engine: MuseEngine; notice?: string; buil
   return parts.length ? parts.join(" ") : null;
 }
 
+/**
+ * Puts the Muse Code round running now on the build row, numbered as its log and mailbox are (bridgePaths), so the
+ * owner's controls know where to send, or takes it off with null. Returns whether the owner asked to stop, read in the
+ * same update (ownerStopped). Does nothing while steering is off.
+ */
+export async function museRoundStep(buildId: string, round: number | null): Promise<boolean> {
+  "use step";
+  if (!env.steeringEnabled) return false;
+  return ownerStopped(buildId, { museRound: round });
+}
+museRoundStep.maxRetries = 2;
+
 export interface MusePollResult {
   done: boolean;
   exitCode: number | null;
@@ -528,6 +568,8 @@ export interface MusePollResult {
   childrenIncluded?: boolean | null;
   /** The session bridge's condenser state, on a serve round. Pass it to the next poll. */
   bridgeState?: BridgeCondenseState;
+  /** True once the build's owner pressed Stop. The workflow then ends the build instead of going on. */
+  stopRequested?: boolean;
 }
 
 /**
@@ -542,6 +584,9 @@ export interface MusePollResult {
  * own endpoint, unless run.usage said it includes them or didn't say (Condensed.childrenIncluded), so they are never
  * charged twice. `childrenIncluded` carries over between polls. The main agent's calls in runs that never wrote
  * run.usage (one stopped at its cap, and every round on the session bridge, which has none) are charged from that log.
+ *
+ * While steering is on, each poll also reads the owner's Stop, and the poll that reports done takes the run's round
+ * off the build row in the same update, so a stop sent just as the run ends is never missed.
  */
 export async function pollMuseStep(input: {
   buildId: string;
@@ -581,6 +626,7 @@ export async function pollMuseStep(input: {
   if (children?.usage.length) {
     await charge({ ...ctx, endpoint: `${endpoint} children` }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
   }
+  const stopRequested = env.steeringEnabled ? await ownerStopped(input.buildId, poll.done ? { museRound: null } : undefined) : false;
   return {
     done: poll.done,
     exitCode: poll.exitCode,
@@ -589,6 +635,7 @@ export async function pollMuseStep(input: {
     announced: poll.announced,
     childrenIncluded,
     ...(poll.bridgeState ? { bridgeState: poll.bridgeState } : {}),
+    stopRequested,
   };
 }
 pollMuseStep.maxRetries = 2;
@@ -773,7 +820,7 @@ export async function writeFixPromptStep(input: {
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes() }),
   );
   return { promptFile, images };
 }
@@ -1099,6 +1146,7 @@ export async function reopenStep(input: {
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
+    ...sessionNotes(),
   });
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);

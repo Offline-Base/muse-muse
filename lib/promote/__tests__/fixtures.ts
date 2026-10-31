@@ -63,6 +63,8 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
     sandboxName,
     museSessionId: sessionId,
     workflowRunId: "wrun_local_1",
+    museRound: null,
+    stopRequested: false,
     previewUrl: "https://sb-1a2b3c.vercel.run",
   };
   let eventId = 0;

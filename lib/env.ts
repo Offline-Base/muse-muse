@@ -1,4 +1,5 @@
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
+import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
@@ -176,7 +177,7 @@ export const env = {
    * included, keeps one-shot `muse exec` (docs/MUSE_CODE_FULL.md, "The engine"). A round whose bridge can't start runs
    * on exec anyway.
    */
-  get museEngine(): "serve" | "exec" {
+  get museEngine(): MuseEngine {
     return (process.env.MUSE_ENGINE ?? "").trim().toLowerCase() === "serve" ? "serve" : "exec";
   },
   /**
@@ -189,6 +190,14 @@ export const env = {
   /** MUSE_AGENT_CAPACITY: Muse Code's agents.execution_capacity under MUSE_FULL. Default 6, held to 1 through 64. */
   get museAgentCapacity(): number {
     return agentCapacity(process.env.MUSE_AGENT_CAPACITY);
+  },
+  /**
+   * True when a running build's owner may steer it from the build room (docs/MUSE_CODE_FULL.md, "The owner steers"): the
+   * session bridge reads their commands, or MUSE_FULL's hook hands their notes to `muse exec`. Off by default, so the
+   * build room shows no controls and POST /api/builds/{id}/control answers 503 steering_off.
+   */
+  get steeringEnabled(): boolean {
+    return env.museEngine === "serve" || env.museFull;
   },
   /** Lambda Cloud API key for fine-tuning jobs (lib/train). Platform only: never sent to an instance or a sandbox. */
   get lambdaApiKey() {
