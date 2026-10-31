@@ -710,6 +710,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   and added a no-log-editing rule to the compare-lab workflow (restarted at its design step). AWS-side SSM history and
   CloudTrail were untouched. Rule from now on: never edit or delete logs or system files; short URL expiry is the protection.
   The file itself arrived intact: 6,526,418,880 bytes in 85 s, sha256 23fef56a... matches writer-1.
+- 4:26 PM: Mac test not run: the lab's headless Android emulator (up since about 2:24 PM) and an iOS simulator (since about
+  3:28 PM) never went away, so the helper loaded no model in 85 minutes and deleted its folder. Confirmed: Macmini9,1, M1,
+  16 GB, Metal 12,124 MiB usable, llama.cpp b11970 macOS release runs from a folder with no install. Estimates only: about
+  7.8 GB in memory, 5 to 10 tok/s. Scripts to rerun are in the session scratchpad (mac/). Asked Muse Muse General for a
+  20-minute idle window. Sent Muse Muse General the 1-bit facts for its offline mode (stage 2 IQ1_S now, final IQ1_S later;
+  base IQ1_S sha256 2b751820..., loops on most replies).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
