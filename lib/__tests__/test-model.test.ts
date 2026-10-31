@@ -43,3 +43,12 @@ test("TEST_MODEL accepts only Contributor, and unset changes nothing", () => {
   assert.equal(testModel(), null);
   assert.equal(env.judgeModel, "muse-wonder-1.0");
 });
+
+test("the reminders-off setting names every reminder, scope too, and turns each one off", async () => {
+  const { remindersOffSetting, REMINDER_IDS } = await import("@/lib/sandbox/muse-config");
+  const [key, value] = [remindersOffSetting().slice(0, 20), JSON.parse(remindersOffSetting().slice(21))];
+  assert.equal(key, "runtime_capabilities");
+  for (const id of ["scope", ...REMINDER_IDS]) {
+    assert.deepEqual(value[`plugin:tbh-reminders:reminder:${id}-reminder`], { enabled: false });
+  }
+});

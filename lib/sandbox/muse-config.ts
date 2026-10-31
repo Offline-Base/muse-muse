@@ -58,6 +58,16 @@ export function museSettings(capacity: number): string[] {
 }
 
 /**
+ * The `-c` setting that turns every reminder agent off. Test builds use it (TEST_MODEL, lib/env.ts): `muse serve` turns a
+ * Contributor id in background_agent_model back into muse-spark-1.3, which this platform never calls, so reminders can't
+ * be trusted to stay on Contributor. Production builds never pass it.
+ */
+export function remindersOffSetting(): string {
+  const off = Object.fromEntries(["scope", ...REMINDER_IDS].map((id) => [`plugin:tbh-reminders:reminder:${id}-reminder`, { enabled: false }]));
+  return `runtime_capabilities=${JSON.stringify(off)}`;
+}
+
+/**
  * Bash for a runner prelude: turns the bundled workflow-authoring skill back on, which setup.ts turns off for plain
  * builds (DISABLED_BUNDLED_SKILLS). A Muse Code without the skill or the command just goes on without it.
  */

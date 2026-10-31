@@ -11,7 +11,7 @@ import {
 } from "@/lib/sandbox/bridge-protocol";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { noEmDashes } from "@/lib/brief/normalize";
-import { env } from "@/lib/env";
+import { env, testModel } from "@/lib/env";
 import { buildMcpToken } from "@/lib/mcp/build-token";
 import { fetchBytes, putFile } from "@/lib/storage";
 import type { Manifest, ModelUsage, MuseLogLine, Reference, Screenshot, VerifySummary } from "@/lib/types";
@@ -61,6 +61,7 @@ import {
   MUSE_FULL_MARKER,
   museConfigFiles,
   museSettings,
+  remindersOffSetting,
   NOTES_DIR,
   NOTES_SESSION_FILE,
   WORKFLOW_SKILL_OFF,
@@ -111,6 +112,16 @@ export { PRODUCT_DIR };
 const MIN = 60_000;
 /** Session length for product sandboxes. Pro allows up to 24 hours; long work extends it with extendTimeout. */
 const SANDBOX_TIMEOUT_MS = 60 * MIN;
+
+/**
+ * The settings a round adds. A test build has its reminders off, and a key given twice refuses the run, so the off
+ * setting replaces museSettings' own runtime_capabilities when both apply.
+ */
+function roundSettings(full: boolean): string[] {
+  const settings = full ? museSettings(env.museAgentCapacity) : [];
+  if (!testModel()) return settings;
+  return [...settings.filter((s) => !s.startsWith("runtime_capabilities=")), remindersOffSetting()];
+}
 /** How much session time must be left before long work starts. */
 const LONG_WORK_MS = 40 * MIN;
 const POLL_WORK_MS = 15 * MIN;
@@ -713,7 +724,7 @@ async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: s
     `[ -s ${q(logPath)} ] && mv ${q(logPath)} ${q(`${LOG_DIR}/${run.tag}`)}.$(date +%s).jsonl`,
     // A persistent product sandbox keeps the Muse Code it was made with, which may not have these yet.
     optionalFlagsPrelude(),
-    optionalConfigPrelude([...(run.full ? museSettings(env.museAgentCapacity) : []), backgroundModelSetting(run.model)], CHECKED_MUSE_VERSION),
+    optionalConfigPrelude([...roundSettings(run.full), backgroundModelSetting(run.model)], CHECKED_MUSE_VERSION),
     ...(run.full ? [WORKFLOW_SKILL_PRELUDE] : []),
     ...run.images.map((img) => `[ -f ${q(img)} ] && cmd+=(--image ${q(img)})`),
     "true",
@@ -820,7 +831,7 @@ async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId:
     images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
     goal: run.goal?.trim() || null,
     // Every round turns web search off, as exec's --disable-web-tools does; MUSE_FULL adds its own settings.
-    settings: [...SERVE_SETTINGS, ...(run.full ? museSettings(env.museAgentCapacity) : []), backgroundModelSetting(run.model)],
+    settings: [...SERVE_SETTINGS, ...roundSettings(run.full), backgroundModelSetting(run.model)],
     disableRequestUserInput: true,
     logPath: paths.log,
     mailboxDir: paths.mailbox,
