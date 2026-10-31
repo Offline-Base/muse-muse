@@ -568,6 +568,26 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   repair is option C, protecting the turn's tokens against base with the adapter switched off (the plan's self-distillation
   idea, KNOWLEDGE_UPDATE.md lines 226 and 232), not the flagged row writer. The owner's okay doesn't clear the classifier:
   if a helper is stopped again, that work stops and goes back to the owner.
+- 12:33 PM: necessity audit done (workflow wba29bgj0, 3 reviewers and a skeptic; full result in the tasks output). Verdict:
+  safe on budget, not sound as it stood. Corrections to what this log and the owner were told:
+  - "Copy restarted 11:37 AM" was wrong: rsync failed at once because models/ is root-owned (quantize.sh's copy_out failed
+    the same way). Fixed 12:33 PM: models/stage2 made with sudo and owned by ubuntu, rsync running without merged, BF16,
+    Q8_0 or IQ1_M. Stage 2's table and scores now on the Mac and in S3 (knowledge/models/stage2/); NanoQuant score
+    folders on the Mac.
+  - "Held-out" overstated the probes: every one of the 2,500 comes from a passage the model trained on, 0 exact question
+    matches. 29.5% means reworded questions about trained passages, not coverage of 2026. The plan's story-cluster split
+    and 2,000 never-trained facts were never built.
+  - "Reasoning off is ready" was untested: only a raw scorer with the final channel appended. The chat path apps use has
+    no switch for it. Under test now.
+  - Keeping writer-1 and the GH200 idle isn't cheaper than rebuilding (about $5 to $7): capacity risk is the reason, so
+    they get work now. Student moves to the GH200, one GPU.
+  - Stage 2 raised AI and Meta (26.1% to 32.7%) and lowered everything else (24.7% to 21.7%), and kept 155 of 236 facts
+    stage 1 had newly learned.
+  Not in this log before: Claude on Bedrock $1,447.56 on Oct 30, on AWS credits; none on Oct 31. mac2.metal belongs to the
+  Muse Muse native lab, 24 h host minimum ends Nov 1 2:01 AM. Muse Privacy's full test needs a file by Nov 1, 6 PM. Owner
+  decisions listed in the reply: LittleBit, NanoQuant, submission text, mac host, Bedrock limit, final GGUF storage.
+- 12:36 PM: workflow audit-actions started: serving test and LoRA route on writer-1, verbatim recall and a salient-event
+  test (written from outside lists), student on the GH200 with the honest rows, idle alerts.
 
 ## Problems and fixes
 
