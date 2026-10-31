@@ -101,7 +101,7 @@ Script error, logged so it is not repeated: the review 2 script matched verdicts
 - fresh_200_b (`eval/reports/default_loosen_fresh_200_b.md`): 81.5% (163 of 200), 0 leaks, 75 approval requests, 28 needless, 2 missed asks, 0 refusals shared, 4 over-refusals. Before the fixes: 74.5%, 0 leaks, 88, 40, 2, 0, 3. The fixes were chosen on simulated day items, but they came from ask causes seen on sets like this one, so the sealed set, not this one, is the number to treat as unseen.
 - Model matrix (`eval/reports/matrix_lfm_loosen_default.md`), 0 leaks in every row. fresh_200_b: keywords 64.5%, policy_lfm 81.5%, lfm_tighten 44.5%, lfm_decide 43.0%. tasks: 59.0%, 82.0%, 58.0%, 59.0%.
 - Scene rehearsal (`eval/reports/muse_app/rehearsal_2026-10-31.md`, replaces the 01:50 run of the same name; the older one is in git): all six scenes reach their expected statuses, 0 of 18 outputs hold a private value. The new default did not change a demo scene.
-- Device smoke (`eval/reports/device_smoke_lfm_loosen_default.md`): passes, 24 essays graded in 35.9 s, every result device only.
+- Device smoke (`eval/reports/device_smoke_lfm_loosen_default.md`): passes, 24 essays graded in 41.1 s with no toggle and 35.9 s with FERPA on, every result device only.
 - Persona pipeline smoke (`eval/reports/sim/smoke/strict_teacher/`): 1 night, 10 items, 127 s, 0 receipt mismatches. A pipeline check, not a study run, and its numbers are not results.
 
 **02:46** History rewritten locally before the push, over 92ee1a7..ethan/score-build (43 commits, 25 got new hashes): the private address in that one lane commit became a documentation-range address, and two commit messages were reworded. The final tree is byte-identical to before, the range adds no private address, and no message names the old wording. Old hashes in commit messages, this log and the reports were mapped to the new ones (51 places in 25 files), so every hash cited here resolves. The old commits stay only in local lane branches and a local backup ref, none of which are pushed.
@@ -114,8 +114,17 @@ Script error, logged so it is not repeated: the review 2 script matched verdicts
 
 **03:07** CI on 86fccc0: Python on Linux and macOS and the relay job all pass. `main` is green.
 
+**03:46** Wave 2, three lanes, each reviewed then fixed, no model calls. Merged here:
+- Threat model (`docs/THREAT_MODEL.md`, `tests/test_threat_model.py`): every row names an existing test or says it is a gap and why; every xfail is listed (64 cases); the suite is described as hand-written attacks, not Spark; Muse's retention is stated as not known, with what is assumed. The review found the page overstating twice, both fixed: old results are deleted only with COPPA or GDPR on, and a paraphrase the labeler and the floors both miss follows the first matching policy rule rather than always asking.
+- Study and time tools (`scripts/study_summary.py`, `scripts/time_model.py`, `eval/reports/sim/assumptions.yaml`), tested on invented rows only. The review found a stopped or misnamed run could read as clean; a run now gives a number only if it is complete, on plan and error-free. No study has run, so these report nothing yet.
+- Device table (`docs/DEVICES.md`): Mac rows from reports, Jetson, Raspberry Pi and Device Farm "not measured". 
+3546 passed, 6 skipped, 64 xfailed; ruff and the secrets scan clean.
+Held on lane/w2-docs, not merged: README, MUSE_SETUP and RUBRIC draft plus `tests/test_claims.py` (3447 passed on that lane), waiting for Ethan's wording decisions.
+
+Router finding for Ethan: a request headed outside the class that both the labeler and the floors miss ("For the yearbook") follows the first matching policy rule. Names stay tags, but a tagged score goes out with no ask. That was already so for per-student results (RED-F3c, 10 of 22 destinations missed); the result_words default extends it to free text holding a score. Fix on offer: widen the floor with those destinations, before the study freeze.
+
 ## Open items
 
-- Ethan: what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
+- Ethan: README wording and the default setup (lane/w2-docs); widen the outside-class floor (RED-F3c), the differencing floor, MAX_PENDING; when the persona study runs; read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
 - Persona study: pipeline smoke next. The study itself runs on the frozen commit (the plan says Nov 2 night), one run at a time.
 - Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.
