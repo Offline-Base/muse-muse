@@ -71,8 +71,10 @@ export type ToolPolicy = {
   toolkit?: string;
   builtin?: boolean;
   functions: FunctionPolicy[];
-  /** Arguments that name a person who will be contacted. The gateway counts these against the recipient cap. */
+  /** Arguments that say who will be contacted. The gateway shows them on the confirmation and caps them. */
   recipientFields?: string[];
+  /** Most calls a day per product, for tools that reach other people. Builds never count, because they never send. */
+  perDay?: number;
   sources?: SourceRule[];
   output?: OutputRule;
   /**
@@ -97,6 +99,7 @@ export const TOOLKIT_PINS: Record<string, string> = {
   firecrawl: "20261030_00",
   gmail: "20261029_00",
   googlecalendar: "20261010_00",
+  slack: "20261023_00",
 };
 
 /** Whole toolkits never allowed, by Composio slug. Patterns below catch variants such as `stripe_mcp`. */
@@ -255,6 +258,8 @@ export const DENIED_SLUG_PATTERNS: readonly RegExp[] = [
   /INTERACT/,
   /APOLLO/,
   /GROQ|LLM|CHAT_COMPLETION/,
+  // Slack: nothing that deletes, or changes channels, members or workspace settings.
+  /^SLACK_.*(DELETE|REMOVE|ARCHIVE|KICK|RENAME|ADMIN|UPDATE|SET_|INVITE|REVOKE)/,
 ];
 
 export const denialOfToolkit = (toolkit: string): string | null => {
@@ -531,6 +536,7 @@ export const TOOL_POLICIES: ToolPolicy[] = [
     access: "create",
     toolkit: "gmail",
     perMinute: 10,
+    perDay: 10,
     recipientFields: ["recipient_email", "extra_recipients", "cc", "bcc"],
     output: { keep: ["id", "threadId", "labelIds"], dropKeys: [] },
     functions: [
@@ -631,6 +637,130 @@ export const TOOL_POLICIES: ToolPolicy[] = [
           end: { dateTime: "2026-11-03T10:30:00-05:00" },
           htmlLink: "https://example.com/calendar/sample-event-2",
         },
+      },
+    ],
+  },
+  {
+    id: "slack_read",
+    label: "Read Slack channels",
+    stepTitle: "Reading Slack",
+    tier: "personal",
+    access: "read",
+    toolkit: "slack",
+    perMinute: 60,
+    output: {
+      keep: ["channels", "messages", "response_metadata.next_cursor"],
+      dropKeys: ["blocks", "composio_execution_message", "previous_names", "team", "unread_count"],
+    },
+    functions: [
+      {
+        slug: "SLACK_FIND_CHANNELS",
+        description:
+          "Find channels in the connected Slack workspace by name, topic or purpose, and get their IDs. Other Slack tools need an ID, so look it up here first. It only sees what the connected account can see, so an empty result can mean no match or no access.",
+        keepParams: ["query", "exact_match", "member_only", "limit", "cursor"],
+        paramDescriptions: {
+          limit: "How many channels to scan on this page, up to 999. The default is 50. Fewer may match.",
+        },
+        sample: {
+          channels: [
+            {
+              id: "C0SAMPLE1",
+              name: "sample-channel",
+              topic: { value: "A sample channel topic" },
+              is_private: false,
+              num_members: 12,
+            },
+          ],
+        },
+      },
+      {
+        slug: "SLACK_FETCH_CONVERSATION_HISTORY",
+        description:
+          "Read messages from one Slack channel, by the ID from SLACK_FIND_CHANNELS. It returns the main timeline only, so replies inside threads aren't included. Use oldest and latest for a time window.",
+        keepParams: ["channel", "limit", "oldest", "latest", "cursor"],
+        paramDescriptions: {
+          channel: "The channel's ID, from SLACK_FIND_CHANNELS.",
+          limit: "How many messages to request, up to 1000. The default is 100. Slack may return fewer.",
+          oldest: "Start of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+          latest: "End of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+        },
+        sample: {
+          messages: [
+            {
+              type: "message",
+              user: "U0SAMPLE1",
+              text: "A sample Slack message.",
+              ts: "1761900000.000100",
+              reply_count: 0,
+            },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: "slack_search",
+    label: "Search Slack",
+    stepTitle: "Searching Slack",
+    tier: "personal",
+    access: "read",
+    toolkit: "slack",
+    perMinute: 30,
+    output: { keep: ["messages.matches", "messages.total"], dropKeys: ["blocks", "iid", "team"] },
+    functions: [
+      {
+        slug: "SLACK_SEARCH_MESSAGES",
+        description:
+          "Search messages across the connected Slack workspace. Put modifiers in the query, such as in:#channel, from:@user, has:link, before:YYYY-MM-DD or after:YYYY-MM-DD. Set count, because the default is a single message.",
+        keepParams: ["query", "count", "page", "sort", "sort_dir"],
+        paramDescriptions: {
+          query: "What to search for. Modifiers: in:#channel, in:@user, from:@user, has:link, has:file, before:YYYY-MM-DD, after:YYYY-MM-DD.",
+          count: "How many messages per page, up to 100. The default is 1, so set it.",
+          page: "Which page of results to return.",
+        },
+        sample: {
+          messages: {
+            total: 1,
+            matches: [
+              {
+                text: "A sample Slack message that matches your search.",
+                ts: "1761900000.000100",
+                username: "sample.user",
+                channel: { id: "C0SAMPLE1", name: "sample-channel" },
+                permalink: "https://example.com/slack/archives/C0SAMPLE1/p1761900000000100",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  },
+  {
+    id: "slack_send",
+    label: "Send Slack messages",
+    stepTitle: "Sending a Slack message",
+    tier: "personal",
+    access: "create",
+    toolkit: "slack",
+    perMinute: 10,
+    perDay: 10,
+    // One channel can be a whole workspace, so the confirmation has to show where it goes.
+    recipientFields: ["channel"],
+    output: { keep: ["ok", "channel", "ts"], dropKeys: [] },
+    functions: [
+      {
+        slug: "SLACK_SEND_MESSAGE",
+        description:
+          "Post a message to one Slack channel. It posts at once, and a repeated call posts a duplicate. Write the message in Markdown. To reply in a thread, pass the parent message's thread_ts.",
+        // `blocks` can carry buttons, and `reply_broadcast` widens a thread reply to the whole channel. `channel_id` is
+        // an alias outside the schema, refused for the same reason as Gmail's `to`.
+        keepParams: ["channel", "markdown_text", "thread_ts"],
+        required: ["channel", "markdown_text"],
+        paramDescriptions: {
+          channel: "The channel's ID from SLACK_FIND_CHANNELS, or its name without the #.",
+          markdown_text: "The message, in standard Markdown.",
+        },
+        sample: { ok: true, channel: "C0SAMPLE1", ts: "1761900000.000200" },
       },
     ],
   },

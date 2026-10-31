@@ -6,13 +6,15 @@
   ],
   "personalToolkits": [
     "gmail",
-    "googlecalendar"
+    "googlecalendar",
+    "slack"
   ],
   "toolkitVersions": {
     "firecrawl": "20261030_00",
     "gmail": "20261029_00",
     "googlecalendar": "20261010_00",
-    "serpapi": "20261030_00"
+    "serpapi": "20261030_00",
+    "slack": "20261023_00"
   },
   "tools": [
     {
@@ -23,6 +25,7 @@
       "label": "Web search",
       "output": null,
       "outputVerified": false,
+      "perDay": null,
       "perMinute": null,
       "recipientFields": [],
       "sources": [],
@@ -118,6 +121,7 @@
         ]
       },
       "outputVerified": true,
+      "perDay": null,
       "perMinute": 120,
       "recipientFields": [],
       "sources": [
@@ -226,6 +230,7 @@
         ]
       },
       "outputVerified": true,
+      "perDay": null,
       "perMinute": 120,
       "recipientFields": [],
       "sources": [
@@ -328,6 +333,7 @@
         ]
       },
       "outputVerified": true,
+      "perDay": null,
       "perMinute": 60,
       "recipientFields": [],
       "sources": [
@@ -405,6 +411,7 @@
         ]
       },
       "outputVerified": true,
+      "perDay": null,
       "perMinute": 120,
       "recipientFields": [],
       "sources": [
@@ -552,6 +559,7 @@
         ]
       },
       "outputVerified": false,
+      "perDay": null,
       "perMinute": 60,
       "recipientFields": [],
       "sources": [],
@@ -648,6 +656,7 @@
         ]
       },
       "outputVerified": false,
+      "perDay": null,
       "perMinute": 30,
       "recipientFields": [
         "recipient_email",
@@ -748,6 +757,7 @@
         ]
       },
       "outputVerified": false,
+      "perDay": 10,
       "perMinute": 10,
       "recipientFields": [
         "recipient_email",
@@ -859,6 +869,7 @@
         ]
       },
       "outputVerified": false,
+      "perDay": null,
       "perMinute": 60,
       "recipientFields": [],
       "sources": [],
@@ -982,6 +993,7 @@
         ]
       },
       "outputVerified": false,
+      "perDay": null,
       "perMinute": 30,
       "recipientFields": [
         "attendees"
@@ -990,6 +1002,314 @@
       "stepTitle": "Adding to your calendar",
       "tier": "personal",
       "toolkit": "googlecalendar"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Find channels in the connected Slack workspace by name, topic or purpose, and get their IDs. Other Slack tools need an ID, so look it up here first. It only sees what the connected account can see, so an empty result can mean no match or no access.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_FIND_CHANNELS",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "cursor": {
+                "description": "Pagination cursor from response_metadata.next_cursor of a previous response. Omit for the first page.",
+                "type": "string"
+              },
+              "exact_match": {
+                "default": false,
+                "description": "When true, only return channels whose name exactly matches the query (case-insensitive). Also matches against previous channel names and the 'general' flag. When false, returns partial matches across name, topic, and purpose.",
+                "type": "boolean"
+              },
+              "limit": {
+                "default": 50,
+                "description": "How many channels to scan on this page, up to 999. The default is 50. Fewer may match.",
+                "type": "integer"
+              },
+              "member_only": {
+                "default": false,
+                "description": "Only return channels the user is a member of. Defaults to false.",
+                "type": "boolean"
+              },
+              "query": {
+                "description": "Search query to find channels. Searches across channel name, topic, purpose, and description (case-insensitive partial matching). Leading '#' prefix is automatically stripped.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "channels": [
+              {
+                "id": "C0SAMPLE1",
+                "is_private": false,
+                "name": "sample-channel",
+                "num_members": 12,
+                "topic": {
+                  "value": "A sample channel topic"
+                }
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        },
+        {
+          "description": "Read messages from one Slack channel, by the ID from SLACK_FIND_CHANNELS. It returns the main timeline only, so replies inside threads aren't included. Use oldest and latest for a time window.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_FETCH_CONVERSATION_HISTORY",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "description": "The channel's ID, from SLACK_FIND_CHANNELS.",
+                "type": "string"
+              },
+              "cursor": {
+                "description": "Pagination cursor from `response_metadata.next_cursor` of a previous response. Omit this for the first page; pass the returned cursor in a follow-up call to fetch the next page.",
+                "type": "string"
+              },
+              "latest": {
+                "description": "End of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+                "type": "string"
+              },
+              "limit": {
+                "default": 100,
+                "description": "How many messages to request, up to 1000. The default is 100. Slack may return fewer.",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "oldest": {
+                "description": "Start of the time window, as a Unix or Slack timestamp such as '1234567890.000000'.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "messages": [
+              {
+                "reply_count": 0,
+                "text": "A sample Slack message.",
+                "ts": "1761900000.000100",
+                "type": "message",
+                "user": "U0SAMPLE1"
+              }
+            ]
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_read",
+      "label": "Read Slack channels",
+      "output": {
+        "dropKeys": [
+          "blocks",
+          "composio_execution_message",
+          "previous_names",
+          "team",
+          "unread_count"
+        ],
+        "keep": [
+          "channels",
+          "messages",
+          "response_metadata.next_cursor"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 60,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Reading Slack",
+      "tier": "personal",
+      "toolkit": "slack"
+    },
+    {
+      "access": "read",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Search messages across the connected Slack workspace. Put modifiers in the query, such as in:#channel, from:@user, has:link, before:YYYY-MM-DD or after:YYYY-MM-DD. Set count, because the default is a single message.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "idempotentHint",
+            "openWorldHint",
+            "readOnlyHint"
+          ],
+          "instant": false,
+          "name": "SLACK_SEARCH_MESSAGES",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "count": {
+                "default": 1,
+                "description": "How many messages per page, up to 100. The default is 1, so set it.",
+                "type": "integer"
+              },
+              "page": {
+                "description": "Which page of results to return.",
+                "type": "integer"
+              },
+              "query": {
+                "description": "What to search for. Modifiers: in:#channel, in:@user, from:@user, has:link, has:file, before:YYYY-MM-DD, after:YYYY-MM-DD.",
+                "type": "string"
+              },
+              "sort": {
+                "description": "Sort results by `score` (relevance) or `timestamp` (chronological).",
+                "type": "string"
+              },
+              "sort_dir": {
+                "description": "Sort direction: `asc` (ascending) or `desc` (descending).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "messages": {
+              "matches": [
+                {
+                  "channel": {
+                    "id": "C0SAMPLE1",
+                    "name": "sample-channel"
+                  },
+                  "permalink": "https://example.com/slack/archives/C0SAMPLE1/p1761900000000100",
+                  "text": "A sample Slack message that matches your search.",
+                  "ts": "1761900000.000100",
+                  "username": "sample.user"
+                }
+              ],
+              "total": 1
+            }
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_search",
+      "label": "Search Slack",
+      "output": {
+        "dropKeys": [
+          "blocks",
+          "iid",
+          "team"
+        ],
+        "keep": [
+          "messages.matches",
+          "messages.total"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": null,
+      "perMinute": 30,
+      "recipientFields": [],
+      "sources": [],
+      "stepTitle": "Searching Slack",
+      "tier": "personal",
+      "toolkit": "slack"
+    },
+    {
+      "access": "create",
+      "builtin": false,
+      "functions": [
+        {
+          "description": "Post a message to one Slack channel. It posts at once, and a repeated call posts a duplicate. Write the message in Markdown. To reply in a thread, pass the parent message's thread_ts. Needs the user's confirmation before it runs.",
+          "discountPercent": null,
+          "estimateUsd": 0,
+          "hints": [
+            "createHint",
+            "openWorldHint"
+          ],
+          "instant": false,
+          "name": "SLACK_SEND_MESSAGE",
+          "parameters": {
+            "additionalProperties": false,
+            "properties": {
+              "channel": {
+                "description": "The channel's ID from SLACK_FIND_CHANNELS, or its name without the #.",
+                "type": "string"
+              },
+              "markdown_text": {
+                "description": "The message, in standard Markdown.",
+                "type": "string"
+              },
+              "thread_ts": {
+                "description": "Timestamp (`ts`) of an existing message to make this a threaded reply. Use `ts` of the parent message, not another reply. Example: '1476746824.000004'.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channel",
+              "markdown_text"
+            ],
+            "type": "object"
+          },
+          "priceText": null,
+          "sample": {
+            "channel": "C0SAMPLE1",
+            "ok": true,
+            "ts": "1761900000.000200"
+          },
+          "strict": false,
+          "type": "function",
+          "version": "20261023_00"
+        }
+      ],
+      "id": "slack_send",
+      "label": "Send Slack messages",
+      "output": {
+        "dropKeys": [],
+        "keep": [
+          "ok",
+          "channel",
+          "ts"
+        ]
+      },
+      "outputVerified": false,
+      "perDay": 10,
+      "perMinute": 10,
+      "recipientFields": [
+        "channel"
+      ],
+      "sources": [],
+      "stepTitle": "Sending a Slack message",
+      "tier": "personal",
+      "toolkit": "slack"
     }
   ]
 }

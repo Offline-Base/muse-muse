@@ -7,6 +7,7 @@ What Composio really does, checked against the live API for unit C0. The scripts
 ## Versions
 
 - `@composio/core` **0.27.0**, pinned exactly. It pulls in `@composio/client` 2.0.0-rc.19. `1.0.0-beta.1` also exists, and we didn't use it.
+- `@composio/core` needs Node 22.22.3 or newer. Unit T should check the Vercel runtime.
 - The SDK isn't in `package.json` yet. The spike ran it from a scratch folder, because `node_modules` in a worktree is a shared symlink. Unit T adds it. The sync script uses plain `fetch` and doesn't need it.
 - REST base: `https://backend.composio.dev/api/v3.1`, header `x-api-key`.
 
@@ -82,6 +83,9 @@ The price line is Composio's list price. The charge is lower, and the discount f
 | gmail_send | GMAIL_SEND_EMAIL | 20261029_00 | no | none | not run | create, openWorld |
 | calendar_read | GOOGLECALENDAR_EVENTS_LIST | 20261010_00 | no | none | not run | readOnly, idempotent, openWorld |
 | calendar_add | GOOGLECALENDAR_CREATE_EVENT | 20261010_00 | no | none | not run | create, openWorld |
+| slack_read | SLACK_FIND_CHANNELS, SLACK_FETCH_CONVERSATION_HISTORY | 20261023_00 | no | none | not run | readOnly, idempotent, openWorld |
+| slack_search | SLACK_SEARCH_MESSAGES | 20261023_00 | no | none | not run | readOnly, idempotent, openWorld |
+| slack_send | SLACK_SEND_MESSAGE | 20261023_00 | no | none | not run | create, openWorld |
 
 No catalog tool carries `destructiveHint`. `results/01-discover.jsonl` has every tool in these toolkits, plus Exa and `composio_search`.
 
@@ -93,7 +97,7 @@ The API confirms Exa as Instant: `EXA_SEARCH` ($0.007), `EXA_ANSWER` and `EXA_GE
 - **Event cards had no `link`** in the query we checked, and one query returned no cards at all, only web results.
 - **Size:** news 10 KB, places 43 KB, events 60 to 132 KB. Most of that is metadata, an AI overview and `serpapi.com` links, so the catalog's `output` rules keep only the useful paths. Unit T has to apply them before the 32 KB trim, or a plain cut will lose results.
 - `serpapi.com/searches/<id>` links appear in replies and shouldn't reach products. The replies we scanned had no `api_key=`.
-- **Gmail and Calendar outputs are unverified,** since nothing is connected. Provider text can be wrong here: Tavily's says `response_data.results`, and the real path is `data.results`. These tools have `outputVerified: false` in the catalog.
+- **Gmail, Calendar and Slack outputs are unverified,** since nothing is connected. Provider text can be wrong here: Tavily's says `response_data.results`, and the real path is `data.results`. These tools have `outputVerified: false` in the catalog.
 
 ## Connect Links
 
@@ -122,9 +126,23 @@ The API confirms Exa as Instant: `EXA_SEARCH` ($0.007), `EXA_ANSWER` and `EXA_GE
    - GMAIL_SEND_EMAIL accepts `to` as an alias outside its schema, so the gateway must refuse any argument not in the catalog's parameters.
    - Calendar attendees are emailed by default, so `calendar_add` lists `attendees` as a recipient field and narrows it to strings.
    - GMAIL_SEND_DRAFT has `destructiveHint`, so draft-then-send isn't available. `gmail_send` is always a fresh send.
+   - The daily cap of 10 is now in the catalog as `perDay`, for `gmail_send` and `slack_send`.
 9. **Parameters are a safety boundary, not just size (2.5).** Firecrawl `actions` is browser automation, `jsonOptions` runs an LLM, and Tavily `search_depth` doubled the price. `keepParams` drops them, and T has to enforce that at execute.
 10. **`web_results` and `news` are gone, by the owner's decision.** Sections 2.5, 3.3 and 5 and test build 2 still mention them.
 11. **`read_page` is limited only by its description for now.** To enforce "URLs the user gave", T or runAgent would have to check the URL against the user's input.
+
+## Slack
+
+The owner added Slack to the personal tier after the live runs. Only Composio's schemas and toolkit metadata were read: no Slack call, no connection and no Connect Link.
+
+- Composio lists managed OAuth for it (`composio_managed_auth_schemes: ["OAUTH2"]`). Nobody has tried it yet.
+- `slack_send` needs a confirmation each time and is capped at 10 a day per product, in the catalog as `perDay`. The gateway has to enforce both.
+- `blocks`, `reply_broadcast` and the `channel_id` alias stay out of `slack_send`, and `channel` is its recipient field.
+- **Check in the owner test:**
+  - Whether a send posts as the owner or as a bot. Composio's text mentions a bot, and `not_in_channel` if it isn't a member.
+  - Whether `slack_search` works on the managed app. It needs the `search:read` scope, and as far as we know Slack only allows search on a user token, which we didn't confirm.
+  - Composio's text says Slack can cap history at 15 messages a page for apps outside the Marketplace.
+- Slack messages, including private channels, pass through Composio and fall under its retention (plan section 8, item 7), so the ZDR decision covers them too.
 
 ## Left behind at Composio
 

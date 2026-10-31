@@ -174,7 +174,7 @@ test("the denylist doesn't catch the toolkits and tools the catalog needs", () =
 });
 
 test("the sync refuses a denied toolkit by Composio's category, for toolkits nobody listed", async () => {
-  for (const category of ["Payment Processing", "phone & sms", "ai models", "social media accounts", "social media marketing"]) {
+  for (const category of ["Payment Processing", "payment-processing", "phone & sms", "ai models", "ai-models", "social media accounts", "social-media-marketing"]) {
     const { deps } = fakeDeps((slug) => remoteTool(slug), [category]);
     await refused([policy("TAVILY_SEARCH")], PINS, deps, /denied category/);
   }
@@ -331,10 +331,10 @@ test("the committed catalog is byte-stable", () => {
 test("the committed catalog has exactly the planned ids", () => {
   assert.deepEqual(
     catalog.tools.map((t) => t.id),
-    ["web_search", "scholar", "places", "events", "read_page", "gmail_read", "gmail_draft", "gmail_send", "calendar_read", "calendar_add"],
+    ["web_search", "scholar", "places", "events", "read_page", "gmail_read", "gmail_draft", "gmail_send", "calendar_read", "calendar_add", "slack_read", "slack_search", "slack_send"],
   );
   assert.deepEqual(catalog.instantToolkits, ["firecrawl", "serpapi"]);
-  assert.deepEqual(catalog.personalToolkits, ["gmail", "googlecalendar"]);
+  assert.deepEqual(catalog.personalToolkits, ["gmail", "googlecalendar", "slack"]);
 });
 
 test("the committed catalog holds nothing from the denylist, and no trace of Exa", () => {
@@ -358,7 +358,7 @@ test("no committed tool has destructiveHint, and each read tool with a write tag
 });
 
 test("every committed name passes Meta's rules and avoids the reserved names", () => {
-  assert.equal(allFunctions.length, 10);
+  assert.equal(allFunctions.length, 14);
   for (const { fn: f } of allFunctions) {
     assert.equal(functionNameProblem(f.name), null, f.name);
     assert.match(f.name, /^[a-zA-Z0-9_.-]+$/);
@@ -417,6 +417,10 @@ test("the parameters that make a tool dangerous or dear stay out", () => {
   absent("GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "user_id");
   absent("GOOGLECALENDAR_CREATE_EVENT", "calendar_id", "extended_properties", "recurrence", "visibility");
   absent("GOOGLECALENDAR_EVENTS_LIST", "calendarId", "syncToken", "showDeleted", "showHiddenInvitations");
+  absent("SLACK_SEND_MESSAGE", "blocks", "fallback_text", "reply_broadcast", "channel_id", "unfurl_links", "unfurl_media");
+  absent("SLACK_SEARCH_MESSAGES", "auto_paginate", "team_id", "cursor", "highlight");
+  absent("SLACK_FIND_CHANNELS", "team_id", "types");
+  absent("SLACK_FETCH_CONVERSATION_HISTORY", "include_all_metadata", "inclusive");
 });
 
 test("tools that contact people name their recipient fields, and those fields are in the schema", () => {
@@ -424,6 +428,7 @@ test("tools that contact people name their recipient fields, and those fields ar
     gmail_draft: ["recipient_email", "extra_recipients", "cc", "bcc"],
     gmail_send: ["recipient_email", "extra_recipients", "cc", "bcc"],
     calendar_add: ["attendees"],
+    slack_send: ["channel"],
   };
   for (const tool of catalog.tools) {
     assert.deepEqual(tool.recipientFields, expected[tool.id] ?? [], tool.id);
@@ -434,6 +439,45 @@ test("tools that contact people name their recipient fields, and those fields ar
   }
   const attendees = allFunctions.find(({ fn: f }) => f.name === "GOOGLECALENDAR_CREATE_EVENT")?.fn.parameters.properties as Record<string, JsonSchema>;
   assert.deepEqual(attendees.attendees.items, { type: "string" });
+});
+
+test("Slack is owner-only, its one write needs confirmation and a daily cap, and nothing else is exposed", () => {
+  const slack = catalog.tools.filter((t) => t.toolkit === "slack");
+  assert.deepEqual(
+    slack.flatMap((t) => t.functions.map((f) => f.name)).sort(),
+    ["SLACK_FETCH_CONVERSATION_HISTORY", "SLACK_FIND_CHANNELS", "SLACK_SEARCH_MESSAGES", "SLACK_SEND_MESSAGE"],
+  );
+  for (const tool of slack) {
+    assert.equal(tool.tier, "personal", tool.id);
+    assert.ok(tool.functions.every((f) => !f.instant), tool.id);
+  }
+  const send = slack.find((t) => t.id === "slack_send");
+  assert.equal(send?.access, "create");
+  assert.equal(send?.perDay, 10);
+  assert.match(send?.functions[0].description ?? "", /Needs the user's confirmation before it runs\.$/);
+  assert.equal(slack.find((t) => t.id === "slack_read")?.access, "read");
+  assert.equal(slack.find((t) => t.id === "slack_search")?.access, "read");
+});
+
+test("Slack tools that delete or change the workspace are denied by name", () => {
+  for (const slug of [
+    "SLACK_DELETE_A_COMMENT_ON_A_FILE",
+    "SLACK_DELETES_A_MESSAGE_FROM_A_CHAT",
+    "SLACK_REMOVE_A_USER_FROM_A_CONVERSATION",
+    "SLACK_ARCHIVE_A_SLACK_CONVERSATION",
+    "SLACK_RENAME_A_CONVERSATION",
+    "SLACK_UPDATES_A_SLACK_MESSAGE",
+    "SLACK_SET_THE_TOPIC_OF_A_CONVERSATION",
+    "SLACK_INVITE_USERS_TO_A_SLACK_CHANNEL",
+    "SLACK_ADMIN_SET_WORKSPACE_SETTINGS",
+  ]) {
+    assert.ok(denialOfSlug(slug), slug);
+  }
+});
+
+test("both send tools have the same daily cap", () => {
+  const capped = catalog.tools.filter((t) => t.perDay !== null);
+  assert.deepEqual(capped.map((t) => [t.id, t.perDay]), [["gmail_send", 10], ["slack_send", 10]]);
 });
 
 test("descriptions only name tools in the catalog, and only parameters products can send", () => {
@@ -485,6 +529,7 @@ test("output rules exist for every Composio tool, and strip SerpAPI's own links"
     }
   }
   assert.ok(catalog.tools.filter((t) => t.tier === "public" && !t.builtin).every((t) => t.outputVerified));
+  // Nothing personal has run, since no account is connected.
   assert.ok(catalog.tools.filter((t) => t.tier === "personal").every((t) => !t.outputVerified));
 });
 

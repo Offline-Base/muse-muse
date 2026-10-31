@@ -63,6 +63,7 @@ export type CatalogTool = {
   toolkit: string | null;
   builtin: boolean;
   perMinute: number | null;
+  perDay: number | null;
   recipientFields: string[];
   sources: SourceRule[];
   output: OutputRule | null;
@@ -286,7 +287,8 @@ export const buildCatalog = async (policies: ToolPolicy[], pins: Record<string, 
       if (!categoriesSeen.has(policy.toolkit)) {
         categoriesSeen.add(policy.toolkit);
         const { categories } = await deps.fetchToolkit(policy.toolkit);
-        const hit = categories.find((c) => DENIED_CATEGORIES.includes(c.toLowerCase()));
+        // Composio's slugs use hyphens ("team-chat") and its names use spaces ("Team Chat").
+        const hit = categories.find((c) => DENIED_CATEGORIES.includes(c.toLowerCase().replace(/-/g, " ")));
         if (hit) refuse(`Toolkit ${policy.toolkit} is in the denied category "${hit}"`);
       }
     }
@@ -306,6 +308,7 @@ export const buildCatalog = async (policies: ToolPolicy[], pins: Record<string, 
       toolkit: policy.toolkit ?? null,
       builtin: policy.builtin === true,
       perMinute: policy.perMinute ?? null,
+      perDay: policy.perDay ?? null,
       recipientFields: policy.recipientFields ?? [],
       sources: policy.sources ?? [],
       output: policy.output ?? null,
