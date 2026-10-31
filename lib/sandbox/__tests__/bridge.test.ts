@@ -22,6 +22,7 @@ import {
   type BridgeConnection,
   type BridgeFrame,
   type BridgeFs,
+  type BridgeLimits,
 } from "@/lib/sandbox/bridge/bridge.mjs";
 import type { BridgeConfig, BridgeLogRecord, MuseCommand, MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 
@@ -106,6 +107,10 @@ class FakeHost implements BridgeConnection {
   sessionExists = false;
   closed = false;
   fail: Record<string, Error> = {};
+  /** Fails the next call to the method once, then answers as usual. */
+  failOnce: Record<string, Error> = {};
+  /** Methods the host never answers. */
+  hang = new Set<string>();
   /** Durable events the push stream lost, which view/page still serves. */
   pages: BridgeFrame[] = [];
   /** How the last turn ended, as session/read reports it. */
@@ -175,6 +180,12 @@ class FakeHost implements BridgeConnection {
   async request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
     this.calls.push({ method, params });
     if (this.fail[method]) throw this.fail[method];
+    const once = this.failOnce[method];
+    if (once) {
+      delete this.failOnce[method];
+      throw once;
+    }
+    if (this.hang.has(method)) return new Promise(() => {});
     switch (method) {
       case "session/resume":
         if (!this.sessionExists) throw rejected(`no session ${String(params.sessionId)}`, -32011, "notFound");
@@ -241,7 +252,16 @@ function timeline(script: Record<number, () => unknown>) {
   };
 }
 
-async function run(opts: { host?: FakeHost; fs?: MemoryFs; config?: Partial<BridgeConfig>; script?: Record<number, () => unknown>; signal?: AbortSignal } = {}) {
+async function run(
+  opts: {
+    host?: FakeHost;
+    fs?: MemoryFs;
+    config?: Partial<BridgeConfig>;
+    script?: Record<number, () => unknown>;
+    signal?: AbortSignal;
+    limits?: Partial<BridgeLimits>;
+  } = {},
+) {
   const host = opts.host ?? new FakeHost();
   const fs = opts.fs ?? new MemoryFs();
   const time = timeline(opts.script ?? {});
@@ -255,6 +275,7 @@ async function run(opts: { host?: FakeHost; fs?: MemoryFs; config?: Partial<Brid
       return host;
     },
     signal: opts.signal,
+    limits: opts.limits,
   });
   const records = fs.records();
   return { code, host, fs, records, exit: records[records.length - 1]!, time, connected };
@@ -700,11 +721,11 @@ describe("the bridge's limits and endings", () => {
     assert.match(noPrompt.exit.kind === "bridge" ? String(noPrompt.exit.reason) : "", /^config: can't read the prompt/);
     assert.deepEqual(noPrompt.connected, [], "nothing was started");
 
-    // A session that can't be opened either way.
+    // A session that can't be opened either way. The host is up, so it is no command-line refusal (exit 2).
     const host = new FakeHost();
     host.fail["session/start"] = rejected("session_id_conflict", -32030, "commandRejected");
     const noSession = await run({ host });
-    assert.equal(noSession.code, EXIT.usage);
+    assert.equal(noSession.code, EXIT.failed);
     assert.match(noSession.exit.kind === "bridge" ? String(noSession.exit.reason) : "", /couldn't open the session \(no session .*; session_id_conflict\)/);
     assert.ok(host.closed);
 
@@ -712,7 +733,7 @@ describe("the bridge's limits and endings", () => {
     const refusing = new FakeHost();
     refusing.fail["turn/start"] = rejected("invalid params", -32602, "invalidParams");
     const refused = await run({ host: refusing });
-    assert.equal(refused.code, EXIT.usage);
+    assert.equal(refused.code, EXIT.failed);
 
     // Something the bridge never expected.
     const crashing = await run({
@@ -754,6 +775,80 @@ describe("the bridge's limits and endings", () => {
       percentComplete: 100,
     });
     assert.equal(records.filter((r) => r.kind === "note").length, notes.length + 1, "each frame is logged, with the fake's own turn/started");
+  });
+});
+
+describe("the bridge's start", () => {
+  const turnRecords = (records: BridgeLogRecord[]) => records.filter((r) => r.kind === "bridge" && r.event === "turn");
+
+  it("ends with 1 and no turn record when Muse Code won't take the prompt after the session opened", async () => {
+    const host = new FakeHost();
+    host.fail["turn/start"] = rejected("invalid params", -32602, "invalidParams");
+    const { code, records } = await run({ host });
+    assert.equal(code, EXIT.failed);
+    // No turn record: startMuse reads that as a start that didn't happen and runs the round on exec.
+    assert.deepEqual(bridgeEvents(records), ["started", "session: started", "exit: Muse Code didn't take the prompt (invalid params)"]);
+    assert.equal(host.methods().filter((m) => m === "turn/start").length, 1, "a refusal that admitted something isn't sent again");
+    assert.ok(host.closed);
+  });
+
+  it("gives up on a start that runs out of time, without sending what comes after", async () => {
+    const host = new FakeHost();
+    host.hang.add("session/resume");
+    const began = performance.now();
+    const { code, exit, records } = await run({ host, limits: { startMs: 50 } });
+    assert.equal(code, EXIT.failed);
+    assert.match(exit.kind === "bridge" ? String(exit.reason) : "", /^couldn't open the session \(no answer in \d+ ms; out of time\)$/);
+    assert.deepEqual(host.methods(), ["session/resume"], "session/start isn't sent once the start's time is up");
+    assert.ok(host.closed);
+    assert.deepEqual(turnRecords(records), []);
+    assert.ok(performance.now() - began < 2000);
+  });
+
+  it("gives up on a host that never answers its handshake", async () => {
+    const fs = new MemoryFs();
+    const code = await runBridge({ config: config(), fs, clock: timeline({}).clock, connect: () => new Promise(() => {}), limits: { startMs: 50 } });
+    assert.equal(code, EXIT.usage);
+    const exit = fs.records().at(-1);
+    assert.match(exit?.kind === "bridge" ? String(exit.reason) : "", /^host did not start: no answer in \d+ ms$/);
+  });
+
+  it("sends a command again, under the same id, when the host turned it away unseen", async () => {
+    const host = new FakeHost();
+    host.failOnce["turn/start"] = rejected("busy writing", -32031, "backpressured");
+    const { code, records } = await run({ host, limits: { retryMs: 1 }, script: { 1: () => host.complete() } });
+    assert.equal(code, EXIT.completed);
+    const starts = host.calls.filter((c) => c.method === "turn/start");
+    assert.equal(starts.length, 2);
+    assert.equal(starts[0]!.params.commandId, starts[1]!.params.commandId);
+    assert.equal(turnRecords(records).length, 1);
+  });
+
+  it("stops while the host is still starting, with its exit record", async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const fs = new MemoryFs();
+    const code = await runBridge({
+      config: config(),
+      fs,
+      clock: timeline({}).clock,
+      connect: () => new Promise(() => {}),
+      signal: stop.signal,
+      limits: { startMs: 50 },
+    });
+    assert.equal(code, EXIT.failed);
+    assert.deepEqual(bridgeEvents(fs.records()), ["started", "exit: stopped"]);
+  });
+
+  it("closes a host that came up after it was told to stop, and opens no session", async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const host = new FakeHost();
+    const { code, records } = await run({ host, signal: stop.signal });
+    assert.equal(code, EXIT.failed);
+    assert.deepEqual(bridgeEvents(records), ["started", "exit: stopped"]);
+    assert.deepEqual(host.methods(), []);
+    assert.ok(host.closed);
   });
 });
 

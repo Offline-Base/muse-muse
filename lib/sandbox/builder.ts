@@ -136,10 +136,11 @@ const DRY_RUN_PREFIX = "dryrun-";
  */
 const BRIDGE_IDLE_EXIT_MS = 2 * MIN;
 /**
- * How long startMuse waits for a new bridge to open its session (usually 2 to 5 s). One that hasn't by then is taken
- * to be starting. With the SDK install, a start stays under about a minute.
+ * How long startMuse waits for a new bridge to have Muse Code take the prompt (usually 2 to 5 s). The bridge gives its
+ * whole start 20 s (START_MS in bridge.mjs) and closing its host up to 20 s, so by then it has taken the prompt or
+ * ended. One that has done neither is taken to be starting. With the SDK install, a start stays under about 75 s.
  */
-const BRIDGE_START_PROBE_S = 15;
+const BRIDGE_START_PROBE_S = 45;
 /** How long installing the bridge's SDK may take, the first time in a sandbox (one small package, no dependencies). */
 const SDK_INSTALL_MS = 30_000;
 /** The largest command the mailbox takes. */
@@ -628,7 +629,8 @@ async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void
 /**
  * Starts one Muse Code round detached and returns at once: on the session bridge over `muse serve` (MUSE_ENGINE=serve,
  * docs/MUSE_CODE_FULL.md) or as `muse exec --json`. Under MUSE_FULL both get the platform's settings, hooks and build
- * MCP server. A bridge that can't install its SDK or exits 2 at start leaves the round to exec, with a notice saying so.
+ * MCP server. A bridge that can't install its SDK, or ends before Muse Code takes the prompt, leaves the round to exec,
+ * with a notice saying so.
  */
 export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   if (!isSessionId(input.sessionId)) throw new Error(`sessionId must be a UUID, got ${input.sessionId}`);
@@ -709,19 +711,22 @@ export function bridgePrepareScript(round: number): string {
 }
 
 /**
- * Waits for a bridge that just started to open its session, reading its log in the sandbox. Resolves true once it
- * has, or when it is still going after BRIDGE_START_PROBE_S; otherwise why it couldn't start: it exited 2, or ended
- * without its exit record.
+ * Waits for a bridge that just started to have Muse Code take the prompt (its `turn` record), reading its log in the
+ * sandbox. Resolves true once it has, or when it is still going after BRIDGE_START_PROBE_S; otherwise why it couldn't
+ * start: it ended before then, with its exit record (whatever the code: nothing ran) or without one.
  */
 async function bridgeStarted(sandbox: Sandbox, round: number): Promise<true | string> {
   const paths = bridgePaths(round);
   const exitFile = `${paths.err}.exit`;
   const script = [
     `for i in $(seq 1 ${BRIDGE_START_PROBE_S * 2}); do`,
-    `  if grep -q '"kind":"bridge","event":"session"' ${q(paths.log)} 2>/dev/null; then echo session; exit 0; fi`,
+    // The runner's exit file, then the exit record, then the turn record: the bridge writes them in the other order,
+    // so whichever came first is already there when a later one is read.
+    `  ended=; [ -f ${q(exitFile)} ] && ended=1`,
     `  line=$(grep '"kind":"bridge","event":"exit"' ${q(paths.log)} 2>/dev/null | tail -n 1)`,
+    `  if grep -q '"kind":"bridge","event":"turn"' ${q(paths.log)} 2>/dev/null; then echo turn; exit 0; fi`,
     `  if [ -n "$line" ]; then printf 'exit %s\\n' "$line"; exit 0; fi`,
-    `  if [ -f ${q(exitFile)} ]; then printf 'ended %s\\n' "$(cat ${q(exitFile)})"; exit 0; fi`,
+    `  if [ -n "$ended" ]; then printf 'ended %s\\n' "$(cat ${q(exitFile)})"; exit 0; fi`,
     "  sleep 0.5",
     "done",
     "echo waiting",
@@ -732,20 +737,19 @@ async function bridgeStarted(sandbox: Sandbox, round: number): Promise<true | st
   });
   const out = res?.stdout.trim() ?? "";
   if (out.startsWith("exit ")) {
-    let record: { exitCode?: unknown; reason?: unknown };
+    let reason: unknown;
     try {
-      record = JSON.parse(out.slice("exit ".length)) as typeof record;
+      reason = (JSON.parse(out.slice("exit ".length)) as { reason?: unknown }).reason;
     } catch {
-      return true;
+      reason = null;
     }
-    if (record.exitCode !== 2) return true;
-    return typeof record.reason === "string" && record.reason ? noEmDashes(record.reason).slice(0, 300) : "it couldn't start";
+    return typeof reason === "string" && reason ? noEmDashes(reason).slice(0, 300) : "it ended before Muse Code took the prompt";
   }
   if (out.startsWith("ended ")) {
     const err = (await tailText(sandbox, paths.err, 1500).catch(() => "")).trim().split("\n").pop() ?? "";
     return `it stopped with code ${out.slice("ended ".length).trim() || "unknown"}${err ? `: ${noEmDashes(err).slice(0, 300)}` : ""}`;
   }
-  // Opened, still opening, or the check itself didn't answer: the polls take it from here.
+  // Taken, still starting, or the check itself didn't answer: the polls take it from here.
   return true;
 }
 

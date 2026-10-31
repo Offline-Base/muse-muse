@@ -6,6 +6,7 @@ export declare const POLL_MS: number;
 export declare const SETTLE_MS: number;
 export declare const INTERRUPT_WAIT_MS: number;
 export declare const QUIET_MS: number;
+export declare const START_MS: number;
 export declare const MAX_IMAGE_BYTES: number;
 export declare const MAX_IMAGES_BYTES: number;
 
@@ -44,6 +45,13 @@ export interface BridgeClock {
   sleep(ms: number): Promise<void>;
 }
 
+/** Timings in real milliseconds: one call's limit, a whole start's, and the wait before a turned-away call goes again. */
+export interface BridgeLimits {
+  requestMs: number;
+  startMs: number;
+  retryMs: number;
+}
+
 export interface RunBridgeInput {
   config: BridgeConfig | unknown;
   fs: BridgeFs;
@@ -51,6 +59,8 @@ export interface RunBridgeInput {
   connect?: (args: string[], hooks: { stderr(text: string): void }) => Promise<BridgeConnection>;
   connection?: BridgeConnection;
   signal?: AbortSignal;
+  /** Tests only: shorter timings. */
+  limits?: Partial<BridgeLimits>;
 }
 
 export declare function configProblem(config: unknown): string | null;

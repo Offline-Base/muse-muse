@@ -20,6 +20,8 @@ import { condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const BUILD = "3f2a9c1e-77b0-4d2e-9f00-0123456789ab";
+/** What startMuse's start check looks for in a new bridge's log: Muse Code took the prompt. */
+const PROBE = '"kind":"bridge","event":"turn"';
 
 /** Files the fake sandbox holds, every command it ran, and what each answers. */
 let files: Record<string, string> = {};
@@ -102,7 +104,7 @@ beforeEach(() => {
   commands = [];
   kills = [];
   commandAlive = true;
-  answer = (script) => (script.includes('"kind":"bridge","event":"session"') ? { stdout: "session\n" } : {});
+  answer = (script) => (script.includes(PROBE) ? { stdout: "turn\n" } : {});
   for (const k of ENV) delete process.env[k];
   process.env.MODEL_API_KEY = "test-model-key";
   process.env.GATEWAY_TOKEN_PEPPER = "test-pepper";
@@ -232,7 +234,7 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
   it("runs the round on exec, saying why, when the bridge exits 2 at start", async () => {
     process.env.MUSE_ENGINE = "serve";
     const exit = { t: 1, kind: "bridge", event: "exit", exitCode: 2, goal: null, reason: "host did not start: muse serve exited with code 2" };
-    answer = (script) => (script.includes('"kind":"bridge","event":"session"') ? { stdout: `exit ${JSON.stringify(exit)}\n` } : {});
+    answer = (script) => (script.includes(PROBE) ? { stdout: `exit ${JSON.stringify(exit)}\n` } : {});
     const run = await start();
     assert.equal(run.engine, "exec");
     assert.equal(run.notice, "The session bridge didn't start (host did not start: muse serve exited with code 2), so this round runs on muse exec.");
@@ -242,6 +244,19 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
       ["/vercel/musemuse/run/muse-r0.sh", "/vercel/musemuse/run/muse-r0.sh"],
       "the bridge, then exec under the same name",
     );
+  });
+
+  it("runs the round on exec when the bridge ends before Muse Code takes the prompt, whatever its code", async () => {
+    process.env.MUSE_ENGINE = "serve";
+    const exit = { t: 1, kind: "bridge", event: "exit", exitCode: 1, goal: null, reason: "Muse Code didn't take the prompt (busy writing)" };
+    answer = (script) => (script.includes(PROBE) ? { stdout: `exit ${JSON.stringify(exit)}\n` } : {});
+    const run = await start();
+    assert.equal(run.engine, "exec");
+    assert.equal(run.notice, "The session bridge didn't start (Muse Code didn't take the prompt (busy writing)), so this round runs on muse exec.");
+    // The check waits for the prompt to be taken, not just for the session to open.
+    const probe = commands.find((c) => c.script.includes(PROBE))!.script;
+    assert.ok(!probe.includes('"event":"session"'));
+    assert.match(probe, /for i in \$\(seq 1 90\); do/);
   });
 
   it("runs only valid bash in the sandbox", async () => {
@@ -257,11 +272,42 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     }
   });
 
-  it("keeps a bridge that is still opening, or that started and finished at once", async () => {
+  it("reads a new bridge's log in an order that can't miss the turn record", async () => {
     process.env.MUSE_ENGINE = "serve";
-    for (const stdout of ["waiting\n", `exit ${JSON.stringify({ kind: "bridge", event: "exit", exitCode: 1, reason: "failed: x" })}\n`]) {
+    await start();
+    const probe = commands.find((c) => c.script.includes(PROBE))!.script;
+    const dir = mkdtempSync(path.join(tmpdir(), "musemuse-probe-"));
+    try {
+      const log = path.join(dir, "muse-r0.msp.jsonl");
+      const exitFile = path.join(dir, "muse-r0.msp.err.exit");
+      // The same check, once, on files of its own.
+      const local = probe
+        .replaceAll("/vercel/musemuse/logs/muse-r0.msp.err.exit", exitFile)
+        .replaceAll("/vercel/musemuse/logs/muse-r0.msp.jsonl", log)
+        .replace("seq 1 90", "seq 1 1")
+        .replace("sleep 0.5", "true");
+      const check = () => spawnSync("bash", ["-c", local], { encoding: "utf8" }).stdout.trim();
+      assert.equal(check(), "waiting");
+      const exit = JSON.stringify({ t: 2, kind: "bridge", event: "exit", exitCode: 1, goal: null, reason: "failed: x" });
+      writeFileSync(log, `${JSON.stringify({ t: 1, kind: "bridge", event: "turn", reason: "prompt" })}\n${exit}\n`);
+      writeFileSync(exitFile, "1\n");
+      assert.equal(check(), "turn", "a round that took the prompt and ended at once stays on serve");
+      writeFileSync(log, `${exit}\n`);
+      assert.equal(check(), `exit ${exit}`);
+      writeFileSync(log, "");
+      writeFileSync(exitFile, "137\n");
+      assert.equal(check(), "ended 137");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a bridge that took the prompt, even one that finished at once, or that is still starting", async () => {
+    process.env.MUSE_ENGINE = "serve";
+    // A turn record before the exit record reads as "turn": the check looks for it first.
+    for (const stdout of ["turn\n", "waiting\n"]) {
       files = {};
-      answer = (script) => (script.includes('"kind":"bridge","event":"session"') ? { stdout } : {});
+      answer = (script) => (script.includes(PROBE) ? { stdout } : {});
       assert.equal((await start()).engine, "serve", stdout);
     }
   });
