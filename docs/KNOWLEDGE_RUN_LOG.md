@@ -597,7 +597,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   hackathon". So shrinking Glimmer comes first, reversing the earlier advice to skip LittleBit and treat NanoQuant as
   optional. The Bolt student stops; LFM3 1.7B is the student if one is trained. Workflow w38kyn16r: llama.cpp per-tensor
   shrink study on writer-1. NanoQuant and LittleBit follow once the final model is picked.
-- About 1:05 PM: owner: "I want to be able to run the small quantized versions on devices btw including mac, jetson, and
+- About 12:55 PM: owner: "I want to be able to run the small quantized versions on devices btw including mac, jetson, and
   phone." llama.cpp can't load NanoQuant or LittleBit output; NanoQuant's kernels are CUDA-only and LittleBit has none, so
   neither runs on those devices without a new runtime. Neither is started. Correction: IQ1_S is not llama.cpp's smallest:
   Q1_0 is 1.125 bpw, with Metal support and community Glimmer files about 4.85 GB. Workflow glimmer-on-devices started:
