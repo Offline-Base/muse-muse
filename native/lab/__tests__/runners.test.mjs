@@ -427,8 +427,9 @@ describe("android_emu", () => {
     assert.equal(readFileSync(apk, "utf8"), "the apk");
   });
 
-  test("the recording is pulled only once screenrecord has finished it", async () => {
-    // Oct 31, on the real Mac: the pull came 1 s after the stop, before screenrecord had written the moov atom.
+  test("the local adb is left alone until screenrecord has finished its file", async () => {
+    // Oct 31, on the real Mac: stopping the local adb right after pkill ended the session, the device killed screenrecord
+    // before it wrote the moov atom, and no clip could be made.
     const base = android();
     let stoppedAt = null;
     let pulledAt = null;
@@ -441,7 +442,15 @@ describe("android_emu", () => {
         return base(argv, opts, reply);
       },
     });
+    let localStoppedAt = null;
+    const startProc = h.ctx.startProc;
+    h.ctx.startProc = (argv, opts) => {
+      const proc = startProc(argv, opts);
+      if (!argv.join(" ").includes("screenrecord")) return proc;
+      return { ...proc, stop: async (ms) => ((localStoppedAt = h.ctx.now()), proc.stop(ms)) };
+    };
     const result = await runAndroidEmu(h.ctx);
+    assert.ok(localStoppedAt >= stoppedAt + 2500, `the local adb was stopped ${localStoppedAt - stoppedAt} ms after the stop, before screenrecord had gone`);
     assert.ok(pulledAt >= stoppedAt + 2500, `pulled ${pulledAt - stoppedAt} ms after the stop`);
     assert.ok(result.files.some((f) => f.role === "clip"));
     assert.ok(!h.lines.join("\n").includes("still running"));

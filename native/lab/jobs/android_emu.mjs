@@ -146,15 +146,16 @@ export async function runAndroidEmu(ctx) {
   });
   await recordUntilDone(ctx, started, ready);
   await ctx.exec(adbStopRecording(SERIAL), { timeoutMs: 15_000 });
-  await recorder.stop(8000);
-  // screenrecord takes a few seconds to finish the file after it's told to stop, and the local adb can be gone before then.
-  // On the real Mac a pull 1 s after the stop got a file with no moov atom, which no player can read.
+  // screenrecord takes a few seconds to finish the file after it's told to stop. Ending the local adb before then closes the
+  // session, and the device kills screenrecord with the file half written: on the real Mac that left no moov atom, which no
+  // player can read. So the local adb only gets stopped once screenrecord has gone, when it has usually exited by itself.
   const finished = await waitFor(
     ctx,
     async () => String((await ctx.exec(adbPidof(SERIAL, "screenrecord"), { timeoutMs: 15_000 })).stdout).trim() === "",
     { timeoutMs: RECORDER_FINISH_MS, everyMs: 500 },
   );
-  if (!finished) ctx.logLine("screenrecord was still running when the lab pulled the recording.");
+  if (!finished) ctx.logLine("screenrecord was still running when the lab stopped it.");
+  await recorder.stop(8000);
   const recording = path.join(ctx.dir, "recording.mp4");
   const pulled = await ctx.exec(adbPull(SERIAL, remote, recording), { timeoutMs: 60_000 });
   await ctx.exec(adbRemove(SERIAL, remote), { timeoutMs: 15_000 });
