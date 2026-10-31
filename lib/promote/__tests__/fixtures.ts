@@ -65,6 +65,8 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
     workflowRunId: "wrun_local_1",
     museRound: null,
     stopRequested: false,
+    requestedTargets: null,
+    toolFixtures: null,
     previewUrl: "https://sb-1a2b3c.vercel.run",
   };
   let eventId = 0;
@@ -103,6 +105,7 @@ export function sampleRows(over: { slug?: string; ownerId?: string } = {}): Loca
       demoVideoUrl: video,
       demoPosterUrl: poster,
       transcriptUrl: `${LOCAL}/transcripts/${buildId}/transcript-9c0d1e2f.json`,
+      extraClips: [],
       status: "live",
       createdAt: at(0),
       updatedAt: at(26),

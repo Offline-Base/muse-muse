@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
@@ -9,12 +10,29 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { Brief } from "@/lib/brief/schema";
+import type { Brief, TargetId } from "@/lib/brief/schema";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
 import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
-import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
+import type {
+  NativeArtifactKind,
+  NativeBudgetLane,
+  NativeCheck,
+  NativeJobInput,
+  NativeJobKind,
+  NativeJobResult,
+  NativeJobStatus,
+  NativeLabState,
+  NativeLane,
+  NativePlan,
+  NativeRunStatus,
+  NativeRunSummary,
+  NativeSpendKind,
+} from "@/lib/native/types";
+import type { ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
+import type { BuildEventBody, BuildStatus, Manifest, NativeOrigin, ProductClip, ProductStatus, Reference } from "@/lib/types";
 import type {
   DatasetStatus,
   EvalExample,
@@ -80,6 +98,8 @@ export const products = pgTable(
     /** A still from the demo for its <video> poster. Set with demoVideoUrl, so the two always match. */
     demoPosterUrl: text("demo_poster_url"),
     transcriptUrl: text("transcript_url"),
+    /** Clips of it on a real device that its owner uploaded, shown under the demo. */
+    extraClips: jsonb("extra_clips").$type<ProductClip[]>().notNull().default([]),
     status: text("status").$type<ProductStatus>().notNull().default("building"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -117,6 +137,10 @@ export const builds = pgTable(
     /** Set by the owner's Stop. The workflow ends the build after its next Muse Code poll (lib/pipeline/workflow.ts). */
     stopRequested: boolean("stop_requested").notNull().default(false),
     previewUrl: text("preview_url"),
+    /** The targets the person picked before the brief, or null to let the writer choose (docs/NATIVE.md). */
+    requestedTargets: jsonb("requested_targets").$type<TargetId[]>(),
+    /** Canned tool outputs for this build's tests, by Composio slug (docs/AGENT_TOOLS.md). Null without the agent target. */
+    toolFixtures: jsonb("tool_fixtures").$type<ToolFixtures>(),
     /** Everything this build spent on Meta models: brief, Muse Code, judge, smoke tests. */
     costUsd: real("cost_usd").notNull().default(0),
     error: text("error"),
@@ -168,13 +192,13 @@ export const gatewayTokens = pgTable(
 /**
  * One row per Meta Model API call, from any source: the gateway (products and their tests), Muse Code runs, the
  * platform's own brief and judge calls, and the live docs demos ("docs", lib/docs/proxy). "Meta tokens driven" is the
- * sum of input and output tokens here.
+ * sum of input and output tokens here. "tools" rows are the tool gateway's calls to Composio, with its slug as `model`.
  */
 export const usage = pgTable(
   "usage",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs">().notNull(),
+    source: text("source").$type<"gateway" | "muse_code" | "platform" | "docs" | "tools">().notNull(),
     productId: uuid("product_id").references(() => products.id),
     buildId: uuid("build_id").references(() => builds.id),
     tokenId: uuid("token_id").references(() => gatewayTokens.id),
@@ -186,6 +210,8 @@ export const usage = pgTable(
     images: integer("images").notNull().default(0),
     videoFrames: integer("video_frames").notNull().default(0),
     audioSeconds: real("audio_seconds").notNull().default(0),
+    /** What a call counts in besides tokens: Meta web searches, or 1 for a tool call. A row with units is kept at $0. */
+    units: integer("units").notNull().default(0),
     costUsd: real("cost_usd").notNull().default(0),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -422,3 +448,190 @@ export const driveOrders = pgTable(
     index("drive_orders_browser_idx").on(t.browserKey, t.createdAt),
   ],
 );
+
+/**
+ * A product's Composio sessions, cached so a call doesn't make one each time, and updated when the config's hash changes
+ * (docs/AGENT_TOOLS.md). composio_user_id is an HMAC of kind, product and subject, so no id is shared across products.
+ */
+export const toolSessions = pgTable(
+  "tool_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    composioUserId: text("composio_user_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    configHash: text("config_hash").notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("tool_sessions_user_idx").on(t.productId, t.composioUserId)],
+);
+
+/**
+ * Accounts a principal connected for a product's personal tools. Only Composio's id for the account is stored, never a
+ * credential. Disconnecting sets revoked_at, so at most one row per toolkit is active.
+ */
+export const toolConnections = pgTable(
+  "tool_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    principal: text("principal").$type<ToolPrincipal>().notNull(),
+    composioUserId: text("composio_user_id").notNull(),
+    toolkit: text("toolkit").notNull(),
+    connectedAccountId: text("connected_account_id").notNull(),
+    createdAt: createdAt(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("tool_connections_active_idx").on(t.productId, t.composioUserId, t.toolkit).where(sql`${t.revokedAt} is null`),
+    index("tool_connections_product_idx").on(t.productId),
+  ],
+);
+
+/**
+ * One run of the native lane for a product: package it, check it, keep the results (docs/NATIVE.md). Its `native` events
+ * go to `build_id`'s log. Shipping and a refinement's re-check start at most one run per build; the agent and the owner
+ * may start more.
+ */
+export const nativeRuns = pgTable(
+  "native_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    buildId: uuid("build_id")
+      .notNull()
+      .references(() => builds.id),
+    origin: text("origin").$type<NativeOrigin>().notNull(),
+    targets: jsonb("targets").$type<TargetId[]>().notNull(),
+    status: text("status").$type<NativeRunStatus>().notNull().default("planned"),
+    plan: jsonb("plan").$type<NativePlan>(),
+    summary: jsonb("summary").$type<NativeRunSummary>(),
+    costUsd: real("cost_usd").notNull().default(0),
+    workflowRunId: text("workflow_run_id"),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: createdAt(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (t) => [
+    uniqueIndex("native_runs_once_idx").on(t.buildId, t.origin).where(sql`${t.origin} in ('ship', 'refine')`),
+    index("native_runs_product_idx").on(t.productId, t.createdAt),
+  ],
+);
+
+/**
+ * The lab's queue. A box claims the next job for its lane with FOR UPDATE SKIP LOCKED (docs/NATIVE_LAB.md). token_hash
+ * is the sha256 of the job's token, which exists in plain text only in the claim's reply.
+ */
+export const nativeJobs = pgTable(
+  "native_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => nativeRuns.id),
+    buildId: uuid("build_id")
+      .notNull()
+      .references(() => builds.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    lane: text("lane").$type<NativeLane>().notNull(),
+    kind: text("kind").$type<NativeJobKind>().notNull(),
+    priority: integer("priority").notNull().default(0),
+    status: text("status").$type<NativeJobStatus>().notNull().default("queued"),
+    input: jsonb("input").$type<NativeJobInput>().notNull(),
+    result: jsonb("result").$type<NativeJobResult>(),
+    tokenHash: text("token_hash"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: createdAt(),
+    /** A job still queued after this is dropped: its preview may be gone. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("native_jobs_claim_idx").on(t.lane, t.status, t.priority, t.createdAt),
+    index("native_jobs_run_idx").on(t.runId),
+    index("native_jobs_build_idx").on(t.buildId),
+  ],
+);
+
+/**
+ * Files a native run made: downloads and what checks left behind. A newer package of the same kind sets superseded_at on
+ * the old one. `check` is null for a package nobody has checked, which the product page says.
+ */
+export const nativeArtifacts = pgTable(
+  "native_artifacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => nativeRuns.id),
+    /** The lab job that made it. Null for packages. */
+    jobId: uuid("job_id").references(() => nativeJobs.id),
+    kind: text("kind").$type<NativeArtifactKind>().notNull(),
+    platform: text("platform"),
+    device: text("device"),
+    caption: text("caption"),
+    url: text("url").notNull(),
+    pathname: text("pathname").notNull(),
+    bytes: integer("bytes").notNull().default(0),
+    sha256: text("sha256"),
+    shellVersion: text("shell_version"),
+    check: text("check_result").$type<NativeCheck>(),
+    createdAt: createdAt(),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  },
+  (t) => [index("native_artifacts_product_idx").on(t.productId, t.kind, t.supersededAt), index("native_artifacts_run_idx").on(t.runId)],
+);
+
+/** The append-only ledger behind native_budget: every reservation, commitment and release, in USD. */
+export const nativeSpend = pgTable(
+  "native_spend",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    lane: text("lane").$type<NativeBudgetLane>().notNull(),
+    kind: text("kind").$type<NativeSpendKind>().notNull(),
+    usd: real("usd").notNull(),
+    /** What it was for: a Device Farm run's ARN, a Windows start. A release names what it releases. */
+    ref: text("ref"),
+    runId: uuid("run_id").references(() => nativeRuns.id),
+    note: text("note"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("native_spend_lane_idx").on(t.lane, t.at), index("native_spend_run_idx").on(t.runId)],
+);
+
+/**
+ * What each budget has reserved and committed, in cents. A reservation is one conditional UPDATE, as reserveUploadBytes
+ * does it, so two runs can't both take the last of a cap. The caps themselves are in lib/env.ts.
+ */
+export const nativeBudget = pgTable("native_budget", {
+  lane: text("lane").$type<NativeBudgetLane>().primaryKey(),
+  reservedCents: integer("reserved_cents").notNull().default(0),
+  committedCents: integer("committed_cents").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** One row per lab box. token_hash is the sha256 of the lane's token, which only claims jobs. */
+export const nativeLabs = pgTable("native_labs", {
+  lane: text("lane").$type<NativeLane>().primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  state: jsonb("state").$type<NativeLabState>(),
+  version: text("version"),
+  instanceId: text("instance_id"),
+});
