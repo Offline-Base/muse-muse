@@ -30,7 +30,15 @@ export interface BuilderPolicyOptions {
   directProducts?: boolean;
   /** Prove it's copy only: one live product's own host, so the outputs can be run against it. */
   extraHosts?: readonly string[];
+  /**
+   * Preview deployments only: Vercel's Protection Bypass for Automation secret. The firewall adds it to every request to
+   * platformHost as x-vercel-protection-bypass, so the sandbox reaches a protected Preview without ever seeing the secret.
+   */
+  platformBypassSecret?: string | null;
 }
+
+/** The header Vercel reads a Protection Bypass for Automation secret from. */
+export const PROTECTION_BYPASS_HEADER = "x-vercel-protection-bypass";
 
 /** Hosts @vercel/blob's client `upload()` talks to: the API that takes the PUT, and the store that serves it. */
 export const BLOB_UPLOAD_HOSTS = ["vercel.com", "*.blob.vercel-storage.com"] as const;
@@ -80,7 +88,11 @@ export function builderNetworkPolicy(opts: BuilderPolicyOptions): NetworkPolicy 
     "api.meta.ai": meta,
     "registry.npmjs.org": [],
   };
-  if (opts.platformHost) allow[opts.platformHost] = [];
+  if (opts.platformHost) {
+    allow[opts.platformHost] = opts.platformBypassSecret
+      ? [{ transform: [{ headers: { [PROTECTION_BYPASS_HEADER]: opts.platformBypassSecret } }] }]
+      : [];
+  }
   if (opts.blobUploads) for (const host of BLOB_UPLOAD_HOSTS) allow[host] = [];
   for (const host of opts.extraHosts ?? []) allow[host] = [];
   return { allow };

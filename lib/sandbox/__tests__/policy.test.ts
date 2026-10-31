@@ -137,3 +137,18 @@ test("only the Muse Code env carries the placeholder", () => {
   assert.equal("META_API_KEY" in SANDBOX_ENV, false);
   assert.deepEqual(museEnv(PLACEHOLDER), { MUSE_NO_AUTO_UPDATE: "1", MUSE_LOGIN: "0", META_API_KEY: PLACEHOLDER });
 });
+
+test("on a preview, requests to the platform carry the protection bypass header, added by the firewall", async () => {
+  const { builderNetworkPolicy, PROTECTION_BYPASS_HEADER } = await import("@/lib/sandbox/policy");
+  const policy = builderNetworkPolicy({ modelApiKey: "k", placeholderKey: "p", platformHost: "muse-muse-abc.vercel.app", platformBypassSecret: "bypass-secret-value" });
+  const rules = (policy as { allow: Record<string, unknown[]> }).allow["muse-muse-abc.vercel.app"];
+  assert.deepEqual(rules, [{ transform: [{ headers: { [PROTECTION_BYPASS_HEADER]: "bypass-secret-value" } }] }]);
+});
+
+test("without a bypass secret the platform host is allowed exactly as before", async () => {
+  const { builderNetworkPolicy } = await import("@/lib/sandbox/policy");
+  for (const secret of [undefined, null, ""]) {
+    const policy = builderNetworkPolicy({ modelApiKey: "k", placeholderKey: "p", platformHost: "muse-muse.vercel.app", platformBypassSecret: secret });
+    assert.deepEqual((policy as { allow: Record<string, unknown[]> }).allow["muse-muse.vercel.app"], []);
+  }
+});

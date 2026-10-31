@@ -244,6 +244,7 @@ function lockedPolicy(sandboxName: string) {
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
     directProducts: productsCallMetaDirectly(),
+    platformBypassSecret: env.previewBypassSecret,
   });
 }
 
@@ -637,6 +638,7 @@ export async function forkForProve(sandboxName: string, hosts: { liveHost: strin
       placeholderKey: sandboxPlaceholder(name),
       platformHost: hosts.platformHost,
       extraHosts: [hosts.liveHost],
+      platformBypassSecret: env.previewBypassSecret,
     }),
     tags: { app: "musemuse", role: "prove", source: sandboxName.slice(0, 60) },
   });
