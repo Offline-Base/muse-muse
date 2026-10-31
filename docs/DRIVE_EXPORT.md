@@ -15,13 +15,13 @@ migration numbers follow `docs/CAPABILITIES.md` (unit 0) where the two differ.
 
 | Part | Files | Tests, and what they show |
 | --- | --- | --- |
-| One layout for bench drives and exports | `lib/drive/layout.ts`, `kit.ts`, `plan.ts`, and `image.ts` (now the kit plus a plan written into a folder) | `plan.test.ts`, 14: the bench's image is byte for byte what it was before the split, for five fixture models, against `golden/bench-image.json` captured from the old code [V]. A board plan has the adapter, Qwen's license and notice and no Meta words; a lab plan has Meta's; the owner's file is named without its link; the Mac launcher really runs on a board drive and passes `--lora`, copies the adapter and checks it [V, on macOS] |
-| The drive kit | `lib/drive/kit-files.json` (real, generated Oct 31), `scripts/drive-kit.ts` | 82 files, 120.1 MB once each, from the pinned llama.cpp b11669 archives, Meta's two files and Qwen's license, each checked against its pin [V]. **Not uploaded**: `baseUrl` is null, so the routes answer `drive_kit_missing` until the owner runs `--upload` |
+| One layout for bench drives and exports | `lib/drive/layout.ts`, `kit.ts`, `plan.ts`, and `image.ts` (now the kit plus a plan written into a folder) | `plan.test.ts`, 15: the bench's image is byte for byte what it was before the split, for five fixture models, against `golden/bench-image.json` captured from the old code [V]. A board plan has the adapter, Qwen's license and notice and no Meta words; a lab plan has Meta's; the owner's file is named without its link; the Mac launcher really runs on a board drive and passes `--lora`, copies the adapter and checks it [V, on macOS]; a build's level is escaped in Start Here |
+| The drive kit | `lib/drive/kit-files.json` (real, generated Oct 31), `scripts/drive-kit.ts` | 82 files, 120.1 MB once each, from the pinned llama.cpp b11669 archives, Meta's two files and Qwen's license, each checked against its pin [V]. **Not uploaded**: `baseUrl` is null, so the routes answer `drive_kit_missing` until the owner runs `--upload`, commits the `lib/drive/kit-files.json` it writes, and deploys. The routes read the deployed copy, not the laptop's |
 | Links | `lib/drive/sources.ts` | `sources.test.ts`, 4: resolve links for public repos, Hub-signed links for private ones asked with `redirect: "manual"`, kit links from Blob, and redaction |
 | Board calls and plans | `lib/device/drive.ts`, `lib/device/drive-sim.ts` | `drive.test.ts`, 5: which sources a request may name; a board plan with the **real** kit is 99 files (80 from the kit) and an 87 KB `export_model` call, against the board's 1 MiB [V]; the simulated board ends in PASS |
-| Routes | `app/api/device/drive/route.ts`, `app/api/device/drive/erase/route.ts` | `drive-route.test.ts`, 14: 404 and nothing touched with the flag off (not even the session); admin only; a private model's links signed only for Export now, never armed; fresh links on GET in `needs_urls`; no link, token or board address in any answer or log line (this test caught a failure log that carried the board's address) |
-| The card and links | `components/device/DeviceDrive.tsx`, `DriveExportLink.tsx`, `app/device/page.tsx`, `DeviceTrain.tsx`, `app/fine-tuning/[jobId]/page.tsx` | Type-checked. Not seen in a browser: there is no board for it to talk to here |
-| The board | `muse-device/drive.py` (about 1,100 lines), five tools in `server.py`, `setup-drive.sh` | `test_drive.py`, 51 (1 skipped off Linux): detection, plan refusals, the golden plan ending on a fake drive with the same `SHA256SUMS` as Node's, FAT32 and a 5 GB file, NTFS, locked, full, too small, over 256 GB, armed exports that ignore sticks already in and never erase, copies, resume with `Range`, a 200 that starts over, an expired link that waits for a fresh one, a hash mismatch, a flipped byte, a missing and an extra file, an unplug mid-write (failed when not armed, resumed when armed), a killed export that carries on, and the tools. Ten runs in a row pass, after the tests found a real race (an export finishing while its status was read was recorded as failed). `test_server.py`: Hussam's 76 still pass |
+| Routes | `app/api/device/drive/route.ts`, `app/api/device/drive/erase/route.ts` | `drive-route.test.ts`, 14: 404 and nothing touched with the flag off (not even the session); admin only; a private model's links signed only for Export now, never armed; fresh signed links on GET in `needs_urls`, and nothing sent for a public model's link, which never changes; the owner's file level checked; Carry on's body accepted; no link, token or board address in any answer or log line (this test caught a failure log that carried the board's address). `route.test.ts`: the generic `/api/device` route lists and calls none of the five drive tools, flag off or on (the review's finding 2). `drive-export-script.test.ts`, 1: the owner's script stops before signing anything without `--origin` |
+| The card and links | `components/device/DeviceDrive.tsx`, `DriveExportLink.tsx`, `app/device/page.tsx`, `DeviceTrain.tsx`, `app/fine-tuning/[jobId]/page.tsx`, `lib/device/drive-card.ts` | `drive-card.test.ts`, 4: Carry on for an export that failed, stopped or ended in FAIL, on its own drive when it's back or the one picked, and the owner's script for the owner's file. The card itself is type-checked, not seen in a browser: there is no board for it to talk to here |
+| The board | `muse-device/drive.py` (about 1,100 lines), five tools in `server.py`, `setup-drive.sh` | `test_drive.py`, 63 (1 skipped off Linux): detection (with LVM, LUKS, md and sysfs holders inside a USB disk, after the review found the old one-level check missed them), plan refusals, the golden plan ending on a fake drive with the same `SHA256SUMS` as Node's, FAT32 and a 5 GB file, NTFS, locked, full, too small, over 256 GB, armed exports that ignore sticks already in and never erase, copies, resume with `Range`, a 200 that starts over, a refused signed link that waits for a fresh one (or the same one sent again), a refused public link retried and then failed instead of waiting, fresh links refused 5 times failing, a hash mismatch, a flipped byte, a missing and an extra file, an unplug mid-write (failed when not armed, resumed when armed), a killed export that carries on, a drive swapped during the unmount before an erase, `export_source` listing only real base builds, the server starting without `drive.py`, and the tools. Ten runs in a row pass, after the tests found a real race (an export finishing while its status was read was recorded as failed). `test_server.py`: Hussam's 76 still pass |
 | Loopback | `muse-device/test_drive_loop.py` | **Never ran**: it needs Linux as root |
 | Owner and deploy scripts | `scripts/drive-export.ts` (the owner's S3 file), `scripts/device-bundle.ts` | Never run: one signs with the owner's AWS session, the other uploads to Blob |
 
@@ -38,6 +38,12 @@ Every change in `muse-device/` is listed for Hussam in `muse-device/CHANGES_FOR_
   adapter loses whole, so a bench drive's launchers are what they were.
 - **`drive_status` also lists the board's finished runs**, since no tool listed runs and the card picks from them.
 - **`export_model {export}`** with no plan carries on an export that failed or was stopped, from the plan the board kept.
+  The card's **Carry on** button does that (`POST {resume, drive, identity}`): the same export id and folder, keeping every
+  file that already hashes right. The owner's own file is carried on by its script (`--resume`), the only place its link
+  can be signed again.
+- **Only signed links wait in `needs_urls`.** A refused link with no query (the Hub's resolve URL, a kit file) is the same
+  link next time, so the board retries it with backoff and then fails in a sentence. `GET` sends only links `freshUrls`
+  signed.
 - **The erase happens in the export's own process.** `erase_drive` checks the typed word and the identity and leaves a
   confirmation; the export reads the drive once more and formats only if it is still the same one. It works only for an
   export waiting in `needs_erase`.
@@ -50,11 +56,14 @@ Every change in `muse-device/` is listed for Hussam in `muse-device/CHANGES_FOR_
 ### Before the owner's real test
 
 1. The owner uploads the kit: `npx tsx --env-file-if-exists=.env.local scripts/drive-kit.ts --upload` (writes about 120 MB
-   to the public Blob store under `drive-kit/`).
+   to the public Blob store under `drive-kit/`). It writes `baseUrl` into `lib/drive/kit-files.json` in the local checkout:
+   commit that file and deploy, since the routes read the deployed copy and answer `drive_kit_missing` until then.
 2. Hussam (or a fleet job the owner approves) puts this `muse-device/` on `jetson-02`, runs `setup-drive.sh`, restarts the
    service, and runs `test_drive_loop.py` there once. `scripts/device-bundle.ts` makes the tarball and prints its sha256.
 3. `DRIVE_EXPORT_ENABLED=1` on the deployment the owner uses for the test (a preview, by decision 6), then "The one real
-   test" below.
+   test" below. `scripts/drive-export.ts` has no default site: pass `--origin` with that preview's address. Whether a
+   preview's deployment protection lets the script's cookie-only request through is untested; if it answers with Vercel's
+   login page, the script needs the preview's protection bypass or a test on the local site.
 
 ## What the person does
 
@@ -164,10 +173,12 @@ string into a status, a log or `PROVENANCE.json`, and blanks anything that looks
 
 **Resume.** A download goes to `<path>.part` on the drive. After a network error the board retries 5 times with backoff,
 then asks for `Range: bytes=<size>-`. A 206 with a matching `Content-Range` continues; a 200 starts over. To keep the hash
-honest, a resumed file's existing bytes are read and hashed again first. A 401, 403 or 410 from a source that can be
-signed again moves the export to `needs_urls`. The platform's next `GET /api/device/drive` signs fresh URLs and sends them
-with `export_model {export, urls}`, so an open page keeps it moving. An S3 URL can only be renewed by running the owner's
-script again (`--resume <export>`).
+honest, a resumed file's existing bytes are read and hashed again first. A 401, 403 or 410 for a signed link (one with a
+query) moves the export to `needs_urls`. For a private lab model, the platform's next `GET /api/device/drive` signs fresh
+URLs and sends them with `export_model {export, urls}`, so an open page keeps it moving. An S3 URL can only be renewed by
+running the owner's script again (`--resume <export>`). Links sent again count even when one is unchanged, and after 5
+rounds of refused fresh links the export fails. A 401, 403 or 410 for a public link (no query) is retried like any failed
+download and then fails, since the same link would come back.
 
 **Hash check.** Every byte is hashed as it is written. A file whose sha256 doesn't match is deleted, never used, and the
 export fails with which file and why. The read-back check after a remount checks every file again.
@@ -224,7 +235,10 @@ root, plus `/sys/block` and `/proc/self/mounts`. A disk is offered only when all
 
 - its transport is `usb` and its sysfs path runs through a USB port;
 - it isn't the disk behind `/`, `/boot`, any swap, or any mount outside `/media/<this user>/` (compared by major and minor
-  number, partition by partition);
+  number, through the disk's whole `lsblk` tree, so an LVM, LUKS or md device inside a partition counts);
+- nothing is built on it: no `LVM2_member`, `crypto_LUKS`, `*_raid_member`, `zfs_member`, `swap` or `bcache` signature
+  anywhere in its tree, no nested device of another type, and an empty `holders` folder in sysfs for the disk and each
+  partition. Such a disk is never written to or erased, mounted or not;
 - it isn't `loop`, `ram`, `zram`, `mmcblk` or `nvme`. An SD card in a USB reader shows as `sdX` on USB and is fine;
 - it is at least the plan's size.
 
@@ -233,7 +247,7 @@ boots from USB is safe, because its boot disk fails the second rule.
 
 Each drive gets an identity: a hash of its vendor, model, serial, size, sysfs path, and its partitions' labels and UUIDs.
 An erase re-reads the drive and refuses unless the identity is the one the person confirmed, the board's version of the
-bench's `sameDisk` [V, `bench.ts`]. Linux gives the next disk the same `sda` name, so a name alone never says which disk.
+bench's `sameDisk` [V, `bench.ts`], and reads it once more after unmounting its filesystems, right before the format. Linux gives the next disk the same `sda` name, so a name alone never says which disk.
 
 Tests point the module at a fake sysfs root and fake `lsblk` output. `DRIVE_ALLOW_LOOP_BACKING` is a module constant,
 `None` in the shipped code. Only the loopback test sets it to its own temp folder, and then a loop device counts only when
@@ -304,8 +318,8 @@ A FAIL keeps the files, so a retry rewrites only what is wrong.
 
 `waiting_for_drive` (armed) > `checking` > `needs_erase` or `read_only` or `too_small` (waits for the person) >
 `writing` (or `needs_urls`) > `verifying` > `done` with PASS or FAIL. Also `failed` (with why, resumable) and `stopped`.
-An unplugged drive during `writing` is `failed`: "The drive was unplugged while writing model/x.gguf. Plug it back in to
-carry on: the files already written are kept." When armed, the same drive coming back resumes by itself.
+An unplugged drive during `writing` is `failed`: "The drive was unplugged while writing model/x.gguf. Plug it back in,
+then press Carry on: the files already written are kept." When armed, the same drive coming back resumes by itself.
 
 ### Board tools (MCP)
 
@@ -496,7 +510,9 @@ with the gadget option shares one board, which is the release review's high find
 No migration. An export's state lives on the board, as a training run's does, and the routes read it from there.
 
 Every drive route uses `requireAdmin`, not `requireAdminOrAutomation`, and logs one line per call with the admin and the
-tool, never a URL. The release review asked for exactly that on board routes (its decision 5).
+tool, never a URL. The release review asked for exactly that on board routes (its decision 5). The generic `/api/device`
+route, which also takes `AUTOMATION_SECRET`, neither lists nor calls the five drive tools, flag off or on
+(`lib/device/drive-tools.ts`), so the drive routes are the only way to them.
 
 ## Safety rules
 
@@ -525,13 +541,14 @@ tool, never a URL. The release review asked for exactly that on board routes (it
 - Fake model files: small files starting `GGUF`, with declared sizes for the large-file rules. The FAT32 refusal is
   decided from sizes, so no 4 GB file is ever written.
 - Downloads use `FakeDownload` as `test_server.py` does [V], extended with `Range`. Cases: resume after a cut, a 403 that
-  moves to `needs_urls` and then finishes with fresh URLs, a 200 to a Range request that starts over, a sha256 mismatch
-  that deletes the file, a private address refused.
+  moves a signed link to `needs_urls` and then finishes with fresh URLs (or the same one sent again), a refused public link
+  retried and then failed, a 200 to a Range request that starts over, a sha256 mismatch that deletes the file, a private
+  address refused.
 - The plan's refusals: escaping paths, inline hashes that don't match, unknown board files, http URLs, over 400 files.
-- Detection: the boot disk, `mmcblk0`, `nvme0n1` and loop devices refused; a USB SSD offered; a loop device accepted only
-  inside `DRIVE_ALLOW_LOOP_BACKING`.
-- Erase: a drive swapped between the list and the erase is refused with nothing erased; a wrong typed name is refused;
-  armed exports never erase.
+- Detection: the boot disk, `mmcblk0`, `nvme0n1` and loop devices refused; a USB SSD offered; a USB disk used through LVM,
+  LUKS, md or a sysfs holder refused; a loop device accepted only inside `DRIVE_ALLOW_LOOP_BACKING`.
+- Erase: a drive swapped between the list and the erase, or during the unmount before it, is refused with nothing erased;
+  a wrong typed name is refused; a drive found to be held is never erased; armed exports never erase.
 - Verify: a byte flipped between write and remount, a missing file and an extra file each give FAIL with their sentence.
 - A killed child leaves `failed`, keeps its `.part`, and resumes. A restarted server still finds and stops a live export,
   as the training tests check for runs [V].
@@ -677,7 +694,10 @@ Nothing below was possible on this laptop: no Jetson, no Linux, no USB drive, an
   not run.
 - That `udisksctl mount` prints `Mounted <device> at <path>` on JetPack 7's udisks2, which `drive.py` parses.
 - The Windows launcher's adapter block (`--lora`, the adapter copy) was only read, never run on Windows.
-- The card and its two links were type-checked, not seen in a browser.
+- The card and its two links, Carry on included, were type-checked, not seen in a browser.
+- The LVM, LUKS and md checks ran only on made-up `lsblk` trees and sysfs folders shaped as the kernel documents them, not
+  on a real disk set up that way.
+- Whether a preview's deployment protection lets `scripts/drive-export.ts` through with a cookie alone.
 
 - That `jetson-02`'s kernel has exFAT, that udisks2 is there, and which polkit it runs (JetPack 7 means JavaScript rules).
 - That a plain user with no session can mount, format and power off through the polkit rule.

@@ -982,7 +982,8 @@ wave 3. Where the two differ, change one of them on purpose, in the same commit.
   tools), both off.
 - **Migration:** none. An export's state lives on the board, as a training run's does.
 - **Routes:** `app/api/device/drive/route.ts` (`GET` status and URL refresh, `POST` start or arm, `DELETE` stop) and
-  `app/api/device/drive/erase/route.ts`, all `requireAdmin`, as that doc says. No gateway route until unit 13.
+  `app/api/device/drive/erase/route.ts`, all `requireAdmin`, as that doc says. No gateway route until unit 13. The generic
+  admin route `/api/device` lists and calls none of the five drive tools, flag off or on (`lib/device/drive-tools.ts`, 1.6).
 - **Board tools** (`muse-device/server.py`, with the work in a new `muse-device/drive.py`, standard library only, for Hussam):
   `drive_status` (with the board's finished runs), `export_source`, `export_model`, `erase_drive`, `stop_export`. The same
   layout as `lib/drive/image.ts`, through the shared plan in `lib/drive/plan.ts`. Every sha256 is read back from the drive.
@@ -1222,6 +1223,7 @@ Phaser game.
 - Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
   section 21a added with the planner's decisions.
 - Nov 1 (unit 12): section 18 says the board tools are built, `drive_status` lists finished runs, and where the build stand-in lives.
+- Oct 31 (unit 12, review fixes): section 18 says `/api/device` filters the drive tools, as 1.6 asks.
 
 
 - Oct 31: first version (unit 0).

@@ -7,8 +7,9 @@
  * Decision 18 (docs/CAPABILITIES.md, 21a): the stage 2 file goes only onto the owner's own stick.
  *
  *   MUSE_SESSION=<the mm_session cookie of an admin, from the browser> \
- *     npx tsx scripts/drive-export.ts --s3 s3://<bucket>/knowledge/models/stage2/glimmer-stage2-IQ1_S.gguf --drive sda \
- *       [--identity <from the drive card>] [--origin https://muse-muse.vercel.app] [--system <file holding the system message>]
+ *     npx tsx scripts/drive-export.ts --origin <the deployment with DRIVE_EXPORT_ENABLED, a preview by decision 6> \
+ *       --s3 s3://<bucket>/knowledge/models/stage2/glimmer-stage2-IQ1_S.gguf --drive sda \
+ *       [--identity <from the drive card>] [--system <file holding the system message>]
  *   ... --resume <export id> [--drive sda]     a fresh link for an export waiting in needs_urls, or to carry one on
  *
  * The defaults describe stage 2 (subjects.ts in muse-muse-devices): name, size and sha256. It prints neither the link nor
@@ -41,7 +42,8 @@ async function main(): Promise<void> {
       s3: { type: "string" },
       drive: { type: "string" },
       identity: { type: "string" },
-      origin: { type: "string", default: "https://muse-muse.vercel.app" },
+      // No default: the test runs on a preview (decision 6), and production is never picked by leaving this out.
+      origin: { type: "string" },
       system: { type: "string" },
       resume: { type: "string" },
       name: { type: "string", default: STAGE2.name },
@@ -55,7 +57,8 @@ async function main(): Promise<void> {
   const session = process.env.MUSE_SESSION?.trim();
   if (!session) throw new Error("Set MUSE_SESSION to an admin's mm_session cookie, copied from the browser.");
   if (!values.s3?.startsWith("s3://")) throw new Error("Pass --s3 s3://<bucket>/<key> for the file.");
-  const origin = values.origin!.replace(/\/+$/, "");
+  if (!values.origin) throw new Error("Pass --origin, the site the Flash drive card is on (a preview, by decision 6).");
+  const origin = values.origin.replace(/\/+$/, "");
   if (!/^https:\/\/[^/\s?#@]+$/.test(origin) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) throw new Error("--origin must be https.");
 
   // 900 seconds is the most an aws login session's link lasts.
