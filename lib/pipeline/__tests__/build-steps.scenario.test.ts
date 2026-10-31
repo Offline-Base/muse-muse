@@ -10,13 +10,17 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { afterEach, before, beforeEach, describe, it, mock } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
 import { goalObjective, renderRefinePrompt } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
 import type { Brief, ModelUsage } from "@/lib/types";
+import { z } from "zod";
+import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
+import { CAP_ENV } from "@/lib/caps/env";
+import { CAP_BUILD_HOSTS } from "@/lib/caps/hosts";
 
 type Rows = Record<string, unknown>[];
 
@@ -47,6 +51,8 @@ let demoSpecs: Array<{ sandboxName: string; spec: Record<string, unknown> }> = [
 let demoVideo: { videoUrl: string | null; posterUrl: string | null } = { videoUrl: null, posterUrl: null };
 let liveCheckImpl: (input: Record<string, unknown>) => Promise<unknown> = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
 let liveCheckInputs: Array<Record<string, unknown>> = [];
+let minted: Array<Record<string, unknown>> = [];
+let reopened: Array<Record<string, unknown>> = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -118,7 +124,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../../gateway/tokens.ts"), {
       namedExports: {
-        mintToken: async () => ({ id: "tok-1", token: "secret" }),
+        mintToken: async (opts: Record<string, unknown>) => {
+          minted.push(opts);
+          return { id: "tok-1", token: "secret" };
+        },
         revokeTokens: async (...args: unknown[]) => void revoked.push(args),
         revokeLiveTokensExcept: async (...args: unknown[]) => void revoked.push(["live except", ...args]),
       },
@@ -167,7 +176,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           return shots.map((_, i) => `.muse-fix/round-${fix}-${i + 1}.png`);
         },
         writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
-        reopenSandbox: async () => undefined,
+        reopenSandbox: async (input: Record<string, unknown>) => void reopened.push(input),
         readManifest: async () => null,
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
@@ -210,6 +219,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     demoVideo = { videoUrl: null, posterUrl: null };
     liveCheckInputs = [];
     liveCheckImpl = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
+    minted = [];
+    reopened = [];
   });
 
   describe("judgeStep on a refinement", () => {
@@ -853,6 +864,42 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       // Today's change prompt, to the byte.
       const plain = await changePrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
       assert.equal(plain, renderRefinePrompt({ message: "Add a dark mode", newReferences: [] }));
+    });
+  });
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, 2.3 and 2.5): a change to a product with platform services.
+  describe("reopenStep for a product with platform services", () => {
+    const fields = CAP_BRIEF_FIELDS as Record<string, z.ZodTypeAny>;
+    before(() => {
+      fields.data = z.object({ scopes: z.array(z.string()) });
+      CAP_ENV.data = { build: () => ({ MUSEMUSE_DATA: "on" }) };
+      CAP_BUILD_HOSTS.data = ["pypi.example"];
+    });
+    after(() => {
+      delete fields.data;
+      delete CAP_ENV.data;
+      delete CAP_BUILD_HOSTS.data;
+    });
+    const reopen = (brief: unknown) => {
+      selects = {
+        builds: [[{ id: "r1", kind: "refine", productId: "prod-1", message: "Add a dark mode", inspirationId: "i", brief }]],
+        inspirations: [[{ note: null, references: [] }]],
+      };
+      return steps.reopenStep({ buildId: "r1", productId: "prod-1", sandboxName: "sb", refineIndex: 2 });
+    };
+
+    it("mints a token tied to this build and keeps the caps' env lines and hosts", async () => {
+      await reopen({ ...BRIEF, capabilities: [{ model: "muse-wonder-1.0" }], data: { scopes: ["shared"] } });
+      assert.equal(minted[0]!.scope, "build");
+      assert.equal(minted[0]!.buildId, "r1", "the change's rows live in the build namespace b:r1, never in live");
+      assert.equal(reopened[0]!.capEnv, "MUSEMUSE_DATA=on\n");
+      assert.deepEqual(reopened[0]!.capHosts, ["pypi.example"]);
+    });
+
+    it("leaves a product with no caps as it was: no build id, no extra env, no hosts", async () => {
+      await reopen({ ...BRIEF, capabilities: [{ model: "muse-wonder-1.0" }] });
+      assert.ok(!("buildId" in minted[0]!));
+      assert.ok(!("capEnv" in reopened[0]!));
+      assert.ok(!("capHosts" in reopened[0]!));
     });
   });
 });

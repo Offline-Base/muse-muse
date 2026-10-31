@@ -154,6 +154,22 @@ describe("provisionSandbox with platform services", { skip: canMock ? false : "n
     }
   });
 
+  it("a change keeps the caps' env lines after envLocal's, and a product with none gets envLocal's alone", async () => {
+    try {
+      const base = { sandboxName: "product-bird-count-11111111", productId: input.productId, buildToken: "mm_build_sample", gatewayUrl: input.gatewayUrl, newReferences: [] };
+      await builder.reopenSandbox({ ...base, capEnv: "MUSEMUSE_DATA=on\n", capHosts: ["pypi.example"] });
+      const withCaps = written.filter((w) => w.path === "/vercel/app/.env.local");
+      assert.equal(withCaps.length, 1);
+      assert.match(withCaps[0]!.text, /\nPRODUCT_TOKEN=[^\n]+\nMUSEMUSE_DATA=on\n$/);
+      written = [];
+      await builder.reopenSandbox(base);
+      const plain = written.filter((w) => w.path === "/vercel/app/.env.local")[0]!.text;
+      assert.equal(withCaps[0]!.text, `${plain}MUSEMUSE_DATA=on\n`);
+    } finally {
+      restore();
+    }
+  });
+
   it("does none of it for a brief with no caps", async () => {
     try {
       await builder.provisionSandbox(input);

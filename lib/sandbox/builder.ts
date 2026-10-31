@@ -544,6 +544,8 @@ export async function reopenSandbox(input: {
   // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a product with no cap blocks ----------
   /** Hosts the product's caps need, so a refinement keeps them (capBuildHosts). */
   capHosts?: string[];
+  /** Lines appended to .env.local after envLocal's (capBuildEnv), as provisioning does, so a refinement keeps them. */
+  capEnv?: string;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
@@ -556,7 +558,7 @@ export async function reopenSandbox(input: {
   await writeBatched(sandbox, [
     ...downloaded,
     ...(await productWrites(sandbox, missing)),
-    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
+    { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
 }
 

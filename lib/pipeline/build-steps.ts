@@ -1302,15 +1302,19 @@ export async function reopenStep(input: {
   const inspiration = await loadInspiration(build.inspirationId);
   const brief = build.brief ?? (await latestBrief(input.productId));
   const allowedModels = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
+  // A product with caps gets a token tied to this build, as at provision, so a change works in the build namespace
+  // b:<buildId> and never on the product's live rows (docs/CAPABILITIES.md, 2.3). One without gets today's token.
+  const caps = brief ? capsFileFor(brief) : null;
   const { token } = await mintToken({
     productId: input.productId,
     scope: "build",
     allowedModels,
     dailyBudgetUsd: buildTokenBudgetFor(),
     ttlHours: BUILD_TOKEN_TTL_HOURS,
+    ...(caps ? { buildId: input.buildId } : {}),
   });
   const newReferences: Reference[] = inspiration.references;
-  const capHosts = brief ? capBuildHosts(briefCaps(brief)) : [];
+  const capHosts = caps ? capBuildHosts(caps.caps) : [];
   await sandbox.reopenSandbox({
     sandboxName: input.sandboxName,
     productId: input.productId,
@@ -1318,7 +1322,9 @@ export async function reopenStep(input: {
     gatewayUrl: env.gatewayUrl,
     newReferences,
     ...extraFilesFor(brief),
+    // A product with caps keeps its hosts and its .env.local lines on every change, as at provision.
     ...(capHosts.length ? { capHosts } : {}),
+    ...(caps && brief ? { capEnv: capBuildEnv(brief) } : {}),
   });
   const prompt = renderRefinePrompt({
     brief,
