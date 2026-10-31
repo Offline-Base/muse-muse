@@ -112,8 +112,9 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   let mockRecordingStarted = 0;
   let mockRecordingEnds = 0;
   let recordingSource = /** @type {"glasses" | "phone"} */ ("phone");
-  // Goes up with each new page, so a recording the old page was still starting doesn't start for nobody.
-  let pageNumber = 0;
+  // The start under way, if any. Anything that ends a recording clears this, and that tells the start to give up.
+  /** @type {object | null} */
+  let starting = null;
 
   /**
    * Loaded on demand, because importing it crashes a build that doesn't link the module, and the crash can't be caught.
@@ -338,6 +339,12 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     if (recorder?.isRecording) await recorder.stop();
   }
 
+  /** Puts the audio mode back, unless a recording is running or on its way. */
+  async function releaseAudioMode() {
+    if (recorder || starting) return;
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+  }
+
   /**
    * A recorder nobody will finish: stopped if it's running, its file deleted, and the audio mode put back unless a newer
    * recording needs it.
@@ -350,8 +357,18 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
         if (stale.uri) new File(stale.uri).delete();
       })
       .catch(() => {})
-      .then(() => (recorder ? undefined : setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })))
+      .then(releaseAudioMode)
       .catch(() => {});
+  }
+
+  /** Ends the recording, running or still starting, and nobody gets its audio. */
+  function abandonRecording() {
+    starting = null;
+    if (recordingLimit) clearTimeout(recordingLimit);
+    recordingLimit = null;
+    const stale = recorder;
+    recorder = null;
+    if (stale) dropRecorder(stale);
   }
 
   /** @param {{ maxSeconds: number }} params */
@@ -362,28 +379,37 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
       mockRecordingEnds = mockRecordingStarted + maxSeconds * 1_000;
       return;
     }
-    if (recorder?.isRecording) throw new BridgeError("busy", "A recording is already running.");
-    const startedOn = pageNumber;
-    const permission = await requestRecordingPermissionsAsync();
-    if (startedOn !== pageNumber) return;
-    if (!permission.granted) throw new BridgeError("denied", "Microphone access is off. You can turn it on in Settings.");
-    await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    if (starting || recorder?.isRecording) throw new BridgeError("busy", "A recording is already running.");
+    const mine = {};
+    starting = mine;
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (starting !== mine) return;
+      if (!permission.granted) throw new BridgeError("denied", "Microphone access is off. You can turn it on in Settings.");
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (starting !== mine) {
+        await releaseAudioMode();
+        return;
+      }
 
-    const next = new AudioModule.AudioRecorder(WAV_RECORDING);
-    recorder = next;
-    await next.prepareToRecordAsync();
-    const source = await currentInputSource(next);
-    if (startedOn !== pageNumber) {
-      if (recorder === next) recorder = null;
-      dropRecorder(next);
-      return;
+      const next = new AudioModule.AudioRecorder(WAV_RECORDING);
+      recorder = next;
+      await next.prepareToRecordAsync();
+      const source = await currentInputSource(next);
+      if (starting !== mine) {
+        // It was dropped once already, but preparing can make its file after that.
+        dropRecorder(next);
+        return;
+      }
+      recordingSource = source;
+      next.record();
+      recordingStarted = Date.now();
+      recordingLimit = setTimeout(() => {
+        stopRecorderNow().catch(() => {});
+      }, maxSeconds * 1_000);
+    } finally {
+      if (starting === mine) starting = null;
     }
-    recordingSource = source;
-    next.record();
-    recordingStarted = Date.now();
-    recordingLimit = setTimeout(() => {
-      stopRecorderNow().catch(() => {});
-    }, maxSeconds * 1_000);
   }
 
   async function stopRecording() {
@@ -394,13 +420,15 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
       mockRecordingEnds = 0;
       return mockRecording(seconds);
     }
+    // Nothing has been heard yet, so stopping a recording that's still starting cancels it.
+    if (starting) abandonRecording();
     const active = recorder;
     if (!active) throw new BridgeError("bad_request", "Nothing is recording.");
     const seconds = active.isRecording ? (Date.now() - recordingStarted) / 1_000 : active.currentTime;
     await stopRecorderNow();
     const uri = active.uri;
     if (recorder === active) recorder = null;
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    await releaseAudioMode();
     if (!uri) throw new BridgeError("failed", "That recording didn't work. Please try again.");
     const file = new File(uri);
     const base64 = await file.base64();
@@ -436,22 +464,17 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
      * live view and speech end here. The glasses stay connected for the new page.
      */
     pageChanged() {
-      pageNumber += 1;
       mockRecordingStarted = 0;
       mockRecordingEnds = 0;
-      if (recordingLimit) clearTimeout(recordingLimit);
-      recordingLimit = null;
       setPreview(false);
       Speech.stop().catch(() => {});
-      const stale = recorder;
-      recorder = null;
-      if (stale) dropRecorder(stale);
+      abandonRecording();
     },
 
     /** Ends the camera, the microphone and speech when the page goes away. */
     dispose() {
       for (const sub of subscriptions.splice(0)) sub.remove();
-      stopRecorderNow().catch(() => {});
+      abandonRecording();
       Speech.stop().catch(() => {});
       setPreview(false);
       endSession().catch(() => {});

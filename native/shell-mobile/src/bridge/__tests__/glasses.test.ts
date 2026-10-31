@@ -10,6 +10,7 @@ let permission = { granted: true };
 /** Holds the next permission answer back, so a test can act while a recording is still starting. */
 let permissionGate: Promise<void> | null = null;
 let prepareGate: Promise<void> | null = null;
+let audioModeGate: Promise<void> | null = null;
 
 const wearables = {
   configure: async () => {},
@@ -43,10 +44,15 @@ const wearables = {
   },
 };
 
+const recorders: FakeRecorder[] = [];
+
 class FakeRecorder {
   isRecording = false;
   currentTime = 0;
   uri = "file:///tmp/q.wav";
+  constructor() {
+    recorders.push(this);
+  }
   async prepareToRecordAsync() {
     await prepareGate;
   }
@@ -102,6 +108,7 @@ before(async () => {
       },
       setAudioModeAsync: async ({ allowsRecording }: { allowsRecording: boolean }) => {
         calls.push(`audioMode:${allowsRecording}`);
+        await audioModeGate;
       },
     },
   });
@@ -123,14 +130,26 @@ function bridge({ mockGlasses = false } = {}) {
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 /** Only the calls about one thing, so a test doesn't pin the audio mode calls around them. */
 const without = (prefix: string) => calls.filter((c) => !c.startsWith(prefix));
+/** How many microphones are on right now. */
+const liveMics = () => recorders.filter((r) => r.isRecording).length;
+/** A promise a test opens when it's ready. */
+function gate() {
+  let open = () => {};
+  const held = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { held, open };
+}
 
 describe("the glasses bridge", () => {
   beforeEach(() => {
     calls.length = 0;
+    recorders.length = 0;
     question = null;
     permission = { granted: true };
     permissionGate = null;
     prepareGate = null;
+    audioModeGate = null;
     events.removeAllListeners();
   });
 
@@ -212,6 +231,131 @@ describe("the glasses bridge", () => {
     assert.ok(!calls.includes("record"));
     assert.ok(!calls.includes("audioMode:false"), "the new page is recording");
     assert.deepEqual(await call("stopRecording").then((r) => (r as { source: string }).source), "phone");
+  });
+
+  it("a stop while a recording is preparing cancels it, so no microphone stays on", async () => {
+    const { held, open } = gate();
+    prepareGate = held;
+    const { call } = bridge();
+    const starting = call("startRecording", { maxSeconds: 60 });
+    await settle();
+    await assert.rejects(call("stopRecording"), { code: "bad_request" });
+    prepareGate = null;
+    open();
+    await starting;
+    await settle();
+    assert.equal(liveMics(), 0);
+    assert.ok(!calls.includes("record"));
+    assert.equal(calls.at(-1), "audioMode:false");
+    await call("startRecording", { maxSeconds: 60 });
+    assert.equal(liveMics(), 1, "the next recording still works");
+  });
+
+  it("a stop while the permission is being asked cancels it too", async () => {
+    const { held, open } = gate();
+    permissionGate = held;
+    const { call } = bridge();
+    const starting = call("startRecording", { maxSeconds: 60 });
+    await assert.rejects(call("stopRecording"), { code: "bad_request" });
+    open();
+    await starting;
+    await settle();
+    assert.equal(liveMics(), 0);
+    assert.equal(recorders.length, 0);
+    assert.ok(!calls.includes("audioMode:true"));
+  });
+
+  it("a stop while the audio mode is being set leaves it off", async () => {
+    const { held, open } = gate();
+    audioModeGate = held;
+    const { call } = bridge();
+    const starting = call("startRecording", { maxSeconds: 60 });
+    await settle();
+    await assert.rejects(call("stopRecording"), { code: "bad_request" });
+    audioModeGate = null;
+    open();
+    await starting;
+    await settle();
+    assert.equal(recorders.length, 0);
+    assert.equal(calls.at(-1), "audioMode:false");
+  });
+
+  it("a second start while the first is still starting says busy, and one stop ends the only microphone", async () => {
+    const { call } = bridge();
+    const first = call("startRecording", { maxSeconds: 60 });
+    await assert.rejects(call("startRecording", { maxSeconds: 60 }), { code: "busy" });
+    await first;
+    assert.equal(recorders.length, 1);
+    assert.equal(liveMics(), 1);
+    await call("stopRecording");
+    assert.equal(liveMics(), 0);
+    await call("startRecording", { maxSeconds: 60 });
+    assert.equal(liveMics(), 1, "busy clears once the first one has started");
+  });
+
+  it("a start that fails says so and doesn't leave the next one busy", async () => {
+    permission = { granted: false };
+    const { call } = bridge();
+    await assert.rejects(call("startRecording", { maxSeconds: 60 }), { code: "denied" });
+    permission = { granted: true };
+    await call("startRecording", { maxSeconds: 60 });
+    assert.equal(liveMics(), 1);
+  });
+
+  it("an old page's late start can't take over from the new page's recording", async () => {
+    const { held, open } = gate();
+    audioModeGate = held;
+    const { call, pageChanged } = bridge();
+    const old = call("startRecording", { maxSeconds: 60 });
+    await settle();
+    pageChanged();
+    audioModeGate = null;
+    await call("startRecording", { maxSeconds: 60 });
+    open();
+    await old;
+    await settle();
+    assert.equal(recorders.length, 1, "the old page's start made no recorder");
+    assert.equal(liveMics(), 1);
+    await call("stopRecording");
+    assert.equal(liveMics(), 0);
+  });
+
+  it("leaving the screen while a recording is starting means it never starts", async () => {
+    const { held, open } = gate();
+    permissionGate = held;
+    const { call, dispose } = bridge();
+    const starting = call("startRecording", { maxSeconds: 60 });
+    dispose();
+    open();
+    await starting;
+    await settle();
+    assert.ok(!calls.includes("record"));
+    assert.equal(liveMics(), 0);
+  });
+
+  it("leaving the screen ends a running recording and throws its file away", async () => {
+    const { call, dispose, previews } = bridge();
+    await call("startRecording", { maxSeconds: 60 });
+    dispose();
+    await settle();
+    assert.equal(liveMics(), 0);
+    assert.ok(calls.includes("delete"));
+    assert.equal(calls.at(-1), "audioMode:false");
+    assert.deepEqual(previews, [false]);
+  });
+
+  it("leaving the screen also cancels a recording that's preparing", async () => {
+    const { held, open } = gate();
+    prepareGate = held;
+    const { call, dispose } = bridge();
+    const starting = call("startRecording", { maxSeconds: 60 });
+    await settle();
+    dispose();
+    open();
+    await starting;
+    await settle();
+    assert.equal(liveMics(), 0);
+    assert.equal(calls.at(-1), "audioMode:false");
   });
 
   it("says when the microphone is off", async () => {
