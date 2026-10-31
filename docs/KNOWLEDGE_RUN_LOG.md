@@ -538,7 +538,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   - measure_known.py: 40,000 questions, 28.0% right (11,199).
   - Stage 2 llama.cpp, all 2,500 probes, old facts: base Q4_K_M 18.4%, 40/40; base IQ1_S 1.6%, 30/40; Q8_0 30.0%, 40/40;
     Q4_K_M 29.5%, 40/40; IQ2_XXS 18.7%, 40/40; IQ1_M 11.8%, 38/40; IQ1_S 9.0%, 40/40. Its copy to the cache filesystem
-    never finished; restarted 11:45 AM.
+    never finished; restarted about 11:37 AM.
   - NanoQuant, 300 probes, old facts: stage 1 0.8 bits 11.3%, 21/40; 0.55 bits 6.3%, 11/40; stage 2 0.8 bits 12.7%
     fixed and 11.3% new, 16/40. Stage 2 0.55 bits ran out of GPU memory at block 10 (9:43 UTC) despite the shared lock;
     stage 2's BF16 scoring also failed. Not rerun, since stage 2 isn't the final model. Sub-1-bit loses most knowledge
@@ -548,7 +548,7 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   no rows exist. The flagged text was withheld. All reasoning here is from Glimmer, not Claude, but it wasn't reworded
   around: the design dropped the part asking the writer to invent reasoning for fact rows, keeps base Glimmer's own
   unedited replies, and has helpers stop and report if flagged again.
-- 11:45 AM: uploading both 8-GPU adapters to S3, which held neither. 11:50 AM: workflow stage-b-repair-to-pilot started:
+- About 11:37 AM: uploading both 8-GPU adapters to S3, which held neither. 11:39 AM: workflow stage-b-repair-to-pilot started:
   finish both cut-off fix passes, serve BF16 base with vLLM on train-1 (no fleet, no new machine) for the rows, assemble
   mixes at 30% and 50% reasoning, review, then the pilot with stage 2 as its before reading.
 
