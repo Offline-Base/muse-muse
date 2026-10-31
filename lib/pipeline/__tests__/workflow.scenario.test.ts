@@ -905,12 +905,16 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     assert.equal(starts()[0]!.capMs, 35 * MIN, "a scaled round asks for its session time");
   });
 
-  it("checks a refinement whose first round hit its cap, and ships it when it passes", async () => {
+  it("keeps the live version when a change hits its cap, even with ENGINE_CHECK_ON_TIMEOUT", async () => {
+    // The judge sees the product's brief, not the change, so a half-made change could pass and replace what is live.
     flags({ ENGINE_CHECK_ON_TIMEOUT: "1" });
     reset({ head: { kind: "refine", status: "queued", productId: "prod-1" }, musePollsByRun: [Infinity], verifies: [{ passed: true }] });
-    assert.deepEqual(await wf.refineProduct({ buildId: "t3" }), { status: "live" });
-    assert.ok(logs().includes("Muse Code was stopped at its time limit. Checking what it built."));
-    assert.equal(named("judgeStep").length, 1);
+    assert.deepEqual(await wf.refineProduct({ buildId: "t3" }), { status: "failed" });
+    assert.match((named("failStep")[0]!.args[0] as { message: string }).message, /past its 25-minute limit and was stopped\. The live version was kept\./);
+    assert.equal(named("collectVerifyStep").length, 0);
+    assert.equal(named("judgeStep").length, 0);
+    assert.equal(named("registerStep").length, 0, "nothing shipped");
+    assert.ok(!logs().includes("Muse Code was stopped at its time limit. Checking what it built."));
   });
 
   it("builds milestones in chained rounds with strict checks between, then numbers fix rounds after them", async () => {

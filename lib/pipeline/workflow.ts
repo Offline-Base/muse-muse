@@ -730,11 +730,10 @@ export async function refineProduct(input: BuildProductInput): Promise<BuildProd
       capMs: firstCap,
     });
     if (built.stopped) throw stoppedByOwner("refine");
+    // A change stopped at its cap stops here even with ENGINE_CHECK_ON_TIMEOUT: the judge checks the product's brief,
+    // not the change, so a half-made change could pass and replace the live version. The live version is kept.
     if (built.timedOut) {
-      if (!env.engineCheckOnTimeout) {
-        throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped. The live version was kept.`);
-      }
-      await emitStep(buildId, { type: "log", text: CHECKING_AFTER_CAP });
+      throw new BuildStop(`Muse Code ran past its ${Math.round(firstCap / 60_000)}-minute limit and was stopped. The live version was kept.`);
     } else if (built.exitCode === MUSE_EXIT.usage) {
       throw new BuildStop("Muse Code refused its command line. The live version was kept.");
     }
