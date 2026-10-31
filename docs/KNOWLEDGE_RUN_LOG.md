@@ -34,8 +34,10 @@ The Mac has about 17 GB free (1:45 AM; swap had grown to 8 GB). The train_multi 
 
 ## Limits
 
-- Writing (hosted Spark Open plus Glimmer writer GPUs): $500 total (owner, Oct 30, 5:19 PM). The Glimmer fleet is
-  capped at $333 (`CAP_USD` in scripts/knowledge/aws/writer_fleet.py).
+- Writing (hosted Spark Open plus Glimmer writer GPUs): up to $1,000 if needed (owner, Oct 31, about 2:45 AM: "writer can
+  go up to 1000 if needed just make sure it is used well and muse glimmer is trained well even test it's reasoning and
+  such"); before that $500 (Oct 30, 5:19 PM). The Glimmer fleet is still capped at $333 (`CAP_USD` in
+  scripts/knowledge/aws/writer_fleet.py) and stops about 7:13 AM; raise it only for data that reaches the model.
 - Hosted Spark Open: $50 per host (2:24 PM). Fireworks raised to $85 (3:05 PM) and $105 (4:40 PM).
 - Lambda: $2,500 total, AWS: $3,500 total (owner, Oct 31, about 2:40 AM: "2500 on lambda 3500 on aws"). Earlier limits:
   Lambda $250 a day, then $1,250 (Oct 30, 8:20 PM); AWS $750. Writing stays at $500 below; the owner didn't change it.
