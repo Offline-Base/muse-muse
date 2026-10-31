@@ -1,0 +1,13 @@
+00:00.113  system.path      | WARNING Could not get a list of mounted file-systems
+/tmp/spike/lib/scene.py:34: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(m, "use_nodes") and not m.use_nodes:
+/tmp/spike/lib/scene.py:93: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(world, "use_nodes") and not world.use_nodes:
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+00:06.880  render           | Saved: '/tmp/out/render/eevee-640-32-surfaceless.png'
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.147, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 6.178, "out": "/tmp/out/render/eevee-640-32-surfaceless.png", "threads": 4, "maxRssMB": 1612.8}
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+
+Blender quit

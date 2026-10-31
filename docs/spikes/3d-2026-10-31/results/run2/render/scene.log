@@ -1,0 +1,24 @@
+00:00.073  system.path      | WARNING Could not get a list of mounted file-systems
+/tmp/spike/lib/scene.py:32: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(m, "use_nodes") and not m.use_nodes:
+/tmp/spike/lib/scene.py:91: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(world, "use_nodes") and not world.use_nodes:
+INFO Draco is available, use library at /opt/blender/lib/libbf_intern_draco_bridge.so
+INFO MeshOptimizer is available, use library at /opt/blender/lib/libbf_intern_meshopt_bridge.so
+19:57:37 | INFO: Starting glTF 2.0 export
+19:57:37 | INFO: Extracting primitive: Plane
+19:57:37 | INFO: Primitives created: 1
+19:57:37 | INFO: Extracting primitive: Cone
+19:57:37 | INFO: Primitives created: 1
+19:57:37 | INFO: Extracting primitive: Torus
+19:57:37 | INFO: Primitives created: 1
+19:57:37 | INFO: Extracting primitive: Icosphere
+19:57:37 | INFO: Primitives created: 1
+19:57:37 | INFO: Extracting primitive: Cylinder
+19:57:37 | INFO: Primitives created: 1
+19:57:37 | INFO: Finished glTF 2.0 export in 0.07796621322631836 s
+
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.246, "glb": "/tmp/out/render/scene.glb", "exportS": 0.656, "maxRssMB": 326.6}
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+
+Blender quit

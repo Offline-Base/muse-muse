@@ -1,0 +1,33 @@
+00:00.104  system.path      | WARNING Could not get a list of mounted file-systems
+/tmp/spike/lib/scene.py:34: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(m, "use_nodes") and not m.use_nodes:
+/tmp/spike/lib/scene.py:93: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(world, "use_nodes") and not world.use_nodes:
+00:02.830  render           | Saved: '/tmp/out/render/turn-cycles-0001.png'
+00:04.781  render           | Saved: '/tmp/out/render/turn-cycles-0002.png'
+00:06.741  render           | Saved: '/tmp/out/render/turn-cycles-0003.png'
+00:08.705  render           | Saved: '/tmp/out/render/turn-cycles-0004.png'
+00:10.678  render           | Saved: '/tmp/out/render/turn-cycles-0005.png'
+00:12.603  render           | Saved: '/tmp/out/render/turn-cycles-0006.png'
+00:14.495  render           | Saved: '/tmp/out/render/turn-cycles-0007.png'
+00:16.358  render           | Saved: '/tmp/out/render/turn-cycles-0008.png'
+00:18.198  render           | Saved: '/tmp/out/render/turn-cycles-0009.png'
+00:20.102  render           | Saved: '/tmp/out/render/turn-cycles-0010.png'
+00:22.044  render           | Saved: '/tmp/out/render/turn-cycles-0011.png'
+00:24.000  render           | Saved: '/tmp/out/render/turn-cycles-0012.png'
+00:25.943  render           | Saved: '/tmp/out/render/turn-cycles-0013.png'
+00:28.227  render           | Saved: '/tmp/out/render/turn-cycles-0014.png'
+00:30.522  render           | Saved: '/tmp/out/render/turn-cycles-0015.png'
+00:32.724  render           | Saved: '/tmp/out/render/turn-cycles-0016.png'
+00:34.692  render           | Saved: '/tmp/out/render/turn-cycles-0017.png'
+00:36.824  render           | Saved: '/tmp/out/render/turn-cycles-0018.png'
+00:38.861  render           | Saved: '/tmp/out/render/turn-cycles-0019.png'
+00:40.873  render           | Saved: '/tmp/out/render/turn-cycles-0020.png'
+00:42.939  render           | Saved: '/tmp/out/render/turn-cycles-0021.png'
+00:45.152  render           | Saved: '/tmp/out/render/turn-cycles-0022.png'
+00:47.292  render           | Saved: '/tmp/out/render/turn-cycles-0023.png'
+00:49.446  render           | Saved: '/tmp/out/render/turn-cycles-0024.png'
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.15, "samples": 16, "denoisers": [], "denoiser": null, "frames": 24, "engine": "CYCLES", "renderS": 48.74, "out": "/tmp/out/render/turn-cycles.png", "threads": 4, "maxRssMB": 348.4}
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+
+Blender quit

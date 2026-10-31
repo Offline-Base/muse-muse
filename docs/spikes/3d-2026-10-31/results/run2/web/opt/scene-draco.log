@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                4ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 4ms
+❯ weld
+✔ weld                 4ms
+❯ simplify
+✔ simplify             4ms
+❯ resample
+✔ resample             1ms
+❯ prune
+✔ prune                8ms
+❯ sparse
+✔ sparse               1ms
+❯ textureCompress
+✔ textureCompress      11ms
+❯ draco
+✔ draco                2ms
+
+info: scene.glb (42.5 KB) → scene-draco.glb (14.41 KB)

@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                5ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              2ms
+❯ join
+✔ join                 63ms
+❯ weld
+✔ weld                 108ms
+❯ simplify
+✔ simplify             117ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               36ms
+❯ textureCompress
+✔ textureCompress      0ms
+❯ draco
+✔ draco                103ms
+
+info: torus.glb (8.85 MB) → torus-draco.glb (299.97 KB)

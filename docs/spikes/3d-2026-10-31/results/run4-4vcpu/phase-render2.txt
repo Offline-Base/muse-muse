@@ -1,0 +1,35 @@
+--- phase render2 firewall locked: exit 0 in 153 s
+== Q0 4 vCPUs, 8404 MB
+== Q1 Cycles with OIDN
+c-640-32-oidn: exit 0 in 5.0 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.16, "samples": 32, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYCLES", "renderS": 4.105, "out": "/tmp/out/render2/c-640-32-oidn.png", "threads": 4, "maxRssMB": 639.3}
+c-640-32-raw: exit 0 in 3.5 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.114, "samples": 32, "oidnBuilt": true, "denoiser": null, "engine": "CYCLES", "renderS": 2.716, "out": "/tmp/out/render2/c-640-32-raw.png", "threads": 4, "maxRssMB": 331.1}
+c-640-8-oidn: exit 0 in 2.6 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.109, "samples": 8, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYCLES", "renderS": 1.956, "out": "/tmp/out/render2/c-640-8-oidn.png", "threads": 4, "maxRssMB": 630.9}
+c-640-128-oidn: exit 0 in 9.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.111, "samples": 128, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYCLES", "renderS": 8.607, "out": "/tmp/out/render2/c-640-128-oidn.png", "threads": 4, "maxRssMB": 630.9}
+c-1280-64-oidn: exit 0 in 27.5 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.113, "samples": 64, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYCLES", "renderS": 26.801, "out": "/tmp/out/render2/c-1280-64-oidn.png", "threads": 4, "maxRssMB": 1379.9}
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.16, "samples": 32, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYC
+== Q2 Workbench
+w-640: exit 0 in 1.8 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.112, "engine": "BLENDER_WORKBENCH", "renderS": 1.081, "out": "/tmp/out/render2/w-640.png", "threads": 4, "maxRssMB": 552.7}
+== Q3 Eevee, cold and warm
+e-640-32-cold: exit 0 in 16.7 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.158, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 15.802, "out": "/tmp/out/render2/e-640-32-cold.png", "threads": 4, "maxRssMB": 2031.5}
+cache after the cold render: 0	/vercel/.cache/blender
+cache after the cold render: 4.3M	/vercel/.cache/mesa_shader_cache
+cache after the cold render: 681M	/vercel/.cache/ms-playwright
+cache after the cold render: 0	/vercel/.cache/opencode
+cache after the cold render: 0	/vercel/.cache/thumbnails
+e-640-32-warm: exit 0 in 6.1 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.111, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 5.359, "out": "/tmp/out/render2/e-640-32-warm.png", "threads": 4, "maxRssMB": 1626.4}
+e-640-32-nomesacache: exit 0 in 15.9 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.109, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 15.15, "out": "/tmp/out/render2/e-640-32-nomesacache.png", "threads": 4, "maxRssMB": 2020.6}
+== Q4 turntable, Cycles with OIDN, 24 frames, 16 samples
+t-cycles-oidn: exit 0 in 62.8 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.12, "samples": 16, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "frames": 24, "engine": "CYCLES", "renderS": 61.959, "out": "/tmp/out/render2/t-cycles-oidn.png", "threads": 4, "maxRssMB": 637.6}
+== Q5 pictures
+{"file":"/tmp/out/render2/c-1280-64-oidn.png","bytes":1478878,"size":"1280,960","spread":103.1,"colors":1635,"top":0.402,"grain":3.481,"blank":false}
+{"file":"/tmp/out/render2/c-640-128-oidn.png","bytes":411415,"size":"640,480","spread":102.9,"colors":1712,"top":0.4,"grain":3.363,"blank":false}
+{"file":"/tmp/out/render2/c-640-32-oidn.png","bytes":412483,"size":"640,480","spread":102.9,"colors":1729,"top":0.4,"grain":3.359,"blank":false}
+{"file":"/tmp/out/render2/c-640-32-raw.png","bytes":456958,"size":"640,480","spread":102.9,"colors":1778,"top":0.4,"grain":3.691,"blank":false}
+{"file":"/tmp/out/render2/c-640-8-oidn.png","bytes":414170,"size":"640,480","spread":102.8,"colors":1739,"top":0.399,"grain":3.352,"blank":false}
+{"file":"/tmp/out/render2/e-640-32-cold.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"grain":3.279,"blank":false}
+{"file":"/tmp/out/render2/e-640-32-nomesacache.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"grain":3.279,"blank":false}
+{"file":"/tmp/out/render2/e-640-32-warm.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"grain":3.279,"blank":false}
+{"file":"/tmp/out/render2/w-640.png","bytes":324260,"size":"640,480","spread":83.7,"colors":261,"top":0.428,"grain":1.181,"blank":false}
+
+[stderr]
+

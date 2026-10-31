@@ -1,0 +1,21 @@
+--- phase muse firewall locked: exit 0 in 1 s
+== M0 Muse Code and its blender skill
+Muse Code 1.4.14 (1.4.14-R7309.1)
+{"id":"bundled:blender","activation":"off","description":"Build, edit, animate and render 3D content in Blender with Python (bpy), usually headless. Covers modeling objects and assemblies from a description or reference image, recreating a photographed scene, laying out environments from a tabletop to a landscape or city, animation (keyframes, paths, physi","path":"bundled://muse-core/skills/blender/SKILL.md"}
+{"id":"bundled:game-3d-visuals","activation":"off","description":"Use for 3D work where the user wants a polished, art-directed look: recreating an object or scene from reference image(s), modeling and rendering in Blender, or an explicit ask for high visual fidelity in a three.js, WebGL/WebGPU or game-engine scene. It adds consistent reference images, a detailed ","path":"bundled://muse-core/skills/game-3d-visuals/SKILL.md"}
+{"id":"bundled:visual-coding","activation":"off","description":"For building or materially changing 3D, game, Blender or video-from-code work, read this first, before a plan or any file: a 3D web page, scene or model viewer, a playable browser game (2D, 2.5D or 3D), a Blender model, scene, animation or render, or a rendered video or GIF made from code; not for 2","path":"bundled://muse-core/skills/visual-coding/SKILL.md"}
+{"id":"bundled:web3d","activation":"off","description":"Use before building or materially changing a single-file 3D web page, 3D scene, 3D model viewer or 3D browser game (three.js, WebGL, WebGPU or WGSL). It gives a method for getting from the brief to a page that opens without errors, shows a recognisable subject and does everything the brief asks. Not","path":"bundled://muse-core/skills/web3d/SKILL.md"}
+proxy: {"ok":true,"keyHeld":true,"mode":"refuse","budget":0.15,"spent":0}
+== M1 wiring check, free (the proxy refuses the model call)
+m1-wiring: muse exec exit 1 in 0.4 s
+failed to fetch model catalog: authentication failed: your API key from META_API_KEY was rejected — update or unset it 
+
+  exec events: 0 {}
+  tool items: {}
+  proxy: 1 requests, 0 model calls forwarded, refused {}
+  proxy routes {"GET /muse-code/models 401":1} models {} auth {"standin":1}
+  proxy tokens {"input":0,"cached":0,"output":0}, cost $0.000000, response models {}
+M1 never reached the proxy as Contributor with the stand-in, so no paid run
+
+[stderr]
+

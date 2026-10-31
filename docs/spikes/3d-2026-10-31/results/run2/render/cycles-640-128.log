@@ -1,0 +1,15 @@
+00:00.108  system.path      | WARNING Could not get a list of mounted file-systems
+/tmp/spike/lib/scene.py:32: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(m, "use_nodes") and not m.use_nodes:
+/tmp/spike/lib/scene.py:91: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(world, "use_nodes") and not world.use_nodes:
+Traceback (most recent call last):
+  File "/tmp/spike/lib/scene.py", line 128, in <module>
+    scene.cycles.use_denoising = bool(bpy.app.build_options.openimagedenoise)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'bpy.app.build_options' object has no attribute 'openimagedenoise'
+
+Error: script failed, file: '/tmp/spike/lib/scene.py', exiting.
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+
+Blender quit

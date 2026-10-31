@@ -1,0 +1,29 @@
+Reading package lists...
+Building dependency tree...
+Reading state information...
+libgl1 is already the newest version (1.7.0-3).
+libgl1 set to manually installed.
+libgl1-mesa-dri is already the newest version (26.0.8-1ubuntu0.3).
+libgl1-mesa-dri set to manually installed.
+libglx-mesa0 is already the newest version (26.0.8-1ubuntu0.3).
+libglx-mesa0 set to manually installed.
+libgbm1 is already the newest version (26.0.8-1ubuntu0.3).
+Solving dependencies...
+The following NEW packages will be installed:
+  libegl-mesa0 libegl1
+0 upgraded, 2 newly installed, 0 to remove and 0 not upgraded.
+Need to get 163 kB of archives.
+After this operation, 579 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu resolute-updates/main amd64 libegl-mesa0 amd64 26.0.8-1ubuntu0.3 [134 kB]
+Get:2 http://archive.ubuntu.com/ubuntu resolute/main amd64 libegl1 amd64 1.7.0-3 [29.7 kB]
+Fetched 163 kB in 1s (265 kB/s)
+Selecting previously unselected package libegl-mesa0:amd64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 21500 files and directories currently installed.)
+Preparing to unpack .../libegl-mesa0_26.0.8-1ubuntu0.3_amd64.deb ...
+Unpacking libegl-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Selecting previously unselected package libegl1:amd64.
+Preparing to unpack .../libegl1_1.7.0-3_amd64.deb ...
+Unpacking libegl1:amd64 (1.7.0-3) ...
+Setting up libegl-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libegl1:amd64 (1.7.0-3) ...
+Processing triggers for libc-bin (2.43-2ubuntu2.4) ...

@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                3ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 3ms
+❯ weld
+✔ weld                 2ms
+❯ simplify
+✔ simplify             3ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                7ms
+❯ sparse
+✔ sparse               1ms
+❯ textureCompress
+✔ textureCompress      12ms
+❯ meshopt
+✔ meshopt              7ms
+
+info: scene.glb (42.5 KB) → scene-meshopt.glb (19.68 KB)

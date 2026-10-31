@@ -1,0 +1,83 @@
+--- phase setup firewall open: exit 0 in 27 s
+== S0 machine
+{
+  "createdAt": "2026-10-28T17:41:07.349Z",
+  "node": "v24.22.1",
+  "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+  "muse": "Muse Code 1.4.14 (1.4.14-R7309.1)",
+  "templateHash": "46d1f7e86aca"
+}
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+6.18.56
+4
+               total        used        free      shared  buff/cache   available
+Mem:            8404         294        8202           0          84        8110
+Model name:                              Intel(R) Xeon(R) Processor @ 2.90GHz
+/dev/vdb         64G  5.8G   59G   9% /
+apt-get: /usr/bin/apt-get
+dnf: none
+yum: none
+ls: cannot access '/dev/dri': No such file or directory
+GL, EGL and Vulkan packages installed before: libgbm1=26.0.8-1ubuntu0.3 libgl1=1.7.0-3 libgl1-mesa-dri=26.0.8-1ubuntu0.3 libglx-mesa0=26.0.8-1ubuntu0.3 libglx0=1.7.0-3 libvulkan1=1.4.341.0-1 mesa-libgallium=26.0.8-1ubuntu0.3 
+== S1 find the LTS
+Blender 3.6 LTS;Blender 4.2 LTS;Blender 4.5 LTS;Blender 5.2 LTS;
+download.blender.org index: HTTP 403
+version 5.2.3, blender-5.2.3-linux-x64.tar.xz
+== S2 download
+download.blender.org tarball: HTTP 403 61548 bytes at 1793252 B/s, 0.034322 s, from https://download.blender.org/release/Blender5.2/blender-5.2.3-linux-x64.tar.xz
+mirror.blender.org tarball: HTTP 200 385331224 bytes at 280744597 B/s, 1.372533 s, from https://mirrors.iu13.net/blender/release/Blender5.2/blender-5.2.3-linux-x64.tar.xz
+download took 1.6 s
+download.blender.org sums file: HTTP 403, linux x64 line: none
+mirror.blender.org sums file: HTTP 200, linux x64 line: 78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec
+laptop copy: 78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec
+sha256 check against 2 published copies: PASS in 0.4 s; computed 78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec
+tarball 385.3 MB
+== S3 extract
+extract took 11.7 s
+extracted 1237.6 MB, 5592 files
+4.0K	/opt/blender/copyright.txt
+8.0K	/opt/blender/blender.desktop
+8.0K	/opt/blender/readme.html
+412K	/opt/blender/license
+912K	/opt/blender/blender-thumbnailer
+167M	/opt/blender/blender
+446M	/opt/blender/lib
+582M	/opt/blender/5.2
+disk used after removing the tarball (df, lags behind the delete): 1255.1 MB
+== S4 does it run, as shipped
+blender -b --version exit 0
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+Blender 5.2.3 LTS
+	build date: 2026-10-22
+	build time: 01:35:05
+missing per ldd:
+in the tarball's own lib/: 134 files; X11/GL/SM ones: 
+still missing with LD_LIBRARY_PATH=lib: 0
+== S5 the fix by package
+packages for the missing ones: none
+apt-get update exit 0 in 1.8 s
+missing per ldd now: 
+blender -b --version exit 0
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+Blender 5.2.3 LTS
+	build date: 2026-10-22
+BPY 5.2.3 LTS python 3.13.13
+python start took 2.0 s
+GL, EGL and Vulkan packages installed now: libgbm1=26.0.8-1ubuntu0.3 libgl1=1.7.0-3 libgl1-mesa-dri=26.0.8-1ubuntu0.3 libglx-mesa0=26.0.8-1ubuntu0.3 libglx0=1.7.0-3 libvulkan1=1.4.341.0-1 mesa-libgallium=26.0.8-1ubuntu0.3 
+== S6 engine probe before any software GL
+BLENDER_WORKBENCH: exit 134 in 0.6 s; Couldn't open libEGL.so.1: libEGL.so.1: cannot open shared object file: No such file or directory|
+BLENDER_EEVEE: exit 134 in 0.5 s; Couldn't open libEGL.so.1: libEGL.so.1: cannot open shared object file: No such file or directory|
+== S7 software GL (Mesa llvmpipe for EGL and OpenGL, lavapipe for Vulkan)
+mesa EGL/GL install exit 0 in 2.3 s, 0.6 MB in 2 packages
+Setting up libegl-mesa0:amd64 (26.0.8-1ubuntu0.3) ...
+Setting up libegl1:amd64 (1.7.0-3) ...
+lavapipe install exit 0 in 3.6 s, 113.1 MB in 2 packages
+Setting up libdisplay-info3:amd64 (0.3.0-1) ...
+Setting up mesa-vulkan-drivers:amd64 (26.0.8-1ubuntu0.3) ...
+GL, EGL and Vulkan packages installed now: libegl-mesa0=26.0.8-1ubuntu0.3 libegl1=1.7.0-3 libgbm1=26.0.8-1ubuntu0.3 libgl1=1.7.0-3 libgl1-mesa-dri=26.0.8-1ubuntu0.3 libglx-mesa0=26.0.8-1ubuntu0.3 libglx0=1.7.0-3 libvulkan1=1.4.341.0-1 mesa-libgallium=26.0.8-1ubuntu0.3 mesa-vulkan-drivers=26.0.8-1ubuntu0.3 
+
+[stderr]
+/tmp/spike/phase-setup.sh: line 124:   864 Aborted                    timeout 120 blender -b --factory-startup --python-exit-code 3 --python /tmp/spike/lib/probe.py -- "$e" "$OUT/probe-$e-before.png" > "$OUT/probe-$e-before.log" 2>&1
+/tmp/spike/phase-setup.sh: line 124:   883 Aborted                    timeout 120 blender -b --factory-startup --python-exit-code 3 --python /tmp/spike/lib/probe.py -- "$e" "$OUT/probe-$e-before.png" > "$OUT/probe-$e-before.log" 2>&1
+

@@ -1,0 +1,2 @@
+00:00.071  system.path      | WARNING Could not get a list of mounted file-systems
+Couldn't open libEGL.so.1: libEGL.so.1: cannot open shared object file: No such file or directory

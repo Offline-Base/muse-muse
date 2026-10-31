@@ -1,0 +1,27 @@
+00:00.098  system.path      | WARNING Could not get a list of mounted file-systems
+INFO Draco is available, use library at /opt/blender/lib/libbf_intern_draco_bridge.so
+INFO MeshOptimizer is available, use library at /opt/blender/lib/libbf_intern_meshopt_bridge.so
+20:08:59 | INFO: Starting glTF 2.0 export
+20:08:59 | INFO: Extracting primitive: torus
+20:08:59 | INFO: Primitives created: 1
+20:08:59 | INFO: Finished glTF 2.0 export in 0.18149900436401367 s
+
+20:08:59 | INFO: Starting glTF 2.0 export
+20:08:59 | INFO: Extracting primitive: sphere
+20:08:59 | INFO: Primitives created: 1
+20:08:59 | INFO: Finished glTF 2.0 export in 0.012048959732055664 s
+
+20:09:02 | INFO: Starting glTF 2.0 export
+20:09:02 | INFO: Extracting primitive: torus
+20:09:02 | INFO: Primitives created: 1
+20:09:02 | INFO: Finished glTF 2.0 export in 0.02088785171508789 s
+
+RESULT {"step": "convert", "in": "torus.obj", "inBytes": 3899481, "triangles": 147456, "importS": 0.06, "exportS": 0.267, "out": "torus.glb", "outBytes": 8847532}
+RESULT {"step": "convert", "in": "sphere.stl", "inBytes": 451284, "triangles": 9024, "importS": 0.004, "exportS": 0.014, "out": "sphere.glb", "outBytes": 504300}
+RESULT {"step": "decimate", "ratio": 0.1, "trianglesBefore": 147456, "trianglesAfter": 14744, "decimateS": 2.435, "exportS": 0.022, "out": "decimated.glb", "outBytes": 1096344}
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+OBJ import of 'torus.obj' took 59.85 ms
+Timer 'STL Import' took 3.42 ms
+OBJ import of 'torus.obj' took 53.18 ms
+
+Blender quit

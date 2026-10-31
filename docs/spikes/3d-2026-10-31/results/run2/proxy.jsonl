@@ -1,0 +1,2 @@
+{"t":1793476706728,"label":"","event":"listening","keyHeld":true,"budget":0.15,"extraCa":true}
+{"t":1793476707490,"label":"m1-wiring","n":1,"method":"GET","path":"/muse-code/models","upstream":"/muse-code/models","size":0,"auth":"standin","mode":"refuse","forwarded":true,"status":401,"ms":142,"bytes":118,"respModel":null,"usage":null,"costUsd":0,"spentUsd":0}

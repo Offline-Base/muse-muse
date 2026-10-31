@@ -1,0 +1,76 @@
+--- phase render firewall locked: exit 0 in 371 s
+== R0 firewall (locked)
+registry.npmjs.org 200
+download.blender.org 000
+download.blender.org blocked (curl exit 6)
+polyhaven 000
+dl.polyhaven.org blocked (curl exit 6)
+api.meta.ai (no placeholder) 403
+== R1 what this Blender has
+INFO 5.2.3 LTS build options: ['alembic', 'audaspace', 'bullet', 'codec_ffmpeg', 'codec_sndfile', 'compositor_cpu', 'cycles', 'cycles_osl', 'fluid', 'freestyle', 'haru', 'image_cineon', 'image_dds', 'image_hdr', 'image_openexr', 'image_openjpeg', 'image_tiff', 'image_webp', 'input_ndof', 'international', 'io_fbx', 'io_gpencil', 'io_ply', 'io_stl', 'io_wavefront_obj', 'jack', 'libmv', 'mod_oceansim', 'mod_remesh', 'openal', 'opencolorio', 'opensubdiv', 'openvdb', 'potrace', 'pugixml', 'pulseaudio', 'usd', 'xr_openxr']
+INFO engines ['BLENDER_EEVEE']
+INFO denoisers []
+INFO importers ['obj_import', 'stl_import', 'ply_import', 'usd_import', 'alembic_import'] fbx True gltf True
+--gpu-backend 
+	Force to use a specific GPU backend. Valid options: 'opengl' or 'vulkan'.
+
+--gpu-device <device>
+== R2 scene and GLB export
+scene + export: exit 0 in 1.7 s wall
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.209, "glb": "/tmp/out/render/scene.glb", "exportS": 0.62, "maxRssMB": 327.0}
+scene.glb 42500 bytes
+== R3 Cycles on CPU
+cycles-640-32: exit 0 in 5.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.158, "samples": 32, "denoisers": [], "denoiser": null, "engine": "CYCLES", "renderS": 4.204, "out": "/tmp/out/render/cycles-640-32.png", "threads": 4, "maxRssMB": 330.6}
+cycles-640-32-again: exit 0 in 5.2 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.16, "samples": 32, "denoisers": [], "denoiser": null, "engine": "CYCLES", "renderS": 4.144, "out": "/tmp/out/render/cycles-640-32-again.png", "threads": 4, "maxRssMB": 330.7}
+cycles-640-32-nodenoise: exit 0 in 5.1 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.152, "samples": 32, "denoisers": [], "denoiser": null, "engine": "CYCLES", "renderS": 4.031, "out": "/tmp/out/render/cycles-640-32-nodenoise.png", "threads": 4, "maxRssMB": 331.1}
+cycles-320-16: exit 0 in 1.7 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.155, "samples": 16, "denoisers": [], "denoiser": null, "engine": "CYCLES", "renderS": 0.635, "out": "/tmp/out/render/cycles-320-16.png", "threads": 4, "maxRssMB": 316.6}
+cycles-640-128: exit 0 in 11.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.152, "samples": 128, "denoisers": [], "denoiser": null, "engine": "CYCLES", "renderS": 10.335, "out": "/tmp/out/render/cycles-640-128.png", "threads": 4, "maxRssMB": 331.3}
+== R4 Workbench
+workbench-640: exit 0 in 2.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.149, "engine": "BLENDER_WORKBENCH", "renderS": 1.376, "out": "/tmp/out/render/workbench-640.png", "threads": 4, "maxRssMB": 553.8}
+== R5 Eevee
+shader cache before: /vercel/.cache/blender
+eevee-640-32: exit 0 in 21.1 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.148, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 20.008, "out": "/tmp/out/render/eevee-640-32.png", "threads": 4, "maxRssMB": 2010.0}
+eevee-640-32-again: exit 0 in 8.7 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.156, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 7.614, "out": "/tmp/out/render/eevee-640-32-again.png", "threads": 4, "maxRssMB": 1626.8}
+eevee-640-32-third: exit 0 in 7.8 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.162, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 6.634, "out": "/tmp/out/render/eevee-640-32-third.png", "threads": 4, "maxRssMB": 1611.9}
+shader cache after: 0	/vercel/.cache/blender
+eevee-640-32-surfaceless: exit 0 in 7.2 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.147, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 6.178, "out": "/tmp/out/render/eevee-640-32-surfaceless.png", "threads": 4, "maxRssMB": 1612.8}
+eevee-640-32-vulkan: exit 0 in 18.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.161, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 17.157, "out": "/tmp/out/render/eevee-640-32-vulkan.png", "threads": 4, "maxRssMB": 1111.4}
+eevee-640-32-vulkan-again: exit 0 in 6.7 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.17, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 5.584, "out": "/tmp/out/render/eevee-640-32-vulkan-again.png", "threads": 4, "maxRssMB": 889.0}
+eevee-640-64: exit 0 in 10.8 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.144, "samples": 64, "engine": "BLENDER_EEVEE", "renderS": 9.851, "out": "/tmp/out/render/eevee-640-64.png", "threads": 4, "maxRssMB": 1611.8}
+eevee-1280-64: exit 0 in 32.5 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.148, "samples": 64, "engine": "BLENDER_EEVEE", "renderS": 31.468, "out": "/tmp/out/render/eevee-1280-64.png", "threads": 4, "maxRssMB": 1767.7}
+== R5b turntables, 24 frames at 640x480
+turn-workbench: exit 0 in 5.4 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.145, "frames": 24, "engine": "BLENDER_WORKBENCH", "renderS": 4.488, "out": "/tmp/out/render/turn-workbench.png", "threads": 4, "maxRssMB": 510.9}
+turn-eevee: exit 0 in 159.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.159, "samples": 16, "frames": 24, "engine": "BLENDER_EEVEE", "renderS": 158.165, "out": "/tmp/out/render/turn-eevee.png", "threads": 4, "maxRssMB": 1659.4}
+turn-cycles: exit 0 in 49.8 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.15, "samples": 16, "denoisers": [], "denoiser": null, "frames": 24, "engine": "CYCLES", "renderS": 48.74, "out": "/tmp/out/render/turn-cycles.png", "threads": 4, "maxRssMB": 348.4}
+turn-workbench.mp4: 57108 bytes, encoded in 0.5 s
+turn-eevee.mp4: 189699 bytes, encoded in 0.4 s
+turn-cycles.mp4: 211055 bytes, encoded in 0.4 s
+== R6 conversion and decimate
+torus.obj 73728 quads, sphere.stl 9024 triangles
+sphere.stl 451284 bytes
+torus.obj 3899481 bytes
+convert + decimate: exit 0 in 3.9 s wall
+{"step": "convert", "in": "torus.obj", "inBytes": 3899481, "triangles": 147456, "importS": 0.06, "exportS": 0.267, "out": "torus.glb", "outBytes": 8847532}
+{"step": "convert", "in": "sphere.stl", "inBytes": 451284, "triangles": 9024, "importS": 0.004, "exportS": 0.014, "out": "sphere.glb", "outBytes": 504300}
+{"step": "decimate", "ratio": 0.1, "trianglesBefore": 147456, "trianglesAfter": 14744, "decimateS": 2.435, "exportS": 0.022, "out": "decimated.glb", "outBytes": 1096344}
+== R7 blank check
+{"file":"/tmp/out/render/cycles-320-16.png","bytes":130263,"size":"320,240","spread":102.2,"colors":1923,"top":0.399,"blank":false}
+{"file":"/tmp/out/render/cycles-640-128.png","bytes":427513,"size":"640,480","spread":102.9,"colors":1717,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/cycles-640-32-again.png","bytes":456920,"size":"640,480","spread":102.9,"colors":1778,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/cycles-640-32-nodenoise.png","bytes":456920,"size":"640,480","spread":102.9,"colors":1778,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/cycles-640-32.png","bytes":456920,"size":"640,480","spread":102.9,"colors":1778,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-1280-64.png","bytes":1392842,"size":"1280,960","spread":103.1,"colors":1415,"top":0.402,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-again.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-surfaceless.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-third.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-vulkan-again.png","bytes":387434,"size":"640,480","spread":102.9,"colors":1475,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-vulkan.png","bytes":387434,"size":"640,480","spread":102.9,"colors":1475,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-64.png","bytes":386932,"size":"640,480","spread":102.9,"colors":1469,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/turn-cycles-frame12.png","bytes":511067,"size":"640,480","spread":107.5,"colors":2196,"top":0.379,"blank":false}
+{"file":"/tmp/out/render/turn-eevee-frame12.png","bytes":399986,"size":"640,480","spread":93.5,"colors":1743,"top":0.382,"blank":false}
+{"file":"/tmp/out/render/turn-workbench-frame12.png","bytes":326035,"size":"640,480","spread":83.6,"colors":260,"top":0.452,"blank":false}
+{"file":"/tmp/out/render/workbench-640.png","bytes":324260,"size":"640,480","spread":83.7,"colors":261,"top":0.428,"blank":false}
+
+[stderr]
+

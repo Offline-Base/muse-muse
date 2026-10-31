@@ -1,0 +1,5 @@
+--- phase render firewall locked: exit 7 in 0 s
+no blender, phase setup must run first
+
+[stderr]
+

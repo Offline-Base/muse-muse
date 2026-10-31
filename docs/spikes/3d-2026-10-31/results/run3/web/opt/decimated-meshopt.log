@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                3ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 12ms
+❯ weld
+✔ weld                 16ms
+❯ simplify
+✔ simplify             20ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               13ms
+❯ textureCompress
+✔ textureCompress      0ms
+❯ meshopt
+✔ meshopt              43ms
+
+info: decimated.glb (1.1 MB) → decimated-meshopt.glb (277.56 KB)

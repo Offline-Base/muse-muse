@@ -1,0 +1,228 @@
+[
+  {
+    "name": "decimated",
+    "glb": "/models/render/convert/decimated.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 62,
+      "meshes": 1,
+      "triangles": 14744,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 265
+  },
+  {
+    "name": "decimated-meshopt",
+    "glb": "/models/web/opt/decimated-meshopt.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 56,
+      "meshes": 1,
+      "triangles": 14744,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 213
+  },
+  {
+    "name": "decimated-draco",
+    "glb": "/models/web/opt/decimated-draco.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 84,
+      "meshes": 1,
+      "triangles": 14744,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "KHR_draco_mesh_compression"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 229
+  },
+  {
+    "name": "sphere",
+    "glb": "/models/render/convert/sphere.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 34,
+      "meshes": 1,
+      "triangles": 9024,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 200
+  },
+  {
+    "name": "sphere-meshopt",
+    "glb": "/models/web/opt/sphere-meshopt.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 33,
+      "meshes": 1,
+      "triangles": 9024,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 205
+  },
+  {
+    "name": "sphere-draco",
+    "glb": "/models/web/opt/sphere-draco.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 76,
+      "meshes": 1,
+      "triangles": 9024,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "KHR_draco_mesh_compression"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 215
+  },
+  {
+    "name": "torus",
+    "glb": "/models/render/convert/torus.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 111,
+      "meshes": 1,
+      "triangles": 147456,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 268
+  },
+  {
+    "name": "torus-meshopt",
+    "glb": "/models/web/opt/torus-meshopt.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 58,
+      "meshes": 1,
+      "triangles": 147456,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 244
+  },
+  {
+    "name": "torus-draco",
+    "glb": "/models/web/opt/torus-draco.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 148,
+      "meshes": 1,
+      "triangles": 147456,
+      "calls": 1,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "KHR_draco_mesh_compression"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 306
+  },
+  {
+    "name": "scene",
+    "glb": "/models/render/scene.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 85,
+      "meshes": 5,
+      "triangles": 258,
+      "calls": 5,
+      "fileCamera": false,
+      "extensionsUsed": [],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 260
+  },
+  {
+    "name": "scene-meshopt",
+    "glb": "/models/web/opt/scene-meshopt.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 73,
+      "meshes": 5,
+      "triangles": 258,
+      "calls": 5,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "EXT_meshopt_compression",
+        "EXT_texture_webp",
+        "KHR_mesh_quantization"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 239
+  },
+  {
+    "name": "scene-draco",
+    "glb": "/models/web/opt/scene-draco.glb",
+    "consoleErrors": [],
+    "external": [],
+    "view": {
+      "ok": true,
+      "loadMs": 76,
+      "meshes": 5,
+      "triangles": 258,
+      "calls": 5,
+      "fileCamera": false,
+      "extensionsUsed": [
+        "EXT_texture_webp",
+        "KHR_draco_mesh_compression"
+      ],
+      "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "wallMs": 226
+  }
+]

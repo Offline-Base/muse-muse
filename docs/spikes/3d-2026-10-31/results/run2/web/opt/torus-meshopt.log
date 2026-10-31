@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                2ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 38ms
+❯ weld
+✔ weld                 101ms
+❯ simplify
+✔ simplify             101ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               21ms
+❯ textureCompress
+✔ textureCompress      0ms
+❯ meshopt
+✔ meshopt              135ms
+
+info: torus.glb (8.85 MB) → torus-meshopt.glb (1.56 MB)

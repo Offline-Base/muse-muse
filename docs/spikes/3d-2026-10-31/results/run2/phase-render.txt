@@ -1,0 +1,51 @@
+--- phase render firewall locked: exit 0 in 51 s
+== R0 firewall (locked)
+registry.npmjs.org 200
+download.blender.org 000
+download.blender.org blocked (curl exit 6)
+polyhaven 000
+dl.polyhaven.org blocked (curl exit 6)
+api.meta.ai (no placeholder) 403
+== R1 what this Blender has
+--gpu-backend 
+	Force to use a specific GPU backend. Valid options: 'opengl' or 'vulkan'.
+
+--gpu-device <device>
+== R2 scene and GLB export
+scene + export: exit 0 in 1.6 s wall
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.246, "glb": "/tmp/out/render/scene.glb", "exportS": 0.656, "maxRssMB": 326.6}
+scene.glb 42500 bytes
+== R3 Cycles on CPU
+cycles-640-32: exit 3 in 0.8 s wall; 
+AttributeError: 'bpy.app.build_options' object has no attribute 'openimagedenoise'
+Error: script failed, file: '/tmp/spike/lib/scene.py', exiting.
+cycles-320-16: exit 3 in 1.0 s wall; 
+AttributeError: 'bpy.app.build_options' object has no attribute 'openimagedenoise'
+Error: script failed, file: '/tmp/spike/lib/scene.py', exiting.
+cycles-640-128: exit 3 in 1.1 s wall; 
+AttributeError: 'bpy.app.build_options' object has no attribute 'openimagedenoise'
+Error: script failed, file: '/tmp/spike/lib/scene.py', exiting.
+== R4 Workbench
+workbench-640: exit 0 in 2.0 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.113, "engine": "BLENDER_WORKBENCH", "renderS": 1.27, "out": "/tmp/out/render/workbench-640.png", "threads": 4, "maxRssMB": 552.9}
+== R5 Eevee
+eevee-640-32: exit 0 in 16.7 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.118, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 15.877, "out": "/tmp/out/render/eevee-640-32.png", "threads": 4, "maxRssMB": 2008.4}
+eevee-640-32-surfaceless: exit 0 in 6.5 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.133, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 5.529, "out": "/tmp/out/render/eevee-640-32-surfaceless.png", "threads": 4, "maxRssMB": 1624.9}
+eevee-640-32-vulkan: exit 0 in 14.9 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.15, "samples": 32, "engine": "BLENDER_EEVEE", "renderS": 13.962, "out": "/tmp/out/render/eevee-640-32-vulkan.png", "threads": 4, "maxRssMB": 1106.6}
+workbench-640-surfaceless: exit 0 in 1.3 s wall; {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.13, "engine": "BLENDER_WORKBENCH", "renderS": 0.4, "out": "/tmp/out/render/workbench-640-surfaceless.png", "threads": 4, "maxRssMB": 503.0}
+== R6 conversion and decimate
+torus.obj 73728 quads, sphere.stl 9024 triangles
+sphere.stl 451284 bytes
+torus.obj 3899481 bytes
+convert + decimate: exit 0 in 2.8 s wall
+{"step": "convert", "in": "torus.obj", "inBytes": 3899481, "triangles": 147456, "importS": 0.04, "exportS": 0.255, "out": "torus.glb", "outBytes": 8847532}
+{"step": "convert", "in": "sphere.stl", "inBytes": 451284, "triangles": 9024, "importS": 0.003, "exportS": 0.011, "out": "sphere.glb", "outBytes": 504300}
+{"step": "decimate", "ratio": 0.1, "trianglesBefore": 147456, "trianglesAfter": 14744, "decimateS": 1.633, "exportS": 0.018, "out": "decimated.glb", "outBytes": 1096344}
+== R7 blank check
+{"file":"/tmp/out/render/eevee-640-32-surfaceless.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32-vulkan.png","bytes":387434,"size":"640,480","spread":102.9,"colors":1475,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/eevee-640-32.png","bytes":387056,"size":"640,480","spread":102.8,"colors":1467,"top":0.4,"blank":false}
+{"file":"/tmp/out/render/workbench-640-surfaceless.png","bytes":324260,"size":"640,480","spread":83.7,"colors":261,"top":0.428,"blank":false}
+{"file":"/tmp/out/render/workbench-640.png","bytes":324260,"size":"640,480","spread":83.7,"colors":261,"top":0.428,"blank":false}
+
+[stderr]
+

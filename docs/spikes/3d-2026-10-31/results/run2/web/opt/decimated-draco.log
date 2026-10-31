@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                3ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 12ms
+❯ weld
+✔ weld                 10ms
+❯ simplify
+✔ simplify             21ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               10ms
+❯ textureCompress
+✔ textureCompress      0ms
+❯ draco
+✔ draco                19ms
+
+info: decimated.glb (1.1 MB) → decimated-draco.glb (60.94 KB)

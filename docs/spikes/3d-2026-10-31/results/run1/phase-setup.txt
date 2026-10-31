@@ -1,0 +1,31 @@
+--- phase setup firewall open: exit 4 in 1 s
+== S0 machine
+{
+  "createdAt": "2026-10-28T17:41:07.349Z",
+  "node": "v24.22.1",
+  "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+  "muse": "Muse Code 1.4.14 (1.4.14-R7309.1)",
+  "templateHash": "46d1f7e86aca"
+}
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
+VERSION_ID="26.04"
+6.18.56
+4
+               total        used        free      shared  buff/cache   available
+Mem:            8404         291        8205           0          84        8112
+Model name:                              Intel(R) Xeon(R) Processor @ 2.90GHz
+/dev/vdb         64G  5.8G   59G   9% /
+apt-get: /usr/bin/apt-get
+dnf: none
+yum: none
+ls: cannot access '/dev/dri': No such file or directory
+GL and EGL packages before: libgbm1 libgl1 libgl1-mesa-dri libglx-mesa0 libglx-vendor libglx0 mesa-libgallium mesa-va-drivers mesa-vdpau-drivers mesa-vulkan-drivers none
+== S1 find the LTS
+Blender 3.6 LTS;Blender 4.2 LTS;Blender 4.5 LTS;Blender 5.2 LTS;
+series 5.2, newest linux x64 tarball:  (version )
+no tarball found
+
+[stderr]
+curl: (22) The requested URL returned error: 403
+grep: /tmp/dl/index.html: No such file or directory
+

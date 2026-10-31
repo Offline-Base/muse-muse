@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                3ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              1ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 10ms
+❯ weld
+✔ weld                 14ms
+❯ simplify
+✔ simplify             18ms
+❯ resample
+✔ resample             1ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               10ms
+❯ textureCompress
+✔ textureCompress      1ms
+❯ draco
+✔ draco                21ms
+
+info: sphere.glb (504.3 KB) → sphere-draco.glb (23.98 KB)

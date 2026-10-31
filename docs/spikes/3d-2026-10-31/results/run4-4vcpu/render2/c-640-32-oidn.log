@@ -1,0 +1,11 @@
+00:00.082  system.path      | WARNING Could not get a list of mounted file-systems
+/tmp/spike/lib/scene.py:34: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(m, "use_nodes") and not m.use_nodes:
+/tmp/spike/lib/scene.py:93: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+  if hasattr(world, "use_nodes") and not world.use_nodes:
+00:00.579  cycles           | WARNING CUEW initialization failed: Error opening the library
+00:04.684  render           | Saved: '/tmp/out/render2/c-640-32-oidn.png'
+RESULT {"blender": "5.2.3 LTS", "triangles": 258, "objects": 7, "buildS": 0.16, "samples": 32, "oidnBuilt": true, "denoiser": "OPENIMAGEDENOISE", "engine": "CYCLES", "renderS": 4.105, "out": "/tmp/out/render2/c-640-32-oidn.png", "threads": 4, "maxRssMB": 639.3}
+Blender 5.2.3 LTS (hash e13b728c6880 built 2026-10-22 01:35:05)
+
+Blender quit

@@ -1,0 +1,26 @@
+❯ dedup
+✔ dedup                2ms
+❯ instance
+✔ instance             1ms
+❯ palette
+✔ palette              0ms
+❯ flatten
+✔ flatten              1ms
+❯ join
+✔ join                 6ms
+❯ weld
+✔ weld                 7ms
+❯ simplify
+✔ simplify             10ms
+❯ resample
+✔ resample             0ms
+❯ prune
+✔ prune                0ms
+❯ sparse
+✔ sparse               4ms
+❯ textureCompress
+✔ textureCompress      0ms
+❯ meshopt
+✔ meshopt              26ms
+
+info: sphere.glb (504.3 KB) → sphere-meshopt.glb (105.51 KB)
