@@ -10,7 +10,7 @@ import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
-import { liveFrameAllow } from "@/lib/product-frame";
+import { liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -98,7 +98,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               title={`${product.name}, the live product`}
               loading="lazy"
               allow={liveFrameAllow(brief)}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+              sandbox={liveFrameSandbox(brief)}
               referrerPolicy="no-referrer"
             />
           </section>
