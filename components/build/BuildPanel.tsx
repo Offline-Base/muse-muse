@@ -4,7 +4,8 @@ import { useId, useState } from "react";
 import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { ModelChips, StatusPill } from "@/components/ui";
-import { RAIL, type RailStep, type RailState, type RoomState } from "@/components/build/derive";
+import { RAIL, type AgentNode, type RailStep, type RailState, type RoomState, type Segment } from "@/components/build/derive";
+import { AgentTree } from "@/components/build/session";
 import { compact, duration, statusLabel, usd } from "@/lib/format";
 
 const RAIL_STATE_LABEL: Record<RailState, string> = {
@@ -31,12 +32,22 @@ export interface PanelProps {
   connectorUrl: string | null;
 }
 
-/** The playground's right panel, read-only: step rail, models, run facts, links and the live preview. */
+/** The agents working in the newest Muse Code round, from the session bridge. Empty for a `muse exec` round. */
+function liveAgents(room: RoomState): AgentNode[] {
+  const rounds = room.segments.filter((s): s is Extract<Segment, { type: "muse" }> => s.type === "muse");
+  return rounds[rounds.length - 1]?.session?.agents ?? [];
+}
+
+/**
+ * The playground's right panel, read-only: step rail, the agents at work (on the session bridge), models, run facts,
+ * links and the live preview.
+ */
 export function BuildPanel(p: PanelProps) {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
   const { room } = p;
   const showPreview = Boolean(room.previewUrl) && !room.terminal;
+  const agents = liveAgents(room);
 
   return (
     <aside className="panel" aria-label="Build details">
@@ -103,6 +114,15 @@ export function BuildPanel(p: PanelProps) {
             })}
           </ol>
         </section>
+
+        {agents.length ? (
+          <section className="panel-section" aria-labelledby={`${bodyId}-agents`}>
+            <h3 className="panel-label" id={`${bodyId}-agents`}>
+              Agents
+            </h3>
+            <AgentTree agents={agents} />
+          </section>
+        ) : null}
 
         {p.models.length ? (
           <section className="panel-section">

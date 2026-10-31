@@ -411,18 +411,25 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
   let lastVerifyPassed: boolean | null = null;
   const notes: string[] = [];
   const seenRounds = new Set<number>();
+  // A session bridge line comes again under its item id whenever it changes, as a tool call that runs across polls
+  // does. Each item counts once, as its last version, the way the build room shows it.
+  const items = new Map<string, MuseLogLine>();
+  const count = (l: MuseLogLine) => {
+    if (l.kind === "tool") tools++;
+    if (l.kind === "edit") {
+      edits++;
+      files += l.files ?? 0;
+      added += l.added ?? 0;
+      removed += l.removed ?? 0;
+    }
+  };
 
   for (const e of events) {
     if (e.type === "muse") {
       seenRounds.add(e.round);
       for (const l of e.lines as MuseLogLine[]) {
-        if (l.kind === "tool") tools++;
-        if (l.kind === "edit") {
-          edits++;
-          files += l.files ?? 0;
-          added += l.added ?? 0;
-          removed += l.removed ?? 0;
-        }
+        if (l.itemId === undefined) count(l);
+        else items.set(`${e.round}:${l.itemId}`, l);
       }
     } else if (e.type === "verify") {
       checks++;
@@ -433,6 +440,7 @@ export function buildHighlights(events: BuildEvent[], build: BuildView | null): 
       notes.push(e.text.trim());
     }
   }
+  for (const l of items.values()) count(l);
   rounds = Math.max(0, seenRounds.size - 1);
 
   if (tools || edits) {

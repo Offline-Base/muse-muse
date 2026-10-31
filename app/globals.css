@@ -2186,6 +2186,388 @@ pre {
   font-size: 13px;
 }
 
+/* What the session bridge adds to a Muse Code round (components/build/session.tsx) */
+
+.pill-sm {
+  gap: 5px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.pill-sm .pill-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.pill-dot.dot-neutral {
+  background: var(--faint);
+}
+
+.goal-card,
+.todo-card,
+.wf-card,
+.question-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.goal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.goal-title,
+.question-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.goal-title svg,
+.question-head svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.goal-objective {
+  color: var(--fg-2);
+}
+
+.goal-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.goal-bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--track);
+}
+
+.goal-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 300ms ease;
+}
+
+.goal-live .goal-bar-fill {
+  background: var(--ok);
+}
+
+.goal-partial .goal-bar-fill {
+  background: var(--warn);
+}
+
+.goal-pct {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+
+.todo-head h3 {
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.todo-head .muted {
+  font-size: 13px;
+}
+
+.todos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.todo-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--accent-ink);
+}
+
+.todo-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo-completed .todo-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.todo-completed .todo-text {
+  color: var(--muted);
+}
+
+.todo-inProgress .todo-box {
+  border-color: var(--accent);
+}
+
+.todo-inProgress .todo-text {
+  font-weight: 600;
+}
+
+.todo-cancelled .todo-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.thinking > summary {
+  cursor: pointer;
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.thinking[open] > summary {
+  margin-bottom: 4px;
+}
+
+.thinking .say {
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.steer {
+  align-self: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: min(85%, 520px);
+}
+
+.bubble-steer {
+  padding: 8px 14px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.steer-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.steer-refused .steer-meta {
+  color: var(--bad);
+}
+
+.wf-card {
+  gap: 6px;
+}
+
+.wf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.wf-head svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.wf-title {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.wf-phase {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.wf-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wf-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.wf-child-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.act-running .act-icon {
+  color: var(--accent-text);
+}
+
+.act .pill-sm {
+  flex: none;
+  align-self: center;
+}
+
+.question-card {
+  gap: 12px;
+  padding: 14px 16px;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.question legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.question-tag {
+  padding: 1px 8px;
+  border-radius: var(--pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 12px;
+}
+
+.question-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.question-option:hover {
+  background: var(--hover);
+}
+
+.question:disabled .question-option {
+  cursor: default;
+}
+
+.question-option input {
+  flex: none;
+  margin: 4px 0 0;
+  accent-color: var(--accent);
+}
+
+.question-option-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-free {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.question-free textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-input);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 14px;
+  resize: vertical;
+}
+
+.question-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
 /* Checks */
 
 .check {
@@ -2581,6 +2963,53 @@ pre {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The agents at work in a session bridge round, as a tree */
+
+.agent-tree,
+.agent-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.agent-tree ul {
+  margin-left: 7px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 14px;
+}
+
+.agent-row svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.agent-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.agent-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.agent-meta {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .preview-card {
