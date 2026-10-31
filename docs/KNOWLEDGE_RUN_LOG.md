@@ -716,6 +716,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   7.8 GB in memory, 5 to 10 tok/s. Scripts to rerun are in the session scratchpad (mac/). Asked Muse Muse General for a
   20-minute idle window. Sent Muse Muse General the 1-bit facts for its offline mode (stage 2 IQ1_S now, final IQ1_S later;
   base IQ1_S sha256 2b751820..., loops on most replies).
+- 4:33 to 4:48 PM: Mac test ran in a 40-minute window the lab cleared. Stage 2 IQ1_S on the AWS Mac (M1, 16 GB), llama.cpp
+  b11970 macOS release, -c 4096 -np 1, tuned reasoning-off template. Metal: 4.2 tok/s generation and 25 tok/s prompt on real
+  questions (llama-bench pp512 35.9, tg64 4.29), RSS 6.88 GB (file plus 0.35 GB), 50/50 HTTP 200 and stopped, plain 8/10, old
+  facts 40/40, no swap, thermal Nominal. CPU: 2.3 tok/s, RSS 7.69 GB. Folder deleted 4:48 PM; no files outside it changed.
+  Numbers sent to Muse Muse General for its offline mode.
+- 4:39 PM: stage-b-r30 trained (1,875 steps); adapter sha256 0495fa00..., pulled to the Mac and pushing to writer-1.
+- Phone test done (glimmer-on-devices phone step, Device Farm, llama.cpp b11669, CPU, 3 short prompts, stage 2):
+  Galaxy S25 12 GB: IQ1_S 1.86 tok/s, 2/3, peak RSS 7.09 GiB; IQ2_XXS 1.89 tok/s, 3/3, 7.52 GiB. Pixel 9 Pro 16 GB: IQ2_XXS
+  0.95 tok/s, 3/3. Phone GPU (OpenCL) slower with no IQ kernels; NPU not usable. 8 GB phones: nothing fits. Use IQ2_XXS on
+  phones. Both files stay in S3 knowledge/models/stage2/ for the final comparison. base-test login ends about 2:41 AM Nov 1.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
