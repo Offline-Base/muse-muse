@@ -5,7 +5,7 @@ Command: `uv run python -m scripts.model_matrix --name lfm_loosen_default --conf
 | Field | Value |
 |---|---|
 | Date | 2026-10-31 02:37 |
-| Commit | 6ac46bc (26 files changed and not committed) |
+| Commit | 7ad8083 (26 files changed and not committed) |
 | Device | laptop, DEVICE_ONLY=1 for every config |
 | Models | LFM3-VL-2B (lfm3-vl-2b, port 8083): name pass, request labels and summaries in every config but keywords |
 | Router call | reasoning low, 1500 tokens (Glimmer only; LFM runs with thinking off) |

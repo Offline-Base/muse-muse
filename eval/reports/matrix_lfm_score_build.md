@@ -5,7 +5,7 @@ Command: `uv run python -m scripts.model_matrix --name lfm_score_build --configs
 | Field | Value |
 |---|---|
 | Date | 2026-10-31 01:47 |
-| Commit | bf38b1c (24 files changed and not committed) |
+| Commit | 5e04a4f (24 files changed and not committed) |
 | Device | laptop, DEVICE_ONLY=1 for every config |
 | Models | LFM3-VL-2B (lfm3-vl-2b, port 8083): name pass, request labels and summaries in every config but keywords |
 | Router call | reasoning low, 1500 tokens (Glimmer only; LFM runs with thinking off) |
@@ -94,6 +94,6 @@ Raw rows: raw/matrix_lfm_score_build_<config>_<set>.jsonl next to this report (i
 
 ## Notes
 
-- "24 files changed and not committed" in the header counts this run's own output files (this report and its raw rows), which did not exist yet when the run began. The code was bf38b1c with no changes.
+- "24 files changed and not committed" in the header counts this run's own output files (this report and its raw rows), which did not exist yet when the run began. The code was 5e04a4f with no changes.
 - policy_lfm scores 75.0% on fresh_200_b here and 74.5% in `eval/reports/score_build_fresh_200_b.md`, the same code and set run on its own a few minutes earlier. LFM3-VL-2B's request labels differed on one item between the two runs, so treat a one-item difference between runs as noise.
 - On this 2B model, letting the model decide or tighten costs 31 to 33 points on fresh_200_b, almost all of it over-refusals (86 and 88). The policy deciding, with LFM only labeling the request, stays the default for the device-only setup.

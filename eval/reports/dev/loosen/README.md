@@ -1,6 +1,6 @@
 # ROUTER_LOOSEN fixes on dev items
 
-Invented items, labeled by the strict teacher's policy (eval/user_policy.yaml); no simulated user answers anything here. Run on Oct 31, 2026 at about 02:00 ET on commit bf38b1c, before any persona study run, to choose which fixes the study and the shipped default use.
+Invented items, labeled by the strict teacher's policy (eval/user_policy.yaml); no simulated user answers anything here. Run on Oct 31, 2026 at about 02:00 ET on commit 5e04a4f, before any persona study run, to choose which fixes the study and the shipped default use.
 
 Each run, one at a time through the model-slot lock, with a fresh throwaway BASE_HOME and `ROUTER_LOOSEN=<fix>` (none, lists, result_words, class_of, all):
 
