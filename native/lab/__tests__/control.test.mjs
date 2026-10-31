@@ -3,7 +3,7 @@
 // the real boxes (docs/NATIVE_LAB.md).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -150,6 +150,22 @@ describe("setup/mac.sh", () => {
     const reply = spawnSync("bash", [path.join(HERE, "..", "setup", "mac-finish.sh")], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: "/nonexistent" } });
     assert.equal(reply.status, 2);
     assert.match(reply.stderr, /MUSE_LAB_ACCEPT_LICENSES=1/);
+  });
+  test("a second run leaves auto-login alone, and the password and /etc/kcpassword only change together", () => {
+    const again = script.indexOf("Auto-login is already on.");
+    const passwd = script.indexOf("dscl . -passwd");
+    const fi = script.indexOf('sudo /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser');
+    assert.ok(again > 0 && again < passwd && passwd < fi);
+    assert.ok(script.slice(passwd, fi).includes("sudo /bin/rm -f /etc/kcpassword"));
+  });
+  test("the aws CLI gets the instance role through Apple's curl", () => {
+    const helper = read("setup/imds-credentials.sh");
+    assert.equal(spawnSync("bash", ["-n", path.join(HERE, "..", "setup", "imds-credentials.sh")], { encoding: "utf8" }).status, 0);
+    assert.match(script, /credential_process = %s/);
+    assert.match(script, /current\/setup\/imds-credentials\.sh/);
+    assert.ok(helper.includes("/usr/bin/curl") && helper.includes("Version: 1"));
+    assert.ok(!helper.includes("set -x"));
+    assert.ok(statSync(path.join(HERE, "..", "setup", "imds-credentials.sh")).mode & 0o100, "it has to be executable");
   });
   test("never prints the password", () => {
     assert.ok(!/echo .*PASSWORD/.test(script));

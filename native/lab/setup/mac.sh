@@ -47,12 +47,30 @@ if [ -n "$PDISK" ] && [ -n "$APFS_CONTAINER" ]; then
 fi
 
 step "Auto-login, with no sleep and no screen lock"
-if [ -z "${MUSE_LAB_USER_PASSWORD:-}" ]; then
-  MUSE_LAB_USER_PASSWORD="$(openssl rand -base64 24)"
+# A new password here would need a new /etc/kcpassword too, so on a second run with auto-login already on, leave them both.
+if [ -z "${MUSE_LAB_USER_PASSWORD:-}" ] && sudo /bin/test -s /etc/kcpassword \
+  && [ "$(/usr/bin/defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)" = "$LAB_USER" ]; then
+  echo "Auto-login is already on."
+else
+  MUSE_LAB_USER_PASSWORD="${MUSE_LAB_USER_PASSWORD:-$(openssl rand -hex 10)}"
+  sudo /usr/bin/dscl . -passwd "/Users/$LAB_USER" "$MUSE_LAB_USER_PASSWORD"
+  sudo /bin/rm -f /etc/kcpassword
+  sudo /usr/sbin/sysadminctl -autologin set -userName "$LAB_USER" -password "$MUSE_LAB_USER_PASSWORD" >/dev/null 2>&1 || true
+  if ! sudo /bin/test -s /etc/kcpassword; then
+    # macOS 26 answers SACSetAutoLoginPassword error 22 here, with exit code 0, so this writes what that call would have: the
+    # password in loginwindow's obfuscated form, padded to 12 bytes, readable only by root.
+    MUSE_LAB_PW="$MUSE_LAB_USER_PASSWORD" /usr/bin/perl -e '
+      my @key = (0x7D, 0x89, 0x52, 0x23, 0xD2, 0xBC, 0xDD, 0xEA, 0xA3, 0xB9, 0x1F);
+      my @pw = unpack("C*", $ENV{MUSE_LAB_PW});
+      push @pw, 0 while @pw % 12;
+      print pack("C*", map { $pw[$_] ^ $key[$_ % @key] } 0 .. $#pw);
+    ' | sudo /usr/bin/tee /etc/kcpassword >/dev/null
+    sudo /bin/chmod 600 /etc/kcpassword
+    sudo /usr/sbin/chown root:wheel /etc/kcpassword
+  fi
+  sudo /usr/bin/defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser -string "$LAB_USER"
+  unset MUSE_LAB_USER_PASSWORD
 fi
-sudo /usr/bin/dscl . -passwd "/Users/$LAB_USER" "$MUSE_LAB_USER_PASSWORD"
-sudo /usr/sbin/sysadminctl -autologin set -userName "$LAB_USER" -password "$MUSE_LAB_USER_PASSWORD" >/dev/null 2>&1
-unset MUSE_LAB_USER_PASSWORD
 sudo /usr/bin/pmset -a sleep 0 displaysleep 0 disksleep 0 standby 0 powernap 0 autorestart 1
 /usr/bin/defaults -currentHost write com.apple.screensaver idleTime -int 0
 /usr/bin/defaults write com.apple.screensaver askForPassword -int 0
@@ -126,6 +144,13 @@ if [ "$HERE" != "$ROOT/releases/$VERSION" ]; then
   /usr/bin/rsync -a --delete --exclude __tests__ --exclude node_modules "$HERE/" "$ROOT/releases/$VERSION/"
 fi
 ln -sfn "$ROOT/releases/$VERSION" "$ROOT/current"
+
+# ec2-user's Homebrew tools can't reach the metadata address, so the aws CLI gets the instance role through this. See the script.
+mkdir -p "$HOME/.aws"
+AWS_CONFIG="$HOME/.aws/config"
+if ! /usr/bin/grep -q credential_process "$AWS_CONFIG" 2>/dev/null; then
+  printf '[default]\ncredential_process = %s\nregion = %s\n' "$ROOT/current/setup/imds-credentials.sh" "$REGION" >"$AWS_CONFIG"
+fi
 
 PLIST="$HOME/Library/LaunchAgents/ai.musemuse.lab.plist"
 /usr/bin/sed -e "s|__HOME__|$HOME|g" -e "s|__PLATFORM__|$PLATFORM|g" -e "s|__REGION__|$REGION|g" "$HERE/setup/ai.musemuse.lab.plist" >"$PLIST"
