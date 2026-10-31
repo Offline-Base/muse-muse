@@ -7,7 +7,7 @@ cloud refusal: on a cloud backend every call must say `synthetic=True` or it is 
 The "checker" role is Liquid's LFM3-VL-2B on this device's own llama-server (CHECKER_BACKEND=lfm):
 always local, so it is never refused, with Liquid's sampling and its thinking turned off.
 
-The "jetson" role is LFM3-1.7B on the user's Jetson through the Offline Base gateway (backend
+The "jetson" role is LFM3-1.7B on the user's Jetson through the Jetson gateway (backend
 "gateway"): the same Liquid request, but a remote endpoint, so it is refused like a cloud model.
 
 FallbackLLM (PRIMARY_MODEL=lfm) sends every call to LFM3-VL-2B first and to its fallback (the

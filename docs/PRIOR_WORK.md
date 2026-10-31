@@ -1,6 +1,6 @@
 # Prior work
 
-Muse Privacy was built in this repository during the Meta Global AI Developer Hackathon, which began on Oct 26, 2026. The first commit is from Oct 27, 2026 at 01:29 ET. Nothing here is imported, vendored or copied from another repository. Earlier Offline Base projects by the same author were read for ideas, and each module that took an idea from one is listed below.
+Muse Privacy was built in this repository during the Meta Global AI Developer Hackathon, which began on Oct 26, 2026. The first commit is from Oct 27, 2026 at 01:29 ET. Nothing here is imported, vendored or copied from another repository. Earlier projects by the same author were read for ideas, and each module that took an idea from one is listed below.
 
 **Checked against the [Official Rules](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver) on Oct 28.** They have no clause on pre-existing code, prior-work disclosure or AI coding tools. They require a submission that is the entrant's original work and solely owned, and they allow third-party technical help (if the work stays the entrant's own) and open source (if its licenses are followed and the submission builds on it). This page is our disclosure anyway, because other participants report a "new work only" rule from the event's Discord that we could not confirm. [RUBRIC.md](RUBRIC.md) has the rules and the rubric.
 
@@ -10,10 +10,10 @@ These existed before the event, outside this repository, and are not part of thi
 
 | Earlier project | What it is | What we took as inspiration |
 |---|---|---|
-| decision-guard (Offline-Base) | A local model that checks text before it is sent | The idea of exact checks (Luhn card numbers, one-time codes) that override a model, rewritten in Python for base/guard.py |
-| base-router-subagent, branch base-agent-v0.1 (Offline-Base) | A local memory MCP server with a Cloudflare relay | The relay shape (device dials out to a Worker, OAuth, one-time pairing codes), rewritten for relay/ and base/connector/ |
+| decision-guard | A local model that checks text before it is sent | The idea of exact checks (Luhn card numbers, one-time codes) that override a model, rewritten in Python for base/guard.py |
+| base-router-subagent, branch base-agent-v0.1 | A local memory MCP server with a Cloudflare relay | The relay shape (device dials out to a Worker, OAuth, one-time pairing codes), rewritten for relay/ and base/connector/ |
 | The build plan (Oct 24, a design document kept outside this repo) | The written plan for Muse Privacy: the idea, the architecture, the schedule and the prompts for each day | Followed as the design. It contains no code |
-| decision-tree (Offline-Base) | A small device with a status light | The idea of streaming state to a light, rewritten for base/events.py, base/light.py and hardware/light/ |
+| decision-tree | A small device with a status light | The idea of streaming state to a light, rewritten for base/events.py, base/light.py and hardware/light/ |
 
 ## Built during the event
 
