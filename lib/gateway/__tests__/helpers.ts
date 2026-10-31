@@ -14,6 +14,8 @@ export interface FakeGateway {
   inFlight: Map<string, number>;
   upstreamCalls: Array<{ url: string; init: RequestInit | undefined }>;
   rateKeys: string[][];
+  /** Multi-unit counters (run caps), by "key" alone, whatever the window. */
+  counters: Map<string, number>;
   /** Resolves when every deferred task (metering) has finished. */
   settled(): Promise<void>;
 }
@@ -41,6 +43,7 @@ export function fakeGateway(
   const rateKeys: string[][] = [];
   const deferred: Promise<unknown>[] = [];
   const counters = new Map<string, number>(Object.entries(opts.counts ?? {}));
+  const multiCounters = new Map<string, number>();
   const token: GatewayToken = {
     id: "00000000-0000-4000-8000-000000000001",
     productId: "00000000-0000-4000-8000-000000000002",
@@ -86,6 +89,16 @@ export function fakeGateway(
     recordUsage: async (ctx, items) => {
       usage.push({ ctx, items });
     },
+    reserveCounter: async (key, _window, amount, limit) => {
+      const total = (multiCounters.get(key) ?? 0) + amount;
+      if (total > limit) return null;
+      multiCounters.set(key, total);
+      return total;
+    },
+    adjustCounter: async (key, _window, delta) => {
+      multiCounters.set(key, Math.max(0, (multiCounters.get(key) ?? 0) + delta));
+    },
+    counterValue: async (key) => multiCounters.get(key) ?? 0,
     fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       upstreamCalls.push({ url: String(input), init });
       return realFetch(input, init);
@@ -103,6 +116,7 @@ export function fakeGateway(
     inFlight,
     upstreamCalls,
     rateKeys,
+    counters: multiCounters,
     settled: async () => void (await Promise.all(deferred)),
   };
 }

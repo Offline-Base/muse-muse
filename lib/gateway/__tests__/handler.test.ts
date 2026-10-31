@@ -135,7 +135,7 @@ test("bodies over 4.5 MB -> 413 pointing at /uploads", async () => {
   assert.match(err.message, /https:\/\/platform\.example\/api\/gateway\/uploads/);
 });
 
-test("forward: master key, raw bytes and content type preserved; JSON passes through and is metered", async () => {
+test("forward: master key and content type preserved; a Responses body arrives with its safety id, and is metered", async () => {
   const reply = {
     id: "resp_1",
     model: "muse-wonder-1.0",
@@ -158,13 +158,24 @@ test("forward: master key, raw bytes and content type preserved; JSON passes thr
   const headers = call.init?.headers as Record<string, string>;
   assert.equal(headers.authorization, "Bearer test-master-key");
   assert.equal(headers["content-type"], "application/json");
-  assert.equal(new TextDecoder().decode(call.init?.body as Uint8Array), sent);
+  const upstreamBody = JSON.parse(new TextDecoder().decode(call.init?.body as Uint8Array)) as Record<string, unknown>;
+  assert.match(String(upstreamBody.safety_identifier), /^p_[0-9a-f]{40}$/);
+  delete upstreamBody.safety_identifier;
+  assert.equal(JSON.stringify(upstreamBody), sent, "everything else is unchanged, in order");
   assert.ok(!JSON.stringify(headers).includes(TEST_TOKEN), "the product token never goes upstream");
 
   assert.equal(g.usage.length, 1);
   assert.equal(g.usage[0].ctx.source, "gateway");
   assert.equal(g.usage[0].ctx.endpoint, "responses");
   assert.equal(g.usage[0].items[0].inputTokens, 10);
+});
+
+test("raw bytes are preserved unless the gateway rewrites them: other endpoints go through untouched", async () => {
+  const g = fakeGateway({ fetch: async () => Response.json({ created: 1, data: [{ b64_json: "A" }] }) });
+  const sent = `{ "model": "muse-image-1.0",  "prompt": "ünïcode ✓" }`;
+  const res = await handleGateway(gatewayRequest("images/generations", sent, JSON_CT), ["images", "generations"], g.deps);
+  assert.equal(res.headers.get("x-musemuse-note"), null);
+  assert.equal(new TextDecoder().decode(g.upstreamCalls[0].init?.body as Uint8Array), sent);
 });
 
 test("a product that asks for Muse Spark 1.3 is served and metered as Spark 1.3 Contributor", async () => {
@@ -180,6 +191,8 @@ test("a product that asks for Muse Spark 1.3 is served and metered as Spark 1.3 
   await g.settled();
 
   const upstream = JSON.parse(new TextDecoder().decode(g.upstreamCalls[0].init?.body as Uint8Array)) as Record<string, unknown>;
+  assert.match(String(upstream.safety_identifier), /^p_/);
+  delete upstream.safety_identifier;
   assert.deepEqual(upstream, { model: "muse-spark-1.3-contributor", input: "hi", note: "ünïcode ✓" });
   assert.equal(g.usage.length, 1);
   assert.equal(g.usage[0].items[0].model, "muse-spark-1.3-contributor");
@@ -437,4 +450,302 @@ test("x-musemuse-client-ip: first forwarded entry, IPv6 by /64, junk ignored; ne
     g.deps,
   );
   assert.equal(noToken.status, 401);
+});
+
+const wonderToken = { allowedModels: ["muse-wonder-1.0"] };
+const agentToken = { allowedModels: ["muse-wonder-1.0", "agent"] };
+const wonder = (extra: Record<string, unknown> = {}) => json({ model: "muse-wonder-1.0", input: "hi", max_output_tokens: 100, ...extra });
+const search = [{ type: "web_search" }];
+const upstreamJson = (g: ReturnType<typeof fakeGateway>, i = 0) =>
+  JSON.parse(new TextDecoder().decode(g.upstreamCalls[i].init?.body as Uint8Array)) as Record<string, unknown>;
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
+const tokensUsd = (input: number, output: number) => (input * 4 + output * 20) / 1e6;
+const SEARCH_USD = 0.0025;
+const usageReply = { usage: { input_tokens: 100, output_tokens: 10 } };
+const searched = (ids: string[]) => ({
+  ...usageReply,
+  output: [...ids.map((id) => ({ id, type: "web_search_call", status: "completed" })), { type: "message", content: [] }],
+});
+
+test("web_search: a JSON reply pays its search fee on top of tokens, with the searches as units", async () => {
+  const g = fakeGateway({ token: wonderToken, fetch: async () => Response.json(searched(["ws_1", "ws_2"])) });
+  const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200, "web_search stays allowed for a product without the agent marker");
+  await res.arrayBuffer();
+  await g.settled();
+  const [item] = g.usage[0].items;
+  near(item.costUsd, tokensUsd(100, 10) + 2 * SEARCH_USD);
+  assert.equal(item.units, 2);
+});
+
+test("web_search: an SSE reply pays its search fee too", async () => {
+  const sse =
+    'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"id":"ws_1","type":"web_search_call"}}\n\n' +
+    `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: searched(["ws_1"]) })}\n\n`;
+  const g = fakeGateway({ token: wonderToken, fetch: async () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) });
+  const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search, stream: true }), JSON_CT), ["responses"], g.deps);
+  await res.arrayBuffer();
+  await g.settled();
+  near(g.usage[0].items[0].costUsd, tokensUsd(100, 10) + SEARCH_USD);
+  assert.equal(g.usage[0].items[0].units, 1);
+});
+
+test("web_search: the estimate holds the searches a token may run", async () => {
+  const upstream = gatedUpstream();
+  const g = fakeGateway({ token: wonderToken, fetch: upstream.fetch });
+  const body = wonder({ tools: search });
+  const running = handleGateway(gatewayRequest("responses", body, JSON_CT), ["responses"], g.deps);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const [reservation] = [...g.reservations.values()];
+  // Five searches, each with its fee and 8,000 tokens of results, on top of the 100 output tokens.
+  assert.ok(reservation.costUsd >= 5 * SEARCH_USD + tokensUsd(40_000, 100), String(reservation.costUsd));
+  assert.ok(reservation.costUsd < 5 * SEARCH_USD + tokensUsd(40_100, 100), String(reservation.costUsd));
+  upstream.open();
+  await (await running).arrayBuffer();
+  await g.settled();
+});
+
+test("the clamp per scope: 2 for builds, 5 for live, 8 for live agents, said in the note header", async () => {
+  const cases = [
+    [{ scope: "build" as const, ...wonderToken }, 2],
+    [{ scope: "build" as const, ...agentToken }, 2],
+    [{ scope: "live" as const, ...wonderToken }, 5],
+    [{ scope: "live" as const, ...agentToken }, 8],
+  ] as const;
+  for (const [token, cap] of cases) {
+    const g = fakeGateway({ token, fetch: async () => Response.json(usageReply) });
+    const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search, max_tool_calls: 99 }), JSON_CT), ["responses"], g.deps);
+    assert.equal(upstreamJson(g).max_tool_calls, cap);
+    assert.match(res.headers.get("x-musemuse-note") ?? "", new RegExp(`Set max_tool_calls to ${cap} \\(it was 99\\)`));
+  }
+});
+
+test("no note header when nothing the product needs to know changed", async () => {
+  const g = fakeGateway({ token: wonderToken, fetch: async () => Response.json(usageReply) });
+  const res = await handleGateway(gatewayRequest("responses", wonder(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.headers.get("x-musemuse-note"), null);
+});
+
+test("background: true -> 400 background_unsupported for build and live, before anything is held or forwarded", async () => {
+  for (const scope of ["build", "live"] as const) {
+    const g = fakeGateway({ token: { ...wonderToken, scope } });
+    const res = await handleGateway(gatewayRequest("responses", wonder({ background: true }), JSON_CT), ["responses"], g.deps);
+    const err = await errorOf(res);
+    assert.equal(err.status, 400);
+    assert.equal(err.code, "background_unsupported");
+    assert.match(err.message, /Stream it with stream: true instead/);
+    assert.equal(res.headers.get("x-should-retry"), "false");
+    assert.equal(g.upstreamCalls.length, 0);
+    assert.equal(g.reservations.size, 0);
+    assert.equal(g.rateKeys.length, 0);
+  }
+});
+
+test("agent tokens never run on Contributor, even when they ask for Muse Spark 1.3", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-spark-1.3", "agent"] } });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], g.deps));
+  assert.equal(err.status, 400);
+  assert.equal(err.code, "model_not_for_agents");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("the agent marker is never a model anyone can call", async () => {
+  const g = fakeGateway({ token: agentToken });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", json({ model: "agent", input: "hi" }), JSON_CT), ["responses"], g.deps));
+  assert.equal(err.code, "model_not_found");
+  assert.doesNotMatch(err.message, /Allowed:.*agent/);
+});
+
+test("safety_identifier: a visitor header wins over the client IP, and each is hashed with the product", async () => {
+  const send = async (headers: Record<string, string>, body = wonder()) => {
+    const g = fakeGateway({ token: wonderToken, fetch: async () => Response.json(usageReply) });
+    await handleGateway(gatewayRequest("responses", body, { ...JSON_CT, ...headers }), ["responses"], g.deps);
+    return upstreamJson(g).safety_identifier as string;
+  };
+  const anon = await send({});
+  const ip = await send({ "x-musemuse-client-ip": "203.0.113.7" });
+  const visitor = await send({ "x-musemuse-client-ip": "203.0.113.7", "x-musemuse-visitor": "vid_1" });
+  const own = await send({ "x-musemuse-visitor": "vid_1" }, wonder({ safety_identifier: "own" }));
+  assert.equal(new Set([anon, ip, visitor, own]).size, 4);
+  assert.equal(await send({ "x-musemuse-visitor": "vid_1" }), visitor, "stable for one person");
+  for (const id of [anon, ip, visitor, own]) {
+    assert.match(id, /^p_[0-9a-f]{40}$/);
+    assert.ok(!id.includes("vid_1") && !id.includes("203.0.113.7"));
+  }
+});
+
+test("agent tokens get 8 calls in flight; other tokens stay at 4", async () => {
+  const upstream = gatedUpstream();
+  const g = fakeGateway({ token: agentToken, fetch: upstream.fetch });
+  const calls = Array.from({ length: 10 }, () => handleGateway(gatewayRequest("responses", wonder(), JSON_CT), ["responses"], g.deps));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(g.upstreamCalls.length, 8);
+  upstream.open();
+  const results = await Promise.all(calls);
+  const rejected = results.filter((r) => r.status === 429);
+  assert.equal(rejected.length, 2);
+  assert.match((await errorOf(rejected[0])).message, /already has 8 Meta calls running/);
+  await Promise.all(results.filter((r) => r.status === 200).map((r) => r.arrayBuffer()));
+  await g.settled();
+});
+
+const RUN = "run_12345678";
+const runKeys = {
+  turns: `run-turns:${TOKEN_ID}:${RUN}`,
+  calls: `run-calls:${TOKEN_ID}:${RUN}`,
+  usd: `run-usd:${TOKEN_ID}:${RUN}`,
+};
+const inRun = { ...JSON_CT, "x-musemuse-run-id": RUN };
+
+test("run caps: a build's seventh model turn -> 429 run_limit, in plain words", async () => {
+  const g = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(usageReply) });
+  for (let i = 0; i < 6; i++) {
+    const res = await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps);
+    assert.equal(res.status, 200, `turn ${i + 1}`);
+    await res.arrayBuffer();
+    await g.settled();
+  }
+  const over = await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps);
+  const err = await errorOf(over);
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /limit of 6 model turns/);
+  assert.equal(over.headers.get("x-should-retry"), "false");
+  assert.equal(g.upstreamCalls.length, 6);
+  assert.equal(g.inFlight.get(SLOT_KEY), 0, "the refused call gave its slot back");
+});
+
+test("run caps: a live agent runs 10 turns; a different run starts fresh", async () => {
+  const g = fakeGateway({ token: agentToken, fetch: async () => Response.json(usageReply) });
+  for (let i = 0; i < 10; i++) {
+    const res = await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps);
+    assert.equal(res.status, 200, `turn ${i + 1}`);
+    await res.arrayBuffer();
+    await g.settled();
+  }
+  assert.equal((await errorOf(await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], g.deps))).code, "run_limit");
+  const other = { ...JSON_CT, "x-musemuse-run-id": "run_other_1" };
+  assert.equal((await handleGateway(gatewayRequest("responses", wonder(), other), ["responses"], g.deps)).status, 200);
+});
+
+test("run caps: today's live tokens and calls without a run id have none", async () => {
+  const live = fakeGateway({ token: wonderToken, fetch: async () => Response.json(usageReply) });
+  for (let i = 0; i < 12; i++) {
+    const res = await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], live.deps);
+    assert.equal(res.status, 200, `turn ${i + 1}`);
+    await res.arrayBuffer();
+    await live.settled();
+  }
+  assert.equal(live.counters.size, 0);
+  const malformed = await handleGateway(gatewayRequest("responses", wonder(), { ...JSON_CT, "x-musemuse-run-id": "no" }), ["responses"], live.deps);
+  assert.equal(malformed.status, 200, "a header it doesn't use can't break a live product");
+
+  const build = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(usageReply) });
+  await handleGateway(gatewayRequest("responses", wonder(), JSON_CT), ["responses"], build.deps);
+  assert.equal(build.counters.size, 0);
+});
+
+test("run caps: a malformed run id on a token with caps -> 400 invalid_run_id", async () => {
+  const g = fakeGateway({ token: { ...wonderToken, scope: "build" } });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", wonder(), { ...JSON_CT, "x-musemuse-run-id": "no" }), ["responses"], g.deps));
+  assert.equal(err.status, 400);
+  assert.equal(err.code, "invalid_run_id");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("run caps: the hold settles to what the call used, once it is metered", async () => {
+  const g = fakeGateway({ token: agentToken, fetch: async () => Response.json(searched(["ws_1"])) });
+  const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], g.deps);
+  await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.counters.get(runKeys.turns), 1);
+  assert.equal(g.counters.get(runKeys.calls), 1, "held 8, ran 1");
+  assert.equal(g.counters.get(runKeys.usd), Math.ceil((tokensUsd(100, 10) + SEARCH_USD) * 1e6));
+});
+
+test("run caps: when few tool calls are left, max_tool_calls comes down and the note says why", async () => {
+  const g = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(searched(["ws_1", "ws_2"])) });
+  for (let i = 0; i < 3; i++) {
+    const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], g.deps);
+    assert.equal(res.status, 200);
+    await res.arrayBuffer();
+    await g.settled();
+  }
+  assert.equal(g.counters.get(runKeys.calls), 6);
+  const oneLeft = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(searched(["ws_1"])) });
+  oneLeft.counters.set(runKeys.calls, 7);
+  const low = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], oneLeft.deps);
+  assert.equal(upstreamJson(oneLeft).max_tool_calls, 1);
+  assert.match(low.headers.get("x-musemuse-note") ?? "", /Lowered max_tool_calls to 1: that is all this run has left/);
+
+  const spent = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(usageReply) });
+  spent.counters.set(runKeys.calls, 8);
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], spent.deps));
+  assert.equal(err.code, "run_limit");
+  assert.equal(spent.upstreamCalls.length, 0);
+  assert.equal(spent.counters.get(runKeys.turns), 0, "the refused call's turn came back");
+  assert.equal((await handleGateway(gatewayRequest("responses", wonder(), inRun), ["responses"], spent.deps)).status, 200, "a turn without built-in tools can finish the run");
+});
+
+test("run caps: the dollars held count only the tool calls the run has left", async () => {
+  const g = fakeGateway({ token: agentToken, fetch: async () => Response.json(searched(["ws_1"])) });
+  g.counters.set(runKeys.calls, 11);
+  g.counters.set(runKeys.usd, 650_000);
+  const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], g.deps);
+  assert.equal(res.status, 200, "eight searches wouldn't fit in the $0.10 left, and the one left does");
+  assert.equal(upstreamJson(g).max_tool_calls, 1);
+  assert.ok(g.counters.get(runKeys.usd)! < 750_000);
+});
+
+test("run caps: a call estimated past the run's dollars -> 429 run_limit before the budget check", async () => {
+  const g = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(usageReply) });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", wonder({ max_output_tokens: 32_000 }), inRun), ["responses"], g.deps));
+  assert.equal(err.status, 429);
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /\$0\.40 limit/);
+  assert.equal(g.reservations.size, 0);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("run caps: calls Meta never ran or never billed give the whole hold back", async () => {
+  const failures: Array<[string, Parameters<typeof fakeGateway>[0]]> = [
+    ["an upstream error", { fetch: async () => Response.json({ error: { message: "bad" } }, { status: 400 }) }],
+    ["upstream unreachable", { fetch: async () => { throw new TypeError("fetch failed"); } }],
+    ["the token's budget", { tokenSpend: 3 }],
+    ["the platform cap", { platformSpend: 40 }],
+  ];
+  for (const [what, opts] of failures) {
+    const g = fakeGateway({ token: { ...wonderToken, scope: "build" }, ...opts });
+    await (await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], g.deps)).arrayBuffer();
+    await g.settled();
+    for (const key of Object.values(runKeys)) assert.equal(g.counters.get(key), 0, `${what}: ${key}`);
+    assert.equal(g.inFlight.get(SLOT_KEY), 0, what);
+    assert.equal(g.reservations.size, 0, what);
+  }
+});
+
+test("run caps: a stream cut off keeps the tool calls it held", async () => {
+  const g = fakeGateway({
+    token: { ...wonderToken, scope: "build" },
+    fetch: async () => new Response('event: response.output_text.delta\ndata: {"delta":"hello"}\n\n', { headers: { "content-type": "text/event-stream" } }),
+  });
+  const res = await handleGateway(gatewayRequest("responses", wonder({ tools: search, stream: true }), inRun), ["responses"], g.deps);
+  await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.counters.get(runKeys.calls), 2);
+  assert.equal(g.counters.get(runKeys.turns), 1);
+});
+
+test("run caps count image calls as turns, and never the files endpoint", async () => {
+  const g = fakeGateway({ token: { scope: "build", allowedModels: ["muse-image-1.0"] }, fetch: async () => Response.json({ created: 1, data: [{ b64_json: "A" }] }) });
+  const res = await handleGateway(gatewayRequest("images/generations", json({ model: "muse-image-1.0", prompt: "cat" }), inRun), ["images", "generations"], g.deps);
+  await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.counters.get(runKeys.turns), 1);
+  assert.equal(g.counters.get(runKeys.usd), 10_000);
+
+  const files = fakeGateway({ token: { scope: "build" }, fetch: async () => Response.json({ id: "file-1" }) });
+  const uploaded = await handleGateway(gatewayRequest("files", new Uint8Array(4), { "content-type": "application/octet-stream", "x-musemuse-run-id": "no" }), ["files"], files.deps);
+  assert.equal(uploaded.status, 200);
+  assert.equal(files.counters.size, 0);
 });

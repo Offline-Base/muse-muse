@@ -10,8 +10,22 @@ import {
   parseGatewayRequest,
   type ParsedRequest,
 } from "@/lib/gateway/extract";
-import { meterBody } from "@/lib/gateway/meter";
-import { CLIENT_IP_HEADER, DEFAULT_LIMITS, ENDPOINT_MODELS, GATEWAY_ENDPOINTS, UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
+import { meterReply } from "@/lib/gateway/meter";
+import {
+  AGENT_LIMITS,
+  CLIENT_IP_HEADER,
+  DEFAULT_LIMITS,
+  ENDPOINT_MODELS,
+  GATEWAY_ENDPOINTS,
+  hasAgentMarker,
+  NOTE_HEADER,
+  RUN_HEADER,
+  UPSTREAM_BASE_URL,
+  VISITOR_HEADER,
+} from "@/lib/gateway/policy";
+import { builtInToolCap, noteHeaderValue, rewriteResponsesRequest } from "@/lib/gateway/rewrite";
+import { holdRun, parseRunId, releaseRun, runLimitsFor, settleRun, type RunCounters, type RunHold } from "@/lib/gateway/runs";
+import { isBuiltInTool } from "@/lib/gateway/search";
 import type { GatewayTokenRow } from "@/lib/gateway/tokens";
 import type { UsageContext } from "@/lib/usage";
 import type { GatewayEndpoint, ModelUsage, ProductStatus } from "@/lib/types";
@@ -21,7 +35,7 @@ import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 export type GatewayToken = Pick<GatewayTokenRow, "id" | "productId" | "scope" | "allowedModels" | "dailyBudgetUsd">;
 
 /** Everything the gateway touches outside the request, injected so tests can run it without a database. */
-export interface GatewayDeps {
+export interface GatewayDeps extends RunCounters {
   findToken(token: string): Promise<GatewayToken | null>;
   productStatus(productId: string): Promise<ProductStatus | null>;
   /** Spend today, counting the reservations of calls still running. */
@@ -147,6 +161,8 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     throw err;
   }
   let model = parsed.model;
+  /** Set once the JSON to send differs from the request's own bytes. */
+  let rewritten = false;
   if (endpoint !== "files") {
     if (!model) {
       return gatewayError(400, "invalid_request_error", "missing_model", `/v1/${endpoint} needs a "model".`, {
@@ -170,38 +186,99 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   // and metered at that model's price.
   if (model === RETIRED_SPARK && parsed.kind === "json") {
     parsed = { ...parsed, json: { ...parsed.json, model: SPARK_STANDIN }, model: SPARK_STANDIN };
-    body = new TextEncoder().encode(JSON.stringify(parsed.json));
     model = SPARK_STANDIN;
+    rewritten = true;
+  }
+
+  const notes: string[] = [];
+  if (endpoint === "responses" && parsed.kind === "json") {
+    const visitorKey = req.headers.get(VISITOR_HEADER)?.trim().slice(0, 128) || clientIpKey(req.headers.get(CLIENT_IP_HEADER));
+    const rewrite = rewriteResponsesRequest(parsed.json, { token, visitorKey });
+    if (rewrite.refusal) {
+      return gatewayError(rewrite.refusal.status, "invalid_request_error", rewrite.refusal.code, rewrite.refusal.message, {
+        retry: false,
+      });
+    }
+    notes.push(...rewrite.notes);
+    if (rewrite.changed) {
+      parsed = { ...parsed, json: rewrite.json };
+      rewritten = true;
+    }
+  }
+
+  // A run's caps apply only to tokens that have them, so other products can send the header without any effect. The
+  // files endpoint isn't a model call.
+  const runLimits = endpoint === "files" ? null : runLimitsFor(token);
+  const runHeader = req.headers.get(RUN_HEADER);
+  const runId = runLimits ? parseRunId(runHeader) : null;
+  if (runLimits && runHeader !== null && !runId) {
+    return gatewayError(
+      400,
+      "invalid_request_error",
+      "invalid_run_id",
+      `${RUN_HEADER} must be 8 to 64 letters, digits, dashes or underscores.`,
+      { retry: false },
+    );
   }
 
   const now = deps.now?.() ?? new Date();
   const limited = await checkRateLimits(req, token, deps, now);
   if (limited) return limited;
 
-  // At most perTokenInFlight calls per token run at once, so a burst can't all pass the budget check before any of
-  // them is metered. The slot is given back once the call is metered (or right away when nothing is forwarded).
+  // At most this many calls per token run at once, so a burst can't all pass the budget check before any of them is
+  // metered. The slot is given back once the call is metered (or right away when nothing is forwarded).
+  const inFlightLimit = hasAgentMarker(token.allowedModels) ? AGENT_LIMITS.perTokenInFlight : DEFAULT_LIMITS.perTokenInFlight;
   const slotKey = `inflight:${token.id}`;
-  const slot = await deps.acquireInFlight(slotKey, DEFAULT_LIMITS.perTokenInFlight, now);
+  const slot = await deps.acquireInFlight(slotKey, inFlightLimit, now);
   if (!slot) {
     return gatewayError(
       429,
       "rate_limit_error",
       "too_many_in_flight",
-      `This product already has ${DEFAULT_LIMITS.perTokenInFlight} Meta calls running. Try again when one finishes.`,
+      `This product already has ${inFlightLimit} Meta calls running. Try again when one finishes.`,
       { headers: { "retry-after": "2" } },
     );
   }
   const releaseSlot = () =>
     deps.releaseInFlight(slotKey, slot).catch((err) => console.error("[gateway] releasing an in-flight slot failed:", err));
+  let runHold: RunHold | null = null;
+  const mostSearches = builtInToolCap(token);
   let metering: Promise<void> | null = null;
   try {
-    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt);
+    if (runId && runLimits) {
+      const asked = parsed;
+      const toolCalls = asked.kind === "json" && Array.isArray(asked.json.tools) && asked.json.tools.some(isBuiltInTool) ? Number(asked.json.max_tool_calls) : 0;
+      const withCalls = (calls: number): ParsedRequest =>
+        asked.kind === "json" && calls < toolCalls ? { ...asked, json: { ...asked.json, max_tool_calls: calls } } : asked;
+      const bodyBytes = body.byteLength;
+      const held = await holdRun(deps, {
+        tokenId: token.id,
+        runId,
+        limits: runLimits,
+        toolCalls,
+        usd: (calls) => estimateCost(endpoint, withCalls(calls), bodyBytes, mostSearches),
+        now,
+      });
+      if (!held.ok) return held.response;
+      runHold = held.hold;
+      if (held.toolCalls < toolCalls) {
+        parsed = withCalls(held.toolCalls);
+        rewritten = true;
+        notes.push(`Lowered max_tool_calls to ${held.toolCalls}: that is all this run has left.`);
+      }
+    }
+    if (rewritten && parsed.kind === "json") body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    const result = await forward(req, endpoint, token, parsed, body, contentType, deps, startedAt, { notes, runHold, mostSearches });
     metering = result.metering;
     return result.response;
   } finally {
     const pending = metering;
     if (pending) deps.defer(() => pending.finally(releaseSlot));
-    else await releaseSlot();
+    else {
+      // Nothing reached the meter: the call was refused, or Meta failed it, so its run holds nothing.
+      if (runHold) await releaseRun(deps, runHold).catch((err) => console.error("[gateway] releasing a run hold failed:", err));
+      await releaseSlot();
+    }
   }
 }
 
@@ -215,10 +292,11 @@ async function forward(
   contentType: string | null,
   deps: GatewayDeps,
   startedAt: number,
+  call: { notes: readonly string[]; runHold: RunHold | null; mostSearches: number },
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
-  const estimate = estimateCost(endpoint, parsed, body.byteLength);
+  const estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
   if (spent >= budget || spent + estimate > budget) {
@@ -307,6 +385,8 @@ async function forward(
     outHeaders.set("cache-control", "no-cache, no-transform");
     outHeaders.set("x-accel-buffering", "no");
   }
+  const note = noteHeaderValue(call.notes);
+  if (note) outHeaders.set(NOTE_HEADER, note);
 
   if (!upstream.ok || !upstream.body || endpoint === "files") {
     await unreserve();
@@ -316,11 +396,13 @@ async function forward(
   // Tee the body: one branch streams to the product untouched, the other is read now for usage, which then replaces
   // the reservation.
   const [toClient, toMeter] = upstream.body.tee();
-  const metering = meterBody(endpoint, model, upstreamType, toMeter)
-    .then(async (items) => {
+  const runHold = call.runHold;
+  const metering = meterReply(endpoint, model, upstreamType, toMeter)
+    .then(async ({ items, builtInCalls }) => {
       if (reservation) await deps.settleSpend(reservation, items[0] ?? null);
       const rest = reservation ? items.slice(1) : items;
       if (rest.length) await deps.recordUsage(ctx, rest);
+      if (runHold) await settleRun(deps, runHold, { toolCalls: builtInCalls, usd: items.reduce((n, i) => n + i.costUsd, 0) });
     })
     .catch((err) => console.error(`[gateway] recording usage for ${endpoint} failed:`, err));
 
