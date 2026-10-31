@@ -224,7 +224,8 @@ Keep `.btn-block` at 46 px on the sign-in form (O).
 | State | What shows | Label |
 |---|---|---|
 | Empty | Placeholder in its token. Send at half strength | M at 390 and S. Live at 1440 read full strength, so two of three sources say half |
-| Typing | Send at full strength. No visible change on focus: the live card keeps its shadow, and the caret marks it | M |
+| Typing | Send at full strength | M |
+| Focus | A 1 px `--line-strong` ring around the card. The live card shows no change and only the caret marks it, which fails WCAG 2.4.7 for keyboard users, so the ring stays | O |
 | Attachments | The chips above the text, as now, with `--line` | O |
 | Dragging | `0 0 0 2px var(--accent)` ring, "Drop to attach" | O |
 | Submitting | Spinner in Send | O |
@@ -520,7 +521,7 @@ sizes, so these are ours (O):
 | `--scrim` | `rgba(0,0,0,.5)` | `.6` | White over a white photo: 3.98:1 at .5, 5.74:1 at .6 |
 | `--field-line` | hairline only | `#8a8d91`, dark `#6f7276` | A field's edge needs 3:1 |
 | Buttons | 36 px | 44 px pills | Touch |
-| Composer focus | no ring | the template's ring | Keyboard users |
+| Composer focus | a 1 px hairline ring (O; live shows none) | the template's 2 px `--focus` outline | Keyboard users |
 | Hero | 48 px centered | 28 px, 30 px from 720, left; `.hero.center` only for a chat start | judgeShot's two-line h1 rule, and most products aren't chat |
 
 **Also fixed: test calls on a local platform.** A local platform's products call Meta directly and skipped the gateway's

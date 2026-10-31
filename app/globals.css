@@ -1433,6 +1433,17 @@ pre {
   --composer-floor: 0 0 transparent;
 }
 
+/*
+ * With no border to darken, a hairline ring shows where typing goes. The live card shows no change on focus, but
+ * keyboard users need to see it (WCAG 2.4.7), so this one is ours (docs/BRAND.md, Composer).
+ */
+.composer:has(.composer-input:focus-visible) {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow-card),
+    var(--composer-floor);
+}
+
 .composer.is-dragging {
   box-shadow:
     0 0 0 2px var(--accent),
