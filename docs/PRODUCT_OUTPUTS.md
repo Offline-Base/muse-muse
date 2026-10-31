@@ -149,9 +149,10 @@ minutes counts as over, so a dead workflow doesn't say "testing" forever.
 npx tsx --env-file=.env.local scripts/prove-run.ts --slug=<slug> --sandbox=<sandbox> --live-url=<url> --site=<https origin> --out=<dir> [--fetch] [--no-skill] [--no-record]
 ```
 
-On a preview, set `PLATFORM_URL` to the preview's address. Without it `env.platformUrl` uses the production URL, so the downloads
-and MCP calls would go to production, where these routes may not exist yet. Deployment Protection must let the sandbox through
-too.
+When the stage runs on a preview with its own database, `env.platformUrl` is the preview's own address, and with Protection Bypass
+for Automation on, the firewall lets the sandbox through Deployment Protection (README.md, Preview database). Elsewhere
+`env.platformUrl` follows `PLATFORM_URL` as before. `scripts/prove-run.ts` runs on this machine, which isn't a preview, so its copy
+gets no bypass header: point `--site` at a site without Deployment Protection.
 
 To run the workflow itself: a local dev server with `PLATFORM_URL` set to a public site (a sandbox can't reach this machine),
 `PRODUCT_OUTPUTS=1 PROVE_IT=1 PROVE_PUT_FILES=1`, and a product row seeded from a real sandbox.
