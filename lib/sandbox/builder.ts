@@ -50,6 +50,7 @@ import {
   optionalConfigPrelude,
   optionalFlagsPrelude,
   SANDBOX_ENV,
+  SERVE_SETTINGS,
 } from "@/lib/sandbox/muse";
 import {
   BUILD_MCP_PATH,
@@ -804,7 +805,8 @@ async function startBridge(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId:
     promptFile: `${PRODUCT_DIR}/${run.promptFile}`,
     images: run.images.map((img) => `${PRODUCT_DIR}/${img}`),
     goal: run.goal?.trim() || null,
-    settings: run.full ? museSettings(env.museAgentCapacity) : [],
+    // Every round turns web search off, as exec's --disable-web-tools does; MUSE_FULL adds its own settings.
+    settings: [...SERVE_SETTINGS, ...(run.full ? museSettings(env.museAgentCapacity) : [])],
     disableRequestUserInput: true,
     logPath: paths.log,
     mailboxDir: paths.mailbox,

@@ -17,6 +17,7 @@ import {
   OPTIONAL_EXEC_FLAGS,
   optionalConfigPrelude,
   optionalFlagsPrelude,
+  SERVE_SETTINGS,
 } from "@/lib/sandbox/muse";
 import { q, writeRunner } from "@/lib/sandbox/shell";
 
@@ -98,6 +99,17 @@ describe("museExecArgs", () => {
     // --no-session-log refuses --session-id, and --user-input-auto-resolve adds the ask-the-user tool back.
     for (const bad of ["--no-session-log", "--user-input-auto-resolve", "--provider"]) assert.ok(!args.includes(bad), bad);
     for (const optional of OPTIONAL_EXEC_FLAGS) assert.ok(!args.includes(optional), optional);
+  });
+});
+
+describe("the session bridge's settings", () => {
+  it("turn web search off, as exec's --disable-web-tools does, in the key=JSON form muse serve -c takes", () => {
+    assert.deepEqual(SERVE_SETTINGS, ['tools.web_search.mode="off"']);
+    for (const setting of SERVE_SETTINGS) {
+      const [key, ...rest] = setting.split("=");
+      assert.match(key!, /^[A-Za-z_][A-Za-z0-9_.]*$/);
+      assert.doesNotThrow(() => JSON.parse(rest.join("=")), setting);
+    }
   });
 });
 

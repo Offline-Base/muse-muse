@@ -227,7 +227,8 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
       promptFile: "/vercel/app/fix-2.md",
       images: ["/vercel/app/.muse-fix/round-2-1.png"],
       goal: "Build Bird Finder.",
-      settings: [],
+      // muse serve has no --disable-web-tools, so web search goes off with its setting, with or without MUSE_FULL.
+      settings: ['tools.web_search.mode="off"'],
       disableRequestUserInput: true,
       logPath: "/vercel/musemuse/logs/muse-r2.msp.jsonl",
       mailboxDir: "/vercel/musemuse/mailbox/r2",
@@ -245,8 +246,9 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     process.env.MUSE_FULL = "1";
     await start();
     const config = JSON.parse(files[bridgeConfigPath(0)]!) as BridgeConfig;
-    assert.equal(config.settings[0], "agents.execution_capacity=6");
-    assert.equal(config.settings.length, 3);
+    assert.equal(config.settings[0], 'tools.web_search.mode="off"');
+    assert.equal(config.settings[1], "agents.execution_capacity=6");
+    assert.equal(config.settings.length, 4);
     assert.match(runner("muse-r0"), /^muse skills enable bundled:workflow-authoring/m);
   });
 

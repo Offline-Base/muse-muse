@@ -1075,6 +1075,7 @@ describe("the bridge's checks", () => {
     assert.equal(configProblem(null), "the config isn't a JSON object");
     assert.equal(configProblem({ ...config(), logPath: "" }), "logPath is missing");
     assert.equal(configProblem({ ...config(), settings: ["no equals"] }), "settings must be key=value strings");
+    assert.equal(configProblem({ ...config(), settings: ['tools.web_search.mode="off"', "agents.execution_capacity=6"] }), null);
     assert.equal(configProblem({ ...config(), maxModelSteps: 0 }), "maxModelSteps must be a positive whole number");
     assert.equal(configProblem({ ...config(), goal: 3 }), "goal must be text or null");
     assert.equal(commandProblem({ type: "goal", action: "set", objective: " " }), "the goal needs an objective");

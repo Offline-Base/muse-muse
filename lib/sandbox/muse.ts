@@ -38,6 +38,17 @@ export const OPTIONAL_EXEC_FLAGS = ["--disable-request-user-input", "--no-foreig
 const RUNNER_EXEC_FLAGS = ["--image"] as const;
 
 /**
+ * `-c` settings every session bridge round passes to `muse serve` (lib/sandbox/bridge/bridge.mjs), whatever MUSE_FULL
+ * says. `muse serve --help` on 1.4.14 has no --disable-web-tools (docs/spikes/muse-full-2026-10-30/phase-A.txt), so
+ * web search is turned off with its setting instead, as exec rounds turn web tools off with the flag. The key, and its
+ * values client, hosted and off, are as the 1.4.14 binary spells them; no host has run with it yet. A key or value
+ * Muse Code doesn't know refuses the start (exit 2), and the round then runs on exec, with the reason in the build
+ * room. Exec's --no-foreign-personal-context has no setting here until the type its context.foreign_personal_* keys
+ * take is known.
+ */
+export const SERVE_SETTINGS: readonly string[] = ['tools.web_search.mode="off"'];
+
+/**
  * argv for `muse exec`, after the binary name. --yolo skips Muse Code's own bubblewrap sandbox, which can't run in the
  * microVM: the disposable, firewalled VM is the boundary. Inspo images and OPTIONAL_EXEC_FLAGS are added by the
  * runner script (builder.ts startMuse), which checks first that the file exists and that this Muse Code has the flag.
