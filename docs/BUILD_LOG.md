@@ -833,8 +833,11 @@ because the sidebar showed a real account.
 - Offline mode's plan now defaults to Meta's sampling and checks JSON output both ways before freezing. Decision models
   are unaffected (they read letter log-probabilities from one forward pass).
 - Found in published code: the lab's GGUF cards and Ollama settings (lib/train/hub-cards.ts, recipes/quantize.ts) say
-  temperature 0, and tuned models' stops include <|eom|>. Asked the fine-tune session, whose knowledge run wrote them,
-  whether to change them; nothing changed yet.
+  temperature 0, and tuned models' stops include <|eom|>. That code came with the vibe-tuning commit d72f9f3 (Oct 28),
+  not the knowledge run. Agreed with the fine-tune session: cards recommend Meta's sampling and say the eval was greedy;
+  the <|eom|> and <|start|> stops stay only for final-channel (trainChannel 0) models, with a sentence why; the eval
+  stays greedy. General changes the code after tg-decide lands; rewriting cards already on Hugging Face waits for the
+  owner.
 
 ## Gaps
 
