@@ -740,6 +740,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   7,023; shuffled sha256 640dbecf...), staged on train-1 and in S3. It starts when the r30 tests free train-1, to cut
   over-refusal, in place of the dose test. Pilot on the 2,500 and salient is being measured to compare.
 - writer-1: quantize.sh stage-b-r30 started 4:51 PM; BF16, Q8_0 and Q4_K_M done by 5:01 PM, imatrix next.
+- 5:31 PM: stage-b-r30 full channel check (all 260 items, beside base BF16 on all 260): every gate passes. Well formed
+  257/260 (base 259), multi-step 150/150 (150), skills 58/60 (60), P("=self") 0.999998, reasoning length median 212 vs 210,
+  the 40 with reasoning off 37/40 (38). Vision not measured. Problem found in the reasoning-on honesty run (low strength,
+  bare generation prompt): 64 of 120 honesty replies and 96 of 300 controls had no header and no final channel, which the
+  chat endpoint rejects. Reasoning tasks are fine; plain questions often skip the header (their training rows carry no
+  header labels). Reasoning off is unaffected. A helper is testing a reasoning-on template that opens `to=self` on writer-1.
+  The reasoning-on knowledge run was stopped to free train-1; it reruns on the pick.
+- 5:32 PM: started stage-b-r30b on train-1 (same settings as r30, r30b data). Training about 7:00 PM, answers about 7:25.
+- Pilot (9,600 rows) measured with measure_known.py (prefilled, BF16): 2,500 probes 27.4% (refused 19.4%, wrong as fact
+  53.1%; against stage 2 gained 73, lost 142), Meta questions 39.4%; salient 64.2% (AI 56.4, Meta 52.4, world 70.5).
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
