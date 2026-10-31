@@ -1,4 +1,4 @@
-import { MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
+import { MAX_AGENT_STEPS, MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
 /**
@@ -109,8 +109,12 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
   const agent = b.agent as Loose | null | undefined;
   if (agent && Array.isArray(agent.tools)) {
     const seen = new Set<unknown>();
-    agent.tools = asArray(agent.tools).filter((t) => !seen.has(t.id) && Boolean(seen.add(t.id))).slice(0, MAX_AGENT_TOOLS);
+    const tools = asArray(agent.tools).filter((t) => !seen.has(t.id) && Boolean(seen.add(t.id))).slice(0, MAX_AGENT_TOOLS);
+    agent.tools = tools;
     if (typeof agent.task === "string") agent.task = clamp(agent.task, 400);
+    if (typeof agent.stepsPerRun === "number") agent.stepsPerRun = Math.min(Math.max(1, Math.round(agent.stepsPerRun)), MAX_AGENT_STEPS);
+    // No tools isn't an agent. Null gets the one repair call from targetProblems, then applyTargets' web search.
+    if (!tools.length) b.agent = null;
   }
 
   // A sample can only come from the user when they gave a reference of that kind.

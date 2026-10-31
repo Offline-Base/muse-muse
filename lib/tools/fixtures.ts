@@ -61,7 +61,7 @@ export function pinToExampleDomain(value: unknown): unknown {
   if (typeof value === "string") {
     return noEmDashes(value)
       .replace(/https?:\/\/(?!example\.com(?:[/?#\s"]|$))[^\s/"']+/gi, "https://example.com")
-      .replace(/([\w.+-]+)@(?!example\.com\b)[\w-]+(?:\.[\w-]+)+/gi, "$1@example.com");
+      .replace(/([\w.+-]+)@(?!example\.com(?![\w.-]))[\w-]+(?:\.[\w-]+)+/gi, "$1@example.com");
   }
   if (Array.isArray(value)) return value.map(pinToExampleDomain);
   if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, pinToExampleDomain(v)]));

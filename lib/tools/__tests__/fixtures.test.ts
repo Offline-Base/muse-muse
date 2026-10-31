@@ -92,11 +92,11 @@ describe("tool fixtures", { skip: canMock ? false : "needs --experimental-test-m
   it("rewrites any link or address off example.com", () => {
     const out = mod.pinToExampleDomain({
       a: "See https://evil.test/path?q=1 and http://example.com.evil.test/x and https://example.com/fine.",
-      b: ["ceo@realcompany.com", "me@example.com"],
+      b: ["ceo@realcompany.com", "me@example.com", "you@example.com.evil.test"],
       n: 3,
     }) as { a: string; b: string[]; n: number };
     assert.equal(out.a, "See https://example.com/path?q=1 and https://example.com/x and https://example.com/fine.");
-    assert.deepEqual(out.b, ["ceo@example.com", "me@example.com"]);
+    assert.deepEqual(out.b, ["ceo@example.com", "me@example.com", "you@example.com"]);
     assert.equal(out.n, 3);
   });
 

@@ -90,6 +90,21 @@ describe("the agent option", () => {
   });
 });
 
+describe("what the writer gets wrong about an agent", () => {
+  it("brings stepsPerRun inside its limits, so a plan for too many turns doesn't cost a repair call", () => {
+    const steps = (stepsPerRun: number) => (normalizeRawBrief(withAgent({ ...AGENT, stepsPerRun }), []) as { agent: { stepsPerRun: number } }).agent.stepsPerRun;
+    assert.deepEqual([steps(15), steps(0), steps(4.4)], [10, 1, 4]);
+  });
+
+  it("treats an agent with no tools as none written, which then gets its repair call", () => {
+    const out = normalizeRawBrief(withAgent({ ...AGENT, tools: [] }), []) as Brief;
+    assert.equal(out.agent, null);
+    assert.equal(BriefSchema.safeParse(out).success, true);
+    assert.equal(targetProblems(out, { enabled: ["agent"] }).length, 1);
+    assert.deepEqual(applyTargets(out, { enabled: ["agent"] }).agent?.tools.map((t) => t.id), ["web_search"]);
+  });
+});
+
 describe("applyTargets on an agent", () => {
   const settle = (brief: Brief, personalTools = false, requested?: Brief["targets"]) =>
     applyTargets(brief, { enabled: ["agent"], personalTools, requested: requested?.map((t) => t.id) });
