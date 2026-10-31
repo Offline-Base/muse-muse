@@ -381,7 +381,10 @@ describe("sendMuseCommand", { skip: canMock ? false : "needs --experimental-test
       fakeSandbox.status = "running";
     }
     // No command recorded for the round: it ended, or never started.
-    await assert.rejects(builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 0, envelope: envelope({ type: "steer", text: "x" }) }), /has finished/);
+    await assert.rejects(
+      builder.sendMuseCommand({ sandboxName: fakeSandbox.name, round: 0, envelope: envelope({ type: "steer", text: "x" }) }),
+      (err: unknown) => err instanceof builder.MuseRoundEndedError && /has finished/.test(err.message),
+    );
     assert.equal(commands.length, 0);
   });
 

@@ -11,7 +11,7 @@ import { errorJson, isUuid, readJson, route } from "@/lib/http";
 import { controlRound, CONTROLS_PER_MINUTE, parseControl, STEERABLE_STATUSES, type ControlAction } from "@/lib/pipeline/control";
 import { spendPaused } from "@/lib/quota";
 import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
-import { sendMuseCommand } from "@/lib/sandbox/builder";
+import { MuseRoundEndedError, sendMuseCommand } from "@/lib/sandbox/builder";
 import type { ModelUsage } from "@/lib/types";
 import { recordUsage } from "@/lib/usage";
 
@@ -25,6 +25,10 @@ const BODY_MAX = 64 * 1024;
 const WINDOW_MS = 60_000;
 /** The control event's error when the policy check gave no answer. */
 const NOT_CHECKED = "Muse Muse couldn't check this, so it wasn't sent.";
+/** The control event's error when the sandbox didn't take the command. */
+const NOT_REACHED = "Muse Code couldn't be reached, so this didn't arrive.";
+/** The control event's error when the round finished before the command got there (MuseRoundEndedError). */
+const ROUND_ENDED = "That round of Muse Code had just finished, so this wasn't sent.";
 
 /** The build, its product's owner and the Muse Code round it runs now. */
 async function lookUp(buildId: string) {
@@ -70,8 +74,15 @@ async function policyRefusal(build: { id: string; productId: string | null }, me
   return result.refusal;
 }
 
-/** The build room's `control` event. Never fails the request: by then the command went, or it didn't. */
-async function tell(buildId: string, event: { round: number; action: ControlAction; text?: string; error?: string }): Promise<void> {
+/**
+ * The build room's `control` event. Never fails the request: by then the command went, or it didn't. `commandIds` are
+ * the ids of the envelopes the route made, delivered or not, so the build room counts the session bridge's line for
+ * each as the owner's (components/build/derive.ts).
+ */
+async function tell(
+  buildId: string,
+  event: { round: number; action: ControlAction; text?: string; error?: string; commandIds?: string[] },
+): Promise<void> {
   await emit(buildId, {
     type: "control",
     round: event.round,
@@ -79,6 +90,7 @@ async function tell(buildId: string, event: { round: number; action: ControlActi
     ...(event.text ? { text: event.text } : {}),
     ok: !event.error,
     ...(event.error ? { error: event.error } : {}),
+    ...(event.commandIds?.length ? { commandIds: event.commandIds } : {}),
   }).catch((err) => console.error("[control] event", buildId, err));
 }
 
@@ -94,7 +106,8 @@ async function tell(buildId: string, event: { round: number; action: ControlActi
  * The owner is decided as in the messages route: the product's owner or an admin, never the shared guest. 403
  * cross_site from another site, 503 steering_off unless steering is on (env.steeringEnabled), 401 signed out, 404 for
  * everyone else and for unknown builds, 400 with a sentence for a bad body (lib/pipeline/control.ts) or with the
- * policy's refusal, 409 no_round while no Muse Code round runs, 429 rate_limited with {retryAfterSeconds} past 20
+ * policy's refusal, 409 no_round while no Muse Code round runs (the build row names none, or the sandbox says the round
+ * it names has finished), 429 rate_limited with {retryAfterSeconds} past 20
  * commands a minute for one build (never for a stop), 503 paused for words while the daily spend cap is reached, and
  * 502 not_checked when the policy check gave no answer or not_delivered when the sandbox didn't take the command.
  */
@@ -168,16 +181,27 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     by: "owner",
     command,
   }));
+  // museRound is the round's log number, the one startMuse got (roundBase + round), which names its mailbox; the event
+  // takes the build room's (controlRound). No MuseRun is at hand here, so sendMuseCommand reads the round's engine from
+  // the file startMuse wrote for it before the round went on the build row.
   let delivered = true;
+  let ended = false;
   try {
     for (const envelope of envelopes) await sendMuseCommand({ sandboxName: round.sandboxName, round: round.museRound, envelope });
   } catch (err) {
     delivered = false;
+    ended = err instanceof MuseRoundEndedError;
     console.error("[control]", buildId, action, err instanceof Error ? err.message : err);
   }
   // A stop holds without the session: the workflow kills the run once it sees the mark.
   const ok = delivered || action === "stop";
-  await tell(buildId, { round: controlRound(round), action, text, ...(ok ? {} : { error: "Muse Code couldn't be reached, so this didn't arrive." }) });
-  if (!ok) return errorJson(502, "not_delivered");
+  await tell(buildId, {
+    round: controlRound(round),
+    action,
+    text,
+    commandIds: envelopes.map((e) => e.id),
+    ...(ok ? {} : { error: ended ? ROUND_ENDED : NOT_REACHED }),
+  });
+  if (!ok) return ended ? errorJson(409, "no_round") : errorJson(502, "not_delivered");
   return Response.json({ ok: true, id: envelopes[0]!.id });
 });

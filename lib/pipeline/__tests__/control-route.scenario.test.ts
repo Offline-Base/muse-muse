@@ -3,7 +3,8 @@
  * change policy, usage and the sandbox faked: only the build's owner (or an admin), never from another site and never
  * while steering is off, every field checked, nothing outside a Muse Code round, the owner's own words through the
  * refinement's policy check (charged, failing closed, never past the spend cap), the envelopes sendMuseCommand gets,
- * the control event, the Stop's mark on the build row, and 20 commands a minute. The build room's steer box
+ * the control event with the ids of the envelopes it sent, a round that finished before its command got there, the
+ * Stop's mark on the build row, and 20 commands a minute. The build room's steer box
  * (components/build/SteerBox.tsx) runs against the same route, so the two agree on the body and every error code, and
  * the build room shows it only while a round runs. Nothing reaches a sandbox, Meta or Neon.
  *
@@ -42,6 +43,8 @@ let later: Array<Record<string, unknown> | null> = [];
 let marked: Record<string, unknown>[] = [];
 let viewer: SessionUser | null = OWNER;
 let sendFails = false;
+/** sendMuseCommand finds the round has finished (MuseRoundEndedError). */
+let roundEnded = false;
 let hits: Record<string, number> = {};
 /** The change policy's answer (lib/brief/policy.ts checkChange). */
 let checkImpl: () => Promise<{ refusal: string | null; usage: ModelUsage[] }> = async () => ({ refusal: null, usage: [] });
@@ -54,6 +57,8 @@ const REFUSAL = "Muse Muse won't copy a bank's sign-in page. It can make a sign-
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
 const sent = () => called("sendMuseCommand").map((c) => c.args[0] as { sandboxName: string; round: number; envelope: MuseCommandEnvelope });
 const events = () => called("emit").map((c) => c.args[1] as Record<string, unknown>);
+/** The ids of the envelopes sendMuseCommand got, in order. */
+const sentIds = () => sent().map((s) => s.envelope.id);
 const checked = () => called("checkChange").map((c) => c.args[0] as { message: string; references: unknown[] });
 
 function inRound(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -167,10 +172,13 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
         },
       },
     });
+    class MuseRoundEndedError extends Error {}
     mock.module(at("../../sandbox/builder.ts"), {
       namedExports: {
+        MuseRoundEndedError,
         sendMuseCommand: async (input: unknown) => {
           calls.push({ fn: "sendMuseCommand", args: [input] });
+          if (roundEnded) throw new MuseRoundEndedError("This round of Muse Code has finished, so the command wasn't sent.");
           if (sendFails) throw new Error("The session bridge isn't built yet.");
         },
       },
@@ -200,6 +208,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     marked = [];
     viewer = OWNER;
     sendFails = false;
+    roundEnded = false;
     checkImpl = async () => ({ refusal: null, usage: [] });
     spent = 0;
   });
@@ -220,7 +229,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     assert.equal(envelope.by, "owner");
     assert.deepEqual(envelope.command, { type: "steer", text: "Make the start button bigger.\nKeep it blue." });
     assert.deepEqual(events(), [
-      { type: "control", round: 0, action: "steer", text: "Make the start button bigger.\nKeep it blue.", ok: true },
+      { type: "control", round: 0, action: "steer", text: "Make the start button bigger.\nKeep it blue.", ok: true, commandIds: [envelope.id] },
     ]);
     assert.equal(called("emit")[0]!.args[0], BUILD_ID);
     assert.equal(called("update").length, 0, "only a stop marks the build");
@@ -232,7 +241,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     assert.equal((await send({ action: "queue", text: "After this, add a dark mode." })).status, 200);
     assert.equal(sent()[0]!.round, 12);
     assert.deepEqual(sent()[0]!.envelope.command, { type: "queue", text: "After this, add a dark mode." });
-    assert.deepEqual(events(), [{ type: "control", round: 2, action: "queue", text: "After this, add a dark mode.", ok: true }]);
+    assert.deepEqual(events(), [{ type: "control", round: 2, action: "queue", text: "After this, add a dark mode.", ok: true, commandIds: sentIds() }]);
   });
 
   it("marks the build before anything else for a stop, then sends an interrupt and an end, in that order", async () => {
@@ -256,7 +265,8 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     assert.notEqual(interrupt!.id, end!.id);
     // The mailbox applies files in name order (`<at>-<id>.json`), so the end is always named after the interrupt.
     assert.ok(`${interrupt!.at}-${interrupt!.id}` < `${end!.at}-${end!.id}`);
-    assert.deepEqual(events(), [{ type: "control", round: 0, action: "stop", ok: true }]);
+    // Both ids, in the order sent, so the build room pairs the stop with both of the bridge's command lines.
+    assert.deepEqual(events(), [{ type: "control", round: 0, action: "stop", ok: true, commandIds: [interrupt!.id, end!.id] }]);
   });
 
   it("refuses a stop when the round ended between the lookup and the mark", async () => {
@@ -270,8 +280,15 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
   it("keeps a stop when the sandbox can't be reached, and says so for anything else", async () => {
     sendFails = true;
     marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
-    assert.equal((await send({ action: "stop" })).status, 200, "the workflow ends the build either way");
-    assert.deepEqual(events(), [{ type: "control", round: 0, action: "stop", ok: true }]);
+    const stop = await send({ action: "stop" });
+    assert.equal(stop.status, 200, "the workflow ends the build either way");
+    // The end was never tried once the interrupt failed, but the event still lists both of the stop's envelopes.
+    const { commandIds, ...stopEvent } = events()[0]!;
+    assert.deepEqual(stopEvent, { type: "control", round: 0, action: "stop", ok: true });
+    const stopIds = commandIds as string[];
+    assert.equal(stopIds.length, 2);
+    assert.equal(stopIds[0], stop.json.id);
+    assert.deepEqual(sentIds(), [stopIds[0]]);
 
     calls = [];
     const res = await send({ action: "steer", text: "Use bigger type." });
@@ -285,8 +302,34 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
         text: "Use bigger type.",
         ok: false,
         error: "Muse Code couldn't be reached, so this didn't arrive.",
+        commandIds: sentIds(),
       },
     ]);
+  });
+
+  it("refuses a command for a round that finished before it got there, as when no round runs, but keeps a stop", async () => {
+    // The run ended after the lookup, before the poll that takes its round off the build row.
+    roundEnded = true;
+    const res = await send({ action: "steer", text: "Use bigger type." });
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.json, { error: "no_round" });
+    assert.deepEqual(events(), [
+      {
+        type: "control",
+        round: 0,
+        action: "steer",
+        text: "Use bigger type.",
+        ok: false,
+        error: "That round of Muse Code had just finished, so this wasn't sent.",
+        commandIds: sentIds(),
+      },
+    ]);
+    assert.ok(!String(events()[0]!.error).includes(EM_DASH), "no em dashes");
+
+    calls = [];
+    marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+    assert.equal((await send({ action: "stop" })).status, 200, "the mark ends the build at the workflow's next look");
+    assert.equal(events()[0]!.ok, true);
   });
 
   it("answers 404 to anyone but the build's owner or an admin, and 401 to someone signed out", async () => {
@@ -475,7 +518,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     later = [inRound({ status: "fixing", fixRounds: 1, museRound: 1 })];
     assert.equal((await send({ action: "steer", text: "Bigger buttons." })).status, 200);
     assert.equal(sent()[0]!.round, 1);
-    assert.deepEqual(events(), [{ type: "control", round: 1, action: "steer", text: "Bigger buttons.", ok: true }]);
+    assert.deepEqual(events(), [{ type: "control", round: 1, action: "steer", text: "Bigger buttons.", ok: true, commandIds: sentIds() }]);
   });
 
   it("checks every field, and refuses the body with a sentence before looking the build up", async () => {
@@ -599,7 +642,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       calls = [];
       assert.equal((await send(body)).status, 200, JSON.stringify(body));
       assert.deepEqual(sent().map((s) => s.envelope.command), [command], JSON.stringify(body));
-      assert.deepEqual(events(), [{ type: "control", round: 0, action: body.action, ...(text ? { text } : {}), ok: true }], JSON.stringify(body));
+      assert.deepEqual(events(), [{ type: "control", round: 0, action: body.action, ...(text ? { text } : {}), ok: true, commandIds: sentIds() }], JSON.stringify(body));
     }
   });
 

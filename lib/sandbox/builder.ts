@@ -850,6 +850,17 @@ async function dropFile(sandbox: Sandbox, dir: string, name: string, body: strin
 }
 
 /**
+ * sendMuseCommand's refusal of a command for a round that has finished (or never started): nothing reads its mailbox
+ * any more, so the command isn't written. The control route answers it as it does a build with no round.
+ */
+export class MuseRoundEndedError extends Error {
+  constructor() {
+    super("This round of Muse Code has finished, so the command wasn't sent.");
+    this.name = "MuseRoundEndedError";
+  }
+}
+
+/**
  * Sends a running round one of its owner's commands (docs/MUSE_CODE_FULL.md, "The owner steers"). `round` is the
  * number startMuse got. On the session bridge, the envelope goes into bridgePaths(round).mailbox as one JSON file,
  * which the bridge applies once, in name order, and logs as a `command` record. On exec, a steer or a queued note goes
@@ -878,7 +889,7 @@ export async function sendMuseCommand(input: {
   // Without MUSE_FULL there is no notes hook to deliver them.
   if (engine === "exec" && note !== null && !env.museFull) throw new Error("Notes reach a muse exec round only with MUSE_FULL on.");
   const cmdId = await runningCommand(sandbox, `muse-r${round}`);
-  if (!cmdId) throw new Error("This round of Muse Code has finished, so the command wasn't sent.");
+  if (!cmdId) throw new MuseRoundEndedError();
 
   if (engine === "serve") return dropFile(sandbox, bridgePaths(round).mailbox, name, body);
   if (stop) return killCommand(input.sandboxName, cmdId);
