@@ -482,7 +482,7 @@ describe("the bridge's commands", () => {
   it("maps goal, answer, workflow and subagent commands onto their protocol calls", async () => {
     const fs = new MemoryFs();
     const host = new FakeHost();
-    const { records } = await run({
+    const { code, records } = await run({
       host,
       fs,
       script: {
@@ -497,9 +497,14 @@ describe("the bridge's commands", () => {
           fs.send("s1", { type: "subagent", action: "message", childSessionId: "child-session-1", text: "Check the footer too." }, 6);
           fs.send("s2", { type: "subagent", action: "stop", childSessionId: "child-session-1" }, 7);
         },
-        3: () => host.complete(),
+        3: () => {
+          host.emit("item/completed", { item: { itemId: "w1", kind: "workflow", status: "completed", workflowRunId: "wf-run-7" } });
+          host.emit("item/completed", { item: { itemId: "s1", kind: "subagent", status: "cancelled", childSessionId: "child-session-1", subagentId: "sub-42" } });
+          host.complete();
+        },
       },
     });
+    assert.equal(code, EXIT.completed);
     const call = (method: string) => {
       const p = { ...host.last(method)! };
       delete p.commandId;
@@ -723,6 +728,117 @@ describe("the bridge's limits and endings", () => {
       percentComplete: 100,
     });
     assert.equal(records.filter((r) => r.kind === "note").length, notes.length + 1, "each frame is logged, with the fake's own turn/started");
+  });
+});
+
+describe("the bridge's background work", () => {
+  const workflow = (revision: number, status: string, extra: Record<string, unknown> = {}) => ({
+    item: { itemId: "w1", kind: "workflow", status, workflowRunId: "wf-1", revision, ...extra },
+  });
+  const subagent = (revision: number, controlStatus: string) => ({
+    item: { itemId: "s1", kind: "subagent", status: "inProgress", controlStatus, childSessionId: "child-1", subagentId: "sub-1", revision },
+  });
+
+  it("waits for a workflow still running after its turn, and for the turn its end wakes", async () => {
+    const fs = new MemoryFs();
+    const host = new FakeHost();
+    let exitedEarly = true;
+    const { code, records, time } = await run({
+      host,
+      fs,
+      script: {
+        1: () => {
+          host.emit("item/started", workflow(1, "inProgress"));
+          host.complete();
+        },
+        // Half a minute on, the workflow finishes and Muse Code starts a turn to hand over its result.
+        31: () => {
+          exitedEarly = fs.records().some((r) => r.kind === "bridge" && r.event === "exit");
+          host.emit("item/completed", workflow(2, "completed"));
+          host.wake();
+        },
+        33: () => host.complete(),
+      },
+    });
+    assert.equal(exitedEarly, false, "the bridge stayed while the workflow ran");
+    assert.equal(code, EXIT.completed);
+    assert.ok(time.tick() >= 33 + SETTLE_MS / 1000, `left at tick ${time.tick()}`);
+    assert.equal(records.filter((r) => r.kind === "note" && r.method === "turn/completed").length, 2, "the wake turn ran before the bridge left");
+    assert.ok(bridgeEvents(records).includes("idle: background work"));
+  });
+
+  it("waits for a subagent that is still running, but not for one whose result is ready", async () => {
+    const host = new FakeHost();
+    const { code, time } = await run({
+      host,
+      script: {
+        1: () => {
+          host.emit("item/started", subagent(1, "running"));
+          host.complete();
+        },
+        20: () => host.emit("item/updated", subagent(2, "resultReady")),
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.ok(time.elapsed() >= 20 + SETTLE_MS / 1000 && time.elapsed() < 20 + SETTLE_MS / 1000 + 3, `left after ${time.elapsed()} s`);
+  });
+
+  it("stays for a paused workflow until the idle time runs out", async () => {
+    const host = new FakeHost();
+    const { code, exit, records, time } = await run({
+      host,
+      config: { idleExitMs: 30_000 },
+      script: {
+        1: () => {
+          host.emit("item/started", workflow(1, "inProgress"));
+          host.complete();
+        },
+        5: () => host.emit("item/updated", workflow(2, "inProgress", { paused: true })),
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.equal(exit.kind === "bridge" && exit.reason, "a workflow stayed paused");
+    assert.ok(time.elapsed() >= 5 + 30, `left after ${time.elapsed()} s`);
+    assert.deepEqual(
+      bridgeEvents(records).filter((e) => e.startsWith("idle")),
+      ["idle: background work", "idle: workflow paused"],
+    );
+  });
+
+  it("keeps a finished workflow finished when an older copy of it comes late", async () => {
+    const host = new FakeHost();
+    const { code, time } = await run({
+      host,
+      script: {
+        1: () => {
+          host.emit("item/started", workflow(1, "inProgress"));
+          host.emit("item/completed", workflow(3, "completed"));
+          host.emit("item/updated", workflow(2, "inProgress"));
+          host.complete();
+        },
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.ok(time.elapsed() < 10, `left after ${time.elapsed()} s`);
+  });
+
+  it("ends as stopped when the owner ends the round while a workflow still works", async () => {
+    const fs = new MemoryFs();
+    const host = new FakeHost();
+    const { code, exit } = await run({
+      host,
+      fs,
+      script: {
+        1: () => {
+          host.emit("item/started", workflow(1, "inProgress"));
+          host.complete();
+        },
+        3: () => fs.send("e1", { type: "end", reason: "the owner ended it" }),
+      },
+    });
+    assert.equal(code, EXIT.failed);
+    assert.equal(exit.kind === "bridge" && exit.reason, "the owner ended it");
+    assert.ok(host.closed);
   });
 });
 

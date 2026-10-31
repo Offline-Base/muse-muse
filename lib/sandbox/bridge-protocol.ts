@@ -123,6 +123,9 @@ export interface BridgeConfig {
   mailboxDir: string;
   /** Model steps the round may take in all, like `muse exec --max-model-steps`: the bridge stops the turn at the cap. */
   maxModelSteps: number;
-  /** How long the bridge stays open with nothing running before it exits: after a stop, or while a goal waits. */
+  /**
+   * How long the bridge stays open with nothing running before it exits: after a stop, while a goal waits, or while a
+   * workflow is paused. A workflow or subagent still at work keeps it open with no such limit, as `muse exec` waits.
+   */
   idleExitMs: number;
 }
