@@ -135,6 +135,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 - Rehearsal: six scenes as expected, 0 of 18 outputs private. Device smoke passes: 32.9 s, 32.8 s with FERPA. Demo risk: in the FERPA run the grading result was refused, because the model's text used a never-share word (the blocked floor, unchanged today), with the files still saved; the run before shared it. Fail-safe, not a leak. How often it happens is not measured yet.
 - `scripts/run_study.py`: the 24 runs in the plan's order, resumable, applying the stop rule when a run ends. The misplaced strict-teacher smoke files moved to `eval/reports/sim/smoke/strict_teacher/`, where this log already said they were. They had been copied one folder up at 02:45; nothing was overwritten.
 
+**11:58** Persona study started on the frozen commit 0f00c79, on Ethan's call: 24 runs, one at a time (`scripts/run_study.py`), on the study's own LFM server. Ethan asked to be careful with the laptop's memory: at the start 80% was free, the server holds about 1.7 GB, and a guard pauses the running study below 20% free and resumes it above 35%, logging each pause. Results are copied here and committed when runs finish. Nobody reads a run's numbers to change anything before the last run.
+
 ## Open items
 
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
