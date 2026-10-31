@@ -171,6 +171,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **16:51** Ethan: Muse Privacy should be reachable from the Meta AI app the same way. No public source shows the Meta AI app taking outside connectors (secondary sources only; Muse has its own directory), so it cannot be added as a connector there today. Added the copy and paste path instead: Prepare's text names the Meta AI app, and a new Put the names back box (POST `/prepare/restore`) swaps the device's own tags in an answer back to real names on that page only, storing and sending nothing. Tags the device never handed out stay as written and are counted.
 
+**16:54** Base IQ1_S rows finished on the A100 (eval/reports/matrix_a100_base.md; its dates are the machine's clock, UTC; code from the copy at 7eb4525, before the summary screen). LFM labels with the policy deciding, re-measured there: 81.5% on fresh_200_b and 82.0% on tasks. Base Glimmer deciding: 44.5% and 45.0%; stricter only: 57.0% and 57.0%; labeling: 50.5% and 47.0%. 0 leaks in every row; 1 to 5 fallbacks per row, under the 10% rule. The deciding and stricter-only rows had a p95 of 24.6 to 35.3 s, over the 20 s stop rule, so under the prereg they are published as stopped and support no comparison. The labels row calls no router, so its latency is LFM's. The file check for this file is saved as eval/reports/model_file_a100_base_iq1s.md, so it does not replace the laptop's report for mradermacher's file; the matrix command still names its label `base_iq1s`. GPU lock released.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
