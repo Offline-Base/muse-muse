@@ -944,6 +944,17 @@ because the sidebar showed a real account.
   admins, and a note that connecting your own board is coming (wave 3's hardware unit). Review, fix, full suite and
   screenshots follow.
 
+### 19:58 Owner: a plan card with the Muse mascot in the build room
+
+- The owner sent a screenshot and three images from Downloads (muse present.png, muse building.png and muse privacy or
+  checker image.png, made 19:51 to 19:56): the mascot on the left of the chat and a short plan summary on the right.
+  Present while the plan is shown, building while Muse Code works, the shield pair when the build is done and live.
+- Building on tg-plan-card (wf_352ae383-888): web-sized copies under public/muse/, a PlanCard in the chat (name, tagline,
+  who it's for, how it works; the full brief stays under Read the brief), state-driven image with no layout jump, dark
+  mode and phone layouts, tests, review, and screenshots of every state.
+- Wave 3 agreed two marked slots for the new pages: /gadgets (its hardware unit's board list) and /models (its gpu unit's
+  owner-tuned models), each behind wave 3's own flag.
+
 ## Gaps
 
 What this record doesn't confirm:
