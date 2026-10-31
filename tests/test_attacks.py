@@ -6,8 +6,9 @@ local model can be: a name pass that finds nothing, a topic labeler that labels 
 that always wants to share, answers that echo what the model was shown. Each test states what an
 attacker tries and what must hold. A property that fails today is an xfail whose reason starts with
 its finding id in docs/THREAT_MODEL.md; strict ones flip to a failure the day the fix lands, so the
-marker comes off with the fix. Cases that need daily tag rotation (lane B1) are xfail(strict=False)
-with reason "needs tag rotation (GAP-2)".
+marker comes off with the fix. Daily tag rotation (GAP-2, GAP-3) and tag-shaped document text
+(GAP-12) landed with lane B1, so their cases pass with no marker; Device.tag_of marks a tag as sent
+to Muse unless sent=False, since only sent tags restore.
 """
 
 from __future__ import annotations
@@ -32,7 +33,6 @@ from tests.red_helpers import CHECKER, REPO_ROOT, ROSTER, TRUTH, Device, FakeMod
 
 POLICY = UserPolicy.load(REPO_ROOT / "eval" / "user_policy.yaml")
 NEVER_SHARE = POLICY.never_share
-ROTATION = "needs tag rotation (GAP-2)"
 IEP_STUDENT = "Gideon Pakalnis"  # an IEP and free lunch in the invented records
 PLAIN_STUDENT = "Abigail Thornbury"  # no protected record in the invented records
 ROSTER_NAMES = [p.name for p in ROSTER.students]
@@ -330,7 +330,6 @@ def test_f4_one_student_keeps_one_tag_within_a_day(device):
     clean(first, second)
 
 
-@pytest.mark.xfail(strict=False, reason=ROTATION)
 def test_f4_the_next_day_gives_the_same_student_a_new_tag(make_device, monkeypatch, tmp_path):
     env = {"TAG_ROTATION": "daily"}
     day1 = make_device(**env)
@@ -346,11 +345,10 @@ def test_f4_the_next_day_gives_the_same_student_a_new_tag(make_device, monkeypat
         day2.close()
 
 
-@pytest.mark.xfail(strict=False, reason=f"{ROTATION}: restore only tags the device sent (GAP-3)")
 def test_f4_f6_a_tag_the_device_never_sent_does_not_restore(device):
     """GAP-11 (1): a guessed tag gives the fixed sentence and nothing is searched."""
     calls = len(device.fake.calls)
-    error, out = device.call("search_documents", query=f"{device.tag_of('Zainab Haddad')} essay")
+    error, out = device.call("search_documents", query=f"{device.tag_of('Zainab Haddad', sent=False)} essay")
     assert "no longer works" in out and len(device.fake.calls) == calls
 
 
@@ -682,7 +680,6 @@ def test_f11_past_twenty_waiting_cards_a_new_ask_is_refused(device):
     assert out.status == "refused"
 
 
-@pytest.mark.xfail(strict=True, reason="RED-F11b a list_documents that waits has no job id, so every retry adds another card")
 def test_f11_a_retried_list_that_waits_adds_no_second_card(device):
     for _ in range(3):
         device.call("list_documents", folder="records")
@@ -716,7 +713,6 @@ def test_a_phone_number_spelled_out_in_words_is_caught(device):
     assert "five five five" not in text
 
 
-@pytest.mark.xfail(strict=False, reason="RED-F7b needs GAP-12: tag-shaped text from a document reaches Muse as a live tag")
 def test_tag_shaped_text_inside_a_document_never_reaches_muse_as_a_tag(device):
     """GAP-11 (10): a planted '[Student B]' would let a document pin a statement on a real person."""
     planted = "[Student B] copied this essay from the internet."

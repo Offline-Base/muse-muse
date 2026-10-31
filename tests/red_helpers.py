@@ -218,10 +218,13 @@ class Device:
     def close(self) -> None:
         self.services.close()
 
-    def tag_of(self, name: str) -> str:
-        """The tag this device gives a roster student."""
+    def tag_of(self, name: str, *, sent: bool = True) -> str:
+        """The tag this device gives a roster student, marked as sent to Muse (with daily rotation
+        only the tags the device sent restore) unless sent=False: a tag Muse guessed."""
         tag = guard.tag(name, ROSTER, self.services.tagmap).text
         assert guard.TAG_RE.fullmatch(tag), "not a single roster name"
+        if sent:
+            self.services.tagmap.touch([tag])
         return tag
 
     def call(self, tool: str, **args: Any) -> tuple[bool, str]:
