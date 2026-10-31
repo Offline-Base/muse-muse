@@ -4,8 +4,9 @@
  * - A lab token belongs to one lane and only claims jobs. native_labs keeps its sha256.
  * - A job token is made at claim and covers that one run of that job. native_jobs.token_hash keeps its sha256, and the
  *   plain token exists only in the claim's reply.
- * - A selftest token is an HMAC that names the job. It goes in the job's input, so the shell can post its report, and it
- *   lets the shell do nothing else. It isn't stored: a retry keeps its job id and its selftest token.
+ * - A selftest token is an HMAC that names the job and the attempt. It's made at claim and goes in the claim's reply, so the
+ *   shell can post its report, and it lets the shell do nothing else. It isn't stored. A retry gets a new one, so a shell
+ *   left over from the last attempt can't stand in for this one.
  *
  * The first two are 32 random bytes, so a plain SHA-256 guards them as well as a pepper would.
  */
@@ -38,23 +39,24 @@ function selftestKey(): Buffer {
   return createHmac("sha256", env.gatewayTokenPepper).update("musemuse-native:selftest").digest();
 }
 
-function selftestSignature(jobId: string, expiresAtSeconds: number): string {
-  return createHmac("sha256", selftestKey()).update(`${jobId}.${expiresAtSeconds}`).digest("base64url");
+function selftestSignature(jobId: string, attempt: number, expiresAtSeconds: number): string {
+  return createHmac("sha256", selftestKey()).update(`${jobId}.${attempt}.${expiresAtSeconds}`).digest("base64url");
 }
 
-/** The token for this job's shell: "mmst1.<jobId>.<expiry>.<signature>". */
-export function selftestToken(jobId: string, expiresAt: Date): string {
+/** The token for this attempt's shell: "mmst2.<jobId>.<attempt>.<expiry>.<signature>". */
+export function selftestToken(jobId: string, attempt: number, expiresAt: Date): string {
   const seconds = Math.ceil(expiresAt.getTime() / 1000);
-  return `mmst1.${jobId}.${seconds}.${selftestSignature(jobId, seconds)}`;
+  return `mmst2.${jobId}.${attempt}.${seconds}.${selftestSignature(jobId, attempt, seconds)}`;
 }
 
-/** The job a selftest token names, or null when it's forged, malformed or past its expiry. */
-export function verifySelftestToken(token: string, now: Date = new Date()): string | null {
-  const [version, jobId, seconds, signature, ...rest] = token.split(".");
-  if (version !== "mmst1" || rest.length || !jobId || !seconds || !signature) return null;
+/** The job and attempt a selftest token names, or null when it's forged, malformed or past its expiry. */
+export function verifySelftestToken(token: string, now: Date = new Date()): { jobId: string; attempt: number } | null {
+  const [version, jobId, attemptText, seconds, signature, ...rest] = token.split(".");
+  if (version !== "mmst2" || rest.length || !jobId || !attemptText || !seconds || !signature) return null;
+  const attempt = Number(attemptText);
   const expiry = Number(seconds);
-  if (!Number.isSafeInteger(expiry) || expiry * 1000 <= now.getTime()) return null;
+  if (!Number.isSafeInteger(attempt) || !Number.isSafeInteger(expiry) || expiry * 1000 <= now.getTime()) return null;
   const given = Buffer.from(signature);
-  const wanted = Buffer.from(selftestSignature(jobId, expiry));
-  return given.length === wanted.length && timingSafeEqual(given, wanted) ? jobId : null;
+  const wanted = Buffer.from(selftestSignature(jobId, attempt, expiry));
+  return given.length === wanted.length && timingSafeEqual(given, wanted) ? { jobId, attempt } : null;
 }

@@ -176,14 +176,19 @@ describe("the lab's queue", { skip: canMock ? false : "needs --experimental-test
     assert.equal((await enqueue({ ...s, runId: second!.id }, { tier: "ship", kind: "desktop_mac" })).ok, true, "a shipping check isn't an agent run");
   });
 
-  it("mints a selftest token that names the job, only for a lab shell", async () => {
+  it("hands a lab shell's job a selftest token at each claim, naming the job and the attempt, and never stores it", async () => {
     const { verifySelftestToken } = await import("@/lib/native/lab-token");
     const s = await seed();
     const id = await enqueued(s, { selftest: true, kind: "ios_sim" });
-    const job = await row(id);
-    const selftest = job.input.selftest as { token: string; platformUrl: string };
-    assert.equal(verifySelftestToken(selftest.token), id);
+    assert.deepEqual((await row(id)).input.selftest, { platformUrl: "https://platform.example.com" });
+    const first = (await queue.claimJob("mac", ["ios_sim"]))!;
+    const selftest = first.job.input.selftest as { token: string; platformUrl: string };
+    assert.deepEqual(verifySelftestToken(selftest.token), { jobId: id, attempt: 1 });
     assert.equal(selftest.platformUrl, "https://platform.example.com");
+    assert.ok(!JSON.stringify(await row(id)).includes(selftest.token));
+    const deadline = first.job.deadlineAt!.getTime();
+    assert.ok(verifySelftestToken(selftest.token, new Date(deadline + 14 * 60_000)), "good while the job token is");
+    assert.equal(verifySelftestToken(selftest.token, new Date(deadline + 16 * 60_000)), null);
     assert.equal((await row(await enqueued(s))).input.selftest, undefined);
   });
 
@@ -362,8 +367,7 @@ describe("the lab's queue", { skip: canMock ? false : "needs --experimental-test
     assert.equal(backfill.priority, 10);
     assert.equal(backfill.input.recordSeconds, 12);
     assert.notEqual(backfill.id, ship);
-    const { verifySelftestToken } = await import("@/lib/native/lab-token");
-    assert.equal(verifySelftestToken((backfill.input.selftest as { token: string }).token), backfill.id, "with a token for its own id");
+    assert.ok(backfill.input.selftest, "and it's still a lab shell's job");
     const log = await events(s.buildId);
     assert.ok(log.some((e) => e.item === "check:android_emu" && e.state === "skipped" && String(e.title).includes("the device lab was busy")));
     assert.deepEqual(await queue.expireQueuedJobs(), { expired: 0, backfilled: 0 });
@@ -445,9 +449,10 @@ describe("the lab's queue", { skip: canMock ? false : "needs --experimental-test
     const s = await seed();
     const id = await enqueued(s, { kind: "ios_sim" });
     const report = { v: 1, at: "2026-11-01T00:00:00.123Z", ok: true, nested: { keep: [1, 2] } };
-    assert.equal(await queue.saveSelftest(id, report), false, "still queued");
+    assert.equal(await queue.saveSelftest(id, 1, report), false, "still queued");
     const { token } = (await queue.claimJob("mac", ["ios_sim"]))!;
-    assert.equal(await queue.saveSelftest(id, report), true);
+    assert.equal(await queue.saveSelftest(id, 2, report), false, "another attempt");
+    assert.equal(await queue.saveSelftest(id, 1, report), true);
     assert.deepEqual((await queue.ownedJob(id, token))?.selftest, report);
   });
 

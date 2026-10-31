@@ -57,6 +57,7 @@ export const MAX_JOB_ATTEMPTS = 2;
 /** A claimed job that hasn't sent a heartbeat for this long has lost its box. */
 export const SILENT_AFTER_MS = 90_000;
 /** A job token stops working this long after the job's deadline. */
+const TOKEN_GRACE_MS = 15 * MINUTE;
 const TOKEN_GRACE = sql`interval '15 minutes'`;
 /** A rough time per job, for "about 4 minutes" in the build room. */
 const ETA_SECONDS_PER_JOB = 90;
@@ -125,9 +126,9 @@ export interface EnqueueInput {
   productId: string;
   kind: NativeJobKind;
   tier: NativeJobTier;
-  /** Everything but the selftest token, which needs the job's id. See docs/NATIVE_LAB.md, "Job inputs". */
+  /** Everything but the selftest token, which each claim makes. See docs/NATIVE_LAB.md, "Job inputs". */
   input: NativeJobInput;
-  /** A lab shell's job: mints its selftest token. Per-product apps have no way to take one. */
+  /** A lab shell's job: each claim hands over a selftest token. Per-product apps have no way to take one. */
   selftest?: boolean;
 }
 
@@ -158,16 +159,7 @@ export async function enqueueJob(input: EnqueueInput, deps: EnqueueDeps = {}): P
   const lane = JOB_KIND_LANE[input.kind];
   const jobId = randomUUID();
   const expiresAt = new Date(Date.now() + tier.ttlMs);
-  const stored: NativeJobInput = input.selftest
-    ? {
-        ...input.input,
-        // Good until the last moment a retry of this job could still report.
-        selftest: {
-          token: selftestToken(jobId, new Date(expiresAt.getTime() + (MAX_JOB_ATTEMPTS * limit * 1000 + 30 * MINUTE))),
-          platformUrl: env.platformUrl,
-        },
-      }
-    : input.input;
+  const stored: NativeJobInput = input.selftest ? { ...input.input, selftest: { platformUrl: env.platformUrl } } : input.input;
   const active = sql`status in ('queued', 'claimed')`;
   const [, inserted] = await db().batch([
     db().execute(sql`select pg_advisory_xact_lock(hashtext('native_jobs_enqueue'))`),
@@ -242,14 +234,23 @@ export async function queuePosition(jobId: string): Promise<{ ahead: number; eta
 }
 
 export interface ClaimedJob {
+  /** The row, with this attempt's selftest token in its input. The token is only in this reply, never in the row. */
   job: NativeJob;
   /** The job's token, in plain text for this one reply. */
   token: string;
 }
 
+/** A lab shell's input for one attempt. Its token dies when the job token does. */
+function withSelftestToken(job: NativeJob): NativeJobInput {
+  const selftest = job.input.selftest as { platformUrl?: string } | undefined;
+  if (!selftest) return job.input;
+  const expiresAt = new Date((job.deadlineAt ?? new Date()).getTime() + TOKEN_GRACE_MS);
+  return { ...job.input, selftest: { ...selftest, token: selftestToken(job.id, job.attempts, expiresAt) } };
+}
+
 /**
  * Gives the next job for this lane to one box, or null. One statement, so a job goes to one box only. It clears the stored
- * selftest report in the same step, since a retry keeps its job id and its selftest token.
+ * selftest report in the same step, since a retry keeps its job id.
  */
 export async function claimJob(lane: NativeLane, kinds: readonly string[]): Promise<ClaimedJob | null> {
   const offered = kinds.filter((kind): kind is NativeJobKind => (NATIVE_JOB_KINDS as readonly string[]).includes(kind) && JOB_KIND_LANE[kind as NativeJobKind] === lane);
@@ -273,7 +274,7 @@ export async function claimJob(lane: NativeLane, kinds: readonly string[]): Prom
     .returning();
   if (!job) return null;
   await emitJob(job, "running", `Checking on ${KIND_LABELS[job.kind].device}.`);
-  return { job, token };
+  return { job: { ...job, input: withSelftestToken(job) }, token };
 }
 
 /** The row test for "this token's run owns this job". Every token-holding call goes through it. */
@@ -302,12 +303,15 @@ export async function ownedJob(jobId: string, token: string): Promise<NativeJob 
   return job ?? null;
 }
 
-/** Keeps what the shell posted, as sent apart from text Postgres can't store. False when this job isn't running, so nothing is waiting for it. */
-export async function saveSelftest(jobId: string, report: NativeSelftestReport): Promise<boolean> {
+/**
+ * Keeps what the shell posted, as sent apart from text Postgres can't store. False when this attempt isn't the one running,
+ * so nothing is waiting for it. A shell left over from the last attempt can't write over this one's report.
+ */
+export async function saveSelftest(jobId: string, attempt: number, report: NativeSelftestReport): Promise<boolean> {
   const rows = await db()
     .update(schema.nativeJobs)
     .set({ selftest: cleanForJsonb(report) })
-    .where(and(eq(schema.nativeJobs.id, jobId), eq(schema.nativeJobs.status, "claimed")))
+    .where(and(eq(schema.nativeJobs.id, jobId), eq(schema.nativeJobs.status, "claimed"), eq(schema.nativeJobs.attempts, attempt)))
     .returning({ id: schema.nativeJobs.id });
   return rows.length > 0;
 }

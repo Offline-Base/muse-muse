@@ -3,7 +3,8 @@ import { bearerToken } from "@/lib/native/lab-token";
 import { ownedJob } from "@/lib/native/queue";
 
 // What the shell posted to /api/native/selftest for this job, for the agent. A report from an earlier attempt can't be
-// here, because the claim clears it, and the agent also ignores any report dated before its launch.
+// here: the claim clears it, and that attempt's token no longer works. The agent also ignores any report dated before its
+// launch.
 export const runtime = "nodejs";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }): Promise<Response> {

@@ -52,8 +52,8 @@ export function reportWaitMs(ctx, startedMs) {
 }
 
 /**
- * The report the shell posted to the platform, if it's from this launch. A retry keeps its job id and its selftest token,
- * so the platform's copy can be the last attempt's. The shell runs on this box, so `at` is on the same clock.
+ * The report the shell posted to the platform, if it's from this launch. The platform already keeps each attempt's report
+ * apart, so this is a second guard. The shell runs on this box, so `at` is on the same clock.
  */
 export async function platformReport(ctx, sinceMs) {
   const report = await ctx.fetchSelftest();

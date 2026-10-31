@@ -95,8 +95,9 @@ WHERE id = (SELECT id FROM native_jobs WHERE lane=$lane AND status='queued' AND 
 
 The token only exists in plaintext for this one response, so generate it before the statement and return it beside the row.
 
-Clear the job's stored selftest report in the same step, since a retry keeps its job id and selftest token. The agent also
-ignores a report dated before its launch, as a second guard, so keep the shell's `at` as it was sent.
+Clear the job's stored selftest report in the same step, since a retry keeps its job id. Each claim also makes a new selftest
+token that names the attempt, so a shell left over from an earlier attempt gets a 410. The agent also ignores a report dated
+before its launch, as a second guard, so keep the shell's `at` as it was sent.
 
 ### POST /api/native/agent/jobs/{id}/heartbeat
 
@@ -181,8 +182,8 @@ Job token. Body `{}`. Answers `{ "report": <report> }` with what the shell poste
 report doesn't reach it any other way, which is the normal case on iOS (see "What the shells do"). That's long enough for the
 report the shell's own 60 s watchdog sends for a page that hangs.
 
-Selftest tokens are the HMAC tokens from `lib/native/lab-token.ts`. They have to name the job, so that this route can find
-the report.
+Selftest tokens are the HMAC tokens from `lib/native/lab-token.ts`. They name the job, so that this route can find the report,
+and the attempt, so that only the run in progress can write it. They last as long as the job token does.
 
 ### POST /api/native/agent/jobs/{id}/finish
 
@@ -248,7 +249,7 @@ refuses. Everything here is covered by `lib/native/__tests__/`.
 |---|---|
 | `app/api/native/agent/claim`, `jobs/[id]/heartbeat`, `upload`, `selftest`, `finish` | The routes above. `claim` doesn't hold the request open: it answers at once and the agent waits out its 10 s |
 | `app/api/native/agent/jobs/[id]/files/[name]` | The local "put" slot. A 404 on Vercel or with a Blob store |
-| `app/api/native/selftest` | The shell's report. Takes the selftest token, keeps the body as sent |
+| `app/api/native/selftest` | The shell's report. Takes the selftest token, keeps the body as sent, apart from text Postgres can't store |
 | `app/api/cron/native-sweep` | The sweep, every 5 minutes |
 | `lib/native/queue.ts` | Everything that moves a `native_jobs` row |
 | `lib/native/lab-token.ts` | The lab, job and selftest tokens |
@@ -260,8 +261,8 @@ refuses. Everything here is covered by `lib/native/__tests__/`.
 **The queue.**
 
 ```ts
-// The input comes from docs/NATIVE_LAB.md, "Job inputs", without selftest. Pass selftest: true for a lab shell's job, and the
-// queue mints its token.
+// The input comes from docs/NATIVE_LAB.md, "Job inputs", without selftest. Pass selftest: true for a lab shell's job, and each
+// claim adds a token for that attempt.
 const job = await enqueueJob({ runId, buildId, productId, kind: "ios_sim", tier: "ship", input, selftest: true });
 if (job.ok) job.jobId, job.ahead, job.etaSeconds; else job.reason, job.message;
 ```

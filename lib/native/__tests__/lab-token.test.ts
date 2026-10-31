@@ -1,5 +1,5 @@
 /**
- * The lab's tokens (lib/native/lab-token.ts): what the agent's own rules accept, and a selftest token that names its job,
+ * The lab's tokens (lib/native/lab-token.ts): what the agent's own rules accept, and a selftest token that names its job and attempt,
  * can't be forged or moved to another job, and stops working at its expiry.
  */
 import assert from "node:assert/strict";
@@ -17,7 +17,7 @@ describe("lab tokens", () => {
 
   it("makes tokens the agent accepts, each one new, and hashes them to the same sha256 every time", () => {
     assert.match(newJobToken(), AGENT_TOKEN_RULE);
-    assert.match(selftestToken(JOB, new Date(Date.now() + 1000)), AGENT_TOKEN_RULE);
+    assert.match(selftestToken(JOB, 1, new Date(Date.now() + 1000)), AGENT_TOKEN_RULE);
     assert.notEqual(newLabToken(), newLabToken());
     const token = newJobToken();
     assert.match(hashLabToken(token), /^[a-f0-9]{64}$/);
@@ -34,25 +34,26 @@ describe("lab tokens", () => {
     assert.equal(bearerToken(req(`Bearer ${"x".repeat(513)}`)), null);
   });
 
-  it("reads the job back out of a good selftest token", () => {
-    assert.equal(verifySelftestToken(selftestToken(JOB, new Date(Date.now() + 60_000))), JOB);
+  it("reads the job and the attempt back out of a good selftest token", () => {
+    assert.deepEqual(verifySelftestToken(selftestToken(JOB, 2, new Date(Date.now() + 60_000))), { jobId: JOB, attempt: 2 });
   });
 
   it("refuses an expired, forged or altered selftest token", () => {
     const now = new Date("2026-11-01T00:00:00Z");
-    const good = selftestToken(JOB, new Date(now.getTime() + 60_000));
-    assert.equal(verifySelftestToken(good, now), JOB);
+    const good = selftestToken(JOB, 1, new Date(now.getTime() + 60_000));
+    assert.deepEqual(verifySelftestToken(good, now), { jobId: JOB, attempt: 1 });
     assert.equal(verifySelftestToken(good, new Date(now.getTime() + 61_000)), null, "expired");
     const parts = good.split(".");
-    assert.equal(verifySelftestToken([parts[0], "6f1c2d3e-0000-4000-8000-000000000002", parts[2], parts[3]].join("."), now), null, "moved to another job");
-    assert.equal(verifySelftestToken([parts[0], parts[1], String(Number(parts[2]) + 999), parts[3]].join("."), now), null, "longer life");
+    assert.equal(verifySelftestToken([parts[0], "6f1c2d3e-0000-4000-8000-000000000002", ...parts.slice(2)].join("."), now), null, "moved to another job");
+    assert.equal(verifySelftestToken([parts[0], parts[1], "2", parts[3], parts[4]].join("."), now), null, "moved to another attempt");
+    assert.equal(verifySelftestToken([parts[0], parts[1], parts[2], String(Number(parts[3]) + 999), parts[4]].join("."), now), null, "longer life");
     assert.equal(verifySelftestToken(`${good}.extra`, now), null);
-    assert.equal(verifySelftestToken("mmst1.a.b", now), null);
+    assert.equal(verifySelftestToken("mmst2.a.b", now), null);
     assert.equal(verifySelftestToken(newJobToken(), now), null, "a job token isn't a selftest token");
   });
 
   it("signs with a key of its own, so a token from another pepper is worthless", () => {
-    const good = selftestToken(JOB, new Date(Date.now() + 60_000));
+    const good = selftestToken(JOB, 1, new Date(Date.now() + 60_000));
     process.env.GATEWAY_TOKEN_PEPPER = "another-pepper";
     assert.equal(verifySelftestToken(good), null);
     process.env.GATEWAY_TOKEN_PEPPER = "test-pepper-for-lab-tokens";

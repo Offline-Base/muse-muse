@@ -136,7 +136,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     const id = await enqueue(s, over);
     const res = await claimRoute(post("/api/native/agent/claim", LAB_TOKEN, claimBody({ kinds: [over.kind ?? "desktop_mac"] })));
     assert.equal(res.status, 200);
-    const { job } = (await res.json()) as { job: { id: string; token: string; runId: string } };
+    const { job } = (await res.json()) as { job: { id: string; token: string; runId: string; input: { selftest?: { token: string } } } };
     assert.equal(job.id, id);
     return job;
   }
@@ -155,7 +155,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
         selftestPollRoute(post("/x", good), ctx(id)),
         finishRoute(post("/x", good, { outcome: "passed" }), ctx(id)),
         filesRoute(new Request(`${ORIGIN}/x`, { method: "PUT", body: "x", headers: { authorization: `Bearer ${good}` } }), { params: Promise.resolve({ id, name: "log.txt" }) }),
-        selftestRoute(post("/api/native/selftest", tokens.selftestToken(id, new Date(Date.now() + 60_000)), { at: "x" })),
+        selftestRoute(post("/api/native/selftest", tokens.selftestToken(id, 1, new Date(Date.now() + 60_000)), { at: "x" })),
         cronRoute(new Request(`${ORIGIN}/api/cron/native-sweep`, { headers: { authorization: `Bearer ${CRON}` } })),
       ]);
       assert.deepEqual(answers.map((r) => r.status), [404, 404, 404, 404, 404, 404, 404, 404]);
@@ -224,7 +224,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.ok(!JSON.stringify(row).includes(job.token), "the plain token isn't stored");
       assert.equal(verify(job), id);
     });
-    const verify = (job: Record<string, unknown>) => tokens.verifySelftestToken(((job.input as { selftest: { token: string } }).selftest).token);
+    const verify = (job: Record<string, unknown>) => tokens.verifySelftestToken(((job.input as { selftest: { token: string } }).selftest).token)?.jobId;
 
     it("won't give a box another lane's job", async () => {
       await enqueue(await seed(), { kind: "desktop_windows" });
@@ -403,8 +403,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     it("goes in with the selftest token, as sent, and comes back to the agent", async () => {
       const s = await seed();
       const job = await claimed(s, { kind: "ios_sim", selftest: true });
-      const row = await jobRow(job.id);
-      const token = (row.input.selftest as { token: string }).token;
+      const token = job.input.selftest!.token;
       const before = await selftestPollRoute(post("/x", job.token), ctx(job.id));
       assert.deepEqual(await before.json(), { report: null });
       const report = { v: 1, ok: true, at: "2026-11-01T12:00:00.123Z", finalUrl: "https://demo-product.vercel.app/", errors: ["e"] };
@@ -416,7 +415,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
 
     it("keeps a report with text Postgres can't store, with its `at` as sent, since on iOS this is the only copy", async () => {
       const job = await claimed(await seed(), { kind: "ios_sim", selftest: true });
-      const token = ((await jobRow(job.id)).input.selftest as { token: string }).token;
+      const token = job.input.selftest!.token;
       // The shell cuts each error at 300 characters, which can land inside an emoji.
       const cut = `${"y".repeat(299)}\u{1F600}`.slice(0, 300);
       const at = "2026-11-01T12:00:00.123Z";
@@ -429,24 +428,31 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     it("a retry starts with no report, so it can't pass on the last attempt's", async () => {
       const s = await seed();
       const job = await claimed(s, { kind: "ios_sim", selftest: true });
-      const token = ((await jobRow(job.id)).input.selftest as { token: string }).token;
+      const token = job.input.selftest!.token;
       await selftestRoute(post("/api/native/selftest", token, { at: "old" }));
       await testDb.update(realSchema.nativeJobs).set({ heartbeatAt: new Date(Date.now() - 100_000) }).where(eq(realSchema.nativeJobs.id, job.id));
       await queue.requeueSilentJobs();
       assert.equal((await selftestRoute(post("/api/native/selftest", token, { at: "from the old run" }))).status, 410, "nothing is waiting while it's queued");
       const claim = await claimRoute(post("/c", LAB_TOKEN, claimBody({ kinds: ["ios_sim"] })));
       const { job: second } = (await claim.json()) as { job: { token: string; input: { selftest: { token: string } } } };
-      assert.equal(second.input.selftest.token, token, "a retry keeps its selftest token");
+      assert.notEqual(second.input.selftest.token, token, "a retry gets its own selftest token");
       assert.deepEqual(await (await selftestPollRoute(post("/x", second.token), ctx(job.id))).json(), { report: null });
+      // The old shell can still be alive when the retry launches.
+      const at = new Date(Date.now() + 60_000).toISOString();
+      assert.equal((await selftestRoute(post("/api/native/selftest", token, { marker: "from-attempt-1", ok: true, at }))).status, 410);
+      assert.deepEqual(await (await selftestPollRoute(post("/x", second.token), ctx(job.id))).json(), { report: null });
+      assert.equal((await selftestRoute(post("/api/native/selftest", second.input.selftest.token, { marker: "from-attempt-2", at }))).status, 200);
+      assert.equal((await selftestRoute(post("/api/native/selftest", token, { marker: "from-attempt-1", at }))).status, 410, "nor can it write over the retry's report");
+      assert.deepEqual(await (await selftestPollRoute(post("/x", second.token), ctx(job.id))).json(), { report: { marker: "from-attempt-2", at } });
     });
 
     it("needs a real selftest token, and a body that's a small object", async () => {
       const s = await seed();
       const job = await claimed(s, { kind: "ios_sim", selftest: true });
-      const token = ((await jobRow(job.id)).input.selftest as { token: string }).token;
+      const token = job.input.selftest!.token;
       assert.equal((await selftestRoute(post("/s", null, { at: "x" }))).status, 401);
       assert.equal((await selftestRoute(post("/s", job.token, { at: "x" }))).status, 401, "a job token isn't a selftest token");
-      assert.equal((await selftestRoute(post("/s", tokens.selftestToken(job.id, new Date(Date.now() - 1000)), { at: "x" }))).status, 401, "expired");
+      assert.equal((await selftestRoute(post("/s", tokens.selftestToken(job.id, 1, new Date(Date.now() - 1000)), { at: "x" }))).status, 401, "expired");
       assert.equal((await selftestRoute(post("/s", token, "[1]"))).status, 400);
       assert.equal((await selftestRoute(post("/s", token, "nope"))).status, 400);
       assert.equal((await selftestRoute(post("/s", token, { pad: "x".repeat(129 * 1024) }))).status, 400);
@@ -454,7 +460,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     });
 
     it("a token for a job that doesn't exist changes nothing", async () => {
-      const token = tokens.selftestToken("00000000-0000-4000-8000-000000000000", new Date(Date.now() + 60_000));
+      const token = tokens.selftestToken("00000000-0000-4000-8000-000000000000", 1, new Date(Date.now() + 60_000));
       assert.equal((await selftestRoute(post("/s", token, { at: "x" }))).status, 410);
     });
   });

@@ -2,8 +2,8 @@ import { isJobId, labGate, gone, notFound, readJson, unauthorized } from "@/lib/
 import { bearerToken, verifySelftestToken } from "@/lib/native/lab-token";
 import { saveSelftest } from "@/lib/native/queue";
 
-// The lab shell's health report (native/shell-mobile/src/selftest.ts). Its token is an HMAC naming the job and does nothing
-// else. The report is kept as sent, `at` included, because the agent compares `at` with its own launch. Only text Postgres
+// The lab shell's health report (native/shell-mobile/src/selftest.ts). Its token is an HMAC naming the job and the attempt,
+// and does nothing else. The report is kept as sent, `at` included, because the agent compares `at` with its own launch. Only text Postgres
 // can't store comes out, in saveSelftest.
 export const runtime = "nodejs";
 
@@ -14,11 +14,11 @@ export async function POST(req: Request): Promise<Response> {
   const off = labGate();
   if (off) return off;
   const token = bearerToken(req);
-  const jobId = token ? verifySelftestToken(token) : null;
-  if (!jobId) return unauthorized();
-  if (!isJobId(jobId)) return notFound();
+  const named = token ? verifySelftestToken(token) : null;
+  if (!named) return unauthorized();
+  if (!isJobId(named.jobId)) return notFound();
   const report = await readJson(req, MAX_REPORT_BYTES);
   if (!report || typeof report !== "object" || Array.isArray(report)) return Response.json({ error: "bad_request" }, { status: 400 });
-  if (!(await saveSelftest(jobId, report as Record<string, unknown>))) return gone();
+  if (!(await saveSelftest(named.jobId, named.attempt, report as Record<string, unknown>))) return gone();
   return Response.json({ ok: true });
 }
