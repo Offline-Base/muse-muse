@@ -145,6 +145,14 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
 }
 
 /**
+ * What a run's prompt says about the session around it: the goal the session bridge sets from Done means, and notes
+ * the build's owner can send while it runs. Both off for plain `muse exec`, which keeps today's prompts.
+ */
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean } {
+  return { goalSet: env.museEngine === "serve", ownerNotes: env.steeringEnabled };
+}
+
+/**
  * Whether the build's owner pressed Stop (POST /api/builds/{id}/control), read in the same statement that sets the
  * build's running Muse Code round when `set` is given: the route marks a stop only while a round is set, so an update
  * that takes the round off the row always sees a stop that landed before it.
@@ -407,6 +415,7 @@ export async function provisionStep(input: {
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
     maxModelSteps: MAX_MODEL_STEPS,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
+    ...sessionNotes(),
   });
   const allowedModels = allowedModelsFor(brief);
   const { token } = await mintToken({
@@ -724,7 +733,7 @@ export async function writeFixPromptStep(input: {
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes() }),
   );
   return { promptFile, images };
 }

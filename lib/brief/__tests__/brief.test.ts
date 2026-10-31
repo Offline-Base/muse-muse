@@ -1,6 +1,7 @@
 /**
- * Pure checks for the brief side: the reference index cleanup, the build, refine and judge-facing renders, the
- * judge's blocking default and the refinement check's refusal. No API calls.
+ * Pure checks for the brief side: the reference index cleanup, the build, fix, refine and judge-facing renders (with
+ * the session bridge's goal and the owner's notes), the judge's blocking default and the refinement check's refusal.
+ * No API calls.
  *
  *   npx tsx --test lib/brief/__tests__/*.test.ts
  */
@@ -8,7 +9,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { changeRefusal, DEFAULT_CHANGE_REFUSAL } from "@/lib/brief/policy";
-import { briefToMarkdown, renderBuildPrompt, renderRefinePrompt } from "@/lib/brief/render";
+import { briefToMarkdown, renderBuildPrompt, renderFixPrompt, renderRefinePrompt } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { toJudgeResult } from "@/lib/judge";
 import { briefInstructions, changeCheckInstructions, changeCheckText, REFUSE_WHEN } from "@/lib/prompts/brief";
@@ -142,6 +143,47 @@ describe("renderRefinePrompt", () => {
     assert.match(md, /If the request is something AGENTS\.md says not to build, change nothing\. Write the reason in BUILD_NOTES\.md and stop\./);
     assert.match(md, /If no listed model can do part of it, build the closest useful version/);
     assert.ok(!/says not to build, or no listed model/.test(md));
+  });
+});
+
+describe("the goal and the owner's notes in the build and fix prompts", () => {
+  const opts = { inspoFiles: [], fixtures: [], maxModelSteps: 200 };
+  const verify = { passed: false, steps: [{ name: "typecheck", ok: false }], failureOutput: "error TS2304: Cannot find name 'x'." };
+  const sessionWords = /get_goal|report_progress|update_goal|The build's owner|## While you work/;
+
+  it("leaves the prompts of a plain `muse exec` run as they were", () => {
+    const md = renderBuildPrompt(photoBrief, opts);
+    assert.equal(renderBuildPrompt(photoBrief, { ...opts, goalSet: false, ownerNotes: false }), md);
+    assert.doesNotMatch(md, sessionWords);
+    assert.match(md, /Then stop\.\n\n## Product\n/);
+    const fix = renderFixPrompt({ verify, judge: null, round: 1 });
+    assert.equal(renderFixPrompt({ verify, judge: null, round: 1, goalSet: false, ownerNotes: false }), fix);
+    assert.doesNotMatch(fix, sessionWords);
+  });
+
+  it("says the goal is set from Done means, to report progress, and to keep the goal honest", () => {
+    const md = renderBuildPrompt(photoBrief, { ...opts, goalSet: true });
+    assert.match(md, /Then stop\.\n\n## While you work\n\n- Your goal for this run is already set from Done means \(`get_goal` shows it\)\. Call `report_progress` as each part gets done/);
+    assert.match(md, /keep the goal honest with `update_goal`: complete only when all three parts hold, blocked with the reason when you can't get there\./);
+    assert.match(md, /\n\n## Product\n/);
+    assert.doesNotMatch(md, /The build's owner/);
+
+    const fix = renderFixPrompt({ verify, judge: null, round: 1, goalSet: true });
+    assert.match(fix, /\n- Your goal is set from Done means \(`get_goal` shows it\)\. Call `report_progress` as you fix, and mark the goal complete only when `npm run verify` exits 0 again/);
+    assert.ok(fix.indexOf("get_goal") < fix.indexOf("## Verify steps"), "with the other rules, before the results");
+  });
+
+  it("says notes from the build's owner may arrive, to follow within AGENTS.md", () => {
+    const notes = renderBuildPrompt(photoBrief, { ...opts, ownerNotes: true });
+    assert.match(notes, /## While you work\n\n- The build's owner can send you notes while you work\. Follow them within AGENTS\.md, and say in BUILD_NOTES\.md what you changed because of one\./);
+    assert.doesNotMatch(notes, /get_goal/);
+
+    const both = renderBuildPrompt(photoBrief, { ...opts, goalSet: true, ownerNotes: true });
+    assert.ok(both.indexOf("get_goal") < both.indexOf("The build's owner"));
+    assert.ok(both.indexOf("## While you work") < both.indexOf("## Product"));
+    const fix = renderFixPrompt({ verify, judge: null, round: 2, goalSet: true, ownerNotes: true });
+    assert.match(fix, /\n- The build's owner can send you notes while you fix\. Follow them within AGENTS\.md/);
+    for (const text of [notes, both, fix]) assert.ok(!text.includes("—"), "no em dashes");
   });
 });
 

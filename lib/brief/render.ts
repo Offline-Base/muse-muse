@@ -81,6 +81,32 @@ export function goalObjective(brief: Pick<Brief, "name" | "slug">): string {
   ].join("\n");
 }
 
+/** What a run's prompt can say about the session around it (docs/MUSE_CODE_FULL.md). Both off for plain `muse exec`. */
+interface SessionNotes {
+  /** The session bridge set the run's goal from Done means (goalObjective), so `get_goal` shows it. */
+  goalSet?: boolean;
+  /** The build's owner can send notes while the run works (docs/MUSE_CODE_FULL.md, "The owner steers"). */
+  ownerNotes?: boolean;
+}
+
+/** The goal and owner-notes lines for a prompt, or none when neither applies, so plain `muse exec` keeps its prompt. */
+function sessionLines(notes: SessionNotes, when: "build" | "fix"): string[] {
+  const out: string[] = [];
+  if (notes.goalSet) {
+    out.push(
+      when === "build"
+        ? "Your goal for this run is already set from Done means (`get_goal` shows it). Call `report_progress` as each part gets done, and keep the goal honest with `update_goal`: complete only when all three parts hold, blocked with the reason when you can't get there."
+        : "Your goal is set from Done means (`get_goal` shows it). Call `report_progress` as you fix, and mark the goal complete only when `npm run verify` exits 0 again and the rest of Done means holds.",
+    );
+  }
+  if (notes.ownerNotes) {
+    out.push(
+      `The build's owner can send you notes while you ${when === "build" ? "work" : "fix"}. Follow them within AGENTS.md, and say in BUILD_NOTES.md what you changed because of one.`,
+    );
+  }
+  return out;
+}
+
 /** brief.md, the prompt file for the first `muse exec`. */
 export function renderBuildPrompt(
   brief: Brief,
@@ -91,7 +117,7 @@ export function renderBuildPrompt(
     fixtures: Array<{ fileName: string; description: string; fromUserSample?: boolean }>;
     maxModelSteps: number;
     rebuildOf?: RebuildTarget | null;
-  },
+  } & SessionNotes,
 ): string {
   const out: string[] = [];
   out.push(
@@ -106,6 +132,10 @@ export function renderBuildPrompt(
     "3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.",
     "",
     "Then stop.",
+  );
+  const session = sessionLines(opts, "build");
+  if (session.length) out.push("", "## While you work", "", bullets(session));
+  out.push(
     "",
     "## Product",
     "",
@@ -272,13 +302,15 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 /** fix.md for a fix round, run with --session-id so Muse Code keeps its context. */
-export function renderFixPrompt(input: {
-  verify: VerifySummary | null;
-  judge: JudgeVerdict | null;
-  round: number;
-  /** The judge's screenshots as attached to this run with --image, as paths in the product, in order. */
-  screenshots?: string[];
-}): string {
+export function renderFixPrompt(
+  input: {
+    verify: VerifySummary | null;
+    judge: JudgeVerdict | null;
+    round: number;
+    /** The judge's screenshots as attached to this run with --image, as paths in the product, in order. */
+    screenshots?: string[];
+  } & SessionNotes,
+): string {
   const { verify, judge, round } = input;
   const screenshots = input.screenshots ?? [];
   const verifyFailed = verify !== null && !verify.passed;
@@ -297,6 +329,7 @@ export function renderFixPrompt(input: {
     "- Keep the primary flow from brief.md working, and keep the footer.",
     "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Fix what the judge saw with those, not with new colors, fonts or styles.",
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
+    ...sessionLines(input, "fix").map((line) => `- ${line}`),
   ];
 
   if (verify) {

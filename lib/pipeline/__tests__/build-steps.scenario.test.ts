@@ -599,4 +599,31 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(writes.length, 0);
     });
   });
+
+  describe("what a fix round's prompt says about the session", () => {
+    const fixPrompt = async (vars: Record<string, string | undefined>) => {
+      const old = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+      for (const [k, v] of Object.entries(vars)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      try {
+        productFiles = [];
+        selects = { build_events: [[{ payload: { type: "verify", round: 0, summary: { passed: false, steps: [], failureOutput: "boom" }, screenshots: [] } }]] };
+        await steps.writeFixPromptStep({ buildId: "b1", sandboxName: "sb", fix: 1, verifiedRound: 0 });
+        return productFiles[0]!.content;
+      } finally {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      }
+    };
+
+    it("names the goal on the session bridge, the owner's notes wherever steering is on, and neither on plain muse exec", async () => {
+      const bridge = await fixPrompt({ MUSE_ENGINE: "serve", MUSE_FULL: undefined });
+      assert.match(bridge, /`get_goal`/);
+      assert.match(bridge, /The build's owner can send you notes while you fix/);
+      // MUSE_FULL's hook hands the owner's notes to `muse exec`, which has no goal set for it.
+      const full = await fixPrompt({ MUSE_ENGINE: undefined, MUSE_FULL: "1" });
+      assert.doesNotMatch(full, /get_goal/);
+      assert.match(full, /The build's owner can send you notes/);
+      const plain = await fixPrompt({ MUSE_ENGINE: undefined, MUSE_FULL: undefined });
+      assert.doesNotMatch(plain, /get_goal|The build's owner/);
+    });
+  });
 });

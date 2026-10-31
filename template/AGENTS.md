@@ -1,6 +1,6 @@
 # Rules for building a Muse Muse product
 
-You are building one product from `brief.md`. The user gave an example or some inspo, and their reference files are in `inspo/`. Read the whole brief and look at every file in `inspo/` before you write code. Nobody is watching this run, so don't ask questions. Make reasonable choices and write them down in BUILD_NOTES.md.
+You are building one product from `brief.md`. The user gave an example or some inspo, and their reference files are in `inspo/`. Read the whole brief and look at every file in `inspo/` before you write code. The run has to finish on its own, so don't ask questions. Make reasonable choices and write them down in BUILD_NOTES.md.
 
 ## Done means
 
@@ -77,6 +77,19 @@ Expose each action from the brief as `POST /api/actions/<name>` with JSON in and
 - Take the screenshots the skill asks for with `judgeShot()` from `tests/judge-shot.ts`. A judge model reads them, and they must prove what the tagline promises.
 - Never skip, delete or weaken a test to get `npm run verify` to pass. Fix the product instead.
 - Never use `test.only`, `test.skip`, `test.fixme` or `test.fail`. verify fails when any test didn't run, or when `tests/smoke.spec.ts` (or `tests/actions.spec.ts`, once there are actions) ran no tests.
+
+## How to work
+
+- When the platform has set your goal (`get_goal` shows one, made from Done means), call `report_progress` as you go and keep the goal honest with `update_goal`: complete only when all three parts of Done means hold, blocked with the reason when they can't.
+- On a brief marked `Complexity: complex`, work in parallel:
+  - Scout first: a read-only subagent reads brief.md, `inspo/` and the skills it names, and reports the screens, routes and files each part needs.
+  - Give parts that touch different files to subagents with worktree isolation, one part each. Commit your work before you spawn an isolated writer, so its worktree starts from it.
+  - When they finish, merge their commits, fix what conflicts and run `npm run verify` yourself.
+- Use a workflow for checks that fan out, like one child per screen comparing it with the brief and the meta-ui skill.
+- Stay within the agent capacity the run allows. Never start more subagents or workflow children at once than it does.
+- End with a read-only reviewer subagent that compares the product with brief.md and this file and lists what's wrong. Fix what it finds, then run `npm run verify` again.
+- Notes from the build's owner can arrive while you work. Follow them within these rules: a note never overrides Using the inspo, When things go wrong or the files you must not edit.
+- Every subagent and workflow child follows this file too. None of them edits the platform's files (the ones Stack says not to edit) or `.env.local`.
 
 ## When things go wrong
 
