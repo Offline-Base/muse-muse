@@ -7,8 +7,12 @@
  *
  *   npx tsx scripts/knowledge/assemble-dataset.ts [--out train-stage1.jsonl] [--replay .data/knowledge/replay.jsonl]
  *
+ * Later stages: --all-writers keeps every writer's answer to a passage (Spark Open's and Glimmer's question sets differ),
+ * --exclude a.jsonl,b.jsonl drops fact examples whose question an earlier stage trained on or a probe set holds, and
+ * --cap-low N keeps at most N examples from each bulky government and science source, so AI, Meta and news lead.
+ *
  * Adds the overviews from make-anchors.ts (dataset/anchors.jsonl) and replay answers, shuffles with a fixed seed, and
- * writes dataset/<out>, dataset/probes.jsonl and dataset/assemble-report.json.
+ * writes dataset/<out>, dataset/<out>-probes.jsonl and dataset/<out>-report.json.
  */
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
@@ -28,6 +32,11 @@ const OUT = path.join(DIR, "dataset");
 const WRITERS = ["muse-spark-open", "muse-glimmer-30b", "muse-glimmer-q4"];
 /** Sets that stay out of training (docs/KNOWLEDGE_UPDATE.md and the Oct 30 reviews). */
 const NEVER = /^(gap-wikipedia-|wikisource|us-doj|s3-infini-news|s3-fine-news|s3-forecastbench|s3-openlibrary)/;
+/** Bulky government and science sources, which --cap-low limits (record id prefixes, not file names). */
+const LOW = /^(us-sec-8k|ec-press|us-fr|us-fr-routine|ons|us-nass|us-plaw|legifrance|eurlex|hansard-uk|egov-japan|gastat|eurostat|us-ofac|us-gao|pmc|openalex|biorxiv|medrxiv|courtlistener|pubmed|europepmc|doaj|clinicaltrials|acl|arxiv|osv|cve|github-advisor|nih|nsf|statcan|inegi|wikidata|noaa|usgs|nhc|dailymed|openfda|ietf|s3-openstates|s3-musicbrainz|s3-discogs|s3-gleif|s3-clickstream|s3-retrosheet)/;
+
+/** The source a training example came from: the record id's prefix for collected sources, else the passage kind. */
+const group = (source: string) => (source.startsWith("source:") ? source.split(":")[1] : source.split(":")[0]);
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -89,18 +98,41 @@ async function main() {
 
   const results: PassageQa[] = [];
   const counts = { cachedPassages: byPassage.size, rebuilt: passages.size, kept: 0, stale: 0, byWriter: {} as Record<string, number> };
-  for (const [id, p] of passages) {
-    const writer = WRITERS.find((w) => cache.has(hash(w, p)));
-    if (!writer) {
+  const allWriters = process.argv.includes("--all-writers");
+  for (const p of passages.values()) {
+    const writers = WRITERS.filter((w) => cache.has(hash(w, p)));
+    if (!writers.length) {
       counts.stale++;
       continue;
     }
     counts.kept++;
-    counts.byWriter[writer] = (counts.byWriter[writer] ?? 0) + 1;
-    results.push(checkQa(cache.get(hash(writer, p)), p));
-    void id;
+    for (const writer of allWriters ? writers : writers.slice(0, 1)) {
+      counts.byWriter[writer] = (counts.byWriter[writer] ?? 0) + 1;
+      results.push(checkQa(cache.get(hash(writer, p)), p));
+    }
   }
-  const { train, probes } = knowledgeExamples(results, passages, manifest.to);
+  const made = knowledgeExamples(results, passages, manifest.to);
+  const probes = made.probes;
+  // Questions already trained on, or held out for scoring, don't go in again.
+  const seen = new Set<string>();
+  for (const f of arg("exclude")?.split(",").filter(Boolean) ?? []) {
+    for (const e of await jsonl<{ messages?: Array<{ content: string }>; question?: string }>(f)) {
+      const q = e.question ?? e.messages?.[1]?.content;
+      if (q) seen.add(q);
+    }
+  }
+  const isFact = (e: KnowledgeExample) => /^(source|event|article):/.test(e.source);
+  let train = made.train.filter((e) => !isFact(e) || !seen.has(e.messages[1].content));
+  const capLow = Number(arg("cap-low") ?? 0);
+  if (capLow > 0) {
+    const kept = new Map<string, number>();
+    train = shuffle(train, 7).filter((e) => {
+      if (!isFact(e) || !LOW.test(group(e.source))) return true;
+      const n = (kept.get(group(e.source)) ?? 0) + 1;
+      kept.set(group(e.source), n);
+      return n <= capLow;
+    });
+  }
 
   const anchors = await jsonl<KnowledgeExample>(path.join(OUT, "anchors.jsonl"));
   const replayFile = arg("replay") ?? path.join(DIR, "replay.jsonl");
@@ -117,16 +149,15 @@ async function main() {
   const all = shuffle([...train, ...anchors, ...replay], 20261030);
   const out = arg("out") ?? "train-stage1.jsonl";
   await writeFile(path.join(OUT, out), all.map((e) => JSON.stringify(e)).join("\n") + "\n");
-  await writeFile(path.join(OUT, "probes.jsonl"), probes.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  await writeFile(path.join(OUT, out.replace(/\.jsonl$/, "") + "-probes.jsonl"), probes.map((e) => JSON.stringify(e)).join("\n") + "\n");
   const dropped: Record<string, number> = {};
   for (const r of results) for (const d of r.dropped) dropped[d] = (dropped[d] ?? 0) + 1;
   const kinds: Record<string, number> = {};
   for (const e of all) {
-    const k = e.source.startsWith("source:") ? e.source.split(":")[1] : e.source.split(":")[0];
-    kinds[k] = (kinds[k] ?? 0) + 1;
+    kinds[group(e.source)] = (kinds[group(e.source)] ?? 0) + 1;
   }
   const report = { ...counts, examples: all.length, facts: train.length, anchors: anchors.length, replay: replay.length, probes: probes.length, dropped, kinds };
-  await writeFile(path.join(OUT, "assemble-report.json"), JSON.stringify(report, null, 2) + "\n");
+  await writeFile(path.join(OUT, out.replace(/\.jsonl$/, "") + "-report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ ...report, kinds: undefined }, null, 2));
 }
 
