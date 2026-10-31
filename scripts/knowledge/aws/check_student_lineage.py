@@ -112,6 +112,15 @@ new_probes = rows(os.path.join(D, "stage2-new-probes.jsonl"))
 held_out = {question_key(p["question"]) for p in rows(os.path.join(D, "stage2-eval-probes.jsonl")) + old_probes + new_probes}
 forget_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forget.jsonl")
 forget = {question_key(p["question"]) for p in rows(forget_file)}
+# The corpus's real last day (make-stage-b.ts). Stage A's templates state the manifest's October 28, so a set holding
+# stage B's rows must not also hold those: one shuffled pass would train both dates.
+STAGEB_CUTOFF_DAY = "October 29, 2026"
+stageb_rows = 0
+STAGEB_HONEST = {"false_premise": "stageb-false-premise:", "after_cutoff": "stageb-after-cutoff:",
+                 "unknowable": "stageb-unknowable:", "cutoff_restated": "stageb-cutoff:"}
+written_file = os.path.join(D, "stage-b-written.jsonl")
+written = {(r["messages"][1]["content"], r["messages"][2]["content"]): (r["kind"], r["source"], r["lineage"].get("writer"))
+           for r in (rows(written_file) if os.path.exists(written_file) else []) if not r["lineage"].get("tuned")}
 
 train = rows(os.path.join(D, SET))
 facts = [e for e in train if FACT.match(e["source"])]
@@ -160,8 +169,25 @@ for e in train:
     elif src == "after-cutoff":
         if not a.startswith(f"I don't know. My knowledge goes up to {cutoff_day}"):
             fail["after-cutoff example that doesn't decline"] += 1
+    elif src.startswith("stageb-"):
+        # The student's honest rows (make_student_honest.py): only these kinds, each traced apart from the row's own
+        # claim to base Glimmer's written file, or a template that states the cutoff.
+        kind, lin = e.get("kind"), e.get("lineage") or {}
+        stageb_rows += 1
+        if not src.startswith(STAGEB_HONEST.get(kind, "\0")):
+            fail[f"stage B row of a kind not allowed: {kind}"] += 1
+        elif lin.get("tuned") or not lin.get("student_usable"):
+            fail["stage B row marked tuned or not student usable"] += 1
+        elif kind == "cutoff_restated":
+            if lin.get("writer") != "template" or STAGEB_CUTOFF_DAY not in a:
+                fail["stage B cutoff row that isn't a template stating the cutoff"] += 1
+        elif written.get((q, a)) != (kind, src, lin.get("writer")) or lin.get("writer") not in GLIMMER:
+            fail["stage B row not in base Glimmer's written file"] += 1
     else:
         fail[f"source not allowed: {src}"] += 1
+
+if stageb_rows and (kinds["cutoff"] or kinds["after-cutoff"]):
+    fail["stage A cutoff templates beside stage B's: two cutoff dates"] += kinds["cutoff"] + kinds["after-cutoff"]
 
 
 def coverage(probes):

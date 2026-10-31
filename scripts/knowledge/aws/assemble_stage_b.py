@@ -12,11 +12,16 @@ writer, tuned and student_usable, and visibility, as in make-stage-b.ts):
   contrast         stageb-contrast:SOURCE  Glimmer, or Spark Open         if Glimmer's     a fact stage 2 trained on
   replay           stageb-contrast:replay  base Glimmer                   yes              base Glimmer's answers, general skills
   cutoff_restated  stageb-cutoff:          template                       yes              the cutoff, at the date the corpus reaches
+  reasoning        stageb-reasoning:       base Glimmer                   no               base Glimmer's own reasoning and answer
 
-"Honest kinds" are the first four and cutoff_restated. What isn't from make-stage-b.ts has visibility "private": training only,
+"Honest kinds" are the first four and cutoff_restated. Reasoning rows are not an honest kind. What isn't from make-stage-b.ts has visibility "private": training only,
 never published, like the news it comes from. A student model must stay Glimmer-only with no tuned-Glimmer output, so
 --student-out holds only student_usable records, at the same honest share, with its contrast drawn only from pairs in
-train-student.jsonl.
+train-student.jsonl. Reasoning rows stay out of that file.
+
+--reasoning with --reasoning-share adds rows that already carry reasoning_content. The assistant text, reasoning_content
+and reasoning_strength are copied through unchanged. The share is of the whole set. Short of reasoning rows, the set
+shrinks so the share holds. The other rows are a sample of the mix this script would have written at --max-total.
 
 Mixes test the honest share at one size: every mix takes the total the highest share can fill (--own-total opts out). Left to
 itself, a lower share only added non-honest rows, so both mixes held the same honest examples and differed in contrast volume.
@@ -60,7 +65,7 @@ import re
 
 from stage_b_lib import D, SHARES, Screen, named_thing, qkey, read_jsonl, topic_group, usable_aliases
 from honesty_grade import CUTOFF_CUES, first_match, numbers, refuses
-from train_glimmer import SYSTEM, answered, normalize
+from train_glimmer import CONTROL_TOKEN, STRENGTHS, SYSTEM, answered, normalize
 
 MIXES = {"a": 0.40, "b": 0.25}
 # make-stage-b.ts's source prefixes and kinds, and its targets as weights.
@@ -538,8 +543,90 @@ def tally(rows):
             "distinct_replies": len(replies), "top_reply_share": round(replies.most_common(1)[0][1] / max(1, len(rows)), 4) if rows else 0}
 
 
+# Reasoning rows repair channel tokens. They are not an honest kind, same as contrast and replay.
+NOT_HONEST = ("measured_right", "contrast", "replay", "reasoning")
+
+
 def honest_share_of(rows):
-    return round(sum(r["kind"] not in ("measured_right", "contrast", "replay") for r in rows) / max(1, len(rows)), 4)
+    return round(sum(r["kind"] not in NOT_HONEST for r in rows) / max(1, len(rows)), 4)
+
+
+def reasoning_problem(row, screen):
+    """Why a reasoning row cannot be copied in, or None. Does not change the row."""
+    if row.get("kind") != "reasoning":
+        return "not a reasoning row"
+    if row.get("reasoning_strength") not in STRENGTHS:
+        return "bad strength"
+    if not str(row.get("source") or "").startswith("stageb-reasoning:"):
+        return "bad source"
+    lineage = row.get("lineage") or {}
+    if lineage.get("writer") not in BASE_GLIMMER or lineage.get("tuned") or lineage.get("student_usable"):
+        return "not base Glimmer"
+    messages = row.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return "no messages"
+    saw = False
+    users = 0
+    for m in messages:
+        if not isinstance(m, dict) or m.get("role") not in ("system", "user", "assistant", "tool"):
+            return "bad message"
+        for field in ("content", "reasoning_content"):
+            value = m.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, str) or CONTROL_TOKEN.search(value):
+                return "control token or non-text"
+        if m.get("role") == "user":
+            users += 1
+            if screen.why(m.get("content") or ""):
+                return "screened"
+        if m.get("role") == "assistant" and m.get("reasoning_content"):
+            saw = True
+            if not isinstance(m.get("content"), str):
+                return "answer is not text"
+    if not saw or not users:
+        return "no reasoning turn"
+    return None
+
+
+def load_reasoning(path, screen, dropped):
+    """The pool, each row the object read from disk so reasoning_content is unchanged."""
+    pool = []
+    for row in read_jsonl(path):
+        reason = reasoning_problem(row, screen)
+        if reason:
+            dropped["reasoning: " + reason] += 1
+            continue
+        pool.append(row)
+    return pool
+
+
+def mix_reasoning(rows, pool, share, max_total, rng):
+    """About `share` of the result comes from pool. Short of those rows, the result shrinks so the share holds.
+    Pool rows are not rebuilt."""
+    n_reason = min(len(pool), round(share * max_total))
+    n_base = min(len(rows), max(0, max_total - n_reason))
+    n_reason = min(len(pool), round(share / (1 - share) * n_base)) if n_base else 0
+    n_base = min(len(rows), round(n_reason * (1 - share) / share)) if n_reason else 0
+    if n_base + n_reason > max_total:
+        n_reason = min(n_reason, max_total - n_base)
+    base = rng.sample(rows, n_base) if n_base < len(rows) else list(rows)
+    return base + rng.sample(pool, n_reason)
+
+
+def head_kind_share(path, kind, n):
+    """Share of `kind` in the first n written lines. The file is already shuffled."""
+    hits = seen = 0
+    with open(path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            seen += 1
+            if json.loads(line).get("kind") == kind:
+                hits += 1
+            if seen >= n:
+                break
+    return {"n": seen, "share": round(hits / max(1, seen), 4)}
 
 
 def write_set(path, rows, rng):
@@ -571,6 +658,8 @@ def main():
     ap.add_argument("--dev", help="the honesty dev set; its usual file if it exists")
     ap.add_argument("--out", required=True)
     ap.add_argument("--student-out")
+    ap.add_argument("--reasoning", help="jsonl of base Glimmer rows with reasoning_content")
+    ap.add_argument("--reasoning-share", type=float, help="share of --out taken from --reasoning; counted as not honest")
     ap.add_argument("--max-total", type=int, default=60000)
     ap.add_argument("--own-total", action="store_true", help="this share's largest set, not the size the highest share can fill")
     ap.add_argument("--max-adds-fact", default=MAX_ADDS_FACT, help="largest share of written records adding a fact, by kind; corrections are all kept")
@@ -619,6 +708,15 @@ def main():
     named_shape = sum(named_thing(r["messages"][1]["content"]) for r in written if r["kind"] == "false_premise")
     contrast = build_contrast(max(0, rest - len(replay_used) - len(right_used)), round(a.named_contrast * named_shape), a.same_passage_contrast, targeted, facts, rng)
     rows = written + wrong_used + chosen_cutoffs + right_used + replay_used + contrast
+    if a.reasoning or a.reasoning_share is not None:
+        if not a.reasoning or a.reasoning_share is None:
+            ap.error("--reasoning and --reasoning-share are used together")
+        if not 0 < a.reasoning_share < 1:
+            ap.error("--reasoning-share must be between 0 and 1")
+        reasoning_pool = load_reasoning(a.reasoning, screen, dropped)
+        if not reasoning_pool:
+            ap.error("no reasoning rows left after the screen")
+        rows = mix_reasoning(rows, reasoning_pool, a.reasoning_share, a.max_total, rng)
     report = {
         "mix": a.mix if a.honest_share is None else None, "honest_share_asked": honest_share, "honest_share": honest_share_of(rows),
         "seed": a.seed, "cutoff": a.cutoff, "plan": sizes, "available": {
@@ -629,6 +727,10 @@ def main():
         "dropped": dict(dropped.most_common()), "screen": screen.counts(), "set": tally(rows), "cost_at_measured_rate": run_cost(len(rows)),
         "sha256": write_set(a.out, rows, rng),
     }
+    if a.reasoning_share is not None:
+        report["reasoning_share_asked"] = a.reasoning_share
+        report["reasoning_share"] = round(sum(r["kind"] == "reasoning" for r in rows) / max(1, len(rows)), 4)
+        report["reasoning_head"] = head_kind_share(a.out, "reasoning", 9600)
     if a.student_out:
         cuts = chosen_cutoffs
         total = min(a.max_total, round((student_written + len(cuts)) / honest_share))
@@ -638,7 +740,7 @@ def main():
         replays = rng.sample(replay, min(round(a.replay_share * total), len(replay)))
         student_named = round(a.named_contrast * sum(named_thing(r["messages"][1]["content"]) for r in kept if r["kind"] == "false_premise"))
         student_rows = kept + cuts + replays + build_contrast(max(0, rest_n - len(replays)), student_named, a.same_passage_contrast, student_targeted, student_facts, rng)
-        bad = [r for r in student_rows if not usable(r) or r["lineage"]["tuned"] or r["kind"].startswith("measured")]
+        bad = [r for r in student_rows if not usable(r) or r["lineage"]["tuned"] or r["kind"].startswith("measured") or r["kind"] == "reasoning"]
         if bad:
             raise SystemExit(f"{len(bad)} records in the student file aren't usable for the student")
         report["student"] = {"honest_share": honest_share_of(student_rows), "set": tally(student_rows), "sha256": write_set(a.student_out, student_rows, rng)}

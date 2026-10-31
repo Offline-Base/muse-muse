@@ -527,6 +527,60 @@ def check_tokenizer(path):
     print("ok Answerer.ask: prompts, decoding and halving on out-of-memory, with a stand-in model")
 
 
+@check
+def reasoning_rows_are_a_share_and_stay_out_of_the_student_file():
+    """The reasoning pool is copied through, counted as not honest, and left out of the student file."""
+    assert A.honest_share_of([{"kind": "reasoning"}, {"kind": "false_premise"}, {"kind": "contrast"}, {"kind": "replay"}]) == 0.25
+    marker = "MARKER THINK"
+    pool = []
+    for i in range(30):
+        pool.append({
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": f"Add the pile numbered {i}."},
+                         {"role": "assistant", "content": f"The pile is {i}.", "reasoning_content": marker}],
+            "reasoning_strength": "medium", "source": "stageb-reasoning:multistep", "kind": "reasoning",
+            "lineage": {"writer": "muse-glimmer-30b", "tuned": False, "student_usable": False, "prompt_id": f"p{i}"},
+            "visibility": "private",
+        })
+    mixed = A.mix_reasoning([{"kind": "replay", "messages": [{"role": "system"}, {"role": "user"}, {"role": "assistant", "content": "x"}]} for _ in range(40)],
+                            pool, 0.5, 20, random.Random(1))
+    assert len(mixed) == 20 and sum(r["kind"] == "reasoning" for r in mixed) == 10
+    assert all(r["messages"][2]["reasoning_content"] == marker for r in mixed if r["kind"] == "reasoning")
+    with tempfile.TemporaryDirectory() as tmp:
+        s = fixture_screen(tmp)
+        written = [chat(f"Why did the Blorp {i} Foundation close?", f"I have no record of Blorp {i}.", f"stageb-false-premise:p{i}", writer="muse-glimmer-30b") for i in range(80)]
+        written += [chat(f"Who won race {i} in December 2026?", "That's after my knowledge cutoff of October 29, 2026.", f"stageb-after-cutoff:p{i}", writer="muse-glimmer-30b") for i in range(40)]
+        written += [chat(f"How did senator {i} privately vote?", "That isn't public.", f"stageb-unknowable:p{i}", writer="muse-glimmer-30b") for i in range(20)]
+        measured = [{**probe(f"Measured question {i}?", f"ans{i}", f"source:s3-ccnews-general:m{i}:0"), "i": i, "ended": True,
+                     "reply": f"It was ans{i}." if i % 3 == 0 else "It was something else.", "right": i % 3 == 0} for i in range(200)]
+        train = [chat(f"Stage 2 fact {i}?", f"Fact answer {i}.", f"source:s3-ccnews-ai-meta:s{i}:0") for i in range(400)]
+        train += [chat(f"Replay prompt {i}?", f"Replay answer {i}.", "replay") for i in range(40)]
+        train += [chat("What is your knowledge cutoff?", "My knowledge goes up to October 28, 2026.", "cutoff") for _ in range(8)]
+        d = os.path.join(tmp, "d")
+        os.makedirs(d)
+        paths = {k: write_jsonl(os.path.join(d, k + ".jsonl"), v) for k, v in
+                 (("w", written), ("m", measured), ("t", train), ("s", train), ("r", pool))}
+        out = os.path.join(d, "r50.jsonl")
+        real_screen, real_argv = A.Screen, sys.argv
+        A.Screen = lambda dev=None: s
+        try:
+            sys.argv = ["assemble_stage_b.py", "--mix", "a", "--measured", paths["m"], "--written", paths["w"], "--train", paths["t"],
+                        "--student-train", paths["s"], "--reasoning", paths["r"], "--reasoning-share", "0.5",
+                        "--out", out, "--student-out", os.path.join(d, "student.jsonl"), "--max-total", "40", "--own-total",
+                        "--dev", os.path.join(tmp, "none")]
+            with contextlib.redirect_stdout(io.StringIO()):
+                A.main()
+        finally:
+            A.Screen, sys.argv = real_screen, real_argv
+        rows = [json.loads(line) for line in open(out)]
+        report = json.load(open(os.path.join(d, "r50-report.json")))
+        assert abs(report["reasoning_share"] - 0.5) < 0.02, report["reasoning_share"]
+        assert all(r["messages"][-1]["reasoning_content"] == marker and r["reasoning_strength"] == "medium"
+                   for r in rows if r["kind"] == "reasoning")
+        student_rows = [json.loads(line) for line in open(os.path.join(d, "student.jsonl"))]
+        assert student_rows and all(r["kind"] != "reasoning" and all("reasoning_content" not in m for m in r["messages"]) for r in student_rows)
+        assert report["reasoning_head"]["n"] == len(rows)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--tokenizer")

@@ -69,7 +69,7 @@ step() {
 # llama.cpp at the pinned release, CUDA for this machine's GPU only (a quicker build), the three tools used here. A
 # function called from step's `||` runs without set -e, so each command that matters says what happens when it fails.
 # No GPU is used: nvidia-smi only reads the compute capability, and CMake only compiles.
-BUILT=$LCPP/build/tools-built
+BUILT=${BUILT:-$LCPP/build/tools-built}  # On writer-1, whose tree came without git history, an existing file skips the build.
 build() {
   if [ ! -d "$LCPP/.git" ]; then
     rm -rf "$LCPP.clone"
@@ -94,7 +94,7 @@ build() {
   touch "$BUILT"
 }
 step build "$BUILT" build
-COMMIT=$(git -C "$LCPP" rev-parse HEAD)
+COMMIT=$(git -C "$LCPP" rev-parse HEAD 2>/dev/null || echo unknown)
 # b11970 is 52202132 (Oct 28); a different commit is logged, not fatal.
 case $COMMIT in 52202132*) log "llama.cpp $TAG at $COMMIT";; *) log "WARNING llama.cpp $TAG is at $COMMIT, not 52202132";; esac
 if [ "$RUN" = build ]; then log "finished: built in $BIN"; exit 0; fi

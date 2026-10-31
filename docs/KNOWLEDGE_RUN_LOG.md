@@ -624,6 +624,13 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   student for now. So the GH200 has no job: NanoQuant logs, scores and settings copied to .data/knowledge/models/, stage
   2's 0.8-bit text weights streaming to the cache filesystem (models/stage2-nanoquant/, sha256 checked), then terminated by id
   (log .data/knowledge/logs/gh200-off.log). The Mac's offlinebase AWS session has expired: S3 uploads need `aws login`.
+- 1:38 PM: owner ran `aws login`; S3 access is back. Owner asked for a PR, so the working scripts are committed and
+  knowledge has a draft PR into main. Draft because the run isn't finished and merging main redeploys prod. Committed as
+  they stood: the shrink and device scripts (still being edited by the running workflows), the reasoning row writer and
+  assemble_stage_b's reasoning mix (the rows agent is still running; its rows aren't verified), the student's honest rows,
+  and the reasoning-off template (its serving test hasn't reported). Checks here: test_stage_b 14, test_honesty_grade 163
+  and 16, test_student 7, tsc clean. test_glimmer_labels can't run on this Mac (no transformers in the venv); train_glimmer.py
+  didn't change in this commit.
 
 ## Problems and fixes
 
