@@ -63,7 +63,7 @@ describe("settings", () => {
   it("are the keys the spike verified, with every reminder in one runtime_capabilities object", () => {
     assert.deepEqual(museSettings(6), [
       "agents.execution_capacity=6",
-      'runtime_capabilities={"plugin:tbh-reminders:reminder:skill-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:goal-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:verify-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:memory-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:todo-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:scope-reminder":{"enabled":true}}',
+      'runtime_capabilities={"plugin:tbh-reminders:reminder:skill-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:goal-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:verify-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:memory-reminder":{"enabled":true},"plugin:tbh-reminders:reminder:todo-reminder":{"enabled":true}}',
       "max_consecutive_stop_hook_continuations=3",
     ]);
     assert.equal(museSettings(500)[0], "agents.execution_capacity=64");

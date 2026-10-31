@@ -72,7 +72,7 @@ changes from `muse exec` to a small bridge script:
 Rewritten by the platform before every Muse Code start, on both engines:
 
 - **Settings** (`-c`): `agents.execution_capacity` sized to the 4 vCPU VM (`MUSE_AGENT_CAPACITY`, default 6, held to
-  1 through 64), every reminder on (adds memory, todo and scope to the defaults), a stop-hook continuation cap.
+  1 through 64), reminders on except scope (adds memory and todo to the defaults), a stop-hook continuation cap.
 - **Hooks** (`.muse/hooks.json`, scripts under `/vercel/musemuse/hooks/`, outside the product): a PreToolUse guard that
   denies writes to the platform's files and to `.env*`; a PostToolUse and PostToolBatch hook that delivers owner notes
   from the mailbox as `additionalContext` (the steering channel on the exec engine); a Stop gate that runs the
@@ -164,7 +164,9 @@ default: `docs/spikes/serve-2026-10-31/README.md`.
 - **The reminder model (Ethan's call).** Meta's catalog sends Wonder's reminder agents to muse-spark-1.3. Every round on both
   engines now passes `backgroundModelSetting`, so they run on the round's own model, and the bridge clears Muse Code's copy of
   the catalog first. A flags-off Wonder build's reminders now really cost about three times what they did.
-- **Which reminders stay on.** Scope ran 173 times and delivered nothing; skill and scope were a third of a build's spend.
+- **Which reminders stay on.** Scope is off: it ran 173 times and delivered nothing. Skill stays on for now (148 runs, 4
+  delivered, about 18% of a build) because the new targets lean on template skills. Measure it again on the VR and agent test
+  builds.
 - **The build MCP server on a real host.** A local run can't reach it. Check it on one preview build.
 - **Questions can't come yet.** The bridge always passes `--disable-request-user-input` (`disableRequestUserInput:
   true` in `startBridge`), so Muse Code never asks and the Question card and the `answer` action go unused. On a real host a

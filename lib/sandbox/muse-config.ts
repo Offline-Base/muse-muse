@@ -43,8 +43,11 @@ export function agentCapacity(raw: string | undefined): number {
   return Math.min(CAPACITY_RANGE.max, Math.max(CAPACITY_RANGE.min, value));
 }
 
-/** Muse Code's reminder agents. All six are turned on: memory, todo and scope are off by default. */
-export const REMINDER_IDS = ["skill", "goal", "verify", "memory", "todo", "scope"] as const;
+/**
+ * Muse Code's reminder agents to turn on. Memory and todo are off by default. Scope stays off: on the Oct 31 serve test
+ * it ran 173 times, delivered nothing and cost about 16% of a build (docs/spikes/serve-2026-10-31/README.md).
+ */
+export const REMINDER_IDS = ["skill", "goal", "verify", "memory", "todo"] as const;
 
 /** How many times in a row the Stop gate may send the agent back to work before Muse Code lets it stop. */
 export const STOP_HOOK_CONTINUATIONS = 3;
