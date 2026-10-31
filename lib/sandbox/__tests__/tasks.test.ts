@@ -526,6 +526,16 @@ function targetRig() {
   return { dir, product, targets, env };
 }
 
+test("the active targets file goes in on a snapshot with no targets folder, as a phone-only brief has", () => {
+  const { dir, env } = targetRig();
+  const file = path.join(dir, "no-folder-yet", "active.json");
+  writeFileSync(path.join(dir, "bin", "chown"), "#!/bin/bash\n");
+  chmodSync(path.join(dir, "bin", "chown"), 0o755);
+  const res = bash(activeTargetsScript(["web", "phone"], file), { env });
+  assert.equal(res.code, 0, res.stderr);
+  assert.equal(readFileSync(file, "utf8"), '{"targets":["web","phone"]}\n');
+});
+
 test("applying a target copies the overlay, installs its deps, writes the target file and commits", () => {
   const { dir, product, targets, env } = targetRig();
   const res = bash(applyTargetScript(["web", "vr", "phone"], targets), { cwd: product, env });

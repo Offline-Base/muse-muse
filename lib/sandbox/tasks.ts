@@ -197,10 +197,13 @@ export function installTargetsScript(from: string, targetsDir: string = TARGETS_
   ].join("\n");
 }
 
-/** Writes ACTIVE_TARGETS_FILE. Run with sudo, once the overlays are there. */
+/**
+ * Writes ACTIVE_TARGETS_FILE. Run with sudo, once the overlays are there. A target with no overlay installs nothing, so on a
+ * snapshot made before targets its folder doesn't exist yet.
+ */
 export function activeTargetsScript(targets: readonly string[], activeFile: string = ACTIVE_TARGETS_FILE): string {
   const file = q(activeFile);
-  return [`set -e`, `rm -f ${file}`, `printf '%s' ${q(targetFileText(targets))} > ${file}`, `chown root:root ${file}`, `chmod 444 ${file}`].join("\n");
+  return [`set -e`, `mkdir -p "$(dirname ${file})"`, `rm -f ${file}`, `printf '%s' ${q(targetFileText(targets))} > ${file}`, `chown root:root ${file}`, `chmod 444 ${file}`].join("\n");
 }
 
 /** Prints an overlay's deps.json as npm's name@version, one a line, for "dependencies" or "devDependencies". */
