@@ -45,7 +45,9 @@ XFaaS is used only for work that isn't user-facing, because its latency varies. 
 | **Email** | `notify(request).email({ to: "me", subject, text })` | Sent by the platform to signed-in users only, with a daily cap per product. No arbitrary recipients, so it can't be used for spam. |
 | **Outside APIs** | `fetchPublic(url)` for keyless public APIs on an allowlist (weather, public datasets); `secrets(request).get("their_service")` for keys the end user owns | The gateway proxies and caches public calls. A key the end user owns is pasted into the product's own settings screen, stored encrypted by the platform and used server-side. It never appears in code or the browser. |
 
-Why shared instead of provisioning a database per product through the Vercel Marketplace: it's instant, products hold no secrets, quotas and abuse checks live in one place, and the gateway already has the token, budget and metering. A product that outgrows it can be ejected later into its own database with a data export.
+**Both kinds of database.** Every product starts on the shared database, so saving works the moment it deploys: products hold no secrets, quotas and abuse checks live in one place, and the gateway already has the token, budget and metering. When a product needs more, such as its own queries, more room, or a hand-off to someone else, its owner moves it to its own Postgres with one button. The platform creates that database through the Vercel Marketplace (Neon), copies the data across, and keeps the connection string in the product's Vercel settings, on the server only. The `data()` helper works the same on both, so the product's code doesn't change.
+
+**The owner can see their data.** Each product's page in Muse Muse gets a data view for browsing and exporting shared collections. What a product's users save privately shows there as counts only.
 
 Builder side: the template's `AGENTS.md` and a new `platform` skill teach the helpers. The brief writer decides what's persisted, and the screen judge checks that a saved item survives a reload in a second browser. Fixtures seed a per-build sandbox namespace that is deleted at the end of the build.
 
@@ -71,7 +73,9 @@ For Muse Muse, a product goes live only when it passes these filters:
 - **Ready to use.** Install to the home screen (PWA), a share link with a preview card, a short address, export to the user's GitHub or as a zip, and "Use in Muse".
 - **Builds that can't get stuck.** A reconcile job finds runs the workflow engine lost and marks them failed with a retry button. A build from the docs on Oct 30 stranded this way, after the local workflow state was wiped mid-run.
 
-## 4. Muse Muse as an MCP server for coding agents
+## 4. Muse Muse as an MCP server, for coding agents and for your Muse
+
+### For coding agents
 
 A platform-level MCP endpoint, `/api/mcp`, beside the per-product ones, so Claude Code, Muse Code or any agent can build with it:
 
@@ -89,6 +93,22 @@ A platform-level MCP endpoint, `/api/mcp`, beside the per-product ones, so Claud
 ```bash
 claude mcp add --transport http muse-muse https://muse-muse.vercel.app/api/mcp --header "Authorization: Bearer $MUSE_MUSE_TOKEN"
 ```
+
+### Ask your Muse how your project is going
+
+A private "My projects" connector the owner adds to the Muse app, which takes remote MCP servers over HTTP. The owner can then ask their Muse things like "How's my bakery app doing this week?", "Did anyone use the receipt scanner today?" or "Is anything broken?"
+
+| Tool | Answers with |
+|---|---|
+| `list_projects` | Each of the owner's products, its link, and whether it's live. |
+| `project_status` | Build state, the last nightly check, the latest change, and anything still building. |
+| `project_usage` | Visits, people, actions run, model calls and spend for today and the week, and the budget left. |
+| `project_errors` | Recent failures in the live product, in plain words. |
+| `project_data` | Row counts for every collection, and lookups in shared collections. Rows a product's users save privately show as counts only. |
+
+- **Private.** It signs in with the owner's Muse Muse account if the Muse app's connectors support sign-in, or else uses a private connector URL with a secret the owner can revoke. It only ever shows the owner's own products.
+- **Read-only to start.** Asking for a change still happens in Muse Muse.
+- **Where the answers come from.** The gateway already meters each product's model calls. The template adds a small visit counter and error reporter that collect no personal data, and the nightly checks from section 2 supply the health.
 
 ## 5. Hardware with Muse Gadgets
 
@@ -143,9 +163,9 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 
 | # | Work | Rough size | Why first |
 |---|---|---|---|
-| 1 | MCP server for agents (section 4) | 1 day | Small, shows well in the demo ("Claude Code built this through Muse Muse"), and needed by the test bed |
+| 1 | MCP server for agents, and "My projects" for your Muse (section 4) | 1 to 2 days | Shows well in the demo ("Claude Code built this through Muse Muse", then "Muse, how's my app doing?"), and needed by the test bed |
 | 2 | Live-URL check and fault injection (section 2, filters 3 and 4) | 1 to 2 days | Directly raises the share of products that work |
-| 3 | Data and sign-in (section 1) | 2 to 3 days | The biggest jump in what products can be |
+| 3 | Data and sign-in on the shared database, then the move to a product's own database (section 1) | 2 to 3 days, then 1 day | The biggest jump in what products can be |
 | 4 | Gadget skills on product pages (section 5, route 1) | Half a day | Cheap, within the terms, and a hardware story for the demo |
 | 5 | Model day, stage 1 | 1 day | Reuses the docs sweep |
 | 6 | Boards as gateway backends: device tools and the quantized Glimmer | 1 to 2 days | When the quantized Glimmer is ready. A product calling Glimmer on a Jetson is a strong demo |
@@ -154,9 +174,8 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 
 ## Open questions
 
-- **Which paper:** these sections use XFaaS, TestGen-LLM and ACH. If a different Meta engineering paper was meant, it may change section 1.
+- **Muse app sign-in:** whether the Muse app's custom connectors can sign in to a service, which decides how "My projects" stays private.
 - **The e-ink tablet:** its make and operating system decide whether it can show a web page.
 - **Peripherals:** which Pis and the UNO Q have a camera, microphone or speaker attached.
 - **Spare Jetsons:** which boards are free. The fleet control plane was offline on Oct 30, so this wasn't checked.
-- **Shared or separate data:** a shared Postgres, as proposed, or a separate database per product through the Vercel Marketplace.
 - **Email sender:** which domain products send from, and the provider.
