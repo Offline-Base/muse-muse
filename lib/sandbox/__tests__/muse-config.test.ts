@@ -38,7 +38,8 @@ function runHook(name: keyof typeof HOOK_SCRIPTS, input: unknown, env: Record<st
   writeFileSync(file, HOOK_SCRIPTS[name]);
   const res = spawnSync("node", [file], {
     input: typeof input === "string" ? input : JSON.stringify(input),
-    env: { PATH: process.env.PATH ?? "", HOME: tmp, ...env },
+    // Muse Code gives hooks a small environment of their own.
+    env: { NODE_ENV: "test", PATH: process.env.PATH ?? "", HOME: tmp, ...env },
     encoding: "utf8",
     timeout: 30_000,
   });
