@@ -1,0 +1,69 @@
+# Changes to muse-device for drive export
+
+Hussam, these are every change wave 3's drive export (unit 12, `docs/DRIVE_EXPORT.md`) made in `muse-device/`, and why. I kept
+them small and in your style: standard library only, constants at the top, a child process with a status file, plain sentences
+in every error, tests with fakes. Nothing here has run on a board yet. Nobody deployed it anywhere: that's yours, or a fleet job
+the owner approves.
+
+What it does: a person fine-tunes on the board (or picks a lab model), plugs a USB stick into the Jetson, and the board writes
+the model onto it with launchers for a Mac or a Windows PC, checks every file by reading it back, and powers the stick off.
+
+## New files
+
+| File | What and why |
+| --- | --- |
+| `drive.py` | The drive work, about 900 lines. It finds USB drives from `lsblk`, `/sys/block` and `/proc/self/mounts` (no root), checks a drive plan, and writes it in its own process (`python3 drive.py --export ~/drive-export/<export>`), as `train.py` runs a training run, so restarting the server doesn't end an export. Mounting, unmounting, power-off and erasing go through udisks2 (`udisksctl`, and `busctl` for the erase), so nothing runs as root. |
+| `setup-drive.sh` | Run once as root: installs `exfatprogs` only if `mkfs.exfat` is missing (and `udisks2` only if `udisksctl` is), checks the kernel has exFAT, adds a polkit rule letting the server's user mount, unmount, power off and format **USB drives only**, and makes `~/drive-export`. On polkit 0.105 (JetPack 6) it falls back to a `.pkla` file, which can't filter by bus, and says so. |
+| `test_drive.py` | 49 tests with fake drives (temp folders standing in for sticks, a fake sysfs tree and lsblk output) and fake model files. Runs on a Mac: `python3 -m unittest test_drive`. |
+| `test_drive_loop.py` | The same golden plan through a real loop device on the kernel's own exFAT and FAT32 drivers. Skipped unless it runs on Linux as root with `losetup`, `mkfs.exfat`, `mkfs.vfat` and `udisksctl`. It has never run: no Linux machine here. |
+| `fixtures/plan-small.json` | A small drive plan the platform's own test writes (`lib/drive/__tests__/plan.test.ts`), with its kit and model bytes. `test_drive.py` writes it onto a fake drive and checks the drive ends with the same `SHA256SUMS`, so the two sides can't drift. |
+
+## Changes to `server.py`
+
+| Change | Why |
+| --- | --- |
+| `import hashlib`, `import drive` | `install_model` now hashes as it downloads, and the five tools call into `drive.py`. |
+| `VERSION` 0.3.0 to 0.4.0 | Five new tools. |
+| Three lines in the docstring | Where the drive tools' state lives. |
+| `CONVERTER_NAME` constant | Names `llama.cpp b11970 convert_lora_to_gguf.py, f32` on the drive. A test checks it against `LLAMA_CPP_TAG` in `setup-train.sh`, so it can't go stale silently. |
+| `install_model`: hashes each block, then `remember_source()` | Writes `<name>.source.json` (the URL without its query, bytes, sha256) and `<name>.sha256` beside a download, best effort. Without it a drive can only say a base GGUF was "installed by hand". The query is dropped because a signed link is a credential. Neither file ends in `.gguf`, so `list_models` doesn't show them. |
+| New `cached_sha256`, `base_revision`, `dataset_system`, `export_source` | `export_source {run}` answers, for a run that is `done`: the adapter and every `<base>-*.gguf` with bytes and sha256 (cached in `<name>.sha256` with size and mtime, so a second export hashes nothing), the run's config and status, the base weights' revision from huggingface_hub's `.metadata` files, the dataset's system message (its first example's), and the board's hardware model and server version. Never a hostname, an address or a token. |
+| New `drive_tool` wrapper | Turns `drive.DriveError` into your `ToolError`, so drive refusals read like every other tool's. |
+| `DRIVE_TOOLS`, then `TOOLS.update(DRIVE_TOOLS)` | The five tools: `drive_status` (read only), `export_source` (read only), `export_model`, `erase_drive` (destructive), `stop_export`. Same token, same refusal of browser requests, same 1 MiB body limit. |
+
+Nothing else in `server.py` changed. `run_command`, the token rules, the connection limits and every existing tool answer as
+before.
+
+## Changes to `test_server.py`
+
+One line: `test_version_and_tools_are_offered` expects `0.4.0` instead of `0.3.0`. All 76 of your tests still pass (2 skipped
+on a Mac, as before).
+
+## How `drive.py` stays safe
+
+- **Which disks.** Only a disk on the USB bus, whose sysfs path runs through a USB port, that isn't behind `/`, `/boot`, swap or
+  any mount outside `/media/<this user>/` (compared by major and minor number, since `/` shows as `/dev/root` on these boards). Never
+  `mmcblk`, `nvme`, `loop`, `ram` or `zram`. An SD card in a USB reader is `sdX` and is fine. `DRIVE_ALLOW_LOOP_BACKING` is `None`
+  in the shipped code; only the loopback test sets it.
+- **Erasing.** Never on its own, armed or not. Only for the drive an export is waiting on in `needs_erase`, after a person typed
+  its label (or `ERASE` when it has none), only if its identity (maker, model, serial, size, sysfs path, filesystems' labels and
+  UUIDs) is unchanged, and the export looks once more right before the format. Never a disk over 256 GB.
+- **Writing.** Only inside `<mount>/MuseMuse/<one name>/`. A plan with an absolute path, `..`, a backslash, a control character,
+  a character exFAT can't hold, more than 400 files, inline bytes that don't hash to their sha256, or a board file not in
+  `list_models` is refused before anything happens. Each file goes to `<path>.part`, hashed as it's written, fsynced, then
+  renamed. `~/models` is only read.
+- **Links.** https only, at a public address (your `install_model` rule, redirects included), kept in `urls.json` with mode 600
+  and deleted when the export ends. Nothing that looks like a signed URL goes into a status, a log or the drive.
+- **Checking.** `os.sync()`, unmount (which drops the page cache for that filesystem), mount again, read every file back, and
+  FAIL on a wrong, missing or extra file. Then unmount and power off.
+
+## What I couldn't check here, and would like you to
+
+1. On `jetson-02`, read only: `grep exfat /proc/filesystems` after `modprobe exfat`, `udisksctl status`, `pkaction --version`,
+   `command -v mkfs.exfat`, and `df -h ~`.
+2. That the server's user, with no desktop session, can mount, power off and format a stick through the polkit rule. The action
+   ids are my reading of udisks2's policy, not tested.
+3. The `busctl` calls for the erase (`Block.Format` with `dos`, then `PartitionTable.CreatePartitionAndFormat` with `0x07` and
+   `exfat`). I wrote them from udisks2's D-Bus API and have never run them.
+4. That the service unit keeps `KillMode=process`, so an export outlives a server restart as a training run does.
+5. `sudo python3 -m unittest test_drive_loop` on the board or any Linux box, once, as the last check of a deploy.
