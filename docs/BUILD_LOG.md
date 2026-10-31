@@ -860,9 +860,12 @@ because the sidebar showed a real account.
 
 ### 19:19 Disk below 3 GB; local site stopped
 
-- Free space fell to 2.9 GB, swap 5.9 of 7 GB. The fine-tune session's rsync (started 19:15) is copying the stage-b-r30b
-  adapter from its Lambda machine into ~/muse-muse/.data/knowledge on this laptop; asked it to pause or send it elsewhere
-  if it is large.
+- Free space fell to 2.9 GB, swap 5.9 of 7 GB. The fine-tune session had pulled the stage-b-r30b adapter (1.71 GB) onto
+  this laptop by 19:15:58; the rsync General saw was its upload from the laptop to writer-1, which only read. Asked it
+  to keep large files off the laptop.
+- 19:20: the fine-tune session killed the upload, checked the copy's sha256 against train-1, deleted the local folder
+  (about 1.6 GB back), and changed run_handoff.sh to pipe train-1 to writer-1 with nothing written on the laptop.
+  stage-b-r30b is its final model; its IQ1_S is due about 20:15, scored by about 21:30.
 - Stopped General's local site on port 3020 and deleted its build cache (about 0.5 GB). Its database copy stays, so it
   can be restarted. 3.6 GB free after. Next alert at 2 GB.
 
