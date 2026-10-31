@@ -13,6 +13,7 @@ import type {
   DriveBuild,
   DriveFile,
   DriveModel,
+  DrivePayment,
   DriveStatus,
   VerifyResult,
 } from "@/lib/drive/types";
@@ -44,6 +45,12 @@ export const BUYER_KEEP_DAYS = 60;
  */
 export const DELIVERED_BY_DAYS = 14;
 
+/**
+ * A card order nobody pays for within this many days is cancelled by the purge. Its Checkout Sessions expired long
+ * before (Stripe's default is 24 hours), so no payment can land on it afterwards.
+ */
+export const CARD_UNPAID_DAYS = 7;
+
 /** The hashed client and browser keys only count toward the 24-hour quota, so they go after this long. */
 export const CLIENT_KEY_KEEP_DAYS = 30;
 
@@ -54,9 +61,12 @@ const DAY_MS = 86_400_000;
 
 // ---------- Statuses ----------
 
-/** Who may move an order from each status, to where. Every change is checked against this, so v1 needs no workflow. */
+/**
+ * Who may move an order from each status, to where. Every change is checked against this, so v1 needs no workflow. A
+ * card order goes from requested straight to paid when Stripe says its checkout was paid.
+ */
 const MOVES: Record<DriveStatus, Partial<Record<DriveStatus, readonly DriveActor[]>>> = {
-  requested: { invoiced: ["admin"], cancelled: ["buyer", "admin"] },
+  requested: { invoiced: ["admin"], paid: ["checkout"], cancelled: ["buyer", "admin"] },
   invoiced: { paid: ["admin"], cancelled: ["buyer", "admin"] },
   // The bench claims a paid order. The buyer can still cancel until then.
   paid: { flashing: ["bench"], cancelled: ["buyer", "admin"] },
@@ -118,20 +128,26 @@ export function addBusinessDays(from: Date, days: number): Date {
   return d;
 }
 
-/** True for a request nobody has invoiced within INVOICE_BUSINESS_DAYS: the admin queue highlights it. */
-export function invoiceOverdue(row: Pick<DriveOrderRow, "status" | "createdAt">, now: Date): boolean {
+/**
+ * True for a request nobody has invoiced within INVOICE_BUSINESS_DAYS: the admin queue highlights it. A card order is
+ * never overdue: it waits on its buyer's payment, not on the owner.
+ */
+export function invoiceOverdue(row: Pick<DriveOrderRow, "status" | "createdAt"> & { payment?: DrivePayment }, now: Date): boolean {
+  if (row.payment === "card") return false;
   return row.status === "requested" && now.getTime() > addBusinessDays(row.createdAt, INVOICE_BUSINESS_DAYS).getTime();
 }
 
 /**
  * The cutoffs the purge uses: buyer details of orders delivered or cancelled before `buyer`, or shipped before
- * `shipped` and never marked delivered (DELIVERED_BY_DAYS more), and client keys before `keys`.
+ * `shipped` and never marked delivered (DELIVERED_BY_DAYS more), client keys before `keys`, and card orders still
+ * unpaid that were placed before `unpaid`, which are cancelled.
  */
-export function purgeCutoffs(now: Date): { buyer: Date; shipped: Date; keys: Date } {
+export function purgeCutoffs(now: Date): { buyer: Date; shipped: Date; keys: Date; unpaid: Date } {
   return {
     buyer: new Date(now.getTime() - BUYER_KEEP_DAYS * DAY_MS),
     shipped: new Date(now.getTime() - (BUYER_KEEP_DAYS + DELIVERED_BY_DAYS) * DAY_MS),
     keys: new Date(now.getTime() - CLIENT_KEY_KEEP_DAYS * DAY_MS),
+    unpaid: new Date(now.getTime() - CARD_UNPAID_DAYS * DAY_MS),
   };
 }
 
@@ -320,6 +336,18 @@ export function priceLine(priceText: string | null | undefined): string {
   return text || DEFAULT_PRICE_LINE;
 }
 
+/** US cents as a price: "$59", or "$59.50" when there are cents. */
+export function usd(cents: number): string {
+  const dollars = Math.floor(cents / 100);
+  const rest = cents % 100;
+  return `$${dollars.toLocaleString("en-US")}${rest ? `.${String(rest).padStart(2, "0")}` : ""}`;
+}
+
+/** The price line while drive orders are paid by card: the price, with US shipping, and when it's charged. */
+export function cardPriceLine(cents: number): string {
+  return `${usd(cents)} with US shipping, paid by card when you order.`;
+}
+
 // ---------- The build a machine gets ----------
 
 /** The llama.cpp builds on the drive, one folder each under runtime/. */
@@ -391,6 +419,16 @@ export function ownerSummary(input: { title: string; build: DriveBuild; count: n
   const waiting = input.waiting === 1 ? "1 request waits" : `${input.waiting} requests wait`;
   const title = noEmDashes(input.title).replace(/\s+/g, " ").trim().slice(0, 120);
   return `New flash drive request: ${title} (${buildLabel(input.build, input.count)}), order ${input.orderId.slice(0, 8)}. ${waiting} for an invoice: ${input.adminUrl}`;
+}
+
+/**
+ * The one line DRIVE_NOTIFY_URL gets when a card order is paid: the model, the build, the order's short id and how many
+ * paid orders wait for the bench. Never the buyer's name, email or address.
+ */
+export function paidSummary(input: { title: string; build: DriveBuild; count: number; orderId: string; toFlash: number; adminUrl: string }): string {
+  const waiting = input.toFlash === 1 ? "1 drive waits" : `${input.toFlash} drives wait`;
+  const title = noEmDashes(input.title).replace(/\s+/g, " ").trim().slice(0, 120);
+  return `Flash drive order paid by card: ${title} (${buildLabel(input.build, input.count)}), order ${input.orderId.slice(0, 8)}. ${waiting} to be written: ${input.adminUrl}`;
 }
 
 // ---------- The admin's changes and the bench's reports ----------
@@ -472,8 +510,13 @@ export interface DriveOrderView {
   files: Array<{ level: QuantLevel; name: string; bytes: number }>;
   repo: string;
   commit: string;
+  /** How the buyer pays: an emailed invoice, or by card on Stripe Checkout. */
+  payment: DrivePayment;
+  /** For a card order, the Stripe payment's id; for an invoice, the owner's reference. */
   invoiceRef: string | null;
   amountText: string | null;
+  /** True once a card order cancelled after payment was refunded on Stripe. */
+  refunded: boolean;
   carrier: string | null;
   tracking: string | null;
   serial: string | null;
@@ -543,8 +586,10 @@ export function toOrderView(row: DriveOrderRow): DriveOrderView {
     files: row.files.map((f) => ({ level: f.level, name: f.name, bytes: f.bytes })),
     repo: row.ggufRepo,
     commit: row.ggufCommit,
+    payment: row.payment,
     invoiceRef: row.invoiceRef,
     amountText: row.amountText,
+    refunded: Boolean(row.refundRef),
     carrier: row.carrier,
     tracking: row.tracking,
     serial: row.serial,
@@ -564,7 +609,8 @@ export function toAdminRow(row: DriveOrderRow, now: Date): DriveAdminRow {
     manifestSha256: row.manifestSha256,
     note: row.note,
     imageVersion: row.imageVersion,
-    actions: ADMIN_MOVES.filter((to) => canMove(row.status, to, "admin")),
+    // A card order is paid on Stripe, so the admin never invoices it or marks it paid by hand.
+    actions: ADMIN_MOVES.filter((to) => canMove(row.status, to, "admin") && !(row.payment === "card" && (to === "invoiced" || to === "paid"))),
   };
 }
 

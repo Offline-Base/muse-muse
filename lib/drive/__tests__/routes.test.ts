@@ -304,7 +304,8 @@ describe("drive order routes", { skip: canMock ? false : "needs --experimental-t
     it("saves the request, shows the link once, keeps the secret in an HttpOnly cookie, and tells the owner without the buyer's details", async () => {
       const sent = await sendRequest({ build: "Q4_K_M" });
       assert.equal(sent.res.status, 201);
-      assert.deepEqual(Object.keys(sent.json).sort(), ["link", "orderId"]);
+      assert.deepEqual(Object.keys(sent.json).sort(), ["link", "orderId", "payment"]);
+      assert.equal(sent.json.payment, "invoice", "without Stripe set up, a request is invoiced");
       assert.equal(sent.json.link, `${ORIGIN}/orders/${sent.orderId}/open?k=${sent.secret}`);
       assert.match(sent.secret, /^[A-Za-z0-9_-]{43}$/);
       const cookies = sent.res.headers.getSetCookie();

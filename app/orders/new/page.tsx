@@ -6,8 +6,8 @@ import { Icon } from "@/components/icons";
 import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
 import { toPageFiles } from "@/components/vibe/apps";
 import { LocalGuide } from "@/components/vibe/LocalGuide";
-import { driveProblem, gb, minimumSpecText, priceLine } from "@/lib/drive/logic";
-import { DRIVE_TERMS } from "@/lib/drive/terms";
+import { cardPriceLine, driveProblem, gb, minimumSpecText, priceLine, usd } from "@/lib/drive/logic";
+import { DRIVE_CARD_TERMS, DRIVE_TERMS } from "@/lib/drive/terms";
 import { env } from "@/lib/env";
 import { isUuid, safeQuery } from "@/lib/queries";
 import { localFilesFor } from "@/lib/train/local-files-server";
@@ -58,6 +58,7 @@ export default async function NewDriveOrderPage({ searchParams }: { searchParams
   if (problem || !files) return <Unavailable title="This model can't go on a drive" text={problem ?? ""} back={back} />;
 
   const spec = minimumSpecText(minimumSpec(files.files));
+  const cents = env.driveCheckout ? env.drivePriceCents : null;
   return (
     <div className="page">
       <PageHeader
@@ -93,10 +94,14 @@ export default async function NewDriveOrderPage({ searchParams }: { searchParams
         <section className="card section-card" aria-labelledby="drive-price">
           <h2 id="drive-price">Price and shipping</h2>
           <p>
-            <strong>{priceLine(env.drivePriceText)}</strong>
+            <strong>{cents ? cardPriceLine(cents) : priceLine(env.drivePriceText)}</strong>
           </p>
           <ul className="drive-facts">
-            <li>Nothing is charged on this site. We email you an invoice with the price within 2 business days.</li>
+            {cents ? (
+              <li>You pay by card on Stripe&apos;s checkout page. Cancel any time before we start writing the drive for a full refund.</li>
+            ) : (
+              <li>Nothing is charged on this site. We email you an invoice with the price within 2 business days.</li>
+            )}
             <li>We write the drive, check every file on it, and ship it within 2 business days after you pay.</li>
             <li>US addresses only for now.</li>
             <li>Fine-tuned from Meta&apos;s Muse Glimmer 30B (Apache 2.0). Not made, reviewed or endorsed by Meta.</li>
@@ -123,9 +128,10 @@ export default async function NewDriveOrderPage({ searchParams }: { searchParams
         jobId={files.adapterJobId}
         title={files.title}
         files={files.files.map((f) => ({ level: f.level, bytes: f.bytes }))}
-        termsVersion={env.driveTermsVersion}
-        terms={DRIVE_TERMS}
+        termsVersion={env.driveOrderTermsVersion}
+        terms={cents ? DRIVE_CARD_TERMS : DRIVE_TERMS}
         contact={env.driveContactEmail}
+        cardPrice={cents ? usd(cents) : null}
       />
     </div>
   );

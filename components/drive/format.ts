@@ -5,7 +5,7 @@
  */
 import type { Tone } from "@/lib/format";
 import type { DriveOrderView } from "@/lib/drive/logic";
-import type { DriveAddress, DriveStatus } from "@/lib/drive/types";
+import type { DriveAddress, DrivePayment, DriveStatus } from "@/lib/drive/types";
 
 export const DRIVE_STATUS_LABEL: Record<DriveStatus, string> = {
   requested: "Requested",
@@ -36,7 +36,21 @@ export const DRIVE_STEPS: ReadonlyArray<{ status: DriveStatus; label: string; su
   { status: "delivered", label: "Delivered", sub: "Plug it in" },
 ];
 
-/** True once the order was paid: a cancel then owes the buyer a refund, which the owner sends from their own tool. */
+/**
+ * The steps the order page draws for how this order is paid: a card order has no invoice step, and waits for its
+ * payment where an invoice order waits for the owner.
+ */
+export function stepsFor(payment: DrivePayment): ReadonlyArray<{ status: DriveStatus; label: string; sub: string }> {
+  if (payment === "invoice") return DRIVE_STEPS;
+  return DRIVE_STEPS.filter((s) => s.status !== "invoiced").map((s) =>
+    s.status === "requested" ? { ...s, label: "Ordered", sub: "Waiting for your card payment" } : s.status === "paid" ? { ...s, sub: "Paid by card, in line to be written" } : s,
+  );
+}
+
+/**
+ * True once the order was paid: a cancel then owes the buyer a refund. A card order is refunded on Stripe when it's
+ * cancelled; the owner refunds an invoice from their own tool.
+ */
 export function wasPaid(order: Pick<DriveOrderView, "at">): boolean {
   return Boolean(order.at.paid);
 }
@@ -49,11 +63,17 @@ export function trackingHref(carrier: string | null, tracking: string | null): s
 }
 
 /** What happens next, as the order page says it. */
-export function nextStepText(order: Pick<DriveOrderView, "status" | "at" | "buyer" | "invoiceRef" | "amountText" | "carrier" | "tracking" | "serial" | "cancelledBy">): string {
+export function nextStepText(
+  order: Pick<DriveOrderView, "status" | "at" | "buyer" | "invoiceRef" | "amountText" | "carrier" | "tracking" | "serial" | "cancelledBy"> &
+    Partial<Pick<DriveOrderView, "payment" | "refunded">>,
+): string {
   const email = order.buyer?.email ?? "your email";
+  const card = order.payment === "card";
   switch (order.status) {
     case "requested":
-      return `We'll email an invoice to ${email} within 2 business days. Nothing is charged until you pay it.`;
+      return card
+        ? "Pay by card to place your order. Nothing is charged until you pay on Stripe's checkout page."
+        : `We'll email an invoice to ${email} within 2 business days. Nothing is charged until you pay it.`;
     case "invoiced": {
       const what = [order.invoiceRef ? `invoice ${order.invoiceRef}` : "an invoice", order.amountText ? `for ${order.amountText}` : null]
         .filter(Boolean)
@@ -61,7 +81,9 @@ export function nextStepText(order: Pick<DriveOrderView, "status" | "at" | "buye
       return `We emailed ${what} to ${email}. Pay it from the email, and we'll write your drive. You can still cancel until then.`;
     }
     case "paid":
-      return "Thanks, you've paid. We write your drive, check every file on it, and ship it within 2 business days.";
+      return card
+        ? `Thanks, your card payment${order.amountText ? ` of ${order.amountText.replace(/ by card$/, "")}` : ""} went through, and Stripe emailed a receipt to ${email}. We write your drive, check every file on it, and ship it within 2 business days.`
+        : "Thanks, you've paid. We write your drive, check every file on it, and ship it within 2 business days.";
     case "flashing":
       return "We're writing your drive now. Then we unplug it, plug it back in and check every file before it ships.";
     case "checked":
@@ -71,8 +93,11 @@ export function nextStepText(order: Pick<DriveOrderView, "status" | "at" | "buye
     case "delivered":
       return "Delivered. Plug the drive in and open Start Here.html.";
     case "cancelled": {
+      if (order.cancelledBy === "checkout") return "This order was cancelled because it wasn't paid within 7 days. Nothing was charged.";
       const who = order.cancelledBy === "buyer" ? "You cancelled this order." : "This order was cancelled.";
-      return `${who} ${wasPaid(order) ? "We'll refund what you paid." : "Nothing was charged."}`;
+      if (!wasPaid(order)) return `${who} Nothing was charged.`;
+      if (card) return `${who} ${order.refunded ? "We refunded your card in full. It can take 5 to 10 days to show." : "We're refunding your card in full."}`;
+      return `${who} We'll refund what you paid.`;
     }
   }
 }
@@ -94,7 +119,8 @@ export function requestErrorText(status: number, data: unknown): string {
   }
   if (status === 409 && error === "terms_changed") return "The terms changed while this page was open. Reload the page to read them, then send it again.";
   if (status === 404) return typeof d.reason === "string" && d.reason ? d.reason : "This model can't go on a drive right now.";
-  if (status === 503) return "Flash drive orders are off right now.";
+  if (status === 503) return error === "checkout_off" ? "Card payments are off right now. Try again later." : "Flash drive orders are off right now.";
+  if (status === 502) return "Stripe's checkout didn't open. Try again in a minute.";
   if (status === 401) return "Sign in to request a drive.";
   if (status === 403) return "Your browser blocked the request. Reload the page and try again.";
   return "Something went wrong on our side. Try again in a minute.";

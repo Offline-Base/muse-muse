@@ -1,4 +1,5 @@
 import { isCrossSite } from "@/lib/auth";
+import { refundIfCardPaid } from "@/lib/drive/checkout";
 import { toOrderView } from "@/lib/drive/logic";
 import { adminMove, buyerCancel, getOrder, orderForSecret } from "@/lib/drive/store";
 import { errorJson, route } from "@/lib/http";
@@ -8,8 +9,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * POST -> {order}: cancels an order (docs/VIBE_TUNING.md, Feature 6). Its buyer (the link's secret in this browser's
- * cookie) may until the bench starts writing the stick; an admin may until it ships. Not from another site (403
- * cross_site). 404 not_found for anyone else; 409 not_cancellable with {status} once it is too late.
+ * cookie) may until the bench starts writing the stick; an admin may until it ships. A card order cancelled after it
+ * was paid is refunded on Stripe at once (refundIfCardPaid). Not from another site (403 cross_site). 404 not_found for anyone else; 409 not_cancellable with {status} once it is too late.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   if (isCrossSite(req.headers)) return errorJson(403, "cross_site");
@@ -25,5 +26,5 @@ export const POST = route(async (req: Request, { params }: Ctx) => {
     const now = await getOrder(row.id);
     return errorJson(409, "not_cancellable", { status: now?.status ?? row.status });
   }
-  return Response.json({ order: toOrderView(moved) }, { headers: noStore });
+  return Response.json({ order: toOrderView(await refundIfCardPaid(moved)) }, { headers: noStore });
 });

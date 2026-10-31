@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Brief } from "@/lib/brief/schema";
 import type { DocsHoldState } from "@/lib/docs/proxy/types";
-import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DriveStatus, VerifyResult } from "@/lib/drive/types";
+import type { DriveActor, DriveAddress, DriveBuild, DriveFile, DriveModel, DrivePayment, DriveStatus, VerifyResult } from "@/lib/drive/types";
 import type { BuildEventBody, BuildStatus, Manifest, ProductStatus, Reference } from "@/lib/types";
 import type {
   DatasetStatus,
@@ -369,7 +369,16 @@ export const driveOrders = pgTable(
     name: text("name"),
     email: text("email"),
     address: jsonb("address").$type<DriveAddress>(),
-    /** The owner's: the invoice they emailed, the amount as they wrote it, and a note. */
+    /** How the buyer pays: "invoice" (the owner emails one) or "card" (Stripe Checkout when the order is placed). */
+    payment: text("payment").$type<DrivePayment>().notNull().default("invoice"),
+    /** A card order's latest Stripe Checkout Session, reused while it is still open. */
+    checkoutSessionId: text("checkout_session_id"),
+    /** The Stripe refund of a card order cancelled after it was paid. */
+    refundRef: text("refund_ref"),
+    /**
+     * The owner's: the invoice they emailed, the amount as they wrote it, and a note. A card order keeps its Stripe
+     * payment's id (pi_...) and the amount Stripe charged here instead.
+     */
     invoiceRef: text("invoice_ref"),
     amountText: text("amount_text"),
     note: text("note"),

@@ -4,7 +4,7 @@ import { connection } from "next/server";
 import { OrdersQueue } from "@/components/drive/OrdersQueue";
 import { Icon } from "@/components/icons";
 import { EmptyCard, NotConnected, PageHeader } from "@/components/ui";
-import { priceLine, toAdminRow } from "@/lib/drive/logic";
+import { cardPriceLine, priceLine, toAdminRow, usd } from "@/lib/drive/logic";
 import { listOrders, purgeDriveOrders } from "@/lib/drive/store";
 import { env } from "@/lib/env";
 import { safeQuery } from "@/lib/queries";
@@ -13,13 +13,27 @@ import { pageViewer } from "../viewer";
 export const metadata: Metadata = { title: "Drive orders", robots: { index: false } };
 
 const SUBTITLE =
-  "Flash drive order requests. Email each buyer an invoice from your own tool, then move the order along here. The bench script flashes and checks the paid ones.";
+  "Flash drive orders. Card orders arrive paid through Stripe; for the others, email the buyer an invoice from your own tool, then move the order along here. The bench script flashes and checks the paid ones.";
 
 /**
  * The admin queue of flash drive orders (docs/VIBE_TUNING.md, Feature 6). Admins only, confirmed against the database
  * as the other fine-tuning pages do (pageViewer), since it shows buyers' names, emails and addresses. Old buyers'
  * details are purged before it reads, so it never shows what should be gone.
  */
+/** Whether new orders are paid by card, and if not, which Stripe setting is missing. Names settings, never their values. */
+function checkoutLine(): string {
+  if (env.driveCheckout) {
+    return `New orders are paid by card on Stripe (${env.stripeLive ? "live: real cards are charged" : "test mode"}) at ${usd(env.drivePriceCents ?? 0)}.`;
+  }
+  const missing = [
+    env.stripeSecretKey ? null : "STRIPE_SECRET_KEY",
+    env.stripeWebhookSecret ? null : "STRIPE_WEBHOOK_SECRET",
+    env.drivePriceCents === null ? "DRIVE_PRICE_CENTS" : null,
+  ].filter(Boolean);
+  if (missing.length) return `New orders are invoiced by email: card payments need ${missing.join(", ")}.`;
+  return "New orders are invoiced by email: the Stripe key is a live one, and DRIVE_LIVE_SALES isn't on.";
+}
+
 export default async function DriveOrdersPage() {
   await connection();
   const viewer = await pageViewer();
@@ -52,6 +66,8 @@ export default async function DriveOrdersPage() {
   const open = result.data.open.map((r) => toAdminRow(r, now));
   const closed = result.data.closed.map((r) => toAdminRow(r, now));
   const count = (...statuses: string[]) => open.filter((r) => statuses.includes(r.status)).length;
+  const toInvoice = open.filter((r) => r.status === "requested" && r.payment === "invoice").length;
+  const cardWaiting = open.filter((r) => r.status === "requested" && r.payment === "card").length;
   const overdue = open.filter((r) => r.overdue).length;
 
   return (
@@ -75,13 +91,15 @@ export default async function DriveOrdersPage() {
           <div>
             <dt>To invoice</dt>
             <dd>
-              {count("requested")}
+              {toInvoice}
               {overdue ? `, ${overdue} of them over 2 business days` : ""}
             </dd>
           </div>
           <div>
             <dt>Waiting for payment</dt>
-            <dd>{count("invoiced")}</dd>
+            <dd>
+              {count("invoiced")} invoiced, {cardWaiting} by card
+            </dd>
           </div>
           <div>
             <dt>To flash</dt>
@@ -98,7 +116,8 @@ export default async function DriveOrdersPage() {
         </dl>
         <p className="muted small">
           {env.driveEnabled ? "Requests are on (DRIVE_ENABLED)." : "Requests are off: DRIVE_ENABLED isn't set, so nobody can send a new one."}{" "}
-          The price line reads &quot;{priceLine(env.drivePriceText)}&quot;{" "}
+          {checkoutLine()}{" "}
+          The price line reads &quot;{env.driveCheckout && env.drivePriceCents ? cardPriceLine(env.drivePriceCents) : priceLine(env.drivePriceText)}&quot;{" "}
           {env.driveNotifyUrl ? "The notify webhook gets one line per request." : "No notify webhook is set (DRIVE_NOTIFY_URL)."}{" "}
           {env.driveBenchTokenHash ? "The bench token is set." : "The bench script needs DRIVE_BENCH_TOKEN_HASH."}
         </p>

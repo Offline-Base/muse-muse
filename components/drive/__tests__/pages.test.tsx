@@ -59,6 +59,9 @@ function row(over: Partial<DriveOrderRow> = {}): DriveOrderRow {
   return {
     id: ORDER,
     status: "requested",
+    payment: "invoice",
+    checkoutSessionId: null,
+    refundRef: null,
     secretHash: "secrethash",
     trainingJobId: JOB,
     build: "all",
@@ -156,7 +159,12 @@ describe("flash drive pages", { skip: canMock ? false : "needs --experimental-te
           const closed = ["delivered", "cancelled"];
           return { open: rows.filter((r) => !closed.includes(r.status)), closed: rows.filter((r) => closed.includes(r.status)) };
         },
-        purgeDriveOrders: async () => (calls.push("purgeDriveOrders"), { buyers: 0, keys: 0 }),
+        purgeDriveOrders: async () => (calls.push("purgeDriveOrders"), { buyers: 0, keys: 0, unpaid: 0 }),
+        // The card checkout's writes (lib/drive/checkout.ts): the pages only reach them with ?session=.
+        markCardPaid: async () => null,
+        setCheckoutSession: async () => null,
+        setRefund: async () => null,
+        appendNote: async () => {},
       },
     });
     const { renderToString } = await import("react-dom/server");

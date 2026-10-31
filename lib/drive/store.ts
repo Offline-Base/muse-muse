@@ -17,7 +17,7 @@ import {
   type DriveOrderRow,
   type DriveRequest,
 } from "@/lib/drive/logic";
-import type { DriveActor, DriveFile, DriveModel, DriveStatus } from "@/lib/drive/types";
+import type { DriveActor, DriveFile, DriveModel, DrivePayment, DriveStatus } from "@/lib/drive/types";
 
 const orders = schema.driveOrders;
 
@@ -79,6 +79,8 @@ export interface NewDriveOrder {
   commit: string;
   model: DriveModel;
   imageVersion: string;
+  /** How it is paid: by card on Stripe Checkout, or by the owner's emailed invoice (the default). */
+  payment?: DrivePayment;
   secretHash: string;
   clientKey: string;
   browserKey: string;
@@ -102,10 +104,10 @@ export async function createOrder(input: NewDriveOrder, limits: { perClient: num
   const [, inserted] = await db().batch([
     db().execute(sql`select pg_advisory_xact_lock(${REQUEST_LOCK})`),
     db().execute(
-      sql`insert into drive_orders (status, secret_hash, training_job_id, build, gguf_repo, gguf_commit, files, model,
+      sql`insert into drive_orders (status, payment, secret_hash, training_job_id, build, gguf_repo, gguf_commit, files, model,
             image_version, name, email, address, terms_version, terms_accepted_at, age_ok_at, client_key, browser_key,
             created_at, updated_at)
-          select 'requested', ${input.secretHash}, ${r.trainingJobId}::uuid, ${r.build}, ${input.repo}, ${input.commit},
+          select 'requested', ${input.payment ?? "invoice"}, ${input.secretHash}, ${r.trainingJobId}::uuid, ${r.build}, ${input.repo}, ${input.commit},
                  ${JSON.stringify(input.files)}::jsonb, ${JSON.stringify(input.model)}::jsonb, ${input.imageVersion},
                  ${r.name}, ${r.email}, ${JSON.stringify(r.address)}::jsonb, ${r.termsVersion}, ${nowIso}::timestamptz,
                  ${nowIso}::timestamptz, ${input.clientKey}, ${input.browserKey}, ${nowIso}::timestamptz, ${nowIso}::timestamptz
@@ -156,10 +158,73 @@ export async function listOrders(): Promise<{ open: DriveOrderRow[]; closed: Dri
   return { open, closed };
 }
 
-/** How many requests wait for an invoice. */
+/** How many requests wait for an invoice. Card orders wait on their buyer, not the owner, so they don't count. */
 export async function countRequested(): Promise<number> {
-  const [row] = await db().select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, "requested"));
+  const [row] = await db()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(orders)
+    .where(and(eq(orders.status, "requested"), eq(orders.payment, "invoice")));
   return Number(row?.n ?? 0);
+}
+
+/** How many paid orders wait for the bench: what the owner's line says after a card payment. */
+export async function countToFlash(): Promise<number> {
+  const [row] = await db().select({ n: sql<number>`count(*)::int` }).from(orders).where(inArray(orders.status, ["paid", "flashing"]));
+  return Number(row?.n ?? 0);
+}
+
+/** Keeps the Checkout Session just made for a card order that is still waiting for its payment. */
+export async function setCheckoutSession(id: string, sessionId: string, now = new Date()): Promise<DriveOrderRow | null> {
+  if (!isOrderId(id)) return null;
+  const [row] = await db()
+    .update(orders)
+    .set({ checkoutSessionId: sessionId, updatedAt: now })
+    .where(and(eq(orders.id, id.toLowerCase()), eq(orders.status, "requested"), eq(orders.payment, "card")))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * A card order's payment went through on Stripe: "paid", with the payment's id and the amount Stripe charged, in one
+ * guarded update that lands only on a card order still waiting for it. Null otherwise (already paid, or cancelled):
+ * the caller then decides whether this payment is one to refund.
+ */
+export async function markCardPaid(
+  id: string,
+  payment: { paymentIntent: string; amountText: string; sessionId: string },
+  now = new Date(),
+): Promise<DriveOrderRow | null> {
+  const from = movableFrom("paid", "checkout");
+  if (!from.length || !isOrderId(id)) return null;
+  const [row] = await db()
+    .update(orders)
+    .set({
+      status: "paid",
+      paidAt: now,
+      invoiceRef: payment.paymentIntent,
+      amountText: payment.amountText,
+      checkoutSessionId: payment.sessionId,
+      updatedAt: now,
+    })
+    .where(and(eq(orders.id, id.toLowerCase()), eq(orders.payment, "card"), inArray(orders.status, from)))
+    .returning();
+  return row ?? null;
+}
+
+/** Records the Stripe refund of a cancelled card order. */
+export async function setRefund(id: string, refundRef: string, now = new Date()): Promise<DriveOrderRow | null> {
+  if (!isOrderId(id)) return null;
+  const [row] = await db().update(orders).set({ refundRef, updatedAt: now }).where(eq(orders.id, id.toLowerCase())).returning();
+  return row ?? null;
+}
+
+/** Adds a line to the owner's note on an order, such as a refund that didn't go through. */
+export async function appendNote(id: string, line: string, now = new Date()): Promise<void> {
+  if (!isOrderId(id)) return;
+  await db()
+    .update(orders)
+    .set({ note: sql`case when ${orders.note} is null or ${orders.note} = '' then ${line} else ${orders.note} || ' ' || ${line} end`, updatedAt: now })
+    .where(eq(orders.id, id.toLowerCase()));
 }
 
 /**
@@ -253,12 +318,18 @@ export async function reportFlashed(id: string, report: BenchReport, now = new D
 }
 
 /**
- * Clears what the platform no longer needs: the buyer's name, email and address, the tracking number, the invoice's
+ * Cancels card orders still unpaid after CARD_UNPAID_DAYS, then clears what the platform no longer needs: the buyer's name, email and address, the tracking number, the invoice's
  * reference and amount, and the notes of orders delivered or cancelled more than 60 days ago, or shipped more than 74
  * days ago and never marked delivered (purgeCutoffs), and every order's quota keys after 30 days. Safe to run often.
  */
-export async function purgeDriveOrders(now = new Date()): Promise<{ buyers: number; keys: number }> {
+export async function purgeDriveOrders(now = new Date()): Promise<{ buyers: number; keys: number; unpaid: number }> {
   const cut = purgeCutoffs(now);
+  // Card orders nobody paid for within CARD_UNPAID_DAYS are cancelled first, so their buyers' details go on schedule.
+  const unpaid = await db()
+    .update(orders)
+    .set({ status: "cancelled", cancelledAt: now, cancelledBy: "checkout", updatedAt: now })
+    .where(and(eq(orders.payment, "card"), eq(orders.status, "requested"), lt(orders.createdAt, cut.unpaid)))
+    .returning({ id: orders.id });
   const buyers = await db()
     .update(orders)
     .set({ name: null, email: null, address: null, tracking: null, invoiceRef: null, amountText: null, note: null, purgedAt: now, updatedAt: now })
@@ -278,5 +349,5 @@ export async function purgeDriveOrders(now = new Date()): Promise<{ buyers: numb
     .set({ clientKey: null, browserKey: null })
     .where(and(lt(orders.createdAt, cut.keys), or(isNotNull(orders.clientKey), isNotNull(orders.browserKey))))
     .returning({ id: orders.id });
-  return { buyers: buyers.length, keys: keys.length };
+  return { buyers: buyers.length, keys: keys.length, unpaid: unpaid.length };
 }

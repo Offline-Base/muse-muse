@@ -13,7 +13,12 @@ function StatusCell({ row }: { row: DriveAdminRow }) {
       </span>
       {row.overdue ? <span className="drive-flag">Over 2 business days</span> : null}
       {row.verifyResult === "FAIL" && row.status === "paid" ? <span className="drive-flag">Last stick failed its check</span> : null}
-      {row.status === "cancelled" && wasPaid(row) ? <span className="drive-flag">Refund owed</span> : null}
+      {row.payment === "card" ? <span className="row-sub muted">{row.status === "requested" ? "Card, waiting for the buyer to pay" : "Card"}</span> : null}
+      {row.status === "cancelled" && wasPaid(row) && !row.refunded ? (
+        <span className="drive-flag">{row.payment === "card" ? "Card refund not sent" : "Refund owed"}</span>
+      ) : null}
+      {row.refunded ? <span className="row-sub muted">Refunded on Stripe</span> : null}
+      {row.note ? <span className="row-sub muted">{row.note}</span> : null}
       {row.invoiceRef ? (
         <span className="row-sub muted">
           {row.invoiceRef}

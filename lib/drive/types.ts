@@ -1,7 +1,8 @@
 /**
- * Flash drive order requests (docs/VIBE_TUNING.md, Feature 6). Someone asks for a tuned model on a USB stick; the site
- * takes no payment. The owner emails an invoice, marks the order paid, flashes the stick on a bench Mac
- * (scripts/drive-bench.ts) and ships it. Types only, so lib/db/schema.ts can import them without pulling in logic.
+ * Flash drive orders (docs/VIBE_TUNING.md, Feature 6). Someone orders a tuned model on a USB stick and pays either by
+ * card on Stripe Checkout (when the site has Stripe set up) or by an invoice the owner emails. Once it's paid, the owner
+ * flashes the stick on a bench Mac (scripts/drive-bench.ts) and ships it. Types only, so lib/db/schema.ts can import
+ * them without pulling in logic.
  */
 import type { QuantLevel } from "@/lib/train/local-files";
 
@@ -10,9 +11,9 @@ import type { QuantLevel } from "@/lib/train/local-files";
  * to flashing and checked, and the buyer may cancel it until it is flashing. lib/drive/logic.ts holds the moves.
  */
 export type DriveStatus =
-  | "requested" // the buyer sent the request, nothing is charged
+  | "requested" // the buyer sent the request, nothing is charged yet (a card order waits for its payment)
   | "invoiced" // the owner emailed an invoice
-  | "paid" // the invoice is paid: in the bench queue
+  | "paid" // the invoice or the card payment went through: in the bench queue
   | "flashing" // the bench is writing a stick for it
   | "checked" // the stick was read back after a replug and every file matched
   | "shipped" // on its way, with the carrier and tracking number
@@ -63,7 +64,16 @@ export interface DriveModel {
   quantJobId: string;
 }
 
-/** Who moves an order: the buyer (holding the order link), an admin, or the bench script (its token). */
-export type DriveActor = "buyer" | "admin" | "bench";
+/**
+ * How the buyer pays: "invoice", which the owner emails from their own tool, or "card", on Stripe Checkout when the
+ * order is placed (lib/drive/stripe.ts). Fixed when the order is saved.
+ */
+export type DrivePayment = "invoice" | "card";
+
+/**
+ * Who moves an order: the buyer (holding the order link), an admin, the bench script (its token), or Stripe's checkout
+ * (a signed webhook, or the session the buyer comes back with, read from Stripe).
+ */
+export type DriveActor = "buyer" | "admin" | "bench" | "checkout";
 
 export type VerifyResult = "PASS" | "FAIL";

@@ -1,15 +1,19 @@
 import Link from "next/link";
+import { CopyField } from "@/components/CopyButton";
 import { CancelOrder } from "@/components/drive/CancelOrder";
-import { DRIVE_STATUS_LABEL, DRIVE_STEPS, addressLines, driveTone, nextStepText, trackingHref, wasPaid } from "@/components/drive/format";
+import { DRIVE_STATUS_LABEL, addressLines, driveTone, nextStepText, stepsFor, trackingHref, wasPaid } from "@/components/drive/format";
+import { PayButton } from "@/components/drive/PayButton";
 import { LocalTime } from "@/components/drive/LocalTime";
 import { Icon } from "@/components/icons";
 import { ExternalLink, PageHeader } from "@/components/ui";
 import { BUYER_KEEP_DAYS, buildLabel, gb, type DriveOrderView } from "@/lib/drive/logic";
 
+type Step = ReturnType<typeof stepsFor>[number];
+
 /** Where each step stands for an order: done, the one it is at, or still to come. */
-function stepState(order: DriveOrderView, index: number): "done" | "active" | "pending" | "skipped" {
-  const at = DRIVE_STEPS.findIndex((s) => s.status === order.status);
-  if (order.status === "cancelled") return order.at[DRIVE_STEPS[index].status] ? "done" : "skipped";
+function stepState(order: DriveOrderView, steps: readonly Step[], index: number): "done" | "active" | "pending" | "skipped" {
+  const at = steps.findIndex((s) => s.status === order.status);
+  if (order.status === "cancelled") return order.at[steps[index].status] ? "done" : "skipped";
   if (index < at) return "done";
   if (index === at) return order.status === "delivered" ? "done" : "active";
   return "pending";
@@ -33,8 +37,28 @@ function ContactLine({ contact, invoiced }: { contact: string | null; invoiced: 
  * reader's own. A server component: the page hands it the order only after checking the link's secret (or an admin),
  * so the address reaches nobody else. An admin sees the same page, titled as theirs to look at, not to own.
  */
-export function OrderView({ order, adminView = false, contact = null }: { order: DriveOrderView; adminView?: boolean; contact?: string | null }) {
+export function OrderView({
+  order,
+  adminView = false,
+  contact = null,
+  link = null,
+  cardPrice = null,
+  checkoutClosed = false,
+}: {
+  order: DriveOrderView;
+  adminView?: boolean;
+  contact?: string | null;
+  /** The order's link, rebuilt from this browser's own cookie, so a buyer who went straight to Stripe can save it. */
+  link?: string | null;
+  /** Today's card price ("$59") while card payments are on, for the Pay button. */
+  cardPrice?: string | null;
+  /** True when the buyer just closed Stripe's checkout without paying. */
+  checkoutClosed?: boolean;
+}) {
   const bytes = order.files.reduce((n, f) => n + f.bytes, 0);
+  const steps = stepsFor(order.payment);
+  const card = order.payment === "card";
+  const payable = card && order.status === "requested" && !adminView;
   const track = order.status === "shipped" || order.status === "delivered" ? trackingHref(order.carrier, order.tracking) : null;
   return (
     <div className="page">
@@ -63,12 +87,15 @@ export function OrderView({ order, adminView = false, contact = null }: { order:
       <section className="card section-card" aria-labelledby="order-next">
         <h2 id="order-next">{adminView ? "What the buyer reads next" : "What happens next"}</h2>
         <p>{nextStepText(order)}</p>
+        {payable && checkoutClosed ? <p className="muted small">You left the checkout page before paying, so nothing was charged.</p> : null}
+        {payable && cardPrice ? <PayButton orderId={order.id} label={`Pay ${cardPrice} by card`} /> : null}
+        {payable && !cardPrice ? <p className="muted small">Card payments are off right now. Your order is saved; try again later.</p> : null}
         {track ? (
           <p>
             <ExternalLink href={track}>Track it on USPS</ExternalLink>
           </p>
         ) : null}
-        {order.buyerCanCancel && !adminView ? <CancelOrder orderId={order.id} paid={wasPaid(order)} /> : null}
+        {order.buyerCanCancel && !adminView ? <CancelOrder orderId={order.id} paid={wasPaid(order)} card={card} /> : null}
         {adminView ? null : <ContactLine contact={contact} invoiced={Boolean(order.at.invoiced)} />}
       </section>
 
@@ -76,8 +103,8 @@ export function OrderView({ order, adminView = false, contact = null }: { order:
         <section className="card section-card" aria-labelledby="order-steps">
           <h2 id="order-steps">Where it stands</h2>
           <ol className="rail drive-steps">
-            {DRIVE_STEPS.map((step, i) => {
-              const state = stepState(order, i);
+            {steps.map((step, i) => {
+              const state = stepState(order, steps, i);
               const when = order.at[step.status];
               return (
                 <li key={step.status} className={`rail-step rail-${state}`} aria-current={state === "active" ? "step" : undefined}>
@@ -141,6 +168,19 @@ export function OrderView({ order, adminView = false, contact = null }: { order:
         </section>
       </div>
 
+      {link && !adminView ? (
+        <section className="card section-card" aria-labelledby="order-link">
+          <h2 id="order-link">Your order&apos;s link</h2>
+          <div className="drive-link-field">
+            <CopyField value={link} label="Order link" />
+            <p className="field-hint">
+              Save it to open this order on another device. It isn&apos;t emailed, and anyone with it can see your address.
+              This browser remembers the order on its own.
+            </p>
+          </div>
+        </section>
+      ) : null}
+
       <section className="card section-card" aria-labelledby="order-ship">
         <h2 id="order-ship">Shipping to</h2>
         {order.buyer ? (
@@ -151,7 +191,7 @@ export function OrderView({ order, adminView = false, contact = null }: { order:
               ))}
             </address>
             <p>
-              Invoice to <strong>{order.buyer.email}</strong>
+              {card ? "Receipt to" : "Invoice to"} <strong>{order.buyer.email}</strong>
             </p>
           </>
         ) : (

@@ -85,6 +85,9 @@ function row(over: Partial<DriveOrderRow> = {}): DriveOrderRow {
   return {
     id: ORDER,
     status: "requested",
+    payment: "invoice",
+    checkoutSessionId: null,
+    refundRef: null,
     secretHash: "secrethash".padEnd(64, "0"),
     trainingJobId: JOB,
     build: "all",

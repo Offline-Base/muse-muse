@@ -286,7 +286,7 @@ describe("drive orders store", { skip: canMock ? false : "needs --experimental-t
       await setRow(shipped.order.id, { status: "shipped", shippedAt: new Date(NOW.getTime() - 300 * DAY), tracking: "9400 1000", ...invoice, createdAt: new Date(NOW.getTime() - 301 * DAY) });
       await setRow(shippedRecently.order.id, { status: "shipped", shippedAt: new Date(NOW.getTime() - 73 * DAY), createdAt: new Date(NOW.getTime() - 74 * DAY) });
 
-      assert.deepEqual(await store.purgeDriveOrders(NOW), { buyers: 3, keys: 5 });
+      assert.deepEqual(await store.purgeDriveOrders(NOW), { buyers: 3, keys: 5, unpaid: 0 });
       const get = async (id: string) => (await store.getOrder(id))!;
       for (const id of [delivered.order.id, cancelled.order.id, shipped.order.id]) {
         const r = await get(id);
@@ -304,7 +304,7 @@ describe("drive orders store", { skip: canMock ? false : "needs --experimental-t
       assert.equal((await get(shippedRecently.order.id)).email, "ada@example.com", "a shipped order waits 14 days for its delivery, then 60");
       assert.equal((await get(shippedRecently.order.id)).clientKey, null, "but its quota keys go after 30 days");
       assert.ok((await get(fresh.order.id)).clientKey, "a new order keeps its keys");
-      assert.deepEqual(await store.purgeDriveOrders(NOW), { buyers: 0, keys: 0 }, "safe to run again");
+      assert.deepEqual(await store.purgeDriveOrders(NOW), { buyers: 0, keys: 0, unpaid: 0 }, "safe to run again");
     });
   });
 });

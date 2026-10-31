@@ -1,4 +1,4 @@
-import { DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
+import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
@@ -296,6 +296,56 @@ export const env = {
   /** The version of the terms the request form shows (lib/drive/terms.ts). Change it whenever their text changes. */
   get driveTermsVersion(): string {
     return process.env.DRIVE_TERMS_VERSION?.trim().slice(0, 40) || DRIVE_TERMS_DEFAULT_VERSION;
+  },
+  /**
+   * The version of the terms the request form shows for the way this site takes payment: the card terms while
+   * driveCheckout is on, the invoice terms otherwise.
+   */
+  get driveOrderTermsVersion(): string {
+    return env.driveCheckout ? DRIVE_CARD_TERMS_VERSION : env.driveTermsVersion;
+  },
+  /**
+   * STRIPE_SECRET_KEY: the Stripe key drive orders are paid with (sk_ or rk_, test or live), or null. Server only: never
+   * in a reply, a header or a log. A restricted key needs Checkout Sessions and Refunds write access.
+   */
+  get stripeSecretKey(): string | null {
+    const key = process.env.STRIPE_SECRET_KEY?.trim() ?? "";
+    return /^(sk|rk)_(test|live)_[A-Za-z0-9]{8,}$/.test(key) ? key : null;
+  },
+  /** STRIPE_WEBHOOK_SECRET: the signing secret (whsec_...) of the webhook endpoint at /api/drive/stripe, or null. */
+  get stripeWebhookSecret(): string | null {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim() ?? "";
+    return /^whsec_[A-Za-z0-9+/=]{8,}$/.test(secret) ? secret : null;
+  },
+  /** True for a live Stripe key: real cards are charged. */
+  get stripeLive(): boolean {
+    return Boolean(env.stripeSecretKey?.includes("_live_"));
+  },
+  /**
+   * DRIVE_PRICE_CENTS: what a drive costs by card, in US cents with US shipping included (5900 is $59), or null. Between
+   * $1 and $1,000.
+   */
+  get drivePriceCents(): number | null {
+    const raw = process.env.DRIVE_PRICE_CENTS?.trim() ?? "";
+    if (!/^\d+$/.test(raw)) return null;
+    const cents = Number(raw);
+    return cents >= 100 && cents <= 100_000 ? cents : null;
+  },
+  /**
+   * True when DRIVE_LIVE_SALES is "1", "true", "yes" or "on". A live Stripe key takes real money only with it, after the
+   * counsel, tax and insurance review the plan asks for before live sales (docs/VIBE_TUNING.md, "Legal and trust").
+   */
+  get driveLiveSales(): boolean {
+    return ["1", "true", "yes", "on"].includes((process.env.DRIVE_LIVE_SALES ?? "").trim().toLowerCase());
+  },
+  /**
+   * True when drive orders are paid by card on Stripe Checkout: DRIVE_ENABLED, STRIPE_SECRET_KEY,
+   * STRIPE_WEBHOOK_SECRET and DRIVE_PRICE_CENTS are all set, and the key is a test key or DRIVE_LIVE_SALES is on.
+   * Otherwise orders are requests the owner invoices by email, as before.
+   */
+  get driveCheckout(): boolean {
+    if (!env.driveEnabled || !env.stripeSecretKey || !env.stripeWebhookSecret || env.drivePriceCents === null) return false;
+    return !env.stripeLive || env.driveLiveSales;
   },
   /**
    * DRIVE_BENCH_TOKEN_HASH: the SHA-256 of the bench script's token (benchTokenHash in lib/drive/token.ts), or null. The
