@@ -28,6 +28,7 @@ from mcp import Client
 
 from base import guard
 from base.config import REPO_ROOT, load_settings
+from base.connector import server
 from base.connector.server import build_server
 from base.dreaming import train
 from base.services import Services
@@ -253,7 +254,8 @@ def test_full_path_keeps_every_private_value_on_the_device(world):
     assert not error
     job_id = json.loads(started)["job_id"]
     first = muse.wait(job_id, timeout=30)
-    assert first["status"] == "waiting" and first["result"] == "Waiting for your OK on the device."
+    saved = server.SAVED_NOTE.format(where=f"output/{job_id}")  # the feedback files, by job id only
+    assert first["status"] == "waiting" and first["result"] == f"Waiting for your OK on the device. {saved}"
     job = services.jobs.get(job_id)
     assert job["kind"] == "grading" and job["status"] == "waiting_for_approval"
     assert isinstance(job["approval_id"], int)
@@ -279,7 +281,8 @@ def test_full_path_keeps_every_private_value_on_the_device(world):
         pending = services.jobs.get(second)["approval_id"]
         assert page.post(f"/api/approvals/{pending}", json={"approve": False}).status_code == 200
         kept = muse.result(second)
-        assert kept == {"job_id": second, "status": "refused", "result": "Kept on your device."}
+        saved = server.SAVED_NOTE.format(where=f"output/{second}")
+        assert kept == {"job_id": second, "status": "refused", "result": f"Kept on your device. {saved} {server.REFUSED_END}"}
         assert services.jobs.get(second)["status"] == "refused"
 
     error, report = muse.call("dreaming_report")

@@ -94,6 +94,9 @@ class ApprovalStore:
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        # Notified after each decide or delete, so get_result can wait for the user's answer.
+        self._decided = threading.Condition(self._lock)
+        self.decisions_made = 0
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -198,7 +201,32 @@ class ApprovalStore:
                     approval_id,
                 ),
             )
+        self._notify()
         return self.get(approval_id)  # type: ignore[return-value]
+
+    def _notify(self) -> None:
+        with self._decided:
+            self.decisions_made += 1
+            self._decided.notify_all()
+
+    def wait_decided(self, approval_id: int, timeout: float) -> bool:
+        """Wait up to `timeout` seconds while the row is pending. True once it is not.
+
+        Wakes on decide or delete in this process, and re-reads the row every second, so an
+        answer written by another process is seen too.
+        """
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._decided:
+            while True:
+                row = self._conn.execute(
+                    "SELECT status, deleted FROM decisions WHERE id = ?", (approval_id,)
+                ).fetchone()
+                if row is None or row["deleted"] or row["status"] != "pending":
+                    return True
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return False
+                self._decided.wait(min(left, 1.0))
 
     def delete(self, approval_id: int) -> bool:
         """Mark a row deleted and blank its request and tagged text. False if there is no such row."""
@@ -206,7 +234,8 @@ class ApprovalStore:
             cur = self._conn.execute(
                 "UPDATE decisions SET deleted = 1, request = '', tagged_text = '' WHERE id = ?", (approval_id,)
             )
-            return cur.rowcount > 0
+        self._notify()
+        return cur.rowcount > 0
 
     # Reading rows
 

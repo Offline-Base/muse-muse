@@ -242,7 +242,28 @@ def test_generic_path_maps_then_reduces(tmp_path):
     steps = sorted(e["step"] for e in job["model_log"])
     assert steps == ["map:1", "map:2", "map:3", "map:4", "reduce"]
     assert all(schema is not GRADE_SCHEMA for _, schema, _ in llm.calls)
-    assert not (settings.paths.output / job["id"]).exists()
+    out = settings.paths.output / job["id"]  # the full answer is saved on the device, and only that
+    assert [p.name for p in out.iterdir()] == ["result.md"]
+
+
+def test_generic_task_saves_its_full_named_result_on_the_device(tmp_path):
+    root = tmp_path / "root"
+    (root / "plans").mkdir(parents=True)
+    (root / ".synthetic").write_text("")
+    (root / "plans" / "plan.md").write_text("# Tavi Brennick garden plan\nTavi will plant beans by the fence.")
+    agent, settings, jobs = make_agent(tmp_path, root=root)
+    job = jobs.get(agent.run_sync("Summarize the plan for my own planning.", "plans"))
+    assert job["status"] == "done", job["error"]
+    assert job["raw_result"] == "Notes for Tavi Brennick garden plan"  # restored on the device
+    out = settings.paths.output / job["id"]
+    saved = out / "result.md"
+    text = saved.read_text()
+    assert "Tavi Brennick" in text and "Task: Summarize the plan for my own planning." in text
+    assert job["raw_result"] in text
+    assert stat.S_IMODE(saved.stat().st_mode) == 0o600 and stat.S_IMODE(out.stat().st_mode) == 0o700
+    assert not list(root.rglob("result.md"))  # nothing is written in the workspace
+    model_input = " ".join(m["content"] for messages, _, _ in agent.llm.calls for m in messages)
+    assert "Tavi Brennick" not in model_input  # the model still saw only tags
 
 
 def test_single_document_skips_reduce(tmp_path):

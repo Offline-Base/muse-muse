@@ -257,9 +257,11 @@ class FakeConnect:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
         self.calls: list[tuple[str, dict]] = []
+        self.proxies: list = []
 
-    def __call__(self, url, additional_headers=None):
+    def __call__(self, url, additional_headers=None, proxy=True):
         self.calls.append((url, additional_headers))
+        self.proxies.append(proxy)
         outcome = self.outcomes.pop(0)
         connect = self
 
@@ -352,10 +354,13 @@ def fake_services(settings):
             status="shared", text=raw_text.replace(REAL_A, "[Student A]"), approval_id=None
         )
 
+    from base.workspace.jobs import JobStore
+
     docs = [SimpleNamespace(id="d1", path=f"essays/{REAL_A} essay.md", title=f"{REAL_A} essay")]
     return SimpleNamespace(
         settings=settings,
         egress=SimpleNamespace(release=release),
+        jobs=JobStore(settings.paths.db),
         index=SimpleNamespace(list=lambda folder: docs),
         tagmap={},
         audit=None,
@@ -507,6 +512,37 @@ def test_default_local_client_ignores_env_proxies():
     assert client.http.trust_env is False
 
 
+# Proxies on the way to the relay (GAP-9): the system proxy by default, RELAY_PROXY=direct bypasses it
+
+
+@pytest.mark.parametrize(("mode", "proxy"), [("system", True), ("direct", None)])
+async def test_relay_socket_uses_the_system_proxy_unless_direct(mode, proxy):
+    connect = FakeConnect([OSError("down")])
+    client = make_client(lambda r: httpx.Response(200), connect=connect, sleep=lambda s: None, proxy=mode)
+    await client.run(attempts=1)
+    assert connect.proxies == [proxy]
+
+
+def test_relay_proxy_setting_and_client_for(settings, monkeypatch):
+    from base.config import load_settings
+
+    assert settings.relay_proxy == "system" and rc.proxy_mode(settings) == "system"
+    direct = load_settings({"BASE_HOME": str(settings.home), "RELAY_PROXY": "direct"})
+    assert direct.relay_proxy == "direct" and rc.proxy_mode(direct) == "direct"
+    with pytest.raises(ValueError, match="RELAY_PROXY"):
+        load_settings({"BASE_HOME": str(settings.home), "RELAY_PROXY": "socks"})
+    rc.save_config(direct, {"relay_url": RELAY, "device_id": "dev-1", "secret": "sec"})
+    assert rc.client_for(direct).proxy == "direct" and rc.client_for(settings).proxy == "system"
+
+
+@pytest.mark.parametrize(("mode", "trusted"), [("system", True), ("direct", False)])
+async def test_pair_and_unlink_clients_follow_relay_proxy(settings, mode, trusted):
+    async with rc._client(None, SimpleNamespace(relay_proxy=mode)) as http:
+        assert http.trust_env is trusted
+    async with rc._client(None) as http:  # no settings: the system proxy, as before
+        assert http.trust_env is True
+
+
 @pytest.mark.parametrize("error", [RelayAuthError("bad secret"), rc.RelayReplacedError("another copy")])
 def test_cli_exits_3_when_retrying_cannot_help(settings, monkeypatch, error):
     # Review device F9: the unit sets RestartPreventExitStatus=3, so a revoked secret or a second
@@ -543,3 +579,49 @@ async def test_unlink_revokes_links_with_the_device_secret(settings):
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     assert await rc.unlink(settings, http=http) == 2
     assert seen == [("/device/unlink", "Bearer sec")]
+
+
+# Relay or local in the audit (the connector reads the relay client's header)
+
+
+async def test_forwarded_calls_say_relay_and_a_frame_cannot_set_it():
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get_list("x-muse-privacy-via"))
+        return httpx.Response(200, headers={"content-type": "application/json"}, text="{}")
+
+    client = make_client(handler)
+    await client.handle(json.dumps(request_frame()))
+    injected = request_frame("f-2", **{"x-muse-privacy-via": "local", "X-Muse-Privacy-Via": "local"})
+    await client.handle(json.dumps(injected))
+    assert seen == [["relay"], ["relay"]]
+
+
+async def test_relayed_calls_are_audited_as_relay(settings, monkeypatch):
+    from base.connector import server
+    from base.connector.audit import Audit
+
+    monkeypatch.setattr(server, "restore_tags", lambda services, text: text)
+    services = fake_services(settings)
+    services.audit = Audit(settings.paths.db)
+    app = connector_app(services, token="local-token")
+    async with app.router.lifespan_context(app):
+        http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app))
+        client = make_client(http=http)
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "Muse App", "version": "1"},
+            },
+        }
+        await client.forward(request_frame("f-init", body=json.dumps(init)))
+        call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "list_documents", "arguments": {}}}
+        await client.forward(request_frame("f-call", body=json.dumps(call), **{"mcp-protocol-version": "2025-06-18"}))
+        await http.aclose()
+    rows = [(r["tool"], r["outcome"], r["via"]) for r in reversed(services.audit.recent(5))]
+    assert rows == [("initialize", "muse_app", "relay"), ("list_documents", "shared", "relay")]

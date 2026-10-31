@@ -1,4 +1,4 @@
-"""Connector tests: the six MCP tools, egress on every result, auth, health and the audit log.
+"""Connector tests: the eight MCP tools, egress on every result, auth, health and the audit log.
 
 All names are invented. Services are fakes in a SimpleNamespace; the fake egress records every
 call and returns a marked text, so a test can tell released text from raw text.
@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sqlite3
 import stat
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -20,9 +25,10 @@ import pytest
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
-from base.config import CloudBackendRefused
+from base.approvals import ApprovalStore
+from base.config import CloudBackendRefused, load_settings
 from base.connector import server
-from base.connector.audit import Audit, audit, recent
+from base.connector.audit import CURRENT_VIA, Audit, audit, client_label, recent
 from base.connector.server import build_server, connector_app, read_or_create_token
 from base.workspace.jobs import JobStore
 
@@ -35,6 +41,7 @@ ALL_TOOLS = {
     "search_documents",
     "ask_device",
     "run_private_task",
+    "save_on_device",
     "get_result",
     "run_dreaming",
     "dreaming_report",
@@ -282,7 +289,7 @@ def assert_no_real_names(text: str) -> None:
 # Tool listing
 
 
-async def test_seven_tools_with_muse_annotations(client):
+async def test_eight_tools_with_muse_annotations(client):
     tools = {t.name: t for t in (await client.list_tools()).tools}
     assert set(tools) == ALL_TOOLS
     for name in ("list_documents", "search_documents", "ask_device", "get_result", "dreaming_report"):
@@ -290,6 +297,9 @@ async def test_seven_tools_with_muse_annotations(client):
         assert tools[name].annotations.open_world_hint is False
     task, dream = tools["run_private_task"].annotations, tools["run_dreaming"].annotations
     assert (task.read_only_hint, task.destructive_hint, task.idempotent_hint) == (False, False, False)
+    save = tools["save_on_device"].annotations  # a write, not destructive, not idempotent (MUSE-8)
+    assert (save.read_only_hint, save.destructive_hint, save.idempotent_hint, save.open_world_hint) == (False, False, False, False)
+    assert set(tools["save_on_device"].input_schema["required"]) == {"items", "purpose"}
     # Not idempotent: a call after a night ends starts another night (review correctness F10).
     assert (dream.read_only_hint, dream.destructive_hint, dream.idempotent_hint) == (False, False, False)
     assert set(tools["run_private_task"].input_schema["required"]) == {"instructions", "folder"}
@@ -426,8 +436,15 @@ async def test_run_private_task_starts_a_job(client, services):
         "run_private_task", {"instructions": f"Grade {TAG_A} against rubric.md", "folder": "essays"}
     )
     assert not result.is_error
-    assert result.structured_content == {"job_id": "job-1", "status": "queued"}
-    assert json.loads(text_of(result)) == {"job_id": "job-1", "status": "queued"}
+    expected = {
+        "job_id": "job-1",
+        "status": "queued",
+        "result": server.TASK_STARTED_NOTE,
+        "retry_after_seconds": server.RETRY_AFTER_SECONDS,
+        "next": server.NEXT_STEP,
+    }
+    assert result.structured_content == expected
+    assert json.loads(text_of(result)) == expected
     assert services.agent.calls == [(f"Grade {TAG_A} against rubric.md", "essays")]
     assert outcomes(services) == [("run_private_task", "started")]
 
@@ -453,14 +470,21 @@ async def test_run_private_task_rejects_bad_input(client, services, args, expect
 async def test_run_dreaming_is_idempotent(client, services):
     first = await client.call_tool("run_dreaming", {})
     second = await client.call_tool("run_dreaming", {})
-    assert first.structured_content == second.structured_content == {"job_id": "dream-1", "status": "running"}
+    assert first.structured_content == second.structured_content == {
+        "job_id": "dream-1",
+        "status": "running",
+        "result": server.DREAM_STARTED_NOTE,
+        "retry_after_seconds": server.RETRY_AFTER_SECONDS,
+        "next": server.NEXT_STEP,
+    }
     assert services.night.starts == 2
 
 
 async def test_run_dreaming_accepts_a_status_mapping(client, services):
     services.night.start = lambda: {"job_id": "dream-7", "status": "queued"}
     result = await client.call_tool("run_dreaming", {})
-    assert result.structured_content == {"job_id": "dream-7", "status": "queued"}
+    body = result.structured_content
+    assert (body["job_id"], body["status"], body["result"]) == ("dream-7", "queued", server.DREAM_STARTED_NOTE)
     assert services.egress.calls == []  # only a job id and a status leave
 
 
@@ -533,7 +557,8 @@ async def test_get_result_refused_keeps_it_on_device(client, services):
     job_id = add_job(services)
     services.egress.status = "refused"
     body = json.loads(text_of(await client.call_tool("get_result", {"job_id": job_id})))
-    assert body["status"] == "refused" and body["result"] == "Kept on the device: it mentions an IEP."
+    assert body["status"] == "refused"
+    assert body["result"] == f"Kept on the device: it mentions an IEP. {server.REFUSED_END}"
     assert services.jobs.rows[job_id]["status"] == "refused"
     again = json.loads(text_of(await client.call_tool("get_result", {"job_id": job_id})))
     assert again == body and len(services.egress.calls) == 1  # the stored egress text, not re-released
@@ -587,7 +612,9 @@ async def test_every_text_result_is_an_egress_output(client, services):
         ("run_dreaming", {}),
     ):
         result = await client.call_tool(tool, args)
-        assert set(result.structured_content) == {"job_id", "status"}
+        # Only the job id, a status and fixed sentences leave.
+        assert set(result.structured_content) == {"job_id", "status", "result", "retry_after_seconds", "next"}
+        assert result.structured_content["result"] in (server.TASK_STARTED_NOTE, server.DREAM_STARTED_NOTE)
         assert_no_real_names(text_of(result))
 
 
@@ -747,7 +774,8 @@ def test_audit_rows_have_no_content(tmp_path):
         ("get_result", "waiting", 0),
         ("list_documents", "shared", 12),
     ]
-    assert set(rows[0]) == {"ts", "tool", "outcome", "ms"}
+    assert set(rows[0]) == {"ts", "tool", "outcome", "ms", "via"}
+    assert {r["via"] for r in rows} == {"local"}
     for bad in (f"{REAL_A} essay", "Shared", "x" * 41, ""):
         with pytest.raises(ValueError):
             audit(db, "list_documents", bad)
@@ -996,7 +1024,8 @@ async def test_ask_device_starts_a_job_and_get_result_releases_it(client, servic
     services.ask_runner = FakeRunner(services.jobs)
     started = await client.call_tool("ask_device", {"question": f"What did {TAG_A} write about?", "purpose": "for me"})
     body = json.loads(text_of(started))
-    assert body["status"] == "queued" and "get_result" in body["result"]
+    assert body["status"] == "queued" and body["result"] == server.ASK_STARTED_NOTE
+    assert "get_result" in body["next"] and body["retry_after_seconds"] == server.RETRY_AFTER_SECONDS
     assert services.ask_runner.started == [(f"What did {REAL_A} write about?", f"What did {TAG_A} write about?\nPurpose: for me", None)]
     result = await client.call_tool("get_result", {"job_id": body["job_id"]})
     [call] = services.egress.calls
@@ -1022,3 +1051,510 @@ async def test_ask_device_busy_is_a_plain_sentence(client, services):
     services.ask_runner = Busy()
     result = await client.call_tool("ask_device", {"question": "anything"})
     assert result.is_error and "5 jobs" in text_of(result)
+
+
+# ----- multi-step use: descriptions, result shapes, the fixed refusal sentence (MUSE-4) -----
+
+
+async def test_get_result_names_every_tool_that_returns_a_job_id(client):
+    tools = {t.name: t for t in (await client.list_tools()).tools}
+    assert len(tools) == 8
+    get = tools["get_result"]
+    field = get.input_schema["properties"]["job_id"]["description"]
+    for name in ("run_private_task", "search_documents", "ask_device", "save_on_device", "run_dreaming"):
+        assert name in get.description and name in field, name
+    for name in ("run_private_task", "search_documents", "ask_device"):
+        assert "get_result" in tools[name].description and "wait_seconds 25" in tools[name].description
+    assert get.input_schema["properties"]["wait_seconds"]["type"] == "integer"
+    assert get.input_schema["required"] == ["job_id"]
+    assert "wait_seconds" in server.INSTRUCTIONS
+    assert "A scheduled job should call only the tool it names, once." in server.INSTRUCTIONS
+    assert "Tags can change from one day to the next, so use the tags from the current results." in server.INSTRUCTIONS
+    assert "\u2014" not in Path(server.__file__).read_text()
+
+
+async def test_bad_ask_device_and_get_result_arguments_get_the_usage_sentence(client, services):
+    services.ask_runner = FakeRunner(services.jobs)
+    ask = await client.call_tool("ask_device", {"question": 3})
+    assert ask.is_error and text_of(ask) == f"The device could not use those arguments. {server.USAGE['ask_device']}"
+    wait = await client.call_tool("get_result", {"job_id": "job-1", "wait_seconds": "soon"})
+    assert wait.is_error and "wait_seconds" in text_of(wait)
+    assert outcomes(services) == [("ask_device", "bad_input"), ("get_result", "bad_input")]
+
+
+@pytest.mark.parametrize("status", ["queued", "running"])
+async def test_unfinished_jobs_say_when_to_ask_again(client, services, status):
+    job_id = add_job(services, status=status)
+    body = json.loads(text_of(await client.call_tool("get_result", {"job_id": job_id})))
+    assert body == {
+        "job_id": job_id,
+        "status": status,
+        "result": server.WORKING_NOTE,
+        "retry_after_seconds": 20,
+        "next": "Call get_result with this job_id and wait_seconds 25.",
+    }
+
+
+async def test_waiting_and_checking_results_say_when_to_ask_again(client, services):
+    services.egress.status = services.egress.resolve_status = "waiting"
+    body = json.loads(text_of(await client.call_tool("get_result", {"job_id": add_job(services)})))
+    assert body["status"] == "waiting" and body["retry_after_seconds"] == 20 and body["next"] == server.NEXT_STEP
+    search = (await client.call_tool("search_documents", {"query": "evidence"})).structured_content
+    assert search["status"] == "waiting" and search["next"] == server.NEXT_STEP
+    services.egress.status = "shared"
+    done = json.loads(text_of(await client.call_tool("get_result", {"job_id": add_job(services, "job-10")})))
+    assert set(done) == {"job_id", "status", "result"}  # a final result has nothing to wait for
+
+
+async def test_missing_or_unknown_job_ids_say_what_to_pass(client, services):
+    blank = await client.call_tool("get_result", {"job_id": "  "})
+    assert blank.is_error and text_of(blank) == "Pass the job_id that a Muse Privacy tool returned."
+    unknown = await client.call_tool("get_result", {"job_id": "nope"})
+    assert unknown.is_error and text_of(unknown).endswith(server.MISSING_JOB)
+
+
+async def test_refused_results_end_with_the_fixed_sentence(client, services):
+    services.egress.status = "refused"
+    search = text_of(await client.call_tool("search_documents", {"query": "evidence"}))
+    listing = text_of(await client.call_tool("list_documents", {"folder": "essays"}))
+    early = json.loads(text_of(await client.call_tool("get_result", {"job_id": add_job(services, status="refused")})))
+    report = text_of(await client.call_tool("dreaming_report", {}))
+    for text in (search, listing, early["result"], report):
+        assert text.endswith("Do not look for this another way. The user can open it on the device.")
+        assert text.count(server.REFUSED_END) == 1
+    again = text_of(await client.call_tool("search_documents", {"query": "evidence"}))
+    assert again.count(server.REFUSED_END) == 1
+
+
+# ----- relay or local, and Muse's client name, in the audit (MUSE-3) -----
+
+
+async def test_relayed_calls_are_labeled_and_initialize_records_the_client(services):
+    headers = {**MCP_HEADERS, "authorization": "Bearer right-token"}
+    name = "Muse Custom Connector/2.0 (https://muse.example.com)"
+    init = {**INIT, "params": {**INIT["params"], "clientInfo": {"name": name, "version": "1"}}}
+    call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "run_dreaming", "arguments": {}}}
+    calls = {**headers, "mcp-protocol-version": "2025-06-18"}
+    async with open_http(services) as http:
+        assert (await http.post("/mcp", json=init, headers={**headers, "x-muse-privacy-via": "relay"})).status_code == 200
+        await http.post("/mcp", json=call, headers={**calls, "x-muse-privacy-via": "relay"})
+        await http.post("/mcp", json=call, headers=calls)  # a script on this machine
+        await http.post("/mcp", json=call, headers={**calls, "x-muse-privacy-via": "relay; DROP TABLE audit"})
+    rows = [(r["tool"], r["outcome"], r["via"]) for r in reversed(services.audit.recent(10))]
+    assert rows == [
+        ("initialize", "muse_custom_connector_2_0_https_muse_exa", "relay"),
+        ("run_dreaming", "started", "relay"),
+        ("run_dreaming", "started", "local"),
+        ("run_dreaming", "started", "local"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "label"),
+    [
+        ("Muse", "muse"),
+        ("Python-urllib/3.12", "python_urllib_3_12"),
+        ("  ", "client"),
+        (None, "client"),
+        (42, "client_42"),
+        ("123 bot", "client_123_bot"),
+        ("Ünïcode Mu$e", "n_code_mu_e"),
+        ("X" * 99, "x" * 40),
+        ("https://evil.example.com/a?b=c", "https_evil_example_com_a_b_c"),
+    ],
+)
+def test_client_names_become_safe_labels(name, label, tmp_path):
+    assert client_label(name) == label
+    assert re.fullmatch(r"[a-z][a-z0-9_]{0,39}", label)
+    audit(tmp_path / "base.db", "initialize", client_label(name))  # always a valid audit label
+
+
+def test_an_old_audit_table_gains_via_on_first_open(tmp_path):
+    db = tmp_path / "base.db"
+    conn = sqlite3.connect(db)
+    with conn:
+        conn.execute("CREATE TABLE audit (ts REAL NOT NULL, tool TEXT NOT NULL, outcome TEXT NOT NULL, ms INTEGER NOT NULL DEFAULT 0)")
+        conn.execute("INSERT INTO audit VALUES (1.0, 'list_documents', 'shared', 5)")
+    conn.close()
+    audit(db, "get_result", "waiting", via="relay")
+    assert [(r["tool"], r["via"]) for r in recent(db)] == [("get_result", "relay"), ("list_documents", "local")]
+    for bad in ("cloud", "Relay", ""):
+        with pytest.raises(ValueError):
+            audit(db, "get_result", "waiting", via=bad)
+
+
+def test_egress_rows_during_a_relayed_call_say_relay(services, tmp_path):
+    services.jobs, job_id = real_jobs(tmp_path)
+
+    class AuditingEgress(FakeEgress):
+        def release(self, *a, **kw):  # runs on the release thread
+            services.audit("egress", "egress_blocked")
+            return super().release(*a, **kw)
+
+    services.egress = AuditingEgress()
+    c = server.Connector(services)
+    token = CURRENT_VIA.set("relay")
+    try:
+        c.call("get_result", c.get_result, job_id)
+    finally:
+        CURRENT_VIA.reset(token)
+    rows = [(r["tool"], r["outcome"], r["via"]) for r in reversed(services.audit.recent(5))]
+    assert rows == [("egress", "egress_blocked", "relay"), ("get_result", "shared", "relay")]
+
+
+# ----- get_result waits for Share it or Keep it here (MUSE-6) -----
+
+
+class FakeClock:
+    """A monotonic clock that moves only when a wait or a test moves it."""
+
+    def __init__(self, now: float = 1000.0):
+        self.now, self.waits, self._lock = now, [], threading.Lock()
+
+    def __call__(self) -> float:
+        with self._lock:
+            return self.now
+
+    def advance(self, seconds: float) -> None:
+        with self._lock:
+            self.now += seconds
+
+    def wait(self, event: threading.Event, seconds: float) -> bool:
+        """The connector's wait: at once if the event is set, else the whole timeout on this clock.
+
+        A wait longer than a poll first gives a release thread half a second of real time to finish.
+        """
+        if event.wait(0.5 if seconds > server.POLL_SECONDS else 0):
+            return True
+        self.waits.append(round(seconds, 3))
+        self.advance(seconds)
+        return event.is_set()
+
+
+class DecidingEgress(FakeEgress):
+    """resolve() reads the real ApprovalStore, like Egress does."""
+
+    def __init__(self, approvals):
+        super().__init__()
+        self.approvals = approvals
+
+    def resolve(self, approval_id):
+        self.resolved.append(approval_id)
+        status = {"pending": "waiting", "approved": "shared", "denied": "refused"}[self.approvals.get(approval_id)["status"]]
+        text = {"waiting": "Waiting for your OK on the device.", "shared": f"{TAG_A} scored 3", "refused": "Kept on your device."}
+        return SimpleNamespace(status=status, text=text[status], approval_id=approval_id, decision="share_tagged")
+
+
+@pytest.fixture
+def waiting(services, tmp_path):
+    """A finished job whose release waits for the user's answer on a real approval row."""
+    services.approvals = ApprovalStore(tmp_path / "approvals.db")
+    approval_id = services.approvals.create_pending(
+        tool="get_result", request=f"Grade {TAG_A}", result_kind="per_student", tagged_text=f"{TAG_A} scored 3",
+        router_decision="ask_user",
+    )  # fmt: skip
+    services.egress = DecidingEgress(services.approvals)
+    job_id = add_job(services, status="waiting_for_approval", release_status="waiting", approval_id=approval_id)
+    yield job_id, approval_id
+    services.approvals.close()
+
+
+@pytest.mark.parametrize(("approve", "status"), [(True, "shared"), (False, "refused")])
+def test_get_result_returns_the_moment_the_user_answers(services, waiting, approve, status):
+    job_id, approval_id = waiting
+    c = server.Connector(services)
+    timer = threading.Timer(0.5, services.approvals.decide, args=(approval_id, approve))
+    started = time.monotonic()
+    timer.start()
+    try:
+        body = json.loads(text_of(c.call("get_result", c.get_result, job_id, 5)))
+    finally:
+        timer.cancel()
+    assert 0.4 < time.monotonic() - started < 1.5
+    assert body["status"] == status and "retry_after_seconds" not in body
+    if approve:
+        assert body["result"] == f"{TAG_A} scored 3"
+    else:
+        assert body["result"] == f"Kept on your device. {server.REFUSED_END}"
+    assert services.jobs.rows[job_id]["release_status"] == status
+    assert outcomes(services) == [("get_result", status)]
+
+
+def test_get_result_with_no_answer_still_waiting_after_the_wait(services, waiting):
+    job_id, _ = waiting
+    c = server.Connector(services)
+    started = time.monotonic()
+    body = json.loads(text_of(c.call("get_result", c.get_result, job_id, 1)))
+    assert 0.9 < time.monotonic() - started < 2.0
+    assert body["status"] == "waiting" and body["next"] == server.NEXT_STEP
+    started = time.monotonic()
+    assert c.get_result(job_id)[0].structured_content["status"] == "waiting"  # no wait_seconds: at once
+    assert time.monotonic() - started < 0.5
+
+
+def test_wait_seconds_is_clamped_to_0_and_40(services, waiting):
+    job_id, _ = waiting
+    clock, asked = FakeClock(), []
+
+    def wait_decided(approval_id, seconds):
+        asked.append(seconds)
+        clock.advance(seconds)
+        return False
+
+    services.approvals.wait_decided = wait_decided
+    c = server.Connector(services, clock=clock, wait=clock.wait)
+    assert c.call("get_result", c.get_result, job_id, 99).structured_content["status"] == "waiting"
+    assert asked == [40]
+    c.call("get_result", c.get_result, job_id, -5)
+    assert asked == [40]  # a negative wait is no wait
+
+
+def test_the_ninth_waiter_answers_at_once(services, waiting):
+    job_id, _ = waiting
+    clock, entered, release = FakeClock(), threading.Semaphore(0), threading.Event()
+
+    def wait_decided(approval_id, seconds):
+        entered.release()
+        assert release.wait(5)
+        clock.advance(seconds)
+        return False
+
+    services.approvals.wait_decided = wait_decided
+    c = server.Connector(services, clock=clock, wait=clock.wait)
+    with ThreadPoolExecutor(server.MAX_WAITERS) as pool:
+        futures = [pool.submit(c.get_result, job_id, 40) for _ in range(server.MAX_WAITERS)]
+        try:
+            for _ in range(server.MAX_WAITERS):
+                assert entered.acquire(timeout=5)
+            started = time.monotonic()
+            ninth = c.get_result(job_id, 40)[0].structured_content
+            assert time.monotonic() - started < 0.5 and ninth["status"] == "waiting"
+        finally:
+            release.set()
+        assert [f.result(timeout=5)[0].structured_content["status"] for f in futures] == ["waiting"] * 8
+
+
+def test_get_result_can_wait_for_a_running_job(services, tmp_path):
+    services.jobs, job_id = real_jobs(tmp_path)
+    clock = FakeClock()
+    real_get, start = services.jobs.get, clock()
+
+    def get(jid):  # the job is still running for its first 3 s
+        row = real_get(jid)
+        return {**row, "status": "running", "release_status": "none"} if row and clock() - start < 3 else row
+
+    services.jobs.get = get
+    c = server.Connector(services, clock=clock, wait=clock.wait)
+    body = c.call("get_result", c.get_result, job_id, 25).structured_content
+    assert body["status"] == "shared" and clock() - start == pytest.approx(3.0)
+    assert set(clock.waits) == {server.POLL_SECONDS}
+
+
+# ----- one time budget per tool call (MUSE-7) -----
+
+
+@pytest.mark.parametrize(("pick_seconds", "release_wait"), [(30, 15.0), (50, server.MIN_WAIT_SECONDS)])
+def test_search_waits_only_for_what_is_left_of_the_budget(services, tmp_path, pick_seconds, release_wait):
+    clock, gate = FakeClock(), threading.Event()
+
+    class SlowPickRag:
+        candidates = 5
+
+        def retrieve(self, index, question):
+            return [SimpleNamespace(doc_id="d1", title="Essay", text="evidence matters a great deal " * 5)]
+
+        def pick(self, question, found):
+            clock.advance(pick_seconds)  # the device model takes this long to pick passages
+            return found, None
+
+    class BlockedEgress(FakeEgress):
+        def release(self, *a, **kw):
+            assert gate.wait(5)
+            return super().release(*a, **kw)
+
+    services.rag, services.egress = SlowPickRag(), BlockedEgress()
+    services.jobs = JobStore(tmp_path / "jobs.db")
+    c = server.Connector(services, clock=clock, wait=clock.wait)
+    started = clock()
+    try:
+        body = c.call("search_documents", c.search_documents, "evidence", "for my own grading").structured_content
+    finally:
+        gate.set()
+    assert body["status"] == "running" and body["job_id"] and body["next"] == server.NEXT_STEP
+    assert clock.waits == [release_wait]
+    assert clock() - started == pytest.approx(pick_seconds + release_wait)
+    assert clock() - started < 46 or release_wait == server.MIN_WAIT_SECONDS
+    wait_for_release(services.jobs, body["job_id"])
+
+
+def test_get_result_with_wait_40_after_20_s_of_work_answers_by_45_s(services, tmp_path):
+    services.jobs, job_id = real_jobs(tmp_path)
+    clock, gate = FakeClock(), threading.Event()
+    real_get, start = services.jobs.get, clock()
+
+    def get(jid):  # 20 s of work before the job is done; then its check is slow
+        row = real_get(jid)
+        return {**row, "status": "running", "release_status": "none"} if row and clock() - start < 20 else row
+
+    class BlockedEgress(FakeEgress):
+        def release(self, *a, **kw):
+            assert gate.wait(5)
+            return super().release(*a, **kw)
+
+    services.jobs.get, services.egress = get, BlockedEgress()
+    c = server.Connector(services, clock=clock, wait=clock.wait)
+    try:
+        body = c.call("get_result", c.get_result, job_id, 40).structured_content
+    finally:
+        gate.set()
+    assert body["status"] == "running" and body["result"] == server.CHECKING_NOTE
+    assert clock() - start <= server.CALL_BUDGET_SECONDS
+    assert clock.waits[-1] == pytest.approx(25.0)  # the release waits only for what is left
+    wait_for_release(services.jobs, job_id)
+
+
+# ----- the full result saved on the device (MUSE-9) -----
+
+
+class QuietLlm:
+    """The device model, faked: nothing leaves the test."""
+
+    is_cloud = False
+
+    def chat_json(self, *_a, **_k):
+        return {"decision": "share_tagged", "reason": "because"}
+
+    def chat(self, *_a, **_k):
+        return SimpleNamespace(content="A short summary.")
+
+    def llm_names(self, *_a, **_k):
+        return []
+
+    def llm_details(self, *_a, **_k):
+        return []
+
+    def request_topics(self, *_a, **_k):
+        return []
+
+
+def test_with_cui_on_a_task_is_kept_and_says_its_result_is_saved(tmp_path):
+    from base.controls import Controls, ControlStore
+    from base.services import Services
+
+    root = tmp_path / "w"
+    root.mkdir()
+    (root / ".synthetic").write_text("invented\n")
+    env = {"BASE_HOME": str(tmp_path / "home"), "WORKSPACE_ROOT": str(root), "DEVICE_ONLY": "1", "CHECKER_API_KEY": "k"}
+    svc = Services.create(load_settings(env), light=False, heavy=False, owner=False)
+    try:
+        ControlStore(svc.settings.paths.controls).save(Controls(profiles=["cui"]))
+        svc.router.llm = svc.checker_llm = svc.answer_llm = QuietLlm()
+        people = list(svc.roster.people())
+        job_id = svc.jobs.create("private_task", "Write the brief for my own records", "contracts")
+        svc.jobs.finish(job_id, f"{people[1].name} and {people[2].name} reviewed the contract.", "free_text")
+        out = svc.settings.paths.output / job_id
+        out.mkdir(parents=True)
+        (out / "result.md").write_text(f"# Task result\n\n{people[1].name} reviewed it.\n")
+        c = server.Connector(svc)
+        body = json.loads(text_of(c.call("get_result", c.get_result, job_id)))
+        text = body["result"]
+        assert body["status"] == "refused"
+        assert f"The full result is saved on the device in output/{job_id}." in text
+        assert text.endswith(server.REFUSED_END)
+        for person in people:
+            assert person.name not in text and person.first not in text and person.last not in text
+        assert svc.egress.final_check(text) == []
+        assert svc.jobs.get(job_id)["released_text"] in text  # stored as egress released it
+    finally:
+        svc.close()
+
+
+def test_search_and_ask_results_never_name_an_output_folder(services, tmp_path):
+    services.egress.status = "refused"
+    services.ask_runner = FakeRunner(services.jobs)
+    job_id = json.loads(text_of(server.Connector(services).call("ask_device", server.Connector(services).ask_device, "anything")))["job_id"]
+    (services.settings.paths.output / job_id).mkdir(parents=True)
+    (services.settings.paths.output / job_id / "x.md").write_text("x")
+    body = server.Connector(services).get_result(job_id)[0].structured_content
+    assert body["status"] == "refused" and "saved on the device" not in body["result"]
+
+
+# ----- run_dreaming from Muse runs at most once a night (MUSE-11) -----
+
+
+def test_run_dreaming_from_muse_runs_at_most_once_a_night(services, monkeypatch):
+    from base.dreaming import night as night_module
+
+    def quick_dream(self, job_id):
+        with self._db() as con:
+            con.execute(
+                "INSERT INTO dreaming_nights (job_id, finished_at, report, rule_row_ids) VALUES (?, ?, '{}', '[]')",
+                (job_id, time.time()),
+            )
+
+    monkeypatch.setattr(night_module.NightRunner, "_dream", quick_dream)
+    runner = night_module.NightRunner(SimpleNamespace(settings=services.settings), synthetic_path="")
+    services.night = runner
+    c = server.Connector(services)
+    first = c.call("run_dreaming", c.run_dreaming).structured_content
+    runner.wait(5)
+    assert first["status"] == "running"
+    again = c.call("run_dreaming", c.run_dreaming).structured_content
+    assert again == {"job_id": first["job_id"], "status": "done", "result": server.DREAMED_TODAY}
+
+    forced = runner.start()  # Dream now on the approval page always runs a night
+    runner.wait(5)
+    assert forced != first["job_id"]
+    assert c.call("run_dreaming", c.run_dreaming).structured_content["job_id"] == forced
+
+    con = sqlite3.connect(services.settings.paths.db)  # 13 hours later
+    with con:
+        con.execute("UPDATE dreaming_nights SET finished_at = finished_at - 13 * 3600")
+    con.close()
+    tonight = c.call("run_dreaming", c.run_dreaming).structured_content
+    runner.wait(5)
+    assert tonight["status"] == "running" and tonight["job_id"] not in (first["job_id"], forced)
+    assert outcomes(services) == [
+        ("run_dreaming", "started"),
+        ("run_dreaming", "done"),
+        ("run_dreaming", "done"),
+        ("run_dreaming", "started"),
+    ]
+
+
+async def test_run_dreaming_while_a_night_runs_gives_its_id(client, services):
+    services.night.running_job = lambda: "dream-1"
+    services.night.last_finished_at = lambda: ("dream-0", time.time() - 60)
+    body = (await client.call_tool("run_dreaming", {})).structured_content
+    assert body["job_id"] == "dream-1" and body["status"] == "running" and services.night.starts == 1
+
+
+async def test_dreaming_report_adds_the_approval_request_numbers(client, services):
+    # MUSE-12: numbers only, also when a report row carries text where a number should be.
+    services.night.report = {
+        "night_number": 2, "learned_from": 5, "accuracy_before": 0.7, "accuracy_after": 0.75,
+        "agreement_before": 0.7, "agreement_after": 0.8, "kept": True, "leaks": 0, "seconds": 9.0,
+        "approval_requests": 7, "still_asked": f"{REAL_A} [Student A]",
+    }  # fmt: skip
+    await client.call_tool("dreaming_report", {})
+    raw = services.egress.calls[0]["raw_text"]
+    assert "- approval requests in the day before: 7" in raw
+    assert "would still ask" not in raw and REAL_A not in raw and "[Student" not in raw
+    services.night.report = services.night.report | {"still_asked": 3}
+    await client.call_tool("dreaming_report", {})
+    assert "- of those, the rules in place now would still ask: 3" in services.egress.calls[1]["raw_text"]
+
+
+async def test_a_list_waiting_for_the_user_gives_a_job_id_and_a_retry_joins_it(client, services):
+    # Found by the scene rehearsal (MUSE-14): a waiting list used to be plain text with no job_id,
+    # so Muse could only list again, and every retry made another card.
+    services.egress.status = services.egress.resolve_status = "waiting"
+    first = (await client.call_tool("list_documents", {"folder": "essays"})).structured_content
+    again = (await client.call_tool("list_documents", {"folder": "essays"})).structured_content
+    assert first["status"] == "waiting" and first["next"] == server.NEXT_STEP
+    assert again["job_id"] == first["job_id"] and len(services.egress.calls) == 1  # one card, not two
+    services.egress.resolve_status = "shared"
+    body = json.loads(text_of(await client.call_tool("get_result", {"job_id": first["job_id"]})))
+    assert body["status"] == "shared" and services.egress.calls[0]["tool"] == "list_documents"
+    assert "saved on the device" not in body["result"]
+    assert outcomes(services)[:2] == [("list_documents", "waiting"), ("list_documents", "waiting")]

@@ -31,8 +31,10 @@ The full contract is "Relay frames" in `docs/CONTRACTS.md`. In short:
 
 - Relay to device: `{"type": "request", "id": "<uuid>", "method": "POST" | "DELETE", "headers": {...}, "body": "<text>"}`. Headers are lowercase and only `content-type`, `accept`, `mcp-session-id` and `mcp-protocol-version`. The OAuth token never goes down.
 - Device to relay: `{"type": "response", "id": "<same uuid>", "status": 200, "headers": {...}, "body": "<text>"}`. Only `content-type` and `mcp-session-id` are passed back to Muse. A status outside 200 to 599 becomes 502.
+- On the device, the relay client sends each request to the local connector with its own token and the header `x-muse-privacy-via: relay`, so the device's audit log can tell relayed calls from local ones. A frame's own headers are filtered first, so a frame cannot set it.
 - `{"type": "ping"}` gets `{"type": "pong"}`. The exact text `{"type": "ping"}` (Python's `json.dumps` spelling) is answered by the runtime without waking the Durable Object; other spellings work too.
 - No device socket: `503 {"error": "device offline"}`, also when the device drops while a request is waiting. No response frame within 60 seconds: `504 {"error": "device timeout"}`. More than 32 requests waiting on one device: `429 {"error": "device busy"}`. Request bodies over 4 MiB: `413`.
+- A `tools/call` gets a tool result Muse can read instead of those errors (`src/toolresult.ts`). When the device is offline (503, or 502 from a device whose app is not running), took too long (504) or is busy (429), and the body is one JSON-RPC `tools/call` with an id, the relay answers `200` with `{"jsonrpc": "2.0", "id": <the same id>, "result": {"content": [{"type": "text", "text": ...}], "isError": true}}` and one fixed sentence, for example "The user's Muse Privacy device is offline right now (asleep, or the app is not running), so nothing was shared. Ask the user to wake the device and try again." `initialize`, `tools/list`, notifications and batches keep the status codes above. To do this the relay reads only the body's `method` and `id`, and only on those failures; it still never stores or logs a body.
 
 ## Pairing
 
@@ -162,13 +164,13 @@ Then in Muse:
    uv run python -m base.connector.relay_client pair
    ```
 
-7. The page sends you back to Muse, which now lists the six Muse Privacy tools. Linking again later needs a new code; a code works once.
+7. The page sends you back to Muse, which now lists the eight Muse Privacy tools. Linking again later needs a new code; a code works once.
 
 If something goes wrong:
 
 | What you see | What to do |
 |---|---|
-| Muse says the server is unavailable, or `/mcp` answers 503 `device offline` | Start `relay_client run` on the device (and `base.server`). |
+| Muse says the server is unavailable, or `/mcp` answers 503 `device offline` | Start `relay_client run` on the device (and `base.server`). A tool call while the device is offline gets the sentence "The user's Muse Privacy device is offline right now..." instead, once the relay with `src/toolresult.ts` is deployed. |
 | "This relay is not set up yet" | `PAIRING_PEPPER` is missing: run `./deploy.sh` again. |
 | "That code did not work" | Run `pair` again and type the new code; the old one is void. |
 | "Too many tries" | Wait 10 minutes. |

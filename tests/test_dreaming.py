@@ -687,6 +687,19 @@ def test_report_for_a_finished_night(settings, holdout_file, tmp_path, by_rule_c
     assert runner.report_for("dream-none") is None
 
 
+def test_last_finished_at_names_the_latest_night(settings, holdout_file, tmp_path, by_rule_count):
+    runner = runner_for(settings, [row(1, "per_student", ["grades"], "approve", True)], holdout_file, tmp_path)
+    assert runner.last_finished_at() is None
+    before = time.time()
+    first, second = runner.run_night(), runner.run_night()
+    job_id, finished_at = runner.last_finished_at()
+    assert job_id == second.job_id != first.job_id
+    assert before <= finished_at <= time.time()
+    forced = runner.start()  # Dream now still starts a night right after one finished
+    runner.wait(5)
+    assert forced not in (first.job_id, second.job_id) and runner.last_finished_at()[0] == forced
+
+
 def test_night_says_how_many_holdout_items_the_gate_reran(settings, holdout_file, tmp_path, paired_runs):
     rows = [row(i, "snippet", [], "deny", True) for i in range(1, 4)]
     runner = runner_for(settings, rows, holdout_file, tmp_path)
@@ -901,3 +914,80 @@ def test_night_reports_missed_asks_and_refusals_shared_for_the_rules_in_place(se
     rows = [row(i, "per_student", ["grades"], "approve", True) for i in range(1, 4)]
     r = runner_for(settings, rows, holdout_file, tmp_path).run_night()
     assert r.kept and (r.missed_asks, r.refuse_shared) == (0, 2)
+
+
+# ----- approval requests for the 8 AM sentence (MUSE-12) -----
+
+CANARY = "Zephyrine Quoll canary-4417"
+
+
+def seeded_asks(settings, *, remember_share=3, ask_again=2):
+    """Approval requests in a real decisions table: some the user taught to share, some to ask again."""
+    from base.approvals import ApprovalStore
+
+    store = ApprovalStore(settings.paths.db)
+    for i in range(remember_share):
+        rid = store.create_pending(
+            tool="get_result", request=f"attendance this week {CANARY}", result_kind="free_text",
+            tagged_text=f"[Student A] was here {CANARY} {i}", router_decision="ask_user", topics=[],
+        )  # fmt: skip
+        store.decide(rid, approve=True, remember=True)
+    for i in range(ask_again):
+        rid = store.create_pending(
+            tool="search_documents", request=f"seating chart {CANARY}", result_kind="snippet",
+            tagged_text=f"[Student B] sits by the window {i}", router_decision="ask_user", topics=[],
+        )  # fmt: skip
+        store.decide(rid, approve=True, remember=False)
+    return store
+
+
+def test_night_counts_approval_requests_and_those_the_new_rules_still_ask(settings, holdout_file, tmp_path, by_rule_count):
+    from base.connector.server import _report_text
+
+    store = seeded_asks(settings)
+    policy = UserPolicy.load(run_eval.REPO_ROOT / "eval" / "user_policy.yaml")
+    services = SimpleNamespace(settings=settings, approvals=store, policy=policy)
+    runner = night.NightRunner(services, holdout_path=holdout_file, synthetic_path=tmp_path / "none.jsonl")
+    r = runner.run_night()
+    assert r.kept and (r.approval_requests, r.still_asked) == (5, 2)
+    last = runner.last_report()
+    assert (last["approval_requests"], last["still_asked"]) == (5, 2)
+    assert runner.report_for(r.job_id)["still_asked"] == 2
+
+    text = _report_text(last)
+    assert "- approval requests in the day before: 5" in text
+    assert "- of those, the rules in place now would still ask: 2" in text
+    for secret in ("Zephyrine", "Quoll", "canary", "[Student", "attendance", "seating"):
+        assert secret not in text
+
+    again = runner.run_night()  # nothing new since that night finished
+    assert (again.approval_requests, again.still_asked) == (0, 0)
+    store.close()
+
+
+def test_requests_older_than_a_day_or_deleted_do_not_count(settings, holdout_file, tmp_path, by_rule_count):
+    store = seeded_asks(settings, remember_share=0, ask_again=3)
+    con = sqlite3.connect(settings.paths.db)
+    with con:
+        con.execute("UPDATE decisions SET ts = ts - 25 * 3600 WHERE id = 1")
+    con.close()
+    store.delete(2)
+    services = SimpleNamespace(settings=settings, approvals=store, policy=UserPolicy.load(run_eval.REPO_ROOT / "eval" / "user_policy.yaml"))
+    r = night.NightRunner(services, holdout_path=holdout_file, synthetic_path=tmp_path / "none.jsonl").run_night()
+    assert (r.approval_requests, r.still_asked) == (1, 1)
+    store.close()
+
+
+def test_replayed_rows_keep_their_identifier_request_and_toggle_floors():
+    rules = "- free_text: share tagged. You approved 3 of 3 (your decisions)\n"
+    receipt = {"floors": ["identifier:phone", "request:iep", "identifier:digits"], "toggles": []}
+    stored = {"request": "a note", "result_kind": "free_text", "tagged_text": "[Student A] [Phone 1]",
+              "topics": "[]", "blocked": "[]", "receipt": json.dumps(receipt)}  # fmt: skip
+    inp, held = night.replay_input(stored)
+    assert [h.kind for h in inp.hits] == ["phone"] and inp.request_blocked == ["iep"] and not held and not inp.strict
+    policy = UserPolicy.load(run_eval.REPO_ROOT / "eval" / "user_policy.yaml")
+    assert night._RulesOnly(SimpleNamespace(device_only=False), None, policy, rules_text=rules).decide(inp).decision == "ask_user"
+    toggled = {**stored, "receipt": json.dumps({"floors": ["compliance:ask_all"], "toggles": ["glba"]})}
+    inp, held = night.replay_input(toggled)
+    assert held and inp.strict
+    assert night.replay_input({"receipt": "not json", "topics": "{}"})[0].topics == []

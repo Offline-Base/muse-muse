@@ -3,6 +3,10 @@
 `NightRunner.start()` runs one night in a background thread and is idempotent: while a night is
 running, a lock row in the device db makes every caller (this process or another) get the same
 job id back. `last_report()` returns aggregate numbers only, safe to hand to Muse.
+`last_finished_at()` lets the connector run at most one night a day for Muse; Dream now on the
+approval page calls start() and always runs one. Each night also counts the approval requests of
+the day before it and how many of them the rules in place after it would still ask (replayed in
+code, no model call), for the morning message.
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ from pathlib import Path
 from base import events as default_events
 from base.config import REPO_ROOT
 from base.dreaming import dataset, gate, train
+from base.router import Router
+from base.types import Hit, RouteInput
 from eval import run_eval
 
 log = logging.getLogger(__name__)
@@ -32,8 +38,10 @@ STALE_AFTER_SECONDS = 3 * 3600  # a lock this old belongs to a run that died
 OWNER = f"{os.getpid()}:{uuid.uuid4().hex[:8]}"
 REPORT_KEYS = (
     "learned_from", "accuracy_before", "accuracy_after", "agreement_before", "agreement_after",
-    "kept", "leaks", "seconds", "night_number",
+    "kept", "leaks", "seconds", "night_number", "approval_requests", "still_asked",
 )  # fmt: skip
+# The approval requests counted for a night: since the night before finished, at most this far back.
+ASK_WINDOW_SECONDS = 24 * 3600
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS dreaming_lock (name TEXT PRIMARY KEY, job_id TEXT NOT NULL, started_at REAL NOT NULL);
@@ -66,6 +74,10 @@ class NightReport:
     gate_rerun: int | None = None  # holdout items the gate re-ran on the new rules; None if it did not run
     missed_asks: int = 0  # holdout items the policy wants asked about that the rules in place shared
     refuse_shared: int = 0  # holdout items the policy refuses that the rules in place shared
+    # Approval requests (router ask_user) in the day before the night, and how many of them the
+    # rules in place after it would still ask. None when they could not be counted.
+    approval_requests: int | None = None
+    still_asked: int | None = None
 
     def numbers(self) -> dict:
         """Aggregate numbers only."""
@@ -142,6 +154,12 @@ class NightRunner:
         report = json.loads(row[0])
         return {k: report.get(k) for k in REPORT_KEYS}
 
+    def last_finished_at(self) -> tuple[str, float] | None:
+        """The latest finished night as (job id, finished_at in epoch seconds), or None before the first."""
+        with self._db() as con:
+            row = con.execute("SELECT job_id, finished_at FROM dreaming_nights ORDER BY id DESC LIMIT 1").fetchone()
+        return (str(row[0]), float(row[1])) if row else None
+
     def wait(self, timeout: float | None = None) -> None:
         if self._thread is not None:
             self._thread.join(timeout)
@@ -176,7 +194,8 @@ class NightRunner:
                 self.events.emit("idle", f"dreaming {job_id}")
 
     def _dream(self, job_id: str) -> NightReport:
-        started = time.monotonic()
+        started, began = time.monotonic(), time.time()
+        since = max(began - ASK_WINDOW_SECONDS, (self.last_finished_at() or ("", 0.0))[1])
         settings = self.settings
         holdout = run_eval.load_items(self.holdout_path) if self.holdout_path.is_file() else []
         holdout_ids = {str(i["id"]) for i in holdout}
@@ -217,6 +236,8 @@ class NightRunner:
                 note += " Kept the current rules: " + "; ".join(g.reasons) + "."
 
         in_place = after if kept else before
+        asks = self._approval_requests(since, began)
+        rules_now = current.read_text() if current.is_file() else ""
         report = NightReport(
             learned_from=learned_from,
             accuracy_before=before.accuracy,
@@ -235,6 +256,8 @@ class NightRunner:
             gate_rerun=rerun,
             missed_asks=getattr(in_place, "missed_asks", 0),
             refuse_shared=getattr(in_place, "refuse_shared", 0),
+            approval_requests=len(asks),
+            still_asked=self._still_asked(asks, rules_now),
         )
         with self._db() as con:
             con.execute(
@@ -252,6 +275,38 @@ class NightRunner:
             path = Path(self.raw_dir) / f"night-{n}-{label}.jsonl"
             path.parent.mkdir(parents=True, exist_ok=True)
             run_eval.write_raw_rows(report, path)
+
+    def _approval_requests(self, since: float, before: float) -> list[dict]:
+        """Decision rows the router asked the user about between `since` and `before`, not deleted."""
+        with self._db() as con:
+            con.row_factory = sqlite3.Row
+            try:
+                rows = con.execute(
+                    "SELECT * FROM decisions WHERE router_decision = 'ask_user' AND deleted = 0 AND ts >= ? AND ts < ?",
+                    (since, before),
+                ).fetchall()
+            except sqlite3.OperationalError:  # no decisions table: this device has made no decision yet
+                return []
+        return [dict(r) for r in rows]
+
+    def _still_asked(self, rows: list[dict], rules_text: str) -> int | None:
+        """How many of these requests the rules in place would still ask about, decided in code."""
+        policy = getattr(self.services, "policy", None)
+        if not rows:
+            return 0
+        if policy is None:
+            return None
+        router = _RulesOnly(self.settings, None, policy, rules_text=rules_text)
+        still = 0
+        for row in rows:
+            inp, held = replay_input(row)
+            try:
+                asks = held or router.decide(inp).decision == "ask_user"
+            except Exception as exc:  # an odd old row counts as still asked, never as saved
+                log.warning("could not replay a decision row: %s", type(exc).__name__)
+                asks = True
+            still += int(asks)
+        return still
 
     def _score_current(self, holdout: list[dict], current: Path) -> run_eval.EvalReport:
         if not holdout:
@@ -325,3 +380,43 @@ class NightRunner:
     def _night_count(self) -> int:
         with self._db() as con:
             return con.execute("SELECT COUNT(*) FROM dreaming_nights").fetchone()[0]
+
+
+class _RulesOnly(Router):
+    """The router deciding in code, with the given learned rules and no model call."""
+
+    def mode(self, inp: RouteInput | None = None) -> str:
+        return "rules"
+
+
+def _json_list(value) -> list:
+    try:
+        out = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        return []
+    return out if isinstance(out, list) else []
+
+
+def replay_input(row: dict) -> tuple[RouteInput, bool]:
+    """A stored decision row as the router saw it, and whether a toggle held it whatever the rules.
+
+    The row keeps the tagged request and text, the topics and blocked reasons; its receipt keeps
+    the floors, which give back the identifier kinds and the topics named only in the request.
+    """
+    try:
+        receipt = json.loads(row.get("receipt") or "{}")
+    except (TypeError, ValueError):
+        receipt = {}
+    floors = [str(f) for f in receipt.get("floors") or []] if isinstance(receipt, dict) else []
+    hits = [Hit(f.split(":", 1)[1], "", 0, 0) for f in floors if f.startswith("identifier:") and f != "identifier:digits"]
+    inp = RouteInput(
+        request=row.get("request") or "",
+        result_kind=row.get("result_kind") or "free_text",
+        tagged_text=row.get("tagged_text") or "",
+        hits=hits,
+        blocked=[str(b) for b in _json_list(row.get("blocked"))],
+        topics=[str(t) for t in _json_list(row.get("topics"))],
+        request_blocked=[f.split(":", 1)[1] for f in floors if f.startswith("request:")],
+    )
+    inp.strict = bool(isinstance(receipt, dict) and receipt.get("toggles"))
+    return inp, any(f.startswith("compliance:") for f in floors)

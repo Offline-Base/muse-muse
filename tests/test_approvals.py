@@ -278,3 +278,63 @@ def test_needs_a_person_lists_the_floors_always_approve_leaves():
         assert needs_a_person([floor]) and needs_a_person(["policy:x", floor])
     for floors in ([], None, ["learned:ask_user"], ["policy:class_averages"], ["contact_ok"]):
         assert not needs_a_person(floors)
+
+
+# Waiting for the user's answer (the connector's get_result wait_seconds)
+
+
+def test_each_decide_notifies_once(store):
+    a, b = store.create_pending(**fields()), store.create_pending(**fields())
+    assert store.decisions_made == 0
+    store.decide(a, True)
+    assert store.decisions_made == 1
+    with pytest.raises(ValueError):
+        store.decide(a, False)  # not pending any more: no notification
+    assert store.decisions_made == 1
+    store.decide(b, False, remember=True)
+    assert store.decisions_made == 2
+
+
+def test_wait_decided_wakes_on_the_answer(store):
+    import time
+
+    rid = store.create_pending(**fields())
+    timer = threading.Timer(0.3, store.decide, args=(rid, True))
+    started = time.monotonic()
+    timer.start()
+    try:
+        assert store.wait_decided(rid, 5) is True
+    finally:
+        timer.cancel()
+    assert time.monotonic() - started < 1.0  # woken by the decide, not by the 1 s re-read
+    assert store.get(rid)["status"] == "approved"
+
+
+def test_wait_decided_times_out_and_sees_rows_that_are_gone(store):
+    import time
+
+    rid = store.create_pending(**fields())
+    started = time.monotonic()
+    assert store.wait_decided(rid, 0.2) is False
+    assert 0.15 < time.monotonic() - started < 1.0
+    store.delete(rid)
+    assert store.wait_decided(rid, 5) is True  # a deleted card is answered: kept on the device
+    assert store.wait_decided(9999, 5) is True
+    auto = store.record_auto(**fields(router_decision="share_tagged"))
+    assert store.wait_decided(auto, 5) is True
+
+
+def test_wait_decided_sees_an_answer_from_another_connection(tmp_path):
+    import time
+
+    db = tmp_path / "home" / "base.db"
+    waiter, other = ApprovalStore(db), ApprovalStore(db)
+    try:
+        rid = waiter.create_pending(**fields())
+        threading.Timer(0.2, other.decide, args=(rid, False)).start()
+        started = time.monotonic()
+        assert waiter.wait_decided(rid, 5) is True
+        assert time.monotonic() - started < 2.0  # the once-a-second re-read
+    finally:
+        waiter.close()
+        other.close()

@@ -16,6 +16,7 @@ Everything described here is invented: the teacher, the 24 students, the school,
 | `demo/rubric.md` | 4-point opinion writing rubric: Ideas, Organization, Evidence and details, Conventions | 4 criteria |
 | `demo/essays/<First Last>.md` | One garden essay per student, 150 to 300 words | 24 essays |
 | `demo/records/*.md` | Parent contacts, IEP and 504 notes, attendance, reading groups, behavior log, lunch status, health office | 7 files |
+| `demo/casework/*.md` | Case notes from an invented city housing office whose invented agreement marks them CUI (the CUI scene) | 6 files, 3 cases |
 
 `eval/fresh_200.jsonl` is a random sample of 200 items from `eval/synthetic.jsonl` (shuffled with seed 20261030), used once to score the device-only router. Its misses were then read and fixed, so it is no longer unseen. `eval/fresh_200_b.jsonl` is a second sample with no overlap (seed 20261031) for the final score, and its items were not read while writing the rules. `eval/compliance.jsonl` is 58 invented sentences for the toggles' tagging (`eval/run_compliance.py`).
 
@@ -166,6 +167,10 @@ Quentin Beaumont's essay mentions only a cousin. Quality varies: Priyanka Raghun
 ## Records
 
 `demo/records/` feeds `search_documents` and the refuse items: `parent_contacts.md` (a guardian, phone, email and home address for every student, plus a custody note), `iep_504_notes.md` (5 students), `attendance.md`, `reading_groups.md`, `behavior_log.md`, `lunch_status.md` and `health_office.md` (allergies, conditions, dates of birth, nurse visits).
+
+## Casework (the CUI scene)
+
+`demo/casework/` holds six short notes from Example City Housing Assistance Office, an invented office whose invented grant agreement with a federal program marks its case files CUI: two intake and home visit notes for case 000-2026-0417, an eligibility review and a landlord call for 000-2026-0422, a closure for 000-2026-0391, and a supervisor memo listing all three. Each note starts and ends with a `CUI` banner. The clients, caseworkers, supervisor, landlords, buildings, case numbers, phones (555-01xx) and emails (example.org) are invented, none of them is on the roster, and no number is shaped like a Social Security number. The notes were written by hand, not by a model. They are not eval items: with the CUI toggle on, every result from them stays on the device. `tests/test_data.py` checks the banner, the phones, the emails, the case numbers and that no roster name appears.
 
 ## Changing the data
 
