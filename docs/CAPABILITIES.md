@@ -554,8 +554,92 @@ and its golden, `template/caps/core/**` (with unit 3's `user.ts`), `scripts/caps
 0019 migration, and every shared file section 3 gives to unit 2.
 
 **Guards.** A longer round costs more Muse Code time, which is why it scales with the brief and has a ceiling. Milestones
-multiply Muse Code spend, so they need their flag and stop at 3. The live check spends on the product's live token, on
-Wonder, once per build (about $0.30), and counts against that product's daily budget.
+multiply Muse Code spend, so they need their flag and stop at 3. The live check makes no model call (decision 15), so it
+costs nothing.
+
+### 8a. As built (tg-cap-engine, Oct 31)
+
+Built on `tg-cap-contract` (378f387), before wave 2 merged, so it rebases onto the merge. Every flag is off by default.
+
+**Round time.** `roundCapMs` (`lib/pipeline/steps.ts`) with `ENGINE_ROUND_SCALING`: a first round (and each milestone round)
+gets 25 minutes, plus 5 when complex, plus 5 when the brief lists 6 or more screens and actions together, plus 5 per cap
+block, at most `ENGINE_ROUND_MAX_MINUTES` (45, held to 25 through 90). Fix rounds get 12, or 15 when complex or with caps.
+Verify gets 8 plus 1 per cap block, at most 10. The tile game note (complex, 3 screens, 3 actions) gets 35 minutes. The
+plan is worked out once in `briefStep` (`BriefSummary.plan`, saved to `builds.round_plan`), and the workflow reads it, so a
+replay takes the same caps. With a plan, `MAX_BUILD_WALL_MS` (90 minutes) applies: a milestone or fix round that wouldn't
+fit is not started, and the verify before it runs as the last one (warn mode). A scaled round passes `capMs` to
+`startMuse`, which keeps the cap plus 15 minutes of sandbox session.
+
+**A first round that hits its cap** (`ENGINE_CHECK_ON_TIMEOUT`): logs "Muse Code was stopped at its time limit. Checking
+what it built." and goes on to preview, verify and fix rounds, for builds and refinements. With the flag off the failure
+message names the round's real cap ("past its 35-minute limit"), which is today's text at 25.
+
+**Milestones** (`ENGINE_MILESTONES`): `milestones` (2 or 3, `{title, doneMeans}`) is in the writer's schema only under the
+flag (`newBriefSchemaFor({ ..., milestones })`), and always optional in the stored brief. brief.md gets `## Milestones`
+right after Done means. Between milestones: a strict verify with no judge, then `milestone-<n>.md`
+(`renderMilestonePrompt`, `lib/engine/prompts.ts`) with that verify's failures, in the same session as round n - 1. Fix
+rounds number from the last milestone's round and stay under `REFINE_ROUND_STRIDE`. Each step is a `milestone` event and
+updates `builds.round_plan`.
+
+**Exact logic** (`ENGINE_EXACT_LOGIC`, new): one writer rule. When a product's main promise depends on exact logic (a
+deterministic guard, a solvable level, totals that add up, a valid file), the brief says that logic is plain code the
+product runs (a parser, a solver, a validator or a rules table) and a model only reads the input or explains the result.
+
+**Big-build budget lines.** brief.md's Budget says "Run `npm run verify` at most twice in a round" and "test one generated
+item for real and the rest with fixtures" when the brief has caps or milestones, or either round flag is on (the contract
+said caps or milestones only: the tile game needs them most, and has neither).
+
+**The live check** (`ENGINE_LIVE_SMOKE`, `lib/engine/live-check.ts`, `liveCheckStep`): after the deploy event and before
+register, no model call. GET `/` must answer 200 with an HTML page (3 tries); each action route in musemuse.json must
+answer OPTIONS with POST allowed (Next answers OPTIONS itself, so no product code runs and no model is called); a product
+with caps must answer `/api/musemuse/health` with `{"ok":true}` (the core overlay's route). A failure ships as partial with
+"It passed on the build machine, but failed on its live link: <reason>", saved in `builds.live_check`. Skipped when
+publishing is off, which is every local run (decision 6). It does not rerun the smoke test: the base URL override is in
+Playwright for when that's wanted.
+
+**The caps frame.** Registries in `lib/caps/` (one object per hook, keyed by cap id; a cap's brief key is its id),
+`env.enabledCaps`, the hooks in schema, writer, catalog, render, refine, markdown, judge instructions and judge content
+(`judgeContent`, with `capsProofText` before the screenshots), cap markers in `allowedModelsFor`, `capBuildEnv` appended to
+`.env.local` after `envLocal` writes it (envLocal itself is untouched), `capDeployEnv`, `capHosts` in the build policy,
+`gateway_tokens.build_id` for briefs with caps, `capsBuildEnded` in cleanup, `sweepCaps` in the cron (left out of its
+answer while nothing sweeps), and `capsProductOff` when an admin turns a product off (`productOff` pauses, never deletes).
+`GET {GATEWAY_URL}/caps/proof` (`app/api/gateway/caps/proof/route.ts`) answers a build token tied to a build with
+`{buildId, namespace: "b:<id>", caps}` from `CAP_PROOF`, and 404 `unknown_endpoint` while no cap is enabled.
+
+**Overlays.** `template/caps/<overlay>/` beside `template/targets/`, never copied into a product as it is. `core` ships
+`scripts/caps-check.mjs`, `tests/caps/index.ts` (`recordCapCheck`), `app/api/musemuse/health/route.ts` and the `muse-caps`
+skill, all platform files. Provisioning writes the root-owned `CAPS_DIR/active.json`, applies the overlays after the
+template (files, exact deps, `musemuse.caps.json`, commit "Caps: data, jobs") and appends the caps' env lines. Every
+verify and demo puts the platform files and `musemuse.caps.json` back first (a no-op without `active.json`). The snapshot
+script installs `template/caps` read-only; a local run on an older snapshot copies it in, and the live site refuses with
+a plain message. Not built: `lib/platform/identity.ts` in core, since the agent kit (wave 2) isn't on this base.
+
+**verify.** A `caps` step after smoke, only with `musemuse.caps.json`: `scripts/caps-check.mjs` runs each cap's
+`scripts/caps/<id>.mjs` `check({ record, proof, gateway, root })` against the smoke test's record and the gateway's, and a
+cap with no checker or no record fails. The summary gains `caps: [{cap, checks}]`, each check becomes a `caps` event, and
+the judge sees them as decided. Playwright merges `scripts/caps/<id>.browser.json` args into the smoke project and takes
+`MUSEMUSE_BASE_URL` (no local server then). The config's logic is inline TypeScript: importing the `.mjs` helpers would
+break every product's `tsc`.
+
+**The Wonder estimate** (agreed with General). `fitOutputToBudget` (`lib/gateway/estimate.ts`): when a Responses call's
+estimate is over the budget left, `max_output_tokens` is set to the most output the rest pays for after the input, so the
+estimate stays a ceiling, and the call is refused only below 1,024 output tokens. A Muse Code turn of about 30,000 input
+tokens with `max_output_tokens` 128000 is estimated at about $0.76, which used to stop a $1 session after about $0.24. On
+for `code_session` tokens (unit 9) and, behind `ENGINE_FIT_OUTPUT`, for every token. It sits in one marked block in
+`lib/gateway/handler.ts` with a `fitOutputToBudget` dep, a shared-file edit this section adds.
+
+**Migration 0019_engine.** As planned. Its journal index is 16 and its snapshot `meta/0016_snapshot.json` until 0016 to
+0018 merge: the merger renumbers both, regenerating the snapshot on top of 0018. The migrations test allows wave 3 tags
+ahead of their index, checks their journal times by the rule, and checks that a database at 0015 keeps its rows.
+
+**Goldens.** `lib/caps/__tests__/flags-off.test.ts` (policy, steps, allowlist, `.env.local` extra lines, deploy env, judge
+content, extra files): policy, steps, allowlist and judge content were checked byte for byte against tg-cap-contract's own
+code. `lib/gateway/__tests__/caps-off.test.ts`. `template/scripts/__tests__/caps-off.test.mjs`: verify run for real in a bare
+folder reports the same six steps, and Playwright's config equals tg-cap-contract's. The brief goldens hold.
+
+**Not proven yet.** Milestones, the live check and the caps step have scenario and unit tests only. The live check needs
+a published deploy, which local runs never make (decision 6). No cap overlay but core exists, so no build has run the caps
+step for real. The fit is tested against the handler with fakes, not a real Muse Code session (unit 9 has none yet).
 
 ## 9. Unit 3: data (A)
 
@@ -1220,6 +1304,11 @@ Phaser game.
 
 - Oct 31: migrations renumbered from 0018 (0016 and 0017 are the General session's), `code_sessions` moved to General,
   section 21a added with the planner's decisions.
+- Oct 31 (unit 2): section 8a added. New flags `ENGINE_EXACT_LOGIC` and `ENGINE_FIT_OUTPUT`; round size also counts
+  screens plus actions; the big-build budget lines also come with the round flags; the live check loads the page, action
+  routes (OPTIONS) and the caps health route instead of rerunning the smoke test (decision 15); `lib/gateway/handler.ts`
+  gets one marked block from unit 2 (the Wonder estimate fit); cap registries are objects keyed by cap id, and a cap's
+  brief key is its id.
 
 
 - Oct 31: first version (unit 0).
