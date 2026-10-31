@@ -40,7 +40,7 @@ The candidate mode for the pre-registered claim is "model decides" unless change
 
 ## Before handing over
 
-Run this on the full training file, knowledge rows and routing rows together, and send the counts:
+Run this on the Mac, from this repo, on the full training file, knowledge rows and routing rows together, and send the counts. A copy on the GPU machine holds no sealed sets to check against (docs/GPU_RUN.md):
 
 ```
 uv run python -m scripts.check_overlap --train TRAINING_FILE --name glimmer_tuned --sets eval/splits/fresh_200_c.jsonl eval/templated/fresh_200_t.jsonl

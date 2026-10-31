@@ -201,6 +201,32 @@ def test_a_matrix_run_writes_one_report_with_paired_columns(environ, tmp_path):
     assert any(r["router_calls"] == 1 and r["reasoning_tokens"] == 5 for r in decided)
 
 
+def test_a_report_says_where_it_ran_and_that_reasoning_was_off(environ, tmp_path):
+    out = tmp_path / "out"
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(f"{LFM}/chat/completions").mock(side_effect=model_reply)
+        side = mock.post(f"{SIDE}/chat/completions").mock(side_effect=lambda r: model_reply(r, "refuse"))
+        code = mm.main(["--name", "unit", "--configs", "policy_lfm,glimmer_decide", "--sets", str(TASKS), "--limit", "6",
+                        "--glimmer-url", SIDE, "--measured-on", "A100 GPU, not a target device", "--out", str(out)],
+                       {**environ, "GLIMMER_REASONING": "off"})  # fmt: skip
+    assert code in (0, 2)
+    body = json.loads(side.calls.last.request.content)
+    assert "chat_template_kwargs" not in body and body["stop"] == ["<|eot|>"]
+    md = (out / "matrix_unit.md").read_text()
+    assert "| Device | A100 GPU, not a target device, DEVICE_ONLY=1 for every config |" in md
+    assert "| Router call | reasoning off, 1500 tokens" in md
+    meta = json.loads((out / "raw" / "matrix_unit_glimmer_decide_tasks.meta.json").read_text())
+    assert meta["reasoning"] == "off" and meta["measured_on"] == "A100 GPU, not a target device"
+    lfm_meta = json.loads((out / "raw" / "matrix_unit_policy_lfm_tasks.meta.json").read_text())
+    assert lfm_meta["reasoning"] == "low"  # the same setting, unused by a row with no Glimmer
+
+
+def test_an_unpacked_bundle_reports_its_own_commit(tmp_path, monkeypatch):
+    (tmp_path / "SOURCE_COMMIT").write_text("abc1234 2\n")
+    monkeypatch.setattr(mm, "REPO_ROOT", tmp_path)
+    assert mm.git_state() == ("abc1234", 2)
+
+
 def test_holdout_is_scored_as_a_subset_of_the_tasks_run():
     rows = [{"id": i["id"], "expected": i["expected"], "wants": i["expected"], "decision": i["expected"],
              "status": "shared", "source": "rule", "fallback": False, "leaked": False, "latency_ms": 1}

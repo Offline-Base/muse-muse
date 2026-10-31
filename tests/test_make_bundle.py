@@ -91,3 +91,21 @@ def test_the_real_repo_bundle_unpacks_and_the_bench_starts(tmp_path, monkeypatch
     out = subprocess.run([sys.executable, "-m", "scripts.bench_device", "--help"], cwd=tmp_path / "board" / "bundle",
                          capture_output=True, text=True, timeout=120)  # fmt: skip
     assert out.returncode == 0 and "--label" in out.stdout
+
+
+def test_a_copy_for_a_training_machine_holds_no_held_out_data_and_stamps_its_commit(repo, tmp_path):
+    for rel in ("eval/splits/fresh_200_c.jsonl", "eval/splits/sim_unseen.jsonl", "eval/synthetic.jsonl", "eval/fresh_200_b.jsonl", "docs/GPU_RUN.md"):
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text("{}\n")
+    git(repo, "add", "-f", "eval", "docs")
+    files, left = mb.bundle_files(repo, dev_sets_only=True)
+    assert "eval/fresh_200_b.jsonl" in files and "docs/GPU_RUN.md" in files
+    assert not [f for f in files if f.startswith("eval/splits/") or f == "eval/synthetic.jsonl" or f.startswith("eval/templated/")]
+    assert left["held-out data or its source"] == 3
+    assert "eval/splits/fresh_200_c.jsonl" in mb.bundle_files(repo)[0]  # a board's copy is unchanged
+
+    tarball, _, _ = mb.build(repo, tmp_path / "out", "gpu", dev_sets_only=True)
+    with tarfile.open(tarball) as tar:
+        stamp = tar.extractfile("gpu/SOURCE_COMMIT").read().decode()
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert stamp.split()[0] == head and int(stamp.split()[1]) > 0  # the edited base/app.py is counted

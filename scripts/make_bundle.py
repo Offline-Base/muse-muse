@@ -1,6 +1,10 @@
 """Build a tarball of this repo for a board, to carry over on a USB stick (nothing connects to a board).
 
-    uv run python -m scripts.make_bundle [--add PATH ...] [--out dist] [--name muse-bench-YYYY-MM-DD]
+    uv run python -m scripts.make_bundle [--add PATH ...] [--out dist] [--name muse-bench-YYYY-MM-DD] [--dev-sets-only]
+
+--dev-sets-only is for a machine that also trains the model (docs/GPU_RUN.md): it also leaves out
+eval/splits/ and eval/synthetic.jsonl, the sealed set's source, so only the development sets travel.
+SOURCE_COMMIT in the bundle stamps the commit and the count of uncommitted files for the reports.
 
 Takes every file git tracks in the folders a board needs (base, eval, demo, scripts, ui, deploy, the
 device runbook, pyproject.toml and uv.lock), as it is in the working tree, so uncommitted edits go
@@ -29,6 +33,13 @@ from scripts import secrets_scan
 INCLUDE = ("base", "eval", "demo", "scripts", "ui", "deploy", "docs/DEVICE_BENCH.md", "pyproject.toml", "uv.lock")
 # eval/templated/ is an unsealed test set (eval/DATASET.md): no board runs it, so it never travels.
 EXCLUDE_DIRS = ("eval/reports/", "eval/templated/", "models/", "relay/", "site/", "hardware/")
+# Never on a machine that trains the model: the sealed set, the study's held-out rows, and their source.
+NOT_DEV_SETS = ("eval/splits/", "eval/synthetic.jsonl")
+GPU_README = """\
+Muse Privacy measuring copy, built {date} by scripts/make_bundle.py from {files} files.
+
+Follow docs/GPU_RUN.md. It holds the development sets only. Invented data throughout.
+"""
 BOARD_README = """\
 Muse Privacy device bench, built {date} by scripts/make_bundle.py from {files} files.
 
@@ -67,9 +78,10 @@ def excluded(rel: str) -> str | None:
     return None
 
 
-def bundle_files(root: Path, extra: list[str] = ()) -> tuple[list[str], dict[str, int]]:
+def bundle_files(root: Path, extra: list[str] = (), dev_sets_only: bool = False) -> tuple[list[str], dict[str, int]]:
     """The repo-relative files that go in, and counts of what was left out and why."""
-    tracked = [p for p in _git(root, "ls-files", "-z", "--cached", "--", *INCLUDE).split("\0") if p]
+    include = (*INCLUDE, "docs/GPU_RUN.md") if dev_sets_only else INCLUDE
+    tracked = [p for p in _git(root, "ls-files", "-z", "--cached", "--", *include).split("\0") if p]
     wanted = set(tracked)
     for item in extra:
         path = (root / item).resolve()
@@ -87,6 +99,8 @@ def bundle_files(root: Path, extra: list[str] = ()) -> tuple[list[str], dict[str
     keep = []
     for rel in sorted(wanted):
         why = "named in .git/info/exclude" if rel in private else excluded(rel)
+        if why is None and dev_sets_only and rel.startswith(NOT_DEV_SETS):
+            why = "held-out data or its source"
         if why is None and not (root / rel).is_file():
             why = "deleted in the working tree"
         if why:
@@ -125,9 +139,9 @@ def _anonymous(info: tarfile.TarInfo) -> tarfile.TarInfo:
     return info
 
 
-def build(root: Path, out: Path, name: str, extra: list[str] = ()) -> tuple[Path, int, dict[str, int]]:
+def build(root: Path, out: Path, name: str, extra: list[str] = (), dev_sets_only: bool = False) -> tuple[Path, int, dict[str, int]]:
     """Write out/<name>.tar.gz and its .sha256. Raises BundleError, and writes nothing, on a finding."""
-    files, left = bundle_files(root, extra)
+    files, left = bundle_files(root, extra, dev_sets_only)
     with tempfile.TemporaryDirectory(prefix="base-bundle-") as tmp:
         stage = Path(tmp) / name
         for rel in files:
@@ -138,7 +152,10 @@ def build(root: Path, out: Path, name: str, extra: list[str] = ()) -> tuple[Path
             listed = "\n".join(f"  {where}:{n}: {kind}" for where, n, kind in found)
             raise BundleError(f"the secrets scan found {len(found)} thing(s); nothing was built:\n{listed}")
         (stage / "SHA256SUMS").write_text("".join(f"{sha256(stage / rel)}  {rel}\n" for rel in files))
-        (stage / "BOARD_README.txt").write_text(BOARD_README.format(date=date.today().isoformat(), files=len(files)))
+        readme = GPU_README if dev_sets_only else BOARD_README
+        (stage / "BOARD_README.txt").write_text(readme.format(date=date.today().isoformat(), files=len(files)))
+        dirty = len(_git(root, "status", "--porcelain").splitlines())
+        (stage / "SOURCE_COMMIT").write_text(f"{_git(root, 'rev-parse', '--short', 'HEAD').strip()} {dirty}\n")
         out.mkdir(parents=True, exist_ok=True)
         tarball = out / f"{name}.tar.gz"
         with tarfile.open(tarball, "w:gz") as tar:
@@ -152,9 +169,10 @@ def main(argv: list[str] | None = None, root: Path = REPO_ROOT) -> int:
     p.add_argument("--add", nargs="+", default=[], help="more files or folders inside the repo, tracked or not")
     p.add_argument("--out", type=Path, default=root / "dist")
     p.add_argument("--name", default=f"muse-bench-{date.today().isoformat()}")
+    p.add_argument("--dev-sets-only", action="store_true", help="for a machine that also trains the model: no held-out data")
     args = p.parse_args(argv)
     try:
-        tarball, n, left = build(root, args.out, args.name, args.add)
+        tarball, n, left = build(root, args.out, args.name, args.add, args.dev_sets_only)
     except BundleError as exc:
         print(f"make_bundle: {exc}", file=sys.stderr)
         return 1

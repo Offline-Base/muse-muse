@@ -248,7 +248,12 @@ def pair_stem(name: str, config: str, set_path: Path) -> str:
 
 
 def git_state() -> tuple[str, int | None]:
-    """(short commit, files changed and not committed), or ("unknown", None)."""
+    """(short commit, files changed and not committed), or ("unknown", None). An unpacked bundle has
+    no git of its own, and may sit inside another repo, so its SOURCE_COMMIT file comes first."""
+    stamp = REPO_ROOT / "SOURCE_COMMIT"
+    if stamp.is_file():
+        commit, _, dirty = stamp.read_text().strip().partition(" ")
+        return commit, int(dirty or 0)
     try:
         commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, text=True).strip()
         dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=REPO_ROOT, text=True)
@@ -278,8 +283,9 @@ def meta_for(config: Config, settings: Any, opts: argparse.Namespace, set_path: 
         "items": len(items),
         "ids_sha256": ids,
         "router": router_target(config, settings, opts),
-        "reasoning": settings.router_reasoning,
+        "reasoning": "off" if config.needs_glimmer and settings.glimmer_reasoning == "off" else settings.router_reasoning,
         "max_tokens": settings.router_max_tokens,
+        "measured_on": opts.measured_on or settings.device,
         "glimmer_sha256": opts.glimmer_sha if config.needs_glimmer else None,
     }
 
@@ -515,14 +521,15 @@ def render(opts: argparse.Namespace, configs: list[Config], results: dict[str, d
             f"{Path(opts.glimmer_gguf).name}, sha256 {opts.glimmer_sha[:16]}" if opts.glimmer_gguf else "file not given"))
     if any(c.router == "cloud" for c in configs):
         models.append(f"{opts.cloud_model} on OpenRouter (base Glimmer, invented items only), spent ${opts.cloud_spent:.2f}")
+    off = any(c.needs_glimmer for c in configs) and some.glimmer_reasoning == "off"
     lines = [
         f"# Model matrix: {opts.name}", "", f"Command: `{opts.command}`", "",
         "| Field | Value |", "|---|---|",
         f"| Date | {datetime.now():%Y-%m-%d %H:%M} |",
         f"| Commit | {commit}" + (f" ({dirty} files changed and not committed) |" if dirty else " |"),
-        f"| Device | {some.device}, DEVICE_ONLY=1 for every config |",
+        f"| Device | {opts.measured_on or some.device}, DEVICE_ONLY=1 for every config |",
         f"| Models | {'; '.join(models)} |",
-        f"| Router call | reasoning {some.router_reasoning}, {some.router_max_tokens} tokens (Glimmer only; LFM runs with thinking off) |",
+        f"| Router call | reasoning {'off' if off else some.router_reasoning}, {some.router_max_tokens} tokens (Glimmer only; LFM runs with thinking off) |",
         "| Learned rules | none; every config starts in a fresh temporary home |",
         "",
         "All items invented; teacher decisions are simulated (eval/user_policy.yaml answers every ask).",
@@ -572,6 +579,7 @@ def parse(argv: list[str]) -> tuple[argparse.ArgumentParser, argparse.Namespace]
     p.add_argument("--glimmer-label", help="the label of its scripts/plug_in_model.py --check report, for the sha256")
     p.add_argument("--reasoning", choices=REASONING_LEVELS, help="ROUTER_REASONING for this run")
     p.add_argument("--max-tokens", type=int, help="ROUTER_MAX_TOKENS for this run")
+    p.add_argument("--measured-on", help="names a machine that is not a device this ships on, such as 'A100 GPU, not a target device'; no host names")
     p.add_argument("--allow-cloud", action="store_true", help="allow the base_cloud configs (invented items only)")
     p.add_argument("--max-usd", type=float, default=0.0, help="cost cap for paid calls; 0 refuses every paid call")
     p.add_argument("--out", type=Path, default=REPORTS, help="reports folder")

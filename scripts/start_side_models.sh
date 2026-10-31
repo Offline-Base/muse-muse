@@ -10,6 +10,7 @@
 #   SIDE_REASONING     off (default) or on; off serves Glimmer with --reasoning-format none
 #   SIDE_TEMPLATE      a chat template file for Glimmer (--chat-template-file)
 #
+# Refused on a Mac: Glimmer overheated the owner's laptop, so measuring runs elsewhere (docs/GPU_RUN.md).
 # HOME_DIR holds a throwaway key file and the logs. It is refused if it is the real ~/.base. Binds
 # 127.0.0.1 only and runs at low priority, in the foreground; Ctrl-C stops both. It prints the
 # environment that scripts.model_matrix, scripts.bench_device and scripts.simulate_nights need, with
@@ -26,6 +27,7 @@ HOME_DIR="${2:-$(mktemp -d "${TMPDIR:-/tmp}/muse-side.XXXXXX")}"
 mkdir -p "$HOME_DIR"
 HOME_DIR="$(cd "$HOME_DIR" && pwd)"
 [ "$HOME_DIR" != "$HOME/.base" ] || die "use a throwaway folder, not the app's ~/.base"
+[ "$(uname -s)" != Darwin ] || die "this loads Glimmer, and it does not run on the owner's laptop: see docs/GPU_RUN.md"
 
 BIN="${CHECKER_SERVER_BIN:-${LLAMA_SERVER_BIN:-$(command -v llama-server || true)}}"
 [ -n "$BIN" ] && [ -x "$BIN" ] || die "no llama-server: set CHECKER_SERVER_BIN"

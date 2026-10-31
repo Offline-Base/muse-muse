@@ -85,6 +85,25 @@ def test_the_side_servers_script_stays_on_this_device_and_off_the_real_home(tmp_
     assert done.returncode == 1 and "not the app's ~/.base" in done.stderr
 
 
+def test_the_side_servers_script_refuses_on_a_mac(tmp_path):
+    import os
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parent.parent / "scripts" / "start_side_models.sh"
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "uname").write_text("#!/bin/sh\necho Darwin\n")
+    (fake / "uname").chmod(0o755)
+    gguf = tmp_path / "m.gguf"
+    gguf.write_bytes(b"GGUF")
+    done = subprocess.run(
+        ["bash", str(script), str(gguf), str(tmp_path / "side")],
+        env={**os.environ, "HOME": str(tmp_path), "PATH": f"{fake}:{os.environ['PATH']}"}, capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert done.returncode == 1 and "does not run on the owner's laptop" in done.stderr
+
+
 def test_final_channel_keeps_only_the_answer():
     from base.local_llm import final_channel
 
