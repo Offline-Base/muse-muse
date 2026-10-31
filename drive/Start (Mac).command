@@ -55,6 +55,18 @@ SLUG="$(value_of slug)"
 [ -n "$SLUG" ] || SLUG="model"
 PAGE="$(value_of page)"
 [ -n "$PAGE" ] || PAGE="the model's page on the Muse Muse website"
+# >>> adapter
+# A model fine-tuned on a board is its base build with a LoRA adapter on top, as the board ran it (support/model.tsv).
+ADAPTER="$(value_of adapter)"
+if [ -n "$ADAPTER" ] && [ ! -f "$DRIVE/model/$ADAPTER" ]; then
+  finish "The adapter $ADAPTER is missing from this drive. Run Verify (Mac).command to check its files."
+fi
+copy_adapter() {
+  # It goes with the build. A copy that doesn't match its checksum is deleted, and the drive's own is used.
+  cp "$DRIVE/model/$ADAPTER" "$COPY/model/" || return 0
+  [ "$(shasum -a 256 "$COPY/model/$ADAPTER" | awk '{ print $1 }')" = "$(sum_of "model/$ADAPTER")" ] || rm -f "$COPY/model/$ADAPTER"
+}
+# <<< adapter
 tell "$TITLE, from a Muse Muse flash drive."
 tell ""
 
@@ -134,6 +146,9 @@ elif ask_yes "Copy the $LEVEL build to this Mac first? Loads are faster, and you
       chmod +x "$COPY/runtime/macos-arm64/llama-server" &&
       cp "$DRIVE/model/ui-config.json" "$DRIVE/model/system.txt" "$COPY/model/" &&
       { [ ! -f "$DRIVE/model/tuned.jinja" ] || cp "$DRIVE/model/tuned.jinja" "$COPY/model/"; } &&
+# >>> adapter
+      { [ -z "$ADAPTER" ] || copy_adapter; } &&
+# <<< adapter
       cp "$DRIVE/model/$NAME" "$COPY/model/$NAME"; then
       tell "Checking the copy against its checksum."
       GOT_SUM="$(shasum -a 256 "$COPY/model/$NAME" | awk '{ print $1 }')"
@@ -166,6 +181,14 @@ if [ -f "$RUN_DIR/model/tuned.jinja" ]; then
   # A model trained before it learned to open its answer itself needs the template that opens it.
   ARGS+=(--chat-template-file "$RUN_DIR/model/tuned.jinja" --skip-chat-parsing --reasoning off)
 fi
+# >>> adapter
+if [ -n "$ADAPTER" ]; then
+  # The copy's adapter when the copy has one, else the drive's.
+  LORA="$RUN_DIR/model/$ADAPTER"
+  [ -f "$LORA" ] || LORA="$DRIVE/model/$ADAPTER"
+  ARGS+=(--lora "$LORA")
+fi
+# <<< adapter
 
 "$SERVER" "${ARGS[@]}" &
 PID=$!

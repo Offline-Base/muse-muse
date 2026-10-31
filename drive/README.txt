@@ -18,10 +18,6 @@ To check the files, double-click "Verify (Mac).command" or "Verify (Windows).cmd
 They compare every file with SHA256SUMS and change nothing. A drive that arrived
 broken, or a file that doesn't match? To get a new one, {{CONTACT_TEXT}}.
 
-The drive doesn't run on Linux or on a Mac with an Intel chip. The model's page,
-with its eval and Try it live, is {{PAGE_URL}}
+The drive doesn't run on Linux or on a Mac with an Intel chip. {{PAGE_TEXT}}
 
-Fine-tuned from Meta's Muse Glimmer 30B (Apache 2.0). Not made, reviewed or
-endorsed by Meta. What was changed is in licenses/CHANGES.md. Meta's Usage Policy
-applies, and Muse Glimmer is not intended for anyone under 18
-(licenses/USAGE_POLICY.md). The runtime is llama.cpp {{RUNTIME}} (MIT).
+{{NOTICE_TEXT}} The runtime is llama.cpp {{RUNTIME}} (MIT).
