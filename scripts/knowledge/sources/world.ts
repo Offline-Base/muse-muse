@@ -212,7 +212,7 @@ const ifAllowed = (origin: string, run: () => Promise<SourceRecord[]>) => async 
 /** A tag's content in a feed item, without any CDATA wrapper. */
 const xmlTag = (xml: string, name: string) => xml.match(new RegExp(`<${name}(?:\\s[^>]*)?>(?:\\s*<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>\\s*)?</${name}>`))?.[1] ?? "";
 /** Feed HTML to text; some feeds escape their HTML once more, which takes a second pass. */
-const feedText = (raw: string) => (/&lt;\/?[a-z]/i.test(raw) ? htmlToText(htmlToText(raw)) : htmlToText(raw)).replace(/\u00a0/g, " ");
+const feedText = (raw: string) => (/&lt;\/?[a-z]/i.test(raw) ? htmlToText(htmlToText(raw)) : htmlToText(raw)).replace(/\u00a0|&nbsp;/g, " ");
 const feedItems = (xml: string | null) => xml?.match(/<item\b[\s\S]*?<\/item>/g) ?? [];
 
 /** Where the element opening at `start` closes, counting nested elements of the same name. */
@@ -273,7 +273,8 @@ const WIKIDATA_CLASSES: WikidataClass[] = [
     name: "deaths",
     what: "Deaths",
     days: 31,
-    query: itemDated("P570", "?item wdt:P31 wd:Q5. OPTIONAL { ?item wdt:P20 ?x. }"),
+    // People with a Wikipedia article or the like: a bare Wikidata entry may be a private person.
+    query: itemDated("P570", "?item wdt:P31 wd:Q5; wikibase:sitelinks ?n. FILTER(?n > 0) OPTIONAL { ?item wdt:P20 ?x. }"),
     sentence: (who, when, extras) => `${who} died on ${when}${extras.length ? ` in ${extras[0]}` : ""}.`,
   },
   {
@@ -964,7 +965,8 @@ const CAMEO_ROOTS: Record<string, string> = {
 const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, a: string, b: string) => a + b.toUpperCase());
 
 async function gdeltFile(stamp: string, suffix: string): Promise<string> {
-  const zip = await getBytes(`http://data.gdeltproject.org/gdeltv2/${stamp}.${suffix}.zip`, { cache: false });
+  // Static files with no stated limit; 28 a day for 299 days would take 2.3 hours at one a second.
+  const zip = await getBytes(`http://data.gdeltproject.org/gdeltv2/${stamp}.${suffix}.zip`, { cache: false, gapMs: 500 });
   const file = zip ? [...unzip(zip).values()][0] : undefined;
   return file ? file().toString("utf8") : "";
 }

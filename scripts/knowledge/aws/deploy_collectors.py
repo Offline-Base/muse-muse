@@ -4,6 +4,7 @@
     .data/aws/venv/bin/python scripts/knowledge/aws/deploy_collectors.py               every collector in the folder
     .data/aws/venv/bin/python scripts/knowledge/aws/deploy_collectors.py --rerun meta  run this one again, unchanged
     .data/aws/venv/bin/python scripts/knowledge/aws/deploy_collectors.py --status
+    .data/aws/venv/bin/python scripts/knowledge/aws/deploy_collectors.py --push        this Mac's MAC_ONLY output, to S3
 
 Safe to run again at any time: a collector that's running is left alone, and a changed file starts once the old run
 ends (box/collectors.sh). Name the file when other helpers are still writing theirs, so half-written ones stay here.
@@ -11,6 +12,9 @@ Pages this Mac already cached go up first, so the machine doesn't fetch them aga
 
 A file is held back, with the reason printed, if it reaches dumps.wikimedia.org (bulk.py already uses both allowed
 connections) or uses GitHub with a token but has no step that collectors.sh skips by name (MAC_ONLY there).
+
+A file smaller than its S3 copy doesn't replace it, here or on the machine, so a partial rerun can't shrink good data. To
+accept a smaller file on purpose, delete the S3 copy first (aws s3 rm, from this Mac; the machine's role can't delete).
 """
 
 import argparse
@@ -48,7 +52,7 @@ def is_collector(name, text):
 def why_held(text):
     if "dumps.wikimedia.org" in text:
         return "it reaches dumps.wikimedia.org, and bulk.py already uses both allowed connections"
-    steps = re.findall(r'\[\s*"([A-Za-z0-9._-]+)"\s*,', text)
+    steps = re.findall(r'(?:\[\s*|\bstep\(\s*)"([A-Za-z0-9._-]+)"\s*,', text)
     if USES_GITHUB.search(text) and not any(part in step for step in steps for part in mac_only()):
         return f"it uses GitHub but no step name contains one of {mac_only()}: add its step to MAC_ONLY in collectors.sh"
     return None
@@ -128,16 +132,37 @@ def pack(sources):
     return out.getvalue(), notes
 
 
+def push(s, b):
+    """Copies this Mac's output of the MAC_ONLY steps to S3, by the rule the machine follows for its own."""
+    folder = os.path.join(REPO, ".data", "knowledge", "sources")
+    prefix = "knowledge/corpus/sources/"
+    client = s.client("s3")
+    sizes = {o["Key"].removeprefix(prefix): o["Size"] for page in client.get_paginator("list_objects_v2").paginate(Bucket=b, Prefix=prefix) for o in page.get("Contents", [])}
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".jsonl") or not any(part in name for part in mac_only()):
+            continue
+        size = os.path.getsize(os.path.join(folder, name))
+        if size == 0 or size < sizes.get(name, 0):
+            print(f"KEPT {name}: {size} bytes here, {sizes.get(name, 0)} in S3")
+        elif size != sizes.get(name):
+            client.upload_file(os.path.join(folder, name), b, prefix + name)
+            print(f"sent {name}: {size} bytes")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("names", nargs="*", help="collectors to send, such as us-gov; all of them if none are named")
     p.add_argument("--rerun", action="append", default=[], help="run this collector again even though its file hasn't changed")
     p.add_argument("--status", action="store_true")
+    p.add_argument("--push", action="store_true", help="copy this Mac's MAC_ONLY output to S3, then stop")
     a = p.parse_args()
     s = session()
     b = bucket(s)
     if a.status:
         run(f"bash /opt/muse/app/{SCRIPT} {b} status")
+        return
+    if a.push:
+        push(s, b)
         return
     bad = [n for n in a.rerun if not re.fullmatch(r"[a-z0-9-]+", n)]
     if bad:

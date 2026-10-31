@@ -36,7 +36,8 @@ GROUP = "muse-ccnews"
 SCHEDULE = "muse-ccnews-hard-stop"
 TEST_TAG = "muse-ccnews-test"
 TEST_TYPE = "c7i.4xlarge"
-INSTANCE_TYPES = ["c7i.4xlarge", "c7a.4xlarge", "c6a.4xlarge", "c7i-flex.4xlarge", "m7i.4xlarge", "m6i.4xlarge"]
+# c7a is left out: 7 of the first 8 Spot reclaims were c7a, within minutes of launch.
+INSTANCE_TYPES = ["c7i.4xlarge", "c7i-flex.4xlarge", "c6a.4xlarge", "m7i.4xlarge", "m6i.4xlarge", "m7a.4xlarge"]
 SPOT_CAP = 0.45
 MAX_COMPUTE_USD = 190
 MONTHS = [f"{m:02d}" for m in range(1, 11)]
