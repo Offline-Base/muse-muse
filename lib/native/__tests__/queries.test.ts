@@ -45,6 +45,8 @@ async function run(p: { id: string; buildId: string }, n: number, origin: "ship"
   return id;
 }
 
+const briefIds = (brief: { targets?: Array<{ id: string }> } | null) => brief?.targets?.map((t) => t.id);
+
 describe("native queries", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
@@ -98,12 +100,49 @@ describe("native queries", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(view.checks.map((c) => [c.id, c.state, c.clip?.caption]), [[job, "passed", "On an Android emulator"]]);
     });
 
+    it("keeps packages on offer however much media later runs leave", async () => {
+      const p = await product(20);
+      const ship = await run(p, 1, "ship");
+      await testDb.insert(realSchema.nativeArtifacts).values([
+        { id: uuid(2), productId: p.id, runId: ship, kind: "android_apk", url: "https://blob.example/a.apk", pathname: "a", bytes: 41_000_000, createdAt: new Date("2026-10-31T10:00:00.000Z") },
+        { id: uuid(3), productId: p.id, runId: ship, kind: "mac_zip", url: "https://blob.example/m.zip", pathname: "m", bytes: 215_000_000, createdAt: new Date("2026-10-31T10:00:00.000Z") },
+      ]);
+      const refine = await run(p, 4, "refine");
+      const newer = (i: number) => new Date(Date.parse("2026-10-31T11:00:00.000Z") + i * 1000);
+      await testDb.insert(realSchema.nativeArtifacts).values(
+        Array.from({ length: 130 }, (_, i) => ({ id: uuid(100 + i), productId: p.id, runId: refine, kind: "shot" as const, url: `https://blob.example/s${i}.png`, pathname: `s${i}`, createdAt: newer(i) })),
+      );
+      const view = await queries.readProductNative(p.id, ["web", "phone", "desktop"]);
+      assert.deepEqual(view.packages.map((x) => [x.download, x.url]).sort(), [["android", "https://blob.example/a.apk"], ["mac", "https://blob.example/m.zip"]]);
+    });
+
+    it("offers the newest of each package, and an old one doesn't take a new one's place", async () => {
+      const p = await product(21);
+      const ship = await run(p, 1, "ship");
+      await testDb.insert(realSchema.nativeArtifacts).values([
+        { id: uuid(2), productId: p.id, runId: ship, kind: "android_apk", url: "https://blob.example/old.apk", pathname: "a", createdAt: new Date("2026-10-31T10:00:00.000Z") },
+        { id: uuid(3), productId: p.id, runId: ship, kind: "android_apk", url: "https://blob.example/new.apk", pathname: "b", createdAt: new Date("2026-10-31T11:00:00.000Z") },
+        { id: uuid(4), productId: p.id, runId: ship, kind: "windows_zip", url: "https://blob.example/w.zip", pathname: "c", createdAt: new Date("2026-10-31T09:00:00.000Z") },
+      ]);
+      const view = await queries.readProductNative(p.id, ["web", "phone", "desktop"]);
+      assert.deepEqual(view.packages.map((x) => [x.download, x.url]).sort(), [["android", "https://blob.example/new.apk"], ["windows", "https://blob.example/w.zip"]]);
+    });
+
     it("says it's working while a run is, and not for an agent's", async () => {
       const a = await product(3);
       await run(a, 1, "agent", "running");
       assert.equal((await queries.readProductNative(a.id, ["web"])).working, false);
       await run(a, 2, "ship", "running");
       assert.equal((await queries.readProductNative(a.id, ["web"])).working, true);
+    });
+  });
+
+  describe("newestBrief", () => {
+    it("reads the newest build that has one, since a refinement's has none", async () => {
+      const p = await product(22, { targets: ["web", "phone"] });
+      await testDb.insert(realSchema.builds).values({ id: uuid(23), inspirationId: INSPIRATION, userId: USER, productId: p.id, kind: "refine", status: "live", brief: null });
+      assert.deepEqual(briefIds(await queries.newestBrief(p.id)), ["web", "phone"]);
+      assert.equal(await queries.newestBrief(uuid(24)), null);
     });
   });
 
@@ -189,6 +228,41 @@ describe("native queries", { skip: canMock ? false : "needs --experimental-test-
         assert.equal(await active.nativeActive(apps.buildId, NOW), true);
         assert.equal(await active.nativeActive(web.buildId, NOW), false);
         assert.equal(await active.nativeActive(old.buildId, NOW), false);
+      });
+    });
+
+    it("doesn't take a finished agent's run for the ship run having started", async () => {
+      const p = await product(18, { targets: ["web", "phone"], finishedAt: new Date(NOW - 1_000) });
+      await run(p, 1, "agent", "done", new Date(NOW - 300_000));
+      await withFlag("phone", async () => assert.equal(await active.nativeActive(p.buildId, NOW), true));
+    });
+
+    it("doesn't hold the stream for an agent's run, which only checked a preview", async () => {
+      const stuck = await product(19, { targets: ["web", "phone"], finishedAt: new Date(NOW - 600_000) });
+      await run(stuck, 1, "agent", "running", new Date(NOW - 700_000));
+      await withFlag("phone", async () => assert.equal(await active.nativeActive(stuck.buildId, NOW), false));
+    });
+
+    it("isn't crowded out by an agent's many runs", async () => {
+      const p = await product(25, { targets: ["web", "phone"], finishedAt: new Date(NOW - 600_000) });
+      await run(p, 1, "ship", "running", new Date(NOW - 500_000));
+      for (let i = 0; i < 12; i++) await run(p, 10 + i, "agent", "done", new Date(NOW - 100_000 + i));
+      await withFlag("phone", async () => assert.equal(await active.nativeActive(p.buildId, NOW), true));
+    });
+
+    it("waits for a refinement's run, going by the brief of the build before it", async () => {
+      const refineOf = async (n: number, p: { id: string }, finishedAt: Date) => {
+        await testDb.insert(realSchema.builds).values({ id: uuid(n), inspirationId: INSPIRATION, userId: USER, productId: p.id, kind: "refine", status: "live", brief: null, finishedAt });
+        return uuid(n);
+      };
+      const justNow = new Date(NOW - 1_000);
+      const phone = await refineOf(30, await product(26, { targets: ["web", "phone"] }), justNow);
+      const web = await refineOf(31, await product(27), justNow);
+      const old = await refineOf(32, await product(28, { targets: ["web", "phone"] }), new Date(NOW - 600_000));
+      await withFlag("phone", async () => {
+        assert.equal(await active.nativeActive(phone, NOW), true);
+        assert.equal(await active.nativeActive(web, NOW), false);
+        assert.equal(await active.nativeActive(old, NOW), false);
       });
     });
   });

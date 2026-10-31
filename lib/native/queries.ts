@@ -6,10 +6,13 @@ import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { briefTargets } from "@/lib/native/targets";
 import { buildProductNativeView, type ProductNativeView } from "@/lib/native/product-view";
+import { NATIVE_DOWNLOADS } from "@/lib/native/types";
 import type { TargetId } from "@/lib/brief/schema";
 
-const MAX_ARTIFACTS = 120;
+const MAX_MEDIA = 120;
 const MAX_JOBS = 40;
+/** What a check leaves that the panel shows. A refinement only checks again, so these pile up with no new package. */
+const MEDIA_KINDS = ["clip", "poster", "shot"] as const;
 
 /** Products that can be shown or fetched: a turned-off or failed product has no downloads and no links. */
 const SHIPPED = ["live", "partial"] as const;
@@ -38,26 +41,35 @@ export async function readProductNative(productId: string, targets: TargetId[]):
   ]);
   const extraClips = clips[0]?.extraClips ?? [];
   if (!runs.length) return buildProductNativeView({ targets, artifacts: [], jobs: [], runs, clips: extraClips });
-  const [artifacts, jobs] = await Promise.all([
+  const artifactColumns = {
+    id: schema.nativeArtifacts.id,
+    runId: schema.nativeArtifacts.runId,
+    jobId: schema.nativeArtifacts.jobId,
+    kind: schema.nativeArtifacts.kind,
+    platform: schema.nativeArtifacts.platform,
+    device: schema.nativeArtifacts.device,
+    caption: schema.nativeArtifacts.caption,
+    url: schema.nativeArtifacts.url,
+    bytes: schema.nativeArtifacts.bytes,
+    check: schema.nativeArtifacts.check,
+    createdAt: schema.nativeArtifacts.createdAt,
+  };
+  const current = and(eq(schema.nativeArtifacts.productId, productId), isNull(schema.nativeArtifacts.supersededAt), ne(schema.nativeRuns.origin, "agent"));
+  const [packages, media, jobs] = await Promise.all([
+    // The newest of each package, on its own, so no amount of media can push a download out of the view.
     d
-      .select({
-        id: schema.nativeArtifacts.id,
-        runId: schema.nativeArtifacts.runId,
-        jobId: schema.nativeArtifacts.jobId,
-        kind: schema.nativeArtifacts.kind,
-        platform: schema.nativeArtifacts.platform,
-        device: schema.nativeArtifacts.device,
-        caption: schema.nativeArtifacts.caption,
-        url: schema.nativeArtifacts.url,
-        bytes: schema.nativeArtifacts.bytes,
-        check: schema.nativeArtifacts.check,
-        createdAt: schema.nativeArtifacts.createdAt,
-      })
+      .selectDistinctOn([schema.nativeArtifacts.kind], artifactColumns)
       .from(schema.nativeArtifacts)
       .innerJoin(schema.nativeRuns, eq(schema.nativeArtifacts.runId, schema.nativeRuns.id))
-      .where(and(eq(schema.nativeArtifacts.productId, productId), isNull(schema.nativeArtifacts.supersededAt), ne(schema.nativeRuns.origin, "agent")))
+      .where(and(current, inArray(schema.nativeArtifacts.kind, Object.values(NATIVE_DOWNLOADS))))
+      .orderBy(schema.nativeArtifacts.kind, desc(schema.nativeArtifacts.createdAt)),
+    d
+      .select(artifactColumns)
+      .from(schema.nativeArtifacts)
+      .innerJoin(schema.nativeRuns, eq(schema.nativeArtifacts.runId, schema.nativeRuns.id))
+      .where(and(current, inArray(schema.nativeArtifacts.kind, [...MEDIA_KINDS])))
       .orderBy(desc(schema.nativeArtifacts.createdAt))
-      .limit(MAX_ARTIFACTS),
+      .limit(MAX_MEDIA),
     d
       .select({
         id: schema.nativeJobs.id,
@@ -75,27 +87,30 @@ export async function readProductNative(productId: string, targets: TargetId[]):
       .orderBy(desc(schema.nativeJobs.createdAt))
       .limit(MAX_JOBS),
   ]);
-  return buildProductNativeView({ targets, artifacts, jobs, runs, clips: extraClips });
+  return buildProductNativeView({ targets, artifacts: [...packages, ...media], jobs, runs, clips: extraClips });
+}
+
+/** A product's newest brief. A refinement's build has no brief of its own, so it's often an earlier build's. */
+export async function newestBrief(productId: string): Promise<typeof schema.builds.$inferSelect.brief> {
+  const [build] = await db()
+    .select({ brief: schema.builds.brief })
+    .from(schema.builds)
+    .where(and(eq(schema.builds.productId, productId), sql`${schema.builds.brief} is not null`))
+    .orderBy(desc(schema.builds.startedAt))
+    .limit(1);
+  return build?.brief ?? null;
 }
 
 /** A product's id and where it runs, by slug, when it's shipped. */
 export async function shippedProductBySlug(slug: string): Promise<{ id: string; name: string; liveUrl: string | null; targets: TargetId[] } | null> {
   if (!/^[a-z0-9-]{1,80}$/.test(slug)) return null;
-  const d = db();
-  const [product] = await d
+  const [product] = await db()
     .select({ id: schema.products.id, name: schema.products.name, liveUrl: schema.products.liveUrl })
     .from(schema.products)
     .where(and(eq(schema.products.slug, slug), inArray(schema.products.status, [...SHIPPED])))
     .limit(1);
   if (!product) return null;
-  // A refinement's build has no brief of its own: where a product runs comes from the newest one that does.
-  const [build] = await d
-    .select({ brief: schema.builds.brief })
-    .from(schema.builds)
-    .where(and(eq(schema.builds.productId, product.id), sql`${schema.builds.brief} is not null`))
-    .orderBy(desc(schema.builds.startedAt))
-    .limit(1);
-  return { ...product, targets: briefTargets(build?.brief) };
+  return { ...product, targets: briefTargets(await newestBrief(product.id)) };
 }
 
 /** How many times each package was downloaded, for its owner. */
