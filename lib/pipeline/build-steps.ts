@@ -41,6 +41,7 @@ import { capsBuildEnded } from "@/lib/caps/cleanup";
 import { capBuildEnv, capDeployEnv } from "@/lib/caps/env";
 import { capBuildHosts } from "@/lib/caps/hosts";
 import { capsProofText } from "@/lib/caps/judge";
+import { narrowCapMarkers } from "@/lib/caps/manifest";
 import { capsFileFor } from "@/lib/caps/overlays";
 import { liveCheck } from "@/lib/engine/live-check";
 import { briefMilestones, type MilestoneState, type RoundPlanRecord } from "@/lib/engine/milestones";
@@ -1085,10 +1086,13 @@ export async function startDeployStep(input: {
   const build = await loadBuild(input.buildId);
   const product = await loadProduct(input.productId);
   const brief = build.brief ?? (await latestBrief(input.productId));
+  const allowed = brief ? allowedModelsFor(brief) : await liveModels(input.productId);
   const live = await mintToken({
     productId: input.productId,
     scope: "live",
-    allowedModels: brief ? allowedModelsFor(brief) : await liveModels(input.productId),
+    // A product with caps: its musemuse.json may narrow them, never widen them (docs/CAPABILITIES.md, 2.3). Without
+    // caps the manifest isn't read here, as before.
+    allowedModels: brief && briefCaps(brief).length ? narrowCapMarkers(allowed, await sandbox.readManifest(input.sandboxName).catch(() => null)) : allowed,
     // Room for about 20 runs a day at the brief's estimate (Muse Wonder runs cost more than Spark's did).
     dailyBudgetUsd: liveTokenDailyBudgetFor(brief?.estimatedCostPerRunUsd),
   });

@@ -55,6 +55,8 @@ let liveCheckInputs: Array<Record<string, unknown>> = [];
 let minted: Array<Record<string, unknown>> = [];
 let reopened: Array<Record<string, unknown>> = [];
 let provisioned: Array<Record<string, unknown>> = [];
+let manifestReads = 0;
+let manifestImpl: unknown = null;
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -184,7 +186,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
           provisioned.push(input);
           return { sandboxName: "sb" };
         },
-        readManifest: async () => null,
+        readManifest: async () => {
+          manifestReads += 1;
+          return manifestImpl;
+        },
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
         finishDemo: async () => demoVideo,
@@ -229,6 +234,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     minted = [];
     reopened = [];
     provisioned = [];
+    manifestReads = 0;
+    manifestImpl = null;
   });
 
   describe("judgeStep on a refinement", () => {
@@ -925,6 +932,31 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       } finally {
         saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved);
       }
+    });
+
+    it("a live token's caps are narrowed by the product's musemuse.json at deploy, never widened", async () => {
+      const deploy = (brief: unknown) => {
+        selects = {
+          builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief }]],
+          products: [[{ id: "prod-1", slug: "bird-count", name: "Bird Count", vercelProjectId: null }]],
+        };
+        return steps.startDeployStep({ buildId: "b1", productId: "prod-1", sandboxName: "sb" });
+      };
+      const withData = { ...FULL_BRIEF, data: { scopes: ["shared"] } };
+      manifestImpl = { caps: ["files"] };
+      await deploy(withData);
+      assert.equal(minted[0]!.scope, "live");
+      assert.ok(!(minted[0]!.allowedModels as string[]).includes("cap:data"), "the manifest left data out");
+      assert.ok(!(minted[0]!.allowedModels as string[]).includes("cap:files"), "and can't add files");
+      minted = [];
+      manifestImpl = { caps: ["data"] };
+      await deploy(withData);
+      assert.ok((minted[0]!.allowedModels as string[]).includes("cap:data"));
+      // A product with no caps: the manifest isn't read at deploy, as before.
+      minted = [];
+      manifestReads = 0;
+      await deploy(FULL_BRIEF);
+      assert.equal(manifestReads, 0);
     });
 
     it("leaves a product with no caps as it was: no build id, no extra env, no hosts", async () => {
