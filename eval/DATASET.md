@@ -168,3 +168,9 @@ Quentin Beaumont's essay mentions only a cousin. Quality varies: Priyanka Raghun
 ## Changing the data
 
 The items were written by hand. If you change one, keep `expected` equal to what the policy wants, keep `names`, `other_names`, `identifiers` and `dates` complete, keep the holdout copy identical, and run `uv run pytest -q tests/test_data.py`.
+
+## The templated set (eval/templated/, unsealed)
+
+`eval/templated/fresh_200_t.jsonl` is 200 items that `scripts/make_templated_set.py` writes with no model and nothing taken from `eval/synthetic.jsonl`: seeded templates filled from a new invented roster (47 students, their guardians and 6 staff, no name of which appears in any other eval set, `eval/roster.json`, a demo file or a test roster). It has the same fields and the same (expected, result_kind) counts as `fresh_200_b`, its `expected` is `policy.wants(item)` like every other set, every item passes `make_synthetic.clean_item` unchanged, and it has 0 exact or near-duplicate hits against every other eval set, `synthetic.jsonl` included. It exists in case the fine-tuned Glimmer trained on `synthetic.jsonl`, which would rule out every slice of that file as a sealed test set.
+
+It is UNSEALED until Ethan confirms what the fine-tune trained on: no eval runs on it and nobody reads its items. Only `tests/test_make_templated_set.py` opens it. `eval/templated/MANIFEST.md` has its sha256, seed, counts, checks and commands; `eval/reports/glimmer_prereg.md` says how a sealed set is scored.
