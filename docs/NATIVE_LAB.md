@@ -14,7 +14,8 @@ later: the routes under `app/api/native/agent/`, the `native_jobs` queue and the
 | `native/lab/compose.mjs` | The clip: a recording in a generic device frame on a Meta-blue backdrop, 1920x1080, with a caption and a poster |
 | `native/lab/control.mjs` | The box's side of the SSM control document |
 | `native/lab/ssm/MuseLab-Control.json` | The SSM document: enum actions only |
-| `native/lab/setup/` | `mac.sh`, `windows.ps1`, and the LaunchAgent plist |
+| `native/lab/setup/` | `mac.sh`, `mac-finish.sh`, `windows.ps1`, `imds-credentials.sh`, `publish-bundle.sh`, and the LaunchAgent plist |
+| `native/lab/tools/check.mjs` | Runs one real job on a box with a local stand-in for the platform |
 
 The agent needs Node 22 and has no npm dependencies. If `@aws-sdk/client-ssm` is installed it reads its token with that,
 and otherwise with the `aws` CLI.
@@ -374,45 +375,148 @@ aws ssm create-document --region us-east-1 --name MuseLab-Control --document-typ
   --content file://native/lab/ssm/MuseLab-Control.json
 ```
 
+The document exists in the account as `MuseLab-Control` version 1, and it matches this file.
+
 **Pinning a bundle.** `update-agent` can't take a URL, so the pin lives in Parameter Store at `/musemuse/lab/<lane>/bundle`, as
-`{ "version", "url", "sha256" }`. Make the bundle with:
+`{ "version", "url", "sha256" }`. From a laptop with the lab's AWS profile, at a committed tree:
 
 ```
-tar -czf musemuse-lab-0.1.0.tgz -C native/lab --exclude __tests__ .
+AWS_PROFILE=offlinebase AWS_REGION=us-east-1 bash native/lab/setup/publish-bundle.sh
 ```
 
-Upload it to Blob, then put the pin in Parameter Store. The box only downloads from Blob, and checks the checksum.
+That puts the bundle in `s3://muse-knowledge-916979311153/lab/bundles/` and pins it for both lanes. The box checks the checksum.
+Blob URLs work too, but the lab has no Blob upload of its own. Both boxes ran `update-agent` this way, and it left the old release
+in place. A stopped Windows box can't take a control call, so start it first.
 
-**This widens one IAM line in the design.** The instance profile needs `ssm:GetParameter` on `/musemuse/lab/<lane>/*`, not only
-on `.../token`. The profile also needs `AmazonSSMManagedInstanceCore`. Nothing else.
+**The instance role, `musemuse-lab`,** is `AmazonSSMManagedInstanceCore` plus two inline policies. `lab-token-read` allows
+`ssm:GetParameter` on `/musemuse/lab/<lane>/*`, each lane only from its own instance. `lab-files` allows reading
+`lab/bundles/*` and `lab/shells/*` and writing `lab/checks/*` and `lab/s12/*` in the bucket. Each lane also has
+`/musemuse/lab/<lane>/token-sha256`, which is the value `native_labs` needs.
+
+**The platform role, `musemuse-platform-native`,** can send only `MuseLab-Control` to the two instances, read command results and
+instance state, and start and stop only the Windows instance.
+
+## What's on the boxes
+
+As of Oct 31, 18:30 UTC. Account 916979311153, us-east-1, tagged `Project=musemuse-lab`. No inbound ports, and SSM Run Command is the
+only way in.
+
+| | Mac | Windows |
+|---|---|---|
+| Instance | `i-0a5866df305e83d40`, `mac2.metal` on host `h-06879f600be8541ed` | `i-066609c3dc74c9f18`, `t3.large` |
+| State | Running. Never stop it: stopping scrubs the host for up to 4.5 hours | Stopped. It stops itself after 20 idle minutes |
+| OS | macOS 26.7, 300 GB gp3, about 258 GB free | Windows Server 2022, 60 GB gp3, about 38 GB free |
+| Session | `ec2-user` signed in by auto-login | `musemuse`, a standard user, signed in by auto sign-in |
+| Agent | LaunchAgent `ai.musemuse.lab`, release `0.1.1-12f2ff8` in `~/musemuse-lab` | Scheduled Task `MuseLabAgent`, release `0.1.1-12f2ff8` in `C:\MuseLab` |
+| Can run today | `desktop_mac` | `desktop_windows` |
+| Tools | Node 22, ffmpeg with `drawtext`, `openjdk@17`, `aws`, the Command Line Tools. Xcode 26.6 is unpacked but its license isn't accepted | Node 22.22.2, ffmpeg with `drawtext`, `aws` |
+| Files | `~/musemuse-lab/shells/`: `mac-template.zip`, `lab-ios-sim.tar.gz`, `lab-android.apk`, `glasses-ios-sim.tar.gz` (the builds in `native/releases.json`), `mock-photo.jpg` | `C:\MuseLab\shells\windows-template.zip` |
+
+**The bucket** has this under `s3://muse-knowledge-916979311153/lab/`:
+
+- `bundles/`: the pinned agent bundle.
+- `shells/`: `mac-template.zip` (217 MB) and `windows-template.zip` (158 MB), the desktop shell built on the boxes from `native/shell-desktop`
+  at this branch's base, plus its source `shell-desktop-src.tgz` and `mock-photo.jpg`.
+- `checks/`: the real clips and reports in `mac-1/`, `mac-2/`, `windows-1/` and `windows-2/`.
+- `xcode-26.6.tar.zst` (2.7 GB). It stays until the owner says yes and a real Xcode run has worked, then it can go.
+
+**The agents poll the live site.** The claim route isn't deployed yet, and the site answers routes it doesn't have with a 200 HTML page,
+so `agent.log` shows `claim answered with a page, not JSON` once a minute. That's expected until the routes land. Nothing is claimed.
+
+**The token and password.** Both lanes' lab tokens are in Parameter Store as SecureStrings, and nobody has seen them. The Mac's `ec2-user`
+password and the Windows `musemuse` password are random and were never shown. To use screen sharing on the Mac, set a new one by
+running `mac.sh` with `MUSE_LAB_USER_PASSWORD`.
+
+**Rebuilding the desktop templates.** Unpack `native/shell-desktop` on the box and run `npm ci`. On the Mac run `npx electron-builder --mac`,
+which takes about 2 minutes, and keep the zip. On Windows run `npx electron-builder --win dir`, then
+`tar.exe -a -c -f windows-template.zip -C dist\win-unpacked .`.
+
+### What it cost so far
+
+Cost Explorer shows nothing useful yet: it lags a day and credits net it to about $0. This comes from instance times.
+
+| Item | Time | Cost |
+|---|---|---|
+| Windows, running | 3.18 h on Oct 31 (first setup), then 0.38 h for these checks: 3.56 h at $0.083 | $0.30 |
+| Mac host | Since 06:01 UTC on Oct 31 at $0.65/h, with a 24 h minimum per allocation | About $8 by 18:30 UTC. About $75 by Nov 5, 01:00 UTC |
+| EBS and S3 | 360 GB gp3 and 3 GB of S3 | Under $5 through Nov 4 |
+
+## The license hold
+
+**Accepting Xcode's and the Android SDK's licenses is the owner's call, and it hasn't happened.** Nothing has accepted either one,
+and `mac.sh` only does it with `MUSE_LAB_ACCEPT_LICENSES=1`, which nothing here sets.
+
+| Blocked until the yes | Why |
+|---|---|
+| `ios_sim` jobs, spike S2 | `simctl` needs Xcode and an iOS platform |
+| `glasses_sim` jobs, glasses S2 | The same simulator |
+| `android_emu` jobs, spike S1 | The Android SDK, the arm64 image and the AVD aren't installed, and neither is the `android-commandlinetools` cask |
+| Removing `lab/xcode-26.6.tar.zst` | It waits for a verified Xcode run |
+
+Until then the Mac uses the Command Line Tools that came with the AMI. `xcode-select` points at them, because with Xcode selected and
+its license open, every developer tool stops at the license, including the git Homebrew runs. Those tools are enough to build and check
+the desktop shell.
+
+### When the owner says yes
+
+This one command, from a laptop with the lab's AWS profile, does all of it:
+
+```
+aws ssm send-command --profile offlinebase --region us-east-1 --instance-ids i-0a5866df305e83d40 \
+  --document-name AWS-RunShellScript --parameters '{"executionTimeout":["5400"],"commands":["sudo -u ec2-user -H env MUSE_LAB_ACCEPT_LICENSES=1 AWS_REGION=us-east-1 MUSE_LAB_PLATFORM=https://muse-muse.vercel.app bash /Users/ec2-user/musemuse-lab/current/setup/mac-finish.sh"]}' \
+  --query Command.CommandId --output text
+```
+
+It runs `setup/mac-finish.sh`, which:
+
+1. Runs `mac.sh`, which accepts the Xcode license, selects Xcode, runs `-runFirstLaunch` and `-downloadPlatform iOS`, installs the Android
+   command line tools, accepts their licenses, installs the SDK and the image, and creates the AVD.
+2. Restarts the agent, which then offers `ios_sim`, `android_emu` and `glasses_sim`.
+3. Runs a real check of each on the shell builds above against the live site. It carries on past a failure.
+4. Puts clips and reports in `~/musemuse-lab/checks/<time>/` and `lab/checks/<time>/`.
+
+Expect 30 to 45 minutes. Read the result with `aws ssm get-command-invocation --profile offlinebase --region us-east-1
+--command-id <id> --instance-id i-0a5866df305e83d40`, and exit code 0 means all three passed. "The disk resize didn't run" in its output is
+normal: the disk is already full size. It hasn't been run, so S1, S2 and glasses S2 are unproven.
+
+## Checking a box by hand
+
+`tools/check.mjs` runs one real job on the box, with a small stand-in for the platform on 127.0.0.1. It starts a temporary agent in the GUI
+session, keeps the job's files in `--out`, and spends nothing. It's how a box gets tested while the routes aren't live.
+
+```
+node ~/musemuse-lab/current/tools/check.mjs --kind desktop_mac --app ~/musemuse-lab/shells/mac-template.zip \
+  --target https://muse-muse.vercel.app/ --out ~/musemuse-lab/checks/mine --limit 240
+```
+
+Run it as `ec2-user` on the Mac. Run it as SYSTEM through SSM on Windows, where it registers a temporary task in the `musemuse` session and
+removes it after. Start the Windows box first, and remember the idle stop is running.
 
 ## Setting up the Mac
 
-A dedicated `mac2.metal` host in us-east-1, 300 GB gp3, with no key pair and a security group with no inbound rules. It's never
-stopped during the event. Reach it only through SSM Session Manager.
+A dedicated `mac2.metal` host, 300 GB gp3, with no key pair and a security group with no inbound rules. Reach it only through SSM.
 
-1. Install Xcode 26.4 or later. Either bring the .xip over, or sign in once over screen sharing through an SSM port-forward.
+1. Put Xcode at `/Applications/Xcode.app`. This box has 26.6.
 2. Unpack `native/lab` on the box, then run it as `ec2-user`:
    ```
    MUSE_LAB_PLATFORM=https://muse-muse.vercel.app AWS_REGION=us-east-1 bash setup/mac.sh
    ```
-   Set `MUSE_LAB_USER_PASSWORD` if you want to know the password for screen sharing. Otherwise it's random and unseen.
+   Set `MUSE_LAB_USER_PASSWORD` if you want to know the password for screen sharing. Otherwise it's random and unseen. Running it again
+   leaves auto-login alone.
 3. Put the lab token in Parameter Store, then reboot. Auto-login starts the agent in the GUI session.
-4. Check `~/musemuse-lab/logs/agent.log`. Its first line lists the kinds the box can run.
+4. Check `~/musemuse-lab/logs/agent.log`. Its first lines list the kinds the box can run.
 
-**The script resizes APFS, turns on auto-login and turns off sleep and the screen lock.** It installs Homebrew's `node@22`,
-`ffmpeg`, `ffmpeg-full`, `openjdk@17` and `awscli`, the Android tools with an arm64 `android-35` `google_apis` image and the AVD
-`mm_pixel`, and the LaunchAgent.
+**The script resizes APFS, turns on auto-login and turns off sleep and the screen lock.** It installs Homebrew's `node@22`, `ffmpeg`,
+`ffmpeg-full`, `openjdk@17` and `awscli`, and the LaunchAgent. The Xcode and Android steps wait for the license hold above.
 
-Then run the native lane's spikes on the box. Until then, none of this has run on one:
+Two things macOS 26 does that the script handles:
 
-| Spike | How to check it |
-|---|---|
-| S1, the emulator | An `android_emu` job passes with a real clip. Boots in under 3 minutes |
-| S2, simctl from a LaunchAgent | An `ios_sim` job passes with a real clip. Fallback: `launchctl asuser` from an SSM session |
-| S3, Electron in the GUI session | A `desktop_mac` job passes with frames |
-| S12, large uploads | A 150 MB file goes up through a multipart slot |
-| Glasses S2 | A `glasses_sim` job reaches `result` with the mock glasses |
+- **Auto-login.** `sysadminctl -autologin set` fails with `SACSetAutoLoginPassword error:22` and still exits 0, so the script writes
+  `/etc/kcpassword` itself, readable only by root. A reboot on Oct 31 signed `ec2-user` in with this, and the agent started.
+- **The metadata address.** The Local Network privacy check refuses `169.254.169.254` to `ec2-user`'s Homebrew tools with `No route to
+  host`. Root isn't affected, and only a person at the screen could answer the prompt. So the agent couldn't read its token, and the
+  `aws` CLI said `NoCredentials`. `~/.aws/config` now uses `setup/imds-credentials.sh` as its `credential_process`, which gets the instance
+  role's credentials with Apple's own `curl`. Anything new on the Mac that wants the role has to use the `aws` CLI or that script.
 
 ## Setting up Windows
 
@@ -424,19 +528,31 @@ An on-demand `t3.large` running Windows Server 2022, 60 GB, with shutdown behavi
    powershell -ExecutionPolicy Bypass -File setup\windows.ps1 -Platform https://muse-muse.vercel.app -Region us-east-1
    ```
 3. Put the lab token in Parameter Store, then reboot. The box signs in by itself as the standard user `musemuse`, and a Scheduled
-   Task starts the agent in that session, with no RDP attached (spike S4).
+   Task starts the agent in that session, with no RDP attached.
 
-The agent stops the box after 20 idle minutes. Starting it again is the platform's job: `ec2:StartInstances`, then wait up to 6
-minutes for a claim call. The idle clock runs whatever the platform answers, so a box that gets 401s or 404s, because the routes
-or the flags aren't live yet, still stops itself. If the `shutdown` command fails, the agent stays up and tries again each minute.
+Auto sign-in is Windows' own, with the password as an LSA secret, so there's no third-party tool and no license to accept.
+`Set-DisplayResolution` in the agent's start script gives the session 1920x1080.
 
-**`windows.ps1` hasn't run yet.** No machine here has PowerShell, so only its contents are tested. Check these on the first box:
+The agent stops the box after 20 idle minutes. Starting it again is the platform's job: `ec2:StartInstances`, then wait for a claim call.
+It took about 30 seconds from the start call to the agent's first log line, so 6 minutes is plenty. The idle clock runs whatever the
+platform answers, so a box that gets 401s or 404s, because the routes or the flags aren't live yet, still stops itself. If the `shutdown`
+command fails, the agent stays up and tries again each minute.
 
-| Check | How |
-|---|---|
-| The box signs in and the agent starts | `agent.log` shows a claim call, with no RDP attached (spike S4) |
-| The idle stop works | The box stops after 20 idle minutes. Check `agent.log` for `idle shutdown failed` |
-| A restart leaves one agent | `restart-agent`, then `tasklist /fi "imagename eq node.exe"` shows one `node.exe`. `schtasks /End` only stops the PowerShell wrapper, so the restart also ends the pid in `data\agent.pid` with `taskkill` |
+## Spike results
+
+All run on the real boxes on Oct 31, with the local stand-in. The clips are in the bucket under `checks/`.
+
+| Spike | Result | What really ran |
+|---|---|---|
+| S3, Electron in the GUI session | **Passed** | The real universal desktop shell, built on the box, in `ec2-user`'s session against the live site. All checks passed, 27 frames, a framed 1920x1080 clip. `codesign --verify --deep --strict` passes and Gatekeeper rejects it, as expected for an ad hoc app |
+| S4, Windows with no RDP | **Passed** | After a reboot and after a stop and start: `musemuse` signed in on the console, one `node.exe` in session 1, 1920x1080, and a check passed with a framed clip. Nobody ever used RDP |
+| Windows restart | **Passed** | `restart-agent` and `update-agent` each left exactly one `node.exe`, with the pid file right |
+| Taskkill filters | **Passed** | `/F /T /FI "PID eq 4" /FI "IMAGENAME eq node.exe"` left the System process alone and exited 0 |
+| Windows idle stop | **Passed** | At 09:12:17 UTC, 20 minutes to the second after the agent's start: `idle shutdown` in the log, event 1074 from `shutdown.exe` for `musemuse`, and EC2 state reason `Client.InstanceInitiatedShutdown`. It fired again at about 18:18 UTC on the claim-failure path after the final update, with the same state reason |
+| S12, large uploads | **Passed** | 150 MiB and 215 MiB of random bytes and each box's real zip (217 MB Mac, 158 MB Windows). All reached S3, at 67 to 200 MB/s, and the 215 MiB objects' ETags end in `-27`, so they went up as multipart. The lab's own Blob client also sent each through a local server that reassembled the parts: same sha256, peak memory about 250 MB. Real Vercel Blob wasn't hit, because the routes that issue its tokens aren't live |
+| S1, the emulator | **Blocked** | Waiting for the license hold |
+| S2, simctl from a LaunchAgent | **Blocked** | Waiting for the license hold. Fallback: `launchctl asuser` from an SSM session |
+| Glasses S2 | **Blocked** | Waiting for the license hold |
 
 ## Running it against a local platform
 
