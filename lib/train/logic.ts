@@ -4,6 +4,28 @@
  */
 import { noEmDashes } from "@/lib/brief/normalize";
 import type { trainingDatasets, trainingJobs } from "@/lib/db/schema";
+// format.ts imports promptKey and promptWords from this file. Only functions below call into it, never this file's
+// top level, so either file may load first.
+import {
+  combineGroups,
+  labelGroups,
+  letterMass,
+  letterProbabilities,
+  pickDecision,
+  standInDecision,
+  temperedDecision,
+} from "@/lib/decide/format";
+import type {
+  CalibrationRow,
+  DecideScoreItem,
+  DecisionItemKey,
+  DecisionScoringInput,
+  DecisionSideSummary,
+  DecisionSummary,
+  LabelScore,
+  ReliabilityBin,
+  WilsonRate,
+} from "@/lib/decide/types";
 import type { LambdaInstance } from "@/lib/train/lambda";
 import type { QuantLevel } from "@/lib/train/local-files";
 import { judgeModelOf, storyModelOf, writerModelOf } from "@/lib/train/models";
@@ -966,4 +988,343 @@ export function quantProblem(
     return "that adapter trained under its dataset's whole task prompt, and local files need the one-line system message of the short student prompt.";
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision models: scoring a decide job (docs/DECISION_MODELS.md "Scoring (logic.ts)"). Deterministic: no judge, no
+// Meta call, and the same input always gives the same summary.
+
+/** The Wilson interval's z: a 95% interval. */
+export const WILSON_Z = 1.96;
+/** T is fit within these bounds by golden-section search on log T, this many steps. */
+export const DECIDE_T_MIN = 0.25;
+export const DECIDE_T_MAX = 10;
+export const DECIDE_T_STEPS = 60;
+/** With fewer scored dev rows than this, T stays 1 and confidence isn't calibrated. */
+export const DECIDE_T_MIN_ROWS = 20;
+/** Equal-width bins of the top probability, for ECE and the reliability chart. */
+export const DECIDE_BINS = 10;
+/** In dev log loss the right option's probability counts as at least this, so a row that gave it 0 stays finite. */
+const DECIDE_P_FLOOR = 1e-12;
+
+/**
+ * `right` of `total` with its Wilson 95% interval (z = 1.96), which stays inside 0 to 1 and is honest for the small
+ * test sets a person's model can have. No rows gives rate 0 and the interval 0 to 1: nothing is known.
+ */
+export function wilsonRate(right: number, total: number): WilsonRate {
+  if (!(total > 0)) return { right: 0, total: 0, rate: 0, low: 0, high: 1 };
+  if (!(right >= 0 && right <= total)) throw new Error("right must be from 0 to total.");
+  const p = right / total;
+  const z2 = WILSON_Z * WILSON_Z;
+  const scale = 1 + z2 / total;
+  const center = (p + z2 / (2 * total)) / scale;
+  const half = (WILSON_Z / scale) * Math.sqrt((p * (1 - p)) / total + z2 / (4 * total * total));
+  return { right, total, rate: p, low: Math.max(0, center - half), high: Math.min(1, center + half) };
+}
+
+/**
+ * Per label precision, recall, F1 and support, macro F1, and the confusion matrix, from each row's right label and
+ * pick (null for `none`). `none` isn't a class: a `none` pick is a miss for the row's label and counts against no
+ * other. Macro F1 is the mean F1 of the labels that have test rows or were picked (the rest have no F1 to speak of),
+ * every such label weighted the same. The matrix's rows are the right label and its columns the pick, both in label
+ * order, then a last `none` column. A division by 0 counts as 0.
+ */
+export function labelScores(
+  labels: ReadonlyArray<{ id: string; name: string }>,
+  rows: ReadonlyArray<{ label: string; pick: string | null }>,
+): { perLabel: LabelScore[]; macroF1: number; confusion: number[][] } {
+  const at = new Map(labels.map((l, i) => [l.id, i]));
+  const confusion = labels.map(() => new Array<number>(labels.length + 1).fill(0));
+  for (const r of rows) {
+    const i = at.get(r.label);
+    const j = r.pick === null ? labels.length : at.get(r.pick);
+    if (i === undefined) throw new Error(`The label ${JSON.stringify(r.label)} isn't one of this decision's labels.`);
+    if (j === undefined) throw new Error(`The pick ${JSON.stringify(r.pick)} isn't one of this decision's labels.`);
+    confusion[i]![j]! += 1;
+  }
+  const picked = labels.map((_, j) => confusion.reduce((s, row) => s + row[j]!, 0));
+  const perLabel = labels.map((l, i): LabelScore => {
+    const tp = confusion[i]![i]!;
+    const support = confusion[i]!.reduce((s, n) => s + n, 0);
+    const precision = picked[i] ? tp / picked[i]! : 0;
+    const recall = support ? tp / support : 0;
+    const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+    return { id: l.id, name: l.name, precision, recall, f1, support };
+  });
+  const counted = perLabel.filter((s, i) => s.support > 0 || picked[i]! > 0);
+  const macroF1 = counted.length ? counted.reduce((s, l) => s + l.f1, 0) / counted.length : 0;
+  return { perLabel, macroF1, confusion };
+}
+
+/**
+ * Expected calibration error and the reliability bins: each row's top probability (its pick's confidence) goes in one
+ * of 10 equal-width bins (bin i holds i/10 up to (i+1)/10, the last also 1), and ECE is the gap between each bin's
+ * accuracy and its mean confidence, weighted by its share of the rows. No rows gives 0.
+ */
+export function calibrationBins(points: ReadonlyArray<{ confidence: number; right: boolean }>): {
+  ece: number;
+  bins: ReliabilityBin[];
+} {
+  const sums = Array.from({ length: DECIDE_BINS }, () => ({ rows: 0, right: 0, confidence: 0 }));
+  for (const p of points) {
+    if (!Number.isFinite(p.confidence)) throw new Error("A confidence must be a number from 0 to 1.");
+    const bin = sums[Math.min(DECIDE_BINS - 1, Math.max(0, Math.floor(p.confidence * DECIDE_BINS)))]!;
+    bin.rows += 1;
+    bin.confidence += p.confidence;
+    if (p.right) bin.right += 1;
+  }
+  let ece = 0;
+  const bins = sums.map((b, i): ReliabilityBin => {
+    const accuracy = b.rows ? b.right / b.rows : 0;
+    const confidence = b.rows ? b.confidence / b.rows : 0;
+    if (b.rows) ece += (b.rows / points.length) * Math.abs(accuracy - confidence);
+    return { from: i / DECIDE_BINS, to: (i + 1) / DECIDE_BINS, rows: b.rows, accuracy, confidence };
+  });
+  return { ece, bins };
+}
+
+/** Each calibration row's log-probabilities, the right one floored at DECIDE_P_FLOOR. */
+function calibrationLogs(rows: readonly CalibrationRow[]): Array<{ logs: number[]; right: number }> {
+  return rows.map((r, n) => {
+    if (!Number.isInteger(r.right) || r.right < 0 || r.right >= r.p.length) {
+      throw new Error(`Calibration row ${n + 1} has no right option.`);
+    }
+    const logs = r.p.map((p) => {
+      if (!(p >= 0) || !Number.isFinite(p)) throw new Error(`Calibration row ${n + 1} has a probability that isn't a number from 0 to 1.`);
+      return Math.log(p);
+    });
+    logs[r.right] = Math.max(logs[r.right]!, Math.log(DECIDE_P_FLOOR));
+    return { logs, right: r.right };
+  });
+}
+
+function meanLogLoss(rows: ReadonlyArray<{ logs: number[]; right: number }>, T: number): number {
+  if (!rows.length) return 0;
+  let sum = 0;
+  for (const r of rows) {
+    const scaled = r.logs.map((l) => l / T);
+    // Finite: the right option is floored.
+    const max = Math.max(...scaled);
+    let total = 0;
+    for (const s of scaled) total += Math.exp(s - max);
+    sum += max + Math.log(total) - scaled[r.right]!;
+  }
+  return sum / rows.length;
+}
+
+/**
+ * Mean log loss at T: for each row, minus the log of the right option's probability once every option's
+ * log-probability is divided by T and renormalized (applyTemperature), the right one floored at 1e-12.
+ */
+export function decisionLogLoss(rows: readonly CalibrationRow[], T: number): number {
+  if (!(T > 0) || !Number.isFinite(T)) throw new Error("T must be a positive number.");
+  return meanLogLoss(calibrationLogs(rows), T);
+}
+
+/**
+ * One temperature for a model, fit on its dev rows only: the T from 0.25 to 10 with the lowest dev log loss
+ * (decisionLogLoss), by golden-section search on log T, 60 steps, rounded to 4 decimals. The loss is convex in 1/T, so
+ * the search finds its one minimum. T stays 1 unless it lowers the loss, and with fewer than 20 rows it stays 1 and
+ * `calibrated` is false. T divides every option's log-probability, which keeps their order, and the pick is made
+ * before T anyway (temperedDecision): it never changes the winner, so it never changes accuracy.
+ */
+export function fitTemperature(rows: readonly CalibrationRow[]): { T: number; calibrated: boolean } {
+  if (rows.length < DECIDE_T_MIN_ROWS) return { T: 1, calibrated: false };
+  const prepared = calibrationLogs(rows);
+  const loss = (u: number) => meanLogLoss(prepared, Math.exp(u));
+  const phi = (Math.sqrt(5) - 1) / 2;
+  let a = Math.log(DECIDE_T_MIN);
+  let b = Math.log(DECIDE_T_MAX);
+  let c = b - phi * (b - a);
+  let d = a + phi * (b - a);
+  let fc = loss(c);
+  let fd = loss(d);
+  for (let i = 0; i < DECIDE_T_STEPS; i++) {
+    if (fc <= fd) {
+      b = d;
+      d = c;
+      fd = fc;
+      c = b - phi * (b - a);
+      fc = loss(c);
+    } else {
+      a = c;
+      c = d;
+      fc = fd;
+      d = a + phi * (b - a);
+      fd = loss(d);
+    }
+  }
+  const fit = Math.min(DECIDE_T_MAX, Math.max(DECIDE_T_MIN, Math.round(Math.exp((a + b) / 2) * 1e4) / 1e4));
+  return { T: meanLogLoss(prepared, fit) < meanLogLoss(prepared, 1) ? fit : 1, calibrated: true };
+}
+
+type DecideSide = "base" | "tuned";
+
+/** A side's log-probabilities for an item: one per letter, each a number or -Infinity. Null when there are none to use. */
+function sideLogprobs(score: DecideScoreItem | undefined, side: DecideSide, letters: number): number[] | null {
+  const lp = side === "base" ? score?.base : score?.tuned;
+  if (!Array.isArray(lp) || lp.length !== letters || !letters) return null;
+  return lp.every((l) => typeof l === "number" && !Number.isNaN(l) && l !== Infinity) ? lp : null;
+}
+
+/** A part's rows in row order, each with its items (regular or decline ones) in group order. */
+function itemsByRow(items: readonly DecisionItemKey[], rows: number, decline: boolean): Array<[number, DecisionItemKey[]]> {
+  const byRow = new Map<number, DecisionItemKey[]>();
+  for (const item of items) {
+    if (Boolean(item.decline) !== decline) continue;
+    if (!Number.isInteger(item.row) || item.row < 0 || item.row >= rows) {
+      throw new Error(`Item ${item.index} is for row ${item.row}, which the split doesn't have.`);
+    }
+    byRow.set(item.row, [...(byRow.get(item.row) ?? []), item]);
+  }
+  return [...byRow.entries()].sort((x, y) => x[0] - y[0]).map(([row, list]) => [row, list.sort((x, y) => x.group - y.group)]);
+}
+
+interface ScoredRow {
+  combined: { labels: Array<{ id: string; p: number }>; none: number };
+  mass: number[];
+}
+
+/** A row on one side: its groups combined, before T, and each rendering's letter mass. Null if any rendering lacks a score. */
+function scoredRow(items: readonly DecisionItemKey[], scores: ReadonlyMap<number, DecideScoreItem>, side: DecideSide): ScoredRow | null {
+  const groups: Array<{ labelIds: Array<string | null>; p: number[] }> = [];
+  const mass: number[] = [];
+  for (const item of items) {
+    const lp = sideLogprobs(scores.get(item.index), side, item.labelIds.length);
+    if (!lp) return null;
+    groups.push({ labelIds: item.labelIds, p: letterProbabilities(lp) });
+    mass.push(letterMass(lp));
+  }
+  return groups.length ? { combined: combineGroups(groups), mass } : null;
+}
+
+/** The first score sent for each index: a retried callback counts once. */
+function firstScores(scores: readonly DecideScoreItem[]): Map<number, DecideScoreItem> {
+  const out = new Map<number, DecideScoreItem>();
+  for (const s of scores) if (s && Number.isInteger(s.index) && !out.has(s.index)) out.set(s.index, s);
+  return out;
+}
+
+function median(values: readonly number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+}
+
+/**
+ * A decide job's eval_summary from the GPU's scores (docs/DECISION_MODELS.md "Scoring (logic.ts)"), the pure step
+ * scoreDecisionStep saves. For base Glimmer zero-shot and the tuned adapter alike: accuracy with its Wilson interval,
+ * macro F1, per label scores, the confusion matrix, the `none` rate, the decline check, T fit on dev rows only,
+ * ECE raw and with T, the reliability bins and letter mass. Then the baselines, always picking the commonest train
+ * label and the word-overlap stand-in, on the same test rows.
+ *
+ * A row's renderings are combined (combineGroups) and picked before T, as serving does (temperedDecision). Base and
+ * tuned are compared on the same rows: a test row counts only when every rendering of it has usable scores for base,
+ * and for tuned when the job scored tuned; the rest are unscoredRows. `tuned` is null when no test item has tuned
+ * scores (scoreOnly, or a failed tuned pass). The EvalSummary fields follow summarizeJudgements' meaning: `items` the
+ * scored test rows, `tunedWins` the rows tuned got right and base got wrong, `baseWins` the reverse, `ties` the rest,
+ * and the judge's averages and cost 0.
+ */
+export function summarizeDecisions(input: DecisionScoringInput): DecisionSummary {
+  const { labels, dev, test } = input;
+  if (labels.length < 2) throw new Error("A decision has at least 2 labels.");
+  if (new Set(labels.map((l) => l.id)).size !== labels.length) throw new Error("Two labels have the same id.");
+  const devScores = firstScores(dev.scores);
+  const testScores = firstScores(test.scores);
+  const hasTuned = test.items.some((it) => sideLogprobs(testScores.get(it.index), "tuned", it.labelIds.length) !== null);
+  const sides: DecideSide[] = hasTuned ? ["base", "tuned"] : ["base"];
+
+  // Test rows, and decline rows, that every side scored.
+  const onEverySide = (byRow: Array<[number, DecisionItemKey[]]>) =>
+    byRow.flatMap(([row, items]) => {
+      const per = sides.map((s) => scoredRow(items, testScores, s));
+      return per.every((p) => p !== null) ? [{ row, label: test.rows[row]!.label, per: per as ScoredRow[] }] : [];
+    });
+  const rows = onEverySide(itemsByRow(test.items, test.rows.length, false));
+  const declines = onEverySide(itemsByRow(test.items, test.rows.length, true));
+  const devByRow = itemsByRow(dev.items, dev.rows.length, false);
+
+  const summarizeSide = (k: number): { summary: DecisionSideSummary; right: boolean[] } => {
+    const side = sides[k]!;
+    const calibration: CalibrationRow[] = [];
+    for (const [row, items] of devByRow) {
+      const scored = scoredRow(items, devScores, side);
+      if (!scored) continue;
+      const right = labels.findIndex((l) => l.id === dev.rows[row]!.label);
+      if (right < 0) throw new Error(`Dev row ${row + 1}'s label isn't one of this decision's labels.`);
+      const p = new Map(scored.combined.labels.map((l) => [l.id, l.p]));
+      calibration.push({ p: [...labels.map((l) => p.get(l.id) ?? 0), scored.combined.none], right });
+    }
+    const { T, calibrated } = fitTemperature(calibration);
+    const picks = rows.map(({ label, per }) => {
+      const raw = pickDecision(labels, per[k]!.combined);
+      const soft = temperedDecision(labels, per[k]!.combined, T);
+      return { label, pick: raw.id, right: raw.id === label, raw: raw.confidence, withT: soft.confidence };
+    });
+    const right = picks.filter((p) => p.right).length;
+    const { perLabel, macroF1, confusion } = labelScores(labels, picks);
+    const raw = calibrationBins(picks.map((p) => ({ confidence: p.raw, right: p.right })));
+    const withT = calibrationBins(picks.map((p) => ({ confidence: p.withT, right: p.right })));
+    const declined = declines.filter((d) => pickDecision(labels, d.per[k]!.combined).id === null).length;
+    const mass = [...rows, ...declines].flatMap((r) => r.per[k]!.mass);
+    return {
+      right: picks.map((p) => p.right),
+      summary: {
+        accuracy: wilsonRate(right, picks.length),
+        macroF1,
+        perLabel,
+        confusion,
+        noneRate: picks.length ? picks.filter((p) => p.pick === null).length / picks.length : 0,
+        decline: declines.length ? { rows: declines.length, declined, rate: declined / declines.length } : null,
+        T,
+        calibrated,
+        ece: { raw: raw.ece, withT: withT.ece },
+        reliability: withT.bins,
+        letterMass: { median: median(mass), min: mass.length ? Math.min(...mass) : 0 },
+      },
+    };
+  };
+
+  const base = summarizeSide(0);
+  const tuned = hasTuned ? summarizeSide(1) : null;
+  let tunedWins = 0;
+  let baseWins = 0;
+  if (tuned) {
+    base.right.forEach((b, i) => {
+      if (tuned.right[i] && !b) tunedWins += 1;
+      if (b && !tuned.right[i]) baseWins += 1;
+    });
+  }
+
+  const trainCount = (id: string) => {
+    const n = Number(input.trainCounts[id]);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const commonest = labels.reduce((best, l) => (trainCount(l.id) > trainCount(best.id) ? l : best), labels[0]!);
+  const standInRight = rows.filter(({ row, label }) => standInDecision({ state: test.rows[row]!.input, labels }).id === label).length;
+  const tooLong = Number(input.tooLong);
+
+  return {
+    items: rows.length,
+    tunedWins,
+    baseWins,
+    ties: rows.length - tunedWins - baseWins,
+    avgBaseScore: 0,
+    avgTunedScore: 0,
+    judgeCostUsd: 0,
+    kind: "decision",
+    labels: labels.map((l) => ({ id: l.id, name: l.name })),
+    groups: labelGroups(labels).length,
+    devRows: dev.rows.length,
+    testRows: test.rows.length,
+    unscoredRows: test.rows.length - rows.length,
+    tooLong: Number.isFinite(tooLong) && tooLong > 0 ? Math.floor(tooLong) : 0,
+    base: base.summary,
+    tuned: tuned ? tuned.summary : null,
+    baselines: {
+      commonest: { id: commonest.id, accuracy: wilsonRate(rows.filter((r) => r.label === commonest.id).length, rows.length) },
+      standIn: { accuracy: wilsonRate(standInRight, rows.length) },
+    },
+  };
 }

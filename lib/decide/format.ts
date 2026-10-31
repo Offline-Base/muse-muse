@@ -9,6 +9,8 @@ import type {
   DecideTask,
   Decision,
   DecisionLabel,
+  DecisionPartItem,
+  DecisionRow,
 } from "@/lib/decide/types";
 import { promptKey, promptWords } from "@/lib/train/logic";
 import type { TrainExample } from "@/lib/train/types";
@@ -59,7 +61,11 @@ export const DECIDE_SEPARATOR = "\n\nHere is the same task again:\n\n";
 
 /** How a decision is read from the model, as decide.json says it. */
 export const DECIDE_READ =
-  "first-token log-probabilities, bare and space-led letter summed, renormalized over the shown letters, divided by T";
+  "first-token log-probabilities, bare and space-led letter summed, renormalized over the shown letters, groups " +
+  "combined, then every option's log-probability divided by T and renormalized; the pick is made before T";
+
+/** The decline check: at most this many test renderings with the right label taken out (decisionItems). */
+export const DECLINE_RENDERINGS_MAX = 100;
 
 /** The model id the build-time stand-in answers with. */
 export const STAND_IN_MODEL = "stand-in";
@@ -389,6 +395,38 @@ export function decideRenderings(input: {
   return groups.map((g) => rendering(input.state, input.question, g, { none, answer: input.answer }));
 }
 
+/**
+ * A dev or test part's items in index order, the one layout the dataset route serves the GPU and summarizeDecisions
+ * reads back: every row's renderings (decideRenderings, one per group) in row order. Test then adds the decline check:
+ * rows spread evenly through the split, each with its label taken out and every group shown, at most
+ * DECLINE_RENDERINGS_MAX renderings in all, so `none` is the right answer. Dev has no decline items.
+ */
+export function decisionItems(input: {
+  question: string;
+  labels: readonly DecisionLabel[];
+  rows: readonly DecisionRow[];
+  part: "dev" | "test";
+}): DecisionPartItem[] {
+  const { question, labels, rows } = input;
+  const items: DecisionPartItem[] = [];
+  const add = (row: number, renderings: DecideRendering[], decline: boolean) => {
+    renderings.forEach((r, group) => {
+      items.push({ index: items.length, row, group, labelIds: [...r.labelIds], decline, rendering: r });
+    });
+  };
+  rows.forEach((r, row) => add(row, decideRenderings({ state: r.input, question, labels, answer: r.label }), false));
+  if (input.part === "test" && rows.length && labels.length >= 2) {
+    const perRow = labelGroups(labels.slice(1)).length;
+    const count = Math.min(rows.length, Math.floor(DECLINE_RENDERINGS_MAX / perRow));
+    for (let i = 0; i < count; i++) {
+      const row = Math.floor(((i + 0.5) * rows.length) / count);
+      const r = rows[row]!;
+      add(row, decideRenderings({ state: r.input, question, labels, answer: r.label, without: r.label }), true);
+    }
+  }
+  return items;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // From scores to a decision
 
@@ -413,6 +451,7 @@ export function letterProbabilities(logprobs: readonly number[], T = 1): number[
  * Groups into one distribution (more than 4 labels): a label's score is its probability in its own group, `none` is
  * the product of every group's `none`, and the labels are rescaled to share 1 - none. A rule, not a model: its
  * calibration is only what the test set shows. One group comes back as it went in. Labels keep their group order.
+ * Combine the groups' probabilities before T (applyTemperature comes after), or T could change the winner.
  */
 export function combineGroups(groups: ReadonlyArray<{ labelIds: ReadonlyArray<string | null>; p: readonly number[] }>): {
   labels: Array<{ id: string; p: number }>;
@@ -467,8 +506,44 @@ export function pickDecision(
 }
 
 /**
+ * A combined distribution softened by T: every option's log-probability, the labels' and `none`'s, divided by T, then
+ * renormalized. With one group this is exactly letterProbabilities(logprobs, T), since the renormalizing only shifts
+ * every log-probability by the same amount. With groups it comes after combineGroups: dividing each group's letters
+ * by T before combining can change which label wins across groups, and this can't, since p to p^(1/T) keeps order.
+ * An option at 0 stays at 0.
+ */
+export function applyTemperature(
+  combined: { labels: ReadonlyArray<{ id: string; p: number }>; none: number },
+  T: number,
+): { labels: Array<{ id: string; p: number }>; none: number } {
+  if (!(T > 0) || !Number.isFinite(T)) throw new Error("T must be a positive number.");
+  const p = [...combined.labels.map((l) => l.p), combined.none];
+  if (p.some((x) => !(x >= 0) || !Number.isFinite(x))) throw new Error("A probability must be a number from 0 to 1.");
+  const soft = T === 1 ? p : softmax(p.map((x) => Math.log(x) / T));
+  return { labels: combined.labels.map((l, i) => ({ id: l.id, p: soft[i]! })), none: soft.at(-1)! };
+}
+
+/**
+ * The decision at T: the pick is made before T (pickDecision of the combined distribution), and its confidence and
+ * every probability come after (applyTemperature). So T never changes the pick, not even by a rounding error, and
+ * never changes accuracy; it only changes how sure the answer says it is.
+ */
+export function temperedDecision(
+  labels: readonly DecisionLabel[],
+  combined: { labels: ReadonlyArray<{ id: string; p: number }>; none: number },
+  T: number,
+): Decision {
+  const pick = pickDecision(labels, combined);
+  if (T === 1) return pick;
+  const soft = pickDecision(labels, applyTemperature(combined, T));
+  const confidence = pick.id === null ? soft.none : soft.probabilities.find((p) => p.id === pick.id)!.p;
+  return { decision: pick.decision, id: pick.id, confidence, probabilities: soft.probabilities, none: soft.none };
+}
+
+/**
  * Steps 2 to 5 of "What the model answers": each rendering's letter log-probabilities (from a DecideBackend, in the
- * renderings' order) renormalized, divided by T, groups combined, the pick made. Also each rendering's letter mass.
+ * renderings' order) renormalized, groups combined, the pick made, then T applied (temperedDecision). Also each
+ * rendering's letter mass.
  */
 export function decisionFromScores(input: {
   labels: readonly DecisionLabel[];
@@ -481,9 +556,9 @@ export function decisionFromScores(input: {
   const groups = renderings.map((r, i) => {
     const row = logprobs[i]!;
     if (row.length !== r.letters.length) throw new Error(`Prompt ${i + 1} shows ${r.letters.length} letters, but ${row.length} were scored.`);
-    return { labelIds: r.labelIds, p: letterProbabilities(row, input.T ?? 1) };
+    return { labelIds: r.labelIds, p: letterProbabilities(row) };
   });
-  return { decision: pickDecision(input.labels, combineGroups(groups)), mass: logprobs.map(letterMass) };
+  return { decision: temperedDecision(input.labels, combineGroups(groups), input.T ?? 1), mass: logprobs.map(letterMass) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

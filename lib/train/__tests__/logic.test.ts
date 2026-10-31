@@ -4,11 +4,15 @@ import {
   adapterProblem,
   betterOf,
   BOOT_GRACE_MS,
+  calibrationBins,
   certFingerprint,
   capEventBody,
   clampLimits,
   datasetSystemPrompt,
+  DECIDE_T_MAX,
+  DECIDE_T_MIN,
   decideCheck,
+  decisionLogLoss,
   dedupePrompts,
   EVAL_TEXT_MAX,
   evalHoldoutCount,
@@ -16,12 +20,14 @@ import {
   evalSplit,
   EVENT_LOG_MAX,
   estimateCostUsd,
+  fitTemperature,
   GLIMMER_OVERHEAD_MINUTES,
   GLIMMER_OVERHEAD_NO_CACHE_MINUTES,
   instanceNameFor,
   isNearDuplicate,
   judgeScore,
   type JobState,
+  labelScores,
   PARAM_TEXT_MAX,
   promptWords,
   recipeDefaults,
@@ -32,6 +38,7 @@ import {
   SERVE_STOP_MARGIN_SECONDS,
   serveMinutes,
   SILENCE_MS,
+  summarizeDecisions,
   summarizeJudgements,
   toDatasetView,
   toJobView,
@@ -41,7 +48,10 @@ import {
   unjudgedSummary,
   usableMinutes,
   validateParams,
+  wilsonRate,
 } from "@/lib/train/logic";
+import { applyTemperature, decisionItems, labelId, seededRandom, temperedDecision } from "@/lib/decide/format";
+import type { CalibrationRow, DecideScoreItem, DecisionLabel, DecisionRow, DecisionScoringInput } from "@/lib/decide/types";
 import type { Recipe, RecipeId } from "@/lib/train/types";
 
 const MIN = 60_000;
@@ -823,5 +833,430 @@ describe("live demo", () => {
     assert.ok(!JSON.stringify(view).includes(cert));
     assert.equal(toJobView({ ...base, serveEndpoint: null }, after(10 * MIN)).serving, null);
     assert.equal("serving" in toJobView({ ...base, recipe: "smoke" }, after(10 * MIN)), false, "only a serve job has it");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Decision models: scoring (docs/DECISION_MODELS.md "Scoring (logic.ts)")
+
+const approx = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
+const decisionLabel = (name: string): DecisionLabel => ({ id: labelId(name), name, description: "" });
+/** A GPU score from probabilities over the shown letters: the log of each times the letter mass. */
+const logs = (p: readonly number[], mass = 1) => p.map((x) => Math.log(x * mass));
+
+describe("decision scoring: Wilson intervals", () => {
+  it("matches an interval worked by hand", () => {
+    // 8 right of 10, z = 1.96:
+    //   p = 0.8, z^2 = 3.8416, z^2 / n = 0.38416, so the scale is 1 + 0.38416 = 1.38416
+    //   center = (p + z^2 / 2n) / scale = (0.8 + 0.19208) / 1.38416 = 0.716738
+    //   half = (z / scale) * sqrt(p (1 - p) / n + z^2 / 4n^2) = 1.416022 * sqrt(0.016 + 0.009604)
+    //        = 1.416022 * 0.160012 = 0.226581
+    //   low = 0.716738 - 0.226581 = 0.490157, high = 0.716738 + 0.226581 = 0.943319
+    // Published Wilson tables give 0.4902 to 0.9433 for 8 of 10.
+    const w = wilsonRate(8, 10);
+    assert.equal(w.right, 8);
+    assert.equal(w.total, 10);
+    assert.equal(w.rate, 0.8);
+    approx(w.low, 0.490157, 1e-6);
+    approx(w.high, 0.943319, 1e-6);
+  });
+
+  it("stays inside 0 to 1 at the ends and knows nothing with no rows", () => {
+    // 10 of 10: center = (1 + 0.19208) / 1.38416 = 0.861230, half = 1.416022 * sqrt(0.009604) = 1.416022 * 0.098 = 0.138770.
+    const all = wilsonRate(10, 10);
+    approx(all.low, 0.72246, 1e-5);
+    assert.equal(all.high, 1);
+    const none = wilsonRate(0, 5);
+    assert.equal(none.low, 0);
+    // 0 of 5: center = half = (3.8416 / 10) / 1.76832 = 0.217246, so high = 0.434493.
+    approx(none.high, 0.434493, 1e-5);
+    assert.deepEqual(wilsonRate(0, 0), { right: 0, total: 0, rate: 0, low: 0, high: 1 });
+    for (const [k, n] of [[1, 3], [5, 6], [40, 80], [79, 80]] as const) {
+      const w = wilsonRate(k, n);
+      assert.ok(w.low <= w.rate && w.rate <= w.high, `${k} of ${n}`);
+    }
+    assert.throws(() => wilsonRate(6, 5), /right must be/);
+  });
+});
+
+describe("decision scoring: per label, macro F1 and confusion", () => {
+  const labels = ["Billing", "Shipping", "Account"].map(decisionLabel);
+
+  it("scores each label and counts a none pick as a miss", () => {
+    const { perLabel, macroF1, confusion } = labelScores(labels, [
+      { label: "billing", pick: "billing" },
+      { label: "billing", pick: "shipping" },
+      { label: "shipping", pick: "shipping" },
+      { label: "shipping", pick: null },
+      { label: "account", pick: "account" },
+      { label: "account", pick: "billing" },
+    ]);
+    // Rows are the right label, columns the pick, then none.
+    assert.deepEqual(confusion, [
+      [1, 1, 0, 0],
+      [0, 1, 0, 1],
+      [1, 0, 1, 0],
+    ]);
+    // Billing: picked twice, right once: precision 1/2, recall 1/2, F1 1/2. Shipping: the same (its none row is a miss
+    // and no other label's false pick). Account: picked once and right, found 1 of 2: precision 1, recall 1/2, F1 2/3.
+    assert.deepEqual(perLabel.map((l) => [l.id, l.precision, l.recall, l.support]), [
+      ["billing", 0.5, 0.5, 2],
+      ["shipping", 0.5, 0.5, 2],
+      ["account", 1, 0.5, 2],
+    ]);
+    approx(perLabel[2]!.f1, 2 / 3);
+    approx(macroF1, (0.5 + 0.5 + 2 / 3) / 3);
+  });
+
+  it("averages only the labels with test rows or picks", () => {
+    const { perLabel, macroF1 } = labelScores(labels, [
+      { label: "billing", pick: "billing" },
+      { label: "billing", pick: "shipping" },
+    ]);
+    // Billing: precision 1, recall 1/2, F1 2/3. Shipping: no rows but picked once, F1 0, counted. Account: neither.
+    approx(perLabel[0]!.f1, 2 / 3);
+    assert.equal(perLabel[1]!.f1, 0);
+    approx(macroF1, (2 / 3 + 0) / 2);
+    assert.equal(labelScores(labels, []).macroF1, 0);
+    assert.throws(() => labelScores(labels, [{ label: "x", pick: null }]), /isn't one of/);
+    assert.throws(() => labelScores(labels, [{ label: "billing", pick: "x" }]), /isn't one of/);
+  });
+});
+
+describe("decision scoring: ECE and reliability bins", () => {
+  it("matches an ECE worked by hand", () => {
+    // Top probabilities 0.95 (right), 0.85 (right), 0.82 (wrong), 0.55 (right):
+    //   0.9 to 1 holds 0.95: accuracy 1, confidence 0.95, gap 0.05
+    //   0.8 to 0.9 holds 0.85 and 0.82: accuracy 0.5, confidence 0.835, gap 0.335
+    //   0.5 to 0.6 holds 0.55: accuracy 1, confidence 0.55, gap 0.45
+    //   ECE = (1 * 0.05 + 2 * 0.335 + 1 * 0.45) / 4 = 1.17 / 4 = 0.2925
+    const { ece, bins } = calibrationBins([
+      { confidence: 0.95, right: true },
+      { confidence: 0.85, right: true },
+      { confidence: 0.82, right: false },
+      { confidence: 0.55, right: true },
+    ]);
+    approx(ece, 0.2925);
+    assert.equal(bins.length, 10);
+    assert.deepEqual(bins.map((b) => b.rows), [0, 0, 0, 0, 0, 1, 0, 0, 2, 1]);
+    assert.equal(bins[8]!.accuracy, 0.5);
+    approx(bins[8]!.confidence, 0.835);
+    assert.deepEqual(bins[3], { from: 0.3, to: 0.4, rows: 0, accuracy: 0, confidence: 0 });
+  });
+
+  it("puts 1 in the last bin and each edge in the bin it starts", () => {
+    const { bins } = calibrationBins([
+      { confidence: 1, right: true },
+      { confidence: 0, right: false },
+      { confidence: 0.5, right: true },
+    ]);
+    assert.equal(bins[9]!.rows, 1);
+    assert.equal(bins[0]!.rows, 1);
+    assert.equal(bins[5]!.rows, 1);
+    assert.deepEqual(calibrationBins([]).ece, 0);
+    assert.throws(() => calibrationBins([{ confidence: Number.NaN, right: true }]), /confidence/);
+  });
+});
+
+describe("decision scoring: fitting T", () => {
+  const rows = (n: number, p: number[], right: number): CalibrationRow[] => Array.from({ length: n }, () => ({ p, right }));
+
+  it("finds the T worked out by hand", () => {
+    // 20 dev rows give their first option 0.9 and their second 0.1 (none 0); the first is right on 15 of them.
+    // At T the first option gets 0.9^(1/T) / (0.9^(1/T) + 0.1^(1/T)) = 1 / (1 + 9^(-1/T)). The dev log loss,
+    // -(15 ln p + 5 ln (1 - p)) / 20, is lowest at p = 15 / 20 = 0.75, so 9^(-1/T) = 1/3, 1/T = ln 3 / ln 9 = 1/2, T = 2.
+    //   loss at T = 2: -(15 ln 0.75 + 5 ln 0.25) / 20 = (4.315231 + 6.931472) / 20 = 0.562335
+    //   loss at T = 1: -(15 ln 0.9 + 5 ln 0.1) / 20 = (1.580411 + 11.512925) / 20 = 0.654667
+    const dev = [...rows(15, [0.9, 0.1, 0], 0), ...rows(5, [0.9, 0.1, 0], 1)];
+    assert.deepEqual(fitTemperature(dev), { T: 2, calibrated: true });
+    approx(decisionLogLoss(dev, 2), 0.562335, 1e-6);
+    approx(decisionLogLoss(dev, 1), 0.654667, 1e-6);
+    assert.ok(decisionLogLoss(dev, 1.9) > decisionLogLoss(dev, 2) && decisionLogLoss(dev, 2.1) > decisionLogLoss(dev, 2));
+  });
+
+  it("keeps T at 1 with fewer than 20 dev rows, or when no other T lowers the loss", () => {
+    assert.deepEqual(fitTemperature(rows(19, [0.9, 0.1], 0)), { T: 1, calibrated: false });
+    assert.deepEqual(fitTemperature([]), { T: 1, calibrated: false });
+    // Even rows: every T gives the same loss.
+    const even = Array.from({ length: 20 }, (_, i): CalibrationRow => ({ p: [0.5, 0.5], right: i % 2 }));
+    assert.deepEqual(fitTemperature(even), { T: 1, calibrated: true });
+  });
+
+  it("stops at its bounds", () => {
+    // Always right at 0.9: sharpening only helps, down to 0.25.
+    assert.equal(fitTemperature(rows(20, [0.9, 0.1, 0], 0)).T, DECIDE_T_MIN);
+    // Right half the time at 0.9: the best p is 0.5, which needs T without end, so 10.
+    const half = [...rows(10, [0.9, 0.1], 0), ...rows(10, [0.9, 0.1], 1)];
+    assert.equal(fitTemperature(half).T, DECIDE_T_MAX);
+  });
+
+  it("stays finite when the right option got 0", () => {
+    const dev = [...rows(18, [0.7, 0.2, 0.1], 0), ...rows(2, [1, 0, 0], 2)];
+    assert.ok(Number.isFinite(decisionLogLoss(dev, 1)));
+    const { T } = fitTemperature(dev);
+    assert.ok(T >= DECIDE_T_MIN && T <= DECIDE_T_MAX);
+    assert.throws(() => fitTemperature([...dev, { p: [0.5, 0.5], right: 2 }]), /no right option/);
+    assert.throws(() => decisionLogLoss([{ p: [-0.1, 1.1], right: 0 }], 1), /probability/);
+    assert.throws(() => decisionLogLoss(dev, 0), /T must be/);
+  });
+
+  it("never changes the winner", () => {
+    const random = seededRandom("fit-temperature");
+    for (let set = 0; set < 20; set++) {
+      const dev = Array.from({ length: 20 + set * 3 }, (): CalibrationRow => {
+        const n = 3 + Math.floor(random() * 3);
+        const raw = Array.from({ length: n }, () => random() ** 3);
+        const sum = raw.reduce((s, x) => s + x, 0);
+        return { p: raw.map((x) => x / sum), right: Math.floor(random() * n) };
+      });
+      const { T } = fitTemperature(dev);
+      for (const row of dev) {
+        const combined = { labels: row.p.slice(0, -1).map((p, i) => ({ id: `l${i}`, p })), none: row.p.at(-1)! };
+        const soft = applyTemperature(combined, T);
+        const at = (xs: number[]) => xs.indexOf(Math.max(...xs));
+        assert.equal(at([...soft.labels.map((l) => l.p), soft.none]), at([...row.p]), `set ${set}, T ${T}`);
+        const labels = combined.labels.map((l) => ({ id: l.id, name: l.id, description: "" }));
+        assert.equal(temperedDecision(labels, combined, T).id, temperedDecision(labels, combined, 1).id);
+      }
+    }
+  });
+});
+
+describe("decision scoring: summarizeDecisions", () => {
+  const LABELS = ["Billing", "Shipping", "Account"].map(decisionLabel);
+  const QUESTION = "Which team should handle this support ticket?";
+  // The stand-in matches label names: rows 0, 1 (a tie, so the first label), 2 and 4 right; 3 and 5 wrong.
+  const TEST_ROWS: DecisionRow[] = [
+    { input: "billing question", label: "billing" },
+    { input: "my card", label: "billing" },
+    { input: "shipping delay", label: "shipping" },
+    { input: "account of the parcel", label: "shipping" },
+    { input: "account locked", label: "account" },
+    { input: "password", label: "account" },
+  ];
+  // Probabilities over Billing, Shipping, Account and none, kept away from the bins' edges.
+  const BASE = [
+    [0.55, 0.15, 0.15, 0.15], // billing: picks Billing at 0.55, right
+    [0.25, 0.45, 0.15, 0.15], // billing: picks Shipping at 0.45, wrong
+    [0.05, 0.65, 0.15, 0.15], // shipping: picks Shipping at 0.65, right
+    [0.15, 0.15, 0.15, 0.55], // shipping: picks none at 0.55, wrong
+    [0.15, 0.05, 0.65, 0.15], // account: picks Account at 0.65, right
+    [0.35, 0.25, 0.25, 0.15], // account: picks Billing at 0.35, wrong
+  ];
+  const BASE_MASS = [0.8, 0.6, 0.9, 0.7, 0.5, 0.4];
+  const TUNED = [
+    [0.85, 0.05, 0.05, 0.05], // right at 0.85
+    [0.75, 0.15, 0.05, 0.05], // right at 0.75
+    [0.05, 0.85, 0.05, 0.05], // right at 0.85
+    [0.05, 0.75, 0.15, 0.05], // right at 0.75
+    [0.05, 0.05, 0.85, 0.05], // right at 0.85
+    [0.05, 0.55, 0.35, 0.05], // picks Shipping at 0.55, wrong
+  ];
+  // The decline check's renderings show the other two labels, then none: base declines rows 0 and 1, tuned all but 5.
+  const BASE_DECLINE = [0, 1, 2, 3, 4, 5].map((r) => (r < 2 ? [0.2, 0.2, 0.6] : [0.6, 0.2, 0.2]));
+  const TUNED_DECLINE = [0, 1, 2, 3, 4, 5].map((r) => (r < 5 ? [0.1, 0.1, 0.8] : [0.5, 0.2, 0.3]));
+
+  function scenario(): DecisionScoringInput {
+    const devRows = TEST_ROWS.slice(0, 4);
+    const devItems = decisionItems({ question: QUESTION, labels: LABELS, rows: devRows, part: "dev" });
+    const testItems = decisionItems({ question: QUESTION, labels: LABELS, rows: TEST_ROWS, part: "test" });
+    const testScores = testItems.map(
+      (it): DecideScoreItem =>
+        it.decline
+          ? { index: it.index, base: logs(BASE_DECLINE[it.row]!), tuned: logs(TUNED_DECLINE[it.row]!), baseMass: 1, tunedMass: 1 }
+          : {
+              index: it.index,
+              base: logs(BASE[it.row]!, BASE_MASS[it.row]),
+              tuned: logs(TUNED[it.row]!, 0.99),
+              baseMass: BASE_MASS[it.row]!,
+              tunedMass: 0.99,
+            },
+    );
+    const devScores = devItems.map((it): DecideScoreItem => ({ index: it.index, base: logs(BASE[it.row]!), tuned: logs(TUNED[it.row]!), baseMass: 1, tunedMass: 1 }));
+    return {
+      labels: LABELS,
+      trainCounts: { billing: 10, shipping: 12, account: 12 },
+      dev: { rows: devRows, items: devItems, scores: devScores },
+      test: { rows: TEST_ROWS, items: testItems, scores: testScores },
+      tooLong: 2,
+    };
+  }
+
+  it("scores base and tuned on the test rows", () => {
+    const s = summarizeDecisions(scenario());
+    assert.equal(s.kind, "decision");
+    assert.deepEqual(s.labels, [
+      { id: "billing", name: "Billing" },
+      { id: "shipping", name: "Shipping" },
+      { id: "account", name: "Account" },
+    ]);
+    assert.deepEqual([s.groups, s.devRows, s.testRows, s.unscoredRows, s.tooLong], [1, 4, 6, 0, 2]);
+    // EvalSummary as a judged job reads it: tuned fixed rows 1 and 3, both got 0, 2 and 4, both missed 5.
+    assert.deepEqual([s.items, s.tunedWins, s.baseWins, s.ties], [6, 2, 0, 4]);
+    assert.deepEqual([s.avgBaseScore, s.avgTunedScore, s.judgeCostUsd], [0, 0, 0]);
+
+    const base = s.base;
+    const tuned = s.tuned!;
+    assert.deepEqual(base.accuracy, wilsonRate(3, 6));
+    assert.deepEqual(tuned.accuracy, wilsonRate(5, 6));
+    assert.deepEqual(base.confusion, [
+      [1, 1, 0, 0],
+      [0, 1, 0, 1],
+      [1, 0, 1, 0],
+    ]);
+    assert.deepEqual(tuned.confusion, [
+      [2, 0, 0, 0],
+      [0, 2, 0, 0],
+      [0, 1, 1, 0],
+    ]);
+    // Base: F1 1/2, 1/2 and 2/3 (the labelScores case above). Tuned: Billing 1; Shipping picked 3 times, right twice,
+    // found both: precision 2/3, recall 1, F1 0.8; Account found 1 of 2: F1 2/3.
+    approx(base.macroF1, 5 / 9);
+    approx(tuned.macroF1, (1 + 0.8 + 2 / 3) / 3);
+    approx(tuned.perLabel[1]!.precision, 2 / 3);
+    approx(tuned.perLabel[1]!.f1, 0.8);
+    approx(base.noneRate, 1 / 6);
+    assert.equal(tuned.noneRate, 0);
+    assert.deepEqual(base.decline, { rows: 6, declined: 2, rate: 2 / 6 });
+    assert.deepEqual(tuned.decline, { rows: 6, declined: 5, rate: 5 / 6 });
+
+    // 4 dev rows are too few to fit T.
+    assert.deepEqual([base.T, base.calibrated, tuned.T, tuned.calibrated], [1, false, 1, false]);
+    // Base ECE by hand: 0.35 (wrong) alone in 0.3 to 0.4, gap 0.35; 0.45 (wrong) in 0.4 to 0.5, gap 0.45; 0.55 right
+    // and 0.55 wrong in 0.5 to 0.6, accuracy 0.5, gap 0.05; 0.65 and 0.65, both right, in 0.6 to 0.7, gap 0.35.
+    // ECE = (0.35 + 0.45 + 2 * 0.05 + 2 * 0.35) / 6 = 1.6 / 6.
+    approx(base.ece.raw, 1.6 / 6);
+    assert.equal(base.ece.withT, base.ece.raw);
+    assert.deepEqual(base.reliability.map((b) => b.rows), [0, 0, 0, 1, 1, 2, 2, 0, 0, 0]);
+    assert.equal(base.reliability[5]!.accuracy, 0.5);
+    approx(base.reliability[5]!.confidence, 0.55);
+    // Tuned: 0.55 wrong, gap 0.55; two 0.75s right, gap 0.25; three 0.85s right, gap 0.15.
+    // ECE = (0.55 + 2 * 0.25 + 3 * 0.15) / 6 = 1.5 / 6 = 0.25.
+    approx(tuned.ece.raw, 0.25);
+
+    // Letter mass over the 12 test renderings: base 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 and six 1s, so the median is
+    // (0.9 + 1) / 2; tuned six 0.99s and six 1s.
+    approx(base.letterMass.median, 0.95);
+    approx(base.letterMass.min, 0.4);
+    approx(tuned.letterMass.median, 0.995);
+    approx(tuned.letterMass.min, 0.99);
+
+    // Shipping and Account tie for the commonest train label, so the first: right on the 2 Shipping rows.
+    assert.deepEqual(s.baselines.commonest, { id: "shipping", accuracy: wilsonRate(2, 6) });
+    assert.deepEqual(s.baselines.standIn, { accuracy: wilsonRate(4, 6) });
+  });
+
+  it("gives the same summary for the same scores, in any order", () => {
+    const input = scenario();
+    const s = summarizeDecisions(input);
+    assert.deepEqual(summarizeDecisions(scenario()), s);
+    const shuffled = { ...input, test: { ...input.test, scores: [...input.test.scores].reverse() } };
+    assert.deepEqual(summarizeDecisions(shuffled), s);
+  });
+
+  it("compares base and tuned on the same rows, counts a repeated index once, and leaves out what it can't score", () => {
+    const input = scenario();
+    const scores = input.test.scores.map((x) => ({ ...x }));
+    // Row 5's only rendering lost its tuned score, so row 5 leaves both sides.
+    scores[5] = { ...scores[5]!, tuned: null, tunedMass: null };
+    // Index 6 is row 0's decline rendering: a score of the wrong length can't be used.
+    scores[6] = { ...scores[6]!, base: [0, 0] };
+    // A retried callback for index 0 with other numbers: the first one sent counts.
+    scores.push({ ...scores[0]!, base: logs([0.05, 0.85, 0.05, 0.05]) });
+    const s = summarizeDecisions({ ...input, test: { ...input.test, scores } });
+    assert.deepEqual([s.items, s.testRows, s.unscoredRows], [5, 6, 1]);
+    assert.deepEqual(s.base.accuracy, wilsonRate(3, 5));
+    assert.deepEqual(s.tuned!.accuracy, wilsonRate(5, 5));
+    assert.deepEqual([s.tunedWins, s.baseWins, s.ties], [2, 0, 3]);
+    assert.deepEqual(s.base.decline, { rows: 5, declined: 1, rate: 0.2 });
+    assert.deepEqual(s.tuned!.decline, { rows: 5, declined: 4, rate: 0.8 });
+    assert.deepEqual(s.baselines.commonest.accuracy, wilsonRate(2, 5));
+    assert.deepEqual(s.baselines.standIn.accuracy, wilsonRate(4, 5));
+  });
+
+  it("fits T on dev only and shows ECE with it, without changing a pick", () => {
+    const labels = ["Billing", "Shipping"].map(decisionLabel);
+    const devRows = Array.from({ length: 20 }, (_, i): DecisionRow => ({ input: `dev ${i}`, label: i < 15 ? "billing" : "shipping" }));
+    const testRows: DecisionRow[] = ["billing", "billing", "billing", "shipping"].map((label, i) => ({ input: `test ${i}`, label }));
+    const devItems = decisionItems({ question: QUESTION, labels, rows: devRows, part: "dev" });
+    const testItems = decisionItems({ question: QUESTION, labels, rows: testRows, part: "test" });
+    const sure = [Math.log(0.9), Math.log(0.1), -Infinity];
+    const score = (index: number): DecideScoreItem => ({ index, base: sure, tuned: null, baseMass: 1, tunedMass: null });
+    const s = summarizeDecisions({
+      labels,
+      trainCounts: { billing: 30, shipping: 10 },
+      dev: { rows: devRows, items: devItems, scores: devItems.map((it) => score(it.index)) },
+      // Base only (scoreOnly), and the decline renderings were never scored.
+      test: { rows: testRows, items: testItems, scores: testItems.filter((it) => !it.decline).map((it) => score(it.index)) },
+    });
+    // fitTemperature's case worked by hand: 0.9 on the first option, right on 15 of 20 dev rows, so T = 2, where a 0.9
+    // becomes 0.75. On test every row picks Billing, right on 3 of 4.
+    //   raw: all 4 rows in 0.9 to 1, confidence 0.9, accuracy 0.75, so ECE = 0.15
+    //   with T: all 4 in 0.7 to 0.8, confidence 0.75, accuracy 0.75, so ECE = 0
+    assert.equal(s.base.T, 2);
+    assert.equal(s.base.calibrated, true);
+    assert.deepEqual(s.base.accuracy, wilsonRate(3, 4));
+    approx(s.base.ece.raw, 0.15);
+    approx(s.base.ece.withT, 0);
+    assert.equal(s.base.reliability[7]!.rows, 4);
+    approx(s.base.reliability[7]!.confidence, 0.75);
+    assert.equal(s.base.decline, null);
+    assert.equal(s.tuned, null);
+    assert.deepEqual([s.items, s.tunedWins, s.baseWins, s.ties], [4, 0, 0, 4]);
+    assert.deepEqual(s.base.letterMass, { median: 1, min: 1 });
+    assert.deepEqual(s.baselines.commonest, { id: "billing", accuracy: wilsonRate(3, 4) });
+    // No word of "test 3" is in a label, so the stand-in ties to Billing on every row.
+    assert.deepEqual(s.baselines.standIn.accuracy, wilsonRate(3, 4));
+  });
+
+  it("combines groups for more than 4 labels, and T keeps the pick", () => {
+    const labels = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"].map(decisionLabel);
+    const devRows = Array.from({ length: 20 }, (_, i): DecisionRow => ({ input: `dev ${i}`, label: "alpha" }));
+    const testRows: DecisionRow[] = [{ input: "test", label: "alpha" }];
+    const devItems = decisionItems({ question: QUESTION, labels, rows: devRows, part: "dev" });
+    const testItems = decisionItems({ question: QUESTION, labels, rows: testRows, part: "test" });
+    // Group 0 shows Alpha, Bravo, Charlie and none; group 1 Delta, Echo and none. Alpha (0.45, tied with Bravo and
+    // first) beats Delta (0.4) once combined, and dividing each group's letters by T first would hand it to Delta.
+    const score = (it: { index: number; group: number; decline: boolean }): DecideScoreItem => ({
+      index: it.index,
+      base: it.group === 0 ? logs([0.45, 0.45, 0.05, 0.05]) : logs([0.4, 0.3, 0.3]),
+      tuned: null,
+      baseMass: 1,
+      tunedMass: null,
+    });
+    const s = summarizeDecisions({
+      labels,
+      trainCounts: {},
+      dev: { rows: devRows, items: devItems, scores: devItems.map(score) },
+      test: { rows: testRows, items: testItems, scores: testItems.filter((it) => !it.decline).map(score) },
+    });
+    assert.equal(s.groups, 2);
+    // Alpha is always right on dev and shares the top with Bravo, so sharpening only helps: T goes to its bound.
+    assert.equal(s.base.T, DECIDE_T_MIN);
+    assert.deepEqual(s.base.accuracy, wilsonRate(1, 1));
+    assert.deepEqual(s.base.confusion[0], [1, 0, 0, 0, 0, 0]);
+    const combined = {
+      labels: [
+        { id: "alpha", p: (0.45 * 0.985) / 1.65 },
+        { id: "bravo", p: (0.45 * 0.985) / 1.65 },
+        { id: "charlie", p: (0.05 * 0.985) / 1.65 },
+        { id: "delta", p: (0.4 * 0.985) / 1.65 },
+        { id: "echo", p: (0.3 * 0.985) / 1.65 },
+      ],
+      none: 0.015,
+    };
+    approx(s.base.reliability.reduce((sum, b) => sum + b.confidence * b.rows, 0), temperedDecision(labels, combined, DECIDE_T_MIN).confidence);
+    // No trainCounts: the first label is the commonest.
+    assert.equal(s.baselines.commonest.id, "alpha");
+  });
+
+  it("refuses a layout that doesn't fit the rows or labels", () => {
+    const input = scenario();
+    assert.throws(() => summarizeDecisions({ ...input, labels: LABELS.slice(0, 1) }), /at least 2 labels/);
+    assert.throws(() => summarizeDecisions({ ...input, labels: [LABELS[0]!, LABELS[0]!] }), /same id/);
+    const far = [...input.test.items, { index: 99, row: 6, group: 0, labelIds: ["billing", null], decline: false }];
+    assert.throws(() => summarizeDecisions({ ...input, test: { ...input.test, items: far } }), /row 6/);
+    const unknown = TEST_ROWS.map((r, i) => (i === 0 ? { ...r, label: "refunds" } : r));
+    assert.throws(() => summarizeDecisions({ ...input, test: { ...input.test, rows: unknown } }), /isn't one of/);
   });
 });

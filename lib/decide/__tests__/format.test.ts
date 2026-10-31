@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  applyTemperature,
   combineGroups,
   DECIDE_LETTERS,
   DECIDE_MAX_TOKENS,
+  DECIDE_READ,
   DECIDE_SEPARATOR,
   DECIDE_SYSTEM,
   decideItem,
@@ -15,6 +17,8 @@ import {
   decideTask,
   decideUserMessage,
   decisionFromScores,
+  decisionItems,
+  DECLINE_RENDERINGS_MAX,
   GLIMMER_BOS,
   GLIMMER_REASONING,
   GLIMMER_TEMPLATE,
@@ -40,10 +44,11 @@ import {
   standInDecision,
   stateText,
   taskProblem,
+  temperedDecision,
   trainExample,
   trainRendering,
 } from "@/lib/decide/format";
-import type { DecideMessage, DecideOption, DecideTask, DecisionLabel } from "@/lib/decide/types";
+import type { DecideMessage, DecideOption, DecideTask, DecisionLabel, DecisionRow } from "@/lib/decide/types";
 
 interface FixtureCase {
   name: string;
@@ -413,6 +418,66 @@ describe("eval and serving renderings", () => {
   });
 });
 
+describe("dev and test items", () => {
+  const rows = (n: number, labels: readonly DecisionLabel[]): DecisionRow[] =>
+    Array.from({ length: n }, (_, i) => ({ input: `ticket ${i}`, label: labels[i % labels.length]!.id }));
+
+  it("lays out dev rows in order, one item per group, no decline items", () => {
+    const labels = [BILLING, SHIPPING, ACCOUNT];
+    const items = decisionItems({ question: TICKET, labels, rows: rows(3, labels), part: "dev" });
+    assert.deepEqual(items.map((i) => [i.index, i.row, i.group, i.decline]), [
+      [0, 0, 0, false],
+      [1, 1, 0, false],
+      [2, 2, 0, false],
+    ]);
+    assert.deepEqual(items[1]!.labelIds, ["billing", "shipping", "account", null]);
+    assert.deepEqual(items.map((i) => i.rendering.answer), ["A", "B", "C"]);
+    assert.equal(items[2]!.rendering.task.state, "ticket 2");
+  });
+
+  it("adds the decline check to test: each row's label taken out, every group, none the answer", () => {
+    const labels = TWELVE.slice(0, 5);
+    const items = decisionItems({ question: TICKET, labels, rows: rows(3, labels), part: "test" });
+    // 3 rows of 2 groups (3 and 2 labels), then 3 decline rows of 4 labels each, one group.
+    assert.equal(items.length, 9);
+    assert.deepEqual(items.map((i) => i.index), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    assert.deepEqual(items.slice(0, 6).map((i) => [i.row, i.group]), [[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]]);
+    const declines = items.filter((i) => i.decline);
+    assert.deepEqual(declines.map((i) => i.row), [0, 1, 2]);
+    for (const d of declines) {
+      const label = labels[d.row % labels.length]!.id;
+      assert.ok(!d.labelIds.includes(label), "the row's own label is taken out");
+      assert.equal(d.labelIds.length, 5);
+      assert.equal(d.rendering.answer, "E", "none is the answer");
+    }
+  });
+
+  it("keeps the decline check to 100 renderings, rows spread through the split", () => {
+    const four = TWELVE.slice(0, 4);
+    const items = decisionItems({ question: TICKET, labels: four, rows: rows(250, four), part: "test" });
+    const declines = items.filter((i) => i.decline);
+    assert.equal(declines.length, DECLINE_RENDERINGS_MAX);
+    // Row floor((i + 0.5) * 250 / 100): 1, 3, 6, 8, ... 248.
+    assert.deepEqual(declines.slice(0, 4).map((i) => i.row), [1, 3, 6, 8]);
+    assert.equal(declines.at(-1)!.row, 248);
+    assert.equal(new Set(declines.map((i) => i.row)).size, 100);
+    // 9 labels leave 8 once one is out: 2 groups a row, so 50 rows.
+    const nine = TWELVE.slice(0, 9);
+    const wide = decisionItems({ question: TICKET, labels: nine, rows: rows(250, nine), part: "test" }).filter((i) => i.decline);
+    assert.equal(wide.length, 100);
+    assert.equal(new Set(wide.map((i) => i.row)).size, 50);
+  });
+
+  it("serves the GPU what decideItem makes, without labels", () => {
+    const labels = [BILLING, SHIPPING];
+    const [item] = decisionItems({ question: TICKET, labels, rows: [{ input: "Where is it?", label: "shipping" }], part: "dev" });
+    const gpu = decideItem(item!.index, item!.row, item!.group, item!.rendering);
+    assert.ok(!JSON.stringify(gpu).includes("shipping"));
+    assert.deepEqual(gpu.letters, ["A", "B", "C"]);
+    assert.throws(() => decisionItems({ question: TICKET, labels, rows: [{ input: "x", label: "nope" }], part: "dev" }), /isn't one of/);
+  });
+});
+
 describe("from scores to a decision", () => {
   const close = (a: number, b: number, eps = 1e-12) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
@@ -492,6 +557,65 @@ describe("from scores to a decision", () => {
     close(decision.none, 0.8 * (0.1 / 0.9));
     assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [logprobs[0]!] }), /scores for 2 prompts/);
     assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [logprobs[0]!, [0, 0]] }), /shows 3 letters/);
+  });
+
+  it("applies T after combining: with one group it is the same as dividing the letters' log-probabilities", () => {
+    const lp = [Math.log(0.5), Math.log(0.25), Math.log(0.05), Math.log(0.1)];
+    const combined = combineGroups([{ labelIds: ["a", "b", "c", null], p: letterProbabilities(lp) }]);
+    for (const T of [0.25, 0.5, 2, 10]) {
+      const soft = applyTemperature(combined, T);
+      const direct = letterProbabilities(lp, T);
+      soft.labels.forEach((l, i) => close(l.p, direct[i]!));
+      close(soft.none, direct[3]!);
+    }
+    assert.deepEqual(applyTemperature(combined, 1), combined);
+    // An option at 0 stays at 0, and the rest still sum to 1.
+    const zero = applyTemperature({ labels: [{ id: "a", p: 0.75 }, { id: "b", p: 0.25 }], none: 0 }, 2);
+    assert.equal(zero.none, 0);
+    close(zero.labels[0]!.p, Math.sqrt(0.75) / (Math.sqrt(0.75) + Math.sqrt(0.25)));
+    assert.throws(() => applyTemperature(combined, 0), /T must be/);
+    assert.throws(() => applyTemperature({ labels: [{ id: "a", p: Number.NaN }], none: 0 }, 2), /probability/);
+  });
+
+  it("never changes the pick with T, even across groups, where T before combining would", () => {
+    const labels = TWELVE.slice(0, 5);
+    const renderings = decideRenderings({ state: "x", question: TICKET, labels });
+    // Group 1 shows a, b, c and none; group 2 shows d, e and none.
+    const logprobs = [
+      [0.45, 0.45, 0.05, 0.05].map(Math.log),
+      [0.4, 0.3, 0.3].map(Math.log),
+    ];
+    // Combined at T = 1: none = 0.05 * 0.3 = 0.015 and the labels share 0.985 in proportion, so a (0.45, tied with b
+    // and first) beats d (0.4).
+    const at1 = decisionFromScores({ labels, renderings, logprobs }).decision;
+    assert.equal(at1.id, labels[0]!.id);
+    close(at1.confidence, (0.45 * 0.985) / 1.65);
+    // Dividing each group's letters by T first would hand it to d at T = 0.25 (a sharpened to about 0.5 in its group,
+    // d to about 0.61 in its own) and at T = 10.
+    const groupFirst = (T: number) =>
+      pickDecision(labels, combineGroups(renderings.map((r, i) => ({ labelIds: r.labelIds, p: letterProbabilities(logprobs[i]!, T) })))).id;
+    assert.equal(groupFirst(0.25), labels[3]!.id);
+    assert.equal(groupFirst(10), labels[3]!.id);
+    for (const T of [0.25, 0.5, 2, 10]) {
+      const d = decisionFromScores({ labels, renderings, logprobs, T }).decision;
+      assert.equal(d.id, at1.id, `T ${T} kept the pick`);
+      close(d.probabilities.reduce((s, p) => s + p.p, 0) + d.none, 1);
+      assert.equal(d.confidence, d.probabilities[0]!.p);
+    }
+    assert.ok(decisionFromScores({ labels, renderings, logprobs, T: 0.25 }).decision.confidence > at1.confidence);
+    assert.ok(decisionFromScores({ labels, renderings, logprobs, T: 2 }).decision.confidence < at1.confidence);
+  });
+
+  it("keeps a none pick under T and reports none's tempered probability", () => {
+    const labels = [BILLING, SHIPPING];
+    const combined = { labels: [{ id: "billing", p: 0.3 }, { id: "shipping", p: 0.2 }], none: 0.5 };
+    const d = temperedDecision(labels, combined, 2);
+    assert.equal(d.id, null);
+    const z = Math.sqrt(0.3) + Math.sqrt(0.2) + Math.sqrt(0.5);
+    close(d.confidence, Math.sqrt(0.5) / z);
+    close(d.none, d.confidence);
+    assert.deepEqual(temperedDecision(labels, combined, 1), pickDecision(labels, combined));
+    assert.ok(DECIDE_READ.includes("groups combined, then every option's log-probability divided by T"));
   });
 });
 

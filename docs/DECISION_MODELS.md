@@ -4,8 +4,8 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0 and D1 of the build plan (`lib/decide/types.ts`,
-`lib/decide/format.ts`). Branch `tg-decide`, worktree `~/mm-wt/decide`.
+into how it could be done here". Built so far: D0, D1 and D2 of the build plan (`lib/decide/types.ts`,
+`lib/decide/format.ts`, and the scoring in `lib/train/logic.ts`). Branch `tg-decide`, worktree `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
 letter, not a JSON object with a reason (see "What the model answers"). Read `docs/TRAINING.md` first; this builds on
@@ -204,11 +204,15 @@ order, into `k = ceil(L / 4)` groups whose sizes differ by at most 1, the larger
 3 and 3; `labelGroups`), and score each group as its own prompt. The model was trained for exactly this: in
 a group without the right label, the right answer is `none`.
 
-- Each group gives a distribution over its labels and `none`, after T.
+- Each group gives a distribution over its labels and `none`, renormalized over its letters, before T.
 - A label's score is its probability in its own group. The overall `none` is the product of every group's `none`.
   Label scores are rescaled to share `1 - none`.
 - The pick is the highest overall. So 12 labels cost 3 forward passes, and the results page reports exactly what
   serving returns.
+- T comes after combining: every combined probability, labels and `none`, goes to the power 1/T (its log divided by
+  T) and is renormalized (`applyTemperature`). Dividing each group's letters by T first can change the winner across
+  groups: with groups of (0.45, 0.45, 0.05, none 0.05) and (0.4, 0.3, none 0.3), the first label wins at T = 1, but
+  the fourth would win at T = 0.25 or T = 10. With one group the two orders give the same numbers.
 - This combination is a rule, not a model of anything; its calibration is only as good as the test set shows, and the
   page says so for any model with groups. It is `combineGroups` in `lib/decide/format.ts`, used by scoring, the
   gateway and the GGUF instructions alike.
@@ -221,11 +225,12 @@ confidence the model writes is a guess while the logits are measured.
 
 1. Read the first-token log-probabilities of the shown letters (bare plus space-led).
 2. Renormalize over the shown letters. Letter mass, the share before renormalizing, is kept as a health number.
-3. Divide each log-probability by T and renormalize again. T is 1 until fit (see Scoring).
-4. Combine groups when there are more than 4 labels.
-5. Answer `{decision, id, confidence, probabilities, none}`.
+3. Combine groups when there are more than 4 labels, and pick the highest.
+4. Divide each option's log-probability by T and renormalize again. T is 1 until fit (see Scoring).
+5. Answer `{decision, id, confidence, probabilities, none}`: the pick from step 3, the numbers from step 4.
 
-T never changes which option wins, so it never changes accuracy.
+T never changes which option wins, so it never changes accuracy: the pick is made before T (`temperedDecision`), and
+T keeps the options' order anyway. Steps 2 to 5 are `decisionFromScores`.
 
 ## 2. Where it fits in lib/train
 
@@ -288,6 +293,11 @@ the GPU sees answers only for the rows it trains on.
 - `part=dev` and `part=eval` (test): `{index, row, group, messages, letters}` items, no answer. The platform keeps which
   letter is which label, so the GPU can't grade itself. For the decline check, test also has up to 100 renderings with
   the right label taken out.
+- One function lays a part out, `decisionItems` in `lib/decide/format.ts`: every row's renderings in row order, one per
+  group; then, for test, the decline check: rows spread evenly through the split (row `floor((i + 0.5) * n / m)`),
+  each with its label taken out and every group shown, at most 100 renderings (`DECLINE_RENDERINGS_MAX`), so 100 rows
+  with 2 to 5 labels, 50 with 6 to 9 and 33 with 10 to 12. The route serves `decideItem(index, row, group, rendering)` of each, and
+  scoring reads the same layout back, so an index means the same thing to both.
 - The route's 120 pages an hour (`READS_PER_HOUR`) is too few for a large decision dataset (20,000 rows is 200 pages).
   For decide jobs the cap becomes the job's own page count plus 120, computed from the dataset's counts.
 
@@ -357,20 +367,26 @@ and like judging it never changes the job's status.
 
 | Number | How |
 |---|---|
-| Accuracy | right picks over test rows, with a Wilson 95% interval, since a person's test set can be small |
-| Macro F1 | the mean of each label's F1, labels weighted equally; `none` isn't a class, a `none` pick is a miss |
+| Accuracy | right picks over test rows, with a Wilson 95% interval (z = 1.96, `wilsonRate`), since a person's test set can be small. No rows gives 0 to 1 |
+| Macro F1 | the mean of each label's F1, labels weighted equally; `none` isn't a class, a `none` pick is a miss. The mean is over the labels with test rows or picks (`labelScores`); a division by 0 counts as 0 |
 | Per label | precision, recall, F1 and support (test rows with that label) |
 | Confusion matrix | rows the right label, columns the pick, plus a `none` column |
 | `none` rate | share of test rows answered `none` |
 | Decline rate | on the test renderings with the right label taken out, the share answered `none` |
-| T | fit on dev only: the value in 0.25 to 10 that minimizes dev log loss, by golden-section search on log T (60 steps, deterministic). Needs 20 dev rows; with fewer, T stays 1 and the page says confidence isn't calibrated |
-| ECE | expected calibration error on test: 10 equal-width bins of the top probability, the weighted gap between accuracy and confidence. Shown raw and with T |
+| T | fit on dev only (`fitTemperature`): the value in 0.25 to 10 that minimizes dev log loss, by golden-section search on log T (60 steps, deterministic), rounded to 4 decimals. The loss is the combined distribution's, after T, with the right option counted as at least 1e-12; it is convex in 1/T, so the search finds its one minimum. T stays 1 unless it lowers the loss. Needs 20 scored dev rows; with fewer, T stays 1 and the page says confidence isn't calibrated |
+| ECE | expected calibration error on test: 10 equal-width bins of the top probability (bin i holds i/10 up to (i+1)/10, the last also 1), the weighted gap between accuracy and confidence (`calibrationBins`). Shown raw and with T |
 | Reliability bins | the same 10 bins with T: rows, accuracy and mean confidence, for the chart |
-| Letter mass | median and minimum, base and tuned |
-| Baselines | always picking the commonest train label, and the word-overlap stand-in (below), both on the same test rows |
+| Letter mass | median and minimum, base and tuned, over the test renderings behind the scored rows, decline ones included, from the scored log-probabilities (`letterMass`) |
+| Baselines | always picking the commonest train label (ties to the first label), and the word-overlap stand-in (below), both on the same test rows |
+
+The rows behind every number: a test row counts when every rendering of it has a usable score (one number per letter)
+for base, and for tuned when the job scored tuned, so base, tuned and the baselines are always on the same rows. The
+rest are `unscoredRows`, shown beside the numbers; a rendering the GPU dropped as too long is one of them. A repeated
+index counts once, the first sent. `tuned` is null when no test item has tuned scores (`scoreOnly`, or a failed tuned
+pass). Each side fits its own T on the dev rows it scored.
 
 `DecisionSummary` extends `EvalSummary` so every list and gate that reads a judged summary works as it is: `items` is
-the test rows, `tunedWins` the rows tuned got right and base got wrong, `baseWins` the reverse, `ties` the rest,
+the scored test rows, `tunedWins` the rows tuned got right and base got wrong, `baseWins` the reverse, `ties` the rest,
 `avgBaseScore`, `avgTunedScore` and `judgeCostUsd` 0. Its `kind: "decision"` field tells pages to show the numbers
 above instead of judge scores. `hasResults` and `isJudged` hold once it has items, so the public page, the live demo
 and local files open as for a judged chat job.
@@ -408,7 +424,8 @@ mode, epochs and the run estimate for the GPU.
 - **decide.json**, written next to the adapter: the format's contract, so llama.cpp users, the drive (wave 3 unit 12) and
   other apps render the same prompt: `{format: "muse-decide/1", system, separator, letters, none, question, labels, T,
   groupsOf: 4, template: {repo, revision, sha256}, prompt: {prefix, suffix}, maxTokens: 2048, read: "first-token
-  log-probabilities, bare and space-led letter summed, renormalized over the shown letters, divided by T"}`. The prompt
+  log-probabilities, bare and space-led letter summed, renormalized over the shown letters, groups combined, then every
+  option's log-probability divided by T and renormalized; the pick is made before T"}`. The prompt
   is `prefix + task + separator + task + suffix`, without `<|begin_of_text|>`, so an app needs no template engine.
 - **Local files:** `quantProblem` refuses decide adapters until `glimmer-quantize` learns a decision check: its channel
   check asks for a final answer under a stock app's prompt, which is the wrong test here. The decision check instead
@@ -437,8 +454,8 @@ POST http://127.0.0.1:<port>/completion
  "cache_prompt": false}
 ```
 
-- Read `completion_probabilities[0].top_logprobs`, sum each shown letter's bare and space-led tokens, renormalize, divide
-  by T. `n_probs` returns only the top N, so a shown letter missing from them gets an even share of the mass left over,
+- Read `completion_probabilities[0].top_logprobs`, sum each shown letter's bare and space-led tokens, renormalize,
+  combine groups, pick, then divide by T. `n_probs` returns only the top N, so a shown letter missing from them gets an even share of the mass left over,
   capped at the smallest letter seen, which never changes the pick. llama.cpp's README says that with greedy sampling
   the probabilities are a plain softmax of the logits [R].
 - `cache_prompt` is off because llama.cpp warns cached logits may differ across batch sizes [R].
@@ -543,7 +560,7 @@ interface DecideBackend {
 
 The gateway's deps hand it one backend per open serving window, or null (503 `decide_offline`), as `/gadget`'s deps
 hand it a board. `score` rejects when it can't answer: 504 `timeout` once `signal` aborted, else 502
-`decide_unavailable`. The platform renormalizes, applies T and combines groups (`decisionFromScores` in
+`decide_unavailable`. The platform renormalizes, combines groups and applies T (`decisionFromScores` in
 `lib/decide/format.ts`), so a backend only reads logits.
 
 ### Files a decision model produces
@@ -818,7 +835,7 @@ sessions.
 |---|---|---|---|---|
 | D0 (done) | Contract: types, the 0017 question to wave 3, the `DecideBackend` interface for unit 11, the file list for unit 12 | `lib/decide/types.ts`, this doc | 1 | no |
 | D1 (done) | Format: render a task, pick and shuffle options, letters, `none`, groups, the exact Glimmer prompt, `combineGroups`, the word-overlap stand-in; a fixture of the real template's output (made once with jinja2 from `chat_template.jinja` at `cec94fcf`) that the TypeScript renderer must equal | `lib/decide/format.ts`, `lib/decide/__tests__/format.test.ts`, `lib/decide/__tests__/fixtures/` | 3 | no |
-| D2 | Scoring: `summarizeDecisions`, `fitTemperature`, accuracy with Wilson intervals, macro F1, per label, confusion, ECE, reliability bins, baselines | `lib/train/logic.ts` (shared), `lib/train/__tests__/logic.test.ts` | 3 | no |
+| D2 (done) | Scoring: `summarizeDecisions`, `fitTemperature`, accuracy with Wilson intervals, macro F1, per label, confusion, ECE, reliability bins, baselines; T moved after combining groups (`applyTemperature`, `temperedDecision`) and the dev and test layout (`decisionItems`) in `lib/decide/format.ts` | `lib/train/logic.ts` (shared, new exports only), `lib/train/__tests__/logic.test.ts` | 3 | no |
 | D3 | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
 | D4 | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
 | D5 | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/steps.ts` or `lib/train/decide-steps.ts`, `lib/train/hub-steps.ts`, `lib/train/logic.ts`, `workflow.scenario.test.ts`, `steps.test.ts` | 3 | no |

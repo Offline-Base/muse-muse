@@ -67,6 +67,29 @@ export interface DecideItem {
   letters: DecideLetter[];
 }
 
+/**
+ * The platform's own record of one dev or test item: which row and group it renders, which label each letter stands
+ * for, and whether it is a decline check rendering. The GPU never sees it. Made by decisionItems in format.ts, which the
+ * dataset route serves from and summarizeDecisions reads, so the two always agree on what each index means.
+ */
+export interface DecisionItemKey {
+  /** Position in the part, 0 on: the index the GPU's scores come back with. */
+  index: number;
+  /** The row in its split. */
+  row: number;
+  /** Which group of the row, 0 on. */
+  group: number;
+  /** The label id behind each letter, in letter order; null for `none`. */
+  labelIds: Array<string | null>;
+  /** True for the decline check: the row's label is taken out, so `none` is the right answer. Test only. */
+  decline: boolean;
+}
+
+/** A dev or test item with its rendering: decideItem(index, row, group, rendering) is what the GPU gets. */
+export interface DecisionPartItem extends DecisionItemKey {
+  rendering: DecideRendering;
+}
+
 /** One scored item in a "decide" event (ctx.decide on the GPU): log-probabilities of each shown letter, in order. */
 export interface DecideScoreItem {
   index: number;
@@ -84,7 +107,10 @@ export interface DecisionProbability {
   p: number;
 }
 
-/** What a decision answers: the pick and every label's probability, after T and after combining groups. */
+/**
+ * What a decision answers: the pick and every label's probability, after combining groups and then T. The pick is made
+ * before T, so T never changes it.
+ */
 export interface Decision {
   /** The picked label's name, or null when "None of the listed options matches" won. */
   decision: string | null;
@@ -150,7 +176,7 @@ export interface DecideScores {
    * logprobs[i][j]: the log of the first answer token's probability on letter j of prompt i, its bare token and its
    * space-led token summed, read from the full vocabulary or, with llama.cpp's n_probs, from the top tokens (a letter
    * not among them gets an even share of the mass left over, capped at the smallest letter seen). Not renormalized:
-   * the platform renormalizes, applies T and combines groups, and reads letter mass from these.
+   * the platform renormalizes, combines groups and applies T, and reads letter mass from these.
    */
   logprobs: number[][];
   /** GPU time for the call. */
@@ -206,6 +232,36 @@ export interface DecisionRows {
 // ---------------------------------------------------------------------------------------------------------------
 // Scoring (summarizeDecisions in lib/train/logic.ts)
 
+/** One part of a decide job (dev or test) as summarizeDecisions reads it. */
+export interface DecisionPartInput {
+  /** The split's rows, in order: each item's `row` indexes them. */
+  rows: readonly DecisionRow[];
+  /** The part's layout, the same the dataset route served the GPU (decisionItems in format.ts). */
+  items: readonly DecisionItemKey[];
+  /** What the GPU sent for the part ("decide" events), in any order. A repeated index counts once, the first. */
+  scores: readonly DecideScoreItem[];
+}
+
+/** Everything summarizeDecisions needs: no I/O, so the same input always gives the same summary. */
+export interface DecisionScoringInput {
+  /** The decision's labels, in the order the person defined them. */
+  labels: readonly DecisionLabel[];
+  /** Train rows per label id (DecisionSpec.perLabel[id].train), for the commonest-label baseline. */
+  trainCounts: Readonly<Record<string, number>>;
+  /** Dev rows: only used to fit T. */
+  dev: DecisionPartInput;
+  /** Test rows: every number on the results page. */
+  test: DecisionPartInput;
+  /** Renderings the GPU dropped as over MAX_SEQ_LENGTH tokens (its too_long metric). */
+  tooLong?: number;
+}
+
+/** One row for fitting T: its options' probabilities before T (labels in order, then `none`), and which is right. */
+export interface CalibrationRow {
+  p: readonly number[];
+  right: number;
+}
+
 /** A share with its Wilson 95% interval. */
 export interface WilsonRate {
   right: number;
@@ -225,7 +281,10 @@ export interface LabelScore {
   support: number;
 }
 
-/** One of 10 equal-width bins of the top probability. */
+/**
+ * One of 10 equal-width bins of the top probability: from `from` up to but not including `to`, except that the last bin
+ * also holds 1. An empty bin has accuracy and confidence 0.
+ */
 export interface ReliabilityBin {
   from: number;
   to: number;
@@ -246,14 +305,18 @@ export interface DecisionSideSummary {
   noneRate: number;
   /** On the test renderings with the right label taken out, how many answered `none`. Null when none were scored. */
   decline: { rows: number; declined: number; rate: number } | null;
-  /** Fit on dev only, 0.25 to 10; 1 when there were under 20 dev rows. */
+  /**
+   * Fit on dev only (fitTemperature), 0.25 to 10, 4 decimals. 1 when under 20 dev rows were scored, or when no other
+   * T lowers dev log loss.
+   */
   T: number;
-  /** True when T was fit. */
+  /** True when T was fit: 20 or more dev rows scored. */
   calibrated: boolean;
   /** Expected calibration error on test, raw and with T. */
   ece: { raw: number; withT: number };
   /** The 10 bins with T, for the reliability chart. */
   reliability: ReliabilityBin[];
+  /** Over the test renderings behind the scored rows (decline renderings included); 0 when there are none. */
   letterMass: { median: number; min: number };
 }
 
@@ -267,8 +330,15 @@ export interface DecisionSummary extends EvalSummary {
   labels: Array<{ id: string; name: string }>;
   /** Prompts per row: ceil(labels / 4). Over 1, the page says the group rule's calibration is only what test shows. */
   groups: number;
+  /** Rows in the dataset's dev split. */
   devRows: number;
+  /** Rows in the dataset's test split. `items` of them were scored; the rest are unscoredRows. */
   testRows: number;
+  /**
+   * Test rows left out of every number because one of their renderings has no usable score (too long, or never sent)
+   * for base, or for tuned when tuned was scored. Base and tuned are always compared on the same rows.
+   */
+  unscoredRows: number;
   /** Renderings over MAX_SEQ_LENGTH tokens, dropped by the GPU and counted. */
   tooLong: number;
   base: DecisionSideSummary;
