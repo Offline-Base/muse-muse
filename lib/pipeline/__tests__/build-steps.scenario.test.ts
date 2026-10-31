@@ -1,8 +1,8 @@
 /**
  * Runs the real step functions in build-steps.ts with the database, sandbox, judge, policy check and usage faked:
  * the judge on a refinement, Muse Code usage charging (child agents included, never twice), the judge's screenshots on
- * fix rounds, the admin kill switch at register, the brief and the build model copied onto refine rows, and the
- * refinement policy check.
+ * fix rounds, the admin kill switch at register, the brief and the build model copied onto refine rows, the
+ * refinement policy check, and the running round and the owner's Stop on the build row.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
@@ -538,6 +538,65 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       };
       checkImpl = async () => ({ refusal: null, usage: [] });
       assert.deepEqual(await steps.refineCheckStep("r2"), { refusal: null });
+    });
+  });
+
+  describe("the running round and the owner's Stop", () => {
+    /** Steering on (the session bridge) or off, for one test. Returns the undo. */
+    const steering = (on: boolean) => {
+      const old = { MUSE_ENGINE: process.env.MUSE_ENGINE, MUSE_FULL: process.env.MUSE_FULL };
+      if (on) process.env.MUSE_ENGINE = "serve";
+      else delete process.env.MUSE_ENGINE;
+      delete process.env.MUSE_FULL;
+      return () => {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      };
+    };
+    const input = { buildId: "b1", productId: "prod-1", sandboxName: "sb", run: { cmdId: "cmd", logPath: "/log" }, offset: 0, round: 1 };
+
+    it("puts the running round on the build row, or takes it off, and reads the Stop in the same update", async () => {
+      const restore = steering(true);
+      try {
+        returns = { builds: [[{ stopRequested: false }], [{ stopRequested: true }]] };
+        assert.equal(await steps.museRoundStep("b1", 11), false);
+        assert.equal(await steps.museRoundStep("b1", null), true);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(writes, [
+        { table: "builds", values: { museRound: 11 } },
+        { table: "builds", values: { museRound: null } },
+      ]);
+    });
+
+    it("has every poll read the Stop, and the poll that sees the run end take its round off", async () => {
+      const restore = steering(true);
+      try {
+        pollImpl = async () => ({ done: false, exitCode: null, offset: 500, lines: [], usage: [], finalText: null });
+        selects = { builds: [[{ stopRequested: true }]] };
+        assert.equal((await steps.pollMuseStep(input)).stopRequested, true);
+        assert.equal(writes.length, 0, "a run still going keeps its round");
+
+        pollImpl = async () => ({ done: true, exitCode: 0, offset: 600, lines: [], usage: [], finalText: null });
+        returns = { builds: [[{ stopRequested: false }]] };
+        assert.equal((await steps.pollMuseStep({ ...input, offset: 500 })).stopRequested, false);
+      } finally {
+        restore();
+      }
+      assert.deepEqual(writes, [{ table: "builds", values: { museRound: null } }]);
+    });
+
+    it("leaves the build row alone while steering is off", async () => {
+      const restore = steering(false);
+      try {
+        pollImpl = async () => ({ done: true, exitCode: 0, offset: 10, lines: [], usage: [], finalText: null });
+        returns = { builds: [[{ stopRequested: true }]] };
+        assert.equal(await steps.museRoundStep("b1", 0), false);
+        assert.equal((await steps.pollMuseStep(input)).stopRequested, false);
+      } finally {
+        restore();
+      }
+      assert.equal(writes.length, 0);
     });
   });
 });

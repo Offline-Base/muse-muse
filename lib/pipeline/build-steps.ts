@@ -144,6 +144,20 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
   await charge({ source: "platform", endpoint: "responses", buildId }, rest, "Brief");
 }
 
+/**
+ * Whether the build's owner pressed Stop (POST /api/builds/{id}/control), read in the same statement that sets the
+ * build's running Muse Code round when `set` is given: the route marks a stop only while a round is set, so an update
+ * that takes the round off the row always sees a stop that landed before it.
+ */
+async function ownerStopped(buildId: string, set?: { museRound: number | null }): Promise<boolean> {
+  const cols = { stopRequested: schema.builds.stopRequested };
+  const where = eq(schema.builds.id, buildId);
+  const [row] = set
+    ? await db().update(schema.builds).set(set).where(where).returning(cols)
+    : await db().select(cols).from(schema.builds).where(where).limit(1);
+  return row?.stopRequested === true;
+}
+
 function isUniqueViolation(err: unknown): boolean {
   for (let e: unknown = err, i = 0; e && i < 4; i++) {
     if ((e as { code?: unknown }).code === "23505") return true;
@@ -443,6 +457,18 @@ export async function startMuseStep(input: {
 }
 startMuseStep.maxRetries = stepRetries("build");
 
+/**
+ * Puts the Muse Code round running now on the build row, numbered as its log and mailbox are (bridgePaths), so the
+ * owner's controls know where to send, or takes it off with null. Returns whether the owner asked to stop, read in the
+ * same update (ownerStopped). Does nothing while steering is off.
+ */
+export async function museRoundStep(buildId: string, round: number | null): Promise<boolean> {
+  "use step";
+  if (!env.steeringEnabled) return false;
+  return ownerStopped(buildId, { museRound: round });
+}
+museRoundStep.maxRetries = 2;
+
 export interface MusePollResult {
   done: boolean;
   exitCode: number | null;
@@ -453,6 +479,8 @@ export interface MusePollResult {
   announced?: string[];
   /** run.usage's children_included once a poll has read it, else null. Pass it to the next poll. */
   childrenIncluded?: boolean | null;
+  /** True once the build's owner pressed Stop. The workflow then ends the build instead of going on. */
+  stopRequested?: boolean;
 }
 
 /**
@@ -466,6 +494,9 @@ export interface MusePollResult {
  * unless run.usage said it includes them or didn't say (Condensed.childrenIncluded), so they are never charged twice.
  * `childrenIncluded` carries over between polls like `usageRecorded`. A run that never wrote run.usage (stopped at its
  * cap) is charged for its main agent and its children from that log instead.
+ *
+ * While steering is on, each poll also reads the owner's Stop, and the poll that reports done takes the run's round
+ * off the build row in the same update, so a stop sent just as the run ends is never missed.
  */
 export async function pollMuseStep(input: {
   buildId: string;
@@ -500,6 +531,7 @@ export async function pollMuseStep(input: {
   if (children?.usage.length) {
     await charge({ ...ctx, endpoint: "muse exec children" }, children.usage, `${what}: ${ownersLabel(children.owners)}`);
   }
+  const stopRequested = env.steeringEnabled ? await ownerStopped(input.buildId, poll.done ? { museRound: null } : undefined) : false;
   return {
     done: poll.done,
     exitCode: poll.exitCode,
@@ -507,6 +539,7 @@ export async function pollMuseStep(input: {
     usageRecorded: Boolean(input.usageRecorded) || fresh || fromLog.length > 0,
     announced: poll.announced,
     childrenIncluded,
+    stopRequested,
   };
 }
 pollMuseStep.maxRetries = 2;
