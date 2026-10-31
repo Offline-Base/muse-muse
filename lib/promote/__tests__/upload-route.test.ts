@@ -108,6 +108,17 @@ describe("import upload route", { skip: canMock ? false : "needs --experimental-
     assert.equal(issued.length, 6, "nothing was signed for a refused path");
   });
 
+  it("takes a run's and a product's native files, and never a shell template", async () => {
+    for (const ok of ["native/runs/r1/j1/clip.mp4", "native/products/p1/r1/bird-count.apk", "clips/p1/quest.mp4"]) {
+      assert.equal((await POST(post(event(ok)))).status, 200, ok);
+    }
+    issued = [];
+    const res = await POST(post(event("native/shells/1.0.0/shell.apk")));
+    assert.equal(res.status, 400);
+    assert.match(((await res.json()) as { error: string }).error, /shell template/);
+    assert.equal(issued.length, 0, "nothing was signed");
+  });
+
   it("answers only admins and automation, and never another site", async () => {
     assert.equal((await POST(post(event("demos/x.mp4"), {}))).status, 403);
     assert.equal((await POST(post(event("demos/x.mp4"), { authorization: "Bearer wrong" }))).status, 403);

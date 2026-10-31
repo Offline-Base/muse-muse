@@ -94,7 +94,8 @@ code refuses a bundle that has them, so deploy before promoting one that does.
 ## Blob
 
 `native` and `clips` joined `STORED_PREFIXES` in `lib/local-files.ts`, which is now the one list. `BlobPrefix`, the promote
-script's link finder and its upload route all read it.
+script's link finder and its upload route all read it. That route refuses `native/shells/`, since every later download is
+built from those templates.
 
 | Path | What | Kept |
 |---|---|---|

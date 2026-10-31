@@ -75,7 +75,7 @@ export interface ImportBuild {
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
-  /** Left out when null, like toolFixtures, so a build with no targets makes the same bundle it always did. */
+  /** Left out when empty, like toolFixtures, so a build with no targets makes the same bundle it always did. */
   requestedTargets?: TargetId[];
   /** The canned tool outputs a later refinement's tests start from. */
   toolFixtures?: ToolFixtures;

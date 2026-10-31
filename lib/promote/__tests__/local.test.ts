@@ -49,6 +49,19 @@ describe("a local product with targets", () => {
   });
 });
 
+describe("a local product with no targets", () => {
+  it("leaves out empty targets and fixtures, so its bundle reads as it always did", () => {
+    const rows = sampleRows();
+    const plain = toBundle(rows);
+    rows.builds[0]!.requestedTargets = [];
+    rows.builds[0]!.toolFixtures = {};
+    const bundle = toBundle(rows);
+    assert.ok(!("requestedTargets" in bundle.builds[0]!));
+    assert.ok(!("toolFixtures" in bundle.builds[0]!));
+    assert.deepEqual(bundle, plain);
+  });
+});
+
 describe("finding local file links", () => {
   it("finds each one once, at any depth, whole or inside text", () => {
     const value = {

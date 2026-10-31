@@ -30,6 +30,8 @@ export function checkImportPathname(pathname: unknown): string | null {
   if (typeof pathname !== "string" || pathname.length > 300 || !STORED_KEY.test(pathname) || !isSafeFileKey(pathname)) {
     return `Uploads must go to a stored file's path under ${STORED_FOLDERS}.`;
   }
+  // Every later download is built from these, and a promoted product never needs to change one.
+  if (pathname.startsWith("native/shells/")) return "Uploads can't replace a shell template.";
   return null;
 }
 
