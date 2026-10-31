@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Controls a Muse Muse lab box. It takes one action from a fixed list, and nothing else, so the platform can't run arbitrary commands.",
+  "parameters": {
+    "action": {
+      "type": "String",
+      "description": "What to do.",
+      "allowedValues": ["status", "restart-agent", "update-agent", "cleanup", "reboot"]
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "controlMac",
+      "precondition": { "StringEquals": ["platformType", "MacOS"] },
+      "inputs": {
+        "timeoutSeconds": "300",
+        "runCommand": [
+          "#!/bin/bash",
+          "set -u",
+          "ACTION='{{ action }}'",
+          "if [ \"$ACTION\" = \"reboot\" ]; then /sbin/shutdown -r +1 'Muse Muse lab restart'; exit $?; fi",
+          "LAB_HOME=/Users/ec2-user",
+          "exec /usr/bin/sudo -u ec2-user -H /usr/bin/env PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/opt/homebrew/share/android-commandlinetools/platform-tools:/usr/bin:/bin:/usr/sbin:/sbin MUSE_LAB_LANE=mac AWS_REGION=us-east-1 /opt/homebrew/opt/node@22/bin/node \"$LAB_HOME/musemuse-lab/current/control.mjs\" \"$ACTION\""
+        ]
+      }
+    },
+    {
+      "action": "aws:runPowerShellScript",
+      "name": "controlWindows",
+      "precondition": { "StringEquals": ["platformType", "Windows"] },
+      "inputs": {
+        "timeoutSeconds": "300",
+        "runCommand": [
+          "$action = '{{ action }}'",
+          "if ($action -eq 'reboot') { & shutdown.exe /r /t 60 /c 'Muse Muse lab restart'; exit $LASTEXITCODE }",
+          "$env:MUSE_LAB_LANE = 'windows'",
+          "$env:MUSE_LAB_ROOT = 'C:\\MuseLab'",
+          "$env:AWS_REGION = 'us-east-1'",
+          "& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\MuseLab\\current\\control.mjs' $action",
+          "exit $LASTEXITCODE"
+        ]
+      }
+    }
+  ]
+}

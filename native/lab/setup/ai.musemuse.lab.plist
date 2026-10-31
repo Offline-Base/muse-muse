@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.musemuse.lab</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/node@22/bin/node</string>
+    <string>__HOME__/musemuse-lab/current/agent.mjs</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>WorkingDirectory</key>
+  <string>__HOME__/musemuse-lab</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/musemuse-lab/logs/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/musemuse-lab/logs/agent.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/bin:/opt/homebrew/share/android-commandlinetools/platform-tools:/opt/homebrew/share/android-commandlinetools/emulator:/opt/homebrew/share/android-commandlinetools/cmdline-tools/latest/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>JAVA_HOME</key>
+    <string>/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home</string>
+    <key>ANDROID_HOME</key>
+    <string>/opt/homebrew/share/android-commandlinetools</string>
+    <key>ANDROID_SDK_ROOT</key>
+    <string>/opt/homebrew/share/android-commandlinetools</string>
+    <key>MUSE_LAB_LANE</key>
+    <string>mac</string>
+    <key>MUSE_LAB_PLATFORM</key>
+    <string>__PLATFORM__</string>
+    <key>AWS_REGION</key>
+    <string>__REGION__</string>
+  </dict>
+</dict>
+</plist>

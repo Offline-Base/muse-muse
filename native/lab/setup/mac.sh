@@ -1,0 +1,118 @@
+#!/bin/bash
+# Sets up the AWS Mac as a lab box. Run it once as ec2-user over an SSM session, from an unpacked native/lab folder, after
+# Xcode's .xip has been handled (docs/NATIVE_LAB.md, "Setting up the Mac"). It's safe to run again.
+#
+#   MUSE_LAB_PLATFORM=https://muse-muse.vercel.app AWS_REGION=us-east-1 bash setup/mac.sh
+#
+# Auto-login needs a password on ec2-user. Set MUSE_LAB_USER_PASSWORD to choose one, which you'll also need for screen
+# sharing. Otherwise the script makes a random one and doesn't show it. Nothing here prints a secret.
+set -euo pipefail
+
+PLATFORM="${MUSE_LAB_PLATFORM:-https://muse-muse.vercel.app}"
+REGION="${AWS_REGION:-us-east-1}"
+LAB_USER="$(id -un)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$HOME/musemuse-lab"
+VERSION="$(/usr/bin/plutil -extract version raw -o - -- "$HERE/package.json" 2>/dev/null || echo 0.1.0)"
+AVD_NAME="mm_pixel"
+AVD_DEVICE="pixel_7"
+SYSTEM_IMAGE="system-images;android-35;google_apis;arm64-v8a"
+SDK_ROOT="/opt/homebrew/share/android-commandlinetools"
+
+step() { printf '\n== %s\n' "$1"; }
+
+if [ "$(uname -m)" != "arm64" ]; then
+  echo "This script is for an Apple silicon Mac." >&2
+  exit 1
+fi
+if [ "$LAB_USER" = "root" ]; then
+  echo "Run this as ec2-user, not root." >&2
+  exit 1
+fi
+
+step "Growing the disk to fill the volume"
+# The AMI's APFS container starts small. This is AWS's documented resize, and it does nothing once it's full size.
+PDISK="$(diskutil list physical external | head -n1 | cut -d' ' -f1 || true)"
+APFS_CONTAINER="$(diskutil list physical external | awk '/Apple_APFS/ {print $7; exit}' || true)"
+if [ -n "$PDISK" ] && [ -n "$APFS_CONTAINER" ]; then
+  yes | sudo diskutil repairDisk "$PDISK" >/dev/null 2>&1 || true
+  sudo diskutil apfs resizeContainer "$APFS_CONTAINER" 0 >/dev/null 2>&1 || echo "The disk resize didn't run. Check df before going on."
+fi
+
+step "Auto-login, with no sleep and no screen lock"
+if [ -z "${MUSE_LAB_USER_PASSWORD:-}" ]; then
+  MUSE_LAB_USER_PASSWORD="$(openssl rand -base64 24)"
+fi
+sudo /usr/bin/dscl . -passwd "/Users/$LAB_USER" "$MUSE_LAB_USER_PASSWORD"
+sudo /usr/sbin/sysadminctl -autologin set -userName "$LAB_USER" -password "$MUSE_LAB_USER_PASSWORD" >/dev/null 2>&1
+unset MUSE_LAB_USER_PASSWORD
+sudo /usr/bin/pmset -a sleep 0 displaysleep 0 disksleep 0 standby 0 powernap 0 autorestart 1
+/usr/bin/defaults -currentHost write com.apple.screensaver idleTime -int 0
+/usr/bin/defaults write com.apple.screensaver askForPassword -int 0
+sudo /usr/bin/defaults write /Library/Preferences/com.apple.screensaver loginWindowIdleTime -int 0
+
+step "Homebrew packages"
+if ! command -v brew >/dev/null 2>&1; then
+  [ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+if ! command -v brew >/dev/null 2>&1; then
+  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+brew install node@22 ffmpeg openjdk@17 awscli
+# The plain ffmpeg formula has no drawtext filter, which captions use. Without ffmpeg-full, the agent draws them with
+# lib/caption.jxa instead, so a failure here isn't fatal.
+brew install ffmpeg-full || echo "ffmpeg-full didn't install. Captions will use the system font."
+
+step "Android SDK and the $AVD_NAME emulator"
+brew install --cask android-commandlinetools
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+export ANDROID_HOME="$SDK_ROOT" ANDROID_SDK_ROOT="$SDK_ROOT"
+export PATH="/opt/homebrew/opt/node@22/bin:$JAVA_HOME/bin:$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+[ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager)"
+AVDMANAGER="$(dirname "$SDKMANAGER")/avdmanager"
+yes | "$SDKMANAGER" --licenses >/dev/null || true
+"$SDKMANAGER" --install "platform-tools" "emulator" "platforms;android-35" "$SYSTEM_IMAGE"
+if ! "$AVDMANAGER" list avd -c 2>/dev/null | grep -qx "$AVD_NAME"; then
+  echo no | "$AVDMANAGER" create avd --name "$AVD_NAME" --package "$SYSTEM_IMAGE" --device "$AVD_DEVICE" --force
+fi
+AVD_CONFIG="$HOME/.android/avd/$AVD_NAME.avd/config.ini"
+if [ -f "$AVD_CONFIG" ]; then
+  for pair in "hw.ramSize=4096" "hw.keyboard=yes" "disk.dataPartition.size=8G" "hw.gpu.enabled=yes" "hw.gpu.mode=swiftshader_indirect"; do
+    key="${pair%%=*}"
+    /usr/bin/sed -i '' "/^${key}[ =]/d" "$AVD_CONFIG"
+    echo "$pair" >>"$AVD_CONFIG"
+  done
+fi
+
+step "Xcode"
+if xcode-select -p 2>/dev/null | grep -q "Xcode" && [ -d /Applications/Xcode.app ]; then
+  sudo xcodebuild -license accept
+  sudo xcodebuild -runFirstLaunch
+  xcodebuild -downloadPlatform iOS || echo "The iOS platform didn't download. Run: xcodebuild -downloadPlatform iOS"
+else
+  echo "Xcode isn't installed yet. Install it, then run this script again. See docs/NATIVE_LAB.md."
+fi
+
+step "The agent"
+mkdir -p "$ROOT/releases/$VERSION" "$ROOT/data" "$ROOT/logs" "$HOME/Library/LaunchAgents"
+if [ "$HERE" != "$ROOT/releases/$VERSION" ]; then
+  /usr/bin/rsync -a --delete --exclude __tests__ --exclude node_modules "$HERE/" "$ROOT/releases/$VERSION/"
+fi
+ln -sfn "$ROOT/releases/$VERSION" "$ROOT/current"
+
+PLIST="$HOME/Library/LaunchAgents/ai.musemuse.lab.plist"
+/usr/bin/sed -e "s|__HOME__|$HOME|g" -e "s|__PLATFORM__|$PLATFORM|g" -e "s|__REGION__|$REGION|g" "$HERE/setup/ai.musemuse.lab.plist" >"$PLIST"
+/usr/bin/plutil -lint "$PLIST" >/dev/null
+GUI_DOMAIN="gui/$(id -u)"
+if launchctl print "$GUI_DOMAIN" >/dev/null 2>&1; then
+  launchctl bootout "$GUI_DOMAIN/ai.musemuse.lab" >/dev/null 2>&1 || true
+  launchctl bootstrap "$GUI_DOMAIN" "$PLIST" || echo "The agent will start at the next login."
+else
+  echo "There's no GUI session yet. Reboot once, and auto-login will start the agent."
+fi
+
+step "Done"
+echo "Check it with: tail -f $ROOT/logs/agent.log"
