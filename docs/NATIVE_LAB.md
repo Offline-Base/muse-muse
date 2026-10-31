@@ -331,11 +331,14 @@ and `AWS_ROLE_ARN`, and its region is always `NATIVE_AWS_REGION`.
 const held = await reserve("device_farm", usd, { ref: runArn, runId });  // { ok: true } or { ok: false, reason, message }
 await commit("device_farm", { usd: actual, holdUsd: usd, ref: runArn, runId });
 await release("device_farm", usd, { ref: runArn });
+await commitIf("windows", { usd, holdUsd }, claim);  // A commit that lands only if `claim`, a SQL statement, returns a row
 await canSpend("device_farm", usd);  // A plan's guess. Only reserve promises anything
 ```
 
 Caps come from `lib/env.ts`: $150 total, $40 Device Farm, $15 Windows, and the alert at $120. A hold takes both its budget and the
-total, or neither, under a row lock, so two callers can't both take the last of a cap. The Mac has no cap of its own: `syncMacHost`
+total, or neither, under a row lock, so two callers can't both take the last of a cap. Every change takes those locks first and in
+the same order, so two can't deadlock. A Windows session's close and its bill land together through `commitIf`, so a failure leaves
+the session open for the next sweep. The Mac has no cap of its own: `syncMacHost`
 commits its rate from `NATIVE_MAC_ALLOCATED_AT` to `NATIVE_MAC_RELEASE_AT`, with a 24-hour minimum, and that counts against the
 total. A commit always lands, even past a cap, and then later holds are refused.
 

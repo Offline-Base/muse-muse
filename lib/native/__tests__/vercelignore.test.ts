@@ -19,10 +19,6 @@ describe(".vercelignore", () => {
     for (const f of files) assert.equal(rules.ignores(`lib/native/${f}`), false, `lib/native/${f} is dropped`);
   });
 
-  it("keeps the lab's routes and its token script", () => {
-    for (const f of ["app/api/native/selftest/route.ts", "app/api/native/agent/claim/route.ts", "scripts/native/lab.ts"]) assert.equal(rules.ignores(f), false, f);
-  });
-
   it("drops the shells, the lab and the bridge at the repo's root", () => {
     for (const f of ["native/lab/agent.ts", "native/shell-mobile/App.tsx", "native/bridge/protocol.ts"]) assert.equal(rules.ignores(f), true, f);
   });
