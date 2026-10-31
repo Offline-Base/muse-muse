@@ -37,13 +37,15 @@ export function normalizeReport(report) {
     loadError: typeof report.loadError === "string" && report.loadError ? report.loadError : null,
     handshake,
     errors,
+    errorsLeftOut: Number.isInteger(report.errorsLeftOut) && report.errorsLeftOut > 0 ? report.errorsLeftOut : 0,
   };
 }
 
-function consoleWarnings(errors) {
-  if (!Array.isArray(errors) || errors.length === 0) return [];
-  const shown = errors.slice(0, MAX_WARNINGS).map((e) => `Console error: ${String(e).slice(0, 200)}`);
-  const more = errors.length - shown.length;
+/** @param {unknown} errors @param {number} [leftOut] how many the device log line couldn't fit */
+function consoleWarnings(errors, leftOut = 0) {
+  const list = Array.isArray(errors) ? errors : [];
+  const shown = list.slice(0, MAX_WARNINGS).map((e) => `Console error: ${String(e).slice(0, 200)}`);
+  const more = list.length - shown.length + leftOut;
   return more > 0 ? [...shown, `And ${more} more console errors.`] : shown;
 }
 
@@ -116,7 +118,7 @@ export function evaluateCheck(facts) {
 
   add("bridge", report.handshake, report.handshake ? "The app bridge answered." : "The app bridge didn't answer.");
 
-  return verdict(checks, reasons, consoleWarnings(report.errors));
+  return verdict(checks, reasons, consoleWarnings(report.errors, report.errorsLeftOut));
 }
 
 function verdict(checks, reasons, warnings) {

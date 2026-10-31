@@ -106,8 +106,8 @@ Job token. Sent every 15 s, and once at the start.
 { "phase": "record", "attempt": 1 }
 ```
 
-`phase` is one of `start`, `download`, `boot`, `install`, `media`, `record`, `autopilot`, `selftest`, `report`, `compose`,
-`upload`.
+`phase` is one of `start`, `download`, `boot`, `install`, `probe`, `media`, `record`, `autopilot`, `selftest`, `report`,
+`compose`, `upload`.
 
 | Status | Meaning |
 |---|---|
@@ -311,8 +311,8 @@ Checked against `native/shell-mobile` and `native/shell-desktop` as of Oct 31.
 
 1. `Documents/selftest.json` (iOS only). The shell writes the whole report here, so iOS doesn't depend on the log or the network.
 2. A `MUSE_SELFTEST <json>` line in the device log. Android's logcat gets this in release builds. Logcat cuts lines at about
-   4 KB, so the shell keeps the line under 3.5 KB: it keeps as many `errors` as fit, ends the list with how many it left out,
-   and drops the `warnings` copy of them.
+   4 KB, so the shell keeps the line under 3.5 KB: it keeps as many `errors` as fit, says how many it left out in
+   `errorsLeftOut`, and drops the `warnings` copy of them. The lab's warnings count those too.
 3. The platform's copy, through the selftest route above. It only counts if its `at` is after this launch.
 
 iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work.

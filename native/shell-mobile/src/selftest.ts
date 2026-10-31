@@ -50,6 +50,8 @@ export interface SelftestReport extends NativeObservations, PageObservations {
   /** Page errors that only warn. */
   warnings: string[];
   at: string;
+  /** Only in the device log line: how many page errors it left out to fit. */
+  errorsLeftOut?: number;
 }
 
 function text(value: unknown, max: number): string {
@@ -171,11 +173,7 @@ export function selftestLogLine(report: SelftestReport, maxBytes: number = MAX_L
   // warnings repeats errors, and the lab reads errors.
   const withErrors = (kept: number): SelftestReport => {
     const left = report.errors.length - kept;
-    return {
-      ...report,
-      warnings: [],
-      errors: left > 0 ? [...report.errors.slice(0, kept), `${left} more page errors left out of this log line.`] : report.errors,
-    };
+    return { ...report, warnings: [], errors: report.errors.slice(0, kept), ...(left > 0 ? { errorsLeftOut: left } : {}) };
   };
   for (let kept = report.errors.length; kept >= 0; kept -= 1) {
     const line = logLine(withErrors(kept));

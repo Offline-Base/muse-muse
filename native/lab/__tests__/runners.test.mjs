@@ -135,7 +135,7 @@ describe("ios_sim", () => {
       return reply();
     }
     if (argv.includes("launch")) {
-      writeFileSync(path.join(h().container, "Documents", "selftest.json"), JSON.stringify(GOOD_REPORT));
+      writeFileSync(path.join(h().container, "Documents", "selftest.json"), JSON.stringify({ ...GOOD_REPORT, at: new Date(2_000_000).toISOString() }));
       return reply({ stdout: "ai.musemuse.lab: 123\n" });
     }
     return undefined;
@@ -174,6 +174,26 @@ describe("ios_sim", () => {
       answer: (argv, _opts, reply) => (argv[0] === "tar" ? (mkdirSync(path.join(argv.at(-1), "A.app"), { recursive: true }), reply()) : undefined),
     });
     writeFileSync(path.join(h.container, "Documents", "selftest.json"), JSON.stringify(GOOD_REPORT));
+    const result = await runIosSim(h.ctx);
+    assert.equal(result.evaluation.passed, false);
+    assert.ok(result.evaluation.checks.some((c) => c.id === "health_report" && c.ok === false));
+  });
+
+  test("a report file from before this launch can't pass it, even one written after the cleanup", async () => {
+    let h;
+    h = makeCtx("ios_sim", {
+      answer: (argv, _opts, reply) => {
+        if (argv[0] === "tar") {
+          mkdirSync(path.join(argv.at(-1), "A.app"), { recursive: true });
+          return reply();
+        }
+        if (argv.includes("launch")) {
+          writeFileSync(path.join(h.container, "Documents", "selftest.json"), JSON.stringify({ ...GOOD_REPORT, at: new Date(1000).toISOString() }));
+          return reply({ stdout: "ai.musemuse.lab: 123\n" });
+        }
+        return undefined;
+      },
+    });
     const result = await runIosSim(h.ctx);
     assert.equal(result.evaluation.passed, false);
     assert.ok(result.evaluation.checks.some((c) => c.id === "health_report" && c.ok === false));

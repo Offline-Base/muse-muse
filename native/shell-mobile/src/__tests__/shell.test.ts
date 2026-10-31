@@ -330,11 +330,23 @@ describe("selftest", () => {
       const logged = parse(line);
       assert.ok(logged.errors.length > 3, "keeps what fits");
       assert.equal(logged.errors[0], errors[0]);
-      const left = 50 - (logged.errors.length - 1);
-      assert.equal(logged.errors.at(-1), `${left} more page errors left out of this log line.`);
+      assert.equal(logged.errors.length + logged.errorsLeftOut, 50, "every error is shown or counted");
       assert.equal(logged.ok, true);
       assert.equal(logged.handshake, true);
       assert.equal(report.errors.length, 50, "the report itself keeps them all");
+    });
+
+    it("the lab's warning counts the errors the line left out", async () => {
+      // Variable paths keep the root typecheck out of the lab's .mjs files, which have no types.
+      const [commands, rules] = ["commands", "rules"].map((name) => `../../../lab/lib/${name}.mjs`);
+      const { selftestFromLogcat } = await import(commands);
+      const { evaluateCheck } = await import(rules);
+      const errors = Array.from({ length: 50 }, (_, i) => `${i} ${"x".repeat(300)}`.slice(0, 300));
+      const line = selftestLogLine(finishReport(native, { ...page, errors }, at));
+      const report = selftestFromLogcat(`10-31 12:00:00 I ReactNativeJS: ${line}`);
+      const { warnings } = evaluateCheck({ launched: true, report, expectOrigin: native.productOrigin });
+      const shown = warnings.length - 1;
+      assert.equal(warnings.at(-1), `And ${50 - shown} more console errors.`);
     });
 
     it("counts bytes, not characters, and the text survives the trip", () => {

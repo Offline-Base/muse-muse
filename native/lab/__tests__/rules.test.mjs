@@ -78,6 +78,24 @@ describe("evaluateCheck", () => {
     assert.match(result.warnings[3], /2 more/);
   });
 
+  test("errors the device log line left out still count in the warning", () => {
+    const report = { ...REPORT, errors: Array.from({ length: 9 }, (_, i) => `e${i}`), errorsLeftOut: 41 };
+    const result = verdict({ report });
+    assert.equal(result.passed, true);
+    assert.equal(result.warnings.at(-1), "And 47 more console errors.");
+    assert.equal(result.warnings.length, 4);
+  });
+
+  test("a log line with no room for any error still says how many there were", () => {
+    assert.deepEqual(verdict({ report: { ...REPORT, errors: [], errorsLeftOut: 50 } }).warnings, ["And 50 more console errors."]);
+  });
+
+  test("a nonsense left-out count is ignored", () => {
+    for (const errorsLeftOut of [-3, 1.5, "9", null]) {
+      assert.deepEqual(verdict({ report: { ...REPORT, errors: ["a"], errorsLeftOut } }).warnings, ["Console error: a"]);
+    }
+  });
+
   test("no report fails a lab shell", () => {
     assert.deepEqual(failing(verdict({ report: null })), ["health_report"]);
   });
@@ -111,7 +129,7 @@ describe("normalizeReport", () => {
   });
   test("wrong types don't get through", () => {
     const report = normalizeReport({ finalUrl: 3, httpStatus: "200", handshake: "yes", crashed: 1, errors: "x" });
-    assert.deepEqual(report, { finalUrl: null, httpStatus: null, loadMs: null, textLength: null, crashed: false, loadError: null, handshake: false, errors: [] });
+    assert.deepEqual(report, { finalUrl: null, httpStatus: null, loadMs: null, textLength: null, crashed: false, loadError: null, handshake: false, errors: [], errorsLeftOut: 0 });
     assert.equal(normalizeReport(null), null);
     assert.equal(normalizeReport("nope"), null);
   });
