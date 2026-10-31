@@ -15,7 +15,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { cleanForJsonb } from "@/lib/native/agent-http";
-import { commit, release, reserve, windowsHoldUsd, windowsUsd } from "@/lib/native/ledger";
+import { commitIf, release, reserve, windowsHoldUsd, windowsUsd } from "@/lib/native/ledger";
 import { laneActivity, SILENT_AFTER_MS } from "@/lib/native/queue";
 import type { NativeLabControl, NativeLane } from "@/lib/native/types";
 
@@ -66,6 +66,12 @@ function anyRows(result: unknown): boolean {
 
 function sessionRef(startedAt: string): string {
   return `windows-start:${startedAt}`;
+}
+
+/** The test that nothing changed the Windows session since `control` was read. Holds are added to, so a stale write would lose one. */
+function sameSession(control: NativeLabControl) {
+  return sql`coalesce(state->'control'->>'startedAt', '') = ${control.startedAt ?? ""}
+    and coalesce((state->'control'->>'holdUsd')::numeric, 0) = ${control.holdUsd ?? 0}::numeric`;
 }
 
 export type WindowsPlan =
@@ -157,14 +163,16 @@ export async function wakeWindows(aws: BoxAws = realAws, now: Date = new Date())
 async function closeSession(control: NativeLabControl, now: Date): Promise<void> {
   if (!control.startedAt) return;
   const hours = (now.getTime() - Date.parse(control.startedAt)) / 3_600_000;
-  // Only one caller gets to close a session, since the sweep and a wake can both find it. This comes first: a commit that
-  // runs twice would bill twice, and a lost one only under-reports minutes.
-  const closed = await db().execute(sql`update native_labs
-    set state = state || jsonb_build_object('control', (state->'control') || ${JSON.stringify({ startedAt: null, holdUsd: 0 })}::jsonb)
-    where lane = 'windows' and state->'control'->>'startedAt' = ${control.startedAt}
-    returning lane`);
-  if (!anyRows(closed)) return;
-  await commit("windows", { usd: windowsUsd(hours), holdUsd: control.holdUsd ?? 0, ref: sessionRef(control.startedAt), note: `${hours.toFixed(2)} hours.` });
+  // Only one caller gets to close a session, since the sweep and a wake can both find it. The close and its bill land
+  // together: a failure leaves the session open for the next sweep, and a commit can't run twice.
+  await commitIf(
+    "windows",
+    { usd: windowsUsd(hours), holdUsd: control.holdUsd ?? 0, ref: sessionRef(control.startedAt), note: `${hours.toFixed(2)} hours.` },
+    sql`update native_labs
+      set state = state || jsonb_build_object('control', (state->'control') || ${JSON.stringify({ startedAt: null, holdUsd: 0 })}::jsonb)
+      where lane = 'windows' and ${sameSession(control)}
+      returning lane`,
+  );
 }
 
 export interface WindowsTick {
@@ -189,8 +197,15 @@ export async function tickWindows(aws: BoxAws = realAws, now: Date = new Date())
     const holdUsd = windowsHoldUsd();
     const held = await reserve("windows", holdUsd, { ref: sessionRef(startedAt), note: "More time on the Windows box." });
     if (held.ok) {
-      await noteControl("windows", { startedAt, holdUsd: (control.holdUsd ?? 0) + holdUsd });
-      return { boxState, did: "extend_hold" };
+      // Of two sweeps at once, one keeps its hold and the other gives it back, so what the ledger holds matches the session.
+      const patch = JSON.stringify({ startedAt, holdUsd: (control.holdUsd ?? 0) + holdUsd });
+      const noted = await db().execute(sql`update native_labs
+        set state = coalesce(state, '{}'::jsonb) || jsonb_build_object('control', coalesce(state->'control', '{}'::jsonb) || ${patch}::jsonb)
+        where lane = 'windows' and ${sameSession(control)}
+        returning lane`);
+      if (anyRows(noted)) return { boxState, did: "extend_hold" };
+      await release("windows", holdUsd, { ref: sessionRef(startedAt), note: "Another sweep got there first." });
+      return { boxState, did: "none", note: "racing" };
     }
     plan = planWindows({ ...facts, holdAllowed: false });
   }

@@ -7,6 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { sql } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import type { TestDb } from "./helpers";
 
@@ -16,12 +17,13 @@ const SAVED = { ...process.env };
 
 describe("the spend ledger", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   let testDb: TestDb;
+  let client: import("@electric-sql/pglite").PGlite;
   let close: () => Promise<void>;
   let ledger: typeof import("@/lib/native/ledger");
 
   before(async () => {
     const { makeTestDb } = await import("./helpers");
-    ({ db: testDb, close } = await makeTestDb());
+    ({ db: testDb, client, close } = await makeTestDb());
     mock.module(at("../../db/client.ts"), { namedExports: { db: () => testDb, schema: realSchema } });
     ledger = await import(at("../ledger.ts"));
   });
@@ -166,6 +168,75 @@ describe("the spend ledger", { skip: canMock ? false : "needs --experimental-tes
     assert.equal((await ledger.spendView()).alerting, false);
     assert.equal((await ledger.reserve("device_farm", 0.01)).ok, true);
     assert.equal((await ledger.spendView()).alerting, true);
+  });
+
+  describe("two ledger calls at once", () => {
+    /** The statements a call sends, in order. PGlite has one connection, so the order is all a test here can hold. */
+    async function statementsOf(call: () => Promise<unknown>): Promise<string[]> {
+      const sent: string[] = [];
+      const real = client.query.bind(client);
+      const spy = mock.method(client, "query", (text: string, ...rest: unknown[]) => {
+        sent.push(text.replace(/\s+/g, " "));
+        return (real as (...args: unknown[]) => unknown)(text, ...rest);
+      });
+      try {
+        await call();
+      } finally {
+        spy.mock.restore();
+      }
+      return sent;
+    }
+    const LOCK = /^select lane from native_budget where lane in \(\$1, 'total'\) order by lane for update/;
+    const touchesBudget = (s: string) => /^(with .*)?update "?native_budget"?/.test(s) || /update native_budget/.test(s);
+
+    for (const [name, call] of [
+      ["commit", () => ledger.commit("windows", { usd: 1, holdUsd: 1 })],
+      ["release", () => ledger.release("windows", 1)],
+      ["commitIf", () => ledger.commitIf("windows", { usd: 1, holdUsd: 1 }, sql`select 1 as won`)],
+      ["reserve", () => ledger.reserve("windows", 1)],
+    ] as const) {
+      it(`${name} locks both budgets in reserve's order before it changes one, so no two can deadlock`, async () => {
+        const sent = await statementsOf(call);
+        const lock = sent.findIndex((s) => LOCK.test(s));
+        const change = sent.findIndex(touchesBudget);
+        assert.ok(lock >= 0, `no lock in: ${sent.join(" | ")}`);
+        assert.ok(change > lock, `the change came first: ${sent.join(" | ")}`);
+      });
+    }
+  });
+
+  describe("a commit tied to another change", () => {
+    it("lands with what it's tied to", async () => {
+      await ledger.reserve("windows", 2);
+      const won = await ledger.commitIf("windows", { usd: 0.5, holdUsd: 2, ref: "r", note: "n" }, sql`select 1 as won`);
+      assert.equal(won, true);
+      const view = await ledger.spendView();
+      assert.equal(view.lanes.windows.committedUsd, 0.5);
+      assert.equal(view.lanes.windows.reservedUsd, 0);
+      assert.equal(view.lanes.total.committedUsd, 0.5);
+      assert.equal(view.lanes.total.reservedUsd, 0);
+      const spend = await testDb.select().from(realSchema.nativeSpend);
+      assert.deepEqual(spend.map((s) => s.kind).sort(), ["commit", "release", "reserve"]);
+      assert.ok(spend.filter((s) => s.kind !== "reserve").every((s) => s.ref === "r" && s.note === "n" && s.lane === "windows"));
+      await assertBooksAgree();
+    });
+
+    it("leaves no trace when that change finds nothing to do", async () => {
+      await ledger.reserve("windows", 2);
+      const won = await ledger.commitIf("windows", { usd: 0.5, holdUsd: 2 }, sql`select 1 as won where false`);
+      assert.equal(won, false);
+      const view = await ledger.spendView();
+      assert.equal(view.lanes.windows.committedUsd, 0);
+      assert.equal(view.lanes.windows.reservedUsd, 2);
+      assert.deepEqual((await testDb.select().from(realSchema.nativeSpend)).map((s) => s.kind), ["reserve"]);
+      await assertBooksAgree();
+    });
+
+    it("writes no release row when there was no hold", async () => {
+      assert.equal(await ledger.commitIf("windows", { usd: 0.5 }, sql`select 1 as won`), true);
+      assert.deepEqual((await testDb.select().from(realSchema.nativeSpend)).map((s) => s.kind), ["commit"]);
+      await assertBooksAgree();
+    });
   });
 
   it("rounds a hold up to the cent, so the budget is never short", () => {

@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
 import type { BoxAws, WindowsFacts } from "@/lib/native/lab-box";
 import { macInput, type Seeded, type TestDb } from "./helpers";
@@ -243,6 +243,70 @@ describe("the lab boxes", { skip: canMock ? false : "needs --experimental-test-m
       const view = await ledger.spendView();
       assert.equal(view.lanes.windows.committedUsd, 1, "one hour at $1");
       assert.equal(view.lanes.windows.reservedUsd, 0);
+    });
+
+    it("a close that can't reach the ledger leaves the session open, and the next sweep bills it", async () => {
+      await box.wakeWindows(fakeAws("stopped"), NOW);
+      const stopped = fakeAws("stopped");
+      const later = new Date(NOW.getTime() + 60 * MINUTE);
+      await testDb.execute(sql`alter table native_spend add constraint spend_refused check (false) not valid`);
+      try {
+        await assert.rejects(box.tickWindows(stopped, later));
+      } finally {
+        await testDb.execute(sql`alter table native_spend drop constraint spend_refused`);
+      }
+      assert.equal((await labRow("windows")).state?.control?.startedAt, NOW.toISOString(), "the session is still open");
+      assert.equal((await ledger.spendView()).lanes.windows.committedUsd, 0);
+      assert.equal((await box.tickWindows(stopped, later)).did, "close_session");
+      const view = await ledger.spendView();
+      assert.equal(view.lanes.windows.committedUsd, 1, "one hour at $1");
+      assert.equal(view.lanes.windows.reservedUsd, 0);
+      assert.equal(view.lanes.total.committedUsd, 1);
+      assert.equal((await labRow("windows")).state?.control?.startedAt, null);
+    });
+
+    it("two sweeps at once keep one hold, so nothing is stranded when the box stops", async () => {
+      await ledger.reserve("windows", 2);
+      const startedAt = ago(115).toISOString();
+      await setControl("windows", { startedAt, holdUsd: 2 }, ago(0));
+      const s = await seed();
+      await windowsJob(s);
+      // Both sweeps have read the row before either goes on.
+      const aws = fakeAws("running");
+      let waiting = 0;
+      let open!: () => void;
+      const both = new Promise<void>((resolve) => (open = resolve));
+      aws.windowsBoxState = async () => {
+        waiting += 1;
+        if (waiting === 2) open();
+        await both;
+        return "running";
+      };
+      const ticks = await Promise.all([box.tickWindows(aws, NOW), box.tickWindows(aws, NOW)]);
+      assert.deepEqual(ticks.map((t) => t.did).sort(), ["extend_hold", "none"]);
+      assert.equal((await ledger.spendView()).lanes.windows.reservedUsd, 4);
+      const control = (await labRow("windows")).state?.control;
+      assert.equal(control?.holdUsd, 4);
+      assert.equal(control?.startedAt, startedAt);
+      await box.tickWindows(fakeAws("stopped"), NOW);
+      const view = await ledger.spendView();
+      assert.equal(view.lanes.windows.reservedUsd, 0, "the box stopped and no hold is left");
+      assert.equal(view.lanes.total.reservedUsd, 0);
+    });
+
+    it("gives a hold back when the session closed while it was being taken", async () => {
+      await ledger.reserve("windows", 2);
+      await setControl("windows", { startedAt: ago(115).toISOString(), holdUsd: 2 }, ago(0));
+      await windowsJob(await seed());
+      const aws = fakeAws("running");
+      aws.windowsBoxState = async () => {
+        await box.tickWindows(fakeAws("stopped"), NOW);
+        return "running";
+      };
+      assert.equal((await box.tickWindows(aws, NOW)).did, "none");
+      const view = await ledger.spendView();
+      assert.equal(view.lanes.windows.reservedUsd, 0);
+      assert.equal((await labRow("windows")).state?.control?.startedAt, null, "and the closed session stays closed");
     });
 
     it("won't start anything with the lab off", async () => {

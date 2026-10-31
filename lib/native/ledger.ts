@@ -8,10 +8,11 @@
  *
  * Neon's HTTP driver has no interactive transactions, so a reservation is one batch: it locks both budget rows, then
  * makes one conditional change. Each statement in a batch sees what committed before it, so two callers can't both take
- * the last of a cap. Commits aren't refused, since the money is already spent: going over a cap shows on the admin card,
- * and every later reservation is refused.
+ * the last of a cap. Every call that changes a budget takes those locks first and in the same order, so no two can
+ * deadlock. Commits aren't refused, since the money is already spent: going over a cap shows on the admin card, and every
+ * later reservation is refused.
  */
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { NATIVE_BUDGET_LANES, type NativeBudgetLane } from "@/lib/native/types";
@@ -67,6 +68,11 @@ function ensureBudgets() {
     .onConflictDoNothing();
 }
 
+/** Both rows a change to `lane` touches, always in the same order. The first step of every batch that changes a budget. */
+function lockBudgets(lane: SpendLane) {
+  return db().execute(sql`select lane from native_budget where lane in (${lane}, 'total') order by lane for update`);
+}
+
 function rowsOf(result: unknown): unknown[] {
   if (Array.isArray(result)) return result;
   const rows = (result as { rows?: unknown })?.rows;
@@ -102,7 +108,7 @@ export async function reserve(lane: SpendLane, usd: number, note: SpendNote = {}
       (lane = ${lane} and reserved_cents + committed_cents + ${cents} <= ${laneCap})) = 2`;
   const [, , moved] = await db().batch([
     ensureBudgets(),
-    db().execute(sql`select lane from native_budget where lane in (${lane}, 'total') order by lane for update`),
+    lockBudgets(lane),
     db().execute(sql`with moved as (
         update native_budget set reserved_cents = reserved_cents + ${cents}, updated_at = now()
         where lane in (${lane}, 'total') and ${fits}
@@ -129,6 +135,7 @@ export async function commit(lane: SpendLane, input: { usd: number; holdUsd?: nu
   const held = toCents(input.holdUsd ?? 0);
   await db().batch([
     ensureBudgets(),
+    lockBudgets(lane),
     db().execute(sql`update native_budget
         set reserved_cents = greatest(0, reserved_cents - ${held}), committed_cents = committed_cents + ${cents}, updated_at = now()
         where lane in (${lane}, 'total')`),
@@ -141,11 +148,40 @@ export async function commit(lane: SpendLane, input: { usd: number; holdUsd?: nu
   ]);
 }
 
+/**
+ * A commit that lands only if `claim` does, in one statement, so neither can happen without the other. `claim` is a
+ * statement that returns a row when it takes effect, such as closing a session. True when it did. A failure changes
+ * nothing, so the caller can simply try again.
+ */
+export async function commitIf(lane: SpendLane, input: { usd: number; holdUsd?: number } & SpendNote, claim: SQL): Promise<boolean> {
+  const cents = toCents(input.usd);
+  const holdUsd = input.holdUsd ?? 0;
+  const [, , moved] = await db().batch([
+    ensureBudgets(),
+    lockBudgets(lane),
+    db().execute(sql`with claimed as (${claim}), moved as (
+        update native_budget
+        set reserved_cents = greatest(0, reserved_cents - ${toCents(holdUsd)}), committed_cents = committed_cents + ${cents}, updated_at = now()
+        where lane in (${lane}, 'total') and exists (select 1 from claimed)
+        returning lane
+      ), logged as (
+        insert into native_spend (lane, kind, usd, ref, run_id, note)
+        select ${lane}, v.kind, v.usd, ${input.ref ?? null}::text, ${input.runId ?? null}::uuid, ${input.note ?? null}::text
+        from claimed cross join (values ('commit', ${input.usd}::real), ('release', ${holdUsd}::real)) as v(kind, usd)
+        where v.kind = 'commit' or v.usd > 0
+        returning id
+      )
+      select lane from moved`),
+  ]);
+  return rowsOf(moved).length > 0;
+}
+
 /** Gives back a hold that went unused. */
 export async function release(lane: SpendLane, usd: number, note: SpendNote = {}): Promise<void> {
   const cents = toCents(usd);
   await db().batch([
     ensureBudgets(),
+    lockBudgets(lane),
     db().execute(sql`update native_budget set reserved_cents = greatest(0, reserved_cents - ${cents}), updated_at = now()
         where lane in (${lane}, 'total')`),
     db().insert(schema.nativeSpend).values(spendRow(lane, "release", usd, note)),
@@ -168,7 +204,7 @@ export async function syncMacHost(): Promise<void> {
   const projected = toCents(macProjectedUsd());
   await db().batch([
     ensureBudgets(),
-    db().execute(sql`select lane from native_budget where lane in ('mac', 'total') order by lane for update`),
+    lockBudgets("mac"),
     db().execute(sql`with delta as (
         select ${projected} - committed_cents as cents from native_budget where lane = 'mac' and committed_cents <> ${projected}
       ), moved as (

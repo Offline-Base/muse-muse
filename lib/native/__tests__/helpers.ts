@@ -7,7 +7,7 @@ export type TestDb = import("drizzle-orm/pglite").PgliteDatabase<typeof schema> 
   batch: (queries: PromiseLike<unknown>[]) => Promise<unknown[]>;
 };
 
-export async function makeTestDb(): Promise<{ db: TestDb; close: () => Promise<void> }> {
+export async function makeTestDb(): Promise<{ db: TestDb; client: import("@electric-sql/pglite").PGlite; close: () => Promise<void> }> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
@@ -20,7 +20,7 @@ export async function makeTestDb(): Promise<{ db: TestDb; close: () => Promise<v
     },
   });
   await migrate(db, { migrationsFolder: new URL("../../../drizzle", import.meta.url).pathname });
-  return { db, close: () => client.close() };
+  return { db, client, close: () => client.close() };
 }
 
 export interface Seeded {
