@@ -100,6 +100,8 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   /** @type {string | null} */
   let sessionId = null;
   let configured = false;
+  /** @type {Promise<GlassesStatus> | null} */
+  let connecting = null;
   /** @type {Array<{ remove(): void }>} */
   const subscriptions = [];
   /** @type {any} */
@@ -248,18 +250,30 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   }
 
   /** A stopped session can't restart, and a leftover one blocks the next connect. */
-  function endSession() {
+  async function endSession() {
     if (!sessionId) return;
-    wearables()
-      .stopSession(sessionId)
-      .catch(() => {});
+    const id = sessionId;
     sessionId = null;
+    await wearables()
+      .stopSession(id)
+      .catch(() => {});
   }
 
+  /** A page can call connect more than once, or again after a passing error while the session still runs. */
   async function connect() {
     if (status.state === "ready" && sessionId) return status;
+    if (!connecting) {
+      connecting = connectNow().finally(() => {
+        connecting = null;
+      });
+    }
+    return connecting;
+  }
+
+  async function connectNow() {
     const w = wearables();
     try {
+      await endSession();
       if (!configured) {
         await w.configure();
         configured = true;
@@ -278,7 +292,7 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     } catch (error) {
       // The module's own wording stays in the device log, for the lab. The page gets the plain message.
       console.warn(`MUSE_GLASSES connect failed: ${error instanceof Error ? error.message : String(error)}`);
-      endSession();
+      await endSession();
       const problem = error instanceof BridgeError ? { code: /** @type {GlassesProblem["code"]} */ (error.code), message: error.message } : problemFromThrown(error);
       setProblem(problem);
       throw toError(problem);
@@ -389,7 +403,7 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
       stopRecorderNow().catch(() => {});
       Speech.stop().catch(() => {});
       setPreview(false);
-      endSession();
+      endSession().catch(() => {});
     },
   };
 }
