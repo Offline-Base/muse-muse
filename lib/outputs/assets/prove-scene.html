@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Terminal</title>
+<style>
+/* Text stays 100 px from each side: Demo Studio's lowest zoom on a result, 1.15, crops about 84 px off each side of 1280. */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #0d1117; color: #e6edf3; overflow: hidden; }
+body { display: flex; flex-direction: column; font: 17px/1.5 "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", ui-monospace, Menlo, monospace; }
+header { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding: 14px 100px; background: #161b22; border-bottom: 1px solid #30363d; }
+header b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header span { color: #9da7b3; font-size: 14px; white-space: nowrap; }
+main { flex: 1; width: 1080px; min-height: 0; margin: 0 auto; overflow: hidden; padding: 16px 0 24px; }
+.block { margin: 0 0 14px; }
+.cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmd::before { content: "$ "; color: #7ee787; }
+.out { white-space: pre-wrap; overflow-wrap: anywhere; color: #c9d1d9; }
+.out.cut { color: #9da7b3; }
+.took { color: #7ee787; font-size: 15px; }
+.took.bad { color: #ff7b72; }
+.wait { color: #9da7b3; }
+</style>
+</head>
+<body>
+<header><b id="title"></b><span id="note"></span></header>
+<main id="main"></main>
+<script>
+(function () {
+  var main = document.getElementById("main");
+  var scene = null;
+  var pause = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+  var keep = function () { main.scrollTop = main.scrollHeight; };
+
+  window.loadScene = function (next) {
+    scene = next;
+    document.getElementById("title").textContent = scene.title;
+    document.getElementById("note").textContent = scene.note;
+    document.title = scene.title;
+  };
+
+  // Types the command, shows it waiting for at most a moment (the real time is printed under the output), then prints
+  // the output it really gave.
+  window.playStep = async function (index) {
+    var step = scene.steps[index];
+    var block = document.createElement("div");
+    block.className = "block";
+    main.appendChild(block);
+
+    var cmd = document.createElement("div");
+    cmd.className = "cmd";
+    block.appendChild(cmd);
+    var text = step.command;
+    var chunk = Math.max(1, Math.ceil(text.length / 24));
+    for (var at = 0; at < text.length; at += chunk) {
+      cmd.textContent = text.slice(0, at + chunk);
+      keep();
+      await pause(40);
+    }
+
+    var wait = document.createElement("div");
+    wait.className = "wait";
+    wait.textContent = "running";
+    wait.setAttribute("aria-busy", "true");
+    block.appendChild(wait);
+    keep();
+    await pause(Math.min(1200, Math.max(300, step.seconds * 1000)));
+    block.removeChild(wait);
+
+    var out = document.createElement("div");
+    out.className = "out";
+    out.textContent = step.lines.join("\n");
+    if (step.lines.length) block.appendChild(out);
+    var took = document.createElement("div");
+    took.className = "took" + (step.ok ? "" : " bad");
+    took.textContent = (step.ok ? "ok, " : "failed, ") + step.took;
+    block.appendChild(took);
+    keep();
+    await pause(300);
+    keep();
+  };
+})();
+</script>
+</body>
+</html>

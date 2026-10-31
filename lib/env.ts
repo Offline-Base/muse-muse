@@ -333,6 +333,36 @@ export const env = {
     );
   },
 
+  // ---------- What every product comes with, and proving it works (docs/PRODUCT_OUTPUTS.md) ----------
+
+  /** PRODUCT_OUTPUTS: products offer a CLI, a skill file and a Claude plugin, and show how to connect each. */
+  get productOutputs(): boolean {
+    return flag("PRODUCT_OUTPUTS");
+  },
+  /** PROVE_IT: after a product is live, run each output for real against it and record a video. Needs PRODUCT_OUTPUTS. */
+  get proveIt(): boolean {
+    return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT");
+  },
+  /** What one Prove it run may spend at Meta, in USD, charged to its build. */
+  get proveItCapUsd(): number {
+    return dollars("PROVE_IT_CAP_USD", 1.5);
+  },
+  /** PROVE_NIGHTLY: re-check live products each night on Muse Spark Contributor. Needs PROVE_IT. */
+  get proveNightly(): boolean {
+    return flag("PRODUCT_OUTPUTS") && flag("PROVE_IT") && flag("PROVE_NIGHTLY");
+  },
+  /**
+   * PROVE_PUT_FILES: a local run's knob. The stage writes the CLI, skill and plugin straight into its copy instead of
+   * downloading them, for a site whose deployed code doesn't have those routes yet, and its results say so.
+   */
+  get provePutFiles(): boolean {
+    return flag("PROVE_PUT_FILES");
+  },
+  /** How many products a nightly re-check takes, the ones checked longest ago first. */
+  get proveNightlyProducts(): number {
+    return Math.max(0, Math.floor(number("PROVE_NIGHTLY_PRODUCTS", 5)));
+  },
+
   // ---------- The native lane: the device lab, Device Farm and their spend (docs/NATIVE.md) ----------
 
   /** NATIVE_LAB: products are checked on the AWS Mac and Windows lab boxes. */

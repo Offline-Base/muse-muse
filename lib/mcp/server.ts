@@ -50,12 +50,31 @@ export function toolInputSchema(input: Record<string, unknown> | undefined): Too
   return { ...schema, type: "object" } as Tool["inputSchema"];
 }
 
+/** The manifest's own read-only and open-world notes on an action, as MCP's hints. Nothing is guessed for one without. */
+function toolAnnotations(action: Action): Tool["annotations"] | undefined {
+  const notes = (action as { annotations?: { readOnly?: unknown; openWorld?: unknown } }).annotations;
+  const hints = {
+    ...(typeof notes?.readOnly === "boolean" ? { readOnlyHint: notes.readOnly } : {}),
+    ...(typeof notes?.openWorld === "boolean" ? { openWorldHint: notes.openWorld } : {}),
+  };
+  return Object.keys(hints).length ? hints : undefined;
+}
+
+/** The actions the connector offers. MCP callers are anonymous, so an action only the owner may use isn't one of them. */
+function connectorActions(product: McpProduct): Action[] {
+  return (parseManifest(product.manifest)?.actions ?? []).filter((a) => (a as { who?: unknown }).who !== "owner");
+}
+
 export function toolsFor(product: McpProduct): Tool[] {
-  return (parseManifest(product.manifest)?.actions ?? []).map((a) => ({
-    name: a.name,
-    description: a.description,
-    inputSchema: toolInputSchema(a.input),
-  }));
+  return connectorActions(product).map((a) => {
+    const annotations = toolAnnotations(a);
+    return {
+      name: a.name,
+      description: a.description,
+      inputSchema: toolInputSchema(a.input),
+      ...(annotations ? { annotations } : {}),
+    };
+  });
 }
 
 export function instructionsFor(product: McpProduct): string {
@@ -183,7 +202,7 @@ function buildServer(product: McpProduct, deps: McpDeps): McpServer {
     },
     { capabilities: { tools: {} }, instructions: instructionsFor(product) },
   );
-  const actions = new Map((parseManifest(product.manifest)?.actions ?? []).map((a) => [a.name, a]));
+  const actions = new Map(connectorActions(product).map((a) => [a.name, a]));
   mcp.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolsFor(product) }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const action = actions.get(request.params.name);
