@@ -7,6 +7,15 @@ export interface SegmentedTab<T extends string = string> {
   label: ReactNode;
 }
 
+/** The tab a key moves to from tab `at` of `count`: the arrows wrap around, Home and End go to the ends. Else -1. */
+export function nextTab(key: string, at: number, count: number): number {
+  if (key === "ArrowRight") return (at + 1) % count;
+  if (key === "ArrowLeft") return (at - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return -1;
+}
+
 /**
  * The steps panel's segmented tabs (docs/UI_MUSE_APP.md, "The steps panel", "Tabs"): a gray rounded track with the
  * chosen tab as a white segment that doesn't slide. A tablist: arrow keys, Home and End move between the tabs, and only
@@ -27,12 +36,7 @@ export function SegmentedTabs<T extends string>({
   idBase: string;
 }) {
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const at = tabs.findIndex((t) => t.id === value);
-    let next = -1;
-    if (e.key === "ArrowRight") next = (at + 1) % tabs.length;
-    else if (e.key === "ArrowLeft") next = (at - 1 + tabs.length) % tabs.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = tabs.length - 1;
+    const next = nextTab(e.key, tabs.findIndex((t) => t.id === value), tabs.length);
     if (next < 0) return;
     e.preventDefault();
     onChange(tabs[next].id);

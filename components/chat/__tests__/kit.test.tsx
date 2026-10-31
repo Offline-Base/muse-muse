@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
+import { nextTab } from "@/components/chat/SegmentedTabs";
 import type { StepItem } from "@/components/chat/types";
 
 // Server-renders the chat kit outside Next: Link is a stand-in.
@@ -108,6 +109,16 @@ describe("SegmentedTabs", () => {
     const off = render(C(kit.SegmentedTabPanel), { idBase: "p", id: "sources", active: false, children: "Not yet" });
     assert.match(off, /aria-labelledby="p-tab-sources" hidden=""/);
     assert.doesNotMatch(off, /Not yet/);
+  });
+
+  it("moves with the arrows, wrapping around, and to the ends with Home and End", () => {
+    assert.equal(nextTab("ArrowRight", 0, 2), 1);
+    assert.equal(nextTab("ArrowRight", 1, 2), 0);
+    assert.equal(nextTab("ArrowLeft", 0, 2), 1);
+    assert.equal(nextTab("ArrowLeft", 2, 3), 1);
+    assert.equal(nextTab("Home", 2, 3), 0);
+    assert.equal(nextTab("End", 0, 3), 2);
+    for (const key of ["ArrowUp", "ArrowDown", "Enter", " ", "Tab"]) assert.equal(nextTab(key, 1, 3), -1, key);
   });
 });
 
