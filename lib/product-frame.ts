@@ -24,6 +24,14 @@ export function liveFrameAllow(brief: object | null | undefined): string {
   ].join("; ");
 }
 
+/**
+ * A stored brief with only the targets switched on here. Pass this to the two functions in this file: a target whose flag is
+ * off gives its frame nothing, so turning a flag off puts a product's frame back to what it had before.
+ */
+export function enabledFrameBrief(brief: object | null | undefined, enabled: readonly string[]): { targets: Array<{ id: string }> } {
+  return { targets: targetsOf(brief).filter((t) => enabled.includes(t)).map((id) => ({ id })) };
+}
+
 /** The live iframe's sandbox. The simulated headset's play mode needs pointer lock, so a VR product gets that too. */
 export function liveFrameSandbox(brief: object | null | undefined): string {
   return targetsOf(brief).includes("vr") ? `${LIVE_FRAME_SANDBOX} allow-pointer-lock` : LIVE_FRAME_SANDBOX;

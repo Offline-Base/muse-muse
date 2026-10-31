@@ -16,6 +16,7 @@ import {
   isClipUrl,
   presignClipUpload,
   removeClip,
+  takesClips,
 } from "@/lib/native/clips";
 import { isPresignedUrlEvent, storageNotSetUp } from "@/lib/pipeline/inspo-upload";
 import { blobAuth, putFile } from "@/lib/storage";
@@ -66,14 +67,15 @@ async function addLocal(req: Request, productId: string): Promise<Response> {
  * - {url, caption}, which adds the uploaded file to the product;
  * - multipart {file, caption} on a local run, which has no Blob store.
  *
- * 400 bad body, 401 signed out, 403 not theirs, 404 not found or nothing switched on, 409 too many clips, 429 too many uploads,
- * 503 {error: "uploads_unavailable"}.
+ * 400 bad body, 401 signed out, 403 not theirs, 404 not found, nothing switched on or a web-only product, 409 too many clips,
+ * 429 too many uploads, 503 {error: "uploads_unavailable"}.
  */
 export const POST = route(async (req: Request, { params }: Ctx) => {
   const { slug } = await params;
   const owned = await ownedProduct(slug);
   if (owned instanceof Response) return owned;
   const { productId, userId } = owned;
+  if (!(await takesClips(productId))) return errorJson(404, "not_found");
 
   if (req.headers.get("content-type")?.startsWith("multipart/form-data")) return addLocal(req, productId);
 

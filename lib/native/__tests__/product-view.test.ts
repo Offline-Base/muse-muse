@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildProductNativeView, downloadablePackage, safeHttpUrl, type NativeArtifactRow, type NativeJobRow } from "@/lib/native/product-view";
+import { buildProductNativeView, downloadablePackage, panelLinkOrigin, safeHttpUrl, type NativeArtifactRow, type NativeJobRow } from "@/lib/native/product-view";
 
 const at = (s: number) => new Date(Date.parse("2026-10-31T12:00:00.000Z") + s * 1000);
 
@@ -184,5 +184,90 @@ describe("runs", () => {
   it("is working while a run is planned or running", () => {
     assert.equal(view({ status: "running" }).working, true);
     assert.equal(view({ status: "done" }).working, false);
+  });
+});
+
+describe("a package's address in production", () => {
+  const STORE = "https://teststore.public.blob.vercel-storage.com/native/a.apk";
+  const view = (url: string) => buildProductNativeView({ targets: ["web", "phone"], artifacts: [artifact({ id: "a", kind: "android_apk", url })], jobs: [], runs: [] });
+  const env = process.env as Record<string, string | undefined>;
+  const saved = { NODE_ENV: env.NODE_ENV, BLOB_STORE_ID: env.BLOB_STORE_ID, BLOB_READ_WRITE_TOKEN: env.BLOB_READ_WRITE_TOKEN, VERCEL: env.VERCEL };
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete env[k];
+      else env[k] = v;
+    }
+  };
+  const production = () => {
+    env.NODE_ENV = "production";
+    env.BLOB_STORE_ID = "store_TestStore";
+    env.VERCEL = "1";
+    delete env.BLOB_READ_WRITE_TOKEN;
+  };
+
+  it("has to be https on this platform's Blob store", () => {
+    production();
+    try {
+      assert.equal(downloadablePackage(view(STORE), "android")?.url, STORE);
+      for (const bad of ["https://blob.example/a.apk", "https://someoneelse.public.blob.vercel-storage.com/a.apk", "http://teststore.public.blob.vercel-storage.com/a.apk", "https://teststore.public.blob.vercel-storage.com.evil.example/a.apk", "javascript:alert(1)"]) {
+        assert.equal(downloadablePackage(view(bad), "android"), null, bad);
+        assert.deepEqual(view(bad).packages, [], bad);
+      }
+    } finally {
+      restore();
+    }
+  });
+
+  it("offers nothing on a deployment with no store", () => {
+    production();
+    delete env.BLOB_STORE_ID;
+    try {
+      assert.equal(downloadablePackage(view(STORE), "android"), null);
+    } finally {
+      restore();
+    }
+  });
+
+  it("allows a local production run's own files, which have no store", () => {
+    production();
+    delete env.BLOB_STORE_ID;
+    delete env.VERCEL;
+    try {
+      assert.ok(downloadablePackage(view("http://localhost:3000/api/files/native/a.apk"), "android"));
+    } finally {
+      restore();
+    }
+  });
+
+  it("allows a fixture's host outside production", () => {
+    assert.notEqual(env.NODE_ENV, "production");
+    assert.ok(downloadablePackage(view("https://blob.example/a.apk"), "android"));
+  });
+});
+
+describe("settled", () => {
+  const view = (runs: Parameters<typeof buildProductNativeView>[0]["runs"]) => buildProductNativeView({ targets: ["web", "phone"], artifacts: [], jobs: [], runs, now: at(0).getTime() });
+
+  it("is false with no run yet, and while one is going", () => {
+    assert.equal(view([]).settled, false);
+    assert.equal(view([{ status: "done", createdAt: at(-100) }, { status: "running", createdAt: at(-10) }]).settled, false);
+  });
+
+  it("is true once every run has ended, or is stuck", () => {
+    assert.equal(view([{ status: "failed", createdAt: at(-100) }]).settled, true);
+    assert.equal(view([{ status: "running", createdAt: at(-3 * 3600) }]).settled, true);
+  });
+});
+
+describe("panelLinkOrigin", () => {
+  const PROD = "https://muse-muse.example";
+  it("is the preview's own branch address, or its deployment's, on a preview", () => {
+    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview", VERCEL_URL: "x-abc.vercel.app", VERCEL_BRANCH_URL: "x-git-b.vercel.app" }), "https://x-git-b.vercel.app");
+    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview", VERCEL_URL: "x-abc.vercel.app" }), "https://x-abc.vercel.app");
+  });
+  it("leaves production and local runs alone", () => {
+    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "production", VERCEL_URL: "x-abc.vercel.app" }), PROD);
+    assert.equal(panelLinkOrigin("http://localhost:3161", {}), "http://localhost:3161");
+    assert.equal(panelLinkOrigin(PROD, { VERCEL_ENV: "preview" }), PROD);
   });
 });

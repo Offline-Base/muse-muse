@@ -17,8 +17,9 @@ import { canActAsOwner } from "@/lib/auth";
 import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { downloadCounts, readProductNative } from "@/lib/native/queries";
+import { panelLinkOrigin } from "@/lib/native/product-view";
 import { briefTargets } from "@/lib/native/targets";
-import { liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
+import { enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -30,15 +31,16 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  * The panel's slots for a shipped product. Reading them must never take the page down: the rest of the page works without
  * them, so a failure here only leaves the panel out.
  */
-async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest" | "brief"> & { productId: string; brief: Brief | null }) {
+async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest"> & { productId: string; brief: Brief | null }) {
   try {
     const view = await readProductNative(productId, briefTargets(brief));
     const downloads = ctx.isOwner ? await downloadCounts(view.packages.map((p) => p.artifactId)) : undefined;
-    const userAgent = (await headers()).get("user-agent") ?? "";
-    return { slots: nativeSlots(view, { ...ctx, brief, enabled: env.enabledTargets, downloads, onQuest: userAgent.includes("OculusBrowser") }), clips: view.clips };
+    const onQuest = ((await headers()).get("user-agent") ?? "").includes("OculusBrowser");
+    const slots = nativeSlots(view, { ...ctx, enabled: env.enabledTargets, downloads, onQuest });
+    return { slots, clips: view.clips, initial: onQuest && slots.vr ? ("vr" as const) : undefined };
   } catch (err) {
     console.error("[product page] couldn't read its apps:", err instanceof Error ? err.message : err);
-    return { slots: {}, clips: [] };
+    return { slots: {}, clips: [], initial: undefined };
   }
 }
 
@@ -71,9 +73,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const muse = manifest?.inspiration || inspiration?.note || brief?.inspiration.summary || null;
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
+  const frameBrief = enabledFrameBrief(brief, env.enabledTargets);
   const native = shipped
-    ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin, brief, isOwner })
-    : { slots: {}, clips: [] };
+    ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin: panelLinkOrigin(origin), brief, frameBrief, isOwner, buildId: latestBuild?.id ?? null })
+    : { slots: {}, clips: [], initial: undefined };
   // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
   const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
@@ -126,8 +129,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               src={product.liveUrl}
               title={`${product.name}, the live product`}
               loading="lazy"
-              allow={liveFrameAllow(brief)}
-              sandbox={liveFrameSandbox(brief)}
+              allow={liveFrameAllow(frameBrief)}
+              sandbox={liveFrameSandbox(frameBrief)}
               referrerPolicy="no-referrer"
             />
           </section>
@@ -164,7 +167,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </EmptyCard>
         )}
 
-        {shipped ? <GetItPanel slots={native.slots} /> : null}
+        {shipped ? <GetItPanel slots={native.slots} initial={native.initial} /> : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>

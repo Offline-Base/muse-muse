@@ -19,7 +19,7 @@ const ctx = (over: Partial<NativeSlotContext> = {}): NativeSlotContext => ({
   name: "Bird Count",
   liveUrl: "https://bird-count.vercel.app",
   origin: "https://muse.example",
-  brief: null,
+  frameBrief: null,
   isOwner: false,
   onQuest: false,
   enabled: ["phone", "desktop", "vr", "glasses"],
@@ -56,6 +56,25 @@ describe("with nothing to show", () => {
     const slots = nativeSlots(view(["web"], { artifacts: [pack("a", "android_apk", 41_000_000)] }), ctx({ enabled: [] }));
     assert.ok(slots.phone);
     assert.equal(slots.desktop, null);
+  });
+});
+
+describe("when nothing was made", () => {
+  const settled = () => buildProductNativeView({ targets: ["web", "phone", "desktop"], artifacts: [], jobs: [], runs: [{ status: "failed", createdAt: at }], now: later.getTime() });
+
+  it("doesn't promise a package that isn't coming", () => {
+    const phone = html(nativeSlots(settled(), ctx({ buildId: "b1" })).phone);
+    assert.match(phone, /There&#x27;s no Android app for now\./);
+    assert.doesNotMatch(phone, /ready yet/);
+    assert.doesNotMatch(phone, /href="\/b\/b1"/);
+    const desktop = html(nativeSlots(settled(), ctx()).desktop);
+    assert.match(desktop, /There&#x27;s no Mac app for now\./);
+    assert.match(desktop, /There&#x27;s no Windows app for now\./);
+  });
+
+  it("points its owner at the build room", () => {
+    assert.match(html(nativeSlots(settled(), ctx({ isOwner: true, buildId: "b1" })).phone), /href="\/b\/b1"[^>]*>See what happened in the build room/);
+    assert.doesNotMatch(html(nativeSlots(settled(), ctx({ isOwner: true })).phone), /build room/);
   });
 });
 

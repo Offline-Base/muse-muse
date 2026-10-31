@@ -131,7 +131,8 @@ slot, as "Trying it on devices", not nested under its round.
 
 **The stream stays open** while `nativeActive(buildId)` (`lib/native/active.ts`) says a run can still add to the log: a run row
 that is `planned` or `running` and under 2 hours old, or for 90 s after shipping when the brief asks for apps and no run has
-started. With every target flag off it answers false without a query, so a finished build's stream closes as it always has. The
+started. A refinement's build has no brief, so it goes by the product's newest. An agent's run counts for neither: it only checked
+a preview, so it doesn't hold the stream open or say the run that ships has started. With every target flag off it answers false without a query, so a finished build's stream closes as it always has. The
 page keeps its stream open on the same answer, and if the server keeps ending the stream with steps still unsettled, it stops
 after 3 quick closes and shows those steps as not finished.
 
@@ -164,11 +165,13 @@ and logs it. It never takes the page down.
 | VR | The short link in large type, a QR code for phones, and `/vr` to bookmark. "Open in VR" inside Quest Browser |
 | Glasses | "Open in the iPhone app", a QR code to `/open/<slug>`, the sample view, and what was used in place of real glasses |
 
-**The view** is `buildProductNativeView` in `lib/native/product-view.ts`, pure, read by `readProductNative` in
-`lib/native/queries.ts`. An agent's runs checked a preview, so they aren't in it.
+**The view** is `buildProductNativeView` in `lib/native/product-view.ts`, read by `readProductNative` in
+`lib/native/queries.ts`. An agent's runs checked a preview, so they aren't in it. Packages have their own query, since a refinement
+only checks again and its media would otherwise push a live package out of the 120 rows of media.
 
 - **A package** is the newest of its kind that isn't superseded. It's held back from visitors and from the download route when its
-  row's `check` is `failed` or a check made after it failed. The owner sees it's held back and why.
+  row's `check` is `failed` or a check made after it failed. The owner sees it's held back and why. In production its file must be
+  https on this platform's Blob store, or there's no package at all, since this is the last gate before a redirect to an APK.
 - **A check** is the newest job of its kind. It only vouches for a package it was made after, so the pipeline must add a package's
   row before it queues the check. `lab_error`, `expired` and `canceled` read as "Not checked", never as a failure.
 - **Simulated** is said out loud on every emulator, simulator and mock glasses check. A Mac or Windows box in the lab and a real
@@ -180,17 +183,27 @@ and logs it. It never takes the page down.
   `artifacts` by `role`. Without them a check shows no clip.
 - **Stuck work doesn't say it's going.** A run over 2 hours old isn't "being made", and a job past its time reads as "Not checked",
   even before the sweep gets to its row.
+- **Nothing made.** Once a run has ended with no package of a kind, the panel says there's none for now, and points the owner at the
+  build room. It says "isn't ready yet" only before any run.
+
+**The live frame's permissions** go by the targets that are switched on (`enabledFrameBrief`), so turning `VR_ENABLED` or
+`GLASSES_ENABLED` off takes tracking, pointer lock, the camera and the microphone back from existing products' frames.
+
+**On a preview,** the panel's QR codes and typed links point at the preview itself (`panelLinkOrigin`), even with `PLATFORM_URL` set:
+production is another deployment with its own flags and data. The connector URL still uses `platformOrigin`.
 
 **Clips** the owner filmed on a real device (`products.extra_clips`) show under the recorded demo, with their captions. The owner
 adds and removes them there, on a product with a target beyond web, through `POST` and `DELETE /api/products/<slug>/clips`. The
 file goes straight to Blob at `clips/<productId>/` with a presigned URL, as inspo does, and the caption is required, since it says
-what the clip was filmed on. At most 12 a product, 500 MB each. A local run sends the file to the route instead.
+what the clip was filmed on. At most 12 a product, 500 MB each. A local run sends the file to the route instead. `POST` takes only
+a file on this platform's own Blob store, and answers 404 for a web-only product. `DELETE` still works there, so a clip can always
+come off.
 
 ## Links
 
 | Route | Does |
 |---|---|
-| `GET /p/<slug>/get/<android\|mac\|windows>` | 302 to the file on Blob with `?download=1`, for a shipped product with a package a visitor may have. 20 an hour per address, 2,000 a day for everyone. Counts it. A HEAD is neither limited nor counted |
+| `GET /p/<slug>/get/<android\|mac\|windows>` | 302 to the file on Blob with `?download=1`, for a shipped product with a package a visitor may have. 20 an hour per address, 2,000 a day for everyone, and a 404 doesn't use one up. Counts it. A HEAD answers 200 or 404 with no address, and is neither limited nor counted |
 | `GET /q/<slug>` | 302 to a VR product's live URL. 404 with `VR_ENABLED` off or for another product |
 | `/vr` | Shipped VR products as large tiles. 404 with `VR_ENABLED` off |
 | `/open/<slug>` | Hands off to `musemuse://open?slug=`, since a camera can only open a web link. 404 with `GLASSES_ENABLED` off or for another product |

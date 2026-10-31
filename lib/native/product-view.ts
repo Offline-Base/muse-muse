@@ -1,9 +1,11 @@
 /**
- * What the product page's "Get it" panel knows about a product's apps (docs/NATIVE.md). Pure: lib/native/queries.ts reads
+ * What the product page's "Get it" panel knows about a product's apps (docs/NATIVE.md). No database: lib/native/queries.ts reads
  * the rows and this turns them into a view, so a package, a check and what counts as simulated are decided in one place,
  * for the panel and the download route alike.
  */
 import type { TargetId } from "@/lib/brief/schema";
+import { localFilesEnabled } from "@/lib/local-files";
+import { isOwnBlobUrl } from "@/lib/native/blob-host";
 import {
   NATIVE_DOWNLOADS,
   type NativeArtifactKind,
@@ -92,6 +94,8 @@ export interface ProductNativeView {
   clips: ProductClip[];
   /** A run is still making or checking things. A stuck run isn't. */
   working: boolean;
+  /** There was a run and none is working, so what isn't made isn't on its way. */
+  settled: boolean;
 }
 
 const WORKING: readonly NativeRunStatus[] = ["planned", "running"];
@@ -99,6 +103,29 @@ const WORKING: readonly NativeRunStatus[] = ["planned", "running"];
 /** A link a page or a redirect may use. Rows come from the platform, but a stray scheme must never reach an href. */
 export function safeHttpUrl(url: unknown): url is string {
   return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
+/**
+ * True for the file a package may send a visitor to: https on this platform's Blob store. This is the last gate before a 302 to
+ * a phone installing an APK, so a bad row must not get through. A local run keeps its files elsewhere, and fixtures name any host.
+ */
+function safePackageUrl(url: unknown): url is string {
+  if (!safeHttpUrl(url)) return false;
+  if (process.env.NODE_ENV !== "production" || localFilesEnabled()) return true;
+  try {
+    return isOwnBlobUrl(new URL(url));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The address for the links people scan and type on the panel. On a preview that's the preview itself: the production address
+ * is another deployment, with its own flags and data. platformOrigin stays as it is, since products reach the gateway there.
+ */
+export function panelLinkOrigin(origin: string, vercel: Record<string, string | undefined> = process.env): string {
+  const host = vercel.VERCEL_ENV === "preview" ? vercel.VERCEL_BRANCH_URL || vercel.VERCEL_URL : null;
+  return host ? `https://${host}` : origin;
 }
 
 /** A file for a thumbnail or a video: a link, or a data URL as the local fixtures use. */
@@ -167,7 +194,7 @@ export function buildProductNativeView(input: {
   const artifacts = newestFirst(input.artifacts);
   const newestPackage = new Map<NativeDownload, NativeArtifactRow>();
   for (const [download, kind] of Object.entries(NATIVE_DOWNLOADS) as Array<[NativeDownload, NativeArtifactKind]>) {
-    const row = artifacts.find((a) => a.kind === kind && safeHttpUrl(a.url));
+    const row = artifacts.find((a) => a.kind === kind && safePackageUrl(a.url));
     if (row) newestPackage.set(download, row);
   }
   const stillCurrent = (download: NativeDownload | null, createdAt: Date) => {
@@ -223,12 +250,14 @@ export function buildProductNativeView(input: {
     return { download, artifactId: row.id, url: row.url, bytes: row.bytes, state };
   });
 
+  const working = input.runs.some((r) => WORKING.includes(r.status) && now - r.createdAt.getTime() < NATIVE_RUN_LIMIT_MS);
   return {
     targets: input.targets,
     packages,
     checks,
     clips: (input.clips ?? []).filter((c) => safeMediaUrl(c?.url)),
-    working: input.runs.some((r) => WORKING.includes(r.status) && now - r.createdAt.getTime() < NATIVE_RUN_LIMIT_MS),
+    working,
+    settled: input.runs.length > 0 && !working,
   };
 }
 

@@ -7,6 +7,9 @@ import { handleUploadPresigned, type GeneratePresignedUrlEvent } from "@vercel/b
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { localFileKey } from "@/lib/local-files";
+import { isOwnBlobUrl } from "@/lib/native/blob-host";
+import { newestBrief } from "@/lib/native/queries";
+import { briefTargets } from "@/lib/native/targets";
 import { INSPO_UPLOAD_TTL_MS, NO_CALLBACK_KEY } from "@/lib/pipeline/inspo-upload";
 import { blobAuth } from "@/lib/storage";
 import type { ProductClip } from "@/lib/types";
@@ -47,7 +50,7 @@ export function cleanCaption(raw: unknown): string | null {
   return text && text.length <= MAX_CAPTION_CHARS ? text : null;
 }
 
-/** True for a file this product's clip may be: in its folder on Blob, or in .data/files on a local run. */
+/** True for a file this product's clip may be: in its folder on this platform's Blob store, or in .data/files on a local run. */
 export function isClipUrl(raw: unknown, productId: string): raw is string {
   if (typeof raw !== "string") return false;
   const local = localFileKey(raw);
@@ -55,7 +58,7 @@ export function isClipUrl(raw: unknown, productId: string): raw is string {
   try {
     const url = new URL(raw);
     const path = decodeURIComponent(url.pathname).slice(1);
-    return url.protocol === "https:" && /\.blob\.vercel-storage\.com$/i.test(url.hostname) && checkClipPathname(path, productId) === null;
+    return isOwnBlobUrl(url) && checkClipPathname(path, productId) === null;
   } catch {
     return false;
   }
@@ -93,6 +96,11 @@ export async function clipProduct(slug: string): Promise<{ id: string; ownerId: 
     .where(and(eq(schema.products.slug, slug), inArray(schema.products.status, ["live", "partial"])))
     .limit(1);
   return product ?? null;
+}
+
+/** Clips are for a product that runs somewhere beyond the web (docs/NATIVE.md), as the page's add button says. */
+export async function takesClips(productId: string): Promise<boolean> {
+  return briefTargets(await newestBrief(productId)).some((t) => t !== "web");
 }
 
 /** Adds a clip, in one statement so two uploads can't go past the limit. False when the product has its limit already. */

@@ -21,6 +21,8 @@ const OTHER = "00000000-0000-4000-8000-000000000009";
 const INSPIRATION = "00000000-0000-4000-8000-000000000002";
 const PRODUCT = "10000000-0000-4000-8000-000000000001";
 const OFF = "10000000-0000-4000-8000-000000000002";
+const WEB = "10000000-0000-4000-8000-000000000003";
+const REFINED = "10000000-0000-4000-8000-000000000004";
 const BLOB_HOST = "https://teststore.public.blob.vercel-storage.com";
 const FOLDER = `clips/${PRODUCT}/`;
 const FILE = `${BLOB_HOST}/${FOLDER}abc-quest.mp4`;
@@ -109,10 +111,20 @@ describe("product clips", { skip: canMock ? false : "needs --experimental-test-m
     deleted = [];
     issued = [];
     await testDb.delete(realSchema.rateLimits);
+    await testDb.delete(realSchema.builds);
     await testDb.delete(realSchema.products);
     await testDb.insert(realSchema.products).values([
       { id: PRODUCT, slug: "quest-app", name: "Quest App", ownerId: OWNER, inspirationId: INSPIRATION, status: "live" },
       { id: OFF, slug: "turned-off", name: "Off", ownerId: OWNER, inspirationId: INSPIRATION, status: "disabled" },
+      { id: WEB, slug: "web-only", name: "Web", ownerId: OWNER, inspirationId: INSPIRATION, status: "live", extraClips: [{ url: `${BLOB_HOST}/clips/${WEB}/old.mp4`, posterUrl: null, caption: "Added before", addedAt: "2026-10-31T12:00:00.000Z" }] },
+      { id: REFINED, slug: "refined", name: "Refined", ownerId: OWNER, inspirationId: INSPIRATION, status: "live" },
+    ]);
+    const brief = (targets: string[]) => ({ name: "A brief", targets: targets.map((id) => ({ id, why: "A test." })) }) as never;
+    await testDb.insert(realSchema.builds).values([
+      { inspirationId: INSPIRATION, userId: OWNER, productId: PRODUCT, status: "live", brief: brief(["web", "vr"]) },
+      { inspirationId: INSPIRATION, userId: OWNER, productId: WEB, status: "live", brief: brief(["web"]) },
+      { inspirationId: INSPIRATION, userId: OWNER, productId: REFINED, status: "live", brief: brief(["web", "vr"]), startedAt: new Date("2026-10-31T10:00:00.000Z") },
+      { inspirationId: INSPIRATION, userId: OWNER, productId: REFINED, kind: "refine", status: "live", brief: null, startedAt: new Date("2026-10-31T11:00:00.000Z") },
     ]);
   });
 
@@ -188,7 +200,7 @@ describe("product clips", { skip: canMock ? false : "needs --experimental-test-m
     for (const caption of ["", "   ", 7, null, "x".repeat(301)]) {
       assert.equal((await routes.POST(json("POST", { url: FILE, caption }), ctx())).status, 400);
     }
-    for (const url of [`https://evil.example/${FOLDER}a.mp4`, `${BLOB_HOST}/clips/${OFF}/a.mp4`, `${BLOB_HOST}/inspo/a.mp4`, `http://teststore.public.blob.vercel-storage.com/${FOLDER}a.mp4`, `${BLOB_HOST}/${FOLDER}%2e%2e/%2e%2e/a.mp4`, "javascript:alert(1)", 7]) {
+    for (const url of [`https://evil.example/${FOLDER}a.mp4`, `https://someoneelse.public.blob.vercel-storage.com/${FOLDER}a.mp4`, `${BLOB_HOST}/clips/${OFF}/a.mp4`, `${BLOB_HOST}/inspo/a.mp4`, `http://teststore.public.blob.vercel-storage.com/${FOLDER}a.mp4`, `${BLOB_HOST}/${FOLDER}%2e%2e/%2e%2e/a.mp4`, "javascript:alert(1)", 7]) {
       assert.equal((await routes.POST(json("POST", { url, caption: "A clip" }), ctx())).status, 400, String(url));
     }
     assert.equal((await stored()).length, 1);
@@ -224,5 +236,26 @@ describe("product clips", { skip: canMock ? false : "needs --experimental-test-m
     assert.match(clipFailureMessage(403, "forbidden"), /owner/);
     assert.equal(clipFailureMessage(409, "Remove one first."), "Remove one first.");
     assert.match(clipFailureMessage(500, "boom"), /didn't go through/);
+  });
+
+  it("takes no new clip for a product that only runs on the web, but its owner can still remove one", async () => {
+    const web = `${BLOB_HOST}/clips/${WEB}/`;
+    assert.equal((await routes.POST(json("POST", { url: `${web}a.mp4`, caption: "A clip" }), ctx("web-only"))).status, 404);
+    assert.equal((await routes.POST(json("POST", presign(`clips/${WEB}/a.mp4`)), ctx("web-only"))).status, 404);
+    assert.equal((await routes.DELETE(json("DELETE", { url: `${web}old.mp4` }), ctx("web-only"))).status, 200);
+  });
+
+  it("goes by the newest brief that exists, since a refinement's build has none", async () => {
+    const res = await routes.POST(json("POST", { url: `${BLOB_HOST}/clips/${REFINED}/a.mp4`, caption: "A clip" }), ctx("refined"));
+    assert.equal(res.status, 200);
+  });
+
+  it("knows a Blob store from a read-write token too, and takes no file with no store", async () => {
+    delete process.env.BLOB_STORE_ID;
+    process.env.BLOB_READ_WRITE_TOKEN = "vercel_blob_rw_TestStore_secret";
+    assert.equal(clips.isClipUrl(FILE, PRODUCT), true);
+    assert.equal(clips.isClipUrl(`https://other.public.blob.vercel-storage.com/${FOLDER}a.mp4`, PRODUCT), false);
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+    assert.equal(clips.isClipUrl(FILE, PRODUCT), false);
   });
 });

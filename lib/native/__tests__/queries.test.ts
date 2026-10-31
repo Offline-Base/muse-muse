@@ -77,7 +77,7 @@ describe("native queries", { skip: canMock ? false : "needs --experimental-test-
       const clip = { url: "https://blob.example/clip.mp4", posterUrl: null, caption: "Filmed on a Meta Quest 3", addedAt: "2026-10-31T12:00:00.000Z" };
       const p = await product(1, { clips: [clip] });
       const view = await queries.readProductNative(p.id, ["web"]);
-      assert.deepEqual(view, { targets: ["web"], packages: [], checks: [], clips: [clip], working: false });
+      assert.deepEqual(view, { targets: ["web"], packages: [], checks: [], clips: [clip], working: false, settled: false });
     });
 
     it("reads packages and checks, without replaced files or an agent's checks of a preview", async () => {

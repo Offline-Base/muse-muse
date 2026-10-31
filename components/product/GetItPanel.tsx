@@ -33,14 +33,15 @@ function hasContent(node: ReactNode): boolean {
 /**
  * The product page's "Get it" panel (docs/NATIVE.md): a tab for each slot that has something in it. With nothing in any
  * slot it renders nothing at all, so the page looks as it does without it. With one there are no tabs, only its content.
+ * `initial` picks the tab it opens on, when that slot is filled, and the first one otherwise.
  */
-export function GetItPanel({ slots }: { slots: GetItSlots }) {
+export function GetItPanel({ slots, initial }: { slots: GetItSlots; initial?: GetItSlotId }) {
   const filled = GET_IT_SLOTS.filter((id) => hasContent(slots[id])).map((id) => ({ id, label: LABELS[id], content: slots[id] }));
   if (!filled.length) return null;
   return (
     <section className="card section-card" aria-labelledby="get-it-title">
       <h2 id="get-it-title">Get it</h2>
-      {filled.length === 1 ? filled[0]!.content : <GetItTabs slots={filled} />}
+      {filled.length === 1 ? filled[0]!.content : <GetItTabs slots={filled} initial={initial} />}
     </section>
   );
 }

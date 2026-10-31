@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LIVE_FRAME_SANDBOX, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
+import { LIVE_FRAME_SANDBOX, enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 
 test("a glasses product's iframe may use the camera and microphone", () => {
   assert.equal(liveFrameAllow({ targets: ["web", "glasses"] }), "clipboard-write; fullscreen; camera; microphone");
@@ -25,4 +25,18 @@ test("every other product keeps today's limits", () => {
   for (const brief of [null, undefined, {}, { name: "A brief from before targets" }, { targets: ["web"] }, { targets: ["web", "phone"] }, { targets: "glasses" }]) {
     assert.equal(liveFrameAllow(brief), today);
   }
+});
+
+test("a target whose flag is off gives the frame nothing", () => {
+  const stored = { targets: [{ id: "web", why: "Always." }, { id: "vr", why: "Asked." }, { id: "glasses", why: "Asked." }] };
+  const off = enabledFrameBrief(stored, []);
+  assert.equal(liveFrameAllow(off), "clipboard-write; fullscreen");
+  assert.equal(liveFrameSandbox(off), LIVE_FRAME_SANDBOX);
+  const glassesOnly = enabledFrameBrief(stored, ["glasses"]);
+  assert.equal(liveFrameAllow(glassesOnly), "clipboard-write; fullscreen; camera; microphone");
+  assert.equal(liveFrameSandbox(glassesOnly), LIVE_FRAME_SANDBOX);
+  const both = enabledFrameBrief(stored, ["vr", "glasses"]);
+  assert.equal(liveFrameAllow(both), "clipboard-write; fullscreen; camera; microphone; xr-spatial-tracking");
+  assert.equal(liveFrameSandbox(both), `${LIVE_FRAME_SANDBOX} allow-pointer-lock`);
+  assert.equal(liveFrameAllow(enabledFrameBrief(null, ["vr"])), "clipboard-write; fullscreen");
 });

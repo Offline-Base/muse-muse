@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
@@ -18,9 +19,11 @@ export interface NativeSlotContext {
   liveUrl: string | null;
   /** The platform's own address, for the links people scan and type. */
   origin: string;
-  /** The brief as stored, for the frame's permissions. */
-  brief: object | null;
+  /** The brief with only the enabled targets (enabledFrameBrief), for the frame's permissions. */
+  frameBrief: object | null;
   isOwner: boolean;
+  /** The build room to send the owner to when something didn't get made. */
+  buildId?: string | null;
   /** The page is open in Quest Browser. */
   onQuest: boolean;
   /** The targets switched on here (env.enabledTargets). */
@@ -145,16 +148,29 @@ function CheckList({ checks, isOwner, none }: { checks: readonly NativeCheckView
   );
 }
 
-const DOWNLOAD_WORDS: Record<NativeDownload, { button: string; format: string; subject: string }> = {
-  android: { button: "Download for Android", format: "APK", subject: "The Android app" },
-  mac: { button: "Download for Mac", format: "zip", subject: "The Mac app" },
-  windows: { button: "Download for Windows", format: "zip", subject: "The Windows app" },
+const DOWNLOAD_WORDS: Record<NativeDownload, { button: string; format: string; subject: string; none: string }> = {
+  android: { button: "Download for Android", format: "APK", subject: "The Android app", none: "There's no Android app for now." },
+  mac: { button: "Download for Mac", format: "zip", subject: "The Mac app", none: "There's no Mac app for now." },
+  windows: { button: "Download for Windows", format: "zip", subject: "The Windows app", none: "There's no Windows app for now." },
 };
 
 /** The download button, or what stands in for it: still being made, nothing to offer, or held back by a failed check. */
 function DownloadButton({ view, download, ctx }: { view: ProductNativeView; download: NativeDownload; ctx: NativeSlotContext }) {
   const words = DOWNLOAD_WORDS[download];
   const pack: NativePackageView | undefined = view.packages.find((p) => p.download === download);
+  if (!pack && view.settled) {
+    return (
+      <p className="getit-note">
+        {words.none}
+        {ctx.isOwner && ctx.buildId ? (
+          <>
+            {" "}
+            <Link href={`/b/${ctx.buildId}`}>See what happened in the build room.</Link>
+          </>
+        ) : null}
+      </p>
+    );
+  }
   if (!pack) return <p className="getit-note">{view.working ? `${words.subject} is being made.` : `${words.subject} isn't ready yet.`}</p>;
   if (!downloadablePackage(view, download)) {
     return (
@@ -191,7 +207,7 @@ function PhonePanel({ view, ctx }: { view: ProductNativeView; ctx: NativeSlotCon
       {live ? (
         <section className="getit-block">
           <h3>Try it here</h3>
-          <DeviceFrame src={live} title={`${ctx.name}, the live product in a device frame`} allow={liveFrameAllow(ctx.brief)} sandbox={liveFrameSandbox(ctx.brief)} />
+          <DeviceFrame src={live} title={`${ctx.name}, the live product in a device frame`} allow={liveFrameAllow(ctx.frameBrief)} sandbox={liveFrameSandbox(ctx.frameBrief)} />
         </section>
       ) : null}
       <div className="getit-pair">

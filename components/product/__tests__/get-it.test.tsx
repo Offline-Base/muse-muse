@@ -47,7 +47,17 @@ describe("GetItPanel", () => {
 
   it("is on the product page, only for a shipped product", () => {
     const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
-    assert.match(page, /\{shipped \? <GetItPanel slots=\{native\.slots\} \/> : null\}/);
+    assert.match(page, /\{shipped \? <GetItPanel slots=\{native\.slots\} initial=\{native\.initial\} \/> : null\}/);
+  });
+
+  it("opens on the tab it's told to, and on the first when that one is empty", () => {
+    const slots: GetItSlots = { phone: "Android and iPhone", vr: "Open on Quest" };
+    const vr = renderToString(createElement(GetItPanel, { slots, initial: "vr" })).replace(/<!-- -->/g, "");
+    assert.match(vr, /aria-selected="true"[^>]*>VR</);
+    assert.ok(vr.includes("Open on Quest"));
+    assert.ok(!vr.includes("Android and iPhone"));
+    const empty = renderToString(createElement(GetItPanel, { slots: { phone: "Android and iPhone", desktop: "Mac" }, initial: "vr" })).replace(/<!-- -->/g, "");
+    assert.match(empty, /aria-selected="true"[^>]*>Phone</);
   });
 });
 
