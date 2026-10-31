@@ -2,7 +2,7 @@ import { targetLabel } from "@/lib/format";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { RUN_LIMITS } from "@/lib/gateway/runs";
 import type { Brief, TargetId } from "@/lib/brief/schema";
-import { briefTargets } from "@/lib/native/targets";
+import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
@@ -55,7 +55,7 @@ const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
     "The smoke test uses the fake bridge in `tests/glasses.ts`, as the skill shows.",
   ],
   agent: [
-    "One person starts each run and sees its steps and sources as they arrive, in the parts the skill lists. Never show raw tool output.",
+    "One person starts each run and sees its steps and any sources as they arrive, in the parts the skill lists. Never show raw tool output.",
     "See the Agent section below for the task, the tools and the limits.",
   ],
 };
@@ -134,7 +134,9 @@ function agentLines(brief: Brief): string[] {
       ? `Connections: only the product's owner can connect an account for ${personal.map((t) => toolLabel(t.id)).join(", ")} for now, and every visitor needs a clear message saying so. Show a connect card until it's connected.`
       : "Connections: none. Everything works for everyone who opens the product.",
     `Steps: about ${agent.stepsPerRun} model turns per run. A live run stops at ${live.turns} turns, ${live.toolCalls} built-in tool calls or $${live.usd.toFixed(2)}, so handle that stop and offer Keep going. A build's run stops at ${build.turns} turns, ${build.toolCalls} built-in tool calls or $${build.usd.toFixed(2)}.`,
-    "During this build, tools other than web search return sample results with `example.com` links and connections show a sample account. Test the structure (a finished step, a source link, the answer card), never the sample's words.",
+    isOwnerToolsOnly(agent)
+      ? "During this build, its tools return sample results and connections show a sample account. Test the structure (a finished step, a card with what it found or did on the account), never the sample's words. It has no web sources, so don't show or test source links."
+      : "During this build, tools other than web search return sample results with `example.com` links and connections show a sample account. Test the structure (a finished step, a source link, the answer card), never the sample's words.",
   ];
 }
 

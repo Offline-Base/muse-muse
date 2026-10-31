@@ -46,7 +46,7 @@ are in `docs/AGENT_TOOLS.md`.
 - **The prompts.** A brief that adds nothing to web renders exactly as it did. Otherwise `renderBuildPrompt` and
   `briefToMarkdown` get "Where it runs", naming each target's skill.
 - **The judge.** `judgeInstructions(brief)` is `JUDGE_INSTRUCTIONS` itself unless the brief has agent, VR or glasses, which
-  add `AGENT_JUDGE_RULES`, `VR_JUDGE_NOTE` and `GLASSES_JUDGE_NOTE`.
+  add `agentJudgeRules`, `VR_JUDGE_NOTE` and `GLASSES_JUDGE_NOTE`.
 
 ## Files a phone or desktop product gets
 

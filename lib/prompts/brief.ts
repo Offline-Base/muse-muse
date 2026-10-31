@@ -1,7 +1,7 @@
 import type { TargetId } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { targetLabel } from "@/lib/format";
-import { TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
+import { PERSONAL_TOOLS_GUIDE, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
 import { catalogSummary } from "@/lib/prompts/catalog";
 import type { RebuildFit, RebuildTarget, Reference } from "@/lib/types";
 
@@ -13,12 +13,13 @@ export const REFUSE_WHEN =
 function whereItRuns(enabled: readonly TargetId[]): string {
   if (!enabled.length) return "";
   const has = (t: TargetId) => enabled.includes(t);
+  const personal = has("agent") && env.composioPersonalEnabled;
   const lines = [
     "",
     "",
     "Where it runs",
     "- targets lists where the product runs, each with one plain why of at most 200 characters. web is always first. Most muses are web only: add another only when the muse asks for it in the ways listed here. Never add one because it would be nice, and when in doubt leave it out.",
-    ...(["web", ...enabled] as TargetId[]).map((t) => `- ${t}: ${TARGET_GUIDE[t]}`),
+    ...(["web", ...enabled] as TargetId[]).map((t) => `- ${t}: ${TARGET_GUIDE[t]}${t === "agent" && personal ? ` ${PERSONAL_TOOLS_GUIDE}` : ""}`),
     "- When the request text lists targets the person picked, use exactly those plus web.",
   ];
   if (has("vr")) lines.push("- For vr, primaryFlow includes the step that enters VR.");
@@ -34,11 +35,11 @@ function whereItRuns(enabled: readonly TargetId[]): string {
       "- agent is null unless targets has agent. When it does, fill it in:",
       "  - task is the job one run does, in one or two plain sentences.",
       "  - tools lists the fewest tools from the catalog that do the job, each with what the product needs it for and why. Web search comes first, and a third-party tool only for what web search can't do. A product that only looks things up on the web has web_search alone.",
-      "  - connections is \"owner\" when a personal tool is picked, otherwise \"none\".",
+      personal ? "  - connections is \"owner\" when a personal tool is picked, otherwise \"none\"." : "  - connections is \"none\".",
       "  - stepsPerRun is about how many model turns one run takes.",
       "  - capabilities includes muse-wonder-1.0, which runs the agent. complexity is \"complex\" when it works in several steps.",
       "  - estimatedCostPerRunUsd counts its turns, searches and tools, and costNotes shows that arithmetic.",
-      "  - fixtures includes a text fixture holding one realistic task to try it on, and primaryFlow ends with the answer and its source links.",
+      `  - fixtures includes a text fixture holding one realistic task to try it on, and primaryFlow ends with the answer and its source links.${personal ? " For an agent with only personal tools, primaryFlow instead ends with what it found or did on the owner's account (the draft, event or message) and that it finished." : ""}`,
       "  - limits say honestly what a run can't reach, and that answers can miss things or be out of date.",
     );
   }

@@ -58,6 +58,19 @@ describe("the agent option", () => {
     assert.deepEqual(tools(strictJsonSchema(newBriefSchemaFor({ gadgets: false, targets: ["agent"], personalTools: true }))), TOOL_IDS);
   });
 
+  it("tells the writer nothing about personal tools or other apps until their flag is on", () => {
+    process.env.AGENTS_ENABLED = "1";
+    const off = briefInstructions();
+    assert.doesNotMatch(off, /personal/i);
+    assert.doesNotMatch(off, /act in other apps/);
+    assert.match(off, /connections is "none"\./);
+    process.env.COMPOSIO_PERSONAL_ENABLED = "1";
+    const on = briefInstructions();
+    assert.match(on, /- agent: [^\n]*Pick it too when the product must act in other apps\. Public tools work for everyone\. Personal tools work only for the product's owner for now\./);
+    assert.match(on, /connections is "owner" when a personal tool is picked, otherwise "none"\./);
+    assert.match(on, /primaryFlow ends with the answer and its source links\. For an agent with only personal tools, primaryFlow instead ends with what it found or did on the owner's account/);
+  });
+
   it("every tool in the list has its wording, and none of it says Exa or an em dash", () => {
     process.env.AGENTS_ENABLED = "1";
     process.env.COMPOSIO_PERSONAL_ENABLED = "1";
@@ -174,6 +187,13 @@ describe("applyTargets on an agent", () => {
     assert.equal(targetProblems({ ...(withAgent(null) as Brief), verdict: "no" }, { enabled }).length, 0);
     assert.equal(targetProblems(BRIEF, { enabled: [] }).length, 0);
   });
+
+  it("pays for no repair when the person's picks leave the agent out, since it would be thrown away", () => {
+    const enabled = ["vr", "agent"] as const;
+    assert.equal(targetProblems(withAgent(null) as Brief, { enabled, requested: ["web", "vr"] }).length, 0);
+    assert.equal(targetProblems(withAgent(null) as Brief, { enabled, requested: ["web", "agent"] }).length, 1);
+    assert.equal(targetProblems(withAgent(null) as Brief, { enabled, requested: [] }).length, 1, "no picks, so the writer's target stands");
+  });
 });
 
 describe("an agent's tokens and prompts", () => {
@@ -204,6 +224,17 @@ describe("an agent's tokens and prompts", () => {
     const brief = applyTargets(withAgent({ ...AGENT, tools: [{ id: "gmail_read", need: "Read mail", why: "The job" }] }) as Brief, { enabled: ["agent"], personalTools: true });
     const prompt = renderBuildPrompt(brief, { inspoFiles: [], fixtures: [], maxModelSteps: 40 });
     assert.match(prompt, /Connections: only the product's owner can connect an account for Read Gmail for now/);
+  });
+
+  it("tests a source link only on an agent that has sources", () => {
+    const render = (id: string, personalTools: boolean) =>
+      renderBuildPrompt(applyTargets(withAgent({ ...AGENT, tools: [{ id, need: "n", why: "w" }] }) as Brief, { enabled: ["agent"], personalTools }), { inspoFiles: [], fixtures: [], maxModelSteps: 40 });
+    assert.match(render("web_search", false), /Test the structure \(a finished step, a source link, the answer card\)/);
+    const owner = render("gmail_draft", true);
+    assert.doesNotMatch(owner, /a source link, the answer card/);
+    assert.match(owner, /a card with what it found or did on the account/);
+    assert.doesNotMatch(owner, /example\.com/);
+    assert.doesNotMatch(owner, /—/);
   });
 
   it("shows the judge the agent's job in the brief it reads", () => {

@@ -16,6 +16,7 @@ import { catalogSummary } from "@/lib/prompts/catalog";
 import { JUDGE_INSTRUCTIONS, judgeInstructions } from "@/lib/prompts/judge";
 import { BRIEF } from "@/lib/promote/__tests__/fixtures";
 import { liveFrameAllow } from "@/lib/product-frame";
+import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 import type { RebuildTarget } from "@/lib/types";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
@@ -253,6 +254,36 @@ describe("the judge", () => {
     assert.match(text, /still running or waiting/);
     assert.match(text, /raw tool JSON/);
     assert.match(text, /connect an account is fine on the start screen, but not on the final screen/);
+  });
+
+  describe("an agent's final screen", () => {
+    const agent = (...ids: string[]) => ({ task: "t", tools: ids.map((id) => ({ id, need: "n", why: "w" })), connections: "none" as const, stepsPerRun: 3 });
+    const rules = (...ids: string[]) => judgeInstructions({ targets: [web, { id: "agent", why: "x" }], agent: agent(...ids) });
+
+    it("asks for source links only from an agent that looks things up", () => {
+      for (const id of PUBLIC_TOOL_IDS) assert.match(rules(id), /doesn't show the answer with source links/, id);
+      assert.doesNotMatch(rules("web_search"), /owner's account/);
+    });
+
+    it("asks an agent with only personal tools for what it did, never for links", () => {
+      for (const id of PERSONAL_TOOL_IDS) {
+        const text = rules(id);
+        assert.doesNotMatch(text, /doesn't show the answer with source links/, id);
+        assert.match(text, /what the agent found or did on the owner's account \(the draft, event or message\) and that it finished/, id);
+      }
+    });
+
+    it("asks a mixed agent for links only on what came from the web", () => {
+      const text = rules("web_search", "gmail_draft");
+      assert.match(text, /doesn't show the answer with source links/);
+      assert.match(text, /Only what came from the web needs a link/);
+    });
+
+    it("makes raw tool output and unfinished steps blocking, since a non-blocking fail can still ship as partial", () => {
+      for (const text of [rules("web_search"), rules("gmail_draft")]) {
+        assert.match(text, /Set blocking to true when tool names, tool ids or raw tool JSON show on any screen, or when a step on the final screen is still running or waiting\./);
+      }
+    });
   });
 
   it("knows VR is emulated and glasses are simulated", () => {

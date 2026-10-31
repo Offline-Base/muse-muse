@@ -23,8 +23,12 @@ export const TARGET_GUIDE: Record<TargetId, string> = {
   glasses:
     "works with the wearer's Meta AI glasses (Ray-Ban Meta, Oakley Meta) through the Muse Muse iPhone app: the glasses take a photo of what the wearer is looking at, their microphone hears a short question, and the answer is spoken in the glasses. They have no screen, so answers are one to three short sentences, and the phone shows the photo and the answer. In a browser without the app it uses the phone's camera or a sample view. Pick it only when the muse asks for smart glasses, hands-free use, or 'what am I looking at'. The app must be open on the phone, since the glasses can't start it, and their microphone is phone-call quality.",
   agent:
-    "an agent that works in several steps: it looks things up with Meta's web search and the listed tools, then answers with its sources. Pick it only when the product must look things up, act in other apps, or work in several steps, and pick the fewest tools. Public tools work for everyone. Personal tools work only for the product's owner for now.",
+    "an agent that works in several steps: it looks things up with Meta's web search and the listed tools, then answers with its sources. Pick it only when the product must look things up or work in several steps, and pick the fewest tools.",
 };
+
+/** Added to the agent's guide only with COMPOSIO_PERSONAL_ENABLED on, since the writer is offered no personal tool without it. */
+export const PERSONAL_TOOLS_GUIDE =
+  "Pick it too when the product must act in other apps. Public tools work for everyone. Personal tools work only for the product's owner for now.";
 
 /** The targets NATIVE_TARGETS may name. vr, glasses and agent have switches of their own. */
 const NATIVE_LANE: readonly TargetId[] = ["phone", "desktop"];
@@ -104,6 +108,11 @@ function withLimit(limits: string[], text: string, said: RegExp): string[] {
 
 const isPersonal = (id: string) => (PERSONAL_TOOL_IDS as readonly string[]).includes(id);
 
+/** True when an agent works only on the owner's accounts. It has nothing on the web to link to, so no sources to show. */
+export function isOwnerToolsOnly(agent: { tools: ReadonlyArray<{ id: string }> } | null | undefined): boolean {
+  return !!agent?.tools.length && agent.tools.every((t) => isPersonal(t.id));
+}
+
 /** The tool the writer's agent falls back on, and the one every agent can use. */
 const FALLBACK_TOOL = { id: "web_search" as const, need: "Look things up on the web", why: "It is the only general web search." };
 
@@ -156,10 +165,11 @@ export function applyTargets(brief: Brief, opts: { enabled: readonly TargetId[];
 
 /**
  * Problems worth the writer's one repair call, for the extra checks on a brief with targets: an agent target with no
- * agent written, or a person's pick of it that the writer ignored. applyTargets patches what the repair doesn't fix.
+ * agent written, or a person's pick of it that the writer ignored. A person's picks that leave it out need no agent, since
+ * applyTargets would throw it away. applyTargets patches what the repair doesn't fix.
  */
 export function targetProblems(brief: Brief, opts: { enabled: readonly TargetId[]; requested?: readonly TargetId[] | null }): string[] {
   if (!opts.enabled.includes("agent") || brief.verdict === "no" || brief.agent) return [];
-  const wanted = brief.targets?.some((t) => t.id === "agent") || opts.requested?.includes("agent");
+  const wanted = opts.requested?.length ? opts.requested.includes("agent") : brief.targets?.some((t) => t.id === "agent");
   return wanted ? ["agent must be filled in: the task, the tools and the steps, because this product has the agent target."] : [];
 }
