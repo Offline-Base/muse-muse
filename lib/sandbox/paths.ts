@@ -27,6 +27,7 @@ export const PLATFORM_FILES = [
   "playwright.config.ts",
   "musemuse.schema.json",
   "tests/judge-shot.ts",
+  "tests/glasses.ts",
   "tests/demo-fixtures.ts",
   "scripts/demo-plan.mjs",
   "scripts/demo-studio.mjs",

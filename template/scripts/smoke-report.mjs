@@ -125,6 +125,31 @@ export function finalShotProblems(fileNames, read) {
   return problems;
 }
 
+/**
+ * A glasses product's smoke test must take a photo through tests/glasses.ts, or nothing has shown the product works
+ * with glasses at all. Takes the text of test-results/glasses/calls.jsonl, or null when there is no such file. Only
+ * the smoke project's calls count, from `since` (ms) on, so an older run's log can't pass for this one.
+ */
+export function glassesProblems(callsText, { since = 0, project = "smoke" } = {}) {
+  const calls = String(callsText ?? "")
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return line.trim() ? [JSON.parse(line)] : [];
+      } catch {
+        return [];
+      }
+    });
+  const took = calls.some((c) => c?.method === "capturePhoto" && c.ok === true && c.project === project && Number(c.t) >= since);
+  return took
+    ? []
+    : [
+        "A glasses product's smoke test must take at least one photo through the glasses. Call installGlasses(page, " +
+          '{ photos: ["fixtures/pov-1.jpg"], question: "fixtures/question.wav" }) from tests/glasses.ts before page.goto, ' +
+          "connect the glasses, then press the primary button so the product calls capture() (muse-glasses skill).",
+      ];
+}
+
 /** Notes judgeShot() left on any screenshot, for verify to print without failing. */
 export function judgeShotNotes(fileNames, read) {
   return checkedFiles(fileNames, read).flatMap(({ shot, checked }) =>
