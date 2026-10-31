@@ -420,6 +420,27 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - 1:52 AM: freed writer-1 for stage 2 (it needs about 180 GB): deleted its local stage 1 merged weights, BF16 GGUF and
   Q8_0 GGUF (141 GB) after checking the cache filesystem's copies have the same byte sizes. 256 GB free. Its stage 1
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S stay for the honesty test.
+- 1:55 AM: honesty test started on writer-1 while its GPU waits for stage 2 (workflow wi74ktwd1): stage1 Q4_K_M,
+  IQ1_S, base Q4_K_M, IQ1_S, then stage1 IQ2_XXS and IQ1_M, rule grader plus a hand audit of a sample of its verdicts.
+  No hosted judge: the writing budget is spent. It must leave the GPU by 3:15 AM.
+- 2:05 AM: stage 2 handoff set up, all waiting:
+  - `scripts/knowledge/aws/stage2_handoff.sh` on this Mac (log .data/knowledge/logs/stage2-handoff.log) waits for
+    stage 2's adapter_saved event (about 25 minutes before its final answers), pulls the adapter, checks its sha256
+    against train-1, pushes it to writer-1 and then the GH200 (2.5 MB/s up from here, measured with 25 MB to each, so
+    about 11 minutes each), checks it on each, and starts writer-1's `quantize.sh stage2 ~/q/stage2/adapter 2500` with
+    PROBES=~/q/data-stage2/stage2-eval-probes.jsonl (sha256 6703716f..., the same 2,500 train-1 scores). The imatrix
+    reuses stage 1's calibration text (~/q/calib/calib.txt), so the two tables differ only in the model; none of the
+    1,000 new probes appears in it (checked, 0 of 1,000).
+  - `scripts/knowledge/aws/job/nanoquant/nq_stage2_slots.sh` on the GH200 (~/k/nq/, log
+    ~/k/models/stage2-nanoquant/logs/run.log): merge, then prepare and BF16 scoring under stage 1's gpu.lock (prepare
+    and BF16 scoring each put the whole 60 GB model on the GPU and take no lock of their own), then each bit setting
+    takes the GPU slot its stage 1 run frees; stage 2's gpu.lock is a link to stage 1's, so two whole models are never
+    on the GPU at once. Calibration from stage 2's training file (sha256 fc40310a..., 520,895, the same file train-1
+    trains on), stage 1's settings.env, scored on 300 of the fixed 1,500 and 300 of the 1,000 new. Decided not to stop
+    the stage 1 0.8-bit rehearsal after all: stage 2 0.8 would start about 30 minutes sooner, and the stage 1 point
+    on the curve is worth more than that.
+  - writer-1 ~/q/base/new1000.sh: base Q4_K_M and IQ1_S on the 1,000 new probes once the honesty test is done, under
+    gpu.lock, so the stage 2 table has a base row on all 2,500.
 
 ## Problems and fixes
 
