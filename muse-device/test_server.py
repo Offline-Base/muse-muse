@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -866,6 +867,48 @@ class CaptureTests(unittest.TestCase):
         with mock.patch.object(server.subprocess, "run", side_effect=OSError("no gst-launch")):
             self.assertTrue(call("capture_image")[0])
         self.assertFalse(server.capture_lock.locked())
+
+
+class ConnectionTests(unittest.TestCase):
+    """The server on loopback: nothing here needs a token, so half-sent requests can't be allowed to pile up."""
+
+    def serve(self, **attributes):
+        board = server.BoardServer(("127.0.0.1", 0), server.Handler)
+        for name, value in attributes.items():
+            setattr(board, name, value)
+        threading.Thread(target=board.serve_forever, daemon=True).start()
+        self.addCleanup(board.server_close)
+        self.addCleanup(board.shutdown)
+        return board.server_address
+
+    def half_sent(self, address):
+        connection = socket.create_connection(address, timeout=5)
+        self.addCleanup(connection.close)
+        connection.sendall(b"POST /mcp HTTP/1.1\r\n")
+        return connection
+
+    def assert_dropped(self, connection):
+        try:
+            self.assertEqual(connection.recv(100), b"")
+        except ConnectionError:
+            pass
+
+    def test_requests_have_a_time_limit(self):
+        self.assertEqual(server.Handler.timeout, server.REQUEST_TIMEOUT_S)
+
+    def test_a_half_sent_request_is_dropped(self):
+        with mock.patch.object(server.Handler, "timeout", 0.2):
+            self.assert_dropped(self.half_sent(self.serve()))
+
+    def test_connections_past_the_limit_are_dropped_and_their_slots_come_back(self):
+        slots = threading.BoundedSemaphore(2)
+        address = self.serve(slots=slots)
+        held = [self.half_sent(address), self.half_sent(address)]
+        wait_for(lambda: slots._value == 0)
+        self.assert_dropped(self.half_sent(address))
+        for connection in held:
+            connection.close()
+        wait_for(lambda: slots._value == 2)
 
 
 if __name__ == "__main__":

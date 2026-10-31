@@ -74,6 +74,9 @@ TRAIN_DISK_GIB = 0.5
 # 442-token step peaked at 1.91 GiB allocated on 1.42 GiB of loaded weights, and took about 2.3 GiB off what was available.
 TRAIN_OVERHEAD_GIB = 1.0
 STOP_TIMEOUT_S = 30
+# Anyone who can reach the port can open a connection before showing a token, so these hold how many, and for how long.
+REQUEST_TIMEOUT_S = 15
+MAX_CONNECTIONS = 32
 # secrets.token_urlsafe(32) makes 43. Under this the token is empty, cut short, or one anyone could guess.
 MIN_TOKEN_CHARS = 32
 
@@ -939,6 +942,8 @@ def handle_rpc(method, params):
 class Handler(BaseHTTPRequestHandler):
     server_version = f"muse-device/{VERSION}"
     token = ""
+    # For each read and write on the connection, so a tool that takes minutes isn't cut off by it.
+    timeout = REQUEST_TIMEOUT_S
 
     def log_message(self, fmt, *args):
         print(f"{self.address_string()} {fmt % args}", flush=True)
@@ -1003,6 +1008,22 @@ class Handler(BaseHTTPRequestHandler):
             self.rpc_error(200, -32603, "Internal error", rpc_id)
 
 
+class BoardServer(ThreadingHTTPServer):
+    slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+    def process_request(self, request, client_address):
+        if self.slots.acquire(blocking=False):
+            super().process_request(request, client_address)
+        else:
+            self.shutdown_request(request)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.slots.release()
+
+
 def load_token():
     folder = os.path.expanduser("~/.muse-device")
     path = os.path.join(folder, "token")
@@ -1034,7 +1055,7 @@ def main():
         TOOLS["run_command"] = EXEC_TOOL
     Handler.token = load_token()
     print(f"muse-device {VERSION} on {options.host}:{options.port}, tools: {', '.join(TOOLS)}", flush=True)
-    ThreadingHTTPServer((options.host, options.port), Handler).serve_forever()
+    BoardServer((options.host, options.port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
