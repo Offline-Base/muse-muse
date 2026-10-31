@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+dist/
+ios/
+android/
+*.tsbuildinfo
+credentials.json
+*.keystore
+*.jks
+*.apk
+*.tar.gz
+src/**/__tests__/
