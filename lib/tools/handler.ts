@@ -16,7 +16,7 @@ import {
   toolkitLabel,
   type ListedFunction,
 } from "@/lib/tools/catalog";
-import { classifyFailure, replyFailed, type ComposioApi, type ComposioFailure, type ToolReply } from "@/lib/tools/composio/client";
+import { classifyFailure, replyFailed, untilAborted, type ComposioApi, type ComposioFailure, type ToolReply } from "@/lib/tools/composio/client";
 import { ensureToolSession, sessionConfigFor, STALE_SESSION_HASH, type SessionStore } from "@/lib/tools/composio/sessions";
 import type { CatalogFunction, CatalogTool } from "@/lib/tools/composio/sync";
 import type { ToolErrorCode, ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
@@ -70,6 +70,8 @@ export interface ToolsDeps extends RunCounters, SessionStore {
   /** The provider, or null with no key: live calls then answer tools_paused. Builds never ask for it. */
   composio(): ComposioApi | null;
   platformUrl: string;
+  /** TOOL_LIMITS.sessionTimeoutMs, unless a test shortens it. */
+  sessionTimeoutMs?: number;
   now?(): Date;
 }
 
@@ -223,15 +225,16 @@ const WRITE_TITLES: Readonly<Record<string, string>> = {
   slack_send: "Post this in Slack?",
 };
 
-const LINE_CHARS = 200;
+/** Long enough that a person confirming a send sees what it says, not only how it starts. */
+const LINE_CHARS = 1000;
 
 function approvalLines(tool: CatalogTool, args: Record<string, unknown>): string[] {
   const lines: string[] = [];
   const recipients = recipientsOf(tool, args);
   if (recipients.length) lines.push(`${tool.toolkit === "slack" ? "Channel" : "To"}: ${recipients.join(", ")}`);
   for (const [name, value] of Object.entries(args)) {
-    if (tool.recipientFields.includes(name) || typeof value !== "string") continue;
-    const clean = value.replace(/\s+/g, " ").trim();
+    if (tool.recipientFields.includes(name) || (typeof value !== "string" && typeof value !== "number")) continue;
+    const clean = String(value).replace(/\s+/g, " ").trim();
     if (clean) lines.push(`${name.replace(/_/g, " ")}: ${clean.length > LINE_CHARS ? `${clean.slice(0, LINE_CHARS)}...` : clean}`);
   }
   return lines;
@@ -260,10 +263,10 @@ function secondsToNextMinute(now: Date): number {
 }
 
 function failedOutput(tool: CatalogTool, reply: ToolReply): Response {
-  // The provider's own words help a model fix its call, but must not name the provider.
+  // The provider's own words help a model fix its call, but must not name a provider or mention a key.
   const said = reply.error ?? (reply.data as { error?: unknown } | null)?.error;
   const first = typeof said === "string" ? (said.split("\n").find((l) => l.trim()) ?? "").trim().split(/(?<=\.)\s/)[0] : "";
-  const detail = first && first.length <= 240 && !/composio/i.test(first) ? ` ${first}` : "";
+  const detail = first && first.length <= 240 && !/composio|firecrawl|serpapi|api[_-]?key/i.test(first) ? ` ${first}` : "";
   return toolError("tool_failed", `${tool.label} didn't work.${detail}`);
 }
 
@@ -412,7 +415,7 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
     const wanted = sessionFor(tool, token, principal, ownerUserId, allowed);
     let session: string;
     try {
-      session = await ensureToolSession(api as ComposioApi, deps, wanted);
+      session = await untilAborted(ensureToolSession(api as ComposioApi, deps, wanted), AbortSignal.timeout(deps.sessionTimeoutMs ?? TOOL_LIMITS.sessionTimeoutMs));
     } catch (err) {
       // No tool ran. A session that can't be made says nothing about the tool, so this is never needs_connection.
       await release();
@@ -576,8 +579,9 @@ async function connect(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
   const state = mintConnectState({ productId: token.productId, composioUserId: userId, toolkit, returnTo }, now);
   const callback = `${deps.platformUrl}/api/gateway/tools/callback?state=${encodeURIComponent(state)}`;
   try {
-    const session = await ensureToolSession(api, deps, { productId: token.productId, composioUserId: userId, config: sessionConfigFor(allowed.filter((t) => t.tier === "personal")) });
-    const link = await api.authorize(session, toolkit, callback);
+    const signal = AbortSignal.timeout(deps.sessionTimeoutMs ?? TOOL_LIMITS.sessionTimeoutMs);
+    const session = await untilAborted(ensureToolSession(api, deps, { productId: token.productId, composioUserId: userId, config: sessionConfigFor(allowed.filter((t) => t.tier === "personal")) }), signal);
+    const link = await untilAborted(api.authorize(session, toolkit, callback), signal);
     return Response.json({ ok: true, url: link.redirectUrl, simulated: false });
   } catch (err) {
     if (classifyFailure(err).kind === "wallet_empty") return walletEmpty();

@@ -185,6 +185,15 @@ test("step 4: a write needs a confirmation with matching arguments, and a used a
   assertBalanced(g);
 });
 
+test("step 4: a confirmation shows what the call would do, numbers and most of a long body included", async () => {
+  const g = fakeTools({ models: agentModels("gmail_send", "calendar_add"), connections: [...GMAIL, { toolkit: "googlecalendar", connectedAccountId: "ca_cal" }] });
+  const hidden = `${"x".repeat(900)} the part at the end`;
+  const mail = (await (await exec(g.deps, { name: "GMAIL_SEND_EMAIL", arguments: { ...SEND, body: hidden } }, ownerHeaders())).json()) as Pause;
+  assert.ok(mail.approval?.lines.some((l) => l.includes("the part at the end")));
+  const event = (await (await exec(g.deps, { name: "GOOGLECALENDAR_CREATE_EVENT", arguments: { summary: "Review", event_duration_hour: 3 } }, ownerHeaders())).json()) as Pause;
+  assert.ok(event.approval?.lines.includes("event duration hour: 3"));
+});
+
 test("step 4: a read tool never asks, even Firecrawl, which Composio tags as a create", async () => {
   const g = fakeTools();
   const res = await exec(g.deps, { name: "FIRECRAWL_SCRAPE", arguments: { url: "https://a.example/" }, userInput: "https://a.example/" });
@@ -379,6 +388,10 @@ test("step 9: a failed call is a plain tool_failed, settled at $0 with its unit,
 
   const named = withReply({ data: null, error: "Composio could not do it", resultType: "failed" });
   assert.doesNotMatch((await errorOf(await exec(named.deps, SCHOLAR))).message, /composio/i);
+  const scraper = withReply({ data: null, error: "Firecrawl refused this", resultType: "failed" });
+  assert.doesNotMatch((await errorOf(await exec(scraper.deps, SCHOLAR))).message, /firecrawl/i);
+  const key = withReply({ data: null, error: "Your api_key is wrong", resultType: "failed" });
+  assert.doesNotMatch((await errorOf(await exec(key.deps, SCHOLAR))).message, /api_key/i);
 });
 
 test("step 9: an unreachable page comes back completed with success: false, which is a failure at $0", async () => {
@@ -497,6 +510,17 @@ test("a session that can't be made owes nothing, and gives its holds back", asyn
   assert.equal(err.code, "tool_failed");
   assert.deepEqual(g.settled[0].item, null);
   assert.deepEqual([...g.counters.entries()].filter(([k]) => k.startsWith("run-calls") || k.startsWith("tools-calls")).map(([, v]) => v), [0, 0]);
+  assertBalanced(g);
+});
+
+test("a session that never comes back times out, owes nothing, and gives its holds back", async () => {
+  const fake = fakeComposio({ createSession: () => new Promise(() => {}) });
+  const g = fakeTools({ composio: fake.api });
+  g.deps.sessionTimeoutMs = 5;
+  const err = await errorOf(await exec(g.deps, SCHOLAR, { "x-musemuse-run-id": "run_12345678" }));
+  assert.equal(err.code, "tool_failed");
+  assert.deepEqual(g.settled[0].item, null);
+  assert.equal(fake.calls.execute.length, 0);
   assertBalanced(g);
 });
 

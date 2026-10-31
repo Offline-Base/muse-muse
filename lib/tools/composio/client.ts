@@ -101,6 +101,16 @@ interface Session {
   authorize(toolkit: string, options: { callbackUrl: string }): Promise<{ id: string; redirectUrl?: string | null }>;
 }
 
+/** Settles with the work, or rejects when the signal fires first. For SDK calls that take no signal of their own. */
+export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(signal.reason);
+    if (signal.aborted) stop();
+    signal.addEventListener("abort", stop, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
+  });
+}
+
 /** Sessions already read back in this instance, so an execute doesn't cost an extra round trip each time. */
 const SESSIONS_CACHED = 200;
 
@@ -133,7 +143,7 @@ export function composioApi(apiKey: () => string): ComposioApi {
       await (await sessionOf(sessionId)).update(config);
     },
     async execute(sessionId, slug, args, { signal }) {
-      const session = await sessionOf(sessionId);
+      const session = await untilAborted(sessionOf(sessionId), signal);
       const reply = await session.execute(slug, args, undefined, { signal });
       return reply as ToolReply;
     },

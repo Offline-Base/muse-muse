@@ -55,7 +55,9 @@ export function functionNameProblem(name: string): string | null {
 
 function manifestToolIds(manifest: unknown): Set<string> | null {
   const agent = (manifest as { agent?: { tools?: unknown } } | null | undefined)?.agent;
-  if (!agent || !Array.isArray(agent.tools)) return null;
+  if (!agent) return null;
+  // An agent block with no list of tools allows none, since a manifest can only ever narrow.
+  if (!Array.isArray(agent.tools)) return new Set();
   return new Set(agent.tools.map((t: { id?: unknown }) => String(t?.id)));
 }
 

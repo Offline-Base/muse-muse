@@ -77,7 +77,8 @@ so a rate limit doesn't burn one and a failed send needs a new one.
 5. Rate limits (`perMinute` and `perDay` from the catalog too), then an in-flight slot.
 6. Budgets: the token's daily spend, `TOOLS_DAILY_SPEND_CAP_USD`, `TOOLS_DAILY_CALLS`, `DAILY_SPEND_CAP_USD` and the run's dollars.
 7. Reserve the spend.
-8. A build token gets a canned result. A live token calls Composio with a 30-second timeout, no automatic retry and no `version`.
+8. A build token gets a canned result. A live token gets its session (at most 15 seconds), then calls Composio with a 30-second
+   timeout, no automatic retry and no `version`.
 9. Settle, apply the catalog's `output` rules, extract sources, trim to 32 KB and answer.
 
 Implemented by `handleTools` in `lib/tools/handler.ts`, with `TOOL_CHECKS` and the limits in `lib/tools/policy.ts`.
@@ -102,6 +103,8 @@ page returns. Both answer `tool_failed`.
 `@composio/core` is pinned at 0.27.0 and asks for Node 22.22.3 or newer. Vercel runs this project on Node 24.x. A laptop on
 22.22.2 gets npm's EBADENGINE warning and nothing else. `lib/tools/composio/client.ts` imports the SDK lazily and `next.config.ts`
 keeps it out of the bundle, so nothing loads it until a live tool runs. Both Node versions were run live through these routes.
+The route's traced files come to about 16 MB with the SDK in them. A session read back from Composio shows
+`proxy_execution_enabled: false`, and its tools are only the ones it enabled, with no finder or workbench.
 
 ## Errors
 

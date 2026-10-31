@@ -17,6 +17,8 @@ export const TOOL_LIMITS = {
   sourcesMax: 20,
   /** A tool can do billable work, so a timed-out call is never tried again. */
   executeTimeoutMs: 30_000,
+  /** Getting a session or a connect link, so a call stays well inside the route's 60 seconds. Nothing billable has run. */
+  sessionTimeoutMs: 15_000,
   /** Everyone a write reaches: to, cc and bcc together, or a calendar event's attendees. */
   recipientsMax: 5,
   approvalValidMs: 10 * 60_000,

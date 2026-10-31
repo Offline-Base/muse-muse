@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { catalogTool } from "@/lib/tools/catalog";
-import { classifyFailure, replyFailed } from "@/lib/tools/composio/client";
+import { classifyFailure, replyFailed, untilAborted } from "@/lib/tools/composio/client";
 import { ensureToolSession, sessionConfigFor, sessionConfigHash } from "@/lib/tools/composio/sessions";
 import type { CatalogTool } from "@/lib/tools/composio/sync";
 import { fakeComposio, PRODUCT } from "@/lib/tools/__tests__/helpers";
@@ -111,4 +111,16 @@ test("sessions: created once, reused, and updated when the tools change", async 
   assert.equal(fake.calls.update.length, 1);
   assert.deepEqual(fake.calls.update[0].config, second);
   assert.equal(rows.get(`${PRODUCT}:mmp_x`)?.configHash, sessionConfigHash(second));
+});
+
+test("untilAborted gives the work's answer, or stops waiting when the signal fires", async () => {
+  assert.equal(await untilAborted(Promise.resolve("done"), new AbortController().signal), "done");
+  await assert.rejects(untilAborted(Promise.reject(new Error("broke")), new AbortController().signal), /broke/);
+  const late = new AbortController();
+  const waiting = untilAborted(new Promise(() => {}), late.signal);
+  late.abort(new Error("too long"));
+  await assert.rejects(waiting, /too long/);
+  const already = new AbortController();
+  already.abort(new Error("already"));
+  await assert.rejects(untilAborted(new Promise(() => {}), already.signal), /already/);
 });

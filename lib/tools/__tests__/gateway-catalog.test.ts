@@ -58,6 +58,7 @@ test("allowed tools need the agent marker, and a live manifest only narrows", ()
   assert.deepEqual(allowedToolIds(live(agentModels("scholar", "places")), { agent: { tools: [{ id: "places" }, { id: "gmail_send" }] } }), ["places"]);
   assert.deepEqual(allowedToolIds(live(agentModels("scholar")), { agent: { tools: [] } }), []);
   assert.deepEqual(allowedToolIds(live(agentModels("scholar")), { name: "no agent block" }), ["scholar"]);
+  assert.deepEqual(allowedToolIds(live(agentModels("scholar")), { agent: { task: "no list of tools" } }), []);
   assert.deepEqual(allowedToolIds({ scope: "build", allowedModels: agentModels("scholar") }, { agent: { tools: [] } }), ["scholar"]);
   assert.deepEqual(allowedToolIds(live([...agentModels("scholar"), "tool:scholar", "tool:exa_search"]), null), ["scholar"]);
 });
