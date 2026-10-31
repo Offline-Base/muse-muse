@@ -6,6 +6,7 @@ import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
 import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 // ---------- Wave 3 hooks (docs/CAPABILITIES.md, 2.6), unit 2 ----------
 import { capsBuildLines, capsMarkdown, capsRefineLines } from "@/lib/caps/render";
+import type { Milestone } from "@/lib/engine/milestones";
 import { engineBudgetLines, milestoneBuildLines } from "@/lib/engine/prompts";
 // ---------- end Wave 3 hooks ----------
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
@@ -252,6 +253,11 @@ export function renderBuildPrompt(
     // ---------- Wave 3, unit 2 ----------
     /** Big builds (caps, milestones or the engine's round flags): verify at most twice a round (engineBudgetLines). */
     verifyBudget?: boolean;
+    /**
+     * The milestones this build's round plan chains (ENGINE_MILESTONES). Only these make a Milestones section, never the
+     * stored brief's alone, so a brief written with the flag on and built with it off says nothing about milestones.
+     */
+    milestones?: Milestone[] | null;
     // ---------- end Wave 3, unit 2 ----------
   } & SessionNotes,
 ): string {
@@ -270,7 +276,7 @@ export function renderBuildPrompt(
     "Then stop.",
   );
   // ---------- Wave 3, unit 2: milestones (empty for a brief without them) ----------
-  if (brief.verdict !== "no") out.push(...milestoneBuildLines(brief));
+  if (brief.verdict !== "no") out.push(...milestoneBuildLines({ milestones: opts.milestones ?? null }));
   // ---------- end Wave 3, unit 2 ----------
   const session = sessionLines(opts, "build", brief.complexity === "complex");
   if (session.length) out.push("", "## While you work", "", bullets(session));

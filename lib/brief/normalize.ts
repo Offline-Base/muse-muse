@@ -117,6 +117,18 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
     if (!tools.length) b.agent = null;
   }
 
+  // ---------- Wave 3, unit 2 (docs/CAPABILITIES.md, section 8): milestones, only when the writer sent a list ----------
+  // Clamped to the schema's limits and to 3, as name and tagline are, so an overrun doesn't fail the brief. Fewer than 2
+  // usable ones isn't a milestone build.
+  if (Array.isArray(b.milestones)) {
+    const usable = asArray(b.milestones)
+      .filter((m) => typeof m.title === "string" && m.title.trim() && typeof m.doneMeans === "string" && m.doneMeans.trim())
+      .slice(0, 3)
+      .map((m) => ({ ...m, title: clamp(m.title as string, 60), doneMeans: clamp(m.doneMeans as string, 300) }));
+    b.milestones = usable.length >= 2 ? usable : null;
+  }
+  // ---------- end Wave 3, unit 2 ----------
+
   // A sample can only come from the user when they gave a reference of that kind.
   const kinds = new Set(references.map((r) => r.kind as string));
   for (const f of asArray(b.fixtures)) {

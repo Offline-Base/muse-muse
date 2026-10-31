@@ -499,6 +499,8 @@ export async function provisionStep(input: {
     rebuildOf: rebuildTargetFor(build.rebuildOf),
     ...sessionNotes(),
     ...(verifyBudgetFor(brief) ? { verifyBudget: true } : {}),
+    // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
+    ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(brief) } : {}),
   });
   const allowedModels = allowedModelsFor(brief);
   // A brief with cap blocks gets its overlays, its extra env and hosts, and a build token tied to this build, whose

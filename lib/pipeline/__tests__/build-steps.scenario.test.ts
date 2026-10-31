@@ -934,4 +934,26 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.ok(!("capHosts" in reopened[0]!));
     });
   });
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
+  describe("provisionStep and milestones", () => {
+    const milestones = [
+      { title: "Play one level", doneMeans: "A level loads and can be won." },
+      { title: "Level maker", doneMeans: "A generated level is saved." },
+    ];
+    const provision = (roundPlan: unknown) => {
+      selects = {
+        builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief: { ...FULL_BRIEF, milestones }, roundPlan }]],
+        inspirations: [[{ note: null, references: [] }]],
+      };
+      return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+    };
+
+    it("writes the Milestones section only when the saved round plan chains them", async () => {
+      await provision({ capMinutes: 35, milestones: milestones.map((m) => ({ title: m.title, state: "planned" })) });
+      assert.match(provisioned[0]!.promptMarkdown as string, /## Milestones[\s\S]*This run builds only milestone 1/);
+      provisioned = [];
+      await provision(null);
+      assert.ok(!(provisioned[0]!.promptMarkdown as string).includes("## Milestones"), "the flag was off when the plan was made");
+    });
+  });
 });

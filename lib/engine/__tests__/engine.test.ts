@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { after, afterEach, before, describe, it } from "node:test";
 import { z } from "zod";
+import { normalizeRawBrief } from "@/lib/brief/normalize";
 import { renderBuildPrompt } from "@/lib/brief/render";
 import { BriefSchema, newBriefSchemaFor, NewBriefSchemaNoGadget } from "@/lib/brief/schema";
 import { strictJsonSchema } from "@/lib/brief/strict-schema";
@@ -133,12 +134,36 @@ describe("milestone prompts", () => {
   const render = { inspoFiles: [], fixtures: [], maxModelSteps: 40 };
 
   it("brief.md lists the milestones after Done means and says this run builds only the first", () => {
-    const prompt = renderBuildPrompt({ ...BRIEF, milestones }, render);
+    const prompt = renderBuildPrompt({ ...BRIEF, milestones }, { ...render, milestones });
     assert.ok(prompt.indexOf("## Milestones") > prompt.indexOf("Then stop."));
     assert.ok(prompt.indexOf("## Milestones") < prompt.indexOf("## Product"));
     assert.match(prompt, /This run builds only milestone 1/);
     assert.match(prompt, /1\. \*\*Play one level\*\*: A built-in level loads/);
     assert.match(prompt, /2\. \*\*Level maker\*\*/);
+  });
+
+  it("brief.md has no Milestones section unless the build's plan chains them, whatever the stored brief has", () => {
+    // A brief written with ENGINE_MILESTONES on and built with it off gets no milestone rounds, so its brief.md must not
+    // say "This run builds only milestone 1".
+    const prompt = renderBuildPrompt({ ...BRIEF, milestones }, render);
+    assert.ok(!prompt.includes("## Milestones"));
+    assert.equal(prompt, renderBuildPrompt(BRIEF, render));
+  });
+
+  it("the writer's milestones are cleaned before the schema checks them: clamped, at most 3, and null below 2", () => {
+    const long = (n: number) => "x".repeat(n);
+    const raw = (list: unknown) => normalizeRawBrief({ ...BRIEF, milestones: list }, []) as { milestones: unknown };
+    const four = [1, 2, 3, 4].map((i) => ({ title: `${i} ${long(70)}`, doneMeans: long(320) }));
+    const cleaned = raw(four).milestones as Array<{ title: string; doneMeans: string }>;
+    assert.equal(cleaned.length, 3);
+    assert.ok(cleaned.every((m) => m.title.length <= 60 && m.doneMeans.length <= 300));
+    const schema = newBriefSchemaFor({ gadgets: false, targets: [], caps: [], milestones: true });
+    assert.equal(schema.safeParse(raw(four)).success, true, "a brief that overran the limits still parses");
+    assert.equal(raw([four[0]]).milestones, null, "one milestone isn't a milestone build");
+    assert.equal(raw([]).milestones, null);
+    assert.equal(raw([{ title: "", doneMeans: "x" }, { title: "Two", doneMeans: "y" }]).milestones, null, "an empty title doesn't count");
+    assert.equal(schema.safeParse(raw([four[0]])).success, true);
+    assert.ok(!("milestones" in (normalizeRawBrief({ ...BRIEF }, []) as object)), "a brief with no milestones gets none added");
   });
 
   it("brief.md's budget says to verify at most twice a round only for big builds", () => {
