@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
-import { macInput, type Seeded, type TestDb } from "./helpers";
+import { macInput, pruneStoredFolders, type Seeded, type TestDb } from "./helpers";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
@@ -442,6 +442,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal(await readFile(paths.file, "utf8"), "a log");
       await rm(paths.file);
       await rm(paths.type);
+      pruneStoredFolders(paths);
     });
 
     it("the plain upload route doesn't exist once there's a Blob store, or on Vercel", async () => {
