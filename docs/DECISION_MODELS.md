@@ -4,11 +4,13 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Built so far: D0 to D4 of the build plan (`lib/decide/types.ts`,
+into how it could be done here". Built so far: D0 to D5 of the build plan (`lib/decide/types.ts`,
 `lib/decide/format.ts`, the scoring in `lib/train/logic.ts`, decision datasets: migration 0017,
-`lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route, and decide mode
-on the GPU: `GLIMMER_PY`, `ctx.decide` in the runner, the recipe's params, the run estimate and the decide callbacks).
-Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree `~/mm-wt/decide`.
+`lib/train/decision-datasets.ts`, the datasets routes and the decision pages of the job dataset route, decide mode
+on the GPU: `GLIMMER_PY`, `ctx.decide` in the runner, the recipe's params, the run estimate and the decide callbacks,
+and after the run: `scoreDecisionStep` in place of judging, the summary saved, and decision models kept off the Hub
+and out of local files). Nothing has run on a real GPU yet (D8 waits for the owner). Branch `tg-decide`, worktree
+`~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
 letter, not a JSON object with a reason (see "What the model answers"). Read `docs/TRAINING.md` first; this builds on
@@ -282,8 +284,9 @@ As built (D4), in `lib/train/recipes/index.ts` and `validateParams`:
   lifts this when it is.
 - The jobs route refuses decide mode on a chat dataset and chat mode on a decision dataset (`datasetModeProblem`).
   `adapterProblem` refuses every decide job's adapter for now, so glimmer-serve (the public chat demo), glimmer-publish
-  and glimmer-quantize can't misuse one; D5 and D7 lift it for their decide versions. A `scoreOnly` job gets its own
-  sentence: it trained no adapter.
+  and glimmer-quantize can't misuse one; D7 lifts it for decide serving. Publishing and local files stay refused by
+  their own gates after that (`hubJobProblem` and `quantProblem`, D5) until their decide versions exist. A
+  `scoreOnly` job gets its own sentence: it trained no adapter.
 
 ### The dataset
 
@@ -529,6 +532,43 @@ the scored test rows, `tunedWins` the rows tuned got right and base got wrong, `
 above instead of judge scores. `hasResults` and `isJudged` hold once it has items, so the public page, the live demo
 and local files open as for a judged chat job.
 
+As built (D5), in `lib/train/decide-steps.ts`, `lib/train/workflow.ts` and `decisionScoringInput` in
+`lib/train/decision-datasets.ts`:
+
+- **Which jobs.** The jobs route starts a decide job's workflow with `{jobId, mode: "decide"}` (`TrainJobInput.mode`);
+  every other job's input is as it was. After terminate (or abandon, when Lambda never confirmed), a decide job runs
+  `scoreDecisionStep` instead of judging, whatever its ending: the GPU sends its base scores before anything can fail,
+  so a job whose training or tuned pass failed still gets base Glimmer's numbers. The result pages show only jobs that
+  succeeded (`hasResults`), so a failed job's summary is for the admin job page. A chat job is never scored, and its
+  judging is unchanged. Publishing's plan step still comes last.
+- **What it reads.** The job with its done metrics (`getAdapterSource`), its "decide" events (`decideScores`), and its
+  dataset's spec and dev and test rows read whole (`decisionSplitRows`, never train). `decisionScoringInput` lays each
+  part out with `decisionItems` on the real rows, the layout the dataset route served, so an index means the same row,
+  group and letters to both; it checks each split's rows against the spec first (the count, and the label in each
+  place). `tooLong` is the done metrics' `too_long`. A failed job sends no done metrics, so its `tooLong` is 0 and its
+  too-long rows show only in `unscoredRows`.
+- **What it saves.** `summarizeDecisions`' result as `eval_summary`, then one log line, for example (the store test's
+  made-up tickets and scores): "Scored all 48 held-out examples, with no judge and nothing spent: the tuned model was
+  right on 41 (85%), base Glimmer on 32 (67%). 2 renderings were too long to score. Confidence is calibrated on the dev
+  rows (T = 1.1962). It can be wrong: check anything that matters." Base alone for `scoreOnly` ("Score only, so
+  nothing trained.") and for a failed tuned pass ("The tuned model sent no scores, so there is nothing to compare it
+  with."); a first sentence for a job that didn't succeed ("The job didn't succeed, so these are only the scores its
+  GPU sent before it stopped."); and the unscored rows and too-long renderings when there are any.
+- **When it can't score.** An unjudged summary (`unjudgedSummary`) whose note says why, logged too: no scores at all
+  from a job that succeeded, the dataset gone or not a decision dataset, rows that don't match the spec, or scores
+  `summarizeDecisions` refuses. A summary with no scored test row keeps every number and carries `note` (a new
+  optional field of `DecisionSummary`), which `unjudgedNote` reads, so it counts as not judged. Nothing is saved for a
+  job that isn't a glimmer-lora job in decide mode, one that has a summary already (an earlier attempt saved it), or one
+  that failed with no scores.
+- **Retries.** Database errors wait 30 s, 20 retries. It saves the summary, then logs; an attempt that dies between
+  the two leaves the summary and loses the line, as judging does. A scoring failure is swallowed by the workflow and
+  never changes the job's status.
+- **No judge named.** `judgeModelOf` (`lib/train/models.ts`) returns null for a decision summary
+  (`isDecisionSummary`); without that, a summary with items and no `judge_model` reads as judged by Muse Spark 1.3.
+- **Tests:** `workflow.scenario.test.ts` (the order, every ending, a failure, chat untouched), `steps.test.ts` (the step
+  on a fake store), `store.test.ts` (end to end on PGlite: scores sent in 100-item callbacks, the summary back out of
+  jsonb as computed), `hub-flow.test.ts`, `decide-mode.test.ts` and `decision-datasets.test.ts`.
+
 ### The base model, zero-shot, the same way
 
 Base Glimmer is scored in the same run, before training: the same rendered prompts, the same letters, the same
@@ -559,6 +599,13 @@ mode, epochs and the run estimate for the GPU.
 - **Hugging Face:** `publish` defaults to 0 in decide mode, and a person's rows are never published, because the existing
   path publishes the adapter with its dataset. Adapter-only publishing with a decision card (labels, format, scores, T,
   how to call it) is later work (Owner decisions).
+- As built (D5): `publishOff` (`lib/train/hub-cards.ts`) reads an unset `publish` as 0 in decide mode (the jobs route
+  stores 0 anyway), so the publish after the run never starts and the GPU's upload plan (`POST .../hub`) is skipped
+  ("Publish to Hugging Face is 0 for this job."). `hubJobProblem` refuses a decide job by its mode before anything else:
+  "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't
+  built yet." So an admin's Publish answers 409 `not_publishable` with that reason, and `hubPlanStep`, pressed or not,
+  takes no claim and writes no hub state. Without it, a decide job's scored summary would pass as judged results. No
+  change in `hub-steps.ts` was needed: both of its paths go through these two.
 - **decide.json**, written next to the adapter: the format's contract, so llama.cpp users, the drive (wave 3 unit 12) and
   other apps render the same prompt: `{format: "muse-decide/1", system, separator, letters, none, question, labels, T,
   groupsOf: 4, groups, rules, template: {repo, revision, sha256}, prompt: {prefix, suffix}, maxTokens: 2048, read:
@@ -576,7 +623,10 @@ mode, epochs and the run estimate for the GPU.
 - **Local files:** `quantProblem` refuses decide adapters until `glimmer-quantize` learns a decision check: its channel
   check asks for a final answer under a stock app's prompt, which is the wrong test here. The decision check instead
   scores the test renderings on Q4_K_M with `llama-server` (`/completion`, `n_probs`) and passes a build only when its
-  pick matches the adapter's on at least 95% of them. Cut from Nov 1 to 3 (see Cut order).
+  pick matches the adapter's on at least 95% of them. Cut from Nov 1 to 3 (see Cut order). As built (D5):
+  `quantProblem` refuses a decide job's adapter first, whatever else holds ("that job trained a decision model, and its
+  local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet."), in the jobs route
+  and the quantize route alike. `adapterProblem` refuses it too, but D7 lifts that for serving, so this stays the gate.
 - **Live demo:** a decide adapter's `glimmer-serve` job serves `/decide` (below), not the chat box.
 
 ## 3. Serving and use
@@ -995,7 +1045,7 @@ sessions.
 | D2 (done) | Scoring: `summarizeDecisions`, `fitTemperature`, accuracy with Wilson intervals, macro F1, per label, confusion, ECE, reliability bins, baselines; T moved after combining groups (`applyTemperature`, `temperedDecision`) and the dev and test layout (`decisionItems`) in `lib/decide/format.ts` | `lib/train/logic.ts` (shared, new exports only), `lib/train/__tests__/logic.test.ts` | 3 | no |
 | D3 (done) | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
 | D4 (done) | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
-| D5 | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/steps.ts` or `lib/train/decide-steps.ts`, `lib/train/hub-steps.ts`, `lib/train/logic.ts`, `workflow.scenario.test.ts`, `steps.test.ts` | 3 | no |
+| D5 (done) | After the run: `scoreDecisionStep` in place of judging, the summary saved, `publish` 0 by default for decide, `quantProblem` refusing decide adapters for now | `lib/train/workflow.ts` (shared), `lib/train/decide-steps.ts`, `lib/train/hub-cards.ts` (`publishOff`, `hubJobProblem`), `lib/train/logic.ts`, `lib/train/models.ts`, `lib/train/decision-datasets.ts`, `app/api/train/jobs/route.ts`, `workflow.scenario.test.ts`, `steps.test.ts`, `store.test.ts`, `hub-flow.test.ts` | 3 | yes (PGlite) |
 | D6 | Pages: the New decision dataset card, the dataset page, the mode on the New job card with its estimate, `DecisionResults` (strip, per label, confusion, reliability SVG, baselines, health, wrong answers for admins), the Lab results line | `components/train/NewDecisionCard.tsx`, `DatasetDetail.tsx`, `NewJobCard.tsx`, `DecisionResults.tsx`, `results.ts`, `format.ts`, `app/fine-tuning/...`, `components/train/__tests__/decision.test.tsx`; one browser check on the local site | 5 | yes (browser) |
 | D7 | Serving: `/decide` on the demo GPU, `askDecide`, the try box, `{GATEWAY_URL}/decide` with the permission, limits, stand-in and `decide_offline`, the template helper and `isDecideOffline` | `lib/train/recipes/serve.ts` (shared), `lib/train/serve.ts`, `app/api/lab/[id]/decide/route.ts`, `lib/gateway/decide.ts`, `app/api/gateway/decide/route.ts`, `template/lib/meta/decide.ts`, tests in `runner.test.ts`, `lab-try.test.ts`, `lib/gateway/__tests__/decide.test.ts` | 4 | yes (TLS with openssl) |
 | D8 | Real runs: `dryRun: 1` on a real GPU, then the one real run (below); record times and rates, then set the estimate's constants from them | no code beyond constants; results in this doc | 2, plus GPU time | no |

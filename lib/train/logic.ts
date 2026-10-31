@@ -1155,11 +1155,18 @@ export function trainChannelOf(params: Record<string, string | number> | null | 
  * when it can. On top of adapterProblem (a glimmer-lora job that succeeded and saved a real adapter on its region's
  * cache): it was judged, with its GPU shut down, so its files have results to stand on; and it trained under the short
  * student prompt, whose one-line system message the files and their card give to every local app.
+ *
+ * A decision model's adapter (decide mode) is refused for now, whatever adapterProblem says: QUANT_PY's checks are a
+ * chat model's (a final answer under a stock app's prompt), and the decision check its files need, Q4_K_M's picks
+ * against the adapter's on the test renderings, isn't built (docs/DECISION_MODELS.md, "Local files").
  */
 export function quantProblem(
   job: Pick<TrainJobRow, "params" | "terminatedAt" | "evalSummary">,
   metrics: DoneMetrics | null,
 ): string | null {
+  if (jobMode(job.params) === DECIDE_MODE) {
+    return "that job trained a decision model, and its local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet.";
+  }
   if (!job.terminatedAt || !job.evalSummary || unjudgedNote(job.evalSummary) !== null) {
     return "that job isn't judged yet, so its local files would have no results to stand on.";
   }

@@ -8,8 +8,9 @@
  * near-duplicates of eval prompts out of train), a stopped-early note, paging in SQL. And the live demo: a serving
  * callback's endpoint (with the IP Lambda reported, kept in step with it), the adapters a serve job can serve, the
  * newest open demo of an adapter, and the proxy's one-at-a-time slot. Decision datasets: saved ready with their spec,
- * "person" as their writer and their rows out of every head read, and read back by index, cut in SQL. Nothing here
- * reaches Neon or Lambda.
+ * "person" as their writer and their rows out of every head read, and read back by index, cut in SQL; and a decide job
+ * scored on one after its run (scoreDecisionStep: its scores and rows in, the summary saved through jsonb and logged).
+ * Nothing here reaches Neon, Lambda or Meta.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/train/__tests__/store.test.ts
  *
@@ -650,6 +651,51 @@ describe("training store", { skip: canMock ? false : "needs --experimental-test-
       assert.deepEqual(await store.decisionSplitRows(ds.id, "dev", []), { total: 12, rows: new Map() });
       assert.equal(await store.decisionSplitRows("not-a-uuid", "dev"), null);
       assert.equal(await store.decisionSplitRows(ds.id, "eval" as "dev"), null);
+    });
+
+    it("scores a decide job on the database after its run: its scores and rows in, the summary saved and logged", async () => {
+      const { decisionItems } = await import("@/lib/decide/format");
+      const { decisionScoringInput } = await import("../decision-datasets");
+      const { summarizeDecisions, toJobView } = await import("../logic");
+      const { scoreDecisionStep } = await import("../decide-steps");
+      const { spec, rows, title } = await upload([60, 60, 60, 60]);
+      const ds = await store.createDecisionDataset({ title, spec, rows });
+      const params = { datasetId: ds.id, mode: "decide", epochs: 2, learningRate: 0.0002, loraRank: 16, scoreOnly: 0, dryRun: 0, publish: 0 };
+      const row = await job({ recipe: "glimmer-lora", status: "running", params });
+      // What ctx.decide sends: 95% of the probability on the letters, base right on rows not divisible by 3, tuned on
+      // rows not divisible by 7, `none` on every decline rendering, at most 100 items a callback.
+      const sent = { dev: [] as import("@/lib/decide/types").DecideScoreItem[], test: [] as import("@/lib/decide/types").DecideScoreItem[] };
+      for (const part of ["dev", "test"] as const) {
+        for (const item of decisionItems({ question: spec.question, labels: spec.labels, rows: rows[part], part })) {
+          const right = item.decline ? null : rows[part][item.row]!.label;
+          const lp = (rightish: boolean, p: number) => {
+            const want = rightish ? right : (item.labelIds.find((id) => id !== right) ?? null);
+            return item.labelIds.map((id) => Math.log(id === want ? 0.95 * p : (0.95 * (1 - p)) / (item.labelIds.length - 1)));
+          };
+          sent[part].push({ index: item.index, base: lp(item.decline || item.row % 3 !== 0, 0.7), tuned: lp(item.decline || item.row % 7 !== 0, 0.9), baseMass: 0.95, tunedMass: 0.95 });
+        }
+        for (let i = 0; i < sent[part].length; i += 100) {
+          assert.equal(await store.recordDecideEvent(row.id, { type: "decide", part, items: sent[part].slice(i, i + 100) }), "recorded");
+        }
+      }
+      assert.equal(await store.recordDecideEvent(row.id, { type: "decide", part: "test", items: sent.test.slice(0, 3) }), "duplicate", "a retried callback");
+      await store.recordEvent(row.id, { type: "done", summary: "Decide mode", metrics: { mode: "decide", too_long: 2, renderings: 400 } });
+      await testDb
+        .update(realSchema.trainingJobs)
+        .set({ status: "succeeded", finishedAt: new Date(), terminatedAt: new Date() })
+        .where(eq(realSchema.trainingJobs.id, row.id));
+
+      assert.deepEqual(await scoreDecisionStep(row.id), { saved: "summary", items: 48, testRows: 48 });
+      const after = (await store.getJob(row.id))!;
+      assert.deepEqual(after.evalSummary, summarizeDecisions(decisionScoringInput(spec, rows, sent, 2)), "through jsonb and back, as computed");
+      assert.equal(after.status, "succeeded");
+      assert.equal(after.judgeModel, null);
+      assert.equal(toJobView(after, new Date()).judgeModel, null, "scored, not judged: no judge is named");
+      const logs = (await store.listEvents(row.id)).filter((e) => e.payload.type === "log").map((e) => (e.payload as { text: string }).text);
+      assert.deepEqual(logs, [
+        "Scored all 48 held-out examples, with no judge and nothing spent: the tuned model was right on 41 (85%), base Glimmer on 32 (67%). 2 renderings were too long to score. Confidence is calibrated on the dev rows (T = 1.1962). It can be wrong: check anything that matters.",
+      ]);
+      assert.deepEqual(await scoreDecisionStep(row.id), { saved: "none" }, "scored once");
     });
 
     it("reads a chat dataset as kind chat with no decision rows", async () => {

@@ -17,6 +17,8 @@ import { QUANT_LEVELS, type LocalFile, type LocalFiles, type QuantLevel } from "
 import { modelName, recordedModel, UNRECORDED_MODEL, writerModelOf } from "@/lib/train/models";
 import {
   datasetSystemPrompt,
+  DECIDE_MODE,
+  jobMode,
   NEAR_DUPLICATE_JACCARD,
   QUANT_CHANNEL_MIN,
   QUANT_KL_MAX,
@@ -1190,11 +1192,17 @@ export function pickExample(items: RunItem[]): CardExample | null {
 // The hub state's rules
 
 /**
- * Why a job can't be published to the Hub, or null when it can: a glimmer-lora job that succeeded, wasn't a dry run,
- * had its GPU shut down and was judged, so its card has results. Plain sentences, for the job page and the routes.
+ * Why a job can't be published to the Hub, or null when it can: a glimmer-lora job in chat mode that succeeded, wasn't
+ * a dry run, had its GPU shut down and was judged, so its card has results. Plain sentences, for the job page and the
+ * routes. A decide job's scored summary counts as results everywhere else, so it is refused here by its mode.
  */
 export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "params" | "terminatedAt" | "evalSummary">): string | null {
   if (job.recipe !== "glimmer-lora") return "Only Muse Glimmer LoRA jobs are published to Hugging Face.";
+  // This path publishes the adapter with its dataset and a judged chat card. A decision model needs the adapter alone
+  // with a decision card, and a person's rows are never published (docs/DECISION_MODELS.md, "Publishing").
+  if (jobMode(job.params) === DECIDE_MODE) {
+    return "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't built yet.";
+  }
   if (Number(job.params?.dryRun) >= 1) return "It was a dry run, so its adapter is a stand-in.";
   if (job.status !== "succeeded") return "It didn't succeed, so it has no adapter to publish.";
   const note = unjudgedNote(job.evalSummary);
@@ -1203,10 +1211,14 @@ export function hubJobProblem(job: Pick<TrainJobRow, "recipe" | "status" | "para
   return null;
 }
 
-/** True when a job's "publish" param (0 or 1) says to keep it off the Hub. Unset means it publishes. */
+/**
+ * True when a job's "publish" param (0 or 1) says to keep it off the Hub. Unset means it publishes, except in decide
+ * mode, where it means 0 (docs/DECISION_MODELS.md, "Publishing"): the jobs route stores 0 there anyway.
+ */
 export function publishOff(params: Record<string, string | number> | null | undefined): boolean {
   const v = params?.publish;
-  return v !== undefined && v !== "" && Number(v) === 0;
+  if (v === undefined || v === "") return jobMode(params) === DECIDE_MODE;
+  return Number(v) === 0;
 }
 
 /** True when the Hub has every file in the plan, and the plan has the adapter's weights and config. */

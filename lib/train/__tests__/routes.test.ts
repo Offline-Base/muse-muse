@@ -1512,6 +1512,7 @@ describe("job token routes", { skip: canMock ? false : "needs --experimental-tes
 
       const res = await ask({ mode: "decide", epochs: 3 });
       assert.equal(res.status, 201);
+      assert.deepEqual(called("start").map((c) => c.args), [[{ jobId: JOB_ID, mode: "decide" }]], "scored after its run, never judged");
       assert.deepEqual((called("createJob")[0]!.args[0] as { params: Record<string, unknown> }).params, {
         datasetId: DATASET_ID,
         mode: "decide",

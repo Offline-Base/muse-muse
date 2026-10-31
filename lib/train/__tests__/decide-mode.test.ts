@@ -2,14 +2,17 @@
  * Decide mode on the platform's side (docs/DECISION_MODELS.md, "A mode, not a new recipe" and "Lambda, the default"):
  * the glimmer-lora recipe's mode, epochs and scoreOnly params as validateParams checks them (a chat job's params stay
  * exactly as before), the dataset kind each mode trains on, the run estimate from a decision dataset's renderings and
- * scored prompts, the sentence when a run doesn't fit, and the decide callback's cap. Pure: nothing here does I/O.
+ * scored prompts, the sentence when a run doesn't fit, and the decide callback's cap. After the run (D5): a decision
+ * model stays off the Hub (publish 0 by default, and refused by hubJobProblem) and gets no local files (quantProblem),
+ * and its scored summary names no judge. Pure: nothing here does I/O.
  *
  *   npx tsx --test lib/train/__tests__/decide-mode.test.ts
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { DecideSplitCounts, DecisionSpec } from "@/lib/decide/types";
+import type { DecideSplitCounts, DecisionSpec, DecisionSummary } from "@/lib/decide/types";
 import { checkDecisionUpload, decideRunSize, decisionPartSize, isDecideMode } from "@/lib/train/decision-datasets";
+import { hubJobProblem, publishOff } from "@/lib/train/hub-cards";
 import {
   adapterProblem,
   capEventBody,
@@ -20,11 +23,14 @@ import {
   GLIMMER_OVERHEAD_MINUTES,
   GLIMMER_OVERHEAD_NO_CACHE_MINUTES,
   jobMode,
+  quantProblem,
   runEstimate,
   runFitProblem,
   validateParams,
 } from "@/lib/train/logic";
+import { isDecisionSummary, judgeModelOf, UNRECORDED_MODEL } from "@/lib/train/models";
 import { recipeById } from "@/lib/train/recipes";
+import type { EvalSummary } from "@/lib/train/types";
 import { TICKET_LABELS, TICKET_QUESTION, ticketRows } from "./decision-fixture";
 
 const lora = recipeById("glimmer-lora")!;
@@ -191,5 +197,57 @@ describe("decide callbacks and adapters", () => {
     const trained = { ...chat, params: { datasetId: DS, mode: "decide", epochs: 2, scoreOnly: 0 } };
     assert.equal(adapterProblem(trained, metrics), "that job trained a decision model, and serving, publishing and local files for decision models aren't built yet.");
     assert.equal(adapterProblem({ ...trained, params: { ...trained.params, scoreOnly: 1 } }, metrics), "that job only scored base Glimmer, so it trained no adapter.");
+  });
+});
+
+describe("after a decide run: no judge, no publishing, no local files", () => {
+  const id = "aaaaaaaa-0000-4000-8000-000000000000";
+  const scored: DecisionSummary = {
+    items: 48,
+    tunedWins: 10,
+    baseWins: 2,
+    ties: 36,
+    avgBaseScore: 0,
+    avgTunedScore: 0,
+    judgeCostUsd: 0,
+    kind: "decision",
+  } as DecisionSummary;
+  const decideParams = { datasetId: DS, mode: "decide", epochs: 2, scoreOnly: 0, dryRun: 0, publish: 0 };
+  const job = {
+    id,
+    recipe: "glimmer-lora" as const,
+    status: "succeeded" as const,
+    params: decideParams as Record<string, string | number>,
+    terminatedAt: new Date(),
+    evalSummary: scored as EvalSummary,
+  };
+
+  it("keeps a decision model off the Hub, whatever its summary or a missing publish param says", () => {
+    assert.equal(
+      hubJobProblem(job),
+      "It is a decision model, and publishing one (the adapter alone, with a decision card, never the person's rows) isn't built yet.",
+    );
+    assert.equal(hubJobProblem({ ...job, params: { datasetId: DS }, evalSummary: { ...scored, kind: undefined } as EvalSummary }), null, "a judged chat job still publishes");
+    assert.equal(publishOff(decideParams), true);
+    assert.equal(publishOff({ datasetId: DS, mode: "decide" }), true, "unset is 0 in decide mode");
+    assert.equal(publishOff({ datasetId: DS, mode: "decide", publish: 1 }), false, "the param is still read as it is");
+    assert.equal(publishOff({ datasetId: DS }), false, "unset still publishes in chat mode");
+    assert.equal(publishOff({ datasetId: DS, mode: "chat" }), false);
+  });
+
+  it("refuses local files for a decision model's adapter until the decision check exists", () => {
+    const problem = "that job trained a decision model, and its local files need a decision check (Q4_K_M's picks against the adapter's) that isn't built yet.";
+    assert.equal(quantProblem(job, { student_prompt: "short" }), problem);
+    assert.equal(quantProblem({ ...job, terminatedAt: null, evalSummary: null }, null), problem, "before the judged check");
+    assert.equal(quantProblem({ ...job, params: { datasetId: DS, studentPrompt: "short" } }, { student_prompt: "short" }), null, "a chat adapter as before");
+  });
+
+  it("names no judge for a scored decision summary, and Muse Spark 1.3 for a judged one from before the record", () => {
+    assert.equal(isDecisionSummary(scored), true);
+    assert.equal(isDecisionSummary({ ...scored, kind: undefined } as EvalSummary), false);
+    assert.equal(isDecisionSummary(null), false);
+    assert.equal(judgeModelOf({ judgeModel: null, evalSummary: scored }), null);
+    assert.equal(judgeModelOf({ judgeModel: null, evalSummary: { ...scored, kind: undefined } as EvalSummary }), UNRECORDED_MODEL);
+    assert.equal(judgeModelOf({ judgeModel: "muse-wonder-1.0", evalSummary: scored }), "muse-wonder-1.0", "a recorded judge is kept");
   });
 });

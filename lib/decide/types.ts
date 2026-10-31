@@ -356,6 +356,11 @@ export interface DecisionSummary extends EvalSummary {
     /** The word-overlap stand-in (standInDecision in format.ts). */
     standIn: { accuracy: WilsonRate };
   };
+  /**
+   * Only when no test row was scored (`items` 0): why there are no results, in a sentence, as an unjudged summary's
+   * note says it (unjudgedNote in lib/train/logic.ts reads it). scoreDecisionStep sets it.
+   */
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

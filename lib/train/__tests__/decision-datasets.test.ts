@@ -3,7 +3,8 @@
  * checking labels, the question and every row; merging inputs that fold to the same text and dropping the ones that
  * came with two labels; the split, test held out first, with near-duplicates kept in one split; the spec; and the pages
  * a decide job's GPU reads, laid out from the spec alone: train renderings with balancing copies, dev and test items
- * exactly as decisionItems lays them out, the rows each page needs, and the page cap. All data is made up.
+ * exactly as decisionItems lays them out, the rows each page needs, and the page cap. And what scoring reads back after
+ * the run: the rows in index order and each part laid out as the GPU was served it. All data is made up.
  *
  *   npx tsx --test lib/train/__tests__/decision-datasets.test.ts
  */
@@ -23,12 +24,14 @@ import {
   decisionPageCount,
   decisionPageRows,
   decisionPartSize,
+  decisionScoringInput,
   isDecideMode,
   matchLabel,
   mergeDecisionRows,
   parseDecisionCsv,
   parseDecisionJsonl,
   parseDecisionRows,
+  rowsInOrder,
   sampleRowIndexes,
   splitDecisionRows,
   splitLabels,
@@ -558,5 +561,46 @@ describe("the pages a decide job reads", () => {
     for (const w of result.report.warnings) assert.equal(w.includes(EM_DASH), false);
     const labels: DecisionLabel[] = result.spec.labels;
     assert.equal(labels.length, 4);
+  });
+});
+
+describe("what scoring reads back after the run", () => {
+  const checked = checkDecisionUpload({ question: TICKET_QUESTION, labels: TICKET_LABELS, rows: ticketRows([40, 30, 25, 20]) }, SEED);
+  assert.ok(checked.ok);
+  const { spec, rows } = checked;
+
+  it("puts a split's rows back in index order, and notices a missing one", () => {
+    const read = { total: 3, rows: new Map([[2, rows.dev[2]!], [0, rows.dev[0]!], [1, rows.dev[1]!]]) };
+    assert.deepEqual(rowsInOrder(read), rows.dev.slice(0, 3));
+    assert.equal(rowsInOrder({ total: 3, rows: new Map([[0, rows.dev[0]!], [2, rows.dev[2]!]]) }), null);
+    assert.deepEqual(rowsInOrder({ total: 0, rows: new Map() }), []);
+  });
+
+  it("lays dev and test out exactly as the GPU was served them, with the train counts and too_long", () => {
+    const scores = { dev: [{ index: 0, base: [-0.1, -3, -3, -3, -3], tuned: null, baseMass: 0.9, tunedMass: null }], test: [] };
+    const input = decisionScoringInput(spec, rows, scores, 2);
+    for (const part of ["dev", "test"] as const) {
+      const served = decisionItems({ question: spec.question, labels: spec.labels, rows: rows[part], part });
+      assert.deepEqual(
+        input[part].items,
+        served.map(({ index, row, group, labelIds, decline }) => ({ index, row, group, labelIds, decline })),
+        `${part}: the same indexes, rows, groups and letters, without the renderings`,
+      );
+      assert.equal(input[part].rows, rows[part]);
+      assert.equal(input[part].scores, scores[part]);
+    }
+    assert.ok(input.test.items.some((i) => i.decline), "test carries the decline check");
+    assert.deepEqual(input.trainCounts, Object.fromEntries(spec.labels.map((l) => [l.id, spec.perLabel[l.id]!.train])));
+    assert.equal(input.labels, spec.labels);
+    assert.equal(input.tooLong, 2);
+    assert.equal(decisionScoringInput(spec, rows, { dev: [], test: [] }).tooLong, 0);
+  });
+
+  it("refuses rows that don't match the spec, since then no index can be matched to a row", () => {
+    const empty = { dev: [], test: [] };
+    assert.throws(() => decisionScoringInput(spec, { ...rows, test: rows.test.slice(1) }, empty), /^Error: The dataset's test rows don't match its spec/);
+    const swapped = [...rows.dev];
+    [swapped[0], swapped[swapped.length - 1]] = [swapped[swapped.length - 1]!, swapped[0]!];
+    assert.throws(() => decisionScoringInput(spec, { ...rows, dev: swapped }, empty), /^Error: The dataset's dev rows don't match its spec/);
   });
 });

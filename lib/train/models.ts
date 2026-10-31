@@ -5,6 +5,7 @@
  * everything made before then was made by Muse Spark 1.3, so a record with no model reads as Muse Spark 1.3. History is
  * never relabeled. Pure functions only, so the pages, the cards and the steps share them.
  */
+import type { DecisionSummary } from "@/lib/decide/types";
 import { modelLabel } from "@/lib/format";
 import { RETIRED_SPARK } from "@/lib/meta/spark";
 import type { EvalSummary } from "@/lib/train/types";
@@ -59,12 +60,22 @@ export function isJudged(summary: EvalSummary | null | undefined): boolean {
 }
 
 /**
+ * True for a decide job's eval summary (docs/DECISION_MODELS.md, "Scoring"): scored from the GPU's own log-probabilities
+ * by scoreDecisionStep, with no judge. Its `kind` is "decision".
+ */
+export function isDecisionSummary(summary: EvalSummary | null | undefined): summary is DecisionSummary {
+  return Boolean(summary) && (summary as { kind?: unknown }).kind === "decision";
+}
+
+/**
  * The model that judged a job's eval items, or is judging them: its judge_model; else Muse Spark 1.3 for a job with
- * verdicts, judged before the judge was recorded; else null, for a job no judge has started on.
+ * verdicts, judged before the judge was recorded; else null, for a job no judge has started on. A decision summary
+ * was scored, not judged, so it names no judge.
  */
 export function judgeModelOf(job: { judgeModel?: string | null; evalSummary?: EvalSummary | null }): string | null {
   const m = typeof job.judgeModel === "string" ? job.judgeModel.trim() : "";
   if (m) return m;
+  if (isDecisionSummary(job.evalSummary)) return null;
   return isJudged(job.evalSummary) ? UNRECORDED_MODEL : null;
 }
 

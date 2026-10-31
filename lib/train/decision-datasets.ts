@@ -1,9 +1,9 @@
 /**
  * Decision datasets (docs/DECISION_MODELS.md, "The dataset"): a person's labeled rows, read from CSV, JSONL or JSON
  * rows, checked, merged where their inputs fold to the same text, and split once with the test split held out first.
- * Also the pages a decide job's GPU reads (part=train, dev and eval), laid out from the dataset's spec alone, and the
- * dataset route's page cap. Pure, no I/O: the datasets route and the job dataset route call these, and the tests run
- * them directly.
+ * Also the pages a decide job's GPU reads (part=train, dev and eval), laid out from the dataset's spec alone, the
+ * dataset route's page cap, and what scoring reads back after the run (decisionScoringInput). Pure, no I/O: the
+ * datasets route, the job dataset route and scoreDecisionStep call these, and the tests run them directly.
  */
 import {
   DESCRIPTION_MAX_CHARS,
@@ -20,7 +20,17 @@ import {
   trainExample,
   trainRendering,
 } from "@/lib/decide/format";
-import type { DecideItem, DecideSplitCounts, DecisionLabel, DecisionRow, DecisionRows, DecisionSpec } from "@/lib/decide/types";
+import type {
+  DecideItem,
+  DecideScoreItem,
+  DecideSplitCounts,
+  DecisionLabel,
+  DecisionPartInput,
+  DecisionRow,
+  DecisionRows,
+  DecisionScoringInput,
+  DecisionSpec,
+} from "@/lib/decide/types";
 import { DECIDE_MODE, isNearDuplicate, jobMode, NEAR_DUPLICATE_JACCARD, promptKey, promptWords, type DecideRunSize } from "@/lib/train/logic";
 import type { TrainExample } from "@/lib/train/types";
 
@@ -813,4 +823,54 @@ export function decisionPage(
 /** The first `n` rows of each label in a split, as indexes: the dataset page's samples. */
 export function sampleRowIndexes(spec: DecisionSpec, split: DecisionSplit, n: number): number[] {
   return splitRanges(spec, split).flatMap((r) => Array.from({ length: Math.max(0, Math.min(n, r.to - r.from)) }, (_, k) => r.from + k));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// After the run: what scoring reads back (scoreDecisionStep in lib/train/decide-steps.ts)
+
+/**
+ * A split's rows in index order, from decisionSplitRows' map of them, or null when one is missing: then the stored
+ * rows and the count the database reports disagree, and the GPU's indexes can't be matched to rows.
+ */
+export function rowsInOrder(read: { total: number; rows: ReadonlyMap<number, DecisionRow> }): DecisionRow[] | null {
+  const out: DecisionRow[] = [];
+  for (let i = 0; i < read.total; i++) {
+    const row = read.rows.get(i);
+    if (!row) return null;
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * What summarizeDecisions reads for a decide job (docs/DECISION_MODELS.md "Scoring (logic.ts)"): the dataset's dev and
+ * test rows whole, each part laid out by decisionItems as the dataset route served it to the GPU (so an index means the
+ * same row, group and letters to both), the GPU's scores by part, each label's train rows for the commonest-label
+ * baseline, and the GPU's too_long count. Throws with a sentence when a split's rows don't match the spec (another
+ * count, or a row of another label than its place says), since then the scored indexes can't be matched to rows.
+ */
+export function decisionScoringInput(
+  spec: DecisionSpec,
+  rows: { dev: readonly DecisionRow[]; test: readonly DecisionRow[] },
+  scores: { dev: readonly DecideScoreItem[]; test: readonly DecideScoreItem[] },
+  tooLong = 0,
+): DecisionScoringInput {
+  const part = (split: "dev" | "test"): DecisionPartInput => {
+    const want = splitLabels(spec, split);
+    const have = rows[split];
+    if (have.length !== want.length || have.some((r, i) => r?.label !== want[i])) {
+      throw new Error(`The dataset's ${split} rows don't match its spec, so the GPU's scores can't be matched to them.`);
+    }
+    const items = decisionItems({ question: spec.question, labels: spec.labels, rows: have, part: split }).map(
+      ({ index, row, group, labelIds, decline }) => ({ index, row, group, labelIds, decline }),
+    );
+    return { rows: have, items, scores: scores[split] };
+  };
+  return {
+    labels: spec.labels,
+    trainCounts: Object.fromEntries(spec.labels.map((l) => [l.id, spec.perLabel[l.id]?.train ?? 0])),
+    dev: part("dev"),
+    test: part("test"),
+    tooLong,
+  };
 }

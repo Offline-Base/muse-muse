@@ -6,8 +6,10 @@ import { decideRunSize, isDecideMode } from "@/lib/train/decision-datasets";
 import { quantParams } from "@/lib/train/hub-cards";
 import { cacheRegions, LambdaApiError, listInstanceTypes, pickGpu, type LambdaInstanceType } from "@/lib/train/lambda";
 import {
+  ADAPTER_RECIPE,
   adapterProblem,
   clampLimits,
+  DECIDE_MODE,
   datasetModeProblem,
   type DecideRunSize,
   isQuantRecipe,
@@ -177,7 +179,8 @@ export const GET = route(async (req: Request) => {
 
 /**
  * POST {recipe, title?, params?, instanceType?, maxMinutes?, maxUsd?} -> 201 {job}. Admins or automation only.
- * Queues the job and starts the trainJob workflow, which launches the instance. Limits are what the admin asked for,
+ * Queues the job and starts the trainJob workflow, which launches the instance (with mode "decide" for a glimmer-lora
+ * job in decide mode, which the workflow scores after its run instead of judging). Limits are what the admin asked for,
  * capped by the platform ceilings, with the recipe's defaults (also capped) for a limit not asked for. A dataset param
  * must name a dataset that is ready and fits the job's mode: a decision dataset in decide mode, a chat one otherwise
  * (datasetModeProblem); a decide job's run estimate comes from what that dataset makes it train and score
@@ -338,7 +341,10 @@ export const POST = route(async (req: Request) => {
 
   let runId: string;
   try {
-    runId = (await start(trainJob, [{ jobId: job.id }])).runId;
+    // A decide job is scored after its run instead of judged (docs/DECISION_MODELS.md, "Scoring"); every other job's
+    // input is as it was.
+    const decideJob = recipe.id === ADAPTER_RECIPE && isDecideMode(params.value);
+    runId = (await start(trainJob, [{ jobId: job.id, ...(decideJob ? { mode: DECIDE_MODE } : {}) }])).runId;
   } catch (err) {
     console.error("[train/jobs] start", err);
     await setStatus(job.id, "failed", {
