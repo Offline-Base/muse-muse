@@ -762,6 +762,8 @@ are never stored or used.
   necessary lessons, id want to also modernize muse open". Lambda, AWS or GCP only, not Fireworks. See the 2:00 to 2:15 PM
   entry for the routes checked. Needs before it can start: Hugging Face access to the gated weights (owner), `gcloud auth
   login` (owner), and a budget above the current AWS limit if it uses a 16-GPU reservation.
+  Shelved the same day: the owner judged it not feasible at these costs (cheapest real route about $5,500 to $6,100 for one
+  day of 16 B200s on AWS, plus a test day).
 
 - Whether to publish weights (CC-NEWS copyright question; Spark Open-written data makes the model a Muse Model
   License derivative).
