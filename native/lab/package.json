@@ -1,0 +1,13 @@
+{
+  "name": "musemuse-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Muse Muse device lab agent. It runs on the AWS Mac and Windows boxes, claims check jobs from the platform, and uploads the results. See docs/NATIVE_LAB.md.",
+  "type": "module",
+  "bin": {
+    "musemuse-lab": "agent.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
