@@ -1,0 +1,89 @@
+--- phase 1 firewall free: exit 0 in 26 s
+iptables:  nft: 
+{"ok":true,"keyHeld":true,"mode":"refuse","spent":0}
+== control: no custom endpoint, so everything should hit the sink
+bridge exit 1
+[c0-control] proxy requests 0: {}
+[c0-control] direct calls that hit the sink 0: {}
+[c0-control] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c0-control] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/modelRetryScheduled":1,"turn/completed":1,"session/closed":1}
+[c0-control] calls: session/resume:FAIL {"message":"session 01a1932c-a257-7b81-86b2-72db344134b8 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[c0-control] stderr: muse serve: exit reason recorded: stdin_closed
+
+[c0-control] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike-firewall-refused-this-direct-call (after 2 provider attempts)","retryable":false},"reason":"API error 403: spike-firewall-refused-this-direct-call (after 2 provider attempts)"}]
+[c0-control] exit: {"code":1,"reason":"failed: API error 403: spike-firewall-refused-this-direct-call (after 2 provider attempts)","finalText":""}
+[c0-control] timing from bridge start: first note 1025 ms, prompt taken 1048 ms, end 6085 ms
+
+== base_url alone, with a key in the env (the binary's text says the bearer is withheld)
+bridge exit 1
+[c1-base] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- refused:mode_refuse":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[c1-base] direct calls that hit the sink 0: {}
+[c1-base] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c1-base] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[c1-base] calls: session/resume:FAIL {"message":"session 01a1932c-babe-7486-8187-33dd9644e9b7 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[c1-base] stderr: muse serve: exit reason recorded: stdin_closed
+
+[c1-base] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[c1-base] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[c1-base] timing from bridge start: first note 410 ms, prompt taken 419 ms, end 4462 ms
+
+== base_url and auth=bearer
+bridge exit 1
+[c2-bearer] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- refused:mode_refuse":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[c2-bearer] direct calls that hit the sink 0: {}
+[c2-bearer] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c2-bearer] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[c2-bearer] calls: session/resume:FAIL {"message":"session 01a1932c-ccb8-7d26-8a69-c35d8c4259b5 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[c2-bearer] stderr: muse serve: exit reason recorded: stdin_closed
+
+[c2-bearer] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[c2-bearer] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[c2-bearer] timing from bridge start: first note 576 ms, prompt taken 586 ms, end 4623 ms
+
+== base_url and auth=bearer, telemetry and feature config off
+bridge exit 1
+[c3-quiet] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- refused:mode_refuse":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[c3-quiet] direct calls that hit the sink 0: {}
+[c3-quiet] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c3-quiet] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[c3-quiet] calls: session/resume:FAIL {"message":"session 01a1932c-df57-76a9-8e75-b0cb69461bb3 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[c3-quiet] stderr: muse serve: exit reason recorded: stdin_closed
+
+[c3-quiet] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[c3-quiet] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[c3-quiet] timing from bridge start: first note 440 ms, prompt taken 448 ms, end 4482 ms
+
+== keyless: base_url alone, no key anywhere
+bridge exit 1
+[c4-keyless] proxy requests 0: {}
+[c4-keyless] direct calls that hit the sink 0: {}
+[c4-keyless] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c4-keyless] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[c4-keyless] calls: session/resume:FAIL {"message":"session 01a1932c-f172-7b71-8f40-149ee74ba898 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[c4-keyless] stderr: muse serve: exit reason recorded: stdin_closed
+
+[c4-keyless] turns: [{"terminal":"failed","error":{"kind":"authRequired","message":"not logged in: run /login to add an API key","retryable":false},"reason":"not logged in: run /login to add an API key"}]
+[c4-keyless] exit: {"code":1,"reason":"failed: not logged in: run /login to add an API key","finalText":""}
+[c4-keyless] timing from bridge start: first note 249 ms, prompt taken 259 ms, end 4287 ms
+
+== a wrong key must refuse loudly
+bridge exit 2
+[c5-wrongkey] proxy requests 0: {}
+[c5-wrongkey] direct calls that hit the sink 0: {}
+[c5-wrongkey] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[c5-wrongkey] bridge notes: {}
+[c5-wrongkey] calls: 
+[c5-wrongkey] stderr: muse serve: -c endpoint_transport.nope: refusing run: unknown key: no such setting (see `--help` for the -c/--config shape)
+usage: muse serve [OPTIONS] (run `muse serve --help` for options)
+
+[c5-wrongkey] turns: []
+[c5-wrongkey] exit: {"code":2,"reason":"host did not start: connection reached EOF","finalText":""}
+[c5-wrongkey] timing from bridge start: first note - ms, prompt taken - ms, end 45 ms
+
+== firewall check: stand-in straight to the real host, skipping /etc/hosts
+catalog with the stand-in via firewall: 403
+example.com: 000 exit 6
+
+[stderr]
+/etc/hosts: Read-only file system (os error 30)
+

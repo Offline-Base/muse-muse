@@ -1,0 +1,96 @@
+--- phase 2 firewall catalog: exit 0 in 26 s
+== control: no custom endpoint. Every direct connection should show here, or HTTPS_PROXY is ignored
+bridge exit 1
+[d0-control] proxy requests 0: {}
+[d0-control] direct connections refused by the sink 12: {"CONNECT api.meta.ai:443":12}
+[d0-control] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:47866","? [::ffff:169.254.0.1]:47704","? [::ffff:169.254.0.1]:47806","? [::ffff:169.254.0.1]:47932","? [::ffff:169.254.0.1]:47856","? [::ffff:169.254.0.1]:52494","? [::ffff:169.254.0.1]:47660"] npm tunnels 0
+[d0-control] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[d0-control] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/modelRetryScheduled":3,"turn/completed":1,"session/closed":1}
+[d0-control] calls: session/resume:FAIL {"message":"session 01a1932e-6b06-7d91-858f-e4503d4c5ea9 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[d0-control] stderr: muse serve: exit reason recorded: stdin_closed
+
+[d0-control] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"transport error: error sending request for url (https://api.meta.ai/v1/responses) (after 4 provider attempts)","retryable":false},"reason":"transport error: error sending request for url (https://api.meta.ai/v1/responses) (after 4 provider attempts)"}]
+[d0-control] exit: {"code":1,"reason":"failed: transport error: error sending request for url (https://api.meta.ai/v1/responses) (after 4 provider attempts)","finalText":""}
+[d0-control] timing from bridge start: first note 976 ms, prompt taken 1001 ms, end 6039 ms
+
+== endpoint, telemetry and feature config at their defaults
+bridge exit 1
+[d1-endpoint] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[d1-endpoint] direct connections refused by the sink 7: {"CONNECT api.meta.ai:443":7}
+[d1-endpoint] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:47866","? [::ffff:169.254.0.1]:47704","? [::ffff:169.254.0.1]:47806","? [::ffff:169.254.0.1]:47932","? [::ffff:169.254.0.1]:47856","? [::ffff:169.254.0.1]:52494","? [::ffff:169.254.0.1]:47660","MainThread 57.144.230.141:443"] npm tunnels 0
+[d1-endpoint] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[d1-endpoint] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[d1-endpoint] calls: session/resume:FAIL {"message":"session 01a1932e-832d-7941-809e-7cad4e4239a4 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[d1-endpoint] stderr: muse serve: exit reason recorded: stdin_closed
+
+[d1-endpoint] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[d1-endpoint] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[d1-endpoint] timing from bridge start: first note 454 ms, prompt taken 524 ms, end 4560 ms
+
+== endpoint, telemetry and feature config off
+bridge exit 1
+[d2-quiet] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[d2-quiet] direct connections refused by the sink 0: {}
+[d2-quiet] non-loopback sockets seen by ss: ["MainThread 57.144.230.141:443","? [::ffff:169.254.0.1]:47866","? [::ffff:169.254.0.1]:47704","? [::ffff:169.254.0.1]:47806","? [::ffff:169.254.0.1]:47932","? [::ffff:169.254.0.1]:47856","? [::ffff:169.254.0.1]:52494","? [::ffff:169.254.0.1]:47660"] npm tunnels 0
+[d2-quiet] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[d2-quiet] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[d2-quiet] calls: session/resume:FAIL {"message":"session 01a1932e-958a-762e-8775-c277b0464cae not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[d2-quiet] stderr: muse serve: exit reason recorded: stdin_closed
+
+[d2-quiet] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[d2-quiet] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[d2-quiet] timing from bridge start: first note 447 ms, prompt taken 455 ms, end 4487 ms
+
+== endpoint, reminders at their defaults
+bridge exit 1
+[d3-reminders] proxy requests 3: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":2}
+[d3-reminders] direct connections refused by the sink 0: {}
+[d3-reminders] non-loopback sockets seen by ss: ["MainThread 57.144.230.141:443","? [::ffff:169.254.0.1]:47932"] npm tunnels 0
+[d3-reminders] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[d3-reminders] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":2,"item/started":1,"turn/completed":1,"session/closed":1}
+[d3-reminders] calls: session/resume:FAIL {"message":"session 01a1932e-a7a9-7c12-8782-41433541aca5 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[d3-reminders] stderr: muse serve: exit reason recorded: stdin_closed
+
+[d3-reminders] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[d3-reminders] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[d3-reminders] timing from bridge start: first note 457 ms, prompt taken 527 ms, end 4569 ms
+
+== endpoint, auth none and no key
+bridge exit 1
+[d4-authnone] proxy requests 2: {"GET /muse-code/models auth=none model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=none model=muse-spark-1.3 stream=true bg=- ct=application/json refused:mode_refuse":1}
+[d4-authnone] direct connections refused by the sink 0: {}
+[d4-authnone] non-loopback sockets seen by ss: ["MainThread 57.144.230.141:443","? [::ffff:169.254.0.1]:47932"] npm tunnels 0
+[d4-authnone] proxy metered: 0 calls, {"input":0,"cached":0,"output":0,"cost":0}
+[d4-authnone] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":1,"turn/completed":1,"session/closed":1}
+[d4-authnone] calls: session/resume:FAIL {"message":"session 01a1932e-ba24-7e58-868f-3eb4514673bd not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[d4-authnone] stderr: muse serve: exit reason recorded: stdin_closed
+
+[d4-authnone] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[d4-authnone] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+[d4-authnone] timing from bridge start: first note 450 ms, prompt taken 552 ms, end 4586 ms
+
+== catalog: what comes back for the Contributor model
+{"id":"muse-wonder-1.0","efforts":[]}
+{"id":"muse-spark-1.3-contributor","efforts":[]}
+{"id":"muse-spark-1.3","efforts":[]}
+{"id":"muse-image-1.0","efforts":[]}
+{"id":"muse-spark-1.2-contributor","efforts":[]}
+{"id":"muse-spark-1.2","efforts":[]}
+== model-catalog copy in home
+total 308
+drwxr-xr-x 10 ubuntu ubuntu    219 Oct 31 18:18 .
+drwxr-xr-x  4 ubuntu ubuntu     34 Oct 28 17:40 ..
+drwx------  3 ubuntu ubuntu     23 Oct 28 17:40 local-tracing
+drwxr-xr-x  2 ubuntu ubuntu     36 Oct 31 18:17 model-catalog
+drwxr-xr-x  3 ubuntu ubuntu     19 Oct 28 17:41 plugins
+drwx------  2 ubuntu ubuntu    246 Oct 31 18:17 rewind-progress-v2
+-rw-r--r--  1 ubuntu ubuntu    721 Oct 31 18:18 serve-exit.jsonl
+-rw-r--r--  1 ubuntu ubuntu 311296 Oct 31 18:18 session-index.db
+drwx------  2 ubuntu ubuntu     52 Oct 31 18:17 session-name-authority
+total 4
+drwx------  3 ubuntu ubuntu   23 Oct 28 17:40 .
+drwxr-xr-x 10 ubuntu ubuntu  219 Oct 31 18:18 ..
+drwx------  2 ubuntu ubuntu 4096 Oct 31 18:17 bootstrap
+
+[stderr]
+

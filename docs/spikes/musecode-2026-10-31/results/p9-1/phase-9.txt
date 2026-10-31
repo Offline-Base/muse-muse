@@ -1,0 +1,7 @@
+--- phase 9 firewall free: exit 0 in 5 s
+bridge started at 5321 ms from create
+{"firstLogS":"4.78","sessionStartedS":"5.57","turnStartedS":"5.59"}
+first model call reached the proxy 5.62 s
+
+[stderr]
+

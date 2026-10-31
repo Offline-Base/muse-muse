@@ -1,0 +1,48 @@
+--- phase 8 firewall proxy: exit 0 in 34 s
+== task b with a made-up CSV
+bridge exit 0
+task b2: 19708 ms
+[t-b2] proxy requests 5: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":4}
+[t-b2] direct connections refused by the sink 0: {}
+[t-b2] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:55826","? [::ffff:169.254.0.1]:55624","? [::ffff:169.254.0.1]:55852","? [::ffff:169.254.0.1]:55372","? [::ffff:169.254.0.1]:55870","? [::ffff:169.254.0.1]:55598","MainThread 57.144.74.141:443"] npm tunnels 0
+[t-b2] proxy metered: 4 calls, {"input":102853,"cached":76115,"output":1206,"cost":0.003068}
+[t-b2] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":4}
+[t-b2] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":7,"session/tokenUsage":4,"session/contextUsage":7,"item/started":5,"item/delta":17,"item/updated":2,"turn/completed":1,"session/closed":1}
+[t-b2] calls: session/resume:FAIL {"message":"session 01a1933b-e64b-7420-8c9d-5152c84549b5 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[t-b2] stderr: muse serve: exit reason recorded: stdin_closed
+
+[t-b2] turns: [{"terminal":"completed"}]
+[t-b2] tokenUsage events 4, last: {"cumulative":{"cacheReadTokens":76115,"outputTokens":1206,"promptTokens":102853,"totalTokens":104059},"durationMs":1084,"modelId":"muse-spark-1.3-contributor","promptTokens":26614,"sessionId":"01a1933b-e64b-7420-8c9d-5152c84549b5","sourceRange":{"first":{"id":"01a1933c-22fc-7a40-84c0-7f2a1539c388","sequence":134},"last":{"id":"01a1933c-22fc-7a40-84c0-7f2a1539c388","sequence":134},"stream":{"id":"01a1933b-e64b-7420-8c9d-5152c84549b5","kind":"session"}},"totalTokens":26689,"turnId":"01a1933b-ec0b-7000-b80e-74c91bb9b816","usage":{"cacheReadTokens":25585,"cacheWr
+[t-b2] session/tokenUsage summed: {"input":102853,"cached":76115,"output":1206} cost 0.003067 (proxy 0.003068, 4 proxy calls, 4 usage events)
+[t-b2] exit: {"code":0,"reason":"completed","finalText":"Done. Created [index.html](/tmp/ws-b2/index.html), which embeds the 4 rows from [people.csv](/tmp/ws-b2/people.csv) in a table. Clicking a column header sorts by that column; clicking again reverses the order.\n\nOpen it in a browser to view it."}
+[t-b2] timing from bridge start: first note 1408 ms, prompt taken 1433 ms, end 19531 ms
+total 8
+drwxr-xr-x  2 ubuntu ubuntu   42 Oct 31 18:32 .
+drwxrwxrwt 10 root   root    171 Oct 31 18:32 ..
+-rw-r--r--  1 ubuntu ubuntu 2148 Oct 31 18:32 index.html
+-rw-r--r--  1 ubuntu ubuntu  194 Oct 31 18:32 people.csv
+== does the page work, in the sandbox's own Chromium
+/vercel/.cache/ms-playwright/chromium-1248
+/vercel/.cache/ms-playwright/chromium_headless_shell-1248
+/vercel/.cache/ms-playwright/ffmpeg-1013
+playwright: /vercel/app/node_modules/@playwright/test
+{"page0":"index.html","before":["Ada Sample","Bo Placeholder","Cy Madeup","Di Fictional"],"once":["Ada Sample","Bo Placeholder","Cy Madeup","Di Fictional"],"twice":["Ada Sample","Bo Placeholder","Cy Madeup","Di Fictional"]}
+1
+5
+
+== a turn with the catalog route refused
+bridge exit 0
+[n1] proxy requests 3: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- refused:mode_refuse":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":2}
+[n1] proxy metered: 2 calls, {"input":50489,"cached":24945,"output":183,"cost":0.002641}
+[n1] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":2}
+[n1] turns: [{"terminal":"completed"}]
+[n1] session/tokenUsage summed: {"input":50489,"cached":24945,"output":183} cost 0.002641 (proxy 0.002641, 2 proxy calls, 2 usage events)
+[n1] exit: {"code":0,"reason":"completed","finalText":"DONE\n"}
+n.txt
+{"t":1793471554303,"kind":"note","method":"session/contextUsage","params":{"pressure":"normal","sessionId":"01a1933b-e64b-7420-8c9d-5152c84549b5","sourceRange":{"first":{"id":"01a1933c-22fc-7a40-84c0-7f2a1539c388","sequence":134},"last":{"id":"01a1933c-22fc-7a40-84c0-7f2a1539c388","sequence":134},"s
+== all refused
+n1 GET /muse-code/models undefined mode_refuse
+{"ok":true,"keyHeld":true,"mode":"forward","spent":0.005708120000000001}
+
+[stderr]
+

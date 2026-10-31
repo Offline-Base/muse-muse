@@ -1,0 +1,20 @@
+user ubuntu, cwd /tmp/ws-g1
+env names: ALL_PROXY AWS_CA_BUNDLE CARGO_HTTP_CAINFO CLAUDE_CODE_TOOL_USE_ID CURL_CA_BUNDLE GIT_SSL_CAINFO GRPC_DEFAULT_SSL_ROOTS_FILE_PATH HOME HTTPS_PROXY HTTP_PROXY LANG META_API_KEY MUSE_LOGIN MUSE_NO_AUTO_UPDATE MUSE_RELEASE_INFO MUSE_SESSION_ID MUSE_THREAD_ID MUSE_TOOL_USE_ID NODE_EXTRA_CA_CERTS NODE_USE_SYSTEM_CA NO_PROXY NPM_CONFIG_CAFILE OLDPWD PATH PIP_CERT PWD REQUESTS_CA_BUNDLE SHELL SHLVL SSL_CERT_FILE TRACEPARENT all_proxy http_proxy https_proxy no_proxy
+META_API_KEY in this shell: yes
+files read: 3731
+/proc: 22 readable, 0 refused
+hash matches: standIn in this shell's env x1; placeholder in /proc/666/environ x1; placeholder in /proc/668/environ x1; standIn in /proc/680/environ x1; standIn in /proc/689/environ x1; standIn in /proc/692/environ x1; standIn in /proc/727/environ x1; standIn in /proc/728/environ x1; standIn in /proc/739/environ x1; standIn in /proc/771/environ x1; standIn in /proc/772/environ x1
+real key found anywhere: no
+placeholder found anywhere as this user: YES
+direct https://example.com: http 000 exit 6
+direct http://example.com: http 000 exit 6
+direct https://github.com: http 000 exit 6
+direct api.meta.ai, no key: http 403 exit 0 firewall refusal body
+direct api.meta.ai with the shell's key: http 403 exit 0 firewall refusal body
+direct registry.npmjs.org: http 200 exit 0
+sudo -n true: exit 0
+bin folder: .muse-release-info.json 256; .muse-version 15; fx 14037136; muse 32737; muse-bin-1.4.14-R7309.1 414927192
+copy the binary into the workspace: exit 0: 414927192 | identical | Muse Code 1.4.14 (1.4.14-R7309.1) | 
+binary size gzipped: 170566950 bytes
+parent exe and processes: /usr/local/bin/node
+root     MainThread;root     sudo;ubuntu   MainThread;ubuntu   bash;ubuntu   head;ubuntu   muse-bin-1.4.14;ubuntu   ps;ubuntu   sandbox-init;ubuntu   sh;ubuntu   sort;ubuntu   timeout;ubuntu   tr;

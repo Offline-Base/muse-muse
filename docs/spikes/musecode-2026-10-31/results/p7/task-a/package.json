@@ -1,0 +1,1 @@
+{"name": "csv-dedupe", "private": true, "type": "commonjs", "scripts": {"test": "node --test"}, "engines": {"node": ">=18"}}

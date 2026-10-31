@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #999; padding: 0.4rem 0.8rem; text-align: left; }
+th button { all: unset; cursor: pointer; font-weight: bold; }
+th button:focus-visible { outline: 2px solid blue; }
+th .arrow { font-weight: normal; }
+</style>
+</head>
+<body>
+<h1>People</h1>
+<table id="people">
+  <thead>
+    <tr>
+      <th><button data-col="0">Name <span class="arrow" aria-hidden="true"></span></button></th>
+      <th><button data-col="1">Email <span class="arrow" aria-hidden="true"></span></button></th>
+      <th><button data-col="2">City <span class="arrow" aria-hidden="true"></span></button></th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+<script>
+const rows = [
+  ["Ada Sample", "ada@example.invalid", "Springfield"],
+  ["Bo Placeholder", "bo@example.invalid", "Shelbyville"],
+  ["Cy Madeup", "cy@example.invalid", "Ogdenville"],
+  ["Di Fictional", "di@example.invalid", "North Haverbrook"]
+];
+const tbody = document.querySelector("#people tbody");
+const arrows = document.querySelectorAll("#people th .arrow");
+let sortCol = -1, ascending = true;
+
+function render() {
+  tbody.textContent = "";
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    for (const cell of row) {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  arrows.forEach((a, i) => {
+    a.textContent = i === sortCol ? (ascending ? "▲" : "▼") : "";
+  });
+}
+
+document.querySelectorAll("#people th button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const col = Number(btn.dataset.col);
+    if (col === sortCol) {
+      ascending = !ascending;
+    } else {
+      sortCol = col;
+      ascending = true;
+    }
+    rows.sort((a, b) => ascending
+      ? a[col].localeCompare(b[col])
+      : b[col].localeCompare(a[col]));
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>

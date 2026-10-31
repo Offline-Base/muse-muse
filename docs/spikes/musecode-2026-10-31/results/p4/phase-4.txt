@@ -1,0 +1,22 @@
+--- phase 4 firewall proxy: exit 0 in 9 s
+bridge exit 0
+[f1-ready] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":1}
+[f1-ready] direct connections refused by the sink 0: {}
+[f1-ready] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:53004","? [::ffff:169.254.0.1]:53034","? [::ffff:169.254.0.1]:53126","? [::ffff:169.254.0.1]:53090","? [::ffff:169.254.0.1]:53032","? [::ffff:169.254.0.1]:53056","? [::ffff:169.254.0.1]:53070","MainThread 57.145.2.141:443"] npm tunnels 0
+[f1-ready] proxy metered: 1 calls, {"input":25129,"cached":0,"output":21,"cost":0.002517}
+[f1-ready] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":1}
+[f1-ready] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":2,"item/started":1,"item/delta":1,"session/tokenUsage":1,"session/contextUsage":1,"turn/completed":1,"session/closed":1}
+[f1-ready] calls: session/resume:FAIL {"message":"session 01a19331-a194-74d3-8cc7-f632e0455682 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[f1-ready] stderr: muse serve: exit reason recorded: stdin_closed
+
+[f1-ready] turns: [{"terminal":"completed"}]
+[f1-ready] tokenUsage events 1, last: {"cumulative":{"outputTokens":21,"promptTokens":25129,"totalTokens":25150},"durationMs":3397,"modelId":"muse-spark-1.3-contributor","promptTokens":25129,"sessionId":"01a19331-a194-74d3-8cc7-f632e0455682","sourceRange":{"first":{"id":"01a19331-b448-7f62-942e-41e5d3a73883","sequence":44},"last":{"id":"01a19331-b448-7f62-942e-41e5d3a73883","sequence":44},"stream":{"id":"01a19331-a194-74d3-8cc7-f632e0455682","kind":"session"}},"totalTokens":25150,"turnId":"01a19331-a6a7-7000-8979-598850188625","usage":{"cacheReadTokens":0,"cacheWriteTokens":0,"cachedTokens":0,"inputTokens":25129,"outputTokens":21,"reasoningTokens":11},"viewCursor":"v4:01a19331-a194-74d3-8cc7-f632e0455682:6"}
+[f1-ready] exit: {"code":0,"reason":"completed","finalText":"READY"}
+[f1-ready] timing from bridge start: first note 1227 ms, prompt taken 1259 ms, end 8310 ms
+{"t":1793470866618,"label":"f1-ready","n":1,"method":"GET","path":"/muse-code/models","contentType":null,"size":0,"auth":"standin","mode":"forward","forwarded":true,"status":200,"contentTypeOut":"application/json","ms":392,"ttfbMs":390,"bytes":4900,"respModel":null,"usage":null,"costUsd":0,"spentUsd":0}
+{"t":1793470870612,"label":"f1-ready","n":2,"method":"POST","path":"/v1/responses","contentType":"application/json","size":116109,"auth":"standin","mode":"forward","model":"muse-spark-1.3-contributor","stream":true,"background":null,"tools":1,"toolKinds":["namespace:muse[28]"],"effort":"low","inputItems":2,"prevResp":false,"instrLen":48417,"instrSha":"d321093d40","store":false,"safetyId":false,"bodyKeys":["include","input","instructions","max_output_tokens","model","prompt_cache_key","reasoning","store","stream","tools"],"forwarded":true,"status":200,"contentTypeOut":"text/event-stream","ms":3401,"ttfbMs":2992,"bytes":290803,"respModel":"muse-spark-1.3-contributor","usage":{"input":25129,"cached":0,"output":21,"reasoning":11},"costUsd":0.002517,"spentUsd":0.002517}
+{"t":1793470870609,"kind":"note","method":"session/tokenUsage","params":{"cumulative":{"outputTokens":21,"promptTokens":25129,"totalTokens":25150},"durationMs":3397,"modelId":"muse-spark-1.3-contributor","promptTokens":25129,"sessionId":"01a19331-a194-74d3-8cc7-f632e0455682","sourceRange":{"first":{"id":"01a19331-b448-7f62-942e-41e5d3a73883","sequence":44},"last":{"id":"01a19331-b448-7f62-942e-41e5d3a73883","sequence":44},"stream":{"id":"01a19331-a194-74d3-8cc7-f632e0455682","kind":"session"}},"totalTokens":25150,"turnId":"01a19331-a6a7-7000-8979-598850188625","usage":{"cacheReadTokens":0,"cacheWriteTokens":0,"cachedTokens":0,"inputTokens":25129,"outputTokens":21,"reasoningTokens":11},"viewCursor":"v4:01a19331-a194-74d3-8cc7-f632e0455682:6"}}
+{"ok":true,"keyHeld":true,"mode":"forward","spent":0.0025171}
+
+[stderr]
+

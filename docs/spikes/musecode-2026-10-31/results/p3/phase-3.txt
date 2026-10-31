@@ -1,0 +1,79 @@
+--- phase 3 firewall catalog: exit 0 in 56 s
+== control, no custom endpoint
+bridge exit 1
+[e0-control] proxy requests 0: {}
+[e0-control] direct connections refused by the sink 13: {"CONNECT api.meta.ai:443":4,"GET /muse-code/models ct=- auth=true":1,"POST /muse-code/telemetry/logs ct=application/x-protobuf auth=true":5,"POST /v1/responses ct=application/json auth=true":1,"POST /muse-code/telemetry/traces ct=application/x-protobuf auth=true":2}
+[e0-control] stderr: muse serve: exit reason recorded: stdin_closed
+[e0-control] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike sink: direct call refused","retryable":false},"reason":"API error 403: spike sink: direct call refused"}]
+[e0-control] exit: {"code":1,"reason":"failed: API error 403: spike sink: direct call refused","finalText":""}
+
+== endpoint, everything else at its default
+bridge exit 1
+[e1-endpoint] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[e1-endpoint] direct connections refused by the sink 10: {"CONNECT api.meta.ai:443":3,"POST /muse-code/telemetry/logs ct=application/x-protobuf auth=true":5,"POST /muse-code/telemetry/traces ct=application/x-protobuf auth=true":2}
+[e1-endpoint] stderr: muse serve: exit reason recorded: stdin_closed
+[e1-endpoint] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e1-endpoint] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, telemetry off
+bridge exit 1
+[e2-tele] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[e2-tele] direct connections refused by the sink 0: {}
+[e2-tele] stderr: muse serve: exit reason recorded: stdin_closed
+[e2-tele] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e2-tele] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, feature config off
+bridge exit 1
+[e3-feat] proxy requests 2: {"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1,"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1}
+[e3-feat] direct connections refused by the sink 10: {"CONNECT api.meta.ai:443":3,"POST /muse-code/telemetry/logs ct=application/x-protobuf auth=true":5,"POST /muse-code/telemetry/traces ct=application/x-protobuf auth=true":2}
+[e3-feat] stderr: muse serve: exit reason recorded: stdin_closed
+[e3-feat] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e3-feat] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, both off
+bridge exit 1
+[e4-quiet] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[e4-quiet] direct connections refused by the sink 0: {}
+[e4-quiet] stderr: muse serve: exit reason recorded: stdin_closed
+[e4-quiet] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e4-quiet] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, both off, web tools at their default
+bridge exit 1
+[e5-web] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[e5-web] direct connections refused by the sink 0: {}
+[e5-web] stderr: muse serve: exit reason recorded: stdin_closed
+[e5-web] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e5-web] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, both off, reminders on, the contributor catalog row (the trap)
+bridge exit 1
+[e6-row] proxy requests 3: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":2}
+[e6-row] direct connections refused by the sink 0: {}
+[e6-row] stderr: muse serve: exit reason recorded: stdin_closed
+[e6-row] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e6-row] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+== endpoint, both off, reminders on, no row
+bridge exit 1
+[e7-norow] proxy requests 3: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":2}
+[e7-norow] direct connections refused by the sink 0: {}
+[e7-norow] stderr: muse serve: exit reason recorded: stdin_closed
+[e7-norow] turns: [{"terminal":"failed","error":{"kind":"modelError","message":"API error 403: spike proxy: mode_refuse (spike_proxy)","retryable":false},"reason":"API error 403: spike proxy: mode_refuse (spike_proxy)"}]
+[e7-norow] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+e6-row /v1/responses muse-spark-1.3-contributor size 116756 tools ["namespace:muse[29]"] instr d321093d40 48417 low
+e6-row /v1/responses muse-spark-1.3-contributor size 60058 tools ["namespace:muse[1]"] instr d321093d40 48417 low
+e7-norow /v1/responses muse-spark-1.3-contributor size 116758 tools ["namespace:muse[29]"] instr d321093d40 48417 low
+e7-norow /v1/responses muse-spark-1.3-contributor size 60058 tools ["namespace:muse[1]"] instr d321093d40 48417 low
+== exec: --base-url alone
+{"schema_version":1,"id":"019e8ff1-0d40-7c69-b73e-9291140d9bc5","stream":{"kind":"exec.usage","id":"01a19330-9c86-7e40-92ae-c75453f54667"},"sequence":1,"recorded_at":1780531400000026,"record_type":"status","durability":"ephemeral","causation_id":"01a19330-9e8e-7b62-9ec4-b10941e33bf8","payload_type":
+{"schema_version":1,"id":"018f0000-0000-7000-8000-00000000c36a","stream":{"kind":"session","id":"01a19330-9c86-7e40-92ae-c75453f54667"},"sequence":15,"recorded_at":1780531400000026,"record_type":"event","durability":"durable","causation_id":"01a19330-9e8e-7b62-9ec4-b10941e33bf8","payload_type":"run.
+run ended with Failed: API error 403: spike proxy: mode_refuse (spike_proxy)
+exit 0
+[e8-exec] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[e8-exec] direct connections refused by the sink 0: {}
+
+[stderr]
+

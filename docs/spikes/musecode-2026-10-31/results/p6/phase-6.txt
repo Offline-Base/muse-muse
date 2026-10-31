@@ -1,0 +1,80 @@
+--- phase 6 firewall catalog: exit 0 in 43 s
+== compaction settings, each alone
+bridge exit 1
+[h1] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[h1] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+bridge exit 1
+[h2] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[h2] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+bridge exit 2
+[h3] proxy requests 0: {}
+[h3] exit: {"code":2,"reason":"host did not start: connection reached EOF","finalText":""}
+
+bridge exit 2
+[h4] proxy requests 0: {}
+[h4] exit: {"code":2,"reason":"host did not start: connection reached EOF","finalText":""}
+
+bridge exit 2
+[h5] proxy requests 0: {}
+[h5] exit: {"code":2,"reason":"host did not start: connection reached EOF","finalText":""}
+
+== the keyless rewrite
+bridge exit 1
+[k1] proxy requests 2: {"GET /muse-code/models auth=none model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=none model=muse-spark-1.3 stream=true bg=- ct=application/json refused:mode_refuse":1}
+[k1] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+bridge exit 1
+[k2] proxy requests 2: {"GET /muse-code/models auth=none model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=none model=muse-spark-1.3 stream=true bg=- ct=application/json refused:mode_refuse":1}
+[k2] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+bridge exit 1
+[k3] proxy requests 2: {"GET /muse-code/models auth=none model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=none model=muse-spark-1.3 stream=true bg=- ct=application/json refused:mode_refuse":1}
+[k3] exit: {"code":1,"reason":"failed: API error 403: [REDACTED] proxy: mode_refuse ([REDACTED]_proxy)","finalText":""}
+
+== strings about the shell tool's environment
+dboxstrict_foreground_onlysandbox_write_denied_pathssandbox_required_config_dirsandbox_extra_entriesenvironment_policyEnvironmentConfigurationinheritinclude_onlyexcludemanagerIndexoriginal_pathpartsAgentTreeHistoryCursorroot_agent_idroot_
+dboxstrict_foreground_onlysandbox_write_denied_pathssandbox_required_config_dirsandbox_extra_entriesenvironment_policyinheritinclude_onlyexcludemanagerSessionStartCommandPayloadV3activation_sourceSessionStartCommandPayloadV4developer_prom
+eparation_diagnostic.rs:57tbh.local.sandboxeventprofilefilesystem_policynetwork_policybackendoutcomeenvironment_policy_presenttbh_sandbox::preparation_diagnosticfbcode/musecode/build/src/crates/sandbox/core/src/preparation_diagnostic.rsev
+n this platformruntime sandbox disabled explicitlysandbox enforcement delegated to external boundaryshell_environment_policyLinux Bubblewrap selection was requested for a non-Linux backendLinux helper payload directory initializa
+ the base_url in settings `endpoint_transport` AND pin its `auth = "bearer"` (a settings pin does not vouch for a --base-url flag).TBH_TMUX_RUN_STATUS_PATH/record/root_session_id/record/root_agent_id/record/spawn_decision/comm
+/muse-code/confighttps://openrouter.ai/api/v1OpenAI auth=none requires a proxy or complete mTLS identityOpenAI mTLS requires an https base URLClaude CodeCodexAGENTS.md
+er web_fetch transport is unavailable/muse-code/browser_openauth=bearer requires an api key, but none was provideda proxy and an mTLS identity are mutually exclusive; set only onehttps://api.meta.ai/v1meta-provider-api/v1Clie
+}{remotefilelogpathsdefaultsystem_promptduplicate keyauth=bearer requires an api key, but none is configureda proxy and an mTLS identity are mutually exclusive; set only onemTLS requires both client_cert and client_key
+== sudo policy
+
+User ubuntu may run the following commands on 753c7569-cdb:
+    (ALL : ALL) ALL
+    (ALL) NOPASSWD: ALL
+total 12
+drwxr-xr-x  2 root root   35 Oct 28 13:39 .
+drwxr-xr-x 50 root root 4096 Oct 28 17:40 ..
+-r--r-----  1 root root  863 Jan 14  2026 README
+-r--r-----  1 root root   90 Oct 28 13:37 sandbox
+/dev/vdb on / type xfs (rw,noatime,nouuid,inode64,logbufs=8,logbsize=32k,noquota)
+/dev/vda on /etc/hosts type xfs (ro,relatime,inode64,logbufs=8,logbsize=32k,noquota)
+/dev/vda on /etc/resolv.conf type xfs (ro,relatime,inode64,logbufs=8,logbsize=32k,noquota)
+/dev/vda on /etc/pki/ca-trust/source/anchors/vercel-proxy-ca.pem type xfs (ro,relatime,inode64,logbufs=8,logbsize=32k,noquota)
+== locking the binary: root owned, execute only
+-rwx--x--x 1 root root 414927192 Oct 28 17:40 /vercel/.local/bin/muse-bin-1.4.14-R7309.1
+cat as ubuntu: exit 0 
+cp as ubuntu: exit 0 
+Muse Code 1.4.14 (1.4.14-R7309.1)
+bridge exit 1
+[l1] proxy requests 2: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json refused:mode_refuse":1}
+[l1] exit: {"code":1,"reason":"failed: API error 403: spike proxy: mode_refuse (spike_proxy)","finalText":""}
+
+exec help 0
+while serving, is the running binary readable through /proc?
+pid 1404
+lrwxrwxrwx 1 ubuntu ubuntu 0 Oct 31 18:26 /proc/1404/exe -> /vercel/.local/bin/muse-bin-1.4.14-R7309.1
+cat exe exit 0
+== taking sudo away
+sudo: a password is required
+sudo: unable to resolve host 753c7569-cdb: Temporary failure in name resolution
+sudo: a password is required
+sudo after: exit 1
+
+[stderr]
+

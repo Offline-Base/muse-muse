@@ -1,0 +1,93 @@
+--- phase 0b firewall free: exit 0 in 4 s
+bin /vercel/.local/bin/muse-bin-1.4.14-R7309.1
+== muse --help, rest
+          (default: off)
+      --worktree-base <REF>
+          Base ref for --worktree create (default: HEAD)
+      --worktree-existing <PATH>
+          Existing worktree path for --worktree existing
+      --parallel-tool-calls
+          Enable Meta API parallel tool calls
+      --no-parallel-tool-calls
+          Disable Meta API parallel tool calls
+      --subagent-worktree-isolation
+          Compatibility flag; capability defaults on. Only an affirmative
+          per-child request asks for isolation; omission stays shared. Requests
+          may reject when capability, provider, or Git prerequisites are
+          unavailable.
+      --approval-mode <MODE>
+          Tool approval mode: untrusted|on-request|never (default: on-request)
+      --permission-profile <ID>
+          Select a named permission profile for this session.
+      --approval-judge <off|on>
+          LLM approval judge for Prompt-bound calls (default: on)
+      --no-session-log
+          Do not persist session event logs to disk
+      --echo-delay-ms <MS>
+          Deterministic echo reply delay (echo provider only)
+
+Safety (approval and the sandbox are ON by default):
+      --yolo
+          Disable approval and sandbox, trust this workspace, enable async
+          questions (this run)
+      --disable-request-user-input
+          Withhold request_user_input for this run
+      --trust-workspace
+          Trust this workspace for this run (load its skills and rules); does
+          not save trust
+      --disable-approval
+          Disable tool approval prompts for this workspace run
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this run
+      --sandbox-network <MODE>
+          Sandbox network mode: restricted|enabled|proxy-only (default:
+          proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --enable-shell-tool
+          Use the legacy shell tool instead of the managed platform shell
+
+Run `muse <command> --help` for command-specific options.
+
+== muse exec --help (base url lines)
+11:          Read the provider API key from stdin
+12:      --provider <MODE>
+13:          Startup provider: echo or meta (default: meta)
+14-      --preset <NAME>
+15-          Run a built-in preset: native-basic, miniswe, empty, ac_orch,
+--
+20:          Model id for non-echo providers
+21:      --contributor-mode <on|off>
+22:          Per-run contributor mode override (this run only; never persisted)
+23-  -c, --config <KEY=VALUE>
+24-          Set one setting for this run (repeatable; values are JSON). Secrets
+--
+33:      --base-url <URL>
+34:          Override the provider base URL
+35-      --image <PATH>
+36-          Attach a local image file (repeatable)
+--
+53:          Shape the final answer with the JSON schema in FILE (meta provider
+54-          only)
+55-      --max-model-steps <N>
+--
+68:          may reject when capability, provider, or Git prerequisites are
+69-          unavailable.
+70-      --disable-web-tools
+== config --help
+Usage: muse config validate --plane <defaults|policy> --file <path>
+       muse config status
+
+validate checks an enterprise plane document ({"schema_version":1,"settings":{...}} for defaults), not the user's flat settings.json; unknown top-level settings.json members are named at startup instead.
+== launcher env
+MUSE_AUTH_PATH MUSE_CHANNEL MUSE_LAUNCHER_INSTALL MUSE_LOGIN MUSE_NO_AUTO_UPDATE MUSE_RELEASE_INFO MUSE_SYNC_UPDATE MUSE_UPDATE_INTERVAL_SECONDS 
+total 432
+drwxr-xr-x 2 ubuntu ubuntu     50 Oct 31 18:12 .
+drwxrwxrwt 8 root   root       97 Oct 31 18:12 ..
+-rw-r--r-- 1 ubuntu ubuntu    142 Oct 31 18:12 manifest.json
+-rw-r--r-- 1 ubuntu ubuntu 437708 Oct 31 18:12 msp.schema.json
+/tmp/schema/manifest.json
+/tmp/schema/msp.schema.json
+== strings: removed from this copy. The README quotes the two lines that matter.

@@ -1,0 +1,94 @@
+--- phase 5 firewall proxy: exit 0 in 150 s
+bridge exit 0
+[g1-inside] proxy requests 4: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":3}
+[g1-inside] direct connections refused by the sink 0: {}
+[g1-inside] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:55680","? [::ffff:169.254.0.1]:55890","? [::ffff:169.254.0.1]:55900","? [::ffff:169.254.0.1]:55978","? [::ffff:169.254.0.1]:55766","? [::ffff:169.254.0.1]:55882","? [::ffff:169.254.0.1]:55786","MainThread 57.144.74.141:443"] npm tunnels 0
+[g1-inside] proxy metered: 3 calls, {"input":77248,"cached":50658,"output":741,"cost":0.0029089999999999997}
+[g1-inside] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":3}
+[g1-inside] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":6,"session/tokenUsage":3,"session/contextUsage":5,"item/started":4,"item/updated":3,"item/delta":4,"turn/completed":1,"session/closed":1}
+[g1-inside] calls: session/resume:FAIL {"message":"session 01a19332-caaf-75fd-8ffa-ea86a74980a2 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[g1-inside] stderr: muse serve: exit reason recorded: stdin_closed
+
+[g1-inside] turns: [{"terminal":"completed"}]
+[g1-inside] tokenUsage events 3, last: {"cumulative":{"cacheReadTokens":50658,"outputTokens":741,"promptTokens":77248,"totalTokens":77989},"durationMs":3630,"modelId":"muse-spark-1.3-contributor","promptTokens":26436,"sessionId":"01a19332-caaf-75fd-8ffa-ea86a74980a2","sourceRange":{"first":{"id":"01a19333-2118-73b3-b50b-8b348bf4b912","sequence":110},"last":{"id":"01a19333-2118-73b3-b50b-8b348bf4b912","sequence":110},"stream":{"id":"01a19332-caaf-75fd-8ffa-ea86a74980a2","kind":"session"}},"totalTokens":26655,"turnId":"01a19332-cf0a-7000-95fb-d10925695589","usage":{"cacheReadTokens":25585,"cacheWriteTokens":0,"cachedTokens":25585,"inputTokens":26436,"outputTokens":219,"reasoningTokens":205},"viewCursor":"v4:01a19332-caaf-75fd-8ffa-ea86a74980a2:21"}
+[g1-inside] exit: {"code":0,"reason":"completed","finalText":"checked: see the log"}
+[g1-inside] timing from bridge start: first note 1056 ms, prompt taken 1127 ms, end 25191 ms
+user ubuntu, cwd /tmp/ws-g1
+env names: ALL_PROXY AWS_CA_BUNDLE CARGO_HTTP_CAINFO CLAUDE_CODE_TOOL_USE_ID CURL_CA_BUNDLE GIT_SSL_CAINFO GRPC_DEFAULT_SSL_ROOTS_FILE_PATH HOME HTTPS_PROXY HTTP_PROXY LANG META_API_KEY MUSE_LOGIN MUSE_NO_AUTO_UPDATE MUSE_RELEASE_INFO MUSE_SESSION_ID MUSE_THREAD_ID MUSE_TOOL_USE_ID NODE_EXTRA_CA_CERTS NODE_USE_SYSTEM_CA NO_PROXY NPM_CONFIG_CAFILE OLDPWD PATH PIP_CERT PWD REQUESTS_CA_BUNDLE SHELL SHLVL SSL_CERT_FILE TRACEPARENT all_proxy http_proxy https_proxy no_proxy
+META_API_KEY in this shell: yes
+files read: 3731
+/proc: 22 readable, 0 refused
+hash matches: standIn in this shell's env x1; placeholder in /proc/666/environ x1; placeholder in /proc/668/environ x1; standIn in /proc/680/environ x1; standIn in /proc/689/environ x1; standIn in /proc/692/environ x1; standIn in /proc/727/environ x1; standIn in /proc/728/environ x1; standIn in /proc/739/environ x1; standIn in /proc/771/environ x1; standIn in /proc/772/environ x1
+real key found anywhere: no
+placeholder found anywhere as this user: YES
+direct https://example.com: http 000 exit 6
+direct http://example.com: http 000 exit 6
+direct https://github.com: http 000 exit 6
+direct api.meta.ai, no key: http 403 exit 0 firewall refusal body
+direct api.meta.ai with the shell's key: http 403 exit 0 firewall refusal body
+direct registry.npmjs.org: http 200 exit 0
+sudo -n true: exit 0
+bin folder: .muse-release-info.json 256; .muse-version 15; fx 14037136; muse 32737; muse-bin-1.4.14-R7309.1 414927192
+copy the binary into the workspace: exit 0: 414927192 | identical | Muse Code 1.4.14 (1.4.14-R7309.1) | 
+binary size gzipped: 170566950 bytes
+parent exe and processes: /usr/local/bin/node
+root     MainThread;root     sudo;ubuntu   MainThread;ubuntu   bash;ubuntu   head;ubuntu   muse-bin-1.4.14;ubuntu   ps;ubuntu   sandbox-init;ubuntu   sh;ubuntu   sort;ubuntu   timeout;ubuntu   tr;
+
+== compaction
+{"t":1793470967802,"call":"session/start","ok":true,"keys":["session","viewCursor"]}
+{"t":1793470967805,"call":"session/setReasoningEffort","ok":true,"keys":["commandId","status"]}
+{"t":1793470967808,"call":"turn/start","ok":true,"keys":["commandId","disposition","startedNewTurn","status","turnId"]}
+{"t":1793470969109,"note":"turn/completed","terminal":"completed"}
+{"t":1793470969312,"call":"session/compact","ok":false,"error":"MspError: session/compact command 01a19333-35df-7000-8269-b98bca7bc518 rejected: compaction_unavailable","code":-32030,"kind":"commandRejected"}
+{"t":1793471010391,"call":"turn/start","ok":true,"keys":["commandId","disposition","startedNewTurn","status","turnId"]}
+{"t":1793471011689,"note":"turn/completed","terminal":"completed"}
+{"t":1793471052493,"stderr":"muse serve: exit reason recorded: stdin_closed\n"}
+{"t":1793471052501,"closed":true,"done":2}
+{"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":5,"turn/started":2,"item/completed:userMessage":2,"item/started:agentMessage":2,"item/delta":2,"item/completed:agentMessage":2,"session/tokenUsage":2,"session/contextUsage":2,"turn/completed":2,"session/closed":1}
+[g2-compact] proxy requests 3: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":2}
+[g2-compact] direct connections refused by the sink 0: {}
+[g2-compact] proxy metered: 2 calls, {"input":50304,"cached":25073,"output":36,"cost":0.002581}
+[g2-compact] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":2}
+
+bridge exit 0
+[g3-sub] proxy requests 7: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":6}
+[g3-sub] direct connections refused by the sink 0: {}
+[g3-sub] non-loopback sockets seen by ss: ["? [::ffff:169.254.0.1]:55978","MainThread 57.145.2.141:443"] npm tunnels 0
+[g3-sub] proxy metered: 6 calls, {"input":135778,"cached":89796,"output":720,"cost":0.004920999999999999}
+[g3-sub] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":6}
+[g3-sub] bridge notes: {"session/started":1,"session/approvalModeChanged":1,"session/reasoningEffortChanged":1,"session/statusChanged":3,"turn/started":1,"item/completed":6,"session/tokenUsage":3,"session/contextUsage":5,"item/started":4,"item/updated":5,"item/delta":1,"turn/completed":1,"session/closed":1}
+[g3-sub] calls: session/resume:FAIL {"message":"session 01a19334-7b81-7c61-82c6-17f8b448ec82 not found","code":-32020,"kind":"sessionNotFound"} | session/start:ok | session/setReasoningEffort:ok | turn/start:ok
+[g3-sub] stderr: muse serve: exit reason recorded: stdin_closed
+
+[g3-sub] turns: [{"terminal":"completed"}]
+[g3-sub] tokenUsage events 3, last: {"cumulative":{"cacheReadTokens":50530,"outputTokens":472,"promptTokens":76531,"totalTokens":77003},"durationMs":1198,"modelId":"muse-spark-1.3-contributor","promptTokens":25859,"sessionId":"01a19334-7b81-7c61-82c6-17f8b448ec82","sourceRange":{"first":{"id":"01a19334-a388-7272-b92a-fbaa222e238f","sequence":117},"last":{"id":"01a19334-a388-7272-b92a-fbaa222e238f","sequence":117},"stream":{"id":"01a19334-7b81-7c61-82c6-17f8b448ec82","kind":"session"}},"totalTokens":25938,"turnId":"01a19334-7d8a-7000-bf73-7dad6d1796ec","usage":{"cacheReadTokens":25457,"cacheWriteTokens":0,"cachedTokens":25457,"inputTokens":25859,"outputTokens":79,"reasoningTokens":69},"viewCursor":"v4:01a19334-7b81-7c61-82c6-17f8b448ec82:24"}
+[g3-sub] exit: {"code":0,"reason":"completed","finalText":"DONE"}
+[g3-sub] timing from bridge start: first note 467 ms, prompt taken 476 ms, end 13533 ms
+total 4
+drwxr-xr-x  2 ubuntu ubuntu  21 Oct 31 18:24 .
+drwxrwxrwt 12 root   root   253 Oct 31 18:24 ..
+-rw-r--r--  1 ubuntu ubuntu   2 Oct 31 18:24 sub.txt
+
+== reminders on, no catalog row
+bridge exit 0
+[g4-rem] proxy requests 7: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":6}
+[g4-rem] direct connections refused by the sink 0: {}
+[g4-rem] proxy metered: 6 calls, {"input":96616,"cached":50658,"output":1485,"cost":0.004994}
+[g4-rem] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":4,"tools=1 instr=5e2e6de763 effort=low model=muse-spark-1.3-contributor":1,"tools=1 instr=bdfd40d56e effort=high model=muse-spark-1.3-contributor":1}
+[g4-rem] stderr: muse serve: exit reason recorded: stdin_closed
+[g4-rem] turns: [{"terminal":"completed"}]
+[g4-rem] exit: {"code":0,"reason":"completed","finalText":"DONE"}
+== reminders on, the contributor catalog row
+bridge exit 0
+[g5-row] proxy requests 7: {"GET /muse-code/models auth=standin model=- stream=- bg=- ct=- -> 200":1,"POST /v1/responses auth=standin model=muse-spark-1.3-contributor stream=true bg=- ct=application/json -> 200":6}
+[g5-row] direct connections refused by the sink 0: {}
+[g5-row] proxy metered: 6 calls, {"input":96610,"cached":63059,"output":1524,"cost":0.0037849999999999997}
+[g5-row] kinds: {"tools=1 instr=d321093d40 effort=low model=muse-spark-1.3-contributor":4,"tools=1 instr=5e2e6de763 effort=low model=muse-spark-1.3-contributor":1,"tools=1 instr=bdfd40d56e effort=high model=muse-spark-1.3-contributor":1}
+[g5-row] stderr: muse serve: exit reason recorded: stdin_closed
+[g5-row] turns: [{"terminal":"completed"}]
+[g5-row] exit: {"code":0,"reason":"completed","finalText":"DONE"}
+== every refused model call
+{"ok":true,"keyHeld":true,"mode":"forward","spent":0.019190888000000003}
+
+[stderr]
+

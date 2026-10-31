@@ -1,0 +1,209 @@
+--- phase 0 firewall free: exit 0 in 2 s
+Muse Code 1.4.14 (1.4.14-R7309.1)
+bin /vercel/.local/bin/muse 32737 bytes
+-rwxr-xr-x 1 ubuntu ubuntu 32737 Oct 28 17:40 /vercel/.local/bin/muse
+total 418956
+drwxr-xr-x 2 ubuntu ubuntu       111 Oct 28 17:40 .
+drwxr-xr-x 5 ubuntu ubuntu        43 Oct 28 13:39 ..
+-rw-r--r-- 1 ubuntu ubuntu       256 Oct 28 17:40 .muse-release-info.json
+-rw-r--r-- 1 ubuntu ubuntu        15 Oct 28 17:40 .muse-version
+-rwxr-xr-x 1 ubuntu ubuntu  14037136 Oct 16 07:30 fx
+-rwxr-xr-x 1 ubuntu ubuntu     32737 Oct 28 17:40 muse
+-rwxr-xr-x 1 ubuntu ubuntu 414927192 Oct 28 17:40 muse-bin-1.4.14-R7309.1
+/vercel/.local/bin/muse: Bourne-Again shell script, ASCII text executable
+total 0
+drwxr-xr-x 5 ubuntu ubuntu 56 Oct 28 17:41 .
+drwxr-xr-x 4 ubuntu ubuntu 34 Oct 28 17:40 ..
+drwx------ 3 ubuntu ubuntu 23 Oct 28 17:40 local-tracing
+drwxr-xr-x 3 ubuntu ubuntu 19 Oct 28 17:41 plugins
+drwxr-xr-x 3 ubuntu ubuntu 21 Oct 28 17:40 skills
+== tools
+strace none
+ss /usr/bin/ss
+tcpdump none
+lsof /usr/bin/lsof
+sudo /usr/bin/sudo
+curl /usr/bin/curl
+openssl /usr/bin/openssl
+sudo ok
+uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),4(adm),20(dialout),24(cdrom),25(floppy),27(sudo),29(audio),30(dip),44(video),46(plugdev)
+== cert env (names only)
+NODE_EXTRA_CA_CERTS
+NPM_CONFIG_CAFILE
+GIT_SSL_CAINFO
+CARGO_HTTP_CAINFO
+CURL_CA_BUNDLE
+SSL_CERT_FILE
+PIP_CERT
+REQUESTS_CA_BUNDLE
+NODE_USE_SYSTEM_CA
+AWS_CA_BUNDLE
+GRPC_DEFAULT_SSL_ROOTS_FILE_PATH
+== env names
+AWS_CA_BUNDLE CARGO_HTTP_CAINFO CURL_CA_BUNDLE GIT_SSL_CAINFO GRPC_DEFAULT_SSL_ROOTS_FILE_PATH HOME LANG MUSE_LOGIN MUSE_NO_AUTO_UPDATE NODE_EXTRA_CA_CERTS NODE_USE_SYSTEM_CA NPM_CONFIG_CAFILE PATH PIP_CERT PWD REQUESTS_CA_BUNDLE SHELL SHLVL SPIKE_KEY_SHA256 SPIKE_PH_SHA256 SPIKE_REFUSED SPIKE_SANDBOX_NAME SPIKE_STANDIN SPIKE_T0_MS SSL_CERT_FILE _ 
+== muse --help
+muse — interactive terminal coding agent
+
+If no subcommand is given, options run the interactive TUI; pass a prompt to start
+a session, or use a command below.
+
+Usage: muse [OPTIONS] [PROMPT]
+       muse [OPTIONS] <COMMAND>
+
+Commands:
+  resume           Resume a previous session (--last or <session-ref>)
+  exec             Run one prompt non-interactively (headless)
+  config           Validate enterprise configuration documents
+  export           Export a session transcript to a file
+  trace            Inspect a recorded session or run trace
+  model-profile    Show what a model resolves to per knob and effort tier
+  skills           List, inspect, enable, or disable skills
+  voice            Transcribe an audio clip into text
+  plugins          Validate and manage plugin bundles
+  sandbox          Check or set up the OS sandbox
+  schema           Export the MSP wire schema (JSON Schema or TypeScript)
+  serve            Serve an MSP session host over stdio
+  session-message  List or send cross-session messages
+  mcp              Log in to or out of an MCP server (OAuth)
+  auth             Store provider API credentials
+  login            Log in to a provider
+  logout           Remove stored provider credentials
+  usage            Show your subscription allowance
+  init             Scaffold agent config in this workspace
+
+Options:
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+      --agents <JSON>
+          Supply one ephemeral agent-definition overlay
+      --provider <MODE>
+          Startup provider: echo, meta, or local (default: meta)
+      --preset <NAME>
+          Run a built-in preset: native-basic, miniswe, empty, ac_orch,
+          openai-apply-patch
+      --model <MODEL>
+          Model id for non-echo providers
+      --contributor-mode <on|off>
+          Per-run contributor mode override (this run only; never persisted)
+  -c, --config <KEY=VALUE>
+          Set one setting for this run (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+      --reasoning-effort <EFFORT>
+          Meta reasoning effort: none|minimal|low|medium|high|xhigh|max|ultra
+          (default: high; alias: --effort)
+      --base-url <URL>
+          Override the Meta provider base URL
+      --image <PATH>
+          Attach a local image file to the next submitted prompt
+      --workspace <PATH>
+          Register policy-gated workspace tools rooted at PATH
+  -w, --worktree [<MODE>]
+          Session Git worktree: off|create|existing; a bare -w means create
+          (default: off)
+== muse serve --help
+muse serve — serve an MSP session host over stdio
+
+Usage: muse serve [--provider <PROVIDER>] [--model <MODEL>] [--preset <PRESET>] [OPTIONS]
+
+The client owns this process's stdin and stdout and is its only
+connection. Sandbox posture and session durability are constructed
+here and apply to every session the host loads; neither is negotiable
+over the wire. With `--listen` the same binary serves a multi-client
+socket daemon instead, and each session narrows trust under the
+ceiling. Approval mode is the other way round — it is selected
+on the wire, so there is no approval flag here.
+
+Options:
+  -h, --help
+          Print this help
+      --no-session-log
+          Use memory-only sessions
+  -c, --config <KEY=VALUE>
+          Set one setting for this host (repeatable; values are JSON). Secrets
+          only as whole-value ${VAR}; unknown or clashing keys refuse the run.
+
+Provider selection (this process only; never rewrites settings):
+      --preset <PRESET>
+          Existing preset for this host (this process only; never rewrites
+          settings)
+      --provider <PROVIDER>
+          Startup provider for this host: echo, meta, or local (default: from
+          your settings, else meta)
+      --model <MODEL>
+          Model id for non-echo providers (default: your configured model, else
+          the provider's default)
+      --contributor-mode <on|off>
+          Per-process contributor mode override (this host only; never
+          persisted)
+      --disable-request-user-input
+          Withhold request_user_input from the main conversation of every served
+          session (side chats keep it)
+
+Sandbox posture (fixed for the host's lifetime):
+      --disable-sandbox
+          Disable shell filesystem/network sandboxing for this host
+      --sandbox-network <MODE>
+          Sandbox network mode (default: proxy-only)
+      --disable-write
+          Disable non-shell workspace filesystem writes
+      --disable-shell
+          Disable workspace shell execution
+      --trust-workspace
+          Load each session workspace's skills and rules
+
+Socket daemon (multi-client; sessions choose trust per session):
+      --listen [unix:<PATH>]
+          Serve a multi-client socket daemon instead of the stdio host (bare:
+          the well-known per-user-machine socket)
+      --allow-workspace-trust
+          Allow sessions on this daemon to choose workspace trust (socket-only:
+          requires --listen; sessions default untrusted)
+      --vacate-on-upgrade
+          Opt this daemon spawn into vacating and draining when its executable
+          is replaced by an upgrade (socket-only: requires --listen)
+      --join
+          Serve through this machine's session daemon when one runs; otherwise
+          serve in-process, as without --join
+      --client-started
+          Mark this daemon as started by an interactive client: it exits once it
+          has no connection and no loaded session (socket-only: requires
+          --listen)
+
+Examples:
+  muse serve --provider meta
+  muse serve --model <MODEL>
+  muse serve --provider meta --model <MODEL>
+  muse serve --preset native-basic
+
+== muse schema --help
+muse schema — export the MSP wire schema embedded in this binary
+
+Usage: muse schema generate-json-schema --out DIR [--experimental]
+       muse schema generate-ts --out DIR [--experimental]
+
+Both exports are offline and instant: the bundles are precomputed at build
+time, so the output is exact for this binary. The error table describes every
+error this binary can emit, and the method index describes every served
+method except the members of the parity gate's owned deferral register
+(`register_names` in bundle_surface_parity.rs; #33065); the exported methods
+table plus that register is the authoritative list, and the parity gate
+keeps the index exact in both directions.
+
+Options:
+      --out DIR       Directory to write the export into (created if absent)
+      --experimental  Export the experimental surface instead of the stable one
+  -h, --help          Print this help
+schema exit 0 886
+muse schema — export the MSP wire schema embedded in this binary
+
+Usage: muse schema generate-json-schema --out DIR [--experimental]
+       muse schema generate-ts --out DIR [--experimental]
+
+Both exports are offline and instant: the bundles are precomputed at build
+time, so the output is exact for this binary. The error table describes every
+error this binary can emit, and the method index describes every served
+method except the members of the parity gate's owned deferral register
+(`register_names` in bundle_surface_parity.rs; #33065); the exported methods
+table plus that register is the a
