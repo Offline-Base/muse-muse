@@ -24,9 +24,13 @@ describe(".vercelignore", () => {
     assert.ok(ignored.some((file) => file.startsWith("native/lab/")));
   });
 
-  it("keeps the spike recordings out of the functions, and only those docs", () => {
+  it("keeps the spike recordings and the build log's screenshots out of the functions, and only those docs", () => {
     assert.ok(ignored.includes("docs/spikes/serve-2026-10-31/README.md"));
-    assert.deepEqual(ignored.filter((file) => file.startsWith("docs/") && !file.startsWith("docs/spikes/")), []);
+    assert.ok(ignored.some((file) => file.startsWith("docs/log/shots/")));
+    assert.ok(!ignored.includes("docs/BUILD_LOG.md"));
+    const kept = (file: string) => file.startsWith("docs/") && !file.startsWith("docs/spikes/") && !file.startsWith("docs/log/");
+    assert.deepEqual(ignored.filter(kept), []);
     assert.deepEqual(ignored.filter((file) => file.endsWith("/spikes") || file.includes("/docs/spikes/")), []);
+    assert.deepEqual(ignored.filter((file) => file.includes("/docs/log/")), []);
   });
 });
