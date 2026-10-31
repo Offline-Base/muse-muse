@@ -33,6 +33,7 @@ import {
 } from "../lib/commands.mjs";
 import { CROP } from "../lib/pixels.mjs";
 import { evaluateCheck } from "../lib/rules.mjs";
+import { runProbeOnce } from "./android_probe.mjs";
 import { composeInto, keepShot, must, platformReport, reportWaitMs, shotSchedule, waitFor } from "./common.mjs";
 
 const BOOT_TIMEOUT_MS = 180_000;
@@ -76,6 +77,7 @@ export async function runAndroidEmu(ctx) {
   const pkg = app.packageName;
   const files = [];
   const warnings = [];
+  const jobStartedMs = ctx.now();
 
   ctx.setPhase("download");
   const apk = await ctx.download(app);
@@ -92,6 +94,7 @@ export async function runAndroidEmu(ctx) {
   const resolved = await ctx.exec(adbResolveActivity(SERIAL, pkg), { timeoutMs: 15_000 });
   const component = parseResolvedActivity(String(resolved.stdout));
   if (!component) throw new LabError("install_failed", "The APK has no activity to open.");
+  const probeNote = await runProbeOnce(ctx, { serial: SERIAL, component, pkg, jobStartedMs });
   await ctx.exec(adbLogcatClear(SERIAL), { timeoutMs: 15_000 });
 
   ctx.setPhase("record");
@@ -156,6 +159,7 @@ export async function runAndroidEmu(ctx) {
     screen,
     expectOrigin: input.target.origin,
   });
+  if (probeNote) evaluation.checks.push(probeNote);
 
   ctx.setPhase("compose");
   const captionBurned = await composeInto(ctx, {

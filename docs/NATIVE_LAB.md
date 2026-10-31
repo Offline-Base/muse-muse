@@ -293,13 +293,13 @@ ad hoc app is expected.
   pixels, and adds a note saying so. Use the lab APK with the product's URL for a full check.
 - **`glasses_sim` is informational.** It passes when the page loads in 60 s, the mock glasses connect, the main button shows
   up, and a result appears in 120 s. Its `informational: true` means it never blocks shipping or hides a download.
-  The design also asks for no `window.onerror`, which isn't checked yet: the autopilot's checkpoints don't carry page errors, so
-  a product that throws an uncaught error and still shows a result passes. The shell has the list in `internal.pageErrors()`,
-  and could add it to the `result` checkpoint.
+  The design also asks for no `window.onerror`. That one only warns, like console errors in the other checks: the checkpoint
+  that ends the run carries the shell's `internal.pageErrors()`, so a product that throws and still shows a result passes with
+  a warning.
 
 ## What the shells do
 
-Checked against `native/shell-mobile` and `native/shell-desktop` on the `tg-shells` branch as of Oct 31.
+Checked against `native/shell-mobile` and `native/shell-desktop` as of Oct 31.
 
 **Phone, lab variant, iOS.** Launch arguments, read in `launchArgsToRequest`: `-museUrl`, `-museSelftest 1`, `-museToken`,
 `-musePlatform`.
@@ -309,19 +309,22 @@ Checked against `native/shell-mobile` and `native/shell-desktop` on the `tg-shel
 
 **The health report on phones.** The agent looks in this order:
 
-1. `Documents/selftest.json` (iOS only). **The shell doesn't write this yet.**
+1. `Documents/selftest.json` (iOS only). The shell writes the whole report here, so iOS doesn't depend on the log or the network.
 2. A `MUSE_SELFTEST <json>` line in the device log. Android's logcat gets this in release builds. Logcat cuts lines at about
-   4 KB, so the shell should keep the line under 3.5 KB by trimming `errors`.
+   4 KB, so the shell keeps the line under 3.5 KB: it keeps as many `errors` as fit, ends the list with how many it left out,
+   and drops the `warnings` copy of them.
 3. The platform's copy, through the selftest route above. It only counts if its `at` is after this launch.
 
-iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work. Adding this to `report` in
-`ProductScreen.js` makes iOS independent of the network:
+iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work.
 
-```js
-const file = new File(Paths.document, "selftest.json");
-if (!file.exists) file.create();
-file.write(JSON.stringify(result));
-```
+**The Android bridge timing check.** On Android the shim can arrive after a page's first inline script, and a selftest can't see
+that, because its handshake runs after load. So on the first `android_emu` job with a lab shell, before it records, the runner
+(`jobs/android_probe.mjs`) serves its own page on `http://10.0.2.2:<port>/` for up to 45 s. That page's head script writes what
+it saw into `document.title`, and the shell's report brings the title back, posted to the same local server or read from
+logcat. The job's `checks` then have a note with `id: "bridge_timing"` and `ok: null`, saying whether `window.MuseNative` was
+there and how many ms later it showed up. The answer is also saved in `android-bridge-timing.json` in the data folder, and that
+file stops the check running again. Delete it to ask again. No answer is a note too, and the next Android job tries again.
+It never changes a job's verdict, and a job with too little time left leaves it for the next one.
 
 **Desktop.** `<exe> --muse-selftest=<dir>`. The shell writes `selftest.json`, `frames/00001.jpg` and so on, and
 `stills/01.png` and so on. The frame names are a count, so the lab times frames by when they were written. The exit code is 1
@@ -331,14 +334,16 @@ The app opens the URL in its `muse-product.json`. For `variant: "lab"`, the lab 
 signs the app again, ad hoc, because the change breaks the resource seal. A `product` app is left exactly as it shipped, so
 its signature check means something.
 
-**Glasses.** The lab copies media into the shell's `Documents`: `mock-feed.mov`, `mock-photo.jpg` and `mock-question.wav`
-(the shell doesn't read the last one yet). It launches the app, waits 2 s, and sends
+**Glasses.** The lab copies media into the shell's `Documents`: `mock-feed.mov`, `mock-photo.jpg` and `mock-question.wav`. Mock
+mode's `stopRecording` returns that question as a recording from the glasses, or silence when there's none, and never touches
+the microphone. It launches the app, waits 2 s, and sends
 `musemuse://check?url=...&mock=1&run=autopilot`. If no checkpoint shows up in 60 s, it launches again with `-museUrl`,
 `-museMock 1` and `-museRun autopilot`, adds a warning, and counts the load limit from that launch, because the system may hold
 a link back to ask for permission. The wait is that long because the first checkpoint only comes once the page has loaded.
 
 The autopilot writes `Documents/autopilot.jsonl`, one `{ step, ok, detail, at }` per line, with the steps `start`, `connect`
-(detail is the mode), `primary`, `result`, `timeout` and `error`. It has no checkpoint for the capture itself, so that's
+(detail is the mode), `primary`, `result`, `timeout` and `error`. Those last three also carry `errors`, up to 20 of the page's
+uncaught errors and `console.error` calls, when there are any. It has no checkpoint for the capture itself, so that's
 covered by the result.
 
 ## The clip

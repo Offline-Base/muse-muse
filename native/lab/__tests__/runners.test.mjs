@@ -5,7 +5,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, test } from "node:test";
+import vm from "node:vm";
 import { runAndroidEmu } from "../jobs/android_emu.mjs";
+import { PROBE_FILE, probeFromReport, probePage } from "../jobs/android_probe.mjs";
 import { contentTypeOf, shotSchedule } from "../jobs/common.mjs";
 import { findExe, listFrames, listStills, pointAppAt, runDesktopMac, runDesktopWindows } from "../jobs/desktop.mjs";
 import { MOCK_FEED, MOCK_PHOTO, runGlassesSim } from "../jobs/glasses_sim.mjs";
@@ -376,6 +378,113 @@ describe("android_emu", () => {
   test("a process that's gone fails the check", async () => {
     const h = makeCtx("android_emu", { answer: android({ pid: "" }) });
     assert.ok((await runAndroidEmu(h.ctx)).evaluation.checks.some((c) => c.id === "no_crash" && c.ok === false));
+  });
+
+  describe("the bridge timing probe", () => {
+    /** Plays the shell: loads the page from the deep link, runs its head script, then posts the report it would post. */
+    const shell = ({ shimAfterMs }) => async (deepLink) => {
+      const link = new URL(deepLink);
+      const page = await (await fetch(link.searchParams.get("url"))).text();
+      const script = /<script>([\s\S]*?)<\/script>/.exec(page)[1];
+      const window = {};
+      const document = { title: "" };
+      if (shimAfterMs === 0) window.MuseNative = {};
+      else setTimeout(() => (window.MuseNative = {}), shimAfterMs);
+      vm.runInNewContext(script, { window, document, setTimeout, Date, JSON });
+      await new Promise((resolve) => setTimeout(resolve, shimAfterMs + 40));
+      await fetch(`${link.searchParams.get("platform")}/api/native/selftest`, {
+        method: "POST",
+        body: JSON.stringify({ ...GOOD_REPORT, title: document.title }),
+      });
+    };
+    /** The fake adb's am start, which runs `play` for the probe's launch only. */
+    const withProbe = (play, base = android()) => (argv, opts, reply) => {
+      const text = argv.join(" ");
+      const url = /'(musemuse-lab:[^']+)'/.exec(text)?.[1];
+      if (text.includes("am start") && url && new URL(url).searchParams.get("url").includes("10.0.2.2")) {
+        // The page's own URL names the emulator's view of this machine, and the test runs on the machine itself.
+        const here = url.replaceAll("10.0.2.2", "127.0.0.1");
+        return play(here).then(() => reply({ stdout: "Status: ok\nTotalTime: 900\n" }));
+      }
+      return base(argv, opts, reply);
+    };
+    const note = (result) => result.evaluation.checks.find((c) => c.id === "bridge_timing");
+
+    test("reports a late shim on the first run, as a note, then asks no more", async () => {
+      const h = makeCtx("android_emu", { answer: withProbe(shell({ shimAfterMs: 20 })) });
+      const result = await runAndroidEmu(h.ctx);
+      assert.equal(result.evaluation.passed, true, JSON.stringify(result.evaluation.reasons));
+      assert.equal(note(result).ok, null);
+      assert.match(note(result).detail, /wasn't there when the page's first script ran\. It showed up \d+ ms later\./);
+      h.order("install -r -g", "10.0.2.2", "force-stop", "screencap");
+      const probeLaunch = h.ran("am start")[0].join(" ");
+      assert.match(probeLaunch, /selftest=1/);
+      assert.ok(!probeLaunch.includes("muse-muse.vercel.app"), "its report stays on this machine");
+      assert.ok(!probeLaunch.includes("token"));
+      const saved = JSON.parse(readFileSync(path.join(h.ctx.config.dataDir, PROBE_FILE), "utf8"));
+      assert.equal(saved.inHead, false);
+      assert.equal(saved.detail, note(result).detail);
+
+      const again = await runAndroidEmu(h.ctx);
+      assert.equal(note(again), undefined);
+      assert.equal(h.ran("10.0.2.2").length, 1);
+    });
+
+    test("reports a bridge that was there in time", async () => {
+      const result = await runAndroidEmu(makeCtx("android_emu", { answer: withProbe(shell({ shimAfterMs: 0 })) }).ctx);
+      assert.match(note(result).detail, /was there when the page's first script ran/);
+    });
+
+    test("falls back on the device log when the post is lost", async () => {
+      const title = `${probePage().match(/<title>(.*?){}<\/title>/)[1]}${JSON.stringify({ inHead: false, seenMs: 12 })}`;
+      const report = { ...GOOD_REPORT, title };
+      const result = await runAndroidEmu(makeCtx("android_emu", { answer: android({ report }) }).ctx);
+      assert.match(note(result).detail, /It showed up 12 ms later/);
+    });
+
+    test("no answer is a note that doesn't fail the job, and it tries again next time", async () => {
+      const h = makeCtx("android_emu", { answer: android() });
+      const result = await runAndroidEmu(h.ctx);
+      assert.equal(result.evaluation.passed, true);
+      assert.match(note(result).detail, /got no answer/);
+      assert.equal(existsSync(path.join(h.ctx.config.dataDir, PROBE_FILE)), false);
+      assert.ok(note(await runAndroidEmu(h.ctx)));
+    });
+
+    test("a lab shell that can't start for the probe doesn't change the job", async () => {
+      const h = makeCtx("android_emu", { answer: withProbe(async () => { throw new Error("adb went away"); }) });
+      const result = await runAndroidEmu(h.ctx);
+      assert.equal(result.evaluation.passed, true);
+      assert.match(note(result).detail, /got no answer/);
+      assert.ok(h.lines.some((line) => line.includes("adb went away")));
+    });
+
+    test("leaves a product APK alone", async () => {
+      const app = { kind: "apk", variant: "product", version: "1", url: "https://a.public.blob.vercel-storage.com/p.apk", sha256: SHA, packageName: "ai.musemuse.p123" };
+      const h = makeCtx("android_emu", { answer: android({ report: null }), job: { input: { app, selftest: null } } });
+      assert.equal(note(await runAndroidEmu(h.ctx)), undefined);
+      assert.equal(h.ran("10.0.2.2").length, 0);
+    });
+
+    test("waits for the next job when this one is short of time", async () => {
+      const h = makeCtx("android_emu", { answer: android(), job: { input: { limitSeconds: 200 } } });
+      assert.equal(note(await runAndroidEmu(h.ctx)), undefined);
+      assert.equal(h.ran("10.0.2.2").length, 0);
+    });
+
+    test("the page's head script is the first thing that runs, and it parses", () => {
+      const page = probePage();
+      assert.ok(page.indexOf("<script>") < page.indexOf("</head>"));
+      assert.equal((page.match(/<script/g) ?? []).length, 1);
+      assert.doesNotThrow(() => new Function(/<script>([\s\S]*?)<\/script>/.exec(page)[1]));
+      assert.ok(!page.includes("\u2014"), "no em dashes");
+    });
+
+    test("reads only what the page's script wrote", () => {
+      assert.equal(probeFromReport({ title: "A product" }), null);
+      assert.equal(probeFromReport({}), null);
+      assert.equal(probeFromReport(null), null);
+    });
   });
 
   test("a package left by an aborted job doesn't stop the install", async () => {

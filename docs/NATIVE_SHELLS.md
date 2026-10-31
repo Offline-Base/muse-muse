@@ -40,8 +40,9 @@ before native code sees them.
 **When the bridge appears.** On iOS the shim runs before page code. On Android it does not: react-native-webview 14 calls
 `evaluateJavascript` from `onPageStarted`, which is asynchronous, so a page's first inline script can run ahead of it. Product
 code must look for `window.MuseNative` when it's about to use it, never cache a "no" at module load, and wait for the load
-event before settling on a web fallback on Android. The first Android lab run should include a page with an inline head
-script that records what it saw, because the selftest's handshake runs after load and can't catch this.
+event before settling on a web fallback on Android. The first Android lab run reports how late it really is, with a page whose
+inline head script records what it saw, because the selftest's handshake runs after load and can't catch this (`docs/NATIVE_LAB.md`,
+"The Android bridge timing check").
 
 **Leaving the product.** Top-level loads off the product's origin go to the system browser or nowhere. At most 3 opens go
 out in any 10 s, and the rest are dropped. `tel:` and `sms:` links open only from a real click on iOS. Android always
@@ -50,13 +51,13 @@ thread doesn't answer within 250 ms, so `onLoadStart` and `onNavigationStateChan
 to the product. A page that does this more than 3 times in 30 s gets the "This didn't open" screen.
 
 **Camera and microphone.** On iOS a page gets the system's prompt for each page load, because one app opens many products.
-**Known limit, for the owner to accept:** react-native-webview on Android grants a page's request as soon as the app holds
+**Known limit, accepted for this event, since per-product APKs are the default:** react-native-webview on Android grants a page's request as soon as the app holds
 the OS permission, and has no hook to ask first. So in the generic Android shell, a yes given for Product A also covers
 Product B. Per-product APKs don't have this problem, since each one opens one product. A real fix means patching
 `RNCWebChromeClient.onPermissionRequest`.
 
-**Selftest.** It scrolls the page, then logs a `MUSE_SELFTEST {json}` line and posts the same report to
-`<platform>/api/native/selftest`. The pass rules are in `src/selftest.ts`. The handshake is what the shell's router saw,
+**Selftest.** It scrolls the page, then logs a `MUSE_SELFTEST {json}` line, kept under 3.5 KB for logcat, and posts the whole
+report to `<platform>/api/native/selftest`. On iOS it also writes the whole report to `Documents/selftest.json`. The pass rules are in `src/selftest.ts`. The handshake is what the shell's router saw,
 not what the page said, and a report only counts after the page has loaded and the scroll has had its time. A page can
 still claim a text length, so the lab's pixel check is the proof of that one.
 
@@ -93,7 +94,13 @@ With no question file, `stopRecording` returns silence.
 **Autopilot.** With `-museMock 1 -museRun autopilot`, it presses `[data-glasses-action="connect"]`, waits for
 `[data-glasses-primary]` to be enabled and presses it. After 1.5 s it presses it again if it's still there, not disabled,
 and there's no result yet, since the template's button listens between two taps. Then it waits for `[data-result]`.
-Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines.
+Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines. The checkpoint that ends the run
+carries the page's uncaught errors and `console.error` calls in `errors`, which the lab turns into warnings.
+
+**A new page in the same WebView.** Its load start ends the old page's recording, live view and speech, in case the old page
+didn't manage to, and a recording it was still starting never starts. Jumps within a page don't count. The glasses stay
+connected. A failed photo or a stream timeout leaves the state at ready, so the next press can work, and that call's own
+promise carries the failure.
 
 **Cut for now.** The design's button for `glasses_app_update_required` isn't wired, so that error only tells the person to
 open the Meta AI app. Only real glasses can hit it, and this build is simulator only. Wire `openDATGlassesAppUpdate` before
