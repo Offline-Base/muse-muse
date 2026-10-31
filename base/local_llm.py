@@ -53,11 +53,9 @@ def final_channel(content: str) -> str:
     """Glimmer's answer when its channel markup reached the content: the text after the last
     "assistant to=user". Reasoning with no answer after it comes back empty, so it is never used as
     an answer: that text saw what the model read."""
-    found = None
-    for found in _TO_USER.finditer(content):
-        pass
-    if found is not None:
-        return _END_MARK.sub("", content[found.end() :]).strip()
+    answers = list(_TO_USER.finditer(content))
+    if answers:
+        return _END_MARK.sub("", content[answers[-1].end() :]).strip()
     return "" if _TO_SELF.search(content) else content
 
 
