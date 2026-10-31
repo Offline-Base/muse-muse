@@ -353,7 +353,7 @@ export function BuildRoom(props: BuildRoomProps) {
               isRefine={isRefineBuild}
               status={room.status}
               buildId={build.id}
-              canAnswer={props.canRefine}
+              canAnswer={Boolean(props.canSteer)}
             />
           ))}
 

@@ -108,6 +108,7 @@ let render: (c: ComponentType<never>, props: object) => string;
 let MuseLog: ComponentType<never>;
 let BuildPanel: ComponentType<never>;
 let QuestionCard: ComponentType<never>;
+let BuildRoom: ComponentType<never>;
 let derive: typeof import("@/components/build/derive");
 let session: typeof import("@/components/build/session");
 
@@ -120,6 +121,7 @@ before(async () => {
   session = await import("@/components/build/session");
   QuestionCard = session.QuestionCard as ComponentType<never>;
   derive = await import("@/components/build/derive");
+  BuildRoom = (await import("@/components/build/BuildRoom")).BuildRoom as ComponentType<never>;
 });
 
 function clean(html: string) {
@@ -248,6 +250,35 @@ describe("a session bridge round", () => {
     const ended = render(QuestionCard, { question: q, buildId: build.id, canAnswer: true, live: false });
     assert.match(ended, /The run ended before this was answered\./);
     assert.doesNotMatch(ended, /Send answer/);
+  });
+
+  it("opens the question to whoever may steer, as the control route decides, not to whoever may refine", () => {
+    const bodies: BuildEventBody[] = [
+      { type: "status", status: "building", step: "build" },
+      { type: "muse", round: 0, lines: [{ kind: "start", text: "Started" }, question] },
+    ];
+    const events = bodies.map((b, i) => ({ ...b, id: i + 1, at: at(i + 1) }) as BuildEvent);
+    const page = (canRefine: boolean, canSteer: boolean) =>
+      render(BuildRoom, {
+        build,
+        product: null,
+        inspiration: null,
+        events,
+        history: [],
+        tokens: { input: 0, cached: 0, output: 0 },
+        canRefine,
+        canSteer,
+        signedIn: true,
+        origin: "https://musemuse.example",
+        serverNow: t0 + 60_000,
+        focusRefine: false,
+        rebuild: null,
+        maxFixRounds: 2,
+      });
+    // An owner on a first build before its product row exists.
+    assert.match(page(false, true), /Send answer/);
+    // Steering is off, so the route would answer 503.
+    assert.doesNotMatch(page(true, false), /Send answer/);
   });
 
   it("builds each answer the control route takes, and reads its errors", () => {
