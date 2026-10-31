@@ -258,6 +258,15 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     assert.equal(files["/vercel/musemuse/run/by-id/cmd-2"], "/vercel/musemuse/logs/muse-r2.msp.jsonl");
   });
 
+  it("clears Muse Code's copy of the model catalog before every bridge start, so the catalog row holds from the second round on", async () => {
+    process.env.MUSE_ENGINE = "serve";
+    await start({ round: 2 });
+    const prepare = commands.find((c) => c.script.includes("npm install"));
+    assert.ok(prepare, "the bridge's prepare script ran");
+    assert.match(prepare.script, /^rm -rf "\$HOME\/\.local\/share\/muse\/model-catalog"$/m);
+    assert.equal(spawnSync("bash", ["-n", "-c", prepare.script]).status, 0);
+  });
+
   it("gives the bridge the settings under MUSE_FULL", async () => {
     process.env.MUSE_ENGINE = "serve";
     process.env.MUSE_FULL = "1";

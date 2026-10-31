@@ -149,6 +149,13 @@ const BRIDGE_IDLE_EXIT_MS = 2 * MIN;
 const BRIDGE_START_PROBE_S = 45;
 /** How long installing the bridge's SDK may take, the first time in a sandbox (one small package, no dependencies). */
 const SDK_INSTALL_MS = 30_000;
+/**
+ * Where Muse Code keeps its copy of Meta's model catalog. A `muse serve` that finds it there skips the settings catalog
+ * row (backgroundModelSetting), so a round's reminder agents go back to muse-spark-1.3 from the sandbox's second round
+ * on. Without the file it fetches the catalog, applies the row and writes the file again (Oct 31,
+ * docs/spikes/serve-2026-10-31). Exec applies the row either way.
+ */
+const MODEL_CATALOG_CACHE = '"$HOME/.local/share/muse/model-catalog"';
 /** The largest command the mailbox takes. */
 const MAX_COMMAND_BYTES = 64 * 1024;
 
@@ -727,8 +734,8 @@ async function startExec(sandbox: Sandbox, run: MuseRunSpec): Promise<{ cmdId: s
 
 /**
  * Bash run before a bridge starts: sets the round's earlier bridge log aside and empties its mailbox (refinements can
- * reuse round numbers), then installs @muse-code/sdk at MUSE_SDK_VERSION under BRIDGE_DIR unless it is already there.
- * npm reaches the registry through the build firewall.
+ * reuse round numbers), clears Muse Code's copy of the model catalog, then installs @muse-code/sdk at MUSE_SDK_VERSION
+ * under BRIDGE_DIR unless it is already there. npm reaches the registry through the build firewall.
  */
 export function bridgePrepareScript(round: number): string {
   const paths = bridgePaths(round);
@@ -741,6 +748,7 @@ export function bridgePrepareScript(round: number): string {
     `rm -f ${q(`${paths.err}.exit`)}`,
     `rm -rf ${q(paths.mailbox)}`,
     `mkdir -p ${q(paths.mailbox)}`,
+    `rm -rf ${MODEL_CATALOG_CACHE}`,
     `cd ${q(BRIDGE_DIR)}`,
     `if node -e ${q(installed)} 2>/dev/null; then exit 0; fi`,
     `[ -f package.json ] || printf '%s\\n' '{"name":"musemuse-bridge","private":true}' > package.json`,
