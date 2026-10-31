@@ -85,9 +85,10 @@ Not yet read at the source. Do not quote these until someone has:
 
 Wording for the submission, from the brief's warnings:
 
-- Tags are pseudonymization and data minimization, not anonymization or de-identification. A tagged result can still point at someone through context. The public pages already avoid "de-identified"; docs/COMPLIANCE_PLAN.md's FERPA row still says "de-identified results only" and should read "tagged results only" before any of it is quoted.
+- Tags are pseudonymization and data minimization, not anonymization or de-identification. A tagged result can still point at someone through context. The FERPA toggle's text in the app and docs/COMPLIANCE_PLAN.md said "de-identified results only"; both now say tagged or summarized results (Oct 31).
 - Cloud processing is not unlawful: FERPA's school-official exception and HIPAA business associate agreements allow it. The case is less exposure, not the only legal way.
-- Neither Zuckerberg nor Wang has said anything found about teachers, so the teacher case is ours. Do not attach it to them.
+- Neither Zuckerberg nor Wang has said anything found about teachers, clinics or casework, so those cases are ours. Do not attribute them to either.
+- Teachers are one of several users, not the only one (Ethan, Oct 31). README's "Who it's for" lists the six groups the toggles cover, with what exists and what is measured for each. The brief's sector evidence beyond schools is thin (NASW, HIPAA, Part 2); it needs its own search.
 - Do not promise Glimmer on the 8 GB Jetson until it is measured there. Our file is IQ1_S at 1.874 bits per weight, not Meta's 4-bit one, and the Jetson is not measured.
 - Present it as hybrid: Muse plans in the cloud, the device keeps the records. That is Muse's own shape too (a cloud VM plus approvals).
 - CUI only for federally connected work.

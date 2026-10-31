@@ -43,7 +43,7 @@ _PROFILES = (
     Profile(
         "ferpa", "FERPA", "Students and children",
         f"For student records. {_TAGS_MORE}",
-        "Your school decides whether Muse may be used at all. This sends de-identified results only and does not make Meta a school official.",
+        "Your school decides whether Muse may be used at all. This sends tagged or summarized results only, which can still point at a student through context, and does not make Meta a school official.",
     ),
     Profile(
         "coppa", "COPPA", "Students and children",

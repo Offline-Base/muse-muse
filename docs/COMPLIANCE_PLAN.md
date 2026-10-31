@@ -133,7 +133,7 @@ What each toggle does:
 
 | Toggle | Turns on | Stated limit |
 |---|---|---|
-| FERPA | All kinds in 2.2, small-group holds, tag rotation if built | The route is de-identified results only. Meta is not a "school official", because that needs [the school's direct control](https://studentprivacy.ed.gov/sites/default/files/resource_document/file/Vendor%20FAQ.pdf). The school makes the [reasonable determination](https://www.ecfr.gov/current/title-34/subtitle-A/part-99/subpart-D/section-99.31). |
+| FERPA | All kinds in 2.2, small-group holds, tag rotation if built | The route is tagged or summarized results only, which is pseudonymization, not de-identification. Meta is not a "school official", because that needs [the school's direct control](https://studentprivacy.ed.gov/sites/default/files/resource_document/file/Vendor%20FAQ.pdf). The school makes the [reasonable determination](https://www.ecfr.gov/current/title-34/subtitle-A/part-99/subpart-D/section-99.31). |
 | COPPA | Strictest handling for data about under-13s, including government IDs and biometrics, plus a local [retention schedule](https://www.federalregister.gov/documents/2025/04/22/2025-05904/childrens-online-privacy-protection-rule) | Children still cannot use Muse. |
 | HIPAA | The [Safe Harbor list](https://www.hhs.gov/sites/default/files/ocr/privacy/hipaa/understanding/coveredentities/De-identification/hhs_deid_guidance.pdf): all date parts except the year, geography below state level, images held, also applied to relatives, employers and household members | No BAA, and removing the listed identifiers is not always enough per HHS. Muse [cannot give medical advice](https://platform.muse.ai/terms). |
 
