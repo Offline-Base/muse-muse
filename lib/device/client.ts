@@ -29,6 +29,13 @@ export function deviceConfig(): DeviceConfig | null {
   return url && token ? { url, token } : null;
 }
 
+/**
+ * Tools that wait on the board for longer than the SDK's 60-second default: each is the board's own limit (server.py) plus
+ * the trip there, and all fit the 300 seconds a route has. Giving up sooner would leave the board working on a call
+ * nobody is waiting for.
+ */
+const SLOW_TOOL_TIMEOUT_MS: Record<string, number> = { start_model: 150_000, ask_model: 250_000, install_model: 290_000 };
+
 async function withDevice<T>(config: DeviceConfig, doFetch: typeof fetch, use: (client: Client) => Promise<T>): Promise<T> {
   const client = new Client({ name: "muse-muse", version: "0.0.1" });
   const transport = new StreamableHTTPClientTransport(new URL(config.url), {
@@ -58,7 +65,7 @@ export function callDeviceTool(
   doFetch: typeof fetch = fetch,
 ): Promise<DeviceToolResult> {
   return withDevice(config, doFetch, async (client) => {
-    const result = await client.callTool({ name, arguments: args });
+    const result = await client.callTool({ name, arguments: args }, undefined, { timeout: SLOW_TOOL_TIMEOUT_MS[name] });
     return { content: result.content as unknown[], isError: result.isError === true };
   });
 }
