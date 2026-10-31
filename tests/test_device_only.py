@@ -430,3 +430,160 @@ def test_the_loopback_guard_works(loopback_only):
     with pytest.raises((AssertionError, pytest.fail.Exception)):
         httpx.get("https://gateway.example.org/v1", timeout=1)
 
+
+
+# reason codes, and the ROUTER_LOOSEN changes (each off unless turned on)
+
+
+def _route_with(tmp_path, request, text, kind="snippet", topics=(), rules="", hits=(), **env):
+    router = Router(settings_for(tmp_path, **env), _NoModel(), POLICY, rules_text=rules)
+    return router.decide(RouteInput(request, kind, text, topics=list(topics), hits=list(hits)))
+
+
+@pytest.mark.parametrize(
+    ("request_text", "text", "kind", "topics", "code"),
+    [
+        ("attendance for my notes", "[Student A] missed a day.", "snippet", [], "policy_default"),
+        ("grades for my records", "[Student A] scored 88.", "per_student", ["grades"], "policy_rule:tagged_grades_and_excerpts"),
+        ("Write this up for the family newsletter", "Most of the class improved.", "class_aggregate", [], "outside_class"),
+        ("notes for me", "Notes.", "sensitive_record", [], "sensitive_record"),
+        ("Share [Student C] home contact for the walk", "Notes.", "snippet", [], "contact"),
+        ("Summarize the essay by the only student who moved here", "Notes.", "snippet", [], "narrowed"),
+        ("notes for the conference", "Notes.", "snippet", ["parents"], "policy_rule:ask_before_parents"),
+    ],
+)
+def test_every_rules_mode_decision_has_a_fixed_code(tmp_path, request_text, text, kind, topics, code):
+    assert _route(tmp_path, request_text, text, kind, topics).code == code
+
+
+def test_a_rule_you_taught_has_a_learned_code(tmp_path):
+    out = _route(tmp_path, "Class numbers for my notes", "Scores rose.", "class_aggregate", rules=RULES.format(section="Your rules"))
+    assert out.code == "learned:share_tagged"
+
+
+@pytest.mark.parametrize(
+    "request_text", ["Write a progress comment I can send home", "a note home about the garden", "Take it home to the family"]
+)
+def test_sending_something_home_is_going_outside_the_class(tmp_path, request_text):
+    out = _route(tmp_path, request_text, "[Student A] scored 3 of 4.", "free_text", ["grades"])
+    assert out.decision == "ask_user" and out.code == "outside_class"
+
+
+# ROUTER_LOOSEN=result_words
+
+
+def test_a_score_in_the_result_reaches_the_grades_rule_only_when_turned_on(tmp_path):
+    text = "[Student A]: 12 points at the fitness stations. [Student B]: 9 points."
+    assert _route_with(tmp_path, "station results for my notes", text, "free_text").decision == "ask_user"
+    out = _route_with(tmp_path, "station results for my notes", text, "free_text", ROUTER_LOOSEN="result_words")
+    assert out.decision == "share_tagged" and out.code == "policy_rule:tagged_grades_and_excerpts"
+
+
+@pytest.mark.parametrize(
+    ("request_text", "text"),
+    [
+        ("notes for my records", "[Student A] was absent 2 of 5 days and scored 3/4 on the make-up quiz."),
+        ("attendance and quiz notes", "[Student A] scored 3/4 on the quiz."),
+        ("notes for my records", "[Student A] sits by the window; scored 3/4."),
+    ],
+)
+def test_an_attendance_or_seating_result_with_a_score_still_asks(tmp_path, request_text, text):
+    out = _route_with(tmp_path, request_text, text, "free_text", ROUTER_LOOSEN="all")
+    assert out.decision == "ask_user" and out.code == "policy_default"
+
+
+def test_class_wide_numbers_in_a_result_that_names_nobody_go_out_as_a_summary(tmp_path):
+    text = "The class average was 3.1 and 18 of 24 students met the goal."
+    out = _route_with(tmp_path, "how did the unit go", text, "free_text", ROUTER_LOOSEN="result_words")
+    assert out.decision == "share_summary"
+    named = _route_with(tmp_path, "how did the unit go", "[Student A] was above the class average.", "free_text",
+                        ROUTER_LOOSEN="result_words")  # fmt: skip
+    assert named.decision == "ask_user"  # it names someone, so it is not class-level
+
+
+def test_a_result_word_never_lifts_a_destination(tmp_path):
+    out = _route_with(tmp_path, "notes for the family newsletter", "[Student A] scored 3/4.", "free_text",
+                      ROUTER_LOOSEN="all")  # fmt: skip
+    assert out.decision == "ask_user" and out.code == "outside_class"
+    out = _route_with(tmp_path, "notes", "[Student A] scored 3/4.", "free_text", ["third_party"], ROUTER_LOOSEN="all")
+    assert out.decision == "ask_user" and out.code == "policy_rule:ask_before_outside_class"
+
+
+def test_a_full_date_is_not_a_score():
+    from base.router import result_topics
+
+    assert result_topics("Field trip on 10/30/2026 for [Student A].") == []
+    assert result_topics("[Student A] got 18/20.") == ["grades"]
+    assert result_topics("Scores ranged from 2 to 4 across the class.") == ["class_level"]
+
+
+# ROUTER_LOOSEN=class_of
+
+
+@pytest.mark.parametrize(
+    ("request_text", "labels", "kept"),
+    [
+        ("Class averages for [Student A]'s class", ["class_level"], ["class_level"]),
+        ("How did [Student W]’s group do on fractions?", ["class_level"], ["class_level"]),
+        ("How did [Student A] do on the essay?", ["class_level"], []),  # one person, still
+        ("Compare [Student A]'s class with [Student B]", ["class_level"], []),  # someone else is named too
+    ],
+)
+def test_a_tagged_students_class_is_class_level_when_turned_on(request_text, labels, kept):
+    assert checked_labels(request_text, labels, class_of=True) == kept
+    assert checked_labels(request_text, labels) == []  # off by default: any tagged student drops it
+
+
+def test_the_egress_passes_the_class_of_choice_to_the_label_check(tmp_path):
+    class Labels:
+        def llm_names(self, *_a, **_k):
+            return []
+
+        def request_topics(self, *_a, **_k):
+            return ["class_level"]
+
+        def chat(self, *_a, **_k):
+            return type("R", (), {"content": "The class did well."})()
+
+    for env, form in (({}, "ask_user"), ({"ROUTER_LOOSEN": "class_of"}, "share_summary")):
+        home = tmp_path / str(len(env))
+        home.mkdir()
+        svc = Services.create(settings_for(home, **env), light=False, heavy=False, owner=False)
+        try:
+            svc.checker_llm = svc.answer_llm = Labels()
+            out = Egress(svc).release("ask_device", "Show the spread of reading logs in [Student A]'s class", "Logs: 2 to 9.", "free_text")
+            assert out.decision.decision == form
+        finally:
+            svc.close()
+
+
+# ROUTER_LOOSEN=lists, through egress: names stay tags
+
+
+def test_a_taught_list_rule_sends_an_unknown_name_only_as_a_tag(tmp_path):
+    class Misses:
+        def llm_names(self, *_a, **_k):
+            return []
+
+    rules = (
+        "# Learned rules\n\n## Your rules\n\n- Document lists (kind: document_list; topics: none): share tagged. "
+        "You approved 5 of 5 and said don't ask again.\n"
+    )
+    svc = Services.create(settings_for(tmp_path, ROUTER_LOOSEN="lists"), light=False, heavy=False, owner=False)
+    try:
+        svc.checker_llm = svc.answer_llm = Misses()
+        svc.settings.paths.router_prompt.write_text(rules)
+        out = Egress(svc).release("list_documents", "essays", "- essays/Zirconia Vosberg reading notes.md", "document_list")
+        assert out.status == "shared" and out.decision.code == "learned:share_tagged"
+        assert "[Person 1]" in out.text and "Zirconia" not in out.text and "Vosberg" not in out.text
+        kept = Egress(svc).release("list_documents", "essays", "- essays/Zirconia Vosberg IEP goals.md", "document_list")
+        assert kept.status == "refused" and "Zirconia" not in kept.text
+    finally:
+        svc.close()
+
+
+def test_tighten_mode_codes_say_whether_the_model_or_the_policy_decided(tmp_path):
+    assert _with_mode(tmp_path, "tighten", _Says("refuse")).code == "model"
+    assert _with_mode(tmp_path, "tighten", _Says("share_tagged")).code == "policy_rule:tagged_grades_and_excerpts"
+    assert _with_mode(tmp_path, "tighten", _Says(None)).code == "fallback"
+    assert _with_mode(tmp_path, "decide", _Says("ask_user")).code == "model"

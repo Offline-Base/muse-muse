@@ -237,7 +237,8 @@ def test_policy_module_agrees_if_present():
 
 
 def test_policy_schema():
-    assert set(POLICY) <= {"name", "never_share", "ask_first", "request_topics", "rules", "default"}
+    assert set(POLICY) <= {"name", "never_share", "ask_first", "request_topics", "identifier_topics", "rules", "default"}
+    assert set(POLICY.get("identifier_topics", {}).values()) <= set(NEVER_SHARE)
     assert set(POLICY["never_share"]) == set(NEVER_SHARE)
     assert all(POLICY["never_share"][t] for t in NEVER_SHARE)
     assert set(POLICY["ask_first"]) <= set(NEVER_SHARE)

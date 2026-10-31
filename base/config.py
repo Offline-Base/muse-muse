@@ -24,6 +24,10 @@ EMBED_PORT = 8084
 APPROVAL_PORT = 8787
 CONNECTOR_PORT = 8790
 
+# ROUTER_LOOSEN choices (base/router.py): a rule you taught for document lists, topic words read
+# from the tagged result, and "[Student A]'s class" as a class-level question.
+ROUTER_LOOSEN_CHOICES = ("lists", "result_words", "class_of")
+
 
 class CloudBackendRefused(RuntimeError):
     """Raised when private data would reach a cloud model endpoint."""
@@ -120,6 +124,9 @@ class Settings:
     # With DEVICE_ONLY=1 and the prompt backend, how far the router model's answer counts: "tighten"
     # can only make the policy's decision stricter, "decide" replaces it (the safety floors stay).
     router_trust: Literal["tighten", "decide"] = "tighten"
+    # Router changes that ask less often, each off until it is turned on (ROUTER_LOOSEN, a comma
+    # list of ROUTER_LOOSEN_CHOICES or "all"): lists, result_words, class_of. See base/router.py.
+    router_loosen: frozenset[str] = frozenset()
     light_serial: str | None = None
     # A certificate and key for the approval port (the Jetson on a home network). With both set
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
@@ -217,6 +224,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     trust = get("ROUTER_TRUST", "tighten")
     if trust not in ("tighten", "decide"):
         raise ValueError(f"ROUTER_TRUST must be tighten or decide, not {trust!r}")
+    loosen = _router_loosen(get("ROUTER_LOOSEN", ""))
     primary = get("PRIMARY_MODEL", "lfm" if device_only else "glimmer")
     if dreaming == "local_lora" and primary == "lfm":
         raise ValueError("DREAMING_BACKEND=local_lora trains Glimmer: set PRIMARY_MODEL=glimmer and GLIMMER_GGUF")
@@ -282,6 +290,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         jetson_url=get("JETSON_URL") or None,
         dreaming_backend=dreaming,  # type: ignore[arg-type]
         router_trust=trust,  # type: ignore[arg-type]
+        router_loosen=loosen,
         light_serial=get("LIGHT_SERIAL") or None,
         approval_tls_cert=Path(get("APPROVAL_TLS_CERT")).expanduser() if get("APPROVAL_TLS_CERT") else None,
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
@@ -303,6 +312,19 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         tag_rotation=rotation,  # type: ignore[arg-type]
         tag_grace_hours=grace,
     )
+
+
+def _router_loosen(value: str) -> frozenset[str]:
+    """ROUTER_LOOSEN: "" or none for nothing, all for every choice, else a comma list of them."""
+    words = {w.strip().lower() for w in value.split(",") if w.strip()}
+    if words <= {"none"}:
+        return frozenset()
+    if words == {"all"}:
+        return frozenset(ROUTER_LOOSEN_CHOICES)
+    unknown = words - set(ROUTER_LOOSEN_CHOICES)
+    if unknown:
+        raise ValueError(f"ROUTER_LOOSEN takes all, none or {', '.join(ROUTER_LOOSEN_CHOICES)}, not {sorted(unknown)}")
+    return frozenset(words)
 
 
 def _is_loopback_url(url: str) -> bool:

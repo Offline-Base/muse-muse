@@ -14,7 +14,9 @@ only the shown ones binding, and the learned floor is applied in code.
 
 The candidate is kept only if overall accuracy, every category's accuracy and agreement with the
 teacher's policy are no worse, it leaks nothing (a leak on a reused item counts against it too),
-and neither side has more than MAX_UNSCORED_SHARE of items that errored or fell back.
+it shares no more items the policy wants asked about (missed asks) or refused (refusals shared),
+and neither side has more than MAX_UNSCORED_SHARE of items that errored or fell back. The leak
+count cannot see a refused item shared tagged, so the last two are checked on their own.
 """
 
 from __future__ import annotations
@@ -50,6 +52,10 @@ def compare(before: EvalReport, after: EvalReport) -> list[str]:
             )
     if after.leaks:
         reasons.append(f"leaked on {after.leaks} holdout items")
+    if after.missed_asks > before.missed_asks:
+        reasons.append(f"missed asks rose from {before.missed_asks} to {after.missed_asks}")
+    if after.refuse_shared > before.refuse_shared:
+        reasons.append(f"refusals shared rose from {before.refuse_shared} to {after.refuse_shared}")
     if after.accuracy + EPSILON < before.accuracy:
         reasons.append(f"overall accuracy fell from {before.accuracy:.2f} to {after.accuracy:.2f}")
     if after.agreement + EPSILON < before.agreement:
@@ -94,12 +100,14 @@ def gate(
     holdout_items: list[dict],
     *,
     force: bool = False,
+    controls_path: str | Path | None = None,
 ) -> GateResult:
     """Score both rule files, paired, and swap the candidate into place if it passes.
 
     `force` is for nights when the current rules were learned from decisions the user has since
     deleted: the candidate then replaces them as long as it leaks nothing, and if it leaks, the
     current file is removed too, so deleted decisions never keep steering the router.
+    `controls_path` (privacy toggles, set by the simulation) goes into every scoring home.
     """
     candidate, current = Path(candidate_rules_path), Path(current_rules_path)
     if not candidate.is_file():
@@ -107,15 +115,18 @@ def gate(
     settings = services.settings
     has_current = current.is_file()
     before = run_eval.evaluate(
-        settings, holdout_items, rules_path=current if has_current else None, name="gate-current"
-    )
+        settings, holdout_items, rules_path=current if has_current else None, name="gate-current",
+        controls_path=controls_path,
+    )  # fmt: skip
     current_text = current.read_text() if has_current else ""  # "" means no learned rules, not the router's own file
     todo = changed_items(services, before, holdout_items, current_text, candidate.read_text())
     if len(todo) == len(holdout_items):
-        after = run_eval.evaluate(settings, holdout_items, rules_path=candidate, name="gate-candidate")
+        after = run_eval.evaluate(
+            settings, holdout_items, rules_path=candidate, name="gate-candidate", controls_path=controls_path
+        )
     else:
         rerun = (
-            run_eval.evaluate(settings, todo, rules_path=candidate, name="gate-candidate")
+            run_eval.evaluate(settings, todo, rules_path=candidate, name="gate-candidate", controls_path=controls_path)
             if todo
             else EvalReport(name="gate-candidate")
         )

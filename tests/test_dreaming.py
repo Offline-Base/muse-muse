@@ -7,6 +7,7 @@ import threading
 import time
 import types
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -807,3 +808,96 @@ def test_rules_header_and_router_prompt_say_broader_strict_rules_still_hold(sett
     rules = train.read_rules(text)
     key = train.rule_key("snippet", ["parents"], train.relevant_topics(small_policy()))
     assert train.match_rule(rules, *key) is None and train.learned_floor(rules, *key).decision == "refuse"
+
+
+# ----- stricter share rules (HANDOFF open item 12, the t085 case) -----
+
+
+def eval_policy():
+    return UserPolicy.load(Path(__file__).resolve().parents[1] / "eval" / "user_policy.yaml")
+
+
+def approvals(kind, topics, n, label="share_tagged"):
+    return [ex(kind, topics, label, approved=True, remember=True)] * n
+
+
+def test_two_approvals_on_snippets_with_no_topics_teach_no_share_rule(settings):
+    # Oct 27: two approvals taught "share snippets with no topics", and t085, a discipline note
+    # with no discipline keyword, went out tagged with no card. That rule never forms now.
+    assert train.learn_rules(approvals("snippet", [], 2), eval_policy()) == []
+    train.train(approvals("snippet", [], 2), settings, day="2026-10-30", policy=eval_policy())
+    rules_text = settings.paths.router_prompt.read_text()
+    assert "kind: snippet; topics: none" not in rules_text
+
+    from base.router import Router
+    from base.types import RouteInput
+
+    class NoModel:
+        def chat_json(self, *_a, **_k):
+            raise AssertionError("the router asked the model")
+
+    device = replace(settings, device_only=True, primary_model="lfm", dreaming_backend="rules")
+    note = RouteInput("what happened at recess", "snippet", "[Student A] was sent to the office after recess.")
+    out = Router(device, NoModel(), eval_policy(), rules_text=rules_text).decide(note)
+    assert out.decision == "ask_user" and out.code == "policy_default"
+
+
+def test_a_share_rule_for_a_whole_kind_needs_five_decisions_that_all_agree():
+    policy = eval_policy()
+    assert train.learn_rules(approvals("snippet", [], 4), policy) == []
+    dissent = approvals("snippet", [], 5) + [ex("snippet", [], "ask_user", approved=True, remember=False)]
+    assert train.learn_rules(dissent, policy) == []  # 5 of 6 is 83%: enough before, not now
+    assert [(r.result_kind, r.topics, r.decision, r.count) for r in train.learn_rules(approvals("snippet", [], 5), policy)] == [
+        ("snippet", (), "share_tagged", 5)
+    ]
+    # Groups with topics and ask first or refuse rules keep the old bar.
+    assert train.learn_rules(approvals("per_student", ["grades"], 2), policy)[0].decision == "share_tagged"
+    asks = [ex("snippet", [], "ask_user", approved=True, remember=False)] * 2
+    assert train.learn_rules(asks, policy)[0].decision == "ask_user"
+    # Practice defaults follow the same bar.
+    assert train.learn_rules([ex("snippet", [], "share_tagged", source="synthetic")] * 4, policy) == []
+
+
+@pytest.mark.parametrize("topic", ["third_party", "parents", "full_text"])
+def test_a_group_going_outside_the_class_never_gets_a_share_rule(topic):
+    policy = eval_policy()
+    assert train.learn_rules(approvals("free_text", [topic], 5), policy) == []
+    assert train.learn_rules([ex("free_text", [topic], "share_tagged", source="synthetic")] * 5, policy) == []
+    asked = [ex("free_text", [topic], "ask_user", approved=True, remember=False)] * 3
+    assert {(r.result_kind, r.decision) for r in train.learn_rules(asked, policy)} == {("free_text", "ask_user"), (None, "ask_user")}
+
+
+def test_destination_topics_come_from_the_policy():
+    assert train.destination_topics(eval_policy()) == {"parents", "third_party", "full_text", "deanonymize"}
+    assert train.destination_topics(None) == train.DESTINATION_TOPICS
+    assert train.destination_topics(small_policy()) == frozenset()  # no request topics there
+    assert train.learn_rules(approvals("free_text", ["parents"], 5)) == []  # no policy: the default names
+
+
+# ----- the gate checks missed asks and refusals shared -----
+
+
+@pytest.mark.parametrize(("field", "reason"), [("missed_asks", "missed asks rose"), ("refuse_shared", "refusals shared rose")])
+def test_gate_rejects_a_candidate_that_shares_one_more_ask_or_refusal_even_when_more_accurate(
+    settings, tmp_path, scored, field, reason
+):
+    table, _ = scored
+    table.update(current=report(0.5), candidate=replace(report(0.9), **{field: 1}))
+    candidate, current = two_files(tmp_path)
+    g = gate.gate(SimpleNamespace(settings=settings), candidate, current, [{"id": "h"}])
+    assert not g.keep and any(reason in r for r in g.reasons)
+    assert current.read_text() == "current\n"
+
+    table.update(current=replace(report(0.5), **{field: 1}), candidate=replace(report(0.9), **{field: 1}))
+    candidate.write_text("candidate\n")
+    assert gate.gate(SimpleNamespace(settings=settings), candidate, current, [{"id": "h"}]).keep  # no worse
+
+
+def test_night_reports_missed_asks_and_refusals_shared_for_the_rules_in_place(settings, holdout_file, tmp_path, monkeypatch):
+    def evaluate(settings, items, *, rules_path=None, name, **kw):
+        return replace(report(0.5 if rules_path is None else 0.75, name=name), missed_asks=0, refuse_shared=2)
+
+    monkeypatch.setattr(run_eval, "evaluate", evaluate)
+    rows = [row(i, "per_student", ["grades"], "approve", True) for i in range(1, 4)]
+    r = runner_for(settings, rows, holdout_file, tmp_path).run_night()
+    assert r.kept and (r.missed_asks, r.refuse_shared) == (0, 2)

@@ -1,0 +1,3 @@
+night,approval_requests,accuracy,agreement,leaks,kept,seconds,wanted_requests,unneeded_requests,day_mix,acc_share_tagged,acc_share_summary,acc_ask_user,acc_refuse,day_leaks,user_rules,practice_rules,gate_rerun,missed_asks,refuse_shared,day_missed_asks,day_refuse_shared,late_answers,unanswered,undone,persona
+0,,0.6,0.6,0,,13.4,,,,1.0,0.2,0.4,0.8,,,,,2,1,,,,,,privacy_officer (simulated)
+1,3,0.65,0.65,0,yes,13.9,3,0,share_tagged:5 share_summary:2 ask_user:3,1.0,0.4,0.4,0.8,0,0,0,0,2,1,0,0,0,3,0,privacy_officer (simulated)

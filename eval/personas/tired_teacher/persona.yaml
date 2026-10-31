@@ -1,0 +1,16 @@
+# Simulated persona (invented). Not a person: a policy file plus seeded habits. See README.md.
+# Loaded by eval/persona.py; every chance is from 0 to 1, and the same seed gives the same answers.
+id: tired_teacher
+name: Simulated tired 4th-grade teacher (invented)
+description: "The strict teacher's policy answered with noise: slips, a forgotten remember box, late answers and a changed mind. Tests MIN_AGREEMENT and the deletion path."
+policy: policy.yaml
+toggles: []
+seed: 104
+mix: natural
+behavior:
+  flip_p: 0.1             # the answer is the opposite of the policy's
+  forget_remember_p: 0.3   # "don't ask again" left unticked when meant
+  late_p: 0.2             # answered after that night's dreaming
+  ignore_p: 0.0           # never answered
+  undo_p: 0.05             # a remembered answer deleted the next morning
+  seconds_per_card: 15     # an assumption, not a measurement

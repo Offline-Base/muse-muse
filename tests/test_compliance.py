@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -333,3 +334,20 @@ def test_a_broken_controls_file_turns_every_toggle_on(tmp_path):
         assert out.status == "refused" and "Ashgrove" not in out.text
     finally:
         svc.close()
+
+
+def test_a_toggle_hold_keeps_its_floor_as_the_reason_code(tmp_path):
+    svc = services_for(tmp_path, ["coppa"])
+    try:
+        out = Egress(svc).release("read_document", "class numbers for my records", "The class improved.", "class_aggregate",
+                                  summary="The class improved.", sources=["scans/a.png"])  # fmt: skip
+        assert out.status == "waiting" and out.decision.code == "compliance:scan"
+        assert json.loads(svc.approvals.get(out.approval_id)["receipt"])["code"] == "compliance:scan"
+    finally:
+        svc.close()
+    (tmp_path / "c").mkdir()
+    cloud = services_for(tmp_path / "c", ["ferpa"], device_only=False)
+    try:
+        assert Egress(cloud).release("search_documents", "for my records", "Plain notes.", "snippet").decision.code == "compliance:cloud"
+    finally:
+        cloud.close()

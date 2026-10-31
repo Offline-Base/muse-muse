@@ -790,3 +790,44 @@ def test_a_summary_is_not_neutralized(make, settings):
     egress, svc, _guard = real_guard_egress(make, settings, decision="share_summary")
     out = egress.release("get_result", "Class average?", "Plain result.", "class_aggregate", summary="Average 3 of 4.")
     assert out.text == "Average 3 of 4." and "[Redacted" not in out.text
+
+
+# ----- identifier_topics (the policy counts a phone number as a parent contact) -----
+
+
+def test_a_contact_result_with_a_phone_is_refused_under_identifier_topics(make, settings):
+    egress, svc, guard = real_guard_egress(make, settings)
+    out = egress.release("search_documents", "pickup list for Friday", "Pickup: grandmother at 512-555-0147.", "snippet")
+    assert out.status == "refused" and "555-0147" not in out.text
+    assert out.decision.floors[0] == "blocked:parent_contact" and out.decision.code == "blocked:parent_contact"
+    row = svc.approvals.history(limit=1)[0]
+    assert "parent_contact" in row["topics"] and json.loads(row["receipt"])["code"] == "blocked:parent_contact"
+
+
+def test_identifier_topics_only_count_the_results_own_identifiers(make, settings):
+    # An address in Muse's request alone is asked about (test above): the request may only name it.
+    egress, svc, guard = real_guard_egress(make, settings)
+    out = egress.release("get_result", "Is 1200 Oak Avenue on the bus route?", "Bus 4 runs at 3:10.", "free_text")
+    assert out.status == "waiting" and not any(f.startswith("blocked") for f in out.decision.floors)
+
+
+def test_without_identifier_topics_a_phone_still_only_asks(make, settings):
+    from base import guard
+    from base.egress import identifier_topics
+
+    policy = UserPolicy.load(FIXTURE)  # no identifier_topics
+    router = Router(settings, FakeLLM({"decision": "share_tagged", "reason": "Fine."}), policy)
+    egress, svc = make(router=router, policy=policy, roster=guard.load_roster(settings.roster_path), tagmap=guard.TagMap(seed=7))
+    egress.guard = guard
+    out = egress.release("search_documents", "pickup list for Friday", "Pickup: grandmother at 512-555-0147.", "snippet")
+    assert out.status == "waiting" and out.decision.code == "identifier:phone"
+    assert identifier_topics([Hit("phone", "512-555-0147", 0, 12)], policy) == []
+    assert identifier_topics([Hit("email", "a@example.org", 0, 13)], UserPolicy.load(EVAL_POLICY)) == ["parent_contact"]
+
+
+def test_every_decision_row_keeps_its_reason_code_in_the_receipt(make):
+    egress, svc = make("ask_user")
+    svc.router = SimpleNamespace(decide=lambda inp, **kw: RouteDecision("ask_user", "r", "rule", 1, [], code="policy_default"))
+    out = egress.release("get_result", "Seating notes", RAW, "free_text")
+    receipt = json.loads(svc.approvals.get(out.approval_id)["receipt"])
+    assert receipt["code"] == "policy_default" and out.decision.code == "policy_default"

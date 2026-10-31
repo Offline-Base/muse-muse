@@ -64,6 +64,8 @@ class NightReport:
     note: str = ""
     categories: dict = field(default_factory=dict)  # holdout accuracy per expected decision, rules in place
     gate_rerun: int | None = None  # holdout items the gate re-ran on the new rules; None if it did not run
+    missed_asks: int = 0  # holdout items the policy wants asked about that the rules in place shared
+    refuse_shared: int = 0  # holdout items the policy refuses that the rules in place shared
 
     def numbers(self) -> dict:
         """Aggregate numbers only."""
@@ -98,6 +100,9 @@ class NightRunner:
         # Set by the simulation: its unseen test items, never trained on (like the holdout), so a
         # practice set that contains them cannot teach the router the answers.
         self.exclude_ids: set[str] = set()
+        # Set by the simulation: a persona's privacy_controls.json (its toggles), copied into
+        # every home the gate scores in, so the holdout is scored under the same toggles.
+        self.controls_path: Path | None = None
         self._thread: threading.Thread | None = None
         with self._db() as con:
             con.executescript(_SCHEMA)
@@ -200,7 +205,7 @@ class NightRunner:
             if not holdout:
                 note += " No holdout items, so nothing was kept."
         else:
-            g = gate.gate(self.services, candidate, current, holdout, force=tainted)
+            g = gate.gate(self.services, candidate, current, holdout, force=tainted, controls_path=self.controls_path)
             before, after, kept, rerun = g.before, g.after, g.keep, g.rerun
             self._write_raw(before, after)
             in_place_ids = user_ids if kept else ([] if tainted else prev_ids)
@@ -228,6 +233,8 @@ class NightRunner:
             note=note.strip(),
             categories=in_place.category_accuracy(),
             gate_rerun=rerun,
+            missed_asks=getattr(in_place, "missed_asks", 0),
+            refuse_shared=getattr(in_place, "refuse_shared", 0),
         )
         with self._db() as con:
             con.execute(
@@ -250,7 +257,9 @@ class NightRunner:
         if not holdout:
             return run_eval.EvalReport(name="no-holdout")
         rules = current if current.is_file() else None
-        return run_eval.evaluate(self.settings, holdout, rules_path=rules, name="night-current")
+        return run_eval.evaluate(
+            self.settings, holdout, rules_path=rules, name="night-current", controls_path=self.controls_path
+        )
 
     # ----- db -----
 

@@ -116,3 +116,6 @@ class RouteDecision:
     source: Literal["model", "rule", "fallback", "cache"]
     latency_ms: int = 0
     floors: list[str] = field(default_factory=list)
+    # What decided it, as a fixed string (never model text): "policy_default", "outside_class",
+    # "identifier:phone"... docs/CONTRACTS.md (Router) lists them. Empty when unknown.
+    code: str = ""
