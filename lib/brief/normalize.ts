@@ -1,4 +1,4 @@
-import type { Brief } from "@/lib/brief/schema";
+import { MAX_AGENT_TOOLS, type Brief } from "@/lib/brief/schema";
 import type { RebuildTarget, Reference } from "@/lib/types";
 
 /**
@@ -98,6 +98,19 @@ export function normalizeRawBrief(raw: unknown, references: Reference[]): unknow
       byIndex.set(i, { ...r, kind: references[i].kind });
     }
     insp.references = [...byIndex.entries()].sort(([a], [b]) => a - b).map(([, r]) => r);
+  }
+
+  // Duplicates only: which targets and tools stay is applyTargets' call, once zod has passed.
+  if (Array.isArray(b.targets)) {
+    const seen = new Set<unknown>();
+    b.targets = asArray(b.targets).filter((t) => !seen.has(t.id) && Boolean(seen.add(t.id)));
+    for (const t of b.targets as Loose[]) if (typeof t.why === "string") t.why = clamp(t.why, 200);
+  }
+  const agent = b.agent as Loose | null | undefined;
+  if (agent && Array.isArray(agent.tools)) {
+    const seen = new Set<unknown>();
+    agent.tools = asArray(agent.tools).filter((t) => !seen.has(t.id) && Boolean(seen.add(t.id))).slice(0, MAX_AGENT_TOOLS);
+    if (typeof agent.task === "string") agent.task = clamp(agent.task, 400);
   }
 
   // A sample can only come from the user when they gave a reference of that kind.

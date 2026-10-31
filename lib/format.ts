@@ -1,3 +1,4 @@
+import type { TargetId } from "@/lib/brief/schema";
 import type { BuildStatus, Manifest, ProductStatus } from "@/lib/types";
 
 /**
@@ -134,6 +135,20 @@ const MODEL_LABELS: Record<string, string> = {
 
 export function modelLabel(id: string): string {
   return MODEL_LABELS[id] ?? id;
+}
+
+const TARGET_LABELS: Record<TargetId, string> = {
+  web: "Web",
+  phone: "Phone",
+  desktop: "Desktop",
+  vr: "VR",
+  glasses: "Glasses",
+  agent: "Agent",
+};
+
+/** What a person calls a target. */
+export function targetLabel(id: TargetId): string {
+  return TARGET_LABELS[id];
 }
 
 export type Tone = "live" | "partial" | "failed" | "building" | "neutral";
