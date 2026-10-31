@@ -825,6 +825,17 @@ because the sidebar showed a real account.
   equals production's. The owner then creates a Neon branch "preview" and sets PREVIEW_DATABASE_URL for Preview only.
   Until both are in, no preview deploys of branches with migrations.
 
+### 19:02 Glimmer sampling: Meta's docs say not to decode greedily
+
+- The fine-tune session corrected its serving notes: Meta's Glimmer docs give temperature 1.0, top_p 0.95, top_k 64,
+  say greedy decoding gives flat, repetitive answers, and say to stop on <|end_of_text|> and <|eot|>, never <|eom|>. Its
+  earlier numbers (including the AWS Mac's 4.2 tok/s) were measured greedy, so they hold as comparisons only.
+- Offline mode's plan now defaults to Meta's sampling and checks JSON output both ways before freezing. Decision models
+  are unaffected (they read letter log-probabilities from one forward pass).
+- Found in published code: the lab's GGUF cards and Ollama settings (lib/train/hub-cards.ts, recipes/quantize.ts) say
+  temperature 0, and tuned models' stops include <|eom|>. Asked the fine-tune session, whose knowledge run wrote them,
+  whether to change them; nothing changed yet.
+
 ## Gaps
 
 What this record doesn't confirm:
