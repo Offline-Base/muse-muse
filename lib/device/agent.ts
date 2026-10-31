@@ -12,6 +12,8 @@ export const MAX_MODEL_CALLS = 10;
 export const MAX_TOOL_CALLS = 10;
 /** The longest reply. Wonder is told to answer briefly, and it pays for what it writes on every call of a run. */
 export const MAX_OUTPUT_TOKENS = 2000;
+/** Questions an admin may ask in a minute (/api/device/ask). Each can record for minutes and spends on every model call. */
+export const ASKS_PER_MINUTE = 6;
 
 /** What a model may use for any question: these look, listen and report, and change nothing on the board. */
 const READ_TOOLS = ["describe_device", "capture_image", "record_audio", "list_models", "ask_model", "training_status"];

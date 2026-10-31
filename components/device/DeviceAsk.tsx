@@ -9,6 +9,7 @@ const ERRORS: Record<string, string> = {
   device_unavailable: "Couldn't reach the board. Its server or tunnel may be down.",
   model_unavailable: "Couldn't reach Muse Wonder.",
   paused: "Today's spend cap is reached, so model calls are paused.",
+  rate_limited: "That's a lot of questions for one minute. Try again in a moment.",
 };
 
 type Part = { type?: string; text?: string; data?: string; mimeType?: string };

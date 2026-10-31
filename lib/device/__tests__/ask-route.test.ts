@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import OpenAI from "openai";
+import { ASKS_PER_MINUTE } from "@/lib/device/agent";
 
 const at = (path: string) => new URL(path, import.meta.url).href;
 const URL_VALUE = "https://board.example/mcp";
@@ -30,6 +31,8 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
   let modelCalls = 0;
   let recorded: Array<{ ctx: { source: string; endpoint: string }; items: Array<{ model: string; outputTokens: number }> }> = [];
   let boardCalls = 0;
+  let hits = 0;
+  let pauseAfterModelCalls = Infinity;
   let handlers: typeof import("@/app/api/device/ask/route");
 
   const post = (body: unknown) => handlers.POST(new Request("http://x/api/device/ask", { method: "POST", body: JSON.stringify(body) }));
@@ -55,7 +58,10 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
         callDeviceTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false }),
       },
     });
-    mock.module(at("../../quota.ts"), { namedExports: { spendPaused: async () => paused } });
+    mock.module(at("../../quota.ts"), { namedExports: { spendPaused: async () => paused || modelCalls >= pauseAfterModelCalls } });
+    mock.module(at("../../gateway/store.ts"), {
+      namedExports: { hitRateLimits: async (keys: string[]) => Object.fromEntries(keys.map((key) => [key, ++hits])) },
+    });
     mock.module(at("../../usage.ts"), {
       namedExports: {
         recordUsage: async (ctx: { source: string; endpoint: string }, items: Array<{ model: string; outputTokens: number }>) => {
@@ -88,6 +94,8 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
     modelDown = false;
     modelCalls = 0;
     boardCalls = 0;
+    hits = 0;
+    pauseAfterModelCalls = Infinity;
     recorded = [];
     process.env.DEVICE_MCP_URL = URL_VALUE;
   });
@@ -122,6 +130,27 @@ describe("/api/device/ask", { skip: typeof mock.module !== "function" }, () => {
     const res = await post({ prompt: "look" });
     assert.equal(res.status, 503);
     assert.equal((await res.json()).error, "paused");
+    assert.equal(modelCalls + boardCalls, 0);
+  });
+
+  it("stops partway when the spend cap is reached during a question", async () => {
+    pauseAfterModelCalls = 1;
+    const res = await post({ prompt: "what do you see?" });
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error, "paused");
+    assert.equal(modelCalls, 1);
+  });
+
+  it("limits how many questions an admin can ask in a minute", async () => {
+    for (let i = 0; i < ASKS_PER_MINUTE; i++) {
+      modelCalls = 0;
+      assert.equal((await post({ prompt: "look" })).status, 200);
+    }
+    modelCalls = 0;
+    boardCalls = 0;
+    const res = await post({ prompt: "look" });
+    assert.equal(res.status, 429);
+    assert.equal((await res.json()).error, "rate_limited");
     assert.equal(modelCalls + boardCalls, 0);
   });
 
