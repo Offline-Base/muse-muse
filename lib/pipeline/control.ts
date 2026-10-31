@@ -1,7 +1,8 @@
 /**
  * The owner's controls for a running build (docs/MUSE_CODE_FULL.md, "The owner steers"): what POST
- * /api/builds/{id}/control accepts, turned into the MuseCommands that go into the round's mailbox, and the text its
- * `control` build event shows. Pure, so the route stays thin and tests feed it bodies directly.
+ * /api/builds/{id}/control accepts, turned into the MuseCommands that go into the round's mailbox, the text its
+ * `control` build event shows and the owner's own words the change policy checks first. Pure, so the route stays thin
+ * and tests feed it bodies directly.
  */
 import type { MuseAnswer, MuseCommand } from "@/lib/sandbox/bridge-protocol";
 import type { BuildEventBody, BuildStatus } from "@/lib/types";
@@ -62,6 +63,12 @@ export interface ControlRequest {
   commands: MuseCommand[];
   /** The `control` event's text: the owner's own words, or what they asked for when the command has none. */
   text?: string;
+  /**
+   * The words the owner wrote that reach the agent: a note, a goal, a subagent message or typed answers. The route puts
+   * them through the change policy before anything is sent. Absent for a command with no words of their own, such as a
+   * stop or an option the session offered.
+   */
+  ownerText?: string;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -155,7 +162,7 @@ export function parseControl(body: Record<string, unknown>): Parsed<ControlReque
       const text = cleanText(body.text, "note", MAX_CONTROL_TEXT);
       if (!text.ok) return text;
       const command: MuseCommand = act === "steer" ? { type: "steer", text: text.value } : { type: "queue", text: text.value };
-      return { ok: true, value: { action: act, commands: [command], text: text.value } };
+      return { ok: true, value: { action: act, commands: [command], text: text.value, ownerText: text.value } };
     }
     case "interrupt":
       return { ok: true, value: { action: act, commands: [{ type: "interrupt" }] } };
@@ -166,7 +173,15 @@ export function parseControl(body: Record<string, unknown>): Parsed<ControlReque
       if (goalAction === "set" || goalAction === "edit") {
         const objective = cleanText(body.objective, "goal", MAX_CONTROL_TEXT);
         if (!objective.ok) return objective;
-        return { ok: true, value: { action: act, commands: [{ type: "goal", action: goalAction, objective: objective.value }], text: objective.value } };
+        return {
+          ok: true,
+          value: {
+            action: act,
+            commands: [{ type: "goal", action: goalAction, objective: objective.value }],
+            text: objective.value,
+            ownerText: objective.value,
+          },
+        };
       }
       if (goalAction === "pause" || goalAction === "resume" || goalAction === "clear") {
         return { ok: true, value: { action: act, commands: [{ type: "goal", action: goalAction }], text: `${VERB[goalAction]} the goal` } };
@@ -178,7 +193,17 @@ export function parseControl(body: Record<string, unknown>): Parsed<ControlReque
       if (typeof userInputId !== "string" || !OPAQUE_ID.test(userInputId)) return bad("Say which question you're answering.");
       const answers = cleanAnswers(body.answers);
       if (!answers.ok) return answers;
-      return { ok: true, value: { action: act, commands: [{ type: "answer", userInputId, answers: answers.value }], text: answerText(answers.value) } };
+      // The session refuses a label it didn't offer (userInputAnswerInvalid), so only typed replies are the owner's own.
+      const typed = answers.value.flatMap((a) => (a.freeText ? [a.freeText] : []));
+      return {
+        ok: true,
+        value: {
+          action: act,
+          commands: [{ type: "answer", userInputId, answers: answers.value }],
+          text: answerText(answers.value),
+          ...(typed.length ? { ownerText: typed.join("\n\n") } : {}),
+        },
+      };
     }
     case "workflow": {
       const { workflowAction } = body;
@@ -207,7 +232,15 @@ export function parseControl(body: Record<string, unknown>): Parsed<ControlReque
       if (subagentAction === "message") {
         const text = cleanText(body.text, "message", MAX_CONTROL_TEXT);
         if (!text.ok) return text;
-        return { ok: true, value: { action: act, commands: [{ type: "subagent", action: "message", childSessionId, text: text.value }], text: text.value } };
+        return {
+          ok: true,
+          value: {
+            action: act,
+            commands: [{ type: "subagent", action: "message", childSessionId, text: text.value }],
+            text: text.value,
+            ownerText: text.value,
+          },
+        };
       }
       return {
         ok: true,

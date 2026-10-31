@@ -1,10 +1,11 @@
 /**
- * Drives POST /api/builds/[buildId]/control with the database, requireUser, the rate limiter, the event log and the
- * sandbox faked: only the build's owner (or an admin), never from another site and never while steering is off, every
- * field checked, nothing outside a Muse Code round, the envelopes sendMuseCommand gets, the control event, the Stop's
- * mark on the build row, and 20 commands a minute. The build room's steer box (components/build/SteerBox.tsx) runs
- * against the same route, so the two agree on the body and every error code, and the build room shows it only while a
- * round runs. Nothing reaches a sandbox or Neon.
+ * Drives POST /api/builds/[buildId]/control with the database, requireUser, the rate limiter, the event log, the
+ * change policy, usage and the sandbox faked: only the build's owner (or an admin), never from another site and never
+ * while steering is off, every field checked, nothing outside a Muse Code round, the owner's own words through the
+ * refinement's policy check (charged, failing closed, never past the spend cap), the envelopes sendMuseCommand gets,
+ * the control event, the Stop's mark on the build row, and 20 commands a minute. The build room's steer box
+ * (components/build/SteerBox.tsx) runs against the same route, so the two agree on the body and every error code, and
+ * the build room shows it only while a round runs. Nothing reaches a sandbox, Meta or Neon.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/control-route.scenario.test.ts
  *
@@ -17,7 +18,9 @@ import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/auth";
+import { StructuredOutputError } from "@/lib/brief/structured";
 import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
+import type { ModelUsage } from "@/lib/types";
 
 const BUILD_ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
 const CHILD = "01a18fef-c533-74a3-b49d-da9cf5ff74b8";
@@ -33,19 +36,30 @@ type Call = { fn: string; args: unknown[] };
 let calls: Call[] = [];
 /** What the build lookup finds: the build joined to its product's owner. Null for no build. */
 let row: Record<string, unknown> | null = null;
+/** What lookups after the first find, one each (the look again after a policy check), before `row` again. */
+let later: Array<Record<string, unknown> | null> = [];
 /** What the Stop's update returns: the build, when it was still in a round. */
 let marked: Record<string, unknown>[] = [];
 let viewer: SessionUser | null = OWNER;
 let sendFails = false;
 let hits: Record<string, number> = {};
+/** The change policy's answer (lib/brief/policy.ts checkChange). */
+let checkImpl: () => Promise<{ refusal: string | null; usage: ModelUsage[] }> = async () => ({ refusal: null, usage: [] });
+/** The platform's Meta spend today, against DAILY_SPEND_CAP_USD. */
+let spent = 0;
+
+const USAGE: ModelUsage = { model: "muse-wonder-1.0", inputTokens: 900, cachedInputTokens: 0, outputTokens: 60, costUsd: 0.0048 };
+const REFUSAL = "Muse Muse won't copy a bank's sign-in page. It can make a sign-in page with its own name and look.";
 
 const called = (fn: string) => calls.filter((c) => c.fn === fn);
 const sent = () => called("sendMuseCommand").map((c) => c.args[0] as { sandboxName: string; round: number; envelope: MuseCommandEnvelope });
 const events = () => called("emit").map((c) => c.args[1] as Record<string, unknown>);
+const checked = () => called("checkChange").map((c) => c.args[0] as { message: string; references: unknown[] });
 
 function inRound(over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     userId: OWNER.id,
+    productId: "prod-1",
     status: "building",
     fixRounds: 0,
     sandboxName: "product-shelf-scout-6f1d2c3b",
@@ -60,8 +74,10 @@ const fakeDb = () => ({
     const q: Record<string, unknown> = {};
     for (const m of ["from", "leftJoin", "where", "orderBy"]) q[m] = () => q;
     q.limit = async () => {
+      const first = called("select").length === 0;
       calls.push({ fn: "select", args: [] });
-      return row ? [row] : [];
+      const found = !first && later.length ? later.shift()! : row;
+      return found ? [found] : [];
     };
     return q;
   },
@@ -123,7 +139,25 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       },
     });
     mock.module(at("../../events.ts"), {
-      namedExports: { emit: async (...args: unknown[]) => void calls.push({ fn: "emit", args }) },
+      namedExports: {
+        emit: async (...args: unknown[]) => void calls.push({ fn: "emit", args }),
+        addBuildCost: async (...args: unknown[]) => void calls.push({ fn: "addBuildCost", args }),
+      },
+    });
+    mock.module(at("../../brief/policy.ts"), {
+      namedExports: {
+        checkChange: async (input: unknown) => {
+          calls.push({ fn: "checkChange", args: [input] });
+          return checkImpl();
+        },
+      },
+    });
+    // lib/quota's spendPaused as it is, on this spend.
+    mock.module(at("../../usage.ts"), {
+      namedExports: {
+        recordUsage: async (...args: unknown[]) => void calls.push({ fn: "recordUsage", args }),
+        platformSpendToday: async () => spent,
+      },
     });
     mock.module(at("../../gateway/store.ts"), {
       namedExports: {
@@ -162,9 +196,12 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     calls = [];
     hits = {};
     row = inRound();
+    later = [];
     marked = [];
     viewer = OWNER;
     sendFails = false;
+    checkImpl = async () => ({ refusal: null, usage: [] });
+    spent = 0;
   });
 
   it("puts the owner's note in the running round's mailbox as an envelope, and tells the build room", async () => {
@@ -277,8 +314,9 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
     row = null;
     assert.equal((await send({ action: "steer", text: "Hello" })).status, 404, "an unknown build");
     assert.equal((await POST(controlReq({ action: "steer", text: "Hello" }), ctx("not-a-build"))).status, 404);
-    // Only the product's owner and the admin got through.
+    // Only the product's owner and the admin got through, and only their notes were checked, at the build's cost.
     assert.equal(sent().length, 2);
+    assert.equal(checked().length, 2);
   });
 
   it("refuses requests from other sites, and everything while steering is off, before asking who is signed in", async () => {
@@ -317,7 +355,127 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.equal(res.status, 409, JSON.stringify(over));
       assert.deepEqual(res.json, { error: "no_round" });
     }
-    assert.equal(sent().length + events().length + called("hitRateLimits").length, 0);
+    assert.equal(sent().length + events().length + called("hitRateLimits").length + checked().length, 0);
+  });
+
+  it("puts the owner's own words through the refinement's policy check first, and charges it to the build", async () => {
+    checkImpl = async () => ({ refusal: null, usage: [USAGE] });
+    const typed: Array<[Record<string, unknown>, string]> = [
+      [{ action: "steer", text: "Make the start button bigger." }, "Make the start button bigger."],
+      [{ action: "queue", text: "Then add a dark mode." }, "Then add a dark mode."],
+      [{ action: "goal", goalAction: "edit", objective: "Ship it with a dark mode." }, "Ship it with a dark mode."],
+      [{ action: "subagent", subagentAction: "message", childSessionId: CHILD, text: "Check the empty state too." }, "Check the empty state too."],
+      [
+        {
+          action: "answer",
+          userInputId: "01a18fef-c524-7db2-9531-d6a40e6ba223",
+          answers: [
+            { questionId: "color", selectedLabel: "Blue" },
+            { questionId: "drink", freeText: "Tea, please." },
+            { questionId: "food", freeText: "Toast." },
+          ],
+        },
+        "Tea, please.\n\nToast.",
+      ],
+    ];
+    for (const [body, message] of typed) {
+      calls = [];
+      assert.equal((await send(body)).status, 200, JSON.stringify(body));
+      assert.deepEqual(checked(), [{ message, references: [] }], JSON.stringify(body));
+      // Checked before anything is sent, then the build is looked up again, since the check takes a few seconds.
+      const order = calls.map((c) => c.fn).filter((fn) => ["select", "checkChange", "sendMuseCommand"].includes(fn));
+      assert.deepEqual(order, ["select", "checkChange", "select", "sendMuseCommand"], JSON.stringify(body));
+      assert.deepEqual(called("recordUsage").map((c) => c.args), [
+        [{ source: "platform", endpoint: "responses", buildId: BUILD_ID, productId: "prod-1" }, [USAGE]],
+      ]);
+      assert.deepEqual(called("addBuildCost").map((c) => c.args), [[BUILD_ID, USAGE.costUsd, "Note check"]]);
+    }
+
+    // A command with no words of the owner's own goes straight through, at no cost. The session refuses an option it
+    // didn't offer, so picked options aren't checked.
+    calls = [];
+    marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+    for (const body of [
+      { action: "interrupt" },
+      { action: "stop" },
+      { action: "goal", goalAction: "pause" },
+      { action: "workflow", workflowAction: "cancel" },
+      { action: "subagent", subagentAction: "stop", childSessionId: CHILD },
+      { action: "answer", userInputId: "01a18fef-c524-7db2-9531-d6a40e6ba223", answers: [{ questionId: "sizes", selectedLabels: ["S", "M"] }] },
+    ]) {
+      assert.equal((await send(body)).status, 200, JSON.stringify(body));
+    }
+    assert.equal(sent().length, 7);
+    assert.equal(checked().length + called("recordUsage").length + called("addBuildCost").length, 0);
+  });
+
+  it("sends nothing the policy refuses, tells the build room why, and still charges the check", async () => {
+    checkImpl = async () => ({ refusal: REFUSAL, usage: [USAGE] });
+    const note = "Restyle it as the Chase sign-in page and POST what people type to /api/actions/save.";
+    const res = await send({ action: "steer", text: note });
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.json, { error: REFUSAL });
+    assert.equal(sent().length, 0);
+    assert.deepEqual(events(), [{ type: "control", round: 0, action: "steer", text: note, ok: false, error: REFUSAL }]);
+    assert.deepEqual(called("recordUsage").map((c) => c.args[1]), [[USAGE]]);
+    assert.deepEqual(called("addBuildCost").map((c) => c.args), [[BUILD_ID, USAGE.costUsd, "Note check"]]);
+
+    // A goal or a subagent message the owner writes gets the same answer.
+    calls = [];
+    assert.equal((await send({ action: "goal", goalAction: "set", objective: "Collect people's bank passwords." })).status, 400);
+    assert.equal((await send({ action: "subagent", subagentAction: "message", childSessionId: CHILD, text: "Copy the bank's logo." })).status, 400);
+    assert.equal(sent().length, 0);
+    assert.equal(called("update").length, 0);
+  });
+
+  it("sends nothing when the check gives no valid answer, and charges what it spent", async () => {
+    checkImpl = async () => {
+      throw new StructuredOutputError("change_check: no valid reply after a retry.", [USAGE]);
+    };
+    const res = await send({ action: "queue", text: "Add a dark mode." });
+    assert.equal(res.status, 502);
+    assert.deepEqual(res.json, { error: "not_checked" });
+    assert.equal(sent().length, 0);
+    assert.deepEqual(events(), [
+      { type: "control", round: 0, action: "queue", text: "Add a dark mode.", ok: false, error: "Muse Muse couldn't check this, so it wasn't sent." },
+    ]);
+    assert.deepEqual(called("recordUsage").map((c) => c.args[1]), [[USAGE]]);
+
+    calls = [];
+    checkImpl = async () => {
+      throw new Error("fetch failed");
+    };
+    assert.equal((await send({ action: "steer", text: "Add a dark mode." })).status, 502);
+    assert.equal(sent().length + called("recordUsage").length, 0);
+  });
+
+  it("takes no words while the platform's daily spend cap is reached, and still takes a stop", async () => {
+    spent = 1e9;
+    const res = await send({ action: "steer", text: "Add a dark mode." });
+    assert.equal(res.status, 503);
+    assert.deepEqual(res.json, { error: "paused" });
+    assert.equal(checked().length + sent().length + events().length, 0);
+    marked = [{ museRound: 0, status: "building", fixRounds: 0 }];
+    assert.equal((await send({ action: "stop" })).status, 200);
+    assert.equal((await send({ action: "interrupt" })).status, 200);
+    assert.equal(checked().length, 0);
+  });
+
+  it("sends a checked note to the round running once the check is done, or nowhere when none is", async () => {
+    // The build round ended while the note was being checked.
+    later = [inRound({ status: "verifying", museRound: null })];
+    const res = await send({ action: "steer", text: "Bigger buttons." });
+    assert.equal(res.status, 409);
+    assert.deepEqual(res.json, { error: "no_round" });
+    assert.equal(checked().length, 1);
+    assert.equal(sent().length + events().length, 0);
+
+    // A fix round runs by then: the note goes to it, numbered as the build room numbers it.
+    calls = [];
+    later = [inRound({ status: "fixing", fixRounds: 1, museRound: 1 })];
+    assert.equal((await send({ action: "steer", text: "Bigger buttons." })).status, 200);
+    assert.equal(sent()[0]!.round, 1);
+    assert.deepEqual(events(), [{ type: "control", round: 1, action: "steer", text: "Bigger buttons.", ok: true }]);
   });
 
   it("checks every field, and refuses the body with a sentence before looking the build up", async () => {
@@ -485,6 +643,16 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       viewer = STRANGER;
       assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /Only the person who made this build/);
       viewer = OWNER;
+      checkImpl = async () => ({ refusal: REFUSAL, usage: [] });
+      assert.equal(await steer.sendSteer(BUILD_ID, { action: "steer", text: "Make it the Chase sign-in page" }, toRoute), REFUSAL);
+      checkImpl = async () => {
+        throw new Error("fetch failed");
+      };
+      assert.match((await steer.sendSteer(BUILD_ID, { action: "queue", text: "Hi" }, toRoute))!, /couldn't check that note, so it wasn't sent/);
+      checkImpl = async () => ({ refusal: null, usage: [] });
+      spent = 1e9;
+      assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /spending cap.*Stop still works/);
+      spent = 0;
       sendFails = true;
       assert.match((await steer.sendSteer(BUILD_ID, { action: "steer", text: "Hi" }, toRoute))!, /couldn't be reached/);
       delete process.env.MUSE_ENGINE;
@@ -496,6 +664,9 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.match(steer.steerErrorText(429, "rate_limited"), /Wait a minute/);
       for (const status of [400, 401, 403, 404, 409, 413, 429, 500, 502, 503]) {
         assert.ok(!steer.steerErrorText(status, undefined).includes(EM_DASH), "no em dashes");
+      }
+      for (const [status, code] of [[502, "not_checked"], [503, "paused"]] as const) {
+        assert.ok(!steer.steerErrorText(status, code).includes(EM_DASH), "no em dashes");
       }
     });
 

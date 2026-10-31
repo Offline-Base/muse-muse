@@ -34,9 +34,14 @@ export async function sendSteer(buildId: string, body: SteerBody, fetcher: Fetch
   return steerErrorText(res.status, typeof data.error === "string" ? data.error : undefined);
 }
 
-/** The control route sends a readable sentence for 400, and stable codes for the rest (see its contract). */
+/**
+ * The control route sends a readable sentence for 400, the policy's refusal included, and stable codes for the rest
+ * (see its contract).
+ */
 export function steerErrorText(status: number, code: string | undefined): string {
   if (status === 400) return code && /\s/.test(code) ? code : "That note couldn't be sent. Check it and try again.";
+  if (code === "not_checked") return "Muse Muse couldn't check that note, so it wasn't sent. Try again in a moment.";
+  if (code === "paused") return "Muse Muse reached today's spending cap, so it can't take notes right now. Stop still works.";
   if (status === 401) return "Sign in again to steer this build.";
   if (status === 404) return "Only the person who made this build can steer it.";
   if (status === 409 || code === "no_round") return "Muse Code isn't taking notes right now. Try again once it's working.";

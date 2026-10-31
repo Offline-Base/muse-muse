@@ -92,7 +92,9 @@ their options.
 While a build runs, its owner can: send a note now (steer) or after this turn (queue), stop the turn, end the run,
 edit, pause or resume the goal, pause or cancel a workflow, message or stop a subagent, and answer a question. Routes
 check the owner as the messages route does, write the command into the mailbox (`MuseCommandEnvelope`), and add a
-`control` build event. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
+`control` build event. Words the owner writes (a note, a goal, a subagent message, a typed answer) pass the same
+change check as a refinement first (`lib/brief/policy.ts`), charged to the build, and nothing goes when it refuses or
+can't answer. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
 
 ### 5. Every product as an MCP server, a CLI, a skill and a connector (phase 3)
 
