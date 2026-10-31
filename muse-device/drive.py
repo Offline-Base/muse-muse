@@ -937,11 +937,15 @@ def process_alive(export_id, pid):
 
 def export_status(export_id):
     """What an export's status file says, except that an active export whose process has gone is recorded as failed."""
-    status = read_json(file_of(export_id, "status.json"))
     config = read_json(file_of(export_id, "config.json"))
-    if not status or not config:
+    if not config:
         return None
-    if status.get("state") in ACTIVE_STATES and not process_alive(export_id, config["pid"]):
+    # In this order, as run_status does, so a process that ends between the two steps has already written its last status.
+    alive = process_alive(export_id, config["pid"])
+    status = read_json(file_of(export_id, "status.json"))
+    if not status:
+        return None
+    if status.get("state") in ACTIVE_STATES and not alive:
         status.update(state="failed", message="The export stopped without saying why. Start it again to carry on: the files already written are kept.")
         try:
             write_json(file_of(export_id, "status.json"), status)

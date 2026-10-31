@@ -520,7 +520,8 @@ class ExportTests(DriveTestCase):
         self.drives.plug("sda", fstype="ntfs", label="BACKUP", serial="SOMEONE-ELSES")
         error, reply = self.call("erase_drive", drive="sda", identity=identity, confirm="BACKUP")
         self.assertTrue(error)
-        self.assertIn("nothing was erased", reply)
+        # Refused either way: as a drive that changed, or because the export already saw it go.
+        self.assertIn("nothing was erased", reply.lower())
         status = self.finished()
         self.assertEqual(status["state"], "failed")
         self.assertIn("unplugged", status["message"])
@@ -878,6 +879,11 @@ class ServerToolTests(DriveTestCase):
         # The sha256 is kept beside each file, so a second export hashes nothing.
         with mock.patch.object(drive, "sha256_of", side_effect=AssertionError("hashed again")):
             self.assertFalse(self.call("export_source", run="support-coach")[0])
+
+    def test_drive_status_lists_the_finished_runs(self):
+        self.assertEqual(self.call("drive_status")[1]["runs"], [{"run": "support-coach", "base": "Qwen3.5-0.8B", "adapter": "support-coach.gguf"}])
+        server.write_json(server.run_file("support-coach", "status.json"), {"state": "failed"})
+        self.assertEqual(self.call("drive_status")[1]["runs"], [])
 
     def test_export_source_refuses_a_run_that_isnt_done(self):
         server.write_json(server.run_file("support-coach", "status.json"), {"state": "failed"})

@@ -852,6 +852,18 @@ def export_source(args):
     )
 
 
+def drive_status(_args):
+    """drive.py's drives and export, and the finished runs on this board that could go on a drive."""
+    runs = []
+    if os.path.isdir(TRAIN_DIR):
+        with train_lock:
+            for name in run_names():
+                status = run_status(name)
+                if status["state"] == "done":
+                    runs.append({"run": name, "base": (read_json(run_file(name, "config.json")) or {}).get("base"), "adapter": status.get("adapter")})
+    return {**drive.status_report(), "runs": runs}
+
+
 def drive_tool(work):
     """A drive tool: drive.py does the work, and its refusals read as this server's own."""
 
@@ -1034,9 +1046,9 @@ TOOLS = {
 }
 DRIVE_TOOLS = {
     "drive_status": (
-        drive_tool(lambda _args: drive.status_report()),
+        drive_tool(drive_status),
         {
-            "description": "Lists the USB drives plugged into this board (name, size, filesystem, label, free space, read only, identity, and whether an export may use it and why not), and the current or last export with its progress and result.",
+            "description": "Lists the USB drives plugged into this board (name, size, filesystem, label, free space, read only, identity, and whether an export may use it and why not), the current or last export with its progress and result, and the finished training runs that could go on a drive.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
             "annotations": READ_ONLY,
         },
