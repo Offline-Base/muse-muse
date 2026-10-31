@@ -28,6 +28,8 @@ const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const AGENT = path.join(HERE, "..", "..", "..", "native", "lab", "agent.mjs");
+/** The version the agent reports is its package's. */
+const AGENT_VERSION = (JSON.parse(readFileSync(path.join(path.dirname(AGENT), "package.json"), "utf8")) as { version: string }).version;
 const TOOLS_OK =
   process.platform === "darwin" &&
   spawnSync("ffmpeg", ["-version"]).status === 0 &&
@@ -241,7 +243,7 @@ describe("the real agent against the real routes", { skip: !canMock ? "needs --e
     assert.equal(result.outcome, "passed");
     assert.match(result.summary, /^Checked on a Mac in the AWS device lab \(macOS [\d.]+\): opened in 1\.5 s\.$/);
     assert.deepEqual(result.warnings, ["Console error: a console warning"]);
-    assert.equal(result.agentVersion, "0.1.0");
+    assert.equal(result.agentVersion, AGENT_VERSION);
     const checks = result.checks as Array<{ id: string; ok: boolean | null }>;
     assert.equal(checks.find((c) => c.id === "codesign")?.ok, true);
 
@@ -267,7 +269,7 @@ describe("the real agent against the real routes", { skip: !canMock ? "needs --e
 
     const [lab] = await testDb.select().from(realSchema.nativeLabs).where(eq(realSchema.nativeLabs.lane, "mac"));
     assert.ok(lab!.lastSeenAt, "the box's presence was noted");
-    assert.equal(lab!.version, "0.1.0");
+    assert.equal(lab!.version, AGENT_VERSION);
     assert.ok(Array.isArray(lab!.state?.kinds), "and what it can run");
     assert.ok(lab!.state?.capabilities, "and its tools");
 
