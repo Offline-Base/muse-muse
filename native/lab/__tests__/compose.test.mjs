@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, test } from "node:test";
@@ -77,6 +77,15 @@ describe("composeArgs", () => {
     assert.ok(argv.includes("-an"));
     assert.match(argv[argv.indexOf("-filter_complex") + 1], /overlay=700:50/);
   });
+  test("a clip from the end of a recording is trimmed after the frame rate is made even, and every clip has an end", () => {
+    const whole = composeArgs(base);
+    assert.equal(whole[whole.indexOf("-i") - 1], String(MAX_CLIP_SECONDS), "the recording is read for the clip's length");
+    const argv = composeArgs({ ...base, startSeconds: 12.5, maxSeconds: 10 });
+    assert.ok(!argv.includes("-ss"), "a seek drops the frame on screen when the clip starts");
+    assert.match(argv[argv.indexOf("-filter_complex") + 1], /\[0:v\]fps=30,trim=start=12\.500:duration=10,setpts=PTS-STARTPTS,scale=/);
+    assert.equal(argv[argv.indexOf("-i") - 1], "-y", "nothing limits the input, or the end would be cut off");
+    for (const args of [whole, argv]) assert.deepEqual(args.slice(-3), ["-t", String(args === whole ? MAX_CLIP_SECONDS : 10), "o.mp4"]);
+  });
   test("a caption PNG is a third input", () => {
     const argv = composeArgs({ ...base, captionPng: "c.png" });
     assert.equal(argv.filter((a) => a === "-i").length, 3);
@@ -105,6 +114,59 @@ describe("composeClip with the real ffmpeg", { skip: !HAS_FFMPEG }, () => {
       assert.equal(probe.streams[0].pix_fmt, "yuv420p");
       assert.equal(probe.streams[0].color_space, "bt709");
       if (process.platform === "darwin") assert.equal(result.captionBurned, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("keeping the end of a recording", { skip: !HAS_FFMPEG }, () => {
+  /** The device's screen in the clip's first frame, as gray stats. */
+  function firstScreen(clip, width, height) {
+    const { screen } = layoutFor("phone", width, height);
+    const crop = `crop=${screen.w}:${screen.h}:${screen.x}:${screen.y},scale=64:128,format=gray`;
+    const gray = execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", clip, "-frames:v", "1", "-vf", crop, "-f", "rawvideo", "-"], { maxBuffer: 1 << 20 });
+    return screenStats(gray, 64, 128);
+  }
+  const lavfi = (dir, name, source) => {
+    const file = path.join(dir, name);
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", source, "-frames:v", "1", file]);
+    return file;
+  };
+
+  test("a recording that's a long blank wait then a page gives a clip of the page", async () => {
+    // Oct 31, on the real Mac: 39 s of white before a page, and a clip that only showed the white.
+    const dir = mkdtempSync(path.join(tmpdir(), "mm-compose-"));
+    try {
+      const recording = path.join(dir, "in.mp4");
+      const source = "color=c=white:s=270x600:r=10:d=30[w];testsrc2=s=270x600:r=10:d=6[p];[w][p]concat=n=2:v=1";
+      execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", source, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", recording]);
+      const result = await composeClip({ recording, outDir: path.join(dir, "out"), form: "phone", caption: "On an iPhone simulator", keepLastSeconds: 5 });
+      assert.ok(Math.abs(result.seconds - 5) < 0.5, String(result.seconds));
+      const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", result.clip]));
+      assert.ok(Math.abs(Number(probe.format.duration) - 5) < 0.5, probe.format.duration);
+      assert.equal(isBlankScreen(firstScreen(result.clip, 270, 600), null), false, "the first frame is the page, not the white wait");
+      const shortOne = await composeClip({ recording, outDir: path.join(dir, "out2"), form: "phone", caption: "x", keepLastSeconds: 100 });
+      assert.ok(Math.abs(shortOne.seconds - 25) < 0.5, "it's still held to the clip's limit");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a frame that's been on screen since before the clip starts is in the clip", async () => {
+    // A simulator records a frame only when the screen changes. On Oct 31 the glasses run had one frame at 38.75 s that lasted
+    // 60 s, and a seek to 73.8 s dropped it.
+    const dir = mkdtempSync(path.join(tmpdir(), "mm-compose-"));
+    try {
+      const pattern = lavfi(dir, "a.png", "testsrc2=s=270x600:d=1");
+      const flat = lavfi(dir, "b.png", "color=c=0x404040:s=270x600:d=1");
+      const list = path.join(dir, "list.txt");
+      writeFileSync(list, `file '${pattern}'\nduration 3\nfile '${flat}'\nduration 30\nfile '${pattern}'\nduration 0.05\nfile '${pattern}'\n`);
+      const recording = path.join(dir, "sparse.mov");
+      execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", list, "-fps_mode", "vfr", "-c:v", "libx264", "-bf", "0", "-pix_fmt", "yuv420p", recording]);
+      const result = await composeClip({ recording, outDir: path.join(dir, "out"), form: "phone", caption: "x", keepLastSeconds: 8 });
+      const stats = firstScreen(result.clip, 270, 600);
+      assert.ok(Math.abs(stats.mean - 0x40) < 12, `the flat frame, not the backdrop: ${JSON.stringify(stats)}`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -78,6 +78,24 @@ describe("evaluateCheck", () => {
     assert.match(result.warnings[3], /2 more/);
   });
 
+  test("errors the device log line left out still count in the warning", () => {
+    const report = { ...REPORT, errors: Array.from({ length: 9 }, (_, i) => `e${i}`), errorsLeftOut: 41 };
+    const result = verdict({ report });
+    assert.equal(result.passed, true);
+    assert.equal(result.warnings.at(-1), "And 47 more console errors.");
+    assert.equal(result.warnings.length, 4);
+  });
+
+  test("a log line with no room for any error still says how many there were", () => {
+    assert.deepEqual(verdict({ report: { ...REPORT, errors: [], errorsLeftOut: 50 } }).warnings, ["And 50 more console errors."]);
+  });
+
+  test("a nonsense left-out count is ignored", () => {
+    for (const errorsLeftOut of [-3, 1.5, "9", null]) {
+      assert.deepEqual(verdict({ report: { ...REPORT, errors: ["a"], errorsLeftOut } }).warnings, ["Console error: a"]);
+    }
+  });
+
   test("no report fails a lab shell", () => {
     assert.deepEqual(failing(verdict({ report: null })), ["health_report"]);
   });
@@ -111,7 +129,7 @@ describe("normalizeReport", () => {
   });
   test("wrong types don't get through", () => {
     const report = normalizeReport({ finalUrl: 3, httpStatus: "200", handshake: "yes", crashed: 1, errors: "x" });
-    assert.deepEqual(report, { finalUrl: null, httpStatus: null, loadMs: null, textLength: null, crashed: false, loadError: null, handshake: false, errors: [] });
+    assert.deepEqual(report, { finalUrl: null, httpStatus: null, loadMs: null, textLength: null, crashed: false, loadError: null, handshake: false, errors: [], errorsLeftOut: 0 });
     assert.equal(normalizeReport(null), null);
     assert.equal(normalizeReport("nope"), null);
   });
@@ -135,6 +153,23 @@ describe("the glasses check", () => {
     assert.equal(result.informational, true);
     assert.equal(result.loadMs, 5000);
     assert.equal(evaluate([]).informational, true);
+  });
+
+  test("the page's errors on the last checkpoint only warn", () => {
+    const withErrors = good.map((e) => (e.step === "result" ? { ...e, errors: ["ReferenceError: boom", "x".repeat(400)] } : e));
+    const result = evaluate(withErrors);
+    assert.equal(result.passed, true);
+    assert.equal(result.warnings.length, 2);
+    assert.equal(result.warnings[0], "Console error: ReferenceError: boom");
+    assert.ok(result.warnings[1].length < 250);
+    assert.deepEqual(evaluate(good).warnings, []);
+    assert.deepEqual(evaluate(good.map((e) => ({ ...e, errors: "boom" }))).warnings, []);
+  });
+
+  test("a page's errors still warn on a run that stopped", () => {
+    const result = evaluate([...good.slice(0, 2), { step: "timeout", ok: false, detail: "timeout: x", errors: ["boom"], at: at(60) }]);
+    assert.equal(result.passed, false);
+    assert.deepEqual(result.warnings, ["Console error: boom"]);
   });
 
   test("a page that loads after 60 s fails", () => {

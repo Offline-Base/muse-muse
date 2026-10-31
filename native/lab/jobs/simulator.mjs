@@ -29,6 +29,10 @@ import { must, waitFor } from "./common.mjs";
 const BOOT_TIMEOUT_MS = 180_000;
 const INSTALL_TIMEOUT_MS = 120_000;
 const RECORDER_READY_MS = 5_000;
+/** The system's install notices are still going around just after an install, and a launch into them can stall. */
+const AFTER_INSTALL_MS = 5_000;
+/** A first launch on a busy Mac has run past 45 s, which reads as an app that didn't open. */
+export const LAUNCH_TIMEOUT_MS = 120_000;
 const PRIVACY_SERVICES = ["camera", "microphone", "photos"];
 
 /** The lab's simulator, made if it isn't there yet, and booted. */
@@ -90,6 +94,12 @@ export async function installShell(ctx, udid) {
   state[key] = app.sha256;
   await writeFile(`${stateFile}.tmp`, JSON.stringify(state));
   await rename(`${stateFile}.tmp`, stateFile);
+  await ctx.sleep(AFTER_INSTALL_MS);
+}
+
+/** Why simctl launch didn't work, for the job's log. */
+export function logLaunchFailure(ctx, launch) {
+  ctx.logLine(`simctl launch ${launch.timedOut ? "timed out" : `exited with ${launch.code}`}: ${String(launch.stderr).slice(-400)}`);
 }
 
 /** So nothing stops to ask for permission during a recording. */

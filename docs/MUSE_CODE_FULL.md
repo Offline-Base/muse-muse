@@ -150,7 +150,7 @@ one known break from flags-off parity (see the open checks).
    migration `0012_build_controls` (`builds.muse_round`, `builds.stop_requested`).
 3. **Test builds** on a dry-run copy, then real builds within the $100 test budget, comparing cost, time and judge
    score against today's engine.
-4. **Product outputs and Prove it.**
+4. **Product outputs and Prove it** (`docs/PRODUCT_OUTPUTS.md`).
 
 ## Open checks
 

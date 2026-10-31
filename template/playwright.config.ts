@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
 // Three runs of the same test:
@@ -11,8 +12,21 @@ import { defineConfig } from "@playwright/test";
 //           frames, a cursor, typing and a timeline in test-results/demo
 // verify picks a free port, starts the server itself and passes the port as MUSEMUSE_PORT. Playwright's own output goes
 // to test-results/playwright, so the judge screenshots in test-results/judge and the demo recording in
-// test-results/demo survive its cleanup.
+// test-results/demo survive its cleanup. A VR product (musemuse.target.json) runs all three with the browser settings in
+// scripts/browser.json: the simulated headset needs software WebGL, and its smoke and studio runs are at the headset's
+// window size with 1x pixels, since a screen twice as big halves its frame rate.
 const port = Number(process.env.MUSEMUSE_PORT) || 3100;
+
+function readJson(file: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+const targets = readJson("musemuse.target.json")?.targets;
+const vr = Array.isArray(targets) && targets.includes("vr") ? (readJson("scripts/browser.json")?.vr as { args: string[]; viewport: { width: number; height: number } }) : null;
 
 export default defineConfig({
   testDir: "tests",
@@ -28,7 +42,7 @@ export default defineConfig({
     {
       name: "smoke",
       testIgnore: /\.demo\.spec\.ts$/,
-      use: { viewport: { width: 390, height: 844 } },
+      use: vr ? { viewport: vr.viewport, launchOptions: { args: vr.args } } : { viewport: { width: 390, height: 844 } },
     },
     {
       name: "demo",
@@ -36,7 +50,7 @@ export default defineConfig({
       use: {
         viewport: { width: 1280, height: 720 },
         video: { mode: "on", size: { width: 1280, height: 720 } },
-        launchOptions: { slowMo: 250 },
+        launchOptions: vr ? { slowMo: 250, args: vr.args } : { slowMo: 250 },
       },
     },
     {
@@ -47,10 +61,10 @@ export default defineConfig({
       timeout: 240_000,
       use: {
         viewport: { width: 1280, height: 720 },
-        deviceScaleFactor: 2,
+        deviceScaleFactor: vr ? 1 : 2,
         video: "off",
         // Without it Chromium's screencast sends 1280x720 frames even at deviceScaleFactor 2.
-        launchOptions: { args: ["--force-device-scale-factor=2"] },
+        launchOptions: { args: vr ? vr.args : ["--force-device-scale-factor=2"] },
       },
     },
   ],

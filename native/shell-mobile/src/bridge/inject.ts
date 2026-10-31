@@ -16,7 +16,7 @@ export interface ShimConfig {
   origin: string;
   /** Also collects page errors and adds the selftest report call. Lab variant only. */
   selftest?: boolean;
-  /** Also adds the autopilot checkpoint call. Lab glasses checks only. */
+  /** Also collects page errors and adds the autopilot checkpoint call. Lab glasses checks only. */
   autopilot?: boolean;
 }
 
@@ -155,7 +155,7 @@ export function buildShim(config: ShimConfig): string {
 
   var internal = { receive: receive };
 
-  if (setup.selftest) {
+  if (setup.selftest || setup.autopilot) {
     var pageErrors = [];
     var note = function (text) {
       if (pageErrors.length < 50) pageErrors.push(String(text).slice(0, 300));
@@ -174,6 +174,9 @@ export function buildShim(config: ShimConfig): string {
     internal.pageErrors = function () {
       return pageErrors.slice();
     };
+  }
+
+  if (setup.selftest) {
     internal.report = function (report) {
       return call("selftest.report", report);
     };

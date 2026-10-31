@@ -50,7 +50,7 @@ export default async function Home() {
           <h1>Start from an example</h1>
           <p>Give it a muse and Muse makes it. Try an example, or describe your own idea below.</p>
         </div>
-        <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" />
+        <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" targetOptions={env.enabledTargets} />
       </div>
       <SetupPanel
         facts={{ buildModel: env.buildModel, maxFixRounds: env.maxFixRounds, publishOff: env.publishOffReason }}

@@ -46,14 +46,45 @@ export async function waitFor(ctx, check, { timeoutMs, everyMs = 500 }) {
  */
 export const REPORT_BY_MS = 70_000;
 
-/** How much longer to wait for the health report, at least a last few seconds even if the recording ran long. */
-export function reportWaitMs(ctx, startedMs) {
-  return Math.max(5_000, startedMs + REPORT_BY_MS - ctx.now());
+/** What a job keeps for stopping the recording, making the clip and uploading. */
+const JOB_RESERVE_MS = 60_000;
+
+/**
+ * How much longer to wait for the health report, at least a last few seconds even if the job is nearly out of time. The
+ * clock starts when the launch call returns: a cold simulator can spend 15 s in it, and the shell's watchdog only starts after.
+ *
+ * @param {object} ctx
+ * @param {number} openedMs when the launch call returned
+ * @param {number} jobStartMs when the runner started
+ */
+export function reportWaitMs(ctx, openedMs, jobStartMs) {
+  const end = Math.min(openedMs + REPORT_BY_MS, jobStartMs + ctx.input.limitSeconds * 1000 - JOB_RESERVE_MS);
+  return Math.max(5_000, end - ctx.now());
 }
 
 /**
- * The report the shell posted to the platform, if it's from this launch. A retry keeps its job id and its selftest token,
- * so the platform's copy can be the last attempt's. The shell runs on this box, so `at` is on the same clock.
+ * How long the screen is watched once the page is ready. A slow page can take far longer than `recordSeconds` to get there,
+ * so the screenshots and the end of the recording count from this moment, not from launch.
+ */
+export const AFTER_READY_MS = 3_000;
+
+/** Takes the job's screenshots in the moments after the page is ready. `take` gets the one-based number. */
+export async function shotsAfterReady(ctx, readyMs, take) {
+  for (const [i, at] of shotSchedule(ctx.input.shots, AFTER_READY_MS / 1000).entries()) {
+    await ctx.sleep(Math.max(0, readyMs + at - ctx.now()));
+    ctx.throwIfAborted();
+    await take(i + 1);
+  }
+}
+
+/** Waits until the recording has run its `recordSeconds` and has seen the page ready. */
+export async function recordUntilDone(ctx, startedMs, readyMs) {
+  await ctx.sleep(Math.max(0, Math.max(startedMs + ctx.input.recordSeconds * 1000, readyMs + AFTER_READY_MS) - ctx.now()));
+}
+
+/**
+ * The report the shell posted to the platform, if it's from this launch. The platform already keeps each attempt's report
+ * apart, so this is a second guard. The shell runs on this box, so `at` is on the same clock.
  */
 export async function platformReport(ctx, sinceMs) {
   const report = await ctx.fetchSelftest();
@@ -95,10 +126,10 @@ export async function keepShot(ctx, png, index, crop, files) {
  * the product isn't to blame.
  *
  * @param {object} ctx
- * @param {{ recording: string | null, form: "phone" | "desktop", device: object, files: object[], warnings: string[] }} p
+ * @param {{ recording: string | null, form: "phone" | "desktop", device: object, files: object[], warnings: string[], keepLastSeconds?: number }} p
  * @returns {Promise<boolean>} whether the caption is burned in
  */
-export async function composeInto(ctx, { recording, form, device, files, warnings }) {
+export async function composeInto(ctx, { recording, form, device, files, warnings, keepLastSeconds }) {
   if (!recording || !existsSync(recording) || statSync(recording).size === 0) {
     warnings.push("There's no clip: the screen recording didn't come out.");
     return false;
@@ -112,6 +143,7 @@ export async function composeInto(ctx, { recording, form, device, files, warning
       outDir,
       form,
       caption,
+      keepLastSeconds,
       note: noteFor(ctx.job.kind),
       ffmpeg: ctx.ffmpeg.path,
       signal: ctx.signal,

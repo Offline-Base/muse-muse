@@ -111,8 +111,12 @@ describe("the API client", () => {
     assert.equal(doFetch.calls[0].redirect, "error");
   });
   test("claim returns the job", async () => {
-    const { api } = make([{ body: { job: { id: "j" } } }]);
+    const { api } = make([{ body: { job: { id: "j" } }, headers: { "content-type": "application/json" } }]);
     assert.deepEqual(await api.claim({}), { id: "j" });
+  });
+  test("a 200 page isn't \"no work\": the site answers routes it doesn't have this way", async () => {
+    const { api } = make([{ body: "<!DOCTYPE html>", headers: { "content-type": "text/html; charset=utf-8" } }]);
+    await assert.rejects(api.claim({}), (err) => err instanceof ApiError && err.status === 200 && err.code === "not_json");
   });
   test("a 401 reads the token again once", async () => {
     const { api, doFetch } = make([{ status: 401 }, { status: 204 }], { refreshLabToken: async () => "new" });

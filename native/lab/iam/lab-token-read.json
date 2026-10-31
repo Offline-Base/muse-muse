@@ -1,0 +1,33 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MacLane",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:us-east-1:916979311153:parameter/musemuse/lab/mac/*",
+      "Condition": { "StringEquals": { "ec2:SourceInstanceARN": "arn:aws:ec2:us-east-1:916979311153:instance/i-0a5866df305e83d40" } }
+    },
+    {
+      "Sid": "WindowsLane",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:us-east-1:916979311153:parameter/musemuse/lab/windows/*",
+      "Condition": { "StringEquals": { "ec2:SourceInstanceARN": "arn:aws:ec2:us-east-1:916979311153:instance/i-066609c3dc74c9f18" } }
+    },
+    {
+      "Sid": "OnlyTheMacReadsTheMacLane",
+      "Effect": "Deny",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"],
+      "Resource": "arn:aws:ssm:us-east-1:916979311153:parameter/musemuse/lab/mac/*",
+      "Condition": { "StringNotEquals": { "ec2:SourceInstanceARN": "arn:aws:ec2:us-east-1:916979311153:instance/i-0a5866df305e83d40" } }
+    },
+    {
+      "Sid": "OnlyWindowsReadsTheWindowsLane",
+      "Effect": "Deny",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"],
+      "Resource": "arn:aws:ssm:us-east-1:916979311153:parameter/musemuse/lab/windows/*",
+      "Condition": { "StringNotEquals": { "ec2:SourceInstanceARN": "arn:aws:ec2:us-east-1:916979311153:instance/i-066609c3dc74c9f18" } }
+    }
+  ]
+}

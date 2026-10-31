@@ -1,9 +1,50 @@
+import type { TargetId } from "@/lib/brief/schema";
+import { env } from "@/lib/env";
+import { targetLabel } from "@/lib/format";
+import { PERSONAL_TOOLS_GUIDE, TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
 import { catalogSummary } from "@/lib/prompts/catalog";
 import type { RebuildFit, RebuildTarget, Reference } from "@/lib/types";
 
 /** What Muse Muse refuses to build, shared by the brief writer and the refinement check. */
 export const REFUSE_WHEN =
   "impersonating a real person or organization, cloning a real brand or product, collecting passwords or payment details under false pretenses, monitoring people without their consent, sexual content, weapons, malware, scams, or anything aimed at a specific private person";
+
+/** The writer's rules for the targets that are on. Empty with none, so the instructions stay as they were. */
+function whereItRuns(enabled: readonly TargetId[]): string {
+  if (!enabled.length) return "";
+  const has = (t: TargetId) => enabled.includes(t);
+  const personal = has("agent") && env.composioPersonalEnabled;
+  const lines = [
+    "",
+    "",
+    "Where it runs",
+    "- targets lists where the product runs, each with one plain why of at most 200 characters. web is always first. Most muses are web only: add another only when the muse asks for it in the ways listed here. Never add one because it would be nice, and when in doubt leave it out.",
+    ...(["web", ...enabled] as TargetId[]).map((t) => `- ${t}: ${TARGET_GUIDE[t]}${t === "agent" && personal ? ` ${PERSONAL_TOOLS_GUIDE}` : ""}`),
+    "- When the request text lists targets the person picked, use exactly those plus web.",
+  ];
+  if (has("vr")) lines.push("- For vr, primaryFlow includes the step that enters VR.");
+  if (has("glasses")) {
+    lines.push("- For glasses, primaryFlow starts with connecting the glasses, and fixtures include one or two photos taken at the wearer's eye level of what they would look at.");
+  }
+  const added = enabled.flatMap((t) => TARGET_LIMITS[t] ?? []);
+  if (added.length) {
+    lines.push(`- The platform adds these limits itself to a product with that target. Leave them out, and don't say the same thing in other words: ${added.map((l) => `"${l.text}"`).join(" ")}`);
+  }
+  if (has("agent")) {
+    lines.push(
+      "- agent is null unless targets has agent. When it does, fill it in:",
+      "  - task is the job one run does, in one or two plain sentences.",
+      "  - tools lists the fewest tools from the catalog that do the job, each with what the product needs it for and why. Web search comes first, and a third-party tool only for what web search can't do. A product that only looks things up on the web has web_search alone.",
+      personal ? "  - connections is \"owner\" when a personal tool is picked, otherwise \"none\"." : "  - connections is \"none\".",
+      "  - stepsPerRun is about how many model turns one run takes.",
+      "  - capabilities includes muse-wonder-1.0, which runs the agent. complexity is \"complex\" when it works in several steps.",
+      "  - estimatedCostPerRunUsd counts its turns, searches and tools, and costNotes shows that arithmetic.",
+      `  - fixtures includes a text fixture holding one realistic task to try it on, and primaryFlow ends with the answer and its source links.${personal ? " For an agent with only personal tools, primaryFlow instead ends with what it found or did on the owner's account (the draft, event or message) and that it finished." : ""}`,
+      "  - limits say honestly what a run can't reach, and that answers can miss things or be out of date.",
+    );
+  }
+  return lines.join("\n");
+}
 
 /** Prompt 1 in docs/PROMPTS.md: the brief writer's instructions. */
 export function briefInstructions(): string {
@@ -40,7 +81,7 @@ Writing the brief
 - estimatedCostPerRunUsd is one run of the primary flow, from the prices above, and costNotes shows the arithmetic and ends with the same total.
 - fixtures are one to three sample inputs the automated test feeds the primary flow. fromUserSample is true when one of the person's references is itself a good input of that kind (their own photo for a photo-reading tool, their PDF for a tool that reads that kind of document). When the product takes a file of the same kind the person gave, include that reference as a fixture. referenceIndex is that reference's index when fromUserSample is true, otherwise null. For an image fixture that isn't from the person, description is a picture Muse Image can draw: subject, setting, angle, light, with no logos, brands or real people. For a text fixture, description is the sample text itself, ready to paste, under 1,000 characters.
 - actions are one to three things the Muse app could call, named as snake_case verbs (count_birds). Each description says what it takes and what it returns, in plain words.
-- Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.`;
+- Never promise Meta branding. The product says it is built with Muse Muse and is not an official Meta product.${whereItRuns(env.enabledTargets)}`;
 }
 
 /** The refinement check: the brief writer's refusal policy, applied to a change request for a shipped product. */
@@ -73,16 +114,23 @@ const FIT_MEANING: Record<RebuildFit, string> = {
   partial: "part of it needs something outside Muse Muse",
 };
 
+/** The line that says which targets the person picked, or nothing when they left it to the writer. */
+function requestedTargetsLine(requested: readonly TargetId[] | null | undefined): string[] {
+  if (!requested?.length) return [];
+  return [`Where the person picked for it to run: ${requested.map((t) => `${t} (${targetLabel(t)})`).join(", ")}. Use exactly these plus web.`];
+}
+
 /** The text that follows the references: the note and the reference list. */
-export function briefRequestText(note: string | null, references: Reference[]): string {
+export function briefRequestText(note: string | null, references: Reference[], requestedTargets?: readonly TargetId[] | null): string {
   const lines = [`Note: ${note?.trim() ? note.trim() : "none"}`, "References, in order:"];
   if (!references.length) lines.push("none (text only, so inspiration.references is empty)");
   references.forEach((r, i) => lines.push(`Reference ${i + 1} (${r.kind}, ${r.fileName}), index ${i}`));
+  lines.push(...requestedTargetsLine(requestedTargets));
   return lines.join("\n");
 }
 
 /** A rebuild muse is text only: the video is linked, never watched or downloaded. */
-export function rebuildRequestText(target: RebuildTarget, note: string | null): string {
+export function rebuildRequestText(target: RebuildTarget, note: string | null, requestedTargets?: readonly TargetId[] | null): string {
   const fit = target.rebuild.fit;
   return [
     "This muse is a rebuild of one of Meta's developer videos. You can't watch it. Work from this description, and never copy the video.",
@@ -100,5 +148,6 @@ export function rebuildRequestText(target: RebuildTarget, note: string | null): 
     `- verdict follows the fit: "partly" for a partial fit, otherwise "yes" unless something else is missing.`,
     `- The first limit starts with "Rebuild fit: ${fit}." and says honestly what differs from the original video and why.`,
     "- borrow is the job the video demonstrates. dontCopy includes the video's footage, its script, and the Meta and Llama names and logos.",
+    ...requestedTargetsLine(requestedTargets),
   ].join("\n");
 }

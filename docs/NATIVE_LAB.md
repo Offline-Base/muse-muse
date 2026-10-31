@@ -3,8 +3,8 @@
 The lab checks each product on an iPhone simulator, an Android emulator, a Mac and Windows, and records a clip of each. It
 runs on two AWS boxes, which take no inbound connections. An agent on each box asks the platform for work.
 
-The agent and its files live in `native/lab/`. This document is the contract between that code and the parts that come
-later: the routes under `app/api/native/agent/`, the `native_jobs` queue and the sweep. Write those against this page.
+The agent and its files live in `native/lab/`. This document is the contract between that code and the platform: the routes
+under `app/api/native/agent/`, the `native_jobs` queue and the sweep. "The platform's side" below says where those live.
 
 | File | What it is |
 |---|---|
@@ -14,7 +14,10 @@ later: the routes under `app/api/native/agent/`, the `native_jobs` queue and the
 | `native/lab/compose.mjs` | The clip: a recording in a generic device frame on a Meta-blue backdrop, 1920x1080, with a caption and a poster |
 | `native/lab/control.mjs` | The box's side of the SSM control document |
 | `native/lab/ssm/MuseLab-Control.json` | The SSM document: enum actions only |
-| `native/lab/setup/` | `mac.sh`, `windows.ps1`, and the LaunchAgent plist |
+| `native/lab/setup/` | `mac.sh`, `mac-finish.sh`, `mac-checks.sh`, `windows.ps1`, `imds-credentials.sh`, `publish-bundle.sh`, and the LaunchAgent plist |
+| `native/lab/tools/check.mjs` | Runs one real job on a box with a local stand-in for the platform |
+| `native/lab/tools/glasses-check.html` | A small page with the glasses template's contract, for checking `glasses_sim` without a product |
+| `native/lab/iam/` | The instance role's two inline policies, as they are in the account |
 
 The agent needs Node 22 and has no npm dependencies. If `@aws-sdk/client-ssm` is installed it reads its token with that,
 and otherwise with the `aws` CLI.
@@ -95,8 +98,9 @@ WHERE id = (SELECT id FROM native_jobs WHERE lane=$lane AND status='queued' AND 
 
 The token only exists in plaintext for this one response, so generate it before the statement and return it beside the row.
 
-Clear the job's stored selftest report in the same step, since a retry keeps its job id and selftest token. The agent also
-ignores a report dated before its launch, as a second guard, so keep the shell's `at` as it was sent.
+Clear the job's stored selftest report in the same step, since a retry keeps its job id. Each claim also makes a new selftest
+token that names the attempt, so a shell left over from an earlier attempt gets a 410. The agent also ignores a report dated
+before its launch, as a second guard, so keep the shell's `at` as it was sent.
 
 ### POST /api/native/agent/jobs/{id}/heartbeat
 
@@ -106,12 +110,12 @@ Job token. Sent every 15 s, and once at the start.
 { "phase": "record", "attempt": 1 }
 ```
 
-`phase` is one of `start`, `download`, `boot`, `install`, `media`, `record`, `autopilot`, `selftest`, `report`, `compose`,
-`upload`.
+`phase` is one of `start`, `download`, `boot`, `install`, `probe`, `media`, `record`, `autopilot`, `selftest`, `report`,
+`compose`, `upload`.
 
 | Status | Meaning |
 |---|---|
-| 200 | `{ "cancel": false }`. With `true`, the agent stops the job and finishes it with code `canceled` |
+| 200 | `{ "cancel": false }`. With `true`, the agent stops the job and finishes it with code `canceled`. The platform never sends `true`: canceling closes the row, so the agent gets a 410, which it treats the same |
 | 401, 404, 410 | The agent takes it as a cancel. See "A job token only works while its run owns the job" |
 | Anything else, or no answer | The agent keeps going and tries again in 15 s |
 
@@ -142,7 +146,7 @@ The slot, for Blob:
 {
   "name": "clip.mp4",
   "method": "blob",
-  "pathname": "native/runs/<runId>/<jobId>/clip.mp4",
+  "pathname": "native/runs/<runId>/<jobId>/<attempt>/clip.mp4",
   "multipart": false,            // true over 16 MB
   "presignedUrlPayload": { "delegationToken": "...", "signature": "...", "params": { } }
 }
@@ -156,7 +160,7 @@ const limits = { allowedContentTypes: [contentType], maximumSizeInBytes: limit }
 const token = await issueSignedToken({
   pathname,
   operations: ["put"],
-  validUntil: Date.now() + 15 * 60_000,
+  validUntil: Date.now() + 5 * 60_000,
   ...limits,
   ...blobAuth(),
 });
@@ -164,12 +168,14 @@ const { presignedUrlPayload } = await handleUploadPresigned({
   body: { type: "blob.generate-presigned-url", payload: { pathname, clientPayload: null, multipart } },
   request,
   webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || NO_CALLBACK_KEY,
-  getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false, allowOverwrite: true } }),
+  getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false } }),
 });
 ```
 
-`allowOverwrite` is there because a retried job writes to the same pathnames. Only ever issue pathnames under
-`native/runs/<runId>/<jobId>/`, from the job row and never from the request.
+Each attempt has its own folder, so a slot from an old run can't touch a retry's files, and no slot can replace a file that's
+there. If Blob's reply to a PUT is lost after the file landed, the agent's retry is refused and reports the file as lost, with a
+warning. Only ever issue pathnames under `native/runs/<runId>/<jobId>/<attempt>/`, from the job row and never from the request.
+A slot lasts 5 minutes, because it can't be revoked and the agent gives a job's uploads 2.
 
 For a local platform with no Blob store, a slot can be `{ "name", "method": "put", "pathname", "url", "headers" }`. The
 agent PUTs the bytes there and expects `{ "url", "pathname" }` back. Nothing but the local dev server should do this.
@@ -181,8 +187,8 @@ Job token. Body `{}`. Answers `{ "report": <report> }` with what the shell poste
 report doesn't reach it any other way, which is the normal case on iOS (see "What the shells do"). That's long enough for the
 report the shell's own 60 s watchdog sends for a page that hangs.
 
-Selftest tokens are the HMAC tokens from `lib/native/lab-token.ts`. They have to name the job, so that this route can find
-the report.
+Selftest tokens are the HMAC tokens from `lib/native/lab-token.ts`. They name the job, so that this route can find the report,
+and the attempt, so that only the run in progress can write it. They last as long as the job token does.
 
 ### POST /api/native/agent/jobs/{id}/finish
 
@@ -214,8 +220,9 @@ Job token. The agent retries up to 6 times.
 | 401, 404, 409, 410 | The agent gives up quietly. The job expired or already finished |
 | Anything else | The agent retries, up to about a minute |
 
-**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim, and check that its pathname sits
-under this job's folder before storing it.
+**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim: keep a file only if its pathname sits under
+this attempt's folder and its host is this platform's own Blob store. Store a link made from that pathname, not the box's string,
+and each name once. `informational` is set from the job's kind, whatever the box sends.
 
 **`outcome: failed` means the product didn't pass.** `lab_error` means the check never ran, so the product isn't to blame.
 Show them differently: the summary already does ("Not checked on...").
@@ -237,6 +244,114 @@ Show them differently: the summary already does ("Not checked on...").
 | `internal` | An unexpected error. The message is generic and the log has the detail | Yes |
 
 `RETRYABLE_CODES` in `native/lab/lib/errors.mjs` is the same list.
+
+## The platform's side
+
+All of it is off with `NATIVE_LAB` off: every route answers 404 before it reads anything, `/usage` has no card, and `enqueueJob`
+refuses. Everything here is covered by `lib/native/__tests__/`.
+
+| File | What it is |
+|---|---|
+| `app/api/native/agent/claim`, `jobs/[id]/heartbeat`, `upload`, `selftest`, `finish` | The routes above. `claim` doesn't hold the request open: it answers at once and the agent waits out its 10 s |
+| `app/api/native/agent/jobs/[id]/files/[name]` | The local "put" slot. A 404 on Vercel or with a Blob store |
+| `app/api/native/selftest` | The shell's report. Takes the selftest token, keeps the body as sent, apart from text Postgres can't store |
+| `app/api/cron/native-sweep` | The sweep, every 5 minutes |
+| `lib/native/queue.ts` | Everything that moves a `native_jobs` row |
+| `lib/native/lab-token.ts` | The lab, job and selftest tokens |
+| `lib/native/lab-box.ts` | Starting and stopping Windows, restarting the Mac's agent, a box's presence |
+| `lib/native/aws.ts` | The calls to EC2 and SSM |
+| `lib/native/ledger.ts` | The spend ledger |
+| `scripts/native/lab.ts` | Sets a lane's token |
+
+**The queue.**
+
+```ts
+// The input comes from docs/NATIVE_LAB.md, "Job inputs", without selftest. Pass selftest: true for a lab shell's job, and each
+// claim adds a token for that attempt.
+const job = await enqueueJob({ runId, buildId, productId, kind: "ios_sim", tier: "ship", input, selftest: true });
+if (job.ok) job.jobId, job.ahead, job.etaSeconds; else job.reason, job.message;
+```
+
+| `tier` | Priority | Waits for up to | Use it for |
+|---|---|---|---|
+| `agent` | 30 | 10 minutes | An agent mid-build, with someone waiting. A build can have one such run going |
+| `ship` | 20 | 45 minutes | A check after shipping. If it expires, a `backfill` copy takes its place |
+| `batch` | 20 | 90 minutes | The same, from a batch of rebuilds |
+| `backfill` | 10 | 6 hours | A second try for an expired check |
+
+Other limits: 30 jobs queued or running in all, and 2 of each kind per product. The design says 2 per product, but it also gives
+each check its own job, and a phone and desktop product has four, so the limit is per kind.
+
+`enqueueJob` can answer `lab_off`, `bad_input`, `queue_full`, `product_full`, `agent_busy` or `box_down`. A Windows job starts the
+Windows box itself, and `box_down` means the box can't start, so the job isn't queued. Every step goes in the build's log as a
+`native` event, with `item` as `check:<kind>`, so the build room needs no polling for lab checks. `runJobs(runId)`,
+`queuePosition(jobId)` and `cancelAgentJobs(buildId)` are the rest of what callers need. `lib/native/lab-box.ts` has
+`labView(lane)` for whether a box is online, and `wakeWindows()` to start Windows early.
+
+**A retry.** A job gets 2 attempts. A silent job or a lab error with a code from the retry table goes back to `queued`, with
+`token_hash`, the deadline and the report cleared. After that it's `failed`, with `outcome: lab_error`. The statuses:
+
+| Status | Means | `result.outcome` |
+|---|---|---|
+| `done` | The check ran and passed | `passed` |
+| `failed` | The check ran and the product didn't pass, or the lab couldn't run it | `failed` or `lab_error` |
+| `expired` | It waited too long, and it may have a `backfill` copy | None |
+| `canceled` | The build ended under an agent's check | None |
+
+**The sweep.** Each task runs on its own, so AWS being down can't stop the queue's:
+
+1. A claimed job silent for 90 s, or past its token's life, is re-queued or failed.
+2. A queued job past its TTL is expired.
+3. Windows: see below.
+4. The Mac: if its agent is silent and SSM says the box is online, it sends `restart-agent`, at most once per 10 minutes. Nothing
+   in the platform can stop the Mac.
+5. The ledger: commits the Mac's cost, and logs an error while spend is past the alert line.
+
+**Windows.** The sweep reads the box's EC2 state and does one thing:
+
+| The box | Then |
+|---|---|
+| Running, and the agent hasn't spoken for 10 minutes | Stop it, and don't start it again for an hour. This is the backstop: the agent's own idle stop can't run if it crash-loops or never starts. The 10 minutes count from the start, and a start takes up to 6 to reach its first claim |
+| Running, with no jobs for 30 minutes | Stop it. The agent's own stop is at 20, so a healthy box stops itself first |
+| Running, near the end of what the ledger holds | Hold 2 more hours. If the ledger refuses, stop it |
+| Running, and started by hand | Note the session, so its hours reach the ledger |
+| Stopped, with a session open | Commit the hours and give back the holds |
+| Stopped, with a job queued | Start it, if the ledger allows and no block applies |
+
+**Two things the sweep can't cover.** With `NATIVE_LAB` off the sweep is a 404, so only the box's own idle stop is left. And it
+skips a box with no `native_labs` row, because nothing can claim without a token and it has nowhere to note a session, so run
+`scripts/native/lab.ts` before starting Windows with the flag on. Once it's set up, a box you've signed in to with its agent
+stopped counts as silent: the sweep stops it after 10 minutes, and it can't start by itself for an hour.
+
+**The role.** `lib/native/aws.ts` signs its own requests rather than using `@aws-sdk/client-ec2` and `client-ssm`, which would be
+tens of megabytes for two small protocols. It offers only what the policy allows: start, stop and read the Windows box, and
+`MuseLab-Control` with one of its enum actions on a box whose id is in the env. It reads credentials through Vercel's OIDC token
+and `AWS_ROLE_ARN`, and its region is always `NATIVE_AWS_REGION`.
+
+**The ledger.**
+
+```ts
+const held = await reserve("device_farm", usd, { ref: runArn, runId });  // { ok: true } or { ok: false, reason, message }
+await commit("device_farm", { usd: actual, holdUsd: usd, ref: runArn, runId });
+await release("device_farm", usd, { ref: runArn });
+await commitIf("windows", { usd, holdUsd }, claim);  // A commit that lands only if `claim`, a SQL statement, returns a row
+await canSpend("device_farm", usd);  // A plan's guess. Only reserve promises anything
+```
+
+Caps come from `lib/env.ts`: $150 total, $40 Device Farm, $15 Windows, and the alert at $120. A hold takes both its budget and the
+total, or neither, under a row lock, so two callers can't both take the last of a cap. Every change takes those locks first and in
+the same order, so two can't deadlock. A Windows session's close and its bill land together through `commitIf`, so a failure leaves
+the session open for the next sweep. The Mac has no cap of its own: `syncMacHost`
+commits its rate from `NATIVE_MAC_ALLOCATED_AT` to `NATIVE_MAC_RELEASE_AT`, with a 24-hour minimum, and that counts against the
+total. A commit always lands, even past a cap, and then later holds are refused.
+
+**Tokens.** `scripts/native/lab.ts <lane> <file> [instance id]` makes a lane's token, stores its hash and writes it to a file only
+you can read. It never prints it. Put the file's contents in Parameter Store, then delete the file. Running it again is how you
+revoke a box's access: the old lab token stops working, and that lane's running jobs go back in the queue in the same step, so
+their job tokens end too. A rotation mid-job costs that job a run, and it uses up an attempt.
+
+**Not built:** deleting an agent run's files after 7 days (the table in docs/NATIVE.md), and rate limits on these routes, which are
+token-only.
 
 ## Job inputs
 
@@ -293,13 +408,13 @@ ad hoc app is expected.
   pixels, and adds a note saying so. Use the lab APK with the product's URL for a full check.
 - **`glasses_sim` is informational.** It passes when the page loads in 60 s, the mock glasses connect, the main button shows
   up, and a result appears in 120 s. Its `informational: true` means it never blocks shipping or hides a download.
-  The design also asks for no `window.onerror`, which isn't checked yet: the autopilot's checkpoints don't carry page errors, so
-  a product that throws an uncaught error and still shows a result passes. The shell has the list in `internal.pageErrors()`,
-  and could add it to the `result` checkpoint.
+  The design also asks for no `window.onerror`. That one only warns, like console errors in the other checks: the checkpoint
+  that ends the run carries the shell's `internal.pageErrors()`, so a product that throws and still shows a result passes with
+  a warning.
 
 ## What the shells do
 
-Checked against `native/shell-mobile` and `native/shell-desktop` on the `tg-shells` branch as of Oct 31.
+Checked against `native/shell-mobile` and `native/shell-desktop` as of Oct 31.
 
 **Phone, lab variant, iOS.** Launch arguments, read in `launchArgsToRequest`: `-museUrl`, `-museSelftest 1`, `-museToken`,
 `-musePlatform`.
@@ -309,19 +424,22 @@ Checked against `native/shell-mobile` and `native/shell-desktop` on the `tg-shel
 
 **The health report on phones.** The agent looks in this order:
 
-1. `Documents/selftest.json` (iOS only). **The shell doesn't write this yet.**
+1. `Documents/selftest.json` (iOS only). The shell writes the whole report here, so iOS doesn't depend on the log or the network.
 2. A `MUSE_SELFTEST <json>` line in the device log. Android's logcat gets this in release builds. Logcat cuts lines at about
-   4 KB, so the shell should keep the line under 3.5 KB by trimming `errors`.
+   4 KB, so the shell keeps the line under 3.5 KB: it keeps as many `errors` as fit, says how many it left out in
+   `errorsLeftOut`, and drops the `warnings` copy of them. The lab's warnings count those too.
 3. The platform's copy, through the selftest route above. It only counts if its `at` is after this launch.
 
-iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work. Adding this to `report` in
-`ProductScreen.js` makes iOS independent of the network:
+iOS release builds drop `console.log` below the error level, so on iOS only 1 and 3 will work.
 
-```js
-const file = new File(Paths.document, "selftest.json");
-if (!file.exists) file.create();
-file.write(JSON.stringify(result));
-```
+**The Android bridge timing check.** On Android the shim can arrive after a page's first inline script, and a selftest can't see
+that, because its handshake runs after load. So on the first `android_emu` job with a lab shell, before it records, the runner
+(`jobs/android_probe.mjs`) serves its own page on `http://10.0.2.2:<port>/` for up to 45 s. That page's head script writes what
+it saw into `document.title`, and the shell's report brings the title back, posted to the same local server or read from
+logcat. The job's `checks` then have a note with `id: "bridge_timing"` and `ok: null`, saying whether `window.MuseNative` was
+there and how many ms later it showed up. The answer is also saved in `android-bridge-timing.json` in the data folder, and that
+file stops the check running again. Delete it to ask again. No answer is a note too, and the next Android job tries again.
+It never changes a job's verdict, and a job with too little time left leaves it for the next one.
 
 **Desktop.** `<exe> --muse-selftest=<dir>`. The shell writes `selftest.json`, `frames/00001.jpg` and so on, and
 `stills/01.png` and so on. The frame names are a count, so the lab times frames by when they were written. The exit code is 1
@@ -331,14 +449,21 @@ The app opens the URL in its `muse-product.json`. For `variant: "lab"`, the lab 
 signs the app again, ad hoc, because the change breaks the resource seal. A `product` app is left exactly as it shipped, so
 its signature check means something.
 
-**Glasses.** The lab copies media into the shell's `Documents`: `mock-feed.mov`, `mock-photo.jpg` and `mock-question.wav`
-(the shell doesn't read the last one yet). It launches the app, waits 2 s, and sends
-`musemuse://check?url=...&mock=1&run=autopilot`. If no checkpoint shows up in 60 s, it launches again with `-museUrl`,
-`-museMock 1` and `-museRun autopilot`, adds a warning, and counts the load limit from that launch, because the system may hold
-a link back to ask for permission. The wait is that long because the first checkpoint only comes once the page has loaded.
+**Glasses.** The lab copies media into the shell's `Documents`: `mock-feed.mov`, `mock-photo.jpg` and `mock-question.wav`. Mock
+mode's `stopRecording` returns that question as a recording from the glasses, or silence when there's none, and never touches
+the microphone. The lab launches the app with `-museUrl`, `-museMock 1` and `-museRun autopilot`, and counts the load limit
+from when the launch call returns. It doesn't use the `musemuse://check` link: `simctl openurl` stops at a system "Open in
+Muse Glasses Lab?" dialog that nobody is there to answer, and the dialog stays on screen for later jobs.
+
+**When the phone kinds look.** The shell reports once, after the page has loaded and scrolled for 8 s, or at its 60 s
+watchdog. So `ios_sim` and `android_emu` wait for that report, counted from when the launch call returns, then take their
+screenshots in the next 3 s, and keep recording for at least `recordSeconds` in all. The clip is the last `recordSeconds` of
+the recording, so a slow page's wait isn't what people see. A per-product APK has no report, so it gets until 30 s after its
+`recordSeconds` would have ended to draw something. Launches get 120 s, and a failed one logs why in the job's log.
 
 The autopilot writes `Documents/autopilot.jsonl`, one `{ step, ok, detail, at }` per line, with the steps `start`, `connect`
-(detail is the mode), `primary`, `result`, `timeout` and `error`. It has no checkpoint for the capture itself, so that's
+(detail is the mode), `primary`, `result`, `timeout` and `error`. Those last three also carry `errors`, up to 20 of the page's
+uncaught errors and `console.error` calls, when there are any. It has no checkpoint for the capture itself, so that's
 covered by the result.
 
 ## The clip
@@ -374,45 +499,182 @@ aws ssm create-document --region us-east-1 --name MuseLab-Control --document-typ
   --content file://native/lab/ssm/MuseLab-Control.json
 ```
 
+The document exists in the account as `MuseLab-Control` version 1, and it matches this file.
+
 **Pinning a bundle.** `update-agent` can't take a URL, so the pin lives in Parameter Store at `/musemuse/lab/<lane>/bundle`, as
-`{ "version", "url", "sha256" }`. Make the bundle with:
+`{ "version", "url", "sha256" }`. From a laptop with the lab's AWS profile, at a committed tree:
 
 ```
-tar -czf musemuse-lab-0.1.0.tgz -C native/lab --exclude __tests__ .
+AWS_PROFILE=offlinebase AWS_REGION=us-east-1 bash native/lab/setup/publish-bundle.sh
 ```
 
-Upload it to Blob, then put the pin in Parameter Store. The box only downloads from Blob, and checks the checksum.
+That puts the bundle in `s3://muse-knowledge-916979311153/lab/bundles/` and pins it for both lanes. The box checks the checksum.
+Blob URLs work too, but the lab has no Blob upload of its own. Both boxes ran `update-agent` this way, and it left the old release
+in place. A stopped Windows box can't take a control call, so start it first. On Windows, `update-agent` runs as SYSTEM, so the
+bundle waits in `C:\MuseLab\control`, which only SYSTEM and Administrators can write to. In `C:\MuseLab\data` the lab user could
+swap it between its checksum and the unpacking, and the next control call would run the swapped code as SYSTEM.
 
-**This widens one IAM line in the design.** The instance profile needs `ssm:GetParameter` on `/musemuse/lab/<lane>/*`, not only
-on `.../token`. The profile also needs `AmazonSSMManagedInstanceCore`. Nothing else.
+**The instance role, `musemuse-lab`,** is `AmazonSSMManagedInstanceCore` plus the two inline policies in `native/lab/iam/`.
+`AmazonSSMManagedInstanceCore` allows `ssm:GetParameter` and `ssm:GetParameters` on every parameter, so an allow can't keep the
+lanes apart. `lab-token-read` does it with explicit denies: reading `/musemuse/lab/mac/*` is denied unless the call comes from the
+Mac instance, and `/musemuse/lab/windows/*` unless it comes from the Windows one. Checked on Oct 31 with real calls from each box:
+each reads its own lane, and the other lane's `token-sha256` and `bundle` answer `AccessDeniedException`, by `get-parameter` and
+`get-parameters`. Don't check this with `iam simulate-principal-policy`: given `ec2:SourceInstanceARN`, it reports a deny even for a
+box reading its own lane, which the real calls and the agents' claims show is wrong. `lab-files` allows reading `lab/bundles/*` and `lab/shells/*` and
+writing `lab/checks/*` in the bucket. Each lane also has `/musemuse/lab/<lane>/token-sha256`, which is the value `native_labs`
+needs. Apply a change to the policies with:
+
+```
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-token-read --policy-document file://native/lab/iam/lab-token-read.json
+aws iam put-role-policy --profile offlinebase --role-name musemuse-lab --policy-name lab-files --policy-document file://native/lab/iam/lab-files.json
+```
+
+**The platform role, `musemuse-platform-native`,** can send only `MuseLab-Control` to the two instances, read command results and
+instance state, and start and stop only the Windows instance.
+
+## What's on the boxes
+
+As of Oct 31, about 19:30 UTC. Account 916979311153, us-east-1, tagged `Project=musemuse-lab`. No inbound ports, and SSM Run Command is
+the only way in.
+
+| | Mac | Windows |
+|---|---|---|
+| Instance | `i-0a5866df305e83d40`, `mac2.metal` on host `h-06879f600be8541ed` | `i-066609c3dc74c9f18`, `t3.large` |
+| State | Running. Never stop it: stopping scrubs the host for up to 4.5 hours | Stopped, on release `0.1.1-50123fa`. It stopped itself after 20 idle minutes at about 19:15 UTC, then ran once more for that release and was stopped from a laptop at 19:24 UTC |
+| OS | macOS 26.7, 300 GB gp3, about 224 GB free | Windows Server 2022, 60 GB gp3, about 38 GB free |
+| Session | `ec2-user` signed in by auto-login | `musemuse`, a standard user, signed in by auto sign-in, 1920x1080 |
+| Agent | LaunchAgent `ai.musemuse.lab`, release `0.1.1-1a60ff7` in `~/musemuse-lab` | Scheduled Task `MuseLabAgent`, release `0.1.1-50123fa` in `C:\MuseLab`. Both lanes are pinned to `0.1.1-1a60ff7`, whose only change since is Android's, so the next `update-agent` on Windows changes nothing it runs |
+| Offers | `ios_sim`, `glasses_sim`, `android_emu`, `desktop_mac` | `desktop_windows` |
+| Tools | Node 22, ffmpeg with `drawtext`, `openjdk@17`, `aws`. Xcode 26.6, selected, its license accepted, with the iOS 26.5 simulator runtime. The Android command line tools with `platform-tools`, `emulator`, `platforms;android-35` and the arm64 Google APIs image, their licenses accepted, and the AVD `mm_pixel` | Node 22.22.2, ffmpeg with `drawtext`, `aws` |
+| Left running | The simulator `Muse Lab iPhone` and the emulator `emulator-5554`, which the agent keeps up between jobs | |
+| Files | `~/musemuse-lab/shells/`: `mac-template.zip`, `lab-ios-sim.tar.gz`, `lab-android.apk`, `glasses-ios-sim.tar.gz` (the builds in `native/releases.json`), `mock-photo.jpg` | `C:\MuseLab\shells\windows-template.zip` |
+
+**The bucket** has this under `s3://muse-knowledge-916979311153/lab/`:
+
+- `bundles/`: the pinned agent bundle.
+- `shells/`: `mac-template.zip` (217 MB) and `windows-template.zip` (158 MB), the desktop shell built on the boxes from `native/shell-desktop`
+  at this branch's base, plus its source `shell-desktop-src.tgz`, `mock-photo.jpg` and `glasses-check.html`.
+- `checks/`: the real clips and reports. `mac-1/`, `mac-2/`, `windows-1/`, `windows-2/` and `windows-3/` are the desktop kinds.
+  `20261031T181351Z/` is the first run of the phone kinds, which failed. `warm-1851/`, `glasses-1858/`, `final-1920/`, `final2-1926/` and
+`cold-1928/` are the runs after the fixes, and `final2-1926/` has the Android and Mac clips from the final release.
+- `xcode-26.6.tar.zst` (2.7 GB). The owner said yes to the licenses and an Xcode check has passed, so it could go now. It's kept until
+  the teardown, because it's the only quick way to put Xcode on a new host, and it costs about $0.06 a month.
+- `s12/` is gone: the role can't write there any more.
+
+**The agents poll the live site.** The claim route isn't deployed yet, and the site answers routes it doesn't have with a 200 HTML page,
+so `agent.log` shows `claim answered with a page, not JSON` once a minute. That's expected until the routes land. Nothing is claimed.
+
+**The token and password.** Both lanes' lab tokens are in Parameter Store as SecureStrings, and nobody has seen them. The Mac's `ec2-user`
+password and the Windows `musemuse` password are random and were never shown. To use screen sharing on the Mac, set a new one by
+running `mac.sh` with `MUSE_LAB_USER_PASSWORD`.
+
+**Rebuilding the desktop templates.** Unpack `native/shell-desktop` on the box and run `npm ci`. On the Mac run `npx electron-builder --mac`,
+which takes about 2 minutes, and keep the zip. On Windows run `npx electron-builder --win dir`, then
+`tar.exe -a -c -f windows-template.zip -C dist\win-unpacked .`.
+
+### What it cost so far
+
+Cost Explorer shows nothing useful yet: it lags a day and credits net it to about $0. This comes from instance times, at the
+rates the AWS Pricing API gives for us-east-1 on demand. The budget `musemuse-lab` is set at $150.
+
+| Item | Time | Cost |
+|---|---|---|
+| Windows, running | 3.18 h (first setup), 0.38 h (checks) and 0.43 h (review fixes), 3.99 h in all, on Oct 31, at $0.1108/h, the Windows rate | $0.44 |
+| Mac host | Since 06:01 UTC on Oct 31 at $0.65/h, with a 24 h minimum per allocation | About $8.50 by 19:00 UTC on Oct 31. About $75 by Nov 5, 01:00 UTC |
+| EBS and S3 | 360 GB gp3 and 3 GB of S3 | Under $5 through Nov 4 |
+
+### Teardown
+
+Nothing stops the Mac host by itself. It bills $15.60 a day, so left running the lab passes its $150 budget around Nov 9. After
+the hackathon closes at 9 PM ET on Nov 4, from a laptop with the lab's AWS profile:
+
+1. Terminate both instances:
+   `aws ec2 terminate-instances --profile offlinebase --region us-east-1 --instance-ids i-0a5866df305e83d40 i-066609c3dc74c9f18`
+2. Release the host once its scrub is done and its 24 h minimum has passed. Until then the call is refused, so try again later:
+   `aws ec2 release-hosts --profile offlinebase --region us-east-1 --host-ids h-06879f600be8541ed`
+3. Clear the lab's files: `aws s3 rm --profile offlinebase --recursive s3://muse-knowledge-916979311153/lab/`
+4. Delete the parameters under `/musemuse/lab/`, the `MuseLab-Control` document and the two roles, if nothing else will use them.
+
+## The licenses
+
+**The owner said yes to the Xcode and Android SDK licenses on Oct 31.** At 18:13:51 UTC the main session ran `setup/mac-finish.sh` with
+`MUSE_LAB_ACCEPT_LICENSES=1` (SSM command `a30352bd`). Xcode's license shows accepted at 18:15 UTC
+(`IDEXcodeVersionForAgreedToGMLicense` 26.6), and the SDK, the image and the AVD went in. The command took 13 minutes and exited 1,
+because all three checks after it failed:
+
+| Kind | First result | Cause | Now |
+|---|---|---|---|
+| `android_emu` | `lab_error`, `install_failed` | adb refuses a file whose name doesn't end in `.apk`, and the download cache names files by their sha256 | The runner copies the download to `app.apk`. Then the clip failed: stopping the local adb right after `pkill` ended the session, and the device killed screenrecord before it wrote the moov atom. The runner now waits for screenrecord to go first. Passes, with a clip |
+| `ios_sim` | Failed: "The screen stayed blank" | On a cold simulator the report came 23 s after launch. The screenshots and the 15 s clip had already ended on the shell's white loading screen | Shots follow the report, and the clip keeps the end of the recording. Passes on the warm simulator, and on a freshly booted one at 19:28 UTC. That page loaded in 1.7 s, though, so the 23 s case itself has only been checked in the unit tests |
+| `glasses_sim` | Failed: "The app didn't open" | `simctl launch` ran past its 45 s limit just after the install, and the reason wasn't logged | 120 s, a 5 s pause after an install, the reason in the log, and launch arguments instead of the deep link. Opens and loads. Then its clip never finished encoding: a frame that lasted 60 s began before the clip's start, and a seek dropped it. Clips are now trimmed after `fps` fills the gaps, and every encode has an end. Still fails at the mock glasses, see below |
+
+`setup/mac.sh` now leaves Xcode selected on a run without the flag once the license is accepted, so it's safe to run again for a new
+screen sharing password. Run without the flag on Oct 31, it kept Xcode and the four kinds. The flag isn't needed again.
+
+### Checking the phone kinds
+
+This runs the three phone checks on the shell builds on the box, accepts nothing and spends nothing:
+
+```
+aws ssm send-command --profile offlinebase --region us-east-1 --instance-ids i-0a5866df305e83d40 \
+  --document-name AWS-RunShellScript --parameters '{"executionTimeout":["1800"],"commands":["sudo -u ec2-user -H env AWS_REGION=us-east-1 bash /Users/ec2-user/musemuse-lab/current/setup/mac-checks.sh"]}' \
+  --query Command.CommandId --output text
+```
+
+Results go to `~/musemuse-lab/checks/<time>/` and `lab/checks/<time>/`, and exit code 0 means all three passed. `ios_sim` and
+`android_emu` open the live site. The live site isn't a glasses product, so `glasses_sim` opens `glasses-check.html` from the bucket,
+which keeps the glasses template's contract.
+
+**`glasses_sim` still fails, in the glasses shell, not the lab.** The app opens, the page loads, and the autopilot clicks connect.
+`connect` then fails with `no_eligible_device` ("We can't find your glasses"), so the autopilot stops at "timeout: glasses are
+no-glasses". It's the same on a freshly booted simulator, with the build in `native/releases.json` (`68c9d5ab`, checked by size against
+Expo's copy), on iOS 26.5. The shell's own message for this (`MUSE_GLASSES connect failed: ...`) is a `console.warn`, which the
+release build doesn't put in the system log, so the module's wording is lost. Wave 1 reached `ready` with the same build on a laptop
+simulator. Whoever picks this up: have the shell write that message to `Documents` or a checkpoint, run `mac-checks.sh`, and compare the
+simulator's iOS version with wave 1's.
+
+## Checking a box by hand
+
+`tools/check.mjs` runs one real job on the box, with a small stand-in for the platform on 127.0.0.1. It starts a temporary agent in the GUI
+session, keeps the job's files in `--out`, and spends nothing. It's how a box gets tested while the routes aren't live.
+
+```
+node ~/musemuse-lab/current/tools/check.mjs --kind desktop_mac --app ~/musemuse-lab/shells/mac-template.zip \
+  --target https://muse-muse.vercel.app/ --out ~/musemuse-lab/checks/mine --limit 240
+```
+
+Run it as `ec2-user` on the Mac. Run it as SYSTEM through SSM on Windows, where it registers a temporary task in the `musemuse` session and
+removes it after. Start the Windows box first, and remember the idle stop is running.
 
 ## Setting up the Mac
 
-A dedicated `mac2.metal` host in us-east-1, 300 GB gp3, with no key pair and a security group with no inbound rules. It's never
-stopped during the event. Reach it only through SSM Session Manager.
+A dedicated `mac2.metal` host, 300 GB gp3, with no key pair and a security group with no inbound rules. Reach it only through SSM.
 
-1. Install Xcode 26.4 or later. Either bring the .xip over, or sign in once over screen sharing through an SSM port-forward.
+1. Put Xcode at `/Applications/Xcode.app`. This box has 26.6.
 2. Unpack `native/lab` on the box, then run it as `ec2-user`:
    ```
    MUSE_LAB_PLATFORM=https://muse-muse.vercel.app AWS_REGION=us-east-1 bash setup/mac.sh
    ```
-   Set `MUSE_LAB_USER_PASSWORD` if you want to know the password for screen sharing. Otherwise it's random and unseen.
+   Set `MUSE_LAB_USER_PASSWORD` if you want to know the password for screen sharing. Otherwise it's random and unseen. Running it again
+   leaves auto-login alone, keeps Xcode selected once its license is accepted, and, run from `~/musemuse-lab/current/setup/`, stays on
+   the installed release. "The disk resize didn't run" on a second run is normal: the disk is already full size.
 3. Put the lab token in Parameter Store, then reboot. Auto-login starts the agent in the GUI session.
-4. Check `~/musemuse-lab/logs/agent.log`. Its first line lists the kinds the box can run.
+4. Check `~/musemuse-lab/logs/agent.log`. Its first lines list the kinds the box can run.
 
-**The script resizes APFS, turns on auto-login and turns off sleep and the screen lock.** It installs Homebrew's `node@22`,
-`ffmpeg`, `ffmpeg-full`, `openjdk@17` and `awscli`, the Android tools with an arm64 `android-35` `google_apis` image and the AVD
-`mm_pixel`, and the LaunchAgent.
+**The script resizes APFS, turns on auto-login and turns off sleep and the screen lock.** It installs Homebrew's `node@22`, `ffmpeg`,
+`ffmpeg-full`, `openjdk@17` and `awscli`, and the LaunchAgent. The Xcode and Android steps only run with `MUSE_LAB_ACCEPT_LICENSES=1`,
+which has been done on this box. See "The licenses".
 
-Then run the native lane's spikes on the box. Until then, none of this has run on one:
+Two things macOS 26 does that the script handles:
 
-| Spike | How to check it |
-|---|---|
-| S1, the emulator | An `android_emu` job passes with a real clip. Boots in under 3 minutes |
-| S2, simctl from a LaunchAgent | An `ios_sim` job passes with a real clip. Fallback: `launchctl asuser` from an SSM session |
-| S3, Electron in the GUI session | A `desktop_mac` job passes with frames |
-| S12, large uploads | A 150 MB file goes up through a multipart slot |
-| Glasses S2 | A `glasses_sim` job reaches `result` with the mock glasses |
+- **Auto-login.** `sysadminctl -autologin set` fails with `SACSetAutoLoginPassword error:22` and still exits 0, so the script writes
+  `/etc/kcpassword` itself, readable only by root. A reboot on Oct 31 signed `ec2-user` in with this, and the agent started.
+- **The metadata address.** The Local Network privacy check refuses `169.254.169.254` to `ec2-user`'s Homebrew tools with `No route to
+  host`. Root isn't affected, and only a person at the screen could answer the prompt. So the agent couldn't read its token, and the
+  `aws` CLI said `NoCredentials`. `~/.aws/config` now uses `setup/imds-credentials.sh` as its `credential_process`, which gets the instance
+  role's credentials with Apple's own `curl`. Anything new on the Mac that wants the role has to use the `aws` CLI or that script.
+- **Restarting the agent.** `launchctl bootstrap` right after `bootout` fails with an I/O error while the old agent is still shutting
+  down, which left no agent running on Oct 31. The script now tries again for up to 90 s.
 
 ## Setting up Windows
 
@@ -424,19 +686,41 @@ An on-demand `t3.large` running Windows Server 2022, 60 GB, with shutdown behavi
    powershell -ExecutionPolicy Bypass -File setup\windows.ps1 -Platform https://muse-muse.vercel.app -Region us-east-1
    ```
 3. Put the lab token in Parameter Store, then reboot. The box signs in by itself as the standard user `musemuse`, and a Scheduled
-   Task starts the agent in that session, with no RDP attached (spike S4).
+   Task starts the agent in that session, with no RDP attached.
 
-The agent stops the box after 20 idle minutes. Starting it again is the platform's job: `ec2:StartInstances`, then wait up to 6
-minutes for a claim call. The idle clock runs whatever the platform answers, so a box that gets 401s or 404s, because the routes
-or the flags aren't live yet, still stops itself. If the `shutdown` command fails, the agent stays up and tries again each minute.
+Auto sign-in is Windows' own, with the password as an LSA secret, so there's no third-party tool and no license to accept.
+`Set-DisplayResolution` in the agent's start script gives the session 1920x1080.
 
-**`windows.ps1` hasn't run yet.** No machine here has PowerShell, so only its contents are tested. Check these on the first box:
+**Permissions.** The control document runs `C:\MuseLab\current\control.mjs` as SYSTEM, so the lab user mustn't be able to change
+anything under `C:\MuseLab` but `data` and `logs`. A new folder on C: inherits a grant that lets any user add files, so the script
+removes inheritance from `C:\MuseLab` and grants SYSTEM and Administrators full control and Users read and run. `C:\MuseLab\control`
+is SYSTEM and Administrators only. Checked on Oct 31 by writing as `musemuse` in session 1: `data` and `logs` took the write, and
+`C:\MuseLab`, `current`, `releases`, `control`, `shells` and `current\control.mjs` refused it. `tools/check.mjs` grants the lab user
+its own `--out` folder, so keep that under `C:\MuseLab\data`.
 
-| Check | How |
-|---|---|
-| The box signs in and the agent starts | `agent.log` shows a claim call, with no RDP attached (spike S4) |
-| The idle stop works | The box stops after 20 idle minutes. Check `agent.log` for `idle shutdown failed` |
-| A restart leaves one agent | `restart-agent`, then `tasklist /fi "imagename eq node.exe"` shows one `node.exe`. `schtasks /End` only stops the PowerShell wrapper, so the restart also ends the pid in `data\agent.pid` with `taskkill` |
+The agent stops the box after 20 idle minutes. Starting it again is the platform's job: `ec2:StartInstances`, then wait for a claim call.
+It took about 30 seconds from the start call to the agent's first log line, so 6 minutes is plenty. The idle clock runs whatever the
+platform answers, so a box that gets 401s or 404s, because the routes or the flags aren't live yet, still stops itself. If the `shutdown`
+command fails, the agent stays up and tries again each minute.
+
+## Spike results
+
+All run on the real boxes on Oct 31, with the local stand-in. The clips are in the bucket under `checks/`. The phone kinds ran after the
+owner's yes to the licenses.
+
+| Spike | Result | What really ran |
+|---|---|---|
+| S3, Electron in the GUI session | **Passed** | The real universal desktop shell, built on the box, in `ec2-user`'s session against the live site. All checks passed, 27 frames, a framed 1920x1080 clip. `codesign --verify --deep --strict` passes and Gatekeeper rejects it, as expected for an ad hoc app |
+| S4, Windows with no RDP | **Passed** | After a reboot and after a stop and start: `musemuse` signed in on the console, one `node.exe` in session 1, and a check passed with a framed clip. Session 1 measured 1920x1080 after the reboot (08:52 UTC) and after a stop and start (18:53 UTC). Nobody ever used RDP |
+| Windows restart | **Passed** | `restart-agent` and `update-agent` each left exactly one `node.exe`, with the pid file right |
+| Taskkill filters | **Passed** | `/F /T /FI "PID eq 4" /FI "IMAGENAME eq node.exe"` left the System process alone and exited 0 |
+| Windows idle stop | **Passed** | At 09:12:17 UTC, 20 minutes to the second after the agent's start: `idle shutdown` in the log, event 1074 from `shutdown.exe` for `musemuse`, and EC2 state reason `Client.InstanceInitiatedShutdown`. It fired again at about 18:18 UTC on the claim-failure path after the final update, with the same state reason |
+| S12, large uploads | **Passed** | 150 MiB and 215 MiB of random bytes and each box's real zip (217 MB Mac, 158 MB Windows). All reached S3, at 67 to 200 MB/s, and the 215 MiB objects' ETags end in `-27`, so they went up as multipart. The lab's own Blob client also sent each through a local server that reassembled the parts: same sha256, peak memory about 250 MB. Real Vercel Blob wasn't hit, because the routes that issue its tokens aren't live |
+| S1, the emulator | **Passed** | The emulator booted in about 61 s on the first run and stays up between jobs. The lab APK opened the live site by its deep link: loaded,
+bridge handshake, not blank, the report through logcat, and a framed 1920x1080 clip at 19:26 UTC on `0.1.1-1a60ff7`. Still untested
+from wave 1's list: the 250 ms backstop, the microphone path, cleartext and the head-script probe |
+| S2, simctl from a LaunchAgent | **Passed** | `ios_sim` from the check tool's LaunchAgent in `ec2-user`'s GUI session: launched, loaded the live site, bridge handshake, not blank, a framed clip. At 18:41 UTC on the old code and at 18:51 UTC on `0.1.1-db1609a`, both on a warm simulator. The first run, on a cold simulator, failed as blank, which the fix above addresses, but a cold run hasn't been repeated |
+| Glasses S2 | **Failed** | The app opens with launch arguments and loads the page, and the autopilot clicks connect. The mock glasses then answer `no_eligible_device`, so it stops at "timeout: glasses are no-glasses". Same on a freshly booted simulator. See "Checking the phone kinds" |
 
 ## Running it against a local platform
 
@@ -466,9 +750,11 @@ MUSE_LAB_ROOT=/tmp/lab MUSE_LAB_KINDS=desktop_mac node native/lab/agent.mjs
   joins its arguments on the device, so those go through `shQuote`.
 - **Tokens stay out of logs and uploads.** The logger and the uploaded `log.txt` and `report.json` hide them by value and by
   shape. Tests check both.
+- **Each lane reads only its own parameters,** through explicit denies in the instance role. See "Control".
 - **Product content stays in sandboxed renderers.** Captions never carry product text. On Windows, the agent runs as the
-  standard user `musemuse`. **On the Mac it runs as `ec2-user`, who has passwordless sudo,** and `setup/mac.sh` relies on that.
-  So a renderer or simulator escape on the Mac can reach root. Only the sandbox stands in the way there.
+  standard user `musemuse`, who can't change anything SYSTEM runs. See "Setting up Windows". **On the Mac it runs as `ec2-user`, who has passwordless sudo,** and `setup/mac.sh` relies on that.
+  So a renderer or simulator escape on the Mac can reach root. Only the sandbox stands in the way there. The license step that needed
+  the sudo has run, so it could now be narrowed to what a second `mac.sh` run needs, or removed. That's the owner's call.
 - **Downloads** come only from Blob or the platform, with no redirects, and are checked against their sha256.
 - **Target URLs** must be public https, which keeps the box's metadata service (`169.254.169.254`) and anything local out of
   reach of a job.

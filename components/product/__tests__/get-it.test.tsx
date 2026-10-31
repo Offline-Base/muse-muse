@@ -45,9 +45,22 @@ describe("GetItPanel", () => {
     assert.equal((html.match(/role="tabpanel"/g) ?? []).length, 4);
   });
 
-  it("is on the product page with nothing in it today", () => {
+  it("is on the product page, only for a shipped product, with the output tabs only while their flag is on", () => {
     const page = readFileSync(path.join(process.cwd(), "app/p/[slug]/page.tsx"), "utf8");
-    assert.match(page, /<GetItPanel slots=\{\{\}\} \/>/);
+    assert.match(
+      page,
+      /\{shipped \? \(\s*<GetItPanel slots=\{\{ \.\.\.native\.slots, \.\.\.\(env\.productOutputs \? productOutputSlots\(.*\) : \{\}\) \}\} initial=\{native\.initial\} \/>\s*\) : null\}/,
+    );
+  });
+
+  it("opens on the tab it's told to, and on the first when that one is empty", () => {
+    const slots: GetItSlots = { phone: "Android and iPhone", vr: "Open on Quest" };
+    const vr = renderToString(createElement(GetItPanel, { slots, initial: "vr" })).replace(/<!-- -->/g, "");
+    assert.match(vr, /aria-selected="true"[^>]*>VR</);
+    assert.ok(vr.includes("Open on Quest"));
+    assert.ok(!vr.includes("Android and iPhone"));
+    const empty = renderToString(createElement(GetItPanel, { slots: { phone: "Android and iPhone", desktop: "Mac" }, initial: "vr" })).replace(/<!-- -->/g, "");
+    assert.match(empty, /aria-selected="true"[^>]*>Phone</);
   });
 });
 

@@ -34,8 +34,10 @@ import { env } from "@/lib/env";
 import { modelLabel } from "@/lib/format";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
 import { mintToken } from "@/lib/gateway/tokens";
+import { briefTargets } from "@/lib/native/targets";
 import { allowedModelsFor } from "@/lib/pipeline/logic";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
+import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import {
   deleteDryRunCopy,
   finishDemo,
@@ -272,7 +274,7 @@ async function rerecord(p: Product, files: Array<{ path: string; content: Buffer
     if (built.exitCode !== 0) return row("failed", null, "the sandbox has no build (.next) to start; a refinement rebuilds it");
     await refreshPlatformFiles(sandboxName, files);
     const models = brief ? brief.capabilities.map((c) => c.model) : (p.manifest?.models ?? []).map((m) => m.id);
-    await writeDemoSpec(sandboxName, { title: p.name, tagline: p.tagline, models: [...new Set(models)].map(modelLabel), url: p.liveUrl });
+    await writeDemoSpec(sandboxName, { title: p.name, tagline: p.tagline, models: [...new Set(models)].map(modelLabel), url: p.liveUrl, ...demoNoteFor(briefTargets(brief)) });
     log("platform files and studio spec in place, recording");
 
     const run = await runDemo(sandboxName);

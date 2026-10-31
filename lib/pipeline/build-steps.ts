@@ -20,6 +20,8 @@ import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
 import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
+import { nativeExtraFiles } from "@/lib/native/template-files";
+import { prepareToolFixtures } from "@/lib/tools/fixtures";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
   allowedModelsFor,
@@ -34,6 +36,8 @@ import {
 import { modelLabel } from "@/lib/format";
 import { stepRetries } from "@/lib/pipeline/steps";
 import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } from "@/lib/publish/vercel";
+import { briefTargets } from "@/lib/native/targets";
+import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
@@ -128,7 +132,7 @@ async function unrecorded(ctx: UsageContext, items: ModelUsage[]): Promise<Model
 }
 
 /** Records usage rows and adds their cost to the build, once per result even when the step retries. */
-async function charge(ctx: UsageContext & { buildId: string }, usage: ModelUsage[], what: string): Promise<void> {
+export async function charge(ctx: UsageContext & { buildId: string }, usage: ModelUsage[], what: string): Promise<void> {
   const items = await unrecorded(ctx, usage);
   if (!items.length) return;
   await recordUsage(ctx, items);
@@ -297,6 +301,7 @@ export async function briefStep(buildId: string): Promise<BriefSummary> {
     note: inspiration.note,
     references: inspiration.references,
     rebuildOf: rebuildTargetFor(build.rebuildOf),
+    requestedTargets: build.requestedTargets,
   }).catch(async (err: unknown) => {
     // A brief that failed both attempts still cost something. Record it before the step retries.
     if (err instanceof StructuredOutputError) await chargeBrief(buildId, err.usage);
@@ -368,11 +373,31 @@ export async function createProductStep(buildId: string): Promise<ProductRef> {
 }
 createProductStep.maxRetries = stepRetries("provision");
 
+/**
+ * An agent's canned tool outputs, saved on the build. Never throws and never retries: the gateway falls back to each tool's
+ * catalog sample, so a failure here costs some realism in the test's screens and nothing else.
+ */
+async function saveToolFixtures(build: Awaited<ReturnType<typeof loadBuild>>): Promise<void> {
+  const brief = build.brief;
+  if (!brief?.agent || build.toolFixtures) return;
+  const ctx: UsageContext & { buildId: string } = { source: "platform", endpoint: "responses", buildId: build.id, productId: build.productId };
+  try {
+    const { fixtures, usage } = await prepareToolFixtures(brief);
+    if (usage.length) await charge(ctx, usage, "Tool samples");
+    if (fixtures) await db().update(schema.builds).set({ toolFixtures: fixtures }).where(eq(schema.builds.id, build.id));
+  } catch (err) {
+    console.error("[tool fixtures]", err);
+    if (err instanceof StructuredOutputError) await charge(ctx, err.usage, "Tool samples").catch(() => undefined);
+    await emit(build.id, { type: "log", text: "Tool samples could not be written. The test uses the standard ones." }).catch(() => undefined);
+  }
+}
+
 /** Fixture files for the product's tests. Failure is not fatal: Muse Code makes its own fixtures (AGENTS.md). */
 export async function fixturesStep(buildId: string): Promise<PreparedFixture[]> {
   "use step";
   const build = await loadBuild(buildId);
   const inspiration = await loadInspiration(build.inspirationId);
+  await saveToolFixtures(build);
   try {
     const result = await prepareFixtures({
       buildId,
@@ -402,6 +427,12 @@ export interface SandboxRef {
   sessionId: string;
   /** inspo/ paths of the image references, for `muse exec --image`. */
   images: string[];
+}
+
+/** The files this brief's targets add, as a field that isn't there at all for a web-only brief. */
+function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string; content: string }> } {
+  const extraFiles = nativeExtraFiles(brief);
+  return extraFiles.length ? { extraFiles } : {};
 }
 
 /**
@@ -442,6 +473,8 @@ export async function provisionStep(input: {
     promptMarkdown,
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
+    ...extraFilesFor(brief),
+    targets: briefTargets(brief),
   });
   const sessionId = build.museSessionId ?? newSessionId();
   await db().batch([
@@ -860,6 +893,7 @@ export async function demoSpecStep(input: {
     tagline: input.tagline,
     models: [...new Set(models)].map(modelLabel),
     url: demoUrlFor(product, env.publishOffReason),
+    ...demoNoteFor(briefTargets(brief)),
   });
 }
 demoSpecStep.maxRetries = 2;
@@ -1086,7 +1120,7 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
       ),
     );
   const [previous] = await db()
-    .select({ buildModel: schema.builds.buildModel })
+    .select({ buildModel: schema.builds.buildModel, toolFixtures: schema.builds.toolFixtures })
     .from(schema.builds)
     .where(and(eq(schema.builds.productId, product.id), eq(schema.builds.kind, "build")))
     .orderBy(desc(schema.builds.startedAt))
@@ -1101,6 +1135,8 @@ export async function loadRefineStep(buildId: string): Promise<RefineContext> {
       museSessionId: product.museSessionId,
       buildModel: model,
       ...(brief ? { brief } : {}),
+      // A change's tests see the same tool samples as the first build's.
+      ...(previous?.toolFixtures ? { toolFixtures: previous.toolFixtures } : {}),
     })
     .where(eq(schema.builds.id, buildId));
   return {
@@ -1143,8 +1179,10 @@ export async function reopenStep(input: {
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
     newReferences,
+    ...extraFilesFor(brief),
   });
   const prompt = renderRefinePrompt({
+    brief,
     message: build.message ?? inspiration.note ?? "",
     newReferences: newReferences.map((r) => ({
       fileName: r.fileName,

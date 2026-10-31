@@ -5,7 +5,7 @@ import { briefToMarkdown } from "@/lib/brief/render";
 import type { Brief } from "@/lib/brief/schema";
 import { respondStructured } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
-import { JUDGE_INSTRUCTIONS } from "@/lib/prompts/judge";
+import { judgeInstructions } from "@/lib/prompts/judge";
 import type { JudgeVerdict, ModelUsage, Reference, Screenshot } from "@/lib/types";
 
 /**
@@ -106,7 +106,7 @@ export async function judgeBuild(input: {
 
   const result = await respondStructured({
     model: env.judgeModel,
-    instructions: JUDGE_INSTRUCTIONS,
+    instructions: judgeInstructions(input.brief),
     content,
     sources,
     schema: VerdictSchema,

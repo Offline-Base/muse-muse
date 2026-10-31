@@ -13,11 +13,13 @@ import { before, describe, it, mock } from "node:test";
 const SUMMARY = JSON.stringify({ musemuse_verify: 1, passed: true, steps: [{ name: "smoke", ok: true, ms: 1200 }], failure: "" });
 /** What `ls -1 *.png | sort` prints in the judge folder. */
 let pngs: string[] = [];
+/** What `grep -l '"xr":true' *.checked` prints in the judge folder. */
+let vrChecked: string[] = [];
 
 const fakeSandbox = {
   runCommand: async (opts: { args: string[] }) => {
     const script = opts.args[1] ?? "";
-    const stdout = script.includes("verify.out") ? Buffer.from(`${SUMMARY}\n`).toString("base64") : script.includes("ls -1") ? pngs.join("\n") : "";
+    const stdout = script.includes("verify.out") ? Buffer.from(`${SUMMARY}\n`).toString("base64") : script.includes("ls -1") ? pngs.join("\n") : script.includes("grep -l") ? vrChecked.join("\n") : "";
     return { exitCode: 0, stdout: async () => stdout, stderr: async () => "" };
   },
 };
@@ -47,6 +49,14 @@ describe("collectVerifyResult", { skip: canMock ? false : "needs --experimental-
       ["Start", "Chart", "Explained"],
     );
     assert.equal(screenshots[2]!.url, "sandbox://sb/vercel/app/test-results/judge/03-explained.png");
+  });
+
+  it("says which screenshots were taken inside VR", async () => {
+    pngs = ["01-start.png", "02-in-vr.png", "03-result.png"];
+    vrChecked = ["02-in-vr.checked", "03-result.checked"];
+    const { screenshots } = await collect();
+    vrChecked = [];
+    assert.deepEqual(screenshots.map((s) => s.caption), ["Start", "In vr (VR view)", "Result (VR view)"]);
   });
 
   it("keeps the first and the last seven of more than eight, so the last one is still the final screen", async () => {

@@ -1,0 +1,11 @@
+{
+  "meta-quest-touch-plus": {
+    "path": "meta-quest-touch-plus/profile.json"
+  },
+  "generic-hand": {
+    "path": "generic-hand/profile.json"
+  },
+  "generic-trigger": {
+    "path": "generic-trigger/profile.json"
+  }
+}

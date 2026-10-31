@@ -37,6 +37,7 @@
           "$env:MUSE_LAB_LANE = 'windows'",
           "$env:MUSE_LAB_ROOT = 'C:\\MuseLab'",
           "$env:AWS_REGION = 'us-east-1'",
+          "$env:PATH = 'C:\\Program Files\\nodejs;C:\\Program Files\\Amazon\\AWSCLIV2;' + $env:PATH",
           "& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\MuseLab\\current\\control.mjs' $action",
           "exit $LASTEXITCODE"
         ]

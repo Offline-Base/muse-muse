@@ -1,0 +1,23 @@
+{
+  "shellVersion": "1.0.0",
+  "templates": {
+    "mac": {
+      "pathname": "native/shells/1.0.0/mac.zip",
+      "url": null,
+      "bytes": 216576892,
+      "sha256": "e826b62e9c12f688925cdfdf0b7b0080583dae0d45b50b4314f3653b03d8ecc3"
+    },
+    "windows": {
+      "pathname": "native/shells/1.0.0/windows.zip",
+      "url": null,
+      "bytes": 158265713,
+      "sha256": "8a6bd9dc353b7a4bfc5fc0d30ee0a24d45c681d1aa60c5482f70f384f1da8b52"
+    },
+    "android": {
+      "pathname": "native/shells/1.0.0/android.apk",
+      "url": null,
+      "bytes": 74096124,
+      "sha256": "05ca78a89e0e03605d2cb3b580bba55662021520aeba2d5a14cad3c6a4af09b8"
+    }
+  }
+}

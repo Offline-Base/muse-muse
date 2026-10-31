@@ -37,6 +37,8 @@ Note: {{note or "none"}}
 References, in order: {{one line per reference: index, kind, file name}}
 ```
 
+With a target flag on, the writer also gets a "Where it runs" block, and the catalog gets the agent's tools with AGENTS_ENABLED. See `whereItRuns` in `lib/prompts/brief.ts` and `docs/NATIVE.md`.
+
 ## 2. Builder (`brief.md`, the prompt file for `muse exec`)
 
 ```markdown
@@ -102,6 +104,8 @@ Brief: {{brief}}
 Inspiration, in order: {{captions}}
 Screenshots, in order: {{captions}}
 ```
+
+A brief with the agent, VR or glasses target adds its rules and notes to this prompt (`judgeInstructions` in `lib/prompts/judge.ts`).
 
 ## 5. Refinement (follow-up on a shipped product, `--session-id`)
 

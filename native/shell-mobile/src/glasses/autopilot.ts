@@ -13,20 +13,27 @@ export interface AutopilotEntry {
   step: string;
   ok: boolean;
   detail?: string;
+  /** The page's uncaught errors and console.error calls so far, on the steps that end a run. */
+  errors?: string[];
   at: string;
 }
 
 const STEPS = new Set(["start", "connect", "primary", "result", "timeout", "error"]);
+const MAX_ERRORS = 20;
+const MAX_ERROR_CHARS = 300;
 
 /** Page input is untrusted, so only a known step and short text reach the log. */
 export function cleanCheckpoint(raw: unknown, at: Date): AutopilotEntry | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { step, ok, detail } = raw as Record<string, unknown>;
+  const { step, ok, detail, errors } = raw as Record<string, unknown>;
   if (typeof step !== "string" || !STEPS.has(step)) return null;
   return {
     step,
     ok: ok === true,
     ...(typeof detail === "string" ? { detail: detail.slice(0, 300) } : {}),
+    ...(Array.isArray(errors) && errors.length > 0
+      ? { errors: errors.slice(0, MAX_ERRORS).map((error) => String(error).slice(0, MAX_ERROR_CHARS)) }
+      : {}),
     at: at.toISOString(),
   };
 }
@@ -38,8 +45,11 @@ export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS, liste
   if (!internal || !internal.checkpoint || window.__museAutopilotStarted) return;
   window.__museAutopilotStarted = true;
   var deadline = Date.now() + ${Math.max(0, Math.floor(limitMs))};
-  function mark(step, ok, detail) {
-    return internal.checkpoint({ step: step, ok: ok, detail: detail }).catch(function () {});
+  function mark(step, ok, detail, errors) {
+    return internal.checkpoint({ step: step, ok: ok, detail: detail, errors: errors }).catch(function () {});
+  }
+  function pageErrors() {
+    return internal.pageErrors ? internal.pageErrors() : [];
   }
   function find(selector) {
     return document.querySelector(selector);
@@ -94,11 +104,11 @@ export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS, liste
       return waitFor("[data-result]");
     })
     .then(function (result) {
-      return mark("result", true, (result.innerText || "").slice(0, 200));
+      return mark("result", true, (result.innerText || "").slice(0, 200), pageErrors());
     })
     .catch(function (error) {
       var text = error && error.message ? error.message : String(error);
-      return mark(text.indexOf("timeout") === 0 ? "timeout" : "error", false, text);
+      return mark(text.indexOf("timeout") === 0 ? "timeout" : "error", false, text, pageErrors());
     });
 })();
 true;`;
