@@ -5,7 +5,7 @@
  */
 import type { buildEvents, builds, inspirations, products } from "@/lib/db/schema";
 import { bytes } from "@/lib/format";
-import { isSafeFileKey } from "@/lib/local-files";
+import { isSafeFileKey, STORED_PREFIXES } from "@/lib/local-files";
 import {
   IMPORT_MAX_BYTES,
   LOCAL_FILE_URL,
@@ -58,8 +58,9 @@ function muse(i: InspirationRow): ImportInspiration {
 
 /**
  * The rows as an import bundle, ids kept. Left out: every user id (the live site gives the rows to its guest
- * account), the local workflow run, the local event ids (the live table numbers them) and the live link and project,
- * which a local run never sets. Only for rows skipReason passed.
+ * account), the local workflow run, a running build's controls, the local event ids (the live table numbers them) and
+ * the live link and project, which a local run never sets. Columns that are empty for a product with no targets stay
+ * out of the bundle altogether, so it reads as it always did. Only for rows skipReason passed.
  */
 export function toBundle(rows: LocalRows): ImportBundle {
   const { product: p } = rows;
@@ -80,6 +81,7 @@ export function toBundle(rows: LocalRows): ImportBundle {
       demoVideoUrl: p.demoVideoUrl,
       demoPosterUrl: p.demoPosterUrl,
       transcriptUrl: p.transcriptUrl,
+      ...(p.extraClips.length ? { extraClips: p.extraClips } : {}),
       status: "live",
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
@@ -103,6 +105,8 @@ export function toBundle(rows: LocalRows): ImportBundle {
       error: b.error,
       startedAt: b.startedAt.toISOString(),
       finishedAt: b.finishedAt ? b.finishedAt.toISOString() : null,
+      ...(b.requestedTargets ? { requestedTargets: b.requestedTargets } : {}),
+      ...(b.toolFixtures ? { toolFixtures: b.toolFixtures } : {}),
     })),
     events: rows.events.map((e) => ({ buildId: e.buildId, type: e.type, payload: e.payload, at: e.at.toISOString() })),
     inspiration: muse(own),
@@ -123,7 +127,7 @@ export function findLocalFileUrls(value: unknown): string[] {
 }
 
 /** Keys the platform stores files under (lib/storage.ts BlobPrefix). */
-const STORED_KEY = /^(?:inspo|uploads|screens|demos|transcripts|fixtures)\//;
+const STORED_KEY = new RegExp(`^(?:${STORED_PREFIXES.join("|")})/`);
 
 /**
  * The stored key behind a local file URL, which is also its Blob pathname: ".../api/files/demos/<buildId>/demo-1a2b.mp4"

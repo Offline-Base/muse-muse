@@ -17,6 +17,38 @@ function uploaded() {
   return rewriteLocalUrls(bundle, new Map(findLocalFileUrls(bundle).map((url) => [url, blobUrlFor("store_8A701wVtiqVp1x3e", localFileKeyOf(url)!)])));
 }
 
+describe("files under native/ and clips/", () => {
+  it("are found, keyed and moved like any other stored file", () => {
+    const clip = `${LOCAL}/clips/p1/quest-1a2b.mp4`;
+    const shot = `${LOCAL}/native/runs/r1/j1/shot-1.jpg`;
+    const value = { extraClips: [{ url: clip }], payload: { media: [{ url: shot }] } };
+    assert.deepEqual(findLocalFileUrls(value), [clip, shot]);
+    assert.equal(localFileKeyOf(clip), "clips/p1/quest-1a2b.mp4");
+    assert.equal(localFileKeyOf(shot), "native/runs/r1/j1/shot-1.jpg");
+    const moved = rewriteLocalUrls(value, new Map([[clip, `${STORE}/clips/p1/quest-1a2b.mp4`], [shot, `${STORE}/native/runs/r1/j1/shot-1.jpg`]]));
+    assert.deepEqual(findLocalFileUrls(moved), []);
+  });
+});
+
+describe("a local product with targets", () => {
+  it("sends what it picked, its canned outputs and its clips, and its files move with it", () => {
+    const rows = sampleRows();
+    const clip = { url: `${LOCAL}/clips/${rows.product.id}/quest-1a2b.mp4`, posterUrl: null, caption: "Filmed on a Meta Quest 3", addedAt: "2026-11-03T12:00:00.000Z" };
+    rows.product.extraClips = [clip];
+    rows.builds[0]!.requestedTargets = ["web", "phone"];
+    rows.builds[0]!.toolFixtures = { SERPAPI_SEARCH: [{ url: "https://example.com/a" }] };
+    const bundle = toBundle(rows);
+    assert.deepEqual(bundle.product.extraClips, [clip]);
+    assert.deepEqual(bundle.builds[0]!.requestedTargets, ["web", "phone"]);
+    assert.deepEqual(bundle.builds[0]!.toolFixtures, { SERPAPI_SEARCH: [{ url: "https://example.com/a" }] });
+    assert.ok(!("requestedTargets" in bundle.builds[1]!), "its refinement picked none");
+    assert.ok(findLocalFileUrls(bundle).includes(clip.url));
+    assert.match(whyNotSend(bundle) ?? "", /points at a file/);
+    const moved = rewriteLocalUrls(bundle, new Map(findLocalFileUrls(bundle).map((url) => [url, blobUrlFor("store_8A701wVtiqVp1x3e", localFileKeyOf(url)!)])));
+    assert.equal(whyNotSend(moved), null);
+  });
+});
+
 describe("finding local file links", () => {
   it("finds each one once, at any depth, whole or inside text", () => {
     const value = {

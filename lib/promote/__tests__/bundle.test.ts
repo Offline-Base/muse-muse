@@ -9,7 +9,9 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
-import { linkProblems, parseImportBundle, type ImportBundle } from "../bundle";
+import { getTableColumns } from "drizzle-orm";
+import { builds, products } from "@/lib/db/schema";
+import { BUILD_KEYS, linkProblems, OPTIONAL_BUILD_KEYS, OPTIONAL_PRODUCT_KEYS, parseImportBundle, PRODUCT_KEYS, type ImportBundle } from "../bundle";
 import { BRIEF, LOCAL, sampleBundle, STORE } from "./fixtures";
 
 /** The bundle as JSON would carry it, so a test can break it in ways the type doesn't allow. */
@@ -196,5 +198,112 @@ describe("links back to the laptop", () => {
       linkProblems({ a: [{ url: "http://localhost:3000/x" }], b: `${LOCAL}/screens/b/r0/1.png` }).map((p) => p.field),
       ["a[0].url", "b"],
     );
+  });
+});
+
+describe("the bundle and the tables", () => {
+  /**
+   * What a local product's row doesn't send, and why. A new column fails here until someone decides: send it (add it to
+   * the bundle, toBundle and the store) or leave it out on purpose (add it here).
+   */
+  const LEFT_OUT = {
+    // The live site gives every row to its guest account, and sets the link once it publishes.
+    products: ["ownerId", "vercelProjectId", "liveUrl"],
+    // The guest account again; IMPORTED_RUN marks the run; a finished build has no round running and no Stop to heed.
+    builds: ["userId", "workflowRunId", "museRound", "stopRequested"],
+  };
+
+  it("sends every column of products or leaves it out on purpose", () => {
+    const sent = [...PRODUCT_KEYS, ...OPTIONAL_PRODUCT_KEYS, ...LEFT_OUT.products].sort();
+    assert.deepEqual(sent, Object.keys(getTableColumns(products)).sort());
+  });
+
+  it("sends every column of builds or leaves it out on purpose", () => {
+    const sent = [...BUILD_KEYS, ...OPTIONAL_BUILD_KEYS, ...LEFT_OUT.builds].sort();
+    assert.deepEqual(sent, Object.keys(getTableColumns(builds)).sort());
+  });
+});
+
+describe("what targets add to a bundle", () => {
+  const CLIP = { url: `${STORE}/clips/p1/quest.mp4`, posterUrl: `${STORE}/clips/p1/quest.jpg`, caption: "Filmed on a Meta Quest 3", addedAt: "2026-11-03T12:00:00.000Z" };
+
+  /** A bundle with clips, targets and fixtures, as a product built with them makes one. */
+  function withTargets(): Record<string, any> {
+    const b = raw();
+    b.product.extraClips = [{ ...CLIP }];
+    b.builds[0].requestedTargets = ["web", "phone"];
+    b.builds[0].toolFixtures = { SERPAPI_SEARCH: [{ title: "A sample", url: "https://example.com/a" }] };
+    return b;
+  }
+
+  it("leaves them out for a product with none, so a bundle reads as it always did", () => {
+    const b = sampleBundle();
+    assert.ok(!("extraClips" in b.product));
+    for (const build of b.builds) {
+      assert.ok(!("requestedTargets" in build));
+      assert.ok(!("toolFixtures" in build));
+    }
+    const parsed = parseImportBundle(raw(b));
+    assert.ok(parsed.ok);
+    assert.ok(!("extraClips" in parsed.value.product));
+    assert.ok(!("requestedTargets" in parsed.value.builds[0]!));
+  });
+
+  it("takes them, as a bundle from before they existed still parses", () => {
+    const parsed = parseImportBundle(withTargets());
+    assert.ok(parsed.ok);
+    assert.deepEqual(parsed.value.product.extraClips, [CLIP]);
+    assert.deepEqual(parsed.value.builds[0]!.requestedTargets, ["web", "phone"]);
+    assert.deepEqual(parsed.value.builds[0]!.toolFixtures, { SERPAPI_SEARCH: [{ title: "A sample", url: "https://example.com/a" }] });
+  });
+
+  it("takes a native event in a build's log, like any other", () => {
+    const b = raw();
+    const event = { type: "native", runId: "run-1", origin: "ship", item: "package:android", target: "phone", state: "done", title: "Packaged the Android app", artifact: { kind: "android_apk", url: `${STORE}/native/products/p1/r1/a.apk`, bytes: 41 } };
+    b.events.push({ buildId: b.builds[0].id, type: "native", payload: event, at: "2026-10-29T13:00:00.000Z" });
+    const parsed = parseImportBundle(b);
+    assert.ok(parsed.ok);
+    assert.deepEqual(parsed.value.events.at(-1)!.payload, event);
+  });
+
+  it("refuses a target it doesn't know, or requested targets that aren't a list", () => {
+    const unknown = withTargets();
+    unknown.builds[0].requestedTargets = ["toaster"];
+    assert.equal(refused(unknown).field, "builds[0].requestedTargets");
+    const notAList = withTargets();
+    notAList.builds[0].requestedTargets = "phone";
+    assert.equal(refused(notAList).field, "builds[0].requestedTargets");
+  });
+
+  it("refuses canned outputs that aren't an object", () => {
+    const b = withTargets();
+    b.builds[0].toolFixtures = ["nope"];
+    assert.equal(refused(b).field, "builds[0].toolFixtures");
+  });
+
+  it("checks each clip: a public link, a caption, nothing extra", () => {
+    const local = withTargets();
+    local.product.extraClips[0].url = `${LOCAL}/clips/p1/quest.mp4`;
+    assert.equal(refused(local).field, "product.extraClips[0].url");
+    const noLink = withTargets();
+    noLink.product.extraClips[0].url = null;
+    assert.equal(refused(noLink).field, "product.extraClips[0].url");
+    const noCaption = withTargets();
+    noCaption.product.extraClips[0].caption = "";
+    assert.equal(refused(noCaption).field, "product.extraClips[0].caption");
+    const extra = withTargets();
+    extra.product.extraClips[0].ownerId = randomUUID();
+    assert.equal(refused(extra).field, "product.extraClips[0].ownerId");
+  });
+
+  it("finds a link back to the laptop in native events and clips", () => {
+    const event = { type: "native", item: "check:android_emu", media: [{ kind: "video", url: `${LOCAL}/native/runs/r1/j1/clip.mp4`, caption: "On an emulator" }] };
+    assert.equal(linkProblems({ payload: event }).length, 1);
+    assert.equal(linkProblems({ extraClips: [{ url: `${LOCAL}/clips/p1/a.mp4` }] }).length, 1);
+  });
+
+  it("treats canned outputs like a brief: only a local file link counts inside them", () => {
+    assert.deepEqual(linkProblems({ toolFixtures: { X: [{ url: "not a link" }] } }), []);
+    assert.equal(linkProblems({ toolFixtures: { X: [{ url: `${LOCAL}/fixtures/b1/a.txt` }] } }).length, 1);
   });
 });

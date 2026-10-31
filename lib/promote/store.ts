@@ -75,6 +75,7 @@ function inserts(bundle: ImportBundle, ownerId: string): BatchItem<"pg">[] {
       demoVideoUrl: p.demoVideoUrl,
       demoPosterUrl: p.demoPosterUrl,
       transcriptUrl: p.transcriptUrl,
+      extraClips: p.extraClips ?? [],
       status: "live" satisfies ProductStatus,
       createdAt: new Date(p.createdAt),
       updatedAt: new Date(p.updatedAt),
