@@ -6,7 +6,8 @@
 #   shrink_bench.sh --list            names, sizes (dry run, nothing written)
 #   shrink_bench.sh --table           just rebuild the table from the scores so far
 #
-# With no names it runs DEFAULT below. Each candidate: quantize at nice 10 (skipped if its score exists), dump bytes by
+# With no names it runs DEFAULT below, the four mixes that held up on stage 2 (Oct 31); name any other candidate to run it. Copy
+# gguf_bytes.py and shrink_table.py next to this script, and keep the winners with KEEP="name ...". Each candidate: quantize at nice 10 (skipped if its score exists), dump bytes by
 # tensor kind, score under $Q/gpu.lock with score_gguf.py (--n-probes $N), read memory with one slot under the lock, then delete
 # the GGUF unless the name is in $KEEP. Two copies can run side by side on different names with PORT and THREADS set.
 set -euo pipefail
@@ -74,7 +75,8 @@ args() {
     iq2-gate1)        FT=IQ2_XXS; A=(--output-tensor-type q2_k --token-embedding-type iq1_m --tensor-type ffn_gate=iq1_s);;
     iq2-up1)          FT=IQ2_XXS; A=(--output-tensor-type q2_k --token-embedding-type iq1_m --tensor-type ffn_up=iq1_s);;
     iq2-down1)        FT=IQ2_XXS; A=(--output-tensor-type q2_k --token-embedding-type iq1_m --tensor-type ffn_down=iq1_s);;
-    # Q1_0 (1.125 bits): the lowest type this llama.cpp has. Rule-based, so it ignores the imatrix.
+    # Q1_0 (1.125 bits): the lowest type this llama.cpp has. Its quantizer ignores the imatrix; on stage 2 q1-pure
+    # scored 0/600 and 0/40 with every reply running to the token limit.
     q1-pure)          FT=Q1_0;    A=(--pure --output-tensor-type q1_0 --token-embedding-type q1_0);;
     q1-io-keep)       FT=Q1_0;    A=(--pure --output-tensor-type q5_k --token-embedding-type q2_k);;
     # One cheap measurement: drop two middle layers.
@@ -85,7 +87,7 @@ args() {
 LOCAL_CANDS=${LOCAL_CANDS:-}
 [ -z "$LOCAL_CANDS" ] || . "$LOCAL_CANDS"   # optional file: `extra_args NAME` adds or overrides candidates.
 ALL="iq1s-io-lowest iq1s-out-q2 iq1s-out-q4 iq1s-io-high iq1s-attn-iq2 iq1s-ends4-iq2 iq1s-ends8-iq2 iq1s-ends4-q4 iq2-out-q4 iq2-out-q2 iq2-io-lowest iq1s-pure-lowest iq1s-pure-out-q2 iq2-gate1 iq2-up1 iq2-down1 q1-pure q1-io-keep iq1s-prune2"
-DEFAULT=${DEFAULT:-$ALL}
+DEFAULT=${DEFAULT:-iq1s-out-q4 iq1s-io-lowest iq2-io-lowest iq2-out-q2}
 
 resolve() { if declare -F extra_args > /dev/null && extra_args "$1"; then return 0; fi; args "$1"; }
 

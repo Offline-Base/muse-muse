@@ -43,7 +43,7 @@ def paired(a, b):
     return gain, lose, 100 * d / n, 100 * (d / n - 1.96 * se), 100 * (d / n + 1.96 * se)
 
 
-def row(name, d, probes, forget, mem, ref):
+def row(name, d, probes, forget, mem, ref, base_ref=None):
     n = len(probes)
     k = sum(x["right"] for x in probes)
     lo, hi = wilson(k, n)
@@ -52,10 +52,14 @@ def row(name, d, probes, forget, mem, ref):
     loop = sum(loops(x["reply"]) for x in every)
     empty = sum(not x["reply"].strip() for x in every)
     gain, lose, diff, dlo, dhi = paired(ref, probes)
-    return {"name": name, "gb": d["gb"], "right": k, "n": n, "pct": 100 * k / n, "lo": lo, "hi": hi,
+    vs_base = None
+    if base_ref:
+        _, _, bd, blo, bhi = paired(base_ref, probes)
+        vs_base = f"{bd:+.1f} ({blo:+.1f} to {bhi:+.1f})"
+    return {"vs_base": vs_base or "-", "name": name, "gb": d["gb"], "right": k, "n": n, "pct": 100 * k / n, "lo": lo, "hi": hi,
             "old": sum(x["right"] for x in forget), "n_old": len(forget), "limit": limit, "loop": loop, "empty": empty,
             "gain": gain, "lose": lose, "diff": diff, "dlo": dlo, "dhi": dhi,
-            "gpu16": d.get("gpu_mem_used_mib"), "gpu1": (mem or {}).get("gpu_model_mib"),
+            "gpu16": d.get("gpu_mem_used_mib"), "gpu1": (mem or {}).get("gpu_used_mib"), "rss_mib": round((mem or {}).get("rss_kb", 0) / 1024),
             "decode": d.get("decode_tokens_per_second_single"), "agg": d.get("aggregate_tokens_per_second")}
 
 
@@ -99,7 +103,7 @@ def main():
         rows.append(row("base " + t + " (stock)", d, probes, d["rows"]["forget"], mem("stock-base-" + t), ref))
     for t, d in stock.items():
         probes = d["rows"]["probe"][: a.n]
-        rows.append(row("stage2 " + t + " (stock)", d, probes, d["rows"]["forget"], mem("stock-" + t), ref))
+        rows.append(row("stage2 " + t + " (stock)", d, probes, d["rows"]["forget"], mem("stock-" + t), ref, base_ref))
     for p in sorted(glob.glob(os.path.join(a.dir, "scores", "*.json"))):
         name = os.path.basename(p)[:-5]
         d = load(p)
@@ -107,18 +111,19 @@ def main():
         if [x["question"] for x in probes] != questions[: len(probes)] or len(probes) != a.n:
             print(f"{name}: questions don't match the {a.n}-probe subset, left out")
             continue
-        rows.append(row(name, d, probes, d["rows"]["forget"], mem(name), ref))
+        rows.append(row(name, d, probes, d["rows"]["forget"], mem(name), ref, base_ref))
     rows.sort(key=lambda r: r["gb"])
 
     print(f"Knowledge: first {a.n} of the probes in Random(7) order, prefilled final channel, greedy, 96 tokens. Old facts of {rows[0]['n_old']}. "
           "Change: points against stage 2 Q4_K_M on the same questions (paired, 95%). Limit, loops, empty: counts over probes + old facts. "
-          "GPU np16: MiB at -np 16 -c 16384, whole card. GPU 1 slot: MiB above idle at -np 1 -c 2048.")
+          "GPU np16: MiB at -np 16 -c 16384, whole card, can include other jobs. GPU 1 slot: whole card at -np 1 -c 2048, under the lock. "
+          "vs base: points against base Q4_K_M, paired, 95%.")
     print()
-    print("| Candidate | GB | Knowledge (95%) | Old | vs Q4_K_M, points (95%) | Limit | Loops | Empty | GPU np16 MiB | GPU 1 slot MiB | Decode tok/s |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| Candidate | GB | Knowledge (95%) | Old | vs Q4_K_M, points (95%) | vs base | Limit | Loops | Empty | GPU np16 MiB | GPU 1 slot MiB | Host RSS MiB | Decode tok/s |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in rows:
         print(f"| {r['name']} | {r['gb']} | {r['pct']:.1f}% ({r['right']}/{r['n']}, {r['lo']:.1f} to {r['hi']:.1f}) | {r['old']}/{r['n_old']} | "
-              f"{r['diff']:+.1f} ({r['dlo']:+.1f} to {r['dhi']:+.1f}) | {r['limit']} | {r['loop']} | {r['empty']} | {r['gpu16'] if r['gpu16'] else '-'} | {r['gpu1'] if r['gpu1'] else '-'} | {r['decode']} |")
+              f"{r['diff']:+.1f} ({r['dlo']:+.1f} to {r['dhi']:+.1f}) | {r.get('vs_base', '-')} | {r['limit']} | {r['loop']} | {r['empty']} | {r['gpu16'] if r['gpu16'] else '-'} | {r['gpu1'] if r['gpu1'] else '-'} | {r['rss_mib'] if r['rss_mib'] else '-'} | {r['decode']} |")
     with open(os.path.join(a.dir, "table.json"), "w") as f:
         json.dump(rows, f, indent=1)
     if base_ref:

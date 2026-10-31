@@ -1,13 +1,17 @@
 """Does a small Muse Glimmer GGUF answer sensibly? Ten plain questions, each through the two ways a device would ask:
 
   final  /completion with the scorer's prefilled final channel, the same prompt score_gguf.py uses.
-  chat   /v1/chat/completions with tuned-reasoning-off.jinja, the serving path for tuned files. Only message.content is
+  chat   /v1/chat/completions with tuned-reasoning-off.jinja and --reasoning-format none, the serving path for tuned files
+         (it needs both, and a stop at <|eot|>; without them the server answers 500 on tuned files). Only message.content is
          kept. Any reasoning field the server returns is reduced to a yes or no and never stored.
 
 Each reply is checked by a substring test. The JSON holds final answers only.
 
 Usage: python small_replies.py --gguf FILE --label NAME --out FILE.json --tokenizer BASE_DIR --template tuned-reasoning-off.jinja
-       [--port 8130] [--server .../llama-server] [--ngl 999] [--device none]
+       [--port 8130] [--server .../llama-server] [--ngl 999] [--device none] [--threads 8] [--limit 3] [--old-facts forget.jsonl]
+
+--old-facts also asks each old-fact check through the prefilled final channel and grades it with train_glimmer.answered(), for
+files that can't go through score_gguf.py (TQ types: no CUDA kernels, and too slow on a loaded CPU for its 600 s request limit).
 """
 
 import argparse
@@ -22,7 +26,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.environ.get("TRAIN_GLIMMER_DIR", "/home/ubuntu/q/job"))
-from train_glimmer import FINAL_CHANNEL, GENERATION_PROMPT, REASONING, SYSTEM, final_answer  # noqa: E402
+from train_glimmer import FINAL_CHANNEL, GENERATION_PROMPT, REASONING, SYSTEM, answered, final_answer  # noqa: E402
 
 QUESTIONS = [
     ("What is the capital of France?", r"\bparis\b"),
@@ -67,6 +71,9 @@ def main():
     ap.add_argument("--ngl", default="999")
     ap.add_argument("--device", default="")
     ap.add_argument("--n-predict", type=int, default=128)
+    ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--old-facts", default="")
     ap.add_argument("--server", default="/home/ubuntu/writer/llama.cpp-b11970/build/bin/llama-server")
     a = ap.parse_args()
 
@@ -84,9 +91,11 @@ def main():
 
     log_path = a.out + ".server.log"
     cmd = [a.server, "-m", a.gguf, "--port", str(a.port), "--host", "127.0.0.1", "-c", "4096", "-np", "1", "-ngl", a.ngl, "-fa", "on",
-           "--no-webui", "--cache-ram", "0", "--ctx-checkpoints", "0", "--jinja", "--chat-template-file", a.template]
+           "--no-webui", "--cache-ram", "0", "--ctx-checkpoints", "0", "--jinja", "--chat-template-file", a.template, "--reasoning-format", "none"]
     if a.device:
         cmd += ["--device", a.device]
+    if a.threads:
+        cmd += ["-t", str(a.threads)]
     with open(log_path, "w") as logf:
         server = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT)
     rows = []
@@ -98,12 +107,12 @@ def main():
             if time.time() - began > 900:
                 raise RuntimeError("llama-server didn't come up in 15 minutes")
             time.sleep(1)
-        for question, pattern in QUESTIONS:
+        for question, pattern in QUESTIONS[: a.limit or None]:
             st, d = post(a.port, "/completion", {"prompt": ids_for(question), "n_predict": a.n_predict, "temperature": 0.0, "top_k": 1,
                                                  "return_tokens": True, "cache_prompt": False, "stream": False})
             toks = d.get("tokens") or []
             final = final_answer(tok.decode(toks, skip_special_tokens=False)) if toks else ""
-            st2, c = post(a.port, "/v1/chat/completions", {"model": "glimmer", "max_tokens": a.n_predict, "temperature": 0, "top_k": 1,
+            st2, c = post(a.port, "/v1/chat/completions", {"model": "glimmer", "max_tokens": a.n_predict, "temperature": 0, "top_k": 1, "stop": ["<|eot|>"],
                                                            "messages": [{"role": "system", "content": "Reasoning strength: low\n\n" + SYSTEM},
                                                                         {"role": "user", "content": question}],
                                                            "chat_template_kwargs": {"reasoning_strength": "low"}})
@@ -113,18 +122,29 @@ def main():
                          "chat_status": st2, "chat": chat, "chat_ok": bool(re.search(pattern, chat, re.I | re.S)),
                          "chat_had_reasoning": bool(msg.get("reasoning_content")),
                          "chat_tokens": (c.get("usage") or {}).get("completion_tokens")})
+        old = []
+        if a.old_facts:
+            with open(a.old_facts) as f:
+                facts = [json.loads(line) for line in f if line.strip()]
+            for it in facts:
+                _, d = post(a.port, "/completion", {"prompt": ids_for(it["question"]), "n_predict": a.n_predict, "temperature": 0.0, "top_k": 1,
+                                                    "return_tokens": True, "cache_prompt": False, "stream": False})
+                toks = d.get("tokens") or []
+                reply = final_answer(tok.decode(toks, skip_special_tokens=False)) if toks else ""
+                old.append({"question": it["question"], "reply": reply, "right": answered(reply, it), "tokens": len(toks)})
     finally:
         server.terminate()
         try:
             server.wait(timeout=60)
         except subprocess.TimeoutExpired:
             server.kill()
-    out = {"label": a.label, "gguf": a.gguf, "final_ok": sum(r["final_ok"] for r in rows), "chat_ok": sum(r["chat_ok"] for r in rows),
-           "n": len(rows), "chat_had_reasoning": sum(r["chat_had_reasoning"] for r in rows), "rows": rows}
+    out = {"label": a.label, "gguf": a.gguf, "bytes": os.path.getsize(a.gguf), "final_ok": sum(r["final_ok"] for r in rows), "chat_ok": sum(r["chat_ok"] for r in rows),
+           "n": len(rows), "chat_had_reasoning": sum(r["chat_had_reasoning"] for r in rows), "rows": rows,
+           "old_right": sum(r["right"] for r in old), "old_n": len(old), "old_rows": old}
     with open(a.out + ".tmp", "w") as f:
         json.dump(out, f, ensure_ascii=False, indent=1)
     os.replace(a.out + ".tmp", a.out)
-    print("REPLIES " + json.dumps({k: v for k, v in out.items() if k != "rows"}), flush=True)
+    print("REPLIES " + json.dumps({k: v for k, v in out.items() if k not in ("rows", "old_rows")}), flush=True)
 
 
 if __name__ == "__main__":

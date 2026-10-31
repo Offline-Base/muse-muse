@@ -677,6 +677,20 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   hardware other than the laptop. Muse Privacy applied the serving notes on its main at 2c84b1d (unit tests only).
 - About 2:40 PM: Muse Muse General session will squash-merge PR #3 on the owner's instruction, leaving the Lambda addresses,
   key path and notes in. Later pushes to knowledge won't reach main without a new PR.
+- About 2:45 PM: owner signed in to base-test and approved "all": Muse Privacy's checks on writer-1 (run by that session,
+  under ~/mp-gpu, behind gpu.lock, 8 GB disk cap, labelled A100), a real Mac test on the AWS Mac (lab host kept through
+  Nov 4 per Muse Muse General; helper runs only when no simulator is up, own folder, nothing installed), and the phone test
+  (glimmer-on-devices resumed with the Mac step removed, $40 cap).
+- 2:39 to 2:43 PM: dev honesty (120 questions, auto-graded, no hand check yet): stage 2 honest 1.7%, made up 76.7%;
+  stage-b-a 89.2% and 7.5% (controls right 30.0%, refused 38.7%); pilot 82.5% and 15.0% (controls 30.3%, refused 19.3%).
+- 2:48 PM: shrink bench finished (wf_0c2ffb0b-dc7; checker reproduced every row). Stage 2, same 600 questions and 40 old
+  facts: iq2-io-lowest 7.18 GB 19.8% 39/40 and iq2-out-q2 7.32 GB 20.0% 40/40 match stock IQ2_XXS (7.96 GB, 20.3%) and base
+  Q4_K_M (18.8%); iq1s-out-q4 6.21 GB 10.5% 39/40; stock IQ1_S 6.53 GB 9.7% 40/40; stage 2 Q4_K_M 30.7%. Below IQ1_S nothing
+  works (q1-pure 0/600, pure IQ1_S loses old facts). Bytes: the output tensor is Q5_K, 925 MB, untied. Memory, measured on
+  the A100: GPU = file minus embedding plus 0.76 GB, host = embedding plus 0.53 GB. By the devices rule (Linux 70% of RAM,
+  file plus 1.2 GB) no usable file fits an 8 GB Jetson: iq1s-out-q4 needs about 7.4 GB against 5.6 GB. Candidate GGUFs were
+  deleted; rerun on the final model with shrink_bench.sh and KEEP. Layer pruning and first and last layer mixes not measured.
+  Scripts committed (shrink_bench.sh, shrink_table.py, small_*.py/sh, mem_need.py).
 
 ## Problems and fixes
 

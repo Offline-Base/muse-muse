@@ -7,8 +7,9 @@ Modes:
   cpu       --device none -ngl 0 --load-mode none (no mmap): all weights in private memory, so the peak (VmHWM) is the whole need.
   cpu-mmap  --device none -ngl 0: the same with the default mmap. VmHWM counts file pages too; the OS may drop those under
             pressure, but a phone that drops them rereads them from flash at each use.
-  gpu       -ngl 999: GPU memory of this process (nvidia-smi) plus its peak private host memory. On a board with unified
-            memory (Jetson, phone, Mac) those two come from the same RAM, so their sum is the estimate there.
+  gpu       -ngl 999: GPU memory of this process (nvidia-smi) plus its peak private host memory, plus its file pages when
+            most weights stayed on the host. On a board with unified memory (Jetson, phone, Mac) these all come from the same
+            RAM, so their sum is the estimate there.
 
 Usage: python mem_need.py --gguf FILE --label NAME --out FILE.json --tokenizer BASE_DIR [--modes cpu,cpu-mmap,gpu]
        [--ctx 4096,8192] [--mmap-ctx 4096] [--threads 8] [--port 8120] [--n-predict 24]
@@ -126,8 +127,10 @@ def run_one(a, mode, ctx, ids):
             server.kill()
     row.update({"vm_hwm_mib": peak["VmHWM"], "rss_anon_peak_mib": peak["RssAnon"], "rss_file_peak_mib": peak["RssFile"],
                 "rss_peak_mib": peak["VmRSS"], "gpu_mib": peak["gpu"]})
-    # The whole need on one pool of RAM.
-    row["need_mib"] = peak["gpu"] + peak["RssAnon"] if mode == "gpu" else peak["VmHWM"]
+    # The whole need on one pool of RAM. If most weights stayed on the host (a type with no GPU kernels), their file pages count.
+    row["need_mib"] = peak["VmHWM"] if mode != "gpu" else peak["gpu"] + peak["RssAnon"]
+    if mode == "gpu" and peak["gpu"] < 0.8 * os.path.getsize(a.gguf) / 2**20:
+        row["need_mib"] += peak["RssFile"]
     return row
 
 

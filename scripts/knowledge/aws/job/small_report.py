@@ -3,7 +3,7 @@
 Knowledge is paired with the run's Q4_K_M, matched by question.
 "Loops": a reply with some 3-word run at least 3 times, or over 12 words with under 40% distinct (same as shrink_table.py).
 "Limit": stopped at 96 tokens. Sensible: old facts at least 36/40, limit and loops each at most 5% of replies, no empty reply,
-and at least 8 of 10 plain questions right through the chat path. Budgets are from muse-muse-devices/docs/DEVICES.md:
+and at least 8 of 10 plain questions right through the prefilled final channel. The chat path is reported, not gated: its 500s come from the server parser and hit good files too. Budgets are from muse-muse-devices/docs/DEVICES.md:
 70% of the RAM a board or phone is sold with, read here as GiB, as lib/devices/subjects.ts does.
 
 Usage: python small_report.py --dir SMALL_RUN_DIR --stock-scores RUN/scores [--types Q1_0,TQ1_0,Q2_0] [--extra IQ1_S,IQ2_XXS]
@@ -72,7 +72,19 @@ def main():
     for t in types:
         full = load(os.path.join(a.dir, "scores", t + "-full.json"))
         d = full or load(os.path.join(a.dir, "scores", t + ".json")) or load(os.path.join(a.stock_scores, t + ".json"))
+        replies = load(os.path.join(a.dir, "replies", t + ".json"))
+        mem = load(os.path.join(a.dir, "mem", t + ".json"))
         if not d:
+            # A TQ type: no score_gguf.py run, only a few questions and the old facts on the CPU.
+            if replies:
+                row = {"type": t, "bytes": replies.get("bytes") or (mem or {}).get("bytes", 0), "n": 0, "old": replies["old_right"], "n_old": replies["old_n"],
+                       "limit": sum(x["tokens"] >= 32 for x in replies["old_rows"]), "loops": sum(loops(x["reply"]) for x in replies["old_rows"]),
+                       "empty": sum(not x["reply"].strip() for x in replies["old_rows"]), "sane_final": replies["final_ok"], "sane_chat": replies["chat_ok"],
+                       "sane_n": replies["n"], "sensible": False, "unscored": True}
+                row["gb"] = round(row["bytes"] / 1e9, 2)
+                if mem:
+                    row["mem"] = {f"{r['mode']}-{r['ctx']}": r for r in mem["runs"]}
+                rows.append(row)
             continue
         pr, fg = d["rows"]["probe"], d["rows"]["forget"]
         every = pr + fg
@@ -86,14 +98,12 @@ def main():
                "decode_np1": d["decode_tokens_per_second_single"], "aggregate_np16": d["aggregate_tokens_per_second"],
                "gpu_np16_mib": d["gpu_mem_used_mib"]}
         row["vs_q4"] = paired(ref, pr)
-        replies = load(os.path.join(a.dir, "replies", t + ".json"))
         if replies:
             row["sane_final"], row["sane_chat"], row["sane_n"] = replies["final_ok"], replies["chat_ok"], replies["n"]
-        mem = load(os.path.join(a.dir, "mem", t + ".json"))
         if mem:
             row["mem"] = {f"{r['mode']}-{r['ctx']}": r for r in mem["runs"]}
         row["sensible"] = bool(row["old"] >= 0.9 * len(fg) and limit <= 0.05 * len(every) and loop <= 0.05 * len(every) and empty == 0
-                               and row.get("sane_chat", 0) >= 8)
+                               and row.get("sane_final", 0) >= 8)
         rows.append(row)
         if row["sensible"] and (best is None or d["bytes"] < best["bytes"]):
             best = row
@@ -101,6 +111,9 @@ def main():
     lines = ["| Type | GB | Knowledge (95%) | vs Q4_K_M, points (95%) | Old | Limit | Loops | Empty | Decode tok/s | GPU np16 MiB | Sane final | Sane chat | Sensible |",
              "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
+        if r.get("unscored"):
+            lines.append(f"| {r['type']} | {r['gb']} | not scored | - | {r['old']}/{r['n_old']} (CPU) | {r['limit']} | {r['loops']} | {r['empty']} | - | - | {r['sane_final']}/{r['sane_n']} | {r['sane_chat']}/{r['sane_n']} | no |")
+            continue
         v = r.get("vs_q4")
         vs = f"{v[0]:+.1f} ({v[1]:+.1f} to {v[2]:+.1f})" if v else "-"
         lines.append(f"| {r['type']} | {r['gb']} | {r['pct']:.1f}% ({r['right']}/{r['n']}, {r['lo']:.1f} to {r['hi']:.1f}) | {vs} | {r['old']}/{r['n_old']} | "

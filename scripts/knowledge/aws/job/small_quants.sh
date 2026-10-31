@@ -12,9 +12,10 @@
 # weights, and quantize_tq*_0 discards them, in ggml-quants.c at b11970), so none is passed.
 #
 # TQ1_0 and TQ2_0 have no CUDA matrix product at b11970: under -ngl 999 the A100 sits idle at 0.17 tok/s (measured Oct 31), and
-# a 600-probe score would hold the GPU lock for hours. So they are scored on the CPU, outside the lock, on CPU_N probes.
+# a 600-probe score would hold the GPU lock for hours. So they skip score_gguf.py: three plain questions and the old facts on
+# the CPU, outside the lock, at 32 tokens each.
 #
-# Env: TYPES (default "Q1_0 TQ1_0 Q2_0"), CPU_N (default 60), EXTRA (stock files of the run to read memory for, default "IQ1_S IQ2_XXS"),
+# Env: TYPES (default "Q1_0 TQ1_0 Q2_0"), EXTRA (stock files of the run to read memory for, default "IQ1_S IQ2_XXS"),
 #      N (default 600), FULL_N (default 2500; 0 skips the full score), PUBLISH (1: copy the best to $NFS/<run>/), MEM (0 skips
 #      memory and replies), PORT (default 8110, uses PORT to PORT+3), PROBES, FORGET, STOCK_SCORES.
 set -euo pipefail
@@ -33,7 +34,6 @@ STOCK_SCORES=${STOCK_SCORES:-$Q/$RUN/scores}
 TYPES=${TYPES:-Q1_0 TQ1_0 Q2_0}
 EXTRA=${EXTRA-IQ1_S IQ2_XXS}
 N=${N:-600}
-CPU_N=${CPU_N:-60}
 FULL_N=${FULL_N:-2500}
 PUBLISH=${PUBLISH:-1}
 MEM=${MEM:-1}
@@ -85,16 +85,19 @@ CPU_PID=$!
 for t in $TYPES; do
   g=$F-$t.gguf; [ -e "$g" ] || continue
   case $t in
-    TQ*) step "score_${t}_cpu" "$W/scores/$t.json" env CUDA_VISIBLE_DEVICES= "$PY" -I "$SCORER" --gguf "$g" --label "$RUN $t cpu" --out "$W/scores/$t.json" \
-           --tokenizer "$BASE_HF" --probes "$PROBES" --forget "$FORGET" --n-probes "$CPU_N" --parallel 8 --port $((PORT + 3)) || true;;
+    TQ*) ;;
     *) score "$t" "$g" "$N" "$W/scores/$t.json" "$PORT" || true;;
   esac
 done
 if [ "$MEM" = 1 ]; then
   for t in $TYPES $EXTRA; do
     g=$(gguf_of "$t"); [ -e "$g" ] || continue
-    step "replies_$t" "$W/replies/$t.json" flock "$Q/gpu.lock" "$PY" -I "$JOB/small_replies.py" --gguf "$g" --label "$RUN $t" \
-      --out "$W/replies/$t.json" --tokenizer "$BASE_HF" --template "$TEMPLATE" --port $((PORT + 1)) || true
+    case $t in
+      TQ*) step "replies_$t" "$W/replies/$t.json" "$PY" -I "$JOB/small_replies.py" --gguf "$g" --label "$RUN $t cpu" --device none --ngl 0 --n-predict 32 --threads 8 --limit 3 --old-facts "$FORGET" \
+             --out "$W/replies/$t.json" --tokenizer "$BASE_HF" --template "$TEMPLATE" --port $((PORT + 3)) || true;;
+      *) step "replies_$t" "$W/replies/$t.json" flock "$Q/gpu.lock" "$PY" -I "$JOB/small_replies.py" --gguf "$g" --label "$RUN $t" \
+           --out "$W/replies/$t.json" --tokenizer "$BASE_HF" --template "$TEMPLATE" --port $((PORT + 1)) || true;;
+    esac
   done
   for t in $TYPES $EXTRA; do
     g=$(gguf_of "$t"); [ -e "$g" ] || continue
