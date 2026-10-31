@@ -82,3 +82,12 @@ export const ACTIVE_CAPS_FILE = `${CAPS_DIR}/active.json`;
 export const CAPS_FILE = "musemuse.caps.json";
 /** The overlay every product with a cap gets. Its deps.json marks a sandbox whose snapshot has the cap overlays. */
 export const CORE_CAPS_MARKER = `${CAPS_DIR}/core/deps.json`;
+/**
+ * The gateway's address and this build's token for the caps check, root-owned and read-only, written at provision and
+ * on every change. verify's caps step reads it instead of the product's .env.local, which product code can edit.
+ */
+export const CAPS_GATEWAY_FILE = `${CAPS_DIR}/gateway.json`;
+/** The core overlay's caps check in CAPS_DIR. template/scripts/verify.mjs runs this copy in a build sandbox. */
+export const CAPS_CHECK_SCRIPT = `${CAPS_DIR}/core/files/scripts/caps-check.mjs`;
+/** Text only a verify.mjs with the caps step has. A pristine copy without it is from before caps, so it needs a refresh. */
+export const CAPS_VERIFY_MARKER = "musemuse_caps";

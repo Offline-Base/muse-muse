@@ -25,6 +25,10 @@ const readRootText = (file) => (existsSync(path.join(ROOT, file)) ? readFileSync
 const CAPS = readCapsFile(readRootText);
 const STEP_NAMES = verifyStepNames(CAPS !== null);
 let capsResult = null;
+// When this verify started, so the caps step counts only what the gateway saw during it, not an earlier round's work.
+const STARTED_AT = new Date().toISOString();
+// The platform's read-only copy of the caps check in a build sandbox. A product's own copy runs only outside one.
+const PLATFORM_CAPS_CHECK = "/vercel/musemuse/caps/core/files/scripts/caps-check.mjs";
 
 const steps = [];
 const failures = [];
@@ -304,13 +308,15 @@ async function main() {
 }
 
 /**
- * The caps step: scripts/caps-check.mjs (a platform file from the core overlay) checks each active cap against what the
- * smoke test recorded in test-results/caps/ and what the gateway saw for this build. Its last line is one JSON result.
+ * The caps step: the core overlay's caps check runs each active cap's checks against what the smoke test recorded in
+ * test-results/caps/ and what the gateway saw for this build since this verify started. In a build sandbox it is the
+ * platform's read-only copy, with its own checkers and gateway record, so nothing in the product folder decides it. Its
+ * last line is one JSON result.
  */
 async function checkCaps() {
-  const script = path.join(ROOT, "scripts", "caps-check.mjs");
+  const script = existsSync(PLATFORM_CAPS_CHECK) ? PLATFORM_CAPS_CHECK : path.join(ROOT, "scripts", "caps-check.mjs");
   if (!existsSync(script)) return { ok: false, detail: "scripts/caps-check.mjs is missing, so the platform services can't be checked" };
-  const res = await run(process.execPath, [script], { timeoutMs: 120_000 });
+  const res = await run(process.execPath, [script, "--root", ROOT, "--since", STARTED_AT], { timeoutMs: 120_000 });
   const line = res.out.trim().split("\n").reverse().find((l) => l.startsWith("{") && l.includes("musemuse_caps"));
   let parsed = null;
   try {

@@ -81,6 +81,7 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  CAPS_VERIFY_MARKER,
   CORE_CAPS_MARKER,
   TARGET_OVERLAYS,
   TARGET_PLATFORM_MARKER,
@@ -94,6 +95,8 @@ import {
   activeTargetsScript,
   applyCapsScript,
   applyTargetScript,
+  capsGatewayScript,
+  capsGatewayText,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -450,20 +453,40 @@ async function applyTargets(sandbox: Sandbox, sandboxName: string, targets: read
 /**
  * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
  * commit. It runs right after the targets and before anything from the user lands in the product, so the "Caps: ..."
- * commit holds platform files only. A snapshot made with template/caps has them already. One from before them gets them
- * from this checkout on a local run. The live site can't, since its functions have no template/, so a cap whose flag is
- * on there needs a new snapshot.
+ * commit holds platform files only. A snapshot made with template/caps has them already. In one from before them, a local
+ * run takes them from this checkout, along with the newer platform files whose verify runs the caps step. The live site
+ * can't, since its functions have no template/, so a cap whose flag is on there needs a new snapshot.
  */
-async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: string[] }): Promise<void> {
-  const installed = (await sh(sandbox, `[ -f ${q(CORE_CAPS_MARKER)} ]`, { allowFail: true })).exitCode === 0;
-  if (!installed) {
-    if (process.env.VERCEL) throw new Error("This builder snapshot has no platform service overlays. Make a new one with npm run snapshot before turning a cap's flag on.");
-    const files = await readCapFiles(LOCAL_TEMPLATE_DIR());
-    if (!files.length) throw new Error(`This builder snapshot has no platform service overlays, and there's no ${LOCAL_TEMPLATE_DIR()}/caps here to add them from.`);
-    await installCaps(sandbox, files, () => {});
+async function applyCaps(sandbox: Sandbox, sandboxName: string, caps: { caps: string[]; overlays: string[] }): Promise<void> {
+  const ok = async (cmd: string) => (await sh(sandbox, cmd, { allowFail: true })).exitCode === 0;
+  const installed = await ok(`[ -f ${q(CORE_CAPS_MARKER)} ]`);
+  const stale = !(await ok(`grep -q ${q(CAPS_VERIFY_MARKER)} ${q(`${PRISTINE_DIR}/scripts/verify.mjs`)}`));
+  if (!installed || stale) {
+    const needs = !installed ? "the platform service overlays" : "the platform files that check platform services";
+    if (process.env.VERCEL) throw new Error(`This builder snapshot doesn't have ${needs}. Make a new one with npm run snapshot before turning a cap's flag on.`);
+    const dir = LOCAL_TEMPLATE_DIR();
+    if (!installed) {
+      const files = await readCapFiles(dir);
+      if (!files.length) throw new Error(`This builder snapshot doesn't have ${needs}, and there's no ${dir}/caps here to add them from.`);
+      await installCaps(sandbox, files, () => {});
+    }
+    if (stale) await refreshPlatformFiles(sandboxName, await readTemplateFiles(dir));
   }
   await sh(sandbox, activeCapsScript(caps), { sudo: true });
   await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+}
+
+/**
+ * Writes the caps check's record of the gateway (CAPS_GATEWAY_FILE): the gateway's address and this build's token, or,
+ * on a local run, why the build machine can't reach it. verify's caps step reads this, never the product's .env.local.
+ */
+async function writeCapsGateway(sandbox: Sandbox, gatewayUrl: string, buildToken: string): Promise<void> {
+  const record = productsCallMetaDirectly()
+    ? { url: null, token: null, reason: "this is a local run, so the build machine can't reach the gateway. Test platform services with a public PLATFORM_URL" }
+    : { url: gatewayUrl, token: buildToken };
+  const from = `${RUN_DIR}/caps-gateway.json`;
+  await sandbox.writeFiles([{ path: from, content: capsGatewayText(record) }]);
+  await sh(sandbox, capsGatewayScript(from), { sudo: true });
 }
 
 /** .env.local as envLocal writes it, then the caps' lines (capBuildEnv). The same text without caps. */
@@ -515,7 +538,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   if (targets.some((t) => t !== "web")) await applyTargets(sandbox, name, targets);
   // ---------- Wave 3, unit 2: a brief's cap overlays, right after its targets and before the user's files, so their
   // commit holds platform files only (docs/CAPABILITIES.md, 2.5). Nothing for a brief with no cap blocks ----------
-  if (input.caps) await applyCaps(sandbox, input.caps);
+  if (input.caps) await applyCaps(sandbox, name, input.caps);
   // ---------- end Wave 3, unit 2 ----------
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
@@ -529,6 +552,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(name, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
   return { sandboxName: name };
 }
 
@@ -546,6 +570,8 @@ export async function reopenSandbox(input: {
   capHosts?: string[];
   /** Lines appended to .env.local after envLocal's (capBuildEnv), as provisioning does, so a refinement keeps them. */
   capEnv?: string;
+  /** True for a product with caps: the caps check's record of the gateway gets this change's token. */
+  caps?: boolean;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
@@ -560,6 +586,7 @@ export async function reopenSandbox(input: {
     ...(await productWrites(sandbox, missing)),
     { path: `${PRODUCT_DIR}/.env.local`, content: withCapEnv(envLocal(input.sandboxName, input.gatewayUrl, input.buildToken), input.capEnv) },
   ]);
+  if (input.caps) await writeCapsGateway(sandbox, input.gatewayUrl, input.buildToken);
 }
 
 /**

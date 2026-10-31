@@ -7,6 +7,7 @@ import {
   ACTIVE_TARGETS_FILE,
   CAPS_DIR,
   CAPS_FILE,
+  CAPS_GATEWAY_FILE,
   DEMO_OUT_DIR,
   DEMO_RECORDING_DIR,
   DEMO_SPEC_PATH,
@@ -376,6 +377,36 @@ export function activeCapsScript(file: { caps: readonly string[]; overlays: read
     `chmod u+w "$(dirname ${target})"`,
     `rm -f ${target}`,
     `printf '%s' ${q(capsFileText(file))} > ${target}`,
+    `chown root:root ${target}`,
+    `chmod 444 ${target}`,
+    `chmod a-w "$(dirname ${target})"`,
+  ].join("\n");
+}
+
+/**
+ * What the caps check reads to ask the gateway what it saw (CAPS_GATEWAY_FILE): the gateway's address and the build
+ * token, or no address and the reason on a local run, where the build machine can't reach the gateway.
+ */
+export type CapsGatewayRecord = { url: string; token: string } | { url: null; token: null; reason: string };
+
+/** The text of CAPS_GATEWAY_FILE for a record. */
+export function capsGatewayText(record: CapsGatewayRecord): string {
+  return `${JSON.stringify(record)}\n`;
+}
+
+/**
+ * Puts the record written at `from` (by sandbox.writeFiles, so the token is never in a command line or an error) in
+ * place as CAPS_GATEWAY_FILE, root-owned and read-only, as activeCapsScript does for ACTIVE_CAPS_FILE. Run with sudo at
+ * provision and on every change, which mints a new build token. The token is the one .env.local already holds.
+ */
+export function capsGatewayScript(from: string, file: string = CAPS_GATEWAY_FILE): string {
+  const target = q(file);
+  return [
+    "set -e",
+    `chmod u+w "$(dirname ${target})"`,
+    `rm -f ${target}`,
+    `cat ${q(from)} > ${target}`,
+    `rm -f ${q(from)}`,
     `chown root:root ${target}`,
     `chmod 444 ${target}`,
     `chmod a-w "$(dirname ${target})"`,

@@ -95,30 +95,105 @@ describe("scripts/caps-check.mjs", () => {
     assert.equal(result.caps[0].checks[0].id, "caps-file");
   });
 
-  test("reads the gateway's record with the build token from .env.local, and exits 0 only when every check passed", async () => {
-    let auth = null;
-    const server = http.createServer((req, res) => {
-      auth = req.headers.authorization;
+  test("never reads the gateway's address or token from the product's .env.local, which product code can edit", async () => {
+    // The review's spoof: .env.local points GATEWAY_URL at a server that answers with made-up counts.
+    let called = false;
+    const server = http.createServer((_req, res) => {
+      called = true;
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ buildId: "b1", namespace: "b:b1", caps: { data: { rows: req.url === "/api/gateway/caps/proof" ? 4 : 0 } } }));
+      res.end(JSON.stringify({ caps: { data: { rows: 42 } } }));
     });
     await new Promise((r) => server.listen(0, "127.0.0.1", r));
     try {
       const { port } = server.address();
-      const dir = product({ checker: DATA_CHECKER, record: RECORD, env: `GATEWAY_URL=http://127.0.0.1:${port}/api/gateway\nPRODUCT_TOKEN=mm_build_sample\n` });
-      const res = await runNode(path.join(dir, "scripts/caps-check.mjs"), dir);
-      assert.equal(res.status, 0, res.stdout + res.stderr);
-      assert.equal(auth, "Bearer mm_build_sample");
-      const last = JSON.parse(res.stdout.trim().split("\n").at(-1));
-      assert.equal(last.musemuse_caps, 1);
-      assert.equal(last.ok, true);
-      assert.ok(!res.stdout.includes("mm_build_sample"), "the token is never printed");
-      assert.ok(existsSync(path.join(dir, "test-results/caps/summary.json")));
-      const failing = product({ checker: DATA_CHECKER, record: { cap: "data", checks: [{ id: "second-browser", ok: false }] }, env: `GATEWAY_URL=http://127.0.0.1:${port}/api/gateway\nPRODUCT_TOKEN=mm_build_sample\n` });
-      assert.equal((await runNode(path.join(failing, "scripts/caps-check.mjs"), failing)).status, 1);
+      const dir = product({ checker: DATA_CHECKER, record: RECORD, env: `GATEWAY_URL=http://127.0.0.1:${port}\nPRODUCT_TOKEN=mm_build_sample\n` });
+      const result = await runCapsCheck({ root: dir, capsDir: null });
+      assert.equal(called, false, "the product's .env.local was used");
+      assert.equal(result.ok, false);
+      assert.equal(result.gateway.ok, false);
+      assert.match(result.caps[0].checks.find((k) => k.id === "gateway-rows").detail, /The gateway's record couldn't be read/);
     } finally {
       server.close();
     }
+  });
+});
+
+/**
+ * A build sandbox's read-only overlays folder in a temp dir: active.json, the core copy of caps-check, the data
+ * overlay's checker and the gateway record. The product folder next to it has its own, different copies.
+ */
+function platform({ gateway, checker = DATA_CHECKER }) {
+  const caps = mkdtempSync(path.join(tmpdir(), "mm-capsdir-"));
+  dirs.push(caps);
+  mkdirSync(path.join(caps, "core/files/scripts"), { recursive: true });
+  copyFileSync(path.join(CORE, "scripts/caps-check.mjs"), path.join(caps, "core/files/scripts/caps-check.mjs"));
+  mkdirSync(path.join(caps, "data/files/scripts/caps"), { recursive: true });
+  writeFileSync(path.join(caps, "data/files/scripts/caps/data.mjs"), checker);
+  writeFileSync(path.join(caps, "active.json"), JSON.stringify({ caps: ["data"], overlays: ["core", "data"] }));
+  writeFileSync(path.join(caps, "gateway.json"), JSON.stringify(gateway));
+  return { caps, script: path.join(caps, "core/files/scripts/caps-check.mjs") };
+}
+
+/** Runs node on a script with arguments, without blocking this process. */
+function runArgs(args, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { cwd });
+    let stdout = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stdout += d));
+    child.on("close", (status) => resolve({ status, stdout }));
+  });
+}
+
+describe("the caps check in a build sandbox (its read-only copy)", () => {
+  test("asks the gateway in the platform's record for what it saw since verify started, with the platform's checker", async () => {
+    const seen = [];
+    const server = http.createServer((req, res) => {
+      seen.push({ url: req.url, auth: req.headers.authorization });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ buildId: "b1", namespace: "b:b1", caps: { data: { rows: 4 } } }));
+    });
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const { port } = server.address();
+      const { script } = platform({ gateway: { url: `http://127.0.0.1:${port}/api/gateway`, token: "mm_build_sample" } });
+      // The product's own copies say something else: a checker that always passes and a caps file with no caps.
+      const dir = product({ capsFile: { caps: [], overlays: [] }, checker: "export const check = () => [{ id: 'fake', ok: true }];\n", record: RECORD, env: "GATEWAY_URL=http://127.0.0.1:1\nPRODUCT_TOKEN=nope\n" });
+      const since = "2026-10-31T17:50:00.000Z";
+      const res = await runArgs([script, "--root", dir, "--since", since], dir);
+      assert.equal(res.status, 0, res.stdout);
+      assert.deepEqual(seen, [{ url: `/api/gateway/caps/proof?since=${encodeURIComponent(since)}`, auth: "Bearer mm_build_sample" }]);
+      const last = JSON.parse(res.stdout.trim().split("\n").at(-1));
+      assert.deepEqual(last.caps[0].checks.map((k) => k.id), ["second-browser", "gateway-rows"], "the platform's checker ran, not the product's");
+      assert.ok(!res.stdout.includes("mm_build_sample"), "the token is never printed");
+      assert.ok(existsSync(path.join(dir, "test-results/caps/summary.json")), "the summary goes in the product's folder");
+      // A failing record fails the run.
+      const failing = product({ record: { cap: "data", checks: [{ id: "second-browser", ok: false }] } });
+      assert.equal((await runArgs([script, "--root", failing, "--since", since], failing)).status, 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  test("on a local run says why the gateway's record is missing instead of failing with no reason", async () => {
+    const reason = "this is a local run, so the build machine can't reach the gateway. Test platform services with a public PLATFORM_URL";
+    const { caps } = platform({ gateway: { url: null, token: null, reason } });
+    const dir = product({ record: RECORD });
+    const result = await runCapsCheck({ root: dir, capsDir: caps });
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.gateway, { ok: false, problem: reason });
+    const gateway = result.caps[0].checks.find((k) => k.id === "gateway-rows");
+    assert.equal(gateway.ok, false);
+    assert.ok(gateway.detail.endsWith(`The gateway's record couldn't be read: ${reason}`), gateway.detail);
+    // A check that passed without the gateway's record stays passed.
+    assert.equal(result.caps[0].checks.find((k) => k.id === "second-browser").ok, true);
+  });
+
+  test("verify runs the platform's copy by its CAPS_DIR path, with the product as --root and its own start as --since", () => {
+    const verify = readFileSync(path.join(TEMPLATE, "scripts/verify.mjs"), "utf8");
+    assert.match(verify, /const PLATFORM_CAPS_CHECK = "\/vercel\/musemuse\/caps\/core\/files\/scripts\/caps-check\.mjs";/);
+    assert.match(verify, /existsSync\(PLATFORM_CAPS_CHECK\) \? PLATFORM_CAPS_CHECK :/);
+    assert.match(verify, /\[script, "--root", ROOT, "--since", STARTED_AT\]/);
   });
 });
 

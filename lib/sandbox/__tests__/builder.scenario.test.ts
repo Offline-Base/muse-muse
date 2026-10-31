@@ -170,10 +170,56 @@ describe("provisionSandbox with platform services", { skip: canMock ? false : "n
     }
   });
 
+  it("writes the caps check's record of the gateway at provision and on a change, root-owned, with that run's token", async () => {
+    const saved = process.env.PLATFORM_URL;
+    try {
+      process.env.PLATFORM_URL = "https://platform.example";
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      const record = written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json");
+      assert.deepEqual(JSON.parse(record!.text), { url: input.gatewayUrl, token: "mm_build_sample" });
+      const move = sudoScripts.find((x) => x.includes("/vercel/musemuse/caps/gateway.json"));
+      assert.ok(move && move.includes("chown root:root '/vercel/musemuse/caps/gateway.json'") && !move.includes("mm_build_sample"));
+      written = [];
+      sudoScripts = [];
+      await builder.reopenSandbox({ sandboxName: "product-bird-count-11111111", productId: input.productId, buildToken: "mm_build_change", gatewayUrl: input.gatewayUrl, newReferences: [], caps: true });
+      assert.deepEqual(JSON.parse(written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json")!.text), { url: input.gatewayUrl, token: "mm_build_change" });
+      assert.ok(sudoScripts.some((x) => x.includes("/vercel/musemuse/caps/gateway.json")));
+      // A local run: the record says why there is no gateway, and has no token.
+      process.env.PLATFORM_URL = "http://localhost:3000";
+      written = [];
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      const local = JSON.parse(written.find((w) => w.path === "/vercel/musemuse/run/caps-gateway.json")!.text);
+      assert.equal(local.url, null);
+      assert.equal(local.token, null);
+      assert.match(local.reason, /local run, so the build machine can't reach the gateway/);
+    } finally {
+      saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved);
+      restore();
+    }
+  });
+
+  it("refreshes the platform files on a local run whose pristine verify.mjs is from before caps, and refuses on the live site", async () => {
+    const savedVercel = process.env.VERCEL;
+    try {
+      onCommand = (script) => ({ exitCode: script.startsWith("grep -q 'musemuse_caps'") ? 1 : 0 });
+      process.env.MUSEMUSE_TEMPLATE_DIR = new URL("../../../template", import.meta.url).pathname;
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } });
+      assert.ok(written.some((w) => w.path === "/vercel/app/scripts/verify.mjs" && w.text.includes("musemuse_caps")), "verify.mjs was refreshed");
+      assert.ok(sudoScripts.some((x) => x.includes("/vercel/musemuse/pristine")), "and its pristine copy");
+      process.env.VERCEL = "1";
+      await assert.rejects(builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] } }), /doesn't have the platform files that check platform services/);
+    } finally {
+      savedVercel === undefined ? delete process.env.VERCEL : (process.env.VERCEL = savedVercel);
+      delete process.env.MUSEMUSE_TEMPLATE_DIR;
+      restore();
+    }
+  });
+
   it("does none of it for a brief with no caps", async () => {
     try {
       await builder.provisionSandbox(input);
       assert.ok(!scripts.some((x) => x.includes("/vercel/musemuse/caps")));
+      assert.ok(!written.some((w) => w.path.includes("caps-gateway")), "no gateway record");
       assert.equal(written.filter((w) => w.path === "/vercel/app/.env.local").length, 1);
       const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
       assert.ok(!("pypi.example" in policy.allow), "no cap host");

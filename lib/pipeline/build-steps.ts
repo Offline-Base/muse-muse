@@ -50,6 +50,7 @@ import { pollDeploy, projectNameFor, startDeployFromSandbox, type DeployPoll } f
 import { briefTargets } from "@/lib/native/targets";
 import { demoNoteFor } from "@/lib/sandbox/artifacts";
 import * as sandbox from "@/lib/sandbox/builder";
+import { publicHost } from "@/lib/sandbox/policy";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import type { BridgeCondenseState } from "@/lib/sandbox/msp-log";
 import { newSessionId, type BuildModel } from "@/lib/sandbox/muse";
@@ -477,6 +478,10 @@ function extraFilesFor(brief: Brief | null): { extraFiles?: Array<{ path: string
  * Mints the build token and provisions the sandbox in one step, so the plaintext token stays inside it. Also fixes
  * the Muse Code session id (a fresh UUIDv7, reused on retry).
  */
+/** The build room's line for a product with caps on a local run (PLATFORM_URL on localhost). */
+export const CAPS_LOCAL_RUN_NOTE =
+  "This is a local run, so the build machine can't reach the gateway. Checks of what the gateway saw for the platform services will fail. Test them with a public PLATFORM_URL.";
+
 export async function provisionStep(input: {
   buildId: string;
   productId: string;
@@ -520,6 +525,11 @@ export async function provisionStep(input: {
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps) } : {}),
   });
+  // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
+  // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
+  if (caps && publicHost(env.platformUrl) === null) {
+    await emit(input.buildId, { type: "log", text: CAPS_LOCAL_RUN_NOTE });
+  }
   const sessionId = build.museSessionId ?? newSessionId();
   await db().batch([
     db().update(schema.builds).set({ sandboxName, museSessionId: sessionId }).where(eq(schema.builds.id, input.buildId)),
@@ -1324,7 +1334,7 @@ export async function reopenStep(input: {
     ...extraFilesFor(brief),
     // A product with caps keeps its hosts and its .env.local lines on every change, as at provision.
     ...(capHosts.length ? { capHosts } : {}),
-    ...(caps && brief ? { capEnv: capBuildEnv(brief) } : {}),
+    ...(caps && brief ? { capEnv: capBuildEnv(brief), caps: true } : {}),
   });
   const prompt = renderRefinePrompt({
     brief,

@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import { readCapFiles, readTemplateFiles } from "@/lib/sandbox/setup";
-import { applyCapsScript, capsFileText, restoreCapFilesScript, taskScript } from "@/lib/sandbox/tasks";
+import { CAPS_CHECK_SCRIPT, CAPS_DIR, CAPS_GATEWAY_FILE } from "@/lib/sandbox/paths";
+import { applyCapsScript, capsFileText, capsGatewayScript, capsGatewayText, restoreCapFilesScript, taskScript } from "@/lib/sandbox/tasks";
 
 const TEMPLATE = path.join(import.meta.dirname, "../../../template");
 const dirs: string[] = [];
@@ -86,6 +87,32 @@ describe("cap overlay scripts", () => {
     assert.ok(!existsSync(path.join(product, "musemuse.caps.json")));
     // The task scripts carry the restore, guarded the same way.
     assert.ok(taskScript("verify", "/tmp/out.txt").includes("/vercel/musemuse/caps/active.json"));
+  });
+});
+
+describe("the caps check's record of the gateway", () => {
+  it("is moved into place from a file, so the build token is never in a command line", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "mm-caps-gateway-"));
+    dirs.push(root);
+    mkdirSync(path.join(root, "caps"));
+    const from = path.join(root, "caps-gateway.json");
+    const record = { url: "https://platform.example/api/gateway", token: "mm_build_secretsecretsecretsecret" };
+    writeFileSync(from, capsGatewayText(record));
+    const file = path.join(root, "caps", "gateway.json");
+    const script = capsGatewayScript(from, file);
+    assert.ok(!script.includes(record.token), "the token is not in the script");
+    // As the default user, without sudo: no chown, and the folder is given its write bit back for the cleanup.
+    const res = bash(`${script.replace(/^chown .*$/m, "true")}\nchmod u+w ${JSON.stringify(path.join(root, "caps"))}`, root);
+    assert.equal(res.code, 0, res.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), record);
+    assert.ok(!existsSync(from), "the source is removed");
+    assert.match(script, /chown root:root '.*gateway\.json'\nchmod 444/);
+  });
+
+  it("lives in CAPS_DIR, and verify runs the core copy of the caps check by the same path", () => {
+    assert.equal(CAPS_GATEWAY_FILE, `${CAPS_DIR}/gateway.json`);
+    const verify = readFileSync(path.join(TEMPLATE, "scripts/verify.mjs"), "utf8");
+    assert.ok(verify.includes(`const PLATFORM_CAPS_CHECK = "${CAPS_CHECK_SCRIPT}";`), "verify.mjs and lib/sandbox/paths.ts disagree on CAPS_DIR");
   });
 });
 

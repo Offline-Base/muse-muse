@@ -21,6 +21,7 @@ import { z } from "zod";
 import { CAP_BRIEF_FIELDS } from "@/lib/caps/brief-fields";
 import { CAP_ENV } from "@/lib/caps/env";
 import { CAP_BUILD_HOSTS } from "@/lib/caps/hosts";
+import { BRIEF as FULL_BRIEF } from "@/lib/promote/__tests__/fixtures";
 
 type Rows = Record<string, unknown>[];
 
@@ -53,6 +54,7 @@ let liveCheckImpl: (input: Record<string, unknown>) => Promise<unknown> = async 
 let liveCheckInputs: Array<Record<string, unknown>> = [];
 let minted: Array<Record<string, unknown>> = [];
 let reopened: Array<Record<string, unknown>> = [];
+let provisioned: Array<Record<string, unknown>> = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -62,6 +64,7 @@ function thenable<T extends object>(q: T, result: () => unknown): T {
 }
 
 const fakeDb = () => ({
+  batch: async () => [],
   select: () => {
     let table = "";
     const q: Record<string, unknown> = {};
@@ -177,6 +180,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         },
         writeProductFile: async (_name: string, path: string, content: string) => void productFiles.push({ path, content }),
         reopenSandbox: async (input: Record<string, unknown>) => void reopened.push(input),
+        provisionSandbox: async (input: Record<string, unknown>) => {
+          provisioned.push(input);
+          return { sandboxName: "sb" };
+        },
         readManifest: async () => null,
         exportTranscript: async () => ({ url: "https://x/transcript.json", highlights: [] }),
         writeDemoSpec: async (sandboxName: string, spec: Record<string, unknown>) => void demoSpecs.push({ sandboxName, spec }),
@@ -221,6 +228,7 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     liveCheckImpl = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
     minted = [];
     reopened = [];
+    provisioned = [];
   });
 
   describe("judgeStep on a refinement", () => {
@@ -892,7 +900,31 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(minted[0]!.scope, "build");
       assert.equal(minted[0]!.buildId, "r1", "the change's rows live in the build namespace b:r1, never in live");
       assert.equal(reopened[0]!.capEnv, "MUSEMUSE_DATA=on\n");
+      assert.equal(reopened[0]!.caps, true, "the caps check's gateway record gets the change's token");
       assert.deepEqual(reopened[0]!.capHosts, ["pypi.example"]);
+    });
+
+    it("says once at provision that a local run can't reach the gateway, and says nothing on a public one", async () => {
+      const saved = process.env.PLATFORM_URL;
+      const provision = () => {
+        selects = {
+          builds: [[{ id: "b1", kind: "build", productId: "prod-1", inspirationId: "i", brief: { ...FULL_BRIEF, data: { scopes: ["shared"] } } }]],
+          inspirations: [[{ note: null, references: [] }]],
+        };
+        return steps.provisionStep({ buildId: "b1", productId: "prod-1", slug: "bird-count", fixtures: [] });
+      };
+      try {
+        process.env.PLATFORM_URL = "http://localhost:3000";
+        await provision();
+        assert.deepEqual(emitted.filter((e) => e.body.type === "log").map((e) => e.body.text), [steps.CAPS_LOCAL_RUN_NOTE]);
+        assert.equal(minted[0]!.buildId, "b1");
+        emitted = [];
+        process.env.PLATFORM_URL = "https://platform.example";
+        await provision();
+        assert.deepEqual(emitted.filter((e) => e.body.type === "log"), []);
+      } finally {
+        saved === undefined ? delete process.env.PLATFORM_URL : (process.env.PLATFORM_URL = saved);
+      }
     });
 
     it("leaves a product with no caps as it was: no build id, no extra env, no hosts", async () => {

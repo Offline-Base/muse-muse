@@ -23,6 +23,9 @@ After the smoke test, verify's caps step runs the fixed checks for each service.
 agree: what the smoke test recorded with the service's test helper (`tests/caps/<service>.ts`), and what the gateway
 saw for this build. A failed check fails verify, and the next fix round gets it.
 
+The gateway's record counts only what happened during that verify run, from its start. Rows or files written earlier,
+by an earlier run or by hand with the build token, never count, so the smoke test itself has to do the real thing.
+
 - Use the service's test helpers in `tests/smoke.spec.ts`. They record the checks for you.
 - Assert the shape of what comes back (a row exists, a send was confirmed), never a stand-in's exact words.
 - Keep each service's real calls within the number its skill gives.
