@@ -43,7 +43,11 @@ import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import drive
+try:
+    import drive
+except ImportError:
+    # Copied without drive.py: every other tool answers as before, and the drive tools aren't offered.
+    drive = None
 
 VERSION = "0.4.0"
 PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26"]
@@ -52,6 +56,8 @@ MAX_OUTPUT_BYTES = 64 * 1024
 CAPTURE_WARMUP_FRAMES = 30
 MODEL_DIR = os.path.expanduser("~/models")
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\.gguf")
+# A GGUF's quantization as llama.cpp names it at the end of a file: Q4_K_M, Q8_0, IQ1_S, F16, BF16, F32.
+QUANT_LEVEL = re.compile(r"(I?Q[0-9][A-Za-z0-9_]{0,12}|F16|BF16|F32)")
 # On loopback only, like this server. The fleet's own model service uses its own port and is left alone.
 MODEL_PORT = 8766
 MODEL_START_TIMEOUT_S = 120
@@ -822,7 +828,17 @@ def export_source(args):
     config = read_json(run_file(name, "config.json"))
     adapter = status.get("adapter") or f"{name}.gguf"
     model_file(adapter, "adapter")
-    bases = [file for file in model_files() if file.startswith(f"{config['base']}-") and file != adapter]
+    # A base build is <base>-<quantization>.gguf and no run's adapter: a run's name may start with the base's, and
+    # install_model takes any name, so another fine-tune never rides along as a "base build".
+    adapters = set()
+    for run in run_names():
+        adapters |= {f"{run}.gguf", (read_json(run_file(run, "status.json")) or {}).get("adapter")}
+    prefix = f"{config['base']}-"
+    bases = [
+        file
+        for file in model_files()
+        if file.startswith(prefix) and QUANT_LEVEL.fullmatch(file[len(prefix) : -len(".gguf")]) and file != adapter and file not in adapters
+    ]
     if not bases:
         raise ToolError(f"{MODEL_DIR} has no GGUF of {config['base']}, so the adapter has nothing to load on.")
 
@@ -1044,7 +1060,7 @@ TOOLS = {
         },
     ),
 }
-DRIVE_TOOLS = {
+DRIVE_TOOLS = {} if drive is None else {
     "drive_status": (
         drive_tool(drive_status),
         {

@@ -14,7 +14,7 @@ the model onto it with launchers for a Mac or a Windows PC, checks every file by
 | --- | --- |
 | `drive.py` | The drive work, about 1,100 lines. It finds USB drives from `lsblk`, `/sys/block` and `/proc/self/mounts` (no root), checks a drive plan, and writes it in its own process (`python3 drive.py --export ~/drive-export/<export>`), as `train.py` runs a training run, so restarting the server doesn't end an export. Mounting, unmounting, power-off and erasing go through udisks2 (`udisksctl`, and `busctl` for the erase), so nothing runs as root. |
 | `setup-drive.sh` | Run once as root: installs `exfatprogs` only if `mkfs.exfat` is missing (and `udisks2` only if `udisksctl` is), checks the kernel has exFAT, adds a polkit rule letting the server's user mount, unmount, power off and format **USB drives only**, and makes `~/drive-export`. On polkit 0.105 (JetPack 6) it falls back to a `.pkla` file, which can't filter by bus, and says so. |
-| `test_drive.py` | 51 tests (1 needs `/proc`, so it skips on a Mac) with fake drives (temp folders standing in for sticks, a fake sysfs tree and lsblk output) and fake model files. Runs on a Mac: `python3 -m unittest test_drive`. |
+| `test_drive.py` | 63 tests (1 needs `/proc`, so it skips on a Mac) with fake drives (temp folders standing in for sticks, a fake sysfs tree and lsblk output) and fake model files. Runs on a Mac: `python3 -m unittest test_drive`. |
 | `test_drive_loop.py` | The same golden plan through a real loop device on the kernel's own exFAT and FAT32 drivers. Skipped unless it runs on Linux as root with `losetup`, `mkfs.exfat`, `mkfs.vfat` and `udisksctl`. It has never run: no Linux machine here. |
 | `fixtures/plan-small.json` | A small drive plan the platform's own test writes (`lib/drive/__tests__/plan.test.ts`), with its kit and model bytes. `test_drive.py` writes it onto a fake drive and checks the drive ends with the same `SHA256SUMS`, so the two sides can't drift. |
 
@@ -22,14 +22,14 @@ the model onto it with launchers for a Mac or a Windows PC, checks every file by
 
 | Change | Why |
 | --- | --- |
-| `import hashlib`, `import drive` | `install_model` now hashes as it downloads, and the five tools call into `drive.py`. |
+| `import hashlib`, and `import drive` inside a `try` | `install_model` now hashes as it downloads, and the five tools call into `drive.py`. **`server.py` copied to a board without `drive.py` still starts:** every existing tool answers as before and the five drive tools aren't offered (`test_the_server_starts_and_answers_without_drive_py`). Copy both files to have the drive tools. |
 | `VERSION` 0.3.0 to 0.4.0 | Five new tools. |
 | Three lines in the docstring | Where the drive tools' state lives. |
 | `CONVERTER_NAME` constant | Names `llama.cpp b11970 convert_lora_to_gguf.py, f32` on the drive. A test checks it against `LLAMA_CPP_TAG` in `setup-train.sh`, so it can't go stale silently. |
 | `install_model`: hashes each block, then `remember_source()` | Writes `<name>.source.json` (the URL without its query, bytes, sha256) and `<name>.sha256` beside a download, best effort. Without it a drive can only say a base GGUF was "installed by hand". The query is dropped because a signed link is a credential. Neither file ends in `.gguf`, so `list_models` doesn't show them. |
-| New `cached_sha256`, `base_revision`, `dataset_system`, `export_source` | `export_source {run}` answers, for a run that is `done`: the adapter and every `<base>-*.gguf` with bytes and sha256 (cached in `<name>.sha256` with size and mtime, so a second export hashes nothing), the run's config and status, the base weights' revision from huggingface_hub's `.metadata` files, the dataset's system message (its first example's), and the board's hardware model and server version. Never a hostname, an address or a token. |
+| New `cached_sha256`, `base_revision`, `dataset_system`, `export_source` | `export_source {run}` answers, for a run that is `done`: the adapter and every base build, `<base>-<quantization>.gguf` (`QUANT_LEVEL`: `Q4_K_M`, `Q8_0`, `IQ1_S`, `F16`, `BF16`, `F32` and the like) that isn't any run's adapter, with bytes and sha256. A run's name may start with the base's and `install_model` takes any name, so without that rule another fine-tune would ride along as a "base build" (cached in `<name>.sha256` with size and mtime, so a second export hashes nothing), the run's config and status, the base weights' revision from huggingface_hub's `.metadata` files, the dataset's system message (its first example's), and the board's hardware model and server version. Never a hostname, an address or a token. |
 | New `drive_tool` wrapper | Turns `drive.DriveError` into your `ToolError`, so drive refusals read like every other tool's. |
-| `DRIVE_TOOLS`, then `TOOLS.update(DRIVE_TOOLS)` | The five tools: `drive_status` (read only), `export_source` (read only), `export_model`, `erase_drive` (destructive), `stop_export`. Same token, same refusal of browser requests, same 1 MiB body limit. |
+| `DRIVE_TOOLS` (empty without `drive.py`), then `TOOLS.update(DRIVE_TOOLS)` | The five tools: `drive_status` (read only), `export_source` (read only), `export_model`, `erase_drive` (destructive), `stop_export`. Same token, same refusal of browser requests, same 1 MiB body limit. |
 
 Nothing else in `server.py` changed. `run_command`, the token rules, the connection limits and every existing tool answer as
 before.
@@ -42,18 +42,26 @@ on a Mac, as before).
 ## How `drive.py` stays safe
 
 - **Which disks.** Only a disk on the USB bus, whose sysfs path runs through a USB port, that isn't behind `/`, `/boot`, swap or
-  any mount outside `/media/<this user>/` (compared by major and minor number, since `/` shows as `/dev/root` on these boards). Never
+  any mount outside `/media/<this user>/` (compared by major and minor number, since `/` shows as `/dev/root` on these boards),
+  looking through the disk's whole `lsblk` tree, so a mount or swap on an LVM, LUKS or md device inside one of its partitions
+  counts. A disk with anything built on it (an `LVM2_member`, `crypto_LUKS`, `*_raid_member`, `zfs_member`, `swap` or `bcache`
+  signature anywhere in its tree, a nested device of any other type, or a non-empty `holders` folder in sysfs) is never written
+  to or erased, mounted or not. Never
   `mmcblk`, `nvme`, `loop`, `ram` or `zram`. An SD card in a USB reader is `sdX` and is fine. `DRIVE_ALLOW_LOOP_BACKING` is `None`
   in the shipped code; only the loopback test sets it.
 - **Erasing.** Never on its own, armed or not. Only for the drive an export is waiting on in `needs_erase`, after a person typed
   its label (or `ERASE` when it has none), only if its identity (maker, model, serial, size, sysfs path, filesystems' labels and
-  UUIDs) is unchanged, and the export looks once more right before the format. Never a disk over 256 GB.
+  UUIDs) is unchanged, and the export looks once more right before the format, after it has unmounted the drive's filesystems
+  (an unmount can take minutes, and a drive swapped meanwhile gets the same `sdX`). Never a disk over 256 GB.
 - **Writing.** Only inside `<mount>/MuseMuse/<one name>/`. A plan with an absolute path, `..`, a backslash, a control character,
   a character exFAT can't hold, more than 400 files, inline bytes that don't hash to their sha256, or a board file not in
   `list_models` is refused before anything happens. Each file goes to `<path>.part`, hashed as it's written, fsynced, then
   renamed. `~/models` is only read.
 - **Links.** https only, at a public address (your `install_model` rule, redirects included), kept in `urls.json` with mode 600
-  and deleted when the export ends. Nothing that looks like a signed URL goes into a status, a log or the drive.
+  and deleted when the export ends. Nothing that looks like a signed URL goes into a status, a log or the drive. A refused
+  signed link (one with a query) waits in `needs_urls` for links sent with `export_model {export, urls}`, even the same link
+  sent again, and fails after 5 rounds of refused fresh links. A refused public link (the Hub's resolve URL, a kit file) is
+  the same link next time, so it's retried with backoff like any failed download, then fails in a sentence.
 - **Checking.** `os.sync()`, unmount (which drops the page cache for that filesystem), mount again, read every file back, and
   FAIL on a wrong, missing or extra file. Then unmount and power off.
 

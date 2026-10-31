@@ -1057,6 +1057,36 @@ class ServerToolTests(DriveTestCase):
         with mock.patch.object(drive, "sha256_of", side_effect=AssertionError("hashed again")):
             self.assertFalse(self.call("export_source", run="support-coach")[0])
 
+    def test_export_source_lists_base_builds_and_never_another_fine_tune(self):
+        for name in ("Qwen3.5-0.8B-faq.gguf", "Qwen3.5-0.8B-mmproj-F16.gguf", "Qwen3.5-0.8B-BF16.gguf", "Qwen3.5-0.8B-Q8_0.gguf", "Qwen3.5-0.8B-coach-v2.gguf"):
+            with open(os.path.join(self.models, name), "wb") as f:
+                f.write(b"GGUF " + name.encode())
+        # Another run, whose adapter is named like a base build.
+        os.makedirs(os.path.join(server.RUN_DIR, "other"))
+        server.write_json(server.run_file("other", "config.json"), {"pid": 1, "started": 2, "base": "Qwen3.5-0.8B", "dataset": "support-coach", "steps": 10, "rank": 8, "lr": 0.0002, "max_length": 512})
+        server.write_json(server.run_file("other", "status.json"), {"state": "done", "adapter": "Qwen3.5-0.8B-Q8_0.gguf"})
+        # A run named after the base, whose adapter keeps the run's name.
+        os.makedirs(os.path.join(server.RUN_DIR, "Qwen3.5-0.8B-IQ2_M"))
+        server.write_json(server.run_file("Qwen3.5-0.8B-IQ2_M", "config.json"), {"pid": 1, "started": 3, "base": "Qwen3.5-0.8B", "dataset": "support-coach", "steps": 10, "rank": 8, "lr": 0.0002, "max_length": 512})
+        server.write_json(server.run_file("Qwen3.5-0.8B-IQ2_M", "status.json"), {"state": "failed"})
+        with open(os.path.join(self.models, "Qwen3.5-0.8B-IQ2_M.gguf"), "wb") as f:
+            f.write(b"GGUF a half-made adapter")
+        error, source = self.call("export_source", run="support-coach")
+        self.assertFalse(error, source)
+        self.assertEqual(sorted((b["name"], b["level"]) for b in source["bases"]), [("Qwen3.5-0.8B-BF16.gguf", "BF16"), ("Qwen3.5-0.8B-Q4_K_M.gguf", "Q4_K_M")])
+
+    def test_the_server_starts_and_answers_without_drive_py(self):
+        with tempfile.TemporaryDirectory() as alone:
+            shutil.copy(os.path.join(HERE, "server.py"), alone)
+            code = "import json, server; print(json.dumps([t['name'] for t in server.handle_rpc('tools/list', {})['tools']]))"
+            env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+            done = subprocess.run([sys.executable, "-c", code], cwd=alone, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr[-2000:])
+        names = json.loads(done.stdout)
+        self.assertIn("describe_device", names)
+        self.assertIn("list_models", names)
+        self.assertEqual(set(names) & {"drive_status", "export_source", "export_model", "erase_drive", "stop_export"}, set())
+
     def test_drive_status_lists_the_finished_runs(self):
         self.assertEqual(self.call("drive_status")[1]["runs"], [{"run": "support-coach", "base": "Qwen3.5-0.8B", "adapter": "support-coach.gguf"}])
         server.write_json(server.run_file("support-coach", "status.json"), {"state": "failed"})
