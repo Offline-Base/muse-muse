@@ -57,7 +57,8 @@ const CAP_KEEPS: Partial<Record<CapId, string>> = {
 
 /** musemuse.privacy.json: which models get which inputs, and what the product keeps, from its brief. */
 export function productPrivacyFor(brief: Brief): Record<string, unknown> {
-  const gets = ["what you type", ...[...new Set(brief.inputs.map((i) => i.kind))].map((k) => INPUT_WORDS[k] ?? `the ${k} you add`)];
+  // "What you type" covers text inputs.
+  const gets = ["what you type", ...[...new Set(brief.inputs.map((i) => i.kind))].filter((k) => k !== "text").map((k) => INPUT_WORDS[k] ?? `the ${k} you add`)];
   const seen = new Set<string>();
   const models = brief.capabilities
     .filter((c) => c.model !== "muse-gadget" && !seen.has(c.model) && Boolean(seen.add(c.model)))

@@ -45,12 +45,13 @@ describe("musemuse.privacy.json", () => {
   it("names Composio when an agent uses tools beyond web search, and no uploads for text only", () => {
     const p = productPrivacyFor({
       ...BRIEF,
-      inputs: [],
+      inputs: [{ kind: "text", required: true, notes: "A question" }],
       agent: { task: "Plan a trip", tools: [{ id: "web_search", need: "a", why: "b" }, { id: "gmail_create_draft", need: "c", why: "d" }], connections: "owner", stepsPerRun: 4 },
     } as never) as { services: string[]; uploads: boolean };
     assert.equal(p.services.length, 1);
     assert.match(p.services[0]!, /to Composio, which runs the tool/);
     assert.equal(p.uploads, false);
+    assert.deepEqual((p as unknown as { models: Array<{ gets: string[] }> }).models[0]!.gets, ["what you type"], "text is what you type");
   });
 });
 
