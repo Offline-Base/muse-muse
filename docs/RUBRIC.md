@@ -1,6 +1,6 @@
 # Rubric, rules and how Muse Privacy maps to them
 
-Checked Oct 28, 2026. The build plan (Oct 24) was written before the Official Rules were out and treated the startup track's one-line blurb as the scoring rule. It is not. This page replaces the plan's "What the hackathon asks for" table.
+Rules checked Oct 28, 2026; the status table below updated Oct 31. The build plan (Oct 24) was written before the Official Rules were out and treated the startup track's one-line blurb as the scoring rule. It is not. This page replaces the plan's "What the hackathon asks for" table.
 
 ## Sources
 
@@ -67,13 +67,12 @@ Muse Privacy is a privacy connector, not a chatbot, and gives no medical advice.
 
 ## How Muse Privacy maps to each criterion
 
-| Criterion | Where it stands, Oct 28 | What moves it most before Nov 4 |
+| Criterion | Where it stands, Oct 31 | What moves it most before Nov 4 |
 |---|---|---|
-| Impact (30%) | The problem is real, and the README's "Who it's for" section ties it to the Build for Your World theme and FERPA's direct-control condition, but the only teacher is a policy file, there is no time-saved figure, and the grading spot-check is blank | One quote and a minutes-saved estimate from a teacher Ethan works with (HANDOFF row 18); the grading spot-check filled in |
-| Use of Meta AI Tooling (25%), Oct 30 note | Ethan chose Liquid's LFM on the device for now, so the Meta tooling is the Muse app, Spark's invented data and the earlier Glimmer measurements. The row below describes the earlier setup. | Decide whether a Glimmer on the device comes back before submitting. |
-| Use of Meta AI Tooling (25%) | The design uses Meta's models in unusual ways (Muse plans over tags it cannot resolve; one open-weights Glimmer is grader, name pass, request reader and router; Muse's scheduled jobs drive nightly learning), and the README's "What Meta's models do here" section names them with numbers, but the Muse app has not connected and Glimmer has run only on OpenRouter | The first real Muse app run; Glimmer on the laptop with llama-server, so the device numbers can join that section |
-| Demo (25%) | No video yet; the core scenes need the Muse app; the light and plush are not built | The Muse app run, recorded from the first attempt; a video under 3 minutes that names the theme early and says which Glimmer graded; the device kept up Nov 4 to 9 |
-| Technical Depth & Execution (20%) | Strong: 1713 tests, one fail-closed exit, every number with its command, 0 leaks in every final run, a holdout and an unseen test. Held back by cloud-only numbers and untested device paths | Device numbers (`bench_speed --label laptop`); settling the share-rule evidence question (HANDOFF row 12); a public repo with CI |
+| Impact (30%) | The problem is real, and the README's "Who it's for" section ties it to the Build for Your World theme and FERPA's direct-control condition, but there are no real users: the only teacher is a policy file, the persona study has not run, there is no time-saved figure, and the grading spot-check is blank | One quote and a minutes-saved estimate from a teacher the author works with (HANDOFF row 18); the grading spot-check filled in; the persona study, labeled simulated |
+| Use of Meta AI Tooling (25%) | Device-only today: Liquid's LFM on the laptop does the model steps, so the Meta tooling in use is the Muse app (no session has a report in `eval/reports/muse_app` yet), Spark's invented data and the earlier Glimmer measurements on OpenRouter. Glimmer has not been measured on the device. SAM 3.1 is built and off by default | A session in the real app with a report. Whether a tuned Glimmer at about 1.6-bit (IQ1_S) lands and passes its pre-registered test (`eval/reports/glimmer_prereg.md`), so its device numbers can join the README's "What Meta's models do here" section |
+| Demo (25%) | No video yet. A script playing Muse takes all six scenes to their expected statuses, with 0 of 18 tool outputs holding a private value ([rehearsal](../eval/reports/muse_app/rehearsal_2026-10-31.md)), but that is not the app. The light and plush are not built | The scenes in the Muse app, recorded from the first attempt; a video under 3 minutes that names the theme early and says which model did the work; the device kept up Nov 4 to 9 |
+| Technical Depth & Execution (20%) | Strong: one fail-closed exit, every number with its command, and on the device-only default 0 leaks and 81.5% (163 of 200) on `fresh_200_b`, a development set ([report](../eval/reports/default_loosen_fresh_200_b.md)). The test count is in `docs/BUILD_LOG.md`. Held back by: the sealed set not scored yet, no gain from nightly learning on this model so far ([nights](../eval/reports/nights_device_rules/nights.md), before today's router default), and LFM3-VL-2B over-refusing as a router ([matrix](../eval/reports/matrix_lfm_loosen_default.md)) | The sealed set scored once; device numbers for any Glimmer that lands; settling the share-rule evidence question (HANDOFF row 12); a public repo with CI |
 
 ## Related work
 

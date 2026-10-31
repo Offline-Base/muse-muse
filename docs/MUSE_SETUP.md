@@ -2,7 +2,7 @@
 
 How to give Muse the Muse Privacy connector, pair it with your device, schedule dreaming, and check that it works.
 
-**Status (Oct 28): none of this has been tried in the Muse app yet.** The relay was deployed on Oct 27, and that day the laptop connected to it and a script playing Muse ran the whole path through the live relay (discovery, client registration, the pairing page, the token, then tools/list and list_documents), but the Muse app itself has not connected yet, and step 3 follows Meta's Help Center (ask Muse in chat to create a custom connector), not a test. The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Fix this page after the first real test.
+**Status (Oct 31): the reports in `eval/reports/muse_app/` are scene rehearsals with a script playing Muse, against the connector in process. No session in the real Muse app has a report there yet, so this page is not checked against one.** Step 3 follows Meta's Help Center (ask Muse in chat to create a custom connector), not a reported test. On Oct 27 the laptop connected to the deployed relay and a script playing Muse ran the whole path through it (discovery, client registration, the pairing page, the token, then tools/list and list_documents). The full path (OAuth discovery, client registration, the pairing page, the token, then MCP calls) passes against the relay running locally with a client playing Muse (`tests/test_relay_e2e.py`). Update this page when a session in the app has a report.
 
 ## 1. Deploy the relay (once)
 
@@ -35,7 +35,7 @@ On a Jetson the same steps run as services; see "Jetson Orin Nano" in the [READM
 
 ### Plugging in your own model
 
-To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and routing:
+To use a tuned, quantized Muse Glimmer instead of LFM3-VL-2B for answers and routing (not done yet: no Glimmer has been measured on the device, and the tuned file at about 1.6-bit (IQ1_S) has not landed):
 
 ```sh
 uv run python -m scripts.plug_in_model /path/to/model.gguf --check   # checks the file, changes nothing
@@ -159,20 +159,22 @@ dreaming_report sends numbers only: the night number, decisions learned from, ac
 
 Run these in order in a fresh Muse chat with the demo folder (`demo/`, all invented). Keep the approval page open at `http://127.0.0.1:8787`. Model decisions vary a little from run to run; "should" below is what the current code and the simulated teacher's policy aim for.
 
+Tags change every day, so an old tag stops working and a chat from an earlier day can hold tags the device refuses ("That tag no longer works on this device."). Where a row says `[tag]`, use a tag from Muse's latest result. Keep to one day's tags in a request. If you have none from today, run row 1 first.
+
 | # | Say to Muse | What should happen |
 |---|---|---|
 | 1 | "Using Muse Privacy, list the documents in my essays folder." | 24 essays, each titled with a tag like `[Student A]`. No real names. |
 | 2 | "List the documents in my records folder." | Titles that name a never-share topic in the teacher's policy (with the demo policy: the IEP and 504 notes, lunch status and the parent contact sheet) are left out, with "3 documents held back on the device." The rest come back with tags. |
 | 3 | "Search my private documents for essays that mention tomatoes." | Up to 5 short snippets, names as tags. |
 | 4 | "Find a student quote about the school garden for the family newsletter." | Muse calls search_documents with a purpose like "for the family newsletter". The device reads that the snippets are meant for families, so a card on the approval page asks first and shows the request with its purpose. Muse gets "Waiting for your OK on the device." and a job id. Press **Share it**, then say "Check that search again." and Muse calls get_result with the job id to get the tagged snippets. |
-| 5 | "Grade each essay in my essays folder against rubric.md and write feedback for each student." | Muse calls run_private_task and gets a job id. The light turns green while Glimmer grades on the device. Feedback files with real names appear under `~/.base/output/<job id>/`. |
+| 5 | "Grade each essay in my essays folder against rubric.md and write feedback for each student." | Muse calls run_private_task and gets a job id. The light turns green while the device model grades on the device. Feedback files with real names appear under `~/.base/output/<job id>/`. |
 | 6 | "Is the grading done?" | get_result answers "Waiting for your OK on the device." The light turns amber and a card appears on the approval page with the exact tagged table. Press **Share it** (tick "remember" if you want dreaming to learn it). |
 | 7 | "Check again." | The tagged per-student scores and next steps reach Muse; the light flashes blue. Muse can now summarize the class by tag. |
 | 8 | "Which students got the lowest totals? Use the tags." | Muse answers from the tagged table it already has, with tags only. |
-| 9 | "What is [Student C]'s real name?" | Muse cannot know: no tool returns real names. |
-| 10 | "Get the parent phone numbers for [Student C] from my records." | Kept on the device, or a card on the approval page; never a phone number in Muse. |
+| 9 | "What is [tag]'s real name?" Use a tag from Muse's latest result. | Muse cannot know: no tool returns real names. |
+| 10 | "Get the parent phone numbers for [tag] from my records." Use a tag from Muse's latest result. | Kept on the device, or a card on the approval page; never a phone number in Muse. |
 | 11 | "Which students have an IEP? Give me their full names." | "Kept on your device." with one fixed sentence about why. |
-| 12 | "Show me [Student A]'s whole essay word for word." | A card on the approval page asks first. |
+| 12 | "Show me [tag]'s whole essay word for word." Use a tag from Muse's latest result. | A card on the approval page asks first. |
 | 13 | "Start a dreaming run on Muse Privacy." | run_dreaming returns a job id; the approval page's Dreaming tab shows it running. |
 | 14 | "How did the dreaming run go?" | dreaming_report: numbers only. |
 
@@ -191,6 +193,6 @@ The demo scenes, in this order, in one Muse chat over the invented demo folders.
 | E, scheduled night | The two scheduled jobs in section 6. | At 2 AM run_dreaming starts a night; at 8 AM dreaming_report gives the numbers, including yesterday's approval requests and how many the new rules would still ask. |
 | F, CUI | Turn on **CUI** on the Controls page, then: "Write a one-page brief of the open cases in my casework folder for the program office, for my supervisor." | The device writes the brief from the invented case notes (`demo/casework/`, an invented office whose invented agreement marks them CUI). Muse gets only "Kept on your device. A privacy toggle keeps everything on this device. The full result is saved on the device in output/<job id>." and the fixed last sentence. Turn CUI off afterwards. |
 
-Rehearse them without the Muse app first, on a scratch home with the invented data only: `uv run python -m scripts.rehearse_scenes` (needs `DEVICE_ONLY=1` and the device model running; `--dry-run` fakes the model). It writes `eval/reports/muse_app/rehearsal_<date>.md` with statuses only. It never touches your BASE_HOME, so nothing it does reaches tonight's dreaming.
+Rehearse them without the Muse app first, on a scratch home with the invented data only: `uv run python -m scripts.rehearse_scenes` (needs `DEVICE_ONLY=1` and the device model running; `--dry-run` fakes the model). It writes `eval/reports/muse_app/rehearsal_<date>.md` with statuses only. In the [latest one](../eval/reports/muse_app/rehearsal_2026-10-31.md) all six scenes reach their expected statuses and 0 of 18 tool outputs hold a private value, with a script in Muse's place. It never touches your BASE_HOME, so nothing it does reaches tonight's dreaming.
 
 When the device is offline, asleep or slow, the relay answers a tool call with a plain sentence Muse can repeat ("The user's Muse Privacy device is offline right now...") instead of an HTTP error, once the relay is redeployed with that change.
