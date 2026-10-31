@@ -20,7 +20,7 @@ export const SKIP_UNSET = "migrate: DATABASE_URL is not set, skipping";
 export const SKIP_PREVIEW =
   "migrate: skipping, this preview has no PREVIEW_DATABASE_URL, and previews never touch production's database";
 export const REFUSE_PREVIEW =
-  "migrate: refused, PREVIEW_DATABASE_URL points at production's database (the same as DATABASE_URL), and previews never touch it. Set it to the Neon branch \"preview\" (README.md, Preview database).";
+  "migrate: refused, PREVIEW_DATABASE_URL points at production's database (the one DATABASE_URL or another of the Neon integration's URLs names), and previews never touch it. Set it to the database of its own on the Neon branch \"preview\" (README.md, Preview database).";
 
 const defaultDeps: MigrateDeps = {
   async neon(url) {

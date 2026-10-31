@@ -33,6 +33,7 @@ export const PRODUCTION_DATABASE_VARS = [
   "DATABASE_URL_UNPOOLED",
   "POSTGRES_URL",
   "POSTGRES_URL_NON_POOLING",
+  "POSTGRES_URL_NO_SSL",
   "POSTGRES_PRISMA_URL",
 ] as const;
 
@@ -40,7 +41,7 @@ export const DATABASE_UNSET = "DATABASE_URL is not set. See .env.example.";
 export const PREVIEW_DATABASE_UNSET =
   "This preview has no database: PREVIEW_DATABASE_URL is not set, and previews never use production's DATABASE_URL. See README.md, Preview database.";
 export const PREVIEW_DATABASE_IS_PRODUCTION =
-  "PREVIEW_DATABASE_URL points at production's database, and previews never touch it. Set it to the Neon branch \"preview\" (README.md, Preview database).";
+  "PREVIEW_DATABASE_URL points at production's database, and previews never touch it. Set it to the database of its own on the Neon branch \"preview\" (README.md, Preview database).";
 
 export type DatabaseChoice =
   | { url: string; from: "DATABASE_URL" | "PREVIEW_DATABASE_URL" }
@@ -50,19 +51,28 @@ export function isPreview(e: Env = process.env): boolean {
   return (e.VERCEL_ENV ?? "").trim().toLowerCase() === "preview";
 }
 
+/** A Neon compute endpoint's id, such as ep-cool-darkness-123456: a host's first label, without "-pooler". */
+const NEON_ENDPOINT = /^ep-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /**
- * Host, port and database name: what makes two connection strings the same database. Neon's pooled host is the
- * direct one with "-pooler" in its first label, and the user, password and options don't change the database. A
- * string that doesn't parse as a URL is compared as it is.
+ * What makes two connection strings the same database: the server and the database name. The user, the password and
+ * the other options don't change the database. A string that doesn't parse as a URL is compared as it is.
+ *
+ * On Neon the server is the compute endpoint's id, whatever the rest of the host says (region, cell such as c-2) or
+ * the port: the pooled host is the direct one with "-pooler" in its first label, and a client without SNI names the
+ * endpoint in options=endpoint=<id> instead. Elsewhere it is the host and the port.
  */
 function databaseKey(url: string): string {
   const text = url.trim();
   try {
     const u = new URL(text);
-    const host = u.hostname.toLowerCase().replace(/^([^.]+?)-pooler(?=\.|$)/, "$1");
+    const host = u.hostname.toLowerCase();
     if (!host) return text;
     const name = decodeURIComponent(u.pathname.replace(/^\/+/, "")) || decodeURIComponent(u.username);
-    return `${host}:${u.port || "5432"}/${name}`;
+    const named = /(?:^|\s)endpoint=([^\s]+)/.exec(u.searchParams.get("options") ?? "")?.[1]?.toLowerCase();
+    const first = host.split(".")[0]!.replace(/-pooler$/, "");
+    const endpoint = named && NEON_ENDPOINT.test(named) ? named : NEON_ENDPOINT.test(first) ? first : null;
+    return endpoint ? `neon:${endpoint}/${name}` : `${host}:${u.port || "5432"}/${name}`;
   } catch {
     return text;
   }

@@ -83,6 +83,11 @@ describe("databaseChoice", () => {
       refused,
       "the integration's other variables count as production too",
     );
+    assert.deepEqual(
+      databaseChoice({ VERCEL_ENV: "preview", DATABASE_URL: PREVIEW.replace("ep-preview-111111", "ep-other"), POSTGRES_URL_NO_SSL: PROD_UNPOOLED, PREVIEW_DATABASE_URL: PROD }),
+      refused,
+      "POSTGRES_URL_NO_SSL too",
+    );
     assert.deepEqual(databaseChoice({ VERCEL_ENV: "preview", DATABASE_URL: "not a url", PREVIEW_DATABASE_URL: " not a url " }), refused, "unparsed");
   });
 
@@ -99,10 +104,20 @@ describe("sameDatabase", () => {
     assert.ok(sameDatabase(PROD, "postgres://someone:other@EP-PROD-000000-POOLER.us-east-2.aws.neon.tech:5432/neondb"));
   });
 
-  it("tells apart another branch, another port and another database", () => {
+  it("knows a Neon database by its endpoint id, whatever the rest of the host or the port says", () => {
+    assert.ok(sameDatabase(PROD, "postgresql://prod_owner:x@ep-prod-000000-pooler.c-2.us-east-2.aws.neon.tech/neondb"), "another host form");
+    assert.ok(sameDatabase(PROD, PROD.replace(".neon.tech/", ".neon.tech:6543/")), "another port");
+    assert.ok(sameDatabase(PROD, "postgresql://prod_owner:x@db-proxy.example.com/neondb?options=endpoint%3Dep-prod-000000"), "options=endpoint=");
+    assert.ok(!sameDatabase(PREVIEW, "postgresql://prev_owner:x@db-proxy.example.com/neondb?options=endpoint%3Dep-prod-000000"));
+  });
+
+  it("tells apart another endpoint, another database, and elsewhere another host or port", () => {
     assert.ok(!sameDatabase(PROD, PREVIEW));
-    assert.ok(!sameDatabase(PROD, PROD.replace(".neon.tech/", ".neon.tech:6543/")));
-    assert.ok(!sameDatabase(PROD, PROD.replace("/neondb?", "/other?")));
+    assert.ok(!sameDatabase(PROD, PROD.replace("/neondb?", "/preview?")), "another database on the same endpoint");
+    const elsewhere = "postgresql://app:x@db.example.com/app";
+    assert.ok(sameDatabase(elsewhere, "postgresql://other:y@DB.example.com:5432/app?sslmode=require"));
+    assert.ok(!sameDatabase(elsewhere, "postgresql://app:x@db.example.com:6543/app"));
+    assert.ok(!sameDatabase(elsewhere, "postgresql://app:x@db2.example.com/app"));
   });
 });
 
