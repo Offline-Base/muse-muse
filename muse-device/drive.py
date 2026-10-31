@@ -915,7 +915,7 @@ class Export:
                 path = str(err)
                 where = f" while writing {path}" if "/" in path or "." in path else ""
                 if not self.status["armed"]:
-                    raise DriveError(f"The drive was unplugged{where}. Plug it back in and press Carry on on the drive card: the files already written are kept.")
+                    raise DriveError(f"The drive was unplugged{where}. Plug it back in, then press Carry on: the files already written are kept.")
                 self.note = f"The drive was unplugged{where}. Plug it back in to carry on: the files already written are kept."
                 continue
             seconds = round(time.time() - started)
@@ -1011,7 +1011,7 @@ def export_status(export_id):
     if not status:
         return None
     if status.get("state") in ACTIVE_STATES and not alive:
-        status.update(state="failed", message="The export stopped without saying why. Press Carry on on the drive card: the files already written are kept.")
+        status.update(state="failed", message="The export stopped without saying why. Press Carry on: the files already written are kept.")
         try:
             write_json(file_of(export_id, "status.json"), status)
         except OSError:

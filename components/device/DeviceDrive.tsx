@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { Icon } from "@/components/icons";
 import type { BoardDrive, BoardRun, ExportState, ExportStatus } from "@/lib/device/drive";
+import { carryOn, carryOnBody } from "@/lib/device/drive-card";
 
 const POLL_MS = 3000;
 const ENDED: ReadonlySet<ExportState> = new Set(["done", "failed", "stopped"]);
@@ -129,10 +130,14 @@ export function DeviceDrive({ initialSource = null }: { initialSource?: string |
   const usable = (reply?.drives ?? []).filter((d) => d.usable);
   const picked = usable.find((d) => d.name === driveName) ?? null;
   const eraseWord = status?.drive?.label || "ERASE";
+  const resume = carryOn(status, reply?.drives ?? [], driveName);
 
   const exportNow = () =>
     send("/api/device/drive", { method: "POST", body: JSON.stringify({ source, mode: "now", drive: picked?.name, identity: picked?.identity }) });
   const arm = () => send("/api/device/drive", { method: "POST", body: JSON.stringify({ source, mode: "arm", copies: Number(copies) || 1 }) });
+  const carryOnNow = () => {
+    if (status && resume?.by === "card" && resume.drive) void send("/api/device/drive", { method: "POST", body: JSON.stringify(carryOnBody(status, resume.drive)) });
+  };
   const stop = () => send(`/api/device/drive${status ? `?export=${encodeURIComponent(status.export)}` : ""}`, { method: "DELETE" });
   const erase = async () => {
     if (!status?.drive) return;
@@ -218,7 +223,7 @@ export function DeviceDrive({ initialSource = null }: { initialSource?: string |
               {etaText(status.eta_s)}
             </p>
           ) : null}
-          {status.state === "needs_urls" && status.source === "url" ? (
+          {(status.state === "needs_urls" && status.source === "url") || resume?.by === "script" ? (
             <p className="small">Its link can only be signed again on the owner&apos;s laptop: run scripts/drive-export.ts with --resume {status.export}.</p>
           ) : null}
           {status.problems?.length ? (
@@ -240,6 +245,19 @@ export function DeviceDrive({ initialSource = null }: { initialSource?: string |
                 <Icon name="alert" size={16} />
                 <span>Erase as exFAT</span>
               </button>
+            </div>
+          ) : null}
+          {resume?.by === "card" ? (
+            <div>
+              <button type="button" className="btn btn-primary" onClick={carryOnNow} disabled={busy || !resume.drive || Boolean(reply?.kit)}>
+                <Icon name="play" size={16} />
+                <span>Carry on</span>
+              </button>
+              <p className="field-hint">
+                {resume.drive
+                  ? `Keeps the files already written to ${resume.drive.title} and writes only what is missing or wrong, in the same folder.`
+                  : "Plug the drive back in, or pick one above, to carry on."}
+              </p>
             </div>
           ) : null}
           {active ? (

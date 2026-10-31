@@ -13,6 +13,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import type { DeviceToolResult } from "@/lib/device/client";
+import type { BoardDrive, ExportStatus } from "@/lib/device/drive";
+import { carryOnBody } from "@/lib/device/drive-card";
 import type { DriveKit } from "@/lib/drive/kit";
 import { fakeExtract, fakeFetch, sha, TEST_META, TEST_PIN } from "@/lib/drive/__tests__/fixtures";
 
@@ -310,9 +312,9 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
     assert.ok(!calls.some((c) => c.name === "export_model"));
   });
 
-  it("carries on an export that stopped, on a drive from the list", async () => {
-    current = { export: "exp_00000000abcd", state: "failed", source: "board:support-coach" };
-    const res = await post({ resume: "exp_00000000abcd", drive: "sda", identity: DRIVE.identity });
+  it("carries on an export that stopped, on a drive from the list, from the card's Carry on", async () => {
+    current = { export: "exp_00000000abcd", state: "failed", source: "board:support-coach", drive: DRIVE };
+    const res = await post(carryOnBody(current as unknown as ExportStatus, DRIVE as BoardDrive));
     assert.equal(res.status, 200, await res.clone().text());
     const args = calls.find((c) => c.name === "export_model")!.args as { export: string; drive: string; urls: Record<string, string> };
     assert.deepEqual([args.export, args.drive], ["exp_00000000abcd", "sda"]);
