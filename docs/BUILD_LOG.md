@@ -935,6 +935,15 @@ because the sidebar showed a real account.
   at Q4), admits not knowing 86% (base 15%), makes something up 12% (base 74%). Its Q4_K_M is on writer-1 (16.9 GB); the
   1-bit IQ1_S is due about 20:25, scored about 21:05. Nothing goes through the laptop.
 
+### 19:46 Owner: Gadgets and Models tabs in the sidebar
+
+- Building on tg-nav-tabs (wf_5e1ee206-43e): two sidebar rows and icons, and two public read-only pages.
+  /models: Meta's hosted models from the brief writer's catalog with the gateway's prices, Muse Glimmer, and the lab's
+  tuned models from Lab results. /gadgets: what a gadget is, whether gadgets are on and a board is configured (status
+  words only, never its address or token, no live call on load), gallery products using one, a link to /device for
+  admins, and a note that connecting your own board is coming (wave 3's hardware unit). Review, fix, full suite and
+  screenshots follow.
+
 ## Gaps
 
 What this record doesn't confirm:
