@@ -81,7 +81,7 @@ export function productSafetyIdentifier(productId: string, subject: string): str
 /** Rewrites a Responses JSON body. The input is not changed. `visitorKey` names the person when the body doesn't. */
 export function rewriteResponsesRequest(
   input: Record<string, unknown>,
-  opts: { token: RewriteToken; visitorKey?: string | null },
+  opts: { token: RewriteToken; visitorKey?: string | null; testRun?: boolean },
 ): ResponsesRewrite {
   const refuse = (code: string, message: string): ResponsesRewrite => ({
     json: input,
@@ -93,7 +93,8 @@ export function rewriteResponsesRequest(
   if (input.background !== undefined && input.background !== null && input.background !== false) {
     return refuse("background_unsupported", "Products can't run background responses here yet. Stream it with stream: true instead.");
   }
-  if (hasAgentMarker(token.allowedModels) && (input.model === SPARK_STANDIN || input.model === RETIRED_SPARK)) {
+  // A test build's agent reads made-up data on purpose, so TEST_MODEL may run it. A live agent never runs on Contributor.
+  if (!opts.testRun && hasAgentMarker(token.allowedModels) && (input.model === SPARK_STANDIN || input.model === RETIRED_SPARK)) {
     return refuse(
       "model_not_for_agents",
       `Agents can't run on ${SPARK_STANDIN}: Meta may train on that tier, and agents read other people's pages. Use muse-wonder-1.0 instead.`,

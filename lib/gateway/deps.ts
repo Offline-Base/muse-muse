@@ -1,4 +1,4 @@
-import { env } from "@/lib/env";
+import { env, testModel } from "@/lib/env";
 import type { GatewayDeps } from "@/lib/gateway/handler";
 import { UPSTREAM_BASE_URL } from "@/lib/gateway/policy";
 import {
@@ -34,6 +34,7 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     counterValue,
     fetch: (input, init) => fetch(input, init),
     upstreamKey: () => env.modelApiKey,
+    buildTestModel: testModel(),
     upstreamBaseUrl: UPSTREAM_BASE_URL,
     gatewayUrl: env.gatewayUrl,
     defer,

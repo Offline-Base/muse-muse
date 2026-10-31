@@ -55,6 +55,8 @@ export interface GatewayDeps extends RunCounters {
   /** Used for the upstream call and for asr audioUrl downloads. */
   fetch: typeof fetch;
   upstreamKey(): string;
+  /** TEST_MODEL (lib/env.ts): what a build token's Muse Wonder calls run on instead. Null or unset leaves them alone. */
+  buildTestModel?: string | null;
   upstreamBaseUrl?: string;
   /** Public {PLATFORM_URL}/api/gateway, for error messages that point at /uploads. */
   gatewayUrl: string;
@@ -195,9 +197,18 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
   }
 
   const notes: string[] = [];
+  // Test builds only: a build's own product tests run on the cheap model, whatever the product's code asks for. The
+  // product still names Muse Wonder, so it runs on Muse Wonder once it's live.
+  const testRun = token.scope === "build" && Boolean(deps.buildTestModel);
+  if (testRun && deps.buildTestModel && model === "muse-wonder-1.0" && parsed.kind === "json") {
+    parsed = { ...parsed, json: { ...parsed.json, model: deps.buildTestModel }, model: deps.buildTestModel };
+    model = deps.buildTestModel;
+    rewritten = true;
+    notes.push(`Ran on ${deps.buildTestModel} instead of muse-wonder-1.0: this is a test build.`);
+  }
   if (endpoint === "responses" && parsed.kind === "json") {
     const visitorKey = req.headers.get(VISITOR_HEADER)?.trim().slice(0, 128) || clientIpKey(req.headers.get(CLIENT_IP_HEADER));
-    const rewrite = rewriteResponsesRequest(parsed.json, { token, visitorKey });
+    const rewrite = rewriteResponsesRequest(parsed.json, { token, visitorKey, testRun });
     if (rewrite.refusal) {
       return gatewayError(rewrite.refusal.status, "invalid_request_error", rewrite.refusal.code, rewrite.refusal.message, {
         retry: false,

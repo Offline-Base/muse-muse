@@ -33,6 +33,7 @@ export function fakeGateway(
     counts?: Record<string, number>;
     fetch?: typeof fetch;
     upstreamKey?: string;
+    buildTestModel?: string | null;
   } = {},
 ): FakeGateway {
   const usage: FakeGateway["usage"] = [];
@@ -104,6 +105,7 @@ export function fakeGateway(
       return realFetch(input, init);
     }) as typeof fetch,
     upstreamKey: () => opts.upstreamKey ?? "test-master-key",
+    buildTestModel: opts.buildTestModel,
     gatewayUrl: "https://platform.example/api/gateway",
     defer: (task) => {
       deferred.push(task());

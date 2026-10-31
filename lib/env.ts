@@ -46,8 +46,20 @@ export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
 
 const warnedSpark = new Set<string>();
 
+/**
+ * TEST_MODEL: the cheap model for test and example builds. Only Spark 1.3 Contributor is accepted. Meta may train on that
+ * tier, so it never applies on production, where real people's references and briefs go through. When it's set, the
+ * brief, the build, the judge and a build's own product test calls all run on it. Live products aren't affected.
+ */
+export function testModel(): typeof SPARK_STANDIN | null {
+  if (process.env.TEST_MODEL?.trim() !== SPARK_STANDIN) return null;
+  return process.env.VERCEL_ENV === "production" ? null : SPARK_STANDIN;
+}
+
 /** A model id from the environment, or the fallback. Muse Spark 1.3 becomes Spark 1.3 Contributor, with one warning. */
 function model(name: string, fallback: string): string {
+  const test = testModel();
+  if (test) return test;
   const value = process.env[name]?.trim();
   if (!value) return fallback;
   if (value === RETIRED_SPARK) {

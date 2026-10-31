@@ -841,3 +841,68 @@ test("/v1/responses refuses a multipart body, since its guards read JSON", async
   assert.equal((await send(edit, ["images", "edits"], g)).status, 200, "images/edits still takes multipart");
   assert.equal(g.upstreamCalls.length, 1);
 });
+
+const wonderReply = {
+  id: "resp_t",
+  model: "muse-spark-1.3-contributor",
+  output_text: "hello",
+  usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 0 }, output_tokens: 500 },
+};
+const wonderCall = () => json({ model: "muse-wonder-1.0", input: "hi" });
+const replyFetch = async () => new Response(JSON.stringify(wonderReply), { headers: { "content-type": "application/json" } });
+const sentModel = (g: ReturnType<typeof fakeGateway>) =>
+  (JSON.parse(new TextDecoder().decode(g.upstreamCalls[0].init?.body as Uint8Array)) as { model: string }).model;
+const TEST_MODEL_NAME = "muse-spark-1.3-contributor";
+
+test("in a test build, a build token's Muse Wonder call runs and is metered on the test model, and says so", async () => {
+  const g = fakeGateway({
+    fetch: replyFetch,
+    buildTestModel: TEST_MODEL_NAME,
+    token: { scope: "build", allowedModels: ["muse-wonder-1.0"] },
+  });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), TEST_MODEL_NAME);
+  assert.equal(g.usage[0].items[0].model, TEST_MODEL_NAME);
+  assert.match(res.headers.get("x-musemuse-note") ?? "", /this is a test build/);
+});
+
+test("a live product's Muse Wonder call stays on Muse Wonder when the test model is set", async () => {
+  const g = fakeGateway({
+    fetch: replyFetch,
+    buildTestModel: TEST_MODEL_NAME,
+    token: { scope: "live", allowedModels: ["muse-wonder-1.0"] },
+  });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), "muse-wonder-1.0");
+});
+
+test("a build token stays on Muse Wonder when no test model is set", async () => {
+  const g = fakeGateway({ fetch: replyFetch, token: { scope: "build", allowedModels: ["muse-wonder-1.0"] } });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  await g.settled();
+  assert.equal(sentModel(g), "muse-wonder-1.0");
+});
+
+test("a test build's agent runs on the test model, but a live agent is still refused Contributor", async () => {
+  const agentBuild = fakeGateway({
+    fetch: replyFetch,
+    buildTestModel: TEST_MODEL_NAME,
+    token: { scope: "build", allowedModels: ["muse-wonder-1.0", "agent"] },
+  });
+  const res = await handleGateway(gatewayRequest("responses", wonderCall(), JSON_CT), ["responses"], agentBuild.deps);
+  assert.equal(res.status, 200);
+  await agentBuild.settled();
+  assert.equal(sentModel(agentBuild), TEST_MODEL_NAME);
+
+  const liveAgent = fakeGateway({
+    buildTestModel: TEST_MODEL_NAME,
+    token: { scope: "live", allowedModels: ["muse-spark-1.3", "agent"] },
+  });
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", spark(), JSON_CT), ["responses"], liveAgent.deps));
+  assert.equal(err.code, "model_not_for_agents");
+});
