@@ -175,6 +175,10 @@
   --warn-soft: #fcf0d7;
   --bad: #b42318;
   --bad-soft: #fde8e6;
+  /* Tokens added after the freeze, held at what these parts used before them, in both modes. */
+  --accent-fill: var(--accent);
+  --ok-text: var(--ok);
+  --warn-text: var(--warn);
   --chart-1: #7489f7;
   --chart-2: #f2b97c;
   --chart-3: #5bbfa3;

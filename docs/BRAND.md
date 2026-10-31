@@ -63,12 +63,13 @@ under `@media (prefers-color-scheme: dark)` and `:root[data-theme="dark"]`. Chan
 | `--line-strong` | `rgba(0,0,0,.16)` | `rgba(255,255,255,.2)` | O | Hover on an outlined control |
 | `--panel-line` | `rgba(0,0,0,.05)` | `rgba(255,255,255,.12)` | M | Segmented track. S read `#F2F2F2`, the same on white |
 | `--fg` | `#111112` | `#ffffff` | M | Text and icons |
-| `--fg-2` | `rgba(0,2,7,.68)` | `rgba(242,247,255,.53)` | M | Emphasized secondary. In dark the live variable is dimmer than plain secondary, so dark uses plain secondary |
+| `--fg-2` | `rgba(0,2,7,.68)` | `rgba(242,247,255,.6)` | M, O | Emphasized secondary, and secondary text on a fill (the Concept tag, pills, vibe tags). In dark the live variable is dimmer than plain secondary, so dark is ours: plain secondary was 4.49:1 on `--surface-3`, and `.6` is 5.29:1 |
 | `--muted`, `--chat-muted` | `rgba(0,4,9,.59)` | `rgba(242,247,255,.53)` | M | Secondary. 5.36:1 on white, 5.41:1 on dark |
 | `--faint`, `--chat-faint` | `rgba(0,7,17,.37)` | `rgba(241,246,255,.38)` | M | Chevrons, the Done check. Not for text you need to read |
 | `--chat-placeholder` | `rgba(0,7,17,.37)` | `rgba(241,246,255,.38)` | M | **Owner call:** 2.52:1 on white and 3.09:1 on the dark card, under AA. S's `#878787` is 3.59:1. One token to change |
 | `--accent`, `--accent-text`, `--focus` | `#0064d4` | `#1793ff` | M | Links, focus, progress. 5.57:1 and 5.62:1 |
 | `--accent-ink` | `#ffffff` | `#ffffff` | M | On the accent |
+| `--accent-fill` (new) | `#0064d4` | `#0064d4` | O | A fill under white text or icons: the skip link, the current step's number, done boxes. White on the dark `--accent` is 3.16:1; on this, 5.57:1 |
 | `--accent-soft` | `color-mix(in srgb, #0064d4 9%, white)` | `rgba(23,147,255,.16)` | M, O | Light is the live tint. The live dark mix goes pale, so dark is ours |
 | `--send-from` | `#0064d4` | `#007ffd` | M | The gradient, see below. S read about `#2A62CC` |
 | `--send-to` | `#5b70ff` | `#5b70ff` | M | S read about `#5D6DF5` |
@@ -79,8 +80,9 @@ under `@media (prefers-color-scheme: dark)` and `:root[data-theme="dark"]`. Chan
 | `--chat-segment` | `#ffffff` | `rgba(255,255,255,.12)` | M | The chosen segment |
 | `--chat-label` | `#e7e8eb` | `#2b3037` | S, O | Label on hover over a media card |
 | `--work-from`, `--work-to` | `#6547f5`, `#c15af7` | `#8068f8`, `#cd78f9` | S, O | The working icon. Unchanged |
-| `--ok`, `--ok-soft` | `#008200`, `#22c55e26` | `#07b123`, `#22c55e26` | M | |
-| `--warn`, `--warn-soft` | `#c65323`, `#eab30826` | `#f1916e`, `#fbbf2426` | M | |
+| `--ok`, `--ok-soft` | `#008200`, `#22c55e26` | `#07b123`, `#22c55e26` | M | Icons and dots. In light `--ok` on its tint is 4.41:1, too low for text |
+| `--warn`, `--warn-soft` | `#c65323`, `#eab30826` | `#f1916e`, `#fbbf2426` | M | Icons and dots. In light `--warn` on its tint is 4.09:1 |
+| `--ok-text`, `--warn-text` (new) | `#007000`, `#a8431a` | `--ok`, `--warn` | O | Status text on its own tint: 5.57:1 and 5.47:1 in light, 4.82:1 and 5.52:1 in dark. `lib/__tests__/platform-contrast.test.ts` checks every pair |
 | `--bad`, `--bad-soft` | `#c01f37`, `#fde8e8` | `#fa4758`, `#dc262626` | M | |
 | `--chart-1` to `--chart-6` | as they are | as they are | O | No source. Unchanged |
 | Code block fill | `#f3f4f5` | `#1f1f20` | M | |
@@ -514,7 +516,7 @@ sizes, so these are ours (O):
 |---|---|---|---|
 | `--placeholder` | `rgba(0,7,17,.37)`, 2.52:1 | `--fg-2`, 5.36:1 | AA |
 | Primary button | The gradient, white text 4.03:1 at its end | Flat `#0064d4`, 5.57:1 | AA |
-| `--accent` in dark | `#1793ff`, white text 3.16:1 | `#0064d4` for fills; `--link` and `--focus` stay `#1793ff` | AA |
+| `--accent` in dark | `#1793ff`; fills under white use `--accent-fill`, `#0064d4` | `#0064d4` for fills; `--link` and `--focus` stay `#1793ff` | AA. The platform now does the same |
 | `--hover` in dark | `rgba(255,255,255,.12)` | `.08` | Secondary text on a hovered row was 4.49:1 |
 | `--tinted-fg` in dark | none measured | `#5cadff` | `#1793ff` on the hovered tint is 3.98:1 |
 | AI gradient | Working icon `#6547f5` to `#c15af7` | `#6547f5` to `#9b45f0` | White on `#c15af7` is 3.46:1; on `#9b45f0` 4.66:1 |
@@ -579,7 +581,7 @@ light and dark with the live demo panel open) matched the one taken before the c
 
 | # | Gap | Status |
 |---|---|---|
-| 1 | Canvas and color tokens | Done, light and both dark blocks. `themeColor` is `#ffffff` and `#181819`. New tokens: `--hover-2`, `--glass`, `--gradient`, `--shadow-glass`, `--overlay`, `--code-bg`, `--scrim`, `--ease` and the body type tokens. The docs freeze is in `app/docs/docs.css`, "The look before docs/BRAND.md" |
+| 1 | Canvas and color tokens | Done, light and both dark blocks. `themeColor` is `#ffffff` and `#181819`. New tokens: `--hover-2`, `--glass`, `--gradient`, `--shadow-glass`, `--overlay`, `--code-bg`, `--scrim`, `--ease` and the body type tokens, then, after review, `--accent-fill`, `--ok-text` and `--warn-text` for AA. The docs freeze is in `app/docs/docs.css`, "The look before docs/BRAND.md", and holds those three at what the docs used before |
 | 2 | Sidebar | Done. Rows stay 40 px in the phone sheet, for fingers |
 | 3 | Make page | Done. Centered headline "What should Muse make?", composer, then the examples. `SetupPanel` is a folded list of facts |
 | 4 | Font and type scale | Done. Inter is vendored at `app/fonts/` and set on `<html>` |

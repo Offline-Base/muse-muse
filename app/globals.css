@@ -20,6 +20,8 @@
   --accent-text: #0064d4;
   --accent-ink: #ffffff;
   --accent-soft: color-mix(in srgb, #0064d4 9%, white);
+  /* A fill under white text or icons. The same in dark, where white on #1793ff is 3.16:1. */
+  --accent-fill: #0064d4;
   --nav-active: #f2f2f2;
   --bubble: #f3f4f5;
   --table-head: transparent;
@@ -33,6 +35,9 @@
   --ok-soft: #22c55e26;
   --warn: #c65323;
   --warn-soft: #eab30826;
+  /* Status text on its own soft fill. The measured --ok and --warn are 4.41:1 and 4.09:1 there, so they stay for icons. */
+  --ok-text: #007000;
+  --warn-text: #a8431a;
   --bad: #c01f37;
   --bad-soft: #fde8e8;
   --chart-1: #7489f7;
@@ -102,7 +107,7 @@
     --line-strong: rgba(255, 255, 255, 0.2);
     --panel-line: rgba(255, 255, 255, 0.12);
     --fg: #ffffff;
-    --fg-2: rgba(242, 247, 255, 0.53);
+    --fg-2: rgba(242, 247, 255, 0.6);
     --muted: rgba(242, 247, 255, 0.53);
     --faint: rgba(241, 246, 255, 0.38);
     --accent: #1793ff;
@@ -123,6 +128,8 @@
     --ok-soft: #22c55e26;
     --warn: #f1916e;
     --warn-soft: #fbbf2426;
+    --ok-text: var(--ok);
+    --warn-text: var(--warn);
     --bad: #fa4758;
     --bad-soft: #dc262626;
     --chart-1: #8293f8;
@@ -162,7 +169,7 @@
   --line-strong: rgba(255, 255, 255, 0.2);
   --panel-line: rgba(255, 255, 255, 0.12);
   --fg: #ffffff;
-  --fg-2: rgba(242, 247, 255, 0.53);
+  --fg-2: rgba(242, 247, 255, 0.6);
   --muted: rgba(242, 247, 255, 0.53);
   --faint: rgba(241, 246, 255, 0.38);
   --accent: #1793ff;
@@ -183,6 +190,8 @@
   --ok-soft: #22c55e26;
   --warn: #f1916e;
   --warn-soft: #fbbf2426;
+  --ok-text: var(--ok);
+  --warn-text: var(--warn);
   --bad: #fa4758;
   --bad-soft: #dc262626;
   --chart-1: #8293f8;
@@ -310,7 +319,7 @@ pre {
   z-index: 100;
   padding: 10px 16px;
   border-radius: var(--radius-input);
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
   font-weight: 500;
   text-decoration: none;
@@ -404,7 +413,7 @@ pre {
   padding: 2px 7px;
   border-radius: var(--pill);
   background: var(--surface-3);
-  color: var(--muted);
+  color: var(--fg-2);
 }
 
 .disclaimer {
@@ -845,12 +854,12 @@ pre {
 
 .pill-live {
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .pill-partial {
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .pill-failed {
@@ -2750,8 +2759,8 @@ pre {
 }
 
 .todo-completed .todo-box {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
 }
 
 .todo-completed .todo-text {
@@ -3227,8 +3236,8 @@ pre {
 }
 
 .rail-done .rail-dot {
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
 }
 
 .rail-active .rail-dot {
@@ -4383,7 +4392,7 @@ a.dash-card:hover {
 
 .train-callout-warn {
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
   font-size: 14px;
 }
 
@@ -5123,7 +5132,7 @@ a.dash-card:hover {
   padding: 1px 8px;
   border-radius: var(--pill);
   background: var(--surface-3);
-  color: var(--muted);
+  color: var(--fg-2);
   font-size: 11.5px;
   font-weight: 600;
   line-height: 1.6;
@@ -5139,7 +5148,7 @@ a.dash-card:hover {
 .vibe-tag-ask {
   margin-left: 0;
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .vibe-fields {
@@ -5239,7 +5248,7 @@ a.dash-card:hover {
   padding: 10px 14px;
   border-radius: 12px;
   background: var(--warn-soft);
-  color: var(--warn);
+  color: var(--warn-text);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -5424,7 +5433,7 @@ a.dash-card:hover {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
 }
 
@@ -5493,13 +5502,13 @@ a.dash-card:hover {
 }
 
 .vibe-step-current .vibe-step-num {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--accent-ink);
 }
 
 .vibe-step-done .vibe-step-num {
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .vibe-step-todo .vibe-step-title {
@@ -5643,7 +5652,7 @@ a.dash-card:hover {
   padding: 12px 14px;
   border-radius: 12px;
   background: var(--ok-soft);
-  color: var(--ok);
+  color: var(--ok-text);
   font-weight: 500;
 }
 
