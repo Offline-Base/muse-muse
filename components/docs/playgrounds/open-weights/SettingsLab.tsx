@@ -10,6 +10,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { TabPanel, Tabs } from "@/components/docs/kit/Tabs";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { tokenUsage } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -236,9 +237,9 @@ function StrengthCompare() {
                 <strong>{latencyLabel(runner.result?.elapsedMs ?? 0)}</strong>
               </span>
             </p>
-            <p className="pg-stream-text" style={{ fontSize: 14 }}>
-              {reply.text || "(no answer text: the budget ran out during reasoning)"}
-            </p>
+            <div style={{ fontSize: 14 }}>
+              <MarkdownText text={reply.text || "(no answer text: the budget ran out during reasoning)"} />
+            </div>
             <p className="pg-small pg-muted">
               <UsageLine model={runner.result?.model ?? model} usage={reply.usage} />
             </p>

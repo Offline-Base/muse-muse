@@ -13,6 +13,7 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "sam-3.1": ".agents/skills/meta-sam",
   "muse-voice-transcribe-1.0": ".agents/skills/meta-voice",
   "muse-glimmer": ".agents/skills/meta-glimmer",
+  "muse-gadget": ".agents/skills/muse-gadget",
 };
 
 const FIT_MEANING: Record<RebuildTarget["rebuild"]["fit"], string> = {

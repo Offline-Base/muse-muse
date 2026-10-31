@@ -31,3 +31,4 @@ export {
 export { Tabs, TabPanel, type TabItem } from "@/components/docs/kit/Tabs";
 export { FileSlotInput, type PickedFile } from "@/components/docs/kit/FileSlotInput";
 export { DocsPageProvider, useDocsPage, type DocsPageInfo, type RecordedRequest } from "@/components/docs/kit/DocsPageContext";
+export { MarkdownText } from "@/components/markdown/MarkdownText";

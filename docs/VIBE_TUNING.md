@@ -35,7 +35,7 @@ The owner answered the open questions on Oct 28. The rest are the research's rec
 | 6 | GGUF sizes | Q3_K_M, Q4_K_M and Q6_K, 53.5 GB a model on the Hub. v1 has no Q8_0, IQ, MLX or vision file. At 4 runs a day that is about 6.4 TB a month, so watch the organization's storage. |
 | 7 | Hosted inference | **v1:** today's glimmer-serve. A run's owner starts it for 30 minutes, on its own GPU slot (`INFER_MAX_ACTIVE=1`) and a $15 daily cap (`INFER_DAILY_USD`). **v2:** one shared vLLM server, after a spike. |
 | 8 | Drive orders | **An order request, no payment on the site** (the owner's answer). The request saves the model, the build and the shipping address; the owner emails an invoice and moves the order along from an admin page. A returning buyer orders with one click, from details their browser remembers if they ask it to. The page shows `DRIVE_PRICE_TEXT` when it is set (for example "$59 with US shipping, invoiced by email"), and otherwise "We'll email you a quote before anything is charged". |
-| 9 | Payment account | None in v1. A Stripe checkout can come later on the same order rows. |
+| 9 | Payment account | **Stripe Checkout, added Oct 30** (the owner's answer), on the same order rows. Card orders while `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `DRIVE_PRICE_CENTS` are set; the emailed invoice otherwise. A live key also needs `DRIVE_LIVE_SALES=1`. See "Paying by card" in Feature 6. |
 | 10 | Fulfillment | The owner flashes the drives from an admin queue with a bench script. No vendor offers a different 54 GB image per single order at a sane price. |
 | 11 | Signing the drive's launchers | Unsigned while the owner ships drives to people they know. Before selling to strangers: an Apple Developer ID and Windows code signing. |
 | 12 | Keeping what people typed | The plain words and the hashed client keys go after 30 days. The spec stays with the run. A drive request's name, email and address go 60 days after delivery or cancellation. |
@@ -822,6 +822,24 @@ Files copied from a USB stick carry no quarantine or Mark of the Web (Base Drive
 - the bench: `serial`, `verify_result` (PASS or FAIL), `manifest_sha256`;
 - shipping: `carrier`, `tracking`;
 - a timestamp for every status.
+
+### Paying by card (added Oct 30)
+
+With Stripe set up, the order is paid when it's placed instead of invoiced. The invoice flow stays for sites without it.
+
+| | |
+|---|---|
+| **When** | `env.driveCheckout`: `DRIVE_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `DRIVE_PRICE_CENTS` (US cents, US shipping included) are all set, and the key is a test key or `DRIVE_LIVE_SALES=1`. Each order keeps how it is paid (`payment`: `card` or `invoice`), so turning Stripe on or off never changes an order already placed. |
+| **Terms** | `DRIVE_CARD_TERMS` and `DRIVE_CARD_TERMS_VERSION` (`lib/drive/terms.ts`): paid on Stripe's page, cancel for a full refund until flashing, unpaid orders cancelled after 7 days. |
+| **The buyer** | The form says "Continue to payment ($59)". The request saves the order as `requested`, then `POST /api/drive/orders/{id}/checkout` (the link's cookie only) answers with a Checkout Session URL and the browser goes there. Stripe returns them to `/orders/{id}?session={CHECKOUT_SESSION_ID}`, which reads the session and settles it, so the page shows Paid before the webhook lands. The order page shows the order's link (rebuilt from the browser's own cookie), since a buyer who went straight to Stripe never saw it. While unpaid, the page has "Pay $59 by card". |
+| **The session** | One line item in USD, card only (so paid means paid, with no bank transfer to wait for), the buyer's email for Stripe's receipt, and the order id in `client_reference_id` and in the session's and the payment's metadata. Never the address. The order's open session is reused, and a new one is idempotent on the previous session's id, so double clicks make one. |
+| **The webhook** | `POST /api/drive/stripe`, for `checkout.session.completed` and `checkout.session.async_payment_succeeded`. Only a body signed with `STRIPE_WEBHOOK_SECRET` within 5 minutes counts. A paid session moves its card order from `requested` to `paid` in one guarded update (the `checkout` actor), keeping the payment's id in `invoice_ref` and "$59 by card" in `amount_text`, and `DRIVE_NOTIFY_URL` gets one line without the buyer's details. A replay changes nothing. A payment for an order already paid by another session, or for a cancelled order, is refunded at once. A failure answers 500 so Stripe retries. |
+| **Refunds** | Cancelling a paid card order (the buyer until flashing, an admin until shipping) refunds it in full on Stripe, keyed on the payment so it happens once, and keeps `refund_ref`. A refund that fails leaves a note on the order for the admin queue and never undoes the cancel. |
+| **The admin** | Card orders never show Invoiced or Paid; the route refuses them (409). "To invoice" counts invoice orders only, and the queue shows which orders are card ones, refunds sent, and refunds that failed. The page names any Stripe setting that's missing, never its value. |
+| **The purge** | A card order still unpaid after 7 days (`CARD_UNPAID_DAYS`) is cancelled by `checkout`, so its buyer's details go 60 days later as any cancelled order's do. |
+| **Not yet** | Sales tax (Stripe Tax isn't on), other currencies, shipping outside the US, and the counsel, tax and insurance review before live sales. |
+
+Tests: `lib/drive/__tests__/checkout.test.ts`, with a fake Stripe.
 
 ### The admin queue (`/fine-tuning/orders`, `requireAdmin`)
 

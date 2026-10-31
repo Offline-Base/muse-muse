@@ -241,7 +241,7 @@ describe("ResponseView", () => {
     assert.match(html, /69 in · 163 out · under \$0\.0001 est\./);
     assert.match(html, /max_output_tokens set to 16,384 for the live demo\./);
     assert.match(html, /role="tab"[^>]*aria-selected="true"[^>]*>Output<\/button>.*>JSON<\/button>.*>Headers<span class="pg-tab-count">3<\/span><\/button>/);
-    assert.match(html, /The capital of France is \*\*Paris\*\*\./);
+    assert.match(html, /The capital of France is <strong>Paris<\/strong>\./);
   });
 
   it("explains failures, runs and stops", () => {
@@ -283,7 +283,7 @@ describe("StreamView and ReplyView", () => {
     const html = clean(render(C(kit.ReplyView), { reply }));
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt; Leclerc won\./);
     assert.doesNotMatch(html, /<script>/);
-    assert.match(html, /<summary>Reasoning summary<\/summary><p class="pg-reasoning-text">Checked two sources\.<\/p>/);
+    assert.match(html, /<summary>Reasoning summary<\/summary><div class="md pg-reasoning-text"><p>Checked two sources\.<\/p><\/div>/);
     assert.match(html, /Web search: <q>F1 winner<\/q>/);
     assert.match(html, /<a href="https:\/\/en\.wikipedia\.org\/wiki\/2026_British_Grand_Prix" target="_blank" rel="noopener noreferrer">2026 British Grand Prix<\/a><span class="pg-citation-host">en\.wikipedia\.org<\/span>/);
     assert.match(html, /<code class="pg-toolcall-name">get_weather<\/code>/);
@@ -292,7 +292,7 @@ describe("StreamView and ReplyView", () => {
 
   it("shows a caret and a wait note while the first words are coming", () => {
     const html = render(C(kit.StreamView), { text: "", running: true });
-    assert.match(html, /aria-busy="true"><span class="pg-caret" aria-hidden="true"><\/span>/);
+    assert.match(html, /aria-busy="true"><div class="md pg-stream-text" data-streaming="true"><p><\/p><\/div>/);
     assert.match(html, /The model reasons before it writes/);
     assert.match(render(C(kit.StreamView), { text: "", running: false }), /The answer appears here\./);
   });

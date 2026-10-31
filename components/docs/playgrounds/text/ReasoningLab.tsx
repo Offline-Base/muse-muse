@@ -12,6 +12,7 @@ import { latencyLabel, statusText } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError, DocsResult } from "@/lib/docs/client/api";
 import { estimateCost, formatUsd } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, EFFORT_LABELS } from "@/lib/docs/client/models";
@@ -514,9 +515,7 @@ function EffortRow({ effort, slot, onFollow, selected }: { effort: EffortChoice;
               <div className="pg-reasoning">
                 <p className="pg-section-label">Reasoning summary</p>
                 {r.summary.map((s, i) => (
-                  <p key={i} className="pg-reasoning-text">
-                    {s}
-                  </p>
+                  <MarkdownText key={i} className="pg-reasoning-text" text={s} />
                 ))}
               </div>
             ) : slot.protocol === "responses" && slot.body.reasoning && (slot.body.reasoning as { summary?: unknown }).summary ? (

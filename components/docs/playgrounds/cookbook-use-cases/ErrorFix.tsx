@@ -6,6 +6,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { EffortSelect, TextArea, Toggle } from "@/components/docs/kit/Field";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { FilePicker } from "@/components/docs/media/FilePicker";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { fileToDataUrl } from "@/lib/docs/media/base64";
 import type { PickedMedia } from "@/lib/docs/media/prepare";
 import type { Effort } from "@/lib/docs/client/models";
@@ -228,7 +229,7 @@ export function ErrorFix({ sampleId = "error-screenshot", prompt: initialPrompt 
           </button>
           {smoke.result?.json ? <UsageLine model={smoke.result.model ?? model} usage={(smoke.result.json as Json).usage} /> : null}
         </div>
-        {smokeText ? <p className={styles.answer}>{smokeText}</p> : null}
+        {smokeText ? <MarkdownText className={styles.answer} text={smokeText} /> : null}
         <ErrorBox error={smoke.error} />
       </div>
 

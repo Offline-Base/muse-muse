@@ -22,6 +22,7 @@ import {
   type RetryEvent,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/retry";
 import { Advanced, DemoTabs, Note, SplitPills, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -237,7 +238,12 @@ function RetryLoop() {
         <div className="pg-final" role="status">
           <p className="pg-section-label">Result</p>
           <p>{summary}</p>
-          {answer ? <p className="pg-muted">The model said: {answer.trim()}</p> : null}
+          {answer ? (
+            <div className="pg-muted">
+              <p>The model said:</p>
+              <MarkdownText text={answer.trim()} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       {err ? (

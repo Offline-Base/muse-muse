@@ -8,6 +8,7 @@ import { FilePicker } from "@/components/docs/media/FilePicker";
 import { ImageOutput } from "@/components/docs/media/ImageOutput";
 import { imageCallsOf, shortId, statelessTurnBody } from "@/components/docs/playgrounds/media/bodies";
 import styles from "@/components/docs/playgrounds/media/demos.module.css";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError } from "@/lib/docs/client/api";
 import { base64ImageMime, fileToDataUrl } from "@/lib/docs/media/base64";
 import { reasoningOfResponse } from "@/lib/docs/media/images";
@@ -166,7 +167,7 @@ export function StatelessImageTurns({
               {current.reasoning ? (
                 <details className="pg-reasoning" open>
                   <summary>What Muse Image did (reasoning summary)</summary>
-                  <p className="pg-reasoning-text">{current.reasoning}</p>
+                  <MarkdownText className="pg-reasoning-text" text={current.reasoning} />
                 </details>
               ) : null}
               <ImageOutput images={[{ b64: current.b64, mime: base64ImageMime(current.b64), label: `Turn ${at + 1}` }]} name="muse-image-turn" />

@@ -9,14 +9,16 @@ import { Icon } from "@/components/icons";
  * /api/drive/orders/{id}/cancel with this browser's order cookie and reloads the page's data. The route says no once
  * the bench has started writing the drive.
  */
-export function CancelOrder({ orderId, paid }: { orderId: string; paid: boolean }) {
+export function CancelOrder({ orderId, paid, card = false }: { orderId: string; paid: boolean; card?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function cancel() {
     const ask = paid
-      ? "Cancel this order? We won't write the drive, and we'll refund what you paid."
+      ? card
+        ? "Cancel this order? We won't write the drive, and we refund your card in full right away."
+        : "Cancel this order? We won't write the drive, and we'll refund what you paid."
       : "Cancel this order? Nothing was charged, and we won't write the drive.";
     if (busy || !window.confirm(ask)) return;
     setBusy(true);
@@ -26,7 +28,11 @@ export function CancelOrder({ orderId, paid }: { orderId: string; paid: boolean 
       if (res.ok) {
         router.refresh();
       } else if (res.status === 409) {
-        setError("It's too late to cancel: we've started writing your drive. Reply to the invoice email if something is wrong.");
+        setError(
+          card
+            ? "It's too late to cancel: we've started writing your drive. Write to us if something is wrong."
+            : "It's too late to cancel: we've started writing your drive. Reply to the invoice email if something is wrong.",
+        );
       } else {
         setError("Couldn't cancel it just now. Try again in a minute.");
       }

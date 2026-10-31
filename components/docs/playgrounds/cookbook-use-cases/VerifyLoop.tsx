@@ -5,6 +5,7 @@ import { CodeView, ErrorBox, ModelSelect, RunButton, DEFAULT_TEXT_MODEL } from "
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { EffortSelect, TextArea, Toggle } from "@/components/docs/kit/Field";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult, SseEvent } from "@/lib/docs/client/api";
 import { formatUsd } from "@/lib/docs/client/cost";
 import type { Effort } from "@/lib/docs/client/models";
@@ -358,7 +359,7 @@ export function VerifyLoop({ kind, effort: initialEffort = "medium" }: VerifyLoo
           {r.review ? (
             <>
               <p className="pg-section-label">{i === 0 ? "The model's notes" : "What the model saw and fixed"}</p>
-              <p className={styles.answer}>{r.review}</p>
+              <MarkdownText className={styles.answer} text={r.review} />
             </>
           ) : null}
           {r.continued && !r.cutOff ? <p className="pg-hint">The reply hit the 16,384-token output limit mid-file; one Continue on the same chain finished it.</p> : null}

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, ErrorBox, Field, ModelSelect, PresetPills, RunButton, Segmented, Tabs, TextArea, TextInput, Toggle, UsageLine, isAborted, useDocsRun } from "@/components/docs/kit";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult } from "@/lib/docs/client/api";
 import { estimateCost, formatUsd, tokenUsage } from "@/lib/docs/client/cost";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -437,7 +438,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
                         {r.state === "running" ? "Running" : r.state === "done" ? "Done" : r.state === "error" ? "Failed" : "Waiting"}
                       </Chip>
                     </div>
-                    <div className={styles.msgAssistant}>{textOf(r.result) || (r.state === "running" ? "Inspecting..." : "")}</div>
+                    <MarkdownText className={styles.msgAssistant} text={textOf(r.result) || (r.state === "running" ? "Inspecting..." : "")} />
                     <p className="pg-small">
                       <UsageLine model={r.result?.model ?? model} usage={(r.result?.json as { usage?: unknown } | null)?.usage ?? null} />
                     </p>
@@ -451,7 +452,7 @@ export function WorkflowPlanner({ code: startCode }: WorkflowPlannerProps) {
                     {synth.state === "running" ? "Running" : synth.state === "done" ? "Done" : synth.state === "error" ? "Failed" : live === "children" ? "Waits for every child" : "Waiting"}
                   </Chip>
                 </div>
-                <div className={styles.msgAssistant}>{textOf(synth.result)}</div>
+                <MarkdownText className={styles.msgAssistant} text={textOf(synth.result)} />
                 <p className="pg-small">
                   <UsageLine model={synth.result?.model ?? model} usage={(synth.result?.json as { usage?: unknown } | null)?.usage ?? null} />
                 </p>

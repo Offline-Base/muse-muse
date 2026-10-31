@@ -1,6 +1,6 @@
 import { referenceParts, textPart, type ContentPart } from "@/lib/brief/media";
 import { applyRebuildFit, briefProblems, normalizeRawBrief, patchBrief } from "@/lib/brief/normalize";
-import { type Brief, NewBriefSchema } from "@/lib/brief/schema";
+import { type Brief, NewBriefSchema, NewBriefSchemaNoGadget } from "@/lib/brief/schema";
 import { respondStructured, StructuredOutputError } from "@/lib/brief/structured";
 import { env } from "@/lib/env";
 import { metaPlatform } from "@/lib/meta/platform";
@@ -60,7 +60,7 @@ export async function writeBrief(input: BriefInput): Promise<BriefResult> {
     instructions: briefInstructions(),
     content,
     sources: prepared.sources,
-    schema: NewBriefSchema,
+    schema: env.gadgetsEnabled ? NewBriefSchema : NewBriefSchemaNoGadget,
     schemaName: "muse_brief",
     effort: "medium",
     normalize: (raw) => normalizeRawBrief(raw, references),

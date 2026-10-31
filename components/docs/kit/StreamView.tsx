@@ -1,10 +1,11 @@
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { EventLogEntry } from "@/lib/docs/client/events";
 import type { Citation, Collected, GeneratedImage, SearchCall, ToolCall } from "@/lib/docs/client/stream";
 
 /**
  * How a model's reply reads in the playgrounds, streaming or done: the reasoning summary (folded once the answer
- * starts), the text as it arrives with a caret, citations as numbered sources, web searches, tool calls with their
- * arguments, generated images, and the event log. Text is shown as plain text, never as HTML.
+ * starts), the text as it arrives with a caret, as Markdown (MarkdownText, which never injects HTML), citations as
+ * numbered sources, web searches, tool calls with their arguments, generated images, and the event log.
  */
 
 export function StreamView({
@@ -29,14 +30,13 @@ export function StreamView({
       {reasoning ? (
         <details className="pg-reasoning" open={running && !text}>
           <summary>Reasoning summary</summary>
-          <p className="pg-reasoning-text">{reasoning}</p>
+          <MarkdownText className="pg-reasoning-text" text={reasoning} />
         </details>
       ) : null}
       {text || running ? (
         // aria-busy holds the announcement until the reply is whole, so a screen reader reads it once, not per token.
-        <div className="pg-stream-text" aria-live="polite" aria-busy={running || undefined}>
-          {text}
-          {running ? <span className="pg-caret" aria-hidden /> : null}
+        <div aria-live="polite" aria-busy={running || undefined}>
+          <MarkdownText className="pg-stream-text" text={text} streaming={running} />
         </div>
       ) : (
         <p className="pg-empty">{placeholder}</p>

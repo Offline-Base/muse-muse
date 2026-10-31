@@ -3289,6 +3289,33 @@ a.dash-card:hover {
   object-fit: cover;
 }
 
+.ex-grid > li {
+  position: relative;
+}
+
+.ex-camera {
+  position: absolute;
+  right: 10px;
+  top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: var(--pill);
+  background: rgba(255, 255, 255, 0.94);
+  color: #111112;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.ex-camera:hover:not(:disabled) {
+  background: #ffffff;
+}
+
 .ex-tag {
   position: absolute;
   left: 10px;
@@ -4981,3 +5008,425 @@ a.dash-card:hover {
   flex: none;
   color: var(--muted);
 }
+
+/* What a docs page added to a muse (lib/docs/build-note), folded under the reader's own words. */
+.bubble-context {
+  max-width: min(100%, 600px);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.bubble-context summary {
+  cursor: pointer;
+  text-align: right;
+}
+
+.bubble-context p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* A model's reply as Markdown (components/markdown/MarkdownText), anywhere on the platform. */
+div.md {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+div.md.md-plain {
+  white-space: pre-wrap;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md .md-code,
+.md .md-table {
+  margin: 0 0 0.75em;
+}
+
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 1.1em 0 0.4em;
+  color: var(--fg);
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.md h3 {
+  font-size: 1.2em;
+}
+
+.md h4 {
+  font-size: 1.08em;
+}
+
+.md h5,
+.md h6 {
+  font-size: 1em;
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+
+.md ul {
+  list-style: disc;
+}
+
+.md ol {
+  list-style: decimal;
+}
+
+.md li + li {
+  margin-top: 0.25em;
+}
+
+.md li > ul,
+.md li > ol,
+.md li > p {
+  margin: 0.25em 0 0;
+}
+
+.md li:has(> .md-task) {
+  margin-left: -1.4em;
+  list-style: none;
+}
+
+.md-task {
+  margin: 0 0.4em 0 0;
+  vertical-align: -1px;
+}
+
+.md a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md code {
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--surface-3);
+  font-family: var(--mono);
+  font-size: 0.88em;
+  font-style: normal;
+}
+
+.md blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.md hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.md-code {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-style: normal;
+}
+
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 2px 4px 2px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.md-code pre {
+  margin: 0;
+  max-height: 420px;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.md-code pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.md-table {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.md-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+  font-style: normal;
+}
+
+.md-table th,
+.md-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+
+.md-table th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+
+.md-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.md-raw {
+  white-space: pre-wrap;
+}
+
+/* The caret follows the last words of a reply still arriving. */
+.md[data-streaming] > p:last-child::after,
+.md[data-streaming] > :is(h3, h4, h5, h6):last-child::after,
+.md[data-streaming] > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  border-radius: 1px;
+  background: var(--fg);
+  vertical-align: text-bottom;
+  animation: md-caret 1s steps(2, start) infinite;
+}
+
+@keyframes md-caret {
+  to {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md[data-streaming] > p:last-child::after,
+  .md[data-streaming] > :is(h3, h4, h5, h6):last-child::after,
+  .md[data-streaming] > :is(ul, ol):last-child > li:last-child::after {
+    animation: none;
+  }
+}
+
+/* Voice input (components/voice): the mic beside the main boxes, and the one that follows every other text field. */
+.voice-input {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.voice-input-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.voice-input-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+
+.voice-input-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.voice-input-btn .spinner {
+  width: 15px;
+  height: 15px;
+}
+
+.voice-input.is-recording .voice-input-btn {
+  padding: 0 10px;
+  background: #d93025;
+  color: #ffffff;
+}
+
+.voice-input.is-recording .voice-input-btn:hover {
+  background: #bb2a20;
+  color: #ffffff;
+}
+
+.voice-input-stop {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: voice-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-input-stop {
+    animation: none;
+  }
+}
+
+.voice-input-error {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 2;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+}
+
+.voice-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  visibility: hidden;
+}
+
+.voice-layer .voice-input-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.voice-layer .is-recording .voice-input-btn {
+  padding: 0 9px;
+  background: #d93025;
+  box-shadow: none;
+}
+
+@media print {
+  .voice-layer {
+    display: none;
+  }
+}
+
+/* Taking a photo (components/camera/CameraCapture). */
+.camera {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-pop);
+}
+
+.camera::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+
+.camera-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+}
+
+.camera-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.camera-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.camera-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  min-height: 240px;
+  border-radius: 12px;
+  background: #111112;
+}
+
+.camera-stage video,
+.camera-stage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 60dvh;
+  object-fit: contain;
+}
+
+.camera-wait,
+.camera-error {
+  position: absolute;
+  inset: auto 16px;
+  margin: 0;
+  color: #ffffff;
+  font-size: 14px;
+  text-align: center;
+}
+
+.camera-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+

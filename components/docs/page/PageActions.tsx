@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useDocsPage, type DocsPageInfo } from "@/components/docs/kit/DocsPageContext";
+import { Icon } from "@/components/icons";
 import { copyText } from "@/components/docs/page/clipboard";
 import { CheckIcon, ChevronDownIcon, CopyIcon, ExternalIcon, SparkIcon } from "@/components/docs/page/icons";
 import { DISCLAIMER } from "@/components/shell/disclaimer";
@@ -56,7 +57,8 @@ const AGENT_IDS = CODING_AGENTS.map((a) => a.id);
 const LANGUAGE_IDS = PROMPT_LANGUAGES.map((l) => l.id);
 
 /**
- * What Muse Muse adds to a docs page: "Try it live" (opens the demo panel), "Copy prompt for your coding agent" (a
+ * What Muse Muse adds to a docs page: "Try it live" (opens the demo panel), "Ask Muse Muse to build" (opens
+ * BuildWithThis, a build that starts from this page), "Copy prompt for your coding agent" (a
  * prompt built by lib/docs/agent-prompt from the page's agentPrompt, with a menu to pick the agent, the language and
  * whether to include the request the reader just ran), "Copy page" (the page's Markdown from /docs/md/<slug>), and
  * "View on dev.meta.ai". `rail` stacks them under "On this page" on wide screens, with the concept disclaimer;
@@ -71,7 +73,7 @@ export function PageActions({
   spec: AgentPromptSpec | null;
   variant: "rail" | "inline";
 }) {
-  const { lastRequest, setTryOpen } = useDocsPage();
+  const { lastRequest, setTryOpen, setBuildOpen } = useDocsPage();
   const [menuUp, setMenuUp] = useState(false);
   const [agent, setAgent] = useStoredChoice<CodingAgent>("docs:prompt-agent", "claude-code", AGENT_IDS);
   const [language, setLanguage] = useStoredChoice<PromptLanguage>("docs:prompt-language", "python", LANGUAGE_IDS);
@@ -132,6 +134,10 @@ export function PageActions({
       <button type="button" className="docs-btn docs-btn-primary docs-try-open" onClick={() => setTryOpen(true)}>
         <SparkIcon size={16} />
         <span>Try it live</span>
+      </button>
+      <button type="button" className="docs-btn docs-btn-secondary" onClick={() => setBuildOpen(true)} title="Ask Muse Muse to build you something with this">
+        <Icon name="rocket" size={16} />
+        <span>Ask Muse Muse to build</span>
       </button>
       <div className="docs-split" ref={wrap}>
         <button type="button" className="docs-btn docs-btn-secondary docs-split-main" onClick={copyPrompt} title="Copy prompt for your coding agent">

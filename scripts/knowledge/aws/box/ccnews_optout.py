@@ -5,7 +5,7 @@ a table of which domains opt out of AI training to knowledge/news/ccnews-optout/
 
 Excluded domains must not reach training. `excluded` fails closed: a whole-site block of a named crawler, ai-train=no,
 train-ai=n, a declared RSL license, a TDMRep reservation, or a robots.txt we could not read (RFC 9309 treats a server
-error as a full disallow; a 401 or 403 is treated as a block too). `excluded_reasons` says which, so a review can relax
+error as a full disallow; a 401, 403 or 429 is treated as a block too). `excluded_reasons` says which, so a review can relax
 any of them. A partial block is not an exclusion: `partial_block_agents` names the agents and `robots_txt` keeps the
 text, so the page-level test can run later. Progress is saved in parts, so a re-run carries on.
 """
@@ -37,6 +37,7 @@ USER_AGENT = "MuseMuse-knowledge/0.1 (https://offlinebase.com)"
 AGENTS = ["CCBot", "GPTBot", "Google-Extended", "ClaudeBot", "Applebot-Extended", "Meta-ExternalAgent", "Bytespider"]
 MAX_BYTES = 512 * 1024
 TIMEOUT = 15
+READ_SECONDS = 30
 THREADS = 200
 PART_SIZE = 5000
 SHORT_SECOND_LEVEL = {"co", "com", "org", "net", "ac", "gov", "edu", "ne", "or", "go"}
@@ -51,12 +52,29 @@ columns += [("partial_block_agents", pa.string()), ("content_signal_no", pa.bool
 SCHEMA = pa.schema(columns)
 
 
+class Follow308(urllib.request.HTTPRedirectHandler):
+    """Python 3.9 doesn't follow 308 redirects by itself."""
+
+    def http_error_308(self, req, fp, code, msg, headers):
+        return self.http_error_302(req, fp, 307, msg, headers)
+
+
+OPENER = urllib.request.build_opener(Follow308, urllib.request.HTTPSHandler(context=TLS))
+
+
 def get(url):
-    """(status, text, error). Status is None when the server could not be reached at all."""
+    """(status, text, error). Status is None when the server could not be reached at all. A server sending one byte at a
+    time gets READ_SECONDS, then whatever it has sent."""
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "text/plain,application/json,*/*"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT, context=TLS) as r:
-            return r.status, r.read(MAX_BYTES).decode("utf8", "replace"), None
+        with OPENER.open(req, timeout=TIMEOUT) as r:
+            started, body = time.time(), b""
+            while len(body) < MAX_BYTES and time.time() - started < READ_SECONDS:
+                chunk = r.read1(65536)
+                if not chunk:
+                    break
+                body += chunk
+            return r.status, body[:MAX_BYTES].decode("utf8", "replace"), None
     except urllib.error.HTTPError as err:
         return err.code, "", None
     except (urllib.error.URLError, socket.timeout, TimeoutError, OSError, ValueError, Exception) as err:
@@ -136,7 +154,7 @@ def check(domain, articles):
         reasons.append("rsl")
     if status is None or status >= 500:
         reasons.append("robots-unreachable")
-    elif status in (401, 403):
+    elif status in (401, 403, 429):
         reasons.append("robots-forbidden")
     tdm_status, tdm_text, _ = get(f"https://{domain}/.well-known/tdmrep.json")
     row["tdmrep_status"], row["tdmrep_reserved"] = tdm_status, tdm_status == 200 and tdm_reserved(tdm_text)

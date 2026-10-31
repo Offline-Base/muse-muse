@@ -60,6 +60,24 @@ const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length;
 /** The fewest words a passage needs to be worth questions, so headings and link lists aren't sent to the writer. */
 export const MIN_PASSAGE_WORDS = 30;
 
+/**
+ * Contact details and family or age details of people. A passage holding any of these isn't sent to the writer, so
+ * they can't become questions (docs/KNOWLEDGE_UPDATE.md, Rules: no personal data on private individuals).
+ */
+const PERSONAL_DETAIL = new RegExp(
+  [
+    String.raw`[\w.+-]+@[\w-]+\.[a-z]{2,}`,
+    String.raw`\(?\b\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b`,
+    String.raw`\bfor (further|more) information,? (please )?contact\b`,
+    String.raw`\b(media|press|investor)( relations)? (contacts?|inquiries)\b`,
+    String.raw`\bproponent of this resolution\b`,
+    String.raw`\blives (in .{1,40} )?with (his|her|their) (wife|husband|partner|family)\b`,
+    String.raw`\bhas (two|three|four|five|six|\d) (daughters|sons|children)\b`,
+    String.raw`\bAge: \d{2}\b`,
+  ].join("|"),
+  "i",
+);
+
 /** A record as passages of at most `max` words, cut between sentences, each with a header naming the source and date. */
 export function sourcePassages(r: SourceRecord, asOf: string, max = PASSAGE_WORDS): Passage[] {
   const when = r.date ? `published ${longDate(r.date)}` : `as of ${longDate(asOf)}`;
@@ -81,8 +99,9 @@ export function sourcePassages(r: SourceRecord, asOf: string, max = PASSAGE_WORD
   }
   flush();
   return runs
-    .filter((text) => countWords(text) >= MIN_PASSAGE_WORDS)
-    .map((text, i) => ({
+    .map((text, i) => ({ text, i }))
+    .filter(({ text }) => countWords(text) >= MIN_PASSAGE_WORDS && !PERSONAL_DETAIL.test(text))
+    .map(({ text, i }) => ({
       id: `source:${r.id}:${i}`,
       kind: "source" as const,
       header: `${r.source}: ${r.title}, ${when}`,

@@ -16,6 +16,7 @@ import { applyEdit, parseEditCall, pythonProblems, type EditCall, type EditResul
 import { BROKEN_EDITS, EDIT_TASKS, SAM_FILES } from "@/components/docs/playgrounds/cookbook-fundamentals/sam-files";
 import { DiffView, Note, SplitPills, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { useToolLoop } from "@/components/docs/playgrounds/cookbook-fundamentals/useToolLoop";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { NeutralRequest, ToolDef } from "@/lib/docs/client/body";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { nextModelBody, requestedCalls } from "@/lib/docs/client/toolloop";
@@ -286,7 +287,7 @@ export function EditsDemo(_props: EditsDemoProps) {
       {finished ? (
         (() => {
           const last = [...loop.steps].reverse().find((s) => s.kind === "model");
-          return last && last.kind === "model" && last.collected?.text ? <p className={styles.thought}>{last.collected.text}</p> : null;
+          return last && last.kind === "model" && last.collected?.text ? <MarkdownText className={styles.thought} text={last.collected.text} /> : null;
         })()
       ) : null}
 

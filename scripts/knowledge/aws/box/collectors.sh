@@ -28,9 +28,10 @@ S3="s3://$BUCKET/knowledge/corpus"
 NODE_VERSION=v22.23.4
 NODE_SHA256=b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406
 NODE_DIR="$ROOT/node-$NODE_VERSION"
-# Steps that need a GitHub token, by part of their name. They run from the Mac only: skipped here, and their output is
-# never uploaded from here, so an S3 copy made from the Mac stays as it is.
-MAC_ONLY="meta-cookbooks github"
+# Steps that reach the GitHub API, by part of their name, whether through gh or api.github.com: the machine holds no
+# token and has no gh. They run from the Mac only: skipped here, and their output is never uploaded from here, so an S3
+# copy made from the Mac stays as it is. Plain raw.githubusercontent.com reads need no token and stay here.
+MAC_ONLY="meta-cookbooks github cvelist sdk-changelogs ecmascript whatwg kubernetes-blog react-blog django-releases acl-anthology openfootball nflverse"
 
 export HOME=/root
 export PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin"
@@ -49,6 +50,8 @@ setup() {
     mv "$NODE_DIR.partial" "$NODE_DIR"
     rm -rf "$tmp"
   fi
+  # The National Hurricane Center's Tropical Cyclone Reports are PDFs (science.ts).
+  command -v pdftotext > /dev/null || dnf install -y -q poppler-utils || return 1
   cd "$APP" || return 1
   if ! cmp -s package.json "$STATE/package.json" || [ ! -x node_modules/.bin/tsx ]; then
     npm install --no-audit --no-fund --ignore-scripts --loglevel=error || return 1
@@ -115,8 +118,19 @@ sync_all() {
     # The Mac's own output comes down so the manifest covers it; it never goes back up from here.
     aws s3 sync "$S3/sources/" "$SOURCES/" --exclude '*' "${down[@]}" --only-show-errors
     write_manifest
+    # A file smaller than its S3 copy (a pause, failed fetches, a file still being written) doesn't replace it. It's named
+    # in status. To accept a smaller file on purpose, delete the S3 copy from the Mac; this machine's role can't delete.
+    local size key
+    : > "$STATE/kept-larger"
+    while read -r _ _ size key; do
+      case "$key" in *.jsonl) ;; *) continue ;; esac
+      if [ -f "$SOURCES/$key" ] && [ "$(stat -c %s "$SOURCES/$key")" -lt "$size" ]; then
+        up+=(--exclude "$key")
+        echo "$key: $(stat -c %s "$SOURCES/$key") bytes here, $size in S3" >> "$STATE/kept-larger"
+      fi
+    done < <(aws s3 ls "$S3/sources/")
     aws s3 sync "$SOURCES/" "$S3/sources/" --exclude 'cache/*' "${up[@]}" --only-show-errors
-    aws s3 sync "$SOURCES/cache/" "$S3/cache/" --size-only --only-show-errors
+    aws s3 sync "$SOURCES/cache/" "$S3/cache/" --size-only --exclude '*.part' --only-show-errors
     status > "$LOGS/status.txt"
     aws s3 sync "$LOGS/" "$S3/logs/" --only-show-errors
   ) 8>"$LOCK.sync" >> "$LOGS/sync.log" 2>&1
@@ -168,6 +182,8 @@ status() {
     [ -e "$f" ] || continue
     echo "$(basename "$f"): $(wc -l < "$f") documents, $(du -h "$f" | cut -f1)"
   done
+  [ -s "$STATE/kept-larger" ] && sed 's/^/S3 copy kept, it is larger: /' "$STATE/kept-larger"
+  return 0
 }
 
 case "$COMMAND" in

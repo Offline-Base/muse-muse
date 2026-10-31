@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import { CodeView, DEFAULT_TEXT_MODEL, EffortSelect, ErrorBox, ModelSelect, PresetPills, RunButton, TextArea, Toggle, latencyLabel, useDocsRun } from "@/components/docs/kit";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { estimateCost, formatUsd, tokenUsage } from "@/lib/docs/client/cost";
 import { fitEffort, type Effort } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -64,7 +65,7 @@ export function EffortCompare({ prompt: startPrompt }: { prompt?: string }) {
             {cost ? ` · ${formatUsd(cost.usd)}` : ""}
           </p>
         ) : null}
-        <div className={styles.msgAssistant}>{text || (runner.state === "running" ? "Thinking..." : runner.state === "idle" ? "Press Run to compare." : "")}</div>
+        <MarkdownText className={styles.msgAssistant} text={text || (runner.state === "running" ? "Thinking..." : runner.state === "idle" ? "Press Run to compare." : "")} />
         <ErrorBox error={runner.error} />
       </section>
     );

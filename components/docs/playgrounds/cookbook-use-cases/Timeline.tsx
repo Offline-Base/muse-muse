@@ -6,6 +6,7 @@ import { latencyLabel } from "@/components/docs/kit/ResponseView";
 import { prettyArguments, ToolCalls } from "@/components/docs/kit/StreamView";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { TextInput } from "@/components/docs/kit/Field";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { formatUsd } from "@/lib/docs/client/cost";
 import { docsModelLabel } from "@/lib/docs/client/models";
 import type { ToolCall } from "@/lib/docs/client/stream";
@@ -90,7 +91,7 @@ function ModelItem({ e, n, order }: { e: ModelEntry; n: number; order?: readonly
         </span>
       </p>
       {e.error ? <div className="pg-hint pg-bad">{e.error.message}</div> : null}
-      {commentary ? <p className={styles.commentary}>{commentary}</p> : null}
+      {commentary ? <MarkdownText className={styles.commentary} text={commentary} /> : null}
       {status && status.status === "incomplete" ? (
         <div className="pg-hint pg-bad">The reply stopped early ({status.reason ?? "incomplete"}).</div>
       ) : null}
@@ -99,7 +100,7 @@ function ModelItem({ e, n, order }: { e: ModelEntry; n: number; order?: readonly
           <ToolCalls calls={toolCalls} title={toolCalls.length > 1 ? `Asked for ${toolCalls.length} tool calls` : "Asked for a tool call"} />
         </div>
       ) : null}
-      {text ? <LongText text={text} className={`pg-pre ${styles.answer}`} /> : null}
+      {text ? <MarkdownText className={styles.answer} text={text} /> : null}
       <details className="pg-raw pg-advanced">
         <summary>Request{e.response ? " and reply" : ""} JSON</summary>
         <p className="pg-section-label">Request</p>

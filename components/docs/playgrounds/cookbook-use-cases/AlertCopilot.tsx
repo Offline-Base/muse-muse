@@ -6,6 +6,7 @@ import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import { EffortSelect, Toggle } from "@/components/docs/kit/Field";
 import { Tabs, TabPanel } from "@/components/docs/kit/Tabs";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { formatUsd } from "@/lib/docs/client/cost";
 import type { Effort } from "@/lib/docs/client/models";
 import styles from "@/components/docs/playgrounds/cookbook-use-cases/cuc.module.css";
@@ -324,7 +325,7 @@ function TaskCard({ title, run, fallbackModel, plain }: { title: string; run: Ta
       <p className={styles.cardTitle}>{title}</p>
       {run.retried ? <p className="pg-hint">The first reply didn&apos;t parse, so the harness re-prompted once: &quot;No markdown fences, raw JSON only.&quot;</p> : null}
       {run.recovered ? <p className="pg-hint">Recovered the JSON from {run.recovered === "fences" ? "markdown fences" : "text around it"}, as the validator does.</p> : null}
-      {plain ? <p className={styles.answer}>{run.text}</p> : <pre className={run.value ? "pg-pre pg-advanced" : "pg-pre"}>{run.value ? JSON.stringify(run.value, null, 2) : run.text}</pre>}
+      {plain ? <MarkdownText className={styles.answer} text={run.text} /> : <pre className={run.value ? "pg-pre pg-advanced" : "pg-pre"}>{run.value ? JSON.stringify(run.value, null, 2) : run.text}</pre>}
       <ul className="pg-checks">
         {run.checks.map((c, i) => (
           <li key={i} className={c.ok ? "pg-check-ok" : ""}>

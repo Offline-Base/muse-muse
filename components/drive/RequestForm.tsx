@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { CopyField } from "@/components/CopyButton";
+import { PayButton, goToCheckout } from "@/components/drive/PayButton";
 import { Icon } from "@/components/icons";
 import { REMEMBER_KEY, addressLines, requestErrorText } from "@/components/drive/format";
 import { DRIVE_FIELD_MAX, US_STATES, buildLabel, gb } from "@/lib/drive/logic";
@@ -19,6 +20,11 @@ export interface RequestFormProps {
   terms: readonly string[];
   /** Where buyers write about an order (DRIVE_CONTACT_EMAIL), or null. */
   contact?: string | null;
+  /**
+   * The card price ("$59") while orders are paid by card on Stripe Checkout, or null for a request the owner invoices.
+   * With it, sending the form saves the order and goes straight to Stripe.
+   */
+  cardPrice?: string | null;
 }
 
 /** What "Remember my details on this device" keeps, in this browser only. */
@@ -32,6 +38,8 @@ interface Remembered {
 interface Sent {
   orderId: string;
   link: string;
+  /** For a card order whose checkout didn't open: why, with a button to try again. */
+  payProblem?: string;
   build: DriveBuild;
   name: string;
   email: string;
@@ -107,7 +115,7 @@ function writeRemembered(value: Remembered | null): void {
  * only, so the next request is one click: the button sends it straight away and shows what it sent. Nothing is charged:
  * the owner emails an invoice. The link to the order is shown once, after the request.
  */
-export function RequestForm({ jobId, title, files, termsVersion, terms, contact = null }: RequestFormProps) {
+export function RequestForm({ jobId, title, files, termsVersion, terms, contact = null, cardPrice = null }: RequestFormProps) {
   const id = useId();
   const [remembered, setRemembered] = useState<Remembered | null>(null);
   const [editing, setEditing] = useState(false);
@@ -201,14 +209,21 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
         setBusy(false);
         return;
       }
-      const d = data as { orderId?: unknown; link?: unknown };
+      const d = data as { orderId?: unknown; link?: unknown; payment?: unknown };
       if (typeof d.orderId !== "string" || typeof d.link !== "string") {
         setError("The request went through, but its link didn't come back. Check your email for the invoice.");
         setBusy(false);
         return;
       }
       writeRemembered(keep ? { name: details.name.trim(), email: details.email.trim(), address: clean, termsVersion } : null);
-      setSent({ orderId: d.orderId, link: d.link, build, name: details.name.trim(), email: details.email.trim(), address: clean });
+      const saved: Sent = { orderId: d.orderId, link: d.link, build, name: details.name.trim(), email: details.email.trim(), address: clean };
+      if (d.payment === "card") {
+        // Straight on to Stripe. The order page shows its link when the buyer comes back, and this browser keeps it.
+        const problem = await goToCheckout(d.orderId);
+        if (!problem) return;
+        saved.payProblem = problem;
+      }
+      setSent(saved);
     } catch {
       setError("Couldn't reach Muse Muse. Check your connection and try again.");
     }
@@ -220,13 +235,15 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
     if (busy) return;
     const problems: Record<string, string> = {};
     if (!name.trim()) problems.name = "Add your name.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) problems.email = "Check your email address. We send the invoice there.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      problems.email = cardPrice ? "Check your email address. Your receipt goes there." : "Check your email address. We send the invoice there.";
+    }
     if (!address.line1.trim()) problems.line1 = "Add your street address.";
     if (!address.city.trim()) problems.city = "Add your city.";
     if (!address.state) problems.state = "Pick your state.";
     if (!/^\d{5}(-?\d{4})?$/.test(address.postalCode.trim())) problems.postalCode = "Check your ZIP code: 5 digits, or 9 with the dash.";
     if (!ageOk) problems.ageOk = "Confirm that you're 18 or older.";
-    if (!termsOk) problems.terms = "Accept the terms to send the request.";
+    if (!termsOk) problems.terms = cardPrice ? "Accept the terms to order." : "Accept the terms to send the request.";
     setInvalid(problems);
     const first = FIELD_ORDER.find(([key]) => problems[key]);
     if (first) {
@@ -240,10 +257,19 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
   if (sent) {
     return (
       <section className="card section-card" aria-labelledby={`${id}-sent`} role="status">
-        <h2 id={`${id}-sent`}>Request sent</h2>
-        <p>
-          We&apos;ll email an invoice to <strong>{sent.email}</strong> within 2 business days. Nothing is charged until you pay it.
-        </p>
+        <h2 id={`${id}-sent`}>{sent.payProblem ? "Order saved, not paid yet" : "Request sent"}</h2>
+        {sent.payProblem ? (
+          <>
+            <p>
+              {sent.payProblem} Your order is saved and nothing was charged. Pay when you&apos;re ready, here or from your order&apos;s page.
+            </p>
+            <PayButton orderId={sent.orderId} label={cardPrice ? `Pay ${cardPrice} by card` : "Pay by card"} />
+          </>
+        ) : (
+          <p>
+            We&apos;ll email an invoice to <strong>{sent.email}</strong> within 2 business days. Nothing is charged until you pay it.
+          </p>
+        )}
         <div className="drive-link-field">
           <span className="field-label">Your order&apos;s link</span>
           <CopyField value={sent.link} label="Order link" />
@@ -272,7 +298,7 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
             </dd>
           </div>
           <div>
-            <dt>Invoice to</dt>
+            <dt>{cardPrice ? "Receipt to" : "Invoice to"}</dt>
             <dd>{sent.email}</dd>
           </div>
         </dl>
@@ -332,7 +358,7 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
   if (quick && remembered) {
     return (
       <section className="card section-card" aria-labelledby={`${id}-quick`}>
-        <h2 id={`${id}-quick`}>Request a drive</h2>
+        <h2 id={`${id}-quick`}>{cardPrice ? "Order a drive" : "Request a drive"}</h2>
         {sizes}
         <div className="drive-quick">
           <p className="muted small">This device remembers your details:</p>
@@ -347,7 +373,7 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
           <TermsList terms={terms} />
           <div className="drive-row">
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void send(remembered, true)}>
-              {busy ? "Sending..." : "Send the request"}
+              {busy ? "Sending..." : cardPrice ? `Pay ${cardPrice} by card` : "Send the request"}
             </button>
             <button type="button" className="link-btn" disabled={busy} onClick={() => setEditing(true)}>
               Change details
@@ -378,7 +404,7 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
 
   return (
     <section className="card section-card" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>Request a drive</h2>
+      <h2 id={`${id}-title`}>{cardPrice ? "Order a drive" : "Request a drive"}</h2>
       <form className="train-form" onSubmit={submit} noValidate>
         {sizes}
         <div className="train-grid">
@@ -401,7 +427,7 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
                 fixed("email");
               }} disabled={busy} aria-invalid={invalid.email ? true : undefined} aria-describedby={[`${id}-email-help`, invalid.email ? `${id}-email-err` : null].filter(Boolean).join(" ")} />
             <p className="train-help" id={`${id}-email-help`}>
-              The invoice comes here.
+              {cardPrice ? "Stripe's receipt and our shipping news come here." : "The invoice comes here."}
             </p>
             {fieldError("email")}
           </div>
@@ -505,9 +531,13 @@ export function RequestForm({ jobId, title, files, termsVersion, terms, contact 
         ) : null}
 
         <div className="train-foot">
-          <p className="train-cost">This sends a request. Nothing is charged here: we email you an invoice first.</p>
+          <p className="train-cost">
+            {cardPrice
+              ? `${cardPrice} with US shipping. You pay by card on Stripe's checkout page next, and can cancel for a full refund until we start writing the drive.`
+              : "This sends a request. Nothing is charged here: we email you an invoice first."}
+          </p>
           <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "Sending..." : "Send the request"}
+            {busy ? (cardPrice ? "Saving your order..." : "Sending...") : cardPrice ? `Continue to payment (${cardPrice})` : "Send the request"}
           </button>
         </div>
       </form>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DocsPageProvider, type DocsPageInfo } from "@/components/docs/kit/DocsPageContext";
+import { BuildWithThis } from "@/components/docs/page/BuildWithThis";
 import { PageActions } from "@/components/docs/page/PageActions";
 import { Pager } from "@/components/docs/page/Pager";
 import { neighbors, pageSequence } from "@/components/docs/page/sequence";
@@ -11,6 +12,7 @@ import { demoFor } from "@/lib/docs/demos";
 import { loadDocsDoc, renderBlocks, renderInlines } from "@/lib/docs/markdown-react";
 import { swapEmDashes, syncedDate } from "@/lib/docs/markdown-text";
 import { DOCS_PAGES, DOCS_SOURCE, docsPage } from "@/lib/docs/pages";
+import { currentUser } from "@/lib/queries";
 
 // Every mirrored page and nothing else: an unknown slug is a 404 (docs/DOCS_MIRROR.md, "Routes"). The page calls
 // notFound() itself rather than setting dynamicParams = false, so the 404 renders inside the docs layout
@@ -35,16 +37,16 @@ const SEQUENCE = pageSequence(DOCS_NAV, DOCS_PAGES);
 /**
  * One mirrored page (docs/DOCS_MIRROR.md, "Page layout"). The reading column is Meta's page as it is: the H1, the text
  * with Run buttons on its API calls, previous and next, and the mirror credit. What Muse Muse adds sits beside it: under
- * "On this page" on wide screens, the actions (Try it live, Copy prompt, Copy page, View on dev.meta.ai) and, on
- * narrower screens, a row of them under the H1 with a "Table of contents" pill. "Try it live" opens the page's demo and
- * chat in a side panel, so a reader can keep the text in view.
+ * "On this page" on wide screens, the actions (Try it live, Ask Muse Muse to build, Copy prompt, Copy page, View on
+ * dev.meta.ai) and, on narrower screens, a row of them under the H1 with a "Table of contents" pill. "Try it live" opens
+ * the page's demo and chat in a side panel, so a reader can keep the text in view.
  */
 export default async function DocsPage({ params }: Props) {
   const slug = (await params).slug.join("/");
   const page = docsPage(slug);
   if (!page) notFound();
 
-  const doc = await loadDocsDoc(slug);
+  const [doc, user] = await Promise.all([loadDocsDoc(slug), currentUser()]);
   const demo = demoFor(slug);
   const info: DocsPageInfo = {
     slug,
@@ -87,6 +89,7 @@ export default async function DocsPage({ params }: Props) {
       <TryItLive slug={slug} title={demo?.title} blurb={demo?.blurb}>
         {Demo ? <Demo {...demo.props} slug={slug} /> : undefined}
       </TryItLive>
+      <BuildWithThis spec={demo?.agentPrompt ?? null} signedIn={Boolean(user)} />
     </DocsPageProvider>
   );
 }

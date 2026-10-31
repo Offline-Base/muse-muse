@@ -8,6 +8,7 @@ import { ModelSelect } from "@/components/docs/kit/ModelSelect";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { TabPanel, Tabs } from "@/components/docs/kit/Tabs";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { DEFAULT_TEXT_MODEL } from "@/lib/docs/client/models";
 import { useStrictJson } from "@/components/docs/playgrounds/muse-code-cookbook/hooks";
 import { reviewBody as makeReviewBody, type Review } from "@/components/docs/playgrounds/muse-code-cookbook/logic/requests";
@@ -487,7 +488,7 @@ export function SessionLogExplorer(props: SessionLogExplorerProps) {
                     ))}
                   </ul>
                 ) : null}
-                <p>{reviewer.value.summary}</p>
+                <MarkdownText text={reviewer.value.summary} />
               </div>
             ) : (
               <p className="pg-empty">{reviewing ? "The reviewer is reading the ledger..." : "No review in this reply."}</p>

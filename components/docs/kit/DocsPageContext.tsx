@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 /**
  * Per-page state the docs page shares with its demos: which page this is, and the last request a demo or a Run button
@@ -37,17 +37,47 @@ interface DocsPageState {
   /** Whether the "Try it live" panel is open (components/docs/page/TryItLive.tsx). */
   tryOpen: boolean;
   setTryOpen: (open: boolean) => void;
+  /** Whether "Ask Muse Muse to build" is open (components/docs/page/BuildWithThis.tsx). */
+  buildOpen: boolean;
+  setBuildOpen: (open: boolean) => void;
 }
 
 const DocsPageCtx = createContext<DocsPageState | null>(null);
+
+const COMMAND_EVENT = "docs:command";
+
+export interface DocsCommandDetail {
+  /** Which Try it live tab to show: the demo, or the page's chat. */
+  tab?: "demo" | "ask";
+}
+
+/** For what sits outside a page's provider (the docs assistant, in the layout): opens the page's own panels. */
+export function docsCommand(type: "open-try" | "open-build", detail: DocsCommandDetail = {}) {
+  window.dispatchEvent(new CustomEvent(COMMAND_EVENT, { detail: { type, ...detail } }));
+}
+
+/** Listens for docsCommand. */
+export function useDocsCommands(handler: (type: "open-try" | "open-build", detail: DocsCommandDetail) => void) {
+  useEffect(() => {
+    const listen = (e: Event) => {
+      const { type, ...detail } = (e as CustomEvent<DocsCommandDetail & { type: "open-try" | "open-build" }>).detail;
+      handler(type, detail);
+    };
+    window.addEventListener(COMMAND_EVENT, listen);
+    return () => window.removeEventListener(COMMAND_EVENT, listen);
+  }, [handler]);
+}
 
 export function DocsPageProvider({ page, children }: { page: DocsPageInfo; children: ReactNode }) {
   const [lastRequest, setLastRequest] = useState<RecordedRequest | null>(null);
   const recordRequest = useCallback((request: RecordedRequest) => setLastRequest(request), []);
   const [tryOpen, setTryOpen] = useState(false);
+  const [buildOpen, setBuildOpen] = useState(false);
+  const onCommand = useCallback((type: "open-try" | "open-build") => (type === "open-try" ? setTryOpen(true) : setBuildOpen(true)), []);
+  useDocsCommands(onCommand);
   const value = useMemo(
-    () => ({ page, lastRequest, recordRequest, tryOpen, setTryOpen }),
-    [page, lastRequest, recordRequest, tryOpen],
+    () => ({ page, lastRequest, recordRequest, tryOpen, setTryOpen, buildOpen, setBuildOpen }),
+    [page, lastRequest, recordRequest, tryOpen, buildOpen],
   );
   return <DocsPageCtx.Provider value={value}>{children}</DocsPageCtx.Provider>;
 }
@@ -61,6 +91,8 @@ export function useDocsPage(): DocsPageState {
       recordRequest: () => {},
       tryOpen: false,
       setTryOpen: () => {},
+      buildOpen: false,
+      setBuildOpen: () => {},
     }
   );
 }

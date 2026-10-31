@@ -12,6 +12,7 @@ import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { useDocsRun } from "@/components/docs/kit/useDocsRun";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
 import { Advanced, BarList, DemoTabs, Note, Stats, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { tokenUsage } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, EFFORT_LABELS, effortsFor, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -271,7 +272,7 @@ function InspectReasoning() {
             <p className={styles.compareTitle}>Chat Completions</p>
             {result.chat ? (
               <>
-                <p className={styles.textBlock}>{result.chat.content || "(no text)"}</p>
+                <MarkdownText className={styles.textBlock} text={result.chat.content || "(no text)"} />
                 <Stats
                   items={[
                     { label: "reasoning_tokens", value: result.chat.reasoning?.toLocaleString("en-US") ?? "n/a" },
@@ -291,7 +292,7 @@ function InspectReasoning() {
             <p className={styles.compareTitle}>Responses</p>
             {result.responses ? (
               <>
-                <p className={styles.textBlock}>{result.responses.answer || "(no text)"}</p>
+                <MarkdownText className={styles.textBlock} text={result.responses.answer || "(no text)"} />
                 <Stats
                   items={[
                     { label: "output items", value: result.responses.types.join(", ") },
@@ -300,7 +301,7 @@ function InspectReasoning() {
                     { label: "reasoning_tokens", value: result.responses.reasoning?.toLocaleString("en-US") ?? "n/a" },
                   ]}
                 />
-                {summaryText ? <p className={styles.thought}>{summaryText}</p> : null}
+                {summaryText ? <MarkdownText className={styles.thought} text={summaryText} /> : null}
                 {result.responses.id ? <p className="pg-muted pg-small">reasoning id: <code>{result.responses.id}</code></p> : null}
               </>
             ) : busy ? (
@@ -446,7 +447,7 @@ function CarryAcross() {
           {turns.map((t, i) => (
             <div key={i} className={styles.compareCol}>
               <p className={styles.compareTitle}>Turn {i + 1}</p>
-              <p className={styles.textBlock}>{t.text || "(no text)"}</p>
+              <MarkdownText className={styles.textBlock} text={t.text || "(no text)"} />
               <p className="pg-small">
                 <UsageLine model={t.model} usage={t.usage} />
               </p>

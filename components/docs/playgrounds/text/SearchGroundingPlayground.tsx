@@ -9,6 +9,7 @@ import { PresetRow } from "@/components/docs/playgrounds/common/PresetRow";
 import { ResponseView } from "@/components/docs/kit/ResponseView";
 import { RunButton } from "@/components/docs/kit/RunButton";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { SseEvent } from "@/lib/docs/client/api";
 import { logEvent, type EventLogEntry } from "@/lib/docs/client/events";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
@@ -376,7 +377,7 @@ function StepsView({ steps, running }: { steps: readonly GroundingStep[]; runnin
             <span className={dot} aria-hidden />
             <div className={styles.eventBody}>
               {s.kind === "note" ? (
-                <p className={styles.note}>{s.text}</p>
+                <MarkdownText className={styles.note} text={s.text} />
               ) : s.kind === "search" ? (
                 <p>
                   <strong>Searched</strong>{" "}

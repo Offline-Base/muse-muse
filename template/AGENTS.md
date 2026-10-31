@@ -40,6 +40,7 @@ The inspo shows what to make. It is not material to copy.
   - `.agents/skills/meta-sam` covers SAM 3.1: find, outline and track objects in images and video.
   - `.agents/skills/meta-voice` covers Muse Voice Transcribe: speech to text.
   - `.agents/skills/meta-glimmer` covers Muse Glimmer, only when the brief asks for local or offline use.
+  - `.agents/skills/muse-gadget` covers a physical board's camera and microphone, only when the brief lists `muse-gadget`.
 - Use only the models the brief lists. The gateway rejects others.
 - Handle model errors in the UI with a plain message and what to try next.
 

@@ -4,6 +4,7 @@ import { useId, useMemo, useRef, useState } from "react";
 import { CodeView, ErrorBox, ModelSelect, RunButton, DEFAULT_TEXT_MODEL } from "@/components/docs/kit";
 import { EffortSelect, TextArea, Toggle } from "@/components/docs/kit/Field";
 import { Tabs, TabPanel } from "@/components/docs/kit/Tabs";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { Effort } from "@/lib/docs/client/models";
 import styles from "@/components/docs/playgrounds/cookbook-use-cases/cuc.module.css";
 import { AgentBadge, RunBar, Timeline, agentColor } from "@/components/docs/playgrounds/cookbook-use-cases/Timeline";
@@ -150,7 +151,7 @@ export function MultiAgentBoard({ brief: initialBrief = ONE_LINE_BRIEF }: MultiA
                         {cm.author}
                         {cm.kind && cm.kind !== "comment" ? ` (${cm.kind})` : ""}:
                       </strong>{" "}
-                      {cm.body}
+                      <MarkdownText text={cm.body} />
                     </li>
                   ))}
                 </ol>

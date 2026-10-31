@@ -1,5 +1,6 @@
 import { isCrossSite } from "@/lib/auth";
 import { AskInputError, ASK_BODY_MAX_BYTES, buildAskRequest, parseAskBody } from "@/lib/docs/proxy/ask";
+import { ASSISTANT_BODY_MAX_BYTES, buildAssistantRequest, parseAssistantBody } from "@/lib/docs/proxy/assistant";
 import {
   backgroundRefusal,
   finalResponseOf,
@@ -699,6 +700,8 @@ async function proxy(req: Request, path: readonly string[], deps: DocsDeps): Pro
 /** Where Ask reads a page: its title and Markdown, or null for a slug that isn't mirrored. */
 export interface DocsPages {
   page(slug: string): { title: string; markdown: string } | null;
+  /** Every page as "slug: title", one a line, for the assistant. */
+  catalog?(): string;
 }
 
 /**
@@ -714,7 +717,48 @@ export async function handleDocsAsk(req: Request, deps: DocsDeps, pages: DocsPag
   }
 }
 
-async function ask(req: Request, deps: DocsDeps, pages: DocsPages): Promise<Response> {
+/**
+ * POST /api/docs/assistant {slug, input}: one round of the docs sidebar's loop, a streamed Responses call with the
+ * assistant's tools, under the same limits and metering as the proxy. Never throws.
+ */
+export async function handleDocsAssistant(req: Request, deps: DocsDeps, pages: DocsPages): Promise<Response> {
+  try {
+    return await grounded(req, deps, pages, ASSISTANT_BODY_MAX_BYTES, (body) => {
+      const input = parseAssistantBody(body);
+      return {
+        slug: input.slug,
+        model: input.model,
+        swappedSpark: false,
+        build: (page, safetyId) => buildAssistantRequest(input, { slug: input.slug, ...page }, pages.catalog?.() ?? "", safetyId),
+      };
+    });
+  } catch (err) {
+    console.error("[docs] assistant failed:", err instanceof Error ? err.message : err);
+    return docsErrors.unexpected();
+  }
+}
+
+/** What a server-built call needs from its parsed body: the page it's about, the model, and the request itself. */
+interface GroundedCall {
+  slug: string;
+  model: string;
+  swappedSpark: boolean;
+  build(page: { title: string; markdown: string }, safetyId: string): Record<string, unknown>;
+}
+
+function ask(req: Request, deps: DocsDeps, pages: DocsPages): Promise<Response> {
+  return grounded(req, deps, pages, ASK_BODY_MAX_BYTES, (body) => {
+    const input = parseAskBody(body);
+    return {
+      slug: input.slug,
+      model: input.model,
+      swappedSpark: input.swappedSpark,
+      build: (page, safetyId) => buildAskRequest(input, { slug: input.slug, ...page }, safetyId),
+    };
+  });
+}
+
+async function grounded(req: Request, deps: DocsDeps, pages: DocsPages, maxBytes: number, parse: (body: Record<string, unknown>) => GroundedCall): Promise<Response> {
   const startedAt = Date.now();
   const visitor = visitorOf(req, deps.newVisitorId);
   const reply = (res: Response) => finalize(res, visitor, req);
@@ -724,11 +768,11 @@ async function ask(req: Request, deps: DocsDeps, pages: DocsPages): Promise<Resp
   let input;
   let page;
   try {
-    input = parseAskBody(await readJson(req, ASK_BODY_MAX_BYTES));
+    input = parse(await readJson(req, maxBytes));
     page = pages.page(input.slug);
   } catch (err) {
     if (err instanceof HttpError) {
-      return reply(err.status === 413 ? docsErrors.tooLarge(ASK_BODY_MAX_BYTES) : docsErrors.invalidBody(err.code));
+      return reply(err.status === 413 ? docsErrors.tooLarge(maxBytes) : docsErrors.invalidBody(err.code));
     }
     if (err instanceof AskInputError) {
       return reply(docsError(err.status, "invalid_request_error", err.code, err.message, { retry: false }));
@@ -741,7 +785,7 @@ async function ask(req: Request, deps: DocsDeps, pages: DocsPages): Promise<Resp
   }
 
   const endpoint = matchEndpoint("POST", ["responses"]) as DocsEndpoint;
-  const json = buildAskRequest(input, { slug: input.slug, ...page }, safetyIdentifier(visitor));
+  const json = input.build(page, safetyIdentifier(visitor));
   const text = JSON.stringify(json);
   const call: LiveCall = {
     endpoint,

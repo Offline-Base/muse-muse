@@ -35,8 +35,9 @@ const BODY_MAX = 8 * 1024;
 
 /**
  * POST {trainingJobId, build, name, email, address: {line1, line2?, city, state, postalCode}, ageOk: true, termsVersion}
- * -> 201 {orderId, link}: a flash drive order request (docs/VIBE_TUNING.md, Feature 6). No payment: the owner emails an
- * invoice. Anyone may send one, but not from another site (requireUser, and 403 cross_site), and only past the bot check
+ * -> 201 {orderId, link, payment}: a flash drive order (docs/VIBE_TUNING.md, Feature 6). While env.driveCheckout is on
+ * it is a card order ("card"), which the buyer pays next on Stripe Checkout (POST /api/drive/orders/{id}/checkout);
+ * otherwise a request the owner invoices by email ("invoice"). Nothing is charged here. Anyone may send one, but not from another site (requireUser, and 403 cross_site), and only past the bot check
  * (403 bot_check). 503 drive_off unless DRIVE_ENABLED; 400 with a sentence and the `field` it is about; 409
  * terms_changed with {termsVersion} when the form showed older terms; 404 not_orderable with {reason} for a model that
  * can't go on a drive (no public results page, no public local files, none that passed); 429 daily_limit with {scope}
@@ -56,8 +57,10 @@ export const POST = route(async (req: Request) => {
   const parsed = parseDriveRequest(body);
   if (!parsed.ok) return errorJson(400, parsed.error, { field: parsed.field });
   const request = parsed.value;
-  if (request.termsVersion !== env.driveTermsVersion) {
-    return errorJson(409, "terms_changed", { termsVersion: env.driveTermsVersion });
+  // The form shows the card terms while checkout is on, and the invoice terms otherwise.
+  const payment = env.driveCheckout ? "card" : "invoice";
+  if (request.termsVersion !== env.driveOrderTermsVersion) {
+    return errorJson(409, "terms_changed", { termsVersion: env.driveOrderTermsVersion });
   }
 
   const [judged, files] = await Promise.all([getResultJob(request.trainingJobId), localFilesFor(request.trainingJobId)]);
@@ -81,6 +84,7 @@ export const POST = route(async (req: Request) => {
       commit: files.commit,
       model: driveModelOf(files),
       imageVersion: DRIVE_IMAGE_VERSION,
+      payment,
       secretHash: hashToken(secret),
       clientKey: clientKeyOf(ip),
       browserKey: browserKeyOf(browserId),
@@ -93,17 +97,21 @@ export const POST = route(async (req: Request) => {
   const order = saved.order;
   after(async () => {
     try {
+      // A card order is news for the owner once it's paid (the webhook says so), not while it waits for its buyer.
+      if (order.payment === "card") return;
       const waiting = await countRequested();
       const adminUrl = `${env.platformUrl}/fine-tuning/orders`;
       await notifyOwner(ownerSummary({ title: order.model.title, build: order.build, count: order.files.length, orderId: order.id, waiting, adminUrl }));
     } catch (err) {
       console.error("[drive] couldn't tell the owner:", err instanceof Error ? err.message : err);
     }
+  });
+  after(async () => {
     await purgeDriveOrders().catch((err) => console.error("[drive] purge:", err instanceof Error ? err.message : err));
   });
 
   const headers = new Headers(noStore);
   headers.append("set-cookie", orderCookie(order.id, secret));
   if (browserId !== known) headers.append("set-cookie", browserCookie(browserId));
-  return Response.json({ orderId: order.id, link: orderLink(env.platformUrl, order.id, secret) }, { status: 201, headers });
+  return Response.json({ orderId: order.id, link: orderLink(env.platformUrl, order.id, secret), payment: order.payment }, { status: 201, headers });
 });

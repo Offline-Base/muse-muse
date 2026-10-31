@@ -21,7 +21,7 @@
         "required": ["id", "usedFor"],
         "properties": {
           "id": {
-            "enum": ["muse-wonder-1.0", "muse-image-1.0", "sam-3.1", "muse-voice-transcribe-1.0", "muse-glimmer"]
+            "enum": ["muse-wonder-1.0", "muse-image-1.0", "sam-3.1", "muse-voice-transcribe-1.0", "muse-glimmer", "muse-gadget"]
           },
           "usedFor": { "type": "string", "minLength": 1 }
         }

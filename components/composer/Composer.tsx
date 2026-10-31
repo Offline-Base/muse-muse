@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
+import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
   INSPO_ACCEPT,
   MAX_INSPO_BYTES,
@@ -36,6 +38,16 @@ interface Props {
   floating?: boolean;
   /** "playground" shows the examples as photo cards above a composer pinned to the bottom (the Make page). */
   layout?: "playground";
+  /** The heading over plain examples. */
+  examplesLabel?: string;
+  /** Added after the note when it's sent, for a muse started from a page that has something to say (docs pages). */
+  context?: string;
+  /** Sent as the note when the box is empty. Only with `context`: it lets the reader send without typing. */
+  blankNote?: string;
+  /** Keeps this composer's draft apart from the Make page's. */
+  draftId?: string;
+  /** Where to come back to after signing in. */
+  returnTo?: string;
 }
 
 /** Audio originals above this are refused before decoding, so a huge file can't exhaust the tab's memory. */
@@ -58,6 +70,11 @@ function readDraft(key: string): string {
   }
 }
 
+/** Fills a composer's note before it opens, by the draftId it's given: the docs assistant uses it to suggest a build. */
+export function writeComposerDraft(draftId: string, note: string) {
+  writeDraft(draftKey("new", draftId), note);
+}
+
 function writeDraft(key: string, value: string) {
   try {
     if (value) window.sessionStorage.setItem(key, value);
@@ -72,7 +89,21 @@ function writeDraft(key: string, value: string) {
  * remove button, audio is converted to 16 kHz mono WAV and big photos are resized before upload, and send starts the
  * build. Uploads begin as soon as a file is attached when the viewer is signed in.
  */
-export function Composer({ mode, buildId, signedIn, examples, placeholder, autoFocus, floating, layout }: Props) {
+export function Composer({
+  mode,
+  buildId,
+  signedIn,
+  examples,
+  placeholder,
+  autoFocus,
+  floating,
+  layout,
+  examplesLabel = "Try a muse",
+  context,
+  blankNote,
+  draftId,
+  returnTo,
+}: Props) {
   const router = useRouter();
   const inputId = useId();
   const hintId = useId();
@@ -90,10 +121,14 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const canUseCamera = useCameraSupported();
+  // Photos an example card attached: the reader's own photo takes their place.
+  const examplePhotos = useRef(new Set<string>());
 
-  const key = draftKey(mode, buildId);
+  const key = draftKey(mode, draftId ?? buildId);
   const isRefine = mode === "refine";
-  const nextPath = isRefine && buildId ? `/b/${buildId}?refine=1` : "/";
+  const nextPath = returnTo ?? (isRefine && buildId ? `/b/${buildId}?refine=1` : "/");
 
   // Restore a draft note, such as one kept across sign-in.
   useEffect(() => {
@@ -260,7 +295,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
   const pending = items.some((it) => it.state === "preparing" || it.state === "uploading");
   const failed = items.some((it) => it.state === "error");
   const references = useMemo(() => items.map((it) => it.reference).filter((r): r is Reference => Boolean(r)), [items]);
-  const hasContent = isRefine ? note.trim().length > 0 : note.trim().length > 0 || items.length > 0;
+  const hasContent = isRefine ? note.trim().length > 0 : note.trim().length > 0 || items.length > 0 || Boolean(blankNote);
   const canSend = hasContent && !submitting && !pending && !failed;
 
   const statusText = useMemo(() => {
@@ -278,6 +313,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     if (!ex.image) return;
     const fileName = ex.image.split("/").pop() ?? "example.jpg";
     if (items.some((it) => it.name === fileName)) return;
+    examplePhotos.current.add(fileName);
     setLoadingExample(ex.label);
     try {
       const res = await fetch(ex.image);
@@ -289,6 +325,20 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     } finally {
       setLoadingExample(null);
     }
+  }
+
+  /** Same note as the example, with a photo the reader takes instead of ours. */
+  function useCameraForExample(ex: Example) {
+    setNote(ex.note);
+    setCameraOpen(true);
+  }
+
+  function addCameraPhoto(file: File) {
+    setCameraOpen(false);
+    items.filter((it) => examplePhotos.current.has(it.name)).forEach((it) => remove(it.id));
+    examplePhotos.current.clear();
+    addFiles([file]);
+    textarea.current?.focus();
   }
 
   function goSignIn() {
@@ -320,7 +370,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
       ? { message: note.trim(), ...(references.length ? { references } : {}) }
-      : { note: note.trim() || null, references };
+      : { note: [note.trim() || blankNote, context].filter(Boolean).join("\n\n") || null, references };
     let res: Response;
     let data: { buildId?: string; error?: string } = {};
     try {
@@ -378,6 +428,12 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
                   {ex.text ? <span className="ex-text">{ex.text}</span> : null}
                 </span>
               </button>
+              {ex.image && canUseCamera ? (
+                <button type="button" className="ex-camera" onClick={() => useCameraForExample(ex)} disabled={submitting} title={`${ex.label}, with a photo you take`}>
+                  <Icon name="camera" size={15} />
+                  <span>Use my camera</span>
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -409,8 +465,9 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           id={inputId}
           ref={textarea}
           className="composer-input"
+          data-voice="inline"
           rows={isRefine || playground ? 1 : 2}
-          maxLength={4000}
+          maxLength={context ? 4000 - context.length - 2 : 4000}
           value={note}
           placeholder={
             placeholder ??
@@ -442,6 +499,18 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           >
             <Icon name="plus" />
           </button>
+          {canUseCamera ? (
+            <button
+              type="button"
+              className="icon-btn icon-btn-outline"
+              aria-label="Take a photo"
+              title="Take a photo with your camera"
+              onClick={() => setCameraOpen(true)}
+              disabled={submitting || items.length >= MAX_INSPO_FILES}
+            >
+              <Icon name="camera" />
+            </button>
+          ) : null}
           <input
             ref={fileInput}
             type="file"
@@ -455,6 +524,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
               e.target.value = "";
             }}
           />
+          <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} />
           <p id={hintId} className={playground && signedIn ? "sr-only" : "composer-hint"}>
             {signedIn
               ? isRefine
@@ -489,7 +559,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
       ) : null}
       {examples?.length && !playground ? (
         <div className="examples">
-          <span className="examples-label">Try a muse</span>
+          <span className="examples-label">{examplesLabel}</span>
           <ul>
             {examples.map((ex) => (
               <li key={ex.label}>
@@ -508,6 +578,7 @@ export function Composer({ mode, buildId, signedIn, examples, placeholder, autoF
           </ul>
         </div>
       ) : null}
+      <CameraCapture open={cameraOpen} onClose={() => setCameraOpen(false)} onCapture={addCameraPhoto} />
     </div>
   );
 }

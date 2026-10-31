@@ -68,9 +68,35 @@ Each page: the content column (white surface, Meta's type scale as measured on d
 
 Light and dark themes both, using the CSS variables in `app/globals.css`. Docs CSS goes in `app/docs/docs.css`; the kit's in `components/docs/kit/kit.css`; both imported by `app/docs/layout.tsx`. Page-group components use CSS Modules.
 
+**Ask Muse Muse to build** sits under Try it live in the actions, and in the Try it live panel's footer. It opens `components/docs/page/BuildWithThis`: the same `Composer` as the Make page (uploads, limits, sign-in), three ideas from `buildIdeas`, and a fold showing what the page adds. `buildContext` in `lib/docs/build-note.ts` (pure, tested) writes that part: the feature, how to use it, its facts, the docs link and the call the reader just tried, but never what they typed into a demo. It goes through `POST /api/inspirations` after the reader's words, so a build from the docs is a normal build under the normal quota. An empty box is allowed: Muse Muse picks the idea. The build room folds the page's part (`splitBuildNote`). A `#build` link opens the dialog, which is how a reader returns after signing in.
+
 The copy-prompt text comes from `buildAgentPrompt` in `lib/docs/agent-prompt.ts` (pure, tested): the page's `agentPrompt` (task, facts, checklist, snippets) or a fallback fit to the kind of page (a guide or recipe, the cookbook index, an API reference endpoint or schemas page, a Muse Code page, the changelog, an open-weight page), the page's Markdown URL for the agent to read, the setup facts (base URL `https://api.meta.ai/v1`, `Authorization: Bearer $MODEL_API_KEY` from the environment, the model), the last request the reader ran when they asked for it, the snippet for the chosen language, and "done when" checks. The model it names for the reader's code is `muse-spark-1.3-contributor` wherever Meta's examples say `muse-spark-1.3` (Ethan's rule: Spark 1.3 only ever runs in Contributor mode), with the Contributor note; the kit's `CodeView` writes code the same way. Plain text, no em dashes, short enough to paste (aim under 4,000 characters; trim the body of the last request).
 
 **Layout change (Oct 30, from Ethan's side-by-side screenshots).** The reading column is Meta's page as it is. The H1 is followed directly by the text. "Try it live" is no longer a card in the column: it is a side panel (860 px, `components/docs/page/TryItLive.tsx`, also opened by a `#try-it-live` link), and the demo mounts on first open. The actions (Try it live, Copy agent prompt, Copy page, View on dev.meta.ai) and the disclaimer sit under "On this page" on wide screens, and in a row under the H1 at 1200 px and below. The typeface is Figtree (`app/docs/font.ts`), the closest free match to Meta's Optimistic, which we don't ship. The panel opens in a simple view: the demo's title, what to ask, Run and the result, with the Contributor notice. The kit marks controls that only tune a request `pg-advanced` (model menu, reasoning, streaming, protocol switch, Show code and similar, in `components/docs/kit/Field.tsx` and `ModelSelect.tsx`), and they stay hidden until the reader turns on Options, which is remembered across pages. New demos get this by using the kit's controls. Where this section says otherwise, this note wins.
+
+## Assistant
+
+`components/docs/chat/DocsChat`, mounted in the docs layout so it carries from page to page: a sidebar on the right (the **Ask AI** button, Cmd/Ctrl+I) that answers questions, opens pages and runs demos. Each question is a loop in the browser: `POST /api/docs/assistant {slug, input}` streams one round, the browser runs any tool the model asks for, and the result goes back, up to `ASSISTANT_MAX_TOOL_CALLS` steps. Each round goes through the proxy's limits and metering.
+
+- **The server decides the instructions, tools and model** (`lib/docs/proxy/assistant.ts`). The body is validated down to messages, calls to known tools, and results answering a call in the conversation.
+- **Tools run on the page** (`components/docs/chat/tools.ts`): `search_docs`, `read_page`, `open_page`, `open_demo`, `read_demo`, `set_demo_field`, `run_demo`, `open_build`. They read and press what's visible, so they work on every demo without any demo exposing an API, and they can do no more than the reader could.
+- **Some steps stay the reader's.** `readerOnlyReason` refuses approvals, deletes, uploads and recording, so the model can't approve its own computer-use action. `open_build` fills the build box and stops: only the reader's send starts a build.
+- **Generated images show in the chat**, only when the page made them (`isChatImageSrc`: data and blob URLs, never a remote one). They aren't sent to the model or saved.
+- **Links to `/docs/...` open in place** (`MarkdownText`'s `docsLinks`). The conversation is kept in sessionStorage, and earlier questions send only their words, not their tool steps.
+
+## Voice input
+
+Muse Voice Transcribe on the platform's text fields (`components/voice`). `VoiceInputButton` is the mic: press to talk, press again and the words land at the caret. The Make page's composer and the docs assistant show it all the time (`data-voice="inline"`). `VoiceInputLayer`, in the root layout, gives every other field the same button when it's pointed at or focused, so the demos need no changes.
+
+- **What offers it** is `offersVoice` in `lib/client/dictation.ts`. Saying something sends it to Meta, so passwords, keys, tokens, access codes, emails, URLs, ids, numbers, JSON and code fields never do. Set `data-voice="off"` on a field to opt it out.
+- **Record, then transcribe.** One `POST /api/docs/v1/asr/transcribe` in `PUSH_TO_TALK` mode when the reader stops, up to 120 s. There are no live partials: Meta's realtime socket takes the key in its handshake, and the key doesn't reach the browser.
+- **It runs on the docs proxy**, so it has the proxy's per-visitor limits and shows up as docs usage, on any page of the platform. `DOCS_LIVE=off` pauses it too.
+
+Built products (`template/`) don't have it: that takes a new builder snapshot.
+
+## Camera
+
+`components/camera/CameraCapture`: a live preview, then keep or retake. Nothing leaves the page until the reader presses "Use this photo", and the camera is released when the dialog closes. It's on the Make page's composer, on its example cards ("Use my camera" keeps the example's note and takes the place of its photo), and on the docs' image pickers (`FilePicker`, `FileSlotInput`), where the photo goes through the same preparing as a chosen file.
 
 ## Proxy (F2)
 

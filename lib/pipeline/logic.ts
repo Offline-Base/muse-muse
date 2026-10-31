@@ -94,7 +94,10 @@ export function pollTimedOut(input: {
   return input.now - input.startedAt >= input.capMs || input.polls >= pollLimit(input.capMs, input.intervalMs);
 }
 
-/** Models the product's gateway tokens may call: the brief's capabilities, minus Glimmer (self-hosted, not the API). */
+/**
+ * What the product's gateway tokens may call: the brief's capabilities, minus Glimmer (self-hosted, not the API).
+ * muse-gadget stays in: it's what lets the token use the gateway's /gadget route (lib/gateway/gadget.ts).
+ */
 export function allowedModelsFor(brief: Pick<Brief, "capabilities">): string[] {
   const models = brief.capabilities.map((c) => c.model).filter((m) => m !== "muse-glimmer");
   return [...new Set(models)];

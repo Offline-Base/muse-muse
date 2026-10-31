@@ -12,6 +12,7 @@ import { RunButton } from "@/components/docs/kit/RunButton";
 import { prettyArguments, ReplyView, ToolCalls } from "@/components/docs/kit/StreamView";
 import { UsageLine } from "@/components/docs/kit/UsageLine";
 import { isAborted, useDocsRun } from "@/components/docs/kit/useDocsRun";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsResult, SseEvent } from "@/lib/docs/client/api";
 import { PROTOCOL_LABEL, PROTOCOL_PATH, type NeutralRequest } from "@/lib/docs/client/body";
 import { costExtrasOf } from "@/lib/docs/client/cost";
@@ -355,7 +356,7 @@ export function ToolLoopPlayground(props: ToolLoopPlaygroundProps) {
       {action === "done" && answer ? (
         <div className="pg-final" role="status">
           <p className="pg-section-label">Final answer</p>
-          <div className="pg-stream-text">{answer}</div>
+          <MarkdownText className="pg-stream-text" text={answer} />
         </div>
       ) : null}
       {action === "limit" ? <div className="pg-hint">Stopped after {maxCalls} model calls, this demo&apos;s limit. Reset to start over.</div> : null}

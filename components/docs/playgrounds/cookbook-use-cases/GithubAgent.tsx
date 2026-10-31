@@ -3,6 +3,7 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CodeView, ErrorBox, ModelSelect, RunButton, DEFAULT_TEXT_MODEL } from "@/components/docs/kit";
 import { EffortSelect, PresetPills, Toggle } from "@/components/docs/kit/Field";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { Effort } from "@/lib/docs/client/models";
 import styles from "@/components/docs/playgrounds/cookbook-use-cases/cuc.module.css";
 import { Diff } from "@/components/docs/playgrounds/cookbook-use-cases/SandboxExec";
@@ -255,7 +256,7 @@ export function GithubAgent({ scenario: initialScenario = "triage-bug" }: Github
               <p className="pg-small">
                 <strong>{c.author}</strong> commented
               </p>
-              <p className={styles.answer}>{c.body}</p>
+              <MarkdownText className={styles.answer} text={c.body} />
             </div>
           ))}
           {tracker.opened.map((o) => (
@@ -263,7 +264,7 @@ export function GithubAgent({ scenario: initialScenario = "triage-bug" }: Github
               <p className="pg-small">
                 <strong>PR #{o.number} opened: {o.title}</strong> ({o.head} into main, awaiting human review; the agent can&apos;t merge)
               </p>
-              <p className={styles.answer}>{o.body}</p>
+              <MarkdownText className={styles.answer} text={o.body} />
               <Diff patch={o.diff} />
             </div>
           ))}

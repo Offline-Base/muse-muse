@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
+import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { Icon, type IconName } from "@/components/icons";
 import styles from "@/components/docs/media/media.module.css";
 import { loadSample, useObjectUrl } from "@/components/docs/media/hooks";
@@ -89,6 +90,8 @@ export function FilePicker({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const offered = useMemo(() => sampleList(accept, samples), [accept, samples]);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const canUseCamera = useCameraSupported() && acceptKinds(accept).includes("image");
   const url = useObjectUrl(value?.blob ?? null);
 
   const take = useCallback(
@@ -178,6 +181,14 @@ export function FilePicker({
           <button type="button" className="link-btn" onClick={() => input.current?.click()} disabled={disabled || !!busy}>
             choose one
           </button>
+          {canUseCamera ? (
+            <>
+              , or{" "}
+              <button type="button" className="link-btn" onClick={() => setCameraOpen(true)} disabled={disabled || !!busy}>
+                take a photo
+              </button>
+            </>
+          ) : null}
           {busy === "upload" ? " (preparing...)" : null}
         </span>
         <input
@@ -194,6 +205,16 @@ export function FilePicker({
           }}
         />
       </div>
+      {canUseCamera ? (
+        <CameraCapture
+          open={cameraOpen}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(file) => {
+            setCameraOpen(false);
+            void take(file, null);
+          }}
+        />
+      ) : null}
       {offered.length ? (
         <div className={styles.samples} role="group" aria-label="Samples">
           {offered.map((s, i) => (

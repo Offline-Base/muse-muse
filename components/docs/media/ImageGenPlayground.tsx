@@ -7,6 +7,7 @@ import { Field, PresetPills, Segmented, TextArea, Toggle } from "@/components/do
 import { FilePicker } from "@/components/docs/media/FilePicker";
 import { ImageOutput, type OutputImage } from "@/components/docs/media/ImageOutput";
 import styles from "@/components/docs/media/media.module.css";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { DocsError } from "@/lib/docs/client/api";
 import type { FormSpec } from "@/lib/docs/client/form";
 import { fileToDataUrl } from "@/lib/docs/media/base64";
@@ -394,7 +395,7 @@ export function ImageGenPlayground({
               {mode === "responses" && turnShown?.reasoning ? (
                 <details className={styles.events} open>
                   <summary>What Muse Image did (reasoning summary)</summary>
-                  <p className={styles.note}>{turnShown.reasoning}</p>
+                  <MarkdownText className={styles.note} text={turnShown.reasoning} />
                 </details>
               ) : null}
               <ImageOutput images={outputImages} name={mode === "edits" ? "muse-image-edit" : "muse-image"} emptyText="No images in this reply." />

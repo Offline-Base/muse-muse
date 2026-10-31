@@ -24,6 +24,7 @@ import {
   type Transcript,
 } from "@/components/docs/playgrounds/cookbook-fundamentals/context";
 import { BarList, Meter, Note, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { tokenUsage } from "@/lib/docs/client/cost";
 import { DEFAULT_TEXT_MODEL, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { collectReply } from "@/lib/docs/client/stream";
@@ -327,7 +328,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
               <p className={`${styles.note} pg-advanced`}>{r.note}</p>
               <details className="pg-advanced">
                 <summary className="pg-muted pg-small">The reply</summary>
-                <p className={styles.textBlock}>{r.reply || "(only the STATE.md block)"}</p>
+                <MarkdownText className={styles.textBlock} text={r.reply || "(only the STATE.md block)"} />
               </details>
               <p className="pg-small pg-advanced">
                 <UsageLine model={r.model} usage={r.usage} />
@@ -353,7 +354,7 @@ export function ContextDemo({ instructions, script }: ContextDemoProps) {
       {finished && latest ? (
         <div className="pg-final">
           <p className="pg-section-label">The coherence check&apos;s answer</p>
-          <p className={styles.textBlock}>{latest.reply}</p>
+          <MarkdownText className={styles.textBlock} text={latest.reply} />
           <Note advanced>Does it remember the decisions from turn 1? A sliding window drops them first; the running state carries them forward in far fewer tokens than the full history.</Note>
         </div>
       ) : null}

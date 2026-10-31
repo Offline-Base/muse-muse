@@ -13,6 +13,7 @@ import { UsageLine } from "@/components/docs/kit/UsageLine";
 import styles from "@/components/docs/playgrounds/cookbook-fundamentals/cookbook.module.css";
 import { Advanced, StatusPill } from "@/components/docs/playgrounds/cookbook-fundamentals/ui";
 import { useToolLoop } from "@/components/docs/playgrounds/cookbook-fundamentals/useToolLoop";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { chatTools, type NeutralRequest, type ToolDef } from "@/lib/docs/client/body";
 import { DEFAULT_TEXT_MODEL, docsModelLabel, fitEffort, type Effort } from "@/lib/docs/client/models";
 import { nextModelBody, requestedCalls, type LoopStep, type ModelStep } from "@/lib/docs/client/toolloop";
@@ -234,13 +235,13 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
                 </p>
                 {s.collected && requestedCalls(s).length ? (
                   <>
-                    {s.collected.text ? <p className={styles.thought}>{s.collected.text}</p> : null}
+                    {s.collected.text ? <MarkdownText className={styles.thought} text={s.collected.text} /> : null}
                     <div className="pg-advanced">
                       <ToolCalls calls={requestedCalls(s)} title={requestedCalls(s).length > 1 ? `${requestedCalls(s).length} tool calls in one turn` : "A tool call"} />
                     </div>
                   </>
                 ) : s.collected?.done && !s.collected.error ? (
-                  <p className={styles.textBlock}>{s.collected.text || "(no text)"}</p>
+                  <MarkdownText className={styles.textBlock} text={s.collected.text || "(no text)"} />
                 ) : s.collected?.error ? (
                   <p className="pg-bad">{s.collected.error.message}</p>
                 ) : null}
@@ -277,7 +278,7 @@ export function ToolCallingDemo({ prompt: initialPrompt, presets = [], readings,
       {answer ? (
         <div className="pg-final" role="status">
           <p className="pg-section-label">Answer</p>
-          <div className="pg-stream-text">{answer}</div>
+          <MarkdownText className="pg-stream-text" text={answer} />
         </div>
       ) : null}
       {loop.next === "limit" ? <p className="pg-hint">Stopped after {maxCalls} model calls, the loop&apos;s cap. Reset to start over.</p> : null}
