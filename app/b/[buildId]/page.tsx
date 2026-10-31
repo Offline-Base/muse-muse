@@ -5,6 +5,7 @@ import { BuildRoom } from "@/components/build/BuildRoom";
 import { NotConnected } from "@/components/ui";
 import { env } from "@/lib/env";
 import { canActAsOwner } from "@/lib/auth";
+import { nativeActive } from "@/lib/native/active";
 import { currentUser, getBuildRoom, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Build room" };
@@ -51,6 +52,7 @@ export default async function BuildRoomPage({
       focusRefine={sp.refine === "1"}
       rebuild={rebuildRef(data.build.rebuildOf)}
       maxFixRounds={env.maxFixRounds}
+      nativeActive={await nativeActive(data.build.id)}
     />
   );
 }

@@ -1,5 +1,6 @@
 /**
- * The build room with `native` events in its log: they change nothing yet. A later unit gives them their own step.
+ * The build room's state with `native` events in its log: they change nothing in it. Their step comes from apps.tsx, on top
+ * of condenseNativeEvents, and goes in roomSteps' targets slot (apps.test.tsx).
  *   npx tsx --test components/build/__tests__/native-event.test.ts
  */
 import assert from "node:assert/strict";

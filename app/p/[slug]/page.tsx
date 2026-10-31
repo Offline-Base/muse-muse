@@ -1,23 +1,48 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { CopyButton, CopyField } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
+import "@/components/product/get-it.css";
 import { GetItPanel } from "@/components/product/GetItPanel";
+import { nativeSlots } from "@/components/product/NativeSlots";
 import { productOutputSlots } from "@/components/product/OutputPanels";
+import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, connectorActions, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
+import type { Brief } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
-import { liveFrameAllow } from "@/lib/product-frame";
+import { downloadCounts, readProductNative } from "@/lib/native/queries";
+import { panelLinkOrigin } from "@/lib/native/product-view";
+import { briefTargets } from "@/lib/native/targets";
+import { enabledFrameBrief, liveFrameAllow, liveFrameSandbox } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   return { title: slug.replace(/-/g, " ") };
+}
+
+/**
+ * The panel's slots for a shipped product. Reading them must never take the page down: the rest of the page works without
+ * them, so a failure here only leaves the panel out.
+ */
+async function getItSlots({ productId, brief, ...ctx }: Omit<Parameters<typeof nativeSlots>[1], "enabled" | "downloads" | "onQuest"> & { productId: string; brief: Brief | null }) {
+  try {
+    const view = await readProductNative(productId, briefTargets(brief));
+    const downloads = ctx.isOwner ? await downloadCounts(view.packages.map((p) => p.artifactId)) : undefined;
+    const onQuest = ((await headers()).get("user-agent") ?? "").includes("OculusBrowser");
+    const slots = nativeSlots(view, { ...ctx, enabled: env.enabledTargets, downloads, onQuest });
+    return { slots, clips: view.clips, initial: onQuest && slots.vr ? ("vr" as const) : undefined };
+  } catch (err) {
+    console.error("[product page] couldn't read its apps:", err instanceof Error ? err.message : err);
+    return { slots: {}, clips: [], initial: undefined };
+  }
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -50,6 +75,12 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const exposedActions = connectorActions(manifest);
   const refineHref = latestBuild ? `/b/${latestBuild.id}?refine=1#refine` : null;
   const now = Date.now();
+  const frameBrief = enabledFrameBrief(brief, env.enabledTargets);
+  const native = shipped
+    ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin: panelLinkOrigin(origin), brief, frameBrief, isOwner, buildId: latestBuild?.id ?? null })
+    : { slots: {}, clips: [], initial: undefined };
+  // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
+  const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
     <div className="split">
@@ -100,8 +131,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               src={product.liveUrl}
               title={`${product.name}, the live product`}
               loading="lazy"
-              allow={liveFrameAllow(brief)}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+              allow={liveFrameAllow(frameBrief)}
+              sandbox={liveFrameSandbox(frameBrief)}
               referrerPolicy="no-referrer"
             />
           </section>
@@ -138,7 +169,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
           </EmptyCard>
         )}
 
-        {shipped ? <GetItPanel slots={env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}} /> : null}
+        {shipped ? (
+          <GetItPanel slots={{ ...native.slots, ...(env.productOutputs ? productOutputSlots({ product, origin, events, now }) : {}) }} initial={native.initial} />
+        ) : null}
 
         <section className="card section-card" aria-labelledby="muse-title">
           <h2 id="muse-title">The muse</h2>
@@ -265,6 +298,20 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 playsInline
                 aria-label={`Demo of ${product.name}`}
               />
+            </section>
+          ) : null}
+
+          {native.clips.length || canAddClips ? (
+            <section className="panel-section">
+              <h2 className="panel-label">Filmed by its owner</h2>
+              {native.clips.map((clip) => (
+                <figure key={clip.url} className="getit-owner-clip">
+                  <video className="demo" src={clip.url} poster={clip.posterUrl ?? undefined} controls preload="metadata" playsInline aria-label={clip.caption} />
+                  <figcaption>{clip.caption}</figcaption>
+                  {canAddClips ? <RemoveClip slug={product.slug} url={clip.url} /> : null}
+                </figure>
+              ))}
+              {canAddClips ? <AddClip slug={product.slug} productId={product.id} /> : null}
             </section>
           ) : null}
 
