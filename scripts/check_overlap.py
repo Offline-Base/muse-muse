@@ -7,7 +7,7 @@ Standard library only, so it also runs on the machine that did the training (pyt
 scripts.check_overlap from a copy of the repo). Training JSONL may be in any shape: chat
 "messages", dreaming rows or raw eval-style items. Every string in a row counts, and so does each
 line of it with a leading "Label:" dropped, so the router's prompt layout ("Request: ...") still
-matches. For each eval set (default: every eval/*.jsonl and the demo essays) it counts items with:
+matches. For each eval set (default: every eval/*.jsonl, eval/splits/*.jsonl and the demo essays) it counts items with:
 
 - an exact match: one of the item's texts (request, result, text, or a line of them), normalized
   (lowercase, punctuation dropped, tags like [Student A] folded to one token), equals a training
@@ -40,7 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EVAL = ROOT / "eval"
-DEFAULT_SETS = [*sorted(EVAL.glob("*.jsonl")), ROOT / "demo" / "essays"]
+DEFAULT_SETS = [*sorted(EVAL.glob("*.jsonl")), *sorted((EVAL / "splits").glob("*.jsonl")), ROOT / "demo" / "essays"]
 THRESHOLD = 0.8  # the make_synthetic rule for "too close"
 SHINGLE = 1  # one-word shingles: token Jaccard, the rule make_synthetic used to keep its items apart
 MIN_WORDS = 5

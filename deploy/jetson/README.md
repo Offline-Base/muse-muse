@@ -8,7 +8,7 @@ Everything needed to run Muse Privacy on a Jetson Orin Nano 8GB as three systemd
 
 | Service | What it does | Listens on |
 |---|---|---|
-| `muse-privacy-glimmer` | llama-server with Muse Glimmer i1-IQ1_S (6.5 GB), 4096 context, one slot, all layers on the GPU | 127.0.0.1:8081 only, and the unit denies every non-loopback address |
+| `muse-privacy-glimmer` | llama-server with the model in `GLIMMER_GGUF` (default Muse Glimmer i1-IQ1_S, 6.5 GB), 4096 context, one slot, all layers on the GPU | 127.0.0.1:8081 only, and the unit denies every non-loopback address |
 | `muse-privacy` | `python -m base` with `BASE_DEVICE=jetson` and `GLIMMER_BACKEND=llama_server`: approval page, connector, heavy-step queue, status light | approval page on `APPROVAL_HOST` (default 127.0.0.1), connector on 127.0.0.1:8790 |
 | `muse-privacy-relay` | `python -m base.connector.relay_client run`: dials out to the connector relay so Muse can reach the connector | nothing, outgoing only |
 
@@ -20,9 +20,9 @@ All three run as the `muse-privacy` system user with `NoNewPrivileges`, `Protect
 
 | File | What it is |
 |---|---|
-| `install.sh` | Run once as root from a checkout of this repo. Creates the `muse-privacy` user (in the `video` and `dialout` groups when they exist), `/opt/muse-privacy`, `/var/lib/muse-privacy` (0700) and `/etc/muse-privacy/env` (site settings, 0640). Copies the app without `.env`, builds its virtualenv with `uv sync --frozen --no-dev` when uv is installed, optionally builds llama.cpp with CUDA (`--build-llama`), downloads the GGUF and installs and enables the units. It never restarts the board and never changes its power settings. |
-| `muse-privacy-glimmer.service` | The model server. Its `ExecStartPre` runs `glimmer-env.sh`. |
-| `glimmer-env.sh` | Writes `/var/lib/muse-privacy/glimmer.env`. When `/var/lib/muse-privacy/adapters/router.gguf` exists, `LORA_ARGS` becomes `--lora <that file> --lora-init-without-apply`, so the router adapter is loaded but off, ready to be turned on per request or with `adapter_sync.sh`. Otherwise `LORA_ARGS` is empty and llama-server starts without a LoRA. |
+| `install.sh` | Run once as root from a checkout of this repo or from an unpacked bundle (`scripts/make_bundle.py`). Creates the `muse-privacy` user (in the `video` and `dialout` groups when they exist), `/opt/muse-privacy`, `/var/lib/muse-privacy` (0700) and `/etc/muse-privacy/env` (site settings, 0640). Copies the app without `.env` (from a checkout, `git archive HEAD`, with a warning when the working tree has uncommitted changes), builds its virtualenv with `uv sync --frozen --no-dev` when uv is installed, optionally builds llama.cpp with CUDA (`--build-llama`, tag b11972 by default), downloads the GGUF or copies one from a USB stick (`--model-file FILE --model-sha256 HEX`) and installs and enables the units. It never restarts the board and never changes its power settings. |
+| `muse-privacy-glimmer.service` | The model server. Its `ExecStartPre` runs `glimmer-env.sh`; `--model ${GLIMMER_GGUF}` comes from what it writes. |
+| `glimmer-env.sh` | Writes `/var/lib/muse-privacy/glimmer.env`: `GLIMMER_GGUF`, the last `GLIMMER_GGUF=` line of `/etc/muse-privacy/env`, else `/opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf` (a missing file stops the start with a plain message), and `LORA_ARGS`. When `/var/lib/muse-privacy/adapters/router.gguf` exists, `LORA_ARGS` becomes `--lora <that file> --lora-init-without-apply`, so the router adapter is loaded but off, ready to be turned on per request or with `adapter_sync.sh`. Otherwise `LORA_ARGS` is empty and llama-server starts without a LoRA. |
 | `muse-privacy.service` | The Muse Privacy server. Reads site settings from `/etc/muse-privacy/env`. |
 | `muse-privacy-relay.service` | The relay client. Installed but not enabled until you set `RELAY_URL` and pair. |
 | `adapter_sync.sh` | Installs a router LoRA adapter you brought over from the laptop (USB stick, or a copy the laptop starts), restarts the model service if the file changed (llama-server only loads LoRA files at start), and leaves its global scale at 0 (the router names it per request). `--scale S` applies it to every request, for testing. |
@@ -37,6 +37,8 @@ https://huggingface.co/mradermacher/Muse-Glimmer-30B-i1-GGUF/resolve/main/Muse-G
 
 to `/opt/muse-privacy/models/` through a `.part` file that `curl --continue-at -` resumes after an interruption. It reads the file's SHA-256 and size from the Hugging Face API (`/api/models/mradermacher/Muse-Glimmer-30B-i1-GGUF/tree/main`), checks free disk first, and only moves the file into place when the SHA-256 matches. Set `MODEL_SHA256` to supply the hash yourself.
 
+A different file, such as a fine-tuned 1.6-bit (IQ1_S) Glimmer, comes on a USB stick instead: `--model-file /media/usb/FILE.gguf --model-sha256 HEX` copies it into `/opt/muse-privacy/models/`, checks the copy's SHA-256 (the `sha256` row of the laptop's `eval/reports/model_file_<label>.md`) and sets `GLIMMER_GGUF` in `/etc/muse-privacy/env`, so nothing is downloaded. Before that, `uv run python -m scripts.plug_in_model FILE --check --device jetson` from the unpacked bundle checks it fits: it counts the KV cache at the unit's 4096 tokens and keeps 1 GB for the system, with a warning (4 GB on a laptop; `--margin` changes it).
+
 ## Install
 
 ```
@@ -46,7 +48,7 @@ sudo systemctl start muse-privacy-glimmer muse-privacy
 journalctl -u muse-privacy-glimmer -u muse-privacy -f
 ```
 
-llama.cpp must be b10353 or newer. Loading the model takes about a minute; the model unit allows five.
+llama.cpp must be b10353 or newer for Glimmer and b11960 or newer for LFM3-VL-2B; `--build-llama` builds b11972, the laptop's build. Loading the model takes about a minute; the model unit allows five. To measure a board before installing anything, see docs/DEVICE_BENCH.md.
 
 ## Pair the laptop worker
 

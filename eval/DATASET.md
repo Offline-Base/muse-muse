@@ -19,6 +19,8 @@ Everything described here is invented: the teacher, the 24 students, the school,
 
 `eval/fresh_200.jsonl` is a random sample of 200 items from `eval/synthetic.jsonl` (shuffled with seed 20261030), used once to score the device-only router. Its misses were then read and fixed, so it is no longer unseen. `eval/fresh_200_b.jsonl` is a second sample with no overlap (seed 20261031) for the final score, and its items were not read while writing the rules. `eval/compliance.jsonl` is 58 invented sentences for the toggles' tagging (`eval/run_compliance.py`).
 
+`eval/splits/` holds four more samples of `eval/synthetic.jsonl`, made by `scripts/make_splits.py` (seed 20261101) from the 1,264 items that no set above and no scored report has used: `fresh_200_c.jsonl` (200, the candidate sealed final set), `sim_holdout.jsonl` (80, 20 per decision), `sim_unseen.jsonl` (100, 25 per decision) and `sim_days.jsonl` (800). `eval/splits/MANIFEST.md` lists what was left out and each file's sha256. They are **unsealed**: every set here comes from `eval/synthetic.jsonl`, so if the fine-tuned Glimmer trained on that file, all of them are contaminated. No eval has run on them.
+
 ## The roster
 
 Ms. Celeste Fairbrook teaches Room 14 at Quillmere Elementary (invented). The 24 students come from many backgrounds and include the name shapes that trip up a name guard:

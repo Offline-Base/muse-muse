@@ -78,7 +78,9 @@ def test_glimmer_unit_command():
     service = parse_unit(DEPLOY / "muse-privacy-glimmer.service")["Service"]
     cmd = service["ExecStart"][0]
     assert cmd.startswith("/opt/muse-privacy/llama.cpp/")
-    assert "--model /opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf" in cmd
+    assert " --model ${GLIMMER_GGUF} " in cmd  # braced: one argument; glimmer-env.sh writes it
+    unit = parse_unit(DEPLOY / "muse-privacy-glimmer.service")["Unit"]
+    assert not any(p.endswith(".gguf") for p in unit["AssertPathExists"])  # glimmer-env.sh checks the model
     for flag in ("--host 127.0.0.1", "--port 8081", "-c 4096", "-np 1", "-ngl 99", "--no-mmproj"):
         assert f" {flag}" in cmd
     assert cmd.endswith(" $LORA_ARGS")  # unbraced: splits into zero or more arguments
@@ -154,19 +156,63 @@ def test_adapter_sync_rejects_non_gguf(tmp_path):
     assert "/lora-adapters" in code and "127.0.0.1:8081" in code
 
 
+def glimmer_env(tmp_path, site: str | None = None, adapter: bool = False):
+    default = tmp_path / "Muse-Glimmer-30B.i1-IQ1_S.gguf"
+    default.write_bytes(b"GGUF")
+    if adapter:
+        (tmp_path / "router.gguf").write_bytes(b"GGUF")
+    if site is not None:
+        (tmp_path / "site.env").write_text(site)
+    env = {**os.environ, "MUSE_ADAPTER": str(tmp_path / "router.gguf"), "MUSE_GLIMMER_ENV": str(tmp_path / "glimmer.env"),
+           "MUSE_SITE_ENV": str(tmp_path / "site.env"), "MUSE_DEFAULT_MODEL": str(default),
+           "GLIMMER_GGUF": "/an/old/start.gguf"}  # what last start's glimmer.env loaded: never used
+    return subprocess.run(["sh", str(DEPLOY / "glimmer-env.sh")], env=env, capture_output=True, text=True)
+
+
 @pytest.mark.parametrize("with_adapter", [True, False])
-def test_glimmer_env_writes_lora_args(tmp_path, with_adapter):
+def test_glimmer_env_writes_the_model_and_lora_args(tmp_path, with_adapter):
+    assert glimmer_env(tmp_path, adapter=with_adapter).returncode == 0
+    lines = (tmp_path / "glimmer.env").read_text().splitlines()
+    assert lines[0] == f"GLIMMER_GGUF={tmp_path / 'Muse-Glimmer-30B.i1-IQ1_S.gguf'}"  # no site setting: the IQ1_S file
     adapter = tmp_path / "router.gguf"
-    if with_adapter:
-        adapter.write_bytes(b"GGUF")
-    out = tmp_path / "glimmer.env"
-    env = {**os.environ, "MUSE_ADAPTER": str(adapter), "MUSE_GLIMMER_ENV": str(out)}
-    subprocess.run(["sh", str(DEPLOY / "glimmer-env.sh")], env=env, check=True)
-    text = out.read_text()
-    if with_adapter:
-        assert text == f'LORA_ARGS="--lora {adapter} --lora-init-without-apply"\n'
-    else:
-        assert text == "LORA_ARGS=\n"
+    assert lines[1] == (f'LORA_ARGS="--lora {adapter} --lora-init-without-apply"' if with_adapter else "LORA_ARGS=")
+
+
+def test_glimmer_env_takes_the_sites_last_model_line_and_refuses_a_missing_one(tmp_path):
+    tuned = tmp_path / "glimmer-tuned-iq1_s.gguf"
+    tuned.write_bytes(b"GGUF")
+    site = f"RELAY_URL=\nGLIMMER_GGUF=/opt/old.gguf\nGLIMMER_GGUF={tuned}\n"
+    assert glimmer_env(tmp_path, site).returncode == 0
+    assert (tmp_path / "glimmer.env").read_text().splitlines()[0] == f"GLIMMER_GGUF={tuned}"
+    tuned.unlink()
+    r = glimmer_env(tmp_path, site)
+    assert r.returncode == 1 and "no model at" in r.stderr
+    r = glimmer_env(tmp_path, "GLIMMER_GGUF=models/relative.gguf\n")
+    assert r.returncode == 1 and "absolute path" in r.stderr
+
+
+def test_install_copies_a_usb_model_with_its_sha_and_builds_the_laptops_llama_cpp():
+    text = (DEPLOY / "install.sh").read_text()
+    assert 'LLAMA_REF="${LLAMA_REF:-b11972}"' in text
+    code = code_lines(DEPLOY / "install.sh")
+    # the copy branch comes first, so --model-file never reaches the download
+    assert code.index('if [ -n "$MODEL_FILE" ]; then') < code.index("curl -fL --retry 10")
+    assert "GLIMMER_GGUF=" in code and "sha256sum \"$DEST.part\"" in code
+    assert "git -C \"$APP_SRC\" status --porcelain" in code and "scripts.make_bundle" in code
+    out = subprocess.run(["bash", str(DEPLOY / "install.sh"), "--help"], capture_output=True, text=True, check=True)
+    assert "--model-file" in out.stdout and "--model-sha256" in out.stdout
+
+
+@pytest.mark.parametrize(
+    ("args", "says"),
+    [(["--model-file", "x.gguf"], "go together"), (["--model-sha256", "ab"], "go together"),
+     (["--model-file", "README.md", "--model-sha256", "0" * 64], ".gguf file")],
+)
+def test_install_checks_the_model_file_options_first(args, says, tmp_path):
+    if args[0] == "--model-file" and args[1] == "README.md":
+        args = ["--model-file", str(DEPLOY / "README.md"), *args[2:]]
+    r = subprocess.run(["bash", str(DEPLOY / "install.sh"), *args], capture_output=True, text=True)
+    assert r.returncode == 1 and says in r.stderr
 
 
 # -- scripts/start.sh ----------------------------------------------------------------------------

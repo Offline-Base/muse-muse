@@ -15,3 +15,5 @@ eval/reports/raw/*.log
 .DS_Store
 node_modules/
 .vercel/
+# board bundles from scripts/make_bundle.py
+dist/

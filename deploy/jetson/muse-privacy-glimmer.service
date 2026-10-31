@@ -1,8 +1,9 @@
-# Muse Glimmer i1-IQ1_S on llama-server, loopback only. Installed by deploy/jetson/install.sh.
+# Muse Glimmer on llama-server, loopback only. Installed by deploy/jetson/install.sh.
+# The model is GLIMMER_GGUF from /etc/muse-privacy/env (install.sh --model-file sets it), else
+# Muse-Glimmer-30B.i1-IQ1_S.gguf; glimmer-env.sh checks the file exists before the server starts.
 [Unit]
 Description=Muse Privacy Glimmer model (llama-server on 127.0.0.1:8081)
 After=network.target
-AssertPathExists=/opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf
 AssertPathExists=/opt/muse-privacy/llama.cpp/build/bin/llama-server
 AssertPathExists=/var/lib/muse-privacy/home/llama_api_key
 
@@ -10,8 +11,8 @@ AssertPathExists=/var/lib/muse-privacy/home/llama_api_key
 Type=simple
 User=muse-privacy
 Group=muse-privacy
-# glimmer-env.sh writes LORA_ARGS to /var/lib/muse-privacy/glimmer.env. When
-# /var/lib/muse-privacy/adapters/router.gguf exists it holds
+# glimmer-env.sh writes GLIMMER_GGUF and LORA_ARGS to /var/lib/muse-privacy/glimmer.env (read again
+# for ExecStart, after it ran). When /var/lib/muse-privacy/adapters/router.gguf exists LORA_ARGS holds
 # "--lora /var/lib/muse-privacy/adapters/router.gguf --lora-init-without-apply", so the router
 # adapter is loaded but off until a request (or adapter_sync.sh) turns it on; otherwise it is empty.
 ExecStartPre=/opt/muse-privacy/bin/glimmer-env.sh
@@ -21,7 +22,7 @@ EnvironmentFile=-/var/lib/muse-privacy/glimmer.env
 # RAM with every new prompt. --swa-full keeps prefix reuse without checkpoints. --api-key-file
 # keeps other local processes off the model and its /lora-adapters scale; --no-slots hides the
 # last request's state. A key on the command line would show in /proc, so it is a file.
-ExecStart=/opt/muse-privacy/llama.cpp/build/bin/llama-server --model /opt/muse-privacy/models/Muse-Glimmer-30B.i1-IQ1_S.gguf --alias glimmer --host 127.0.0.1 --port 8081 -c 4096 -np 1 -ngl 99 -ub 128 -b 512 --swa-full --ctx-checkpoints 0 --cache-ram 0 --no-slots --api-key-file /var/lib/muse-privacy/home/llama_api_key --no-mmproj --jinja $LORA_ARGS
+ExecStart=/opt/muse-privacy/llama.cpp/build/bin/llama-server --model ${GLIMMER_GGUF} --alias glimmer --host 127.0.0.1 --port 8081 -c 4096 -np 1 -ngl 99 -ub 128 -b 512 --swa-full --ctx-checkpoints 0 --cache-ram 0 --no-slots --api-key-file /var/lib/muse-privacy/home/llama_api_key --no-mmproj --jinja $LORA_ARGS
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=300

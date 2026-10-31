@@ -108,7 +108,7 @@ def test_customize_keeps_device_only_while_swapping_the_client(environ, tmp_path
 
 def test_glimmer_url_must_be_this_device(environ):
     with pytest.raises(mm.MatrixError):
-        mm.glimmer_client(mm.settings_for(mm.CONFIGS["glimmer_decide"], opts(), environ), "http://192.0.2.10:8091/v1")
+        mm.glimmer_client(mm.settings_for(mm.CONFIGS["glimmer_decide"], opts(), environ), "http://192.0.2.5:8091/v1")
 
 
 @pytest.mark.parametrize(

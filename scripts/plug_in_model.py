@@ -1,14 +1,18 @@
 """Plug a local GGUF into Muse Privacy as the device's main model, or undo that.
 
     uv run python -m scripts.plug_in_model /path/to/model.gguf --check [--draft DRAFT.gguf] [--label NAME]
+        [--device laptop|jetson] [--margin GB] [--ctx N]
     uv run python -m scripts.plug_in_model /path/to/model.gguf [--draft DRAFT.gguf] [--draft-n N]
         [--flash-attn on|off|auto] [--reasoning-budget N]
     uv run python -m scripts.plug_in_model --undo
 
 Checks the file first: it reads the GGUF header (architecture, tensor types, parameters, bits per
 weight, the KV cache at ANSWER_CTX, vision tensors, the vocabulary), hashes it, compares its tensor
-types with what llama.cpp can load, and checks free disk and memory with the drafter included. It
-writes eval/reports/model_file_<label>.md and refuses a file that cannot work, with a plain reason.
+types with what llama.cpp can load, and checks free disk and memory with the drafter included. The
+memory check keeps 4 GB for the rest on a laptop (LFM, the embedder, the app, the system) and 1 GB
+on a Jetson (BASE_DEVICE=jetson, a headless board that runs only the model), with a warning; --margin
+sets it. The KV cache is counted at ANSWER_CTX, else 16384 on a laptop and the Jetson unit's 4096.
+It writes eval/reports/model_file_<label>.md and refuses a file that cannot work, with a plain reason.
 
 Then it sets the model's lines in .env: every model on this device, your GGUF for answers and
 routing, LFM3-VL-2B for scans and search, plus the drafter and server knobs scripts/start.sh reads
@@ -36,9 +40,17 @@ from scripts import gguf_info
 ENV = REPO_ROOT / ".env"
 REPORTS = REPO_ROOT / "eval" / "reports"
 BACKUP_NAME = ".env.before-plug-in"
-MARGIN_GB = 4  # LFM, the embedder, the app and the system, on top of the model
+DEVICES = ("laptop", "jetson")
+# Memory kept for everything but the model: LFM, the embedder, the app and the system on a laptop;
+# on a headless Jetson only the system and the small Python services (deploy/jetson).
+MARGIN_GB = {"laptop": 4.0, "jetson": 1.0}
 MIN_FREE_GB = 2  # free disk left on the model's volume, for logs, the database and swap
-DEFAULT_CTX = 16384  # scripts/start.sh's ANSWER_CTX
+DEFAULT_CTX = {"laptop": 16384, "jetson": 4096}  # scripts/start.sh's ANSWER_CTX; the Jetson unit's -c
+JETSON_WARNING = (
+    "Warning: on a Jetson this check keeps only {margin:g} GB for the system and the app. That holds "
+    "only on a headless board (multi-user.target) with Ollama, Docker and other GPU services stopped. "
+    "Watch free -m and tegrastats on the first start."
+)
 GLIMMER_MIN_BUILD = 10353  # Glimmer needs llama.cpp b10353 or newer; every type in gguf_info.TYPES is older
 FLASH_ATTN = ("on", "off", "auto")
 GIB = 1024**3
@@ -69,13 +81,14 @@ def inspect(
     memory_gb: float | None,
     *,
     draft: Path | None = None,
-    ctx: int = DEFAULT_CTX,
+    ctx: int = DEFAULT_CTX["laptop"],
     build: int | None = None,
     free_gb: float | None = None,
     hash_file: bool = True,
+    margin_gb: float = MARGIN_GB["laptop"],
 ) -> tuple[list[str], dict[str, str]]:
     """Plain reasons this file can't be the device's model (empty means it can), and the facts
-    about it for the report, as label -> value."""
+    about it for the report, as label -> value. `margin_gb` is the memory kept for everything else."""
     facts: dict[str, str] = {}
     files = [("model", path)] + ([("drafter", draft)] if draft else [])
     read: dict[str, gguf_info.GGUF] = {}
@@ -156,12 +169,12 @@ def inspect(
     if free_gb is not None and free_gb < MIN_FREE_GB:
         problems.append(f"Only {free_gb:.1f} GB of disk is free on the model's volume. Free at least {MIN_FREE_GB} GB first.")
 
-    total = need / GIB + MARGIN_GB
-    facts["Memory needed"] = f"{total:.1f} GB (model, drafter and KV cache, plus {MARGIN_GB} GB for LFM, the app and the system)"
-    facts["Memory on this device"] = "unknown" if memory_gb is None else f"{memory_gb:.0f} GB"
+    total = need / GIB + margin_gb
+    facts["Memory needed"] = f"{total:.1f} GB (model, drafter and KV cache at {ctx:,} tokens, plus {margin_gb:g} GB for the rest)"
+    facts["Memory on this device"] = "unknown" if memory_gb is None else f"{memory_gb:.1f} GB"
     if memory_gb is not None and total > memory_gb:
         problems.append(
-            f"{path.name} needs about {total:.1f} GB with its KV cache{' and drafter' if draft else ''} and {MARGIN_GB} GB for everything else, more than this device's {memory_gb:.0f} GB of memory."
+            f"{path.name} needs about {total:.1f} GB with its KV cache{' and drafter' if draft else ''} and {margin_gb:g} GB for everything else, more than this device's {memory_gb:.1f} GB of memory."
         )
     return problems, facts
 
@@ -283,9 +296,15 @@ def server_binary(env_path: Path = ENV) -> str | None:
     return env.get("LLAMA_SERVER_BIN") or env.get("CHECKER_SERVER_BIN") or shutil.which("llama-server")
 
 
-def context_size(env_path: Path = ENV) -> int:
+def device_name(env_path: Path = ENV) -> str:
+    """BASE_DEVICE from the environment or .env, laptop when unset or unknown."""
+    value = {**read_dotenv(env_path), **os.environ}.get("BASE_DEVICE", "laptop")
+    return value if value in DEVICES else "laptop"
+
+
+def context_size(env_path: Path = ENV, device: str = "laptop") -> int:
     value = {**read_dotenv(env_path), **os.environ}.get("ANSWER_CTX", "")
-    return int(value) if value.isdigit() else DEFAULT_CTX
+    return int(value) if value.isdigit() else DEFAULT_CTX.get(device, DEFAULT_CTX["laptop"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -298,7 +317,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--draft-n", type=int, help="tokens drafted per step (GLIMMER_DRAFT_N; start.sh's default is 15)")
     p.add_argument("--flash-attn", choices=FLASH_ATTN, help="llama-server -fa (GLIMMER_FA; default auto)")
     p.add_argument("--reasoning-budget", type=int, help="llama-server --reasoning-budget: -1 unrestricted, 0 none (GLIMMER_REASONING_BUDGET)")
-    p.add_argument("--ctx", type=int, help="context size for the KV estimate (default: ANSWER_CTX, else 16384)")
+    p.add_argument("--ctx", type=int, help="context size for the KV estimate (default: ANSWER_CTX, else 16384, 4096 on a Jetson)")
+    p.add_argument("--device", choices=DEVICES, help="the device this file is for (default: BASE_DEVICE, else laptop)")
+    p.add_argument("--margin", type=float, help="GB of memory kept for everything but the model (default 4 on a laptop, 1 on a Jetson)")
     p.add_argument("--label", help="the report's name: eval/reports/model_file_<label>.md (default: the file's name)")
     p.add_argument("--out", type=Path, default=REPORTS, help=argparse.SUPPRESS)
     args = p.parse_args(argv)
@@ -311,14 +332,23 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--draft-n must be 1 or more")
     if args.reasoning_budget is not None and args.reasoning_budget < -1:
         p.error("--reasoning-budget must be -1 (unrestricted), 0 or more")
+    if args.margin is not None and args.margin < 0:
+        p.error("--margin must be 0 or more")
+    device = args.device or device_name(ENV)
+    margin = MARGIN_GB[device] if args.margin is None else args.margin
+    if device == "jetson" and margin < MARGIN_GB["laptop"]:
+        print(JETSON_WARNING.format(margin=margin), file=sys.stderr)
     problems, facts = inspect(
         args.model,
         total_memory_gb(),
         draft=args.draft,
-        ctx=args.ctx or context_size(ENV),
+        ctx=args.ctx or context_size(ENV, device),
         build=gguf_info.llama_build(server_binary(ENV)),
         free_gb=free_disk_gb(args.model),
+        margin_gb=margin,
     )
+    if facts:
+        facts["Device"] = f"{device}, {margin:g} GB kept for everything but the model"
     for label, value in facts.items():
         print(f"{label}: {value}")
     if facts:

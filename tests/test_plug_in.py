@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import stat
 import subprocess
@@ -79,6 +80,45 @@ def test_the_drafter_must_share_the_vocabulary_and_counts_toward_memory(tmp_path
     problems, _ = plug.inspect(model, 36, draft=bad, free_gb=50, hash_file=False)
     assert "vocabulary (4,999 tokens) does not match the model's (5,000)" in problems[0]
     assert "No drafter file" in plug.inspect(model, 36, draft=tmp_path / "none.gguf")[0][0]
+
+
+def six_gib(monkeypatch):
+    """gguf_info.read as usual, but every file says it is 6.1 GiB (the 1.6-bit Glimmer's size)."""
+    real = plug.gguf_info.read
+    monkeypatch.setattr(plug.gguf_info, "read", lambda p: dataclasses.replace(real(p), file_bytes=int(6.1 * plug.GIB)))
+
+
+def test_a_6_gib_file_fits_an_8_gb_jetson_but_not_an_8_gb_laptop(tmp_path, monkeypatch):
+    six_gib(monkeypatch)
+    model = gguf(tmp_path)
+    kw = {"free_gb": 50, "build": 11972, "hash_file": False, "ctx": plug.DEFAULT_CTX["jetson"]}
+    assert plug.inspect(model, 7.4, margin_gb=plug.MARGIN_GB["jetson"], **kw)[0] == []
+    [problem] = plug.inspect(model, 7.4, margin_gb=plug.MARGIN_GB["laptop"], **kw)[0]
+    assert "4 GB for everything else, more than this device's 7.4 GB" in problem
+    # the KV cache at the configured context counts too: a long context no longer fits the board
+    assert plug.inspect(model, 7.4, margin_gb=1, **{**kw, "ctx": 1 << 22})[0]
+
+
+def test_on_a_jetson_the_check_keeps_1_gb_with_a_warning_and_counts_the_units_context(tmp_path, monkeypatch, capsys):
+    six_gib(monkeypatch)
+    monkeypatch.setattr(plug, "ENV", tmp_path / ".env")
+    monkeypatch.delenv("ANSWER_CTX", raising=False)
+    monkeypatch.setenv("BASE_DEVICE", "jetson")
+    monkeypatch.setattr(plug, "total_memory_gb", lambda: 7.4)
+    monkeypatch.setattr(plug.gguf_info, "llama_build", lambda _bin: 11972)
+    monkeypatch.setattr(plug, "free_disk_gb", lambda _p: 50.0)
+    out = tmp_path / "r"
+    assert plug.main([str(gguf(tmp_path)), "--check", "--out", str(out)]) == 0
+    assert "headless board" in capsys.readouterr().err
+    text = (out / "model_file_tuned.md").read_text()
+    assert "| KV cache at 4,096 tokens |" in text and "| Device | jetson, 1 GB kept" in text
+    assert plug.main([str(gguf(tmp_path)), "--check", "--margin", "4", "--out", str(out)]) == 1
+    assert plug.main([str(gguf(tmp_path)), "--check", "--device", "laptop", "--out", str(out)]) == 1
+
+
+def test_the_jetson_context_default_is_the_units():
+    unit = (REPO_ROOT / "deploy" / "jetson" / "muse-privacy-glimmer.service").read_text()
+    assert f" -c {plug.DEFAULT_CTX['jetson']} " in unit
 
 
 def test_check_writes_a_report_with_no_folders_and_leaves_env_alone(tmp_path, monkeypatch, capsys):

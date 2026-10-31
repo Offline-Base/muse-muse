@@ -685,16 +685,10 @@ def _shown_argv(argv: list[str]) -> list[str]:
     """The command for the report: a path inside the repo relative to it, any other path (a model
     file, a temporary folder) by its base name only, so no user or folder name is shown."""
 
-    def shown(value: str) -> str:
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            return value
-        return str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else path.name
-
     out = []
     for arg in argv:
         flag, eq, value = arg.partition("=")
-        out.append(f"{flag}={shown(value)}" if eq and flag.startswith("--") else shown(arg))
+        out.append(f"{flag}={run_eval.shown_path(value)}" if eq and flag.startswith("--") else run_eval.shown_path(arg))
     return out
 
 

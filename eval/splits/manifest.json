@@ -1,0 +1,77 @@
+{
+  "status": "UNSEALED",
+  "reason": "Ethan has not confirmed what his fine-tuned Glimmer trained on. Every set here, like fresh_200 and fresh_200_b, comes from eval/synthetic.jsonl, so if the fine-tune used that file every one of them is contaminated, not only fresh_200_c. Seal fresh_200_c only after he confirms the fine-tune never saw eval/synthetic.jsonl and scripts/check_overlap.py on his training file finds nothing.",
+  "command": "uv run python -m scripts.make_splits",
+  "seed": 20261101,
+  "source": "eval/synthetic.jsonl",
+  "source_sha256": "639885ec87a32b1cc1c3045209e41870521797b156bffaa8c72b7d01dc464bf4",
+  "pool": 1264,
+  "spare": 84,
+  "left_out": {
+    "scored in a report": 336,
+    "in a set": 400
+  },
+  "sets": {
+    "eval/fresh_200.jsonl": 200,
+    "eval/fresh_200_b.jsonl": 200,
+    "eval/tasks.jsonl": 100,
+    "eval/holdout.jsonl": 20,
+    "eval/compliance.jsonl": 62
+  },
+  "used": {
+    "eval/reports/final/raw/nights/unseen-last-night.jsonl": 100,
+    "eval/reports/final/raw/nights/unseen-night-0.jsonl": 100,
+    "eval/reports/nights_device_rules/raw/nights/unseen-last-night.jsonl": 100,
+    "eval/reports/nights_device_rules/raw/nights/unseen-night-0.jsonl": 100,
+    "eval/reports/nights_device_tighten/raw/nights/unseen-last-night.jsonl": 100,
+    "eval/reports/nights_device_tighten/raw/nights/unseen-night-0.jsonl": 100,
+    "eval/reports/raw/request_topics.jsonl": 420,
+    "eval/reports/raw/request_topics_tuning.jsonl": 260
+  },
+  "files": {
+    "fresh_200_c.jsonl": {
+      "items": 200,
+      "sha256": "74b58035d877631c0ec3641256124d086cf54ab3ad50c57808c4c5201355a06a",
+      "purpose": "candidate sealed final set: nobody reads its misses before submission",
+      "per_decision": {
+        "share_tagged": 46,
+        "share_summary": 66,
+        "ask_user": 40,
+        "refuse": 48
+      }
+    },
+    "sim_holdout.jsonl": {
+      "items": 80,
+      "sha256": "df8d3a1e8c4ec3e64171dfeddf5cf1c31d01083c23ce6bef64a375a570b90b0b",
+      "purpose": "the dreaming gate's holdout in the simulation, an equal share per decision",
+      "per_decision": {
+        "share_tagged": 20,
+        "share_summary": 20,
+        "ask_user": 20,
+        "refuse": 20
+      }
+    },
+    "sim_unseen.jsonl": {
+      "items": 100,
+      "sha256": "dc74add075860286104811462d6914ae2f80d28588773dc28a588480e4dca809",
+      "purpose": "the simulation's unseen test, an equal share per decision",
+      "per_decision": {
+        "share_tagged": 25,
+        "share_summary": 25,
+        "ask_user": 25,
+        "refuse": 25
+      }
+    },
+    "sim_days.jsonl": {
+      "items": 800,
+      "sha256": "6f796ebad0acfd4e0d35a4931db4e5f8237cafee7d18509fa216b797042c10cb",
+      "purpose": "the simulated days, free to read",
+      "per_decision": {
+        "share_tagged": 222,
+        "share_summary": 213,
+        "ask_user": 153,
+        "refuse": 212
+      }
+    }
+  }
+}

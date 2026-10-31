@@ -646,6 +646,24 @@ def command_line(module: str, argv: list[str]) -> str:
     return f"uv run python -m {module} " + shlex.join(display_path(a) for a in argv)
 
 
+def shown_path(value: str) -> str:
+    """A path for a report: inside the repo relative to it, any other absolute path (a model file,
+    a temporary folder) by its base name only, so no user or folder name is shown."""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        return value
+    return str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else path.name
+
+
+def shown_command(module: str, argv: list[str]) -> str:
+    """command_line with every path through shown_path, `--flag=PATH` included."""
+    out = []
+    for arg in argv:
+        flag, eq, value = arg.partition("=")
+        out.append(f"{flag}={shown_path(value)}" if eq and flag.startswith("--") else shown_path(arg))
+    return f"uv run python -m {module} {shlex.join(out)}".rstrip()
+
+
 def format_summary(r: EvalReport) -> str:
     return (
         f"{r.name}: accuracy {_pct(r.accuracy)}, agreement {_pct(r.agreement)}, "
