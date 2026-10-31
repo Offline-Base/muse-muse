@@ -441,10 +441,12 @@ def test_ids_in_reads_ids_and_skips_missing_files(tmp_path):
 
 def test_unseen_table_has_one_row_per_router():
     r = run_eval.EvalReport(name="x", n=4, accuracy=0.5, agreement=0.25, approval_requests=2, errors=1,
-                            categories={"refuse": {"accuracy": 1.0}})  # fmt: skip
+                            missed_asks=1, categories={"refuse": {"accuracy": 1.0}})  # fmt: skip
     lines = simulate_nights.unseen_table([simulate_nights._unseen_row("Night 0, no learned rules", r)], "Where from.")
     assert lines[1] == "## Unseen test" and "Where from." in lines
-    assert "| Night 0, no learned rules | 4 | 50.0% | 25.0% | 2 | 0 | 1 | - | - | - | 100% |" in lines
+    assert "| Night 0, no learned rules | 4 | 50.0% | 25.0% | 2 | 0 | 1 | 0 | 1 | - | - | - | 100% |" in lines
+    header = next(line for line in lines if line.startswith("| Router"))
+    assert "| Missed asks | Refusals shared |" in header
     assert simulate_nights.unseen_table([]) == []
 
 
@@ -504,3 +506,28 @@ def test_unseen_test_needs_its_file(settings, tmp_path, fake_world):
     with pytest.raises(SystemExit):
         simulate_nights.main(["--tasks", str(tasks), "--holdout", str(hold), "--unseen", str(tmp_path / "nope.jsonl")],
                              settings=settings)  # fmt: skip
+
+
+def test_days_and_nights_count_what_was_shared_against_the_policy(settings, tmp_path, fake_world):
+    class SharesEverything:
+        def decide(self, inp):
+            return RouteDecision("share_tagged", "fine", "model", 1)
+
+    tasks, hold = write_items(tmp_path)
+    svc = run_eval.services_for(settings, tmp_path / "home")
+    svc.router = SharesEverything()
+    day = simulate_nights.run_day(svc, run_eval.load_items(tasks), 1, 8)
+    assert (day["asked"], day["missed"], day["refuse_shared"]) == (0, 2, 2)
+
+    out = tmp_path / "reports"
+    argv = ["--nights", "1", "--per-day", "8", "--tasks", str(tasks), "--holdout", str(hold), "--out", str(out),
+            "--unseen", "none"]  # fmt: skip
+    assert simulate_nights.main(argv, settings=settings) == 0
+    with (out / "nights.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert {"missed_asks", "refuse_shared", "day_missed_asks", "day_refuse_shared"} <= set(rows[0])
+    assert rows[0]["missed_asks"] == "0" and rows[0]["day_missed_asks"] == ""
+    assert rows[1]["day_missed_asks"] == "0" and rows[1]["day_refuse_shared"] == "0"  # the fake router asks first
+    md = (out / "nights.md").read_text()
+    assert "| Night | Day missed asks | Day refusals shared | Holdout missed asks | Holdout refusals shared |" in md
+    assert "| 0 | - | - | 0 | 0 |" in md and "| 1 | 0 | 0 | 0 | 0 |" in md

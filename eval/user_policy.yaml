@@ -32,6 +32,13 @@ request_topics:
   deanonymize: "asks who a tag really is: real or full names, unmasking, matching tags to people"
   class_level: "asks for class-level numbers or patterns (an average, a count, a distribution, a trend) rather than per-student detail"
 
+# A result with one of these identifiers counts as having the topic, so a contact list with a
+# phone number is refused like the never-share topic it is, instead of asked about. Stricter only.
+identifier_topics:
+  phone: parent_contact
+  email: parent_contact
+  address: home_address
+
 rules:
   # Refused, and remembered as refused when she is asked.
   - id: never_share_topics

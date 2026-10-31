@@ -14,7 +14,9 @@ only the shown ones binding, and the learned floor is applied in code.
 
 The candidate is kept only if overall accuracy, every category's accuracy and agreement with the
 teacher's policy are no worse, it leaks nothing (a leak on a reused item counts against it too),
-and neither side has more than MAX_UNSCORED_SHARE of items that errored or fell back.
+it shares no more items the policy wants asked about (missed asks) or refused (refusals shared),
+and neither side has more than MAX_UNSCORED_SHARE of items that errored or fell back. The leak
+count cannot see a refused item shared tagged, so the last two are checked on their own.
 """
 
 from __future__ import annotations
@@ -50,6 +52,10 @@ def compare(before: EvalReport, after: EvalReport) -> list[str]:
             )
     if after.leaks:
         reasons.append(f"leaked on {after.leaks} holdout items")
+    if after.missed_asks > before.missed_asks:
+        reasons.append(f"missed asks rose from {before.missed_asks} to {after.missed_asks}")
+    if after.refuse_shared > before.refuse_shared:
+        reasons.append(f"refusals shared rose from {before.refuse_shared} to {after.refuse_shared}")
     if after.accuracy + EPSILON < before.accuracy:
         reasons.append(f"overall accuracy fell from {before.accuracy:.2f} to {after.accuracy:.2f}")
     if after.agreement + EPSILON < before.agreement:

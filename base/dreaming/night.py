@@ -64,6 +64,8 @@ class NightReport:
     note: str = ""
     categories: dict = field(default_factory=dict)  # holdout accuracy per expected decision, rules in place
     gate_rerun: int | None = None  # holdout items the gate re-ran on the new rules; None if it did not run
+    missed_asks: int = 0  # holdout items the policy wants asked about that the rules in place shared
+    refuse_shared: int = 0  # holdout items the policy refuses that the rules in place shared
 
     def numbers(self) -> dict:
         """Aggregate numbers only."""
@@ -228,6 +230,8 @@ class NightRunner:
             note=note.strip(),
             categories=in_place.category_accuracy(),
             gate_rerun=rerun,
+            missed_asks=getattr(in_place, "missed_asks", 0),
+            refuse_shared=getattr(in_place, "refuse_shared", 0),
         )
         with self._db() as con:
             con.execute(

@@ -13,6 +13,10 @@ when none matches, the default applies. A rule matches when every match field it
 request_topics maps a topic to a plain description ("meant for a student's family"). The device
 model labels Muse's request with them (base/egress.py), so a rule can tell grades for the
 teacher from grades for families even when the result text is the same.
+
+identifier_topics maps an identifier kind (phone, email, address...) to a never_share topic: the
+router counts a result with that identifier as having the topic, so a phone number in a result
+is refused like a parent contact sheet instead of asked about. Optional; it only adds strictness.
 """
 
 from __future__ import annotations
@@ -25,11 +29,13 @@ from typing import Any
 
 import yaml
 
-from base.types import DECISIONS, RESULT_KINDS, Decision
+from base.types import DECISIONS, IDENTIFIER_KINDS, RESULT_KINDS, Decision
 
 MATCH_KEYS = ("kinds", "topics_any", "topics_all", "request_any")
 RULE_KEYS = frozenset({"id", *MATCH_KEYS, "wants", "pre_approved", "on_ask", "note"})
-TOP_KEYS = frozenset({"name", "description", "never_share", "ask_first", "request_topics", "rules", "default"})
+TOP_KEYS = frozenset(
+    {"name", "description", "never_share", "ask_first", "request_topics", "identifier_topics", "rules", "default"}
+)
 DEFAULT_KEYS = frozenset({"wants", "on_ask"})
 ON_ASK_KEYS = frozenset({"approve", "remember"})
 SHARE_FORMS = frozenset({"share_tagged", "share_summary"})
@@ -91,11 +97,13 @@ class UserPolicy:
         rules: list[Rule],
         default: Rule,
         request_topics: dict[str, str] | None = None,
+        identifier_topics: dict[str, str] | None = None,
     ):
         self.name = name
         self._never_share = never_share
         self._ask_first = set(ask_first)
         self._request_topics = dict(request_topics or {})
+        self._identifier_topics = dict(identifier_topics or {})
         self.rules = list(rules)
         self.default = default
 
@@ -111,6 +119,11 @@ class UserPolicy:
     def request_topics(self) -> dict[str, str]:
         """Topic name to the description the device model labels Muse's request with."""
         return dict(self._request_topics)
+
+    @property
+    def identifier_topics(self) -> dict[str, str]:
+        """Identifier kind to the never_share topic a result with one counts as having."""
+        return dict(self._identifier_topics)
 
     # Loading and validation
 
@@ -141,6 +154,7 @@ class UserPolicy:
         clash = set(request_topics) & set(never_share)
         if clash:
             raise PolicyError(f"{source}: request_topics {sorted(clash)} are already never_share topics")
+        identifier_topics = _parse_identifier_topics(data.get("identifier_topics") or {}, never_share, source)
 
         raw_rules = data.get("rules") or []
         if not isinstance(raw_rules, list):
@@ -156,7 +170,7 @@ class UserPolicy:
 
         default = _parse_default(data.get("default"), source)
         name = str(data.get("name") or Path(source).stem)
-        return cls(name, never_share, ask_first, rules, default, request_topics)
+        return cls(name, never_share, ask_first, rules, default, request_topics, identifier_topics)
 
     # Matching
 
@@ -214,6 +228,21 @@ def _parse_request_topics(value: Any, source: str) -> dict[str, str]:
         if not isinstance(desc, str) or not desc.strip():
             raise PolicyError(f"{source}: request_topics.{topic} needs a non-empty description")
         out[topic] = " ".join(desc.split())
+    return out
+
+
+def _parse_identifier_topics(value: Any, never_share: Mapping, source: str) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise PolicyError(f"{source}: identifier_topics must map an identifier kind to a never_share topic")
+    out: dict[str, str] = {}
+    for kind, topic in value.items():
+        if kind not in IDENTIFIER_KINDS:
+            raise PolicyError(
+                f"{source}: identifier_topics kinds must be one of {sorted(IDENTIFIER_KINDS)}, not {kind!r}"
+            )
+        if topic not in never_share:
+            raise PolicyError(f"{source}: identifier_topics.{kind} must name a never_share topic, not {topic!r}")
+        out[kind] = topic
     return out
 
 

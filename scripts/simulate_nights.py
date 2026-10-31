@@ -11,7 +11,9 @@ eval/reports/nights.csv and eval/reports/nights.md. All items are invented.
 
 Approval requests are split into wanted (the teacher's policy says to ask about that item) and
 unneeded (the policy would have shared or refused it without asking). Only the unneeded ones
-can go away with learning.
+can go away with learning. Fewer asks only count when nothing the policy wants asked about
+(missed asks) or refused (refusals shared) was shared instead, so both are counted each day, on
+the holdout each night and on the unseen test.
 
 Unseen test: the gate selects on the holdout, so the night-0 router and the router after the last
 night are also scored once each on a fixed, seeded sample of eval/synthetic.jsonl that the days,
@@ -42,7 +44,9 @@ FIELDS = (
     "night", "approval_requests", "accuracy", "agreement", "leaks", "kept", "seconds",
     "wanted_requests", "unneeded_requests", "day_mix", *(f"acc_{d}" for d in DECISIONS),
     "day_leaks", "user_rules", "practice_rules", "gate_rerun",
+    "missed_asks", "refuse_shared", "day_missed_asks", "day_refuse_shared",
 )  # fmt: skip
+SHARED = ("share_tagged", "share_summary")
 UNSEEN_N = 100
 # Ids the request-topic check scored while its descriptions were written: not unseen for that pass.
 TOPIC_CHECK_GLOB = "request_topics*.jsonl"
@@ -114,15 +118,19 @@ def run_day(services, items: list[dict], day: int, per_day: int) -> dict:
     """Release the day's items; the simulated teacher answers each approval request.
 
     Every text Muse would get that day is leak-checked, including what an approval releases.
-    Returns the request counts (all, wanted, unneeded), the day's leaks and its mix of expected
-    decisions.
+    Returns the request counts (all, wanted, unneeded), the day's leaks, the items shared that the
+    policy wants asked about (missed) or refused (refuse_shared), and its mix of expected decisions.
     """
-    asked = wanted = leaks = 0
+    asked = wanted = leaks = missed = refuse_shared = 0
     picks = pick_items(items, day, per_day)
     roster_values = run_eval._roster_values(getattr(services, "roster", None))
     resolve = getattr(services.egress, "resolve", None)
     for item in picks:
         released = run_eval.release_item(services, item, tool="simulation", day=day)
+        if getattr(released.decision, "decision", None) in SHARED:
+            wants = services.policy.wants(item)
+            missed += wants == "ask_user"
+            refuse_shared += wants == "refuse"
         texts = [released.text or ""]
         if released.status == "waiting" and released.approval_id is not None:
             asked += 1
@@ -134,7 +142,10 @@ def run_day(services, items: list[dict], day: int, per_day: int) -> dict:
         leaks += any(run_eval.find_leaks(services, t, item, roster_values) for t in texts)
     mix = Counter(i.get("expected") for i in picks)
     day_mix = " ".join(f"{d}:{mix[d]}" for d in DECISIONS if mix[d])
-    return {"asked": asked, "wanted": wanted, "unneeded": asked - wanted, "day_mix": day_mix, "leaks": leaks}
+    return {
+        "asked": asked, "wanted": wanted, "unneeded": asked - wanted, "day_mix": day_mix, "leaks": leaks,
+        "missed": missed, "refuse_shared": refuse_shared,
+    }  # fmt: skip
 
 
 def rule_counts(settings) -> tuple[int, int]:
@@ -174,6 +185,7 @@ def simulate(
     baseline = run_eval.evaluate(sim_settings, holdout, rules_path=None, name="night-0")
     rows = [
         _row(0, "", baseline.accuracy, baseline.agreement, baseline.leaks, "", time.monotonic() - started)
+        | {"missed_asks": baseline.missed_asks, "refuse_shared": baseline.refuse_shared}
         | _categories(baseline.category_accuracy())
     ]
     for night in range(1, nights + 1):
@@ -194,6 +206,10 @@ def simulate(
             "user_rules": user_rules,
             "practice_rules": practice_rules,
             "gate_rerun": _blank(getattr(r, "gate_rerun", None)),
+            "missed_asks": getattr(r, "missed_asks", ""),
+            "refuse_shared": getattr(r, "refuse_shared", ""),
+            "day_missed_asks": day["missed"],
+            "day_refuse_shared": day["refuse_shared"],
         }
         rows.append(row | _categories(getattr(r, "categories", None) or {}))
         _close(services)
@@ -265,6 +281,20 @@ def write_outputs(
             f"| {_dash(r.get('wanted_requests', ''))} | {_dash(r.get('unneeded_requests', ''))} "
             f"| {_dash(r.get('day_leaks', ''))} | {_dash(r.get('user_rules', ''))} | {_dash(r.get('practice_rules', ''))} |"
         )
+    if any(r.get("missed_asks", "") != "" for r in rows):
+        lines += [
+            "",
+            "Shared when the teacher's policy wanted an ask (missed asks) or a refusal (refusals shared). "
+            "The leak count cannot see these, so a drop in approval requests only counts while both stay at 0:",
+            "",
+            "| Night | Day missed asks | Day refusals shared | Holdout missed asks | Holdout refusals shared |",
+            "|---|---|---|---|---|",
+        ]
+        for r in rows:
+            lines.append(
+                f"| {r['night']} | {_dash(r.get('day_missed_asks', ''))} | {_dash(r.get('day_refuse_shared', ''))} "
+                f"| {_dash(r.get('missed_asks', ''))} | {_dash(r.get('refuse_shared', ''))} |"
+            )
     cats = [d for d in DECISIONS if any(r.get(f"acc_{d}", "") != "" for r in rows)]
     if cats:
         lines += [
@@ -320,16 +350,16 @@ def unseen_table(rows: list[dict], note: str = "") -> list[str]:
         "## Unseen test",
         "",
         *([note, ""] if note else []),
-        "| Router | Items | Accuracy | Agreement | Approval requests | Leaks | Errors or fallbacks | "
-        + " | ".join(DECISIONS)
-        + " |",
-        "|---|---|---|---|---|---|---|" + "---|" * len(DECISIONS),
+        "| Router | Items | Accuracy | Agreement | Approval requests | Leaks | Missed asks | Refusals shared "
+        "| Errors or fallbacks | " + " | ".join(DECISIONS) + " |",
+        "|---|---|---|---|---|---|---|---|---|" + "---|" * len(DECISIONS),
     ]
     for r in rows:
         cells = [_pct_cell(r.get(f"acc_{d}", "")) for d in DECISIONS]
         lines.append(
             f"| {r['router']} | {r['n']} | {float(r['accuracy']) * 100:.1f}% | {float(r['agreement']) * 100:.1f}% "
-            f"| {r['approval_requests']} | {r['leaks']} | {r['unscored']} | " + " | ".join(cells) + " |"
+            f"| {r['approval_requests']} | {r['leaks']} | {_dash(r.get('missed_asks'))} "
+            f"| {_dash(r.get('refuse_shared'))} | {r['unscored']} | " + " | ".join(cells) + " |"
         )
     return lines
 
@@ -443,6 +473,10 @@ def _row(night, asked, accuracy, agreement, leaks, kept, seconds) -> dict:
         "user_rules": "",
         "practice_rules": "",
         "gate_rerun": "",
+        "missed_asks": "",
+        "refuse_shared": "",
+        "day_missed_asks": "",
+        "day_refuse_shared": "",
     }
 
 
@@ -459,6 +493,8 @@ def _unseen_row(label: str, r: run_eval.EvalReport) -> dict:
         "agreement": r.agreement,
         "approval_requests": r.approval_requests,
         "leaks": r.leaks,
+        "missed_asks": r.missed_asks,
+        "refuse_shared": r.refuse_shared,
         "unscored": r.errors + r.fallbacks,
     } | _categories(r.category_accuracy())
 

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -480,3 +481,76 @@ def test_never_share_floor_matches_the_router():
     assert never_share_floor(["Mentions discipline"], ["discipline"], {"discipline"}) == "ask_user"
     assert never_share_floor(["a", "b"], ["discipline"], {"discipline"}) == "refuse"
     assert never_share_floor([], ["discipline", "iep"], {"discipline"}) == "refuse"
+
+
+# ----- reason codes (fixed strings on every decision, never model text) -----
+
+
+def test_rule_path_codes(settings, policy):
+    llm = FakeLLM()
+    router = make_router(settings, policy, llm)
+    person = [Hit("person", "Margarita Ruiz", 0, 14)]
+    assert router.decide(route_input(kind="document_list", text="- [Person 1]", hits=person)).code == "unknown_person_title"
+    assert router.decide(route_input(kind="document_list", text="- Notes")).code == "rule_kind"
+    assert router.decide(route_input(kind="class_aggregate", text="Average 3.1")).code == "pre_approved"
+    assert llm.calls == []
+
+
+@pytest.mark.parametrize(
+    ("kw", "code", "decision"),
+    [
+        ({"hits": [Hit("phone", PHONE, 0, len(PHONE)), Hit("email", EMAIL, 20, 20 + len(EMAIL))]}, "identifier:email", "ask_user"),
+        ({"text": "[Student A] case 12-345-678 is open."}, "identifier:digits", "ask_user"),
+        ({"topics": ["iep"], "request_blocked": ["iep"]}, "request_topic:iep", "ask_user"),
+        ({"topics": ["discipline"], "blocked": ["Mentions discipline"]}, "ask_first:discipline", "ask_user"),
+        ({"topics": ["iep"], "blocked": ["Mentions an IEP"]}, "blocked:iep", "refuse"),
+        ({"request": "What is [Student A]'s phone number?"}, "policy_rule:no_contact_requests", "refuse"),
+    ],
+)
+def test_floor_codes_name_what_decided(settings, policy, kw, code, decision):
+    out = make_router(settings, policy, FakeLLM()).decide(route_input(**kw))
+    assert (out.decision, out.code) == (decision, code)
+
+
+def test_model_and_fallback_codes(settings, policy):
+    assert make_router(settings, policy, FakeLLM({"decision": "ask_user", "reason": "x"})).decide(route_input()).code == "model"
+    assert make_router(settings, policy, FakeLLM(exc=FakeParseError())).decide(route_input()).code == "fallback"
+
+
+def test_learned_floor_codes_tell_your_rules_from_practice_defaults(settings, eval_policy):
+    inp = route_input(kind="snippet", text="[Student A] wrote a poem.", topics=["class_level"])
+    assert learned_router(settings, eval_policy, [SNIPPET_REFUSE]).decide(inp).code == "learned:refuse"
+    practice = "- Document snippets (kind: snippet; topics: none): refuse. 5 of 5 practice examples agree."
+    assert learned_router(settings, eval_policy, [], [practice]).decide(inp).code == "practice:refuse"
+
+
+# ----- ROUTER_LOOSEN=lists: a rule you taught for document lists -----
+
+LIST_SHARE = (
+    "- Document lists (kind: document_list; topics: none): share tagged. You approved 5 of 5 and said don't ask again."
+)
+
+
+def list_router(settings, policy, rules, loosen=frozenset({"lists"})):
+    return make_router(replace(settings, router_loosen=frozenset(loosen)), policy, FakeLLM(), rules_text=rules)
+
+
+def test_a_taught_list_rule_shares_lists_that_name_someone_off_the_roster(settings, eval_policy):
+    person = [Hit("person", "Zirconia Vosberg", 2, 18)]
+    inp = route_input(kind="document_list", text="- [Person 1] reading notes", hits=person)
+    out = list_router(settings, eval_policy, LEARNED_HEAD + LIST_SHARE + "\n").decide(inp)
+    assert (out.decision, out.code, out.source) == ("share_tagged", "learned:share_tagged", "rule")
+    # Off by default, and nothing changes without a rule you taught.
+    assert list_router(settings, eval_policy, LEARNED_HEAD + LIST_SHARE + "\n", ()).decide(inp).decision == "ask_user"
+    assert list_router(settings, eval_policy, "").decide(inp).code == "unknown_person_title"
+    practice = "- Document lists (kind: document_list; topics: none): share tagged. 5 of 5 practice examples agree."
+    practice = LEARNED_HEAD + "No rules yet.\n" + PRACTICE_HEAD + practice + "\n"
+    assert list_router(settings, eval_policy, practice).decide(inp).decision == "ask_user"
+
+
+def test_a_taught_list_rule_never_lifts_a_never_share_title(settings, eval_policy):
+    person = [Hit("person", "Zirconia Vosberg", 2, 18)]
+    inp = route_input(kind="document_list", text="- [Person 1] IEP goals", hits=person, topics=["iep"],
+                      blocked=["Mentions an IEP or 504 plan"])  # fmt: skip
+    out = list_router(settings, eval_policy, LEARNED_HEAD + LIST_SHARE + "\n").decide(inp)
+    assert out.decision == "refuse" and out.floors == ["blocked:iep"] and out.code == "blocked:iep"

@@ -22,6 +22,10 @@ local_lora backend: both of the above, for an adapter at BASE_HOME/adapters/rout
 one on this device is not built yet (Ethan, Oct 30: don't test Glimmer fine-tuning yet).
 
 rules backend: the same rules file as prompt. The router applies it in code (base/router.py).
+
+Share rules need more care than ask first or refuse rules: one for a whole kind (topics: none)
+needs MIN_KIND_SHARE_DECISIONS decisions that all agree, and a group whose topics say the result
+is going outside the class (destination_topics) never gets one.
 """
 
 from __future__ import annotations
@@ -44,8 +48,15 @@ log = logging.getLogger(__name__)
 MIN_DECISIONS = 2
 MIN_AGREEMENT = 0.8
 MIN_TOPIC_DECISIONS = 3  # a rule for one topic across every kind needs a little more evidence
+# A share rule for a whole kind (topics: none) covers everything of that kind the topic checks
+# missed: on Oct 27 two approvals taught "share snippets with no topics" and a discipline note
+# went out with no card. Such a rule needs this many decisions, every one of them agreeing.
+MIN_KIND_SHARE_DECISIONS = 5
 TOPIC_RULE_DECISIONS = ("ask_user", "refuse")  # a topic is a reason for care, never for sharing
 FLOOR_DECISIONS = ("ask_user", "refuse")  # learned rules that hold as floors in the router
+SHARE_DECISIONS = ("share_tagged", "share_summary")
+# Who a result is going to (or how much of it), when there is no policy to say: never a share rule.
+DESTINATION_TOPICS = frozenset({"parents", "third_party", "full_text"})
 
 KIND_NAMES = {
     "document_list": "Document lists",
@@ -166,6 +177,21 @@ def floored_topics(policy) -> frozenset[str]:
     return frozenset(never - set(getattr(policy, "ask_first", None) or ()))
 
 
+def destination_topics(policy) -> frozenset[str]:
+    """Request topics the policy asks about or refuses (parents, third_party, full_text and
+    deanonymize in eval/user_policy.yaml): where a result is going, or how much of it. A group
+    with one never gets a share rule. DESTINATION_TOPICS when there is no policy."""
+    if policy is None or not hasattr(policy, "never_share"):
+        return DESTINATION_TOPICS
+    named = set(getattr(policy, "request_topics", None) or {})
+    out: set[str] = set()
+    for rule in getattr(policy, "rules", None) or []:
+        if getattr(rule, "wants", None) in FLOOR_DECISIONS:
+            listed = (*(getattr(rule, "topics_any", ()) or ()), *(getattr(rule, "topics_all", ()) or ()))
+            out.update(t for t in listed if t in named)
+    return frozenset(out)
+
+
 def rule_key(
     result_kind: str, topics: Iterable[str], relevant: frozenset[str] | None
 ) -> tuple[str, tuple[str, ...]]:
@@ -184,9 +210,12 @@ def learn_rules(examples: Iterable[Example], policy=None) -> list[Rule]:
     policy's topics. A group with a never-share topic the floor refuses (`floored_topics`) gets
     no practice rule, and only an ask first or refuse rule from the user's own decisions: the
     user is asked about one only when Muse's request alone names it (the result's own refuses
-    without a card), and that "request:<topic>" floor asks whatever a share rule says.
+    without a card), and that "request:<topic>" floor asks whatever a share rule says. A group
+    with a destination topic (destination_topics) never gets a share rule either, and a share rule
+    for a whole kind needs MIN_KIND_SHARE_DECISIONS decisions that all agree (_rule).
     """
     relevant, floored = relevant_topics(policy), floored_topics(policy)
+    no_share = floored | destination_topics(policy)
     keyed = []
     for e in examples:
         if e.label not in DECISIONS:
@@ -200,12 +229,14 @@ def learn_rules(examples: Iterable[Example], policy=None) -> list[Rule]:
     user_rules = [
         r
         for key, rows in user_groups.items()
-        if (r := _rule(key, rows, "user")) and (r.decision in FLOOR_DECISIONS or not floored.intersection(key[1]))
+        if (r := _rule(key, rows, "user")) and (r.decision in FLOOR_DECISIONS or not no_share.intersection(key[1]))
     ]
     fallback = [
         r
         for key, rows in synthetic_groups.items()
-        if key not in user_groups and (r := _rule(key, rows, "synthetic"))
+        if key not in user_groups
+        and (r := _rule(key, rows, "synthetic"))
+        and (r.decision in FLOOR_DECISIONS or not no_share.intersection(key[1]))
     ]
     # Topic rules need the policy to say which topics matter; without one, exact groups only.
     user_topic_rules, fallback_topics = [], []
@@ -500,6 +531,8 @@ def _rule(key: tuple[str, tuple[str, ...]], rows: list[Example], source: str) ->
     if found is None:
         return None
     label, count = found
+    if label in SHARE_DECISIONS and not key[1] and (len(rows) < MIN_KIND_SHARE_DECISIONS or count < len(rows)):
+        return None  # a share rule for a whole kind needs more evidence, and no dissent
     return Rule(
         result_kind=key[0], topics=key[1], decision=label, count=count, total=len(rows), source=source
     )

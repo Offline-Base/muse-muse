@@ -425,3 +425,41 @@ def test_text_released_after_an_approval_is_leak_checked(settings, tmp_path):
 )
 def test_leak_check_treats_common_word_names_like_the_guard(text, value, found):
     assert run_eval._contains(text, value) is found
+
+
+def test_missed_asks_and_refusals_shared_follow_the_policy_and_rows_keep_the_code(settings, tmp_path):
+    report = run_eval.run(fake_services(settings), ITEMS, name="unit", device_label="laptop")
+    assert (report.missed_asks, report.refuse_shared) == (0, 1)  # d2, refused by the policy, was shared
+    assert report.summary()["refuse_shared"] == 1
+    md_path, raw_path = run_eval.write_report(report, tmp_path)
+    md = md_path.read_text()
+    assert "| Missed asks (the policy wants an ask, the router shared) | 0 |" in md
+    assert "| Refusals shared (the policy refuses, the router shared) | 1 |" in md
+    rows = {r["id"]: r for r in map(json.loads, raw_path.read_text().splitlines())}
+    assert rows["e1"]["code"] == "error" and rows["a1"]["code"] == ""  # the fake router gives none
+
+    # "wants" (the persona's policy) decides, not the hand label.
+    rows = [
+        {"id": "x", "expected": "share_tagged", "wants": "ask_user", "decision": "share_tagged", "status": "shared",
+         "leaked": False, "latency_ms": 1},
+        {"id": "y", "expected": "ask_user", "wants": "ask_user", "decision": "share_summary", "status": "shared",
+         "leaked": False, "latency_ms": 1},
+        {"id": "z", "expected": "refuse", "wants": "refuse", "decision": "refuse", "status": "refused",
+         "leaked": False, "latency_ms": 1},
+    ]  # fmt: skip
+    r = run_eval._report(rows, name="x")
+    assert (r.missed_asks, r.refuse_shared) == (2, 0)
+
+
+def test_raw_rows_carry_the_routers_fixed_code(settings, tmp_path):
+    class CodedEgress(FakeEgress):
+        def release(self, *a, item_id=None, **kw):
+            out = super().release(*a, item_id=item_id, **kw)
+            out.decision.code = "policy_default" if out.decision.decision == "ask_user" else "pre_approved"
+            return out
+
+    items = [i for i in ITEMS if i["id"] != "e1"]
+    report = run_eval.run(fake_services(settings, CodedEgress()), items, name="coded", device_label="laptop")
+    _, raw_path = run_eval.write_report(report, tmp_path)
+    codes = {r["id"]: r["code"] for r in map(json.loads, raw_path.read_text().splitlines())}
+    assert codes["a2"] == "policy_default" and codes["a1"] == "pre_approved"

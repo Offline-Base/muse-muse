@@ -87,6 +87,7 @@ POLICY_REASON = "Your rule {id} says results like this stay on the device."
 DIGITS_REASON = "Contains a long number that could be an identifier."
 REQUEST_TOPIC_REASON = "The request mentions a topic you never share, so you decide."
 OUTSIDE_REASON = "The request says this is going outside the class, so you decide."
+TAUGHT_LIST_REASON = "You said to share document lists like this without asking."
 
 # With DEVICE_ONLY=1 and LFM the user's policy decides, not the model. In a test on Oct 29 the 2B
 # model shared summaries of per-student grades and a newsletter quote, and on Oct 30 it agreed with
@@ -95,7 +96,8 @@ OUTSIDE_REASON = "The request says this is going outside the class, so you decid
 _OUTSIDE = re.compile(
     r"\b(?:famil(?:y|ies)|parents?|guardians?|newsletters?|principal|district|superintendent|counselor|"
     r"club|board|staff|colleagues?|another teacher|website|social media|post(?:ed|ing)? (?:it|this|on)|"
-    r"publish|press|flyer|send (?:it |this )?to|email (?:it |this )?to)\b",
+    r"publish|press|flyer|send (?:it |this )?to|email (?:it |this )?to|"
+    r"send(?:ing)? (?:it |this |them )?home|sent home|take (?:it |this )?home|(?:letter|note|report) home)\b",
     re.IGNORECASE,
 )
 _CLASS_LEVEL = re.compile(
@@ -109,9 +111,24 @@ _WRITING_WORDS = re.compile(r"\b(?:essays?|excerpts?|writing|feedback|paragraph|
 _GRADE_WORDS = re.compile(
     r"\b(?:scores?|scored|grades?|grader|rubric|criterion|criteria|conventions|ideas|organization|evidence)\b", re.IGNORECASE
 )
+# ROUTER_LOOSEN=result_words: topic words read from the tagged result on the device (never sent).
+# A score in the result, or class-wide numbers in a result that names nobody.
+_SCORE_RESULT = re.compile(r"\b(?:scored|points|pts|rubric|out of \d+)\b|\b\d{1,3} ?/ ?\d{1,3}\b(?! ?/)", re.IGNORECASE)
+_AGGREGATE_RESULT = re.compile(
+    r"\b(?:averages?|averaged|median|distribution|percent(?:age)?|range of|ranged from|"
+    r"(?:\d+|most|half|all|none) of (?:the )?(?:\d+ )?(?:class|students))\b|\d ?%",
+    re.IGNORECASE,
+)
+# ROUTER_LOOSEN=class_of: "[Student A]'s class" asks about the class, not about one student.
+_CLASS_OF_PERSON = re.compile(r"\[(?:Student [A-Z]{1,3}|Person \d+)\]['’]s (?:class|group)\b", re.IGNORECASE)
 
 
 LEARNING_MODES = ("rules", "tighten", "decide", "local_lora")
+
+
+def loosened(settings: Any, choice: str) -> bool:
+    """Whether ROUTER_LOOSEN turned on `choice` (base.config.ROUTER_LOOSEN_CHOICES)."""
+    return choice in (getattr(settings, "router_loosen", None) or ())
 
 
 def routing_mode(settings: Any, choice: str = "") -> str:
@@ -138,15 +155,28 @@ def small_model(settings: Any) -> bool:
     return getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
 
 
-def checked_labels(request: str, labels: Collection[str]) -> list[str]:
+def checked_labels(request: str, labels: Collection[str], *, class_of: bool = False) -> list[str]:
     """The local model's request labels, checked against the request's own words: a whole text must
     be asked for, and a question about one tagged person is not class-level. Never-share labels and
-    who-it-is-for labels stay, since they only make a decision stricter."""
+    who-it-is-for labels stay, since they only make a decision stricter. With `class_of`
+    (ROUTER_LOOSEN=class_of), "[Student A]'s class" or "'s group" does not count as one person."""
     out = [t for t in labels if not (t == "full_text" and not _WHOLE_TEXT.search(request or ""))]
-    person = bool(_TAGGED_PERSON.search(request or ""))
+    asked = _CLASS_OF_PERSON.sub("", request or "") if class_of else request or ""
+    person = bool(_TAGGED_PERSON.search(asked))
     if person:
         out = [t for t in out if t != "class_level"]
     elif _CLASS_LEVEL.search(request or "") and "class_level" not in out:
+        out.append("class_level")
+    return out
+
+
+def result_topics(tagged_text: str) -> list[str]:
+    """Topic words the tagged result itself gives (ROUTER_LOOSEN=result_words), for the policy
+    match only: grades for a score, class_level for class-wide numbers in a result that names
+    nobody. The caller skips this when the request or the result has an ask word (attendance)."""
+    text = tagged_text or ""
+    out = ["grades"] if _SCORE_RESULT.search(text) else []
+    if not _TAGGED_PERSON.search(text) and _AGGREGATE_RESULT.search(text):
         out.append("class_level")
     return out
 
@@ -319,80 +349,98 @@ class Router:
         learned, learned_floor = self.learned(inp)
 
         mode = self.mode(inp)
-        outcome = self._rule_path(inp, is_blocked)
+        outcome = self._rule_path(inp, is_blocked, learned)
         by_policy = outcome is None and mode != "model"
         if outcome is None:
             outcome = self._decide_by_mode(mode, inp, synthetic, learned, learned_floor)
-        decision, reason, source = outcome
+        decision, reason, source, code = outcome
 
-        floor, floors, floor_reason = self._floors(inp, blocked_topics, learned_floor)
+        floor, floors, floor_reason, floor_code = self._floors(inp, blocked_topics, learned_floor)
         if by_policy:
-            floor, floors, floor_reason = self._policy_floors(inp, learned, floor, floors, floor_reason)
+            floor, floors, floor_reason, floor_code = self._policy_floors(
+                inp, learned, floor, floors, floor_reason, floor_code
+            )
         final = stricter(decision, floor)
         if floor_reason and STRICTNESS[floor] >= STRICTNESS[final]:
-            reason = floor_reason  # the floor decided it, whatever the model said
+            reason, code = floor_reason, floor_code  # the floor decided it, whatever the model said
         ms = int((time.perf_counter() - start) * 1000)
-        return RouteDecision(final, reason, source, latency_ms=ms, floors=floors)
+        return RouteDecision(final, reason, source, latency_ms=ms, floors=floors, code=code)
 
     def _decide_by_mode(
         self, mode: str, inp: RouteInput, synthetic: bool, learned: Any, learned_floor: Any
-    ) -> tuple[Decision, str, str]:
+    ) -> tuple[Decision, str, str, str]:
         if mode == "rules":
             return self._policy_path(inp, learned)
         asked = self._ask_model(inp, synthetic, learned, learned_floor, use_adapter=mode in ("model", "local_lora"))
+        asked = (*asked, "fallback" if asked[2] == "fallback" else "model")
         if mode != "tighten":
             return asked
         base = self._policy_path(inp, learned)
         if asked[2] == "fallback":  # nothing judged it: keep the mark, so Always approve can't answer
-            return stricter(base[0], asked[0]), asked[1], "fallback"
+            return stricter(base[0], asked[0]), asked[1], "fallback", "fallback"
         return asked if STRICTNESS[asked[0]] > STRICTNESS[base[0]] else base
 
-    def _policy_path(self, inp: RouteInput, learned: Any) -> tuple[Decision, str, str]:
+    def _policy_path(self, inp: RouteInput, learned: Any) -> tuple[Decision, str, str, str]:
         """The rule the user taught for results like this, else the first policy rule that matches.
         Practice defaults come from invented data, so they never stand in for the user's policy."""
         if _taught_by_user(learned):
-            return learned.decision, "You decided this before for results like this.", "rule"
+            return learned.decision, "You decided this before for results like this.", "rule", f"learned:{learned.decision}"
         topics, kind = list(inp.topics), inp.result_kind
-        if not _ASK_WORDS.search(inp.request or ""):
-            if _WRITING_WORDS.search(inp.request or ""):
+        request, text = inp.request or "", inp.tagged_text or ""
+        if not _ASK_WORDS.search(request):
+            if _WRITING_WORDS.search(request):
                 topics.append("writing")
-            if _GRADE_WORDS.search(inp.request or ""):
+            if _GRADE_WORDS.search(request):
                 topics.append("grades")
+            if loosened(self.settings, "result_words") and not _ASK_WORDS.search(text):
+                topics += result_topics(text)
         if "class_level" in topics and kind in ("snippet", "free_text", "per_student"):
             kind = "class_aggregate"  # the request asks for numbers or patterns, not for one person
         rule = self.policy.match({"request": inp.request, "result_kind": kind, "topics": topics})
-        return rule.wants, f"Your rule {rule.id} covers results like this.", "rule"
+        code = "policy_default" if rule.id == "default" else f"policy_rule:{rule.id}"
+        return rule.wants, f"Your rule {rule.id} covers results like this.", "rule", code
 
     def _policy_floors(
-        self, inp: RouteInput, learned: Any, floor: Decision, floors: list[str], reason: str
-    ) -> tuple[Decision, list[str], str]:
+        self, inp: RouteInput, learned: Any, floor: Decision, floors: list[str], reason: str, code: str
+    ) -> tuple[Decision, list[str], str, str]:
         """A sensitive record stays on the device, and the user sees what is going outside the class
         unless they taught a rule that shares results like this."""
         if inp.result_kind == "sensitive_record":
-            return "refuse", [*floors, "sensitive_record"], SENSITIVE_REASON
+            return "refuse", [*floors, "sensitive_record"], SENSITIVE_REASON, "sensitive_record"
         if _CONTACT.search(inp.request or ""):
-            return "refuse", [*floors, "contact"], CONTACT_REASON
+            return "refuse", [*floors, "contact"], CONTACT_REASON, "contact"
         if _NARROWED.search(inp.request or ""):
-            return "refuse", [*floors, "narrowed"], NARROWED_REASON
+            return "refuse", [*floors, "narrowed"], NARROWED_REASON, "narrowed"
         taught = _taught_by_user(learned) and learned.decision in ("share_tagged", "share_summary")
         if not taught and STRICTNESS[floor] < STRICTNESS["ask_user"] and _OUTSIDE.search(inp.request or ""):
-            return "ask_user", [*floors, "outside_class"], OUTSIDE_REASON
-        return floor, floors, reason
+            return "ask_user", [*floors, "outside_class"], OUTSIDE_REASON, "outside_class"
+        return floor, floors, reason, code
 
-    def _rule_path(self, inp: RouteInput, is_blocked: bool) -> tuple[Decision, str, str] | None:
+    def _rule_path(
+        self, inp: RouteInput, is_blocked: bool, learned: Any = None
+    ) -> tuple[Decision, str, str, str] | None:
         if inp.result_kind == "document_list" and any(h.kind == "person" for h in inp.hits):
             # The name pass found someone the roster does not know: a title can say more than
-            # a name, so the user looks first.
-            return "ask_user", UNKNOWN_PERSON_REASON, "rule"
+            # a name, so the user looks first, unless they taught a rule that shares lists like
+            # this (ROUTER_LOOSEN=lists). Names stay tagged, and the floors still run.
+            taught = (
+                loosened(self.settings, "lists")
+                and _taught_by_user(learned)
+                and learned.kind == "document_list"
+                and learned.decision == "share_tagged"
+            )
+            if taught:
+                return "share_tagged", TAUGHT_LIST_REASON, "rule", "learned:share_tagged"
+            return "ask_user", UNKNOWN_PERSON_REASON, "rule", "unknown_person_title"
         if inp.result_kind in RULE_KINDS:
-            return "share_tagged", RULE_KINDS[inp.result_kind], "rule"
+            return "share_tagged", RULE_KINDS[inp.result_kind], "rule", "rule_kind"
         if is_blocked:
             return None
         rule = self.policy.match(
             {"request": inp.request, "result_kind": inp.result_kind, "topics": inp.topics}
         )
         if rule.pre_approved:
-            return rule.wants, f"Pre-approved by your rule {rule.id}.", "rule"
+            return rule.wants, f"Pre-approved by your rule {rule.id}.", "rule", "pre_approved"
         return None
 
     def _refuse_rules(self, inp: RouteInput) -> list:
@@ -426,14 +474,15 @@ class Router:
 
     def _floors(
         self, inp: RouteInput, blocked_topics: list[str], learned=None
-    ) -> tuple[Decision, list[str], str]:
-        """The strictest floor that applies, every floor that fired, and the reason for the strictest.
+    ) -> tuple[Decision, list[str], str, str]:
+        """The strictest floor that applies, every floor that fired, and the reason and code for
+        the strictest.
 
         `learned` is the rule behind the learned floor (train.learned_floor), not the shown rule.
         """
         floor: Decision = "share_tagged"
         floors: list[str] = []
-        reason = ""
+        reason = code = ""
 
         blocked_floor = never_share_floor(inp.blocked, blocked_topics, self.policy.ask_first)
         if blocked_floor is not None:
@@ -444,7 +493,7 @@ class Router:
                 floors.extend(f"{label}:{t}" for t in blocked_topics)
             else:
                 floors.append(label)
-            floor = blocked_floor
+            floor, code = blocked_floor, floors[0]
             reason = "; ".join(r.rstrip(".") for r in inp.blocked) or "Mentions a topic you never share"
             reason += ". You asked to be asked first." if can_ask else "."
 
@@ -453,26 +502,26 @@ class Router:
         if inp.request_blocked:
             floors.extend(f"request:{t}" for t in inp.request_blocked)
             if STRICTNESS["ask_user"] > STRICTNESS[floor]:
-                floor, reason = "ask_user", REQUEST_TOPIC_REASON
+                floor, reason, code = "ask_user", REQUEST_TOPIC_REASON, f"request_topic:{inp.request_blocked[0]}"
 
         found = sorted({h.kind for h in inp.hits if h.kind in IDENTIFIER_KINDS})
         if found:
             floors.extend(f"identifier:{k}" for k in found)
             if STRICTNESS["ask_user"] > STRICTNESS[floor]:
-                floor = "ask_user"
+                floor, code = "ask_user", f"identifier:{found[0]}"
                 reason = "Contains " + ", ".join(IDENTIFIER_WORDS.get(k, k) for k in found) + "."
         elif inp.result_kind not in NUMBER_KINDS and guard.long_digit_runs(inp.tagged_text or ""):
             # A number in a format no exact check knows (a case number, an ITIN with odd spacing).
             floors.append("identifier:digits")
             if STRICTNESS["ask_user"] > STRICTNESS[floor]:
-                floor, reason = "ask_user", DIGITS_REASON
+                floor, reason, code = "ask_user", DIGITS_REASON, "identifier:digits"
 
         # The user's own refuse rules hold in code, not only as words in the prompt: a request to
         # unmask a tag, say, is refused whatever the model answers.
         for rule in self._refuse_rules(inp):
             floors.append(f"policy:{rule.id}")
             if STRICTNESS["refuse"] > STRICTNESS[floor]:
-                floor, reason = "refuse", POLICY_REASON.format(id=rule.id)
+                floor, reason, code = "refuse", POLICY_REASON.format(id=rule.id), f"policy_rule:{rule.id}"
 
         # The strictest learned "ask first" or "refuse" rule that holds is a floor; a learned share
         # rule never loosens one, and neither does a topic the request adds.
@@ -480,6 +529,7 @@ class Router:
         if wanted in ("ask_user", "refuse"):
             floors.append(f"learned:{wanted}")
             if STRICTNESS[wanted] > STRICTNESS[floor]:
-                floor = wanted
-                reason = LEARNED_REASONS[(wanted, "user" if learned.source == "user" else "synthetic")]
-        return floor, floors, reason
+                section = "user" if learned.source == "user" else "synthetic"
+                floor, reason = wanted, LEARNED_REASONS[(wanted, section)]
+                code = f"learned:{wanted}" if section == "user" else f"practice:{wanted}"
+        return floor, floors, reason, code

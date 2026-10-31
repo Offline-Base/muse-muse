@@ -161,3 +161,30 @@ def test_eval_policy_request_topics_are_described():
     policy = UserPolicy.load(Path(__file__).parent.parent / "eval" / "user_policy.yaml")
     assert set(policy.request_topics) == {"parents", "third_party", "full_text", "deanonymize", "class_level"}
     assert "reidentify" not in policy.request_topics  # left to the router's first step
+
+
+def test_identifier_topics_map_an_identifier_to_a_never_share_topic():
+    p = UserPolicy.from_dict({"never_share": {"parent_contact": ["phone number"]},
+                              "identifier_topics": {"phone": "parent_contact", "email": "parent_contact"}})  # fmt: skip
+    assert p.identifier_topics == {"phone": "parent_contact", "email": "parent_contact"}
+    p.identifier_topics["phone"] = "changed"  # a copy
+    assert p.identifier_topics["phone"] == "parent_contact"
+    assert UserPolicy.from_dict({}).identifier_topics == {}
+
+
+@pytest.mark.parametrize(
+    ("bad", "message"),
+    [
+        ({"phone": "grades"}, "never_share topic"),
+        ({"shoe_size": "parent_contact"}, "identifier_topics kinds"),
+        (["phone"], "must map"),
+    ],
+)
+def test_bad_identifier_topics_are_refused(bad, message):
+    with pytest.raises(PolicyError, match=message):
+        UserPolicy.from_dict({"never_share": {"parent_contact": ["phone number"]}, "identifier_topics": bad})
+
+
+def test_eval_policy_counts_contact_identifiers_as_never_share_topics():
+    p = UserPolicy.load(Path(__file__).parents[1] / "eval" / "user_policy.yaml")
+    assert p.identifier_topics == {"phone": "parent_contact", "email": "parent_contact", "address": "home_address"}

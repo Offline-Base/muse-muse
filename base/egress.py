@@ -23,7 +23,7 @@ from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove
 from base.config import CloudBackendRefused, assert_synthetic
-from base.router import checked_labels, never_share_floor, small_model
+from base.router import checked_labels, loosened, never_share_floor, small_model
 from base.types import (
     IDENTIFIER_KINDS,
     STRICTNESS,
@@ -113,6 +113,14 @@ def request_keyword_topics(raw_request: str, tagged_request: str, never_share: M
     still counts: "1200 Oak Avenue" is "[Address 1]" once tagged."""
     scan = scan or guard_module.blocked_topics
     return list(dict.fromkeys([*scan(raw_request or "", never_share), *scan(tagged_request or "", never_share)]))
+
+
+def identifier_topics(hits: Sequence[Hit], policy: Any) -> list[str]:
+    """The never-share topics the policy's identifier_topics give the result's own identifier hits
+    (a phone number counts as parent_contact), so the floor refuses it like the topic. Only the
+    result's hits: one in Muse's request alone is asked about, like a never-share word there."""
+    mapped = getattr(policy, "identifier_topics", None) or {}
+    return list(dict.fromkeys(mapped[h.kind] for h in hits if h.kind in mapped))
 
 
 def needs_topic_pass(result_kind: str, tagged: TagResult, own_topics: Sequence[str], policy: Any) -> bool:
@@ -236,7 +244,7 @@ class Egress:
         hold = compliance.check(text, sources, profiles, raw)
         if hold is None or STRICTNESS[route.decision] >= STRICTNESS[hold[0]]:
             return route
-        return RouteDecision(hold[0], hold[2], "rule", route.latency_ms, [*route.floors, hold[1]])
+        return RouteDecision(hold[0], hold[2], "rule", route.latency_ms, [*route.floors, hold[1]], code=hold[1])
 
     def _red_kw(self) -> dict[str, Any]:
         r = _REDACTION.get()
@@ -264,27 +272,31 @@ class Egress:
         retention.maybe_purge(s, profiles)
         if profiles and not getattr(getattr(s, "settings", None), "device_only", False):
             self._audit("egress", "compliance_needs_device_only")
-            held = RouteDecision("refuse", "A privacy toggle is on and a model is not on this device.", "rule", 0, ["compliance:cloud"])
+            held = RouteDecision(
+                "refuse", "A privacy toggle is on and a model is not on this device.", "rule", 0, ["compliance:cloud"],
+                code="compliance:cloud",
+            )
             return Released("refused", refusal_text(held.floors), None, held, None)
         try:
             tagged = self._tag(raw_text, result_kind, synthetic)
         except Exception as exc:  # the name pass or the guard broke: hold rather than guess
             log.warning("tagging failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "name_check_failed")
-            held = RouteDecision("refuse", NAME_CHECK_FAILED, "fallback", 0, ["name_check"])
+            held = RouteDecision("refuse", NAME_CHECK_FAILED, "fallback", 0, ["name_check"], code="name_check")
             return Released("refused", HELD_TEXT, None, held, None, retryable=True)
         # Muse's request is stored on the device and shown to the router: tag it too, in case
         # Muse was given a real name some other way. The raw request goes no further than here.
-        own_topics = list(dict.fromkeys([*topics, *tagged.topics]))
+        own_topics = list(dict.fromkeys([*topics, *tagged.topics, *identifier_topics(tagged.hits, s.policy)]))
         try:
             asked = self._tag_request(request)
             asked_about = self._request_topics(request, asked.text, result_kind, tagged, own_topics, synthetic)
-            if small_model(getattr(s, "settings", None)):
-                asked_about = checked_labels(asked.text, asked_about)
+            settings = getattr(s, "settings", None)
+            if small_model(settings):
+                asked_about = checked_labels(asked.text, asked_about, class_of=loosened(settings, "class_of"))
         except Exception as exc:  # tagging the request or the topic pass broke: hold, never route without it
             log.warning("request check failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "topic_check_failed")
-            held = RouteDecision("refuse", TOPIC_CHECK_FAILED, "fallback", 0, ["topic_check"])
+            held = RouteDecision("refuse", TOPIC_CHECK_FAILED, "fallback", 0, ["topic_check"], code="topic_check")
             return Released("refused", HELD_TEXT, None, held, tagged, retryable=True)
         raw_kinds = sorted({h.kind for h in asked.hits} & _REQUEST_NOTE_KINDS)
         if raw_kinds:
@@ -301,10 +313,14 @@ class Egress:
             made, failure = self._tagged_summary(summary, tagged.text, request, result_kind, synthetic)
             if failure == "model":  # the model could not write or check one: try again later
                 self._audit("egress", "summary_failed")
-                held = RouteDecision("refuse", SUMMARY_FAILED, "fallback", route.latency_ms, [*route.floors, "summary"])
+                held = RouteDecision(
+                    "refuse", SUMMARY_FAILED, "fallback", route.latency_ms, [*route.floors, "summary"], code="summary"
+                )
                 return Released("refused", HELD_TEXT, None, held, tagged, retryable=True)
             if made is None:
-                route = RouteDecision("refuse", SUMMARY_FAILED, route.source, route.latency_ms, [*route.floors, "summary"])
+                route = RouteDecision(
+                    "refuse", SUMMARY_FAILED, route.source, route.latency_ms, [*route.floors, "summary"], code="summary"
+                )
             else:
                 outgoing = made
                 route = self._with_toggles(route, outgoing, sources, profiles, raw_text)
@@ -367,6 +383,7 @@ class Egress:
             "removed": removed,
             "checks": ["tagging", "name check", "router", *(["toggles"] if profiles else []), "final leak check"],
             "floors": list(route.floors),
+            "code": getattr(route, "code", "") or "",
             "decided_by": route.source,
             "model": getattr(settings, "router_model", None),
             "toggles": list(profiles),
