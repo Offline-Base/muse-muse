@@ -810,3 +810,34 @@ test("run caps count image calls as turns, and never the files endpoint", async 
   assert.equal(uploaded.status, 200);
   assert.equal(files.counters.size, 0);
 });
+
+test("/v1/responses refuses a multipart body, since its guards read JSON", async () => {
+  const send = (form: FormData, path: string[], g: ReturnType<typeof fakeGateway>) =>
+    handleGateway(
+      new Request(`https://p/api/gateway/v1/${path.join("/")}`, { method: "POST", headers: { authorization: `Bearer ${TEST_TOKEN}` }, body: form }),
+      path,
+      g.deps,
+    );
+  const form = new FormData();
+  form.set("model", "muse-spark-1.3");
+  form.set("background", "true");
+  form.set("input", "hi");
+  for (const token of [{ allowedModels: ["muse-spark-1.3", "agent"] }, { allowedModels: ["muse-spark-1.3"] }]) {
+    const g = fakeGateway({ token, fetch: async () => Response.json(usageReply) });
+    const res = await send(form, ["responses"], g);
+    const err = await errorOf(res);
+    assert.equal(err.status, 400);
+    assert.equal(err.code, "invalid_body");
+    assert.equal(err.message, "/v1/responses takes a JSON body.");
+    assert.equal(res.headers.get("x-should-retry"), "false");
+    assert.equal(g.upstreamCalls.length, 0);
+    assert.equal(g.reservations.size, 0);
+  }
+
+  const edit = new FormData();
+  edit.set("model", "muse-image-1.0");
+  edit.set("prompt", "a cat");
+  const g = fakeGateway({ token: { allowedModels: ["muse-image-1.0"] }, fetch: async () => Response.json({ created: 1, data: [{ b64_json: "A" }] }) });
+  assert.equal((await send(edit, ["images", "edits"], g)).status, 200, "images/edits still takes multipart");
+  assert.equal(g.upstreamCalls.length, 1);
+});

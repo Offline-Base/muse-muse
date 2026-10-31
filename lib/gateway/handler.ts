@@ -160,6 +160,10 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
     }
     throw err;
   }
+  // Every Responses guard below reads the JSON body, so nothing else may reach them.
+  if (endpoint === "responses" && parsed.kind === "multipart") {
+    return gatewayError(400, "invalid_request_error", "invalid_body", "/v1/responses takes a JSON body.", { retry: false });
+  }
   let model = parsed.model;
   /** Set once the JSON to send differs from the request's own bytes. */
   let rewritten = false;
