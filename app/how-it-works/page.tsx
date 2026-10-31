@@ -16,7 +16,7 @@ const STEPS: Step[] = [
     title: "Share an idea",
     text: "Type it, or drop in photos, screenshots, a sketch, a short video, a voice memo or a PDF.",
     details:
-      "Files are stored privately. Voice memos are transcribed with Muse Voice Transcribe, and images, video and PDFs go to the model as they are.",
+      "Files are stored at unguessable links, so anyone with the link can open them. Voice memos are transcribed with Muse Voice Transcribe, and images, video and PDFs go to the model as they are.",
     docs: [
       { label: "Image understanding", href: "/docs/image-understanding" },
       { label: "Video understanding", href: "/docs/video-understanding" },

@@ -2,7 +2,7 @@ import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
-import { agentCapacity } from "@/lib/sandbox/muse-config";
+import { agentCapacity } from "@/lib/sandbox/agent-capacity";
 import { publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 

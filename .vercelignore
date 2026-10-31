@@ -7,4 +7,5 @@ template/test-results
 template/playwright-report
 .data
 scripts/.tmp*
-native
+/native
+/docs/spikes

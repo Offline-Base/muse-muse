@@ -55,6 +55,31 @@ test("a live product reaches the connected board, for the product tools only", a
   assert.deepEqual(tools.tools.map((t) => t.name), ["describe_device", "capture_image"]);
 });
 
+test("a live product learns what a board has, not where it sits", async () => {
+  const described = {
+    hostname: "jetson-02",
+    model: "Jetson Orin Nano",
+    os: "Ubuntu 24.04",
+    cameras: [{ device: "/dev/video0", name: "cam" }],
+    microphones: [{ device: "plughw:1,0", name: "mic" }],
+    usb_devices: ["Bus 001 Device 002: a private thing"],
+    disk_gib: { total: 58, free: 2.9 },
+  };
+  const board: GadgetBoard = {
+    listTools: async () => [],
+    callTool: async () => ({ content: [{ type: "text", text: JSON.stringify(described) }], isError: false }),
+  };
+  const res = await handleGadgetCall(call(LIVE, { tool: "describe_device" }), deps({ board: () => board }));
+  const body = (await res.json()) as { content: Array<{ text: string }>; simulated: boolean };
+  assert.deepEqual(JSON.parse(body.content[0]!.text), { model: described.model, cameras: described.cameras, microphones: described.microphones });
+  assert.equal(body.simulated, false);
+
+  // A board's own failure still reads as it was sent.
+  const failing: GadgetBoard = { listTools: async () => [], callTool: async () => ({ content: [{ type: "text", text: "No camera." }], isError: true }) };
+  const failed = (await (await handleGadgetCall(call(LIVE, { tool: "describe_device" }), deps({ board: () => failing }))).json()) as { content: unknown };
+  assert.deepEqual(failed.content, [{ type: "text", text: "No camera." }]);
+});
+
 test("a product never gets a shell, or any tool not on the list", async () => {
   const d = deps();
   for (const tool of ["run_command", "system.run", "", 7]) {
