@@ -1,4 +1,5 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
+import { databaseChoice } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
@@ -93,8 +94,14 @@ export const env = {
   get complexBuildModel() {
     return model("COMPLEX_BUILD_MODEL", DEFAULT_PLATFORM_MODEL);
   },
+  /**
+   * DATABASE_URL, or on a Vercel preview PREVIEW_DATABASE_URL (lib/db/url.ts). Throws when this deployment has no
+   * database: DATABASE_URL unset, or a preview without a database of its own (it never falls back to production's).
+   */
   get databaseUrl() {
-    return required("DATABASE_URL");
+    const choice = databaseChoice();
+    if (choice.url === null) throw new Error(choice.message);
+    return choice.url;
   },
   /**
    * BLOB_READ_WRITE_TOKEN, or undefined. Blob stores connected the old way set this token. Stores connected the new way

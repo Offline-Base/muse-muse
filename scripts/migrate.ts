@@ -1,30 +1,13 @@
 /**
- * Applies drizzle/ migrations. Runs before `next build` on Vercel, where DATABASE_URL is Neon (it's a Secret, so it
- * isn't available locally), and before `npm run dev:local`, where DATABASE_URL is "pglite:<folder>". Skips quietly
- * when DATABASE_URL is missing so local builds still work.
+ * Applies drizzle/ migrations. Runs before `next build` on Vercel, and before `npm run dev:local`, where DATABASE_URL
+ * is "pglite:<folder>". Which database it migrates comes from lib/db/url.ts (the logic is runMigrations in
+ * lib/db/migrate.ts):
+ *
+ *   Production (and local runs): DATABASE_URL, Neon on Vercel (it's a Secret, so it isn't available locally). Skips
+ *     quietly when DATABASE_URL is missing so local builds still work.
+ *   Preview: PREVIEW_DATABASE_URL, the Neon branch "preview". Without it, it says so and skips, and the build goes on
+ *     (the preview then runs with no database). It exits 1 when PREVIEW_DATABASE_URL is production's database.
  */
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
-import { migrate } from "drizzle-orm/neon-http/migrator";
-import { localDbDir } from "@/lib/db/client";
+import { runMigrations } from "@/lib/db/migrate";
 
-const url = process.env.DATABASE_URL;
-const localDir = url ? localDbDir(url) : null;
-if (!url) {
-  console.log("migrate: DATABASE_URL is not set, skipping");
-} else if (localDir) {
-  const started = Date.now();
-  const { mkdirSync } = await import("node:fs");
-  const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle: drizzlePglite } = await import("drizzle-orm/pglite");
-  const { migrate: migratePglite } = await import("drizzle-orm/pglite/migrator");
-  mkdirSync(localDir, { recursive: true });
-  const client = new PGlite(localDir);
-  await migratePglite(drizzlePglite({ client }), { migrationsFolder: "drizzle" });
-  await client.close();
-  console.log(`migrate: local database in ${localDir} up to date in ${Date.now() - started} ms`);
-} else {
-  const started = Date.now();
-  await migrate(drizzle({ client: neon(url) }), { migrationsFolder: "drizzle" });
-  console.log(`migrate: up to date in ${Date.now() - started} ms`);
-}
+process.exitCode = await runMigrations(process.env);

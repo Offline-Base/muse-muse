@@ -4,6 +4,7 @@ import { unstable_rethrow } from "next/navigation";
 import resources from "@/catalog/meta-resources.json";
 import { getSessionUser, type SessionUser } from "@/lib/auth";
 import { db, schema } from "@/lib/db/client";
+import { databaseUrl } from "@/lib/db/url";
 import { env } from "@/lib/env";
 import { newestPerRebuild, parseManifest } from "@/lib/format";
 import type { Brief, BuildEvent, MuseLogLine, RebuildFit } from "@/lib/types";
@@ -25,8 +26,9 @@ import type {
 export type QueryResult<T> =
   { ok: true; data: T } | { ok: false; reason: "not_configured" | "unreachable"; message: string };
 
+/** A deployment with no database (DATABASE_URL unset, or a preview without its own: lib/db/url.ts) never runs `fn`. */
 export async function safeQuery<T>(fn: () => Promise<T>): Promise<QueryResult<T>> {
-  if (!process.env.DATABASE_URL) {
+  if (!databaseUrl()) {
     return { ok: false, reason: "not_configured", message: "The database isn't connected yet." };
   }
   try {

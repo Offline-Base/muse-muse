@@ -206,6 +206,27 @@ On Vercel, set the same variables on the project. A few need care:
 - Fine-tuning needs `LAMBDA_API_KEY` and `CRON_SECRET`. Jobs start only on production, where Vercel runs the sweep cron.
 - Publishing to Hugging Face needs `HF_TOKEN` (a fine-grained token with write access to repos under `HF_NAMESPACE`, a user or an organization) and `HF_NAMESPACE`. `HF_PUBLIC=1` makes repos public once checked; anything else keeps them private. Without a token, judged runs say publishing is off.
 
+### Preview database
+
+On Vercel, Preview gets the same `DATABASE_URL` (and the Neon integration's `PG*` and `POSTGRES_*` variables) as Production, and every deployment runs `scripts/migrate.ts` before `next build`. So previews never use `DATABASE_URL`. A preview uses `PREVIEW_DATABASE_URL`, a Neon branch of its own, and everything that opens or migrates the database picks it the same way (`lib/db/url.ts`):
+
+| Where | Database the site uses | What the build's migrate does |
+| --- | --- | --- |
+| Production, `npm run dev`, scripts | `DATABASE_URL`, as before | migrates `DATABASE_URL` (skips when it's unset) |
+| `DATABASE_URL=pglite:<folder>` (`npm run dev:local`) | that folder, as before | migrates that folder |
+| Preview with `PREVIEW_DATABASE_URL` | `PREVIEW_DATABASE_URL` | migrates `PREVIEW_DATABASE_URL` |
+| Preview without it | none: pages show "Not connected yet" and anything that needs the database fails, as with no `DATABASE_URL` | prints that it skips, since previews never touch production's database, and the build goes on |
+| Preview with production's database in it | none | refuses with exit 1, so the build stops |
+
+"Production's database" means the same host (with or without `-pooler`), port and database name as `DATABASE_URL` or the integration's other URLs, whatever the user, password or options. Crons don't change this: Vercel runs `vercel.json` crons on production deployments only.
+
+To give previews their database (once):
+
+1. In Vercel, open Storage, the Neon database, then Open in Neon. Under Branches, choose Create branch, name it `preview` and keep the default (production) branch as its parent. Copy the branch's pooled connection string (Connect, with connection pooling on).
+2. Run `vercel env add PREVIEW_DATABASE_URL preview`, paste the string, and leave the Git branch empty so every preview gets it. Previews made after that use it.
+
+Every preview shares that one branch. It starts as a copy of production's rows, so treat it like production data. To start clean, reset the branch from its parent in the Neon console (Branches, `preview`, Reset from parent), then redeploy a preview so its migrations run again. Migrations reach the preview database in number order too: Drizzle skips a migration older than the newest one applied, so once a preview has applied `0021`, a later preview that brings `0020` skips it there. Reset the branch from its parent before deploying that preview.
+
 `npm run rebuild-all` starts the rebuild batch at `PLATFORM_URL` with the `AUTOMATION_SECRET` bearer and prints a table and a total. `npx tsx --env-file=.env.local scripts/rerecord-demos.ts` re-records the demo of every live product (or the ids and slugs you give it) in its own sandbox with Demo Studio, without a Muse Code run; `--dry-run` records in a throwaway copy of each sandbox and saves the videos locally, changing nothing. Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds target well under 30 minutes, so Hobby works for the hackathon.
 
 ## Run it on your machine
