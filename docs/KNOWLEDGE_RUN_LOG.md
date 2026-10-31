@@ -5,7 +5,7 @@ fix, in order. The plan and the reasons behind it are in [KNOWLEDGE_UPDATE.md](K
 record. Times are Eastern (EDT) unless they say UTC. Add an entry for every launch, run, result, decision and fix, and
 commit it.
 
-Live tracker: https://claude.ai/artifact/TY7xM8JpvFzx3VScPNWZmh (private; since Oct 31, 2:36 AM, when this session's
+Live tracker: https://claude.ai/artifact/TY7xM8JpvFzx3VScPNWZmh (private; since Oct 31, about 2:28 AM, when this session's
 account switched back. Earlier: GGMF3tM2qBQkgWk2RrFzWz, on the other account, last updated 2 AM).
 
 ## Now
@@ -469,18 +469,18 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   small (standard error about 7 points), one reader graded them, and the audit graded against the probes' notes. The
   grader's mistakes: negations inside invented answers read as denials, question words as cutoff cues, sentence-opening
   words as names, invented answers without digits as "unclear". Outputs in .data/knowledge/models/{stage1,base}/honesty/.
-- 2:30 AM: started building Stage B, the plan's short honest-answer pass (KNOWLEDGE_UPDATE.md line 237; stages 1 and 2
+- About 2:25 AM: started building Stage B, the plan's short honest-answer pass (KNOWLEDGE_UPDATE.md line 237; stages 1 and 2
   are its Stage A), workflow for the data, scripts, grader fix and review. Stage A has only 960 date-template
   after-cutoff and 225 cutoff examples in 520,895, and no false-premise or unknowable ones, which fits this result. The
   fleet writes the data as a second process beside the government batch, inside its $333 cap, so no new writing spend.
   Tuned honesty is expected to change the model chosen for the final quantize, so stage 2's quantized files may become
   a measurement rather than the final files.
-- 2:32 AM: owner approved the extra pass and asked for the audit, the fix and any other recommended changes as the run
+- About 2:27 AM: owner approved the extra pass and asked for the audit, the fix and any other recommended changes as the run
   goes ("Do this ... and any other thing you recommend as we go ... please audit it, fix and cotinue"), within the
   existing limits.
-- 2:35 AM: owner went to bed: "You have full permission to do what you think is best here in this training process. I
+- About 2:28 AM: owner went to bed: "You have full permission to do what you think is best here in this training process. I
   am going to bed, keep going." Training decisions are mine overnight; the spending limits and release rules stand.
-- 2:36 AM: this session's claude.ai account switched again: GGMF3tM2qBQkgWk2RrFzWz returns not found and the list shows
+- About 2:28 AM: this session's claude.ai account switched again: GGMF3tM2qBQkgWk2RrFzWz returns not found and the list shows
   TY7xM8JpvFzx3VScPNWZmh. Tracker updates now go to TY7x until GGMF can be reached (GGMF last updated 2 AM).
 
 ## Problems and fixes
