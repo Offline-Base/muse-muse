@@ -3224,8 +3224,9 @@ pre {
   background: var(--line);
 }
 
+/* The same blue as the done dots it joins. */
 .rail-done:not(:last-child)::before {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .rail-dot {
