@@ -153,7 +153,8 @@ Built on Oct 31 in `components/build`. `steps.tsx` maps a build onto the kit (`r
   as before), then the demo video, its poster, or the checks' last screenshot. The final message is plain text under it.
 - **The steps panel** replaces the "Build details" panel. It starts open beside a running build from 1100 px, and closed
   on a finished build or a narrower window. Below 1100 px it covers the conversation from the right, and on phones it's
-  a full-screen sheet with the same close X. Until the room has read the window's width, an open panel that would cover
+  a full-screen sheet with the same close X. While the build runs the list follows its newest line, unless the reader
+  scrolls up, and a closed fold doesn't render what it holds until it's opened. Until the room has read the window's width, an open panel that would cover
   the conversation stays hidden (`.room[data-settled="false"]`), so a phone never sees it flash.
 - **The steer box is the composer** while a build runs. Send turns into stop while the box is empty. With a note written,
   Stop moves beside Send, so it's always one press away, and still asks to confirm.
@@ -193,7 +194,7 @@ Nothing the old room showed is gone. This is where each piece is now.
 | Hook runs and compaction | Nested rows. A blocked hook is a failed row |
 | Workflow cards | In the Agents row on the newest round, as nested rows in the log on older ones, with phase and children |
 | Observer runs | Nested rows, folded past 3 |
-| Question card | The conversation, where it's answered, with a row in the round's step saying it was asked |
+| Question card | The conversation, where it's answered, last while it's open, with a row in the round's step saying it was asked |
 | Owner notes | Bubbles in the conversation with how they went, and a row in the round's step |
 | Stop, Send now, After this step | The composer |
 | Log lines, such as the per-round engine line and `build_note` | Rows under their turn. A line logged just before a round heads that round, not the turn before it |

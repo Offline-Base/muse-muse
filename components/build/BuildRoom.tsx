@@ -39,6 +39,10 @@ export interface BuildRoomProps {
 
 /** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
 const PANEL_COVERS = "(max-width: 1099.98px)";
+/** The steps panel, for the button that opens it. */
+const PANEL_ID = "room-steps-panel";
+/** Within this of its end, the steps list counts as at its end, and follows the newest line. */
+const PANEL_PINNED_PX = 80;
 
 /** Copies known fields from an API reply onto a view, ignoring anything missing or mistyped. */
 function mergeKnown<T extends object>(prev: T, next: unknown): T {
@@ -202,12 +206,15 @@ export function BuildRoom(props: BuildRoomProps) {
     setSettled(true);
   }, []);
   const closePanel = useCallback(() => setPanelOpen(false), []);
-  const showSteps = (step: string | null = null) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Whether the steps list follows the newest line. A panel opening beside a running build starts at the end.
+  const panelPinned = useRef(true);
+  const showSteps = (step: string | null = null, follow = false) => {
+    panelPinned.current = follow;
     setPanelTab("steps");
     setPanelOpen(true);
     setFocusStep(step);
   };
-  const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!focusStep || !panelOpen) return;
     const row = panelRef.current?.querySelector(`[data-step="${CSS.escape(focusStep)}"]`);
@@ -215,6 +222,33 @@ export function BuildRoom(props: BuildRoomProps) {
     if (row && body) body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
     setFocusStep(null);
   }, [focusStep, panelOpen]);
+  // A reader who scrolls up, or opens a fold that pushes the end away, stays where they are until they're back at the end.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onChange = () => {
+      const body = panel.querySelector<HTMLElement>(".chat-panel-body:not([hidden])");
+      if (!body?.querySelector('[role="log"]')) return;
+      panelPinned.current = body.scrollHeight - body.scrollTop - body.clientHeight < PANEL_PINNED_PX;
+    };
+    // Neither event bubbles, so catch them on the way down.
+    panel.addEventListener("scroll", onChange, true);
+    panel.addEventListener("toggle", onChange, true);
+    return () => {
+      panel.removeEventListener("scroll", onChange, true);
+      panel.removeEventListener("toggle", onChange, true);
+    };
+  }, []);
+  useEffect(() => {
+    if (!panelOpen || panelTab !== "steps" || room.terminal || !panelPinned.current) return;
+    const body = panelRef.current?.querySelector<HTMLElement>(".chat-panel-body:not([hidden])");
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [events.length, panelOpen, panelTab, room.terminal]);
+
+  const items = useMemo(() => conversationItems(room), [room]);
+  // An open question comes last, under the preview, so it sits beside the composer and not above a tall frame.
+  const liveQuestions = items.filter((i) => i.type === "question" && i.live);
+  const answering = Boolean(props.canSteer) && liveQuestions.length > 0;
 
   // Keep the newest turn in view while the viewer is at the bottom; otherwise offer a jump button.
   const end = useRef<HTMLDivElement>(null);
@@ -232,10 +266,18 @@ export function BuildRoom(props: BuildRoomProps) {
   useEffect(() => {
     if (seenEvents.current === events.length) return;
     seenEvents.current = events.length;
-    if (atBottom && !room.terminal) end.current?.scrollIntoView({ block: "end", behavior: smooth() });
+    if (atBottom && !room.terminal && !answering) end.current?.scrollIntoView({ block: "end", behavior: smooth() });
     // Only react to new events, not to scroll position changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length]);
+  // A new question comes into view once. After that the page holds still, so the card doesn't move while it's answered.
+  const convo = useRef<HTMLOListElement>(null);
+  const newestQuestion = answering ? liveQuestions[liveQuestions.length - 1]?.key : undefined;
+  useEffect(() => {
+    if (!newestQuestion) return;
+    const cards = convo.current?.querySelectorAll(".question-card");
+    cards?.[cards.length - 1]?.scrollIntoView({ block: "start", behavior: smooth() });
+  }, [newestQuestion]);
 
   const brief = room.brief;
   const name = product?.name ?? brief?.name ?? (build.kind === "refine" ? "Change" : "New build");
@@ -263,7 +305,6 @@ export function BuildRoom(props: BuildRoomProps) {
   // While Muse Code works, its owner gets the steer box where the refine composer shows once the build ends.
   const steering = Boolean(props.canSteer) && !room.terminal && (room.status === "building" || room.status === "fixing");
 
-  const items = useMemo(() => conversationItems(room), [room]);
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
   const panelList = useMemo(() => {
@@ -313,8 +354,12 @@ export function BuildRoom(props: BuildRoomProps) {
         <p className="sr-only" aria-live="polite">
           {`Status: ${statusLabel(room.status)}.`}
         </p>
+        {/* The panel's log announces each line while it's open. */}
+        <p className="sr-only" aria-live="polite">
+          {current && !panelOpen ? (current.description ?? current.title) : ""}
+        </p>
 
-        <ol className="convo" aria-label="Build conversation">
+        <ol ref={convo} className="convo" aria-label="Build conversation">
           <UserTurn
             inspiration={props.inspiration}
             message={isRefineBuild ? build.message : null}
@@ -322,9 +367,11 @@ export function BuildRoom(props: BuildRoomProps) {
             showReferences={showRefs}
           />
 
-          {items.map((item) => (
-            <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
-          ))}
+          {items
+            .filter((item) => !liveQuestions.includes(item))
+            .map((item) => (
+              <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+            ))}
 
           {current ? (
             <li className="room-working">
@@ -336,12 +383,7 @@ export function BuildRoom(props: BuildRoomProps) {
               <p className="room-working-meta">
                 {duration(elapsed)} · {usd(room.costUsd)} est.
                 {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
-                {panelOpen ? null : (
-                  <button type="button" className="link-btn room-steps-link" onClick={() => showSteps()}>
-                    Show steps
-                    <Icon name="chevronRight" size={16} />
-                  </button>
-                )}
+                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, true))} />
               </p>
             </li>
           ) : null}
@@ -386,6 +428,10 @@ export function BuildRoom(props: BuildRoomProps) {
               {brief ? <BriefBody brief={brief} /> : <p>{room.lastError ?? room.lastStatusMessage ?? "Muse Muse can't make this one."}</p>}
             </li>
           ) : null}
+
+          {liveQuestions.map((item) => (
+            <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+          ))}
         </ol>
         <div ref={end} className="convo-end" />
 
@@ -419,6 +465,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
       <div ref={panelRef} className="room-panel">
         <StepsPanel
+          id={PANEL_ID}
           open={panelOpen}
           onClose={closePanel}
           tab={panelTab}
@@ -432,6 +479,16 @@ export function BuildRoom(props: BuildRoomProps) {
         />
       </div>
     </div>
+  );
+}
+
+/** Opens and closes the steps panel from the running step. It stays on the page, so the panel can give focus back to it. */
+export function StepsToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="link-btn room-steps-link" aria-expanded={open} aria-controls={PANEL_ID} onClick={onClick}>
+      {open ? "Hide steps" : "Show steps"}
+      <Icon name="chevronRight" size={16} />
+    </button>
   );
 }
 

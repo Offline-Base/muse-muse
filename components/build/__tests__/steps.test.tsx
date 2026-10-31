@@ -23,6 +23,7 @@ type FixtureName = keyof typeof FIXTURES;
 
 let render: (c: ComponentType<never>, props: object) => string;
 let BuildRoom: ComponentType<never>;
+let StepsToggle: ComponentType<never>;
 let StepList: ComponentType<never>;
 let SteerBox: ComponentType<never>;
 let steps: typeof import("@/components/build/steps");
@@ -32,6 +33,7 @@ before(async () => {
   const { renderToString } = await import("react-dom/server");
   render = (c, props) => renderToString(createElement(c, props as never)).replace(/<!-- -->/g, "");
   BuildRoom = (await import("@/components/build/BuildRoom")).BuildRoom as ComponentType<never>;
+  StepsToggle = (await import("@/components/build/BuildRoom")).StepsToggle as ComponentType<never>;
   StepList = (await import("@/components/chat")).StepList as ComponentType<never>;
   SteerBox = (await import("@/components/build/SteerBox")).SteerBox as ComponentType<never>;
   steps = await import("@/components/build/steps");
@@ -306,9 +308,23 @@ describe("the room", () => {
     assert.match(html, /<h1 class="chat-title-chip">Feeder Count<\/h1>/);
     assert.match(html, /aria-label="Copy this product&#x27;s link"/);
     assert.match(html, /aria-label="Build details"/);
-    assert.match(html, /<aside class="chat-panel" aria-label="Steps and sources">/);
+    assert.match(html, /<aside id="room-steps-panel" class="chat-panel" aria-label="Steps and sources">/);
     assert.match(html, /<div role="log" aria-relevant="additions" aria-label="Muse Code activity">/);
     assert.doesNotMatch(html, /Build details<\/strong>|class="toolbar"|class="turn[ "]/);
+  });
+
+  it("keeps the steps button on the page, open or closed, so the panel can give focus back to it", () => {
+    assert.match(page("running"), /aria-expanded="true" aria-controls="room-steps-panel">Hide steps/);
+    assert.match(render(StepsToggle, { open: false, onClick() {} }), /aria-expanded="false" aria-controls="room-steps-panel">Show steps/);
+    assert.match(render(StepsToggle, { open: true, onClick() {} }), /aria-expanded="true" aria-controls="room-steps-panel">Hide steps/);
+  });
+
+  it("puts an open question last, under the preview", () => {
+    const html = page("running");
+    const card = html.indexOf('class="question-card"');
+    assert.ok(card > 0);
+    assert.ok(html.indexOf("<iframe") > 0 && html.indexOf("<iframe") < card, "under the preview");
+    assert.ok(card > html.indexOf("room-working"), "under the running step");
   });
 
   it("keeps every fact the old panel and toolbar had in the More menu", () => {
@@ -335,7 +351,7 @@ describe("the room", () => {
     assert.match(html, /10 m · Input 412k · Output 38k · \$0\.90 est\./);
     assert.match(html, /Show thinking/);
     // The panel starts closed on a finished build, and opens from Show thinking.
-    assert.match(html, /<aside class="chat-panel" aria-label="Steps and sources" hidden="">/);
+    assert.match(html, /<aside id="room-steps-panel" class="chat-panel" aria-label="Steps and sources" hidden="">/);
   });
 
   it("says plainly that a failed build didn't ship", () => {
