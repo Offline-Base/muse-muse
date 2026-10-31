@@ -406,35 +406,29 @@ describe("glasses helpers", () => {
     assert.equal(AUTOPILOT_LOG, "autopilot.jsonl");
   });
 
-  /** Runs the script against a small fake of the template's connect and primary buttons. */
-  async function runAutopilot(primary: { pressed: boolean; enabledAfterMs?: number }) {
+  /** Runs the script against a small fake of the connect and primary buttons. `onClick` says what the product does. */
+  async function runAutopilot(primary: { enabledAfterMs?: number; onClick(count: number, state: { disabled: boolean; result: boolean }): void }) {
     const started = Date.now();
     const clicks: number[] = [];
     const marks: Array<{ step: string; ok: boolean }> = [];
-    let resultShown = false;
-    const button = (attrs: Record<string, string | null>, onClick: () => void) => ({
-      click: onClick,
-      getAttribute: (name: string) => attrs[name] ?? null,
-    });
-    const connect = button({}, () => {});
-    const attrs: Record<string, string | null> = { "aria-pressed": "false" };
-    const main = button(attrs, () => {
-      clicks.push(Date.now() - started);
-      if (clicks.length === 1 && primary.pressed) {
-        attrs["aria-pressed"] = "true";
-      } else {
-        attrs["aria-pressed"] = "false";
-        resultShown = true;
-      }
-    });
+    const state = { disabled: false, result: false };
+    const main = {
+      get disabled() {
+        return state.disabled;
+      },
+      click() {
+        clicks.push(Date.now() - started);
+        primary.onClick(clicks.length, state);
+      },
+    };
     const document = {
       querySelector(selector: string) {
-        if (selector === '[data-glasses-action="connect"]') return connect;
+        if (selector === '[data-glasses-action="connect"]') return { click() {} };
         if (selector === "[data-glasses-primary]") return main;
         if (selector === "[data-glasses-primary]:not([disabled])") {
-          return Date.now() - started >= (primary.enabledAfterMs ?? 0) ? main : null;
+          return Date.now() - started >= (primary.enabledAfterMs ?? 0) && !state.disabled ? main : null;
         }
-        if (selector === "[data-result]") return resultShown ? { innerText: "done" } : null;
+        if (selector === "[data-result]") return state.result ? { innerText: "done" } : null;
         return null;
       },
     };
@@ -446,7 +440,7 @@ describe("glasses helpers", () => {
       },
       MuseNative: { glasses: { status: async () => ({ state: "ready", mode: "mock" }) } },
     };
-    new Function("window", "document", buildAutopilotScript(4_000, 50))(page, document);
+    new Function("window", "document", buildAutopilotScript(1_000, 50))(page, document);
     while (!marks.some((mark) => mark.step === "result" || mark.step === "timeout" || mark.step === "error")) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
@@ -454,7 +448,12 @@ describe("glasses helpers", () => {
   }
 
   it("taps twice for the template's button, once it's enabled", async () => {
-    const { clicks, marks } = await runAutopilot({ pressed: true, enabledAfterMs: 300 });
+    const { clicks, marks } = await runAutopilot({
+      enabledAfterMs: 300,
+      onClick: (count, state) => {
+        if (count === 2) state.result = true;
+      },
+    });
     assert.equal(clicks.length, 2);
     assert.ok(clicks[0] >= 300, "the first tap waits for the button to be enabled");
     assert.ok(clicks[1] - clicks[0] >= 50, "the second tap comes after the listening time");
@@ -462,10 +461,33 @@ describe("glasses helpers", () => {
     assert.ok(marks.every((mark) => mark.ok));
   });
 
-  it("taps once for a button that doesn't stay pressed", async () => {
-    const { clicks, marks } = await runAutopilot({ pressed: false });
+  it("doesn't tap again once there's a result", async () => {
+    const { clicks, marks } = await runAutopilot({
+      onClick: (_count, state) => {
+        state.result = true;
+      },
+    });
     assert.equal(clicks.length, 1);
     assert.equal(marks.at(-1)?.step, "result");
+  });
+
+  it("doesn't tap a button that's disabled while it works", async () => {
+    const { clicks, marks } = await runAutopilot({
+      onClick: (_count, state) => {
+        state.disabled = true;
+        setTimeout(() => {
+          state.result = true;
+        }, 150);
+      },
+    });
+    assert.equal(clicks.length, 1);
+    assert.equal(marks.at(-1)?.step, "result");
+  });
+
+  it("reports a timeout when the button never gets enabled, without claiming the tap", async () => {
+    const { clicks, marks } = await runAutopilot({ enabledAfterMs: 60_000, onClick: () => {} });
+    assert.equal(clicks.length, 0);
+    assert.deepEqual(marks.map((mark) => mark.step), ["start", "connect", "timeout"]);
   });
 });
 

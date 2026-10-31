@@ -91,9 +91,9 @@ touches the microphone, because preparing the recorder on a simulator can hang a
 With no question file, `stopRecording` returns silence.
 
 **Autopilot.** With `-museMock 1 -museRun autopilot`, it presses `[data-glasses-action="connect"]`, waits for
-`[data-glasses-primary]` to be enabled and presses it. If the button still shows `aria-pressed="true"` after 1.5 s, it
-presses it again, since the template's button listens between two taps. Then it waits for `[data-result]`. Checkpoints go
-to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines.
+`[data-glasses-primary]` to be enabled and presses it. After 1.5 s it presses it again if it's still there, not disabled,
+and there's no result yet, since the template's button listens between two taps. Then it waits for `[data-result]`.
+Checkpoints go to `Documents/autopilot.jsonl` and to the log as `MUSE_AUTOPILOT` lines.
 
 **Cut for now.** The design's button for `glasses_app_update_required` isn't wired, so that error only tells the person to
 open the Meta AI app. Only real glasses can hit it, and this build is simulator only. Wire `openDATGlassesAppUpdate` before

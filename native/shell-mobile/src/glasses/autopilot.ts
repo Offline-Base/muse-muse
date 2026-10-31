@@ -1,7 +1,8 @@
 // Presses through a glasses product on the iPhone Simulator, so the lab can record the real path with mock glasses.
 // It relies on the automation contract from the glasses template: [data-glasses-action="connect"],
 // [data-glasses-primary] and [data-result]. The template's button listens from the first script click until the second,
-// so a product's main button that shows aria-pressed="true" gets that second click.
+// so after a moment the main button gets a second click, if it's still there, not disabled, and there's no result yet.
+// The muse-glasses skill tells products the same thing.
 
 export const AUTOPILOT_LOG = "autopilot.jsonl";
 export const AUTOPILOT_LIMIT_MS = 120_000;
@@ -86,7 +87,7 @@ export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS, liste
     })
     .then(function () {
       var button = find("[data-glasses-primary]");
-      if (button && button.getAttribute("aria-pressed") === "true") button.click();
+      if (button && !button.disabled && !find("[data-result]")) button.click();
       return mark("primary", true);
     })
     .then(function () {
