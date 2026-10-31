@@ -267,6 +267,12 @@ h4 {
   text-wrap: balance;
 }
 
+/* Weights stop at 600, as on the live page. The browser's "bolder" would make these 700 over regular text. */
+strong,
+b {
+  font-weight: 600;
+}
+
 p {
   margin: 0;
 }
@@ -684,11 +690,12 @@ pre {
 
 /* ---------- Controls ---------- */
 
+/* The live button's 20 px icon sits 4 px from its label, edge to edge, though its CSS gap reads 2 px (docs/BRAND.md). */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   min-height: 36px;
   padding: 0 14px;
   border: 0;
@@ -3696,6 +3703,13 @@ pre {
 .range a[aria-current] {
   background: var(--chat-segment);
   box-shadow: var(--shadow-segment);
+}
+
+/* An option that isn't chosen shows a fill under the pointer, so it reads as one you can pick. */
+.tab:hover:not([aria-selected="true"]),
+.range a:hover:not([aria-current]),
+.segmented a:hover:not([aria-current]) {
+  background: var(--hover);
 }
 
 /* ---------- Dashboard ---------- */

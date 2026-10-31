@@ -359,6 +359,11 @@
   backdrop-filter: none;
 }
 
+/* Bold text keeps the browser's "bolder" in the docs, under the platform's 600. */
+:where(.docs-frame, .sidebar:has(.docs-nav), .sheet:has(.docs-nav), .main:has(.docs-frame) > .topbar) :is(strong, b) {
+  font-weight: bolder;
+}
+
 /* The docs' menus have their border, so the composer's "+" menu doesn't take the platform's hairline ring too. */
 :where(.docs-frame) .composer-row .menu {
   box-shadow: var(--shadow-pop);

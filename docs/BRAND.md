@@ -103,7 +103,7 @@ All M. Each shadow sits on the surface fill beside it.
 | `--shadow-pop` | `inset 0 1px 0 rgba(255,255,255,.64), 0 0 12px rgba(0,0,0,.04), 0 12px 60px rgba(0,0,0,.12)` | `rgba(255,255,255,.76)` with `blur(60px)` | Menus |
 | Same, on a dialog | as `--shadow-pop` | `#ffffff`, 1px `--line`. Dark: `#181819` | Large popovers |
 | `--shadow-segment` | same as `--shadow-card` | `--chat-segment` | Chosen segment |
-| `--shadow-showcase` (new) | `inset 0 1px 0 rgba(255,255,255,.64), 0 0 2px rgba(0,0,0,.02), 0 0 10px rgba(0,0,0,.03), 0 10px 50px rgba(0,0,0,.07)` | `#f3f4f5` | A large framed preview (M-demo) |
+| `--shadow-showcase` (not added) | `inset 0 1px 0 rgba(255,255,255,.64), 0 0 2px rgba(0,0,0,.02), 0 0 10px rgba(0,0,0,.03), 0 10px 50px rgba(0,0,0,.07)` | `#f3f4f5` | A large framed preview (M-demo). No platform screen has one yet, so it isn't in `globals.css`. Add it with the first that does |
 | `--shadow-side` | as it is | | Panel over the conversation, up to 1100 px (O) |
 
 In dark, every inset highlight is `rgba(255,255,255,.06)`. The outer shadows keep their values (M). Hairline-only cards
@@ -205,7 +205,7 @@ Class names are today's. Keep them.
 
 | Kind | Size | Fill and text | Hover |
 |---|---|---|---|
-| Primary `.btn-primary` | 36 px, `0 14px`, gap 2 px, full radius | The gradient, white, 14 / 500 | No change |
+| Primary `.btn-primary` | 36 px, `0 14px`, 4 px from icon to label, full radius | The gradient, white, 14 / 500 | No change |
 | Secondary `.btn`, `.btn-outline` | Same | `--surface-3`, `--fg`, 14 / 500, no border | `--hover-2` |
 | Small `.btn-sm` | 32 px, `0 12px` | Either, 14 / 400 | Same |
 | Floating | 40 px, `0 12px 0 14px` | Glass, `--shadow-chip`, 14 / 500 | |
@@ -215,6 +215,9 @@ Class names are today's. Keep them.
 | Focus | | `outline: 2px solid var(--focus)` on buttons | |
 
 Keep `.btn-block` at 46 px on the sign-in form (O).
+
+The live buttons' CSS `gap` reads 2 px, but their 20 px icon sits 4 px from the label, edge to edge ("Learn more", M).
+`.btn` uses `gap: 4px` with our 20 px icons, which gives the same 4 px on screen.
 
 ### Composer (`.composer`, `Composer.tsx`, `SteerBox.tsx`)
 
@@ -276,7 +279,8 @@ All M unless it says otherwise.
 ### Segmented tabs (`.chat-tabs`, `.tabs`, `.range`, `.segmented`), M
 
 Track 36 px, `--panel-line`, radius 16 px, 4 px inset. Chosen segment 28 px, radius 16 px, `--chat-segment`,
-`--shadow-segment`. Labels 14 / 500 in `--fg` whether chosen or not. S read 15 px and a fully round track on the steps
+`--shadow-segment`. Labels 14 / 500 in `--fg` whether chosen or not. An option that isn't chosen takes `--hover` under the
+pointer (O). S read 15 px and a fully round track on the steps
 panel. M is the same control measured directly, so it wins.
 
 ### Conversation kit (`components/chat`), mostly S
@@ -593,7 +597,7 @@ light and dark with the live demo panel open) matched the one taken before the c
 | 10 | Sign-in width | Fixed: 520 px |
 | 11 | Conversation fine-tuning | Done: bubble 22 px, tabs 14 / 500, glass chip and buttons |
 | 12 | Gallery and product page | Tokens, and `.panel` is a hairline card |
-| 13 | Dashboard, usage, how it works, fine-tuning | Tokens, regular-weight big numbers. No weight above 600 is left |
+| 13 | Dashboard, usage, how it works, fine-tuning | Tokens, regular-weight big numbers. No weight above 600 is left: `strong` and `b` are 600 too, outside the docs |
 | 14 | Voice state | Not done. It changes the recording controls' wiring |
 | 15 | Phone sheet | Done: full width, the live overlay |
 | 16 | Phone Make page | Done: 24 px margins, a 342 px composer at 390 |
