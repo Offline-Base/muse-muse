@@ -364,8 +364,9 @@ export const env = {
   get nativeMacHourlyUsd(): number {
     return dollars("NATIVE_MAC_HOURLY_USD", 0.65);
   },
+  /** t3.large on Windows, the box docs/NATIVE_LAB.md sets up. The same size on Linux is about $0.083. */
   get nativeWindowsHourlyUsd(): number {
-    return dollars("NATIVE_WINDOWS_HOURLY_USD", 0.083);
+    return dollars("NATIVE_WINDOWS_HOURLY_USD", 0.111);
   },
   /** When the Mac host was allocated and when it will be released, as ISO dates. Its whole span is a fixed cost. */
   get nativeMacAllocatedAt(): string | null {

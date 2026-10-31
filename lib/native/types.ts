@@ -95,7 +95,7 @@ export interface NativeJobResult {
  */
 export type NativeSelftestReport = Record<string, unknown>;
 
-/** native_labs.state: what a box last said about itself. */
+/** native_labs.state: what a box last said about itself, and the platform's own notes on it. */
 export interface NativeLabState {
   slots?: number;
   running?: string[];
@@ -104,4 +104,24 @@ export interface NativeLabState {
   simBooted?: boolean;
   emulatorBooted?: boolean;
   diskFreeGb?: number;
+  /** Only the platform writes this. A claim call merges the box's own fields beside it and can't set it. */
+  control?: NativeLabControl;
+}
+
+/** What the sweep and the Windows wake keep between runs (lib/native/lab-box.ts). */
+export interface NativeLabControl {
+  /** The box's EC2 state when the sweep last looked, for the admin card, which never calls AWS. */
+  boxState?: string;
+  boxStateAt?: string;
+  /** Windows: when this billing session began. Null when the box isn't billing. */
+  startedAt?: string | null;
+  /** Windows: what the ledger holds for this session, in USD. */
+  holdUsd?: number;
+  /** Windows: no automatic start before this, after the backstop stopped a box whose agent never came up. */
+  noStartUntil?: string | null;
+  /** Why the platform last stopped the box. */
+  stopReason?: string | null;
+  stopAt?: string | null;
+  /** Mac: when the sweep last sent restart-agent, so it tries at most once per 10 minutes. */
+  restartAt?: string | null;
 }
