@@ -6,7 +6,7 @@ import { AudioModule, IOSOutputFormat, requestRecordingPermissionsAsync, setAudi
 import { File } from "expo-file-system";
 import * as Speech from "expo-speech";
 
-import { enableMockGlasses } from "../glasses/mock";
+import { enableMockGlasses, mockRecording } from "../glasses/mock";
 import { deviceSummary, initialStatus, problemFromSessionError, problemFromStreamError, problemFromThrown } from "../glasses/status";
 import { photoToDataUrl } from "../native/photo";
 import { BridgeError } from "./router";
@@ -107,6 +107,7 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let recordingLimit = null;
   let recordingStarted = 0;
+  let mockRecordingStarted = 0;
   let recordingSource = /** @type {"glasses" | "phone"} */ ("phone");
 
   /**
@@ -320,15 +321,17 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
 
   /** @param {{ maxSeconds: number }} params */
   async function startRecording({ maxSeconds }) {
+    if (mock) {
+      mockRecordingStarted = Date.now();
+      return;
+    }
     if (recorder?.isRecording) throw new BridgeError("busy", "A recording is already running.");
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) throw new BridgeError("denied", "Microphone access is off. You can turn it on in Settings.");
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-    console.log("MUSE_GLASSES recording: audio mode set");
 
     recorder = new AudioModule.AudioRecorder(WAV_RECORDING);
     await recorder.prepareToRecordAsync();
-    console.log("MUSE_GLASSES recording: prepared");
     recordingSource = await currentInputSource(recorder);
     recorder.record();
     recordingStarted = Date.now();
@@ -338,6 +341,12 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   }
 
   async function stopRecording() {
+    if (mock) {
+      if (!mockRecordingStarted) throw new BridgeError("bad_request", "Nothing is recording.");
+      const seconds = (Date.now() - mockRecordingStarted) / 1_000;
+      mockRecordingStarted = 0;
+      return mockRecording(seconds);
+    }
     if (!recorder) throw new BridgeError("bad_request", "Nothing is recording.");
     const seconds = recorder.isRecording ? (Date.now() - recordingStarted) / 1_000 : recorder.currentTime;
     await stopRecorderNow();

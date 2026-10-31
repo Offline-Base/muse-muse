@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 import { buildConfig } from "../../app.config";
 import { buildAutopilotScript, cleanCheckpoint } from "../glasses/autopilot";
+import { silentWavBase64 } from "../glasses/wav";
 import { deviceSummary, problemFromSessionError, problemFromStreamError, problemFromThrown } from "../glasses/status";
 import { chooseLaunchTarget, isOpenableUrl, isValidSlug, launchArgsToRequest, parseDeepLink, targetForRunningApp } from "../launch";
 import type { LaunchEnv } from "../launch";
@@ -334,6 +335,19 @@ describe("glasses helpers", () => {
     assert.deepEqual(deviceSummary({ name: "RB", batteryLevel: 80, donState: "donned" }), { name: "RB", battery: 80, worn: true });
     assert.deepEqual(deviceSummary({ batteryLevel: -1 }), { name: "Meta glasses", battery: null, worn: null });
     assert.equal(deviceSummary(null), null);
+  });
+
+  it("makes a valid 16 kHz mono silent WAV", () => {
+    const wav = Buffer.from(silentWavBase64(0.5), "base64");
+    assert.equal(wav.toString("latin1", 0, 4), "RIFF");
+    assert.equal(wav.toString("latin1", 8, 12), "WAVE");
+    assert.equal(wav.readUInt16LE(22), 1);
+    assert.equal(wav.readUInt32LE(24), 16_000);
+    assert.equal(wav.readUInt16LE(34), 16);
+    assert.equal(wav.readUInt32LE(40), 16_000);
+    assert.equal(wav.length, 44 + 16_000);
+    assert.equal(wav.readUInt32LE(4), wav.length - 8);
+    assert.equal(Buffer.from(silentWavBase64(-1), "base64").length, 44);
   });
 
   it("only logs known autopilot steps", () => {

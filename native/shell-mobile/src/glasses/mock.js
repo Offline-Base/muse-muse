@@ -2,12 +2,16 @@
 // Meta's mock glasses, for the simulator-only build. The module only compiles them where with-mock-glasses-in-release.js
 // or a Debug build allows it. Anywhere else these calls throw, and the shell reports it as an error.
 //
-// The lab copies its media into the app's Documents folder before launch: mock-feed.mov (H.265) and mock-photo.jpg.
+// The lab copies its media into the app's Documents folder before launch: mock-feed.mov (H.265), mock-photo.jpg and
+// mock-question.wav (16 kHz mono).
 
 import { File, Paths } from "expo-file-system";
 
+import { silentWavBase64 } from "./wav";
+
 export const MOCK_FEED_FILE = "mock-feed.mov";
 export const MOCK_PHOTO_FILE = "mock-photo.jpg";
+export const MOCK_QUESTION_FILE = "mock-question.wav";
 
 /** @param {string} name */
 function documentFile(name) {
@@ -34,4 +38,16 @@ export async function enableMockGlasses(wearables) {
   const photo = documentFile(MOCK_PHOTO_FILE);
   if (photo) await wearables.mockDeviceSetCapturedImage(id, photo);
   return id;
+}
+
+/**
+ * What mock glasses "heard". A simulator has no dependable microphone: preparing the recorder there can hang, and that
+ * stalls every Expo module's async calls behind it. So mock mode never touches the microphone.
+ *
+ * @param {number} seconds How long the recording ran, for the silence used when the lab supplied no question.
+ */
+export async function mockRecording(seconds) {
+  const question = new File(Paths.document, MOCK_QUESTION_FILE);
+  const base64 = question.exists ? await question.base64() : silentWavBase64(seconds);
+  return { wavDataUrl: `data:audio/wav;base64,${base64}`, seconds, source: /** @type {const} */ ("phone") };
 }

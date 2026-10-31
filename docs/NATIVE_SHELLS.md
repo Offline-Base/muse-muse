@@ -59,8 +59,10 @@ needed. Two things make that work, and both have tests:
 The module only compiles Meta's mock glasses under `DEBUG`. `plugins/with-mock-glasses-in-release.js` turns that on for
 the module alone when `MUSE_GLASSES_MOCK=1`, so a simulator build runs with no Metro. Never use it on a device build.
 
-**Mock media.** Copy these into the app's Documents folder before launch: `mock-feed.mov` (H.265, `-tag:v hvc1`) and
-`mock-photo.jpg`. A capture has nothing to return without the photo.
+**Mock media.** Copy these into the app's Documents folder before launch: `mock-feed.mov` (H.265, `-tag:v hvc1`),
+`mock-photo.jpg` and `mock-question.wav` (16 kHz mono). A capture has nothing to return without the photo. Mock mode never
+touches the microphone, because preparing the recorder on a simulator can hang and stall every Expo async call behind it.
+With no question file, `stopRecording` returns silence.
 
 **Autopilot.** With `-museMock 1 -museRun autopilot`, it presses `[data-glasses-action="connect"]`, then
 `[data-glasses-primary]`, and waits for `[data-result]`. Checkpoints go to `Documents/autopilot.jsonl` and to the log as
