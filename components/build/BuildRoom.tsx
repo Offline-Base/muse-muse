@@ -12,10 +12,12 @@ import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef 
 import { BuildDetails } from "@/components/build/BuildDetails";
 import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
 import { QuestionCard, SteerNote } from "@/components/build/session";
+import { proveRows } from "@/components/build/prove-rows";
 import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
 import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
 import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
+import { proveRunning } from "@/lib/outputs/labels";
 import type { BuildEvent } from "@/lib/types";
 
 export interface BuildRoomProps {
@@ -77,7 +79,7 @@ export function BuildRoom(props: BuildRoomProps) {
 
   const room = useMemo(() => deriveRoom(build, events), [build, events]);
   const rail = useMemo(() => railStates(room, build.kind), [room, build.kind]);
-  const now = useNow(props.serverNow, !room.terminal);
+  const now = useNow(props.serverNow, !room.terminal || proveRunning(events, props.serverNow));
 
   const refresh = useCallback(async () => {
     try {
@@ -104,13 +106,15 @@ export function BuildRoom(props: BuildRoomProps) {
   // Live events. EventSource resumes with Last-Event-ID on its own; when the server ends the stream for good
   // (a terminal build), stop instead of reconnecting forever. Incoming events are batched into one render.
   useEffect(() => {
-    if (isTerminalStatus(props.build.status)) return;
+    // A Prove it run writes events after the build's end, so a page opened during one still listens.
+    const proveEvents: BuildEvent[] = props.events.filter((e) => e.type === "prove");
+    if (isTerminalStatus(props.build.status) && !proveRunning(proveEvents, Date.now())) return;
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let flush: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
     let attempts = 0;
-    let sawTerminal = false;
+    let sawTerminal = isTerminalStatus(props.build.status);
     let lastId = props.events[props.events.length - 1]?.id ?? 0;
     let lastRefresh = 0;
     const buffer: BuildEvent[] = [];
@@ -146,6 +150,7 @@ export function BuildRoom(props: BuildRoomProps) {
         if (!ev.at) ev = { ...ev, at: new Date().toISOString() };
         buffer.push(ev);
         if (ev.type === "status" && isTerminalStatus(ev.status)) sawTerminal = true;
+        if (ev.type === "prove") proveEvents.push(ev);
         if (!flush) flush = setTimeout(drain, 80);
         // Columns such as the build model, session id and fix rounds change without an event of their own, so
         // reload the build row on every status change, and now and then while Muse Code is working.
@@ -156,7 +161,7 @@ export function BuildRoom(props: BuildRoomProps) {
         }
       });
       es.addEventListener("error", () => {
-        if (sawTerminal) {
+        if (sawTerminal && !proveRunning(proveEvents, Date.now())) {
           es?.close();
           stopped = true;
           setConn("closed");
@@ -307,10 +312,14 @@ export function BuildRoom(props: BuildRoomProps) {
 
   const answer = useMemo(() => finalWords(room), [room]);
   const current = useMemo(() => currentStep(room), [room]);
+  // The clock only matters to a Prove it run, so a build without one doesn't redraw its list each tick.
+  const proveNow = events.some((e) => e.type === "prove") ? now : 0;
+  const proveSteps = useMemo(() => proveRows(events, proveNow), [events, proveNow]);
+  const proveStep = proveSteps[0];
   const panelList = useMemo(() => {
     if (!panelOpen) return null;
-    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild })} end={stepsEnd(room)} />;
-  }, [panelOpen, room, rail, isRefineBuild]);
+    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild, targets: proveSteps })} end={proveStep?.state === "running" ? undefined : stepsEnd(room)} />;
+  }, [panelOpen, room, rail, isRefineBuild, proveSteps, proveStep?.state]);
   const panelSources = useMemo(() => {
     if (!panelOpen) return null;
     return <SourceList sources={roomSources({ room, inspiration: props.inspiration, showReferences: showRefs, models })} empty="Nothing yet. What the build reads shows here." />;
@@ -405,6 +414,15 @@ export function BuildRoom(props: BuildRoomProps) {
               {answer ? <MarkdownText className="say" text={answer} /> : null}
               <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} />
               <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
+            </li>
+          ) : null}
+
+          {shipped && proveStep ? (
+            <li className="room-working">
+              <WorkingStep title={proveStep.title} description={proveStep.description} state={proveStep.state} />
+              <p className="room-working-meta">
+                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(proveStep.id, proveStep.state === "running"))} />
+              </p>
             </li>
           ) : null}
 

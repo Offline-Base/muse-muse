@@ -3585,6 +3585,50 @@ pre {
   box-shadow: var(--shadow-tab);
 }
 
+/* The Get it panel's outputs (components/product/OutputPanels.tsx). */
+.output-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.output-panel p {
+  margin: 0;
+}
+
+.output-panel ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.output-panel li code {
+  overflow-wrap: anywhere;
+}
+
+.output-proof {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.output-proof-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.output-proof ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .code-block {
   display: flex;
   align-items: center;

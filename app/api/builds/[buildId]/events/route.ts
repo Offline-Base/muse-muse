@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
-import { eventsAfter } from "@/lib/events";
+import { env } from "@/lib/env";
+import { eventsAfter, proveStillRunning } from "@/lib/events";
 import { errorJson, isUuid } from "@/lib/http";
 import { SSE_PING, formatSseEvent, isTerminal, isTerminalEvent, parseCursor } from "@/lib/pipeline/sse";
 
@@ -16,6 +17,8 @@ const BATCH = 200;
 const STATUS_EVERY_POLLS = 5;
 /** Keep draining this long after the build ends: the failure event and cleanup logs land just after the status. */
 const DRAIN_MS = 2_000;
+/** After the build ends, how often to ask whether a Prove it run is still going (docs/PRODUCT_OUTPUTS.md). */
+const PROVE_CHECK_MS = 5_000;
 
 type Ctx = { params: Promise<{ buildId: string }> };
 
@@ -31,7 +34,7 @@ async function buildStatus(buildId: string): Promise<string | null> {
 /**
  * GET -> text/event-stream of BuildEvents: "id: <id>\nevent: build\ndata: <json>\n\n". Resumes from Last-Event-ID
  * or ?after=<id>, polls the database every second, pings every 15 s, and closes after about 280 s or once the build is
- * terminal and drained.
+ * terminal and drained, and no Prove it run is still going.
  */
 export async function GET(req: Request, { params }: Ctx): Promise<Response> {
   const { buildId } = await params;
@@ -57,6 +60,7 @@ export async function GET(req: Request, { params }: Ctx): Promise<Response> {
       const startedAt = Date.now();
       let lastWrite = Date.now();
       let endedAt: number | null = isTerminal(status) ? Date.now() : null;
+      let proveCheckedAt = 0;
       const write = (text: string) => {
         controller.enqueue(encoder.encode(text));
         lastWrite = Date.now();
@@ -74,7 +78,13 @@ export async function GET(req: Request, { params }: Ctx): Promise<Response> {
           if (endedAt === null && poll % STATUS_EVERY_POLLS === 0 && isTerminal(await buildStatus(buildId))) {
             endedAt = Date.now();
           }
-          if (endedAt !== null && events.length === 0 && Date.now() - endedAt >= DRAIN_MS) break;
+          if (endedAt !== null && events.length === 0 && Date.now() - endedAt >= DRAIN_MS) {
+            if (!env.proveIt) break;
+            if (Date.now() - proveCheckedAt >= PROVE_CHECK_MS) {
+              proveCheckedAt = Date.now();
+              if (!(await proveStillRunning(buildId))) break;
+            }
+          }
           if (Date.now() - lastWrite >= PING_MS) write(SSE_PING);
           await new Promise((resolve) => setTimeout(resolve, POLL_MS));
         }
