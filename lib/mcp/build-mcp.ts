@@ -1,42 +1,22 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { noEmDashes } from "@/lib/brief/normalize";
+import { buildIdFromToken } from "@/lib/mcp/build-token";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 /**
  * The build MCP server (docs/MUSE_CODE_FULL.md, "Every capability on"): what Muse Code inside a build's sandbox may ask
  * the platform, over streamable HTTP at app/api/build-mcp. Meta's developer docs (the mirror in content/meta-docs), the
- * models a product may call, and a note to the build room. Each build has its own token, an HMAC of its id, which only
- * the build's Muse Code runner exports (lib/sandbox/muse-config.ts). Stateless, like lib/mcp/server.ts: each POST gets a
- * fresh server and transport and a plain JSON reply.
+ * models a product may call, and a note to the build room. Each build has its own token (lib/mcp/build-token.ts), which
+ * only the build's Muse Code runner exports. Stateless, like lib/mcp/server.ts: each POST gets a fresh server and
+ * transport and a plain JSON reply.
  */
 
-const TOKEN_PREFIX = "mm_build_mcp";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** The most of a docs page one docs_read returns. Bigger pages say how to read them a section at a time. */
 export const MAX_DOC_CHARS = 60_000;
 export const MAX_NOTE_CHARS = 600;
 const MAX_QUERY_CHARS = 200;
-
-function mac(buildId: string, secret: string): string {
-  return createHmac("sha256", secret).update(`build-mcp:${buildId}`).digest("hex");
-}
-
-/** A build's MCP token: its id and an HMAC of it, so it needs no storage and can't be made for another build. */
-export function buildMcpToken(buildId: string, secret: string): string {
-  return `${TOKEN_PREFIX}.${buildId}.${mac(buildId, secret)}`;
-}
-
-/** The build a token was made for, or null. The HMAC is compared in constant time. */
-export function buildIdFromToken(token: string, secret: string): string | null {
-  const [prefix, buildId = "", given = "", ...extra] = token.trim().split(".");
-  if (prefix !== TOKEN_PREFIX || extra.length || !UUID.test(buildId) || !/^[0-9a-f]{64}$/.test(given)) return null;
-  const want = Buffer.from(mac(buildId, secret), "hex");
-  const got = Buffer.from(given, "hex");
-  return got.length === want.length && timingSafeEqual(got, want) ? buildId : null;
-}
 
 export interface DocsHit {
   slug: string;

@@ -1,6 +1,6 @@
 /**
- * Unit tests for the build MCP server (lib/mcp/build-mcp.ts): the per-build token, its tools over the handler with
- * fake deps, the SDK's own client through it, and the docs tools on the real mirror in content/meta-docs.
+ * Unit tests for the build MCP server (lib/mcp/build-mcp.ts): the per-build token (lib/mcp/build-token.ts), its tools
+ * over the handler with fake deps, the SDK's own client through it, and the docs tools on the real mirror.
  *   npx tsx --test lib/mcp/__tests__/build-mcp.test.ts
  */
 import assert from "node:assert/strict";
@@ -9,17 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DOCS_PAGES, docsMarkdown, docsNav, docsPage } from "@/lib/docs/pages";
 import { buildSearchIndex, searchDocs } from "@/lib/docs/search";
-import {
-  BUILD_MCP_TOOLS,
-  buildIdFromToken,
-  buildMcpToken,
-  cleanNote,
-  docsSection,
-  docsTarget,
-  handleBuildMcp,
-  MAX_DOC_CHARS,
-  type BuildMcpDeps,
-} from "@/lib/mcp/build-mcp";
+import { BUILD_MCP_TOOLS, cleanNote, docsSection, docsTarget, handleBuildMcp, MAX_DOC_CHARS, type BuildMcpDeps } from "@/lib/mcp/build-mcp";
+import { buildIdFromToken, buildMcpToken } from "@/lib/mcp/build-token";
 import type { BuildStatus } from "@/lib/types";
 
 const SECRET = "test-pepper-0123456789";
