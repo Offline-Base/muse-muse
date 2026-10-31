@@ -637,9 +637,35 @@ content, extra files): policy, steps, allowlist and judge content were checked b
 code. `lib/gateway/__tests__/caps-off.test.ts`. `template/scripts/__tests__/caps-off.test.mjs`: verify run for real in a bare
 folder reports the same six steps, and Playwright's config equals tg-cap-contract's. The brief goldens hold.
 
-**Not proven yet.** Milestones, the live check and the caps step have scenario and unit tests only. The live check needs
-a published deploy, which local runs never make (decision 6). No cap overlay but core exists, so no build has run the caps
-step for real. The fit is tested against the handler with fakes, not a real Muse Code session (unit 9 has none yet).
+**What the two failed builds' events show** (read Oct 31 from the local site that ran them). Both briefs were complex
+with 3 screens and 3 actions. 6c99bf4b (the tile game) had its code written 7 minutes into the round. The other 18 minutes
+went to shell runs about two minutes apart (verify runs: it read its own judge screenshots at minute 12) and to edit after
+edit of `app/api/actions/generate_level/route.ts`, where a model-made level had to pass the solver. d5255100 (ForgeBot, the
+robot URDF designer) had its code by minute 8 and spent 17 more on the same loop around `generate_robot_proposal`, and
+edited the template's `lib/meta/queue.ts` along the way. So point 3 and point 4 above hold: the time went to verify runs
+and a smoke test waiting on generated items, not to writing code. With the round flags each gets a 35-minute first round
+and the "verify at most twice" and "one generated item for real" lines, and with `ENGINE_CHECK_ON_TIMEOUT` the platform's
+own verify and fix rounds see what was built instead of throwing it away.
+
+**Test builds** (Oct 31, the local site from this worktree on a throwaway PGlite database, `TEST_MODEL` Contributor,
+made-up notes, reminders off, with `ENGINE_CHECK_ON_TIMEOUT`, `ENGINE_ROUND_SCALING`, `ENGINE_MILESTONES` and
+`ENGINE_EXACT_LOGIC` on):
+
+| Build | Note | Brief | Result |
+|---|---|---|---|
+| dc4de384 | The tile game note again | Complex, 2 screens, 2 actions (the writer made it smaller this time), plan 30 minutes, no milestones. The level check is code: "checks it with code for walls, item reach and exit path" | First round 4 minutes, verify and judge passed on the first try, live in 8.0 minutes for $0.026 (no link of its own: a local run). Screenshots in the run's `shots/` |
+| 60956185 | A tabletop campaign helper: scene planner, battle maps with tokens on a grid, session recap | Complex, 3 screens, 3 actions, 3 milestones from the writer, plan 35 minutes. Exact logic: "The app checks with code that every token sits on an open square" | Milestone rounds 0, 1 and 2 took 4, 11 and 7 minutes. The strict verify after milestones 1 and 2 failed in smoke (a test waiting on model-made scenes timed out), and each failure went into the next milestone's prompt. After milestone 3, verify failed only on a too-tall judge screenshot; fix round 1 ran as Muse Code round 3, then verify and judge passed and it went live in 36.5 minutes for $0.087. `builds.round_plan` ended failed, failed, passed. Poster in `shots/milestones-poster.jpg` |
+| a32e8572 | The same note, an earlier try | 3 milestones, plan 35 minutes | Cut off in milestone 1 when the earlier builder session stopped and took the local site with it. The local workflow store doesn't pick runs up again after a restart, and the build room's stop needs a round on the build row, so its sandbox ran until its session ended. Not counted |
+
+The tile game passing once shows the flags don't get in the way. It doesn't prove they fixed the failure: this run's
+brief was smaller and its first round never came near its cap. The milestone build proves the chain end to end on a real
+sandbox: prompts, round numbers, strict verifies, events, the round plan and the fix round after it. A milestone's state
+is what the strict verify right after it found, so "failed" on an early milestone that a later round fixed is expected.
+
+**Not proven yet.** A first round that really hits its cap and then ships has scenario tests only. The live check needs a published deploy, which local runs never make (decision 6). No cap overlay
+but core exists, so no build has run the caps step for real, and the "3-cap brief with milestones" build in section 22
+waits for three caps to be ready. The fit is tested against the handler with fakes, not a real Muse Code session (unit 9
+has none yet).
 
 ## 9. Unit 3: data (A)
 
@@ -1309,6 +1335,8 @@ Phaser game.
   routes (OPTIONS) and the caps health route instead of rerunning the smoke test (decision 15); `lib/gateway/handler.ts`
   gets one marked block from unit 2 (the Wonder estimate fit); cap registries are objects keyed by cap id, and a cap's
   brief key is its id.
+- Oct 31 (unit 2): 8a records the two failed builds' events and the engine's test builds. Section 22's "3-cap brief with
+  milestones" waits for three caps to be ready; a milestone build with no caps stands in for it until then.
 
 
 - Oct 31: first version (unit 0).
