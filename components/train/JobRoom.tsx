@@ -99,7 +99,7 @@ function smooth(): ScrollBehavior {
 }
 
 /**
- * The fine-tuning job page, in the build room's layout: the event log on the left, polled every 5 seconds while the
+ * The fine-tuning job page: the event log on the left, polled every 5 seconds while the
  * job runs, and the job panel on the right with status, limits, cost, progress, artifacts and Stop. A job that sent
  * eval items gets its results below the log; polling goes on after the GPU is gone while the judge judges them.
  * A trained glimmer-lora job also gets its live demo above the results (Try it live, or Start a live demo), its
@@ -239,8 +239,8 @@ export function JobRoom(props: JobRoomProps) {
   const shuttingDown = terminal && Boolean(job.instanceId) && !job.terminatedAt;
 
   return (
-    <div className="room">
-      <div className="room-main">
+    <div className="job-room">
+      <div className="job-room-main">
         <div className="toolbar" aria-label="Job actions">
           <Link className="btn" href="/fine-tuning">
             <Icon name="chevronLeft" />

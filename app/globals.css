@@ -1848,6 +1848,159 @@ pre {
   font-weight: 700;
 }
 
+/* ---------- Page toolbar and status line (Make page, product page, Fine-tuning job room) ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 10px;
+  width: 100%;
+  margin: 0 0 20px;
+}
+
+.toolbar .btn {
+  min-height: 36px;
+  padding: 6px 8px;
+  gap: 9px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.mobile-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 12px;
+  width: 100%;
+  max-width: var(--col-w);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (min-width: 1180px) {
+  .mobile-status {
+    display: none;
+  }
+}
+
+/* ---------- Fine-tuning job room ---------- */
+
+.job-room {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px var(--gutter) 24px;
+}
+
+.job-room-main {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 1180px) {
+  .job-room {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--panel-w);
+    align-items: start;
+    gap: 24px;
+    padding: 20px 20px 24px 24px;
+  }
+}
+
+.job-room .toolbar {
+  margin-bottom: 48px;
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.turn-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.turn-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.turn-ok .turn-icon {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.turn-bad .turn-icon {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.turn-warn .turn-icon {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.turn-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.turn-meta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-working {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--fg-2);
+  font-size: 15px;
+}
+
+.working-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+
 /* ---------- Build room ---------- */
 
 /*
