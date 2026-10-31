@@ -18,7 +18,8 @@ import { isTerminalStatus } from "@/lib/format";
  *
  * A Muse Code round on the session bridge (docs/MUSE_CODE_FULL.md, "The build room shows all of it") sends lines with
  * item ids: a line whose id is already in the round replaces that line in place, so a tool call shows once and turns
- * from running to done. Each round also gets a model of what the bridge showed beyond its log (SessionModel).
+ * from running to done. Each round also gets a model of what the bridge showed beyond its log (SessionModel). A
+ * command line from the bridge counts as the owner's only when a `control` event lists its id (settleCommands).
  */
 
 export type RailStep = "brief" | "provision" | "build" | "preview" | "check" | "record" | "deploy";
@@ -225,21 +226,11 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   });
   /** Per muse round: itemId -> where its line is, so an update replaces it. */
   const slots = new Map<string, Map<string, number>>();
-  /** Per muse round: owner commands the room sent that the session bridge hasn't confirmed yet. */
-  const pending = new Map<string, Array<{ itemId: string; confirms: Delivery[]; text: string }>>();
+  /** The owner's notes from control events: each note's item id -> the mailbox command ids it sent. */
+  const owned = new Map<string, string[]>();
   const addLine = (seg: MuseSegment, line: MuseLogLine) => {
     let slot = slots.get(seg.key);
     if (!slot) slots.set(seg.key, (slot = new Map()));
-    const waiting = pending.get(seg.key);
-    if (waiting?.length && line.kind === "steer" && line.itemId && !slot.has(line.itemId) && line.detail?.status !== "sent") {
-      // The bridge's line for a command takes the place of the note the room showed when it was sent.
-      const i = waiting.findIndex((p) => confirms(p, line));
-      if (i >= 0) {
-        const [p] = waiting.splice(i, 1);
-        slot.set(line.itemId, slot.get(p!.itemId)!);
-        slot.delete(p!.itemId);
-      }
-    }
     upsertLine(seg.lines, slot, line);
   };
 
@@ -265,7 +256,13 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
       }
       case "muse": {
         const seg = touch(`muse:${e.round}`, () => newMuse(e.round, e.at), e.at);
-        for (const l of e.lines) addLine(seg, l);
+        for (const l of e.lines) {
+          const id = l.itemId ?? "";
+          // The room's own notes are never Muse Code's to replace. The bridge logs each command once, so a second
+          // line for the same command didn't come from it.
+          if (id.startsWith(CONTROL_ID) || (id.startsWith(COMMAND_ID) && slots.get(seg.key)?.has(id))) continue;
+          addLine(seg, l);
+        }
         break;
       }
       case "control": {
@@ -278,11 +275,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         }
         const line = controlLine(e);
         addLine(seg, line);
-        if (e.ok) {
-          const list = pending.get(seg.key) ?? [];
-          list.push({ itemId: line.itemId!, confirms: CONTROL_CONFIRMS[e.action] ?? [], text: (e.text ?? "").trim() });
-          pending.set(seg.key, list);
-        }
+        owned.set(line.itemId!, (e.commandIds ?? []).filter((id) => typeof id === "string" && id.length > 0));
         break;
       }
       case "verify":
@@ -338,7 +331,9 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     }
   }
 
-  for (const seg of segments) if (seg.type === "muse") seg.session = sessionOf(seg.lines);
+  const rounds = segments.filter((s): s is MuseSegment => s.type === "muse");
+  settleCommands(rounds, owned);
+  for (const seg of rounds) seg.session = sessionOf(seg.lines);
 
   // The build row is the source of truth once it is terminal, even if the stream missed the last status event.
   if (isTerminalStatus(build.status) && !isTerminalStatus(status)) status = build.status;
@@ -399,15 +394,10 @@ export function upsertLine(lines: MuseLogLine[], slot: Map<string, number>, line
   slot.set(id, under);
 }
 
-/** The deliveries a session bridge line may have for each control action, so it can confirm the room's note. */
-const CONTROL_CONFIRMS: Record<string, Delivery[]> = {
-  steer: ["steer"],
-  queue: ["queue"],
-  interrupt: ["interrupt"],
-  stop: ["end", "interrupt"],
-  goal: ["goal"],
-  answer: ["answer"],
-};
+/** The item id prefix of the room's own note for a control event. Muse Code's lines never take one. */
+const CONTROL_ID = "control:";
+/** lib/sandbox/msp-log.ts gives a mailbox command's line the id `command:<envelope id>`. */
+const COMMAND_ID = "command:";
 
 const CONTROL_DELIVERY: Record<string, Delivery> = {
   steer: "steer",
@@ -432,18 +422,83 @@ function controlLine(e: Extract<BuildEvent, { type: "control" }>): MuseLogLine {
   const delivery = CONTROL_DELIVERY[e.action];
   return {
     kind: "steer",
-    itemId: `control:${e.id}`,
+    itemId: `${CONTROL_ID}${e.id}`,
     text: words[e.action] ?? (text || "A command."),
     ok: e.ok,
     detail: { ...(delivery ? { delivery } : {}), status: e.ok ? "sent" : "refused", ...(e.error ? { error: e.error } : {}) },
   };
 }
 
-/** Whether a session bridge command line is the one a waiting control note stands for: notes match by their text. */
-function confirms(p: { confirms: Delivery[]; text: string }, line: MuseLogLine): boolean {
-  const delivery = line.detail?.delivery;
-  if (!delivery || !p.confirms.includes(delivery)) return false;
-  return delivery === "steer" || delivery === "queue" ? line.text.trim() === p.text : true;
+/** The mailbox envelope id a session bridge command line is for, or null for any other line. */
+function commandIdOf(l: MuseLogLine): string | null {
+  return l.kind === "steer" && l.itemId?.startsWith(COMMAND_ID) ? l.itemId.slice(COMMAND_ID.length) : null;
+}
+
+/**
+ * Settles the owner's commands once every event is in. The agent can write to the session bridge's log, so a command
+ * line there proves nothing about who sent it: it counts as the owner's only when a control event lists its envelope
+ * id. The owner's note then shows once in its round, where it or the first of its commands' lines came, in the
+ * owner's words, with how the bridge applied its commands. Any other command line shows as a plain status line, never
+ * as the owner's. `owned` maps each note's item id to the command ids its control event sent.
+ */
+function settleCommands(rounds: MuseSegment[], owned: Map<string, string[]>): void {
+  const noteOf = new Map<string, string>();
+  for (const [note, ids] of owned) for (const id of ids) if (!noteOf.has(id)) noteOf.set(id, note);
+  /** Each note, and the round it was sent in. */
+  const notes = new Map<string, { line: MuseLogLine; round: string }>();
+  /** The bridge's line for each command: the first, as it logs each one once. */
+  const applied = new Map<string, MuseLogLine>();
+  for (const seg of rounds) {
+    for (const l of seg.lines) {
+      const id = commandIdOf(l);
+      if (id !== null) {
+        if (!applied.has(id)) applied.set(id, l);
+      } else if (l.kind === "steer" && l.itemId?.startsWith(CONTROL_ID)) notes.set(l.itemId, { line: l, round: seg.key });
+    }
+  }
+  const placed = new Set<string>();
+  for (const seg of rounds) {
+    const lines: MuseLogLine[] = [];
+    for (const l of seg.lines) {
+      if (l.kind !== "steer") {
+        lines.push(l);
+        continue;
+      }
+      const command = commandIdOf(l);
+      const key = command === null ? (l.itemId ?? "") : (noteOf.get(command) ?? "");
+      const note = notes.get(key);
+      if (!note) lines.push(plainCommand(l));
+      // A command line from another round only settles its note there.
+      else if (note.round === seg.key && !placed.has(key)) {
+        placed.add(key);
+        lines.push(settledNote(note.line, owned.get(key) ?? [], applied));
+      }
+    }
+    seg.lines = lines;
+  }
+}
+
+/** The owner's note with how its commands went: delivered once any went in, refused once all came back refused. */
+function settledNote(note: MuseLogLine, ids: string[], applied: Map<string, MuseLogLine>): MuseLogLine {
+  const back = ids.flatMap((id) => applied.get(id) ?? []);
+  const delivered = back.some((l) => l.ok === true);
+  // Until then the note says what the control route said: sent, or refused with why.
+  if (!back.length || (!delivered && back.length < ids.length)) return note;
+  const error = delivered ? "" : (back.map((l) => l.detail?.error ?? "").filter(Boolean).pop() ?? "");
+  const delivery = note.detail?.delivery;
+  return {
+    ...note,
+    ok: delivered,
+    detail: { ...(delivery ? { delivery } : {}), status: delivered ? "delivered" : "refused", ...(error ? { error } : {}) },
+  };
+}
+
+/** A command line no control event lists, as a plain status line: the room can't say who sent it. */
+function plainCommand(l: MuseLogLine): MuseLogLine {
+  const error = l.detail?.error;
+  const refused = l.ok === false || l.detail?.status === "refused";
+  const said = refused ? `Muse Code didn't take a command${error ? ` (${error})` : ""}` : "Muse Code got a command";
+  return { kind: "status", ...(l.itemId === undefined ? {} : { itemId: l.itemId }), text: `${said}: ${l.text}` };
 }
 
 const BRIDGE_KINDS = new Set<MuseLogLine["kind"]>([

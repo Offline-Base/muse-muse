@@ -185,8 +185,12 @@ export type BuildEventBody =
   | { type: "deploy"; url: string }
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }
-  /** The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change. */
-  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string }
+  /**
+   * The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change.
+   * `commandIds` are the ids of the mailbox envelopes it wrote, in order. The build room counts a session bridge
+   * command line as the owner's only when its id is among them, since the agent can write to the bridge's log.
+   */
+  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */

@@ -766,6 +766,8 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
         break;
       }
       case "command": {
+        // The agent can write to this log too, so the line alone doesn't make a command the owner's: the build room
+        // counts it as theirs only when a control event lists its id (components/build/derive.ts, settleCommands).
         const { text, delivery } = describeCommand(obj(r.command));
         const ok = r.ok === true;
         const error = ok ? "" : firstLine(r.error);

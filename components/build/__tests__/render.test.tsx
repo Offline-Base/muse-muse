@@ -126,20 +126,27 @@ function clean(html: string) {
   assert.equal(html.includes(String.fromCharCode(0x2014)), false, "no em dash");
 }
 
-function room(lines: MuseLogLine[]) {
+/** The control events for bridgeLines' two owner notes, listing the mailbox command ids the bridge's lines are for. */
+const OWNER: BuildEventBody[] = [
+  { type: "control", round: 0, action: "steer", text: "Use a grid, not a list.", ok: true, commandIds: ["c1"] },
+  { type: "control", round: 0, action: "steer", text: "Too late?", ok: true, commandIds: ["c2"] },
+];
+
+function room(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
   const bodies: BuildEventBody[] = [
     { type: "status", status: "building", step: "build" },
     { type: "muse", round: 0, lines },
+    ...owner,
   ];
   return derive.deriveRoom(build, bodies.map((b, i) => ({ ...b, id: i + 1, at: at(i + 1) }) as BuildEvent));
 }
 
-function museRound(lines: MuseLogLine[]) {
-  return room(lines).segments.find((s) => s.type === "muse") as Extract<import("@/components/build/derive").Segment, { type: "muse" }>;
+function museRound(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
+  return room(lines, owner).segments.find((s) => s.type === "muse") as Extract<import("@/components/build/derive").Segment, { type: "muse" }>;
 }
 
-function panel(lines: MuseLogLine[]) {
-  const r = room(lines);
+function panel(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
+  const r = room(lines, owner);
   return render(BuildPanel, {
     name: "Gallery",
     room: r,
@@ -159,7 +166,7 @@ function panel(lines: MuseLogLine[]) {
 
 describe("a session bridge round", () => {
   it("shows the goal with its status and progress, and the todo list with checked items", () => {
-    const seg = museRound(bridgeLines);
+    const seg = museRound(bridgeLines, OWNER);
     const html = render(MuseLog, { lines: seg.lines, live: true, session: seg.session, buildId: build.id, canAnswer: true });
     clean(html);
     assert.match(html, /<section class="goal-card goal-building" aria-labelledby="[^"]+"><div class="goal-head"><h3 class="goal-title" id="[^"]+">/);
@@ -178,7 +185,7 @@ describe("a session bridge round", () => {
   });
 
   it("folds thinking, and shows tools, subagents, hooks, compaction, workflows and owner notes in order", () => {
-    const seg = museRound(bridgeLines);
+    const seg = museRound(bridgeLines, OWNER);
     const html = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
     clean(html);
     assert.match(html, /<details class="thinking"><summary>Thinking<\/summary><div class="md say"><p>The brief wants a grid first\.<\/p><\/div><\/details>/);
@@ -196,18 +203,27 @@ describe("a session bridge round", () => {
     assert.deepEqual(order, [...order].sort((a, b) => a - b), "in the order they happened");
   });
 
-  it("folds observer runs when there are many, and lists a few as they are", () => {
+  it("draws a command line no control event lists as a plain step, never as a note from the owner", () => {
     const seg = museRound(bridgeLines);
+    const html = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
+    clean(html);
+    assert.doesNotMatch(html, /class="steer|bubble-steer|From the owner/);
+    assert.match(html, /<li class="act act-status">.*?<span class="act-text">Muse Code got a command: Use a grid, not a list\.<\/span><\/li>/);
+    assert.match(html, /<li class="act act-status">.*?<span class="act-text">Muse Code didn&#x27;t take a command \(no turn is running\): Too late\?<\/span><\/li>/);
+  });
+
+  it("folds observer runs when there are many, and lists a few as they are", () => {
+    const seg = museRound(bridgeLines, OWNER);
     const many = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
     assert.match(many, /<details class="fold"><summary>4 observers ran<\/summary><ul class="notes observer-notes" aria-label="Observers">/);
-    const few = museRound(bridgeLines.filter((l) => l.kind !== "reminder" || l.itemId === "o0"));
+    const few = museRound(bridgeLines.filter((l) => l.kind !== "reminder" || l.itemId === "o0"), OWNER);
     const html = render(MuseLog, { lines: few.lines, live: false, session: few.session });
     assert.match(html, /<ul class="notes observer-notes" aria-label="Observers"><li class="note"><svg[^>]*>.*?<\/svg><span>verify observer ran<\/span><\/li><\/ul>/);
     assert.doesNotMatch(html, /observers ran/);
   });
 
   it("asks the owner the question with its options and room for their own words", () => {
-    const seg = museRound(bridgeLines);
+    const seg = museRound(bridgeLines, OWNER);
     const html = render(MuseLog, { lines: seg.lines, live: true, session: seg.session, buildId: build.id, canAnswer: true });
     clean(html);
     // The card sits after the live log, so answering it isn't part of the log's announcements.
@@ -250,10 +266,13 @@ describe("a session bridge round", () => {
   });
 
   it("lists the live agent tree in the panel", () => {
-    const html = panel([
-      ...bridgeLines,
-      { kind: "subagent", itemId: "s2", text: "Subagent helper is working", detail: { status: "inProgress", agentPath: "main/scout/1/helper/1", label: "helper" } },
-    ]);
+    const html = panel(
+      [
+        ...bridgeLines,
+        { kind: "subagent", itemId: "s2", text: "Subagent helper is working", detail: { status: "inProgress", agentPath: "main/scout/1/helper/1", label: "helper" } },
+      ],
+      OWNER,
+    );
     clean(html);
     assert.match(html, /<h3 class="panel-label" id="([^"]+)-agents">Agents<\/h3><ul class="agent-tree"><li><span class="agent-row"><svg[^>]*>.*?<\/svg><span class="agent-text"><span class="agent-name">Muse Code<\/span><\/span><\/span><ul>/);
     assert.match(html, /<span class="agent-name">scout<\/span><code class="agent-meta">main\/scout\/1<\/code><\/span><span class="pill pill-live pill-sm">.*?Done<\/span><\/span><ul><li><span class="agent-row">.*?<span class="agent-name">helper<\/span>.*?Running/);
