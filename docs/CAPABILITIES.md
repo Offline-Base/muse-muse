@@ -1416,6 +1416,11 @@ Phaser game.
   gate's marker check; the goldens are the real surfaces in `flags-off-surface.test.ts` and `playwright-off.test.mjs`.
 - Nov 1 (unit 12): section 18 says the board tools are built, `drive_status` lists finished runs, and where the build stand-in lives.
 - Oct 31 (unit 12, review fixes): section 18 says `/api/device` filters the drive tools, as 1.6 asks.
+- Oct 31 (integration 1, tg-cap-int with the UI brand): build on these shapes. `judgeInstructions(brief, { museAppLook })`
+  starts from the look's house style, then the target notes, then `capsJudgeNotes(brief)`. Provisioning applies the
+  muse-app look, then a brief's targets, then its caps; every overlay sits in `TARGETS_DIR` through `installTargets`
+  except caps, which stay in `CAPS_DIR`. Verify and demo restore the template's platform files, the targets', the look's,
+  then the caps'. A snapshot's `templateHash` covers `template/`, `template/targets` and `template/caps`.
 
 
 - Oct 31: first version (unit 0).
