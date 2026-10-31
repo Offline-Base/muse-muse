@@ -70,6 +70,8 @@ TRAIN_DISK_GIB = 0.5
 # 442-token step peaked at 1.91 GiB allocated on 1.42 GiB of loaded weights, and took about 2.3 GiB off what was available.
 TRAIN_OVERHEAD_GIB = 1.0
 STOP_TIMEOUT_S = 30
+# secrets.token_urlsafe(32) makes 43. Under this the token is empty, cut short, or one anyone could guess.
+MIN_TOKEN_CHARS = 32
 
 capture_lock = threading.Lock()
 # Taken before train_lock when both are needed: the board's memory holds a running model or a training run, not both.
@@ -907,7 +909,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def authorized(self):
         sent = self.headers.get("Authorization", "")
-        return hmac.compare_digest(sent.encode(), f"Bearer {self.token}".encode())
+        return bool(self.token) and hmac.compare_digest(sent.encode(), f"Bearer {self.token}".encode())
 
     def do_GET(self):
         # This server sends nothing unprompted, so it offers no event stream.
@@ -958,10 +960,20 @@ def load_token():
     path = os.path.join(folder, "token")
     os.makedirs(folder, mode=0o700, exist_ok=True)
     if not os.path.exists(path):
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            f.write(secrets.token_urlsafe(32))
-    return read_text(path)
+        # Whole or not at all, since a full disk or a crash can't be allowed to leave an empty token for the next start.
+        fd, part = tempfile.mkstemp(dir=folder)
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(secrets.token_urlsafe(32))
+            os.replace(part, path)
+        finally:
+            if os.path.exists(part):
+                os.remove(part)
+    token = read_text(path)
+    # authorized() compares against this, so an empty or unreadable file would open the board to "Bearer " or "Bearer None".
+    if not token or len(token) < MIN_TOKEN_CHARS:
+        raise SystemExit(f"{path} is empty, unreadable or too short. Fix its owner and mode, or delete it to make a new token, then start again.")
+    return token
 
 
 def main():

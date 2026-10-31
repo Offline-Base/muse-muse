@@ -725,5 +725,54 @@ class TrainScriptTests(unittest.TestCase):
         self.assertIn("assistant", self.status()["error"])
 
 
+class TokenTests(unittest.TestCase):
+    """A token that is empty or can't be read would let "Bearer " or "Bearer None" through, so the server won't start on one."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {"HOME": self.home})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.path = os.path.join(self.home, ".muse-device", "token")
+
+    def write(self, text):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        with open(self.path, "w") as f:
+            f.write(text)
+
+    def test_first_start_makes_a_long_private_token(self):
+        token = server.load_token()
+        self.assertGreaterEqual(len(token), server.MIN_TOKEN_CHARS)
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+        self.assertEqual(server.load_token(), token)
+
+    def test_a_token_that_is_empty_or_short_stops_the_start(self):
+        for text in ("", "   \n", "short"):
+            with self.subTest(text=text):
+                self.write(text)
+                with self.assertRaises(SystemExit):
+                    server.load_token()
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a file whatever its mode")
+    def test_a_token_that_cannot_be_read_stops_the_start(self):
+        self.write("x" * 64)
+        os.chmod(self.path, 0)
+        with self.assertRaises(SystemExit):
+            server.load_token()
+
+    def test_a_failed_write_leaves_no_token_behind(self):
+        with mock.patch.object(server.secrets, "token_urlsafe", side_effect=OSError("No space left on device")):
+            with self.assertRaises(OSError):
+                server.load_token()
+        self.assertEqual(os.listdir(os.path.dirname(self.path)), [])
+
+    def test_no_token_means_no_request_is_authorized(self):
+        handler = server.Handler.__new__(server.Handler)
+        handler.token = ""
+        handler.headers = {"Authorization": "Bearer "}
+        self.assertFalse(handler.authorized())
+
+
 if __name__ == "__main__":
     unittest.main()
