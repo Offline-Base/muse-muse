@@ -758,6 +758,11 @@ are never stored or used.
 
 ## Open
 
+- Muse Spark Open, after Glimmer (owner, Oct 31, about 3:40 PM): "once we finish this process with muse glimmer and learn the
+  necessary lessons, id want to also modernize muse open". Lambda, AWS or GCP only, not Fireworks. See the 2:00 to 2:15 PM
+  entry for the routes checked. Needs before it can start: Hugging Face access to the gated weights (owner), `gcloud auth
+  login` (owner), and a budget above the current AWS limit if it uses a 16-GPU reservation.
+
 - Whether to publish weights (CC-NEWS copyright question; Spark Open-written data makes the model a Muse Model
   License derivative).
 - Rotate the keys pasted in chat. Fireworks terms question.
