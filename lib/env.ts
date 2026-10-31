@@ -384,6 +384,10 @@ export const env = {
   get awsRoleArn(): string | null {
     return optional("AWS_ROLE_ARN");
   },
+  /** The lab boxes' region. Not AWS_REGION, which a Vercel function may have set to its own region. */
+  get nativeAwsRegion(): string {
+    return optional("NATIVE_AWS_REGION") ?? "us-east-1";
+  },
   get deviceFarmProjectArn(): string | null {
     return optional("DEVICE_FARM_PROJECT_ARN");
   },

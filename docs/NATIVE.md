@@ -48,8 +48,9 @@ All in `lib/env.ts`, all in `.env.example`, all off by default. A switch is on f
 
 Spend settings: `NATIVE_SPEND_CAP_USD` (150), `NATIVE_SPEND_ALERT_USD` (120), `NATIVE_DEVICE_FARM_CAP_USD` (40),
 `NATIVE_WINDOWS_CAP_USD` (15), `NATIVE_MAC_HOURLY_USD` (0.65), `NATIVE_WINDOWS_HOURLY_USD` (0.083),
-`NATIVE_MAC_ALLOCATED_AT`, `NATIVE_MAC_RELEASE_AT`. `.env.example` has the rest: instance ids, `AWS_ROLE_ARN`, Device Farm's
-ARNs, `PACKAGER_SNAPSHOT_ID` and the Android signing key.
+`NATIVE_MAC_ALLOCATED_AT`, `NATIVE_MAC_RELEASE_AT`, `NATIVE_AWS_REGION` (us-east-1). A Vercel function may have its own
+region in `AWS_REGION`, so the platform doesn't read that for the lab. `.env.example` has the rest: instance ids,
+`AWS_ROLE_ARN`, Device Farm's ARNs, `PACKAGER_SNAPSHOT_ID` and the Android signing key.
 
 ## Tables
 
