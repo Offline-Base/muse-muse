@@ -59,4 +59,31 @@ describe("composer", () => {
     assert.match(html, /<button type="button" class="menu-item"><svg[^>]*>[\s\S]*?<\/svg>Take a photo<\/button>/);
     assert.equal(html.match(/class="composer-tool"/g)?.length, 1, "one + button");
   });
+
+  it("shows no target pill with no target on, and none on a change", () => {
+    camera = false;
+    assert.doesNotMatch(render({ mode: "new", signedIn: true, layout: "playground" }), /target-pill|Where it runs/);
+    assert.doesNotMatch(render({ mode: "new", signedIn: true, layout: "playground", targetOptions: [] }), /target-pill|Where it runs/);
+    assert.doesNotMatch(render({ mode: "refine", buildId: "b1", signedIn: true, targetOptions: ["phone"] }), /target-pill/);
+  });
+
+  it("puts the target pill left of the mic, on Auto, with Web checked and locked", () => {
+    camera = false;
+    const html = render({ mode: "new", signedIn: true, layout: "playground", targetOptions: ["phone", "vr"] });
+    assert.match(html, /<div class="composer-actions"><div class="menu-wrap"><button type="button" class="composer-pill target-pill"[^>]*aria-label="Where it runs: Auto"[^>]*><span>Auto<\/span>[\s\S]*voice-input/);
+    assert.match(html, /<input type="checkbox" disabled="" checked=""\/><span class="menu-item-text"><span>Web<\/span>/);
+    assert.match(html, /<input type="checkbox"\/><span class="menu-item-text"><span>Phone<\/span>/);
+    assert.match(html, /<span>VR<\/span>/);
+    assert.doesNotMatch(html, /<span>Desktop<\/span>|<span>Glasses<\/span>|<span>Agent<\/span>/, "only what is on");
+  });
+});
+
+describe("the target pill's text", () => {
+  it("reads Auto, then the names, then a count", async () => {
+    const { targetPillText } = await import("@/components/composer/TargetPill");
+    assert.equal(targetPillText([]), "Auto");
+    assert.equal(targetPillText(["phone"]), "Web + Phone");
+    assert.equal(targetPillText(["phone", "vr"]), "Web + Phone + VR");
+    assert.equal(targetPillText(["phone", "desktop", "vr"]), "Web + 3 more");
+  });
 });

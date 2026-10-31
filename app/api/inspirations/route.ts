@@ -1,6 +1,8 @@
 import { start } from "workflow/api";
 import { requireUser } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { errorJson, readJson, route } from "@/lib/http";
+import { requestedTargetsFrom } from "@/lib/native/targets";
 import { catalogItem } from "@/lib/pipeline/catalog";
 import { attachRun, insertBuild, markStartFailed } from "@/lib/pipeline/records";
 import { validateNote, validateReferences } from "@/lib/pipeline/references";
@@ -8,8 +10,9 @@ import { buildProduct } from "@/lib/pipeline/workflow";
 import { checkBuildAllowed } from "@/lib/quota";
 
 /**
- * POST {note, references, rebuildOf?} -> 201 {buildId}. Saves the muse, queues a build and starts the build workflow.
- * 400 bad input, 401 signed out, 403 rebuildOf from someone who isn't an admin (showcase rebuilds are admin-only, as
+ * POST {note, references, rebuildOf?, targets?} -> 201 {buildId}. Saves the muse, queues a build and starts the build
+ * workflow. `targets` is where the person picked for it to run (docs/NATIVE.md), and with every target flag off it is
+ * ignored. 400 bad input or a target whose flag is off, 401 signed out, 403 rebuildOf from someone who isn't an admin (showcase rebuilds are admin-only, as
  * in /api/rebuilds), 429 {error: "daily_limit" | "shared_limit"}, 503 {error: "paused"} (daily spend cap) or
  * {error: "no_storage"} (neither BLOB_READ_WRITE_TOKEN nor BLOB_STORE_ID is set).
  */
@@ -32,6 +35,9 @@ export const POST = route(async (req: Request) => {
     rebuildOf = body.rebuildOf;
   }
 
+  const targets = requestedTargetsFrom(body.targets, env.enabledTargets);
+  if (!targets.ok) return errorJson(400, targets.error);
+
   const allowed = await checkBuildAllowed(user);
   if (!allowed.ok) return errorJson(allowed.status, allowed.error);
 
@@ -40,6 +46,7 @@ export const POST = route(async (req: Request) => {
     note: note.value,
     references: references.value,
     rebuildOf,
+    requestedTargets: targets.value,
   });
   let runId: string;
   try {

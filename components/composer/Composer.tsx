@@ -6,6 +6,7 @@ import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
+import { TargetPill } from "@/components/composer/TargetPill";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import {
   INSPO_ACCEPT,
@@ -16,6 +17,7 @@ import {
   unsupportedMessage,
 } from "@/lib/client/prepare";
 import { uploadInspo } from "@/lib/client/upload";
+import type { TargetId } from "@/lib/brief/schema";
 import type { Reference } from "@/lib/types";
 
 export interface Example {
@@ -49,6 +51,8 @@ interface Props {
   draftId?: string;
   /** Where to come back to after signing in. */
   returnTo?: string;
+  /** The targets a new build may add to web (env.enabledTargets). Empty or missing shows no pill and sends no targets. */
+  targetOptions?: readonly TargetId[];
 }
 
 /** Audio originals above this are refused before decoding, so a huge file can't exhaust the tab's memory. */
@@ -105,6 +109,7 @@ export function Composer({
   blankNote,
   draftId,
   returnTo,
+  targetOptions,
 }: Props) {
   const router = useRouter();
   const inputId = useId();
@@ -124,6 +129,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [loadingExample, setLoadingExample] = useState<string | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [targets, setTargets] = useState<TargetId[]>([]);
   const canUseCamera = useCameraSupported();
   // Photos an example card attached: the reader's own photo takes their place.
   const examplePhotos = useRef(new Set<string>());
@@ -372,7 +378,11 @@ export function Composer({
     const url = isRefine ? `/api/builds/${buildId}/messages` : "/api/inspirations";
     const body = isRefine
       ? { message: note.trim(), ...(references.length ? { references } : {}) }
-      : { note: [note.trim() || blankNote, context].filter(Boolean).join("\n\n") || null, references };
+      : {
+          note: [note.trim() || blankNote, context].filter(Boolean).join("\n\n") || null,
+          references,
+          ...(targets.length ? { targets: ["web", ...targets] } : {}),
+        };
     let res: Response;
     let data: { buildId?: string; error?: string } = {};
     try {
@@ -553,7 +563,10 @@ export function Composer({
               : "Sign in to build. Your note is kept, files need adding again."}
           </p>
           <div className="composer-actions">
-            {/* The Muse app's "Thinking" pill goes here once builds have a model or effort switch to put in it. */}
+            {/* The Muse app's "Thinking" pill goes here too once builds have a model or effort switch to put in it. */}
+            {!isRefine && targetOptions?.length ? (
+              <TargetPill options={targetOptions} picked={targets} onChange={setTargets} disabled={submitting} />
+            ) : null}
             <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} size={22} />
             <button
               type="submit"
