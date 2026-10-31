@@ -33,6 +33,31 @@ SMALL = ["adapter_config.json", "README.md", "chat_template.jinja", "processor_c
 TRAIN1 = "ubuntu@163.192.200.51"
 
 
+def put_big(cfg, path, key, file_name, name, size_fn=None):
+    """One big file from the machine cfg["writer1"]["host"] names to S3 `key`, through lab.s3_put (presigned multipart,
+    URLs over ssh stdin, <key>.sha256 beside it; a rerun reads the recorded sha256 instead). lab.s3_put drives entries
+    of models.json, so this adds a throwaway entry to a temp copy, never the real file. Returns (sha256, bytes)."""
+    tmpdir = tempfile.mkdtemp(prefix="put-big-")
+    try:
+        tmp = os.path.join(tmpdir, "models.json")
+        raw = json.load(open(C.CONFIG))
+        used = {m.get("port") for m in raw["models"]}
+        lo, hi = (raw.get("lab", {}).get("remote_ports") or [8201, 8209])[:2]
+        port = next(p for p in range(hi, lo - 1, -1) if p not in used)
+        name = name.lower()[:64]
+        raw["models"].append({"name": name, "like": "glimmer-stage2", "port": port, "enabled": False,
+                              "file": file_name, "bytes": None, "sha256": None,
+                              "source": {"s3_key": key, "writer1_path": path}})
+        with open(tmp, "w") as f:
+            json.dump(raw, f, indent=2)
+        cfg_t = C.load_config(tmp)
+        cfg_t["writer1"] = cfg["writer1"]
+        kw = {"size_fn": size_fn} if size_fn else {}
+        return lab.s3_put(name, cfg_t, config_path=tmp, argv=lab.uploader_argv(cfg), **kw)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def main():
     args = sys.argv[1:]
     run = args[0] if args else ""
@@ -63,27 +88,9 @@ def main():
     bucket, profile = cfg["s3"]["bucket"], cfg["s3"]["profile"]
     prefix = f"knowledge/runs/{run}/adapter"
 
-    # The big file: a throwaway models.json entry so lab.s3_put can drive it, written to a temp copy, never the real one.
-    tmpdir = tempfile.mkdtemp(prefix="adapter-s3-")
-    try:
-        tmp = os.path.join(tmpdir, "models.json")
-        raw = json.load(open(C.CONFIG))
-        used = {m.get("port") for m in raw["models"]}
-        lo, hi = (raw.get("lab", {}).get("remote_ports") or [8201, 8209])[:2]
-        port = next(p for p in range(hi, lo - 1, -1) if p not in used)
-        name = f"adapter-{run}"[:64]
-        raw["models"].append({"name": name, "like": "glimmer-stage2", "port": port, "enabled": False,
-                              "file": "adapter_model.safetensors", "bytes": None, "sha256": None,
-                              "source": {"s3_key": f"{prefix}/adapter_model.safetensors",
-                                         "writer1_path": f"{src}/adapter_model.safetensors"}})
-        with open(tmp, "w") as f:
-            json.dump(raw, f, indent=2)
-        cfg_t = C.load_config(tmp)
-        cfg_t["writer1"] = cfg["writer1"]
-        sha, size = lab.s3_put(name, cfg_t, config_path=tmp, size_fn=size_on_writer1, argv=lab.uploader_argv(cfg))
-        print(f"adapter_model.safetensors: {size} bytes, sha256 {sha}")
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    sha, size = put_big(cfg, f"{src}/adapter_model.safetensors", f"{prefix}/adapter_model.safetensors",
+                        "adapter_model.safetensors", f"adapter-{run}", size_on_writer1)
+    print(f"adapter_model.safetensors: {size} bytes, sha256 {sha}")
 
     # The small files, streamed: ssh cat | aws s3 cp -
     for fn in SMALL:
