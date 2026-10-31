@@ -691,6 +691,21 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   file plus 1.2 GB) no usable file fits an 8 GB Jetson: iq1s-out-q4 needs about 7.4 GB against 5.6 GB. Candidate GGUFs were
   deleted; rerun on the final model with shrink_bench.sh and KEEP. Layer pruning and first and last layer mixes not measured.
   Scripts committed (shrink_bench.sh, shrink_table.py, small_*.py/sh, mem_need.py).
+- 2:43 PM: base dev honesty: honest 15.0%, made up 74.2% (controls right 17.0%).
+- 3:03 PM: pilot reasoning repaired, beside base BF16 on the same items (30-minute cut runs, about 184 of 260 items): well
+  formed 183/184 (base 179/184, stage 2 0/260), multi-step 149/150 (base 148/150, stage 2 0/150), P("=self") 0.999995 (stage 2
+  1.2e-05), reasoning length median 188 vs 191 tokens, the 40 with reasoning off 38/40, with reasoning on 40/40, skills 33/34
+  (32/32). Gates: 0 failed, skills and vision not measured, run not complete. Knowledge and honesty with reasoning on were
+  stopped at 3:15 PM to free train-1; they run on the full candidate instead.
+- 3:15 PM: started stage-b-r30 on train-1: train-stage-b-r30-shuffled.jsonl (60,000 rows shuffled from r30, seed 20261031,
+  18,000 reasoning, sha256 b5d51c33...), from stage2-multi, lr 5e-5, whole-turn labels on reasoning rows, 1,875 steps at about
+  2.55 s, tuned eval on the 2,500 stage 2 probes, saves every 500 steps, no sync. Training ends about 4:40 PM, answers about
+  5:10 PM. Then ~/k/final_tests.sh (full channels beside full base, dev honesty prefilled and reasoning on, knowledge with
+  reasoning on). run_handoff.sh (new) waits for the adapter and starts quantize.sh stage-b-r30 on writer-1.
+  Chose this before the dose pilot: it gives a usable final candidate tonight. The dose pilot runs after on train-1.
+- 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
+  weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
+  Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
 
 ## Problems and fixes
 
