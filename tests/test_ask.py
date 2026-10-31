@@ -176,8 +176,8 @@ def test_the_runner_finishes_a_job_and_keeps_its_sources():
         def start(self, job_id):
             self.rows[job_id]["status"] = "running"
 
-        def finish(self, job_id, raw, kind, summary=None, topics=()):
-            self.rows[job_id].update(status="done", raw_result=raw, result_kind=kind)
+        def finish(self, job_id, raw, kind, summary=None, topics=(), sources=()):
+            self.rows[job_id].update(status="done", raw_result=raw, result_kind=kind, sources=list(sources))
 
         def fail(self, job_id, error):
             self.rows[job_id].update(status="failed", error=error)
@@ -189,7 +189,7 @@ def test_the_runner_finishes_a_job_and_keeps_its_sources():
     row = jobs.rows[job_id]
     assert row["status"] == "done" and row["kind"] == "ask" and row["instructions"] == "q (tagged request)"
     assert row["raw_result"].startswith("Answer: Crabs.") and '"crabs"' in row["raw_result"]
-    assert runner.sources[job_id] == ["essays/a.md"]
+    assert row["sources"] == ["essays/a.md"]  # in the job row, not in the runner's memory
 
 
 def test_rewritten_queries_are_restored_and_a_failure_searches_the_question_only():

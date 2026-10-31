@@ -378,7 +378,6 @@ class AskRunner:
         self.asker = asker
         self.jobs = jobs
         self.deadline_seconds = deadline_seconds
-        self.sources: dict[str, list[str]] = {}  # job id -> doc ids, for the user's redaction controls
         self._slot = threading.Semaphore(1)
 
     def start(self, question: str, request: str, folder: str | None) -> str:
@@ -400,8 +399,8 @@ class AskRunner:
             events.emit("working", job_id)
             try:
                 result = self.asker.run(question, folder, deadline=time.monotonic() + self.deadline_seconds)
-                self.sources[job_id] = result.sources
-                self.jobs.finish(job_id, format_result(result), "snippet")
+                # the doc ids it read go in the job row, so the user's controls still apply after a restart
+                self.jobs.finish(job_id, format_result(result), "snippet", sources=result.sources)
             except Exception as exc:
                 log.warning("ask job failed: %s", type(exc).__name__)
                 self.jobs.fail(job_id, FAILED)

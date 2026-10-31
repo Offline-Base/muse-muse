@@ -185,3 +185,32 @@ def test_a_search_release_cut_off_by_a_restart_is_picked_up_again(store):
     job = store.get(job_id)
     assert job["status"] == "done" and job["release_status"] == "none"
     assert store.job_for_result("search", "q", "raw", "snippet") == job_id
+
+
+# sources live in the job row, so a release after a restart keeps them (GAP-5)
+
+
+def test_sources_are_kept_in_the_job_row_across_a_new_store(tmp_path):
+    path = tmp_path / "base.db"
+    store = JobStore(path)
+    search = store.job_for_result("search", "q", "raw", "snippet", sources=["forms/trip.png", "essays/a.md"])
+    asked = store.create("ask", "q", None)
+    store.finish(asked, "Answer: raw", "snippet", sources=["essays/b.md"])
+    plain = store.create("private_task", "x", "essays")
+    store.finish(plain, "raw", "free_text")
+    again = JobStore(path)  # the next process after a restart
+    assert again.get(search)["sources"] == ["forms/trip.png", "essays/a.md"]
+    assert again.get(asked)["sources"] == ["essays/b.md"]
+    assert again.get(plain)["sources"] == []
+
+
+def test_a_job_from_before_the_sources_column_gets_them_when_the_search_repeats(tmp_path):
+    path = tmp_path / "base.db"
+    store = JobStore(path)
+    job_id = store.job_for_result("search", "q", "raw", "snippet")
+    assert store.get(job_id)["sources"] == []
+    assert store.job_for_result("search", "q", "raw", "snippet", sources=["essays/a.md"]) == job_id
+    assert store.get(job_id)["sources"] == ["essays/a.md"]
+    # known sources are never replaced by a later call
+    assert store.job_for_result("search", "q", "raw", "snippet", sources=["other.md"]) == job_id
+    assert store.get(job_id)["sources"] == ["essays/a.md"]

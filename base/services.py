@@ -124,6 +124,9 @@ class Services:
         s.jobs = JobStore(settings.paths.db)
         if owner:
             events_module.set_pending_source(lambda: len(s.approvals.pending()))
+            # After a restart with cards still waiting, the light and the page start at waiting,
+            # not idle: the bus is fresh, so nothing else would say so until the next result.
+            events_module.settle("startup")
             failed = s.jobs.fail_unfinished()
             if failed:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)

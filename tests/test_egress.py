@@ -46,14 +46,14 @@ def fake_leaks(text, roster, tagmap):
 
 
 class FakeRouter:
-    def __init__(self, decision="share_tagged", reason="Router reason."):
-        self.decision, self.reason = decision, reason
+    def __init__(self, decision="share_tagged", reason="Router reason.", floors=()):
+        self.decision, self.reason, self.floors = decision, reason, list(floors)
         self.inputs, self.kwargs = [], []
 
     def decide(self, inp, *, synthetic=False):
         self.inputs.append(inp)
         self.kwargs.append({"synthetic": synthetic})
-        return RouteDecision(self.decision, self.reason, "model", 5, [])
+        return RouteDecision(self.decision, self.reason, "model", 5, list(self.floors))
 
 
 class FakeAnswerLLM:
@@ -726,6 +726,38 @@ def test_always_approve_off_by_default(make, tmp_path):
     egress, svc = make("ask_user")
     svc.settings = SimpleNamespace(paths=Paths(tmp_path / "home"))
     assert egress.release("get_result", "Scores", RAW, "per_student").status == "waiting"
+
+
+@pytest.mark.parametrize(
+    "floor", ["request:iep", "ask_first:custody", "identifier:phone", "identifier:digits", "outside_class"]
+)
+def test_always_approve_leaves_a_card_a_floor_keeps_for_a_person(make, tmp_path, floor):
+    egress, svc = make(router=FakeRouter("ask_user", "A floor asks.", floors=[floor]))
+    auto_on(svc, tmp_path)
+    out = egress.release("get_result", "Scores please", RAW, "per_student")
+    assert out.status == "waiting" and out.text == WAITING_TEXT
+    assert svc.approvals.get(out.approval_id)["status"] == "pending"
+    assert ("egress", "auto_approve_skipped") in svc.audits and ("egress", "auto_approved") not in svc.audits
+
+
+def test_always_approve_still_answers_an_ask_with_other_floors(make, tmp_path):
+    egress, svc = make(router=FakeRouter("ask_user", "Your rules ask.", floors=["learned:ask_user"]))
+    auto_on(svc, tmp_path)
+    assert egress.release("get_result", "Scores please", RAW, "per_student").status == "shared"
+
+
+def test_always_approve_older_than_8_hours_is_off_and_removed(make, tmp_path):
+    import time as _time
+
+    from base.config import Paths
+
+    egress, svc = make("ask_user")
+    svc.settings = SimpleNamespace(paths=Paths(tmp_path / "home"))
+    path = svc.settings.paths.auto_approve
+    path.parent.mkdir(parents=True)
+    path.write_text(f"on since 2026-10-30 08:00\nstarted {int(_time.time() - 8 * 3600 - 60)}\n")
+    assert egress.release("get_result", "Scores please", RAW, "per_student").status == "waiting"
+    assert not path.exists()
 
 
 # tag-shaped text from a document (GAP-12)

@@ -217,7 +217,6 @@ class Connector:
         self.services = services
         self._check_failures: dict[str, int] = {}
         self._failures_lock = threading.Lock()
-        self._sources: dict[str, list[str]] = {}  # job id -> documents a search used (redaction controls)
 
     def call(self, tool: str, fn: Callable[..., tuple[CallToolResult, str]], *args: Any) -> CallToolResult:
         """Run one tool, turn every failure into a plain message, and write the audit row."""
@@ -322,8 +321,10 @@ class Connector:
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still
         # checking" with a job_id before the relay gives up, and a retried search joins the release.
         jobs = self.services.jobs
-        job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet")
-        self._sources[job_id] = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
+        # The documents the snippets came from are stored with the job, so a release after a
+        # restart still uses the user's controls for them (a names-off folder, a scanned page).
+        sources = [str(_get(s, "doc_id")) for s in snippets if _get(s, "doc_id")]
+        job_id = jobs.job_for_result(SEARCH_KIND, request, raw, "snippet", sources=sources)
         status, text = self._release(job_id, jobs.get(job_id))
         if status in ("shared", "refused"):
             return _text(text), status
@@ -439,13 +440,18 @@ class Connector:
             raise box["error"]
         return box["released"]
 
-    def _job_sources(self, job_id: str, job: Any) -> list[str]:
-        """Where a job's result came from, for the user's redaction controls. Unknown (a restart)
+    def _job_sources(self, job: Any) -> list[str]:
+        """Where a job's result came from, for the user's redaction controls: the job row's
+        sources (a search's passages, an ask job's reading), else a task's folder. None known
         means no sources, which always tags everything."""
-        runner = getattr(self.services, "ask_runner", None)
-        known = self._sources.get(job_id) or (getattr(runner, "sources", {}) or {}).get(job_id)
-        if known:
-            return list(known)
+        known = _get(job, "sources")
+        if isinstance(known, str):
+            try:
+                known = json.loads(known)
+            except ValueError:
+                known = []
+        if isinstance(known, list | tuple) and known:
+            return [str(s) for s in known]
         folder = _get(job, "folder")
         return [str(folder)] if folder and _get(job, "kind") not in (SEARCH_KIND, ASK_KIND) else []
 
@@ -460,7 +466,7 @@ class Connector:
             job_id=job_id,
             summary=_get(job, "summary"),
             topics=_topics(job),
-            sources=self._job_sources(job_id, job),
+            sources=self._job_sources(job),
         )
         if getattr(released, "retryable", False):
             with self._failures_lock:

@@ -38,8 +38,11 @@ COLUMNS = (
     ("release_status", "TEXT NOT NULL DEFAULT 'none'"),
     ("released_text", "TEXT"),
     ("topics", "TEXT NOT NULL DEFAULT '[]'"),
+    # Workspace paths the result came from (a search's passages, an ask job's reading), so the
+    # user's privacy controls apply the same way when the release runs after a restart.
+    ("sources", "TEXT NOT NULL DEFAULT '[]'"),
 )
-JSON_COLUMNS = ("model_log", "topics")
+JSON_COLUMNS = ("model_log", "topics", "sources")
 FINAL = ("done", "refused", "failed")
 
 
@@ -134,7 +137,9 @@ class JobStore:
         result_kind: str,
         summary: str | None = None,
         topics: list[str] | tuple[str, ...] = (),
+        sources: list[str] | tuple[str, ...] = (),
     ) -> None:
+        fields: dict[str, Any] = {"sources": [str(s) for s in sources]} if sources else {}
         self._update(
             job_id,
             status="done",
@@ -144,19 +149,28 @@ class JobStore:
             summary=summary,
             topics=list(topics),
             error=None,
+            **fields,
         )
 
     def fail(self, job_id: str, error: str) -> None:
         self.set_status(job_id, "failed", error=error)
 
-    def job_for_result(self, kind: str, instructions: str, raw_result: str, result_kind: str) -> str:
+    def job_for_result(
+        self,
+        kind: str,
+        instructions: str,
+        raw_result: str,
+        result_kind: str,
+        sources: list[str] | tuple[str, ...] = (),
+    ) -> str:
         """A finished job for a result made inside one tool call, such as a search, so it can be
-        released like a private task's result.
+        released like a private task's result. `sources` are kept with it (see COLUMNS).
 
         While an identical one (same kind, request and raw result) is still unreleased, being
         released or waiting for the user, its id comes back instead: a retried call joins that
         release rather than starting a second one and a second approval card.
         """
+        listed = json.dumps([str(s) for s in sources])
         with self._lock, self._connect() as db:
             row = db.execute(
                 "SELECT id FROM jobs WHERE kind = ? AND instructions = ? AND raw_result = ? AND status != 'failed' "
@@ -164,12 +178,14 @@ class JobStore:
                 (kind, instructions, raw_result),
             ).fetchone()
             if row is not None:
+                if sources:  # a row from before the sources column has none yet
+                    db.execute("UPDATE jobs SET sources = ? WHERE id = ? AND sources = '[]'", (listed, row["id"]))
                 return row["id"]
             job_id, now = uuid.uuid4().hex[:16], time.time()
             db.execute(
-                "INSERT INTO jobs (id, kind, instructions, status, created_at, finished_at, result_kind, raw_result) "
-                "VALUES (?, ?, ?, 'done', ?, ?, ?, ?)",
-                (job_id, kind, instructions, now, now, result_kind, raw_result),
+                "INSERT INTO jobs (id, kind, instructions, status, created_at, finished_at, result_kind, raw_result, "
+                "sources) VALUES (?, ?, ?, 'done', ?, ?, ?, ?, ?)",
+                (job_id, kind, instructions, now, now, result_kind, raw_result, listed),
             )
             return job_id
 

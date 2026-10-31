@@ -462,6 +462,7 @@ td { padding: 16px 24px; }
 .auto-card .glance-row { grid-template-columns: minmax(0, 1fr) auto; }
 .state-on { color: var(--ok); font-weight: 700; }
 .state-off { color: var(--text-2); font-weight: 700; }
+.auto-banner { background: var(--wait-soft); color: var(--wait-text); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; font-weight: 600; }
 
 /* Device facts as a glance table */
 .card:has(> .facts) { padding: 0; overflow: hidden; }

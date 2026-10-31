@@ -21,7 +21,7 @@ from typing import Any, Literal
 from base import compliance, retention
 from base import events as events_module
 from base import guard as guard_module
-from base.approvals import AutoApprove
+from base.approvals import AutoApprove, needs_a_person
 from base.config import CloudBackendRefused, assert_synthetic
 from base.router import checked_labels, never_share_floor, small_model
 from base.types import (
@@ -369,10 +369,14 @@ class Egress:
                 # The user turned on always-approve: answer as they would with Share it, and
                 # leave it out of dreaming. The leak check in _finish still runs. When the router
                 # could not decide, nothing has judged this result, so the user still looks. A
-                # compliance toggle turns it off too.
-                s.approvals.decide(approval_id, approve=True, remember=False, by="auto_approve")
-                self._audit("egress", "auto_approved")
-                return self._finish("shared", outgoing, approval_id, route, tagged, detail=job_id or tool)
+                # compliance toggle turns it off too, and so does a floor that needs a person
+                # (approvals.AUTO_APPROVE_SKIPS: a never-share topic in the request, ask first,
+                # an identifier, a result going outside the class).
+                if not needs_a_person(route.floors):
+                    s.approvals.decide(approval_id, approve=True, remember=False, by="auto_approve")
+                    self._audit("egress", "auto_approved")
+                    return self._finish("shared", outgoing, approval_id, route, tagged, detail=job_id or tool)
+                self._audit("egress", "auto_approve_skipped")
             return self._finish("waiting", WAITING_TEXT, approval_id, route, tagged, detail=str(approval_id))
         s.approvals.record_auto(**row)
         if route.decision == "refuse":

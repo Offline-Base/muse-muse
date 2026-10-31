@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import socket
 from pathlib import Path
 
 import httpx
@@ -363,28 +362,57 @@ def test_always_approve_does_not_share_what_the_router_could_not_judge(tmp_path)
         svc.close()
 
 
-# the network
+class _NoLabels:
+    def llm_names(self, *_a, **_k):
+        return []
+
+    def request_topics(self, *_a, **_k):
+        return []
 
 
 @pytest.fixture
-def loopback_only(monkeypatch):
-    """Any connection that leaves this device fails the test."""
-    real = socket.socket.connect
+def auto_on(tmp_path):
+    """Device-only services with Always approve on and the real router (rules mode, no model)."""
+    from base.approvals import AutoApprove
 
-    def connect(self, address):
-        host = address[0] if isinstance(address, tuple) else ""
-        assert self.family == socket.AF_UNIX or host in ("127.0.0.1", "::1", "localhost"), "a connection left the device"
-        return real(self, address)
-
-    monkeypatch.setattr(socket.socket, "connect", connect)
-    monkeypatch.setattr(
-        socket,
-        "getaddrinfo",
-        lambda host, *a, **k: pytest.fail(f"a name lookup left the device: {host}") if host not in ("127.0.0.1", "localhost", "::1") else _real_getaddrinfo(host, *a, **k),
-    )
+    svc = Services.create(settings_for(tmp_path), light=False, heavy=False, owner=False)
+    svc.checker_llm = svc.answer_llm = _NoLabels()
+    AutoApprove(svc.settings.paths.auto_approve).set(True)
+    yield svc
+    svc.close()
 
 
-_real_getaddrinfo = socket.getaddrinfo
+@pytest.mark.parametrize(
+    ("request_text", "raw", "kind", "floor"),
+    [
+        ("Which students have an IEP?", "- Abigail Thornbury essay\n- Benjamin Adeyemi essay", "document_list", "request:iep"),
+        ("Find essay excerpts about bees.", "Abigail Thornbury wrote about bees. Call 512-555-0143.", "snippet", "identifier:phone"),
+        ("Summarize the class scores to send to the principal", "Most of the class improved.", "class_aggregate", "outside_class"),
+    ],
+)
+def test_always_approve_leaves_these_cards_for_you(auto_on, request_text, raw, kind, floor):
+    out = Egress(auto_on).release("search_documents", request_text, raw, kind, summary="Most of the class improved.")
+    assert out.status == "waiting" and floor in out.decision.floors
+    assert [r["decided_by"] for r in auto_on.approvals.pending()] == [None]
+
+
+def test_always_approve_shares_a_plain_policy_ask(auto_on):
+    out = Egress(auto_on).release("search_documents", "attendance for my notes", "Abigail Thornbury missed a day.", "snippet")
+    assert out.decision.decision == "ask_user" and not out.decision.floors
+    assert out.status == "shared" and "Abigail" not in out.text
+    assert auto_on.approvals.history(limit=1)[0]["decided_by"] == "auto_approve"
+
+
+def test_always_approve_turned_on_9_hours_ago_is_off(auto_on):
+    import time
+
+    path = auto_on.settings.paths.auto_approve
+    path.write_text(f"on since 2026-10-30 08:00\nstarted {int(time.time() - 9 * 3600)}\n")
+    out = Egress(auto_on).release("search_documents", "attendance for my notes", "Abigail Thornbury missed a day.", "snippet")
+    assert out.status == "waiting" and not path.exists()
+
+
+# the network (the loopback_only guard is in tests/conftest.py)
 
 
 def test_a_release_with_every_model_down_stays_on_this_device(tmp_path, loopback_only):

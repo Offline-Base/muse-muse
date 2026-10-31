@@ -40,5 +40,4 @@ The Muse Connector Platform (platform.muse.ai/docs, read Oct 30) asks for busine
 ## Known gaps
 
 - The 2B local model is uneven: ask_device answered 11 of 12 smoke-test questions; one run missed the resume part. The prompt now keeps details like "in the resume" when splitting a request.
-- After a restart, a waiting result's sources are kept (decision rows store them), but a search or ask job released after a restart has no sources and is tagged with the defaults (safe, but a names-off folder would be tagged).
 - When the laptop model is down, the name check falls back to the Jetson gateway with raw text. Ethan chose to keep that on Oct 29; the device-only mode above removes it.

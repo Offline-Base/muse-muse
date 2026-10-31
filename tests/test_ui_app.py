@@ -865,3 +865,46 @@ def test_controls_json_and_other_sites(client, services):
     assert r.status_code == 200 and r.json()["controls"]["never_redact"] == ["Coral Bay"]
     evil = client.post("/api/controls", json={"hidden_folders": []}, headers={"Origin": "http://evil.example"})
     assert evil.status_code == 403
+
+
+def test_always_approve_shows_when_it_turns_itself_off(client, services):
+    assert "auto-banner" not in client.get("/").text
+    assert client.get("/api/status").json()["auto_approve_seconds_left"] is None
+    client.post("/api/auto-approve", json={"on": True})
+    page = client.get("/").text
+    assert 'class="auto-banner"' in page and "Always approve is on until" in page and "turns itself off" in page
+    assert "outside the class" in page  # what it still leaves for you
+    left = client.get("/api/status").json()["auto_approve_seconds_left"]
+    assert 8 * 3600 - 60 <= left <= 8 * 3600
+
+
+def test_always_approve_from_9_hours_ago_shows_off(client, services):
+    path = services.settings.paths.auto_approve
+    path.write_text(f"on since 2026-10-30 08:00\nstarted {int(time.time() - 9 * 3600)}\n")
+    page = client.get("/").text
+    assert 'class="state-off">off<' in page and "auto-banner" not in page and not path.exists()
+    status = client.get("/api/status").json()
+    assert status["auto_approve"] is False and status["auto_approve_seconds_left"] is None
+
+
+# ---------------------------------------------------------------- /ask shows only questions asked on the page
+
+
+def test_ask_page_never_renders_another_jobs_raw_result(client, services, tmp_path):
+    from base.workspace.jobs import JobStore
+
+    services.jobs = jobs = JobStore(tmp_path / "jobs.db")
+    task = jobs.create("private_task", "Grade each essay for [Student A]", "essays")
+    jobs.finish(task, "Juniper Ashvale: 3 of 4, strong thesis.", "per_student")
+    search = jobs.job_for_result("search", "evidence", "1. Juniper Ashvale essay\nJuniper Ashvale argues.", "snippet")
+    from_muse = jobs.create("ask", "What did [Student A] write about?", None)
+    jobs.finish(from_muse, "Answer: Juniper Ashvale wrote about tide pools.", "snippet")
+    spoofed = jobs.create("grading", ui_app.PAGE_ASK, "essays")  # the page's request text on another kind
+    jobs.finish(spoofed, "Juniper Ashvale: 2 of 4.", "per_student")
+    asked_here = jobs.create("ask", ui_app.PAGE_ASK, None)
+    jobs.finish(asked_here, "Answer: Rowan Thistlewood wrote about bees.", "snippet")
+    for job in (task, search, from_muse, spoofed, "no-such-job"):
+        page = client.get(f"/ask?job={job}").text
+        assert "Juniper" not in page and "Ashvale" not in page and ">Answer</h2>" not in page
+    page = client.get(f"/ask?job={asked_here}").text
+    assert ">Answer</h2>" in page and "Rowan Thistlewood wrote about bees." in page
