@@ -4,8 +4,9 @@
 
 Takes every file git tracks in the folders a board needs (base, eval, demo, scripts, ui, deploy, the
 device runbook, pyproject.toml and uv.lock), as it is in the working tree, so uncommitted edits go
-in, plus each --add path inside the repo. Leaves out .env files, every .gguf, eval/reports and
-anything .git/info/exclude names (personal files in demo/ live there). Runs the secrets scan over
+in, plus each --add path inside the repo. Leaves out .env files, every .gguf, eval/reports, the
+unsealed eval/templated set and anything .git/info/exclude names (personal files in demo/ live
+there). Runs the secrets scan over
 every staged file and refuses to build on any finding. The bundle holds SHA256SUMS and
 BOARD_README.txt; its own sha256 goes next to it. Owners and user names are blanked in the tar.
 """
@@ -26,7 +27,8 @@ from base.config import REPO_ROOT
 from scripts import secrets_scan
 
 INCLUDE = ("base", "eval", "demo", "scripts", "ui", "deploy", "docs/DEVICE_BENCH.md", "pyproject.toml", "uv.lock")
-EXCLUDE_DIRS = ("eval/reports/", "models/", "relay/", "site/", "hardware/")
+# eval/templated/ is an unsealed test set (eval/DATASET.md): no board runs it, so it never travels.
+EXCLUDE_DIRS = ("eval/reports/", "eval/templated/", "models/", "relay/", "site/", "hardware/")
 BOARD_README = """\
 Muse Privacy device bench, built {date} by scripts/make_bundle.py from {files} files.
 

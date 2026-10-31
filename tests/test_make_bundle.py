@@ -27,6 +27,7 @@ def repo(tmp_path, monkeypatch):
         "demo/Screenshot one.png": "png", "deploy/jetson/install.sh": "#!/bin/sh\n", "relay/wrangler.jsonc": "{}\n",
         ".env.example": "KEY=\n", "eval/tiny.gguf": "GGUF", "pyproject.toml": "[project]\n", "uv.lock": "lock\n",
         "docs/DEVICE_BENCH.md": "# Runbook\n", "docs/OTHER.md": "# other\n",
+        "eval/templated/fresh_200_t.jsonl": "{}\n",  # an unsealed test set: no board needs it
     }  # fmt: skip
     for rel, text in files.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +47,7 @@ def test_tracked_files_plus_named_extras_without_env_models_reports_or_private_f
     files, left = mb.bundle_files(repo, ["scripts/extra_tool.py", "demo"])
     assert files == ["base/app.py", "demo/essays/Rose Hallaway.md", "deploy/jetson/install.sh", "docs/DEVICE_BENCH.md",
                      "eval/roster.json", "pyproject.toml", "scripts/bench_device.py", "scripts/extra_tool.py", "uv.lock"]  # fmt: skip
-    assert left == {"not needed on a board": 1, "model file": 1, "named in .git/info/exclude": 2}
+    assert left == {"not needed on a board": 2, "model file": 1, "named in .git/info/exclude": 2}
     with pytest.raises(mb.BundleError, match="inside the repo"):
         mb.bundle_files(repo, ["../outside.txt"])
 
@@ -83,7 +84,7 @@ def test_the_real_repo_bundle_unpacks_and_the_bench_starts(tmp_path, monkeypatch
     assert {"scripts/bench_device.py", "scripts/make_bundle.py", "pyproject.toml", "uv.lock", "docs/DEVICE_BENCH.md",
             "deploy/jetson/install.sh", "eval/roster.json"} <= set(files)  # fmt: skip
     assert not [f for f in files if f.endswith(".gguf") or f.rsplit("/", 1)[-1].startswith(".env")
-                or f.startswith(("relay/", "site/", "eval/reports/", "tests/"))]  # fmt: skip
+                or f.startswith(("relay/", "site/", "eval/reports/", "eval/templated/", "tests/"))]  # fmt: skip
     tarball, _n, _left = mb.build(REPO_ROOT, tmp_path / "dist", "bundle")
     with tarfile.open(tarball) as tar:
         tar.extractall(tmp_path / "board", filter="data")

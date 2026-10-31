@@ -275,6 +275,42 @@ def test_a_letter_home_naming_anyone_but_its_own_student_saves_nothing(svc, extr
     assert body2["status"] == "saved"
 
 
+def test_a_letter_home_is_checked_for_tags_only_and_says_so(svc):
+    assert "hold only the tag" in merge.OTHER_TAGS and "may name" not in merge.OTHER_TAGS
+    tags = list(student_tags(svc))
+    other = student_tags(svc)[tags[1]]
+    body = f"Dear {{guardian}}, {tags[0]} read with {other}. Call 512-555-0177."  # Ethan, Oct 31: plain text is not checked
+    _, out = save(svc, [{"for_tag": tags[0], "title": "Reading day", "body": body}])
+    assert out["status"] == "saved"
+
+
+def test_a_letter_home_is_checked_for_never_share_words_as_muse_wrote_it_not_with_real_names():
+    names = {"[Student A]": "Rowan Street", "[Teacher]": "Odile Avenue"}  # invented surnames that are policy words
+    never = {"home_address": ["street", "avenue"]}
+    letter = merge.Item("Reading update for [Student A]", "Dear {guardian}, [Student A] read three books. From [Teacher]", "[Student A]")
+
+    def restore(text):
+        return text.replace("[Student A]", names["[Student A]"]).replace("[Teacher]", names["[Teacher]"])
+
+    merge.check([letter], "guardians", set(names), restore=restore, never_share=never)  # saved: neither word is Muse's
+    asked = merge.Item("Reading update", "Dear {guardian}, what street do you live on?", "[Student A]")
+    with pytest.raises(merge.SaveRefused, match="never shares"):
+        merge.check([asked], "guardians", set(names), restore=restore, never_share=never)
+
+
+def test_a_title_ending_in_student_and_a_body_starting_with_i_are_two_texts(svc):
+    yesterday = list(student_tags(svc))  # [Student I] is one of them, sent and still live
+    svc.tagmap.clock = lambda: __import__("time").time() + 86400  # tomorrow: a new block of tags
+    svc.tagmap.ensure_roster(svc.roster)
+    mine = next(t for t in svc.tagmap.as_dict() if t.startswith("[Student ") and t not in yesterday)
+    svc.tagmap.touch([mine])
+    body = f"I wanted to share how {mine} did on the garden essay. From [Teacher]"
+    for address_to in ("none", "guardians"):
+        title = "Progress update for your student"
+        result, out = save(svc, [{"for_tag": mine, "title": title, "body": body}], address_to=address_to)
+        assert not result.is_error and out["status"] == "saved", result.content[0].text
+
+
 def test_a_letter_home_that_names_a_never_share_topic_saves_nothing(svc):
     mine = next(iter(student_tags(svc)))
     result, _ = save(svc, [{"for_tag": mine, "title": "Next week", "body": f"Dear {{guardian}}, {mine}'s IEP meeting is Tuesday."}])

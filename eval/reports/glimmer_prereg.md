@@ -48,8 +48,16 @@ Fixed for every comparison: the same items, the same commit, the same device for
 ## The sets
 
 - **Development sets** (free to read; their results are published but never carry the claim): `eval/fresh_200_b.jsonl` (200 items; its misses were read on Oct 30, so it is a development set now) and `eval/tasks.jsonl` (100 hand-written items, with `eval/holdout.jsonl`'s 20 also reported as a subset).
-- **The sealed set** (the claim): one set, chosen before any tuned row runs. It is `eval/fresh_200_c.jsonl` (drawn from the unused part of eval/synthetic.jsonl) if Ethan confirms the fine-tune did not train on eval/synthetic.jsonl or anything drawn from it. Otherwise it is `eval/templated/fresh_200_t.jsonl`, which a script wrote from templates with no model and which shares nothing with eval/synthetic.jsonl (eval/templated/MANIFEST.md).
-- Before the sealed set is scored, the overlap checker run on the training file must report 0 exact hits and 0 name hits against it. If it reports any, that set is not used and the other one is checked the same way. If neither passes, there is no sealed result and the claim is not made.
+- **The sealed set** (the claim): one set, chosen before any tuned row runs. It is `eval/splits/fresh_200_c.jsonl` (drawn from the unused part of eval/synthetic.jsonl; eval/splits/MANIFEST.md) if Ethan confirms the fine-tune did not train on eval/synthetic.jsonl or anything drawn from it. Otherwise it is `eval/templated/fresh_200_t.jsonl`, which a script wrote from templates with no model and which shares nothing with eval/synthetic.jsonl (eval/templated/MANIFEST.md). Each is pinned by its sha256, and a file with any other hash is not the registered set:
+  - `eval/splits/fresh_200_c.jsonl`: `74b58035d877631c0ec3641256124d086cf54ab3ad50c57808c4c5201355a06a`
+  - `eval/templated/fresh_200_t.jsonl`: `c83fd50f66d38d8683cea0f312e639891fb3ad8151d939507e65f17c19092e34`
+- Before the sealed set is scored, the overlap checker run on the training file must report 0 exact hits and 0 name hits against it. Both candidate sets are checked in one run, since the checker's default sets leave out eval/templated/:
+
+  ```
+  uv run python -m scripts.check_overlap --train TRAINING_FILE --name glimmer_tuned --sets eval/splits/fresh_200_c.jsonl eval/templated/fresh_200_t.jsonl
+  ```
+
+  If it reports any hit against the chosen set, that set is not used and the other one must pass the same way. If neither passes, there is no sealed result and the claim is not made.
 - The sealed set is scored once, on a frozen commit named in the report, with every row in the same run. Nothing is tuned, prompted or re-thresholded after that run. If a harness bug (not a model mistake) turns up afterward, the fix is committed, the sealed run is repeated once, and both runs are published.
 
 ## The metrics
@@ -93,4 +101,4 @@ Everything is published as measured: every row on every set, the b and c counts 
 
 ## Amendments
 
-None yet.
+None yet. (Oct 31, before any Glimmer row had run, the sealed set's path was corrected to `eval/splits/fresh_200_c.jsonl`, where the set has always been, both candidate sets were pinned by sha256, and the overlap command was written out. The rule above allows these edits until the first Glimmer row runs.)

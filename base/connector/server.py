@@ -255,15 +255,17 @@ def tag_values(services: Any) -> dict[str, str]:
     return dict(tagmap.tag_map)
 
 
-def check_tags(services: Any, text: str) -> None:
-    """Raise ToolFailure with EXPIRED_TAG (audit expired_tag) when `text` holds a tag that will not
-    restore for Muse (TagMap.expired), or restorable tags from two tag days (TagMap.mixed_days).
-    Old, never-sent and guessed tags and mixed days get the same sentence, so Muse cannot tell
-    them apart. Nothing is searched, listed, started or saved then."""
+def check_tags(services: Any, *texts: str) -> None:
+    """Raise ToolFailure with EXPIRED_TAG (audit expired_tag) when one of `texts` holds a tag that
+    will not restore for Muse (TagMap.expired), or the texts together hold restorable tags from
+    two tag days (TagMap.mixed_days). Each text is read on its own, so a title ending in "student"
+    and a body starting with "I" never make a tag. Old, never-sent and guessed tags and mixed days
+    get the same sentence, so Muse cannot tell them apart. Nothing is searched, listed, started or
+    saved then."""
     tagmap = services.tagmap
     if isinstance(tagmap, Mapping) or not hasattr(tagmap, "expired"):
         return
-    if tagmap.expired(text) or (hasattr(tagmap, "mixed_days") and tagmap.mixed_days(text)):
+    if any(tagmap.expired(t) for t in texts) or (hasattr(tagmap, "mixed_days") and tagmap.mixed_days(*texts)):
         raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
 
 
@@ -536,8 +538,8 @@ class Connector:
             )
         except merge.SaveRefused as refused:
             raise ToolFailure(str(refused)) from None
-        # Every text at once, before anything is written: an old tag or two tag days save nothing.
-        check_tags(self.services, "\n".join(t for i in parsed for t in (i.for_tag, i.title, i.body)))
+        # Every text, before anything is written: an old tag or two tag days save nothing.
+        check_tags(self.services, *(t for i in parsed for t in (i.for_tag, i.title, i.body)))
         contacts = self._contacts() if address_to == "guardians" else None
         jobs = self.services.jobs
         job_id = jobs.create(SAVE_KIND, merge.SAVE_REQUEST, None)

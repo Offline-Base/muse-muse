@@ -606,7 +606,7 @@ class Egress:
 
     def _mark_sent(self, text: str) -> None:
         """Every tag in a shared text now counts as sent (TagMap.touch): Muse may send it back,
-        and it restores until the grace window after this send."""
+        and it restores until the grace window after its own day ends; this send does not extend it."""
         touch = getattr(getattr(self.services, "tagmap", None), "touch", None)
         if not callable(touch):
             return

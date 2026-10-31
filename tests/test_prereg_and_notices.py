@@ -1,5 +1,6 @@
 """eval/reports/glimmer_prereg.md and THIRD_PARTY_NOTICES.md say what they must."""
 
+import hashlib
 import importlib.metadata
 import json
 import re
@@ -33,7 +34,7 @@ def test_prereg_fixes_the_claim_sets_metrics_test_and_stop_rules():
         "base IQ1_S against base Glimmer in the cloud",
         "`eval/fresh_200_b.jsonl`",
         "`eval/tasks.jsonl`",
-        "`eval/fresh_200_c.jsonl`",
+        "`eval/splits/fresh_200_c.jsonl`",
         "`eval/templated/fresh_200_t.jsonl`",
         "scored once, on a frozen commit",
         "McNemar",
@@ -58,6 +59,17 @@ def test_prereg_fixes_the_claim_sets_metrics_test_and_stop_rules():
     ):
         assert name in metrics, name
     assert "—" not in text and "/Users/" not in text
+
+
+def test_prereg_names_sets_that_exist_pins_them_and_checks_both_for_overlap():
+    text = PREREG.read_text()
+    paths = re.findall(r"`(eval/[\w./-]+\.jsonl)`", text)
+    assert "eval/splits/fresh_200_c.jsonl" in paths and "eval/templated/fresh_200_t.jsonl" in paths
+    for rel in paths:
+        assert (REPO_ROOT / rel).is_file(), rel
+    for rel in ("eval/splits/fresh_200_c.jsonl", "eval/templated/fresh_200_t.jsonl"):
+        assert hashlib.sha256((REPO_ROOT / rel).read_bytes()).hexdigest() in text, rel  # hashed, never read
+    assert "--sets eval/splits/fresh_200_c.jsonl eval/templated/fresh_200_t.jsonl" in text
 
 
 def test_notices_list_every_python_dependency_at_its_installed_version():
@@ -98,6 +110,18 @@ def test_notices_name_each_model_and_tool_with_its_license():
         "https://huggingface.co/LiquidAI/LFM3-VL-2B",
         "https://huggingface.co/google/embeddinggemma-2",
         "https://github.com/ggml-org/llama.cpp/blob/master/LICENSE",
+        "mlx-community/sam3.1-bf16",
+        "pdftotext",
+        "SAM_ENABLED=1",
     ):
         assert needed in text, needed
+    assert "Not part of this commit" not in text and "Planned" not in text  # the SAM sidecar is in the tree
     assert "—" not in text and "/Users/" not in text
+
+
+def test_notices_list_every_sam_sidecar_dependency():
+    project = tomllib.loads((REPO_ROOT / "sidecars" / "sam" / "pyproject.toml").read_text())
+    table = rows(NOTICES.read_text())
+    for spec in project["project"]["dependencies"]:
+        name = re.match(r"[A-Za-z0-9_.-]+", spec).group(0).lower()
+        assert name in table and table[name][-1], name

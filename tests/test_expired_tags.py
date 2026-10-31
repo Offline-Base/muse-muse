@@ -227,6 +227,10 @@ def test_a_request_mixing_yesterdays_and_todays_tags_is_refused(svc):
         ("search_documents", ("which student IEP goals mention reading", "for my own planning")),
         ("run_private_task", ("Check the Student ID column on each form, for my own records", "essays")),
         ("ask_device", ("Which STUDENT ID is missing?", "", "")),
+        # an abbreviation or a line break, not a code: no [Student I] was ever made for this roster of 8
+        ("run_private_task", ("Check the Student I.D. column on each form, for my own records", "essays")),
+        ("ask_device", ("Which STUDENT I.D. is missing?", "", "")),
+        ("search_documents", ("Write one comment per student\nI want them short", "")),
     ],
 )
 def test_school_words_after_student_are_not_refused_as_tags(svc, tool, args):

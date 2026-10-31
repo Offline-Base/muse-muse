@@ -61,17 +61,27 @@ class QuietEvents:
 NEW_COLUMNS = (("audit", "via"), ("jobs", "sources"))
 
 
+DB_COPY_FAILED = (
+    "base.db could not be copied before this version adds its new columns, so nothing was changed. "
+    "Check that the disk has space and start again."
+)
+
+
 def back_up_db_before_upgrade(db: Path) -> list[Path]:
     """Copy base.db once (base.db.v1-backup-<time>, 0600) before this version first changes its
     schema, when no copy is there yet. The tag map upgrade copies it only while tagmap.json is
-    still version 1, so a tag map already at version 2 would otherwise leave base.db uncopied."""
+    still version 1, so a tag map already at version 2 would otherwise leave base.db uncopied.
+    A failed copy raises GuardError(DB_COPY_FAILED), a plain message, before anything changes."""
     db = Path(db)
     if not db.is_file():
         return []
-    with contextlib.closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as conn:
-        have = {t: {row[1] for row in conn.execute(f"PRAGMA table_info({t})")} for t, _c in NEW_COLUMNS}
-    older = any(have[t] and c not in have[t] for t, c in NEW_COLUMNS)  # a missing table is made new
-    return guard.back_up_files([db]) if older else []
+    try:
+        with contextlib.closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as conn:
+            have = {t: {row[1] for row in conn.execute(f"PRAGMA table_info({t})")} for t, _c in NEW_COLUMNS}
+        older = any(have[t] and c not in have[t] for t, c in NEW_COLUMNS)  # a missing table is made new
+        return guard.back_up_files([db]) if older else []
+    except (OSError, sqlite3.Error) as exc:
+        raise guard.GuardError(DB_COPY_FAILED) from exc
 
 
 def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:

@@ -173,7 +173,7 @@ class Settings:
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
     # daily: every tag day gives each person a new tag, and an old tag restores until
-    # tag_grace_hours after its day ends or it was last sent. off: one tag per value, forever.
+    # tag_grace_hours after its day ends, however often it is sent. off: one tag per value, forever.
     tag_rotation: Literal["daily", "off"] = "daily"
     tag_grace_hours: float = 36.0
     # The router's model call: Glimmer's reasoning strength (llama-server's

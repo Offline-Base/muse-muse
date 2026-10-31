@@ -3,12 +3,14 @@ upgrade from version 1. All names and numbers are invented."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
 import stat
 import threading
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -165,6 +167,41 @@ def test_plain_words_after_student_never_restore_or_count_as_tags_on_any_day():
     # in brackets a code of two letters still restores, and one Muse was never sent is refused
     assert restore("[Student IS] wrote", tm.for_muse()) != "[Student IS] wrote"
     assert tm.expired("[Student ZY] wrote") == ["[Student ZY]"]
+
+
+def test_abbreviations_and_line_breaks_after_student_are_not_tags():
+    clock = Clock()
+    tm = daily(clock=clock)
+    tm.ensure_roster(BIG)
+    tm.touch(tm.as_dict())
+    assert {"[Student A]", "[Student E]", "[Student I]"} <= set(tm.for_muse())
+    plain = (
+        "Pick one passage per student e.g. a quote", "one line per student i.e. short",
+        "Write one comment per student\nI want them short", "Every student\nA reader", "Check the Student I.D. column",
+        "Which STUDENT I.D. is missing?",
+    )  # fmt: skip
+    for text in plain:
+        assert restore(text, tm.for_muse()) == text, text
+        assert tm.day_for(text) is None, text
+    # Ethan, Oct 31: an unbracketed capital code still restores, before any word
+    meant = "Compare Student A with Student I about it, Student A's essay, (Student I). Did student a and Student E read?"
+    assert "tudent" not in restore(meant, tm.for_muse())
+    assert "tudent" not in restore("Student I.", tm.for_muse())  # the end of a sentence is not an abbreviation
+    clock.advance(24 * 4)  # every day-one code is past its window
+    for text in plain:
+        assert tm.expired(text) == [], text
+    assert tm.expired("Student I wrote it") == ["[Student I]"]
+
+
+def test_no_text_says_a_send_extends_a_tag():
+    root = Path(guard.__file__).resolve().parent.parent
+    for rel, stale in (
+        ("base/config.py", "or it was last sent"),
+        ("base/egress.py", "after this send"),
+        ("docs/COMPLIANCE_PLAN.md", "or it was last sent"),
+        ("docs/CONTRACTS.md", "which starts their grace window"),
+    ):
+        assert stale not in (root / rel).read_text(), rel
 
 
 def test_school_words_after_student_are_not_tags_with_a_fresh_map_either():
@@ -412,6 +449,76 @@ def test_an_identical_tag_map_copy_still_lets_an_uncopied_base_db_be_copied(tmp_
     TagMap(path, rotation="daily", clock=Clock(), backup=[home / "base.db"])
     copies = sorted(p.name.split(".v1-backup-")[0] for p in home.glob("*.v1-backup-*"))
     assert copies == ["base.db", "tagmap.json"]
+
+
+class _CopyFails:
+    """sqlite3 as guard sees it, except that SQLite's backup stops partway (a full disk, a kill)."""
+
+    Error = sqlite3.Error
+
+    @staticmethod
+    def connect(*args, **kwargs):
+        conn = sqlite3.connect(*args, **kwargs)
+
+        class Conn:
+            def backup(self, _target, **_kw):
+                raise sqlite3.OperationalError("database or disk is full")
+
+            def __getattr__(self, name):
+                return getattr(conn, name)
+
+        return Conn()
+
+
+def _readable_db_copies(home):
+    out = []
+    for p in home.glob("base.db.v1-backup-*"):
+        with contextlib.closing(sqlite3.connect(p)) as db:
+            out.append(db.execute("SELECT tagged_text FROM decisions").fetchall())
+    return out
+
+
+def test_a_base_db_copy_that_fails_partway_leaves_nothing_and_is_made_on_the_next_start(tmp_path, monkeypatch):
+    home, path = v1_home(tmp_path)
+    monkeypatch.setattr(guard, "sqlite3", _CopyFails)
+    with pytest.raises(GuardError, match="could not be upgraded"):
+        TagMap(path, rotation="daily", backup=[home / "base.db"])
+    assert not list(home.glob("base.db.v1-*")) and json.loads(path.read_text()) == V1  # no empty copy, map untouched
+    monkeypatch.undo()
+    TagMap(path, rotation="daily", backup=[home / "base.db"])
+    assert _readable_db_copies(home) == [[("[Student B]: 3 of 4",)]]
+
+
+def test_an_empty_copy_left_by_an_older_start_does_not_count_as_the_backup(tmp_path):
+    home, _path = v1_home(tmp_path)
+    (home / "base.db.v1-backup-20261030-120000").touch(mode=0o600)
+    [made] = guard.back_up_files([home / "base.db"], now=datetime(2026, 10, 31, 9, 0).timestamp())
+    with contextlib.closing(sqlite3.connect(made)) as db:
+        assert db.execute("SELECT tagged_text FROM decisions").fetchall() == [("[Student B]: 3 of 4",)]
+    assert stat.S_IMODE(os.stat(made).st_mode) == 0o600
+    assert guard.back_up_files([home / "base.db"]) == []  # now there is a real one
+
+
+def test_a_failed_base_db_copy_before_the_schema_change_is_a_plain_guard_error(tmp_path, monkeypatch):
+    from base.services import Services
+
+    home = tmp_path / "home"
+    home.mkdir(mode=0o700)
+    daily(home / "tagmap.json").save()
+    with sqlite3.connect(home / "base.db") as db:  # tables from before audit.via and jobs.sources
+        db.execute("CREATE TABLE audit (ts REAL, tool TEXT, outcome TEXT, ms INTEGER)")
+        db.execute("CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT)")
+    settings = load_settings({"BASE_HOME": str(home), "WORKSPACE_ROOT": str(tmp_path)})
+    monkeypatch.setattr(guard, "sqlite3", _CopyFails)
+    with pytest.raises(GuardError) as err:  # python -m base then says "Not starting: ..." and exits 3
+        Services.create(settings, light=False, heavy=False, owner=False)
+    assert "base.db" in str(err.value) and "—" not in str(err.value)
+    assert not list(home.glob("base.db.v1-*"))
+    with sqlite3.connect(home / "base.db") as db:
+        assert "via" not in {r[1] for r in db.execute("PRAGMA table_info(audit)")}  # nothing was changed
+    monkeypatch.undo()
+    Services.create(settings, light=False, heavy=False, owner=False).close()
+    assert len(list(home.glob("base.db.v1-backup-*"))) == 1
 
 
 def test_base_db_is_copied_before_its_first_schema_change_when_the_tag_map_is_already_v2(tmp_path):

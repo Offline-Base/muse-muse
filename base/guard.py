@@ -1648,11 +1648,12 @@ class TagMap:
                 self._dirty = True
                 self.flush()
 
-    def _days(self, text: str) -> set[int]:
-        """The tag days of the tags in `text` that restore for Muse ([Teacher] has none)."""
+    def _days(self, *texts: str) -> set[int]:
+        """The tag days of the tags in `texts` that restore for Muse ([Teacher] has none)."""
         with self._lock:
             restorable = self.for_muse()
-            return {self._tags[t].day for t, _b in tag_references(text) if t in restorable and t != TEACHER_TAG}
+            refs = [t for text in texts for t, _b in tag_references(text)]
+            return {self._tags[t].day for t in refs if t in restorable and t != TEACHER_TAG}
 
     def expired(self, text: str) -> list[str]:
         """The tags in Muse's `text` that will not restore: never sent, past their grace window or
@@ -1676,13 +1677,14 @@ class TagMap:
         days = self._days(text)
         return max(days) if days else None
 
-    def mixed_days(self, text: str) -> bool:
-        """True when the tags in Muse's `text` that restore come from more than one tag day. The
+    def mixed_days(self, *texts: str) -> bool:
+        """True when the tags in Muse's `texts` that restore come from more than one tag day. The
         connector refuses such a request (EXPIRED_TAG), so no answer puts a person from an older
-        day's tags into today's tags, which would link the two codes."""
-        if self.rotation == "off" or not text:
+        day's tags into today's tags, which would link the two codes. Each text is read on its
+        own, so a tag never runs from the end of one into the start of the next."""
+        if self.rotation == "off" or not any(texts):
             return False
-        return len(self._days(text)) > 1
+        return len(self._days(*texts)) > 1
 
     # retention
 
@@ -1786,6 +1788,7 @@ def _roster_idents(roster: Any) -> set[tuple[str, str]]:
 
 
 BACKUP_SUFFIX = ".v1-backup-"
+COPYING_SUFFIX = ".v1-copying-"  # a base.db copy still being written (back_up_files)
 
 
 def _back_up(path: Path, raw: bytes, more: Iterable[Path], now: float) -> list[Path]:
@@ -1805,20 +1808,42 @@ def _back_up(path: Path, raw: bytes, more: Iterable[Path], now: float) -> list[P
     return made + back_up_files(more, now)
 
 
+def _usable_copy(path: Path) -> bool:
+    """A finished SQLite copy: its schema reads and has a table. Read as immutable, so no -wal or
+    -shm file is made next to the copy."""
+    try:
+        with contextlib.closing(sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro&immutable=1", uri=True)) as db:
+            return db.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] > 0
+    except (OSError, sqlite3.Error):
+        return False
+
+
 def back_up_files(files: Iterable[Path], now: float | None = None) -> list[Path]:
-    """Copy each existing SQLite file in `files` that has no <name>.v1-backup-* copy yet next to
-    itself, 0600, through SQLite's backup API (a consistent snapshot, WAL included). Returns the
-    copies made. Used before the tag map upgrade and before base.db's first schema change."""
+    """Copy each existing SQLite file in `files` that has no usable <name>.v1-backup-* copy yet
+    next to itself, 0600, through SQLite's backup API (a consistent snapshot, WAL included).
+    Returns the copies made. Used before the tag map upgrade and before base.db's first schema
+    change. The copy is written under a .v1-copying- name and renamed only once it is complete,
+    so a copy that fails partway (a full disk, a kill) leaves no file that looks like a backup,
+    and an empty one an older start left behind does not count."""
     stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(time.time() if now is None else now))
     made = []
     for src in map(Path, files):
-        if not src.exists() or any(src.parent.glob(f"{src.name}{BACKUP_SUFFIX}*")):
+        if not src.exists() or any(_usable_copy(p) for p in src.parent.glob(f"{src.name}{BACKUP_SUFFIX}*")):
             continue
+        for old in src.parent.glob(f"{src.name}{COPYING_SUFFIX}*"):  # left by a start that was killed
+            old.unlink(missing_ok=True)
         dst = src.with_name(f"{src.name}{BACKUP_SUFFIX}{stamp}")
-        os.close(os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-        with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(dst)) as b:
-            a.backup(b)
-        os.chmod(dst, 0o600)
+        part = src.with_name(f"{src.name}{COPYING_SUFFIX}{stamp}")
+        try:
+            os.close(os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            with contextlib.closing(sqlite3.connect(src)) as a, contextlib.closing(sqlite3.connect(part)) as b:
+                a.backup(b)
+            os.chmod(part, 0o600)
+            os.replace(part, dst)
+        except BaseException:
+            for p in src.parent.glob(f"{part.name}*"):  # the copy and its -journal
+                p.unlink(missing_ok=True)
+            raise
         made.append(dst)
     return made
 
@@ -1972,7 +1997,8 @@ def tag(
 
 _RESTORE_RE = re.compile(
     r"\[\s*(?P<teacher>teacher)\s*\]"
-    r"|(?P<ob>\[\s*)?\b(?P<student>student)\s+(?P<letters>[a-z]{1,3})(?![a-z])(?(ob)\s*\])"
+    # Spaces or tabs only between "student" and its code: "per student\nI want" is two lines, not a tag.
+    r"|(?P<ob>\[\s*)?\b(?P<student>student)[ \t]+(?P<letters>[a-z]{1,3})(?![a-z])(?(ob)\s*\])"
     r"|(?P<ob2>\[\s*)?\b(?P<kind>person|phone|email|ssn|card|code|id|address|dob|redacted)\s+(?P<num>\d+)(?!\d)(?(ob2)\s*\])"
     # Only in brackets: "Age 12" or "Date 2" in a sentence is not a tag.
     r"|\[\s*(?P<kind2>place|date|age|detail|record|url|ip)\s+(?P<num2>\d+)\s*\]",
@@ -1983,6 +2009,7 @@ _REFERENCE_AFTER = re.compile(
     r"['’]s\b|\s*[.,;:!?)\]]|\s*$|\s+(?:and|or|is|was|has|had|needs|did|does|wrote|got|scored|earned"
     r"|should|will|can|could|would|might|must|also|then|but)\b"
 )
+_ABBREVIATION_AFTER = re.compile(r"\.[^\W\d_]")  # "Student I.D.", "student e.g.", "student i.e."
 
 
 def _canonical(m: re.Match[str]) -> str | None:
@@ -1995,6 +2022,8 @@ def _canonical(m: re.Match[str]) -> str | None:
             # Without brackets two or three letters are words or acronyms as often as codes
             # ("student is", "Student ID", "STUDENT OF THE MONTH"), and daily rotation makes
             # most of those codes real, so only [Student AB] in brackets counts.
+            return None
+        if not m.group("ob") and _ABBREVIATION_AFTER.match(m.string, m.end()):
             return None
         if (
             not m.group("ob")
@@ -2014,7 +2043,8 @@ def _canonical(m: re.Match[str]) -> str | None:
 
 def tag_references(text: str, *, as_written: bool = False) -> list[tuple[str, bool]]:
     """(tag, bracketed) for every tag `restore` would swap in `text`, in order. Without brackets
-    a Student reference has one letter ("Student B"); two or three letters count only in
+    a Student reference has one letter ("Student B"), on the same line as "student" and not before
+    a dot and a letter ("Student I.D.", "student e.g."); two or three letters count only in
     brackets ([Student AB]), so "student is", "Student ID" or "Student IEP" stay words. With
     `as_written` an unbracketed Student reference counts only when its letter is a capital, so
     plain words ("each student who has", "the student was") never read as a tag."""

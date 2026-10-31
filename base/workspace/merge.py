@@ -77,8 +77,8 @@ def unknown_tags(items: Iterable[Item], known: Collection[str]) -> list[str]:
 
 
 OTHER_TAGS = (
-    "A letter home may name only the student it is for and [Teacher], so nothing was saved. Take any other "
-    "student's tag, and phone, email, address and other tags, out of the title and body."
+    "A letter home may hold only the tag of the student it is for and [Teacher], so nothing was saved. Take "
+    "any other student's tag, and phone, email, address and other tags, out of the title and body."
 )
 NEVER_SHARE = "A letter home may not mention a topic your privacy policy never shares, so nothing was saved."
 
@@ -93,11 +93,13 @@ def check(
 ) -> None:
     """Raise SaveRefused when the items cannot be saved as they are. Nothing is written first.
 
-    A letter home goes to one family, so with address_to "guardians" its title and body may name
-    only the item's own student (for_tag) and [Teacher]: another student's tag, or a phone, email,
-    address or any other tag, would put someone else's real value in the draft. With `restore` and
-    `never_share` (the policy's), a letter whose restored text names a never-share topic is
-    refused too."""
+    A letter home goes to one family, so with address_to "guardians" its title and body may hold
+    only the tags of the item's own student (for_tag) and [Teacher]: another student's tag, or a
+    phone, email, address or any other tag, would put someone else's real value in the draft. Only
+    tags are checked: a name or number Muse wrote out itself goes into the unsent draft as written.
+    With `never_share` (the policy's), a letter whose title or body, as Muse wrote it, names a
+    never-share topic is refused too. Restored names are not scanned: only names can come from
+    the two allowed tags, and a surname such as Street is not a topic."""
     if address_to not in ADDRESS_TO:
         raise SaveRefused('address_to must be "none" or "guardians".')
     if not 1 <= len(items) <= MAX_ITEMS:
@@ -120,7 +122,7 @@ def check(
         allowed = {item.for_tag, TEACHER_TAG}
         if any(tag not in allowed for text in (item.title, item.body) for tag, _b in tag_references(text)):
             raise SaveRefused(OTHER_TAGS)
-        if restore is not None and never_share and blocked_topics(f"{restore(item.title)}\n{restore(item.body)}", never_share):
+        if never_share and blocked_topics(f"{item.title}\n{item.body}", never_share):
             raise SaveRefused(NEVER_SHARE)
 
 
