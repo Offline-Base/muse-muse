@@ -4,11 +4,50 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { DEMO_FONT_PACKAGES, DISABLED_BUNDLED_SKILLS, fontInstallScript, INTER_DEFAULT_CONF, skillsNotOff } from "@/lib/sandbox/setup";
+import { DEMO_FONT_PACKAGES, DISABLED_BUNDLED_SKILLS, fontInstallScript, INTER_DEFAULT_CONF, readTargetFiles, readTemplateFiles, skillsNotOff, templateHash } from "@/lib/sandbox/setup";
+
+describe("the template's targets", () => {
+  function tree(files: Record<string, string>): string {
+    const dir = mkdtempSync(path.join(tmpdir(), "template-"));
+    for (const [file, content] of Object.entries(files)) {
+      mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      writeFileSync(path.join(dir, file), content);
+    }
+    return dir;
+  }
+
+  it("stay out of a product, in the real template too", async () => {
+    const files = await readTemplateFiles("template");
+    assert.ok(files.some((f) => f.path === "package.json"));
+    assert.deepEqual(files.filter((f) => f.path.startsWith("targets/") || f.path.includes("/glasses/")), []);
+  });
+
+  it("are read on their own, for the snapshot", async () => {
+    const files = await readTargetFiles("template");
+    assert.ok(files.some((f) => f.path === "targets/glasses/platform-files.json"));
+    assert.ok(files.every((f) => f.path.startsWith("targets/")));
+  });
+
+  it("only means the top-level folder, and is fine when there are none", async (t) => {
+    const dir = tree({ "lib/targets/a.ts": "a", "app.ts": "b" });
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    assert.deepEqual((await readTemplateFiles(dir)).map((f) => f.path), ["app.ts", "lib/targets/a.ts"]);
+    assert.deepEqual(await readTargetFiles(dir), []);
+  });
+
+  it("change the template's hash when they change", async (t) => {
+    const before = tree({ "app.ts": "b", "targets/glasses/deps.json": "{}" });
+    const after = tree({ "app.ts": "b", "targets/glasses/deps.json": '{"x":"1"}' });
+    t.after(() => [before, after].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+    const hash = async (dir: string) => templateHash([...(await readTemplateFiles(dir)), ...(await readTargetFiles(dir))]);
+    assert.equal(templateHash(await readTemplateFiles(before)), templateHash(await readTemplateFiles(after)));
+    assert.notEqual(await hash(before), await hash(after));
+  });
+});
 
 /** The shape of `muse skills list --json` (Muse Code 1.4.14). */
 function list(activation: (id: string) => string, extra: Array<{ id: string; activation: string }> = []): string {

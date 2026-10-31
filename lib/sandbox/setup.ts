@@ -16,6 +16,8 @@ import { pristineCopyScript } from "@/lib/sandbox/tasks";
 // __tests__ holds the template's own unit tests (template/scripts/__tests__), which products don't need.
 const SKIP_NAMES = new Set(["node_modules", ".next", "test-results", "playwright-report", ".git", ".vercel", ".DS_Store", "__tests__"]);
 
+const TARGETS_DIR = "targets";
+
 function skipTemplateEntry(name: string): boolean {
   return SKIP_NAMES.has(name) || name.startsWith(".env") || name.endsWith(".tsbuildinfo");
 }
@@ -31,17 +33,33 @@ export interface TemplateFile {
  * template (node_modules included) into the platform's functions.
  */
 export async function readTemplateFiles(templateDir: string): Promise<TemplateFile[]> {
+  return readTemplateTree(templateDir, "");
+}
+
+/**
+ * Reads the top-level template/targets/: overlays a product gets only when its brief asks for that target, so they
+ * aren't in readTemplateFiles. They still count toward templateHash, since a snapshot carries them too.
+ */
+export async function readTargetFiles(templateDir: string): Promise<TemplateFile[]> {
+  return readTemplateTree(templateDir, TARGETS_DIR);
+}
+
+async function readTemplateTree(templateDir: string, from: string): Promise<TemplateFile[]> {
   const out: TemplateFile[] = [];
   async function walk(rel: string) {
-    const entries = await readdir(path.join(templateDir, rel), { withFileTypes: true });
+    const entries = await readdir(path.join(templateDir, rel), { withFileTypes: true }).catch((err: NodeJS.ErrnoException) => {
+      if (rel === TARGETS_DIR && err.code === "ENOENT") return [];
+      throw err;
+    });
     for (const e of entries) {
       if (skipTemplateEntry(e.name)) continue;
+      if (!rel && e.name === TARGETS_DIR) continue;
       const child = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) await walk(child);
       else if (e.isFile()) out.push({ path: child, content: await readFile(path.join(templateDir, child)) });
     }
   }
-  await walk("");
+  await walk(from);
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
@@ -242,13 +260,13 @@ export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInf
   return full;
 }
 
-/** Full setup on a fresh VM. Needs open egress. */
-export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log): Promise<BuilderInfo> {
+/** Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles, and only counts toward the template's hash. */
+export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = []): Promise<BuilderInfo> {
   await makeDirs(sandbox, [WORK_DIR]);
   await installSystemTools(sandbox, log);
   const muse = await installMuseCode(sandbox, log);
   await disableBundledSkills(sandbox, log);
   await installTemplate(sandbox, files, log);
   await savePristineFiles(sandbox, log);
-  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash(files) });
+  return writeBuilderMarker(sandbox, { muse, templateHash: templateHash([...files, ...targets]) });
 }
