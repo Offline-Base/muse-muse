@@ -74,7 +74,7 @@ STUDENTS: tuple[tuple[str, str, str | None], ...] = (
     ("Adaeze", "Zarvinek", "Dazie"),
     ("Folasade", "Mollenbrae", "Fola"),
     ("Gunnar", "Quistenhal", None),
-    ("Ilse", "Druvaley", None),
+    ("Tavia", "Druvaley", None),
     ("Lisandro", "Ostravin", None),
     ("Nkechi", "Pellucard", None),
     ("Oswin", "Varnhollis", None),
@@ -506,7 +506,7 @@ def roster_name_tokens() -> set[str]:
 
 def names_in(text: str, forms: Iterable[str]) -> list[str]:
     """Each form found in text as a whole word, in order of first appearance. A longer form hides
-    the shorter ones inside it, so "Ilse Druvaley" is not listed again as "Ilse"."""
+    the shorter ones inside it, so "Tavia Druvaley" is not listed again as "Tavia"."""
     spans: list[tuple[int, int, str]] = []
     for form in sorted(set(forms), key=len, reverse=True):
         for m in re.finditer(rf"(?<!\w){re.escape(form)}(?!\w)", text):

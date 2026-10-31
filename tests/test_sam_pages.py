@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from base import manifest
 from base.guard import find_identifiers, load_roster
 from scripts import make_sam_pages as pages
 
@@ -53,7 +54,7 @@ def test_a_rerun_writes_the_same_bytes(tmp_path, rendered):
 def test_committed_set_matches_the_script(rendered):
     assert TRUTH["command"] == pages.COMMAND
     assert (SET / ".synthetic").is_file()
-    on_disk = sorted(p.name for p in SET.iterdir() if p.name not in ("truth.json", ".synthetic"))
+    on_disk = sorted(p.name for p in SET.iterdir() if p.name != "truth.json" and p.name not in manifest.SKIPPED_NAMES)
     assert on_disk == sorted(row["file"] for row in TRUTH["pages"])
     for i, row in enumerate(TRUTH["pages"]):
         fresh = pages.truth_row(i, rendered[i])

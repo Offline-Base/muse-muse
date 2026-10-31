@@ -96,9 +96,9 @@ def test_a_template_with_an_unlisted_keyword_topic_is_refused(checker, monkeypat
 
 
 def test_names_in_lists_each_form_once_in_order():
-    forms = ["Ilse Druvaley", "Ilse", "Fola", "Radek Druvaley"]
-    text = "Fola met Ilse Druvaley's guardian, Radek Druvaley. Ilse waved."
-    assert mt.names_in(text, forms) == ["Fola", "Ilse Druvaley", "Radek Druvaley", "Ilse"]
+    forms = ["Tavia Druvaley", "Tavia", "Fola", "Radek Druvaley"]
+    text = "Fola met Tavia Druvaley's guardian, Radek Druvaley. Tavia waved."
+    assert mt.names_in(text, forms) == ["Fola", "Tavia Druvaley", "Radek Druvaley", "Tavia"]
     assert mt.names_in("Ilsewhere", forms) == []
 
 

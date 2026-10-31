@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | File | eval/templated/fresh_200_t.jsonl |
-| sha256 | `af16ebb1eddd984dfc290bcb1313c0a5f861361189548737b449343770d0968d` |
+| sha256 | `c83fd50f66d38d8683cea0f312e639891fb3ad8151d939507e65f17c19092e34` |
 | Items | 200 |
 | Seed | 20261102 |
 | Generator command | `uv run python -m scripts.make_templated_set` |
@@ -57,7 +57,7 @@ From `uv run python -m scripts.make_templated_set --check`:
 | no phone, email, SSN or card outside the fake ranges | pass | 0 items |
 | no identifier in a share item | pass | 0 items |
 | no repeated request or result | pass | 0 repeats |
-| 0 overlap hits against every other eval set | pass | 0 hits in 6 sets |
+| 0 overlap hits against every other eval set | pass | 0 hits in 18 sets |
 | roster names are new | pass | 0 name tokens in 0 files |
 
 ## Overlap with the other eval sets
@@ -70,6 +70,18 @@ Hits of this set's items against each set, from the same command. Exact means eq
 | eval/fresh_200.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.47 | 0.00 |
 | eval/fresh_200_b.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.54 | 0.00 |
 | eval/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.36 | 0.00 |
+| eval/personas/caseworker_cui/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.43 | 0.00 |
+| eval/personas/caseworker_cui/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.43 | 0.00 |
+| eval/personas/caseworker_cui/items.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.43 | 0.00 |
+| eval/personas/caseworker_cui/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.43 | 0.00 |
+| eval/personas/clinic_coordinator/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.38 | 0.00 |
+| eval/personas/clinic_coordinator/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.31 | 0.00 |
+| eval/personas/clinic_coordinator/items.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.38 | 0.00 |
+| eval/personas/clinic_coordinator/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.38 | 0.00 |
+| eval/splits/fresh_200_c.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.50 | 0.00 |
+| eval/splits/sim_days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/splits/sim_holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/splits/sim_unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
 | eval/synthetic.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
 | eval/tasks.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.54 | 0.00 |
 

@@ -250,8 +250,8 @@ def test_generic_path_maps_then_reduces(tmp_path):
 def test_generic_task_saves_its_full_named_result_on_the_device(tmp_path):
     root = tmp_path / "root"
     (root / "plans").mkdir(parents=True)
-    (root / ".synthetic").write_text("")
     (root / "plans" / "plan.md").write_text("# Tavi Brennick garden plan\nTavi will plant beans by the fence.")
+    mark_synthetic(root)
     agent, settings, jobs = make_agent(tmp_path, root=root)
     job = jobs.get(agent.run_sync("Summarize the plan for my own planning.", "plans"))
     assert job["status"] == "done", job["error"]
