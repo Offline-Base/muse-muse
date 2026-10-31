@@ -498,6 +498,14 @@ platform files back before a check yet (the VR branch adds that for brief target
 
 With the flag off, every prompt and the judge are byte-identical to the goldens, and no overlay is applied.
 
+**Once a muse-app product exists, don't turn the flag back off.** The judge and the fix and change prompts read the
+flag when they run, not the look the product was built with ("Look: muse-app" in its history). With the flag off again,
+that product's next fix or change is judged against the meta-ui house style alone, and the judge may block it for
+copying a real product's look. The prompts would still reach muse-app-ui through the overlay's meta-ui pointers. A
+safe rollback first needs the look stored on the product at provision, or `app/muse-app.css` detected in the sandbox,
+and passed to `judgeInstructions` and the prompts. That changes the pipeline with the flag off, so it isn't on this
+branch.
+
 **A builder snapshot is needed.** `setupBuilder` now installs `template/targets/` read-only at `/vercel/musemuse/targets`,
 the place the VR branch uses. On the live site, a provision with the flag on and an older snapshot fails with "This
 builder snapshot doesn't have the muse-app overlay", rather than build with a prompt that names a missing skill. A local

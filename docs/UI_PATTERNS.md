@@ -92,7 +92,9 @@ For the build room, the panel becomes a read-only **build panel**:
 
 For Muse Muse the hero card is **Use your products in Muse**, with tabs for Muse app, Claude Code and cURL, product tabs below, and the product's connector URL or command in the code block. It only offers published products, since an unpublished product's connector doesn't answer. The cards are Requests, Input tokens, Output tokens, then Products (opens the gallery), Spend (est.) and How it works.
 
-## Image playground: the model for Make (`/`)
+## Image playground: the model for Make (`/`) until Oct 31
+
+These bullets describe Meta's Image playground as captured on Oct 27. Make followed it until Oct 31 and no longer does: the last paragraph of this section says what it is now.
 
 - The toolbar sits at the top right of the main area ("Get code", "History"; ours are "How it works" and "History").
 - About 100 px below it, a centered 24 px semibold title ("Start from an example") and a muted 15 px line.

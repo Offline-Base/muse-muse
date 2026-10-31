@@ -1,5 +1,7 @@
 # Source: owner paste, Oct 31, 2026. A Gemini reading of meta.ai screenshots.
 # Measurements are estimates, not captured values. Real measurements beat this file.
+# Its background claims (the people it names, the mascot, and the typeface's maker and history) are unverified and
+# weren't used. Below is the paste as it came, so its punctuation is the source's. docs/BRAND.md says what was used.
 
 i want to make the UI closer to what is on meta.ai 
 
