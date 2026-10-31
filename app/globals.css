@@ -1388,21 +1388,25 @@ pre {
   border: 0;
   border-radius: 32px;
   background: var(--surface);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--composer-floor);
+  /* Nothing under the card, unless it's pinned over a page that scrolls (the Make page's rules). */
+  --composer-floor: 0 0 transparent;
 }
 
 /* With no border to darken, a hairline ring shows where typing goes. */
 .composer:has(.composer-input:focus-visible) {
   box-shadow:
     0 0 0 1px var(--line-strong),
-    var(--shadow-card);
+    var(--shadow-card),
+    var(--composer-floor);
 }
 
 .composer.is-dragging {
   box-shadow:
     0 0 0 2px var(--accent),
     0 0 0 6px var(--accent-soft),
-    var(--shadow-card);
+    var(--shadow-card),
+    var(--composer-floor);
 }
 
 /* Two lines tall at rest, which makes the card about 130 px. The composer grows it with the text. */
@@ -3275,8 +3279,13 @@ a.dash-card:hover {
   background: var(--chat-bg);
 }
 
-/* The setup panel: a hairline outline on the page, not a gray card. */
+/*
+ * The setup panel: a hairline outline on the page, not a gray card. Under the Make column on narrow screens, it stays
+ * in front of the fill under the composer's card (below).
+ */
 .play .panel {
+  position: relative;
+  z-index: 11;
   border-color: var(--chat-line);
   background: var(--chat-bg);
 }
@@ -3341,14 +3350,25 @@ a.dash-card:hover {
   max-width: var(--composer-w);
 }
 
+/*
+ * Pinned 24 px above the window's bottom edge, the card leaves a gap under it where what scrolls up behind it would
+ * show, and it shows in the card's rounded bottom corners too. The Muse app's page is plain there, so a copy of the
+ * card's shape in the page color sits 56 px lower: the gap plus the corner's 32 px, which keeps the copy's sides
+ * straight from those corners down to the window's edge. As a shadow, it paints under the card's own soft shadow and
+ * only outside the card, and reaches neither above it nor beside it.
+ */
 .play-main > .composer-wrap > .composer {
   position: sticky;
   bottom: 24px;
   z-index: 10;
   margin-top: auto;
+  --composer-floor: 0 56px 0 var(--chat-bg);
 }
 
+/* An error under the card stays in front of that fill. */
 .play-main > .composer-wrap > .form-error {
+  position: relative;
+  z-index: 11;
   margin-bottom: 8px;
 }
 
