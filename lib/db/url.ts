@@ -41,7 +41,7 @@ export const DATABASE_UNSET = "DATABASE_URL is not set. See .env.example.";
 export const PREVIEW_DATABASE_UNSET =
   "This preview has no database: PREVIEW_DATABASE_URL is not set, and previews never use production's DATABASE_URL. See README.md, Preview database.";
 export const PREVIEW_DATABASE_IS_PRODUCTION =
-  "PREVIEW_DATABASE_URL points at production's database, and previews never touch it. Set it to the database of its own on the Neon branch \"preview\" (README.md, Preview database).";
+  "PREVIEW_DATABASE_URL points at production's database, and previews never touch it. Set it to the \"preview\" database on the Neon branch \"preview\" (README.md, Preview database).";
 
 export type DatabaseChoice =
   | { url: string; from: "DATABASE_URL" | "PREVIEW_DATABASE_URL" }
