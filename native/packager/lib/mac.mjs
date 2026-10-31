@@ -11,6 +11,7 @@ import path from "node:path";
 import { icnsFile, ICNS_TYPES, macIconAt } from "./icons.mjs";
 import { getString, setString } from "./plist.mjs";
 import { runOrThrow } from "./proc.mjs";
+import { markUtf8Names } from "./zip.mjs";
 
 export const TEMPLATE_NAME = "Muse Muse";
 const TEMPLATE_APP = `${TEMPLATE_NAME}.app`;
@@ -20,17 +21,32 @@ export function productConfig(product) {
   return `${JSON.stringify({ name: product.name, url: product.url, shellVersion: product.version }, null, 2)}\n`;
 }
 
+/**
+ * The name inside the bundle: the executable, CFBundleName and the helpers Electron finds by it. Plain ASCII, because on the
+ * Oct 31 spike a helper named with "日本語" and "é" failed `codesign --verify --strict` after rcodesign signed it. The real name
+ * stays on the .app folder and in CFBundleDisplayName, which is what Finder and the Dock show.
+ */
+export function innerName(name) {
+  const plain = String(name)
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return plain || "Muse App";
+}
+
 export function patchMainPlist(xml, product) {
-  let out = setString(xml, "CFBundleName", product.fileName);
+  const inner = innerName(product.name);
+  let out = setString(xml, "CFBundleName", inner);
   out = setString(out, "CFBundleDisplayName", product.name);
-  out = setString(out, "CFBundleExecutable", product.fileName);
+  out = setString(out, "CFBundleExecutable", inner);
   out = setString(out, "CFBundleIdentifier", product.packageId);
   return out;
 }
 
 /** A helper's plist. Its suffix ("", " (GPU)") stays, since Chromium looks for those exact names. */
 export function patchHelperPlist(xml, product, suffix) {
-  const name = `${product.fileName} Helper${suffix}`;
+  const name = `${innerName(product.name)} Helper${suffix}`;
   const idSuffix = suffix ? `.${suffix.trim().slice(1, -1).toLowerCase()}` : "";
   let out = setString(xml, "CFBundleName", name);
   if (getString(out, "CFBundleDisplayName") !== null) out = setString(out, "CFBundleDisplayName", name);
@@ -49,7 +65,7 @@ async function renameHelpers(contents, product) {
     const dir = path.join(frameworks, helper);
     const plistPath = path.join(dir, "Contents", "Info.plist");
     await writeFile(plistPath, patchHelperPlist(await readFile(plistPath, "utf8"), product, suffix));
-    const newName = `${product.fileName} Helper${suffix}`;
+    const newName = `${innerName(product.name)} Helper${suffix}`;
     await rename(path.join(dir, "Contents", "MacOS", `${prefix}${suffix}`), path.join(dir, "Contents", "MacOS", newName));
     await rename(dir, path.join(frameworks, `${newName}.app`));
   }
@@ -83,7 +99,7 @@ export async function packageMac({ template, product, workDir, sharp, master, rc
     for (const [, size] of ICNS_TYPES) if (!pngs.has(size)) pngs.set(size, await macIconAt(sharp, master, size));
     await writeFile(path.join(contents, "Resources", iconFile.endsWith(".icns") ? iconFile : `${iconFile}.icns`), icnsFile(pngs));
 
-    await rename(path.join(contents, "MacOS", TEMPLATE_NAME), path.join(contents, "MacOS", product.fileName));
+    await rename(path.join(contents, "MacOS", TEMPLATE_NAME), path.join(contents, "MacOS", innerName(product.name)));
     await renameHelpers(contents, product);
     if (product.fileName !== TEMPLATE_NAME) await rename(path.join(workDir, TEMPLATE_APP), bundle);
   });
@@ -91,7 +107,10 @@ export async function packageMac({ template, product, workDir, sharp, master, rc
   await lap("sign", () => runOrThrow([rcodesign, "sign", bundle], { maxBytes: 200_000 }));
 
   const zip = path.join(workDir, "product.zip");
-  await lap("zip", () => runOrThrow(["zip", "-y", "-r", "-q", "-1", zip, path.basename(bundle)], { cwd: workDir }));
+  await lap("zip", async () => {
+    await runOrThrow(["zip", "-y", "-r", "-q", zip, path.basename(bundle)], { cwd: workDir });
+    await markUtf8Names(zip);
+  });
   const { size } = await stat(zip);
   return { path: zip, bytes: size, timings };
 }

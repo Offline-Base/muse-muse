@@ -25,6 +25,9 @@ const PROJECT_DIR = process.env.MUSE_PACKAGER_PROJECT ?? path.join(HERE, "projec
 const WORK_DIR = process.env.MUSE_PACKAGER_WORK ?? "/tmp/muse-packager";
 const BUILD_TOOLS_DIR = process.env.MUSE_BUILD_TOOLS_DIR ?? "/usr/bin";
 
+// So zip and unzip keep a product's name as UTF-8 and mark it so, or Windows shows it garbled.
+process.env.LC_ALL = "C.UTF-8";
+
 const CONTENT_TYPES = { android: "application/vnd.android.package-archive", mac: "application/zip", windows: "application/zip" };
 const TEMPLATE_FILES = { android: "android.apk", mac: "mac.zip", windows: "windows.zip" };
 

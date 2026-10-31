@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
 import { getString } from "../lib/plist.mjs";
-import { packageMac, patchHelperPlist, patchMainPlist, productConfig } from "../lib/mac.mjs";
+import { innerName, packageMac, patchHelperPlist, patchMainPlist, productConfig } from "../lib/mac.mjs";
 
 const sharp = await import("sharp").then((m) => m.default).catch(() => null);
 const product = { name: "Fern & Moss", fileName: "Fern & Moss", url: "https://fern.vercel.app/", packageId: "ai.musemuse.p0123456789abcdef", version: "1.0.0" };
@@ -17,14 +17,18 @@ describe("the Mac's edits", () => {
   });
   it("makes the main bundle this product's", () => {
     const out = patchMainPlist(plist("Muse Muse"), product);
-    assert.equal(getString(out, "CFBundleName"), "Fern & Moss");
+    assert.equal(getString(out, "CFBundleName"), "Fern Moss");
     assert.equal(getString(out, "CFBundleDisplayName"), "Fern & Moss");
-    assert.equal(getString(out, "CFBundleExecutable"), "Fern & Moss");
+    assert.equal(getString(out, "CFBundleExecutable"), "Fern Moss");
     assert.equal(getString(out, "CFBundleIdentifier"), product.packageId);
+  });
+  it("keeps names inside the bundle to plain ASCII", () => {
+    assert.equal(innerName(`Tom's "A&B" $(x) café`), "Tom s A B x cafe");
+    assert.equal(innerName("日本語"), "Muse App");
   });
   it("renames helpers keeping the suffix Chromium looks for", () => {
     const gpu = patchHelperPlist(plist("Muse Muse Helper (GPU)"), product, " (GPU)");
-    assert.equal(getString(gpu, "CFBundleName"), "Fern & Moss Helper (GPU)");
+    assert.equal(getString(gpu, "CFBundleName"), "Fern Moss Helper (GPU)");
     assert.equal(getString(gpu, "CFBundleIdentifier"), `${product.packageId}.helper.gpu`);
     assert.equal(getString(patchHelperPlist(plist("Muse Muse Helper"), product, ""), "CFBundleIdentifier"), `${product.packageId}.helper`);
   });
@@ -66,8 +70,8 @@ describe("packageMac", { skip: !sharp && "run npm install in native/packager" },
     const bundle = path.join(workDir, "Fern & Moss.app");
     assert.equal(readFileSync(path.join(dir, "signed-args"), "utf8").trim(), `sign ${bundle}`);
     assert.ok(!existsSync(path.join(workDir, "Muse Muse.app")));
-    assert.ok(existsSync(path.join(bundle, "Contents/MacOS/Fern & Moss")));
-    assert.ok(existsSync(path.join(bundle, "Contents/Frameworks/Fern & Moss Helper (Renderer).app/Contents/MacOS/Fern & Moss Helper (Renderer)")));
+    assert.ok(existsSync(path.join(bundle, "Contents/MacOS/Fern Moss")));
+    assert.ok(existsSync(path.join(bundle, "Contents/Frameworks/Fern Moss Helper (Renderer).app/Contents/MacOS/Fern Moss Helper (Renderer)")));
     assert.equal(JSON.parse(readFileSync(path.join(bundle, "Contents/Resources/muse-product.json"), "utf8")).url, product.url);
     assert.equal(readFileSync(path.join(bundle, "Contents/Resources/electron.icns")).toString("ascii", 0, 4), "icns");
     assert.equal(getString(readFileSync(path.join(bundle, "Contents/Info.plist"), "utf8"), "CFBundleIdentifier"), product.packageId);

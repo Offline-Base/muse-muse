@@ -5,6 +5,7 @@ import path from "node:path";
 import { icoFile, ICO_SIZES, iconAt } from "./icons.mjs";
 import { productConfig, TEMPLATE_NAME } from "./mac.mjs";
 import { runOrThrow } from "./proc.mjs";
+import { markUtf8Names } from "./zip.mjs";
 
 const TEMPLATE_DIR = "win-unpacked";
 
@@ -78,12 +79,19 @@ export async function packageWindows({ template, product, workDir, sharp, master
     const exePath = path.join(dir, `${TEMPLATE_NAME}.exe`);
     const patched = await patchExe(await readFile(exePath), icoFile(pngs), product, resedit);
     await writeFile(path.join(dir, `${product.fileName}.exe`), patched);
-    if (product.fileName !== TEMPLATE_NAME) await rm(exePath);
+    if (product.fileName !== TEMPLATE_NAME) {
+      await rm(exePath);
+      // electron-builder names Electron's crash reporter DLL after the exe, so it follows the rename.
+      await rename(path.join(dir, `${TEMPLATE_NAME}_wer.dll`), path.join(dir, `${product.fileName}_wer.dll`)).catch(() => {});
+    }
     await rename(dir, folder);
   });
 
   const zip = path.join(workDir, "product.zip");
-  await lap("zip", () => runOrThrow(["zip", "-r", "-q", "-1", zip, path.basename(folder)], { cwd: workDir }));
+  await lap("zip", async () => {
+    await runOrThrow(["zip", "-r", "-q", zip, path.basename(folder)], { cwd: workDir });
+    await markUtf8Names(zip);
+  });
   const { size } = await stat(zip);
   return { path: zip, bytes: size, timings };
 }

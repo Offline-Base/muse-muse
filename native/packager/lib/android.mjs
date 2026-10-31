@@ -147,11 +147,35 @@ export function repackSpawn({ workDir, patch }) {
   };
 }
 
+/**
+ * Native libraries a phone can't map straight from the APK. The manifest says extractNativeLibs is false, so each must be stored
+ * and start on a 16 KB boundary, which also covers 4 KB phones. A wrong one only shows up at install.
+ */
+export function libraryProblems(apk) {
+  let eocd = apk.length - 22;
+  while (eocd >= 0 && apk.readUInt32LE(eocd) !== 0x06054b50) eocd--;
+  if (eocd < 0) return ["this isn't a zip"];
+  const problems = [];
+  let at = apk.readUInt32LE(eocd + 16);
+  for (let i = apk.readUInt16LE(eocd + 10); i > 0; i--) {
+    const nameBytes = apk.readUInt16LE(at + 28);
+    const name = apk.toString("utf8", at + 46, at + 46 + nameBytes);
+    if (name.startsWith("lib/") && name.endsWith(".so")) {
+      const local = apk.readUInt32LE(at + 42);
+      const data = local + 30 + apk.readUInt16LE(local + 26) + apk.readUInt16LE(local + 28);
+      if (apk.readUInt16LE(at + 10) !== 0) problems.push(`${name} is compressed`);
+      else if (data % 16384 !== 0) problems.push(`${name} isn't aligned`);
+    }
+    at += 46 + nameBytes + apk.readUInt16LE(at + 30) + apk.readUInt16LE(at + 32);
+  }
+  return problems;
+}
+
 /** Reads the built APK back and throws unless it is what was asked for. This is the check S6 needs on every package. */
 export async function checkApk(apk, product, aapt2 = "aapt2") {
   const badging = await runOrThrow([aapt2, "dump", "badging", apk], { maxBytes: 4_000_000 });
   const manifest = await runOrThrow([aapt2, "dump", "xmltree", "--file", "AndroidManifest.xml", apk], { maxBytes: 8_000_000 });
-  const problems = manifestProblems(String(badging.stdout), String(manifest.stdout), product);
+  const problems = [...manifestProblems(String(badging.stdout), String(manifest.stdout), product), ...libraryProblems(await readFile(apk))];
   if (problems.length) throw new Error(`The APK isn't right: ${problems.join("; ")}.`);
 }
 
@@ -159,12 +183,14 @@ export async function checkApk(apk, product, aapt2 = "aapt2") {
 export function manifestProblems(badging, xmltree, product) {
   const problems = [];
   if (!badging.includes(`package: name='${product.packageId}'`)) problems.push("wrong package");
-  const label = /application-label:'((?:[^'\\]|\\.)*)'/.exec(badging)?.[1];
+  // aapt2 prints this with a double quote escaped and an apostrophe not, so the line's ends are the only safe delimiters.
+  const label = /^application-label:'(.*)'$/m.exec(badging)?.[1];
   if (label === undefined) problems.push("no label");
   else if (label.replace(/\\(.)/g, "$1") !== product.name) problems.push("wrong name");
-  const block = /A: android:name[^\n]*"expo\.modules\.updates\.ENABLED"[^\n]*\n\s*A: android:value[^\n]*/.exec(xmltree)?.[0] ?? "";
+  // aapt2 prints this as android:value(0x01010024)=false, or with quotes or a type on some versions.
+  const block = /android:name\([^)]*\)="expo\.modules\.updates\.ENABLED"[^\n]*\n\s*A: [^\n]*android:value\([^)]*\)=([^\n]*)/.exec(xmltree);
   if (!block) problems.push("expo.modules.updates.ENABLED is missing");
-  else if (!/android:value\(0x[0-9a-f]+\)=(?:"false"|\(type 0x12\)0x0)/.test(block)) problems.push("expo.modules.updates.ENABLED isn't false");
+  else if (!/^(?:false|"false"|\(type 0x12\)0x0)/.test(block[1])) problems.push("expo.modules.updates.ENABLED isn't false");
   if (xmltree.includes("expo.modules.updates.EXPO_UPDATE_URL")) problems.push("the update URL is still there");
   // Two apps can't both hold a provider's authority, so one left on the shell's id stops the second product installing.
   if (/android:authorities[^\n]*"ai\.musemuse\.app\b/.test(xmltree)) problems.push("a provider still has the shell's id");
@@ -172,7 +198,7 @@ export function manifestProblems(badging, xmltree, product) {
 }
 
 /** Makes the APK, without its real signature. Returns its path. */
-export async function packageAndroid({ template, product, projectRoot, workDir, sharp, master, aapt2, androidBuildToolsDir }) {
+export async function packageAndroid({ template, product, projectRoot, workDir, sharp, master, aapt2, androidBuildToolsDir, keepWork = false }) {
   const require = createRequire(import.meta.url);
   const { repackAppAndroidAsync } = require("@expo/repack-app");
   await mkdir(workDir, { recursive: true });
@@ -191,6 +217,7 @@ export async function packageAndroid({ template, product, projectRoot, workDir, 
     workingDirectory: repackDir,
     androidBuildToolsDir,
     logger: quiet,
+    skipWorkingDirCleanup: keepWork,
     spawnAsync: repackSpawn({ workDir: repackDir, patch: () => patchDecoded(decoded, { product, master, sharp }) }),
   });
   await checkApk(outputPath, product, aapt2);

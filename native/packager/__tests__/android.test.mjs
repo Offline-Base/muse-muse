@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { appJson, escapeAndroidString, manifestProblems, patchManifest, patchStrings, repackSpawn } from "../lib/android.mjs";
+import { appJson, escapeAndroidString, libraryProblems, manifestProblems, patchManifest, patchStrings, repackSpawn } from "../lib/android.mjs";
 
 const product = { name: "Fern & Moss", url: "https://fern.vercel.app/", packageId: "ai.musemuse.p0123456789abcdef", version: "1.0.0" };
 
@@ -67,12 +67,22 @@ describe("the app's name", () => {
 
 describe("manifestProblems", () => {
   const badging = `package: name='${product.packageId}' versionCode='1'\napplication-label:'Fern & Moss'\n`;
-  const good = `E: meta-data (line=1)\n  A: android:name(0x01010003)="expo.modules.updates.ENABLED" (Raw: "x")\n  A: android:value(0x01010024)="false" (Raw: "false")\n`;
+  // As aapt2 2.19 printed it on the Oct 31 spike.
+  const good = `E: meta-data (line=75)\n  A: http://schemas.android.com/apk/res/android:name(0x01010003)="expo.modules.updates.ENABLED" (Raw: "expo.modules.updates.ENABLED")\n  A: http://schemas.android.com/apk/res/android:value(0x01010024)=false\nE: meta-data (line=76)\n  A: http://schemas.android.com/apk/res/android:name(0x01010003)="expo.modules.updates.ENABLE_BSDIFF_PATCH_SUPPORT" (Raw: "x")\n  A: http://schemas.android.com/apk/res/android:value(0x01010024)=true\n`;
   it("passes a right APK", () => assert.deepEqual(manifestProblems(badging, good, product), []));
+  it("also reads the quoted and typed forms of false", () => {
+    assert.deepEqual(manifestProblems(badging, good.replace("=false", '="false" (Raw: "false")'), product), []);
+    assert.deepEqual(manifestProblems(badging, good.replace("=false", "=(type 0x12)0x0"), product), []);
+  });
   it("catches updates left on, and the S6 failure of an update URL still there", () => {
-    assert.deepEqual(manifestProblems(badging, good.replaceAll('"false"', '"true"'), product), ["expo.modules.updates.ENABLED isn't false"]);
+    assert.deepEqual(manifestProblems(badging, good.replace("=false", "=true"), product), ["expo.modules.updates.ENABLED isn't false"]);
     assert.deepEqual(manifestProblems(badging, `${good}  A: android:name="expo.modules.updates.EXPO_UPDATE_URL"\n`, product), ["the update URL is still there"]);
     assert.deepEqual(manifestProblems(badging, "", product), ["expo.modules.updates.ENABLED is missing"]);
+  });
+  it("reads a name with quotes in it, as aapt2 prints it", () => {
+    const hard = { ...product, name: `Tom's "A&B" <C>` };
+    const printed = `package: name='${product.packageId}'\napplication-label:'Tom's \\"A&B\\" <C>'\n`;
+    assert.deepEqual(manifestProblems(printed, good, hard), []);
   });
   it("catches the wrong package or name", () => {
     assert.deepEqual(manifestProblems(`package: name='ai.musemuse.app'\napplication-label:'Fern & Moss'\n`, good, product), ["wrong package"]);
@@ -83,6 +93,33 @@ describe("manifestProblems", () => {
     const tree = `${good}  A: android:authorities(0x01010018)="ai.musemuse.app.fileprovider" (Raw: "x")\n`;
     assert.deepEqual(manifestProblems(badging, tree, product), ["a provider still has the shell's id"]);
   });
+});
+
+describe("libraryProblems", () => {
+  /** A zip with one file whose data starts at `dataAt`, stored or deflated. */
+  function zipWith(name, dataAt, method = 0) {
+    const nameBytes = Buffer.from(name);
+    const pad = dataAt - 30 - nameBytes.length;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(nameBytes.length, 26);
+    local.writeUInt16LE(pad, 28);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt16LE(nameBytes.length, 28);
+    const entries = Buffer.concat([local, nameBytes, Buffer.alloc(pad)]);
+    const directory = Buffer.concat([central, nameBytes]);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0);
+    end.writeUInt16LE(1, 10);
+    end.writeUInt32LE(entries.length, 16);
+    return Buffer.concat([entries, directory, end]);
+  }
+  it("passes a stored library on a 16 KB boundary", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 16384)), []));
+  it("catches one that's only on a 4 KB boundary", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 4096)), ["lib/arm64-v8a/a.so isn't aligned"]));
+  it("catches a compressed one", () => assert.deepEqual(libraryProblems(zipWith("lib/arm64-v8a/a.so", 16384, 8)), ["lib/arm64-v8a/a.so is compressed"]));
+  it("doesn't care about other files", () => assert.deepEqual(libraryProblems(zipWith("assets/a.bin", 77)), []));
 });
 
 describe("repackSpawn", () => {
