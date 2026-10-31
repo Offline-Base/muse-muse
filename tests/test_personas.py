@@ -449,3 +449,14 @@ def test_the_command_runs_a_persona_with_its_toggles_and_labels_every_output(tmp
 def csv_rows(path):
     with path.open() as f:
         yield from csv.DictReader(f)
+
+
+def test_relabel_reads_the_sim_1_split_by_default_and_the_school_sets_match_it(tmp_path):
+    persona = "eval/personas/relaxed_teacher/persona.yaml"
+    assert relabel_for_persona.main(["--persona", str(ROOT / persona), "--out", str(tmp_path)]) == 0
+    for name in relabel_for_persona.SETS:
+        split = run_eval.load_items(run_eval.EVAL_DIR / "splits" / f"sim_{name}.jsonl")
+        made = run_eval.load_items(tmp_path / f"{name}.jsonl")
+        assert [i["id"] for i in made] == [i["id"] for i in split]
+        committed = run_eval.load_items(ROOT / "eval" / "personas" / "relaxed_teacher" / f"{name}.jsonl")
+        assert committed == made

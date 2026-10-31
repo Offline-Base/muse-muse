@@ -97,4 +97,8 @@ Each run writes nights.md, nights.csv and receipts.md (for the privacy officer, 
 
 ---
 
+Changes before the first study run, Oct 31, 2026:
+- The SIM-1 split was written to eval/splits/sim_days.jsonl, sim_holdout.jsonl and sim_unseen.jsonl, not eval/sim/. The relabel step reads those files, with the same items and split the plan describes, and the five school personas' sets are written.
+- Ethan's choice for the router changes: ROUTER_LOOSEN=lists,result_words, now the default, fixed for the whole study (class_of stays off). The numbers behind it are in eval/reports/dev/loosen/README.md, on simulated day items only, not this study's holdout or unseen sets. The fix ablation still runs the strict teacher with ROUTER_LOOSEN=none.
+
 Changes after the first study run: none yet.

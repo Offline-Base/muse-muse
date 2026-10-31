@@ -269,6 +269,13 @@ def check_tags(services: Any, *texts: str) -> None:
         raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
 
 
+def codes_left_as_written(services: Any, *texts: str) -> int:
+    """How many codes in `texts` Muse wrote without brackets, which restore leaves as codes."""
+    guard = importlib.import_module("base.guard")
+    known = tag_values(services)
+    return sum(guard.unbracketed_codes(t, known) for t in texts)
+
+
 def restore_tags(services: Any, text: str) -> str:
     """Swap tags like [Student A] back to real values. The result stays on the device.
 
@@ -553,7 +560,8 @@ class Connector:
             if isinstance(exc, merge.SaveRefused):
                 raise ToolFailure(str(exc)) from None
             raise
-        jobs.finish(job_id, merge.receipt(saved), "document_list")
+        left = codes_left_as_written(self.services, *(t for i in parsed for t in (i.title, i.body)))
+        jobs.finish(job_id, merge.receipt(saved, left), "document_list")
         status, text = self._release(job_id, jobs.get(job_id), deadline)
         if status == "shared":
             return _json({"job_id": job_id, "status": "saved", "result": text}), "shared"

@@ -106,10 +106,10 @@ def test_llama_key_comes_from_the_home_file(tmp_path):
         ("lists, Class_Of", frozenset({"lists", "class_of"})),
     ],
 )
-def test_router_loosen_is_off_unless_turned_on(tmp_path, value, expected):
+def test_router_loosen_is_lists_and_result_words_unless_set(tmp_path, value, expected):
     s = load_settings({"BASE_HOME": str(tmp_path), "ROUTER_LOOSEN": value})
     assert s.router_loosen == expected
-    assert load_settings({"BASE_HOME": str(tmp_path)}).router_loosen == frozenset()
+    assert load_settings({"BASE_HOME": str(tmp_path)}).router_loosen == frozenset({"lists", "result_words"})
 
 
 def test_router_loosen_refuses_unknown_choices(tmp_path):

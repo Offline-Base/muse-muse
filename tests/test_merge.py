@@ -364,6 +364,30 @@ async def test_through_mcp_items_arrive_as_objects_and_bad_arguments_get_the_usa
         assert bad.is_error and bad.content[0].text == f"The device could not use those arguments. {server.USAGE['save_on_device']}"
 
 
+def test_a_two_letter_code_without_brackets_is_saved_as_written_and_the_receipt_counts_it(svc, monkeypatch):
+    real = server.tag_values
+    monkeypatch.setattr(server, "tag_values", lambda s: {**real(s), "[Student AB]": "Invented Person"})
+    items = [{"title": "Plan", "body": "Student AB read. Student ZZ, Student is, Student ID."}]
+    result, body = save(svc, items, purpose="my own planning", address_to="none")
+    assert body["status"] == "saved" and body["result"].startswith("Saved 1 note in your own files.")
+    assert "1 code came in the wrong form and got no real name." in body["result"]
+    assert "Invented Person" not in result.content[0].text
+    out = svc.settings.paths.output / body["job_id"] / "Plan.md"
+    assert "Student AB read." in out.read_text() and "Invented Person" not in out.read_text()
+    _, clean = save(svc, [{"title": "Other", "body": "No codes here."}], purpose="my own planning", address_to="none")
+    assert "wrong form" not in clean["result"]
+
+
+def test_unbracketed_codes_counts_only_capital_known_codes_without_brackets():
+    from base import guard
+
+    tags = {"[Student AB]", "[Student OF]", "[Student A]"}
+    assert guard.unbracketed_codes("Student AB and student ab and [Student AB]", tags) == 1
+    assert guard.unbracketed_codes("Student A, Student ZZ, Student is", tags) == 0
+    assert guard.unbracketed_codes("STUDENT OF THE MONTH", tags) == 1  # a live code spelled like a word: only a count
+    assert guard.unbracketed_codes("", tags) == 0
+
+
 def test_every_receipt_word_is_common_english_to_the_guard():
     import re
 
@@ -372,8 +396,9 @@ def test_every_receipt_word_is_common_english_to_the_guard():
     shapes = [merge.Saved(27, 24, 24, 0, True), merge.Saved(25, 24, 23, 1, True), merge.Saved(2, 3, 3, 2, True),
               merge.Saved(1, 1, 0, 0, False), merge.Saved(3, 3, 1, 0, False)]  # fmt: skip
     for shape in shapes:
-        words = re.findall(r"[A-Za-z]+", merge.receipt(shape))
-        assert [w for w in words if not guard._is_common(w)] == [], shape
+        for left in (0, 1, 2):
+            words = re.findall(r"[A-Za-z]+", merge.receipt(shape, left))
+            assert [w for w in words if not guard._is_common(w)] == [], shape
 
 
 def test_header_words_the_guard_took_for_names_do_not_hold_the_receipt(svc):

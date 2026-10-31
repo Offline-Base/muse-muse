@@ -91,8 +91,15 @@ Only result_words is above the 1 to 3 item run-to-run noise. lists needs a learn
 - Letters home: keep the tag-only check; make the refusal text and docs say exactly what is checked.
 These go in after review 2's fixer commits, then the numbers that depend on the router default are measured again.
 
+**02:55** Review 2's fixer committed 54aa569: restore no longer reads across a line break or before "." plus a letter; `save_on_device` checks each text on its own; the never-share check on letters reads Muse's text as written, not restored names; a failed base.db copy leaves nothing and an empty one no longer counts as the backup; the notices and the pre-registration path are corrected; the board bundle leaves out the templated set; four texts on the old grace rule are corrected; the letter refusal says it checks tags only. It read Ethan's decisions from this log and applied the one-letter and letter-wording parts. 3331 passed. Its report's two license gaps are open: the notices say the `mlx-community/sam3.1-bf16` license is not checked yet. Check before submitting.
+
+Script error, logged so it is not repeated: the review 2 script matched verdicts to findings by list position, and the skeptics returned them in another order, so some verdicts were attached to the wrong finding. Checked afterward by text: 15 findings, 15 verdicts, one rejected on evidence (a claim that the templated set needs a roster that does not ship), nothing real dropped. Later scripts should key verdicts by finding id.
+
+**03:10** Ethan's remaining decisions in: ROUTER_LOOSEN defaults to `lists,result_words` (`none` turns them off); the `save_on_device` receipt counts codes Muse wrote without brackets (they stay as written, with no real name). The relabel step now reads the SIM-1 split where it is (`eval/splits/sim_*.jsonl`), and all five school personas have their sets (relaxed teacher 163 of 980 labels changed, special ed coordinator 42, the three on the strict policy 0), so the whole study can run with no Meta API call. The change is noted below the line in `eval/reports/sim/PLAN.md`, before any study run. 3334 passed, 6 skipped, 64 xfailed; ruff and the secrets scan clean. The templated set's bytes did not change (sha256 c83fd50f...), now checked against 33 sets.
+
 ## Open items
 
-- Ethan: which ROUTER_LOOSEN fixes ship (numbers above when the runs finish); the three restore choices above; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
-- Persona study: the five school personas read `eval/sim/`, but SIM-1 wrote the split to `eval/splits/sim_*.jsonl`. Point the relabel step at it, note the path in PLAN.md below its line, then the pipeline smoke. The study itself runs on the frozen commit (the plan says Nov 2 night), one run at a time.
+- Ethan: what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
+- Persona study: pipeline smoke next. The study itself runs on the frozen commit (the plan says Nov 2 night), one run at a time.
+- Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.
 - History: before `ethan/score-build` goes to `main`, rewrite 5dfb2f9's private address to a documentation-range one and reword the two commit messages that name the old org wording, then check a clean clone.

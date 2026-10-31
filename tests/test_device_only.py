@@ -470,7 +470,7 @@ def test_the_loopback_guard_works(loopback_only):
 
 
 
-# reason codes, and the ROUTER_LOOSEN changes (each off unless turned on)
+# reason codes, and the ROUTER_LOOSEN changes (lists and result_words on by default, class_of off)
 
 
 def _route_with(tmp_path, request, text, kind="snippet", topics=(), rules="", hits=(), **env):
@@ -510,10 +510,10 @@ def test_sending_something_home_is_going_outside_the_class(tmp_path, request_tex
 # ROUTER_LOOSEN=result_words
 
 
-def test_a_score_in_the_result_reaches_the_grades_rule_only_when_turned_on(tmp_path):
+def test_a_score_in_the_result_reaches_the_grades_rule_unless_turned_off(tmp_path):
     text = "[Student A]: 12 points at the fitness stations. [Student B]: 9 points."
-    assert _route_with(tmp_path, "station results for my notes", text, "free_text").decision == "ask_user"
-    out = _route_with(tmp_path, "station results for my notes", text, "free_text", ROUTER_LOOSEN="result_words")
+    assert _route_with(tmp_path, "station results for my notes", text, "free_text", ROUTER_LOOSEN="none").decision == "ask_user"
+    out = _route_with(tmp_path, "station results for my notes", text, "free_text")
     assert out.decision == "share_tagged" and out.code == "policy_rule:tagged_grades_and_excerpts"
 
 

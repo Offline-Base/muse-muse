@@ -6,6 +6,6 @@ The strict teacher's policy (policy.yaml is a copy of eval/user_policy.yaml) ans
 
 What it tests: that MIN_AGREEMENT and the gate hold under noisy answers, that late answers train the next night, and that a deleted answer leaves the next rebuild. Her answers differ from the labeling policy by design.
 
-Items: eval/sim/days.jsonl, eval/sim/holdout.jsonl and eval/sim/unseen.jsonl (the SIM-1 split, invented items written by Muse Spark), relabeled with this persona's policy by `uv run python -m scripts.relabel_for_persona --persona eval/personas/{pid}/persona.yaml` into days.jsonl, holdout.jsonl and unseen.jsonl here. Until that split exists, the sets are not written.
+Items: eval/splits/sim_days.jsonl, sim_holdout.jsonl and sim_unseen.jsonl (the SIM-1 split, invented items written by Muse Spark), relabeled with this persona's policy by `uv run python -m scripts.relabel_for_persona --persona eval/personas/tired_teacher/persona.yaml` into days.jsonl, holdout.jsonl and unseen.jsonl here (sets.md has the counts).
 
 Run: see eval/reports/sim/PLAN.md for the pre-registered command, seeds and nights.

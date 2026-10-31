@@ -30,6 +30,7 @@ CONNECTOR_PORT = 8790
 # ROUTER_LOOSEN choices (base/router.py): a rule you taught for document lists, topic words read
 # from the tagged result, and "[Student A]'s class" as a class-level question.
 ROUTER_LOOSEN_CHOICES = ("lists", "result_words", "class_of")
+ROUTER_LOOSEN_DEFAULT = "lists,result_words"  # chosen Oct 31 from eval/reports/dev/loosen/README.md
 # Glimmer's reasoning strengths (base/local_llm.py REASONING_LEVELS) and the router's token budget.
 ROUTER_REASONING_LEVELS = ("low", "medium", "high", "xhigh")
 MIN_ROUTER_TOKENS = 64
@@ -136,9 +137,9 @@ class Settings:
     # With DEVICE_ONLY=1 and the prompt backend, how far the router model's answer counts: "tighten"
     # can only make the policy's decision stricter, "decide" replaces it (the safety floors stay).
     router_trust: Literal["tighten", "decide"] = "tighten"
-    # Router changes that ask less often, each off until it is turned on (ROUTER_LOOSEN, a comma
-    # list of ROUTER_LOOSEN_CHOICES or "all"): lists, result_words, class_of. See base/router.py.
-    router_loosen: frozenset[str] = frozenset()
+    # Router changes that ask less often (ROUTER_LOOSEN, a comma list of ROUTER_LOOSEN_CHOICES, "all"
+    # or "none"): lists and result_words unless set, class_of only when asked for. See base/router.py.
+    router_loosen: frozenset[str] = frozenset({"lists", "result_words"})
     light_serial: str | None = None
     # A certificate and key for the approval port (the Jetson on a home network). With both set
     # the page and the /heavy routes are served over TLS and the session cookie is Secure.
@@ -256,7 +257,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     trust = get("ROUTER_TRUST", "tighten")
     if trust not in ("tighten", "decide"):
         raise ValueError(f"ROUTER_TRUST must be tighten or decide, not {trust!r}")
-    loosen = _router_loosen(get("ROUTER_LOOSEN", ""))
+    loosen = _router_loosen(get("ROUTER_LOOSEN", ROUTER_LOOSEN_DEFAULT))
     primary = get("PRIMARY_MODEL", "lfm" if device_only else "glimmer")
     if dreaming == "local_lora" and primary == "lfm":
         raise ValueError("DREAMING_BACKEND=local_lora trains Glimmer: set PRIMARY_MODEL=glimmer and GLIMMER_GGUF")

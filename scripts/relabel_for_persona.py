@@ -1,11 +1,11 @@
 """Write a simulated persona's item sets: invented items labeled with the persona's own policy.
 
-    uv run python -m scripts.relabel_for_persona --persona eval/personas/<id>/persona.yaml [--from eval/sim]
+    uv run python -m scripts.relabel_for_persona --persona eval/personas/<id>/persona.yaml [--from eval/splits]
     uv run python -m scripts.relabel_for_persona --persona eval/personas/<id>/persona.yaml \\
         --pool eval/personas/<id>/items.jsonl --holdout-n 16 --unseen-n 16 [--seed 0]
 
-With --from, the folder's days.jsonl, holdout.jsonl and unseen.jsonl (the SIM-1 split) keep their
-split, so every persona's gate scores the same items. With --pool, one file is split here, seeded:
+With --from, the folder's sim_days.jsonl, sim_holdout.jsonl and sim_unseen.jsonl (the SIM-1 split,
+or the same names without sim_) keep their split, so every persona's gate scores the same items. With --pool, one file is split here, seeded:
 holdout and unseen draw an equal share per expected decision as far as the pool allows
 (simulate_nights.sample_unseen), and the rest are the days. Either way each item's `expected`
 becomes policy.wants(item) on its hand labels (request, result_kind, topics) under the persona's
@@ -28,7 +28,7 @@ from eval.persona import Persona, PersonaError
 
 SETS = ("days", "holdout", "unseen")
 MIN_PER_DECISION = 10
-DEFAULT_FROM = run_eval.EVAL_DIR / "sim"
+DEFAULT_FROM = run_eval.EVAL_DIR / "splits"
 
 
 def relabel(items: list[dict], persona: Persona) -> list[dict]:
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     p = argparse.ArgumentParser(prog="python -m scripts.relabel_for_persona", description=__doc__.split("\n")[0])
     p.add_argument("--persona", type=Path, required=True)
-    p.add_argument("--from", dest="source", type=Path, help=f"folder with {', '.join(SETS)}.jsonl (default eval/sim)")
+    p.add_argument("--from", dest="source", type=Path, help=f"folder with sim_{{{','.join(SETS)}}}.jsonl (default eval/splits)")
     p.add_argument("--pool", type=Path, help="one item file to split here instead")
     p.add_argument("--holdout-n", type=int, default=0)
     p.add_argument("--unseen-n", type=int, default=0)
@@ -86,14 +86,15 @@ def main(argv: list[str] | None = None) -> int:
         source = f"{run_eval.display_path(args.pool)}, split here with seed {args.seed}"
     else:
         folder = args.source or DEFAULT_FROM
-        missing = [s for s in SETS if not (folder / f"{s}.jsonl").is_file()]
+        files = {s: next((f for f in (folder / f"sim_{s}.jsonl", folder / f"{s}.jsonl") if f.is_file()), None) for s in SETS}
+        missing = [s for s, f in files.items() if f is None]
         if missing:
             p.error(f"{run_eval.display_path(folder)} has no {', '.join(missing)}.jsonl (the SIM-1 split)")
-        raw_sets = {s: run_eval.load_items(folder / f"{s}.jsonl") for s in SETS}
+        raw_sets = {s: run_eval.load_items(f) for s, f in files.items()}
         raw = [i for s in SETS for i in raw_sets[s]]
         sets = {s: relabel(raw_sets[s], persona) for s in SETS}
         pool = [i for s in SETS for i in sets[s]]
-        source = f"{run_eval.display_path(folder)} ({', '.join(f'{s}.jsonl' for s in SETS)}), split kept"
+        source = f"{run_eval.display_path(folder)} ({', '.join(f.name for f in files.values())}), split kept"
 
     out = args.out or persona.path.parent
     out.mkdir(parents=True, exist_ok=True)

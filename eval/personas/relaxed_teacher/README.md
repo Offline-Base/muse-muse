@@ -6,6 +6,6 @@ Shares almost everything tagged and ticks "don't ask again". The never-share top
 
 What it tests: a persona whose labels differ from the strict teacher's (the relabel count is in sets.md once written). Staff and full-text requests are shares for her, so dreaming may learn share rules the strict teacher never gets, while the router's outside-the-class floor still asks until she teaches one.
 
-Items: eval/sim/days.jsonl, eval/sim/holdout.jsonl and eval/sim/unseen.jsonl (the SIM-1 split, invented items written by Muse Spark), relabeled with this persona's policy by `uv run python -m scripts.relabel_for_persona --persona eval/personas/{pid}/persona.yaml` into days.jsonl, holdout.jsonl and unseen.jsonl here. Until that split exists, the sets are not written.
+Items: eval/splits/sim_days.jsonl, sim_holdout.jsonl and sim_unseen.jsonl (the SIM-1 split, invented items written by Muse Spark), relabeled with this persona's policy by `uv run python -m scripts.relabel_for_persona --persona eval/personas/relaxed_teacher/persona.yaml` into days.jsonl, holdout.jsonl and unseen.jsonl here (sets.md has the counts).
 
 Run: see eval/reports/sim/PLAN.md for the pre-registered command, seeds and nights.

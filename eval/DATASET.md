@@ -195,7 +195,7 @@ The items were written by hand. If you change one, keep `expected` equal to what
 
 ## Persona sets (simulated)
 
-`eval/personas/<id>/` holds seven simulated personas (eval/personas/README.md): a policy file, seeded habits and item sets labeled with that persona's own policy by `scripts/relabel_for_persona.py` (`expected` changes, `labeled_by` says which persona). The five school personas relabel the SIM-1 split in `eval/sim/` once it exists. The clinic (80 items) and CUI casework (36 items) pools in `items.jsonl` were written from seeded templates by `scripts/make_persona_items.py`, with no model: invented patients and clients who are not on the roster, 555-01xx phones and record numbers in a 000- block. Six casework requests carry a phone number or a client's name on purpose (`request_detail`). The study that uses them is planned in `eval/reports/sim/PLAN.md`.
+`eval/personas/<id>/` holds seven simulated personas (eval/personas/README.md): a policy file, seeded habits and item sets labeled with that persona's own policy by `scripts/relabel_for_persona.py` (`expected` changes, `labeled_by` says which persona). The five school personas relabel the SIM-1 split (`eval/splits/sim_*.jsonl`). The clinic (80 items) and CUI casework (36 items) pools in `items.jsonl` were written from seeded templates by `scripts/make_persona_items.py`, with no model: invented patients and clients who are not on the roster, 555-01xx phones and record numbers in a 000- block. Six casework requests carry a phone number or a client's name on purpose (`request_detail`). The study that uses them is planned in `eval/reports/sim/PLAN.md`.
 
 ## The templated set (eval/templated/, unsealed)
 

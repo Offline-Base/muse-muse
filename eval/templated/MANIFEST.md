@@ -57,7 +57,7 @@ From `uv run python -m scripts.make_templated_set --check`:
 | no phone, email, SSN or card outside the fake ranges | pass | 0 items |
 | no identifier in a share item | pass | 0 items |
 | no repeated request or result | pass | 0 repeats |
-| 0 overlap hits against every other eval set | pass | 0 hits in 18 sets |
+| 0 overlap hits against every other eval set | pass | 0 hits in 33 sets |
 | roster names are new | pass | 0 name tokens in 0 files |
 
 ## Overlap with the other eval sets
@@ -78,6 +78,21 @@ Hits of this set's items against each set, from the same command. Exact means eq
 | eval/personas/clinic_coordinator/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.31 | 0.00 |
 | eval/personas/clinic_coordinator/items.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.38 | 0.00 |
 | eval/personas/clinic_coordinator/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.38 | 0.00 |
+| eval/personas/privacy_officer/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/personas/privacy_officer/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/personas/privacy_officer/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
+| eval/personas/relaxed_teacher/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/personas/relaxed_teacher/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/personas/relaxed_teacher/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
+| eval/personas/sped_coordinator/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/personas/sped_coordinator/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/personas/sped_coordinator/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
+| eval/personas/strict_teacher/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/personas/strict_teacher/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/personas/strict_teacher/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
+| eval/personas/tired_teacher/days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
+| eval/personas/tired_teacher/holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |
+| eval/personas/tired_teacher/unseen.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.44 | 0.00 |
 | eval/splits/fresh_200_c.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.50 | 0.00 |
 | eval/splits/sim_days.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.60 | 0.00 |
 | eval/splits/sim_holdout.jsonl | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.45 | 0.00 |

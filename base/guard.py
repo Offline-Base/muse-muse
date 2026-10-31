@@ -25,7 +25,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from functools import lru_cache, partial
@@ -2060,6 +2060,18 @@ def tag_references(text: str, *, as_written: bool = False) -> list[tuple[str, bo
             continue
         out.append((canonical, bracketed))
     return out
+
+
+def unbracketed_codes(text: str, tags: Collection[str]) -> int:
+    """How many capital two or three letter Student codes in `text` are in `tags` but have no
+    brackets, so restore left them as written. "Student AB" counts when [Student AB] is in `tags`;
+    "Student is" never does."""
+    count = 0
+    for m in _RESTORE_RE.finditer(text or ""):
+        letters = m.group("letters")
+        if letters and not m.group("ob") and len(letters) > 1 and letters.isupper():
+            count += f"[Student {letters}]" in tags
+    return count
 
 
 def restore(text: str, tag_map: Mapping[str, str] | TagMap) -> str:

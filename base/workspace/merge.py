@@ -169,8 +169,10 @@ def write(
     )
 
 
-def receipt(saved: Saved) -> str:
+def receipt(saved: Saved, left_as_written: int = 0) -> str:
     """What Muse gets back: the number of items it sent, no name, tag, address or family count.
+    `left_as_written` is how many codes Muse wrote without brackets (guard.unbracketed_codes),
+    which the files keep as codes, so Muse can send them again.
 
     For letters home it never says how many letters were made or how many students have no
     guardian on file: one call per student would tell Muse how many parents each tag has, which
@@ -181,6 +183,8 @@ def receipt(saved: Saved) -> str:
     receipt for the user's OK.
     """
     done = "The real names were filled in there, and none of them came back to you."
+    if left_as_written:
+        done += f" {_n(left_as_written, 'code')} came in the wrong form and got no real name. Send each code just as you got it."
     if not saved.drafts:
         return f"Saved {_n(saved.files, 'note')} in your own files. {done}"
     return (
