@@ -207,7 +207,7 @@
             </details>
             <details class="acc" name="features">
               <summary>Privacy toggles for regulated work</summary>
-              <p>Fifteen toggles in six groups: students and children (FERPA, COPPA, state laws), health (HIPAA, 42 CFR Part 2), money (GLBA, PCI DSS, tax preparer rules), work (attorney-client, employee records), privacy laws (GDPR, CCPA) and government (CUI, CJIS, ITAR and EAR). Each tags more, locks the settings that could undo it, and holds results it should. The government ones send nothing to Muse at all. A toggle doesn't make anyone compliant: your school, clinic, agency or company still decides whether Muse may be used.</p>
+              <p>Fifteen toggles in six groups: students and children (FERPA, COPPA, state laws), health (HIPAA, 42 CFR Part 2), money (GLBA, PCI DSS, tax preparer rules), work (attorney-client, employee records), privacy laws (GDPR, CCPA) and government (CUI, CJIS, ITAR and EAR). Each tags more, locks the settings that could undo it, and holds results it should. The government ones send nothing to Muse at all. A toggle doesn't make anyone legally covered: your school, clinic, agency or company still decides whether Muse may be used.</p>
             </details>
           </div>
         </div>
@@ -313,7 +313,7 @@ scripts/start.sh</pre>
           </article>
           <article class="card">
             <h3>Jetson Orin Nano</h3>
-            <p class="muted">Designed and tested in simulation, not run on a board yet. The installer builds llama.cpp, fetches a 1-bit Muse Glimmer and sets up three services.</p>
+            <p class="muted">Designed and tested in simulation, not run on a board yet. The installer builds llama.cpp, fetches an about 1.6-bit (IQ1_S) Muse Glimmer and sets up three services.</p>
             <pre class="mini"><span class="k">sudo</span> deploy/jetson/install.sh --build-llama
 <span class="k">sudo</span> systemctl start \
   muse-privacy-glimmer muse-privacy</pre>
