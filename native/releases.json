@@ -1,0 +1,50 @@
+{
+  "shellVersion": "1.0.0",
+  "eas": {
+    "account": "offline-base1",
+    "projectId": "ee7dbfb2-f11f-4e19-9eb7-d5bc6212a5de",
+    "slug": "muse-hackathon"
+  },
+  "builds": {
+    "lab-android": {
+      "id": "f98fe88b-5bdc-4d0a-92cc-a552ae2e3185",
+      "profile": "lab-android",
+      "platform": "android",
+      "appId": "ai.musemuse.lab",
+      "sdk": "58.0.0",
+      "runtime": "lab-1",
+      "channel": "lab",
+      "artifactUrl": "https://expo.dev/artifacts/eas/EE6D9KU8viXc3wTvYhLJIEZbclXVumGnhGGVlFRxeXk.apk",
+      "sourceCommit": "967f349",
+      "createdAt": "2026-10-31T06:39:45.671Z",
+      "expiresAt": "2026-11-14T06:39:45.703Z"
+    },
+    "lab-ios-sim": {
+      "id": "332cab5b-e055-410e-90c2-ea754031ed3c",
+      "profile": "lab-ios-sim",
+      "platform": "ios",
+      "appId": "ai.musemuse.lab",
+      "sdk": "58.0.0",
+      "runtime": "lab-1",
+      "channel": "lab",
+      "artifactUrl": "https://expo.dev/artifacts/eas/v6TTaiRcuH0fqLmYg5MF6xmbGNDmFIyIrwic0lAvSRQ.tar.gz",
+      "sourceCommit": "967f349",
+      "createdAt": "2026-10-31T06:39:16.917Z",
+      "expiresAt": "2026-11-14T06:39:16.947Z"
+    },
+    "glasses-ios-sim": {
+      "id": "41db5a6e-efb2-459e-8bec-c3923af3c25f",
+      "profile": "glasses-ios-sim",
+      "platform": "ios",
+      "appId": "app.musemuse.glasses",
+      "sdk": "58.0.0",
+      "runtime": "glasses-1",
+      "channel": "glasses",
+      "artifactUrl": "https://expo.dev/artifacts/eas/Al8d_ehITpxLq82YnIK0eQH0clGE2SuMQEevI_MEyCM.tar.gz",
+      "sourceCommit": "5d760ed",
+      "createdAt": "2026-10-31T07:18:58.706Z",
+      "expiresAt": "2026-11-14T07:18:58.744Z"
+    }
+  },
+  "productionUpdate": null
+}
