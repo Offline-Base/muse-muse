@@ -58,7 +58,7 @@ Use tokens in every style and inline SVG, never raw hex. Light and dark switch o
 ## Type, space, shape, motion
 
 - **Type.** `h1` hero (400, 28 px, 30 px from 720 px), `h2` card title (600, 20 px), `h3` headline (600, 17 px), all Inter. `--type-body` (16 px), `--type-label` (labels, buttons: 500, 14 px), `--type-meta` (`.meta`, `.hint`: 13 px). `.big-number` for a figure, at 400. Text is tracked in by 1%. Sentence case: no all caps, italics or letter-spaced labels.
-- **Space.** Built in: 16 px between cards and between the parts in a card, 12 under a heading, 8 above a hint or limits, 20 above the actions. Don't add margins to fight it; use `--space-*` when you need one.
+- **Space.** Built in: 16 px between cards and between the parts in a card, 12 under a heading, 8 above a hint or limits, 20 above the actions. Don't add margins to fight it; use `--space-*` when you need one, in JSX too: `style={{ marginTop: "var(--space-16)" }}`, never a bare number.
 - **Shape.** `--radius-lg` (16) cards, the segmented track and toasts; `--radius` (12) fields, notes, tables and list rows; `--radius-sm` (8) thumbnails; `--pill` buttons, chips and avatars. The composer is 32 and dialogs 32, built in. Photos in `.media` are 18, built in.
 - **Elevation.** Flat: only the composer (`--shadow-card`), menus and dialogs (`--shadow-menu`) and toasts (`--shadow-elevated`) have shadows. The app bar has a hairline under it. A card never gets a shadow.
 - **Motion.** `--ease-enter` with `--dur-short-in` to appear, `--ease-exit` with `--dur-short-out` to leave, `--dur-xxs` (150 ms) for hover and press. Only the AI working state moves on its own. Reduced motion is handled.
@@ -159,7 +159,7 @@ Icons: upload, camera, image, file, mic, sparkle, check, alert, info, copy, down
 </section>
 ```
 
-**Ask, then answer.** A card that holds a model action and later its answer starts as an `.empty` whose one button is the `.tinted.ai` action. Once answered, the ModelChip sits right above the answer, and the action moves under it as a `.text` "Write it again" in `.actions`. Never put a model button between its chip and its answer. On the last judge screenshot it is answered: the smoke test presses its button first.
+**Ask, then answer.** A card that holds a model action and later its answer starts as an `.empty` whose one button is the `.tinted.ai` action. Every `.tinted.ai` button leads with the sparkle: `<button className="tinted ai"><Icon name="sparkle" /> Cook this</button>`. Once answered, the ModelChip sits right above the answer, and the action moves under it as a `.text` "Write it again" in `.actions`. Never put a model button between its chip and its answer. On the last judge screenshot it is answered: the smoke test presses its button first.
 
 **Errors** go where the result would have been, with the input still filled so a retry is one tap: `<div className="error" role="alert"><Icon name="alert" /> <strong>Couldn't read that receipt.</strong> The photo is too blurry. Retake it in brighter light.</div>`. A field error is `aria-invalid="true"` plus a `.hint` saying what to fix.
 
