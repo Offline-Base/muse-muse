@@ -8,6 +8,8 @@ export type StepsTab = "steps" | "sources";
 
 /** Below 1100 px the panel covers the conversation instead of sitting beside it (chat.css has the same break). */
 const OVERLAY = "(max-width: 1099.98px)";
+/** Below 640 px it's a full-screen sheet (chat.css too). */
+const SHEET = "(max-width: 639.98px)";
 
 const TABS = [
   { id: "steps", label: "Steps" },
@@ -15,14 +17,51 @@ const TABS = [
 ] as const;
 
 /**
+ * Whether Escape closes the panel. A dialog on top of it, such as the camera, takes its own Escape. Beside the
+ * conversation, Escape counts only from inside the panel: in the composer it can mean something else.
+ */
+export function escapeCloses(at: { overlay: boolean; inPanel: boolean; inOtherDialog: boolean }): boolean {
+  return !at.inOtherDialog && (at.overlay || at.inPanel);
+}
+
+/**
+ * Where focus goes once the panel closes: back to whatever opened it, when closing took focus away with the panel's
+ * insides and left it on the page's body. Focus the reader moved elsewhere stays there.
+ */
+export function focusAfterClose<T extends { isConnected: boolean }>(
+  opener: T | null,
+  active: unknown,
+  body: unknown,
+): T | null {
+  return opener?.isConnected && (!active || active === body) ? opener : null;
+}
+
+/** Makes everything on the page but `el` inert, and returns what undoes it. */
+function inertAround(el: HTMLElement): () => void {
+  const made: HTMLElement[] = [];
+  let node = el;
+  while (node !== document.body && node.parentElement) {
+    const parent = node.parentElement;
+    for (const other of Array.from(parent.children)) {
+      if (other === node || !(other instanceof HTMLElement) || other.inert) continue;
+      other.inert = true;
+      made.push(other);
+    }
+    node = parent;
+  }
+  return () => made.forEach((other) => (other.inert = false));
+}
+
+/**
  * The steps panel (docs/UI_MUSE_APP.md, "The steps panel"): 400 px at the window's right edge, full height, with a close
  * X and the Steps and Sources tabs over their lists. From 1100 px it sits beside the conversation, which re-centers in
  * the space left: mount it as the last child of a `chat-split` row. Narrower, it covers the conversation from the right
  * with a soft shadow on its left edge, and on phones it is a full-screen sheet. It opens and closes without sliding.
  *
- * Escape closes it. Opened as an overlay, it moves focus to its close button and gives it back to whatever opened it
- * once it closes. The parent owns `open`, and can own the tab as well (`tab` and `onTabChange`) or leave it to the
- * panel, starting from `defaultTab`.
+ * Escape closes it, unless a dialog or a menu on top takes the key. Opened as an overlay, it moves focus to its close
+ * button. However it opens, closing it from inside gives focus back to whatever opened it. On phones the sheet is
+ * modal: the rest of the page is inert while it's open. The parent owns `open`, and can own the tab as well (`tab` and
+ * `onTabChange`) or leave it to the panel, starting from `defaultTab`.
  */
 export function StepsPanel({
   open,
@@ -61,28 +100,51 @@ export function StepsPanel({
     onTabChange?.(next);
   };
 
+  // The phone sheet is modal. This comes before the focus effect, so on close the page stops being inert before focus
+  // goes back to the opener in it.
+  useEffect(() => {
+    const el = panel.current;
+    const query = window.matchMedia?.(SHEET);
+    if (!open || !el || !query) return;
+    let undo: (() => void) | null = null;
+    const update = () => {
+      undo?.();
+      undo = query.matches ? inertAround(el) : null;
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => {
+      query.removeEventListener("change", update);
+      undo?.();
+    };
+  }, [open]);
+
   useEffect(() => {
     const opening = open && !wasOpen.current;
     wasOpen.current = open;
-    if (!opening || !window.matchMedia?.(OVERLAY).matches) return;
+    if (!opening) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    close.current?.focus();
-    return () => {
-      if (opener?.isConnected) opener.focus();
-    };
+    if (window.matchMedia?.(OVERLAY).matches) close.current?.focus();
+    return () => focusAfterClose(opener, document.activeElement, document.body)?.focus();
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      // Beside the conversation, Escape counts only from inside the panel: in the composer it can mean something else.
-      if (!panel.current?.contains(document.activeElement) && !window.matchMedia?.(OVERLAY).matches) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const at = {
+        overlay: Boolean(window.matchMedia?.(OVERLAY).matches),
+        inPanel: Boolean(panel.current?.contains(document.activeElement)),
+        inOtherDialog: Boolean(target?.closest("dialog") && !panel.current?.contains(target)),
+      };
+      if (!escapeCloses(at)) return;
       e.preventDefault();
       onClose();
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // On the window, so a menu listening on the document closes first and keeps the key (Menu prevents its default).
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   return (

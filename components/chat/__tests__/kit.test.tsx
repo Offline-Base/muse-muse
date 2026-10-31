@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { before, describe, it, mock } from "node:test";
 import { createElement, type ComponentType } from "react";
 import { nextTab } from "@/components/chat/SegmentedTabs";
+import { escapeCloses, focusAfterClose } from "@/components/chat/StepsPanel";
 import type { StepItem } from "@/components/chat/types";
 
 // Server-renders the chat kit outside Next: Link is a stand-in.
@@ -149,6 +150,23 @@ describe("StepsPanel", () => {
       assert.doesNotMatch(html, /STEP LIST/);
     }
     assert.equal(chosen(render(C(kit.StepsPanel), { ...props, open: true, tab: "steps", defaultTab: "sources" })), "Steps");
+  });
+
+  it("closes on Escape over the conversation, beside it only from inside, and never under another dialog", () => {
+    assert.equal(escapeCloses({ overlay: true, inPanel: false, inOtherDialog: false }), true, "over it, from the composer");
+    assert.equal(escapeCloses({ overlay: false, inPanel: true, inOtherDialog: false }), true, "beside it, from inside");
+    assert.equal(escapeCloses({ overlay: false, inPanel: false, inOtherDialog: false }), false, "beside it, from the composer");
+    assert.equal(escapeCloses({ overlay: true, inPanel: false, inOtherDialog: true }), false, "the camera on top");
+  });
+
+  it("gives focus back to the opener only when closing dropped it on the body", () => {
+    const body = {};
+    const opener = { isConnected: true };
+    assert.equal(focusAfterClose(opener, body, body), opener, "the close button went away with the panel");
+    assert.equal(focusAfterClose(opener, null, body), opener);
+    assert.equal(focusAfterClose(opener, { id: "composer" }, body), null, "the reader moved on");
+    assert.equal(focusAfterClose({ isConnected: false }, body, body), null, "the opener is gone");
+    assert.equal(focusAfterClose(null, body, body), null);
   });
 });
 
