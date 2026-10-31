@@ -60,14 +60,17 @@ export function drawtextFilter({ textFile, font, size, y, alpha }) {
  * @param {{ x: number, y: number, w: number, h: number }} p.screen
  * @param {string} p.out
  * @param {number} [p.maxSeconds]
- * @param {number} [p.startSeconds] how far into the recording the clip starts
+ * @param {number} [p.startSeconds] how far into the recording the clip starts. Trimmed in the graph after the frame rate is
+ *   made even, not with -ss: a simulator records a frame only when the screen changes, so the frame on screen when the clip
+ *   starts can be a minute older, and a seek would drop it. On the real Mac, a seek past such a frame left an encode that never
+ *   ended.
  * @param {{ textFile: string, font: string, size: number, y: number, alpha: number }[]} [p.drawtext]
  * @param {string | null} [p.captionPng]
  */
 export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSeconds = MAX_CLIP_SECONDS, startSeconds = 0, drawtext = [], captionPng = null }) {
   const graph = [
     `color=c=black:s=${CANVAS.w}x${CANVAS.h}:r=${FPS},format=gbrp[base]`,
-    `[0:v]fps=${FPS},scale=${screen.w}:${screen.h}:flags=lanczos,setsar=1,format=gbrp[rec]`,
+    `[0:v]fps=${FPS}${startSeconds > 0 ? `,trim=start=${startSeconds.toFixed(3)}:duration=${maxSeconds},setpts=PTS-STARTPTS` : ""},scale=${screen.w}:${screen.h}:flags=lanczos,setsar=1,format=gbrp[rec]`,
     `[base][rec]overlay=${screen.x}:${screen.y}:shortest=1:format=gbrp[placed]`,
     `[placed][1:v]overlay=0:0:format=gbrp[framed]`,
   ];
@@ -84,9 +87,7 @@ export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSec
     "-loglevel",
     "error",
     "-y",
-    ...(startSeconds > 0 ? ["-ss", startSeconds.toFixed(2)] : []),
-    "-t",
-    String(maxSeconds),
+    ...(startSeconds > 0 ? [] : ["-t", String(maxSeconds)]),
     "-i",
     recording,
     "-f",
@@ -121,6 +122,9 @@ export function composeArgs({ ffmpeg, recording, frameLayer, screen, out, maxSec
     "bt709",
     "-movflags",
     "+faststart",
+    // Whatever the graph does, the clip ends here, so an encode can't run on with the backdrop alone.
+    "-t",
+    String(maxSeconds),
     out,
   ];
 }

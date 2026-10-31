@@ -42,6 +42,8 @@ const SERIAL = EMULATOR_SERIAL;
 const RECORD_LIMIT_SECONDS = 170;
 /** How much longer an app with no health report gets to draw something, once its `recordSeconds` are nearly up. */
 const NO_REPORT_DRAW_MS = 30_000;
+/** How long screenrecord gets to finish its file. */
+const RECORDER_FINISH_MS = 15_000;
 
 /** The emulator, started if it isn't running. It's left running for the next job. */
 export async function ensureEmulator(ctx) {
@@ -145,8 +147,14 @@ export async function runAndroidEmu(ctx) {
   await recordUntilDone(ctx, started, ready);
   await ctx.exec(adbStopRecording(SERIAL), { timeoutMs: 15_000 });
   await recorder.stop(8000);
-  // screenrecord needs a moment to finish the file after it's told to stop.
-  await ctx.sleep(1000);
+  // screenrecord takes a few seconds to finish the file after it's told to stop, and the local adb can be gone before then.
+  // On the real Mac a pull 1 s after the stop got a file with no moov atom, which no player can read.
+  const finished = await waitFor(
+    ctx,
+    async () => String((await ctx.exec(adbPidof(SERIAL, "screenrecord"), { timeoutMs: 15_000 })).stdout).trim() === "",
+    { timeoutMs: RECORDER_FINISH_MS, everyMs: 500 },
+  );
+  if (!finished) ctx.logLine("screenrecord was still running when the lab pulled the recording.");
   const recording = path.join(ctx.dir, "recording.mp4");
   const pulled = await ctx.exec(adbPull(SERIAL, remote, recording), { timeoutMs: 60_000 });
   await ctx.exec(adbRemove(SERIAL, remote), { timeoutMs: 15_000 });

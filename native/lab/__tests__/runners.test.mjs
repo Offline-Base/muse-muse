@@ -390,6 +390,7 @@ describe("android_emu", () => {
     if (text.includes("am start")) return reply({ stdout: am });
     if (text.includes("-b crash")) return reply({ stdout: crash });
     if (text.includes("logcat -d")) return reply({ stdout: report ? `I ReactNativeJS: MUSE_SELFTEST ${JSON.stringify(report)}\nchromium: x\n` : "" });
+    if (text.includes("pidof") && text.includes("screenrecord")) return reply({ stdout: "" });
     if (text.includes("pidof")) return reply({ stdout: pid });
     if (argv.includes("pull")) {
       writeFileSync(argv.at(-1), "mp4");
@@ -424,6 +425,26 @@ describe("android_emu", () => {
     const apk = h.ran("install -r -g")[0].at(-1);
     assert.match(apk, /\.apk$/);
     assert.equal(readFileSync(apk, "utf8"), "the apk");
+  });
+
+  test("the recording is pulled only once screenrecord has finished it", async () => {
+    // Oct 31, on the real Mac: the pull came 1 s after the stop, before screenrecord had written the moov atom.
+    const base = android();
+    let stoppedAt = null;
+    let pulledAt = null;
+    const h = makeCtx("android_emu", {
+      answer: (argv, opts, reply) => {
+        const text = argv.join(" ");
+        if (text.includes("pkill -INT screenrecord")) stoppedAt = h.ctx.now();
+        if (text.includes("pidof") && text.includes("screenrecord")) return reply({ stdout: h.ctx.now() < stoppedAt + 2500 ? "777\n" : "" });
+        if (argv.includes("pull")) pulledAt = h.ctx.now();
+        return base(argv, opts, reply);
+      },
+    });
+    const result = await runAndroidEmu(h.ctx);
+    assert.ok(pulledAt >= stoppedAt + 2500, `pulled ${pulledAt - stoppedAt} ms after the stop`);
+    assert.ok(result.files.some((f) => f.role === "clip"));
+    assert.ok(!h.lines.join("\n").includes("still running"));
   });
 
   test("a slow page gets its screenshots and the end of its recording after it reports", async () => {
