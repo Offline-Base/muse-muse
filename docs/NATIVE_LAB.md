@@ -143,7 +143,7 @@ The slot, for Blob:
 {
   "name": "clip.mp4",
   "method": "blob",
-  "pathname": "native/runs/<runId>/<jobId>/clip.mp4",
+  "pathname": "native/runs/<runId>/<jobId>/<attempt>/clip.mp4",
   "multipart": false,            // true over 16 MB
   "presignedUrlPayload": { "delegationToken": "...", "signature": "...", "params": { } }
 }
@@ -157,7 +157,7 @@ const limits = { allowedContentTypes: [contentType], maximumSizeInBytes: limit }
 const token = await issueSignedToken({
   pathname,
   operations: ["put"],
-  validUntil: Date.now() + 15 * 60_000,
+  validUntil: Date.now() + 5 * 60_000,
   ...limits,
   ...blobAuth(),
 });
@@ -165,12 +165,14 @@ const { presignedUrlPayload } = await handleUploadPresigned({
   body: { type: "blob.generate-presigned-url", payload: { pathname, clientPayload: null, multipart } },
   request,
   webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || NO_CALLBACK_KEY,
-  getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false, allowOverwrite: true } }),
+  getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false } }),
 });
 ```
 
-`allowOverwrite` is there because a retried job writes to the same pathnames. Only ever issue pathnames under
-`native/runs/<runId>/<jobId>/`, from the job row and never from the request.
+Each attempt has its own folder, so a slot from an old run can't touch a retry's files, and no slot can replace a file that's
+there. If Blob's reply to a PUT is lost after the file landed, the agent's retry is refused and reports the file as lost, with a
+warning. Only ever issue pathnames under `native/runs/<runId>/<jobId>/<attempt>/`, from the job row and never from the request.
+A slot lasts 5 minutes, because it can't be revoked and the agent gives a job's uploads 2.
 
 For a local platform with no Blob store, a slot can be `{ "name", "method": "put", "pathname", "url", "headers" }`. The
 agent PUTs the bytes there and expects `{ "url", "pathname" }` back. Nothing but the local dev server should do this.
@@ -215,9 +217,9 @@ Job token. The agent retries up to 6 times.
 | 401, 404, 409, 410 | The agent gives up quietly. The job expired or already finished |
 | Anything else | The agent retries, up to about a minute |
 
-**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim: keep it only if its pathname sits under
-this job's folder and its host is this platform's own Blob store. `informational` is set from the job's kind, whatever the box
-sends.
+**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim: keep a file only if its pathname sits under
+this attempt's folder and its host is this platform's own Blob store. Store a link made from that pathname, not the box's string,
+and each name once. `informational` is set from the job's kind, whatever the box sends.
 
 **`outcome: failed` means the product didn't pass.** `lab_error` means the check never ran, so the product isn't to blame.
 Show them differently: the summary already does ("Not checked on...").

@@ -14,7 +14,8 @@ import { env } from "@/lib/env";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const UPLOAD_TTL_MS = 15 * 60_000;
+/** The agent gives all of a job's uploads 2 minutes. A slot can't be revoked, so it shouldn't last much longer. */
+const UPLOAD_TTL_MS = 5 * 60_000;
 /** Blob's multipart threshold, as in lib/storage.ts. */
 const MULTIPART_BYTES = 16 * 1024 * 1024;
 
@@ -26,7 +27,8 @@ const UploadBody = z.object({
 
 /**
  * A slot on Vercel Blob. Production has no read-write token, only OIDC, so this asks Blob for a delegation scoped to this
- * one pathname with its limits, as lib/pipeline/inspo-upload.ts does. A retried job writes to the same pathnames.
+ * one pathname with its limits, as lib/pipeline/inspo-upload.ts does. No overwriting: each attempt has its own folder, so
+ * nothing needs it, and a box can't replace a clip that's already in the gallery.
  */
 async function blobSlot(req: Request, name: string, pathname: string, rule: UploadRule, bytes: number) {
   const multipart = bytes > MULTIPART_BYTES;
@@ -42,7 +44,7 @@ async function blobSlot(req: Request, name: string, pathname: string, rule: Uplo
     body: { type: "blob.generate-presigned-url", payload: { pathname, clientPayload: null, multipart } },
     request: req,
     webhookPublicKey: process.env.BLOB_WEBHOOK_PUBLIC_KEY || NO_CALLBACK_KEY,
-    getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false, allowOverwrite: true } }),
+    getSignedToken: async () => ({ token, urlOptions: { ...limits, addRandomSuffix: false } }),
   });
   return { name, method: "blob" as const, pathname, multipart, presignedUrlPayload: (reply as { presignedUrlPayload: unknown }).presignedUrlPayload };
 }

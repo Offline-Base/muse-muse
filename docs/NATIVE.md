@@ -102,7 +102,7 @@ built from those templates.
 |---|---|---|
 | `native/shells/<ver>/` | Shell templates | Per shell version |
 | `native/products/<productId>/<runId>/` | `<slug>.apk`, `<slug>-mac.zip`, `<slug>-windows.zip` | Latest 2 per kind |
-| `native/runs/<runId>/<jobId>/` | Shots, `clip.mp4`, `poster.jpg`, `report.json`, logs | 7 days for agent runs, kept for shipped runs |
+| `native/runs/<runId>/<jobId>/<attempt>/` | Shots, `clip.mp4`, `poster.jpg`, `report.json`, logs | 7 days for agent runs, kept for shipped runs |
 | `clips/<productId>/` | Clips the owner uploaded | Kept |
 
 ## The native event

@@ -251,7 +251,7 @@ describe("the real agent against the real routes", { skip: !canMock ? "needs --e
     const { localFilePaths } = await import("@/lib/storage");
     for (const artifact of artifacts) {
       stored.push(artifact.pathname);
-      assert.match(artifact.pathname, new RegExp(`^native/runs/${runId}/${id}/`));
+      assert.match(artifact.pathname, new RegExp(`^native/runs/${runId}/${id}/1/`));
       assert.equal(artifact.check, "passed");
       assert.ok(artifact.url.startsWith(`${origin}/api/files/native/runs/`), artifact.url);
       const { file } = localFilePaths(artifact.pathname);

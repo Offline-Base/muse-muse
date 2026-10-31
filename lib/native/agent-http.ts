@@ -3,7 +3,7 @@
  * before it reads anything, so a box that's up early sees what it would see if the routes didn't exist.
  */
 import { env } from "@/lib/env";
-import { isSafeFileKey, localFileKey, localFilesEnabled } from "@/lib/local-files";
+import { isSafeFileKey, localFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
 import type { NativeArtifactKind } from "@/lib/native/types";
 
 /** A 404 when the lab is off, and null when it's on. Every route starts with this. */
@@ -85,9 +85,9 @@ export function uploadRule(name: string): UploadRule | null {
   return Object.hasOwn(UPLOAD_RULES, name) ? UPLOAD_RULES[name] : null;
 }
 
-/** Where a job's files go. Built from the job row, never from a request. */
-export function jobFolder(job: { runId: string; id: string }): string {
-  return `native/runs/${job.runId}/${job.id}/`;
+/** Where one attempt's files go. Built from the job row, never from a request. A retry can't touch the last attempt's. */
+export function jobFolder(job: { runId: string; id: string; attempts: number }): string {
+  return `native/runs/${job.runId}/${job.id}/${job.attempts}/`;
 }
 
 /** The public host of this platform's Blob store, from either credential. The id's shape is as @vercel/blob reads it. */
@@ -97,7 +97,7 @@ function blobStoreHost(): string | null {
 }
 
 /** True when a finish call's url really is that file in this job's folder, on the store this platform uses. */
-export function artifactLinkHolds(job: { runId: string; id: string }, name: string, pathname: string, url: string): boolean {
+export function artifactLinkHolds(job: { runId: string; id: string; attempts: number }, name: string, pathname: string, url: string): boolean {
   if (pathname !== `${jobFolder(job)}${name}` || !isSafeFileKey(pathname)) return false;
   if (localFilesEnabled()) return localFileKey(url) === pathname;
   let parsed: URL;
@@ -112,4 +112,9 @@ export function artifactLinkHolds(job: { runId: string; id: string }, name: stri
   } catch {
     return false;
   }
+}
+
+/** The link to keep for a file whose claim held. Made here, so nothing else in the box's string reaches the gallery. */
+export function artifactLink(pathname: string): string {
+  return localFilesEnabled() ? localFileUrl(pathname) : `https://${blobStoreHost()}/${pathname}`;
 }

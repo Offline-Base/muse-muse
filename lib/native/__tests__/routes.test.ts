@@ -321,7 +321,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(uploads.map((u) => u.name), allFiles.map((f) => f.name));
       for (const slot of uploads) {
         assert.equal(slot.method, "blob");
-        assert.equal(slot.pathname, `native/runs/${job.runId}/${job.id}/${slot.name}`);
+        assert.equal(slot.pathname, `native/runs/${job.runId}/${job.id}/1/${slot.name}`);
         assert.equal(slot.multipart, false);
         const payload = slot.presignedUrlPayload as { delegationToken: string; signature: string; params: Record<string, string> };
         assert.ok(payload.delegationToken && payload.signature);
@@ -331,12 +331,41 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(clip.operations, ["put"]);
       assert.deepEqual(clip.allowedContentTypes, ["video/mp4"]);
       assert.equal(clip.maximumSizeInBytes, 16 * 1024 * 1024);
-      assert.ok(Math.abs((clip.validUntil as number) - (Date.now() + 15 * 60_000)) < 10_000);
+      assert.ok(Math.abs((clip.validUntil as number) - (Date.now() + 5 * 60_000)) < 10_000);
       const clipParams = (uploads.find((u) => u.name === "clip.mp4")!.presignedUrlPayload as { params: Record<string, string> }).params;
       assert.equal(clipParams["vercel-blob-add-random-suffix"], "false");
-      assert.equal(clipParams["vercel-blob-allow-overwrite"], "true");
+      assert.equal(clipParams["vercel-blob-allow-overwrite"], undefined, "a slot can't replace a file that's there");
       assert.equal(clipParams["vercel-blob-allowed-content-types"], "video/mp4");
-      assert.ok(issued.every((o) => String(o.pathname).startsWith(`native/runs/${job.runId}/${job.id}/`)));
+      assert.ok(issued.every((o) => String(o.pathname).startsWith(`native/runs/${job.runId}/${job.id}/1/`)));
+    });
+
+    it("gives each attempt its own folder, so a slot from an old run can't touch a retry's files", async () => {
+      const job = await claimed(await seed());
+      const first = await uploadRoute(post("/x", job.token, { files: [file("clip.mp4", "video/mp4")] }), ctx(job.id));
+      const firstSlot = ((await first.json()) as { uploads: Array<{ pathname: string }> }).uploads[0]!;
+      await testDb.update(realSchema.nativeJobs).set({ heartbeatAt: new Date(Date.now() - 100_000) }).where(eq(realSchema.nativeJobs.id, job.id));
+      await queue.requeueSilentJobs();
+      const claim = await claimRoute(post("/c", LAB_TOKEN, claimBody({ kinds: ["desktop_mac"] })));
+      const { job: second } = (await claim.json()) as { job: { token: string; attempt: number } };
+      assert.equal(second.attempt, 2);
+      const again = await uploadRoute(post("/x", second.token, { files: [file("clip.mp4", "video/mp4")] }), ctx(job.id));
+      const secondSlot = ((await again.json()) as { uploads: Array<{ pathname: string }> }).uploads[0]!;
+      assert.equal(firstSlot.pathname, `native/runs/${job.runId}/${job.id}/1/clip.mp4`);
+      assert.equal(secondSlot.pathname, `native/runs/${job.runId}/${job.id}/2/clip.mp4`);
+      const url = (pathname: string) => `https://teststore.public.blob.vercel-storage.com/${pathname}`;
+      const res = await finishRoute(
+        post("/x", second.token, {
+          outcome: "passed",
+          artifacts: [
+            { name: "clip.mp4", url: url(firstSlot.pathname), pathname: firstSlot.pathname, bytes: 1 },
+            { name: "log.txt", url: url(`native/runs/${job.runId}/${job.id}/2/log.txt`), pathname: `native/runs/${job.runId}/${job.id}/2/log.txt`, bytes: 1 },
+          ],
+        }),
+        ctx(job.id),
+      );
+      assert.equal(res.status, 200);
+      const rows = await testDb.select().from(realSchema.nativeArtifacts).where(eq(realSchema.nativeArtifacts.jobId, job.id));
+      assert.deepEqual(rows.map((a) => a.kind), ["log"], "the last attempt's file isn't this one's");
     });
 
     it("gives no slot for a file it doesn't allow, while the rest still go", async () => {
@@ -486,8 +515,8 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     const artifact = (job: { id: string; runId: string }, name: string, over: Record<string, unknown> = {}) => ({
       name,
       role: "x",
-      url: `https://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/${name}`,
-      pathname: `native/runs/${job.runId}/${job.id}/${name}`,
+      url: `https://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/1/${name}`,
+      pathname: `native/runs/${job.runId}/${job.id}/1/${name}`,
       bytes: 1234,
       sha256: "b".repeat(64),
       contentType: "video/mp4",
@@ -564,8 +593,8 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
               artifact(other, "poster.jpg"),
               artifact(job, "shot-1.jpg", { pathname: `native/products/${s.productId}/x/${"a"}.apk` }),
               artifact(job, "shot-2.jpg", { url: "https://evil.example.com/native/shot-2.jpg" }),
-              artifact(job, "shot-3.jpg", { url: `http://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/shot-3.jpg` }),
-              artifact(job, "shot-4.jpg", { url: `https://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/other.jpg` }),
+              artifact(job, "shot-3.jpg", { url: `http://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/1/shot-3.jpg` }),
+              artifact(job, "shot-4.jpg", { url: `https://teststore.public.blob.vercel-storage.com/native/runs/${job.runId}/${job.id}/1/other.jpg` }),
               artifact(job, "evil.exe"),
               "not even an object",
             ],
@@ -576,9 +605,39 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       warn.mock.restore();
       assert.equal(res.status, 200);
       const rows = await artifactsOf(job.id);
-      assert.deepEqual(rows.map((a) => a.pathname), [`native/runs/${job.runId}/${job.id}/clip.mp4`]);
+      assert.deepEqual(rows.map((a) => a.pathname), [`native/runs/${job.runId}/${job.id}/1/clip.mp4`]);
       const stored = (await jobRow(job.id)).result?.artifacts as unknown[];
       assert.equal(stored.length, 1, "the stored result only names what was kept");
+    });
+
+    it("keeps a link it made itself, whatever else the box's string carried, and each name once", async () => {
+      const job = await claimed(await seed());
+      const warn = mock.method(console, "warn", () => {});
+      const folder = `native/runs/${job.runId}/${job.id}/1`;
+      const store = "teststore.public.blob.vercel-storage.com";
+      const res = await finishRoute(
+        post("/x", job.token, passed(job, {
+          artifacts: [
+            artifact(job, "log.txt", { url: `https://user:pw@${store}:8443/${folder}/log.txt` }),
+            artifact(job, "shot-4.jpg", { url: `https://${store}/${folder}/shot-4.jpg?x=1#y` }),
+            artifact(job, "clip.mp4", { bytes: 11 }),
+            artifact(job, "clip.mp4", { bytes: 22 }),
+          ],
+        })),
+        ctx(job.id),
+      );
+      warn.mock.restore();
+      assert.equal(res.status, 200);
+      const rows = await artifactsOf(job.id);
+      const urls = Object.fromEntries(rows.map((a) => [a.kind, a.url]));
+      assert.deepEqual(urls, {
+        log: `https://${store}/${folder}/log.txt`,
+        shot: `https://${store}/${folder}/shot-4.jpg`,
+        clip: `https://${store}/${folder}/clip.mp4`,
+      });
+      assert.equal(rows.find((a) => a.kind === "clip")?.bytes, 11, "the first one named");
+      const kept = (await jobRow(job.id)).result?.artifacts as Array<{ url: string }>;
+      assert.deepEqual(kept.map((a) => a.url).sort(), Object.values(urls).sort(), "and the result says the same");
     });
 
     it("keeps the check when a field is wrong, since refusing it would waste the whole run", async () => {
@@ -632,7 +691,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     it("keeps a link only on this platform's own store, for either credential", async () => {
       const job = await claimed(await seed(), { kind: "desktop_mac" });
       const warn = mock.method(console, "warn", () => {});
-      const pathOf = (name: string) => `native/runs/${job.runId}/${job.id}/${name}`;
+      const pathOf = (name: string) => `native/runs/${job.runId}/${job.id}/1/${name}`;
       await finishRoute(
         post("/x", job.token, passed(job, { artifacts: [artifact(job, "clip.mp4"), artifact(job, "poster.jpg", { url: `https://attacker.public.blob.vercel-storage.com/${pathOf("poster.jpg")}` })] })),
         ctx(job.id),
@@ -646,8 +705,8 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       try {
         const { artifactLinkHolds } = await import("@/lib/native/agent-http");
         const pathname = pathOf("clip.mp4");
-        assert.equal(artifactLinkHolds(job, "clip.mp4", pathname, `https://abc123.public.blob.vercel-storage.com/${pathname}`), true);
-        assert.equal(artifactLinkHolds(job, "clip.mp4", pathname, `https://teststore.public.blob.vercel-storage.com/${pathname}`), false);
+        assert.equal(artifactLinkHolds({ ...job, attempts: 1 }, "clip.mp4", pathname, `https://abc123.public.blob.vercel-storage.com/${pathname}`), true);
+        assert.equal(artifactLinkHolds({ ...job, attempts: 1 }, "clip.mp4", pathname, `https://teststore.public.blob.vercel-storage.com/${pathname}`), false);
       } finally {
         delete process.env.BLOB_STORE_ID;
         process.env.BLOB_READ_WRITE_TOKEN = saved;
@@ -657,7 +716,7 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
     it("lets a local run's links through only for its own files", async () => {
       delete process.env.BLOB_READ_WRITE_TOKEN;
       const job = await claimed(await seed());
-      const folder = `native/runs/${job.runId}/${job.id}`;
+      const folder = `native/runs/${job.runId}/${job.id}/1`;
       const res = await finishRoute(
         post("/x", job.token, passed(job, {
           artifacts: [

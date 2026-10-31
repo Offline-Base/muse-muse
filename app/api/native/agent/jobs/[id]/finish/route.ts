@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { artifactLinkHolds, cleanForJsonb, gone, isJobId, labGate, readJson, unauthorized, uploadRule } from "@/lib/native/agent-http";
+import { artifactLink, artifactLinkHolds, cleanForJsonb, gone, isJobId, labGate, readJson, unauthorized, uploadRule } from "@/lib/native/agent-http";
 import { bearerToken } from "@/lib/native/lab-token";
 import { finishJob, ownedJob, type FinishedArtifact } from "@/lib/native/queue";
 import type { NativeJobResult } from "@/lib/native/types";
 
 // A job's result (docs/NATIVE_LAB.md). Nothing here is trusted for money or for the gallery: the body is cut down to the
 // contract's fields at the contract's sizes, and a file is only kept if its pathname is this job's and its link really
-// goes there. A bad optional field is dropped, not refused: refusing it would cost the whole check.
+// goes there, once per name, with a link made here. A bad optional field is dropped, not refused: refusing it would cost
+// the whole check.
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
@@ -61,6 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const artifacts: FinishedArtifact[] = [];
   const dropped: string[] = [];
+  const named = new Set<string>();
   for (const raw of claimed) {
     const artifact = Artifact.safeParse(raw);
     const rule = artifact.success ? uploadRule(artifact.data.name) : null;
@@ -69,14 +71,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       continue;
     }
     const { name, url, pathname, bytes, sha256, caption } = artifact.data;
-    if (!artifactLinkHolds(job, name, pathname, url)) {
+    if (named.has(name) || !artifactLinkHolds(job, name, pathname, url)) {
       dropped.push(name);
       continue;
     }
+    named.add(name);
     const device = body.device ? [body.device.name, body.device.os].filter(Boolean).join(", ") || null : null;
-    artifacts.push({ kind: rule.kind, platform: job.kind, device, caption, url, pathname, bytes, sha256 });
+    artifacts.push({ kind: rule.kind, platform: job.kind, device, caption, url: artifactLink(pathname), pathname, bytes, sha256 });
   }
-  if (dropped.length) console.warn(`[native/finish] job ${job.id} named files outside its folder: ${dropped.join(", ")}`);
+  if (dropped.length) console.warn(`[native/finish] job ${job.id} named files it can't keep: ${dropped.join(", ")}`);
 
   const result: NativeJobResult = {
     ...body,
