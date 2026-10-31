@@ -11,6 +11,8 @@
  * Then open /p/<slug> and /b/<id> for each one it prints, and /vr. That is a visitor. Add ADMIN_EMAILS=fixture@example.com
  * for the owner, and NEXT_PUBLIC_LOCAL_FILES=1 PLATFORM_URL=http://localhost:3161 to try adding a clip. Leave out the flags to
  * see that the panel stays away. Seed again after 2 hours: a run older than that counts as stuck, so seed fresh to see a live one.
+ * get-every-state also has a public action and a finished Prove it run, so with PRODUCT_OUTPUTS=1 its Get it panel shows
+ * the MCP, CLI, Skill, Claude and ChatGPT tabs with their results, and its build room the "Tested what it comes with" row.
  *
  * Every clip and picture is a stand-in. `serve` answers for the live sites, and for the clip when given a file after the port.
  */
@@ -24,7 +26,7 @@ import type { TargetId } from "@/lib/brief/schema";
 import { localDbDir } from "@/lib/db/client";
 import * as schema from "@/lib/db/schema";
 import type { NativeArtifactKind, NativeCheck, NativeJobKind, NativeJobResult, NativeJobStatus, NativeRunStatus } from "@/lib/native/types";
-import type { BuildEventBody, NativeEventBody, ProductClip } from "@/lib/types";
+import type { BuildEventBody, Manifest, NativeEventBody, ProductClip, ProveEventBody } from "@/lib/types";
 
 const SITE_PORT = 3169;
 const SITE = `http://localhost:${SITE_PORT}`;
@@ -57,6 +59,10 @@ interface ProductFixture {
   /** The build is still going, with an agent's checks in its log. */
   building?: boolean;
   origin?: NativeEventBody["origin"];
+  /** musemuse.json, for a product whose actions make the outputs (MCP, CLI, skill and plugins). */
+  manifest?: Manifest;
+  /** A Prove it run of those outputs, written after the deploy. */
+  prove?: Array<Omit<ProveEventBody, "type" | "runId" | "origin">>;
 }
 
 const passed = (summary: string, name: string, os: string, loadMs = 2100): NativeJobResult => ({ outcome: "passed", informational: false, summary, device: { name, os }, loadMs });
@@ -83,6 +89,54 @@ const doneEvents: ProductFixture["events"] = [
   { item: "device_farm:android", target: "phone", state: "done", title: "Real Galaxy S25 on AWS Device Farm: 4 device minutes, $0.68", costUsd: 0.68, media: [{ kind: "video", url: CLIP, posterUrl: shot("Galaxy S25", 30), caption: "On a real Galaxy S25 (AWS Device Farm)" }] },
 ];
 
+const feederManifest: Manifest = {
+  name: "Feeder Count",
+  slug: "get-every-state",
+  tagline: baseBrief.tagline,
+  inspiration: "A short clip from a backyard bird feeder.",
+  models: [{ id: "muse-wonder-1.0", usedFor: "Finding and counting the birds in each frame" }],
+  actions: [
+    {
+      name: "count_birds",
+      description: "Counts the birds in a short feeder clip.",
+      input: { type: "object", properties: { clipUrl: { type: "string" } }, required: ["clipUrl"] },
+      output: { type: "object", properties: { count: { type: "number" } } },
+      who: "anyone",
+      annotations: { readOnly: true },
+    },
+  ],
+  fixtures: [],
+  limits: ["Clips up to 30 seconds."],
+  estimatedCostPerRunUsd: 0.02,
+};
+
+const proveEvents: ProductFixture["prove"] = [
+  { item: "stage", state: "done", title: "Tested what it comes with", detail: "2 of 3 outputs worked" },
+  {
+    item: "mcp",
+    state: "done",
+    title: "MCP server: worked",
+    checks: [
+      { label: "Listed its tools", ok: true },
+      { label: "Called count_birds", ok: true },
+    ],
+    media: { url: CLIP, posterUrl: shot("MCP run", 200), caption: "The MCP run" },
+    costUsd: 0.08,
+  },
+  {
+    item: "cli",
+    state: "failed",
+    title: "CLI: didn't work",
+    detail: "The command exited with code 1.",
+    checks: [
+      { label: "Installed", ok: true },
+      { label: "Ran count_birds", ok: false },
+    ],
+    costUsd: 0.04,
+  },
+  { item: "skill", state: "skipped", title: "Skill: not tested", detail: "The run reached its spend cap first." },
+];
+
 const PRODUCTS: ProductFixture[] = [
   {
     slug: "get-every-state",
@@ -104,6 +158,8 @@ const PRODUCTS: ProductFixture[] = [
     deviceFarm: { device: "Galaxy S25", check: "passed" },
     clips: [{ url: CLIP, posterUrl: shot("Filmed on a Quest", 280), caption: "Filmed on a Meta Quest 3", addedAt: "2026-10-31T12:00:00.000Z" }],
     events: doneEvents,
+    manifest: feederManifest,
+    prove: proveEvents,
   },
   {
     slug: "get-failed-check",
@@ -161,7 +217,7 @@ async function seed() {
     const runId = uuid(group, 3);
     const brief = { ...baseBrief, name: f.name, slug: f.slug, targets: f.targets.map((id) => ({ id, why: "A fixture." })) };
     const status = f.building ? ("building" as const) : ("live" as const);
-    await d.insert(schema.products).values({ id: productId, slug: f.slug, name: f.name, tagline: baseBrief.tagline, ownerId: ROOM_IDS.user, inspirationId: ROOM_IDS.inspiration, status, liveUrl: f.building ? null : `${SITE}/?p=${f.slug}`, extraClips: f.clips ?? [] }).onConflictDoNothing();
+    await d.insert(schema.products).values({ id: productId, slug: f.slug, name: f.name, tagline: baseBrief.tagline, ownerId: ROOM_IDS.user, inspirationId: ROOM_IDS.inspiration, status, liveUrl: f.building ? null : `${SITE}/?p=${f.slug}`, extraClips: f.clips ?? [], manifest: f.manifest ?? null }).onConflictDoNothing();
     await d
       .insert(schema.builds)
       .values({ id: buildId, inspirationId: ROOM_IDS.inspiration, userId: ROOM_IDS.user, kind: "build", productId, status, step: f.building ? "build" : "deploy", brief, buildModel: "muse-wonder-1.0", costUsd: 0.9, startedAt: new Date(started), finishedAt: f.building ? null : new Date(started + 500_000) })
@@ -176,6 +232,11 @@ async function seed() {
       for (const e of f.events ?? []) body.push({ type: "native", runId, origin: f.origin ?? "ship", ...e });
     }
     for (const payload of body) await d.insert(schema.buildEvents).values({ buildId, type: payload.type, payload, at: new Date(started + 505_000) });
+    // Prove it runs after the build is final, so its events come after the deploy and the apps.
+    for (const [n, e] of (f.prove ?? []).entries()) {
+      const payload: ProveEventBody = { type: "prove", runId: uuid(group, 4), origin: "ship", ...e };
+      await d.insert(schema.buildEvents).values({ buildId, type: "prove", payload, at: new Date(started + 560_000 + n * 1000) });
+    }
 
     const packageAt = new Date(started + 520_000);
     for (const [n, p] of (f.packages ?? []).entries()) {

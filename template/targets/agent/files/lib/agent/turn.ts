@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { gatewayEnv } from "@/lib/meta/client";
+import { metaClient } from "@/lib/meta/client";
 import { plain } from "@/lib/meta/text";
 import type { AgentEvent, AgentSource, AgentStep } from "./events";
 
@@ -38,9 +38,12 @@ export function newRunId(): string {
   return `run_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
-/** The gateway client for a run. One retry: the gateway says when a retry won't help. */
+/**
+ * The gateway client for a run. One retry: the gateway says when a retry won't help. Made from metaClient, so a test
+ * build that calls Meta directly runs its Muse Wonder turns on TEST_MODEL, as every other call does.
+ */
 export function agentClient(headers: Record<string, string>): OpenAI {
-  return new OpenAI({ ...gatewayEnv(), maxRetries: 1, defaultHeaders: headers });
+  return metaClient().withOptions({ maxRetries: 1, defaultHeaders: headers });
 }
 
 function siteOf(url: URL): string {

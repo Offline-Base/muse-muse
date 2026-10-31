@@ -1594,3 +1594,25 @@ describe("the overlay", () => {
     assert.deepEqual(ids, [...AGENT_TOOL_IDS]);
   });
 });
+
+describe("a test build", () => {
+  test("runs the agent's Muse Wonder turns on Spark 1.3 Contributor only when TEST_MODEL names it, as metaClient does", async () => {
+    const saved = process.env.TEST_MODEL;
+    const models = [];
+    try {
+      for (const value of [undefined, "muse-spark-1.3-contributor", "muse-spark-1.3", ""]) {
+        if (value === undefined) delete process.env.TEST_MODEL;
+        else process.env.TEST_MODEL = value;
+        gateway?.restore();
+        gateway = fakeGateway({ turns: [turn("resp_1", [message("Hi.")])] });
+        const done = doneOf(await run({ tools: { webSearch: true } }));
+        assert.equal(done.status, "completed");
+        models.push(gateway.model().map((r) => r.body.model));
+      }
+    } finally {
+      if (saved === undefined) delete process.env.TEST_MODEL;
+      else process.env.TEST_MODEL = saved;
+    }
+    assert.deepEqual(models, [["muse-wonder-1.0"], ["muse-spark-1.3-contributor"], ["muse-wonder-1.0"], ["muse-wonder-1.0"]]);
+  });
+});

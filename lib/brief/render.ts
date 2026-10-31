@@ -192,6 +192,27 @@ interface SessionNotes {
   playbook?: boolean;
 }
 
+/**
+ * Which look a product follows (docs/BRAND.md). Unset is meta-ui, the template's own, and every prompt stays as it was.
+ * With MUSE_APP_LOOK the product gets the muse-app overlay at provision, so the prompts name its muse-app-ui skill. A fix
+ * or a change may reach a product from before the flag, so those name both and let the product's files decide.
+ */
+interface LookNote {
+  museAppLook?: boolean;
+}
+
+/** The skill a build prompt sends Muse Code to for the look. */
+function lookSkill(note: LookNote): string {
+  return note.museAppLook ? "muse-app-ui" : "meta-ui";
+}
+
+/** The fix and change prompts' look line, up to its last sentence. */
+function keepLookLine(note: LookNote): string {
+  return note.museAppLook
+    ? "- Keep the product's current look: the tokens and parts in `app/globals.css`, with `app/muse-app.css` and `.agents/skills/muse-app-ui` when the product has them, or else `.agents/skills/meta-ui` if it exists."
+    : "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists.";
+}
+
 /** The run a prompt starts: the first build, a fix round or a change to a shipped product. */
 type Run = "build" | "fix" | "change";
 
@@ -217,14 +238,14 @@ const PARALLEL_LINE = [
  * The goal, playbook and owner-notes lines for a prompt, or none when nothing applies, so plain `muse exec` keeps its
  * prompt. `complex` is the brief's complexity, which only the build prompt uses.
  */
-function sessionLines(notes: SessionNotes, when: Run, complex = false): string[] {
+function sessionLines(notes: SessionNotes & LookNote, when: Run, complex = false): string[] {
   const out: string[] = [];
   if (notes.goalSet) out.push(GOAL_LINE[when]);
   if (notes.playbook) {
     if (when === "build") {
       if (complex) out.push(PARALLEL_LINE);
       out.push(
-        "Use a workflow for checks that fan out, like one child per screen comparing it with brief.md and the meta-ui skill.",
+        `Use a workflow for checks that fan out, like one child per screen comparing it with brief.md and the ${lookSkill(notes)} skill.`,
         "End with a read-only reviewer subagent that compares the product with brief.md and AGENTS.md and lists what's wrong. Fix what it finds, then run `npm run verify` again.",
       );
     }
@@ -259,13 +280,14 @@ export function renderBuildPrompt(
      */
     milestones?: Milestone[] | null;
     // ---------- end Wave 3, unit 2 ----------
-  } & SessionNotes,
+  } & SessionNotes &
+    LookNote,
 ): string {
   const out: string[] = [];
   out.push(
     "# Build this product",
     "",
-    "Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, read `.agents/skills/meta-ui` for the look, and read the skill for each model listed below.",
+    `Follow AGENTS.md. Before you write code, read this whole brief, look at every file in \`inspo/\`, read \`.agents/skills/${lookSkill(opts)}\` for the look, and read the skill for each model listed below.`,
     "",
     "## Done means",
     "",
@@ -380,7 +402,7 @@ export function renderBuildPrompt(
     "",
     bullets(brief.inspiration.borrow),
     "",
-    "The look always comes from the meta-ui skill, in Meta blue. The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.",
+    `${opts.museAppLook ? "The look always comes from the muse-app-ui skill and its tokens in `app/muse-app.css`." : "The look always comes from the meta-ui skill, in Meta blue."} The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.`,
     "",
     "Leave out:",
     "",
@@ -468,7 +490,8 @@ export function renderFixPrompt(
     round: number;
     /** The judge's screenshots as attached to this run with --image, as paths in the product, in order. */
     screenshots?: string[];
-  } & SessionNotes,
+  } & SessionNotes &
+    LookNote,
 ): string {
   const { verify, judge, round } = input;
   const screenshots = input.screenshots ?? [];
@@ -486,7 +509,7 @@ export function renderFixPrompt(
     "- Don't delete, skip, weaken or loosen tests to make them pass, and don't mock or stub Meta calls. Fix the product instead.",
     "- If a model call fails, check the request against the skill for that model before changing anything else.",
     "- Keep the primary flow from brief.md working, and keep the footer.",
-    "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Fix what the judge saw with those, not with new colors, fonts or styles.",
+    `${keepLookLine(input)} Fix what the judge saw with those, not with new colors, fonts or styles.`,
     "- When you're done, run `npm run verify` again until it exits 0, and update BUILD_NOTES.md.",
     ...sessionLines(input, "fix").map((line) => `- ${line}`),
   ];
@@ -559,7 +582,8 @@ export function renderRefinePrompt(
     newReferences: Array<{ fileName: string; describes: string }>;
     /** The product's brief, for where it runs and its platform services. Left out for a brief with none, whose prompt stays as it was. */
     brief?: Brief | null;
-  } & SessionNotes,
+  } & SessionNotes &
+    LookNote,
 ): string {
   const out: string[] = ["# Change request", "", "The user asked for this change to the live product:", "", quote(input.message)];
   if (input.newReferences.length) {
@@ -575,7 +599,7 @@ export function renderRefinePrompt(
     "## What to do",
     "",
     "- Make the change and keep the primary flow working.",
-    "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Don't restyle what the request doesn't change.",
+    `${keepLookLine(input)} Don't restyle what the request doesn't change.`,
     ...refineTargetLines(input.brief),
     // ---------- Wave 3, unit 2: platform services' change lines, bullets (none for a product with no cap blocks) ----------
     ...(input.brief ? capsRefineLines(input.brief) : []),

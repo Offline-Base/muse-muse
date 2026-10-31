@@ -22,7 +22,7 @@ import { after, before, describe, it, mock } from "node:test";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import * as realSchema from "@/lib/db/schema";
-import { macInput, type Seeded, type TestDb } from "./helpers";
+import { macInput, pruneStoredFolders, type Seeded, type TestDb } from "./helpers";
 
 const canMock = typeof (mock as { module?: unknown }).module === "function";
 const at = (rel: string) => new URL(rel, import.meta.url).href;
@@ -199,6 +199,7 @@ describe("the real agent against the real routes", { skip: !canMock ? "needs --e
       const { file, type } = localFilePaths(key);
       rmSync(file, { force: true });
       rmSync(type, { force: true });
+      pruneStoredFolders({ file, type });
     }
     process.env = { ...SAVED };
   });

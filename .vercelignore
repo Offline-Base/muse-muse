@@ -11,3 +11,5 @@ scripts/.tmp*
 # since a kept test imports its bridge and a deployment's typecheck reads tests too.
 /native
 /docs/spikes
+# The build log's screenshots: docs/BUILD_LOG.md itself stays.
+/docs/log

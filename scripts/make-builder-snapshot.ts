@@ -7,8 +7,8 @@
  * Muse Code, turns off the bundled Muse Code skills that fight a headless build (DISABLED_BUNDLED_SKILLS in
  * lib/sandbox/setup.ts), copies template/ to /vercel/app, runs npm ci, commits the template, keeps a root-owned
  * read-only copy of the platform-owned verify files in /vercel/musemuse/pristine (startTask restores them before
- * every verify and demo) and of template/targets in /vercel/musemuse/targets (the overlays a brief can ask for, with their
- * deps warmed in npm's cache), checks those copies against template/, that those skills are off and that `muse exec --help`
+ * every verify and demo) and of template/targets in /vercel/musemuse/targets (the overlays a brief can ask for and the
+ * muse-app look, with their deps warmed in npm's cache), checks those copies against template/, that those skills are off and that `muse exec --help`
  * lists every flag a build passes, then snapshots with no expiry. The builder marker records the Muse Code version.
  * Builds start from the snapshot and run with the locked-down policy in lib/sandbox/policy.ts.
  * Save the printed id as BUILDER_SNAPSHOT_ID.
@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { Sandbox } from "@vercel/sandbox";
+import { MUSE_APP_OVERLAY } from "@/lib/sandbox/look";
 import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { PLATFORM_FILES, PRISTINE_DIR, TARGET_OVERLAYS, TARGETS_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
@@ -48,8 +49,8 @@ async function checkPristine(sandbox: Sandbox, files: TemplateFile[]): Promise<v
 
 /** Throws unless TARGETS_DIR has every overlay, matches template/targets, and is root-owned with no write bits. */
 async function checkTargets(sandbox: Sandbox, targets: TemplateFile[]): Promise<void> {
-  const missing = TARGET_OVERLAYS.filter((t) => !targets.some((f) => f.path === `targets/${t}/deps.json`));
-  if (missing.length) throw new Error(`template/targets has no overlay for ${missing.join(", ")}, but TARGET_OVERLAYS in lib/sandbox/paths.ts lists it.`);
+  const missing = [...TARGET_OVERLAYS, MUSE_APP_OVERLAY].filter((t) => !targets.some((f) => f.path === `targets/${t}/deps.json`));
+  if (missing.length) throw new Error(`template/targets has no overlay for ${missing.join(", ")}, but TARGET_OVERLAYS in lib/sandbox/paths.ts or MUSE_APP_OVERLAY in lib/sandbox/look.ts names it.`);
   const want = targets.map((f) => `${createHash("sha1").update(f.content).digest("hex")}  ${f.path.slice("targets/".length)}`).sort();
   const sums = await sh(sandbox, `cd ${q(TARGETS_DIR)} && find . -type f -printf '%P\\0' | xargs -0 sha1sum`);
   const got = sums.stdout.trim().split("\n").sort();

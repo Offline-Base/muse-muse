@@ -2,9 +2,11 @@
 
 Ethan shared screenshots of Meta's developer dashboard on Oct 27, 2026: the Chat playground (twice) and the Usage page, then the Dashboard, Chat, Image and Audio pages at 2x. The second set was measured pixel by pixel, and the numbers below are in CSS pixels from those measurements. This file describes them so the Muse Muse platform UI can sit next to them like another tab. It follows "Dashboard-native UI" in DESIGN.md: copy the **patterns**, never the identity.
 
+Since Oct 31 the platform's colors, type and control sizes come from `docs/BRAND.md`, measured from live meta.ai. The layouts below still hold. Where a value here differs from that file, that file wins.
+
 ## Hard rules (from DESIGN.md)
 
-- No Meta logo (the infinity mark), no "Meta" wordmark or "Meta Model API" in our header, and no Meta proprietary font. Use the system font stack in `app/globals.css`.
+- No Meta logo (the infinity mark), no "Meta" wordmark or "Meta Model API" in our header, and no Meta proprietary font. Use the font in `app/globals.css` (Inter, vendored in `app/fonts/`, since Oct 31).
 - The brand slot is our own two-sparkle mark, **Muse Muse** and a **Concept** pill. The sidebar foot says "Not an official Meta product." above the account chip.
 - Our sign-in page must not look like a Meta sign-in or API-key page. Keep it plain and clearly ours, and never ask for a Meta key.
 - Don't put "Ask Meta..." in our composer. Ours says something like "Describe it, or drop in your inspo...".
@@ -90,7 +92,9 @@ For the build room, the panel becomes a read-only **build panel**:
 
 For Muse Muse the hero card is **Use your products in Muse**, with tabs for Muse app, Claude Code and cURL, product tabs below, and the product's connector URL or command in the code block. It only offers published products, since an unpublished product's connector doesn't answer. The cards are Requests, Input tokens, Output tokens, then Products (opens the gallery), Spend (est.) and How it works.
 
-## Image playground: the model for Make (`/`)
+## Image playground: the model for Make (`/`) until Oct 31
+
+These bullets describe Meta's Image playground as captured on Oct 27. Make followed it until Oct 31 and no longer does: the last paragraph of this section says what it is now.
 
 - The toolbar sits at the top right of the main area ("Get code", "History"; ours are "How it works" and "History").
 - About 100 px below it, a centered 24 px semibold title ("Start from an example") and a muted 15 px line.
@@ -98,7 +102,9 @@ For Muse Muse the hero card is **Use your products in Muse**, with tabs for Muse
 - The composer is pinned to the bottom of the column, about 750 px wide.
 - The right panel holds a disabled Model select (grey text), more selects and switches.
 
-For Muse Muse, the examples are Receipt to spreadsheet, Sketch to habit tracker and Bakery menu boards, with photos made by `muse-image-1.0` in `public/examples/`. A click fills the note and attaches the photo as inspo. The panel shows the build setup as disabled controls: Model, Builder, Fix rounds, and switches for Screenshot judge, Demo video, Publish and Muse app connector (Publish and the connector are off when `VERCEL_TOKEN` isn't set).
+For Muse Muse, the examples are Receipt to spreadsheet, Sketch to habit tracker and Bakery menu boards, with photos made by `muse-image-1.0` in `public/examples/`. A click fills the note and attaches the photo as inspo.
+
+Since Oct 31 the Make page follows meta.ai's own home instead of this playground (`docs/BRAND.md`, "Layout"): a centered "What should Muse make?" headline, the composer under it, then the three examples as photo cards with their label on the photo, all centered in the window. The toolbar stays. The disabled controls looked like settings a person could change, so the build setup is now a folded list of facts under the examples: Model, Builder, Fix rounds, Screenshot judge, Demo video, Publish and Muse app connector (Publish and the connector are off when `VERCEL_TOKEN` isn't set).
 
 ## Usage page: the model for `/usage`
 

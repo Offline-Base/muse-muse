@@ -8,6 +8,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
+import { MUSE_APP_OVERLAY } from "@/lib/sandbox/look";
+import { TARGET_OVERLAYS } from "@/lib/sandbox/paths";
 import { DEMO_FONT_PACKAGES, DISABLED_BUNDLED_SKILLS, fontInstallScript, INTER_DEFAULT_CONF, readTargetFiles, readTemplateFiles, skillsNotOff, templateHash } from "@/lib/sandbox/setup";
 
 describe("the template's targets", () => {
@@ -30,6 +32,9 @@ describe("the template's targets", () => {
     const files = await readTargetFiles("template");
     assert.ok(files.some((f) => f.path === "targets/glasses/platform-files.json"));
     assert.ok(files.every((f) => f.path.startsWith("targets/")));
+    // Every brief target's overlay and the muse-app look go into the snapshot, and so into its hash.
+    for (const t of [...TARGET_OVERLAYS, MUSE_APP_OVERLAY]) assert.ok(files.some((f) => f.path === `targets/${t}/deps.json`), t);
+    assert.ok(files.some((f) => f.path === "targets/muse-app/files/app/muse-app.css"));
   });
 
   it("only means the top-level folder, and is fine when there are none", async (t) => {

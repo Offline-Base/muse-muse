@@ -47,8 +47,7 @@ export default async function Home() {
           </Link>
         </div>
         <div className="play-intro">
-          <h1>Start from an example</h1>
-          <p>Give it a muse and Muse makes it. Try an example, or describe your own idea below.</p>
+          <h1>What should Muse make?</h1>
         </div>
         <Composer mode="new" signedIn={Boolean(user)} examples={EXAMPLES} layout="playground" targetOptions={env.enabledTargets} />
       </div>

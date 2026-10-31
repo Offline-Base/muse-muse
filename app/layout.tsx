@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { docsFont } from "@/app/docs/font";
+import { interFont } from "@/app/fonts/inter";
 import { MobileNav } from "@/components/shell/MobileNav";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { VoiceInputLayer } from "@/components/voice/VoiceInputLayer";
@@ -18,20 +19,20 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f2f4f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#0e1013" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#181819" },
   ],
 };
 
-// Dashboard-native shell (docs/DESIGN.md, "Dashboard-native UI"; docs/UI_PATTERNS.md): developer-dashboard
-// patterns, no Meta logo, wordmark or font, a visible Concept tag and disclaimer, and nothing that asks for keys.
+// The shell in the look docs/BRAND.md sets out: a white page, a quiet sidebar and Inter, with no Meta logo, wordmark or
+// typeface, a visible Concept tag and disclaimer, and nothing that asks for keys.
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await currentUser();
   const user = session
     ? { email: session.email, isAdmin: session.isAdmin, openAccess: Boolean(session.openAccess) }
     : null;
   return (
-    <html lang="en">
+    <html lang="en" className={interFont.variable}>
       <body className={docsFont.variable}>
         <a className="skip-link" href="#main">
           Skip to content

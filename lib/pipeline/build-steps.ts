@@ -178,6 +178,14 @@ function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: bool
 }
 
 /**
+ * MUSE_APP_LOOK (docs/BRAND.md): a new build gets the muse-app look at provision, and the build, fix and change prompts
+ * name it. Off, every prompt and sandbox is as it was.
+ */
+function lookNote(): { museAppLook: boolean } {
+  return { museAppLook: env.museAppLook };
+}
+
+/**
  * Whether the build's owner pressed Stop (POST /api/builds/{id}/control), read in the same statement that sets the
  * build's running Muse Code round when `set` is given: the route marks a stop only while a round is set, so an update
  * that takes the round off the row always sees a stop that landed before it.
@@ -493,6 +501,7 @@ export async function provisionStep(input: {
   const build = await loadBuild(input.buildId);
   const brief = requireBrief(build);
   const inspiration = await loadInspiration(build.inspirationId);
+  const look = lookNote();
   const promptMarkdown = renderBuildPrompt(brief, {
     inspoFiles: inspiration.references.map((r) => r.fileName),
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
@@ -502,6 +511,7 @@ export async function provisionStep(input: {
     ...(verifyBudgetFor(brief) ? { verifyBudget: true } : {}),
     // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
     ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(brief) } : {}),
+    ...look,
   });
   const allowedModels = allowedModelsFor(brief);
   // A brief with cap blocks gets its overlays, its extra env and hosts, and a build token tied to this build, whose
@@ -524,6 +534,7 @@ export async function provisionStep(input: {
     promptMarkdown,
     buildToken: token,
     gatewayUrl: env.gatewayUrl,
+    ...look,
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps) } : {}),
@@ -935,7 +946,7 @@ export async function writeFixPromptStep(input: {
   await sandbox.writeProductFile(
     input.sandboxName,
     promptFile,
-    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes() }),
+    renderFixPrompt({ verify, judge, round: input.fix, screenshots: images, ...sessionNotes(), ...lookNote() }),
   );
   return { promptFile, images };
 }
@@ -1350,6 +1361,7 @@ export async function reopenStep(input: {
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
     ...sessionNotes(),
+    ...lookNote(),
   });
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);

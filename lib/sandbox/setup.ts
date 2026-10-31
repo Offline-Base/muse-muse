@@ -39,8 +39,9 @@ export async function readTemplateFiles(templateDir: string): Promise<TemplateFi
 }
 
 /**
- * Reads the top-level template/targets/: overlays a product gets only when its brief asks for that target, so they
- * aren't in readTemplateFiles. They still count toward templateHash, since a snapshot carries them too.
+ * Reads the top-level template/targets/: overlays a product gets only when its build asks for one (a target in its
+ * brief, or the muse-app look), so they aren't in readTemplateFiles. They still count toward templateHash, since a
+ * snapshot carries them too.
  */
 export async function readTargetFiles(templateDir: string): Promise<TemplateFile[]> {
   return readTemplateTree(templateDir, TEMPLATE_TARGETS);
@@ -255,9 +256,10 @@ export async function savePristineFiles(sandbox: Sandbox, log: Log): Promise<voi
 }
 
 /**
- * Puts template/targets in the sandbox as the read-only TARGETS_DIR. With `warm`, for a snapshot with open egress, it also
- * fills npm's cache with each overlay's deps, so applying one at provision is quick. A provision on an older snapshot skips
- * that: its policy allows npm, so the deps still install.
+ * Puts template/targets in the sandbox as the read-only TARGETS_DIR, where provisioning finds a brief's targets
+ * (applyTargets) and the muse-app look (lib/sandbox/look.ts). A snapshot gets every overlay. With `warm`, for a snapshot
+ * with open egress, it also fills npm's cache with each overlay's deps, so applying one at provision is quick. A provision
+ * on an older snapshot skips that: its policy allows npm, so the deps still install.
  */
 export async function installTargets(sandbox: Sandbox, files: TemplateFile[], log: Log, opts: { warm?: boolean } = {}): Promise<void> {
   const from = `/tmp/musemuse-targets-${Date.now().toString(36)}`;
@@ -309,8 +311,9 @@ export async function writeBuilderMarker(sandbox: Sandbox, info: Omit<BuilderInf
 }
 
 /**
- * Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays a brief can ask for. `caps` is
- * readCapFiles: installed as the read-only CAPS_DIR and counted in the hash. None installs nothing.
+ * Full setup on a fresh VM. Needs open egress. `targets` is readTargetFiles: the overlays, kept outside the product in
+ * TARGETS_DIR until a build asks for one (a target in its brief, or the muse-app look). `caps` is readCapFiles: installed
+ * as the read-only CAPS_DIR and counted in the hash. None installs nothing.
  */
 export async function setupBuilder(sandbox: Sandbox, files: TemplateFile[], log: Log, targets: TemplateFile[] = [], caps: TemplateFile[] = []): Promise<BuilderInfo> {
   await makeDirs(sandbox, [WORK_DIR]);
