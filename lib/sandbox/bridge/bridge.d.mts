@@ -5,6 +5,7 @@ export declare const EXIT: Readonly<{ completed: 0; failed: 1; usage: 2 }>;
 export declare const POLL_MS: number;
 export declare const SETTLE_MS: number;
 export declare const INTERRUPT_WAIT_MS: number;
+export declare const QUIET_MS: number;
 export declare const MAX_IMAGE_BYTES: number;
 export declare const MAX_IMAGES_BYTES: number;
 

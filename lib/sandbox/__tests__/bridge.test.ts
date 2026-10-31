@@ -15,6 +15,7 @@ import {
   firstTurnInput,
   INTERRUPT_WAIT_MS,
   MAX_IMAGE_BYTES,
+  QUIET_MS,
   runBridge,
   serveArgs,
   SETTLE_MS,
@@ -105,6 +106,10 @@ class FakeHost implements BridgeConnection {
   sessionExists = false;
   closed = false;
   fail: Record<string, Error> = {};
+  /** Durable events the push stream lost, which view/page still serves. */
+  pages: BridgeFrame[] = [];
+  /** How the last turn ended, as session/read reports it. */
+  lastTurn: Record<string, unknown> | undefined;
   private ids = 0;
   private onNote?: (frame: BridgeFrame) => void;
   private onRequest?: (frame: BridgeFrame) => Promise<Record<string, unknown>>;
@@ -141,16 +146,26 @@ class FakeHost implements BridgeConnection {
     this.nextTurnId = null;
     return id;
   }
-  /** Ends the running turn, and starts the next queued one, as the host does. */
-  complete(terminal = "completed", extra: Record<string, unknown> = {}) {
+  /**
+   * Ends the running turn, and starts the next queued one, as the host does. With `lost`, the turn/completed never
+   * arrives: the stream reports a hole there instead (`dropped`).
+   */
+  complete(terminal = "completed", extra: Record<string, unknown> = {}, lost?: { after: string; at: string; next: string }) {
     const id = this.running;
     this.running = null;
-    this.emit("turn/completed", { turnId: id, terminal, ...extra });
+    this.lastTurn = { turnId: id, terminal, ...extra };
+    if (lost) this.dropped("turn/completed", { turnId: id, terminal, ...extra }, lost);
+    else this.emit("turn/completed", { turnId: id, terminal, ...extra });
     const next = this.queue.shift();
     if (next) {
       this.running = next;
       this.emit("turn/started", { turnId: next, commandId: next });
     }
+  }
+  /** A durable event at cursor `at` that push delivery loses: view/page has it, and a view/gap names the hole. */
+  dropped(method: string, params: Record<string, unknown>, gap: { after: string; at: string; next: string }) {
+    this.pages.push({ method, params: { sessionId: SESSION, ...params, viewCursor: gap.at, sourceRange: { start: 1, end: 1 } } });
+    this.emit("view/gap", { after: gap.after, next: gap.next });
   }
   /** A turn Muse Code starts on its own, as a goal does. */
   wake() {
@@ -182,6 +197,17 @@ class FakeHost implements BridgeConnection {
       case "turn/steer":
         if (params.expectedTurnId !== this.running) throw rejected("that turn isn't running", -32030, "commandRejected");
         return { commandId: params.commandId, turnId: this.running, status: "accepted" };
+      case "view/page": {
+        const from = this.pages.findIndex((e) => (e.params as Record<string, unknown>).viewCursor === params.cursor);
+        return { events: this.pages.slice(from + 1), nextCursor: null };
+      }
+      case "session/read":
+        return {
+          session: { sessionId: SESSION, status: this.running ? "running" : "idle", activeTurnId: this.running },
+          ...(this.lastTurn ? { lastTurn: this.lastTurn } : {}),
+          pendingRequests: [],
+          viewCursor: "v:head",
+        };
       default:
         return { commandId: params.commandId, status: "accepted" };
     }
@@ -839,6 +865,98 @@ describe("the bridge's background work", () => {
     assert.equal(code, EXIT.failed);
     assert.equal(exit.kind === "bridge" && exit.reason, "the owner ended it");
     assert.ok(host.closed);
+  });
+});
+
+describe("the bridge's stream", () => {
+  it("pages in what a view/gap says was dropped, and ends the turn whose turn/completed was in it", async () => {
+    const host = new FakeHost();
+    const { code, records, exit, time } = await run({
+      host,
+      script: {
+        2: () => {
+          host.emit("item/completed", { item: { itemId: "m1", kind: "agentMessage", messagePhase: "finalAnswer", text: "Done." } });
+          host.complete("completed", {}, { after: "v:7", at: "v:8", next: "v:9" });
+        },
+        // The same durable event again, as a stream that overlaps a filled gap could bring it.
+        3: () => host.replay({ method: "turn/completed", params: { sessionId: SESSION, turnId: "turn-1", terminal: "completed", viewCursor: "v:8", sourceRange: { start: 1, end: 1 } } }),
+      },
+    });
+    assert.equal(code, EXIT.completed, JSON.stringify(exit));
+    assert.equal(exit.kind === "bridge" && exit.reason, "completed");
+    assert.equal(exit.kind === "bridge" && exit.finalText, "Done.");
+    assert.ok(time.elapsed() < 2 + SETTLE_MS / 1000 + 3, `left after ${time.elapsed()} s`);
+    assert.deepEqual(host.last("view/page"), { sessionId: SESSION, cursor: "v:7", limit: 200 });
+    assert.equal(records.filter((r) => r.kind === "note" && r.method === "turn/completed").length, 1, "the dropped event is logged once");
+    const page = records.find((r) => r.kind === "call" && r.method === "view/page");
+    assert.deepEqual(page?.kind === "call" && page.result, { events: 1, nextCursor: null }, "a page is logged in short");
+  });
+
+  it("asks the host how the session stands when the hole can't be paged in", async () => {
+    const host = new FakeHost();
+    host.fail["view/page"] = rejected("no such cursor", -32011, "notFound");
+    const { code, exit } = await run({
+      host,
+      script: { 2: () => host.complete("failed", { error: { kind: "modelError", message: "API error 500" } }, { after: "v:7", at: "v:8", next: "v:9" }) },
+    });
+    assert.equal(code, EXIT.failed);
+    assert.equal(exit.kind === "bridge" && exit.reason, "failed: API error 500");
+    assert.deepEqual(host.last("session/read"), { sessionId: SESSION });
+  });
+
+  it("follows a turn whose turn/started was dropped, instead of leaving while it runs", async () => {
+    const host = new FakeHost();
+    const { code, records, time } = await run({
+      host,
+      script: {
+        2: () => {
+          host.complete();
+          // Muse Code starts a turn of its own right away, and its turn/started is lost.
+          host.running = "turn-2";
+          host.dropped("turn/started", { turnId: "turn-2", commandId: "turn-2" }, { after: "v:1", at: "v:2", next: "v:3" });
+        },
+        10: () => host.complete(),
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.ok(time.tick() >= 10 + SETTLE_MS / 1000, `left at tick ${time.tick()}`);
+    assert.equal(records.filter((r) => r.kind === "note" && r.method === "turn/completed").length, 2);
+  });
+
+  it("checks a turn that has gone quiet for a minute, and ends it when the host says it ended", async () => {
+    const host = new FakeHost();
+    const { code, time } = await run({
+      host,
+      script: {
+        // The turn ends, and nothing about it reaches the bridge: no turn/completed and no view/gap.
+        1: () => {
+          host.lastTurn = { turnId: host.running, terminal: "completed" };
+          host.running = null;
+        },
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.ok(time.elapsed() >= QUIET_MS / 1000 && time.elapsed() < QUIET_MS / 1000 + SETTLE_MS / 1000 + 3, `left after ${time.elapsed()} s`);
+    assert.equal(host.methods().filter((m) => m === "session/read").length, 1);
+  });
+
+  it("keeps the newest goal when an older change comes late", async () => {
+    const objective = "Make it work.";
+    const host = new FakeHost();
+    const { code, exit, time } = await run({
+      host,
+      config: { goal: objective },
+      script: {
+        1: () => {
+          host.emit("session/goalChanged", { goal: { objective, status: "complete", percentComplete: 100, updatedAtMs: 200 } });
+          host.emit("session/goalChanged", { goal: { objective, status: "active", percentComplete: 40, updatedAtMs: 100 } });
+          host.complete();
+        },
+      },
+    });
+    assert.equal(code, EXIT.completed);
+    assert.deepEqual(exit.kind === "bridge" && exit.goal, { objective, status: "complete", percentComplete: 100 });
+    assert.ok(time.elapsed() < 10, "doesn't wait out a goal that is already complete");
   });
 });
 
