@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadBundles",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::muse-knowledge-916979311153/lab/bundles/*",
+        "arn:aws:s3:::muse-knowledge-916979311153/lab/shells/*"
+      ]
+    },
+    {
+      "Sid": "WriteChecks",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Resource": "arn:aws:s3:::muse-knowledge-916979311153/lab/checks/*"
+    }
+  ]
+}

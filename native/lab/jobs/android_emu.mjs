@@ -1,6 +1,6 @@
 // android_emu: installs the APK on the emulator, which stays booted between jobs, then records, opens it, takes
 // screenshots and reads the health report from logcat.
-import { readFile, writeFile } from "node:fs/promises";
+import { copyFile, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { LabError } from "../lib/errors.mjs";
 import {
@@ -31,13 +31,20 @@ import {
   parseResolvedActivity,
   selftestFromLogcat,
 } from "../lib/commands.mjs";
-import { CROP } from "../lib/pixels.mjs";
+import { CROP, isBlankScreen } from "../lib/pixels.mjs";
 import { evaluateCheck } from "../lib/rules.mjs";
+import { screenshotStats } from "../lib/tools.mjs";
 import { runProbeOnce } from "./android_probe.mjs";
-import { composeInto, keepShot, must, platformReport, reportWaitMs, shotSchedule, waitFor } from "./common.mjs";
+import { AFTER_READY_MS, composeInto, keepShot, must, platformReport, recordUntilDone, reportWaitMs, shotsAfterReady, waitFor } from "./common.mjs";
 
 const BOOT_TIMEOUT_MS = 180_000;
 const SERIAL = EMULATOR_SERIAL;
+/** screenrecord allows at most 180 s. The lab stops it sooner, so this only has to outlast the wait for a slow page. */
+const RECORD_LIMIT_SECONDS = 170;
+/** How much longer an app with no health report gets to draw something, once its `recordSeconds` are nearly up. */
+const NO_REPORT_DRAW_MS = 30_000;
+/** How long screenrecord gets to finish its file. */
+const RECORDER_FINISH_MS = 15_000;
 
 /** The emulator, started if it isn't running. It's left running for the next job. */
 export async function ensureEmulator(ctx) {
@@ -71,16 +78,26 @@ async function deviceFacts(ctx) {
   return { name: ctx.input.device.name ?? ctx.config.android.deviceLabel, os: String(release.stdout).trim() };
 }
 
+/** Is the screen showing something? For an app that can't report, the pixels are the only sign that its page has loaded. */
+async function screenDrawn(ctx) {
+  const png = path.join(ctx.dir, "probe.png");
+  await ctx.exec(adbScreencap(SERIAL), { timeoutMs: 15_000, stdoutFile: png });
+  const stats = await screenshotStats(ctx.ffmpeg.path, png, CROP.android, { exec: ctx.exec, signal: ctx.signal });
+  return isBlankScreen(stats, null) === false;
+}
+
 export async function runAndroidEmu(ctx) {
   const { input } = ctx;
   const { app } = input;
   const pkg = app.packageName;
   const files = [];
   const warnings = [];
-  const jobStartedMs = ctx.now();
+  const jobStart = ctx.now();
 
   ctx.setPhase("download");
-  const apk = await ctx.download(app);
+  // adb refuses a file whose name doesn't end in .apk, and the download cache names files by their checksum.
+  const apk = path.join(ctx.dir, "app.apk");
+  await copyFile(await ctx.download(app), apk);
 
   ctx.setPhase("boot");
   await ensureEmulator(ctx);
@@ -94,13 +111,12 @@ export async function runAndroidEmu(ctx) {
   const resolved = await ctx.exec(adbResolveActivity(SERIAL, pkg), { timeoutMs: 15_000 });
   const component = parseResolvedActivity(String(resolved.stdout));
   if (!component) throw new LabError("install_failed", "The APK has no activity to open.");
-  const probeNote = await runProbeOnce(ctx, { serial: SERIAL, component, pkg, jobStartedMs });
+  const probeNote = await runProbeOnce(ctx, { serial: SERIAL, component, pkg, jobStartedMs: jobStart });
   await ctx.exec(adbLogcatClear(SERIAL), { timeoutMs: 15_000 });
 
   ctx.setPhase("record");
   const remote = `/sdcard/mm-${ctx.job.id}.mp4`;
-  const limit = input.recordSeconds + 2;
-  const recorder = ctx.startProc(adbScreenrecord(SERIAL, remote, limit));
+  const recorder = ctx.startProc(adbScreenrecord(SERIAL, remote, RECORD_LIMIT_SECONDS));
   await ctx.sleep(500);
   const started = ctx.now();
 
@@ -111,32 +127,40 @@ export async function runAndroidEmu(ctx) {
   const launched = amReply.code === 0 && am.ok;
   if (!launched) ctx.logLine(`am start: ${String(amReply.stdout).slice(-300)} ${String(amReply.stderr).slice(-200)}`);
 
-  let screen = null;
-  for (const [i, at] of shotSchedule(input.shots, input.recordSeconds).entries()) {
-    await ctx.sleep(Math.max(0, started + at - ctx.now()));
-    ctx.throwIfAborted();
-    const png = path.join(ctx.dir, `shot-${i + 1}.png`);
-    await ctx.exec(adbScreencap(SERIAL), { timeoutMs: 15_000, stdoutFile: png });
-    screen = (await keepShot(ctx, png, i + 1, CROP.android, files)) ?? screen;
+  // The shell reports once, after the page has loaded and scrolled, or at its watchdog. On a slow page that's long after a
+  // fixed recording would have ended, and screenshots taken before it read as blank.
+  ctx.setPhase("report");
+  const expectReport = app.variant === "lab";
+  let report = null;
+  if (launched && expectReport) {
+    const readReport = async () => selftestFromLogcat(String((await ctx.exec(adbLogcatDump(SERIAL), { timeoutMs: 20_000 })).stdout)) ?? (await platformReport(ctx, started));
+    report = await waitFor(ctx, readReport, { timeoutMs: reportWaitMs(ctx, ctx.now(), jobStart), everyMs: 1000 });
+  } else if (launched) {
+    await ctx.sleep(Math.max(0, started + input.recordSeconds * 1000 - AFTER_READY_MS - ctx.now()));
+    await waitFor(ctx, () => screenDrawn(ctx), { timeoutMs: NO_REPORT_DRAW_MS, everyMs: 2000 });
   }
-  await ctx.sleep(Math.max(0, started + input.recordSeconds * 1000 - ctx.now()));
+  const ready = ctx.now();
+  let screen = null;
+  await shotsAfterReady(ctx, ready, async (number) => {
+    const png = path.join(ctx.dir, `shot-${number}.png`);
+    await ctx.exec(adbScreencap(SERIAL), { timeoutMs: 15_000, stdoutFile: png });
+    screen = (await keepShot(ctx, png, number, CROP.android, files)) ?? screen;
+  });
+  await recordUntilDone(ctx, started, ready);
   await ctx.exec(adbStopRecording(SERIAL), { timeoutMs: 15_000 });
+  // screenrecord takes a few seconds to finish the file after it's told to stop. Ending the local adb before then closes the
+  // session, and the device kills screenrecord with the file half written: on the real Mac that left no moov atom, which no
+  // player can read. So the local adb only gets stopped once screenrecord has gone, when it has usually exited by itself.
+  const finished = await waitFor(
+    ctx,
+    async () => String((await ctx.exec(adbPidof(SERIAL, "screenrecord"), { timeoutMs: 15_000 })).stdout).trim() === "",
+    { timeoutMs: RECORDER_FINISH_MS, everyMs: 500 },
+  );
+  if (!finished) ctx.logLine("screenrecord was still running when the lab stopped it.");
   await recorder.stop(8000);
-  // screenrecord needs a moment to finish the file after it's told to stop.
-  await ctx.sleep(1000);
   const recording = path.join(ctx.dir, "recording.mp4");
   const pulled = await ctx.exec(adbPull(SERIAL, remote, recording), { timeoutMs: 60_000 });
   await ctx.exec(adbRemove(SERIAL, remote), { timeoutMs: 15_000 });
-
-  ctx.setPhase("report");
-  const expectReport = app.variant === "lab";
-  const report = expectReport && launched
-    ? await waitFor(
-        ctx,
-        async () => selftestFromLogcat(String((await ctx.exec(adbLogcatDump(SERIAL), { timeoutMs: 20_000 })).stdout)) ?? (await platformReport(ctx, started)),
-        { timeoutMs: reportWaitMs(ctx, started), everyMs: 1000 },
-      )
-    : null;
 
   const pidReply = await ctx.exec(adbPidof(SERIAL, pkg), { timeoutMs: 15_000 });
   const pid = String(pidReply.stdout).trim().split(/\s+/)[0] || null;
@@ -168,6 +192,8 @@ export async function runAndroidEmu(ctx) {
     device,
     files,
     warnings,
+    // The end of the recording is what's worth showing: the page and its scroll, not the wait for them.
+    keepLastSeconds: input.recordSeconds,
   });
   return {
     evaluation,
