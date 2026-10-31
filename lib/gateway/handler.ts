@@ -1,6 +1,6 @@
 import { AsrInputError, asrJsonToForm } from "@/lib/gateway/asr";
 import { gatewayError } from "@/lib/gateway/errors";
-import { estimateCost } from "@/lib/gateway/estimate";
+import { estimateCost, fitOutputToBudget } from "@/lib/gateway/estimate";
 import {
   BadRequestError,
   clientIpKey,
@@ -42,6 +42,8 @@ export interface GatewayDeps extends RunCounters {
   tokenSpendToday(tokenId: string): Promise<number>;
   platformSpendToday(): Promise<number>;
   dailySpendCapUsd: number;
+  /** Wave 3, unit 2: ENGINE_FIT_OUTPUT. A call over the budget left runs with a lower max_output_tokens (fitOutputToBudget). */
+  fitOutputToBudget?: boolean;
   /** Increments each key's counter for the window and returns the new counts, keyed like the input. */
   hitRateLimits(keys: string[], windowStart: Date): Promise<Record<string, number>>;
   /** Takes one of `limit` slots for the key atomically. Returns the handle releaseInFlight needs, or null when full. */
@@ -311,9 +313,20 @@ async function forward(
 ): Promise<{ response: Response; metering: Promise<void> | null }> {
   const done = (response: Response) => ({ response, metering: null });
   const model = parsed.model;
-  const estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
+  let estimate = estimateCost(endpoint, parsed, body.byteLength, call.mostSearches);
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
+  // ---------- Wave 3, unit 2: fit max_output_tokens to what's left (docs/CAPABILITIES.md, section 8). Off by default ----------
+  const fit = deps.fitOutputToBudget || (token.scope as string) === "code_session"
+    ? fitOutputToBudget({ endpoint, parsed, bodyBytes: body.byteLength, mostSearches: call.mostSearches, estimate, leftUsd: budget - spent })
+    : null;
+  if (fit && parsed.kind === "json") {
+    parsed = { ...parsed, json: { ...parsed.json, max_output_tokens: fit.maxOutputTokens } };
+    body = new TextEncoder().encode(JSON.stringify(parsed.json));
+    estimate = fit.estimate;
+    call = { ...call, notes: [...call.notes, `Set max_output_tokens to ${fit.maxOutputTokens}: that is what's left in ${token.scope === "build" ? "this build's" : "this product's"} Meta budget.`] };
+  }
+  // ---------- end Wave 3, unit 2 ----------
   if (spent >= budget || spent + estimate > budget) {
     // A build token's budget is the whole build's, so waiting for midnight only stalls the build.
     const whose =

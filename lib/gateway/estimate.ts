@@ -235,3 +235,42 @@ export function estimateCost(
     }
   }
 }
+
+// ---------- Wave 3, unit 2: fit max_output_tokens to the budget left (docs/CAPABILITIES.md, section 8) ----------
+
+/** The fewest output tokens a fitted call keeps. A budget that can't pay for this many refuses the call, as today. */
+export const MIN_FIT_OUTPUT_TOKENS = 1_024;
+
+export interface OutputFit {
+  /** The max_output_tokens the call is sent with, set or lowered. */
+  maxOutputTokens: number;
+  /** The call's estimate at that max_output_tokens, at most the budget left. */
+  estimate: number;
+}
+
+/**
+ * A Responses call whose estimate is more than the budget left, refitted: max_output_tokens set to the most output the
+ * budget can still pay for after the input, searches included, at most MAX_OUTPUT_TOKENS. Then the estimate is a true
+ * ceiling for the call's output, so the budget still holds, and a session that sends max_output_tokens 128000 (Muse Code
+ * does) runs until its budget is really spent instead of stopping after about a quarter of it. Null when the call already
+ * fits, isn't a token-priced Responses call, or the budget can't pay for MIN_FIT_OUTPUT_TOKENS.
+ */
+export function fitOutputToBudget(input: {
+  endpoint: GatewayEndpoint;
+  parsed: ParsedRequest;
+  bodyBytes: number;
+  mostSearches: number;
+  estimate: number;
+  leftUsd: number;
+}): OutputFit | null {
+  const { endpoint, parsed } = input;
+  if (endpoint !== "responses" || parsed.kind !== "json" || !parsed.model) return null;
+  if (input.estimate <= input.leftUsd || input.leftUsd <= 0) return null;
+  const at = (n: number) => estimateCost(endpoint, { ...parsed, json: { ...parsed.json, max_output_tokens: n } }, input.bodyBytes, input.mostSearches);
+  const perToken = (at(1_001) - at(1)) / 1_000;
+  if (!(perToken > 0)) return null;
+  const base = at(1) - perToken;
+  const fitted = Math.min(MAX_OUTPUT_TOKENS, Math.floor((input.leftUsd - base) / perToken));
+  if (fitted < MIN_FIT_OUTPUT_TOKENS) return null;
+  return { maxOutputTokens: fitted, estimate: at(fitted) };
+}

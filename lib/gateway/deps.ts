@@ -23,6 +23,7 @@ export function gatewayDeps(defer: GatewayDeps["defer"]): GatewayDeps {
     tokenSpendToday,
     platformSpendToday,
     dailySpendCapUsd: env.dailySpendCapUsd,
+    fitOutputToBudget: env.engineFitOutput,
     hitRateLimits,
     acquireInFlight,
     releaseInFlight,
