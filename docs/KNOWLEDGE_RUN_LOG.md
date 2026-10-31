@@ -638,6 +638,23 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   branch's history, so PR #3 must be squash-merged or the branch cleaned first, and `knowledge` deleted before the repo
   could go public. The process-name guards in run_student.sh, run_measure_known.sh and train_multi.py stay: they only
   avoid sharing GPUs with a run.
+- 1:43 PM: GH200 copied stage 2's 0.8-bit NanoQuant text weights to the NFS (sha256 0e2a58af...) and terminated itself.
+- 1:52 PM: owner's other agent finished the reasoning rows: stage-b-reasoning.jsonl, 26,919 kept, 7,354 rejected (3,598
+  wrong, 636 no reasoning, the rest mostly round trip), sha256 5640e628.... Mixes train-stage-b-r30.jsonl (60,000, 18,000
+  reasoning, c179d80d...) and r50 (53,838, 26,919 reasoning, 2f6d2f0c...). Neither file is shuffled, so --max-examples
+  alone would take no reasoning rows.
+- About 1:52 to 2:17 PM: train-1 idle, about $9, while I researched Spark Open and my machine checks failed on shell slips.
+- 2:00 to 2:15 PM: owner asked about modernizing Spark Open; said not Fireworks, only Lambda, AWS or GCP. Read-only checks,
+  nothing bought or booked. Lambda: no B200 free, 8x B200 is 1,440 GB against 1,644 GB of BF16 weights, clusters have a
+  16-GPU, 2-week minimum (about $53,000 for B200). AWS: 192 vCPU P quota in us-east-1 means one 8-GPU machine; 2x
+  p6-b200.48xlarge for 24 h starts Nov 5 at the earliest ($5,455.97 capacity block, $6,143.65 SageMaker training plan). GCP:
+  Vertex open-model tuning doesn't list Spark Open; quotas unchecked, gcloud needs `gcloud auth login`. Both repos are
+  gated (manual) and our check got 401. NVIDIA's text LoRA recipe uses 64 GB200s, its smallest LoRA 16 (image and text,
+  attention only). Result: no route on credits before Nov 4, so Spark Open stays out of the submission as a tuned model.
+  Also read: Fireworks lists Glimmer fine-tuning as free until Nov 30. Not used.
+- 2:17 PM: started pilot-channels on train-1: pilot-channels.jsonl, 9,600 rows shuffled from r30 (seed 20261031, 30.0%
+  reasoning, 2,879 rows, sha256 8fa0fb19...), from stage2-multi, lr 5e-5, whole-turn labels on reasoning rows, no tuned
+  eval, no sync. start_run's own mkdir didn't take, so the data folder was made by hand and passed with --data-dir.
 
 ## Problems and fixes
 
