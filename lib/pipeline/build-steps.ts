@@ -67,6 +67,7 @@ import {
   type Screenshot,
   type VerifySummary,
 } from "@/lib/types";
+import { trustOverlayFor, type TrustOverlay } from "@/lib/trust/overlay";
 import { briefTierFor } from "@/lib/trust/tiers";
 import { platformSpendToday, recordUsage, type UsageContext } from "@/lib/usage";
 
@@ -340,6 +341,26 @@ function verifyBudgetFor(brief: Brief): boolean {
   return briefCaps(brief).length > 0 || (env.engineMilestones && briefMilestones(brief).length > 0) || env.engineRoundScaling || env.engineCheckOnTimeout;
 }
 
+/**
+ * Wave 3, unit 1 (docs/CAPABILITIES.md, section 7): the trust overlay's two files for a new product, from its brief and
+ * the trust flags as the build starts, or null while TRUST_AGE_GATE, TRUST_LEGAL_PAGES, TRUST_GEO_BLOCK and
+ * TRUST_REPORTS are all off.
+ */
+function trustOverlayStep(brief: Brief, slug: string): TrustOverlay | null {
+  if (!env.trustProductOverlay) return null;
+  return trustOverlayFor(brief, {
+    slug,
+    platformUrl: env.platformUrl,
+    flags: {
+      ageGate: env.trustAgeGate,
+      legalPages: env.trustLegalPages,
+      geoBlock: env.trustGeoBlock,
+      geoCountries: env.trustGeoCountries,
+      reports: env.trustReports,
+    },
+  });
+}
+
 /** Writes the brief with the brief model (env.briefModel) and saves it. A retry after the brief was saved reuses it. */
 export async function briefStep(buildId: string): Promise<BriefSummary> {
   "use step";
@@ -506,6 +527,8 @@ export async function provisionStep(input: {
   const brief = requireBrief(build);
   const inspiration = await loadInspiration(build.inspirationId);
   const look = lookNote();
+  // Wave 3, unit 1: the trust overlay, for every new build while a trust product flag is on. Null with them off.
+  const trust = trustOverlayStep(brief, input.slug);
   const promptMarkdown = renderBuildPrompt(brief, {
     inspoFiles: inspiration.references.map((r) => r.fileName),
     fixtures: input.fixtures.map((f) => ({ fileName: f.fileName, description: f.description, fromUserSample: f.fromUserSample })),
@@ -515,6 +538,7 @@ export async function provisionStep(input: {
     ...(verifyBudgetFor(brief) ? { verifyBudget: true } : {}),
     // Only when the round plan briefStep saved chains milestones, which is what the workflow runs.
     ...(build.roundPlan?.milestones?.length ? { milestones: briefMilestones(brief) } : {}),
+    ...(trust ? { trust: true } : {}),
     ...look,
   });
   const allowedModels = allowedModelsFor(brief);
@@ -542,6 +566,7 @@ export async function provisionStep(input: {
     ...extraFilesFor(brief),
     targets: briefTargets(brief),
     ...(caps ? { caps, capEnv: capBuildEnv(brief), capHosts: capBuildHosts(caps.caps) } : {}),
+    ...(trust ? { trust } : {}),
   });
   // A local run's sandbox can't reach the gateway, so a cap check that needs the gateway's record can't pass there. Say
   // so once, at the start, instead of letting each check fail with no reason (docs/CAPABILITIES.md, 8a).
