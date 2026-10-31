@@ -9,15 +9,15 @@ Live tracker: https://claude.ai/artifact/GGMF3tM2qBQkgWk2RrFzWz (private).
 
 ## Now
 
-Updated Oct 30, 11:16 PM.
+Updated Oct 31, 1:55 AM.
 
 | Machine | What it does | Price | Stops how |
 |---|---|---|---|
-| muse-knowledge-train-1 (Lambda 8x A100 80GB, us-midwest-1, 36517e6c25ed4bccb6db6dde54f5a610, 163.192.200.51) | Stage 2 (run stage2-multi, started 11:00 PM, done about 5 AM). Stage 1 (stage1-multi) finished 10:58 PM | $22.32/h since Oct 30 8:20 PM; $59.89 of its $450 cap at 11:00 PM | `train_multi.py watch` on this Mac: at $450 or Oct 31 10:00 AM (14:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/train_multi.py stop --name muse-knowledge-train-1` |
-| muse-knowledge-glimmer-gh200 (Lambda GH200, us-east-3, c3ff7180e6c2415d8a491de7a5978fa8, 192.222.56.131) | Stage 1 single-GPU run (89% at 11:16 PM; training done about 11:40 PM, answers about midnight), then NanoQuant (nq_run.live.sh waits on it). Outputs only on its local disk (~/k/runs/stage1/): copy the adapter, answers and metrics off before terminating | $2.29/h since Oct 30 5:44 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
-| muse-knowledge-writer-1 (Lambda A100 40GB SXM4, us-east-1, e39f1fcd8fa9401bbed6a870fa236b83, 132.145.195.77) | llama.cpp quantize and scoring pipeline (cache filesystem muse-muse-cache-us-east-1). At 11:16 PM: quantize.sh for stage1-ckpt and for base | $1.99/h since Oct 30 2:02 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
-| muse-knowledge-gw-1 to gw-16, 15 live (9 A100 and 5 A10 on Lambda; gw-4 is an AWS g6e.xlarge L40S) | Glimmer writer fleet | $26.22/h together; $117.98 of $333 at 11:01 PM | `writer_fleet.py watch`: at $333 (about Oct 31 7:12 AM) or Oct 31 8:00 AM (12:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/writer_fleet.py stop`. gw-4 also shuts itself down at 8:00 AM |
-| muse-knowledge-lb-1 (Lambda H100 PCIe, us-west-3, 97c349f17d984bde924d8909979fa048) | LittleBit development | $3.29/h since Oct 30 9:22 PM | Its own watch on this Mac (scratchpad lb/watch.py): at $70 or Oct 31 12:00 PM (16:00 UTC), whichever comes first (the deadline, at about $48) |
+| muse-knowledge-train-1 (Lambda 8x A100 80GB, us-midwest-1, 36517e6c25ed4bccb6db6dde54f5a610, 163.192.200.51) | Stage 2 (run stage2-multi, started 11:00 PM; 59% at 1:45 AM, training done about 3:30 AM, answers about 4 AM). Stage 1 (stage1-multi) finished 10:58 PM | $22.32/h since Oct 30 8:20 PM; $120.90 of its $450 cap at 1:44 AM | `train_multi.py watch` on this Mac: at $450 or Oct 31 10:00 AM (14:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/train_multi.py stop --name muse-knowledge-train-1` |
+| muse-knowledge-glimmer-gh200 (Lambda GH200, us-east-3, c3ff7180e6c2415d8a491de7a5978fa8, 192.222.56.131) | NanoQuant on the GH200's stage 1 adapter, 0.55 and 0.8 bits side by side (since 12:05 AM; 0.55 done about 3:50 AM, 0.8 about 4:35 AM). Stage 1 outputs only on its local disk (~/k/runs/stage1/; the adapter, metrics and answers are also on this Mac and in S3 knowledge/models/stage1/) | $2.29/h since Oct 30 5:44 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
+| muse-knowledge-writer-1 (Lambda A100 40GB SXM4, us-east-1, e39f1fcd8fa9401bbed6a870fa236b83, 132.145.195.77) | llama.cpp quantize and scoring pipeline (cache filesystem muse-muse-cache-us-east-1). Stage 1 table done 1:04 AM; GPU idle and 256 GB free, waiting for stage 2's adapter | $1.99/h since Oct 30 2:02 PM | By hand through the Lambda API only: no watch covers it, so it bills until someone terminates it |
+| muse-knowledge-gw-1 to gw-16, 15 live (9 A100 and 5 A10 on Lambda; gw-4 is an AWS g6e.xlarge L40S) | Glimmer writer fleet, on the government batches (archive only, not in a training set) | $26.22/h together; $189.47 of $333 at 1:44 AM | `writer_fleet.py watch`: at $333 (about Oct 31 7:13 AM) or Oct 31 8:00 AM (12:00 UTC). By hand: `.data/aws/venv/bin/python scripts/knowledge/aws/writer_fleet.py stop`. gw-4 also shuts itself down at 8:00 AM |
+| muse-knowledge-student-1 (Lambda, rented by the student workflow) | Student smoke test | | The workflow's watch on this Mac: at $15 or 3 h |
 | AWS collector i-025c6d3ca38400591 (m7i.2xlarge, us-east-1) | Wikimedia, bulk and collector pulls into S3 | about $0.40/h since Oct 30 1:28 PM | Shuts itself off Nov 2, 1:28 PM |
 | AWS research and law box i-0f0188876ffe09600 (m7i.8xlarge) | PMC, OpenAlex, bioRxiv, medRxiv, arXiv, CourtListener into knowledge/filtered/ | on demand | Shuts itself off Oct 31, 1:53 PM |
 
@@ -26,8 +26,10 @@ The CC-NEWS Spot fleet and the 3 ccnews-select machines are finished and gone.
 Lambda machines can't stop themselves (powering off the OS doesn't stop billing). The watches on this Mac are their
 only kill switch (the GH200 and writer-1 have none), so the Mac has to stay awake, online and plugged in.
 
-The Mac has about 11 GB free. The train_multi sync stops pulling checkpoints below 6 GB free, so free space before
-stage 2's checkpoints arrive.
+muse-knowledge-lb-1 (LittleBit development) was terminated Oct 30, 11:08 PM.
+
+The Mac has about 17 GB free (1:45 AM; swap had grown to 8 GB). The train_multi sync stops pulling checkpoints below
+6 GB free.
 
 ## Limits
 
@@ -108,7 +110,7 @@ is out of 40.
 | base eval | Lambda A100 40GB (writer-1, 4-bit) | 1,500 probes | | Base 18.1%, 40/40 (6:09 PM). This is the 4-bit model, which is why it differs from the BF16 runs' 18.3% and 18.6% |
 | stage1 (A100) | Lambda A100 40GB (writer-1) | stage 1 | QLoRA, batch 16 x 2, group by length, about 4.8 examples/s (batch and packing tests showed that's its limit) | Started 7:05 PM, stopped 8:53 PM at about 17% (1,060 of 6,229 steps at 8:45 PM), killed so writer-1 could run the llama.cpp quantize pipeline |
 | GH200 bench | GH200 | 800 examples, 2 epochs | 8 settings | BF16 LoRA 32 x 1 with checkpointing: 9.69 examples/s, 61 GB (2.16x the A100). 64 longest examples peaked at 66 GB, so batch 32 is safe (7:12 PM) |
-| stage1 (GH200) | GH200 | stage 1, 199,309 | BF16 LoRA, batch 32 x 1, gradient checkpointing, peak 66 GB | Started 7:14 PM. Base 18.3% on 1,500, 40/40. Loss 1.19 to 0.89 by 42% (9:23 PM); 65% at 10:19 PM; 89% at 11:16 PM (5,533 of 6,229 steps, about 2.1 s a step). Training done about 11:40 PM, answers about midnight |
+| stage1 (GH200) | GH200 | stage 1, 199,309 | BF16 LoRA, batch 32 x 1, gradient checkpointing, peak 66 GB | Started 7:14 PM. Base 18.3% on 1,500, 40/40. Loss 1.19 to 0.89 by 42% (9:23 PM); 65% at 10:19 PM; 89% at 11:16 PM (5,533 of 6,229 steps, about 2.1 s a step). Finished 11:50 PM: tuned 30.9% (464 of 1,500) vs base 18.3% (275); old facts 40/40 both. Matches stage1-multi (30.8%) |
 | test1600, test-init | 8x A100 80GB | 1,600 examples | DDP, 4 x 1 per GPU on 8 GPUs | 19.52 examples/s cold; 25.47 warm (test-init, which also loaded a starting adapter: all 832 tensors matched, loss 0.81 at step 10 vs 1.27 from scratch). test1600 made the base answers stage1-multi reuses: 18.6% on 1,500 and 40/40 (857 s). 61.7 to 62.7 GB reserved per GPU |
 | stage1-multi | 8x A100 80GB | stage 1, 199,309 | Same recipe, DDP (4 x 1 x 8 GPUs), save every 1,000 steps | Started 8:56 PM (00:56 UTC), base answers reused from test1600 (18.6% on 1,500, 40/40). Loss 1.48 at step 10 (1.28 averaged over the first 100 steps) to about 0.88 by half. Finished 10:58 PM: 6,229 steps, train loss 0.926, 6,747 s of training (29.5 examples/s; 29.75 steady, about 2.2x the GH200), peak 63.7 GB per GPU (64.4 to 65.3 GB in nvidia-smi). Tuned 30.8% vs base 18.6% on 1,500; old facts 40/40 both. 236 probes newly right, 53 newly wrong |
 | stage2-multi | 8x A100 80GB | stage 2, 520,895; probes 2,500 | Starts from stage1-multi's adapter (fresh optimizer and schedule) | Started 11:00 PM. Data in /home/ubuntu/k/data-stage2-multi (sha256 train fc40310a00d2b793..., probes 6703716fc7fd6133..., forget 40). Rank 0 first answers the 2,540 questions with the stage 1 model (about 25 minutes), then about 4.9 h of training, then the tuned answers: done about 5 AM. metrics.json scores all 2,500 together; split answers.json for the fixed 1,500 and the new 1,000 |
@@ -362,6 +364,63 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Base Glimmer on all 1,500 probes: Q4_K_M 17.7% (266), 40/40; IQ1_S 0.8% (12), 30/40. New knowledge holds to 4
   bits and falls off below 2. The 200-probe numbers have wide intervals (IQ1_S 4.2% to 11.4%).
 
+### Oct 31
+
+- 11:50 PM (Oct 30): the GH200 stage 1 finished: 30.9% (464 of 1,500) vs base 18.3%, 40/40 both. Two machines, two
+  batch layouts, same result (stage1-multi 30.8%).
+- 12:05 AM: NanoQuant started on the GH200's stage 1 adapter. Prepare and merge passed; BF16 perplexity 6.53 (289,692
+  tokens, seqlen 2,048). The 2-layer GPU self-test failed (`MuseGlimmerConfig` has no `max_position_embeddings`) but
+  the full pipeline doesn't use that path and went on. 0.8 and 0.55 bits run side by side on the one GPU, about 300 and
+  245 s per block, 52 blocks: 0.55 done about 3:50 AM, 0.8 about 4:35 AM, then scoring on 300 probes. This is the
+  rehearsal on stage 1; the stage 2 run follows (nanoquant/nq_rerun_stage2.sh, which assumes stage 2 on the GH200 and
+  needs adapting to take train-1's adapter through this Mac).
+- 12:50 AM: this Mac dipped to 7.5 GB free (4 GB of swap plus a stage 2 checkpoint). Deleted the local copy of
+  stage1-multi's checkpoint-6229 (left EMPTIED.txt so the sync doesn't pull it again; the full copy is on train-1, and
+  out/adapter, 1.68 GB, is intact). 23 GB free at 12:55 AM, 17 GB at 1:45 AM (swap up to 8 GB).
+- 1:07 AM: student workflow: student picked (NVIDIA Nemotron 3.5 Bolt E4B, BF16 release, OpenMDW-1.1). Training set
+  built and uploaded: 554,904 fact pairs, all Glimmer-written, passes the lineage check
+  (scripts/knowledge/aws/check_student_lineage.py). Training, merge, GGUF and scoring scripts written
+  (train_student.py, student_gguf.sh, score_student_gguf.py, run_student.sh, STUDENT.md); test_student.py passes 16
+  checks on this Mac against Bolt's tokenizer. Smoke test on muse-knowledge-student-1 running since then.
+- 1:30 AM: stage 2 slowed from about 1.27 to 1.07 steps a second (59% at 1:45 AM): training ends about 3:30 AM,
+  answers about 4 AM. train-1 at $120.90 of $450 at 1:44 AM.
+- 1:47 AM: llama.cpp pipeline finished stage 1 (the GH200's final adapter, sha256 of adapter_model.safetensors
+  97d78c59..., the same on the GH200, writer-1 and this Mac). All 1,500 probes and 40 old facts:
+
+  | Model | File | GB | Probes | Old facts | Decode tok/s |
+  |---|---|---|---|---|---|
+  | base | BF16 (transformers) | 59.55 | 18.3% (275) | 40/40 | |
+  | stage1 | BF16 (transformers) | 59.55 | 30.9% (464) | 40/40 | |
+  | base | Q4_K_M | 16.94 | 17.7% (266) | 40/40 | 48.6 |
+  | base | IQ1_S | 6.53 | 0.8% (12) | 30/40 | 68.6 |
+  | stage1 | Q8_0 | 29.61 | 31.4% (471) | 40/40 | 37.5 |
+  | stage1 | Q4_K_M | 16.94 | 29.9% (448) | 40/40 | 49.5 |
+  | stage1 | IQ2_XXS | 7.96 | 16.8% (252) | 40/40 | 59.1 |
+  | stage1 | IQ1_M | 7.06 | 10.2% (153) | 38/40 | 57.9 |
+  | stage1 | IQ1_S | 6.53 | 8.1% (122) | 34/40 | 67.5 |
+
+  Q4_K_M keeps nearly all the new knowledge. IQ2_XXS is the smallest file that keeps every old fact. At IQ1_S the tuned
+  model keeps 8.1% where the base falls to 0.8% (1,457 of the base's 1,500 IQ1_S answers ran to the 96-token limit,
+  repeating), so most of the 1-bit loss is the quantizing itself, and the tuned model survives it better. IQ1_S is
+  1.56 bits per weight nominal, about 1.8 overall in the file. Steps on writer-1: merge 228 s (416 targeted tensors
+  changed, 1,020 others bit-identical, sampled tensors within 0.5 BF16 steps of base + B@A), convert 172 s, Q8_0 53 s,
+  imatrix 1,544 s on 403,569 calibration tokens from stage 1's training text (no probe or old-fact question in it),
+  quantize 110 to 460 s each, scoring 6 to 10 minutes each. A second pass checked: Q8_0 gives the tuned BF16 model's
+  exact reply on 1,181 of 1,500 probes (the base BF16's on 13); all 12 score files regraded on this Mac match.
+  Scripts: quantize.sh, merge_adapter.py, make_calibration.py, score_gguf.py, make_table.py, store_run.sh,
+  make_venv.sh, imatrix-mt.patch. Outputs: the cache filesystem's models/{stage1,stage1-ckpt,base}/ (merged BF16, every
+  GGUF, imatrix, scores, tables; the mmproj in base/); this Mac's .data/knowledge/models/RUN/ (adapters, tables,
+  scores). The base Q8_0 was deleted for disk room (rebuild from the base BF16 GGUF in about a minute).
+- 1:50 AM: S3. The Mac's AWS session expired about 5:15 UTC mid-upload and came back. Aborted the half-done multipart
+  upload of glimmer-stage1-IQ1_S.gguf, and `store_run.sh stage1` sent stage 1's table, scores, pipeline log and steps
+  to knowledge/models/stage1/ (over a stale 4:45 UTC snapshot). The stage 1 GGUFs are on the cache filesystem only:
+  this Mac's upload link (160 to 430 KB/s) would take 4 to 11 hours for the 6.5 GB IQ1_S. stage1-multi's adapter is
+  still going up at 64 KB/s in the sync (started 3:06 UTC, done about 10 UTC). Other open multipart uploads in the
+  bucket (a Wikimedia history file started 5:48 UTC, two Wikidata uploads from Oct 30 17:28 and 17:34 UTC) were left.
+- 1:52 AM: freed writer-1 for stage 2 (it needs about 180 GB): deleted its local stage 1 merged weights, BF16 GGUF and
+  Q8_0 GGUF (141 GB) after checking the cache filesystem's copies have the same byte sizes. 256 GB free. Its stage 1
+  Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S stay for the honesty test.
+
 ## Problems and fixes
 
 - zsh doesn't split a variable holding a command (`$W`, `$OFF`, ssh options), so commands silently didn't run. Use
@@ -393,6 +452,16 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - S3 knowledge/runs/stage1-multi/code/ holds an old train_glimmer.py (15,243 bytes, from 7:27 PM), not the 19,892-byte
   one the 8x A100 runs (copied by scp). Unused; the repo copy is the real one.
 - 5:51 PM: claude.ai account switched, so the tracker moved from TY7xM8JpvFzx3VScPNWZmh to GGMF3tM2qBQkgWk2RrFzWz.
+- Oct 31, 3:02 UTC: a fine-tuning lab job on the shared cache filesystem retired the shared venv
+  venvs/glimmer-bdf08ed7acaa (renamed to .stale-..., `remove_old_venvs` in lib/train/recipes/glimmer.ts) while the
+  quantize pipeline used it. Stage 1 then merged, converted and scored from a local venv on writer-1 (same versions,
+  torch's CPU build); stage1-ckpt and base used the original. train-1 runs from its own /home/ubuntu/k/venv and has no
+  cache filesystem, so stage 2 isn't affected. Use a local venv (make_venv.sh) for the stage 2 pipeline.
+- The cache filesystem stalled for several minutes around 3:20 UTC under heavy writes.
+- llama-imatrix's CPU-side sum was single-threaded: imatrix-mt.patch splits it across threads (bit-identical imatrix
+  on 32 chunks, about 20% less time per pass; not compared on the full 788). Stock binary and source kept on writer-1
+  as /home/ubuntu/q/llama-imatrix.orig and imatrix.cpp.orig.
+- score_gguf.py once exited non-zero after writing complete JSON, with no traceback. It now ends with `os._exit(0)`.
 
 ## Left out of training
 
@@ -411,7 +480,10 @@ are never stored or used.
   Glimmer writer fleet).
 - LittleBit on muse-knowledge-train-1 needs its watch deadline (Oct 31 10:00 AM, about $305 by then) raised first, or
   MAX_HOURS set to end before it (littlebit/README.md).
-- stage1-multi's final adapter goes to S3 at 64 KB/s (1.6 GB, about 7 hours). If train-1 is terminated first, the
-  upload stops; upload the Mac copy by hand.
-- The GH200 stage 1 run (~/k/runs/stage1 on the GH200) isn't synced anywhere; copy its adapter, answers and metrics off
-  before terminating it.
+- stage1-multi's final adapter goes to S3 at 64 KB/s (1.6 GB, about 7 hours, done about 10 UTC). If train-1 is
+  terminated first, the upload stops; upload the Mac copy by hand.
+- The GH200 stage 1 run's adapter, answers and metrics are on this Mac and in S3 (knowledge/models/stage1/). Copy the
+  NanoQuant outputs off the GH200 before terminating it.
+- The GGUFs aren't in S3 (only stage1-ckpt's IQ1_S is): the cache filesystem holds them. The upload link here is too
+  slow; decide whether they need to be in S3 before the cache filesystem is deleted.
+- The tuned GGUFs were never tried with the mmproj (vision); only base Q4_K_M was (one image).
