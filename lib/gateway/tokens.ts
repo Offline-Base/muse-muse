@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, ne } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 
@@ -61,6 +61,24 @@ export async function revokeTokens(productId: string, scope?: TokenScope): Promi
         eq(schema.gatewayTokens.productId, productId),
         isNull(schema.gatewayTokens.revokedAt),
         ...(scope ? [eq(schema.gatewayTokens.scope, scope)] : []),
+      ),
+    );
+}
+
+/**
+ * Revokes every live token of a product except `keepId`, the one its newest deployment uses, or all of them when it's
+ * null. registerStep and an imported product's publish (lib/promote/steps.ts) call it once the product is live.
+ */
+export async function revokeLiveTokensExcept(productId: string, keepId: string | null): Promise<void> {
+  await db()
+    .update(schema.gatewayTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(schema.gatewayTokens.productId, productId),
+        eq(schema.gatewayTokens.scope, "live"),
+        isNull(schema.gatewayTokens.revokedAt),
+        keepId ? ne(schema.gatewayTokens.id, keepId) : undefined,
       ),
     );
 }

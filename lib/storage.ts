@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { del, list, put } from "@vercel/blob";
 import { env } from "@/lib/env";
-import { LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
+import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
 
 /**
  * Vercel Blob paths, by prefix:
@@ -25,9 +25,9 @@ async function toBuffer(body: Buffer | Blob | ReadableStream | string): Promise<
   return Buffer.from(await new Response(body).arrayBuffer());
 }
 
-/** The file and its content-type sidecar for a stored key. */
-export function localFilePaths(key: string): { file: string; type: string } {
-  const root = path.resolve(LOCAL_FILES_DIR);
+/** The file and its content-type sidecar for a stored key, under `dir` (this run's .data/files by default). */
+export function localFilePaths(key: string, dir: string = LOCAL_FILES_DIR): { file: string; type: string } {
+  const root = path.resolve(dir);
   return { file: path.join(root, "data", key), type: path.join(root, "types", key) };
 }
 
@@ -70,6 +70,27 @@ export async function putFile(
     access: "public",
     contentType,
     addRandomSuffix: true,
+    ...blobAuth(),
+  });
+  return blob.url;
+}
+
+/** Uploads bigger than this go in parts, which @vercel/blob sends in parallel and retries one at a time. */
+const MULTIPART_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Uploads to exactly `pathname` (no random suffix), replacing any blob already there, and returns its URL. For moving
+ * a local run's files to the same paths in a Blob store (scripts/promote-local.ts), so a path with a build id in it
+ * stays that build's. Signs in with blobAuth(), as putFile does.
+ */
+export async function putBlobAt(pathname: string, body: Buffer, contentType: string): Promise<string> {
+  if (!isSafeFileKey(pathname)) throw new Error(`Not a stored file's path: ${pathname}`);
+  const blob = await put(pathname, body, {
+    access: "public",
+    contentType,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    multipart: body.length > MULTIPART_BYTES,
     ...blobAuth(),
   });
   return blob.url;

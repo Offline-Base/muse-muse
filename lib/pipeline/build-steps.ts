@@ -7,7 +7,7 @@
  * appear in a step's return value (step results are persisted in the workflow's event log).
  */
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { FatalError, getStepMetadata } from "workflow";
 import type { Brief } from "@/lib/brief/schema";
 import { checkChange } from "@/lib/brief/policy";
@@ -18,7 +18,7 @@ import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { addBuildCost, emit, setBuildStatus } from "@/lib/events";
 import { buildTokenBudgetFor, liveTokenDailyBudgetFor } from "@/lib/gateway/policy";
-import { mintToken, revokeTokens } from "@/lib/gateway/tokens";
+import { mintToken, revokeLiveTokensExcept, revokeTokens } from "@/lib/gateway/tokens";
 import { judgeBuild, pickScreenshots } from "@/lib/judge";
 import { rebuildTargetFor } from "@/lib/pipeline/catalog";
 import {
@@ -885,17 +885,7 @@ export async function registerStep(input: {
     });
   }
   await revokeTokens(input.productId, "build");
-  await db()
-    .update(schema.gatewayTokens)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(schema.gatewayTokens.productId, input.productId),
-        eq(schema.gatewayTokens.scope, "live"),
-        isNull(schema.gatewayTokens.revokedAt),
-        input.liveTokenId ? ne(schema.gatewayTokens.id, input.liveTokenId) : undefined,
-      ),
-    );
+  await revokeLiveTokensExcept(input.productId, input.liveTokenId);
 }
 registerStep.maxRetries = stepRetries("register");
 

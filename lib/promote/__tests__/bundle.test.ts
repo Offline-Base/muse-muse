@@ -1,0 +1,200 @@
+/**
+ * The import bundle's strict parser and its check for links back to the laptop (lib/promote/bundle.ts): every field
+ * typed and sized, nothing it doesn't take (a user id least of all), only a live product with its latest build live
+ * and every build finished, the rows' ids agreeing, another product's sandbox refused, the brief checked against its
+ * schema, and no local file link or non-public link field left. Pure: nothing is mocked.
+ *
+ *   npx tsx --test lib/promote/__tests__/bundle.test.ts
+ */
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { describe, it } from "node:test";
+import { linkProblems, parseImportBundle, type ImportBundle } from "../bundle";
+import { BRIEF, LOCAL, sampleBundle, STORE } from "./fixtures";
+
+/** The bundle as JSON would carry it, so a test can break it in ways the type doesn't allow. */
+function raw(b: ImportBundle = sampleBundle()): Record<string, any> {
+  return JSON.parse(JSON.stringify(b));
+}
+
+function refused(bundle: unknown): { error: string; field: string } {
+  const parsed = parseImportBundle(bundle);
+  assert.equal(parsed.ok, false, "expected the parser to refuse it");
+  return parsed as { error: string; field: string };
+}
+
+describe("parseImportBundle", () => {
+  it("takes the bundle the script sends, as it is", () => {
+    const b = sampleBundle();
+    const parsed = parseImportBundle(raw(b));
+    assert.ok(parsed.ok);
+    assert.deepEqual(parsed.value, b);
+  });
+
+  it("takes a bundle without refineInspirations, which then has none", () => {
+    const b = raw();
+    b.builds = b.builds.slice(0, 1);
+    b.events = b.events.filter((e: { buildId: string }) => e.buildId === b.builds[0].id);
+    delete b.refineInspirations;
+    const parsed = parseImportBundle(b);
+    assert.ok(parsed.ok);
+    assert.deepEqual(parsed.value.refineInspirations, []);
+  });
+
+  it("refuses anything it doesn't take, a user id first of all", () => {
+    for (const [field, set] of [
+      ["product.ownerId", (b: Record<string, any>) => (b.product.ownerId = randomUUID())],
+      ["builds[0].userId", (b: Record<string, any>) => (b.builds[0].userId = randomUUID())],
+      ["inspiration.userId", (b: Record<string, any>) => (b.inspiration.userId = randomUUID())],
+      ["events[0].id", (b: Record<string, any>) => (b.events[0].id = 7)],
+      ["usage", (b: Record<string, any>) => (b.usage = [])],
+    ] as const) {
+      const b = raw();
+      set(b);
+      const out = refused(b);
+      assert.equal(out.field, field);
+      assert.match(out.error, /isn't something an import takes/);
+    }
+  });
+
+  it("needs every field, and each to be the right type and size", () => {
+    const cases: Array<[string, (b: Record<string, any>) => void]> = [
+      ["product.tagline", (b) => delete b.product.tagline],
+      ["product.id", (b) => (b.product.id = "bird-count")],
+      ["product.slug", (b) => (b.product.slug = "Bird Count")],
+      ["product.name", (b) => (b.product.name = "")],
+      ["builds[0].costUsd", (b) => (b.builds[0].costUsd = -1)],
+      ["builds[0].fixRounds", (b) => (b.builds[0].fixRounds = 1.5)],
+      ["builds[0].kind", (b) => (b.builds[0].kind = "rebuild")],
+      ["builds[0].startedAt", (b) => (b.builds[0].startedAt = "yesterday")],
+      ["events[0].at", (b) => (b.events[0].at = 1_761_739_200_000)],
+      ["inspiration.note", (b) => (b.inspiration.note = "x".repeat(4001))],
+      ["builds", (b) => (b.builds = "all of them")],
+    ];
+    for (const [field, set] of cases) {
+      const b = raw();
+      set(b);
+      assert.equal(refused(b).field, field, field);
+    }
+    assert.equal(refused([]).field, "bundle");
+    assert.equal(refused(null).error, "The bundle must be an object.");
+  });
+
+  it("takes only a live product, its latest build live and every build finished", () => {
+    const partial = raw();
+    partial.product.status = "partial";
+    assert.equal(refused(partial).error, "Only a live product can be imported.");
+    const latest = raw();
+    latest.builds[0].status = "partial";
+    assert.equal(refused(latest).error, "The product's latest build is partial, not live.");
+    const running = raw();
+    running.builds[1].status = "building";
+    assert.equal(refused(running).field, "builds[1].status");
+  });
+
+  it("checks the rows against each other", () => {
+    const cases: Array<[string, (b: Record<string, any>) => void]> = [
+      ["builds[0].productId", (b) => (b.builds[0].productId = randomUUID())],
+      ["events[0].buildId", (b) => (b.events[0].buildId = randomUUID())],
+      ["builds[1].inspirationId", (b) => (b.builds[1].inspirationId = randomUUID())],
+      ["product.inspirationId", (b) => (b.product.inspirationId = randomUUID())],
+      ["product.latestBuildId", (b) => (b.product.latestBuildId = randomUUID())],
+      ["builds[1].id", (b) => (b.builds[1].id = b.builds[0].id)],
+      ["refineInspirations[1].id", (b) => b.refineInspirations.push({ ...b.inspiration, id: randomUUID() })],
+      ["builds", (b) => (b.builds = [])],
+    ];
+    for (const [field, set] of cases) {
+      const b = raw();
+      set(b);
+      assert.equal(refused(b).field, field, field);
+    }
+  });
+
+  it("refuses a sandbox that isn't this product's, and takes the older product-<slug> names", () => {
+    const other = raw();
+    other.product.sandboxName = "product-bird-count-ffffffff";
+    assert.equal(refused(other).error, "product.sandboxName isn't this product's sandbox.");
+    const older = raw();
+    older.product.sandboxName = "product-bird-count";
+    assert.ok(parseImportBundle(older).ok);
+  });
+
+  it("checks briefs against the brief's schema", () => {
+    const b = raw();
+    b.builds[0].brief = { ...BRIEF, capabilities: [] };
+    const out = refused(b);
+    assert.equal(out.field, "builds[0].brief.capabilities");
+    assert.match(out.error, /doesn't fit the brief's schema/);
+  });
+
+  it("takes event types this site doesn't render yet, as long as the payload names its own type", () => {
+    const b = raw();
+    b.events.push({ buildId: b.builds[0].id, type: "question", payload: { type: "question", text: "Which color?" }, at: b.events[0].at });
+    assert.ok(parseImportBundle(b).ok);
+    const mismatch = raw();
+    mismatch.events[0].payload.type = "log";
+    assert.equal(refused(mismatch).field, "events[0].payload.type");
+    const badType = raw();
+    badType.events[0].type = "Status!";
+    badType.events[0].payload.type = "Status!";
+    assert.equal(refused(badType).field, "events[0].type");
+  });
+});
+
+describe("links back to the laptop", () => {
+  it("are refused in the product's link fields, the events' and the references", () => {
+    const b = raw();
+    const local = (u: string) => u.replace(STORE, LOCAL);
+    b.product.demoVideoUrl = local(b.product.demoVideoUrl);
+    assert.equal(refused(b).field, "product.demoVideoUrl");
+
+    const shot = raw();
+    const verify = shot.events.findIndex((e: { type: string }) => e.type === "verify");
+    shot.events[verify].payload.screenshots[0].url = local(shot.events[verify].payload.screenshots[0].url);
+    assert.equal(refused(shot).field, `events[${verify}].payload.screenshots[0].url`);
+
+    // Where lib/local-files.ts would take it as a stored inspo file, the link check still refuses it.
+    const ref = raw();
+    ref.inspiration.references[0].url = local(ref.inspiration.references[0].url);
+    assert.match(refused(ref).field, /^inspiration\.references/);
+  });
+
+  it("are refused inside text too, while text that only mentions the sandbox's localhost passes", () => {
+    const b = raw();
+    const log = b.events.findIndex((e: { type: string }) => e.type === "log");
+    b.events[log].payload.text = `Saved it to ${LOCAL}/demos/${b.builds[0].id}/demo-1a2b3c4d.mp4.`;
+    const out = refused(b);
+    assert.equal(out.field, `events[${log}].payload.text`);
+    assert.match(out.error, /still points at a file on the machine it came from/);
+    assert.ok(JSON.stringify(sampleBundle()).includes("curl http://localhost:3000/api/health"));
+    assert.ok(parseImportBundle(raw()).ok);
+  });
+
+  it("are refused in any link field that isn't https on a public host", () => {
+    for (const bad of ["http://sb-1a2b3c.vercel.run", "https://127.0.0.1/x.png", "https://localhost/x.png", "https://user:pw@sb.vercel.run", "data:image/png;base64,AAAA"]) {
+      const b = raw();
+      b.builds[0].previewUrl = bad;
+      assert.equal(refused(b).field, "builds[0].previewUrl", bad);
+    }
+    const poster = raw();
+    const rec = poster.events.findIndex((e: { type: string }) => e.type === "recording");
+    poster.events[rec].payload.posterUrl = "http://localhost:3000/poster.jpg";
+    assert.equal(refused(poster).field, `events[${rec}].payload.posterUrl`);
+  });
+
+  it("leave what the models wrote to the first rule: no local file links, but any other value", () => {
+    const b = raw();
+    b.product.manifest.actions = [{ name: "count", description: "d", input: {}, output: {}, example: { imageUrl: "data:image/png;base64,AAAA" } }];
+    assert.ok(parseImportBundle(b).ok);
+    b.product.manifest.actions[0].example.imageUrl = `${LOCAL}/fixtures/x/sample-1.png`;
+    assert.equal(refused(b).field, "product.manifest.actions[0].example.imageUrl");
+  });
+
+  it("are listed by linkProblems for any JSON, with where each one is", () => {
+    assert.deepEqual(linkProblems({ a: [{ url: "https://sb.vercel.run" }], note: "see http://localhost:3000/" }), []);
+    assert.deepEqual(
+      linkProblems({ a: [{ url: "http://localhost:3000/x" }], b: `${LOCAL}/screens/b/r0/1.png` }).map((p) => p.field),
+      ["a[0].url", "b"],
+    );
+  });
+});
