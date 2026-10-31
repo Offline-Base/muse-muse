@@ -24,6 +24,7 @@
     "tools:sync": "tsx --env-file-if-exists=.env.local scripts/tools/sync-composio-catalog.ts"
   },
   "dependencies": {
+    "@composio/core": "0.27.0",
     "@meta-sam/parser": "0.1.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@neondatabase/serverless": "1.2.0",

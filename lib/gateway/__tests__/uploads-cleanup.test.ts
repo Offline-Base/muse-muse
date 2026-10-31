@@ -195,3 +195,14 @@ test("runCleanup: cutoffs per task, and one failure doesn't stop the rest", asyn
     expiredBuildTokens: { ok: true, count: 2 },
   });
 });
+
+test("runCleanup revokes connections only when given the task", async () => {
+  const base = {
+    deleteBlobsOlderThan: async () => 0,
+    deleteRateLimitsBefore: async () => 0,
+    revokeExpiredBuildTokens: async () => 0,
+  };
+  assert.equal("toolConnections" in (await runCleanup(base)), false);
+  const results = await runCleanup({ ...base, revokeDisabledProductConnections: async () => 2 });
+  assert.deepEqual(results.toolConnections, { ok: true, count: 2 });
+});

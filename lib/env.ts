@@ -431,6 +431,10 @@ export const env = {
   get composioApiKey(): string {
     return required("COMPOSIO_API_KEY").trim();
   },
+  /** Whether the key is there, without reading it for anything else. Live tools answer tools_paused when it isn't. */
+  get composioConfigured(): boolean {
+    return optional("COMPOSIO_API_KEY") !== null;
+  },
   /** COMPOSIO_PERSONAL_ENABLED: Gmail, Calendar and Slack work for a product's owner, on the owner's own accounts. */
   get composioPersonalEnabled(): boolean {
     return flag("COMPOSIO_PERSONAL_ENABLED");

@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 import { withWorkflow } from "workflow/next";
 
-// PGlite (local runs only, lib/db/client.ts) loads its WebAssembly from node_modules, so it must not be bundled.
+// PGlite (local runs only, lib/db/client.ts) loads its WebAssembly from node_modules, so it must not be bundled. The
+// Composio SDK (lib/tools/composio/client.ts) stays out too: it is imported lazily, only when a live tool runs.
 // The dev indicator is off because it sits on top of the sidebar's account chip.
 // The docs pages, the docs Ask route and the build MCP read Meta's mirrored Markdown from disk at request time
 // (docsMarkdown in lib/docs/pages.ts builds the path from the slug, which file tracing can't follow), so the pages are
@@ -9,7 +10,7 @@ import { withWorkflow } from "workflow/next";
 const DOCS_MARKDOWN = ["./content/meta-docs/pages/**/*.md"];
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@electric-sql/pglite"],
+  serverExternalPackages: ["@electric-sql/pglite", "@composio/core"],
   devIndicators: false,
   outputFileTracingIncludes: {
     "/docs/**": DOCS_MARKDOWN,

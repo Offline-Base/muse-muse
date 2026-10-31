@@ -519,15 +519,14 @@ export const TOOL_POLICIES = policies([
       {
         slug: "GMAIL_CREATE_EMAIL_DRAFT",
         description:
-          "Save an email as a draft in the connected Gmail account. It sends nothing. Use a full email address for each recipient. Set is_html only when the body is HTML. To reply in a thread, pass its thread_id.",
-        keepParams: ["recipient_email", "extra_recipients", "cc", "bcc", "subject", "body", "is_html", "thread_id"],
+          "Save an email as a draft in the connected Gmail account. It sends nothing. Use a full email address for each recipient. The body is plain text. To reply in a thread, pass its thread_id.",
+        keepParams: ["recipient_email", "extra_recipients", "cc", "bcc", "subject", "body", "thread_id"],
         paramDescriptions: {
           recipient_email: "The main recipient's full email address, such as 'user@example.com'.",
           extra_recipients: "More 'To' recipients' full email addresses.",
           cc: "Carbon copy recipients' full email addresses.",
           bcc: "Blind carbon copy recipients' full email addresses.",
-          body: "The message, as plain text or HTML. Set is_html when it is HTML.",
-          is_html: "True when the body is already HTML.",
+          body: "The message, as plain text.",
         },
         sample: { id: "sample-draft-1", message: { id: "sample-message-2", threadId: "sample-thread-2" } },
       },
@@ -548,15 +547,15 @@ export const TOOL_POLICIES = policies([
       {
         slug: "GMAIL_SEND_EMAIL",
         description:
-          "Send an email from the connected Gmail account. It goes out at once and can't be undone. Use a full email address for each recipient, and give a subject, a body or both. Set is_html only when the body is HTML.",
-        keepParams: ["recipient_email", "extra_recipients", "cc", "bcc", "subject", "body", "is_html"],
+          "Send an email from the connected Gmail account. It goes out at once and can't be undone. Use a full email address for each recipient, and give a subject, a body or both. The body is plain text.",
+        keepParams: ["recipient_email", "extra_recipients", "cc", "bcc", "subject", "body"],
         required: ["recipient_email"],
         paramDescriptions: {
           recipient_email: "The main recipient's full email address, such as 'user@example.com'.",
           extra_recipients: "More 'To' recipients' full email addresses.",
           cc: "Carbon copy recipients' full email addresses.",
           bcc: "Blind carbon copy recipients' full email addresses.",
-          is_html: "True when the body is already HTML.",
+          body: "The message, as plain text. Give a subject, a body or both.",
         },
         sample: { id: "sample-sent-1", threadId: "sample-thread-3", labelIds: ["SENT"] },
       },

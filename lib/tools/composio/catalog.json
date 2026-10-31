@@ -572,7 +572,7 @@
       "builtin": false,
       "functions": [
         {
-          "description": "Save an email as a draft in the connected Gmail account. It sends nothing. Use a full email address for each recipient. Set is_html only when the body is HTML. To reply in a thread, pass its thread_id. Needs the user's confirmation before it runs.",
+          "description": "Save an email as a draft in the connected Gmail account. It sends nothing. Use a full email address for each recipient. The body is plain text. To reply in a thread, pass its thread_id. Needs the user's confirmation before it runs.",
           "discountPercent": null,
           "estimateUsd": 0,
           "hints": [
@@ -593,7 +593,7 @@
                 "type": "array"
               },
               "body": {
-                "description": "The message, as plain text or HTML. Set is_html when it is HTML.",
+                "description": "The message, as plain text.",
                 "type": "string"
               },
               "cc": {
@@ -611,11 +611,6 @@
                   "type": "string"
                 },
                 "type": "array"
-              },
-              "is_html": {
-                "default": false,
-                "description": "True when the body is already HTML.",
-                "type": "boolean"
               },
               "recipient_email": {
                 "description": "The main recipient's full email address, such as 'user@example.com'.",
@@ -674,7 +669,7 @@
       "builtin": false,
       "functions": [
         {
-          "description": "Send an email from the connected Gmail account. It goes out at once and can't be undone. Use a full email address for each recipient, and give a subject, a body or both. Set is_html only when the body is HTML. Needs the user's confirmation before it runs.",
+          "description": "Send an email from the connected Gmail account. It goes out at once and can't be undone. Use a full email address for each recipient, and give a subject, a body or both. The body is plain text. Needs the user's confirmation before it runs.",
           "discountPercent": null,
           "estimateUsd": 0,
           "hints": [
@@ -695,7 +690,7 @@
                 "type": "array"
               },
               "body": {
-                "description": "Email content (plain text or HTML). Either subject or body must be provided for the email to be sent. If HTML, `is_html` must be `True`.",
+                "description": "The message, as plain text. Give a subject, a body or both.",
                 "type": "string"
               },
               "cc": {
@@ -713,11 +708,6 @@
                   "type": "string"
                 },
                 "type": "array"
-              },
-              "is_html": {
-                "default": false,
-                "description": "True when the body is already HTML.",
-                "type": "boolean"
               },
               "recipient_email": {
                 "description": "The main recipient's full email address, such as 'user@example.com'.",
