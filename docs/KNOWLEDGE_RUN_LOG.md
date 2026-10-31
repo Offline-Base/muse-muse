@@ -669,6 +669,14 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Numbers to use: verbatim recall about 30% by hand (auto 24.9% undercounts; base about 14%), not 25%. Salient 69% with
   60% on the least-paraphrased band beside it (50% on base-wrong), base about 24%. World questions aren't independent of
   training: 99 of 149 answers appear in Portal:Current_events rows. All 76 wrong salient answers were stated as fact.
+- 2:38 PM: owner's rule, relayed by the Muse Privacy session: no Muse Glimmer on the owner's laptop (it overheated loading
+  base IQ1_S). Stopped workflow glimmer-on-devices (wf_e757bd23-d26). Its Mac step had put stage 2 IQ1_S on a 6.3 GB RAM disk
+  at 2:36 PM and loaded no model; I ejected the disk. Its Android step scheduled no Device Farm run (latest run in the project
+  is Sep 16), and left uncommitted harness edits in ~/muse-muse-devices. build:small had finished: Q1_0, TQ1_0 and Q2_0 give
+  gibberish (0/40 old facts). Phone test needs `aws sso login --profile base-test` from the owner; a real Mac test needs
+  hardware other than the laptop. Muse Privacy applied the serving notes on its main at 2c84b1d (unit tests only).
+- About 2:40 PM: Muse Muse General session will squash-merge PR #3 on the owner's instruction, leaving the Lambda addresses,
+  key path and notes in. Later pushes to knowledge won't reach main without a new PR.
 
 ## Problems and fixes
 
