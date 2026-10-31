@@ -95,6 +95,10 @@ Wording for the submission, from the brief's warnings:
 
 For Q&A, the counterpoints the brief found: contracts can make cloud processing lawful; teachers adopt AI quickly; Meta's own rule treats human approval as one layer of defense, and too many asks wear people down; local models are weaker, as our stage 2 rows show.
 
+## The Meta AI app, Oct 31
+
+Ethan wants Muse Privacy reachable from the Meta AI app the way it is from Muse. Searches found no sign the Meta AI app takes outside connectors or MCP servers: guides describe Muse as separate from it, with connectors through Muse's own directory (muse.ai/platform) and custom connectors Muse writes itself. Meta's one public MCP server is for ad accounts, used from ChatGPT or Claude (mcp.facebook.com/ads, Apr 29, 2026). All of this is secondary; check Meta's help center before the submission says it. What works today is copy and paste: the Prepare page tags a question, and Put the names back restores an answer on the device.
+
 ## When the tuned Glimmer lands
 
 Not before; this is a test design only. Run on identical items with the same policy, prompt, schema and decoding settings:

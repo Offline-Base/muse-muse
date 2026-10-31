@@ -1515,7 +1515,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         rotation = tag_day_note(getattr(services, "tagmap", None))
         return page(
             request, "prepare", "Prepare a question",
-            render("prepare.html", original="", result_html="", note="", rotation=rotation),
+            render("prepare.html", original="", result_html="", note="", rotation=rotation, answer="", restore_note="", restored_html=""),
         )
 
     @app.post("/prepare", response_class=HTMLResponse)
@@ -1532,7 +1532,27 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         rotation = tag_day_note(getattr(services, "tagmap", None))
         return page(
             request, "prepare", "Prepare a question",
-            render("prepare.html", original=original, result_html=result, note=note, rotation=rotation),
+            render("prepare.html", original=original, result_html=result, note=note, rotation=rotation, answer="",
+                   restore_note="", restored_html=""),
+        )
+
+    @app.post("/prepare/restore", response_class=HTMLResponse)
+    async def prepare_restore(request: Request) -> HTMLResponse:
+        """Put real names back into an answer from Muse or the Meta AI app, for this page only.
+        Only tags this device handed out restore. The text is never stored, logged or sent."""
+        answer = str((await _read_body(request)).get("answer") or "")[:RESTORE_LIMIT]
+        restored, note = restore_text(services, answer)
+        result = (
+            '<div class="codebox"><label class="codebox-label" for="restored">with real names, on this device only</label>'
+            f'<textarea id="restored" readonly rows="6">{esc(restored)}</textarea></div>'
+            if restored
+            else ""
+        )
+        rotation = tag_day_note(getattr(services, "tagmap", None))
+        return page(
+            request, "prepare", "Prepare a question",
+            render("prepare.html", original="", result_html="", note="", rotation=rotation, answer=answer,
+                   restore_note=note, restored_html=result),
         )
 
     @app.get("/api/audit.csv")
@@ -1803,6 +1823,7 @@ def learning_html(settings: Any, controls: Any) -> str:
 
 
 PREPARE_LIMIT = 4000
+RESTORE_LIMIT = 20000  # an answer can be longer than the question
 AUDIT_LIMIT = 100000
 def _read_setup(settings: Any) -> dict[str, Any]:
     try:
@@ -1843,7 +1864,7 @@ def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
         if not callable(names) or getattr(checker, "is_cloud", True):
             raise RuntimeError("no local name check")
         result = guard.tag(text, services.roster, services.tagmap, llm_names=names, **kw)
-        note = "Copy this into Muse. Muse uses the tags, and this device swaps them back when it searches."
+        note = "Copy this into Muse or the Meta AI app. Muse's searches here swap the tags back, and so does Put the names back below."
     except Exception as exc:
         log.warning("prepare could not run the name check: %s", type(exc).__name__)
         result = guard.tag(text, services.roster, services.tagmap, **kw)
@@ -1852,6 +1873,21 @@ def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
     if callable(touch):  # the user pastes these into Muse, so Muse may send them back
         touch(guard.TAG_RE.findall(result.text))
     return result.text, note
+
+
+def restore_text(services: Any, text: str) -> tuple[str, str]:
+    """(the answer with this device's tags swapped for real values, a note for the page). Only tags
+    the device handed out and still restores (TagMap.for_muse) come back; any other tag stays as written."""
+    if not text.strip():
+        return "", ""
+    tagmap = getattr(services, "tagmap", None)
+    known = dict(tagmap.for_muse()) if hasattr(tagmap, "for_muse") else {}
+    restored = guard.restore(text, known)
+    left = list(dict.fromkeys(guard.TAG_RE.findall(restored)))
+    if left:
+        return restored, (f"{len(left)} tag{'s' if len(left) > 1 else ''} stayed as written: from another day, "
+                          "or not made on this device.")  # fmt: skip
+    return restored, "Kept on this device. Nothing here is saved or sent."
 
 
 def tag_day_note(tagmap: Any) -> str:

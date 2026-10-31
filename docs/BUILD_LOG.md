@@ -169,6 +169,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **16:35** Ethan chose the guardian lock and a family preset for the families case. Added `base/guardian.py`: a PIN kept as a salted PBKDF2 hash in BASE_HOME/guardian.json (0600), 5 misses lock it for 15 minutes, an unlock lasts 10 minutes in one browser. With a PIN set, changing Controls, Setup, learning mode or Always approve, or deleting a decision, needs the guardian; with its approvals box on, approving a result does too, and "don't ask again" always does. Denying never does. Added a `family` toggle: codes, passwords, account numbers and a home address stay on the device, money, health and custody are asked, faces are asked, and the fewer-than-10-people hold is off for it, since a family's files are about one or two people. Limits written in THREAT_MODEL and the toggle's own text: an administrator can delete the file, and nothing typed into Muse is seen. Unit and page tests only.
 
+**16:51** Ethan: Muse Privacy should be reachable from the Meta AI app the same way. No public source shows the Meta AI app taking outside connectors (secondary sources only; Muse has its own directory), so it cannot be added as a connector there today. Added the copy and paste path instead: Prepare's text names the Meta AI app, and a new Put the names back box (POST `/prepare/restore`) swaps the device's own tags in an answer back to real names on that page only, storing and sending nothing. Tags the device never handed out stay as written and are counted.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import time
 
 import pytest
@@ -121,10 +122,21 @@ def test_always_approve_is_locked_on_the_page_and_the_api(client, svc):
 
 
 def test_prepare_tags_the_question_and_keeps_nothing(client, svc):
-    assert "paste the tagged version" in client.get("/prepare").text
+    assert "paste the tagged version in instead" in client.get("/prepare").text
     page = client.post("/prepare", data={"text": f"How did {STUDENT} do? Call 555-0142."}).text
     assert "[Student" in page and "[Phone 1]" in page
     assert svc.approvals.history(limit=5) == []
+
+
+def test_an_answer_from_the_meta_ai_app_gets_its_names_back_on_the_device_only(client, svc):
+    page = client.post("/prepare", data={"text": f"Write a note to {STUDENT}'s family about the trip."}).text
+    tag = re.search(r"\[Student [A-Z]+\]", page).group(0)
+    answer = f"Dear family of {tag}, the trip is on Friday. [Student ZZZ] and [Phone 9] are not ours."
+    back = client.post("/prepare/restore", data={"answer": answer}).text
+    assert f"Dear family of {STUDENT}" in back
+    assert "[Student ZZZ]" in back and "2 tags stayed as written" in back  # tags this device never made
+    assert svc.approvals.history(limit=5) == []  # nothing stored, nothing sent
+    assert "Put the names back" in client.get("/prepare").text and "Meta AI app" in client.get("/prepare").text
 
 
 def test_prepare_says_so_when_the_local_model_is_down(client, svc):
