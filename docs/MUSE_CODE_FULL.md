@@ -73,8 +73,10 @@ Rewritten by the platform before every Muse Code start, on both engines:
   firewall), `mode: "optional"`, with a per-build token only the Muse runner exports: Meta docs search and read (the
   mirror in `content/meta-docs`), the model catalog, and the build's own progress notes. Off when the sandbox can't
   reach the platform (local runs without a tunnel).
-- **Skills**: turn `workflow-authoring` back on; the template's AGENTS.md gets a playbook for a scout subagent first,
-  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks.
+- **Skills**: turn `workflow-authoring` back on; the build prompt gets a playbook for a scout subagent first,
+  parallel writers in isolated worktrees, a read-only reviewer at the end, and workflows for fan-out checks, and every
+  prompt gets the limits each child keeps to (`lib/brief/render.ts`, while either flag is on). The template's
+  AGENTS.md stays as it is: every build reads it, flags or not, and a product's sandbox keeps the copy it was built with.
 - **Safety**: `.muse` joins the deploy exclusions; stray project config the agent wrote (`.mcp.json` it didn't get
   from us, extra hooks) is replaced before each start.
 

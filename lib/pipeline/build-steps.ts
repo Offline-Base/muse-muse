@@ -145,11 +145,16 @@ async function chargeBrief(buildId: string, usage: ModelUsage[]): Promise<void> 
 }
 
 /**
- * What a run's prompt says about the session around it: the goal the session bridge sets from Done means, and notes
- * the build's owner can send while it runs. Both off for plain `muse exec`, which keeps today's prompts.
+ * What a run's prompt says about the session around it: the goal the session bridge sets from Done means, notes the
+ * build's owner can send while it runs, and the playbook for subagents and workflows, which only test builds on the
+ * session bridge or MUSE_FULL get. All off for plain `muse exec`, which keeps today's prompts.
  */
-function sessionNotes(): { goalSet: boolean; ownerNotes: boolean } {
-  return { goalSet: env.museEngine === "serve", ownerNotes: env.steeringEnabled };
+function sessionNotes(): { goalSet: boolean; ownerNotes: boolean; playbook: boolean } {
+  return {
+    goalSet: env.museEngine === "serve",
+    ownerNotes: env.steeringEnabled,
+    playbook: env.museFull || env.museEngine === "serve",
+  };
 }
 
 /**
@@ -1069,6 +1074,7 @@ export async function reopenStep(input: {
       fileName: r.fileName,
       describes: `${/^[aeiou]/.test(r.kind) ? "An" : "A"} ${r.kind === "pdf" ? "PDF" : r.kind} the user attached with this change (inspo/${r.fileName}).`,
     })),
+    ...sessionNotes(),
   });
   const promptFile = `refine-${input.refineIndex}.md`;
   await sandbox.writeProductFile(input.sandboxName, promptFile, prompt);
