@@ -1,5 +1,5 @@
 import { TARGETS, type TargetId } from "@/lib/brief/schema";
-import { databaseChoice } from "@/lib/db/url";
+import { databaseChoice, isPreview } from "@/lib/db/url";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
 import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
@@ -41,6 +41,9 @@ function flag(name: string): boolean {
 function optional(name: string): string | null {
   return process.env[name]?.trim() || null;
 }
+
+/** env.publishOffReason on a Vercel preview. It reads after "because" and inside "Publishing is off for this run (...)". */
+export const PUBLISH_OFF_ON_PREVIEW = "it's a Vercel preview, and a product published here would deploy into production's Vercel projects";
 
 /** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
 export const DEFAULT_PLATFORM_MODEL = "muse-wonder-1.0";
@@ -133,9 +136,13 @@ export const env = {
   },
   /**
    * Why products aren't published to their own link here, or null when they are. A local run never publishes, even
-   * with VERCEL_TOKEN set: the product would call this machine's gateway (GATEWAY_URL), which Vercel can't reach.
+   * with VERCEL_TOKEN set: the product would call this machine's gateway (GATEWAY_URL), which Vercel can't reach. A
+   * Vercel preview never publishes either (README.md, Preview database): its products live in the preview's own
+   * database, but a publish goes into the Vercel project musemuse-<slug> (or the one a row copied from production
+   * names), which is production's live product, and would give it a token production's gateway doesn't know.
    */
   get publishOffReason(): string | null {
+    if (isPreview()) return PUBLISH_OFF_ON_PREVIEW;
     if (!process.env.VERCEL_TOKEN) return "VERCEL_TOKEN isn't set";
     if (!publicHost(env.platformUrl)) return "it's a local run, and a published product couldn't reach this machine's gateway";
     return null;
