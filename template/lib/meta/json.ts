@@ -7,7 +7,10 @@ import { plainDeep } from "./text";
 export type JsonReasoningEffort = "minimal" | "low" | "medium" | "high";
 
 export interface RespondJsonOptions<T> {
-  /** Default "muse-wonder-1.0", the model for a product's own text and vision calls. Muse Muse never uses Spark 1.3. */
+  /**
+   * Default "muse-wonder-1.0", the model for a product's own text and vision calls. Muse Muse never uses Spark 1.3. A
+   * test build may run it on Spark 1.3 Contributor instead (testModelFor), which the product's code never chooses.
+   */
   model?: "muse-wonder-1.0";
   schema: z.ZodType<T>;
   /** Letters, digits, _ and -. Sent as the json_schema name. */
@@ -79,7 +82,7 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     let res: Response;
     try {
       res = await client.responses.create({
-        model: opts.model ?? "muse-wonder-1.0",
+        model: testModelFor(opts.model ?? "muse-wonder-1.0"),
         instructions: instructionsFor(current, opts.instructions, plain),
         input,
         reasoning: { effort: opts.reasoningEffort ?? "low" },
@@ -126,6 +129,18 @@ export async function respondJson<T>(opts: RespondJsonOptions<T>): Promise<T> {
     ];
   }
   throw new RespondJsonError(`The model's JSON did not match "${opts.schemaName}" after a retry.`, lastIssues, lastRaw);
+}
+
+/** The only model TEST_MODEL may name. */
+const TEST_MODEL = "muse-spark-1.3-contributor";
+
+/**
+ * The model a call runs on. Muse Wonder, unless this is a test build whose calls go straight to Meta: then the Muse
+ * Muse platform writes TEST_MODEL=muse-spark-1.3-contributor into .env.local, the same swap the gateway makes for every
+ * other test build. Any other value is ignored. A live product never has it, since .env files are never deployed.
+ */
+function testModelFor(model: "muse-wonder-1.0"): string {
+  return process.env.TEST_MODEL?.trim() === TEST_MODEL ? TEST_MODEL : model;
 }
 
 /** Every call asks for copy without em dashes, so plain() on the reply is only a fallback. */

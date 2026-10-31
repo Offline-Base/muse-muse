@@ -11,7 +11,7 @@ import {
 } from "@/lib/sandbox/bridge-protocol";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { noEmDashes } from "@/lib/brief/normalize";
-import { env } from "@/lib/env";
+import { env, testModel } from "@/lib/env";
 import { buildMcpToken } from "@/lib/mcp/build-token";
 import { fetchBytes, putFile } from "@/lib/storage";
 import type { Manifest, ModelUsage, MuseLogLine, Reference, Screenshot, VerifySummary } from "@/lib/types";
@@ -257,9 +257,16 @@ async function ensureTime(sandbox: Sandbox, needMs: number): Promise<void> {
   }
 }
 
+/**
+ * The product's .env.local. A product calling Meta directly skips the gateway, and with it the gateway's TEST_MODEL swap
+ * of a build's Muse Wonder calls, so on those runs TEST_MODEL goes in the file too and the template's respondJson makes
+ * the swap itself. Through the gateway the file never names it.
+ */
 function envLocal(sandboxName: string, gatewayUrl: string, token: string): string {
-  const [url, key] = productsCallMetaDirectly() ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
-  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n`;
+  const direct = productsCallMetaDirectly();
+  const [url, key] = direct ? ["https://api.meta.ai", sandboxPlaceholder(sandboxName)] : [gatewayUrl, token];
+  const test = direct ? testModel() : null;
+  return `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=${url}\nPRODUCT_TOKEN=${key}\n${test ? `TEST_MODEL=${test}\n` : ""}`;
 }
 
 async function download(items: Array<{ dir: "inspo" | "fixtures"; fileName: string; url: string }>) {

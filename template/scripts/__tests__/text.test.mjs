@@ -101,3 +101,32 @@ test("respondJson asks the model for no em dashes in every mode, and cleans the 
   assert.match(calls[2].instructions, new RegExp(`^Write one line\\.\\n\\n${NO_EM_DASHES.replace(/\./g, "\\.")}\\n\\nReply with only one JSON value`));
   assert.equal(calls[2].text, undefined);
 });
+
+test("respondJson runs on Spark 1.3 Contributor only when a test build's .env.local says TEST_MODEL names it", async () => {
+  const saved = process.env.TEST_MODEL;
+  const models = [];
+  const client = {
+    responses: {
+      create: async (req) => {
+        models.push(req.model);
+        return { output_text: '{"line":"Fine."}' };
+      },
+    },
+  };
+  const ask = () => respondJson({ client, schema: z.object({ line: z.string() }), schemaName: "nudge", input: "Hi" });
+  try {
+    delete process.env.TEST_MODEL;
+    await ask();
+    process.env.TEST_MODEL = " muse-spark-1.3-contributor\n";
+    await ask();
+    // Nothing else can take its place: not the retired Spark 1.3, not another model, not an empty value.
+    for (const other of ["muse-spark-1.3", "muse-image-1.0", ""]) {
+      process.env.TEST_MODEL = other;
+      await ask();
+    }
+  } finally {
+    if (saved === undefined) delete process.env.TEST_MODEL;
+    else process.env.TEST_MODEL = saved;
+  }
+  assert.deepEqual(models, ["muse-wonder-1.0", "muse-spark-1.3-contributor", "muse-wonder-1.0", "muse-wonder-1.0", "muse-wonder-1.0"]);
+});

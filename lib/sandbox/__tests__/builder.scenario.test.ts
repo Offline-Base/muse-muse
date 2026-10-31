@@ -407,4 +407,47 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
     assert.equal(tags?.slug, "bird-finder", "keeps the other tags");
     assert.ok(written.some((w) => w.path.endsWith("/.env.local")));
   });
+
+  describe(".env.local and TEST_MODEL", () => {
+    const NAMES = ["MODEL_API_KEY", "PLATFORM_URL", "VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_ENV", "TEST_MODEL"] as const;
+    /** The .env.local reopenSandbox writes with these settings, the rest of NAMES unset. */
+    async function envFile(set: Partial<Record<(typeof NAMES)[number], string>>): Promise<string> {
+      const saved = Object.fromEntries(NAMES.map((n) => [n, process.env[n]]));
+      for (const n of NAMES) delete process.env[n];
+      Object.assign(process.env, { MODEL_API_KEY: "test-model-key", ...set });
+      tags = { app: "musemuse", role: "product", product: PRODUCT };
+      written = [];
+      try {
+        await reopen(PRODUCT);
+      } finally {
+        for (const n of NAMES) {
+          if (saved[n] === undefined) delete process.env[n];
+          else process.env[n] = saved[n];
+        }
+      }
+      const file = written.find((w) => w.path === "/vercel/app/.env.local");
+      assert.ok(file, "wrote .env.local");
+      return file.text;
+    }
+    const CONTRIBUTOR = "muse-spark-1.3-contributor";
+
+    it("names the test model when products call Meta directly, the gateway's swap doesn't happen there", async () => {
+      const text = await envFile({ PLATFORM_URL: "http://localhost:3000", TEST_MODEL: CONTRIBUTOR });
+      assert.match(text, /^GATEWAY_URL=https:\/\/api\.meta\.ai$/m);
+      assert.match(text, new RegExp(`^TEST_MODEL=${CONTRIBUTOR}\\n$`, "m"));
+    });
+
+    it("leaves it out through the gateway, which swaps the model itself", async () => {
+      const text = await envFile({ PLATFORM_URL: "https://musemuse.example", TEST_MODEL: CONTRIBUTOR });
+      assert.match(text, /^GATEWAY_URL=https:\/\/g$/m);
+      assert.doesNotMatch(text, /TEST_MODEL/);
+    });
+
+    it("leaves it out when TEST_MODEL is unset, names another model, or the platform is production", async () => {
+      for (const set of [{}, { TEST_MODEL: "muse-wonder-1.0" }, { TEST_MODEL: CONTRIBUTOR, VERCEL_ENV: "production" }]) {
+        const text = await envFile({ PLATFORM_URL: "http://localhost:3000", ...set });
+        assert.equal(text, `# Written by the Muse Muse platform for this build. Never commit this file.\nGATEWAY_URL=https://api.meta.ai\nPRODUCT_TOKEN=${text.match(/^PRODUCT_TOKEN=(.*)$/m)?.[1]}\n`);
+      }
+    });
+  });
 });
