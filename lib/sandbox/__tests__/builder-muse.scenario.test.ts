@@ -29,6 +29,8 @@ let commands: Array<{ script: string; detached: boolean; sudo?: boolean }> = [];
 let answer: (script: string) => { exitCode?: number; stdout?: string } = () => ({});
 let kills: string[] = [];
 let commandAlive = true;
+/** What a command that has ended exited with. */
+let commandExit = 143;
 
 class NotFound extends Error {
   response = { status: 404 };
@@ -60,7 +62,7 @@ const fakeSandbox = {
     },
     // A command that runs until it is killed. AbortSignal.timeout's timer is unref'd, so hold the event loop open.
     wait: ({ signal }: { signal: AbortSignal }) => {
-      if (!commandAlive) return Promise.resolve({ exitCode: 143 });
+      if (!commandAlive) return Promise.resolve({ exitCode: commandExit });
       const keepAlive = setTimeout(() => {}, 30_000);
       return new Promise((_, reject) =>
         signal.addEventListener("abort", () => {
@@ -104,6 +106,7 @@ beforeEach(() => {
   commands = [];
   kills = [];
   commandAlive = true;
+  commandExit = 143;
   answer = (script) => (script.includes(PROBE) ? { stdout: "turn\n" } : {});
   for (const k of ENV) delete process.env[k];
   process.env.MODEL_API_KEY = "test-model-key";
@@ -444,27 +447,72 @@ describe("transcript highlights", { skip: canMock ? false : "needs --experimenta
 });
 
 describe("pollMuse on the session bridge", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const LOG = "/vercel/musemuse/logs/muse-r0.msp.jsonl";
+  const jsonl = (records: unknown[]) => records.map((r) => JSON.stringify(r)).join("\n").concat("\n");
+  const exitRecord = (exitCode: number) => ({ t: 3, kind: "bridge", event: "exit", exitCode, finalText: "All done", goal: null, reason: "completed" });
+  /** Answers the log's read with `log`, runs `onRead` when it is read, and answers the session log's read with `session`. */
+  const serve = (log: string, session: { exitCode?: number; stdout?: string } = {}, onRead = () => {}) => {
+    answer = (script) => {
+      if (script.includes(`tail -c +1 '${LOG}'`)) {
+        onRead();
+        return { stdout: Buffer.from(log).toString("base64") };
+      }
+      return script.includes("node -e") ? session : {};
+    };
+  };
+  const poll = () => builder.pollMuse({ sandboxName: fakeSandbox.name, cmdId: "cmd-2", logPath: LOG, offset: 0, announced: ["reminder:skill"] });
+
   it("reads the bridge's log with its condenser and is done at the exit record, charging from the session log", async () => {
-    const log = [
+    const log = jsonl([
       { t: 1, kind: "bridge", event: "started", sessionId: SESSION },
       { t: 2, kind: "bridge", event: "session", sessionId: SESSION, reason: "started" },
       { t: 3, kind: "bridge", event: "exit", exitCode: 0, finalText: "Done. Bird Finder works.", goal: null, reason: "completed" },
-    ]
-      .map((r) => JSON.stringify(r))
-      .join("\n")
-      .concat("\n");
-    answer = (script) => {
-      if (script.includes("tail -c +1 '/vercel/musemuse/logs/muse-r0.msp.jsonl'")) return { stdout: Buffer.from(log).toString("base64") };
-      return {};
-    };
-    const poll = await builder.pollMuse({ sandboxName: fakeSandbox.name, cmdId: "cmd-2", logPath: "/vercel/musemuse/logs/muse-r0.msp.jsonl", offset: 0, announced: ["reminder:skill"] });
-    assert.equal(poll.done, true);
-    assert.equal(poll.exitCode, 0);
-    assert.equal(poll.offset, Buffer.byteLength(log));
-    assert.equal(poll.finalText, "Done. Bird Finder works.");
-    assert.deepEqual(poll.usage, []);
-    assert.equal(poll.childrenIncluded, null);
-    assert.deepEqual(poll.bridgeState?.announced, ["reminder:skill"], "what was announced carries over");
+    ]);
+    // The real order: the record is written while the first check still sees the bridge running, and it exits at once.
+    serve(log, {}, () => {
+      commandAlive = false;
+      commandExit = 0;
+    });
+    const read = await poll();
+    assert.equal(read.done, true);
+    assert.equal(read.exitCode, 0);
+    assert.equal(read.offset, Buffer.byteLength(log));
+    assert.equal(read.finalText, "Done. Bird Finder works.");
+    assert.deepEqual(read.usage, []);
+    assert.equal(read.childrenIncluded, null);
+    assert.deepEqual(read.bridgeState?.announced, ["reminder:skill"], "what was announced carries over");
     assert.ok(commands.some((c) => c.script.includes("node -e") && c.script.includes("muse-r0.msp.jsonl")), "the session log is read for charging");
+    assert.deepEqual(kills, [], "a bridge that exited isn't killed");
+  });
+
+  it("stops a bridge whose log says it exited while its command runs on, and doesn't believe the record", async () => {
+    serve(jsonl([{ t: 1, kind: "bridge", event: "started", sessionId: SESSION }, exitRecord(0)]));
+    const read = await poll();
+    assert.deepEqual(kills, ["SIGTERM"], "the round's cap, Stop and charges don't end while it goes on");
+    assert.equal(read.done, true);
+    assert.equal(read.exitCode, 143, "the command's own code, not the record's 0");
+    assert.equal(read.finalText, null);
+    assert.ok(!read.lines.some((l) => l.kind === "done"), "no Done line for a round that was stopped");
+    assert.deepEqual(
+      read.lines.filter((l) => l.kind === "error").map((l) => l.text),
+      ["The session bridge's log said the round had ended while it was still running, so it was stopped."],
+    );
+    assert.ok(commands.some((c) => c.script.includes("node -e")), "what it spent up to there is charged");
+  });
+
+  it("takes the exit code from the command when the record says otherwise", async () => {
+    commandAlive = false;
+    commandExit = 1;
+    serve(jsonl([exitRecord(0)]));
+    const read = await poll();
+    assert.equal(read.exitCode, 1);
+    assert.deepEqual(kills, []);
+  });
+
+  it("keeps the record's code when a restarted sandbox lost the command's", async () => {
+    commandAlive = false;
+    commandExit = null as unknown as number;
+    serve(jsonl([exitRecord(0)]));
+    assert.equal((await poll()).exitCode, 0);
   });
 });

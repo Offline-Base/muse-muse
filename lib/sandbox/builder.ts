@@ -1037,20 +1037,33 @@ export async function pollMuse(input: {
 
 /**
  * pollMuse for a session bridge round. The round is done once a poll reads the bridge's exit record, its last line,
- * or when the bridge ended without one. Its calls are all charged from the session log, read in the poll that reports
- * done, so `usage` stays empty.
+ * or when the bridge ended without one. The agent can write to this log too, so an exit record only says to look: a
+ * real bridge exits right after writing it, and one whose command is still running is stopped here, so the round's
+ * cap, its Stop and its charges never end while it goes on. The exit code is the command's whenever it has one. Its
+ * calls are all charged from the session log, read in the poll that reports done, so `usage` stays empty.
  */
 async function pollBridge(
   sandbox: Sandbox,
-  input: { cmdId: string; logPath: string; offset: number; announced?: string[]; bridgeState?: BridgeCondenseState },
+  input: { sandboxName: string; cmdId: string; logPath: string; offset: number; announced?: string[]; bridgeState?: BridgeCondenseState },
 ): Promise<MusePoll> {
   // The runner's own output, and its exit code file, sit beside the bridge's log (bridgePaths(round).err).
   const errPath = input.logPath.replace(/\.jsonl$/, ".err");
-  const state = await commandState(sandbox, input.cmdId, errPath);
+  let state = await commandState(sandbox, input.cmdId, errPath);
   if (!state.finished) await ensureTime(sandbox, POLL_WORK_MS);
 
   const { lines, consumed, atEof, extra } = await readNewLines(sandbox, input.logPath, input.offset, state.finished);
   const condensed = condenseBridgeLines(lines, input.bridgeState ?? { ...emptyBridgeState(), announced: [...(input.announced ?? [])] });
+  let falseExit = false;
+  if (condensed.exit && !state.finished) {
+    // Checked before the log was read, so a real bridge may have exited since.
+    state = await commandState(sandbox, input.cmdId, errPath);
+    if (!state.finished) {
+      falseExit = true;
+      await killCommand(input.sandboxName, input.cmdId);
+      state = await commandState(sandbox, input.cmdId, errPath);
+      extra.push({ kind: "error", ok: false, text: "The session bridge's log said the round had ended while it was still running, so it was stopped." });
+    }
+  }
   const done = condensed.exit !== null || (state.finished && atEof);
   const session = done ? await readSessionUsage(sandbox, input.logPath) : null;
   if (session?.children.calls) extra.push(childUsageLine(session.children));
@@ -1063,13 +1076,15 @@ async function pollBridge(
     const code = state.exitCode === null ? "no exit code (the sandbox restarted)" : `code ${state.exitCode}`;
     extra.push({ kind: "error", ok: false, text: `The session bridge stopped before it finished, with ${code}${err ? `: ${err}` : ""}` });
   }
+  // A false exit record's code counts for nothing, even while its bridge is still going down.
+  const recorded = falseExit ? null : (condensed.exit?.code ?? null);
   return {
     done,
-    exitCode: !done ? null : condensed.exit ? condensed.exit.code : state.exitCode,
+    exitCode: done ? (state.exitCode ?? recorded) : null,
     offset: input.offset + consumed,
-    lines: [...condensed.lines, ...extra],
+    lines: [...(falseExit ? condensed.lines.filter((l) => l.kind !== "done") : condensed.lines), ...extra],
     usage: [],
-    finalText: condensed.finalText,
+    finalText: falseExit ? null : condensed.finalText,
     announced: condensed.state.announced,
     childrenIncluded: null,
     bridgeState: condensed.state,
