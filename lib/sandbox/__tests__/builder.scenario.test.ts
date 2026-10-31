@@ -10,7 +10,7 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, it, mock } from "node:test";
+import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { PLATFORM_FILES } from "@/lib/sandbox/paths";
 
 const MB = 1024 * 1024;
@@ -71,7 +71,7 @@ const shot = (url: string) => ({ url, caption: url });
 before(async () => {
   if (!canMock) return;
   mock.module("@vercel/sandbox", {
-    namedExports: { APIError: class APIError extends Error {}, Sandbox: { get: async () => fakeSandbox } },
+    namedExports: { APIError: class APIError extends Error {}, Sandbox: { get: async () => fakeSandbox, getOrCreate: async () => fakeSandbox } },
   });
   mock.module(new URL("../../storage.ts", import.meta.url).href, {
     namedExports: {
@@ -384,6 +384,56 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
     assert.notEqual(builder.sandboxNameFor("bird-finder", PRODUCT), builder.sandboxNameFor("bird-finder", "9b1d0c3e-0000-4000-8000-000000000000"));
     assert.ok(builder.sandboxNameFor("a".repeat(80), PRODUCT).length <= 61);
     assert.throws(() => builder.sandboxNameFor("bird", "not-a-uuid"), /Invalid product id/);
+  });
+
+  describe("files beyond the template", () => {
+    const extraFiles = [
+      { path: "lib/native/bridge.ts", content: "new bridge" },
+      { path: ".agents/skills/muse-native/SKILL.md", content: "new skill" },
+    ];
+    const savedKey = process.env.MODEL_API_KEY;
+    const savedSnapshot = process.env.BUILDER_SNAPSHOT_ID;
+    beforeEach(() => {
+      process.env.MODEL_API_KEY = "test-model-key";
+      process.env.BUILDER_SNAPSHOT_ID = "snap-test";
+      tags = { app: "musemuse", role: "product", slug: "bird-finder", product: PRODUCT };
+      files = { "/vercel/musemuse/builder.json": "{}" };
+    });
+    after(() => {
+      for (const [name, value] of [["MODEL_API_KEY", savedKey], ["BUILDER_SNAPSHOT_ID", savedSnapshot]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    });
+    const provision = (extra?: typeof extraFiles) =>
+      builder.provisionSandbox({
+        buildId: "b1",
+        productId: PRODUCT,
+        slug: "bird-finder",
+        references: [],
+        fixtures: [],
+        promptMarkdown: "# Build",
+        buildToken: "mm_build_x",
+        gatewayUrl: "https://g",
+        ...(extra ? { extraFiles: extra } : {}),
+      });
+
+    it("are written into the product at provision, with their folders made first", async () => {
+      await provision(extraFiles);
+      assert.deepEqual(written.filter((w) => w.text.startsWith("new ")).map((w) => w.path), ["/vercel/app/lib/native/bridge.ts", "/vercel/app/.agents/skills/muse-native/SKILL.md"]);
+      assert.ok(scripts.some((s) => s.includes("'/vercel/app/lib/native'") && s.includes("'/vercel/app/.agents/skills/muse-native'") && s.includes("mkdir -p")));
+    });
+
+    it("with none, provision writes just what it always wrote", async () => {
+      await provision();
+      assert.deepEqual(written.map((w) => w.path), ["/vercel/app/brief.md", "/vercel/app/.env.local"]);
+    });
+
+    it("on a reopen, are written only where missing, so what Muse Code changed stays", async () => {
+      files["/vercel/app/lib/native/bridge.ts"] = "Muse Code's edit";
+      await builder.reopenSandbox({ sandboxName: "product-bird-finder", productId: PRODUCT, buildToken: "mm_build_x", gatewayUrl: "https://g", newReferences: [], extraFiles });
+      assert.deepEqual(written.map((w) => w.path), ["/vercel/app/.agents/skills/muse-native/SKILL.md", "/vercel/app/.env.local"]);
+    });
   });
 
   it("refuses a sandbox tagged with another product before touching it", async () => {

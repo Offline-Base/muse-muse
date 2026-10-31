@@ -4,6 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
+import type { TargetId } from "@/lib/brief/schema";
 import { setBuildStatus } from "@/lib/events";
 import { TERMINAL_STATUSES, type Reference } from "@/lib/types";
 
@@ -13,6 +14,8 @@ export async function insertBuild(input: {
   note: string | null;
   references: Reference[];
   rebuildOf: string | null;
+  /** Where the person picked for it to run. Empty or missing lets the brief writer choose. */
+  requestedTargets?: TargetId[] | null;
 }): Promise<{ buildId: string; inspirationId: string }> {
   const inspirationId = randomUUID();
   const buildId = randomUUID();
@@ -30,6 +33,7 @@ export async function insertBuild(input: {
       kind: "build",
       rebuildOf: input.rebuildOf,
       status: "queued",
+      ...(input.requestedTargets?.length ? { requestedTargets: input.requestedTargets } : {}),
     }),
   ]);
   return { buildId, inspirationId };
@@ -44,7 +48,7 @@ function rowsOf(result: unknown): unknown[] {
 /**
  * Saves a refinement (its message as the muse's note) and a queued refine build, but only if no other build of the
  * product is running. The product row is locked first, so two requests at once can't both get in. Returns null when
- * the product is busy.
+ * the product is busy. A refinement keeps what the person picked for the product's first build.
  */
 export async function insertRefineBuild(input: {
   userId: string;
@@ -69,9 +73,12 @@ export async function insertRefineBuild(input: {
           where ${notBusy}`,
     ),
     db().execute(
-      sql`insert into builds (id, inspiration_id, user_id, kind, message, rebuild_of, product_id, status)
+      sql`insert into builds (id, inspiration_id, user_id, kind, message, rebuild_of, product_id, status, requested_targets)
           select ${buildId}::uuid, ${inspirationId}::uuid, ${input.userId}::uuid, 'refine', ${input.message}::text,
-                 ${input.rebuildOf}::text, ${input.productId}::uuid, 'queued'
+                 ${input.rebuildOf}::text, ${input.productId}::uuid, 'queued',
+                 (select original.requested_targets from builds original
+                  where original.product_id = ${input.productId}::uuid and original.kind = 'build'
+                  order by original.created_at desc limit 1)
           where ${notBusy}
           returning id`,
     ),

@@ -63,10 +63,10 @@ describe("with every target flag off", () => {
     assert.ok(!("targets" in BriefSchema.parse(BRIEF)));
   });
 
-  it("the stored schema differs from the one the writer used only by the optional targets", () => {
+  it("the stored schema differs from the one the writer used only by the optional targets and agent", () => {
     const stored = strictJsonSchema(BriefSchema) as { properties: Record<string, unknown>; required: string[] };
     const written = strictJsonSchema(NewBriefSchema) as { properties: Record<string, unknown>; required: string[] };
-    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), ["targets"]);
+    assert.deepEqual(Object.keys(stored.properties).filter((k) => !(k in written.properties)), ["targets", "agent"]);
     assert.deepEqual(Object.keys(written.properties).filter((k) => !(k in stored.properties)), []);
   });
 });

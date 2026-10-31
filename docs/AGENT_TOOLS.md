@@ -30,6 +30,26 @@ is what the sync generated from it.
 A token carries `agent` and one `tool:<id>` per tool the brief picked, in `allowedModels` (`AGENT_MARKER`, `toolMarker` and
 `toolOfMarker`). A product's manifest can narrow that list, never widen it.
 
+## In the brief
+
+With `AGENTS_ENABLED` on, the writer's schema has `agent`, null for a product that isn't one:
+
+```ts
+agent: { task: string; tools: Array<{ id: ToolId; need: string; why: string }> /* 1 to 6 */; connections: "none" | "owner"; stepsPerRun: number }
+```
+
+- **The catalog** lists each tool with its tier and price, from `lib/tools/composio/catalog.json`, and Meta's search first. Personal
+  tools appear only with `COMPOSIO_PERSONAL_ENABLED`. Tiers and prices go to the writer through `catalogSummary()`.
+- **`applyTargets` settles it.** The agent target and the field always agree: a person's pick gets web search at least, and a
+  dropped target drops the field. Tools with their flag off go. `connections` follows the tools. It adds Muse Wonder if it's missing
+  and the owner-only limit. An agent target with no agent written gets one repair call first (`targetProblems`).
+- **Tokens** carry `agent` and `tool:<id>`, through `allowedModelsFor`.
+- **A stored brief's tool ids are plain strings**, since a tool can leave the catalog. `allowedModelsFor` skips ones it doesn't know.
+- **Canned outputs.** `prepareToolFixtures` in `lib/tools/fixtures.ts` is one Muse Wonder call of about $0.04 at the fixtures step,
+  only for read tools other than web search. It saves them to `builds.tool_fixtures`, and a refinement copies them. Each output must
+  match the catalog sample's shape, and links and addresses off `example.com` are rewritten. If this fails, the build goes on, and
+  each tool's catalog sample stands in.
+
 ## Routes
 
 | Method and path | Answers |

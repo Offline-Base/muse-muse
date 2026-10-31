@@ -1,5 +1,9 @@
+import { targetLabel } from "@/lib/format";
 import { buildTokenBudgetFor } from "@/lib/gateway/policy";
-import type { Brief } from "@/lib/brief/schema";
+import { RUN_LIMITS } from "@/lib/gateway/runs";
+import type { Brief, TargetId } from "@/lib/brief/schema";
+import { briefTargets, isOwnerToolsOnly } from "@/lib/native/targets";
+import { isToolId, PERSONAL_TOOL_IDS, toolLabel } from "@/lib/tools/ids";
 import type { JudgeVerdict, RebuildTarget, VerifySummary } from "@/lib/types";
 
 /**
@@ -14,6 +18,46 @@ const SKILLS: Record<Brief["capabilities"][number]["model"], string> = {
   "muse-voice-transcribe-1.0": ".agents/skills/meta-voice",
   "muse-glimmer": ".agents/skills/meta-glimmer",
   "muse-gadget": ".agents/skills/muse-gadget",
+};
+
+/** The skill that goes with a target. */
+const TARGET_SKILLS: Record<Exclude<TargetId, "web">, string> = {
+  phone: ".agents/skills/muse-native",
+  desktop: ".agents/skills/muse-native",
+  vr: ".agents/skills/muse-vr",
+  glasses: ".agents/skills/muse-glasses",
+  agent: ".agents/skills/muse-agent",
+};
+
+/** What each target asks of the build, on top of its skill. */
+const TARGET_RULES: Record<Exclude<TargetId, "web">, string[]> = {
+  phone: [
+    "The same web product opens in the phone app and as an iPhone home screen icon, so design it for a phone first, at 390x844.",
+    "Respect the safe-area insets, make every target at least 44 px, and keep popups and new windows out of the main flow.",
+    "Use `lib/native/bridge.ts` for haptics, sharing, the camera and notifications. It falls back to web APIs in a browser.",
+    "If you have `preview_devices` and `native_run` tools, check the product with them before you finish.",
+  ],
+  desktop: [
+    "The same web product opens in a Mac and a Windows app window, so it must work from 900x600 up to a full 1920x1080 screen.",
+    "Make the main flow work with a keyboard, and keep popups and new windows out of it.",
+    "Use `lib/native/bridge.ts` for notifications. Haptics, sharing and the camera fall back to web APIs in the desktop app too.",
+    "If you have `preview_devices` and `native_run` tools, check the product with them before you finish.",
+  ],
+  vr: [
+    "The product opens from its link in Quest Browser. Collect text, photos and files on the page before entering VR. Inside VR there are buttons, hands and at most one short spoken request.",
+    "The smoke test enters VR with `xr.enter(page)` from `tests/xr.ts` and saves at least one judge screenshot inside it, then the final result.",
+    "Stay inside the skill's performance budget: at most 100 draw calls and 100k triangles, no post-processing, no remote assets.",
+    "On a computer it runs in a simulated headset, and on a phone it shows a 3D preview. Both have to work, because that is where it gets tested.",
+  ],
+  glasses: [
+    "The wearer sees nothing in the glasses, so every answer is one to three short sentences to be spoken, and the phone shows the photo and the answer.",
+    "Build it from the parts in `components/glasses/` and `useGlasses` in `lib/glasses/client.ts`. Without the Muse Muse app it must still work with the phone's camera or a sample view.",
+    "The smoke test uses the fake bridge in `tests/glasses.ts`, as the skill shows.",
+  ],
+  agent: [
+    "One person starts each run and sees its steps and any sources as they arrive, in the parts the skill lists. Never show raw tool output.",
+    "See the Agent section below for the task, the tools and the limits.",
+  ],
 };
 
 const FIT_MEANING: Record<RebuildTarget["rebuild"]["fit"], string> = {
@@ -50,6 +94,50 @@ function quote(text: string): string {
 
 function uniqueModels(brief: Brief): Brief["capabilities"][number]["model"][] {
   return [...new Set(brief.capabilities.map((c) => c.model))];
+}
+
+/** The targets a brief adds to web. Empty for a web-only brief, which renders as it always did. */
+function addedTargets(brief: Pick<Brief, "targets">): Exclude<TargetId, "web">[] {
+  return briefTargets(brief).filter((t): t is Exclude<TargetId, "web"> => t !== "web");
+}
+
+/** The build prompt's "Where it runs", from the brief's targets. */
+function whereItRunsLines(brief: Brief): string[] {
+  const added = addedTargets(brief);
+  if (!added.length) return [];
+  const why = new Map((brief.targets ?? []).map((t) => [t.id, t.why]));
+  const out = ["", "## Where it runs", "", "One web product, on these too. Read each skill named here before you write code."];
+  for (const t of added) {
+    out.push("", `### ${targetLabel(t)}`, "", `${sentence(why.get(t) ?? "The brief picked it")} Skill: \`${TARGET_SKILLS[t]}\`.`, "", bullets(TARGET_RULES[t]));
+  }
+  return out;
+}
+
+/** The build prompt's "Agent" section. */
+function agentLines(brief: Brief): string[] {
+  const agent = brief.agent;
+  if (!agent || !briefTargets(brief).includes("agent")) return [];
+  const live = RUN_LIMITS.liveAgent;
+  const build = RUN_LIMITS.build;
+  const personal = agent.tools.filter((t) => (PERSONAL_TOOL_IDS as readonly string[]).includes(t.id));
+  return [
+    "",
+    "## Agent",
+    "",
+    `Task for one run: ${sentence(agent.task)}`,
+    "",
+    "Tools, and only these. The gateway refuses any other:",
+    "",
+    bullets(agent.tools.map((t) => `\`${t.id}\` (${isToolId(t.id) ? toolLabel(t.id) : "unknown tool"}): ${sentence(t.need)} Why: ${sentence(t.why)}`)),
+    "",
+    personal.length
+      ? `Connections: only the product's owner can connect an account for ${personal.map((t) => toolLabel(t.id)).join(", ")} for now, and every visitor needs a clear message saying so. Show a connect card until it's connected.`
+      : "Connections: none. Everything works for everyone who opens the product.",
+    `Steps: about ${agent.stepsPerRun} model turns per run. A live run stops at ${live.turns} turns, ${live.toolCalls} built-in tool calls or $${live.usd.toFixed(2)}, so handle that stop and offer Keep going. A build's run stops at ${build.turns} turns, ${build.toolCalls} built-in tool calls or $${build.usd.toFixed(2)}.`,
+    isOwnerToolsOnly(agent)
+      ? "During this build, its tools return sample results and connections show a sample account. Test the structure (a finished step, a card with what it found or did on the account), never the sample's words. It has no web sources, so don't show or test source links."
+      : "During this build, tools other than web search return sample results with `example.com` links and connections show a sample account. Test the structure (a finished step, a source link, the answer card), never the sample's words.",
+  ];
 }
 
 function money(usd: number): string {
@@ -193,6 +281,8 @@ export function renderBuildPrompt(
     return out.join("\n") + "\n";
   }
 
+  out.push(...whereItRunsLines(brief));
+
   out.push(
     "",
     "## Primary flow",
@@ -214,6 +304,7 @@ export function renderBuildPrompt(
     "Use only these. The gateway rejects any other model. Call them through the helpers in `lib/meta/`.",
     "",
     bullets(brief.capabilities.map((c) => `\`${c.model}\`: ${sentence(c.need)} Why: ${sentence(c.why)} Skill: \`${SKILLS[c.model]}\`.`)),
+    ...agentLines(brief),
   );
 
   out.push(
@@ -247,7 +338,9 @@ export function renderBuildPrompt(
     "## Cost",
     "",
     `About ${money(brief.estimatedCostPerRunUsd)} per run (estimate). ${brief.costNotes}`.trim(),
-    "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
+    brief.agent && briefTargets(brief).includes("agent")
+      ? "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`. Keep all the tests to at most 3 agent runs, each with `maxTurns` 3 or 4."
+      : "Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.",
   );
 
   out.push("", "## Inspiration", "", brief.inspiration.summary);
@@ -422,6 +515,14 @@ export function renderFixPrompt(
   return out.join("\n") + "\n";
 }
 
+/** A change keeps the product working everywhere it runs, which the session may no longer have in mind. */
+function refineTargetLines(brief: Pick<Brief, "targets"> | null | undefined): string[] {
+  const added = brief ? addedTargets(brief) : [];
+  if (!added.length) return [];
+  const skills = [...new Set(added.map((t) => TARGET_SKILLS[t]))].map((s) => `\`${s}\``).join(", ");
+  return [`- This product also runs on: ${added.map(targetLabel).join(", ")}. Keep it working there, and follow ${skills}.`];
+}
+
 /**
  * The prompt for a user's follow-up change to a shipped product. Its sandbox keeps the AGENTS.md it was built with, so
  * the session lines come with every change, whatever that copy says.
@@ -430,6 +531,8 @@ export function renderRefinePrompt(
   input: {
     message: string;
     newReferences: Array<{ fileName: string; describes: string }>;
+    /** The product's brief, for where it runs. Left out for a brief with none, whose prompt stays as it was. */
+    brief?: Pick<Brief, "targets"> | null;
   } & SessionNotes,
 ): string {
   const out: string[] = ["# Change request", "", "The user asked for this change to the live product:", "", quote(input.message)];
@@ -447,6 +550,7 @@ export function renderRefinePrompt(
     "",
     "- Make the change and keep the primary flow working.",
     "- Keep the product's current look: the tokens and parts in `app/globals.css`, and `.agents/skills/meta-ui` if it exists. Don't restyle what the request doesn't change.",
+    ...refineTargetLines(input.brief),
     "- Use only the models the product already lists in `musemuse.json`. The gateway rejects others.",
     "- Update `musemuse.json` if actions, limits or cost changed.",
     "- If the flow changed, update `tests/smoke.spec.ts` to cover it and its judge screenshots. Never weaken or skip a test.",
@@ -491,6 +595,22 @@ export function briefToMarkdown(brief: Brief): string {
 
   out.push("", "## How it works", "", ...brief.primaryFlow.map((s, i) => `${i + 1}. ${s}`));
   if (brief.screens.length) out.push("", "## Screens", "", bullets(brief.screens.map((s) => `**${s.name}**: ${s.purpose}`)));
+
+  const added = addedTargets(brief);
+  if (added.length) {
+    const why = new Map((brief.targets ?? []).map((t) => [t.id, t.why]));
+    out.push("", "## Where it runs", "", bullets(["web", ...added].map((t) => `**${targetLabel(t as TargetId)}**: ${why.get(t as TargetId) ?? "Every product runs on the web."}`)));
+  }
+  if (brief.agent && added.includes("agent")) {
+    out.push(
+      "",
+      "## Agent",
+      "",
+      brief.agent.task,
+      "",
+      bullets(brief.agent.tools.map((t) => `**${toolLabel(t.id)}**: ${t.need}`)),
+    );
+  }
 
   out.push(
     "",

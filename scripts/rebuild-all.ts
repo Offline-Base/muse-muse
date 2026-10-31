@@ -3,6 +3,7 @@
  *
  *   npm run rebuild-all                 every catalog item without a live or partial product yet
  *   npm run rebuild-all -- <id> <id>    exactly these catalog ids
+ *   npm run rebuild-all -- --targets=phone,desktop <id>    these also run there, if their flags are on at PLATFORM_URL
  *
  * Starts the batch through POST /api/rebuilds at PLATFORM_URL with the AUTOMATION_SECRET bearer (acting as the first
  * ADMIN_EMAILS user, who must have signed in once or opened a preview once while it had OPEN_ACCESS=admin), polls each
@@ -70,6 +71,7 @@ function printTable(rows: Tracked[]): void {
 async function main(): Promise<void> {
   const base = env.platformUrl;
   const ids = process.argv.slice(2).filter((a) => !a.startsWith("-"));
+  const targets = process.argv.find((a) => a.startsWith("--targets="))?.slice("--targets=".length).split(",").map((t) => t.trim()).filter(Boolean);
   for (const id of ids) {
     if (!catalogItem(id)) throw new Error(`${id} isn't in catalog/meta-resources.json.`);
   }
@@ -78,7 +80,7 @@ async function main(): Promise<void> {
   const res = await fetch(`${base}/api/rebuilds`, {
     method: "POST",
     headers: { "content-type": "application/json", ...automationHeaders() },
-    body: JSON.stringify(ids.length ? { ids } : {}),
+    body: JSON.stringify({ ...(ids.length ? { ids } : {}), ...(targets?.length ? { targets } : {}) }),
   });
   if (!res.ok) throw new Error(`POST /api/rebuilds failed (${res.status}): ${await res.text()}`);
   const { started } = (await res.json()) as { started: Array<{ id: string; buildId: string }> };

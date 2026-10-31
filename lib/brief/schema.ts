@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PERSONAL_TOOL_IDS, PUBLIC_TOOL_IDS } from "@/lib/tools/ids";
 
 /**
  * What a product may call. muse-glimmer means a self-hosted Glimmer endpoint, not the Model API. muse-gadget means a
@@ -74,13 +75,34 @@ const BriefFields = z.object({
 const targetPicks = (ids: readonly [TargetId, ...TargetId[]]) =>
   z.array(z.object({ id: z.enum(ids), why: z.string().min(1).max(200) })).max(ids.length);
 
+/** Most tools one agent may use (docs/AGENT_TOOLS.md). Fewer is better: each one is more for the model to read. */
+export const MAX_AGENT_TOOLS = 6;
+/** A live agent's run stops at 10 turns (RUN_LIMITS in lib/gateway/runs.ts), so a plan for more could never finish. */
+export const MAX_AGENT_STEPS = 10;
+
+/** The brief's `agent` field, limited to these tool ids. */
+const agentFields = (toolIds: z.ZodType<string>) =>
+  z.object({
+    /** The job one run does, in one or two plain sentences. */
+    task: z.string().min(1).max(400),
+    tools: z.array(z.object({ id: toolIds, need: z.string().min(1), why: z.string().min(1) })).min(1).max(MAX_AGENT_TOOLS),
+    /** "owner" when a personal tool needs the product's owner to connect an account. Settled by applyTargets. */
+    connections: z.enum(["none", "owner"]),
+    /** About how many model turns one run takes, for the cost arithmetic and the run's limits. */
+    stepsPerRun: z.number().int().min(1).max(MAX_AGENT_STEPS),
+  });
+
 /**
  * The brief the brief model (env.briefModel, Muse Wonder by default) writes from a muse: the user's references plus an
  * optional note (docs/PROMPTS.md, prompt 1). It drives the build prompt, the gateway allowlist and the product page.
  * `targets` is optional, so older briefs still parse, and a brief without it runs on the web only (briefTargets in
- * lib/native/targets.ts).
+ * lib/native/targets.ts). `agent` is set only when `targets` has agent. Its tool ids are plain strings here, since a tool
+ * can leave the catalog after a brief was stored; the writer's schema below limits them.
  */
-export const BriefSchema = BriefFields.extend({ targets: targetPicks(TARGETS).optional() });
+export const BriefSchema = BriefFields.extend({
+  targets: targetPicks(TARGETS).optional(),
+  agent: agentFields(z.string().min(1)).nullable().optional(),
+});
 
 export type Brief = z.infer<typeof BriefSchema>;
 
@@ -110,13 +132,18 @@ export const NewBriefSchemaNoGadget = BriefFields.extend({
 
 /**
  * The schema the brief writer answers in for these flags. With no targets enabled it is exactly NewBriefSchema or
- * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those.
+ * NewBriefSchemaNoGadget, the same objects. With targets it also requires `targets`, limited to web and those. With the
+ * agent target it also requires `agent`, which is null for a product that isn't one, limited to the public tools unless
+ * personal tools are on (COMPOSIO_PERSONAL_ENABLED).
  */
-export function newBriefSchemaFor(opts: { gadgets: boolean; targets: readonly TargetId[] }): z.ZodType<Brief> {
+export function newBriefSchemaFor(opts: { gadgets: boolean; targets: readonly TargetId[]; personalTools?: boolean }): z.ZodType<Brief> {
   const base = opts.gadgets ? NewBriefSchema : NewBriefSchemaNoGadget;
   const ids = TARGETS.filter((t) => t === "web" || opts.targets.includes(t));
   if (ids.length === 1) return base;
-  return base.extend({ targets: targetPicks(ids as [TargetId, ...TargetId[]]).min(1) });
+  const targets = targetPicks(ids as [TargetId, ...TargetId[]]).min(1);
+  if (!ids.includes("agent")) return base.extend({ targets });
+  const tools = (opts.personalTools ? [...PUBLIC_TOOL_IDS, ...PERSONAL_TOOL_IDS] : PUBLIC_TOOL_IDS) as [string, ...string[]];
+  return base.extend({ targets, agent: agentFields(z.enum(tools)).nullable() });
 }
 
 export type ProductModelId = (typeof PRODUCT_MODELS)[number];

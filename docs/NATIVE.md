@@ -28,8 +28,44 @@ are in `docs/AGENT_TOOLS.md`.
 | `applyTargets(brief, { enabled, requested })` | Settles the writer's answer. With nothing enabled it returns the same object |
 | `TARGET_GUIDE` | What the writer is told about each target, used only once its flag is on |
 
-Not wired yet: `writeBrief` still picks its schema the old way, and no prompt mentions targets. The targets unit does that
-all at once, behind `env.enabledTargets`, with `requestedTargets` on `BriefInput`.
+## How a brief gets its targets
+
+- **The writer.** `writeBrief` asks in `newBriefSchemaFor` and `briefInstructions()` adds a "Where it runs" block, both from
+  `env.enabledTargets`. `catalogSummary()` changes only for the agent's tools. The writer is told to add nothing beyond web
+  unless the muse asks.
+- **The person.** `TargetPill` sits in the composer's pill slot on the Make page: Web locked, Auto by default, only when a
+  flag is on. It sends `targets` only when something is picked, and a pick is exactly what the build makes, plus web.
+- **The routes.** `/api/inspirations` and `/api/rebuilds` run `requestedTargetsFrom`: with every flag off `targets` is
+  ignored, as any stray field is, and with one on a target whose flag is off is a 400. `npm run rebuild-all --
+  --targets=phone,desktop <id>` sends them for a batch.
+- **The build row.** `builds.requested_targets` holds the picks, or null for Auto. A refinement copies them from the
+  product's first build, and its prompt says where to keep the product working.
+- **Settling.** `applyTargets` is the last word, after the model: only web and enabled targets stay, the person's picks win,
+  a refused brief is web only, and each target's fixed limits are added unless the writer said the same thing. It also keeps
+  `agent` in step with the target (`docs/AGENT_TOOLS.md`).
+- **The prompts.** A brief that adds nothing to web renders exactly as it did. Otherwise `renderBuildPrompt` and
+  `briefToMarkdown` get "Where it runs", naming each target's skill.
+- **The judge.** `judgeInstructions(brief)` is `JUDGE_INSTRUCTIONS` itself unless the brief has agent, VR or glasses, which
+  add `agentJudgeRules`, `VR_JUDGE_NOTE` and `GLASSES_JUDGE_NOTE`.
+
+## Files a phone or desktop product gets
+
+`template-native/` holds them, by their path in the product:
+
+| File | Does |
+|---|---|
+| `lib/native/bridge.ts` | `haptic`, `share`, `takePhoto`, `notify`, `nativeApp`. Each falls back to web APIs |
+| `lib/native/protocol.ts` | A byte-for-byte copy of `native/bridge/protocol.ts`, which a test holds it to |
+| `app/manifest.ts`, `app/icon.tsx`, `app/apple-icon.tsx`, `lib/native/app-icon.tsx` | The home screen's name and icon, from `musemuse.json` |
+| `.agents/skills/muse-native/SKILL.md` | How to build for it |
+
+They need no snapshot. `npx tsx scripts/gen-native-template.ts` writes them into `lib/native/template-source.ts`, and
+`provisionStep` passes them to `provisionSandbox` as `extraFiles` (`nativeExtraFiles(brief)`). `reopenStep` writes any that are
+missing and leaves the rest alone. A web-only build gets nothing new. A test fails while the generated file is stale. Root `tsc`
+skips the folder because it needs a product's `musemuse.json`, so build a scratch product to check it after a real change.
+
+**The bridge follows `docs/NATIVE_SHELLS.md`:** it looks for `window.MuseNative` at each call, never caches a no, and on Android
+waits for the load event (up to 5 s) before settling on a fallback.
 
 ## Flags
 

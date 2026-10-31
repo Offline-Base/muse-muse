@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { before, describe, it, mock } from "node:test";
-import { createElement, type ComponentType } from "react";
+import { createElement, isValidElement, type ComponentType, type ReactElement, type ReactNode } from "react";
 
 // Server-renders the muse box outside Next. The router and the camera check are stand-ins: the camera check is false
 // on the server, so `camera` turns it on for the "+" menu.
@@ -13,6 +15,8 @@ mock.module("@/components/camera/CameraCapture", {
 });
 
 let render: (props: object) => string;
+
+type CheckboxProps = { onKeyDown?: (e: { key: string; preventDefault(): void; currentTarget: { click(): void } }) => void };
 
 before(async () => {
   const { renderToString } = await import("react-dom/server");
@@ -58,5 +62,68 @@ describe("composer", () => {
     assert.match(html, /<button type="button" class="menu-item"><svg[^>]*>[\s\S]*?<\/svg><span class="menu-item-text"><span>Photos and files<\/span><span class="muted small">Photos, video, a voice memo or a PDF<\/span><\/span><\/button>/);
     assert.match(html, /<button type="button" class="menu-item"><svg[^>]*>[\s\S]*?<\/svg>Take a photo<\/button>/);
     assert.equal(html.match(/class="composer-tool"/g)?.length, 1, "one + button");
+  });
+
+  it("shows no target pill with no target on, and none on a change", () => {
+    camera = false;
+    assert.doesNotMatch(render({ mode: "new", signedIn: true, layout: "playground" }), /target-pill|Where it runs/);
+    assert.doesNotMatch(render({ mode: "new", signedIn: true, layout: "playground", targetOptions: [] }), /target-pill|Where it runs/);
+    assert.doesNotMatch(render({ mode: "refine", buildId: "b1", signedIn: true, targetOptions: ["phone"] }), /target-pill/);
+  });
+
+  it("puts the target pill left of the mic, on Auto, with Web checked and locked", () => {
+    camera = false;
+    const html = render({ mode: "new", signedIn: true, layout: "playground", targetOptions: ["phone", "vr"] });
+    assert.match(html, /<div class="composer-actions"><div class="menu-wrap"><button type="button" class="composer-pill target-pill"[^>]*aria-label="Where it runs: Auto"[^>]*><span>Auto<\/span>[\s\S]*voice-input/);
+    assert.match(html, /<input type="checkbox" disabled="" checked=""\/><span class="menu-item-text"><span>Web<\/span>/);
+    assert.match(html, /<input type="checkbox"\/><span class="menu-item-text"><span>Phone<\/span>/);
+    assert.match(html, /<span>VR<\/span>/);
+    assert.doesNotMatch(html, /<span>Desktop<\/span>|<span>Glasses<\/span>|<span>Agent<\/span>/, "only what is on");
+  });
+});
+
+describe("the target pill's text", () => {
+  it("reads Auto, then the name, then a count that stays short on a phone", async () => {
+    const { targetPillText } = await import("@/components/composer/TargetPill");
+    assert.equal(targetPillText([]), "Auto");
+    assert.equal(targetPillText(["phone"]), "Web + Phone");
+    assert.equal(targetPillText(["desktop", "glasses"]), "Web + 2 more");
+    assert.equal(targetPillText(["phone", "desktop", "vr"]), "Web + 3 more");
+  });
+});
+
+describe("the target pill on a phone", () => {
+  it("gives way before the mic and send, and only a row with a pill changes", () => {
+    const css = readFileSync(path.join(process.cwd(), "app/globals.css"), "utf8");
+    const block = css.slice(css.indexOf("/* The pill sits mid-row on a phone"), css.indexOf(".target-menu-note {"));
+    assert.match(block, /\.target-pill \{\s*flex: 0 1 auto;\s*min-width: 0;/);
+    assert.match(block, /\.target-pill span \{\s*overflow: hidden;\s*text-overflow: ellipsis;/);
+    assert.match(block, /\.composer-row:has\(\.target-pill\) \.composer-actions \{\s*min-width: 0;\s*margin-left: 0;/);
+    assert.doesNotMatch(block, /^\s*\.composer-actions \{/m, "a row with no pill keeps its layout");
+  });
+});
+
+describe("the target pill's checkboxes", () => {
+  /** Every checkbox TargetPill returns, as elements. It has no hooks of its own, so it can be called directly. */
+  function checkboxes(element: ReactNode, found: ReactElement<CheckboxProps>[] = []) {
+    if (Array.isArray(element)) for (const child of element) checkboxes(child, found);
+    else if (isValidElement<CheckboxProps & { children?: ReactNode }>(element)) {
+      if (element.type === "input") found.push(element);
+      checkboxes(element.props.children, found);
+    }
+    return found;
+  }
+
+  it("toggle on Enter and don't send the form, so a half-made pick can't start a build", async () => {
+    const { TargetPill } = await import("@/components/composer/TargetPill");
+    const [, phone] = checkboxes(TargetPill({ options: ["phone"], picked: [], onChange() {} }));
+    let prevented = 0;
+    let clicked = 0;
+    const press = (key: string) => phone!.props.onKeyDown?.({ key, preventDefault: () => prevented++, currentTarget: { click: () => clicked++ } });
+    press("Enter");
+    assert.deepEqual({ prevented, clicked }, { prevented: 1, clicked: 1 });
+    press(" ");
+    press("Tab");
+    assert.deepEqual({ prevented, clicked }, { prevented: 1, clicked: 1 }, "other keys keep what they do");
   });
 });
