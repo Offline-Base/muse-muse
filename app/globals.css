@@ -45,7 +45,9 @@
   --shadow-tab: 0 1px 3px rgba(17, 17, 18, 0.12);
   /*
    * The Muse app look (docs/UI_MUSE_APP.md) for the conversation surfaces and the chat kit (components/chat).
-   * Its text color is --fg and its tab track is --panel-line, which already hold those values.
+   * Its text color is --fg and its tab track is --panel-line, which already hold those values. The captures were light,
+   * so the dark values are this site's own: the dark placeholder keeps 4.5:1 on the composer card, and on the docs'
+   * lighter #1f1f22 card too.
    */
   --chat-bg: #ffffff;
   --chat-muted: #696b6e;
@@ -122,7 +124,7 @@
     --chat-bg: #0e1013;
     --chat-muted: #a3a6ad;
     --chat-faint: #6b6f76;
-    --chat-placeholder: #7c8087;
+    --chat-placeholder: #83878e;
     --chat-line: #2b2f35;
     --chat-bubble: #262a30;
     --chat-label: #2b3037;
@@ -181,7 +183,7 @@
   --chat-bg: #0e1013;
   --chat-muted: #a3a6ad;
   --chat-faint: #6b6f76;
-  --chat-placeholder: #7c8087;
+  --chat-placeholder: #83878e;
   --chat-line: #2b2f35;
   --chat-bubble: #262a30;
   --chat-label: #2b3037;
