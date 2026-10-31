@@ -84,6 +84,13 @@ The 2B model as router over-refuses (86 to 88 on fresh_200_b), so policy decides
 
 Only result_words is above the 1 to 3 item run-to-run noise. lists needs a learned share rule, which these runs do not have, so only the persona study can show it. Ethan picks which ship; the study fixes that choice before its first run.
 
+**02:15** Ethan's decisions:
+- ROUTER_LOOSEN ships as `result_words,lists` (the default, and fixed for the whole persona study); class_of stays off.
+- One-letter codes: fix the clear cases (restore never reaches across a line break, and never before "." plus a letter as in "I.D.", "e.g.", "i.e."); an unbracketed capital "Student A" still restores.
+- Two or three letter codes without brackets in a saved note: save as now, and the receipt tells Muse how many codes were not in brackets and stayed as written.
+- Letters home: keep the tag-only check; make the refusal text and docs say exactly what is checked.
+These go in after review 2's fixer commits, then the numbers that depend on the router default are measured again.
+
 ## Open items
 
 - Ethan: which ROUTER_LOOSEN fixes ship (numbers above when the runs finish); the three restore choices above; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
