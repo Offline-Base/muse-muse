@@ -54,16 +54,50 @@ function near(a: number, b: number) {
 
 const usageReply = { usage: { input_tokens: 100, output_tokens: 10 } };
 
-test("handler, fitting on: a call over the budget left runs with a lower max_output_tokens and says so", async () => {
-  const g = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1 }, tokenSpend: 0.3, fetch: async () => Response.json(usageReply) });
+test("handler, fitting on: a build's call over the budget left runs with a lower max_output_tokens and says so", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1, scope: "build" }, tokenSpend: 0.3, fetch: async () => Response.json(usageReply) });
   g.deps.fitOutputToBudget = true;
   const res = await handleGateway(gatewayRequest("responses", json(SESSION_TURN), JSON_CT), ["responses"], g.deps);
   assert.equal(res.status, 200);
   const sent = JSON.parse(String(g.upstreamCalls[0]!.init?.body ? new TextDecoder().decode(g.upstreamCalls[0]!.init.body as Uint8Array) : "{}"));
   assert.ok(sent.max_output_tokens < 128_000 && sent.max_output_tokens >= MIN_FIT_OUTPUT_TOKENS, String(sent.max_output_tokens));
-  assert.match(res.headers.get("x-musemuse-note") ?? "", /Set max_output_tokens to \d+: that is what's left in this product's Meta budget/);
+  assert.match(res.headers.get("x-musemuse-note") ?? "", /Set max_output_tokens to \d+: that is what's left in this build's Meta budget/);
   await res.arrayBuffer();
   await g.settled();
+});
+
+test("handler, fitting on: a live product's call is never cut short; its users get the budget message as today", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1, scope: "live" }, tokenSpend: 0.3, fetch: async () => Response.json(usageReply) });
+  g.deps.fitOutputToBudget = true;
+  const res = await handleGateway(gatewayRequest("responses", json(SESSION_TURN), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 429);
+  assert.equal(((await res.json()) as { error: { code: string } }).error.code, "budget_exceeded");
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("handler, fitting on: a structured (json_schema) reply is never fitted, since cut-off JSON doesn't parse", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1, scope: "build" }, tokenSpend: 0.3, fetch: async () => Response.json(usageReply) });
+  g.deps.fitOutputToBudget = true;
+  const structured = { ...SESSION_TURN, text: { format: { type: "json_schema", name: "level", schema: { type: "object" }, strict: true } } };
+  const res = await handleGateway(gatewayRequest("responses", json(structured), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 429);
+  assert.equal(g.upstreamCalls.length, 0);
+});
+
+test("handler, fitting on: two calls fitted to the same remainder at once don't both spend it", async () => {
+  const g = fakeGateway({ token: { allowedModels: ["muse-wonder-1.0"], dailyBudgetUsd: 1, scope: "build" }, tokenSpend: 0.3, fetch: async () => Response.json(usageReply) });
+  g.deps.fitOutputToBudget = true;
+  // Another call read the same spend and reserves its own fitted share at the same moment as this one.
+  const reserve = g.deps.reserveSpend;
+  g.deps.reserveSpend = async (ctx, model, costUsd) => {
+    await reserve(ctx, model, costUsd);
+    return reserve(ctx, model, costUsd);
+  };
+  const res = await handleGateway(gatewayRequest("responses", json(SESSION_TURN), JSON_CT), ["responses"], g.deps);
+  assert.equal(res.status, 429);
+  assert.match(((await res.json()) as { error: { message: string } }).error.message, /Another call took what was left/);
+  assert.equal(g.upstreamCalls.length, 0);
+  assert.equal(g.reservations.size, 1, "this call's reservation was removed; only the other call's is left");
 });
 
 test("handler, fitting off: the same call is refused as today", async () => {

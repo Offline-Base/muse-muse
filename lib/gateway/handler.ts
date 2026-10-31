@@ -300,6 +300,13 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
 }
 
 /** Budget check and reservation, then the upstream call. `metering` is set when usage is still being read. */
+/** Wave 3, unit 2: a Responses call that asks for a structured (json_schema) reply. */
+function wantsJsonSchema(parsed: ParsedRequest): boolean {
+  if (parsed.kind !== "json") return false;
+  const format = (parsed.json.text as { format?: { type?: unknown } } | undefined)?.format;
+  return format?.type === "json_schema";
+}
+
 async function forward(
   req: Request,
   endpoint: GatewayEndpoint,
@@ -317,7 +324,10 @@ async function forward(
   const [spent, platformSpent] = await Promise.all([deps.tokenSpendToday(token.id), deps.platformSpendToday()]);
   const budget = token.dailyBudgetUsd;
   // ---------- Wave 3, unit 2: fit max_output_tokens to what's left (docs/CAPABILITIES.md, section 8). Off by default ----------
-  const fit = deps.fitOutputToBudget || (token.scope as string) === "code_session"
+  // Only for a Muse Code session's token and, with ENGINE_FIT_OUTPUT, a build's: a live product's users get the clean
+  // budget message, never a reply cut short. A structured reply is never fitted, since cut-off JSON doesn't parse.
+  const fits = (token.scope as string) === "code_session" || (deps.fitOutputToBudget === true && token.scope === "build");
+  const fit = fits && !wantsJsonSchema(parsed)
     ? fitOutputToBudget({ endpoint, parsed, bodyBytes: body.byteLength, mostSearches: call.mostSearches, estimate, leftUsd: budget - spent })
     : null;
   if (fit && parsed.kind === "json") {
@@ -364,6 +374,17 @@ async function forward(
     if (!reservation) return;
     await deps.settleSpend(reservation, null).catch((err) => console.error("[gateway] removing a reservation failed:", err));
   };
+  // ---------- Wave 3, unit 2: a fitted call took all that was left, so another call reserving at the same moment would
+  // overspend. Read the spend again, with this reservation in it, and refuse when two calls raced ----------
+  if (fit && reservation && (await deps.tokenSpendToday(token.id)) > budget + 1e-9) {
+    await unreserve();
+    return done(
+      gatewayError(429, "insufficient_quota", "budget_exceeded", `Another call took what was left of the $${budget.toFixed(2)} Meta budget at the same moment. Try again once it ends.`, {
+        retry: false,
+      }),
+    );
+  }
+  // ---------- end Wave 3, unit 2 ----------
 
   // asr/transcribe JSON extension: download the WAV and send Meta the multipart request.
   let upstreamBody: BodyInit = body;
