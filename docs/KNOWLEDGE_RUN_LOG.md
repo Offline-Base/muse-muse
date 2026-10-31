@@ -588,6 +588,15 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   decisions listed in the reply: LittleBit, NanoQuant, submission text, mac host, Bedrock limit, final GGUF storage.
 - 12:36 PM: workflow audit-actions started: serving test and LoRA route on writer-1, verbatim recall and a salient-event
   test (written from outside lists), student on the GH200 with the honest rows, idle alerts.
+- 12:50 PM: stage-b-a scored, 2,500 probes vs stage 2: 26.0% (649) vs 30.2% (755); fixed 26.3% vs 31.5%, new 25.5% vs
+  28.2%; 40/40 old facts. 57 newly right, 163 newly wrong. Rough regex: 952 of 2,500 replies now refuse; 847 of 1,688 still
+  wrong are refusals, and 105 of the 163 lost are refusals. Fails the 2-point gate as written; judged with the dev set. Train
+  loss 0.566. Adapter on the Mac, going to S3. Dev honesty and channel checks running on train-1 (out/ in ~/k/stage-b).
+- About 12:50 PM: owner changed priorities: "The student in this case should really be liquid lfm 3 1.7b But idk how
+  vlauably this student would really be, id prefer to shrink muse glimmer as much as possible mainly for the sake of the
+  hackathon". So shrinking Glimmer comes first, reversing the earlier advice to skip LittleBit and treat NanoQuant as
+  optional. The Bolt student stops; LFM3 1.7B is the student if one is trained. Workflow w38kyn16r: llama.cpp per-tensor
+  shrink study on writer-1. NanoQuant and LittleBit follow once the final model is picked.
 
 ## Problems and fixes
 
