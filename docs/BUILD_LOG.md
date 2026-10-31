@@ -165,6 +165,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **16:27** Ethan: there should be more than teacher use cases. README's "Who it's for" now lists the six groups the privacy toggles cover (schools, special education and privacy review, clinics and Part 2 programs, government casework, finance and tax, law, HR and privacy-law work), with what exists and what is measured for each; only teachers have a measured job. Took in the deep research brief (docs/RESEARCH_NOTES.md): the Zuckerberg letter, Meta's Agents Rule of Two, the Glimmer research page and Gallup's 58% read at source; Wang's "discretion" quote not found. The FERPA toggle's text said "de-identified results only"; it now says tagged or summarized results, which can still point at a student through context.
 
+**16:30** Ethan: a use case for parents letting their kids use this, or people setting it up for older family members, so they don't send very private things. Added families to README's "Who it's for", with its limits: what someone types into Muse reaches Meta before the device sees it, so the device guards files, not chat; Meta's minimum age for Muse is 13; anyone at the device can change its settings today. Not built: a guardian lock, asks routed to the guardian, a family preset.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
