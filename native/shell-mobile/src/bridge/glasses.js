@@ -16,6 +16,8 @@ import { BridgeError } from "./router";
 
 const CONNECT_LIMIT_MS = 110_000;
 const CAPTURE_LIMIT_MS = 18_000;
+const CREATE_SESSION_TRIES = 5;
+const CREATE_SESSION_WAIT_MS = 1_000;
 
 /** 16 kHz mono 16-bit PCM in a WAV file, which is what the platform's speech-to-text takes. */
 const WAV_RECORDING = {
@@ -61,6 +63,22 @@ function waitFor(start, limitMs, onTimeout) {
     );
     if (done) cleanup();
   });
+}
+
+/**
+ * Glasses show up as a Bluetooth input once the phone routes audio to them. The native call is synchronous, whatever
+ * its type says, and can throw, so a failure here just means the phone's microphone.
+ *
+ * @param {{ getCurrentInput(): unknown }} recorder
+ * @returns {Promise<"glasses" | "phone">}
+ */
+async function currentInputSource(recorder) {
+  try {
+    const input = /** @type {{ type?: string; name?: string } | null} */ (await recorder.getCurrentInput());
+    return input && /bluetooth/i.test(`${input.type} ${input.name}`) ? "glasses" : "phone";
+  } catch {
+    return "phone";
+  }
 }
 
 /** @param {GlassesProblem} problem */
@@ -171,11 +189,46 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     );
   }
 
-  async function startCamera() {
+  /**
+   * The paired device can take a moment to become selectable, so creating the session gets a few tries.
+   *
+   * @param {string | undefined} deviceId
+   */
+  async function createSessionWithRetry(deviceId) {
     const w = wearables();
-    const id = await w.createSession();
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await w.createSession(deviceId);
+      } catch (error) {
+        if (attempt >= CREATE_SESSION_TRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, CREATE_SESSION_WAIT_MS));
+      }
+    }
+  }
+
+  /** @param {string | undefined} deviceId */
+  async function startCamera(deviceId) {
+    const w = wearables();
+    const id = await createSessionWithRetry(deviceId);
     sessionId = id;
-    await w.startSession(id);
+    // The camera can only be added to a session that has started.
+    await waitFor(
+      (finish, fail) => {
+        const sub = w.addListener("onDeviceSessionStateChange", ({ sessionId: changed, state }) => {
+          if (changed === id && state === "started") finish(undefined);
+        });
+        const failed = w.addListener("onDeviceSessionError", ({ sessionId: changed, error }) => {
+          if (changed === id) fail(toError(problemFromSessionError(error)));
+        });
+        w.startSession(id).catch(fail);
+        return () => {
+          sub?.remove();
+          failed?.remove();
+        };
+      },
+      CONNECT_LIMIT_MS,
+      CONNECT_TIMEOUT,
+    );
     await waitFor(
       (finish, fail) => {
         const sub = w.addListener("onStreamStateChange", ({ state }) => {
@@ -193,6 +246,15 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     );
   }
 
+  /** A stopped session can't restart, and a leftover one blocks the next connect. */
+  function endSession() {
+    if (!sessionId) return;
+    wearables()
+      .stopSession(sessionId)
+      .catch(() => {});
+    sessionId = null;
+  }
+
   async function connect() {
     if (status.state === "ready" && sessionId) return status;
     const w = wearables();
@@ -202,17 +264,20 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
         configured = true;
       }
       listen();
-      if (mock) await enableMockGlasses(w);
+      const mockDeviceId = mock ? await enableMockGlasses(w) : undefined;
       await ensureRegistered();
 
       setStatus({ state: "connecting", error: null });
       const permission = await w.requestPermission("camera");
       if (permission !== "granted") throw toError(problemFromSessionError("capabilityDenied"));
 
-      await startCamera();
+      await startCamera(mockDeviceId);
       const devices = await w.getDevices();
       return setStatus({ state: "ready", device: deviceSummary(devices[0]), error: null });
     } catch (error) {
+      // The module's own wording stays in the device log, for the lab. The page gets the plain message.
+      console.warn(`MUSE_GLASSES connect failed: ${error instanceof Error ? error.message : String(error)}`);
+      endSession();
       const problem = error instanceof BridgeError ? { code: /** @type {GlassesProblem["code"]} */ (error.code), message: error.message } : problemFromThrown(error);
       setProblem(problem);
       throw toError(problem);
@@ -259,12 +324,12 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
     const permission = await requestRecordingPermissionsAsync();
     if (!permission.granted) throw new BridgeError("denied", "Microphone access is off. You can turn it on in Settings.");
     await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+    console.log("MUSE_GLASSES recording: audio mode set");
 
     recorder = new AudioModule.AudioRecorder(WAV_RECORDING);
     await recorder.prepareToRecordAsync();
-    // Glasses show up as a Bluetooth input once the phone routes audio to them.
-    const input = await recorder.getCurrentInput().catch(() => null);
-    recordingSource = input && /bluetooth/i.test(`${input.type} ${input.name}`) ? "glasses" : "phone";
+    console.log("MUSE_GLASSES recording: prepared");
+    recordingSource = await currentInputSource(recorder);
     recorder.record();
     recordingStarted = Date.now();
     recordingLimit = setTimeout(() => {
@@ -315,12 +380,7 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
       stopRecorderNow().catch(() => {});
       Speech.stop().catch(() => {});
       setPreview(false);
-      if (sessionId) {
-        wearables()
-          .stopSession(sessionId)
-          .catch(() => {});
-        sessionId = null;
-      }
+      endSession();
     },
   };
 }

@@ -324,6 +324,10 @@ describe("glasses helpers", () => {
     assert.equal(problemFromStreamError("somethingNew").code, "capture_failed");
     assert.equal(problemFromThrown(new Error("metaAINotInstalled")).code, "meta_ai_missing");
     assert.equal(problemFromThrown(new Error("thermalCritical")).code, "thermal");
+    assert.equal(problemFromThrown(new Error("The Meta AI app is not installed on the device")).code, "meta_ai_missing");
+    assert.equal(problemFromThrown(new Error("All discovered devices are powered off or disconnected")).code, "no_eligible_device");
+    assert.equal(problemFromThrown(new Error("Your glasses need an update.")).code, "glasses_app_update_required");
+    assert.equal(problemFromThrown(new Error("anything else")).code, "session_ended");
   });
 
   it("summarizes a device, treating -1 battery as unknown", () => {

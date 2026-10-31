@@ -53,7 +53,15 @@ export function problemFromStreamError(type: string): GlassesProblem {
   return STREAM_ERRORS[type] ?? { code: "capture_failed", message: "Your glasses stopped sending video. Please try again." };
 }
 
-/** Native errors carry the module's code in their message or code field. */
+/** The toolkit's localized wording, for errors that reach here with no code. */
+const WORDED_ERRORS: Array<[RegExp, GlassesProblem]> = [
+  [/Meta AI .*not installed/i, { code: "meta_ai_missing", message: "Install the Meta AI app, then try again." }],
+  [/no wearable devices|powered off or disconnected|no eligible/i, { code: "no_eligible_device", message: NO_DEVICE }],
+  [/needs? an update/i, { code: "glasses_app_update_required", message: UPDATE_GLASSES }],
+  [/battery critically low/i, { code: "battery_low", message: LOW_BATTERY }],
+];
+
+/** Native errors carry the module's code in their message or code field, or else the toolkit's own wording. */
 export function problemFromThrown(error: unknown): GlassesProblem {
   const text = error instanceof Error ? `${(error as Error & { code?: string }).code ?? ""} ${error.message}` : String(error);
   if (/metaAINotInstalled|META_AI/i.test(text)) {
@@ -61,6 +69,7 @@ export function problemFromThrown(error: unknown): GlassesProblem {
   }
   for (const key of Object.keys(SESSION_ERRORS)) if (text.includes(key)) return SESSION_ERRORS[key];
   for (const key of Object.keys(STREAM_ERRORS)) if (text.includes(key)) return STREAM_ERRORS[key];
+  for (const [pattern, problem] of WORDED_ERRORS) if (pattern.test(text)) return problem;
   return GENERIC;
 }
 
