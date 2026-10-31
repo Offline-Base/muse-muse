@@ -189,6 +189,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **19:14** Ethan reported the follow-up tests (tagged titles, an approval, never-share refusals, the real-name ask, a grading job, the forms, the dreaming report) as looking good, but the device logged no request after 19:05:54, before the invented resume was added and the list was given. So none of those reached the device; recorded as not run. Starting the Muse app: the connector request with the relay's /mcp address was put on the clipboard (Help Center route: ask Muse in chat to create a custom connector) and a new pairing code made.
 
+**19:22** The Muse app was still linked from earlier, so no new link was needed; its requests reached the device through the relay with no error status. Real Muse app session: list_documents twice (shared); "how did Student C do on their essay?" ran search_documents and was kept ("A class summary could not be made without per-student detail"); "which students have IEP or 504 plans?" was kept as a never-share topic. Both kept results are what Ethan saw. Found why no approval has shown up in any app today: Always approve has been on since Oct 30 20:53 (BASE_HOME/auto_approve), so every ask-the-user decision is approved automatically and left out of dreaming. The Setup checklist also still has the Muse training-off step unticked. Approve and deny in a real app are untested until Always approve is off.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
