@@ -494,7 +494,43 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   layout and the fleet already runs it: 4.6 to 4.9 GB peak on an 8 GB Orin Nano, 13.2 to 13.7 tok/s (jetson-infra
   docs/fleet.md), so the 2 GB in the plan was wrong rather than the file too big. Phones not measured. DDP still untested.
 - 3:16 AM: student code, data and base answers copied to train-1 (~/k/student, ~/k/data-student; sha256s match), and its
-  llama.cpp build started at low priority with no GPU use, beside stage 2 (95%, about 1.08 steps a second).
+  llama.cpp build started at low priority with no GPU use, beside stage 2 (95%, about 1.08 steps a second). It failed:
+  train-1 has no CUDA headers (cuda_runtime.h, cublas_v2.h), so student GGUFs will likely go on writer-1.
+- 3:30 AM: stage 2 training done (16,278 steps, train loss 1.10, 15,180 s, about 34 examples/s), adapter sha256
+  b568ab79.... 3:54 AM, answers: 2,500 probes "before" (the stage 1 model) 27.9%, after 30.2%, 40/40 old facts both.
+  By set (`split_probes.py stage2-multi`):
+
+  | Set | Base (Q4_K_M) | Before stage 2 | After stage 2 | Newly right / wrong |
+  |---|---|---|---|---|
+  | Fixed 1,500 | 17.7% | 31.2% (468) | 31.5% (473) | 109 / 104 |
+  | New 1,000 | 19.5% | 23.0% (230) | 28.2% (282) | 83 / 31 |
+
+  So 520,895 examples moved the fixed set by nothing beyond noise and the new set by 5 points. Second question sets for
+  the same passages didn't add measured knowledge; new passages added a little. Who-wrote-it (`probe_by_writer.py`):
+  Spark Open n=1,491 31.1% to 31.6%, Glimmer n=1,001 23.1% to 28.3%; within shared sources both writers are near zero
+  gain on small samples, so this doesn't separate the writers. Experiment 5 stays open.
+- 3:45 AM: reasoning test (scripts/knowledge/aws/job/score_reasoning.py, 260 items, reasoning on, greedy), checked
+  independently by recomputing from raw replies. Q4_K_M, medium, base then stage 1: well formed 257 then 40 of 260;
+  multi-step on the to=user channel 149 then 64 of 150 (only about 20 if counting what the chat endpoint accepts; 135 with
+  any header spelling); skills 60 then 29 of 60; with the final channel prefilled, 37 and 37 of 40, which is why
+  no earlier score caught this; vision raw 5/5 both, chat endpoint 5/5 then HTTP 500 on all 5; P("=self" after " to")
+  0.99999 then 0.21. Failures: misspelled headers (" toself"), reasoning closed by <|eot|> not <|eom|>, <|start|> not
+  followed by "assistant". Likely cause, not proven: labels masked up to RESPONSE_PART train only 'ANSWER<|eot|>', so
+  control tokens drift. Stage 2 has the same masking, unmeasured. Thinking: no large loss detected, but reasoning is
+  shorter (median 141 vs 232 tokens) and real calendar errors are slightly up (4/189 vs 0/257 closed finals). IQ1_S
+  fails reasoning on both base and tuned (0 well formed; base partial, 98 items), so that is the quantizing.
+- 3:58 AM: bug in stage2_handoff.sh: `pgrep -f score_honesty.py` run through ssh matches its own shell, so it waited
+  forever after pushing to writer-1 (7:42 UTC). Killed it; started quantize.sh stage2 by hand (16 minutes lost) and
+  pushed the adapter to the GH200 with a one-off script. Fixed in the repo with a bracket pattern. The earlier pgrep in
+  new1000.sh was run on the machine itself and wasn't affected.
+- 4:00 AM: measure_known.py started on train-1, all 8 GPUs: stage 2 answers 40,000 held-out questions (about 53 min).
+  Raised train-1's stop: CAP_USD 450 to 1,500 and deadline Nov 1 10 AM EDT (14:00 UTC), since Stage B, the student and
+  LittleBit need it. `kill` of the watch was respawned by its loop, and one duplicate watch was removed; one runs.
+- 4:02 AM: decisions, under the owner's handover. Stage 2 is a measurement, not the final model. Stage B now also repairs
+  reasoning (workflow wnxqo8y4y): whole-turn labels on rows with reasoning, about 20,000 skills rows, 20,000 fact rows
+  with reasoning and 8,000 honest rows with reasoning from base Glimmer on the fleet, and a new test of knowledge with
+  reasoning on. A pilot of about 300 steps reads the channel gates first. If it can't reach them, Stage A gets retrained
+  from scratch with correct labels: affordable under the $2,500 Lambda limit.
 
 ## Problems and fixes
 

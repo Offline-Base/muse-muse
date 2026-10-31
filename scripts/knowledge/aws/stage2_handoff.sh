@@ -44,7 +44,7 @@ push() {  # push HOST DEST: copy, check against train-1's sha256, then write the
 
 push $WR /home/ubuntu/q/stage2/adapter
 # The honesty test's llama-server doesn't take quantize.sh's gpu.lock, so wait for it to finish before starting.
-while r $WR 'pgrep -f score_honesty.py > /dev/null'; do log "writer-1: honesty test still running; waiting"; sleep 60; done
+while r $WR 'pgrep -f [s]core_honesty.py > /dev/null'; do log "writer-1: honesty test still running; waiting"; sleep 60; done
 r $WR 'cd ~/q && (nohup env PROBES=/home/ubuntu/q/data-stage2/stage2-eval-probes.jsonl bash ~/q/job/quantize.sh stage2 /home/ubuntu/q/stage2/adapter 2500 > ~/q/logs/stage2.out 2>&1 < /dev/null &)'
 log "writer-1: quantize.sh stage2 started (2,500 probes)"
 

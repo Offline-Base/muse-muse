@@ -9,7 +9,7 @@
     caffeinate -dims $PY $F watch    the kill switch: terminates at CAP_USD, at each machine's deadline, or after stop
     $PY $F lambda-prep --name N      Lambda: scp the code and the stage data from this Mac, start box_setup.sh
     $PY $F lambda-sync --name N --run RUN   Lambda: every 10 minutes, the run to .data/knowledge/runs/RUN/ and S3
-    $PY $F start-run --name N --run RUN [--train LOCAL.jsonl] [--init-adapter RUN|RUN/checkpoint-N] [--base-json RUN] ...
+    $PY $F start-run --name N --run RUN [--train LOCAL.jsonl] [--init-adapter RUN|RUN/checkpoint-N] [--base-json RUN] [--lr X] ...
                                      Lambda: start run_multi.sh detached (refused while a run is going) plus its sync
       Stage 2 from stage 1:  start-run --name muse-knowledge-train-1 --run stage2-multi --train NEW.jsonl \
                              --init-adapter stage1-multi --base-json stage1-multi --save-steps 1000
@@ -56,7 +56,7 @@ LAMBDA_KEY_NAME = "muse-muse-platform"
 KEY = os.path.expanduser("~/.ssh/muse-muse-lambda")
 AMI_PARAM = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id"
 # This lane's cap for its own machines (the owner allows $1,250 on Lambda in all; this lane may use $450 of it).
-CAP_USD = 450.0
+CAP_USD = 1500.0
 SPENT_BEFORE_USD = 0.0
 MAX_HOURS = 7.0
 RETRY_UNTIL = dt.datetime(2026, 10, 31, 3, 0, tzinfo=dt.timezone.utc)
@@ -646,6 +646,8 @@ def start_run(a):
     env = {"KNOWLEDGE_NO_S3": "1", "SAVE_STEPS": str(a.save_steps), "TUNED_EVAL": str(a.tuned_eval)}
     if a.init_adapter:
         env["KNOWLEDGE_INIT_ADAPTER"] = remote_path(a.init_adapter)
+    if a.lr:
+        env["LR"] = str(float(a.lr))  # run_multi.sh writes it into hyper.json; without it, its default of 1e-4
     if a.base_json:
         env["BASE_JSON"] = a.base_json if a.base_json.startswith("/") else f"{REMOTE}/runs/{a.base_json}/ckpt/base.json"
     envs = " ".join(f"{k}={v}" for k, v in env.items())
@@ -686,6 +688,7 @@ if __name__ == "__main__":
     ap.add_argument("--max-examples", type=int, default=0)
     ap.add_argument("--save-steps", type=int, default=250)
     ap.add_argument("--tuned-eval", type=int, default=1)
+    ap.add_argument("--lr", help="learning rate for this run (default: run_multi.sh's 1e-4)")
     ap.add_argument("--no-sync", action="store_true")
     # lambda-sync
     ap.add_argument("--large", choices=["final", "none"], default="final", help="large files to S3: the final adapter (throttled) or none")
