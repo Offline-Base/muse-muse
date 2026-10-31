@@ -858,6 +858,14 @@ because the sidebar showed a real account.
 - Pass 2 after tg-decide lands (it is editing lib/train): build the fixes and the backends. Real provider runs wait for
   the owner's OK.
 
+### 19:19 Disk below 3 GB; local site stopped
+
+- Free space fell to 2.9 GB, swap 5.9 of 7 GB. The fine-tune session's rsync (started 19:15) is copying the stage-b-r30b
+  adapter from its Lambda machine into ~/muse-muse/.data/knowledge on this laptop; asked it to pause or send it elsewhere
+  if it is large.
+- Stopped General's local site on port 3020 and deleted its build cache (about 0.5 GB). Its database copy stays, so it
+  can be restarted. 3.6 GB free after. Next alert at 2 GB.
+
 ## Gaps
 
 What this record doesn't confirm:
