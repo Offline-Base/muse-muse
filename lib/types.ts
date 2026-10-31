@@ -150,6 +150,8 @@ export interface MuseLineDetail {
   delivery?: "steer" | "queue" | "interrupt" | "answer" | "goal" | "end" | "workflow" | "subagent";
   /** steer: why the command was refused. */
   error?: string;
+  /** tool and web search: what it looked at, for the build room's Sources tab. Plain text from the agent's arguments. */
+  source?: { kind: "docs" | "docs-search" | "skill" | "web"; title: string };
 }
 
 export interface Screenshot {

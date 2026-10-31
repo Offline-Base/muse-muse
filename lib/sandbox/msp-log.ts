@@ -270,6 +270,17 @@ function toolText(tool: string, it: Record<string, unknown>, status: string, out
   return firstLine(args.description) || (path ? `\`${path}\`` : "") || tool;
 }
 
+/** What a tool call looked at, for the build room's Sources tab: a Meta docs page or search, or a skill. */
+function toolSource(tool: string, it: Record<string, unknown>): MuseLineDetail["source"] | undefined {
+  const args = typeof it.args === "string" ? parseArgs(it.args) : obj(it.args);
+  const name = tool.replace(/^mcp__.+?__/, "");
+  if (name === "docs_read" && str(args.slug)) return { kind: "docs", title: str(args.slug) };
+  if (name === "docs_search" && str(args.query)) return { kind: "docs-search", title: str(args.query) };
+  const skill = str(args.name) || str(args.skill) || str(args.skill_name);
+  if (name === "read_skill" && skill) return { kind: "skill", title: skill };
+  return undefined;
+}
+
 /** A tool call: its line, and an edit line beside it when it changed files. */
 function toolLines(id: string, it: Record<string, unknown>, status: string): MuseLogLine[] {
   const tool = str(it.tool) || "tool";
@@ -291,7 +302,8 @@ function toolLines(id: string, it: Record<string, unknown>, status: string): Mus
       text: `Edited ${files} file${files === 1 ? "" : "s"} (+${added} −${removed})`,
     });
   }
-  lines.push({ kind: "tool", itemId: id, tool, ...(ok === undefined ? {} : { ok }), text: toolText(tool, it, status, output), detail: { status } });
+  const source = toolSource(tool, it);
+  lines.push({ kind: "tool", itemId: id, tool, ...(ok === undefined ? {} : { ok }), text: toolText(tool, it, status, output), detail: { status, ...(source ? { source } : {}) } });
   return lines;
 }
 
@@ -704,6 +716,7 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
             kind: "status",
             itemId: id,
             text: firstLine(it.fallbackText) || firstLine(it.monitorDescription) || KIND_WORDS[kind] || `${kind || "Item"}: ${status}`,
+            ...(kind === "webSearch" ? { detail: { source: { kind: "web" as const, title: firstLine(it.query) || firstLine(it.fallbackText) || "A web search" } } } : {}),
           },
           done,
         );
