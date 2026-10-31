@@ -119,7 +119,7 @@ describe("the build sandbox", () => {
     assert.deepEqual(briefCaps(WITH), ["runtime"]);
     assert.deepEqual(overlaysFor(WITH), ["core", "runtime"]);
     assert.deepEqual(capsFileFor(WITH), { caps: ["runtime"], overlays: ["core", "runtime"] });
-    assert.equal(capBuildEnv(WITH), "MUSEMUSE_PYTHON=local\n");
+    assert.equal(capBuildEnv(WITH), "MUSEMUSE_PYTHON=local\nMUSEMUSE_PYTHON_NOTES=1\n");
     assert.deepEqual(capDeployEnv(WITH, "mm_live_x"), {});
     assert.ok(allowedModelsFor(WITH).includes("cap:runtime"));
     assert.ok(!allowedModelsFor(BRIEF).some((m) => m.startsWith("cap:")));

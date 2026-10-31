@@ -1150,8 +1150,9 @@ rules, as before.
 
 - `lib/platform/python.ts`: `callPython(request, name, input)`. On Vercel it POSTs to the deployment's own
   `/api/py/<name>`; with `MUSEMUSE_PYTHON_URL` to that address; anywhere else, and in every build
-  (`MUSEMUSE_PYTHON=local`, from `CAP_ENV.runtime`), it runs the file through the runner. Each build call that answered is
-  noted in `test-results/caps/runtime-calls.jsonl`. Throws `CapError {code, status, message}` in plain words.
+  (`MUSEMUSE_PYTHON=local`, from `CAP_ENV.runtime`), it runs the file through the runner. Only in a build
+  (`MUSEMUSE_PYTHON_NOTES=1`, also from `CAP_ENV.runtime`) each call that answered is noted in
+  `test-results/caps/runtime-calls.jsonl`; a deployed or self-hosted product notes nothing. Throws `CapError {code, status, message}` in plain words.
 - `scripts/py-local.mjs`: runs one `handler` class the way an HTTP server would, through a socket made of buffers,
   standard library only, with a 10 second limit, 4.5 MB each way, and none of the server's env (so no token reaches
   Python on a build). `install` puts pinned wheels from PyPI in `~/.cache/musemuse/python/<python>-<hash>`, never in the

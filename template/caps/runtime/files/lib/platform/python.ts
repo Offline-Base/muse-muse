@@ -5,8 +5,9 @@
 // - On Vercel it calls the deployment's own /api/py/<name>, which Vercel serves from the Python file.
 // - With MUSEMUSE_PYTHON_URL set it calls that address instead (for example scripts/py-local.mjs serve).
 // - Anywhere else, and in every build (MUSEMUSE_PYTHON=local), it runs the file on this machine with
-//   scripts/py-local.mjs. In a build each call is also noted in test-results/caps/runtime-calls.jsonl, so verify's
-//   checks can run the same function again on the same input.
+//   scripts/py-local.mjs. In a build only (MUSEMUSE_PYTHON_NOTES=1, which the platform writes into the build's
+//   .env.local), each call is also noted in test-results/caps/runtime-calls.jsonl, so verify's checks can run the same
+//   function again on the same input. A deployed or self-hosted product never notes anything.
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -106,7 +107,7 @@ function runLocal(name: string, body: string): Promise<{ status: number; text: s
 }
 
 function noteCall(name: string, input: string, output: unknown): void {
-  if (process.env.MUSEMUSE_PYTHON !== "local" || Buffer.byteLength(input) > LOG_MAX_INPUT_BYTES) return;
+  if (process.env.MUSEMUSE_PYTHON_NOTES !== "1" || Buffer.byteLength(input) > LOG_MAX_INPUT_BYTES) return;
   try {
     mkdirSync(path.dirname(CALL_LOG), { recursive: true });
     appendFileSync(CALL_LOG, `${JSON.stringify({ name, input: JSON.parse(input), output, at: new Date().toISOString() })}\n`);

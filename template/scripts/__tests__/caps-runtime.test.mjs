@@ -231,7 +231,7 @@ console.log(JSON.stringify(out));
 
   test("runs the function on this machine in a build, and notes each call for the checks", () => {
     const dir = product({ sum_values: SUM });
-    const res = run(dir, SCRIPT, { MUSEMUSE_PYTHON: "local", VERCEL: "" });
+    const res = run(dir, SCRIPT, { MUSEMUSE_PYTHON: "local", MUSEMUSE_PYTHON_NOTES: "1", VERCEL: "" });
     assert.equal(res.status, 0, res.stderr);
     const out = JSON.parse(res.stdout.trim().split("\n").at(-1));
     assert.deepEqual(out.sum, { total: 5, items: [{ n: 2 }, { n: 3 }] });
@@ -240,6 +240,14 @@ console.log(JSON.stringify(out));
     const log = readFileSync(path.join(dir, "test-results/caps/runtime-calls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(log.length, 1, "only calls that answered are noted");
     assert.deepEqual([log[0].name, log[0].input, log[0].output], ["sum_values", { values: [2, 3] }, { total: 5, items: [{ n: 2 }, { n: 3 }] }]);
+  });
+
+  test("notes nothing outside a build, even when it runs the function on this machine", () => {
+    const dir = product({ sum_values: SUM });
+    const res = run(dir, SCRIPT, { MUSEMUSE_PYTHON: "", MUSEMUSE_PYTHON_NOTES: "", VERCEL: "" });
+    assert.equal(res.status, 0, res.stderr);
+    assert.deepEqual(JSON.parse(res.stdout.trim().split("\n").at(-1)).sum, { total: 5, items: [{ n: 2 }, { n: 3 }] });
+    assert.ok(!existsSync(path.join(dir, "test-results/caps/runtime-calls.jsonl")));
   });
 
   test("calls an address over HTTP when MUSEMUSE_PYTHON_URL is set, and notes nothing outside a build", async () => {
