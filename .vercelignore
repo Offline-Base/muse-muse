@@ -8,3 +8,4 @@ template/playwright-report
 .data
 scripts/.tmp*
 native
+template-native

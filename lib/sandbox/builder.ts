@@ -374,6 +374,15 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
+  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). */
+  extraFiles?: Array<{ path: string; content: string }>;
+}
+
+/** Makes the folders these files go in and returns them as writes, with their paths inside the product. */
+async function productWrites(sandbox: Sandbox, files: Array<{ path: string; content: string }>): Promise<Array<{ path: string; content: string }>> {
+  const writes = files.map((f) => ({ path: productPath(f.path), content: f.content }));
+  if (writes.length) await makeDirs(sandbox, [...new Set(writes.map((f) => path.posix.dirname(f.path)))]);
+  return writes;
 }
 
 /**
@@ -421,6 +430,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   ]);
   await writeBatched(sandbox, [
     ...downloaded,
+    ...(await productWrites(sandbox, input.extraFiles ?? [])),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
@@ -434,6 +444,8 @@ export async function reopenSandbox(input: {
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
+  /** Written only where missing: a product from before its target's files, and never over what Muse Code changed. */
+  extraFiles?: Array<{ path: string; content: string }>;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
@@ -441,7 +453,13 @@ export async function reopenSandbox(input: {
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
-  await writeBatched(sandbox, [...downloaded, { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) }]);
+  const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
+  const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
+  await writeBatched(sandbox, [
+    ...downloaded,
+    ...(await productWrites(sandbox, missing)),
+    { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
+  ]);
 }
 
 /**
