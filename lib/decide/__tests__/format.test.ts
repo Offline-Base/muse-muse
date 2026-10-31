@@ -49,6 +49,7 @@ import {
   temperedDecision,
   trainExample,
   trainRendering,
+  trainShownCount,
 } from "@/lib/decide/format";
 import type { DecideMessage, DecideOption, DecideTask, DecisionLabel, DecisionRow } from "@/lib/decide/types";
 
@@ -340,7 +341,37 @@ describe("training renderings", () => {
     assert.ok(Math.abs(declined / n - NONE_SHARE) < 0.02, `declined ${declined} of ${n}`);
   });
 
-  it("with more than 4 labels shows the right one, 3 others and none", () => {
+  it("with more than 4 labels shows as many as one eval group does, so training covers every shape scoring uses", () => {
+    for (const n of [5, 6, 7, 9, 10, 11]) {
+      const labels = TWELVE.slice(0, n);
+      const sizes = [...new Set(labelGroups(labels).map((g) => g.length))].sort();
+      const shown = new Set<number>();
+      const letters = new Set<string>();
+      for (let i = 0; i < 200; i++) {
+        const answer = labels[i % n]!.id;
+        const seed = `g:${n}:${i}`;
+        const r = trainRendering({ state: "x", question: TICKET, labels, answer, seed, decline: false });
+        assert.deepEqual(r, trainRendering({ state: "x", question: TICKET, labels, answer, seed, decline: false }));
+        assert.equal(r.labelIds.length - 1, trainShownCount(n, seed));
+        assert.ok(sizes.includes(r.labelIds.length - 1), `${n} labels showed ${r.labelIds.length - 1}`);
+        shown.add(r.labelIds.length - 1);
+        assert.equal(new Set(r.labelIds).size, r.labelIds.length);
+        assert.equal(r.labelIds[r.letters.indexOf(r.answer!)], answer);
+        assert.equal(r.labelIds.at(-1), null);
+        letters.add(r.answer!);
+        const d = trainRendering({ state: "x", question: TICKET, labels, answer, seed, decline: true });
+        assert.equal(d.labelIds.length - 1, trainShownCount(n, seed), "a decline shows a whole group of others");
+        assert.ok(!d.labelIds.includes(answer));
+        assert.equal(d.answer, d.letters.at(-1));
+      }
+      assert.deepEqual([...shown].sort(), sizes, `${n} labels: every group size shows up`);
+      assert.ok(letters.size >= Math.min(...sizes), `${n} labels: the right one sits behind every letter`);
+    }
+    // Up to 4 labels, every label is shown.
+    for (const n of [2, 3, 4]) assert.equal(trainShownCount(n, "any"), n);
+  });
+
+  it("with 8 or 12 labels, whose groups are all 4, shows the right one, 3 others and none", () => {
     for (let i = 0; i < 100; i++) {
       const r = trainRendering({ state: "x", question: TICKET, labels: TWELVE, answer: TWELVE[7]!.id, seed: `m:${i}`, decline: false });
       assert.equal(r.letters.length, 5);
@@ -351,6 +382,8 @@ describe("training renderings", () => {
       assert.equal(d.letters.length, 5);
       assert.ok(!d.labelIds.includes(TWELVE[7]!.id));
       assert.equal(d.answer, "E");
+      const eight = trainRendering({ state: "x", question: TICKET, labels: TWELVE.slice(0, 8), answer: TWELVE[2]!.id, seed: `e:${i}` });
+      assert.equal(eight.letters.length, 5);
     }
   });
 

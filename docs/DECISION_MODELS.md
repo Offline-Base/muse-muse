@@ -94,9 +94,11 @@ once form.
 - **`none` is always shown, always last.** Its text is exactly "None of the listed options matches".
 - **Training renderings:** option order is shuffled per rendering (seeded), so a letter never stands for a label. On
   15% of renderings the right label is taken out and `none` becomes the answer, so the model learns to decline instead of
-  guessing. With more than 4 labels, a rendering shows the right label plus 3 others picked at random, then `none`;
-  a decline rendering shows up to 4 others. Each rendering is seeded on its own (`${seed}:${row}:${copy}`), so every
-  copy of a row gets a new order (`trainRendering`).
+  guessing. With more than 4 labels, a rendering shows as many labels as one of the eval groups does (below), the
+  group picked at random per rendering (`trainShownCount`): the right label plus others picked at random, then
+  `none`, so 5 labels show 3 or 2 and 10 show 4 or 3. A decline rendering shows that many others, like a serving group
+  without the right label. So training covers every prompt shape that scoring and serving use. Each rendering is
+  seeded on its own (`${seed}:${row}:${copy}`), so every copy of a row gets a new order and shape (`trainRendering`).
 - **Eval and serving renderings:** labels in the order the person defined them, never shuffled, so a decision is
   repeatable.
 
@@ -203,8 +205,9 @@ the tokenizer files aren't committed.
 
 A prompt shows at most 4 labels plus `none`. With 5 to 12 labels, eval and serving split the labels, in their defined
 order, into `k = ceil(L / 4)` groups whose sizes differ by at most 1, the larger first (5 labels are 3 and 2, 10 are 4,
-3 and 3; `labelGroups`), and score each group as its own prompt. The model was trained for exactly this: in
-a group without the right label, the right answer is `none`.
+3 and 3; `labelGroups`), and score each group as its own prompt. Training shows the same prompt shapes (each
+training rendering shows as many labels as one group), and in a group without the right label the right answer is
+`none`, which the decline renderings teach.
 
 - Each group gives a distribution over its labels and `none`, renormalized over its letters, before T.
 - A label's score is its probability in its own group. The overall `none` is the product of every group's `none`.
@@ -615,7 +618,8 @@ and trained by the same recipe. A person's model can start from base Glimmer (v1
 `baseAdapterJobId` param).
 
 Mix rules, all from Scion's published ideas: every source becomes `{state, question, options}`; tasks with many labels
-show the right one plus 3 others and `none`; `none` on 15% of renderings; yes/no tasks and our rule-made policy tasks
+show the right one plus 3 others and `none` (the mix's own rule, since Muse Decide serves 2 to 4 options in one prompt,
+not `trainRendering`'s group sizes); `none` on 15% of renderings; yes/no tasks and our rule-made policy tasks
 balanced 50/50 so "always no" earns nothing; three whole sources held out (GoEmotions, the financial headlines, QuaRTz)
 to check calibration on tasks it never trained on.
 
@@ -929,6 +933,9 @@ Each with a recommendation.
   are shown, and the page says when a label has under 10 test rows.
 - **Calibration.** T is fit on dev rows that may be few (under 20 and T stays 1). On tasks unlike its training, Muse
   Decide stays overconfident, as Scion saw [R]. The group rule for more than 4 labels has no theory behind it.
+- **`none` with groups.** With k groups, k - 1 of a row's prompts have `none` as the right answer (2 of 3 for 12
+  labels), while 15% of training renderings decline. A model that says `none` too rarely there can let a wrong group's
+  label win; the test numbers show how much [I].
 - **The trained base differs from the served one.** Training and the demo use Unsloth's 4-bit base; GGUF files are a
   merge into 16-bit, then quantized. Picks may shift; the decide quantize check (cut for now) is what would catch it.
 - **llama.cpp details are unchecked on Glimmer:** the top-20 limit, the BOS token, `cache_prompt`, and the grammar idea.

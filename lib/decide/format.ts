@@ -326,10 +326,22 @@ function rendering(
 }
 
 /**
- * One training rendering of a row (seeded, so the same seed gives the same prompt): the right label and up to 3 others
- * picked at random, shuffled, then `none`. On a decline rendering (isDeclineRendering of the seed, unless `decline`
- * says) the right label is taken out, up to 4 others are shown, and `none` is the answer. Seed each rendering on its
- * own, as `${spec.seed}:${row}:${copy}`, so every copy of a row gets a new order.
+ * How many labels a training rendering shows: all of them up to 4, else the size of one of the eval and serving groups
+ * (labelGroups), the group picked by the seed. So 5 labels show 3 or 2, 7 show 4 or 3, 10 show 4 or 3, 12 always 4.
+ */
+export function trainShownCount(labels: number, seed: string): number {
+  const sizes = labelGroups(Array.from({ length: labels }, (_, i) => i)).map((g) => g.length);
+  if (sizes.length === 1) return sizes[0]!;
+  return sizes[Math.min(sizes.length - 1, Math.floor(seededRandom(`${seed}|shown`)() * sizes.length))]!;
+}
+
+/**
+ * One training rendering of a row (seeded, so the same seed gives the same prompt): the right label and others picked
+ * at random, shuffled, then `none`. It shows trainShownCount labels: all of them up to 4, and with more the size of one
+ * eval group, so training covers every prompt shape that scoring and serving use. On a decline rendering
+ * (isDeclineRendering of the seed, unless `decline` says) the right label is taken out, that many others are shown
+ * (every other label, with 4 or fewer), and `none` is the answer, as in a serving group without the right label. Seed
+ * each rendering on its own, as `${spec.seed}:${row}:${copy}`, so every copy of a row gets a new order and shape.
  */
 export function trainRendering(input: {
   state: string;
@@ -349,7 +361,8 @@ export function trainRendering(input: {
     input.labels.filter((l) => l !== right),
     random,
   );
-  const shown = decline ? others.slice(0, LABELS_PER_PROMPT) : shuffled([right, ...others.slice(0, LABELS_PER_PROMPT - 1)], random);
+  const count = trainShownCount(input.labels.length, input.seed);
+  const shown = decline ? others.slice(0, count) : shuffled([right, ...others.slice(0, count - 1)], random);
   return rendering(input.state, input.question, shown, { none: true, answer: decline ? null : right.id });
 }
 
