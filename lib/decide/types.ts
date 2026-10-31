@@ -90,7 +90,11 @@ export interface DecisionPartItem extends DecisionItemKey {
   rendering: DecideRendering;
 }
 
-/** One scored item in a "decide" event (ctx.decide on the GPU): log-probabilities of each shown letter, in order. */
+/**
+ * One scored item in a "decide" event (ctx.decide on the GPU): log-probabilities of each shown letter, in order, from
+ * a float32 log_softmax. JSON can't carry -Infinity, so a letter with no probability is sent as a large negative
+ * number. A side whose numbers can't be log-probabilities (logprobsProblem in format.ts) leaves its row unscored.
+ */
 export interface DecideScoreItem {
   index: number;
   base: number[];
@@ -176,7 +180,9 @@ export interface DecideScores {
    * logprobs[i][j]: the log of the first answer token's probability on letter j of prompt i, its bare token and its
    * space-led token summed, read from the full vocabulary or, with llama.cpp's n_probs, from the top tokens (a letter
    * not among them gets an even share of the mass left over, capped at the smallest letter seen). Not renormalized:
-   * the platform renormalizes, combines groups and applies T, and reads letter mass from these.
+   * the platform renormalizes, combines groups and applies T, and reads letter mass from these. It refuses a prompt's
+   * numbers when they can't be log-probabilities (logprobsProblem in format.ts): more than all the probability (as
+   * probabilities or raw logits sent in their place would be), or none on any letter.
    */
   logprobs: number[][];
   /** GPU time for the call. */

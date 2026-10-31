@@ -435,6 +435,31 @@ export function decisionItems(input: {
 // ---------------------------------------------------------------------------------------------------------------
 // From scores to a decision
 
+/**
+ * How far over 1 the shown letters' summed probability may go from float error. Their tokens are distinct, so real
+ * log-probabilities hold at most all the probability; numbers that hold more are probabilities or raw logits sent in
+ * their place. A float32 log_softmax errs by far less than this, so the GPU computes it in float32, not bf16.
+ */
+export const LETTER_MASS_SLACK = 1e-3;
+
+/**
+ * Why one prompt's scores can't be its letters' log-probabilities, in a sentence, or null when they can. Each must be
+ * a number or -Infinity. Together they must hold some probability: all at -Infinity (or so low that it rounds to 0)
+ * means the model put none on a letter, and the even split that gives would only pick the first label. And they must
+ * hold at most all of it, give or take LETTER_MASS_SLACK. Scoring leaves a row with such a prompt out (unscoredRows),
+ * and decisionFromScores refuses it, so a backend that sends the wrong numbers fails loudly.
+ */
+export function logprobsProblem(logprobs: readonly number[]): string | null {
+  let mass = 0;
+  for (const l of logprobs) {
+    if (typeof l !== "number" || Number.isNaN(l) || l === Infinity) return "A log-probability must be a number or -Infinity.";
+    mass += Math.exp(l);
+  }
+  if (!(mass > 0)) return "No shown letter has any probability.";
+  if (mass > 1 + LETTER_MASS_SLACK) return "The letters hold more than all the probability, so these aren't log-probabilities.";
+  return null;
+}
+
 /** Letter mass: the share of first-token probability on the shown letters, before renormalizing. A health number. */
 export function letterMass(logprobs: readonly number[]): number {
   let sum = 0;
@@ -548,7 +573,7 @@ export function temperedDecision(
 /**
  * Steps 2 to 5 of "What the model answers": each rendering's letter log-probabilities (from a DecideBackend, in the
  * renderings' order) renormalized, groups combined, the pick made, then T applied (temperedDecision). Also each
- * rendering's letter mass.
+ * rendering's letter mass. Throws when a rendering's scores can't be log-probabilities (logprobsProblem).
  */
 export function decisionFromScores(input: {
   labels: readonly DecisionLabel[];
@@ -561,6 +586,8 @@ export function decisionFromScores(input: {
   const groups = renderings.map((r, i) => {
     const row = logprobs[i]!;
     if (row.length !== r.letters.length) throw new Error(`Prompt ${i + 1} shows ${r.letters.length} letters, but ${row.length} were scored.`);
+    const problem = logprobsProblem(row);
+    if (problem) throw new Error(`Prompt ${i + 1}'s scores can't be used. ${problem}`);
     return { labelIds: r.labelIds, p: letterProbabilities(row) };
   });
   return { decision: temperedDecision(input.labels, combineGroups(groups), input.T ?? 1), mass: logprobs.map(letterMass) };

@@ -331,8 +331,10 @@ What changes in `GLIMMER_PY`:
 3. The child, in decide mode:
    - Looks up every letter's bare and space-led token id, and fails if any isn't a single token.
    - **Scores** instead of generating (`score_all`): one forward pass per prompt, 8 at a time, left padded, the logits
-     at the last position through `log_softmax`, then for each shown letter its log-probability, plus the letter mass
-     and whether the top token was a letter. On the lab's own GPU this reads the whole vocabulary, so no top-k limit.
+     at the last position through `log_softmax` in float32 (bf16 can err by enough to look like more than all the
+     probability), then for each shown letter its log-probability, plus the letter mass and whether the top token was
+     a letter. JSON can't carry `-Infinity`, so a letter with no probability is sent as a large negative number. On the
+     lab's own GPU this reads the whole vocabulary, so no top-k limit.
    - Scores the base first (a fresh LoRA adds zero, as today), then trains, then scores the tuned model on the same
      items. Base scores are written to the result file at once, as base answers are now.
    - Trains with `per_device_train_batch_size=16`, `gradient_accumulation_steps=2` (32 rows a step) and
@@ -343,7 +345,8 @@ What changes in `GLIMMER_PY`:
    - `scoreOnly: 1` loads the base, scores, and writes no adapter.
 4. `finish`: sends the scores with `ctx.decide(part, items)` (below) instead of `ctx.eval`, then uploads the adapter as
    today. Metrics add `mode`, `epochs`, `renderings`, `too_long`, `letter_mass_median` and `letter_mass_min`.
-5. `dryRun: 1`: fake but deterministic log-probabilities, a stand-in adapter, no GPU, as today.
+5. `dryRun: 1`: fake but deterministic log-probabilities (they must still pass `logprobsProblem`, or scoring leaves
+   the rows out), a stand-in adapter, no GPU, as today.
 
 The knowledge run found that training only `ANSWER<|eot|>` on the final channel broke Glimmer's reasoning channel
 (Oct 31, 3:45 AM: well-formed reasoning fell from 257 to 40 of 260; the likely cause, control tokens drifting, isn't
@@ -381,9 +384,13 @@ and like judging it never changes the job's status.
 | Letter mass | median and minimum, base and tuned, over the test renderings behind the scored rows, decline ones included, from the scored log-probabilities (`letterMass`) |
 | Baselines | always picking the commonest train label (ties to the first label), and the word-overlap stand-in (below), both on the same test rows |
 
-The rows behind every number: a test row counts when every rendering of it has a usable score (one number per letter)
-for base, and for tuned when the job scored tuned, so base, tuned and the baselines are always on the same rows. The
-rest are `unscoredRows`, shown beside the numbers; a rendering the GPU dropped as too long is one of them. A repeated
+The rows behind every number: a test row counts when every rendering of it has a usable score for base, and for tuned
+when the job scored tuned, so base, tuned and the baselines are always on the same rows. Usable means one
+log-probability per letter that together hold some of the probability and at most all of it, give or take 0.001
+(`logprobsProblem` in `lib/decide/format.ts`). So probabilities or raw logits sent in place of log-probabilities, or a
+rendering with no probability on any letter (which would read as an even split and credit the first label), are left
+out loudly instead of giving plausible numbers. The rest are `unscoredRows`, shown beside the numbers; a rendering
+the GPU dropped as too long is one of them. A repeated
 index counts once, the first sent. `tuned` is null when no test item has tuned scores (`scoreOnly`, or a failed tuned
 pass). Each side fits its own T on the dev rows it scored.
 
@@ -563,7 +570,9 @@ interface DecideBackend {
 The gateway's deps hand it one backend per open serving window, or null (503 `decide_offline`), as `/gadget`'s deps
 hand it a board. `score` rejects when it can't answer: 504 `timeout` once `signal` aborted, else 502
 `decide_unavailable`. The platform renormalizes, combines groups and applies T (`decisionFromScores` in
-`lib/decide/format.ts`), so a backend only reads logits.
+`lib/decide/format.ts`), so a backend only reads logits. `decisionFromScores` throws on numbers that can't be
+log-probabilities (`logprobsProblem`), so a backend that sends probabilities, raw logits or nothing on any letter gets
+502 `decide_unavailable`, not a confident-looking answer.
 
 ### Files a decision model produces
 

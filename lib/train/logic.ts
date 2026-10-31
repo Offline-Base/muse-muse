@@ -11,6 +11,7 @@ import {
   labelGroups,
   letterMass,
   letterProbabilities,
+  logprobsProblem,
   pickDecision,
   standInDecision,
   temperedDecision,
@@ -1160,11 +1161,14 @@ export function fitTemperature(rows: readonly CalibrationRow[]): { T: number; ca
 
 type DecideSide = "base" | "tuned";
 
-/** A side's log-probabilities for an item: one per letter, each a number or -Infinity. Null when there are none to use. */
+/**
+ * A side's log-probabilities for an item: one per letter. Null when there are none to use: missing, the wrong length,
+ * or numbers that can't be log-probabilities (logprobsProblem: above all the probability, or none on any letter).
+ */
 function sideLogprobs(score: DecideScoreItem | undefined, side: DecideSide, letters: number): number[] | null {
   const lp = side === "base" ? score?.base : score?.tuned;
   if (!Array.isArray(lp) || lp.length !== letters || !letters) return null;
-  return lp.every((l) => typeof l === "number" && !Number.isNaN(l) && l !== Infinity) ? lp : null;
+  return logprobsProblem(lp) === null ? lp : null;
 }
 
 /** A part's rows in row order, each with its items (regular or decline ones) in group order. */

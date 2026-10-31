@@ -30,8 +30,10 @@ import {
   labelId,
   LABELS_PER_PROMPT,
   letterMass,
+  LETTER_MASS_SLACK,
   letterProbabilities,
   lettered,
+  logprobsProblem,
   neutralText,
   NONE_OPTION,
   NONE_SHARE,
@@ -521,6 +523,27 @@ describe("from scores to a decision", () => {
     assert.throws(() => letterProbabilities([Number.NaN, 0]), /log-probability/);
   });
 
+  it("refuses numbers that can't be log-probabilities", () => {
+    assert.equal(logprobsProblem([Math.log(0.5), Math.log(0.25), -Infinity]), null);
+    assert.equal(logprobsProblem([0, -Infinity]), null);
+    assert.equal(logprobsProblem([-700, -701]), null, "tiny but not 0: e^-700 is still a number");
+    // Float error just over all the probability is fine.
+    assert.equal(logprobsProblem([Math.log(0.6), Math.log(0.4) + 1e-6]), null);
+    assert.ok(LETTER_MASS_SLACK > 1e-6 && LETTER_MASS_SLACK < 0.5);
+    // Probabilities sent in place of their logs, or raw logits, hold more than all the probability.
+    assert.match(logprobsProblem([0.7, 0.15, 0.15])!, /more than all the probability/);
+    assert.match(logprobsProblem([12.5, 3.1, -2])!, /more than all the probability/);
+    assert.match(logprobsProblem([0, 0])!, /more than all the probability/);
+    // No probability on any letter: an even split would just pick the first label.
+    assert.match(logprobsProblem([-Infinity, -Infinity])!, /No shown letter/);
+    assert.match(logprobsProblem([-1e30, -1e30])!, /No shown letter/);
+    assert.match(logprobsProblem([-800, -801])!, /No shown letter/, "e^-800 rounds to 0");
+    assert.match(logprobsProblem([])!, /No shown letter/);
+    for (const bad of [Number.NaN, Infinity, null as unknown as number, "0" as unknown as number]) {
+      assert.match(logprobsProblem([bad, -1])!, /number or -Infinity/);
+    }
+  });
+
   it("combines groups: each label in its own group, none the product, labels sharing 1 - none", () => {
     const one = combineGroups([{ labelIds: ["a", "b", null], p: [0.6, 0.3, 0.1] }]);
     assert.deepEqual(one.labels.map((l) => l.id), ["a", "b"]);
@@ -570,6 +593,9 @@ describe("from scores to a decision", () => {
     close(decision.none, 0.8 * (0.1 / 0.9));
     assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [logprobs[0]!] }), /scores for 2 prompts/);
     assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [logprobs[0]!, [0, 0]] }), /shows 3 letters/);
+    assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [logprobs[0]!, [0.7, 0.2, 0.1]] }), /Prompt 2's scores can't be used/);
+    const nothing = [-Infinity, -Infinity, -Infinity, -Infinity];
+    assert.throws(() => decisionFromScores({ labels, renderings, logprobs: [nothing, logprobs[1]!] }), /Prompt 1's .*No shown letter/);
   });
 
   it("applies T after combining: with one group it is the same as dividing the letters' log-probabilities", () => {

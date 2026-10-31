@@ -1174,6 +1174,33 @@ describe("decision scoring: summarizeDecisions", () => {
     assert.deepEqual(s.baselines.standIn.accuracy, wilsonRate(4, 5));
   });
 
+  it("leaves out a row whose scores can't be log-probabilities", () => {
+    const input = scenario();
+    const scores = input.test.scores.map((x) => ({ ...x }));
+    // Row 0's tuned scores put no probability on any letter. Read as an even split, they would pick Billing, row 0's
+    // label, and credit tuned with a right answer it never gave.
+    scores[0] = { ...scores[0]!, tuned: [-Infinity, -Infinity, -Infinity, -Infinity] };
+    // Row 2's base scores came back as probabilities, not their logs: they hold more than all the probability.
+    scores[2] = { ...scores[2]!, base: [...BASE[2]!] };
+    const s = summarizeDecisions({ ...input, test: { ...input.test, scores } });
+    // Rows 1, 3, 4 and 5 are left: base gets only row 4 right, tuned all but row 5.
+    assert.deepEqual([s.items, s.testRows, s.unscoredRows], [4, 6, 2]);
+    assert.deepEqual(s.base.accuracy, wilsonRate(1, 4));
+    assert.deepEqual(s.tuned!.accuracy, wilsonRate(3, 4));
+    assert.deepEqual([s.tunedWins, s.baseWins, s.ties], [2, 0, 2]);
+    assert.deepEqual(s.tuned!.confusion, [
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 1, 1, 0],
+    ]);
+    // Letter mass is only over the renderings left; the probabilities would have read as a healthy 1.
+    approx(s.base.letterMass.min, 0.4);
+    // The decline renderings were all scored as they should be.
+    assert.deepEqual(s.base.decline, { rows: 6, declined: 2, rate: 2 / 6 });
+    assert.deepEqual(s.baselines.commonest.accuracy, wilsonRate(1, 4));
+    assert.deepEqual(s.baselines.standIn.accuracy, wilsonRate(2, 4));
+  });
+
   it("fits T on dev only and shows ECE with it, without changing a pick", () => {
     const labels = ["Billing", "Shipping"].map(decisionLabel);
     const devRows = Array.from({ length: 20 }, (_, i): DecisionRow => ({ input: `dev ${i}`, label: i < 15 ? "billing" : "shipping" }));
