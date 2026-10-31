@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useXRTarget } from "@/lib/xr/targets";
 
 // A flat panel in the Meta look: white, radius 16, Inter, Meta blue buttons. Sizes below are in panel pixels, and 1000 of
-// them make a metre, because of pixelSize. Without pixelSize a 0.8 m panel would be 80 pixels wide and its text would wrap
+// them make a metre, because of pixelSize. Without pixelSize a 1 m panel would be 100 pixels wide and its text would wrap
 // one word a line.
 const PIXEL_SIZE = 0.001;
 const BLUE = "#0064e0";
@@ -23,7 +23,7 @@ export interface PanelProps {
   children: ReactNode;
 }
 
-export function Panel({ position = [0, 1.5, -1.4], rotation = [0, 0, 0], width = 0.8, height = 0.5, children }: PanelProps) {
+export function Panel({ position = [0, 1.5, -1.4], rotation = [0, 0, 0], width = 1, height = 0.6, children }: PanelProps) {
   return (
     <group position={position} rotation={rotation}>
       <Container
@@ -46,7 +46,7 @@ export function Panel({ position = [0, 1.5, -1.4], rotation = [0, 0, 0], width =
 
 export function PanelTitle({ children }: { children: string }) {
   return (
-    <Text fontSize={44} fontWeight={700} color={INK} textAlign="center">
+    <Text fontSize={52} fontWeight={700} color={INK} textAlign="center">
       {children}
     </Text>
   );
@@ -54,7 +54,7 @@ export function PanelTitle({ children }: { children: string }) {
 
 export function PanelText({ children, muted = false }: { children: string; muted?: boolean }) {
   return (
-    <Text fontSize={30} color={muted ? MUTED : INK} textAlign="center">
+    <Text fontSize={36} color={muted ? MUTED : INK} textAlign="center">
       {children}
     </Text>
   );
@@ -64,20 +64,20 @@ export function PanelText({ children, muted = false }: { children: string; muted
 export function PanelResult({ children }: { children: string }) {
   return (
     <Container borderWidth={4} borderColor="#a033ff" borderRadius={16} padding={24}>
-      <Text fontSize={30} color={INK}>
+      <Text fontSize={36} color={INK}>
         {children}
       </Text>
     </Container>
   );
 }
 
-/** A button 60 panel pixels tall or more, big enough to hit with a controller ray or a finger. `name` is its name for tests. */
+/** A button 80 panel pixels tall, big enough to hit with a controller ray or a finger. `name` is its name for tests. */
 export function PanelButton({ name, children, onClick, secondary = false }: { name: string; children: string; onClick: () => void; secondary?: boolean }) {
   const ref = useXRTarget(name);
   return (
     <Container
       ref={ref}
-      minHeight={72}
+      minHeight={80}
       paddingX={32}
       backgroundColor={secondary ? "#e4e6eb" : BLUE}
       hover={{ backgroundColor: secondary ? "#d8dadf" : "#0052b8" }}
@@ -86,7 +86,7 @@ export function PanelButton({ name, children, onClick, secondary = false }: { na
       justifyContent="center"
       onClick={onClick}
     >
-      <Text fontSize={32} fontWeight={600} color={secondary ? INK : "#ffffff"}>
+      <Text fontSize={36} fontWeight={600} color={secondary ? INK : "#ffffff"}>
         {children}
       </Text>
     </Container>

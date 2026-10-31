@@ -22,6 +22,13 @@ declare global {
   }
 }
 
+/**
+ * The simulated view's height in radians. IWER's default is 90 degrees, which across a 16:9 window is 121: objects a person
+ * reads easily in a headset come out small and stretched at the edges, in screenshots and the demo too. A real headset
+ * brings its own.
+ */
+const SIMULATED_FOVY = Math.PI / 3;
+
 let ensured: Promise<MuseXR> | null = null;
 
 export function ensureXR(): Promise<MuseXR> {
@@ -36,7 +43,7 @@ async function install(): Promise<MuseXR> {
   if (matchMedia("(pointer: coarse)").matches) return expose("preview", null);
 
   const { XRDevice, metaQuest3 } = await import("iwer");
-  const device = new XRDevice(metaQuest3, { stereoEnabled: false });
+  const device = new XRDevice(metaQuest3, { stereoEnabled: false, fovy: SIMULATED_FOVY });
   // Without forceInstall IWER skips itself wherever navigator.xr exists, which includes desktop Chrome and headless Chromium.
   device.installRuntime({ forceInstall: true });
   device.position.set(0, 1.6, 0);

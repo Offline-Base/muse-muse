@@ -27,7 +27,7 @@ A normal web product, with the same pages, action routes and gateway calls as an
 | Part | Does |
 |---|---|
 | `components/xr/XRStage.tsx` | The canvas, the XR store, a floor and soft light. Waits until it knows which kind of headset this is. `teleport` turns on aiming at the floor and pressing to move there |
-| `components/xr/EnterVRButton.tsx` | The way in. Takes the store XRStage hands over. On a phone it shows nothing |
+| `components/xr/EnterVRButton.tsx` | The way in, and the only one. Takes the store XRStage hands over, a `label` and `disabled` for while the page still needs something first. On a phone it shows nothing |
 | `components/xr/HowToView.tsx` | One line of help for Quest, computer or phone. Put it under the button |
 | `components/xr/Panel.tsx` | `Panel`, `PanelTitle`, `PanelText`, `PanelResult` and `PanelButton`: flat panels in the Meta look. `PanelResult` is for a model's answer, and is the only place the AI accent appears |
 | `lib/xr/targets.ts` | `useXRTarget("Start game")` names an object |
@@ -49,9 +49,9 @@ Scenes must stay smooth on a Quest and in the sandbox's graphics-card-free recor
 ## Comfort
 
 - Never move the camera or the person on your own. They turn their head, teleport, or press a button that says it will move them.
-- Keep content 0.5 to 3 m away, and panels 1.2 to 1.5 m away at about eye height (1.3 to 1.6 m).
+- Keep content 1 to 3 m away, and panels 1.2 to 1.5 m away at about eye height (1.3 to 1.6 m). Nothing stands between the person and the panel, and nothing but what they hold comes closer than 1 m.
 - Everything fits in front of the person when they arrive. Don't make them look behind them to start.
-- Text at least 30 panel pixels, buttons at least 60.
+- Text at least 36 panel pixels, buttons at least 72. Panels are about 1 m wide, with a line or two of text.
 
 ## Test conventions
 
@@ -68,9 +68,9 @@ With `next dev` running on port 3000:
 node scripts/xr-peek.mjs --enter --look 0,1.6,1.5:0,1.2,-1 --select "Start game" --out .muse-peek/start.png
 ```
 
-It prints `{ mode, inSession, fps, blank, stats, targets, status, consoleErrors }`. Then open the PNG with `read_file` and look at it. Do this before you trust a scene: an empty floor passes the type check. Flags, in the order you give them: `--enter`, `--look [from:]to`, `--select <name>`, `--wait <status text>`, `--hand left|right`.
+It prints `{ mode, inSession, fps, blank, stats, targets, status, consoleErrors }`. Then open the PNG with `read_file` and look at it. Flags, in the order you give them: `--enter`, `--look [from:]to`, `--select <name>`, `--wait <status text>`, `--hand left|right`.
 
-Use it after every change to the scene. A fix round's failure from a VR judge screenshot starts here too.
+**Do this at least once before your first `npm run verify`, and again after changing the scene.** An empty floor passes the type check, and verify can't tell whether a person can read the panel. This picture is what the judge and the demo video see: if you can't read the panel's text in it, or something blocks the view, fix that first. A fix round's failure from a VR judge screenshot starts here too.
 
 ## The smoke test
 
@@ -101,7 +101,7 @@ test("step in and start the game", async ({ page }) => {
 });
 ```
 
-Keep moves slow enough to follow: they become the demo video. End on the best moment in VR, because the last VR view is the video's poster. Screenshots: `01-start` on the page, one in VR, then the final result, where the promised result is plainly in view. An empty floor fails with the judge.
+Keep moves slow enough to follow: they become the demo video. End the session on the best moment, because the last VR view is the video's poster. After `xr.exit`, the card marked `data-result` comes on screen and gets its own hold. Screenshots: `01-start` on the page, one in VR, then the final result in VR, where the promised result is plainly in view. An empty floor fails with the judge.
 
 | Call | Does |
 |---|---|
