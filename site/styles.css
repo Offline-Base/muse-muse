@@ -284,6 +284,9 @@ button { font: inherit; color: inherit; }
   .card { padding: 22px; }
   .footer { margin-top: 96px; }
 }
+.flow-lede { margin-left: auto; margin-right: auto; text-align: center; }
+.flow-wrap { margin-top: 44px; }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
