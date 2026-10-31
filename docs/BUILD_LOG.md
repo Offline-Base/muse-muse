@@ -177,6 +177,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **18:33** Ethan asked me to start the device for the Claude and ChatGPT tests. Started `scripts/start.sh` in ~/muse-privacy (branch ethan/device-only-build, 92ee1a7, so without LINKED_APP: its pages still say Muse). Device only: LFM3-VL-2B and the embedder, no Glimmer, on AC power, workspace with its `.synthetic` marker. The approval page answers on 127.0.0.1:8787 and the relay client logged "connected to the relay".
 
+**18:38** Claude linked for real. Ethan added a custom connector in Claude with the relay's /mcp address; Claude detected OAuth and offered its published identity (a client ID metadata document), which the relay's OAuth provider has enabled, so nothing was registered by hand. He typed a one-time pairing code on the relay's page and Ethan reports it works. The relay client logged the MCP calls arriving (one 400 among them, then 202 and 200s). No tool call in a chat yet.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
