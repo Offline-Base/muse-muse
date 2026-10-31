@@ -1,0 +1,40 @@
+--- a/tools/imatrix/imatrix.cpp	2026-10-31 01:30:20.196600836 +0000
++++ b/tools/imatrix/imatrix.cpp	2026-10-31 01:30:20.225601469 +0000
+@@ -724,11 +724,32 @@
+                 const int64_t mat_id = (i3 % src0->ne[3]) * src0->ne[2] + (i2 % src0->ne[2]);
+                 float * acc = e.values.data() + mat_id * ne0;
+                 float * act = has_act ? e.activations.data() + mat_id * ne0 : nullptr;
+-                for (int64_t row = 0; row < src1->ne[1]; ++row) {
+-                    const float * x = (const float *) (data + row * src1->nb[1] + i2 * src1->nb[2] + i3 * src1->nb[3]);
+-                    for (int64_t j = 0; j < ne0; ++j) { acc[j] += x[j] * x[j]; }
+-                    if (act) {
+-                        for (int64_t j = 0; j < ne0; ++j) { act[j] += x[j]; }
++                // Muse patch: the columns are split across threads. Each column still adds its rows in the same
++                // order with the same expressions, so the sums match the single-threaded loop bit for bit.
++                {
++                    const int64_t nrows = src1->ne[1];
++                    const size_t nb1 = src1->nb[1];
++                    const char * base = data + i2 * src1->nb[2] + i3 * src1->nb[3];
++                    auto work = [&](int64_t j0, int64_t j1) {
++                        for (int64_t row = 0; row < nrows; ++row) {
++                            const float * x = (const float *) (base + row * nb1);
++                            for (int64_t j = j0; j < j1; ++j) { acc[j] += x[j] * x[j]; }
++                            if (act) {
++                                for (int64_t j = j0; j < j1; ++j) { act[j] += x[j]; }
++                            }
++                        }
++                    };
++                    static const int64_t n_hw = std::max<int64_t>(1, std::min<int64_t>(16, (int64_t) std::thread::hardware_concurrency()));
++                    const int64_t nt = std::min<int64_t>(n_hw, std::max<int64_t>(1, ne0 / 256));
++                    if (nt <= 1 || nrows < 64) {
++                        work(0, ne0);
++                    } else {
++                        const int64_t step = ((ne0 + nt - 1) / nt + 15) / 16 * 16;
++                        std::vector<std::thread> pool;
++                        for (int64_t j0 = 0; j0 < ne0; j0 += step) {
++                            pool.emplace_back(work, j0, std::min<int64_t>(ne0, j0 + step));
++                        }
++                        for (auto & th : pool) { th.join(); }
+                     }
+                 }
+             }

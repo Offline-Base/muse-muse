@@ -165,3 +165,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # The scores are written and renamed into place above. Leave without interpreter teardown: once, a finished run
+    # (its JSON complete) still exited non-zero with no traceback, which quantize.sh read as a failed step.
+    sys.stdout.flush()
+    os._exit(0)
