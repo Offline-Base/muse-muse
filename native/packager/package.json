@@ -1,0 +1,19 @@
+{
+  "name": "musemuse-packager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Turns the shell templates into one product's downloads inside a short-lived sandbox. See docs/NATIVE_PACKAGER.md.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"__tests__/*.test.mjs\""
+  },
+  "dependencies": {
+    "@expo/config": "58.0.9",
+    "@expo/repack-app": "0.10.4",
+    "resedit": "3.1.0",
+    "sharp": "0.35.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
