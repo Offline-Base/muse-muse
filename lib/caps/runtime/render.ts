@@ -22,7 +22,7 @@ const packages = (runtime: RuntimeBrief) => runtime.packages.filter((p) => PYPI_
 
 function packagesLine(runtime: RuntimeBrief): string {
   return packages(runtime).length
-    ? `Packages, from PyPI: ${packages(runtime).map((p) => `\`${p}\``).join(", ")}. Pin each in \`requirements.txt\` as \`name==version\` with a version that has wheels for Python 3.14, which both the build machine and Vercel run (`.python-version`).`
+    ? `Packages, from PyPI: ${packages(runtime).map((p) => `\`${p}\``).join(", ")}. Pin each in \`requirements.txt\` as \`name==version\` with a version that has wheels for Python 3.14, which both the build machine and Vercel run (\`.python-version\`).`
     : "No packages: the standard library is enough. Keep `requirements.txt` without any.";
 }
 
