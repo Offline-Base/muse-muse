@@ -461,6 +461,29 @@ class TrainingTests(unittest.TestCase):
         config = server.read_json(server.run_file("run1", "config.json"))
         self.assertEqual((config["rank"], config["lr"], config["base"]), (4, 0.001, server.DEFAULT_BASE))
 
+    def test_a_model_that_will_not_fit_in_memory_is_refused(self):
+        # A failed GPU allocation has frozen and rebooted these boards (train.py), so this is checked before llama-server starts.
+        model = f"{server.DEFAULT_BASE}-Q4_K_M.gguf"
+        self.memory.return_value = 0.1
+        with mock.patch.object(server, "find_llama_server", return_value=("/fake/llama-server", {})), mock.patch.object(server.subprocess, "Popen") as started:
+            self.assert_refused("free memory", "start_model", model=model)
+            started.assert_not_called()
+
+    def test_memory_needed_for_a_model_grows_with_its_files_and_context(self):
+        small = server.model_memory_gib([], 4096)
+        self.assertGreater(server.model_memory_gib([], 32768), small)
+        path = os.path.join(server.MODEL_DIR, "big.gguf")
+        with open(path, "wb") as f:
+            f.truncate(2**30)
+        self.assertAlmostEqual(server.model_memory_gib([path], 4096), small + 1, places=3)
+
+    def test_a_model_with_room_starts(self):
+        model = f"{server.DEFAULT_BASE}-Q4_K_M.gguf"
+        self.memory.return_value = 4.4
+        with mock.patch.object(server, "find_llama_server", return_value=("/fake/llama-server", {})), mock.patch.object(server.subprocess, "Popen", side_effect=OSError("stop here")) as started:
+            self.assertTrue(call("start_model", model=model)[0])
+            started.assert_called_once()
+
     def test_a_second_run_is_refused(self):
         self.start()
         self.wait_for_state("training")

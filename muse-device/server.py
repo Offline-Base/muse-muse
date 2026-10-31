@@ -75,6 +75,11 @@ STOP_TIMEOUT_S = 30
 # secrets.token_urlsafe(32) makes 43. Under this the token is empty, cut short, or one anyone could guess.
 MIN_TOKEN_CHARS = 32
 
+# start_model's floor, on top of the files themselves: llama-server's own buffers, and its cache per 4096 tokens of context.
+# Estimates, not measured on a board: this is here to stop a load that can't fit, not to judge one that nearly does.
+MODEL_OVERHEAD_GIB = 0.5
+MODEL_CONTEXT_GIB_PER_4K = 0.1
+
 capture_lock = threading.Lock()
 # Taken before train_lock when both are needed: the board's memory holds a running model or a training run, not both.
 model_lock = threading.Lock()
@@ -367,14 +372,19 @@ def install_model(args):
     return text_result(json.dumps({"installed": name, "gib": round(os.path.getsize(path) / 2**30, 3)}))
 
 
+def model_memory_gib(paths, context):
+    return sum(os.path.getsize(path) for path in paths) / 2**30 + MODEL_OVERHEAD_GIB + context / 4096 * MODEL_CONTEXT_GIB_PER_4K
+
+
 def start_model(args):
     global model_process, model_loaded
     model = model_file(args.get("model"))
     adapter = args.get("adapter")
     adapter_path = model_file(adapter, "adapter") if adapter is not None else None
     binary, env = find_llama_server()
+    context = int_arg(args, "context", 4096, 512, 32768)
     command = [binary, "--model", model, "--host", "127.0.0.1", "--port", str(MODEL_PORT), "--no-webui", "-ngl", "999", "-c",
-               str(int_arg(args, "context", 4096, 512, 32768)), "-np", "1", "--jinja", "--reasoning", "off"]
+               str(context), "-np", "1", "--jinja", "--reasoning", "off"]
     if adapter_path:
         command += ["--lora", adapter_path]
     with model_lock_or_busy():
@@ -383,6 +393,11 @@ def start_model(args):
         if active:
             raise ToolError(f"Training run {active} is using this board's memory. Wait for it to finish, or call stop_training first.")
         stop_running_model()
+        # After the stop, since what's free depends on it. A failed GPU allocation has frozen and rebooted these boards (train.py).
+        needed = model_memory_gib([model] + ([adapter_path] if adapter_path else []), context)
+        memory = meminfo_gib("MemAvailable")
+        if memory is not None and memory < needed:
+            raise ToolError(f"This model needs about {needed:.1f} GiB of free memory at this context size, and this board has {memory} GiB available. No model is running now.")
         log = open(os.path.join(MODEL_DIR, "llama-server.log"), "wb")
         model_process = subprocess.Popen(command, env={**os.environ, **env}, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         log.close()
