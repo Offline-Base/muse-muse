@@ -847,6 +847,17 @@ because the sidebar showed a real account.
   independent review started next; wave 3's gateway-address and bypass pieces get folded in after it.
 - The multi-Jetson simulation has written its scripts (tabular and LoRA federated runs) and is running in the cloud.
 
+### 19:13 Owner: align fine-tuning with Meta's Glimmer docs, and run on Lambda, Fireworks, Baseten or Modal
+
+- Owner asked that fine-tuning be at least roughly aligned with Meta's Glimmer pages on post-training, quantization,
+  deploy and hardware platforms, and ready to run on Lambda, Fireworks, Baseten or Modal.
+- Pass 1 now (wf_a24c3785-97a, branch tg-train-align, read-only, no spend): read Meta's four pages, our lib/train code,
+  and each provider's current Glimmer support and prices; write docs/GLIMMER_ALIGNMENT.md (one row per Meta
+  recommendation: aligned, partly or not, with the fix) and docs/TRAIN_BACKENDS.md (one backend seam, what each provider
+  needs, a cheap smoke test each); independent check.
+- Pass 2 after tg-decide lands (it is editing lib/train): build the fixes and the backends. Real provider runs wait for
+  the owner's OK.
+
 ## Gaps
 
 What this record doesn't confirm:
