@@ -3,10 +3,11 @@
     uv run python -m scripts.glimmer_probe --url http://127.0.0.1:8181/v1 --key-file FILE
         [--levels off,low,medium,high,xhigh] [--max-tokens 1500]
 
-Sends one invented request per reasoning level, with the router's kind of strict JSON schema, through
-the same client the app uses. It reports the shape only: whether the content parsed as the schema,
-why the reply ended, reasoning tokens and seconds. It prints no reply text, and it needs no other
-server. Exit 0 when every level parsed. A failure here means fix the server flags or the parser first,
+Sends one invented free-text request and one with the router's kind of strict JSON schema per reasoning
+level, through the same client the app uses: a tuned file has failed on free text alone, and has
+answered 200 with markup in the content. It reports the shape only: HTTP errors by type, whether the
+reply parsed, markup, why the reply ended, reasoning tokens and seconds. It prints no reply text, and it
+needs no other server. Exit 0 when every level parsed. A failure here means fix the server flags or the parser first,
 before any scored row: a row would only count it as a stop.
 """
 
@@ -33,7 +34,10 @@ SCHEMA = {
     "additionalProperties": False,
 }
 MESSAGES = [
-    {"role": "system", "content": "You decide what a teacher's device may share with a cloud assistant. Answer in JSON."},
+    {
+        "role": "system",
+        "content": "You decide what a teacher's device may share with a cloud assistant. Answer in JSON.",
+    },
     {
         "role": "user",
         "content": "Muse asked: What was the class average on the invented quiz? The result: The class average was 8.1 of 10. Decide.",
@@ -44,6 +48,7 @@ MESSAGES = [
 @dataclass
 class Row:
     level: str
+    kind: str
     parsed: bool
     finish: str
     reasoning_tokens: int
@@ -57,23 +62,41 @@ def client(url: str, key: str, reasoning: str = "on") -> LocalLLM:
     return LocalLLM(replace(settings, router_url=url.rstrip("/")), "router")
 
 
-def probe(llm: Any, level: str, max_tokens: int) -> Row:
+def probe(llm: Any, level: str, max_tokens: int, kind: str = "schema") -> Row:
     start = time.monotonic()
     try:
         reasoning = None if level == "off" else level
-        result = llm.chat(MESSAGES, json_schema=SCHEMA, max_tokens=max_tokens, reasoning=reasoning, synthetic=True)
+        schema = SCHEMA if kind == "schema" else None
+        result = llm.chat(
+            MESSAGES, json_schema=schema, max_tokens=max_tokens, reasoning=reasoning, synthetic=True
+        )
     except Exception as exc:  # a type name only: an error message may quote the reply
-        return Row(level, False, "error", 0, time.monotonic() - start, type(exc).__name__)
+        return Row(level, kind, False, "error", 0, time.monotonic() - start, type(exc).__name__)
     seconds = time.monotonic() - start
+    markup = "<|" in result.content
+    if kind == "free text":
+        parsed = bool(result.content.strip()) and not markup
+        problem = "markup in the content" if markup else "" if parsed else "empty reply"
+        return Row(
+            level, kind, parsed, result.finish_reason or "unknown", result.reasoning_tokens, seconds, problem
+        )
     try:
         data = parse_json(result.content)
-        parsed = data.get("decision") in SCHEMA["properties"]["decision"]["enum"] and isinstance(data.get("reason"), str)
+        parsed = data.get("decision") in SCHEMA["properties"]["decision"]["enum"] and isinstance(
+            data.get("reason"), str
+        )
         problem = "" if parsed else "JSON, but not the schema"
     except (ValueError, json.JSONDecodeError):
         parsed, problem = False, "content is not JSON; is reasoning text landing in content?"
     if level == "off" and result.reasoning_tokens:
-        problem = (problem + "; " if problem else "") + "reasoning tokens with reasoning off; check the template and the budget"
-    return Row(level, parsed, result.finish_reason or "unknown", result.reasoning_tokens, seconds, problem)
+        problem = (
+            problem + "; " if problem else ""
+        ) + "reasoning tokens with reasoning off; check the template and the budget"
+    if markup:
+        problem = (problem + "; " if problem else "") + "markup in the content"
+    return Row(
+        level, kind, parsed, result.finish_reason or "unknown", result.reasoning_tokens, seconds, problem
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -94,10 +117,11 @@ def main(argv: list[str] | None = None) -> int:
     rows = []
     try:
         for level in levels:
-            row = probe(off if level == "off" else llm, level, args.max_tokens)
-            rows.append(row)
-            print(f"{row.level}: parsed={row.parsed} finish={row.finish} reasoning_tokens={row.reasoning_tokens} "
-                  f"seconds={row.seconds:.1f}" + (f" problem={row.problem}" if row.problem else ""))  # fmt: skip
+            for kind in ("free text", "schema"):
+                row = probe(off if level == "off" else llm, level, args.max_tokens, kind)
+                rows.append(row)
+                print(f"{row.level}, {row.kind}: parsed={row.parsed} finish={row.finish} reasoning_tokens={row.reasoning_tokens} "
+                    f"seconds={row.seconds:.1f}" + (f" problem={row.problem}" if row.problem else ""))  # fmt: skip
     finally:
         llm.close()
         off.close()

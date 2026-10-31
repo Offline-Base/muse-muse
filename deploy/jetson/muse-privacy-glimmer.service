@@ -14,7 +14,8 @@ Group=muse-privacy
 # glimmer-env.sh writes GLIMMER_GGUF and LORA_ARGS to /var/lib/muse-privacy/glimmer.env (read again
 # for ExecStart, after it ran). When /var/lib/muse-privacy/adapters/router.gguf exists LORA_ARGS holds
 # "--lora /var/lib/muse-privacy/adapters/router.gguf --lora-init-without-apply", so the router
-# adapter is loaded but off until a request (or adapter_sync.sh) turns it on; otherwise it is empty.
+# adapter is loaded. That flag alone still applies it at 1.0 (b11970): the app's start and
+# adapter_sync.sh set its scale to 0, and a request then names it. Otherwise LORA_ARGS is empty.
 ExecStartPre=/opt/muse-privacy/bin/glimmer-env.sh
 EnvironmentFile=-/var/lib/muse-privacy/glimmer.env
 # Memory on the 8 GB board: a small ubatch keeps the f32 logits buffer near 0.1 GiB, and the

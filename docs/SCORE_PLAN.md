@@ -162,6 +162,8 @@ The run takes the model slot from whatever is running. Every step runs from the 
    - `scripts/start_side_models.sh FILE` starts it and LFM on side ports, 4 CPU threads each, low priority, a throwaway key. It prints the environment for the steps below.
    - `uv run python -m scripts.glimmer_probe --url http://127.0.0.1:8181/v1 --key-file KEY` sends one invented request per reasoning level and reports whether the reply parses as the schema. Glimmer has only run on OpenRouter here, so this is the first test of its template and reasoning on our llama-server. Fix anything it finds before any scored row.
    - Stop the Glimmer attempt if no load and no parsed reply within 90 minutes.
+   - Oct 31, from the training session's tests (stage 2 Q4_K_M on an A100, b11970, not run here): the tuned file needs reasoning off, its own template and a stop at `<|eot|>`. `plug_in_model --reasoning-off --template FILE` sets them, and start.sh then serves it with `--reasoning-format none`. Reasoning on returned HTTP 500 on free text. The probe tests free text and JSON, because JSON alone passed while free text failed. The Jetson unit has none of these flags yet.
+   - Oct 31: Ethan said not to run Glimmer on this laptop. Every step here that loads it needs another machine; where is his call.
 3. **Measure speed with the live app untouched.**
    - Run `uv run python -m scripts.bench_device --label mac-glimmer1b --gguf FILE --kind glimmer --reasoning low,medium,high,xhigh`.
    - With the drafter, first confirm that `--draft-n` changes acceptance, then sweep `3,5,7,15,16`.

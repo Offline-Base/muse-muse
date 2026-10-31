@@ -7,7 +7,7 @@
 #   SIDE_CHECKER_PORT  default 8183
 #   SIDE_THREADS       CPU threads per server, default 4 (the models are on the GPU)
 #   SIDE_CTX           default 16384
-#   SIDE_REASONING     off (default) or on; off serves Glimmer with --reasoning-budget 0
+#   SIDE_REASONING     off (default) or on; off serves Glimmer with --reasoning-format none
 #   SIDE_TEMPLATE      a chat template file for Glimmer (--chat-template-file)
 #
 # HOME_DIR holds a throwaway key file and the logs. It is refused if it is the real ~/.base. Binds
@@ -42,7 +42,7 @@ chmod 600 "$KEY"
 
 COMMON=(--host 127.0.0.1 -np 1 -ngl 99 -t "$THREADS" -c "$CTX" --jinja --cache-ram 0 --ctx-checkpoints 0 --no-slots --api-key-file "$KEY")
 G_FLAGS=()
-if [ "${SIDE_REASONING:-off}" = off ]; then G_FLAGS+=(--reasoning-budget 0); fi
+if [ "${SIDE_REASONING:-off}" = off ]; then G_FLAGS+=(--reasoning-format none); fi
 if [ -n "${SIDE_TEMPLATE:-}" ]; then
   [ -f "$SIDE_TEMPLATE" ] || die "no such template: $SIDE_TEMPLATE"
   G_FLAGS+=(--chat-template-file "$SIDE_TEMPLATE")

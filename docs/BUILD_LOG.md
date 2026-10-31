@@ -151,6 +151,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **14:12** Base i1-IQ1_S downloaded, sha256 matches Hugging Face, and the header check passed: 1.874 bits per weight measured, not the 1.6 we had been saying, 27.85 B parameters (eval/reports/model_file_base_iq1s.md, no model run). Started it with LFM on side ports. The laptop got too hot, Ethan stopped the probe before any result was seen, and both servers were stopped. Ethan's instruction: do not run Muse Glimmer locally. No Glimmer reply has been measured on our server. The Glimmer steps in SCORE_PLAN that run on this Mac need another machine or a different plan; that is Ethan's call.
 
+**14:38** From the training session (stage 2 Q4_K_M, A100, b11970; not run here): tuned Glimmer returns HTTP 500 on free text with our flags, and with `--reasoning-budget 0`; it works with its own template, `--reasoning-format none` and a stop at `<|eot|>`. Changed to match: `GLIMMER_REASONING=off` now sends the stop and start.sh serves with `--reasoning-format none`; `glimmer_probe` tests free text and JSON and flags markup. Also from that session, checked by reading our scripts: `--lora-init-without-apply` still applies an adapter at 1.0, and nothing here set it to 0. Now the app sets every adapter to 0 at start when router.gguf is in place, and `adapter_sync.sh` does by default. Unit tests only, no model run. Jetson's unit has no reasoning-off flags yet. Next: tonight's final model estimate is about 8:15 PM, files about 12:30 AM, or midday to evening Nov 1 if the repair fails.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

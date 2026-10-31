@@ -20,14 +20,14 @@ SERVICE=muse-privacy-glimmer.service
 SERVICE_USER=muse-privacy
 KEY_FILE="${LLAMA_KEY_FILE:-/var/lib/muse-privacy/home/llama_api_key}"
 SCALE=0
-APPLY=0
+APPLY=1  # --lora-init-without-apply alone still applies the adapter at 1.0 (b11970), so set 0 here
 SRC=""
 
 usage() {
   echo "Usage: sudo $0 ADAPTER.gguf [--scale S] [--no-apply]"
   echo "  --scale S    apply the adapter to every request at scale S (testing only; the router"
   echo "               names it per request, so the default leaves the global scale at 0)"
-  echo "  --no-apply   install and load the adapter, and leave its scale alone (the default)"
+  echo "  --no-apply   install and load the adapter, and leave its scale alone"
 }
 die() { printf 'adapter_sync.sh: %s\n' "$*" >&2; exit 1; }
 
@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --scale) [ $# -ge 2 ] || die "--scale needs a value"; SCALE="$2"; APPLY=1; shift ;;
     --no-apply) APPLY=0 ;;
+    # --no-apply leaves the scale as the server has it, which may be 1.0 after a restart
     -h|--help) usage; exit 0 ;;
     -*) usage >&2; die "unknown option: $1" ;;
     *) [ -z "$SRC" ] || die "give one adapter path"; SRC="$1" ;;
@@ -89,6 +90,6 @@ if [ "$APPLY" -eq 1 ]; then
     || die "llama-server refused the new adapter scale"
   echo "Adapter $ADAPTER_ID applied at scale $SCALE."
 else
-  echo "Adapter $ADAPTER_ID loaded at global scale 0; the router names it on its own requests."
-  echo "Restart muse-privacy.service so the server finds the adapter id."
+  echo "Adapter $ADAPTER_ID loaded; its scale is left as the server has it, which may be 1.0."
 fi
+echo "Restart muse-privacy.service so the server finds the adapter id and sets its scale to 0."

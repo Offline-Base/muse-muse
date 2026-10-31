@@ -151,8 +151,9 @@ class Settings:
     # The model for the checks and search: "glimmer" uses the answer model, "lfm" a small Liquid
     # model on this device's own llama-server (always local, so it never needs the .synthetic rule).
     checker_backend: Literal["glimmer", "lfm"] = "glimmer"
-    # GLIMMER_REASONING=off: no reasoning line and no reasoning_strength in Glimmer's requests, for a
-    # file whose reasoning is broken. Pair it with GLIMMER_REASONING_BUDGET=0 (and GLIMMER_TEMPLATE).
+    # GLIMMER_REASONING=off: no reasoning line or reasoning_strength in Glimmer's requests and a stop
+    # at <|eot|>, for a file whose reasoning is broken. start.sh then serves it with --reasoning-format
+    # none; give the file's own template in GLIMMER_TEMPLATE. Tested on stage 2 Q4_K_M, b11970, A100.
     glimmer_reasoning: Literal["on", "off"] = "on"
     # Who labels Muse's requests: the checker, or Glimmer with its labels checked the same way
     # (LABELS_BACKEND=glimmer, which needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm).

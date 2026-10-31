@@ -28,6 +28,7 @@ The candidate mode for the pre-registered claim is "model decides" unless change
 
 - The rows have no "Reasoning strength" line, because the file is served with reasoning off. The app strips that line when `GLIMMER_REASONING=off`. If reasoning gets repaired and the file is served with it on, re-export with `--keep-reasoning-line`.
 - Render the assistant turn as the final channel only: `<|start|>assistant to=user<|message|>JSON<|eot|>`, with no `to=self` turn. Test with the same template the file will be served with, and hand that template over too (`GLIMMER_TEMPLATE`).
+- The app serves a file with reasoning off as `--jinja --chat-template-file TEMPLATE --reasoning-format none`, with `"stop": ["<|eot|>"]` on every request.
 - Replies are generated under a strict JSON schema on llama.cpp. Test the final quantized file with `response_format` json_schema, not only free text.
 - In real use, the user's learned rules follow "This user's rules, learned from their decisions:" in the router's system prompt. The rows have "None yet."
 

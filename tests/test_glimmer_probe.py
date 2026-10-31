@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import httpx
@@ -92,6 +93,7 @@ def test_final_channel_keeps_only_the_answer():
     assert final_channel("assistant to=self private thought assistant to=user The answer.") == "The answer."
     assert final_channel("<|start|>assistant to=self<|message|>private thought, no answer") == ""
     assert final_channel('{"decision": "refuse", "reason": "x"}') == '{"decision": "refuse", "reason": "x"}'
+    assert final_channel("The answer.<|eot|><|start|>user<|message|>more") == "The answer."
 
 
 def test_reasoning_off_sends_no_reasoning_at_all(tmp_path):
@@ -102,7 +104,54 @@ def test_reasoning_off_sends_no_reasoning_at_all(tmp_path):
     assert "chat_template_kwargs" not in body
     assert "reasoning strength" not in body["messages"][0]["content"].lower()
     assert body["messages"][0]["content"] == "Decide."
+    assert body["stop"] == ["<|eot|>"]
     llm.close()
     on = gp.LocalLLM(replace(settings, glimmer_reasoning="on"), "router")
-    assert on.build_body([{"role": "user", "content": "x"}], reasoning="high")["chat_template_kwargs"] == {"reasoning_strength": "high"}
+    with_reasoning = on.build_body([{"role": "user", "content": "x"}], reasoning="high")
+    assert with_reasoning["chat_template_kwargs"] == {"reasoning_strength": "high"} and "stop" not in with_reasoning
     on.close()
+
+
+def test_a_failure_on_free_text_alone_fails_the_probe(tmp_path, capsys):
+    key = tmp_path / "k"
+    key.write_text("test-key")
+    good = reply('{"decision": "share_tagged", "reason": "x"}')
+
+    def answer(request):
+        body = json.loads(request.content)
+        return good if "response_format" in body else httpx.Response(500, json={"error": {"message": SECRET_WORDS}})
+
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(f"{URL}/chat/completions").mock(side_effect=answer)
+        code = gp.main(["--url", URL, "--key-file", str(key), "--levels", "off"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "off, free text: parsed=False" in out and "off, schema: parsed=True" in out and SECRET_WORDS not in out
+
+
+def test_every_adapter_goes_to_scale_0_at_start(tmp_path):
+    from types import SimpleNamespace
+
+    from base.services import zero_adapter_scales
+
+    (tmp_path / "router.gguf").write_bytes(b"GGUF")
+    settings = SimpleNamespace(glimmer_backend="llama_server", paths=SimpleNamespace(adapters=tmp_path))
+    posted = []
+
+    def client(entries, post_status=200):
+        return SimpleNamespace(
+            get=lambda url, **k: httpx.Response(200, json=entries, request=httpx.Request("GET", url)),
+            post=lambda url, json, **k: (posted.append(json), httpx.Response(post_status, request=httpx.Request("POST", url)))[1],
+        )
+
+    def llm(entries, **kw):
+        return SimpleNamespace(base_url="http://127.0.0.1:8081/v1", headers=dict, client=client(entries, **kw))
+
+    assert zero_adapter_scales(settings, llm([{"id": 0, "scale": 1.0, "path": "router.gguf"}]))
+    assert posted == [[{"id": 0, "scale": 0.0}]]
+    posted.clear()
+    assert zero_adapter_scales(settings, llm([{"id": 0, "scale": 0.0}])) and not posted
+    assert not zero_adapter_scales(settings, llm([{"id": 0, "scale": 1.0}], post_status=500))
+    (tmp_path / "router.gguf").unlink()
+    posted.clear()
+    assert zero_adapter_scales(settings, llm([{"id": 0, "scale": 1.0}])) and not posted

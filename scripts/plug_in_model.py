@@ -310,7 +310,7 @@ def plug_in(
     if mode is not None:
         values.update(MODES[mode])
     if reasoning_off:
-        values.update({"GLIMMER_REASONING": "off", "GLIMMER_REASONING_BUDGET": "0"})
+        values["GLIMMER_REASONING"] = "off"
     if template is not None:
         values["GLIMMER_TEMPLATE"] = str(template.resolve())
     env_path.write_text(with_lines(current, values))
@@ -357,7 +357,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--flash-attn", choices=FLASH_ATTN, help="llama-server -fa (GLIMMER_FA; default auto)")
     p.add_argument("--reasoning-budget", type=int, help="llama-server --reasoning-budget: -1 unrestricted, 0 none (GLIMMER_REASONING_BUDGET)")
     p.add_argument("--mode", choices=sorted(MODES), help="how far the file's privacy work goes (default: leave those lines alone)")
-    p.add_argument("--reasoning-off", action="store_true", help="serve the file with no reasoning (GLIMMER_REASONING=off, budget 0)")
+    p.add_argument("--reasoning-off", action="store_true", help="serve the file with no reasoning (GLIMMER_REASONING=off); a tuned file also needs --template")
     p.add_argument("--template", type=Path, help="a chat template file for the file (GLIMMER_TEMPLATE)")
     p.add_argument("--ctx", type=int, help="context size for the KV estimate (default: ANSWER_CTX, else 16384, 4096 on a Jetson)")
     p.add_argument("--device", choices=DEVICES, help="the device this file is for (default: BASE_DEVICE, else laptop)")

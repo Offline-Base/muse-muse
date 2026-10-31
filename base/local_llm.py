@@ -43,6 +43,7 @@ MAX_RETRY_AFTER = 30.0
 ROLES = ("answer", "router", "checker", "jetson")
 # The model card's recommended sampling for LFM3-VL-2B.
 CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
+GLIMMER_END = "<|eot|>"
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 _TO_SELF = re.compile(r"(?:<\|start\|>)?\s*assistant to=self\b")
 _TO_USER = re.compile(r"(?:<\|start\|>)?\s*assistant to=user(?:<\|message\|>)?")
@@ -55,8 +56,10 @@ def final_channel(content: str) -> str:
     an answer: that text saw what the model read."""
     answers = list(_TO_USER.finditer(content))
     if answers:
-        return _END_MARK.sub("", content[answers[-1].end() :]).strip()
-    return "" if _TO_SELF.search(content) else content
+        return _END_MARK.sub("", content[answers[-1].end() :].split(GLIMMER_END)[0]).strip()
+    if _TO_SELF.search(content):
+        return ""
+    return content.split(GLIMMER_END)[0].rstrip() if GLIMMER_END in content else content
 
 
 class LLMError(RuntimeError):
@@ -385,6 +388,8 @@ class LocalLLM:
                         f"adapter must be a llama-server LoRA id (an int), not {adapter!r}"
                     ) from None
                 body["lora"] = [{"id": lora_id, "scale": 1.0}]
+        if self.reasoning_off:
+            body["stop"] = [GLIMMER_END]  # without it the reply is 200 with markup in the content
         if json_schema is not None:
             body["response_format"] = response_format(json_schema)
         if tools:

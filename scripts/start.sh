@@ -76,6 +76,7 @@ values = {
     "GLIMMER_FA": env.get("GLIMMER_FA") or "auto",
     "GLIMMER_REASONING_BUDGET": env.get("GLIMMER_REASONING_BUDGET") or "-1",
     "GLIMMER_TEMPLATE": env.get("GLIMMER_TEMPLATE", ""),
+    "GLIMMER_REASONING": s.glimmer_reasoning,
     "ANSWER_CTX": env.get("ANSWER_CTX", "16384"),
     "ROUTER_CTX": env.get("ROUTER_CTX", "8192"),
 }
@@ -131,7 +132,12 @@ elif [ "$BACKEND" = llama_server ]; then
   case "$GLIMMER_FA" in on|off|auto) ;; *) die "GLIMMER_FA must be on, off or auto" ;; esac
   case "$GLIMMER_REASONING_BUDGET" in -1) ;; ''|*[!0-9]*) die "GLIMMER_REASONING_BUDGET must be -1 or a number of tokens" ;; esac
   # Glimmer's servers only: flash attention, the reasoning budget and, with a drafter, DFlash.
-  GLIMMER_FLAGS=(-fa "$GLIMMER_FA" --reasoning-budget "$GLIMMER_REASONING_BUDGET")
+  if [ "$GLIMMER_REASONING" = off ]; then
+    GLIMMER_FLAGS=(-fa "$GLIMMER_FA" --reasoning-format none)
+    [ -n "$GLIMMER_TEMPLATE" ] || echo "GLIMMER_REASONING=off with no GLIMMER_TEMPLATE: a tuned file needs its own template, or free-text replies fail."
+  else
+    GLIMMER_FLAGS=(-fa "$GLIMMER_FA" --reasoning-budget "$GLIMMER_REASONING_BUDGET")
+  fi
   if [ -n "$GLIMMER_TEMPLATE" ]; then
     [ -f "$GLIMMER_TEMPLATE" ] || die "GLIMMER_TEMPLATE is not a file: $GLIMMER_TEMPLATE"
     GLIMMER_FLAGS+=(--chat-template-file "$GLIMMER_TEMPLATE")

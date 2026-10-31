@@ -104,6 +104,27 @@ def discover_router_adapter(settings: Settings, router_llm: Any) -> int | None:
     return None
 
 
+def zero_adapter_scales(settings: Settings, llm: Any) -> bool:
+    """Set every adapter on `llm`'s llama-server to global scale 0, so only a request that names one
+    uses it. --lora-init-without-apply alone still applies it at 1.0 to a request with no lora field
+    (b11970). True when the scales are known to be 0 or no adapter file is in place."""
+    adapter = Path(settings.paths.adapters) / "router.gguf"
+    if settings.glimmer_backend != "llama_server" or not adapter.is_file():
+        return True
+    root = llm.base_url.removesuffix("/v1")
+    try:
+        response = llm.client.get(f"{root}/lora-adapters", headers=llm.headers(), timeout=5)
+        response.raise_for_status()
+        entries = response.json()
+        if any(float(e.get("scale", 0)) != 0 for e in entries):
+            body = [{"id": int(e["id"]), "scale": 0.0} for e in entries]
+            llm.client.post(f"{root}/lora-adapters", json=body, headers=llm.headers(), timeout=5).raise_for_status()
+        return True
+    except Exception as exc:
+        log.warning("could not set the adapter's scale to 0: %s", type(exc).__name__)
+        return False
+
+
 class Services:
     """Attributes: settings, events, roster, tagmap, policy, answer_llm, router_llm, checker_llm
     (answer_llm unless CHECKER_BACKEND=lfm), scans and rag (None unless lfm), regions (a
@@ -159,6 +180,9 @@ class Services:
                 s.answer_llm = FallbackLLM(lfm, backup)
         if settings.labels_backend == "glimmer":
             s.checker_llm = LabelsFrom(s.answer_llm, s.checker_llm)
+        if owner:
+            for llm in {id(s.answer_llm): s.answer_llm, id(s.router_llm): s.router_llm}.values():
+                zero_adapter_scales(settings, llm)
         adapter = discover_router_adapter(settings, s.router_llm) if owner else None
         s.router = Router(settings, s.router_llm, s.policy, adapter=adapter)
         s.approvals = ApprovalStore(settings.paths.db)
