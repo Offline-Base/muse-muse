@@ -65,7 +65,8 @@ shadow and no border: share (a paper plane) and more (three dots), with 16 px ic
 - **Title:** a short present-tense step title ("Generating mascot data center video"), 16 px, secondary color,
   regular weight.
 - **Thread line:** under the title, a 1 px hairline drops from under the icon. It runs beside the step's description:
-  one or two sentences in the secondary color saying in plain words what's happening and why.
+  one or two sentences in the secondary color saying in plain words what's happening and why, 13 px on an 18 px line
+  (measured in the first capture, which is 1.614 device px per CSS px).
 - **Nesting:** sub-steps (subagents, workflow children, observers, tool calls) nest on the same thread line, each with
   its own small icon and one-line title, so a step reads as a quiet tree.
 
