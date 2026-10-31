@@ -135,6 +135,12 @@ export function museEnv(placeholder: string): Record<string, string> {
   return { ...SANDBOX_ENV, META_API_KEY: placeholder };
 }
 
+/**
+ * Muse Code log rounds per change of a product: a first build starts at 0 and refinement n at n times this, with their
+ * fix rounds between, so they never reuse an earlier build's log name.
+ */
+export const REFINE_ROUND_STRIDE = 10;
+
 /** Muse Code exit codes. 0 means the turn ended, not that the product works. Always gate on npm run verify. */
 export const MUSE_EXIT = { completed: 0, failed: 1, usage: 2 } as const;
 

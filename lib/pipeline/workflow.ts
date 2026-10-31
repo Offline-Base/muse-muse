@@ -65,7 +65,7 @@ import {
   type VerifyStepResult,
 } from "@/lib/pipeline/logic";
 import { stepTimeoutMs } from "@/lib/pipeline/steps";
-import { MUSE_EXIT, type BuildModel } from "@/lib/sandbox/muse";
+import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
 export interface BuildProductInput {
@@ -79,9 +79,6 @@ export interface BuildProductResult {
 const MUSE_POLL_MS = 15_000;
 const TASK_POLL_MS = 10_000;
 const DEPLOY_POLL_MS = 10_000;
-/** Muse Code log rounds for a refinement start here, so they never reuse an earlier build's log name. */
-const REFINE_ROUND_STRIDE = 10;
-
 function maxFixRounds(): number {
   return Math.min(REFINE_ROUND_STRIDE - 1, Math.floor(env.maxFixRounds));
 }

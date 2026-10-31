@@ -163,6 +163,7 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     assert.equal(mcp.mcpServers.musemuse.headers.Authorization, "Bearer ${MUSEMUSE_BUILD_MCP_TOKEN}");
     assert.equal(files[`${NOTES_DIR}/.session`], `${SESSION}\n`);
     assert.ok(files[MUSE_FULL_MARKER], "the sandbox remembers that it has the platform's config");
+    assert.ok(commands[0]!.script.includes(`rm -f -- '${NOTES_DIR}'/*.json`), "notes a past run never read don't reach this one");
     const script = runner("muse-r0");
     assert.match(script, /^export MUSEMUSE_BUILD_MCP_TOKEN='mm_build_mcp\.3f2a9c1e-77b0-4d2e-9f00-0123456789ab\.[0-9a-f]{64}'$/m);
     assert.ok(script.includes("cmd+=('--config' 'agents.execution_capacity=8' '--config' 'runtime_capabilities={\"plugin:tbh-reminders:reminder:skill-reminder\""));
@@ -196,6 +197,16 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
       commands.map((c) => c.detached),
       [true],
     );
+  });
+
+  it("empties unread notes when a build or a change starts, and keeps them for a fix round", async () => {
+    process.env.MUSE_FULL = "1";
+    const clears = async (round: number) => {
+      commands = [];
+      await start({ round });
+      return commands[0]!.script.includes(`rm -f -- '${NOTES_DIR}'/*.json`);
+    };
+    assert.deepEqual([await clears(0), await clears(1), await clears(9), await clears(10), await clears(11), await clears(20)], [true, false, false, true, false, true]);
   });
 
   it("leaves the build MCP out when the sandbox can't reach the platform", async () => {

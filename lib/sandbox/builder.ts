@@ -49,6 +49,7 @@ import {
   museExecArgs,
   optionalConfigPrelude,
   optionalFlagsPrelude,
+  REFINE_ROUND_STRIDE,
   SANDBOX_ENV,
   SERVE_SETTINGS,
 } from "@/lib/sandbox/muse";
@@ -615,7 +616,9 @@ function runnerEnv(run: MuseRunSpec): Record<string, string> {
  * .mcp.json is just removed). Also records the session id, so owner notes on exec rounds reach the main agent, and
  * keeps .muse/ (with its subagents' worktrees) and .mcp.json out of the product's commits through the checkout's own
  * info/exclude, which changes nothing tracked. MUSE_FULL_MARKER goes first, so a later start without MUSE_FULL takes
- * all of it away again (clearMuseConfig).
+ * all of it away again (clearMuseConfig). The start of a build or a change also empties the exec notes a past run never
+ * read, which were for other work, while a fix round keeps them: a note sent just after a run's last tool call still
+ * reaches the same build's next run.
  */
 async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void> {
   const files = museConfigFiles({ mcpUrl: run.token ? `${env.platformUrl}${BUILD_MCP_PATH}` : null });
@@ -626,6 +629,7 @@ async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void
     [
       `rm -rf -- ${files.remove.map(q).join(" ")} && mkdir -p -- ${files.dirs.map(q).join(" ")}`,
       `if [ -d ${q(git)} ]; then mkdir -p ${q(`${git}/info`)}; for p in .muse/ .mcp.json; do grep -qxF -- "$p" ${q(exclude)} 2>/dev/null || printf '%s\\n' "$p" >> ${q(exclude)}; done; fi`,
+      ...(run.round % REFINE_ROUND_STRIDE === 0 ? [`rm -f -- ${q(NOTES_DIR)}/*.json`] : []),
     ].join("\n"),
   );
   await sandbox.writeFiles([
