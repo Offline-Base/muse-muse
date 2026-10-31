@@ -12,6 +12,7 @@ import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
 import { canActAsOwner } from "@/lib/auth";
 import { env } from "@/lib/env";
+import { connectorNote } from "@/lib/outputs/generate";
 import { liveFrameAllow } from "@/lib/product-frame";
 import { buildHighlights, currentUser, getProductPage, platformOrigin, rebuildRef, safeQuery } from "@/lib/queries";
 
@@ -245,9 +246,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <CopyField value={connectorUrl} label="Connector URL" />
               <p className="muted small">
                 Add it in the Muse app as a custom connector.
-                {manifest?.actions?.length
-                  ? ` It exposes ${plural(manifest.actions.length, "action")}: ${manifest.actions.map((a) => a.name).join(", ")}.`
-                  : ""}
+                {connectorNote(manifest)}
               </p>
             </section>
           ) : null}
