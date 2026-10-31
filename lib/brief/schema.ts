@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-/** Models a product may call. muse-glimmer means a self-hosted Glimmer endpoint, not the Model API. */
+/**
+ * What a product may call. muse-glimmer means a self-hosted Glimmer endpoint, not the Model API. muse-gadget means a
+ * physical board's camera and microphone, through the gateway's /gadget route (docs/GADGETS.md).
+ */
 export const PRODUCT_MODELS = [
   "muse-spark-1.3",
   "muse-wonder-1.0",
@@ -8,6 +11,7 @@ export const PRODUCT_MODELS = [
   "sam-3.1",
   "muse-voice-transcribe-1.0",
   "muse-glimmer",
+  "muse-gadget",
 ] as const;
 
 const MediaKind = z.enum(["text", "image", "video", "audio", "pdf"]);

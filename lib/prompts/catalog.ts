@@ -96,6 +96,7 @@ export function catalogSummary(): string {
     "Models a product may call, all through the Muse Muse gateway (prices are estimates):",
     ...hosted.map(modelBlock),
     "- muse-glimmer: open-weights model for local or offline use. Not on the Model API: it needs an endpoint someone hosts. Pick it only when the muse asks for local or offline use.",
+    "- muse-gadget: a physical board connected to Muse Muse, with a camera and a microphone. The product can take a photo or record a few seconds of sound on the board, then pass it to a model, for example a counter that photographs a shelf. Pick it only when the muse asks for hardware: a device that watches, listens or reacts in the real world. It isn't a model, so pair it with the model that reads what it captures. A product must still work when no board is connected, with a clear message and a way to upload instead.",
     "",
     "Not available on the Model API yet, with the workaround a product uses instead:",
     "- Text-to-speech: the browser's built-in speech synthesis.",
@@ -107,7 +108,7 @@ export function catalogSummary(): string {
     "How products run:",
     "- One Next.js app on Vercel with its own link. No database and no user accounts: anything saved stays in the user's browser (localStorage).",
     "- Requests to the product's server are capped at about 4.5 MB. Larger photos, videos and recordings upload to temporary storage first and are deleted after 24 hours.",
-    "- Products reach only Meta's models. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.",
+    "- Products reach only Meta's models, and a connected gadget when the brief picks muse-gadget. No other services or API keys: no WhatsApp, SMS, email, payments, maps, social networks or scraping other sites. When a muse needs one, build the web version and make that a limit.",
     "- Each product has a small daily model budget, so one run should cost cents, not dollars.",
   ].join("\n");
   return cached;

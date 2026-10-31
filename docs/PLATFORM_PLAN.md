@@ -157,6 +157,19 @@ The output is a public report card per model, with the diff against the previous
 
 This only measures models. Meta's Model API terms forbid using outputs to train competing models, so these results must never become training data for one.
 
+## 7. Real devices with AWS Device Farm
+
+Device Farm rents real phones, tablets and desktop browsers by the minute, and all of it runs through its API (us-west-2 only). Products are web apps, so Device Farm can open each one in real phone and desktop browsers. It works with a connected account:
+
+- **A ship check on real phones.** After deploy, the platform opens the live product in Chrome on a few Android phones and Safari on an iPhone, waits for it to load, presses the primary action by its label, and saves screenshots and a video. A platform-owned script does this, so no product writes device code. The screenshots go to the screen judge with the rest.
+- **Desktop browsers.** Device Farm's desktop browser testing hands out a remote browser URL for Chrome, Firefox or Edge, for the same check on a laptop-sized screen.
+- **A tool for agents.** `test_on_devices` on the platform MCP server (section 4) runs the check on chosen devices and returns pass or fail with the screenshots.
+- **Model day.** The `devices` branch already has a Device Farm harness (`lib/devices/devicefarm*`, `docs/DEVICES.md`) that runs quantized models on real phones. It becomes the phone part of the edge pass.
+
+**Connecting your account.** The safe way is a role in your AWS account that Muse Muse may assume. You create it with a Device Farm-only policy that trusts Muse Muse's AWS account and requires an external ID Muse Muse shows you. Muse Muse then gets short-lived credentials for each run, and no long-lived key is stored. On Vercel, Muse Muse gets its own AWS identity through Vercel's OIDC federation. The fallback is an access key for an IAM user limited to Device Farm, stored encrypted.
+
+**Cost.** Metered runs cost about $0.17 per device minute. Each run gets a device-minute cap, and a monthly budget you set covers the rest. Nothing runs on your account past that budget without your OK.
+
 ## Order
 
 The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. Demo is 25% of judging, so nothing here should eat that time. In this order:
@@ -170,7 +183,8 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 | 5 | Model day, stage 1 | 1 day | Reuses the docs sweep |
 | 6 | Boards as gateway backends: device tools and the quantized Glimmer | 1 to 2 days | When the quantized Glimmer is ready. A product calling Glimmer on a Jetson is a strong demo |
 | 7 | Jobs, email, outside APIs, nightly re-checks | 2 to 3 days | After the hackathon |
-| 8 | Model day stages 2 and 3, gadget builds, starter shapes | Ongoing | After the hackathon |
+| 8 | Real-device checks with AWS Device Farm (section 7) | 1 to 2 days | After the hackathon, once your account is connected |
+| 9 | Model day stages 2 and 3, gadget builds, starter shapes | Ongoing | After the hackathon |
 
 ## Open questions
 
@@ -179,3 +193,4 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 - **Peripherals:** which Pis and the UNO Q have a camera, microphone or speaker attached.
 - **Spare Jetsons:** which boards are free. The fleet control plane was offline on Oct 30, so this wasn't checked.
 - **Email sender:** which domain products send from, and the provider.
+- **Device Farm budget:** how many device minutes a month Muse Muse may spend on your account.
