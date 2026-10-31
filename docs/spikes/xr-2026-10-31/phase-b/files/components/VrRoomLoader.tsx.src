@@ -1,0 +1,10 @@
+"use client";
+
+import dynamic from "next/dynamic";
+
+// A canvas and WebXR need a browser, and ssr: false only works from a client component.
+const VrRoom = dynamic(() => import("@/components/VrRoom"), { ssr: false });
+
+export function VrRoomLoader() {
+  return <VrRoom />;
+}

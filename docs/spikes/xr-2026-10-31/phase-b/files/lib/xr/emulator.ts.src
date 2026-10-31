@@ -1,0 +1,122 @@
+// Platform file in the VR overlay. ensureXR() decides where the product runs: a real headset, or a simulated Meta Quest 3
+// from IWER. Everything a test needs goes through window.__musemuseXR.
+import { listTargets, targetResolver, type XRTarget } from "@/lib/xr/targets";
+
+export interface MuseXR {
+  mode: "native" | "emulated";
+  /** The spike's probe reads these. Not part of the design's handle. */
+  info: Record<string, unknown>;
+  inSession(): boolean;
+  frames(): number;
+  waitFrames(n: number, timeoutMs?: number): Promise<number>;
+  remote(method: string, params?: unknown): Promise<unknown>;
+  targets(): XRTarget[];
+}
+
+declare global {
+  interface Window {
+    __musemuseXR?: MuseXR;
+  }
+}
+
+let ensured: Promise<MuseXR> | null = null;
+
+export function ensureXR(): Promise<MuseXR> {
+  ensured ??= install();
+  return ensured;
+}
+
+async function install(): Promise<MuseXR> {
+  const params = new URLSearchParams(location.search);
+  const nativeSupported = (await navigator.xr?.isSessionSupported("immersive-vr").catch(() => false)) ?? false;
+  if (nativeSupported) return expose("native", null, { nativeSupported });
+
+  const { XRDevice, metaQuest3 } = await import("iwer");
+  const device = new XRDevice(metaQuest3, { stereoEnabled: false });
+  // Without forceInstall IWER skips itself wherever navigator.xr exists, which includes headless Chromium.
+  device.installRuntime({ forceInstall: true });
+  device.position.set(0, 1.6, 0);
+  fillViewport(device.canvasContainer);
+  if (params.get("mono") !== "0") oneView();
+  device.remote.setTargetResolver(targetResolver as never);
+  const emulatedSupported = await navigator.xr?.isSessionSupported("immersive-vr").catch((e: Error) => `error: ${e.message}`);
+  // People get the handles and play mode. Tests don't, and neither does a headset, so neither downloads it.
+  if (!navigator.webdriver || params.get("devui") === "1") {
+    const { DevUI } = await import("@iwer/devui");
+    device.installDevUI(DevUI);
+  }
+  return expose("emulated", device, { nativeSupported, emulatedSupported, devui: !navigator.webdriver || params.get("devui") === "1" });
+}
+
+/**
+ * During a session IWER moves the canvas into a full-screen container, but only its drawing size follows, not its CSS
+ * size. R3F writes the size of the canvas's old box in px on the canvas's style, so without this a 1280x720 view shows
+ * squeezed into that box, centered, with the page around it. The rule stops applying when IWER moves the canvas back.
+ */
+function fillViewport(container: HTMLElement): void {
+  container.id = "musemuse-xr-view";
+  container.style.background = "#000";
+  const style = document.createElement("style");
+  style.textContent = "#musemuse-xr-view > canvas { width: 100% !important; height: 100% !important; }";
+  document.head.appendChild(style);
+}
+
+/**
+ * With stereo off IWER still reports two views and gives the right one a zero-width viewport, and three.js draws every
+ * object for it anyway. So all the vertex work happens twice with nothing to show for it. Reporting one view fixes that.
+ */
+function oneView(): void {
+  const proto = (window as unknown as { XRFrame: { prototype: XRFrame } }).XRFrame.prototype;
+  const original = proto.getViewerPose;
+  proto.getViewerPose = function (this: XRFrame, space: XRReferenceSpace) {
+    const pose = original.call(this, space);
+    if (!pose) return pose;
+    return { transform: pose.transform, emulatedPosition: pose.emulatedPosition, views: [pose.views[0]] } as unknown as XRViewerPose;
+  };
+}
+
+function expose(mode: MuseXR["mode"], device: { remote: { dispatch(m: string, p?: unknown): Promise<unknown> } } | null, info: Record<string, unknown>): MuseXR {
+  let session: XRSession | null = null;
+  let frames = 0;
+  const xr = navigator.xr;
+  if (xr) {
+    const request = xr.requestSession.bind(xr);
+    xr.requestSession = async (sessionMode, init) => {
+      const started = await request(sessionMode, init);
+      session = started;
+      started.addEventListener("end", () => {
+        session = null;
+      });
+      const count: XRFrameRequestCallback = () => {
+        frames++;
+        if (session === started) started.requestAnimationFrame(count);
+      };
+      started.requestAnimationFrame(count);
+      return started;
+    };
+  }
+  const handle: MuseXR = {
+    mode,
+    info,
+    inSession: () => session !== null,
+    frames: () => frames,
+    waitFrames: (n, timeoutMs = 10_000) =>
+      new Promise((resolve, reject) => {
+        const goal = frames + n;
+        const started = performance.now();
+        const check = () => {
+          if (frames >= goal) resolve(frames);
+          else if (performance.now() - started > timeoutMs) reject(new Error(`only ${n - (goal - frames)} of ${n} frames in ${timeoutMs} ms`));
+          else setTimeout(check, 20);
+        };
+        check();
+      }),
+    remote: (method, params) => {
+      if (!device) return Promise.reject(new Error("There is no simulated headset on a real one."));
+      return device.remote.dispatch(method, params);
+    },
+    targets: listTargets,
+  };
+  window.__musemuseXR = handle;
+  return handle;
+}

@@ -1,0 +1,111 @@
+"use client";
+
+import { Container, Text } from "@react-three/uikit";
+import type { XRStore } from "@react-three/xr";
+import { useCallback, useState } from "react";
+import { EnterVRButton } from "@/components/xr/EnterVRButton";
+import { XRStage } from "@/components/xr/XRStage";
+import { setXRStatus } from "@/lib/xr/status";
+import { useXRTarget } from "@/lib/xr/targets";
+
+const ALL_ORBS = Array.from({ length: 90 }, (_, i) => ({
+  key: i,
+  position: [-2.25 + (i % 10) * 0.5, 0.4 + (Math.floor(i / 10) % 9) * 0.42, -3.2] as const,
+  color: `hsl(${(i / 90) * 360}, 70%, 55%)`,
+}));
+
+function Box({ color, position, size = 0.4 }: { color: string; position: readonly [number, number, number]; size?: number }) {
+  return (
+    <mesh position={position}>
+      <boxGeometry args={[size, size, size]} />
+      <meshStandardMaterial color={color} />
+    </mesh>
+  );
+}
+
+function Scene({ orbs, unpickable, lambert, blank }: { orbs: number; unpickable: boolean; lambert: boolean; blank: boolean }) {
+  const [picked, setPicked] = useState(false);
+  const start = useXRTarget("Start");
+  const reset = useXRTarget("Reset");
+  return (
+    <>
+      <color attach="background" args={[blank ? "#101014" : "#dfe9f5"]} />
+      <mesh
+        ref={start}
+        position={[0, 1.4, -1.5]}
+        visible={!blank}
+        onClick={() => {
+          setPicked(true);
+          setXRStatus("Selected Start");
+        }}
+      >
+        <boxGeometry args={[0.4, 0.4, 0.4]} />
+        <meshStandardMaterial color={picked ? "#22c55e" : "#0064e0"} />
+      </mesh>
+      {blank ? null : (
+        <>
+          <hemisphereLight args={["#ffffff", "#8899aa", 1.6]} />
+          <directionalLight position={[2, 5, 3]} intensity={2} />
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[30, 30]} />
+            <meshStandardMaterial color="#b8c4b0" roughness={0.9} />
+          </mesh>
+          <gridHelper args={[30, 30, "#556677", "#8899aa"]} />
+          <Box color="#e0304a" position={[-1.1, 1, -2]} />
+          <Box color="#f2c230" position={[1.2, 1.2, -2.5]} />
+          <Box color="#7a4ee0" position={[2, 1, -1]} size={0.8} />
+          <Box color="#20a070" position={[0, 1.2, 2.5]} size={0.8} />
+          <group position={[-1, 1.8, -1.6]} rotation={[0, 0.5, 0]}>
+            <Container pixelSize={0.001} sizeX={0.8} sizeY={0.45} backgroundColor="#ffffff" borderRadius={16} padding={24} flexDirection="column" gap={16} alignItems="center" justifyContent="center">
+              <Text fontSize={40} fontWeight={700} color="#1c2b33">
+                Pick the blue box
+              </Text>
+              <Container
+                ref={reset}
+                backgroundColor="#0064e0"
+                borderRadius={12}
+                paddingX={32}
+                paddingY={16}
+                onClick={() => {
+                  setPicked(false);
+                  setXRStatus("Reset");
+                }}
+              >
+                <Text fontSize={32} color="#ffffff">
+                  Reset
+                </Text>
+              </Container>
+            </Container>
+          </group>
+        </>
+      )}
+      {ALL_ORBS.slice(0, orbs).map((o) => (
+        <mesh key={o.key} position={o.position} {...(unpickable ? { pointerEvents: "none" } : {})}>
+          <icosahedronGeometry args={[0.17, 6]} />
+          {lambert ? <meshLambertMaterial color={o.color} /> : <meshStandardMaterial color={o.color} roughness={0.4} />}
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+export default function VrRoom() {
+  const [store, setStore] = useState<XRStore | null>(null);
+  const keep = useCallback((s: XRStore) => setStore(s), []);
+  const params = new URLSearchParams(location.search);
+  return (
+    <>
+      <EnterVRButton store={store} />
+      <div style={{ height: 360, marginTop: 16, borderRadius: 16, overflow: "hidden" }}>
+        <XRStage onStore={keep}>
+          <Scene
+            orbs={params.get("scene") === "budget" ? Number(params.get("orbs") ?? 90) : 0}
+            unpickable={params.get("nopick") === "1"}
+            lambert={params.get("mat") === "lambert"}
+            blank={params.get("blank") === "1"}
+          />
+        </XRStage>
+      </div>
+    </>
+  );
+}

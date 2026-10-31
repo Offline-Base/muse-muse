@@ -1,0 +1,29 @@
+"use client";
+
+import type { XRStore } from "@react-three/xr";
+import { useState } from "react";
+import { setXRStatus } from "@/lib/xr/status";
+
+export function EnterVRButton({ store }: { store: XRStore | null }) {
+  const [opening, setOpening] = useState(false);
+  return (
+    <button
+      type="button"
+      className="primary"
+      disabled={!store || opening}
+      aria-busy={opening}
+      onClick={async () => {
+        setOpening(true);
+        try {
+          await store?.enterVR();
+        } catch {
+          setXRStatus("VR didn't open. Try again.");
+        } finally {
+          setOpening(false);
+        }
+      }}
+    >
+      {opening ? "Opening VR..." : "Enter VR"}
+    </button>
+  );
+}

@@ -1,0 +1,50 @@
+// Platform file in the VR overlay. Names the objects a person can act on: the 3D version of getByRole. Tests aim at
+// names, and IWER learns the same list through remote.setTargetResolver, so run_sequence and list_targets can use it.
+import { useCallback } from "react";
+import { Box3, Vector3, type Object3D } from "three";
+
+const objects = new Map<string, Object3D>();
+
+/** Pass the result as the object's ref: <mesh ref={useXRTarget("Start game")} />. */
+export function useXRTarget(name: string): (object: Object3D | null) => void {
+  return useCallback(
+    (object: Object3D | null) => {
+      if (object) objects.set(name, object);
+      else objects.delete(name);
+    },
+    [name],
+  );
+}
+
+export interface XRTarget {
+  name: string;
+  position: { x: number; y: number; z: number };
+  size?: { x: number; y: number; z: number };
+}
+
+function describe(name: string, object: Object3D): XRTarget {
+  object.updateWorldMatrix(true, true);
+  const box = new Box3().setFromObject(object);
+  // uikit draws its panels with shared instanced meshes, so a panel's own box can be empty.
+  if (box.isEmpty()) {
+    const p = object.getWorldPosition(new Vector3());
+    return { name, position: { x: p.x, y: p.y, z: p.z } };
+  }
+  const c = box.getCenter(new Vector3());
+  const s = box.getSize(new Vector3());
+  return { name, position: { x: c.x, y: c.y, z: c.z }, size: { x: s.x, y: s.y, z: s.z } };
+}
+
+export function listTargets(): XRTarget[] {
+  return [...objects].map(([name, object]) => describe(name, object));
+}
+
+/** What IWER's remote.setTargetResolver takes. */
+export const targetResolver = {
+  resolve(target: string | { name: string }) {
+    const name = typeof target === "string" ? target : target.name;
+    const object = objects.get(name);
+    return object ? describe(name, object) : null;
+  },
+  list: listTargets,
+};
