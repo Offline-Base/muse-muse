@@ -837,6 +837,13 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   four default mixes on r30b's BF16 and imatrix (600 probes) and keeps iq1s-out-q4 and iq2-io-lowest (on stage 2: 6.21 GB
   10.5% and 7.18 GB 19.8%, against stock IQ1_S 6.53 GB 9.7%). It stops if writer-1 has under 22 GB free. Copied
   shrink_bench.sh, shrink_table.py and gguf_bytes.py into ~/q/job (they weren't there).
+- 7:41 PM: stage-b-r30b channel check (30-minute cap, 212 of 300 items): well formed 211/212, chat endpoint 211/212,
+  multi-step 149/150, reasoning off 39/40, P("=self") 0.999998; gates pass (r30: 257/260, 150/150, 37/40). Skills and the
+  rest of the 300 not reached. Reasoning-on dev honesty (low strength, bare prompt): well formed 88/120, empty final 31,
+  honest 45, made up 33 (r30's run: 64 of 120 with no header), so the serving rule stands: reasoning off for knowledge
+  questions. r30b is final. train-1's small files (logs, tests, answers, scripts; no adapters or checkpoints) are in S3
+  knowledge/train-1/k-small-files-20261031T2345Z.tar.gz (23 MB). train-1 has no GPU job now; it waits for the plan
+  workflow's dose test verdict, and goes if nothing starts by about 9:15 PM.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
