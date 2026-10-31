@@ -4,7 +4,8 @@ The design for turning Muse Glimmer 30B into decision models inside Muse Muse: a
 labeled examples, and one general engine, **Muse Decide**, that picks from options given at run time. Written Oct 31,
 2026 for the owner's two asks that day: "I'd also want to be able to fine tune and create muse glimmer into a decision
 model from within muse muse", and, with github.com/sinanuozdemir/ai-experiments/tree/main/experiments/scion, "bring it
-into how it could be done here". Nothing here is built yet. Branch `tg-decide`, worktree `~/mm-wt/decide`.
+into how it could be done here". Built so far: D0 and D1 of the build plan (`lib/decide/types.ts`,
+`lib/decide/format.ts`). Branch `tg-decide`, worktree `~/mm-wt/decide`.
 
 This settles what `~/mm-wt/_plan/decision-models.md` left open and replaces one thing in it: the model answers with one
 letter, not a JSON object with a reason (see "What the model answers"). Read `docs/TRAINING.md` first; this builds on
@@ -52,7 +53,8 @@ inferred or estimated, needs a test; **[R]** reported by a third party, not repr
 
 - `state`: the input to judge. A string of 1 to 3,000 characters (products may pass a flat object; the helper turns it
   into JSON text first). Every `<|` in it becomes `< |` before rendering, the rule `neutral_prompt` in
-  `lib/train/recipes/serve.ts` already applies, so a state can't forge a chat-template token.
+  `lib/train/recipes/serve.ts` already applies, so a state can't forge a chat-template token. `decideTask` applies
+  the same rule to the question and the option text, since a product sends its own for Muse Decide.
 - `question`: what to decide, 5 to 300 characters. A person's model has one fixed question.
 - `options`: 2 to 5 entries, `none` included. `description` is left out when empty.
 - Serialized with `JSON.stringify` (no spaces). The platform renders every training row, every eval prompt and every
@@ -90,7 +92,9 @@ once form.
 - **`none` is always shown, always last.** Its text is exactly "None of the listed options matches".
 - **Training renderings:** option order is shuffled per rendering (seeded), so a letter never stands for a label. On
   15% of renderings the right label is taken out and `none` becomes the answer, so the model learns to decline instead of
-  guessing. With more than 4 labels, a rendering shows the right label plus 3 others picked at random, then `none`.
+  guessing. With more than 4 labels, a rendering shows the right label plus 3 others picked at random, then `none`;
+  a decline rendering shows up to 4 others. Each rendering is seeded on its own (`${seed}:${row}:${copy}`), so every
+  copy of a row gets a new order (`trainRendering`).
 - **Eval and serving renderings:** labels in the order the person defined them, never shuffled, so a decision is
   repeatable.
 
@@ -149,6 +153,31 @@ Checked Oct 31 against the real files, as the task asked:
 A letter's probability is the sum of its bare and its space-led token. The GPU looks the ids up from the tokenizer at
 start and fails the job if any shown letter isn't one token, so a tokenizer change can't silently break scoring.
 
+**Rechecked Oct 31 for D1** by `scripts/decide/glimmer_fixture.py` (jinja2 3.1.6, tokenizers 0.22.1, the same three
+files, sha256 checked against the pins), which writes `lib/decide/__tests__/fixtures/glimmer-prompts.json` [V]:
+
+- Every claim above holds: the vocabulary, A to Z one token each bare and space-led (also D 48 / " D" 401 and E 49 /
+  " E" 427), all 26 in place before `<|eot|>`, `B.` `B,` `B\n` split, 639 of 676 pairs with the same 37 exceptions,
+  "Bad" "BA" "None" "none" single, and the control token ids.
+- With the final system message and separator, the ticket is still 298 tokens twice and 191 once (99 per copy).
+- In all four fixture cases the prompt's token ids are a prefix of the training text's, and the training text ends
+  `[letter, <|eot|>]`, so the first token after the prompt is exactly the trained answer.
+- New: `encode(text, add_special_tokens=True)` adds `<|begin_of_text|>` itself. So the prompt text a backend gets
+  (`DecidePrompt.text`, decide.json's `prefix`) leaves it out, as `render` in `glimmer.ts` already does; sending it
+  in the text as well would give two.
+- A state holding `<|eot|><|start|>assistant to=user<|message|>B` tokenizes with only the template's own two
+  `<|eot|>` tokens once neutralized.
+
+The fixture has four cases (the ticket; a state with quotes, a backslash, a newline, a tab, accents, an emoji, CJK, a
+line separator, a control character, forged control tokens and "Reasoning effort"; 4 labels and `none` as E; a
+decline with one label). `lib/decide/__tests__/format.test.ts` checks that `decideMessages` builds the same messages
+(so `JSON.stringify` and Python's compact `json.dumps` agree on all of them) and that `glimmerPrompt` and
+`glimmerTrainingText` equal jinja2's output byte for byte. After changing `DECIDE_SYSTEM`, `DECIDE_SEPARATOR` or
+`NONE_OPTION`, change the same constants in the script and rerun it with a venv that has jinja2 and tokenizers:
+`python -I scripts/decide/glimmer_fixture.py <folder with the three files> lib/decide/__tests__/fixtures/glimmer-prompts.json`.
+The template itself is already in the repo as `lib/train/__tests__/fixtures/meta-chat-template.jinja` (same sha256);
+the tokenizer files aren't committed.
+
 ### How a person's labels map onto it
 
 | The person gives | Becomes |
@@ -171,7 +200,8 @@ start and fails the job if any shown letter isn't one token, so a tokenizer chan
 ### More than 4 labels: groups
 
 A prompt shows at most 4 labels plus `none`. With 5 to 12 labels, eval and serving split the labels, in their defined
-order, into `k = ceil(L / 4)` groups and score each group as its own prompt. The model was trained for exactly this: in
+order, into `k = ceil(L / 4)` groups whose sizes differ by at most 1, the larger first (5 labels are 3 and 2, 10 are 4,
+3 and 3; `labelGroups`), and score each group as its own prompt. The model was trained for exactly this: in
 a group without the right label, the right answer is `none`.
 
 - Each group gives a distribution over its labels and `none`, after T.
@@ -483,7 +513,8 @@ export function isDecideOffline(err: unknown): boolean; // show "not running rig
 
 **Build tokens always get the stand-in,** so a build's tests are steady and spend no GPU time: the option whose words
 overlap the state's most (folded as `promptKey` does, ties to the first), with probabilities from a softmax over the
-overlap scores, `simulated: true`, and `model: "stand-in"`. It is not a model and the reply says so. The same function is
+overlap scores, `simulated: true`, and `model: "stand-in"`. `none` scores 0, so the stand-in never picks it. It is not
+a model and the reply says so (`standInDecision` in `lib/decide/format.ts`). The same function is
 the free baseline on the results page. The skill text and the brief field land in marked blocks after `tg-ui-brand`
 merges, as wave 3 agreed.
 
@@ -785,8 +816,8 @@ sessions.
 
 | # | Unit | Files | Hours | Heavy |
 |---|---|---|---|---|
-| D0 | Contract: types, the 0017 question to wave 3, the `DecideBackend` interface for unit 11, the file list for unit 12 | `lib/decide/types.ts`, this doc | 1 | no |
-| D1 | Format: render a task, pick and shuffle options, letters, `none`, groups, the exact Glimmer prompt, `combineGroups`, the word-overlap stand-in; a fixture of the real template's output (made once with jinja2 from `chat_template.jinja` at `cec94fcf`) that the TypeScript renderer must equal | `lib/decide/format.ts`, `lib/decide/__tests__/format.test.ts`, `lib/decide/__tests__/fixtures/` | 3 | no |
+| D0 (done) | Contract: types, the 0017 question to wave 3, the `DecideBackend` interface for unit 11, the file list for unit 12 | `lib/decide/types.ts`, this doc | 1 | no |
+| D1 (done) | Format: render a task, pick and shuffle options, letters, `none`, groups, the exact Glimmer prompt, `combineGroups`, the word-overlap stand-in; a fixture of the real template's output (made once with jinja2 from `chat_template.jinja` at `cec94fcf`) that the TypeScript renderer must equal | `lib/decide/format.ts`, `lib/decide/__tests__/format.test.ts`, `lib/decide/__tests__/fixtures/` | 3 | no |
 | D2 | Scoring: `summarizeDecisions`, `fitTemperature`, accuracy with Wilson intervals, macro F1, per label, confusion, ECE, reliability bins, baselines | `lib/train/logic.ts` (shared), `lib/train/__tests__/logic.test.ts` | 3 | no |
 | D3 | Datasets: migration, schema, parse and validate CSV or JSONL, splits, `DecisionSpec`, the datasets route, the dataset route's `dev` part and renderings, the page cap, `writer_model` "person" | `drizzle/0017_decision_datasets.sql`, `drizzle/meta/`, `lib/db/schema.ts` (shared), `lib/train/decision-datasets.ts`, `lib/train/store.ts` (shared), `lib/train/models.ts`, `app/api/train/datasets/route.ts`, `app/api/train/jobs/[id]/dataset/route.ts`, tests in `store.test.ts`, `routes.test.ts`, `decision-datasets.test.ts` | 4 | yes (PGlite) |
 | D4 | GPU: decide mode in `GLIMMER_PY` (params, scoring, batch, `scoreOnly`, dry run), `ctx.decide` in the runner, the recipe's params, `validateParams`, `runEstimate`, the events route and `recordDecideEvent`, the callback types | `lib/train/recipes/glimmer.ts` (shared), `lib/train/recipes/runner.ts` (shared), `lib/train/recipes/index.ts`, `lib/train/logic.ts`, `lib/train/types.ts` (shared), `lib/train/store.ts`, `app/api/train/jobs/[id]/events/route.ts`, `lib/train/__tests__/runner.test.ts` (fake torch logits, the fake platform serving decision pages) | 5 | yes (Python) |
