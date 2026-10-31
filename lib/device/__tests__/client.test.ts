@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it, mock } from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { callDeviceTool } from "@/lib/device/client";
+import { callDeviceTool, deviceConfig } from "@/lib/device/client";
 
 const CONFIG = { url: "https://board.example/mcp", token: "test-device-token" };
 
@@ -18,6 +18,43 @@ async function timeoutFor(tool: string): Promise<number | undefined> {
   const options = call.mock.calls[0]!.arguments[2] as { timeout?: number };
   return options.timeout;
 }
+
+describe("deviceConfig", () => {
+  const TOKEN = "test-device-token";
+  const configFor = (url: string) => {
+    process.env.DEVICE_MCP_URL = url;
+    process.env.DEVICE_MCP_TOKEN = TOKEN;
+    return deviceConfig();
+  };
+
+  afterEach(() => {
+    delete process.env.DEVICE_MCP_URL;
+    delete process.env.DEVICE_MCP_TOKEN;
+    mock.restoreAll();
+  });
+
+  it("takes https, and plain http only on this machine", () => {
+    for (const url of ["https://board.example/mcp", "http://127.0.0.1:8765/mcp", "http://localhost:8765/mcp", "http://[::1]:8765/mcp"]) {
+      assert.deepEqual(configFor(url), { url, token: TOKEN });
+    }
+  });
+
+  it("won't send the token anywhere it could be read on the way, and doesn't log the address", () => {
+    const logged = mock.method(console, "error", () => {});
+    for (const url of ["http://board.example/mcp", "http://192.168.1.5:8765/mcp", "ftp://board.example/mcp", "not a url"]) {
+      assert.equal(configFor(url), null, url);
+    }
+    assert.equal(logged.mock.callCount(), 4);
+    assert.doesNotMatch(JSON.stringify(logged.mock.calls.map((c) => c.arguments)), /board\.example|192\.168/);
+  });
+
+  it("is off when either is missing", () => {
+    assert.equal(deviceConfig(), null);
+    process.env.DEVICE_MCP_URL = "   ";
+    process.env.DEVICE_MCP_TOKEN = TOKEN;
+    assert.equal(deviceConfig(), null);
+  });
+});
 
 describe("callDeviceTool", () => {
   afterEach(() => mock.restoreAll());

@@ -21,12 +21,24 @@ export interface DeviceToolResult {
   isError: boolean;
 }
 
-/** The board's address and token, or null when either is missing. */
+/** Whether the token can travel to this address: over https, or over http only when it stays on this machine. */
+function safeAddress(url: string): boolean {
+  if (!URL.canParse(url)) return false;
+  const { protocol, hostname } = new URL(url);
+  return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname));
+}
+
+/** The board's address and token, or null when either is missing or the address would expose the token. */
 export function deviceConfig(): DeviceConfig | null {
   const url = process.env.DEVICE_MCP_URL?.trim();
   // Trimmed: a pasted token often ends in a line break, which no header takes.
   const token = process.env.DEVICE_MCP_TOKEN?.trim();
-  return url && token ? { url, token } : null;
+  if (!url || !token) return null;
+  if (!safeAddress(url)) {
+    console.error("[device] DEVICE_MCP_URL isn't https, so the board stays off.");
+    return null;
+  }
+  return { url, token };
 }
 
 /**
