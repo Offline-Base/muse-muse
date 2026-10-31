@@ -278,8 +278,10 @@ describe("/api/device/drive", { skip: typeof mock.module !== "function" }, () =>
     assert.equal((fresh.urls as Record<string, string>)["a".repeat(64)], SIGNED);
     assert.equal(fresh.plan, undefined, "only the links");
     assert.deepEqual(leaks(body), []);
-    // A board run's export never needs signed links, and the owner's own file is signed only on the owner's laptop.
-    for (const source of ["board:support-coach", "url"]) {
+    // A board run's export never needs signed links, the owner's own file is signed only on the owner's laptop, and a
+    // public lab model's link is the same every time, which the board doesn't wait on: nothing is sent.
+    lab = { public: true };
+    for (const source of ["board:support-coach", "url", `lab:${JOB}:Q4_K_M`]) {
       calls = [];
       current = { export: "exp_00000000abcd", state: "needs_urls", source };
       assert.equal((await (await get()).json()).refreshed, false);

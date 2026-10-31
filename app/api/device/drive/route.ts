@@ -18,7 +18,7 @@ import {
 import { DeviceRefusedError } from "@/lib/device/train";
 import { kitFileUrl, kitProblem, loadKit, type DriveKit } from "@/lib/drive/kit";
 import { EXPORT_ID, readDriveTemplates, type UrlSource } from "@/lib/drive/plan";
-import { hubText, redactUrls, SourceError } from "@/lib/drive/sources";
+import { expiringUrl, hubText, redactUrls, SourceError } from "@/lib/drive/sources";
 import { env } from "@/lib/env";
 import { badRequest, errorJson, HttpError, readJson, route } from "@/lib/http";
 
@@ -102,8 +102,9 @@ function urlSource(body: Record<string, unknown>): UrlSource {
 
 /**
  * GET -> {drives, export, runs, kit}: the USB drives on the board, the current or last export, the board's finished runs,
- * and why the drive kit can't be used yet (null when it can). An export waiting in needs_urls for a lab model gets fresh
- * links before this answers, so an open card keeps it moving. Admins only. 404 with DRIVE_EXPORT_ENABLED off, 503
+ * and why the drive kit can't be used yet (null when it can). An export waiting in needs_urls for a private lab model gets
+ * freshly signed links before this answers, so an open card keeps it moving. Only signed links are sent: the board waits
+ * only on those, and a public link is the same link every time. Admins only. 404 with DRIVE_EXPORT_ENABLED off, 503
  * device_not_configured, 502 device_unavailable.
  */
 export const GET = route(async () => {
@@ -117,11 +118,12 @@ export const GET = route(async () => {
     const status = await driveStatus(config, callDeviceTool);
     let refreshed = false;
     if (status.export?.state === "needs_urls" && kit && !kitProblem(kit)) {
-      const urls = await freshUrls(status.export.source, await deps(config, kit)).catch((err) => {
+      const made = await freshUrls(status.export.source, await deps(config, kit)).catch((err) => {
         console.error("[device/drive] fresh links", logReason(err, config));
         return null;
       });
-      if (urls && Object.keys(urls).length) {
+      const urls = Object.fromEntries(Object.entries(made ?? {}).filter(([, url]) => expiringUrl(url)));
+      if (Object.keys(urls).length) {
         logCall(admin, "export_model (fresh links)");
         await refreshUrls(config, status.export.export, urls, callDeviceTool);
         refreshed = true;
