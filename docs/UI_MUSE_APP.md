@@ -136,22 +136,77 @@ animates.
 ## Where it applies
 
 - **Make page:** the composer, and the first message as the person's bubble.
-- **Build room:**
-  - The title chip holds the product name. Share copies the product's link (the live URL once it ships, the build
-    room's link before). More opens the build details that today sit in the "Build details" panel: model, Muse Code
-    session, fix rounds, elapsed time, cost, tokens, connector URL and demo video.
-  - The main column has the person's turn as a bubble. Each Muse Code round shows its current step inline with the
-    mascot while it runs, and folds into "Show thinking" when it ends. The round's output is the media card: the live
-    preview while the build runs (an iframe with today's sandbox attributes), then the poster or the demo video once
-    it's done. The final message is plain text.
-  - The steps panel replaces the "Build details" panel. Steps lists the whole build in order: the brief, each Muse Code
-    round with its subagents, workflows, observers and tool calls nested under it, checks and fix rounds, the demo and
-    the deploy. Screenshots and demo frames are its thumbnails, and it ends in "Done", "Stopped" or "Didn't finish".
-    Subagent and workflow child rows use the mascot's subagent avatar (16 px) in place of the dot. Sources lists what
-    the build used: the brief's inspirations and reference files, the Meta docs pages and models the agent looked up
-    through the build MCP, the skills it read, and web pages.
-  - Below about 1100 px wide, the panel covers the conversation from the right instead (same look, plus a soft shadow
-    on its left edge); on phones it's a full-screen sheet with the same close X.
-  - While a build runs, the steer box is this composer, and send turns into stop.
+- **Build room:** see below.
 - **Docs sidebar chat:** the same bubbles, steps and composer. It's already a narrow sidebar, so "Show thinking"
   unfolds the steps list inline under its row instead of opening a second panel.
+
+## The build room
+
+Built on Oct 31 in `components/build`. `steps.tsx` maps a build onto the kit (`roomSteps`, `roomSources`,
+`conversationItems`, `currentStep`) and `BuildRoom.tsx` lays it out.
+
+- **The title chip** holds the product name. **Share** copies the product's link: the live URL once it ships, the build
+  room's link before. **More** opens the build details (`BuildDetails.tsx`).
+- **The main column** has the person's turn as a bubble. A running round shows its current step inline with the working
+  icon, and folds into "Show thinking" when it ends. "Show thinking" opens the steps panel, at the fix round if it's one.
+  The round's output is the media card: the live preview while the build runs (an iframe with the same sandbox attributes
+  as before), then the demo video, its poster, or the checks' last screenshot. The final message is plain text under it.
+- **The steps panel** replaces the "Build details" panel. It starts open beside a running build from 1100 px, and closed
+  on a finished build or a narrower window. Below 1100 px it covers the conversation from the right, and on phones it's
+  a full-screen sheet with the same close X. Until the room has read the window's width, an open panel that would cover
+  the conversation stays hidden (`.room[data-settled="false"]`), so a phone never sees it flash.
+- **The steer box is the composer** while a build runs. Send turns into stop while the box is empty. With a note written,
+  Stop moves beside Send, so it's always one press away, and still asks to confirm.
+- **The working icon** is `WorkingIcon` everywhere, so the mascot's animation replaces it in one file.
+- **Native targets:** `roomSteps` takes `targets`, rows with `media`, which show under the deploy and above the end row.
+  Nothing fills it yet (`BuildRoom` passes none), and with none there's no row and nothing on the page. The native lane's
+  "Apps" step goes there.
+
+To look at it with no sandbox and no keys, `scripts/dev/room-fixtures.ts` stores a running, a failed and a finished build
+and a plain `muse exec` build in a local PGlite. Its header has the commands.
+
+### Where each thing went
+
+Nothing the old room showed is gone. This is where each piece is now.
+
+| The old room | Now |
+|---|---|
+| Toolbar: New muse, Open preview, Get connector, History | More menu. Open preview is also under the preview |
+| Mobile status line (status, time, cost) | The running step's line, and the More menu |
+| "Build details" panel | Steps panel and More menu |
+| Model, Muse Code session, fix rounds, elapsed, cost, tokens | More menu |
+| Status rail, with the stages still to come | More menu. Stages that have happened are also steps |
+| Models in the product | More menu, and the Sources tab |
+| Links: preview, live product, product page, demo video | More menu. The live link and product page are also in the answer |
+| Connector URL and how to add it | More menu |
+| The person's muse, references, rebuild tag, "From the docs page" | Bubble with 40 px thumbnails, tag above, fold below. File names are in the Sources tab |
+| Notes from before any turn | A "Getting ready" step |
+| Brief turn | A step, with the whole brief in a "Read the brief" fold. A declined brief also shows in the conversation |
+| Muse Code turn title and its time, usage and cost | The round's step and its description |
+| Goal card, with status and progress | On the round's step, in the panel |
+| Todo list | On the round's step, in the panel |
+| Agents section | An "Agents" row nested under the newest round, with paths, phases and status words |
+| Live log: tool calls, edits, status and error lines | Nested rows, running ones turning. Long runs fold behind their summary, and a running round keeps its newest 8 unfolded |
+| Muse Code's messages | Nested rows. A round's last words also show in the conversation |
+| Thinking | A nested fold |
+| Subagent rows | Nested rows with the subagent avatar and their status |
+| Hook runs and compaction | Nested rows. A blocked hook is a failed row |
+| Workflow cards | In the Agents row on the newest round, as nested rows in the log on older ones, with phase and children |
+| Observer runs | Nested rows, folded past 3 |
+| Question card | The conversation, where it's answered, with a row in the round's step saying it was asked |
+| Owner notes | Bubbles in the conversation with how they went, and a row in the round's step |
+| Stop, Send now, After this step | The composer |
+| Log lines, such as the per-round engine line and `build_note` | Rows under their turn. A line logged just before a round heads that round, not the turn before it |
+| Error notes | Failed rows, and a line in the conversation |
+| Checks: verify steps, failing output, the judge's verdict | A step with a "What ran" fold, open when it failed, and one line in the conversation |
+| The judge's screenshots | The check step's thumbnails. Captions are their alt text and tooltip |
+| Recorded demo | The media card once done, and the record step's thumbnail |
+| Deployed | A step with the live link |
+| Ship turn, its time, tokens and cost | The answer and its last line |
+| "This build didn't ship" | The answer, plain text, with Try another muse |
+| Jump to latest | The kit's scroll button, now also on a finished build |
+
+**Sources** lists the muse's references, the models in the brief, then what Muse Code looked at: Meta docs pages and
+searches, the model catalog, skills and web searches. On the session bridge these come from the tool's arguments
+(`detail.source`, set in `lib/sandbox/msp-log.ts`). On `muse exec` the log has no arguments, so a docs read shows by the
+first line of its reply, the catalog by its tool name, and searches and skills don't show.

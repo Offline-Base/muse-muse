@@ -101,7 +101,7 @@ Rewritten by the platform before every Muse Code start, on both engines:
 From the bridge log: agent messages and reasoning summaries, tool calls with their outcome, a live agent tree
 (subagents with their paths and status, workflows with phase and children), observer runs, hook runs, the goal with
 its status and progress, the todo list, compaction, and owner commands. Questions the agent asks show as a card with
-their options.
+their options. docs/UI_MUSE_APP.md, "Where each thing went", says where each sits since the room took the Muse app's look.
 
 ### 4. The owner steers
 
