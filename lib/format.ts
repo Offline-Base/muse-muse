@@ -229,14 +229,32 @@ export function parseManifest(m: unknown): Manifest | null {
         isString(x.description) &&
         isObject(x.input) &&
         isObject(x.output) &&
-        (x.example === undefined || isObject(x.example)),
+        (x.example === undefined || isObject(x.example)) &&
+        (x.who === undefined || x.who === "anyone" || x.who === "owner") &&
+        (x.annotations === undefined ||
+          (isObject(x.annotations) && isOptionalBoolean(x.annotations.readOnly) && isOptionalBoolean(x.annotations.openWorld))),
     ) &&
     listOf(m.fixtures, (x) => isObject(x) && isString(x.path) && isString(x.description)) &&
     listOf(m.limits, isString) &&
     typeof m.estimatedCostPerRunUsd === "number" &&
     Number.isFinite(m.estimatedCostPerRunUsd) &&
-    m.estimatedCostPerRunUsd >= 0;
+    m.estimatedCostPerRunUsd >= 0 &&
+    (m.agent === undefined || isAgentBlock(m.agent));
   return ok ? (m as unknown as Manifest) : null;
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === "boolean";
+}
+
+function isAgentBlock(agent: unknown): boolean {
+  return (
+    isObject(agent) &&
+    isString(agent.task) &&
+    listOf(agent.tools, (x) => isObject(x) && isString(x.id) && isString(x.usedFor)) &&
+    (agent.connections === "none" || agent.connections === "owner") &&
+    (agent.limits === undefined || isObject(agent.limits))
+  );
 }
 
 /**

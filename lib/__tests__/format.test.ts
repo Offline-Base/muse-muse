@@ -56,6 +56,30 @@ describe("parseManifest", () => {
     assert.deepEqual(parseManifest({ ...manifest, $schema: "./musemuse.schema.json" })?.name, "Feeder Count");
   });
 
+  it("keeps the agent parts of a manifest, and a manifest without them reads as it always did", () => {
+    const action = manifest.actions[0];
+    const agent = { task: "Finds things", tools: [{ id: "web_search", usedFor: "Looking things up" }], connections: "none" };
+    const withAgent = { ...manifest, agent, actions: [{ ...action, who: "owner", annotations: { readOnly: true, openWorld: false } }] };
+    assert.deepEqual(parseManifest(withAgent), withAgent);
+    assert.equal(parseManifest(manifest)?.agent, undefined);
+  });
+
+  it("drops an agent part with the wrong shape", () => {
+    const action = manifest.actions[0];
+    const agent = { task: "Finds things", tools: [], connections: "none" };
+    for (const bad of [
+      { ...manifest, agent: { ...agent, connections: "everyone" } },
+      { ...manifest, agent: { ...agent, tools: [{ id: "x" }] } },
+      { ...manifest, agent: { ...agent, task: 7 } },
+      { ...manifest, agent: "yes" },
+      { ...manifest, actions: [{ ...action, who: "root" }] },
+      { ...manifest, actions: [{ ...action, annotations: { readOnly: "yes" } }] },
+      { ...manifest, actions: [{ ...action, annotations: true }] },
+    ]) {
+      assert.equal(parseManifest(bad), null);
+    }
+  });
+
   it("drops one that would crash a page", () => {
     for (const bad of [
       null,
