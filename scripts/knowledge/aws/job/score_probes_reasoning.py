@@ -22,7 +22,7 @@ measure_known.Answerer (KNOWLEDGE_MODEL and KNOWLEDGE_4BIT as for train_glimmer.
 
 --probes holds the fixed 1,500, then the new 1,000 (stage_probes.py writes it so; --fixed-n moves the line). --prefilled takes
 score_gguf.py's JSON or a train_glimmer.py answers.json with :base or :tuned, several times to pool (the fixed file and a new-1000
-file). Output prints counts only.
+file; base needs both). Output prints counts only.
 
 Time: 640 questions a strength. Replies average perhaps 150 to 300 tokens (not measured on these questions), so about 100,000 to
 200,000 tokens: 6 to 12 minutes a strength in GGUF mode at about 290 tokens a second, 10 to 20 in adapter mode at about 180.
@@ -174,6 +174,7 @@ def main():
     answerer = None
     if a.adapter:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(a.gpu)
+        os.environ["UNSLOTH_BFLOAT16_MIXED_PRECISION"] = "1"  # greedy_tokens() runs in chunks; check_channels_bf16.py says why
         from measure_known import Answerer
         answerer = Answerer(None if a.adapter == "none" else a.adapter)
     from transformers import AutoTokenizer

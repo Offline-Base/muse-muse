@@ -448,7 +448,7 @@ const BAD_RECORDS: Array<[Kind, string]> = [
   // This record says COP31 is in Ethiopia in 2027; kremlin:80287 gives Antalya in November 2026.
   ["after_cutoff", "source:kremlin:81114"],
 ];
-/** Words the prompt's examples seed into unknowable questions, each capped as a share of the kind, so the idea is learned and not the cue. */
+/** Words the prompt's examples seed into unknowable questions, each capped as a share of the kind's candidates that pass the checks (about 1.7 times that share of what's kept), so the idea is learned and not the cue. */
 const SEEDED_CAPS: Array<[RegExp, number]> = [
   [/\binternal forecast\b/i, 0.03],
   [/\bargued against\b/i, 0.03],

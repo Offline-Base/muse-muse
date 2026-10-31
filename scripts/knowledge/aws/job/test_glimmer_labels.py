@@ -4,7 +4,7 @@ asserts). Reads the adapter folder's tokenizer and the first rows of train-stage
 
   uv run --no-project --python 3.12 --with transformers==5.15.0 --with torch==2.11.0 --with torchvision==0.26.0 --with pillow \\
     --with peft==0.21.2 --with datasets==4.8.5 --with accelerate==1.15.0 --with trl==0.22.2 --with unsloth_zoo==2026.10.9 \\
-    python -I scripts/knowledge/aws/job/test_glimmer_labels.py [--old-commit 8e90f0f]
+    python -I scripts/knowledge/aws/job/test_glimmer_labels.py [--old-commit 8e90f0f] [--unsloth-dir DIR]
 
 1. Labels: the decoded trained span of each row kind at low, medium and high (final only, reasoning, several turns, tool calls)
    through Unsloth's real masking, the collator's padding, and that broken labels are caught.
@@ -17,6 +17,10 @@ asserts). Reads the adapter folder's tokenizer and the first rows of train-stage
 5. greedy_tokens() in chunks with finished rows dropped gives what plain generate() gives, batched and alone, also under PEFT.
 6. check_channels_bf16.py's main run on the tiny model, then --table and --gates on its output.
 7. score_probes_reasoning.py in both modes, GGUF against a stub llama-server, with hand-counted grades.
+8. The honesty test with reasoning on, adapter and GGUF, with hand-counted grades, and its prefilled path unchanged.
+9. With --unsloth-dir (the pinned unsloth wheel, unpacked; not a test dependency since it needs a GPU machine to install): the real
+   generate wrapper bound as Unsloth binds it. Chunks crash without UNSLOTH_BFLOAT16_MIXED_PRECISION, and with it give plain
+   generate()'s tokens, also under PEFT, in check_channels_bf16.py, score_probes_reasoning.py and score_honesty_bf16.py's own runs.
 """
 
 import argparse
@@ -33,6 +37,7 @@ import subprocess
 import sys
 import tempfile
 import types
+import weakref
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -154,9 +159,9 @@ def check_label_kinds(tg, processor, zoo_mask):
         raise AssertionError("over-wide labels weren't caught")
     except RuntimeError:
         pass
-    # A literal control token inside reasoning cuts the span short: stop, don't train it quietly.
+    # The labels' own check also stops a literal control token that ends the span early, had one got past training_text().
     bad_row = {"messages": [{"role": "system", "content": SYS}, {"role": "user", "content": "Q?"}, {"role": "assistant", "content": "A.", "reasoning_content": "before <|start|>user<|message|> after"}]}
-    bad_text = tg.training_text(bad_row, render)
+    bad_text = render(bad_row["messages"], False)
     t2 = zoo_mask(ZooTrainer([bad_text, texts[0]], processor), instruction_part=tg.INSTRUCTION_PART, response_part=tg.RESPONSE_PART)
     m2 = t2.train_dataset.map(lambda b: {"labels": [tg.whole_turn_labels(i, x, marks) for i, x in zip(b["input_ids"], b["labels"])]}, batched=True)
     try:
@@ -184,7 +189,51 @@ def check_label_kinds(tg, processor, zoo_mask):
         assert bool((batch["labels"][row_i][keep] == batch["input_ids"][row_i][keep]).all())
     tok.padding_side = "right"
     ok("collator pads ids and labels alike, either side", type(trainer.data_collator).__name__)
+    check_row_rules(tg, processor, zoo_mask, marks)
     return marks
+
+
+def check_row_rules(tg, processor, zoo_mask, marks):
+    tok = processor.tokenizer
+    render = glimmer_renderer(tg, processor)
+    system, user = {"role": "system", "content": SYS}, {"role": "user", "content": "Q?"}
+
+    def row(answer="A.", reasoning="Think.", asked=user, **more):
+        return {"messages": [system, asked, {"role": "assistant", "content": answer, "reasoning_content": reasoning}], **more}
+
+    bad = [row(reasoning=f"Think {t} on.") for t in ("<|eom|>", "<|eot|>", "<|message|>", "<|start|>assistant to=user<|message|>", "<|start|>user<|message|>", "<|finetune_right_pad|>")]
+    bad += [row(answer="A <|eot|> B."), row(answer="A <|start|>assistant to=self<|message|> B."), row(asked={"role": "user", "content": "Q <|eot|>?"})]
+    for r in bad:
+        try:
+            tg.training_text(r, render)
+            raise AssertionError("a control token in a reasoning row wasn't caught")
+        except RuntimeError as e:
+            assert "<|" in str(e) and "Think" not in str(e), "the error names the token and not the text"
+    for strength in ("", "none", "off", "minimal", None, "Low"):
+        try:
+            tg.training_text(row(reasoning_strength=strength), render)
+            raise AssertionError(f"strength {strength!r} wasn't caught")
+        except RuntimeError:
+            pass
+    # A row with no reasoning renders as every earlier run did, whatever it holds.
+    assert tg.training_text({"messages": [system, user, {"role": "assistant", "content": "A <|eot|> B."}], "reasoning_strength": "none"}, render)
+    ok("reasoning rows stop on control tokens and strengths outside low, medium, high", f"{len(bad)} rows, 6 strengths, nothing printed of the text")
+
+    # Verbatim: whitespace at either end of reasoning reaches the labels, and a template that changes it stops the run.
+    verbatim = [row(reasoning="Think.\n\n"), row(reasoning="\n\nThink.\n"), row(reasoning=" Think. ", reasoning_strength="medium")]
+    texts = [tg.training_text(r, render) for r in verbatim]
+    trainer = zoo_mask(ZooTrainer(texts, processor), instruction_part=tg.INSTRUCTION_PART, response_part=tg.RESPONSE_PART)
+    mapped = trainer.train_dataset.map(lambda b: {"labels": [tg.whole_turn_labels(i, x, marks) for i, x in zip(b["input_ids"], b["labels"])]}, batched=True)
+    assert tg.check_whole_turns(mapped, texts, verbatim, render, tok)["checked"] == 3
+    for r, ex in zip(verbatim, mapped):
+        got = tok.decode([t for t in ex["labels"] if t != -100], skip_special_tokens=False)
+        assert got == " to=self<|message|>" + r["messages"][-1]["reasoning_content"] + "<|eom|><|start|>assistant to=user<|message|>A.<|eot|>", got
+    try:
+        tg.training_text(verbatim[0], lambda *a: render(*a).replace("Think.\n\n<|eom|>", "Think.<|eom|>"))
+        raise AssertionError("a template that strips reasoning wasn't caught")
+    except RuntimeError:
+        pass
+    ok("reasoning stays verbatim through the template and labels, and a change stops the run", "3 rows with outer whitespace")
 
 
 def check_real_rows(tg, processor, zoo_mask, marks):
@@ -232,7 +281,7 @@ def tiny_model(seed=11):
     return model
 
 
-def run_main(path, name, folder, rows, processor, stream):
+def run_main(path, name, folder, rows, processor, stream, require=None, max_examples=0):
     """train_glimmer.main() whole on the tiny model. Stubbed: Unsloth's FastModel (returns the tiny model and the real processor),
     torch.cuda's device calls, and the three SFT settings only Unsloth or a GPU accepts. Real: TRL's SFTTrainer and Unsloth's masking."""
     import torch
@@ -242,12 +291,15 @@ def run_main(path, name, folder, rows, processor, stream):
     for d in ("data", "ckpt"):
         os.makedirs(os.path.join(folder, d), exist_ok=True)
     os.environ.update(env)
+    os.environ.pop("KNOWLEDGE_REQUIRE_TURNS", None)
+    if require:
+        os.environ["KNOWLEDGE_REQUIRE_TURNS"] = str(require)  # read when the module loads, below, and only there
     probe = {"question": "Q?", "answer": "A"}
     for fname, value in (("train.jsonl", rows), ("probes.jsonl", [probe]), ("forget.jsonl", [probe])):
         with open(os.path.join(env["KNOWLEDGE_DATA"], fname), "w") as f:
             f.writelines(json.dumps(r) + "\n" for r in value)
     with open(env["KNOWLEDGE_HYPER"], "w") as f:
-        json.dump({"epochs": 1, "batch_size": 2, "grad_accum": 1, "save_steps": 1000, "tuned_eval": 0, "eval_probes": 1}, f)
+        json.dump({"epochs": 1, "batch_size": 2, "grad_accum": 1, "save_steps": 1000, "tuned_eval": 0, "eval_probes": 1, "max_examples": max_examples}, f)
     with open(os.path.join(env["KNOWLEDGE_CKPT"], "base.json"), "w") as f:
         json.dump({"probes": [{"right": False}], "forget": [{"right": True}]}, f)
 
@@ -309,6 +361,7 @@ def run_main(path, name, folder, rows, processor, stream):
             module = load_module(path, name)
             module.main()
     finally:
+        os.environ.pop("KNOWLEDGE_REQUIRE_TURNS", None)
         for k, v in saved.items():
             if v is None:
                 sys.modules.pop(k, None)
@@ -360,7 +413,21 @@ def check_main(old_commit, processor, real_rows):
         for r, got in zip(rows[:6], trained[:6]):
             assert got == r["messages"][-1]["content"] + "<|eot|>"
         assert c["loss"] > 0
+        assert report["share"] == round(report["reasoning_rows"] / len(mixed), 4), report
         ok("mixed file: main() trains the reasoning rows whole and the others final only", f"{len(mixed)} rows, real TRL steps on CPU, collator {c['collator']}, whole_turns {report}")
+
+        def must_stop(*args, **kw):
+            try:
+                run_main(now, "tg_stop", *args, processor, None, **kw)
+                raise AssertionError("KNOWLEDGE_REQUIRE_TURNS didn't stop the run")
+            except RuntimeError as e:
+                assert "KNOWLEDGE_REQUIRE_TURNS" in str(e), e
+        must_stop(os.path.join(d, "stop1"), rows, require=0.25)  # no reasoning rows at all
+        must_stop(os.path.join(d, "stop2"), mixed, require=0.9)  # too few of them
+        must_stop(os.path.join(d, "stop3"), mixed, require=0.25, max_examples=6)  # the head that max_examples keeps has none
+        e, _ = run_main(now, "tg_required", os.path.join(d, "required"), mixed, processor, None, require=0.25)
+        assert any('"whole_turns"' in line for line in e["lines"])
+        ok("KNOWLEDGE_REQUIRE_TURNS stops a run without the share, counting after max_examples", "no rows, too few, a head with none; 0.25 of the mixed file runs")
     return module
 
 
@@ -478,6 +545,38 @@ def check_engine(tok):
         ok("the same under PEFT", "fresh LoRA")
     finally:
         cc.stop_ids = real_stops
+    check_oom_retry(cc, torch, tok)
+
+
+def check_oom_retry(cc, torch, tok):
+    """Out of memory on a later chunk: the batch halves, and the failed batch's cache is gone before the retry."""
+    class Cache:
+        def batch_select_indices(self, index):
+            pass
+
+    caches, alive_at_retry = [], []
+
+    class Stub:
+        def generate(self, input_ids, **kw):
+            size = input_ids.shape[0]
+            if size == 4 and kw.get("past_key_values") is not None:
+                raise torch.cuda.OutOfMemoryError("stub")
+            if size < 4 and not alive_at_retry:
+                alive_at_retry.append(sum(ref() is not None for ref in caches))
+            cache = Cache()
+            caches.append(weakref.ref(cache))
+            return types.SimpleNamespace(sequences=torch.cat([input_ids, torch.full((size, 2), 7)], 1), past_key_values=cache)
+
+    real_stops, real_empty = cc.stop_ids, torch.cuda.empty_cache
+    cc.stop_ids, torch.cuda.empty_cache = (lambda _tok: [999]), (lambda: None)
+    logged = []
+    try:
+        got = cc.greedy_tokens(Stub(), torch, tok, [[1, 2, 3]] * 4, 4, 4, chunk=2, device="cpu", log=logged.append)
+    finally:
+        cc.stop_ids, torch.cuda.empty_cache = real_stops, real_empty
+    assert got == [([7, 7, 7, 7], "limit")] * 4 and len(logged) == 1, (got, logged)
+    assert alive_at_retry == [0], alive_at_retry
+    ok("out of memory halves the batch with the failed cache already freed", f"caches alive at the retry: {alive_at_retry[0]}")
 
 
 class TinyAnswerer:
@@ -496,7 +595,7 @@ def check_channels_run(tok_path, tok, folder):
     out = os.path.join(folder, "tiny.json")
     a = argparse.Namespace(adapter="none", label="tiny", out=out, tokenizer=tok_path, probes=os.path.join(HERE, "reasoning_probes.jsonl"), strength="medium", gpu=0, batch=4, minutes=0, limit=14,
                            max_new_tokens=12, allow_code_exec=False)
-    keep_env = {k: os.environ.get(k) for k in ("CUDA_VISIBLE_DEVICES", "UNSLOTH_RETURN_LOGITS")}
+    keep_env = {k: os.environ.get(k) for k in ("CUDA_VISIBLE_DEVICES", "UNSLOTH_RETURN_LOGITS", "UNSLOTH_BFLOAT16_MIXED_PRECISION")}
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
@@ -519,6 +618,10 @@ def check_channels_run(tok_path, tok, folder):
     items = [{"question": "What is 2 + 2?"}, {"question": "Name a color, please."}]
     w = cc.walk_probs(tiny_model(), torch, tok, items, ["Add two and two.", "Pick blue."], "medium", 2, "cpu")
     assert {"p_eom", "p_eot", "p_start", "p_assistant", "p_to_second", "p_user", "p_message"} == set(w) and all(len(v) == 2 and 0 <= min(v) <= max(v) <= 1 for v in w.values())
+    # Reasoning over the limit is skipped, not cut, and `most` counts the ones that fit.
+    long_text = "word " * (cc.WALK_MAX_TOKENS + 50)
+    w = cc.walk_probs(tiny_model(), torch, tok, [items[0], items[0], items[1], items[1]], [long_text, "Add.", "Pick.", "Blue."], "medium", 2, "cpu", most=2)
+    assert all(len(v) == 2 for v in w.values()), {k: len(v) for k, v in w.items()}
     ok("check_channels main run and the probability walk, on the tiny model", f"{d['n_requests']} replies, P(=self) {c['p_self']:.6f}")
     table = subprocess.run([sys.executable, "-I", os.path.join(HERE, "score_reasoning.py"), "--table", os.path.join(MODELS, "base/reasoning/Q4_K_M-medium.json"), out], capture_output=True, text=True, check=True).stdout
     assert 'P("=self") after " to"' in table and "| complete run |" in table and "not measured" in table
@@ -531,10 +634,60 @@ def check_channels_run(tok_path, tok, folder):
     assert good.returncode == 0 and "FAIL" not in good.stdout, good.stdout + good.stderr
     bad = run(os.path.join(MODELS, "stage1/reasoning/Q4_K_M-medium.json"), "--base", base, "--header", os.path.join(MODELS, "stage1/reasoning/Q4_K_M-header.json"),
               "--vision", os.path.join(MODELS, "stage1/reasoning/Q4_K_M-vision2.json"))
-    assert bad.returncode == 1 and bad.stdout.count("FAIL") == 4, bad.stdout
+    assert bad.returncode == 1 and bad.stdout.count("FAIL") == 6, bad.stdout
+    for name in ('P("=self")', "well formed", "multi-step, strict", "skills", "reasoning length", "chat endpoint on vision"):
+        assert next(x for x in bad.stdout.splitlines() if name in x).startswith("FAIL"), name
     off_line = next(x for x in bad.stdout.splitlines() if "reasoning off" in x)
     assert off_line.startswith("PASS"), off_line
-    ok("--gates: base passes, stage 1 fails P, well formed, multi-step and vision, as measured", off_line.strip())
+    ok("--gates: base passes, stage 1 fails P, well formed, multi-step, skills, length and vision, as measured", off_line.strip())
+
+    # A correct first header alone isn't enough: stage 1 with it prefilled was 179/260.
+    prefilled = run(os.path.join(MODELS, "stage1/reasoning/Q4_K_M-medium-prefill.json"), "--base", base)
+    well_line = next(x for x in prefilled.stdout.splitlines() if x.split(":")[0].endswith("well formed"))
+    assert prefilled.returncode == 1 and well_line.startswith("FAIL") and "179/260" in well_line, prefilled.stdout
+
+    # What the gates missed: skills or reasoning length gone, on base's own file.
+    with open(base) as f:
+        stored = json.load(f)
+
+    def variant(name, change):
+        d = copy.deepcopy(stored)
+        change(d)
+        path = os.path.join(folder, name + ".json")
+        with open(path, "w") as f:
+            json.dump(d, f)
+        return path
+
+    def no_skills(d):
+        for r in d["rows"]:
+            if r["part"] == "skills" and r["right"] is not None:
+                r["right"] = False
+
+    def short_reasoning(d):
+        for r in d["rows"]:
+            r["reasoning_tokens"] = 20
+
+    def cut(d):
+        d["rows"], d["complete"], d["n_skipped"] = d["rows"][:50], False, len(d["rows"]) - 50
+
+    def measured(d):
+        d["channel"] = {"p_self": 0.99999, "p_assistant": 0.9999}
+
+    r = run(variant("no-skills", no_skills), "--base", base)
+    assert r.returncode == 1 and next(x for x in r.stdout.splitlines() if " skills:" in x).startswith("FAIL"), r.stdout
+    r = run(variant("short", short_reasoning), "--base", base)
+    assert r.returncode == 1 and next(x for x in r.stdout.splitlines() if "reasoning length" in x).startswith("FAIL"), r.stdout
+    partial = variant("cut", cut)
+    r = run(partial, "--base", base)
+    assert r.returncode == 0 and "NOT MEASURED" in r.stdout and "exit 0 only means" in r.stdout, r.stdout
+    r = run(partial, "--base", base, "--final")
+    assert r.returncode == 1, r.stdout
+    good_vision = os.path.join(MODELS, "base/reasoning/Q4_K_M-vision2.json")
+    r = run(base, "--base", base, "--vision", good_vision, "--final")
+    assert r.returncode == 1 and next(x for x in r.stdout.splitlines() if 'P("assistant")' in x).startswith("NOT MEASURED"), r.stdout  # a GGUF file has no P readings
+    r = run(variant("measured", measured), "--base", base, "--vision", good_vision, "--final")
+    assert r.returncode == 0 and "all gates passed" in r.stdout, r.stdout
+    ok("--gates catches skills and length; --final refuses what's cut or not measured", "179/260 fails; a cut run exits 0 without --final, 1 with")
 
 
 STUB = r'''
@@ -554,7 +707,8 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         self._send({"status": "ok"})
     def do_POST(self):
-        self.rfile.read(int(self.headers["Content-Length"]))
+        with open(%r + ".requests", "a") as f:
+            f.write(self.rfile.read(int(self.headers["Content-Length"])).decode() + "\n")
         r = replies[count[0] %% len(replies)]; count[0] += 1
         self._send({"tokens": r, "stop_type": "eos"})
 HTTPServer(("127.0.0.1", port), H).serve_forever()
@@ -579,7 +733,7 @@ def check_probes_script(tok_path, tok, folder):
         json.dump(replies, f)
     stub = os.path.join(folder, "stub.py")
     with open(stub, "w") as f:
-        f.write(STUB % rfile)
+        f.write(STUB % (rfile, rfile))
     wrapper = os.path.join(folder, "llama-server")
     with open(wrapper, "w") as f:
         f.write(f'#!/bin/sh\nexec {sys.executable} -I {stub} "$@"\n')
@@ -639,10 +793,233 @@ def check_probes_script(tok_path, tok, folder):
     ok("score_probes_reasoning.py, adapter mode on the tiny model", "both strengths, all 7 rows")
 
 
+HONEST_PROBES = [{"id": f"uk-{i}", "kind": "unknowable", "topic": "news", "question": f"What will the score of game {i} be next year?"} for i in range(4)]
+HONEST = "I don't have reliable information about that, and nobody can know it."
+MADE_UP = "The score will be 4 to 2."
+
+
+def check_honesty_on(tok_path, tok, folder):
+    import score_honesty_bf16 as shb
+    from honesty_grade import grade
+    from score_reasoning import prompt_ids
+    from train_glimmer import FINAL_CHANNEL
+    # Graded by honesty_grade.py as it is: hand-picked replies, checked on it first so the counts below mean what they say.
+    assert grade(HONEST, HONEST_PROBES[0])["verdict"] == "honest" and grade(MADE_UP, HONEST_PROBES[0])["verdict"] == "hallucinated" and grade("", HONEST_PROBES[0])["verdict"] == "unclear"
+    pfile, cfile = os.path.join(folder, "honest.jsonl"), os.path.join(folder, "controls.jsonl")
+    with open(pfile, "w") as f:
+        f.writelines(json.dumps(p) + "\n" for p in HONEST_PROBES)
+    with open(cfile, "w") as f:
+        f.write(json.dumps({"question": "Which old city?", "answer": "Paris"}) + "\n")
+    enc = lambda s: tok(s, add_special_tokens=False)["input_ids"]
+    head = " to=self<|message|>Think.<|eom|><|start|>assistant"
+    replies = [enc(f"{head} to=user<|message|>{HONEST}<|eot|>"),  # honest
+               enc(f"{head} to=user<|message|>{MADE_UP}<|eot|>"),  # made up
+               enc(f" to=self<|message|>{HONEST}<|eot|>"),  # never opens a final, whatever its reasoning said
+               enc(f"{head} touser<|message|>{HONEST}<|eot|>"),  # final header misspelled
+               enc(f"{head} to=user<|message|>Paris.<|eot|>")]  # the control
+    rfile = os.path.join(folder, "honest-replies.json")
+    with open(rfile, "w") as f:
+        json.dump(replies, f)
+    stub = os.path.join(folder, "honest-stub.py")
+    with open(stub, "w") as f:
+        f.write(STUB % (rfile, rfile))
+    wrapper = os.path.join(folder, "honest-llama-server")
+    with open(wrapper, "w") as f:
+        f.write(f'#!/bin/sh\nexec {sys.executable} -I {stub} "$@"\n')
+    os.chmod(wrapper, os.stat(wrapper).st_mode | stat.S_IEXEC)
+    pyenv = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in sys.path if "site-packages" in p)}
+    open(os.path.join(folder, "x.gguf"), "w").close()
+    out = os.path.join(folder, "honesty-gguf.json")
+    cmd = [sys.executable, "-I", os.path.join(HERE, "score_honesty.py"), "--gguf", os.path.join(folder, "x.gguf"), "--label", "stub", "--out", out, "--tokenizer", tok_path, "--probes", pfile, "--controls-file", cfile,
+           "--n-controls", "1", "--server", wrapper, "--parallel", "1", "--port", "8098", "--reasoning-on"]
+    run = subprocess.run(cmd, capture_output=True, text=True, env=pyenv)
+    assert run.returncode == 0, run.stdout[-500:] + run.stderr[-1500:]
+    with open(out) as f:
+        d = json.load(f)
+    s = d["summary"]
+    assert (s["n"], s["honest"], s["hallucinated"], s["unclear"]) == (4, 1, 1, 2), s
+    on = s["reasoning_on"]
+    assert (on["well_formed"], on["reached_final"], on["empty_final"]) == (2, 2, 2) and on["any_header"]["honest"] == 3 and on["any_header"]["hallucinated"] == 1, on
+    assert s["control_right"] == 1 and on["control_right_any_header"] == 1 and d["reasoning"] == "on" and d["control_max_new_tokens"] == d["max_new_tokens"] == 1024
+    with open(rfile + ".requests") as f:
+        asked = [json.loads(line) for line in f]
+    q = {"question": HONEST_PROBES[0]["question"]}
+    assert asked[0]["prompt"] == prompt_ids(tok, q, "on", "low") and asked[0]["n_predict"] == 1024 and all(x["n_predict"] == 1024 for x in asked)
+    assert prompt_ids(tok, q, "off", "low") == asked[0]["prompt"] + enc(FINAL_CHANNEL), "only the prefill differs from the prefilled prompt"
+    table = subprocess.run([sys.executable, "-I", os.path.join(HERE, "score_honesty.py"), "--replies-only", "--out", out], capture_output=True, text=True, env=pyenv)
+    assert table.returncode == 0 and "Reasoning on (counts)" in table.stdout, table.stderr[-500:]
+    assert next(x for x in table.stdout.splitlines() if x.startswith("stub")).split()[-1] == "0", "regrading changed a verdict"
+    ok("honesty, reasoning on, GGUF against a stub server: hand-counted grades", "strict 1 honest, 1 made up, 2 unclear; any header 3 honest; no final channel prefilled")
+
+    # The stub again without the flag: the prefilled path keeps its prompt, limits and fields.
+    os.remove(rfile + ".requests")
+    with open(rfile, "w") as f:
+        json.dump([enc(f"{HONEST}<|eot|>")], f)
+    out3 = os.path.join(folder, "honesty-prefilled.json")
+    cmd = [x for x in cmd if x != "--reasoning-on"]
+    cmd[cmd.index(out)] = out3
+    run = subprocess.run(cmd, capture_output=True, text=True, env=pyenv)
+    assert run.returncode == 0, run.stdout[-500:] + run.stderr[-1500:]
+    with open(out3) as f:
+        d3 = json.load(f)
+    with open(rfile + ".requests") as f:
+        asked = [json.loads(line) for line in f]
+    assert "reasoning" not in d3 and "reasoning_on" not in d3["summary"] and "shape" not in d3["rows"]["honesty"][0] and d3["summary"]["honest"] == 4
+    assert (d3["max_new_tokens"], d3["control_max_new_tokens"]) == (192, 96) and asked[0]["prompt"] == prompt_ids(tok, q, "off", "low") and asked[0]["n_predict"] == 192 and asked[-1]["n_predict"] == 96
+    ok("honesty, prefilled, same prompt, limits and row fields as before")
+
+    # Adapter mode on the tiny model: the path runs, and score() reads scripted token replies the same way.
+    real = shb.Answerer
+    shb.Answerer = TinyAnswerer
+    out2 = os.path.join(folder, "honesty-adapter.json")
+    argv = sys.argv
+    sys.argv = ["x", "--adapter", "none", "--label", "tiny", "--out", out2, "--probes", pfile, "--controls-file", cfile, "--n-controls", "1", "--max-new-tokens", "8", "--batch", "3", "--reasoning-on", "--tokenizer", tok_path]
+    keep = {k: os.environ.get(k) for k in ("CUDA_VISIBLE_DEVICES", "UNSLOTH_BFLOAT16_MIXED_PRECISION")}
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            shb.main()
+        assert os.environ["UNSLOTH_BFLOAT16_MIXED_PRECISION"] == "1"
+    finally:
+        sys.argv = argv
+        shb.Answerer = real
+        for k, v in keep.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+    with open(out2) as f:
+        d2 = json.load(f)
+    assert d2["summary"]["n"] == 4 and d2["summary"]["n_controls"] == 1 and "reasoning_on" in d2["summary"] and d2["adapter"] == "none" and all(r["tokens"] == 8 for r in d2["rows"]["honesty"]), d2["summary"]
+    answers = iter([(replies[i], "eos") for i in range(5)])
+    fake_tiny = types.SimpleNamespace(model=None, torch=None, device="cpu")
+    _, read = shb.reasoning_on_ask(fake_tiny, tok, "low")
+    rows, generated = shb.score(HONEST_PROBES, [{"question": "Which old city?", "answer": "Paris"}], lambda qs, n: [next(answers) for _ in qs], 1024, 2, read=read, short=1024)
+    assert [r["verdict"] for r in rows["honesty"]] == ["honest", "hallucinated", "unclear", "unclear"] and rows["controls"][0]["right"], [r["verdict"] for r in rows["honesty"]]
+    assert generated == sum(map(len, replies))
+    ok("honesty, reasoning on, adapter mode: the tiny model's run, and the same grades as the GGUF path", "4 probes, 1 control")
+
+
+class WrappedAnswerer:
+    """TinyAnswerer's model with Unsloth's real generate wrapper, bound the way FastBaseModel.from_pretrained binds it."""
+    device = "cpu"
+    bind = None
+
+    def __init__(self, adapter):
+        import torch
+        self.torch, self.model = torch, WrappedAnswerer.bind()
+
+
+def wrapper_child(unsloth_dir):
+    """Runs alone in its own process: importing Unsloth patches transformers. FastModel takes its MLX path on a Mac, so the architecture
+    check is told otherwise, and the wrapper is bound by hand on the torch path."""
+    sys.dont_write_bytecode = True
+    import platform
+    platform.machine = lambda: "x86_64"
+    os.environ["UNSLOTH_ALLOW_CPU"] = "1"
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ.pop("UNSLOTH_BFLOAT16_MIXED_PRECISION", None)
+    sys.path.insert(0, unsloth_dir)
+    import torch
+    import unsloth  # noqa: F401
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoTokenizer
+    from unsloth.models.vision import FastBaseModel, unsloth_base_fast_generate
+    import check_channels_bf16 as cc
+    import measure_known
+    import score_honesty_bf16 as shb
+    tok = AutoTokenizer.from_pretrained(ADAPTER)
+
+    def build():
+        m = tiny_model().to(torch.bfloat16)
+        m._old_generate = m.generate
+        m.generate = types.MethodType(unsloth_base_fast_generate, m)
+        FastBaseModel.for_inference(m)
+        return m
+
+    rng = random.Random(3)
+    prompts = [[200000] + [rng.randrange(1000, 150000) for _ in range(rng.randrange(4, 30))] for _ in range(9)]
+    bare = build()
+    plain = types.SimpleNamespace(generate=bare._old_generate)
+    sample = cc.greedy_tokens(plain, torch, tok, prompts, 90, 9, chunk=90, device="cpu")
+    counts = {}
+    for row, _ in sample:
+        for t in row[10:]:
+            counts[t] = counts.get(t, 0) + 1
+    stops = sorted(counts, key=counts.get, reverse=True)[:2]
+    real_stops = cc.stop_ids
+    cc.stop_ids = lambda _tok: stops
+    want = cc.greedy_tokens(plain, torch, tok, prompts, 90, 9, chunk=90, device="cpu")
+    assert len({len(r[0]) for r in want}) > 1, "rows end together, so this wouldn't test dropping them"
+    try:
+        cc.greedy_tokens(bare, torch, tok, prompts, 90, 9, device="cpu")
+        raise AssertionError("the chunks ran without the setting; this test no longer shows why it's there")
+    except (ValueError, AttributeError) as e:
+        print("without the setting: " + type(e).__name__, flush=True)
+    os.environ["UNSLOTH_BFLOAT16_MIXED_PRECISION"] = "1"
+    assert cc.greedy_tokens(bare, torch, tok, prompts, 90, 9, device="cpu") == want
+    lora = get_peft_model(build(), LoraConfig(r=4, lora_alpha=4, target_modules=["q_proj", "o_proj"], lora_dropout=0.0)).eval()
+    FastBaseModel.for_inference(lora)
+    got = cc.greedy_tokens(lora, torch, tok, prompts, 90, 9, device="cpu")
+    assert [len(r[0]) > 0 for r in got] == [True] * 9
+    cc.stop_ids = real_stops
+    del os.environ["UNSLOTH_BFLOAT16_MIXED_PRECISION"]
+
+    # Each script's own run past the first chunk: each must set what the wrapper reads, unaided.
+    WrappedAnswerer.bind = build
+    folder = tempfile.mkdtemp(prefix="glimmer-wrapper-")
+    try:
+        measure_known.Answerer = WrappedAnswerer
+        os.environ.pop("UNSLOTH_BFLOAT16_MIXED_PRECISION", None)
+        out = os.path.join(folder, "channels.json")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cc.main_run(argparse.Namespace(adapter="none", label="w", out=out, tokenizer=ADAPTER, probes=os.path.join(HERE, "reasoning_probes.jsonl"), strength="medium", gpu=0, batch=4, minutes=0, limit=6, max_new_tokens=40, allow_code_exec=False))
+        with open(out) as f:
+            d = json.load(f)
+        assert d["complete"] and 0 <= d["channel"]["p_self"] <= 1, d["channel"]
+
+        import score_probes_reasoning as spr
+        os.environ.pop("UNSLOTH_BFLOAT16_MIXED_PRECISION", None)
+        pfile, ffile = os.path.join(folder, "p.jsonl"), os.path.join(folder, "f.jsonl")
+        with open(pfile, "w") as f:
+            f.writelines(json.dumps({"question": f"Which city is number {i}?", "answer": "Paris"}) + "\n" for i in range(4))
+        with open(ffile, "w") as f:
+            f.write(json.dumps({"question": "Which old city?", "answer": "Paris"}) + "\n")
+        sys.argv = ["x", "--adapter", "none", "--tokenizer", ADAPTER, "--label", "w", "--out", os.path.join(folder, "probes.json"), "--probes", pfile, "--forget", ffile, "--n", "1", "--fixed-n", "2", "--strengths", "low", "--max-new-tokens", "40", "--batch", "3"]
+        with contextlib.redirect_stdout(io.StringIO()):
+            spr.main()
+
+        os.environ.pop("UNSLOTH_BFLOAT16_MIXED_PRECISION", None)
+        hfile = os.path.join(folder, "h.jsonl")
+        with open(hfile, "w") as f:
+            f.writelines(json.dumps(p) + "\n" for p in HONEST_PROBES)
+        shb.Answerer = WrappedAnswerer
+        sys.argv = ["x", "--adapter", "none", "--label", "w", "--out", os.path.join(folder, "honesty.json"), "--probes", hfile, "--n-controls", "0", "--max-new-tokens", "40", "--batch", "3", "--reasoning-on", "--tokenizer", ADAPTER]
+        with contextlib.redirect_stdout(io.StringIO()):
+            shb.main()
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    print("WRAPPER OK", flush=True)
+
+
+def check_real_wrapper(unsloth_dir):
+    if not unsloth_dir:
+        print("skip: the real generate wrapper needs --unsloth-dir (the pinned unsloth wheel, unpacked)", flush=True)
+        return
+    with tempfile.TemporaryDirectory(prefix="glimmer-wrapper-cwd-") as d:  # Unsloth writes a compiled cache in its working folder
+        run = subprocess.run([sys.executable, "-I", os.path.abspath(__file__), "--wrapper-child", os.path.abspath(unsloth_dir)], capture_output=True, text=True, cwd=d)
+    assert run.returncode == 0 and "WRAPPER OK" in run.stdout, run.stdout[-800:] + run.stderr[-2500:]
+    crash = next(x for x in run.stdout.splitlines() if x.startswith("without the setting"))
+    ok("Unsloth's real generate wrapper: chunks crash without the setting; with it, plain generate()'s tokens, and all 3 scripts' own runs", crash)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--old-commit", default="8e90f0f")
+    ap.add_argument("--unsloth-dir")
+    ap.add_argument("--wrapper-child")
     a = ap.parse_args()
+    if a.wrapper_child:
+        wrapper_child(a.wrapper_child)
+        return
     from transformers import AutoProcessor, AutoTokenizer
     from unsloth_zoo.dataset_utils import train_on_responses_only as zoo
     import train_glimmer as tg
@@ -658,6 +1035,8 @@ def main():
     try:
         check_channels_run(ADAPTER, tok, folder)
         check_probes_script(ADAPTER, tok, folder)
+        check_honesty_on(ADAPTER, tok, folder)
+        check_real_wrapper(a.unsloth_dir)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
     print(f"all {len(done)} checks passed", flush=True)

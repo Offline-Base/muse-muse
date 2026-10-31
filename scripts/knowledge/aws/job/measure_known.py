@@ -15,7 +15,7 @@ with the same arguments carries on from what's there, and refuses if the adapter
 
 Usage: python measure_known.py --adapter DIR --questions Q.jsonl --out OUT.jsonl --gpu 3 --shard 3 --shards 8
        python measure_known.py --merge --questions Q.jsonl --out OUT.jsonl --shards 8 [--allow-partial]
-Speed: 2,540 questions took about 25 minutes on one A100 80GB, so 40,000 on eight take about 49 minutes plus loading.
+Speed: 40,000 questions took 31 minutes on eight A100 80GB (Oct 31, loading included).
 """
 
 import argparse

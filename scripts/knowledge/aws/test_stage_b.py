@@ -75,7 +75,7 @@ def screen_keeps_tests_out():
         assert s.why("Is it true?", "Yes, the Quillfeather Prize.") == "shares a distinctive test or dev name"
         assert s.why("What did Meta do on day 3?") is None, "a common real name must not count"
         assert s.why("What did Meta do on day 3?", "It shipped.") is None
-        assert s.why("Who won the Meta election, on November 3 2026, in the end?") == "near match with a test or dev question"
+        assert s.why("Who won the Meta election, on November 3 2026, in the end?") == "near match with a test or dev question or reasoning probe"
         assert s.why("Who won Meta's board seat?") is None
         assert "source:ons:1:0" in s.passages
         dev = write_jsonl(os.path.join(tmp, "dev.jsonl"), [{"id": "uk-dev-001", "kind": "unknowable", "topic": "news", "question": "How did the Plimble board privately vote?",
@@ -90,6 +90,16 @@ def screen_keeps_tests_out():
         assert L.named_thing("What did the Harbor Fees Audit find?") and not L.named_thing("What did the European Commission say?") and not L.named_thing("Who won?")
         report = json.dumps(s.counts())
         assert "orbleck" not in report and "uillfeather" not in report
+        assert L.REASONING_PROBES in L.HELD_OUT and L.CUTOFF_QUESTIONS in L.HELD_OUT
+        real = L.REASONING_PROBES
+        L.REASONING_PROBES = write_jsonl(os.path.join(tmp, "reasoning.jsonl"), [{"id": "r-1", "question": "A train leaves Fenwick station carrying forty passengers, how many remain?"}])
+        try:
+            r = L.Screen(test=os.path.join(tmp, "test.jsonl"), held_out=[L.REASONING_PROBES], pool=os.path.join(tmp, "pool.jsonl"))
+        finally:
+            L.REASONING_PROBES, kept = real, L.REASONING_PROBES
+        assert r.why("A train leaves Fenwick station carrying forty passengers, how many remain?") in ("test or dev question", "held-out question")
+        assert r.why("A train leaves Fenwick station carrying forty people, how many passengers remain?") == "near match with a test or dev question or reasoning probe"
+        assert r.why("Is Fenwick station open?") is None, "a reasoning probe's names don't count"
 
 
 @check
@@ -401,7 +411,7 @@ def start_run_passes_the_learning_rate_only_when_asked():
     T.machine, T.ssh, T.log = (lambda name: {"ip": "192.0.2.1"}), fake_ssh, (lambda msg: None)
     try:
         args = dict(name="muse-knowledge-train-1", run="stage-b-a", train=None, probes=None, data_dir="/home/ubuntu/k/d", init_adapter="stage2-multi", base_json=None,
-                    batch=4, accum=1, epochs=1, eval_probes=2500, max_examples=0, save_steps=500, tuned_eval=1, no_sync=True)
+                    batch=4, accum=1, epochs=1, eval_probes=2500, max_examples=0, save_steps=500, tuned_eval=1, no_sync=True, require_turns=None)
         T.start_run(argparse.Namespace(lr="5e-5", **args))
         assert " LR=5e-05 " in " " + seen["last"] and "KNOWLEDGE_INIT_ADAPTER=/home/ubuntu/k/runs/stage2-multi/out/adapter" in seen["last"]
         T.start_run(argparse.Namespace(lr=None, **args))

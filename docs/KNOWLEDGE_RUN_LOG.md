@@ -551,6 +551,18 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
 - About 11:37 AM: uploading both 8-GPU adapters to S3, which held neither. 11:39 AM: workflow stage-b-repair-to-pilot started:
   finish both cut-off fix passes, serve BF16 base with vLLM on train-1 (no fleet, no new machine) for the rows, assemble
   mixes at 30% and 50% reasoning, review, then the pilot with stage 2 as its before reading.
+- About 11:56 AM: second safety stop on the reasoning-rows step (classifier gave no category this time). No rows written.
+  Stopped there as promised; owner decides. Removed the 8 vLLM containers it had started on train-1 (GPUs back at 0 MiB).
+  Both fix passes finished first: 11 honesty findings, 8 repair findings, offline tests pass, nothing yet run on a GPU.
+- 11:58 AM: both 8-GPU adapters confirmed in S3 (knowledge/runs/{stage1-multi,stage2-multi}/adapter/).
+- 12:01 PM: started stage-b-a on train-1, the honesty pass only, because every option needs it and it uses no reasoning
+  rows: 60,000 rows (sha256 5381bc03...): false premise 7,097, after cutoff 4,699, unknowable 2,627, measured wrong 8,400,
+  cutoff restated 1,177, measured right 10,023, replay 5,893, contrast 20,084; 335 contrast rows are Spark Open or
+  unmatched, none in student files. From stage2-multi's adapter, lr 5e-5, base answers reused from stage 2. Final-channel
+  labels, so it can't repair reasoning.
+- 12:02 PM: owner asked for an audit that everything is necessary. Independent read-only workflow wba29bgj0 started.
+  Found while scouting: AWS mac2.metal i-0a5866df305e83d40 "musemuse-lab-mac", launched Oct 31 2:01 AM on a dedicated host,
+  not in this log. Not touched; origin being checked.
 
 ## Problems and fixes
 

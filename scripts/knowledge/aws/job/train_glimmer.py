@@ -22,9 +22,15 @@ Extra hyperparameters: save_steps (250), tuned_eval (1; 0 skips the answers afte
 Reasoning rows: an assistant message with reasoning_content gets its whole turn trained, from just after the generation
 prompt: ' to=self<|message|>THINK<|eom|><|start|>assistant to=user<|message|>ANSWER<|eot|>'. Training only the answer
 left those control tokens with no loss (stage 1's P("=self") after " to" fell to 0.21, base 0.99999). Such a row may say
-its reasoning_strength and tools; its text is rendered with them. Every other row keeps the final-only labels and prompt,
-and a file with no reasoning rows runs exactly as before. A row must reach a to=user answer (Unsloth drops one with
-nothing after RESPONSE_PART). test_glimmer_labels.py checks all this against the real tokenizer and template.
+its reasoning_strength (low, medium or high) and tools; its text is rendered with them. Every other row keeps the final-only
+labels and prompt, and a file with no reasoning rows runs exactly as before. A row must reach a to=user answer (Unsloth drops one
+with nothing after RESPONSE_PART). A reasoning row is trained verbatim, so a control token written in its text would train as a
+channel mark: that stops the run, as does a reasoning text the template changed. test_glimmer_labels.py checks all this against
+the real tokenizer and template.
+
+KNOWLEDGE_REQUIRE_TURNS=SHARE (0 to 1; 0 or unset means no check): a pilot of the labels on a file with no reasoning rows would train
+nothing new and read as "the labels don't work", so this stops before the model loads unless at least this share of the rows in use
+(after max_examples) has reasoning, and stops again if none of them reach the check.
 """
 
 import json
@@ -48,6 +54,9 @@ FINAL_CHANNEL = RESPONSE_PART[len(GENERATION_PROMPT):]
 FINAL_ENDS = ("<|eot|>", "<|eom|>", "<|end_of_text|>")
 PAD_TOKEN = "<|finetune_right_pad|>"
 REASONING = "low"
+STRENGTHS = ("low", "medium", "high")
+SELF_CHANNEL = " to=self<|message|>"
+CONTROL_TOKEN = re.compile(r"<\|[a-z0-9_]+\|>")
 MAX_SEQ_LENGTH = 2048
 MAX_NEW_TOKENS = 96
 GEN_BATCH = 32
@@ -63,6 +72,7 @@ RANK = int(os.environ.get("RANK", "0"))
 LOCAL_RANK = int(os.environ.get("LOCAL_RANK", "0"))
 MAIN = RANK == 0
 INIT_ADAPTER = os.environ.get("KNOWLEDGE_INIT_ADAPTER", "")
+REQUIRE_TURNS = float(os.environ.get("KNOWLEDGE_REQUIRE_TURNS") or 0)
 
 
 def say(event, **fields):
@@ -129,12 +139,30 @@ def has_reasoning(row):
     return any(m["role"] == "assistant" and m.get("reasoning_content") for m in row["messages"])
 
 
+def check_reasoning_row(row):
+    """A reasoning row trains its whole turn verbatim, so its strength must be one the model uses and no message may spell a
+    control token: most would train as channel marks without tripping the label check. The message says where, never the text."""
+    strength = row.get("reasoning_strength", REASONING)
+    if strength not in STRENGTHS:
+        raise RuntimeError(f"A reasoning row has reasoning_strength {strength!r}, not one of {STRENGTHS}")
+    for k, m in enumerate(row["messages"]):
+        for field in ("content", "reasoning_content"):
+            found = CONTROL_TOKEN.search(m.get(field) or "")
+            if found:
+                raise RuntimeError(f"A reasoning row has {found.group(0)} in the {field} of message {k} ({m['role']}); drop such rows when assembling")
+
+
 def training_text(row, render):
     """One training example, checked. render(messages, generation, [strength, tools]) is the template without the BOS text.
     A row without reasoning always renders at REASONING with no tools, as every earlier run did."""
     turns = has_reasoning(row)
+    if turns:
+        check_reasoning_row(row)
     text = render(row["messages"], False, row.get("reasoning_strength", REASONING), row.get("tools")) if turns else render(row["messages"], False)
     for m in row["messages"]:
+        # Verbatim, whitespace included: a stripped or reworded reasoning wouldn't be the model's own tokens.
+        if turns and m.get("reasoning_content") and SELF_CHANNEL + m["reasoning_content"] + "<|eom|>" not in text:
+            raise RuntimeError("The template changed a reasoning message; it must render verbatim between its header and <|eom|>")
         if turns and m.get("tool_calls"):
             continue  # no content; the template writes the call on its own channel
         marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
@@ -146,7 +174,7 @@ def training_text(row, render):
 def channel_marks(text_tokenizer):
     """Token ids of the generation prompt and of the reasoning header that follows it, and the <|start|> id."""
     ids = lambda s: text_tokenizer(s, add_special_tokens=False)["input_ids"]
-    return {"prompt": ids(GENERATION_PROMPT), "header": ids(GENERATION_PROMPT + " to=self<|message|>"), "start": text_tokenizer.convert_tokens_to_ids("<|start|>")}
+    return {"prompt": ids(GENERATION_PROMPT), "header": ids(GENERATION_PROMPT + SELF_CHANNEL), "start": text_tokenizer.convert_tokens_to_ids("<|start|>")}
 
 
 def whole_turn_labels(ids, labels, marks):
@@ -274,6 +302,10 @@ def main():
     probes = probes[: int(h["eval_probes"])]
     forget = read_jsonl(os.path.join(DATA, "forget.jsonl"))
     say("data", train=len(train_rows), probes=len(probes), forget=len(forget))
+    turn_rows = sum(has_reasoning(row) for row in train_rows)
+    if REQUIRE_TURNS and (not turn_rows or turn_rows < REQUIRE_TURNS * len(train_rows)):
+        raise RuntimeError(f"KNOWLEDGE_REQUIRE_TURNS={REQUIRE_TURNS}: {turn_rows} of the {len(train_rows)} rows in use have reasoning, "
+                           f"share {turn_rows / max(1, len(train_rows)):.4f}")
 
     say("model", model=MODEL, revision=MODEL_REVISION, load_in_4bit=LOAD_IN_4BIT, gradient_checkpointing=GRAD_CKPT)
     model, tokenizer = FastModel.from_pretrained(
@@ -410,8 +442,10 @@ def main():
         trainer.train_dataset = trainer.train_dataset.map(
             lambda b: {"labels": [whole_turn_labels(i, x, marks) for i, x in zip(b["input_ids"], b["labels"])]}, batched=True)
         if MAIN:
-            say("whole_turns", rows=len(train_rows), kept=len(trainer.train_dataset),
-                **check_whole_turns(trainer.train_dataset, texts, train_rows, render, text_tokenizer))
+            report = check_whole_turns(trainer.train_dataset, texts, train_rows, render, text_tokenizer)
+            say("whole_turns", rows=len(train_rows), kept=len(trainer.train_dataset), share=round(turn_rows / len(train_rows), 4), **report)
+            if REQUIRE_TURNS and not report["checked"]:
+                raise RuntimeError(f"KNOWLEDGE_REQUIRE_TURNS={REQUIRE_TURNS}: no reasoning row reached the label check: {report}")
     first = trainer.train_dataset[0]
     trained = sum(1 for label in first["labels"] if label != -100)
     if not trained:

@@ -650,6 +650,8 @@ def start_run(a):
         env["KNOWLEDGE_INIT_ADAPTER"] = remote_path(a.init_adapter)
     if a.lr:
         env["LR"] = str(float(a.lr))  # run_multi.sh writes it into hyper.json; without it, its default of 1e-4
+    if a.require_turns:
+        env["KNOWLEDGE_REQUIRE_TURNS"] = str(float(a.require_turns))  # train_glimmer.py stops unless this share of its rows has reasoning
     if a.base_json:
         env["BASE_JSON"] = a.base_json if a.base_json.startswith("/") else f"{REMOTE}/runs/{a.base_json}/ckpt/base.json"
     envs = " ".join(f"{k}={v}" for k, v in env.items())
@@ -688,6 +690,7 @@ if __name__ == "__main__":
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--eval-probes", type=int, default=1500)
     ap.add_argument("--max-examples", type=int, default=0)
+    ap.add_argument("--require-turns", help="stop unless this share of the rows in use has reasoning (a pilot of the whole-turn labels)")
     ap.add_argument("--save-steps", type=int, default=250)
     ap.add_argument("--tuned-eval", type=int, default=1)
     ap.add_argument("--lr", help="learning rate for this run (default: run_multi.sh's 1e-4)")

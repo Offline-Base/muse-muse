@@ -15,13 +15,20 @@ probes of eval-probes.jsonl after shuffling with random.Random(7), the same ones
 new tokens and graded by answered(), so control accuracy lines up with its probe accuracy. A control answered wrong
 with a refusal ("I don't know", a cutoff, "no record") counts as over-refused.
 
+--reasoning-on: the same test with nothing prefilled, since a prefilled final channel is all any score above reads and an app
+lets the model reason first. The prompt stops at the generation prompt, at --strength (low, as above, so the two pair up), with
+1,024 new tokens for every item unless --max-new-tokens says otherwise, and honesty_grade.grade() reads only the strict to=user
+channel: a reply that never opens it has an empty final and grades unclear. Each row also keeps the raw reply, its shape and its
+grade on any header spelling, and the summary's reasoning_on says how many were well formed, reached a final and so on, so a drop can be
+placed between channel damage and honesty. score_honesty_bf16.py has the same flag for an adapter.
+
 Output (--out): per-item reply and verdict, and a summary: honest, hallucinated, unclear and degenerate rates overall,
 by kind and by topic; control accuracy and over-refusal rate; how many replies hit the token limit. --replies-only regrades the
 replies already in one or more --out files with the current rules (no GPU, tokenizer or server) and prints a table.
 
 Usage: python score_honesty.py --gguf FILE --label NAME --out FILE.json --tokenizer BASE_DIR --probes honesty_probes.jsonl
        --controls-file eval-probes.jsonl [--n-controls 300] [--max-new-tokens 192] [--server .../llama-server]
-       [--port 8092] [--parallel 16]
+       [--port 8092] [--parallel 16] [--reasoning-on [--strength low]]
        python score_honesty.py --replies-only --out A.json [B.json ...]
 """
 
@@ -41,6 +48,26 @@ from score_gguf import gpu_mem_used_mib, healthy, post, read_jsonl  # noqa: E402
 from train_glimmer import FINAL_CHANNEL, GENERATION_PROMPT, MAX_NEW_TOKENS, REASONING, SYSTEM, answered, final_answer  # noqa: E402
 
 PREFIX = {"after_cutoff": "ac-", "false_premise": "fp-", "unknowable": "uk-"}
+ON_MAX_NEW_TOKENS = 1024
+ON_SLOT_CTX = 1400
+
+
+def reasoning_on_reply(toks, tok):
+    """(strict final reply, the row's extra fields) of a reply to the bare generation prompt, parsed by score_reasoning.py."""
+    from score_reasoning import analyze_raw, channel_parts
+    reasoning, final, channels, reached = channel_parts(toks, "on", tok)
+    raw = tok.decode(toks, skip_special_tokens=False)
+    seen = analyze_raw(raw)
+    return tok.decode(final, skip_special_tokens=False).strip(), {"reply_any_header": seen["final_lenient"], "shape": seen["shape"], "channels": channels,
+                                                                  "reached_final": reached, "reasoning_tokens": len(reasoning), "raw": raw}
+
+
+def honesty_extra(extra, item):
+    return {**extra, "verdict_any_header": grade(extra["reply_any_header"], item)["verdict"]} if extra else {}
+
+
+def control_extra(extra, item):
+    return {**extra, "right_any_header": answered(extra["reply_any_header"], item)} if extra else {}
 
 
 def check_probes(probes):
@@ -73,11 +100,19 @@ def rates(rows):
     return {"n": n, **count, **{f"{v}_rate": round(count[v] / max(1, n), 4) for v in VERDICTS}}
 
 
+def reasoning_on_summary(h, c):
+    tokens = sorted(r["reasoning_tokens"] for r in h)
+    return {"well_formed": sum(r["shape"] == "well formed: to=self, then to=user" for r in h), "reached_final": sum(r["reached_final"] for r in h), "empty_final": sum(not r["reply"] for r in h),
+            "reasoning_tokens_median": tokens[len(tokens) // 2] if tokens else 0, "any_header": {v: sum(r["verdict_any_header"] == v for r in h) for v in VERDICTS},
+            "controls_well_formed": sum(r["shape"] == "well formed: to=self, then to=user" for r in c), "control_right_any_header": sum(r["right_any_header"] for r in c)}
+
+
 def summarize(rows):
     h, c = rows["honesty"], rows["controls"]
     right = sum(x["right"] for x in c)
     refused = sum(x["refused"] and not x["right"] for x in c)
     return {
+        **({"reasoning_on": reasoning_on_summary(h, c)} if any("shape" in r for r in h) else {}),
         **rates(h),
         "n_controls": len(c), "control_right": right, "control_accuracy": round(right / max(1, len(c)), 4),
         "control_refused": refused, "control_refusal_rate": round(refused / max(1, len(c)), 4),
@@ -94,9 +129,13 @@ def regrade(rows):
         g = grade(r["reply"], r)
         changed += g["verdict"] != r.get("verdict")
         r.update(g)
+        if "reply_any_header" in r:
+            r["verdict_any_header"] = grade(r["reply_any_header"], r)["verdict"]
     for r in rows["controls"]:
         r["right"] = answered(r["reply"], r)
         r["refused"] = refuses(r["reply"])
+        if "reply_any_header" in r:
+            r["right_any_header"] = answered(r["reply_any_header"], r)
     return changed
 
 
@@ -105,13 +144,15 @@ def print_summaries(paths):
         return f"{100 * x:5.1f}"
 
     head = f"{'label':28s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s} {'degen':>6s} {'ctl_acc':>7s} {'ctl_ref':>7s} {'changed':>7s}"
-    lines, kinds, topics = [head], [], []
+    lines, kinds, topics, on = [head], [], [], []
     for path in paths:
         with open(path) as f:
             out = json.load(f)
         changed = regrade(out["rows"])
         s = summarize(out["rows"])
         label = out.get("label", os.path.basename(path))
+        if "reasoning_on" in s:
+            on.append(f"{label[:28]:28s} {json.dumps(s['reasoning_on'])}")
         lines.append(f"{label[:28]:28s} {s['n']:4d} {pct(s['honest_rate']):>6s} {pct(s['hallucinated_rate']):>6s} "
                      f"{pct(s['unclear_rate']):>6s} {pct(s['degenerate_rate']):>6s} {pct(s['control_accuracy']):>7s} {pct(s['control_refusal_rate']):>7s} {changed:7d}")
         for group, table in (("by_kind", kinds), ("by_topic", topics)):
@@ -119,7 +160,7 @@ def print_summaries(paths):
                 table.append(f"{label[:28]:28s} {name:16s} {r['n']:4d} {pct(r['honest_rate']):>6s} "
                              f"{pct(r['hallucinated_rate']):>6s} {pct(r['unclear_rate']):>6s} {pct(r['degenerate_rate']):>6s}")
     sub = f"{'label':28s} {'group':16s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s} {'degen':>6s}"
-    print("\n".join(lines + ["", "By kind (percent)", sub] + kinds + ["", "By topic (percent)", sub] + topics))
+    print("\n".join(lines + ["", "By kind (percent)", sub] + kinds + ["", "By topic (percent)", sub] + topics + (["", "Reasoning on (counts)"] + on if on else [])))
     print("\nRates are percent of honesty probes; ctl_acc is control accuracy, ctl_ref the controls answered wrong with a "
           "refusal; changed counts verdicts the current rules grade differently from the stored ones.")
 
@@ -133,11 +174,13 @@ def main():
     ap.add_argument("--probes", default=os.path.join(HERE, "honesty_probes.jsonl"))
     ap.add_argument("--controls-file")
     ap.add_argument("--n-controls", type=int, default=300)
-    ap.add_argument("--max-new-tokens", type=int, default=192)
+    ap.add_argument("--max-new-tokens", type=int, help="192; with --reasoning-on 1,024, for the controls too")
+    ap.add_argument("--reasoning-on", action="store_true", help="nothing prefilled: the model reasons first, and only its to=user channel is graded")
+    ap.add_argument("--strength", default=REASONING, help="reasoning strength for --reasoning-on")
     ap.add_argument("--server", default="/home/ubuntu/writer/llama.cpp-b11970/build/bin/llama-server")
     ap.add_argument("--port", type=int, default=8092)
     ap.add_argument("--parallel", type=int, default=16)
-    ap.add_argument("--slot-ctx", type=int, default=1024)
+    ap.add_argument("--slot-ctx", type=int, help=f"1024; with --reasoning-on {ON_SLOT_CTX}")
     ap.add_argument("--replies-only", action="store_true")
     a = ap.parse_args()
     if a.replies_only:
@@ -148,6 +191,9 @@ def main():
     if missing or len(a.out) != 1:
         ap.error(f"a scoring run needs {', '.join(missing) or 'exactly one --out'}")
     out_path = a.out[0]
+    limit = a.max_new_tokens or (ON_MAX_NEW_TOKENS if a.reasoning_on else 192)
+    control_limit = limit if a.reasoning_on else MAX_NEW_TOKENS
+    slot_ctx = a.slot_ctx or (ON_SLOT_CTX if a.reasoning_on else 1024)
 
     probes = read_jsonl(a.probes)
     check_probes(probes)
@@ -162,6 +208,9 @@ def main():
     bos = tok.bos_token or ""
 
     def ids_for(question):
+        if a.reasoning_on:
+            from score_reasoning import prompt_ids
+            return prompt_ids(tok, {"question": question}, "on", a.strength)
         text = tok.apply_chat_template([{"role": "system", "content": SYSTEM}, {"role": "user", "content": question}],
                                        tokenize=False, add_generation_prompt=True, reasoning_strength=REASONING)
         text = text.removeprefix(bos) if bos else text
@@ -169,16 +218,16 @@ def main():
             raise RuntimeError("Generation prompt doesn't end with " + GENERATION_PROMPT)
         return tok(text + FINAL_CHANNEL)["input_ids"]
 
-    items = [("honesty", p, a.max_new_tokens) for p in probes] + [("control", c, MAX_NEW_TOKENS) for c in controls]
+    items = [("honesty", p, limit) for p in probes] + [("control", c, control_limit) for c in controls]
     prompts = [ids_for(it["question"]) for _, it, _ in items]
     longest = max(len(p) for p in prompts)
-    if longest + max(a.max_new_tokens, MAX_NEW_TOKENS) > a.slot_ctx:
+    if longest + max(limit, control_limit) > slot_ctx:
         raise RuntimeError(f"a prompt has {longest} tokens; raise --slot-ctx")
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     log_path = out_path + ".server.log"
     cmd = [a.server, "-m", a.gguf, "--port", str(a.port), "--host", "127.0.0.1", "-ngl", "999", "-fa", "on",
-           "-np", str(a.parallel), "-c", str(a.parallel * a.slot_ctx), "--no-webui", "--metrics"]
+           "-np", str(a.parallel), "-c", str(a.parallel * slot_ctx), "--no-webui", "--metrics"]
     began = time.time()
     with open(log_path, "w") as logf:
         server = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT)
@@ -216,20 +265,25 @@ def main():
     for (part, it, _), r in zip(items, results):
         toks = r.get("tokens") or []
         generated += len(toks)
-        reply = final_answer(tok.decode(toks, skip_special_tokens=False)) if toks else final_answer(r.get("content", ""))
+        extra = {}
+        if a.reasoning_on:
+            reply, extra = reasoning_on_reply(toks, tok)
+        else:
+            reply = final_answer(tok.decode(toks, skip_special_tokens=False)) if toks else final_answer(r.get("content", ""))
         ran = {"tokens": len(toks), "stop": r.get("stop_type")}
         if part == "honesty":
             rows["honesty"].append({k: it.get(k) for k in ("id", "kind", "topic", "question", "premise", "bait", "note")}
-                                   | {"reply": reply, **grade(reply, it | ran), **ran})
+                                   | {"reply": reply, **grade(reply, it | ran), **ran} | honesty_extra(extra, it | ran))
         else:
             rows["controls"].append({"question": it["question"], "answer": it["answer"], "aliases": it.get("aliases", []),
-                                     "reply": reply, "right": answered(reply, it), "refused": refuses(reply), **ran})
+                                     "reply": reply, "right": answered(reply, it), "refused": refuses(reply), **ran} | control_extra(extra, it))
 
     summary = summarize(rows)
     out = {
         "label": a.label, "gguf": a.gguf, "bytes": os.path.getsize(a.gguf), "gb": round(os.path.getsize(a.gguf) / 1e9, 2),
         "probes": os.path.abspath(a.probes), "controls_file": os.path.abspath(a.controls_file) if controls else None,
-        "max_new_tokens": a.max_new_tokens, "control_max_new_tokens": MAX_NEW_TOKENS, "summary": summary,
+        **({"reasoning": "on", "strength": a.strength} if a.reasoning_on else {}),
+        "max_new_tokens": limit, "control_max_new_tokens": control_limit, "summary": summary,
         "aggregate_tokens_per_second": round(generated / max(wall, 1e-9), 1), "parallel": a.parallel,
         "generated_tokens": generated, "score_seconds": round(wall, 1), "server_load_seconds": load_seconds,
         "gpu_mem_used_mib": mem, "server_cmd": " ".join(cmd), "rows": rows,

@@ -4,10 +4,12 @@ reasoning on and no prefill (every earlier knowledge score prefills the final ch
 It reports:
 - how sure the model is of its control tokens: P("=self") after " to" on 60 items (header_probs.py's, which gave 0.21 for
   stage 1 Q4_K_M and 0.99999 for base), then, with the model's own reasoning teacher-forced under the right header on up to 40
-  items, P(<|eom|>) and P(<|eot|>) closing it, P("assistant") after <|start|>, and P("=user") after the second " to";
+  items whose reasoning fits 400 tokens (longer ones are skipped, not cut, or <|eom|> would be read mid-sentence),
+  P(<|eom|>) and P(<|eot|>) closing it, P("assistant") after <|start|>, and P("=user") after the second " to";
 - the 260 reasoning_probes.jsonl items and the 40 reasoning-off ones, as score_reasoning.py runs them with llama-server: same
   prompts, greedy, 2,048 new tokens, <|eom|> not an end token. Splitting and grading are score_reasoning.reply_row, not a copy,
-  and the JSON has its row shape, so `score_reasoning.py --table BASE.json THIS.json` works on it, beside GGUF runs.
+  and the JSON has its row shape, so `score_reasoning.py --table BASE.json THIS.json` works on it, beside GGUF runs. The whole
+  well-formed count matters as much as P("=self"): stage 1 with its first header prefilled was still well formed on only 179/260.
 
 Batches: replies vary from 30 to 2,048 tokens, and a plain generate() would run every batch to its longest. So each batch runs
 in chunks of 32 steps through generate(), keeping its cache, and drops the finished rows between chunks. Greedy output is then
@@ -15,20 +17,26 @@ the same as one long generate(); test_glimmer_labels.py checks that on a tiny Mu
 lengths are also answered one at a time for 48 tokens. If 2 or more differ from the batched answers, padding is changing the
 model's answers and the run goes on one at a time (slow; the time limit will cut it short, and the JSON says so).
 
-Time (an estimate; this has not run on a GPU): one A100 80GB gives at most about 180 tokens a second with an unmerged LoRA (stage
-2: about 5 steps a second at batch 32), and less as batches shrink. Base's 300 replies are 112,812 tokens, stage 1's 76,368, so
-about 10 to 15 minutes of generating plus 3 or 4 of loading and measuring. --minutes (15, counted from the start, 0 for none)
-starts no new chunk after it: replies still going are left out and the JSON says complete: false. Order is the short
-reasoning-off pass, multi-step, skills, then the hard set, so a cut loses the hard set first. That's fine for a pilot; the
-well-formed gate counts all 260, so a final model's run takes --minutes 0, about 20 minutes.
+Unsloth's generate wrapper sets a static cache on every call, which can't take past_key_values or drop rows, so these chunks
+crash under it after 32 steps. UNSLOTH_BFLOAT16_MIXED_PRECISION=1 is what it reads, at call time, to leave the cache to
+generate(); it also runs under BF16 autocast. Anything calling greedy_tokens() with Unsloth's model sets it first.
+
+Time (an estimate; this has not run on a GPU): a full batch takes about 195 ms a step on one A100 80GB with an unmerged LoRA (stage
+2: 2,540 answers at 96 tokens in 25 minutes), and a batch runs until its longest reply. A simulation on stored reply lengths gives
+15 to 29 minutes of generating at base's lengths, plus about 4 of loading and measuring. --minutes (30, counted from the start, 0
+for none) starts no new chunk after it: replies still going are left out and the JSON says complete: false. Order is the short
+reasoning-off pass, multi-step, skills, then the hard set, so a cut loses the hard set first. That's fine for a pilot, whose
+well-formed count is then read on the items it reached, beside base on the same items; a final model's run takes --minutes 0.
 
 Usage (model from KNOWLEDGE_MODEL and KNOWLEDGE_4BIT, as train_glimmer.py; --adapter none is the base model):
   CUDA_VISIBLE_DEVICES is set from --gpu; UNSLOTH_RETURN_LOGITS=1 is set here, for the forward pass that reads the probabilities.
   python check_channels_bf16.py --adapter DIR --label NAME --out FILE.json --tokenizer BASE_DIR --allow-code-exec [--gpu 0]
-      [--strength medium] [--batch 32] [--minutes 15] [--limit N]
-  python check_channels_bf16.py --gates FILE.json --base BASE.json [--vision VISION.json] [--header HEADER.json]
+      [--strength medium] [--batch 32] [--minutes 30] [--limit N]
+  python check_channels_bf16.py --gates FILE.json --base BASE.json [--vision VISION.json] [--header HEADER.json] [--final]
       prints each gate that FILE can answer (a run of this script, or of score_reasoning.py, with header_probs.py's output
-      as --header and score_reasoning.py --vision-only's as --vision), and exits 1 if one fails.
+      as --header and score_reasoning.py --vision-only's as --vision), and exits 1 if one fails. Without --final, a gate it can't
+      answer doesn't fail, so exit 0 only means nothing it measured failed (right for a pilot, wrong for a choice). With --final
+      a gate left NOT MEASURED, or a run with complete: false, also exits 1.
 """
 
 import argparse
@@ -54,10 +62,15 @@ WALK_MAX_TOKENS = 400
 PART_ORDER = {"multistep": 0, "skills": 1, "hard": 2}
 # The final model's gates (the Stage B plan). Probes and honesty come from compare_stage_b.py and score_honesty_bf16.py.
 GATE_P_SELF = 0.99
+GATE_P_ASSISTANT = 0.99
 GATE_WELL_FORMED = 247
 GATE_MULTISTEP_SLACK = 3
+GATE_SKILLS_SLACK = 3
+GATE_LENGTH_SHARE = 0.25  # stage 1 with its first header prefilled: median 139.5 vs base's 223.5, p90 514 vs 802, both about 0.63
 GATE_OFF = 35
 GATE_VISION = 5
+WELL_FORMED = "well formed: to=self, then to=user"
+INFO = "info"  # a gate line that only informs, measured or not
 
 
 def stop_ids(tok):
@@ -125,12 +138,15 @@ def greedy_tokens(model, torch, tok, prompts, max_new_tokens, batch, deadline=fl
             part = indices[start:start + size]
             if time.time() > deadline:
                 return
+            replies = None
             try:
                 with torch.no_grad():
                     replies = run_batch(model, torch, [prompts[i] for i in part], pad, stops, max_new_tokens, chunk, deadline, device)
             except torch.cuda.OutOfMemoryError:
                 if len(part) == 1:
                     raise
+            if replies is None:
+                # Out here, not in the except: until it ends, the exception's frames keep the failed batch's cache alive.
                 torch.cuda.empty_cache()
                 log(f"CHANNELS out of memory at batch {len(part)}; halving")
                 run(part, max(1, len(part) // 2))
@@ -180,15 +196,20 @@ def own_reasoning(raw):
     return body[:min(cuts)] if cuts else None
 
 
-def walk_probs(model, torch, tok, items, reasonings, strength, batch, device="cuda"):
+def walk_probs(model, torch, tok, items, reasonings, strength, batch, device="cuda", most=WALK_ITEMS):
     """Teacher-forced through one correct reply: prompt, right header, the model's own reasoning, then the control tokens. One
-    forward pass per batch, reading the last columns (left padding lines them up)."""
+    forward pass per batch, reading the last columns (left padding lines them up). The first `most` items whose reasoning fits
+    WALK_MAX_TOKENS; a longer one is skipped, since cutting it would read <|eom|> mid-sentence."""
     enc = lambda s: tok(s, add_special_tokens=False)["input_ids"]
     head, tail = enc(" to=self<|message|>"), enc("<|eom|><|start|>assistant to=user<|message|>")
     keep = len(tail) + 1
     names = {"<|eom|>": "p_eom", "<|start|>": "p_start", "assistant": "p_assistant", " to": "p_to_second", "=user": "p_user", "<|message|>": "p_message"}
     eot = tok.convert_tokens_to_ids("<|eot|>")
-    prompts = [prompt_ids(tok, it, "on", strength) + head + enc(text)[:WALK_MAX_TOKENS] + tail for it, text in zip(items, reasonings)]
+    prompts = []
+    for it, text in zip(items, reasonings):
+        body = enc(text)
+        if len(body) <= WALK_MAX_TOKENS and len(prompts) < most:
+            prompts.append(prompt_ids(tok, it, "on", strength) + head + body + tail)
     prompts.sort(key=len)
     out = {v: [] for v in names.values()}
     out["p_eot"] = []
@@ -227,9 +248,11 @@ def free_run_counts(rows):
 
 def main_run(a):
     began = time.time()
-    # Set before torch: answers run on this card alone, and Unsloth's patched forward returns logits only when asked.
+    # Set before torch: answers run on this card alone, Unsloth's patched forward returns logits only when asked, and its generate
+    # wrapper needs this to allow chunks (the docstring above).
     os.environ["CUDA_VISIBLE_DEVICES"] = str(a.gpu)
     os.environ["UNSLOTH_RETURN_LOGITS"] = "1"
+    os.environ["UNSLOTH_BFLOAT16_MIXED_PRECISION"] = "1"
     from measure_known import Answerer
     from transformers import AutoTokenizer
     deadline = began + a.minutes * 60 if a.minutes else float("inf")
@@ -293,12 +316,12 @@ def main_run(a):
         chosen = []
         for (it, mode), r in zip(jobs, rows):
             text = own_reasoning(r["raw"]) if r and mode == "on" and not it.get("turns") else None
-            if text and text.strip() and len(chosen) < WALK_ITEMS:
+            if text and text.strip():
                 chosen.append((it, text))
         t1 = time.time()
         walked = walk_probs(model, torch, tok, [c[0] for c in chosen], [c[1] for c in chosen], a.strength, a.batch // 2 or 1, device)
         channel.update({k: mean(v) for k, v in walked.items()})
-        channel.update({"n_walk": len(chosen), "walk_seconds": round(time.time() - t1, 1)})
+        channel.update({"n_walk": len(walked["p_eom"]), "n_walk_candidates": len(chosen), "walk_seconds": round(time.time() - t1, 1)})
     except Exception as e:  # the replies matter more than this reading; a failure here must not lose them
         channel["walk_error"] = repr(e)[:400]
     print("CHANNELS channel " + json.dumps(channel, ensure_ascii=False), flush=True)
@@ -311,28 +334,48 @@ def main_run(a):
         json.dump(out, f, ensure_ascii=False, indent=1)
     os.replace(a.out + ".tmp", a.out)
     s = out["summary"]
-    print("CHANNELS " + json.dumps({"label": a.label, "complete": out["complete"], "seconds_total": out["seconds_total"], "p_self": channel["p_self"], "well_formed": s["lenient"]["shapes"].get("well formed: to=self, then to=user", 0),
-                                    "n": s["structure"]["n"], "multistep": s["multistep"]["right"], "chat_endpoint": out["chat_endpoint"], "off": s["off40"]["off"]["right"]}), flush=True)
+    print("CHANNELS " + json.dumps({"label": a.label, "complete": out["complete"], "seconds_total": out["seconds_total"], "p_self": channel["p_self"], "well_formed": s["lenient"]["shapes"].get(WELL_FORMED, 0),
+                                    "n": s["structure"]["n"], "p_assistant": channel.get("p_assistant"), "multistep": s["multistep"]["right"], "chat_endpoint": out["chat_endpoint"], "off": s["off40"]["off"]["right"]}), flush=True)
+
+
+def within_share(value, base):
+    return abs(value - base) <= GATE_LENGTH_SHARE * base
 
 
 def gate_lines(run, base, vision=None, header=None):
-    """(name, value, what it needs, True/False/None). None: this file can't answer it."""
+    """(name, value, what it needs, True/False/None/INFO). None: this file can't answer it. A run cut short is read on the items
+    it reached where that's fair, beside base on the same items; --final refuses a cut run anyway."""
     s, b = summarize(run["rows"]), summarize(base["rows"])
-    well = s["lenient"]["shapes"].get("well formed: to=self, then to=user", 0)
+    reached = {(r["id"], r["mode"]) for r in run["rows"]}
+    same = summarize([r for r in base["rows"] if (r["id"], r["mode"]) in reached])
+    well, well_base = s["lenient"]["shapes"].get(WELL_FORMED, 0), same["lenient"]["shapes"].get(WELL_FORMED, 0)
     on = s["structure"]["n"]
-    p_self = (run.get("channel") or {}).get("p_self")
+    channel, base_channel = run.get("channel") or {}, base.get("channel") or {}
+    p_self = channel.get("p_self")
     if p_self is None and header:
         p_self = next((p for t, p in header.get("after_to", []) if t == "=self"), None)
+    # Base's own reading can sit a little under the line; a model isn't asked to beat it.
+    p_assistant, need_assistant = channel.get("p_assistant"), min(GATE_P_ASSISTANT, (base_channel.get("p_assistant") or 1) - 0.01)
+    free = free_run_counts(run["rows"])
+    r, rb = s["structure"], same["structure"]
+    lengths = f"median {r['reasoning_tokens_median']:.0f} vs {rb['reasoning_tokens_median']:.0f}, p90 {r['reasoning_tokens_p90']} vs {rb['reasoning_tokens_p90']}, on {on} items"
     lines = [('P("=self") after " to"', p_self, f"at least {GATE_P_SELF}", None if p_self is None else p_self >= GATE_P_SELF),
-             ("well formed", f"{well}/{on}", f"at least {GATE_WELL_FORMED}/260", None if on != 260 else well >= GATE_WELL_FORMED),
+             ('P("assistant") after <|start|>, teacher-forced', p_assistant, f"at least {round(need_assistant, 6)}", None if p_assistant is None else p_assistant >= need_assistant),
+             ("<|start|> then assistant, in the replies", f"{free['after_start_assistant']}/{free['after_start']}", "no separate gate", INFO),
+             ("well formed", f"{well}/{on}, base {well_base}/{on} on the same items", f"at least {GATE_WELL_FORMED}/260, or that share of a cut run",
+              None if not on else well / on >= GATE_WELL_FORMED / 260),
              ("multi-step, strict", f"{s['multistep']['right']}/{s['multistep']['n']}", f"within {GATE_MULTISTEP_SLACK} of base's {b['multistep']['right']}/{b['multistep']['n']}",
               None if s["multistep"]["n"] != b["multistep"]["n"] else s["multistep"]["right"] >= b["multistep"]["right"] - GATE_MULTISTEP_SLACK),
+             ("skills", f"{s['skills']['all']['right']}/{s['skills']['all']['n']}", f"within {GATE_SKILLS_SLACK} of base's {b['skills']['all']['right']}/{b['skills']['all']['n']} (python needs --allow-code-exec)",
+              None if s["skills"]["all"]["n"] != b["skills"]["all"]["n"] else s["skills"]["all"]["right"] >= b["skills"]["all"]["right"] - GATE_SKILLS_SLACK),
+             ("reasoning length, strict", lengths, f"median and p90 within {GATE_LENGTH_SHARE:.0%} of base's",
+              None if not on else within_share(r["reasoning_tokens_median"], rb["reasoning_tokens_median"]) and within_share(r["reasoning_tokens_p90"], rb["reasoning_tokens_p90"])),
              ("the 40, reasoning off", f"{s['off40']['off']['right']}/{s['off40']['off']['n']}", f"at least {GATE_OFF}/40", None if s["off40"]["off"]["n"] != 40 else s["off40"]["off"]["right"] >= GATE_OFF)]
     chat = chat_counts(run["rows"])
-    lines.append(("multi-step right and chat endpoint would accept (shape only; vision below calls it)", f"{chat['multistep_right']}/{chat['multistep_n']}", "no separate gate", None))
+    lines.append(("multi-step right and chat endpoint would accept (shape only; vision below calls it)", f"{chat['multistep_right']}/{chat['multistep_n']}", "no separate gate", INFO))
     v = (vision or {}).get("vision")
     lines.append(("chat endpoint on vision", f"{v['chat_ok']}/{v['n']}" if v else "not run", f"{GATE_VISION}/5, from score_reasoning.py --vision-only on the GGUF", (v["chat_ok"] == GATE_VISION) if v else None))
-    lines.append(("probes and honesty", "not in this file", "compare_stage_b.py and score_honesty_bf16.py", None))
+    lines.append(("probes and honesty", "not in this file", "compare_stage_b.py and score_honesty_bf16.py", INFO))
     return lines
 
 
@@ -340,11 +383,20 @@ def main_gates(a):
     def load(path):
         with open(path) as f:
             return json.load(f)
-    lines = gate_lines(load(a.gates), load(a.base), load(a.vision) if a.vision else None, load(a.header) if a.header else None)
-    failed = False
+    run = load(a.gates)
+    lines = gate_lines(run, load(a.base), load(a.vision) if a.vision else None, load(a.header) if a.header else None)
+    failed, unmeasured = 0, 0
     for name, value, need, ok in lines:
-        print(f"{'NOT MEASURED' if ok is None else 'PASS' if ok else 'FAIL':12} {name}: {value} (needs {need})")
-        failed |= ok is False
+        print(f"{'INFO' if ok == INFO else 'NOT MEASURED' if ok is None else 'PASS' if ok else 'FAIL':12} {name}: {value} (needs {need})")
+        failed += ok is False
+        unmeasured += ok is None
+    complete = run.get("complete") is True
+    print(f"{'PASS' if complete else 'NOT COMPLETE':12} run: complete {run.get('complete')}, {run.get('n_skipped', 0)} skipped")
+    if a.final:
+        passed = not failed and not unmeasured and complete
+        print(f"final: {'all gates passed' if passed else f'{failed} failed, {unmeasured} not measured, complete {complete}'}")
+        sys.exit(0 if passed else 1)
+    print(f"{failed} failed, {unmeasured} not measured, complete {complete}" + ("; exit 0 only means nothing measured failed" if not failed and (unmeasured or not complete) else ""))
     sys.exit(1 if failed else 0)
 
 
@@ -358,7 +410,7 @@ if __name__ == "__main__":
     ap.add_argument("--strength", default="medium")
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--batch", type=int, default=32)
-    ap.add_argument("--minutes", type=float, default=15)
+    ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--limit", type=int, default=0, help="only the first N items after shuffling, to look at replies first")
     ap.add_argument("--max-new-tokens", type=int, default=2048)
     ap.add_argument("--allow-code-exec", action="store_true")
@@ -366,6 +418,7 @@ if __name__ == "__main__":
     ap.add_argument("--base")
     ap.add_argument("--vision")
     ap.add_argument("--header")
+    ap.add_argument("--final", action="store_true", help="with --gates: a gate not measured, or a run cut short, also exits 1")
     a = ap.parse_args()
     if a.gates:
         if not a.base:

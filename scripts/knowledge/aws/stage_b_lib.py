@@ -7,7 +7,9 @@ its normalized question matches a test or held-out question, or it shares a dist
 set: a capitalized word (four letters or more, not a sentence word) or a pair of neighbouring ones from a test question,
 premise, bait or note that at most MAX_DF of the held-out probe questions use. Invented names appear in none of them, so
 they count; real names as common as "Meta" don't. A real but rare name is dropped too, which costs a few items. Also out: a
-near match, at least NEAR of the content words shared with a test or dev question, like make-stage-b.ts's own guard.
+near match, at least NEAR of the content words shared with a test or dev question or a reasoning probe, like make-stage-b.ts's
+own guard. job/reasoning_probes.jsonl and job/cutoff_questions.jsonl are held out by question, and the reasoning probes by near
+match too; they're tests, but their names (Alice, Python) say nothing about a fact.
 
 The dev set stays out by whole record, as make-stage-b.ts keeps it: nothing from another passage of a dev record trains.
 
@@ -31,7 +33,9 @@ from train_glimmer import normalize  # noqa: E402
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 D = os.path.join(ROOT, ".data", "knowledge", "dataset")
 TEST = os.path.join(JOB, "honesty_probes.jsonl")
-HELD_OUT = [os.path.join(D, "eval-probes.jsonl"), os.path.join(D, "stage2-eval-probes.jsonl"), os.path.join(HERE, "forget.jsonl")]
+REASONING_PROBES = os.path.join(JOB, "reasoning_probes.jsonl")
+CUTOFF_QUESTIONS = os.path.join(JOB, "cutoff_questions.jsonl")
+HELD_OUT = [os.path.join(D, "eval-probes.jsonl"), os.path.join(D, "stage2-eval-probes.jsonl"), os.path.join(HERE, "forget.jsonl"), REASONING_PROBES, CUTOFF_QUESTIONS]
 PROBES = os.path.join(D, "train-stage2-probes.jsonl")
 NAMED_CONTROLS = os.path.join(D, "stage-b-named-controls.jsonl")
 MAX_DF = 25
@@ -151,6 +155,8 @@ class Screen:
                 self.held.add(qkey(p["question"]))
                 if p.get("passageId"):
                     self.passages.add(p["passageId"])
+                if path == REASONING_PROBES:
+                    self.add_near(p["question"])
         self.test = set()
         self.dev_passages = set()
         candidates = set()
@@ -159,10 +165,7 @@ class Screen:
             for p in read_jsonl(path):
                 self.test_items += 1
                 self.test.add(qkey(p["question"]))
-                mine = content_words(p["question"])
-                self.near_sets.append(mine)
-                for w in mine:
-                    self.near_index[w].append(len(self.near_sets) - 1)
+                self.add_near(p["question"])
                 if ":" in str(p.get("source") or ""):
                     # make-stage-b.ts names a dev item's passage: nothing else from its record goes into training.
                     self.dev_passages.add(p["source"].split(":", 1)[1])
@@ -177,6 +180,12 @@ class Screen:
         self.names = {g for g, n in df.items() if n <= max_df}
         self.passages |= self.dev_passages
         self.dev_records = {record_of(p) for p in self.dev_passages}
+
+    def add_near(self, question):
+        mine = content_words(question)
+        self.near_sets.append(mine)
+        for w in mine:
+            self.near_index[w].append(len(self.near_sets) - 1)
 
     def in_dev(self, passage):
         return passage in self.dev_passages or record_of(passage) in self.dev_records
@@ -193,7 +202,7 @@ class Screen:
         if key in self.held:
             return "held-out question"
         if self.near(question):
-            return "near match with a test or dev question"
+            return "near match with a test or dev question or reasoning probe"
         if grams(question) & self.names or (text and grams(text) & self.names):
             return "shares a distinctive test or dev name"
         return None
