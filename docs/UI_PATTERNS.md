@@ -157,6 +157,6 @@ Both themes. Dark mode keeps the same structure: the sidebar on `--bg`, the main
 Below 760 px:
 
 - The sidebar becomes a top bar with the brand and a menu button that opens the nav as a sheet.
-- The playground's right panel stacks under the conversation as a collapsible "Build details" section.
+- The build room's steps panel covers the conversation from the right below 1100 px, and is a full-screen sheet on phones (docs/UI_MUSE_APP.md).
 - The composer stays pinned to the bottom with a 16 px side gutter.
 - No horizontal page scroll. Tables scroll inside their own rounded container.

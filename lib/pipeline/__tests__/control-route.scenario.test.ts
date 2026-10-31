@@ -719,8 +719,14 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.match(html, /<form[^>]*aria-label="Steer Muse Code"/);
       assert.match(html, /<label[^>]*>A note for Muse Code<\/label>/);
       assert.match(html, /<textarea[^>]*maxLength="4000"/);
-      for (const label of ["Send now", "After this step", "Stop"]) assert.ok(html.includes(`${label}<`), label);
-      assert.match(html, /<button type="submit"[^>]*>.*Send now/);
+      // With an empty box, send has turned into stop.
+      assert.match(html, /<button type="button" class="composer-pill">After this step<\/button>/);
+      assert.match(html, /<button type="button" class="send-btn" aria-label="Stop"/);
+      assert.doesNotMatch(html, /type="submit"/);
+      // With a note written, Stop stays one press away beside Send.
+      const noop = () => {};
+      const typed = renderToString(createElement(steer.SteerActions, { hasNote: true, busy: null, disabled: false, onQueue: noop, onStop: noop }));
+      assert.match(typed, /composer-pill.*aria-label="Stop".*<button type="submit" class="send-btn" aria-label="Send now"/);
       assert.ok(!html.includes(EM_DASH), "no em dashes");
     });
 
@@ -795,7 +801,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       // A finished build offers the change composer as before, whether or not the viewer could steer.
       for (const canSteer of [true, false, undefined]) {
         const html = room("live", canSteer);
-        assert.match(html, /<div id="refine">/);
+        assert.match(html, /<div id="refine"/);
         assert.doesNotMatch(html, box);
       }
     });

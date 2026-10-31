@@ -12,6 +12,7 @@ export function Menu({
   label,
   icon,
   iconSize = 18,
+  iconStrokeWidth,
   children,
   align = "end",
   disabled,
@@ -22,6 +23,7 @@ export function Menu({
   label: string;
   icon?: IconName;
   iconSize?: number;
+  iconStrokeWidth?: number;
   children: ReactNode;
   align?: "start" | "end";
   disabled?: boolean;
@@ -67,7 +69,7 @@ export function Menu({
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
       >
-        {icon ? <Icon name={icon} size={iconSize} /> : null}
+        {icon ? <Icon name={icon} size={iconSize} {...(iconStrokeWidth ? { strokeWidth: iconStrokeWidth } : {})} /> : null}
         {text ? <span>{text}</span> : null}
         {text ? <Icon name="chevronDown" size={16} className="btn-chevron" /> : null}
       </button>

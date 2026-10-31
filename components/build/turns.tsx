@@ -1,57 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
-import { CopyField } from "@/components/CopyButton";
-import { Icon, type IconName } from "@/components/icons";
+import { MediaCard, UserBubble, type BubbleAttachment } from "@/components/chat";
+import { Icon } from "@/components/icons";
 import { KIND_ICON } from "@/components/composer/AttachmentChip";
-import { MarkdownText } from "@/components/markdown/MarkdownText";
-import { ExternalLink, ModelChips } from "@/components/ui";
+import { ExternalLink } from "@/components/ui";
 import type { InspirationView, RebuildRef } from "@/components/view-types";
-import { groupLog, type LogGroup, type Note, type Segment, type SessionModel, type WatcherRun } from "@/components/build/derive";
-import {
-  GoalCard,
-  ObserverNotes,
-  QuestionCard,
-  StatusChip,
-  SteerNote,
-  Thinking,
-  TodoList,
-  WorkflowCard,
-} from "@/components/build/session";
+import { groupLog, type LogGroup, type Segment } from "@/components/build/derive";
 import { splitBuildNote } from "@/lib/docs/build-note";
 import { FIT_LABEL, compact, duration, modelLabel, plural, truncate, usd } from "@/lib/format";
-import type { Brief, MuseLogLine, Reference } from "@/lib/types";
+import type { Brief, Reference } from "@/lib/types";
 
 /** The building blocks of the build room's conversation column. */
-
-export function Turn({
-  icon,
-  title,
-  meta,
-  children,
-  tone,
-}: {
-  icon: IconName;
-  title: string;
-  meta?: Array<string | null | undefined | false>;
-  children: ReactNode;
-  tone?: "ok" | "bad" | "warn";
-}) {
-  const metaText = (meta ?? []).filter(Boolean).join(" · ");
-  return (
-    <li className={`turn${tone ? ` turn-${tone}` : ""}`}>
-      <h2 className="turn-head">
-        <span className="turn-icon" aria-hidden>
-          <Icon name={icon} size={18} />
-        </span>
-        {title}
-      </h2>
-      <div className="turn-body">{children}</div>
-      {metaText ? <p className="turn-meta">{metaText}</p> : null}
-    </li>
-  );
-}
 
 export function segmentMeta(seg: Segment, extra: Array<string | null | false> = []): string[] {
   const ms = Date.parse(seg.endAt) - Date.parse(seg.startAt);
@@ -62,38 +22,12 @@ export function segmentMeta(seg: Segment, extra: Array<string | null | false> = 
   ].filter((s): s is string => Boolean(s));
 }
 
-export function Notes({ notes }: { notes: Note[] }) {
-  if (!notes.length) return null;
-  return (
-    <ul className="notes">
-      {notes.map((n) => (
-        <li key={n.id} className={`note note-${n.kind}`}>
-          <Icon name={n.kind === "error" ? "alert" : "info"} size={16} />
-          <span>{n.text}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 // ---------- The user's muse ----------
 
-function RefThumb({ r, index }: { r: Reference; index: number }) {
-  if (r.kind === "image") {
-    return (
-      <a className="ref-thumb" href={r.url} target="_blank" rel="noopener noreferrer">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={r.url} alt={`Inspo ${index + 1}: ${r.fileName}`} loading="lazy" />
-      </a>
-    );
-  }
-  return (
-    <a className="ref-chip" href={r.url} target="_blank" rel="noopener noreferrer">
-      <Icon name={KIND_ICON[r.kind]} size={18} />
-      <span>{truncate(r.fileName, 32)}</span>
-      <span className="sr-only"> (opens in a new tab)</span>
-    </a>
-  );
+/** A reference as a thumbnail in the person's bubble: the picture, or its kind's icon with its name for screen readers. */
+export function referenceAttachment(r: Reference, index: number): BubbleAttachment {
+  if (r.kind === "image") return { src: r.url, alt: `Inspo ${index + 1}: ${r.fileName}`, href: r.url };
+  return { alt: truncate(r.fileName, 32), icon: KIND_ICON[r.kind], href: r.url };
 }
 
 export function UserTurn({
@@ -121,14 +55,11 @@ export function UserTurn({
           {rebuild.fit ? <span className="pill pill-neutral">{FIT_LABEL[rebuild.fit]}</span> : null}
         </p>
       ) : null}
-      {refs.length ? (
-        <div className="ref-row">
-          {refs.map((r, i) => (
-            <RefThumb key={`${r.url}-${i}`} r={r} index={i} />
-          ))}
-        </div>
-      ) : null}
-      {text ? <p className="bubble">{text}</p> : refs.length ? null : <p className="bubble muted">No note</p>}
+      {text || refs.length ? (
+        <UserBubble text={text} attachments={refs.map(referenceAttachment)} />
+      ) : (
+        <UserBubble text={<span className="muted">No note</span>} />
+      )}
       {context ? (
         <details className="bubble-context">
           <summary>From the docs page</summary>
@@ -266,62 +197,8 @@ export function BriefBody({ brief }: { brief: Brief }) {
 
 // ---------- Muse Code log ----------
 
-const RECENT_LINES = 8;
-
-type ActivityItem = Extract<LogGroup, { type: "activity" }>["items"][number];
-
-function actIcon(it: ActivityItem): IconName {
-  if (it.type === "edit") return "file";
-  if (it.type === "error" || ("ok" in it && it.ok === false)) return "alert";
-  if (it.type === "tool") return it.running ? "more" : "check";
-  if (it.type === "subagent") return "user";
-  if (it.type === "hook") return "code";
-  if (it.type === "compaction") return "layers";
-  return "info";
-}
-
-function ActivityList({ items, live }: { items: ActivityItem[]; live: boolean }) {
-  const [showAll, setShowAll] = useState(false);
-  const hidden = live && !showAll ? Math.max(0, items.length - RECENT_LINES) : 0;
-  const visible = hidden ? items.slice(-RECENT_LINES) : items;
-  return (
-    <div className="activity">
-      {hidden ? (
-        <button type="button" className="link-btn" onClick={() => setShowAll(true)}>
-          Show {plural(hidden, "earlier step")}
-        </button>
-      ) : null}
-      <ul className="activity-list">
-        {visible.map((it, i) => (
-          <li
-            key={i}
-            className={`act act-${it.type}${"ok" in it && it.ok === false ? " act-failed" : ""}${it.type === "tool" && it.running ? " act-running" : ""}`}
-          >
-            <span className="act-icon" aria-hidden>
-              <Icon name={actIcon(it)} size={14} />
-            </span>
-            <span className="act-text">
-              {it.type === "edit" ? (
-                <>
-                  Edited {plural(it.files, "file")} <span className="plus">+{it.added}</span>{" "}
-                  <span className="minus">−{it.removed}</span>
-                  {it.text && !/^edited/i.test(it.text) ? <span className="muted"> {it.text}</span> : null}
-                </>
-              ) : (
-                it.text
-              )}
-              {it.type === "tool" && it.running ? <span className="sr-only"> (running)</span> : null}
-            </span>
-            {it.type === "tool" && it.tool ? <code className="act-name">{it.tool}</code> : null}
-            {it.type === "subagent" ? <StatusChip status={it.status} /> : null}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function groupSummary(items: Extract<LogGroup, { type: "activity" }>["items"]): string {
+/** A long run of activity in a few words, for the row that folds it. */
+export function groupSummary(items: Extract<LogGroup, { type: "activity" }>["items"]): string {
   const tools = items.filter((i) => i.type === "tool").length;
   const edits = items.filter((i) => i.type === "edit") as Array<{ files: number; added: number; removed: number }>;
   const parts = [tools ? plural(tools, "step") : null];
@@ -334,94 +211,13 @@ function groupSummary(items: Extract<LogGroup, { type: "activity" }>["items"]): 
   return parts.filter(Boolean).join(", ") || plural(items.length, "line");
 }
 
-/**
- * One Muse Code round's log. On the session bridge, `session` adds the goal and the todo list above the log, observer
- * runs at its foot, and any open question below it, which the owner answers through the build's control route.
- */
-export function MuseLog({
-  lines,
-  live,
-  session = null,
-  buildId,
-  canAnswer = false,
-}: {
-  lines: MuseLogLine[];
-  live: boolean;
-  session?: SessionModel | null;
-  buildId?: string;
-  canAnswer?: boolean;
-}) {
-  return (
-    <>
-      {session?.goal ? <GoalCard goal={session.goal} /> : null}
-      {session?.todos.length ? <TodoList todos={session.todos} /> : null}
-      <RoundLog lines={lines} live={live} observers={session?.observers ?? null} />
-      {session?.questions.map((q) => (
-        <QuestionCard key={q.itemId} question={q} buildId={buildId} canAnswer={canAnswer} live={live} />
-      ))}
-    </>
-  );
-}
-
-function RoundLog({ lines, live, observers }: { lines: MuseLogLine[]; live: boolean; observers: WatcherRun[] | null }) {
-  const { groups, summary } = groupLog(lines);
-  return (
-    <div
-      className="muse"
-      role={live ? "log" : undefined}
-      aria-relevant={live ? "additions" : undefined}
-      aria-label={live ? "Muse Code activity" : undefined}
-    >
-      {groups.map((g, i) => {
-        if (g.type === "say")
-          return (
-            <MarkdownText key={i} className="say" text={g.text.trim()} />
-          );
-        if (g.type === "done")
-          return (
-            <MarkdownText key={i} className="say say-final" text={g.text.trim()} />
-          );
-        if (g.type === "thinking") return <Thinking key={i} text={g.text} />;
-        if (g.type === "steer") return <SteerNote key={i} group={g} />;
-        if (g.type === "workflow") return <WorkflowCard key={i} group={g} />;
-        const isLast = i === groups.length - 1 || groups.slice(i + 1).every((x) => x.type !== "activity");
-        if (live && isLast) return <ActivityList key={i} items={g.items} live />;
-        if (g.items.length <= 3) return <ActivityList key={i} items={g.items} live={false} />;
-        return (
-          <details key={i} className="activity-fold">
-            <summary>{groupSummary(g.items)}</summary>
-            <ActivityList items={g.items} live={false} />
-          </details>
-        );
-      })}
-      {!groups.length ? (
-        <p className="muted">{live ? "Muse Code is reading the brief." : "No activity was logged."}</p>
-      ) : null}
-      {observers ? <ObserverNotes observers={observers} /> : null}
-      {summary.edits || summary.tools ? (
-        <p className="muse-summary muted">
-          {summary.tools ? plural(summary.tools, "tool call") : null}
-          {summary.tools && summary.edits ? " · " : null}
-          {summary.edits ? (
-            <>
-              Edited {plural(summary.files, "file")} <span className="plus">+{summary.added}</span>{" "}
-              <span className="minus">−{summary.removed}</span>
-            </>
-          ) : null}
-          {summary.failedTools ? ` · ${summary.failedTools} failed` : ""}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 export function museUsageText(seg: Extract<Segment, { type: "muse" }>): string | null {
   return groupLog(seg.lines).summary.usageText;
 }
 
 // ---------- Checks ----------
 
-const VERIFY_LABEL: Record<string, string> = {
+export const VERIFY_LABEL: Record<string, string> = {
   typecheck: "Typecheck",
   build: "Production build",
   start: "Server starts",
@@ -430,6 +226,7 @@ const VERIFY_LABEL: Record<string, string> = {
   manifest: "Manifest",
 };
 
+/** What the checks ran and what the judge said. Their screenshots are the step's thumbnails (roomSteps). */
 export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check" }>; live: boolean }) {
   const { verify, judge } = seg;
   return (
@@ -458,21 +255,6 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
               <summary>Failing output</summary>
               <pre className="pre">{verify.summary.failureOutput}</pre>
             </details>
-          ) : null}
-          {verify.screenshots.length ? (
-            <ul className="shots" aria-label="Screenshots from the smoke test">
-              {verify.screenshots.map((s, i) => (
-                <li key={s.url}>
-                  <figure>
-                    <a href={s.url} target="_blank" rel="noopener noreferrer">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={s.url} alt={s.caption || `Screenshot ${i + 1}`} loading="lazy" />
-                    </a>
-                    {s.caption ? <figcaption>{s.caption}</figcaption> : null}
-                  </figure>
-                </li>
-              ))}
-            </ul>
           ) : null}
         </>
       ) : live ? (
@@ -514,28 +296,10 @@ export function CheckBody({ seg, live }: { seg: Extract<Segment, { type: "check"
 
 // ---------- Ship and outcomes ----------
 
-export function ShipBody({
-  status,
-  liveUrl,
-  slug,
-  connectorUrl,
-  models,
-  demoUrl,
-  demoPosterUrl = null,
-}: {
-  status: "live" | "partial";
-  liveUrl: string | null;
-  slug: string | null;
-  connectorUrl: string | null;
-  models: string[];
-  demoUrl: string | null;
-  demoPosterUrl?: string | null;
-}) {
+export function ShipBody({ status, liveUrl, slug }: { status: "live" | "partial"; liveUrl: string | null; slug: string | null }) {
   return (
     <div className="ship">
-      <p className="lead">
-        <strong>{status === "live" ? "It's live." : "Shipped as partial."}</strong>
-      </p>
+      <p>{status === "live" ? "It's live." : "Shipped as partial."}</p>
       {status === "partial" ? (
         <p className="muted">
           The main page works, and some checks still fail for a documented reason. The limits are on the product page.
@@ -547,27 +311,6 @@ export function ShipBody({
             {liveUrl.replace(/^https?:\/\//, "")}
           </ExternalLink>
         </p>
-      ) : null}
-      <ModelChips models={models} />
-      {connectorUrl ? (
-        <div className="field-block">
-          <span className="field-label" id="ship-connector">
-            Muse app connector
-          </span>
-          <CopyField value={connectorUrl} label="Connector URL" />
-          <p className="muted small">Add it in the Muse app as a custom connector to use this product from chat.</p>
-        </div>
-      ) : null}
-      {demoUrl ? (
-        <video
-          className="demo"
-          src={demoUrl}
-          poster={demoPosterUrl ?? undefined}
-          controls
-          preload="metadata"
-          playsInline
-          aria-label="Recorded demo"
-        />
       ) : null}
       <div className="row-actions">
         {slug ? (
@@ -582,6 +325,57 @@ export function ShipBody({
         </Link>
       </div>
     </div>
+  );
+}
+
+/** What the build made, once it's done: the demo video, else its poster, else the checks' last screenshot. */
+export function BuildOutput({
+  name,
+  demoUrl,
+  demoPosterUrl = null,
+  screenshotUrl = null,
+}: {
+  name: string;
+  demoUrl: string | null;
+  demoPosterUrl?: string | null;
+  screenshotUrl?: string | null;
+}) {
+  if (demoUrl) {
+    return (
+      <MediaCard label="Recorded demo" ratio="16 / 10">
+        <video src={demoUrl} poster={demoPosterUrl ?? undefined} controls preload="metadata" playsInline aria-label="Recorded demo" />
+      </MediaCard>
+    );
+  }
+  const still = demoPosterUrl ?? screenshotUrl;
+  if (!still) return null;
+  return (
+    <MediaCard label={demoPosterUrl ? "From the demo" : "From the checks"} ratio="16 / 10">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={still} alt={`What ${name} looks like`} loading="lazy" />
+    </MediaCard>
+  );
+}
+
+/** The running product, in the conversation while the build works. */
+export function LivePreview({ url, name }: { url: string; name: string }) {
+  return (
+    <>
+      <MediaCard label="Live preview" ratio="16 / 10">
+        <iframe
+          src={url}
+          title={`Live preview of ${name}`}
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+          referrerPolicy="no-referrer"
+        />
+      </MediaCard>
+      <a className="room-media-link" href={url} target="_blank" rel="noopener noreferrer">
+        Open preview
+        <Icon name="external" size={14} className="ext-icon" />
+        <span className="sr-only"> (opens in a new tab)</span>
+      </a>
+    </>
   );
 }
 

@@ -2,37 +2,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FloatButton, ScrollButton, ShowThinking, SourceList, StepList, StepsPanel, TitleChip, WorkingStep, type StepsTab } from "@/components/chat";
 import { Composer } from "@/components/composer/Composer";
-import { CopyButton } from "@/components/CopyButton";
+import { copyText } from "@/components/CopyButton";
 import { Icon } from "@/components/icons";
 import { Menu } from "@/components/Menu";
+import { MarkdownText } from "@/components/markdown/MarkdownText";
 import type { BuildSummary, BuildView, InspirationView, ProductView, RebuildRef } from "@/components/view-types";
-import { BuildPanel } from "@/components/build/BuildPanel";
-import { deriveRoom, railStates, refineSpot, type Segment } from "@/components/build/derive";
+import { BuildDetails } from "@/components/build/BuildDetails";
+import { deriveRoom, railStates, refineSpot } from "@/components/build/derive";
+import { QuestionCard, SteerNote } from "@/components/build/session";
+import { conversationItems, currentStep, finalWords, roomSources, roomSteps, shareLink, stepsEnd, type ConvoItem } from "@/components/build/steps";
 import { SteerBox } from "@/components/build/SteerBox";
-import {
-  BriefBody,
-  CheckBody,
-  MuseLog,
-  Notes,
-  ShipBody,
-  Turn,
-  UserTurn,
-  museUsageText,
-  segmentMeta,
-  tokensText,
-} from "@/components/build/turns";
-import {
-  duration,
-  elapsedMs,
-  isTerminalStatus,
-  parseManifest,
-  relativeTime,
-  statusLabel,
-  truncate,
-  usd,
-} from "@/lib/format";
-import type { BuildEvent, BuildStatus } from "@/lib/types";
+import { BriefBody, BuildOutput, LivePreview, ShipBody, UserTurn, tokensText } from "@/components/build/turns";
+import { duration, elapsedMs, isTerminalStatus, parseManifest, statusLabel, usd } from "@/lib/format";
+import type { BuildEvent } from "@/lib/types";
 
 export interface BuildRoomProps {
   build: BuildView;
@@ -53,17 +37,12 @@ export interface BuildRoomProps {
   maxFixRounds: number;
 }
 
-const WORKING: Partial<Record<BuildStatus, string>> = {
-  queued: "Waiting to start",
-  briefing: "Muse Wonder is reading your inspo and writing the brief",
-  provisioning: "Setting up a sandbox for this product",
-  building: "Muse Code is building",
-  previewing: "Starting the live preview",
-  verifying: "Checking it",
-  fixing: "Muse Code is fixing what failed",
-  recording: "Recording the demo",
-  deploying: "Deploying it to its own link",
-};
+/** Below this the steps panel covers the conversation, so it starts closed (components/chat/StepsPanel.tsx). */
+const PANEL_COVERS = "(max-width: 1099.98px)";
+/** The steps panel, for the button that opens it. */
+const PANEL_ID = "room-steps-panel";
+/** Within this of its end, the steps list counts as at its end, and follows the newest line. */
+const PANEL_PINNED_PX = 80;
 
 /** Copies known fields from an API reply onto a view, ignoring anything missing or mistyped. */
 function mergeKnown<T extends object>(prev: T, next: unknown): T {
@@ -215,6 +194,62 @@ export function BuildRoom(props: BuildRoomProps) {
     wasTerminal.current = room.terminal;
   }, [room.terminal, refresh]);
 
+  // The steps panel opens beside a running build, where it has the room, and from "Show thinking" otherwise. The server
+  // can't know the window's width: until this effect has run, the stylesheet hides an open panel that would cover the
+  // conversation (.room[data-settled="false"]), so a phone never sees it flash.
+  const [panelOpen, setPanelOpen] = useState(!isTerminalStatus(props.build.status));
+  const [settled, setSettled] = useState(false);
+  const [panelTab, setPanelTab] = useState<StepsTab>("steps");
+  const [focusStep, setFocusStep] = useState<string | null>(null);
+  useEffect(() => {
+    if (window.matchMedia?.(PANEL_COVERS).matches) setPanelOpen(false);
+    setSettled(true);
+  }, []);
+  const closePanel = useCallback(() => setPanelOpen(false), []);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Whether the steps list follows the newest line. A panel opening beside a running build starts at the end.
+  const panelPinned = useRef(true);
+  const showSteps = (step: string | null = null, follow = false) => {
+    panelPinned.current = follow;
+    setPanelTab("steps");
+    setPanelOpen(true);
+    setFocusStep(step);
+  };
+  useEffect(() => {
+    if (!focusStep || !panelOpen) return;
+    const row = panelRef.current?.querySelector(`[data-step="${CSS.escape(focusStep)}"]`);
+    const body = row?.closest<HTMLElement>(".chat-panel-body");
+    if (row && body) body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - 8;
+    setFocusStep(null);
+  }, [focusStep, panelOpen]);
+  // A reader who scrolls up, or opens a fold that pushes the end away, stays where they are until they're back at the end.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onChange = () => {
+      const body = panel.querySelector<HTMLElement>(".chat-panel-body:not([hidden])");
+      if (!body?.querySelector('[role="log"]')) return;
+      panelPinned.current = body.scrollHeight - body.scrollTop - body.clientHeight < PANEL_PINNED_PX;
+    };
+    // Neither event bubbles, so catch them on the way down.
+    panel.addEventListener("scroll", onChange, true);
+    panel.addEventListener("toggle", onChange, true);
+    return () => {
+      panel.removeEventListener("scroll", onChange, true);
+      panel.removeEventListener("toggle", onChange, true);
+    };
+  }, []);
+  useEffect(() => {
+    if (!panelOpen || panelTab !== "steps" || room.terminal || !panelPinned.current) return;
+    const body = panelRef.current?.querySelector<HTMLElement>(".chat-panel-body:not([hidden])");
+    if (body) body.scrollTop = body.scrollHeight;
+  }, [events.length, panelOpen, panelTab, room.terminal]);
+
+  const items = useMemo(() => conversationItems(room), [room]);
+  // An open question comes last, under the preview, so it sits beside the composer and not above a tall frame.
+  const liveQuestions = items.filter((i) => i.type === "question" && i.live);
+  const answering = Boolean(props.canSteer) && liveQuestions.length > 0;
+
   // Keep the newest turn in view while the viewer is at the bottom; otherwise offer a jump button.
   const end = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -227,16 +262,22 @@ export function BuildRoom(props: BuildRoomProps) {
     io.observe(el);
     return () => io.disconnect();
   }, []);
-  const mounted = useRef(false);
+  const seenEvents = useRef(events.length);
   useEffect(() => {
-    if (!mounted.current) {
-      mounted.current = true;
-      return;
-    }
-    if (atBottom && !room.terminal) end.current?.scrollIntoView({ block: "end", behavior: smooth() });
+    if (seenEvents.current === events.length) return;
+    seenEvents.current = events.length;
+    if (atBottom && !room.terminal && !answering) end.current?.scrollIntoView({ block: "end", behavior: smooth() });
     // Only react to new events, not to scroll position changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [events.length]);
+  // A new question comes into view once. After that the page holds still, so the card doesn't move while it's answered.
+  const convo = useRef<HTMLOListElement>(null);
+  const newestQuestion = answering ? liveQuestions[liveQuestions.length - 1]?.key : undefined;
+  useEffect(() => {
+    if (!newestQuestion) return;
+    const cards = convo.current?.querySelectorAll(".question-card");
+    cards?.[cards.length - 1]?.scrollIntoView({ block: "start", behavior: smooth() });
+  }, [newestQuestion]);
 
   const brief = room.brief;
   const name = product?.name ?? brief?.name ?? (build.kind === "refine" ? "Change" : "New build");
@@ -264,74 +305,61 @@ export function BuildRoom(props: BuildRoomProps) {
   // While Muse Code works, its owner gets the steer box where the refine composer shows once the build ends.
   const steering = Boolean(props.canSteer) && !room.terminal && (room.status === "building" || room.status === "fixing");
 
-  // Only the newest turn can be live, and only while the build is in the matching phase. During "fixing", round 0
-  // is finished even before the fix round logs its first line.
-  const lastSeg = room.segments[room.segments.length - 1];
-  const activeKey =
-    !room.terminal && lastSeg
-      ? (lastSeg.type === "muse" && (room.status === "building" || room.status === "fixing")) ||
-        (lastSeg.type === "check" && room.status === "verifying")
-        ? lastSeg.key
-        : undefined
-      : undefined;
+  const answer = useMemo(() => finalWords(room), [room]);
+  const current = useMemo(() => currentStep(room), [room]);
+  const panelList = useMemo(() => {
+    if (!panelOpen) return null;
+    return <StepList steps={roomSteps({ room, rail, isRefine: isRefineBuild })} end={stepsEnd(room)} />;
+  }, [panelOpen, room, rail, isRefineBuild]);
+  const panelSources = useMemo(() => {
+    if (!panelOpen) return null;
+    return <SourceList sources={roomSources({ room, inspiration: props.inspiration, showReferences: showRefs, models })} empty="Nothing yet. What the build reads shows here." />;
+    // `models` follows room and product, and is made new each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelOpen, room, props.inspiration, showRefs, product]);
+  const lastCheck = [...room.segments].reverse().find((s) => s.type === "check" && s.verify?.screenshots.length);
+  const lastShot = lastCheck?.type === "check" ? lastCheck.verify?.screenshots.at(-1)?.url : undefined;
 
   return (
-    <div className="room">
+    <div className="room chat-split" data-settled={settled}>
       <div className="room-main">
-        <div className="toolbar" aria-label="Build actions">
-          <Link className="btn" href="/">
-            <Icon name="plus" />
-            <span>New muse</span>
-          </Link>
-          {openUrl ? (
-            <a className="btn" href={openUrl} target="_blank" rel="noopener noreferrer">
-              <Icon name="monitor" />
-              <span>Open preview</span>
-              <span className="sr-only"> (opens in a new tab)</span>
-            </a>
-          ) : (
-            <button type="button" className="btn" disabled title="The preview appears once the dev server starts">
-              <Icon name="monitor" />
-              <span>Open preview</span>
-            </button>
-          )}
-          {connectorUrl ? (
-            <CopyButton value={connectorUrl} label="Copy the Muse app connector URL" text="Get connector" icon="plug" />
-          ) : (
-            <button type="button" className="btn" disabled title="The connector is ready once a product exists">
-              <Icon name="plug" />
-              <span>Get connector</span>
-            </button>
-          )}
-          <Menu text="History" label="This product's builds" icon="history" disabled={props.history.length < 1}>
-            <ul className="menu-list">
-              {props.history.map((h) => (
-                <li key={h.id}>
-                  <Link className="menu-item" href={`/b/${h.id}`} aria-current={h.id === build.id ? "page" : undefined}>
-                    <span className={`pill-dot dot-${h.status}`} aria-hidden />
-                    <span className="menu-item-text">
-                      <span>{h.kind === "refine" ? truncate(h.message ?? "Change", 40) : "First build"}</span>
-                      <span className="muted small">
-                        {statusLabel(h.status)} · {relativeTime(h.startedAt, now)}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Menu>
+        <div className="room-top">
+          <TitleChip as="h1">{name}</TitleChip>
+          <div className="room-top-actions">
+            <ShareButton url={shareLink({ liveUrl, origin: props.origin, buildId: build.id })} />
+            <Menu label="Build details" icon="more" iconSize={20} iconStrokeWidth={3} buttonClassName="chat-float">
+              <BuildDetails
+                name={name}
+                room={room}
+                rail={rail}
+                models={models}
+                buildModel={build.buildModel}
+                sessionId={build.museSessionId}
+                maxFixRounds={props.maxFixRounds}
+                elapsedMs={elapsed}
+                tokens={props.tokens}
+                liveUrl={liveUrl}
+                demoUrl={demoUrl}
+                productSlug={slug}
+                connectorUrl={connectorUrl}
+                openUrl={openUrl}
+                buildId={build.id}
+                history={props.history}
+                now={now}
+              />
+            </Menu>
+          </div>
         </div>
-
-        <p className="mobile-status" aria-hidden>
-          <span className={`pill-dot dot-${room.status}`} />
-          {statusLabel(room.status)} · {duration(elapsed)} · {usd(room.costUsd)} est.
-        </p>
 
         <p className="sr-only" aria-live="polite">
           {`Status: ${statusLabel(room.status)}.`}
         </p>
+        {/* The panel's log announces each line while it's open. */}
+        <p className="sr-only" aria-live="polite">
+          {current && !panelOpen ? (current.description ?? current.title) : ""}
+        </p>
 
-        <ol className="convo" aria-label="Build conversation">
+        <ol ref={convo} className="convo" aria-label="Build conversation">
           <UserTurn
             inspiration={props.inspiration}
             message={isRefineBuild ? build.message : null}
@@ -339,97 +367,84 @@ export function BuildRoom(props: BuildRoomProps) {
             showReferences={showRefs}
           />
 
-          {room.preNotes.length ? (
-            <li className="turn turn-plain">
-              <Notes notes={room.preNotes} />
+          {items
+            .filter((item) => !liveQuestions.includes(item))
+            .map((item) => (
+              <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+            ))}
+
+          {current ? (
+            <li className="room-working">
+              <WorkingStep title={current.title} description={current.description}>
+                {current.children.map((c) => (
+                  <WorkingStep key={c.id} nested title={c.title} />
+                ))}
+              </WorkingStep>
+              <p className="room-working-meta">
+                {duration(elapsed)} · {usd(room.costUsd)} est.
+                {conn === "reconnecting" ? " · reconnecting to the live log" : ""}
+                <StepsToggle open={panelOpen} onClick={() => (panelOpen ? closePanel() : showSteps(null, true))} />
+              </p>
             </li>
           ) : null}
 
-          {room.segments.map((seg) => (
-            <SegmentTurn
-              key={seg.key}
-              seg={seg}
-              live={seg.key === activeKey}
-              isRefine={isRefineBuild}
-              status={room.status}
-              buildId={build.id}
-              canAnswer={Boolean(props.canSteer)}
-            />
-          ))}
-
-          {!room.terminal ? (
-            <li className="turn turn-working" aria-hidden>
-              <span className="working-dot" />
-              <span>{WORKING[room.status] ?? statusLabel(room.status)}</span>
-              <span className="muted">{duration(elapsed)}</span>
-              {conn === "reconnecting" ? <span className="muted">· reconnecting to the live log</span> : null}
+          {room.previewUrl && !room.terminal ? (
+            <li className="room-output">
+              <LivePreview url={room.previewUrl} name={name} />
             </li>
           ) : null}
 
           {shipped ? (
-            <Turn
-              icon="rocket"
-              title={room.status === "live" ? "Shipped" : "Shipped as partial"}
-              tone={room.status === "live" ? "ok" : "warn"}
-              meta={[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`]}
-            >
-              <ShipBody
-                status={room.status as "live" | "partial"}
-                liveUrl={liveUrl}
-                slug={slug}
-                connectorUrl={connectorUrl}
-                models={models}
-                demoUrl={room.recordingUrl ? null : demoUrl}
-                demoPosterUrl={demoPosterUrl}
-              />
-            </Turn>
+            <li className="room-output">
+              <BuildOutput name={name} demoUrl={demoUrl} demoPosterUrl={demoPosterUrl} screenshotUrl={lastShot} />
+            </li>
+          ) : null}
+
+          {shipped ? (
+            <li className="room-answer">
+              {answer ? <MarkdownText className="say" text={answer} /> : null}
+              <ShipBody status={room.status as "live" | "partial"} liveUrl={liveUrl} slug={slug} />
+              <p className="room-meta">{[duration(elapsed), tokensText(props.tokens), `${usd(room.costUsd)} est.`].filter(Boolean).join(" · ")}</p>
+            </li>
           ) : null}
 
           {room.status === "failed" ? (
-            <Turn
-              icon="alert"
-              title="This build didn't ship"
-              tone="bad"
-              meta={[duration(elapsed), `${usd(room.costUsd)} est.`]}
-            >
-              <div className="rich">
-                <p>{room.lastError ?? room.lastStatusMessage ?? "The checks didn't pass after the last fix round."}</p>
-                <p className="muted">
-                  A broken product is never shown as working. Muse Code&apos;s notes are in the log above.
-                </p>
-                <div className="row-actions">
-                  <Link className="btn btn-outline" href="/">
-                    <Icon name="plus" size={18} />
-                    Try another muse
-                  </Link>
-                </div>
+            <li className="room-answer">
+              <p>This build didn&apos;t ship.</p>
+              <p>{room.lastError ?? room.lastStatusMessage ?? "The checks didn't pass after the last fix round."}</p>
+              <p className="muted">A broken product is never shown as working. Muse Code&apos;s notes are in its steps.</p>
+              <div className="row-actions">
+                <Link className="btn btn-outline" href="/">
+                  <Icon name="plus" size={18} />
+                  Try another muse
+                </Link>
               </div>
-            </Turn>
+              <p className="room-meta">{[duration(elapsed), `${usd(room.costUsd)} est.`].join(" · ")}</p>
+            </li>
           ) : null}
 
-          {room.status === "refused" && !room.segments.some((s) => s.type === "brief") ? (
-            <Turn icon="alert" title="Declined" tone="bad">
-              <p>{room.lastError ?? room.lastStatusMessage ?? "Muse Muse can't make this one."}</p>
-            </Turn>
+          {room.status === "refused" ? (
+            <li className="room-answer">
+              {brief ? <BriefBody brief={brief} /> : <p>{room.lastError ?? room.lastStatusMessage ?? "Muse Muse can't make this one."}</p>}
+            </li>
           ) : null}
+
+          {liveQuestions.map((item) => (
+            <ConvoRow key={item.key} item={item} buildId={build.id} canAnswer={Boolean(props.canSteer)} onShow={showSteps} />
+          ))}
         </ol>
         <div ref={end} className="convo-end" />
 
-        {!atBottom && !room.terminal ? (
-          <button
-            type="button"
-            className="jump"
-            aria-label="Jump to latest"
-            onClick={() => end.current?.scrollIntoView({ block: "end", behavior: smooth() })}
-          >
-            <Icon name="arrowDown" size={18} />
-          </button>
+        {!atBottom ? (
+          <ScrollButton className="room-jump" onClick={() => end.current?.scrollIntoView({ block: "end", behavior: smooth() })} />
         ) : null}
 
         {steering ? (
-          <SteerBox buildId={build.id} />
+          <div className="room-composer">
+            <SteerBox buildId={build.id} />
+          </div>
         ) : refine.show ? (
-          <div id="refine">
+          <div id="refine" className="room-composer">
             <Composer
               mode="refine"
               buildId={build.id}
@@ -439,7 +454,7 @@ export function BuildRoom(props: BuildRoomProps) {
             />
           </div>
         ) : refine.elsewhere ? (
-          <p className="muted center">
+          <p className="muted center room-elsewhere">
             {refine.elsewhere.running ? "A change to this product is building." : "This isn't the current version."}{" "}
             <Link href={`/b/${refine.elsewhere.buildId}`}>
               {refine.elsewhere.running ? "Open it to follow along." : "Open the current version to make more changes."}
@@ -448,22 +463,61 @@ export function BuildRoom(props: BuildRoomProps) {
         ) : null}
       </div>
 
-      <BuildPanel
-        name={name}
-        room={room}
-        rail={rail}
-        models={models}
-        buildModel={build.buildModel}
-        sessionId={build.museSessionId}
-        maxFixRounds={props.maxFixRounds}
-        elapsedMs={elapsed}
-        tokens={props.tokens}
-        liveUrl={liveUrl}
-        demoUrl={demoUrl}
-        productSlug={slug}
-        connectorUrl={connectorUrl}
-      />
+      <div ref={panelRef} className="room-panel">
+        <StepsPanel
+          id={PANEL_ID}
+          open={panelOpen}
+          onClose={closePanel}
+          tab={panelTab}
+          onTabChange={setPanelTab}
+          steps={
+            <div role={room.terminal ? undefined : "log"} aria-relevant={room.terminal ? undefined : "additions"} aria-label={room.terminal ? undefined : "Muse Code activity"}>
+              {panelList}
+            </div>
+          }
+          sources={panelSources}
+        />
+      </div>
     </div>
+  );
+}
+
+/** Opens and closes the steps panel from the running step. It stays on the page, so the panel can give focus back to it. */
+export function StepsToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="link-btn room-steps-link" aria-expanded={open} aria-controls={PANEL_ID} onClick={onClick}>
+      {open ? "Hide steps" : "Show steps"}
+      <Icon name="chevronRight" size={16} />
+    </button>
+  );
+}
+
+/** Copies the product's link, and confirms with a check for a moment. */
+function ShareButton({ url }: { url: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  return (
+    <>
+      <FloatButton
+        icon={state === "copied" ? "check" : "share"}
+        label={state === "failed" ? "Couldn't copy the link" : state === "copied" ? "Link copied" : "Copy this product's link"}
+        onClick={async () => {
+          const ok = await copyText(url);
+          setState(ok ? "copied" : "failed");
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => setState("idle"), 2000);
+        }}
+      />
+      <span className="sr-only" aria-live="polite">
+        {state === "copied" ? "Link copied" : state === "failed" ? "Couldn't copy the link" : ""}
+      </span>
+    </>
   );
 }
 
@@ -473,86 +527,48 @@ function smooth(): ScrollBehavior {
     : "smooth";
 }
 
-function SegmentTurn({
-  seg,
-  live,
-  isRefine,
-  status,
+function ConvoRow({
+  item,
   buildId,
   canAnswer,
+  onShow,
 }: {
-  seg: Segment;
-  live: boolean;
-  isRefine: boolean;
-  status: BuildStatus;
+  item: ConvoItem;
   buildId: string;
-  /** The viewer owns the product, so can answer Muse Code's questions. */
+  /** The viewer may steer, so can answer Muse Code's questions. */
   canAnswer: boolean;
+  onShow: (step: string | null) => void;
 }) {
-  switch (seg.type) {
-    case "brief":
+  switch (item.type) {
+    case "thinking":
       return (
-        <Turn icon="brief" title="Brief" meta={segmentMeta(seg)} tone={status === "refused" ? "bad" : undefined}>
-          <BriefBody brief={seg.brief} />
-          <Notes notes={seg.notes} />
-        </Turn>
+        <li>
+          <ShowThinking onClick={() => onShow(item.step)} />
+        </li>
       );
-    case "muse": {
-      const title =
-        seg.round === 0 ? (isRefine ? "Muse Code made the change" : "Muse Code built it") : `Fix round ${seg.round}`;
+    case "owner":
       return (
-        <Turn
-          icon="terminal"
-          title={live ? title.replace(/ (built it|made the change)$/, " is working") : title}
-          meta={segmentMeta(seg, [museUsageText(seg)])}
-        >
-          <MuseLog lines={seg.lines} live={live} session={seg.session} buildId={buildId} canAnswer={canAnswer} />
-          <Notes notes={seg.notes} />
-        </Turn>
+        <li>
+          <SteerNote group={item.group} />
+        </li>
       );
-    }
-    case "check": {
-      const passed = seg.verify?.summary.passed && seg.judge?.pass !== false;
-      const failedCheck = seg.verify?.summary.passed === false || seg.judge?.pass === false;
+    case "say":
       return (
-        <Turn
-          icon="clipboard"
-          title={seg.index === 0 ? "Checks" : `Checks, try ${seg.index + 1}`}
-          meta={segmentMeta(seg)}
-          tone={passed && seg.judge ? "ok" : failedCheck ? "bad" : undefined}
-        >
-          <CheckBody seg={seg} live={live || (!seg.judge && status === "verifying")} />
-          <Notes notes={seg.notes} />
-        </Turn>
+        <li className="room-answer">
+          <MarkdownText className="say" text={item.text} />
+        </li>
       );
-    }
-    case "record":
+    case "step":
       return (
-        <Turn icon="video" title="Recorded demo" meta={segmentMeta(seg)}>
-          <video
-            className="demo"
-            src={seg.url}
-            poster={seg.posterUrl ?? undefined}
-            controls
-            preload="metadata"
-            playsInline
-            aria-label="Recorded demo"
-          />
-          <Notes notes={seg.notes} />
-        </Turn>
+        <li>
+          <WorkingStep title={item.title} description={item.description} state={item.state} />
+        </li>
       );
-    case "deploy":
+    case "question":
       return (
-        <Turn icon="rocket" title="Deployed" meta={segmentMeta(seg)}>
-          <p>
-            Live at{" "}
-            <a href={seg.url} target="_blank" rel="noopener noreferrer">
-              {seg.url.replace(/^https?:\/\//, "")}
-            </a>
-            <span className="sr-only"> (opens in a new tab)</span>
-          </p>
-          <Notes notes={seg.notes} />
-        </Turn>
+        <li>
+          <QuestionCard question={item.question} buildId={buildId} canAnswer={canAnswer} live={item.live} />
+        </li>
       );
   }
 }

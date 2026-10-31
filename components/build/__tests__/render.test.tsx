@@ -1,7 +1,7 @@
 /**
- * Server-renders the build room's Muse Code turn and panel, outside Next: a session bridge round with its goal, todo
- * list, thinking, workflow, subagents, observers, owner notes and a question, and a `muse exec` round, which must show
- * none of it.
+ * Server-renders a Muse Code round in the build room's steps panel and conversation, outside Next: a session bridge round
+ * with its goal, todo list, thinking, workflow, subagents, observers, owner notes and a question, and a `muse exec`
+ * round, which must show none of it. components/build/__tests__/steps.test.tsx has the rest of the mapping.
  *   npx tsx --test --experimental-test-module-mocks components/build/__tests__/render.test.tsx
  */
 import assert from "node:assert/strict";
@@ -105,8 +105,10 @@ const bridgeLines: MuseLogLine[] = [
 ];
 
 let render: (c: ComponentType<never>, props: object) => string;
-let MuseLog: ComponentType<never>;
-let BuildPanel: ComponentType<never>;
+let StepList: ComponentType<never>;
+let BuildDetails: ComponentType<never>;
+let SteerNote: ComponentType<never>;
+let steps: typeof import("@/components/build/steps");
 let QuestionCard: ComponentType<never>;
 let BuildRoom: ComponentType<never>;
 let derive: typeof import("@/components/build/derive");
@@ -116,10 +118,12 @@ before(async () => {
   const { renderToString } = await import("react-dom/server");
   // React separates adjacent text with <!-- -->; drop it so assertions read like the page.
   render = (c, props) => renderToString(createElement(c, props as never)).replace(/<!-- -->/g, "");
-  MuseLog = (await import("@/components/build/turns")).MuseLog as ComponentType<never>;
-  BuildPanel = (await import("@/components/build/BuildPanel")).BuildPanel as ComponentType<never>;
+  StepList = (await import("@/components/chat")).StepList as ComponentType<never>;
+  BuildDetails = (await import("@/components/build/BuildDetails")).BuildDetails as ComponentType<never>;
+  steps = await import("@/components/build/steps");
   session = await import("@/components/build/session");
   QuestionCard = session.QuestionCard as ComponentType<never>;
+  SteerNote = session.SteerNote as ComponentType<never>;
   derive = await import("@/components/build/derive");
   BuildRoom = (await import("@/components/build/BuildRoom")).BuildRoom as ComponentType<never>;
 });
@@ -147,29 +151,15 @@ function museRound(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
   return room(lines, owner).segments.find((s) => s.type === "muse") as Extract<import("@/components/build/derive").Segment, { type: "muse" }>;
 }
 
-function panel(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
+/** The steps panel's list for a round. */
+function stepsHtml(lines: MuseLogLine[], owner: BuildEventBody[] = []) {
   const r = room(lines, owner);
-  return render(BuildPanel, {
-    name: "Gallery",
-    room: r,
-    rail: derive.railStates(r, "build"),
-    models: [],
-    buildModel: "muse-wonder-1.0",
-    sessionId: null,
-    maxFixRounds: 2,
-    elapsedMs: 60_000,
-    tokens: { input: 0, cached: 0, output: 0 },
-    liveUrl: null,
-    demoUrl: null,
-    productSlug: null,
-    connectorUrl: null,
-  });
+  return render(StepList, { steps: steps.roomSteps({ room: r, rail: derive.railStates(r, "build"), isRefine: false }), end: steps.stepsEnd(r) });
 }
 
 describe("a session bridge round", () => {
   it("shows the goal with its status and progress, and the todo list with checked items", () => {
-    const seg = museRound(bridgeLines, OWNER);
-    const html = render(MuseLog, { lines: seg.lines, live: true, session: seg.session, buildId: build.id, canAnswer: true });
+    const html = stepsHtml(bridgeLines, OWNER);
     clean(html);
     assert.match(html, /<section class="goal-card goal-building" aria-labelledby="[^"]+"><div class="goal-head"><h3 class="goal-title" id="[^"]+">/);
     assert.match(html, /<span class="pill pill-building"><span class="pill-dot" aria-hidden="true"><\/span>In progress<\/span>/);
@@ -181,55 +171,71 @@ describe("a session bridge round", () => {
     assert.match(html, /<li class="todo todo-completed"><span class="todo-box" aria-hidden="true"><svg[^>]*>.*?<\/svg><\/span><span class="todo-text">Write the page<\/span><span class="sr-only"> \(Done\)<\/span>/);
     assert.match(html, /<li class="todo todo-inProgress">.*?Add the API route.*? \(In progress\)/);
     assert.match(html, /<li class="todo todo-cancelled">.*?Old idea/);
-    // The goal and the list sit above the live log, which keeps only Muse Code's activity.
-    assert.ok(html.indexOf("goal-card") < html.indexOf('role="log"'));
-    assert.ok(html.indexOf("todo-card") < html.indexOf('role="log"'));
+    // On the round's own row, above its log.
+    assert.ok(html.indexOf("goal-card") < html.indexOf("Starting with the layout"));
+    assert.ok(html.indexOf("todo-card") < html.indexOf("Starting with the layout"));
   });
 
-  it("folds thinking, and shows tools, subagents, hooks, compaction, workflows and owner notes in order", () => {
-    const seg = museRound(bridgeLines, OWNER);
-    const html = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
+  it("folds thinking, and nests tools, subagents, hooks, compaction, workflows and owner notes in order", () => {
+    const html = stepsHtml(bridgeLines, OWNER);
     clean(html);
     assert.match(html, /<details class="thinking"><summary>Thinking<\/summary><div class="md say"><p>The brief wants a grid first\.<\/p><\/div><\/details>/);
-    assert.match(html, /<li class="act act-tool act-running">.*?Install the packages<span class="sr-only"> \(running\)<\/span><\/span><code class="act-name">bash<\/code><\/li>/);
-    assert.match(html, /<li class="act act-subagent">.*?Subagent scout finished: Found 3 pages\.<\/span><span class="pill pill-live pill-sm">.*?Done<\/span><\/li>/);
-    assert.match(html, /<li class="act act-hook act-failed">.*?PreToolUse hook blocked: \.env belongs to the platform/);
-    assert.match(html, /<li class="act act-compaction">.*?compacted its context from 812k to 41k tokens/);
-    assert.match(html, /<div class="wf-card"><p class="wf-head"><svg[^>]*>.*?<\/svg><span class="wf-title">Workflow check-everything is running<\/span><span class="pill pill-building pill-sm">/);
-    assert.match(html, /<p class="wf-phase">Phase: Check<\/p>/);
-    assert.match(html, /<li class="wf-child"><span class="pill-dot dot-live" aria-hidden="true"><\/span><span class="wf-child-name">Typecheck<\/span><span class="muted">Done<\/span><\/li>/);
-    assert.match(html, /<li class="wf-child"><span class="pill-dot dot-building" aria-hidden="true"><\/span><span class="wf-child-name">Smoke test<\/span><span class="muted">Running<\/span><\/li>/);
-    assert.match(html, /<div class="steer"><p class="bubble bubble-steer"><span class="sr-only">From the owner: <\/span>Use a grid, not a list\.<\/p><p class="steer-meta">Delivered into the running turn<\/p><\/div>/);
-    assert.match(html, /<div class="steer steer-refused">.*?Too late\?<\/p><p class="steer-meta">Not delivered: no turn is running<\/p>/);
-    const order = ["thinking", "Starting with the layout", "Install the packages", "wf-card", "Use a grid", "Too late"].map((s) => html.indexOf(s));
+    assert.match(html, /<li data-step="muse:0\/\d+\/\d+" class="chat-steplist-row is-running is-nested">.*?Install the packages · bash<span class="sr-only"> \(working\)<\/span>/);
+    assert.match(html, /Subagent scout finished: Found 3 pages\.<\/p><p class="chat-steplist-desc">Done<\/p>/);
+    assert.match(html, /class="chat-steplist-row is-failed is-nested">.*?PreToolUse hook blocked: \.env belongs to the platform/);
+    assert.match(html, /compacted its context from 812k to 41k tokens/);
+    assert.match(html, /Note from the owner<\/p><p class="chat-steplist-desc">Use a grid, not a list\. \(Delivered into the running turn\)<\/p>/);
+    assert.match(html, /Note from the owner.*?<p class="chat-steplist-desc">Too late\? \(Not delivered: no turn is running\)<\/p>/);
+    const order = ["thinking", "Starting with the layout", "Install the packages", "Use a grid", "Too late"].map((s) => html.indexOf(s));
     assert.deepEqual(order, [...order].sort((a, b) => a - b), "in the order they happened");
   });
 
+  it("keeps a workflow's phase and children, in the Agents row or, in an older round, in the log", () => {
+    const html = stepsHtml(bridgeLines, OWNER);
+    assert.match(html, /check-everything<span class="sr-only"> \(working\)<\/span><\/p><p class="chat-steplist-desc">Running · Phase: Check<\/p>/);
+    assert.match(html, /Typecheck<\/p><p class="chat-steplist-desc">Done<\/p>/);
+    assert.match(html, /Smoke test<span class="sr-only"> \(working\)<\/span><\/p><p class="chat-steplist-desc">Running<\/p>/);
+    const twoRounds: BuildEventBody[] = [
+      { type: "status", status: "building", step: "build" },
+      { type: "muse", round: 0, lines: bridgeLines },
+      { type: "muse", round: 1, lines: [{ kind: "say", itemId: "m9", text: "Fixing it." }] },
+    ];
+    const r = derive.deriveRoom(build, twoRounds.map((b, i) => ({ ...b, id: i + 1, at: at(i + 1) }) as BuildEvent));
+    const older = render(StepList, { steps: steps.roomSteps({ room: r, rail: derive.railStates(r, "build"), isRefine: false }) });
+    assert.match(older, /Workflow check-everything is running<\/p><p class="chat-steplist-desc">Done · Phase: Check|Workflow check-everything is running.*?Phase: Check/);
+    assert.doesNotMatch(older, />Agents</, "only the newest round lists its agents");
+  });
+
   it("draws a command line no control event lists as a plain step, never as a note from the owner", () => {
-    const seg = museRound(bridgeLines);
-    const html = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
+    const html = stepsHtml(bridgeLines);
     clean(html);
-    assert.doesNotMatch(html, /class="steer|bubble-steer|From the owner/);
-    assert.match(html, /<li class="act act-status">.*?<span class="act-text">Muse Code got a command: Use a grid, not a list\.<\/span><\/li>/);
-    assert.match(html, /<li class="act act-status">.*?<span class="act-text">Muse Code didn&#x27;t take a command \(no turn is running\): Too late\?<\/span><\/li>/);
+    assert.doesNotMatch(html, /Note from the owner|class="steer|From the owner/);
+    assert.match(html, /Muse Code got a command: Use a grid, not a list\./);
+    assert.match(html, /Muse Code didn&#x27;t take a command \(no turn is running\): Too late\?/);
+    assert.deepEqual(steps.conversationItems(room(bridgeLines)).filter((i) => i.type === "owner"), []);
+  });
+
+  it("shows the owner's notes in the conversation as their bubbles, with how each went", () => {
+    const groups = steps.conversationItems(room(bridgeLines, OWNER)).flatMap((i) => (i.type === "owner" ? [i.group] : []));
+    assert.deepEqual(groups.map((g) => g.text), ["Use a grid, not a list.", "Too late?"]);
+    const sent = render(SteerNote, { group: groups[0] });
+    assert.match(sent, /<div class="steer"><div class="chat-bubble"><p class="chat-bubble-text"><span class="sr-only">From the owner: <\/span>Use a grid, not a list\.<\/p><\/div><p class="steer-meta">Delivered into the running turn<\/p><\/div>/);
+    assert.match(render(SteerNote, { group: groups[1] }), /<div class="steer steer-refused">.*?Too late\?<\/p><\/div><p class="steer-meta">Not delivered: no turn is running<\/p>/);
   });
 
   it("folds observer runs when there are many, and lists a few as they are", () => {
-    const seg = museRound(bridgeLines, OWNER);
-    const many = render(MuseLog, { lines: seg.lines, live: false, session: seg.session });
-    assert.match(many, /<details class="fold"><summary>4 observers ran<\/summary><ul class="notes observer-notes" aria-label="Observers">/);
-    const few = museRound(bridgeLines.filter((l) => l.kind !== "reminder" || l.itemId === "o0"), OWNER);
-    const html = render(MuseLog, { lines: few.lines, live: false, session: few.session });
-    assert.match(html, /<ul class="notes observer-notes" aria-label="Observers"><li class="note"><svg[^>]*>.*?<\/svg><span>verify observer ran<\/span><\/li><\/ul>/);
+    assert.match(stepsHtml(bridgeLines, OWNER), /<details class="chat-steplist-fold"><summary class="chat-steplist-title">4 observers ran<\/summary><\/details>/);
+    const html = stepsHtml(bridgeLines.filter((l) => l.kind !== "reminder" || l.itemId === "o0"), OWNER);
+    assert.match(html, /verify observer ran/);
     assert.doesNotMatch(html, /observers ran/);
   });
 
-  it("asks the owner the question with its options and room for their own words", () => {
-    const seg = museRound(bridgeLines, OWNER);
-    const html = render(MuseLog, { lines: seg.lines, live: true, session: seg.session, buildId: build.id, canAnswer: true });
+  it("asks the owner the question in the conversation, with its options and room for their own words", () => {
+    const item = steps.conversationItems(room(bridgeLines, OWNER)).find((i) => i.type === "question");
+    assert.ok(item?.type === "question");
+    assert.equal(item.live, true);
+    const html = render(QuestionCard, { question: item.question, buildId: build.id, canAnswer: true, live: item.live });
     clean(html);
-    // The card sits after the live log, so answering it isn't part of the log's announcements.
-    assert.ok(html.indexOf("question-card") > html.indexOf('role="log"'));
     assert.match(html, /<form class="question-card" aria-labelledby="([^"]+)-head"><h3 class="question-head" id="\1-head">/);
     assert.match(html, /<legend><span class="question-tag">Layout<\/span><span class="question-text">Which layout should the gallery use\?<\/span><\/legend>/);
     assert.match(html, /<input type="radio" name="[^"]+-layout" value="Grid"\/><span class="question-option-text"><span>Grid<\/span><span class="muted small">Square tiles<\/span><\/span>/);
@@ -239,6 +245,8 @@ describe("a session bridge round", () => {
     assert.match(html, /<textarea rows="2" maxLength="500"><\/textarea>/);
     assert.match(html, /<button type="submit" class="btn btn-primary btn-sm" disabled="">Send answer<\/button>/);
     assert.match(html, /<p class="muted small" role="status"><\/p>/);
+    // The steps list says it was asked, and the card is where it's answered.
+    assert.match(stepsHtml(bridgeLines, OWNER), /Muse Code asks.*?Which layout should the gallery use\?/);
   });
 
   it("shows the question read-only to others, and as unanswered once the run is over", () => {
@@ -296,8 +304,8 @@ describe("a session bridge round", () => {
     assert.equal(session.answerError(500, undefined), "That didn't go through. Try again in a moment.");
   });
 
-  it("lists the live agent tree in the panel", () => {
-    const html = panel(
+  it("lists the live agent tree under the round", () => {
+    const html = stepsHtml(
       [
         ...bridgeLines,
         { kind: "subagent", itemId: "s2", text: "Subagent helper is working", detail: { status: "inProgress", agentPath: "main/scout/1/helper/1", label: "helper" } },
@@ -305,11 +313,10 @@ describe("a session bridge round", () => {
       OWNER,
     );
     clean(html);
-    assert.match(html, /<h3 class="panel-label" id="([^"]+)-agents">Agents<\/h3><ul class="agent-tree"><li><span class="agent-row"><svg[^>]*>.*?<\/svg><span class="agent-text"><span class="agent-name">Muse Code<\/span><\/span><\/span><ul>/);
-    assert.match(html, /<span class="agent-name">scout<\/span><code class="agent-meta">main\/scout\/1<\/code><\/span><span class="pill pill-live pill-sm">.*?Done<\/span><\/span><ul><li><span class="agent-row">.*?<span class="agent-name">helper<\/span>.*?Running/);
-    assert.match(html, /<span class="agent-name">check-everything<\/span><span class="agent-meta">Phase: Check<\/span>/);
-    assert.match(html, /<span class="agent-name">Smoke test<\/span>.*?Running/);
-    assert.ok(html.indexOf("Agents") > html.indexOf('class="rail"'), "under the status rail");
+    assert.match(html, /<p class="chat-steplist-title">Agents<\/p>/);
+    assert.match(html, /scout<\/p><p class="chat-steplist-desc">Done · main\/scout\/1<\/p><ol class="chat-steplist-children"><li[^>]*>.*?helper<span class="sr-only"> \(working\)<\/span><\/p><p class="chat-steplist-desc">Running · main\/scout\/1\/helper\/1<\/p>/);
+    assert.match(html, /check-everything.*?Running · Phase: Check/);
+    assert.ok(html.indexOf(">Agents<") > html.indexOf("Muse Code is working"), "under the round");
   });
 });
 
@@ -318,12 +325,11 @@ describe("a muse exec round", () => {
     const raw = readFileSync(path.join(import.meta.dirname, "../../../lib/sandbox/__tests__/fixtures/muse-exec-subagent.jsonl"), "utf8");
     const seg = museRound(condenseMuseLines(raw.split("\n")).lines);
     assert.equal(seg.session, null);
-    const html = render(MuseLog, { lines: seg.lines, live: true, session: seg.session, buildId: build.id, canAnswer: true });
-    assert.match(html, /^<div class="muse" role="log" aria-relevant="additions" aria-label="Muse Code activity">/);
-    for (const piece of ["goal-card", "todo-card", "thinking", "steer", "wf-card", "question-card", "observer-notes", "act-running", "pill-sm"]) {
+    const html = stepsHtml(seg.lines);
+    for (const piece of ["goal-card", "todo-card", "thinking", ">Agents<", "Note from the owner", "Muse Code asks", "observers ran"]) {
       assert.doesNotMatch(html, new RegExp(piece), piece);
     }
     assert.match(html, /Muse Code started a subagent: scout/);
-    assert.doesNotMatch(panel(seg.lines), /Agents/);
+    assert.deepEqual(steps.conversationItems(room(seg.lines)).filter((i) => i.type === "owner" || i.type === "question"), []);
   });
 });

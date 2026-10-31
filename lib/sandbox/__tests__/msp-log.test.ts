@@ -177,6 +177,26 @@ describe("a real goal that blocked", () => {
 });
 
 describe("kinds the spike didn't produce", () => {
+  it("notes what a tool call or a web search looked at, for the Sources tab", () => {
+    const tool = (itemId: string, name: string, args: unknown) => itemNote("item/completed", { itemId, kind: "toolCall", status: "completed", tool: name, args });
+    const c = condenseBridgeLines(
+      toLines([
+        tool("a", "mcp__musemuse__docs_read", JSON.stringify({ slug: "tool-calling" })),
+        tool("b", "mcp__musemuse__docs_search", { query: "image edits" }),
+        tool("c", "read_skill", JSON.stringify({ name: "meta-ui" })),
+        tool("d", "read_file", JSON.stringify({ path: "app/page.tsx" })),
+        itemNote("item/completed", { itemId: "e", kind: "webSearch", status: "completed", query: "sparrow field marks" }),
+      ]),
+    );
+    assert.deepEqual(c.lines.map((l) => l.detail?.source), [
+      { kind: "docs", title: "tool-calling" },
+      { kind: "docs-search", title: "image edits" },
+      { kind: "skill", title: "meta-ui" },
+      undefined,
+      { kind: "web", title: "sparrow field marks" },
+    ]);
+  });
+
   it("shows a workflow with its phase and each child's latest attempt", () => {
     const base = { itemId: "wf1", kind: "workflow", entryId: "check-everything", workflowRunId: "run-1" };
     const c = condenseBridgeLines(

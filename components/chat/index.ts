@@ -1,6 +1,6 @@
 /**
  * The chat kit (docs/UI_MUSE_APP.md): the Muse app look for Muse Muse's conversation surfaces, used by the docs
- * assistant now and by the build room once it's restyled. Plain data goes in (types.ts) and the same pieces come out
+ * assistant and the build room. Plain data goes in (types.ts) and the same pieces come out
  * everywhere. Styles are global chat- classes in chat.css, imported once by app/layout.tsx. The composer's card is
  * app/globals.css's composer rules, which the docs assistant's box shares.
  */

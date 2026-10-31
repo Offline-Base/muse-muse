@@ -65,6 +65,8 @@ export interface Note {
   kind: "log" | "error" | "status";
   text: string;
   at: string;
+  /** Logged just before its turn's first line, such as how a round runs, so it heads the turn. */
+  leading?: boolean;
 }
 
 interface SegmentBase {
@@ -181,6 +183,10 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
   // Held in an object so the closures below can update it without TypeScript narrowing it to null.
   const cur: { seg: Segment | null } = { seg: null };
   let checkCount = 0;
+  // Log lines between a round's status change and its first line, such as how the round runs (museRunLine). They go
+  // with the turn that comes next, not with the one before.
+  let awaitingRound = false;
+  const carried: Note[] = [];
 
   // A turn starts at the later of the last status change and the previous turn's end. ISO strings sort by time.
   const startFor = (at: string): string => {
@@ -198,6 +204,8 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
     }
     seg.endAt = at > seg.endAt ? at : seg.endAt;
     cur.seg = seg;
+    awaitingRound = false;
+    seg.notes.push(...carried.splice(0));
     return seg;
   };
 
@@ -242,6 +250,7 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         const rail = STATUS_RAIL[e.status] ?? (e.step ? STEP_RAIL[e.step] : undefined);
         if (rail && !isTerminalStatus(e.status)) lastRail = rail;
         lastStatusAt = e.at;
+        if (e.status === "building" || e.status === "fixing") awaitingRound = true;
         if (e.message) {
           lastStatusMessage = e.message;
           note({ id: e.id, kind: "status", text: e.message, at: e.at });
@@ -322,7 +331,8 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         if (cur.seg) cur.seg.costUsd += e.addedUsd;
         break;
       case "log":
-        note({ id: e.id, kind: "log", text: e.text, at: e.at });
+        if (awaitingRound) carried.push({ id: e.id, kind: "log", text: e.text, at: e.at, leading: true });
+        else note({ id: e.id, kind: "log", text: e.text, at: e.at });
         break;
       case "error":
         lastError = e.message;
@@ -330,6 +340,9 @@ export function deriveRoom(build: BuildView, events: BuildEvent[]): RoomState {
         break;
     }
   }
+
+  // No turn followed: they stay where the build got to.
+  for (const n of carried) note(n);
 
   const rounds = segments.filter((s): s is MuseSegment => s.type === "muse");
   settleCommands(rounds, owned);

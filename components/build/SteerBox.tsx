@@ -54,9 +54,12 @@ export function steerErrorText(status: number, code: string | undefined): string
 }
 
 /**
- * The build owner's controls while a Muse Code round runs (docs/MUSE_CODE_FULL.md, "The owner steers"): a note sent
- * into the running step ("Send now"), one held until the step ends ("After this step"), and Stop, which ends the build
- * after a confirm. Each answers with a short sent or error note.
+ * The build owner's controls while a Muse Code round runs (docs/MUSE_CODE_FULL.md, "The owner steers"), in the Muse app's
+ * composer (docs/UI_MUSE_APP.md, "The composer"): a note sent into the running step (Send now), one held until the step
+ * ends ("After this step"), and Stop, which ends the build after a confirm. Each answers with a short sent or error note.
+ *
+ * Send turns into stop while the box is empty, as in the app. With a note written, Stop moves beside Send, so it's
+ * always one press away.
  */
 export function SteerBox({ buildId }: { buildId: string }) {
   const inputId = useId();
@@ -83,6 +86,8 @@ export function SteerBox({ buildId }: { buildId: string }) {
     const error = await sendSteer(buildId, action === "stop" ? { action } : { action, text });
     inFlight.current = false;
     setBusy(null);
+    // Send can be gone or was disabled, so the note takes focus back, unless the owner has moved on.
+    if (action !== "stop" && (document.activeElement === document.body || textarea.current?.form?.contains(document.activeElement))) textarea.current?.focus();
     if (error) {
       setResult({ ok: false, text: error });
       return;
@@ -128,18 +133,8 @@ export function SteerBox({ buildId }: { buildId: string }) {
           Send now reaches Muse Code at its next step. After this step waits until the step it is on ends. Stop ends the
           build.
         </p>
-        <div className="row-actions">
-          <button type="submit" className="btn btn-sm btn-primary" disabled={disabled}>
-            {busy === "steer" ? <span className="spinner" aria-hidden /> : <Icon name="arrowUp" size={16} />}
-            <span>Send now</span>
-          </button>
-          <button type="button" className="btn btn-sm btn-outline" disabled={disabled} onClick={() => void send("queue")}>
-            {busy === "queue" ? "Saving" : "After this step"}
-          </button>
-          <button type="button" className="btn btn-sm btn-outline" disabled={disabled} onClick={() => void send("stop")}>
-            <Icon name="power" size={16} />
-            <span>{busy === "stop" ? "Stopping" : "Stop"}</span>
-          </button>
+        <div className="composer-row">
+          <SteerActions hasNote={note.trim().length > 0} busy={busy} disabled={disabled} onQueue={() => void send("queue")} onStop={() => void send("stop")} />
         </div>
         {result?.ok ? (
           <p className="note" aria-hidden>
@@ -156,6 +151,44 @@ export function SteerBox({ buildId }: { buildId: string }) {
       <p className="sr-only" aria-live="polite">
         {result?.ok ? result.text : ""}
       </p>
+    </div>
+  );
+}
+
+/** The composer's right end: the pill, then Stop and Send when there's a note, and only Stop, in Send's place, when not. */
+export function SteerActions({
+  hasNote,
+  busy,
+  disabled,
+  onQueue,
+  onStop,
+}: {
+  hasNote: boolean;
+  busy: SteerBody["action"] | null;
+  disabled: boolean;
+  onQueue: () => void;
+  onStop: () => void;
+}) {
+  const stopIcon = busy === "stop" ? <span className="spinner" aria-hidden /> : <span className="composer-stop" aria-hidden />;
+  return (
+    <div className="composer-actions">
+      <button type="button" className="composer-pill" disabled={disabled} onClick={onQueue}>
+        {busy === "queue" ? "Saving" : "After this step"}
+      </button>
+      {hasNote ? (
+        <>
+          <button type="button" className="composer-tool" aria-label="Stop" title="Stop" disabled={disabled} onClick={onStop}>
+            {stopIcon}
+          </button>
+          <button type="submit" className="send-btn" aria-label="Send now" title="Send now" disabled={disabled}>
+            {busy === "steer" ? <span className="spinner" aria-hidden /> : <Icon name="arrowUp" size={24} />}
+          </button>
+        </>
+      ) : (
+        <button type="button" className="send-btn" aria-label="Stop" title="Stop" disabled={disabled} onClick={onStop}>
+          {stopIcon}
+        </button>
+      )}
     </div>
   );
 }

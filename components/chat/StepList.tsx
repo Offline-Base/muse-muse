@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { ChatLink } from "@/components/chat/ChatLink";
 import type { StepItem, StepKind, StepMedia, StepsEnd } from "@/components/chat/types";
 import { WorkingIcon } from "@/components/chat/WorkingIcon";
@@ -14,7 +17,8 @@ const END: Record<StepsEnd, { label: string; icon: IconName }> = {
  * thread, a semibold title, a description, and a 72 px thumbnail when it made an image or a video (videos get a play
  * badge). Sub-steps nest under their step as smaller rows. Subagents, workflows and the rows a workflow runs show the
  * working icon's subagent variant in place of the dot, and a step still running shows it turning. The thread ends in
- * "Done", "Stopped" or "Didn't finish" once the list is finished.
+ * "Done", "Stopped" or "Didn't finish" once the list is finished. A surface with more to show can give a row a body, and
+ * fold a long run of children under the row's title; those render only while the fold is open. Each row carries its id as data-step, so a surface can scroll to it.
  */
 export function StepList({ steps, end, label = "Steps" }: { steps: readonly StepItem[]; end?: StepsEnd; label?: string }) {
   return (
@@ -35,9 +39,25 @@ export function StepList({ steps, end, label = "Steps" }: { steps: readonly Step
 }
 
 function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }) {
+  const [foldOpen, setFoldOpen] = useState(false);
   const avatar = step.kind === "subagent" || step.kind === "workflow" || parentKind === "workflow";
+  const media = ([] as readonly StepMedia[]).concat(step.media ?? []);
+  const children = step.children?.length ? (
+    <ol className="chat-steplist-children">
+      {step.children.map((child) => (
+        <StepRow key={child.id} step={child} parentKind={step.kind ?? "step"} />
+      ))}
+    </ol>
+  ) : null;
+  const title = (
+    <>
+      {step.title}
+      {step.state === "running" ? <span className="sr-only"> (working)</span> : null}
+      {step.state === "failed" ? <span className="sr-only"> (failed)</span> : null}
+    </>
+  );
   return (
-    <li className={`chat-steplist-row is-${step.state}${parentKind ? " is-nested" : ""}`}>
+    <li data-step={step.id} className={`chat-steplist-row is-${step.state}${parentKind ? " is-nested" : ""}`}>
       <span className="chat-steplist-marker">
         {step.state === "running" || avatar ? (
           <WorkingIcon state={step.state === "running" ? "working" : "still"} variant="subagent" />
@@ -46,20 +66,26 @@ function StepRow({ step, parentKind }: { step: StepItem; parentKind?: StepKind }
         )}
       </span>
       <div className="chat-steplist-text">
-        <p className="chat-steplist-title">
-          {step.title}
-          {step.state === "running" ? <span className="sr-only"> (working)</span> : null}
-          {step.state === "failed" ? <span className="sr-only"> (failed)</span> : null}
-        </p>
-        {step.description ? <p className="chat-steplist-desc">{step.description}</p> : null}
-        {step.media ? <StepThumb media={step.media} /> : null}
-        {step.children?.length ? (
-          <ol className="chat-steplist-children">
-            {step.children.map((child) => (
-              <StepRow key={child.id} step={child} parentKind={step.kind ?? "step"} />
-            ))}
-          </ol>
-        ) : null}
+        {step.folded ? (
+          <details className="chat-steplist-fold" onToggle={(e) => setFoldOpen(e.currentTarget.open)}>
+            <summary className="chat-steplist-title">{title}</summary>
+            {foldOpen ? children : null}
+          </details>
+        ) : (
+          <>
+            {step.title ? <p className="chat-steplist-title">{title}</p> : null}
+            {step.description ? <p className="chat-steplist-desc">{step.description}</p> : null}
+            {media.length ? (
+              <div className="chat-steplist-gallery">
+                {media.map((m) => (
+                  <StepThumb key={m.src} media={m} />
+                ))}
+              </div>
+            ) : null}
+            {step.body ? <div className="chat-steplist-body">{step.body}</div> : null}
+            {children}
+          </>
+        )}
       </div>
     </li>
   );
@@ -70,7 +96,7 @@ function StepThumb({ media }: { media: StepMedia }) {
     <ChatLink href={media.href} className="chat-steplist-media">
       {/* A screenshot or a poster from storage. next/image would need every host configured. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={media.src} alt={media.alt} width={72} height={72} loading="lazy" />
+      <img src={media.src} alt={media.alt} title={media.alt} width={72} height={72} loading="lazy" />
       {media.kind === "video" ? (
         <span className="chat-steplist-play">
           <Icon name="play" size={14} title="Video" />
