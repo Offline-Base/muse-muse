@@ -20,9 +20,11 @@ export interface MuseExecOptions {
 }
 
 export const DEFAULT_MAX_MODEL_STEPS = 200;
+/** A build's reasoning effort on both engines. */
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "high";
 
 /** What a run uses when the caller doesn't choose. Muse Wonder is the build default (lib/env.ts). */
-const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: "high", maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
+const EXEC_DEFAULTS = { model: "muse-wonder-1.0", reasoningEffort: DEFAULT_REASONING_EFFORT, maxModelSteps: DEFAULT_MAX_MODEL_STEPS } as const;
 
 /**
  * Hardening flags the runner adds only when `muse exec --help` lists them (optionalFlagsPrelude). A headless run has
@@ -77,6 +79,22 @@ export function optionalFlagsPrelude(flags: readonly string[] = OPTIONAL_EXEC_FL
       (flag) =>
         `if grep -Eq -- ${q(helpPattern(flag))} <<<"$help"; then cmd+=(${q(flag)}); else echo ${q(`muse exec has no ${flag}, so this run goes without it`)}; fi`,
     ),
+  ].join("\n");
+}
+
+/**
+ * Bash for the runner prelude, after optionalFlagsPrelude: appends `--config KEY=VALUE` for each of `settings`, each
+ * value quoted with q(), but only when `muse exec --help` lists --config and `muse --version` is `version`. An unknown
+ * key refuses the whole run with exit 2 (docs/MUSE_CODE_FULL.md), so a sandbox on any other Muse Code runs without the
+ * settings instead. Says on the runner's stdout when it leaves them out.
+ */
+export function optionalConfigPrelude(settings: readonly string[], version: string): string {
+  if (!settings.length) return "true";
+  const versionPattern = `(^|[^0-9.])${version.replace(/\./g, "\\.")}([^0-9]|$)`;
+  const words = settings.flatMap((s) => ["--config", s]).map(q).join(" ");
+  return [
+    `[ -n "\${help:-}" ] || help=$("\${cmd[0]}" exec --help 2>&1)`,
+    `if grep -Eq -- ${q(helpPattern("--config"))} <<<"$help" && "\${cmd[0]}" --version 2>/dev/null | grep -Eq -- ${q(versionPattern)}; then cmd+=(${words}); else echo ${q(`muse exec isn't Muse Code ${version} with --config, so this run goes without the platform's settings`)}; fi`,
   ].join("\n");
 }
 

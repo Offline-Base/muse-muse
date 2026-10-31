@@ -1,4 +1,5 @@
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
+import { agentCapacity } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
 import { RETIRED_SPARK, SPARK_STANDIN } from "@/lib/meta/spark";
 
@@ -169,6 +170,25 @@ export const env = {
   },
   get maxFixRounds() {
     return number("MAX_FIX_ROUNDS", 3);
+  },
+  /**
+   * MUSE_ENGINE: "serve" runs each Muse Code round through the session bridge over `muse serve`; anything else, unset
+   * included, keeps one-shot `muse exec` (docs/MUSE_CODE_FULL.md, "The engine"). A round whose bridge can't start runs
+   * on exec anyway.
+   */
+  get museEngine(): "serve" | "exec" {
+    return (process.env.MUSE_ENGINE ?? "").trim().toLowerCase() === "serve" ? "serve" : "exec";
+  },
+  /**
+   * True when MUSE_FULL is "1", "true", "yes" or "on" (any case): every Muse Code run gets the platform's settings,
+   * hooks and build MCP server (lib/sandbox/muse-config.ts). Off by default.
+   */
+  get museFull(): boolean {
+    return ["1", "true", "yes", "on"].includes((process.env.MUSE_FULL ?? "").trim().toLowerCase());
+  },
+  /** MUSE_AGENT_CAPACITY: Muse Code's agents.execution_capacity under MUSE_FULL. Default 6, held to 1 through 64. */
+  get museAgentCapacity(): number {
+    return agentCapacity(process.env.MUSE_AGENT_CAPACITY);
   },
   /** Lambda Cloud API key for fine-tuning jobs (lib/train). Platform only: never sent to an instance or a sandbox. */
   get lambdaApiKey() {

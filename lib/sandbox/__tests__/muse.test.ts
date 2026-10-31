@@ -9,8 +9,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { execFlags, flagsMissingFromHelp, helpLists, museExecArgs, OPTIONAL_EXEC_FLAGS, optionalFlagsPrelude } from "@/lib/sandbox/muse";
-import { writeRunner } from "@/lib/sandbox/shell";
+import {
+  execFlags,
+  flagsMissingFromHelp,
+  helpLists,
+  museExecArgs,
+  OPTIONAL_EXEC_FLAGS,
+  optionalConfigPrelude,
+  optionalFlagsPrelude,
+} from "@/lib/sandbox/muse";
+import { q, writeRunner } from "@/lib/sandbox/shell";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
@@ -190,5 +198,43 @@ describe("the runner's optional flags", () => {
   it("is valid bash", () => {
     const res = spawnSync("bash", ["-n", "-c", `cmd=(muse exec)\n${optionalFlagsPrelude()}`], { encoding: "utf8" });
     assert.equal(res.status, 0, res.stderr);
+  });
+});
+
+describe("the runner's --config settings", () => {
+  const SETTINGS = ["agents.execution_capacity=6", `runtime_capabilities={"plugin:tbh-reminders:reminder:todo-reminder":{"enabled":true}}`, "x='quoted'"];
+
+  /** Runs the prelude in bash against a stand-in `muse` function, and returns the command it built and what it said. */
+  function prelude(opts: { version: string; config: boolean }) {
+    const help = opts.config ? "  -c, --config <KEY=VALUE>  Set one setting for this run" : "      --json  Print events";
+    const script = [
+      `muse() { if [ "$1" = --version ]; then echo ${q(`Muse Code ${opts.version} (${opts.version}-R7309.1)`)}; elif [ "$1 $2" = "exec --help" ]; then echo ${q(help)}; fi; }`,
+      "cmd=(muse exec --json)",
+      optionalConfigPrelude(SETTINGS, "1.4.14"),
+      `printf '%s\\n' "\${cmd[@]}"`,
+    ].join("\n");
+    const res = spawnSync("bash", ["-c", script], { encoding: "utf8" });
+    assert.equal(res.status, 0, res.stderr);
+    return res.stdout.trim().split("\n");
+  }
+
+  it("passes each setting, quoted as it is, to the Muse Code it was checked on", () => {
+    assert.deepEqual(prelude({ version: "1.4.14", config: true }), ["muse", "exec", "--json", ...SETTINGS.flatMap((s) => ["--config", s])]);
+  });
+
+  it("leaves them out on another Muse Code or one without --config, instead of failing the run with exit 2", () => {
+    for (const opts of [
+      { version: "1.4.13", config: true },
+      { version: "1.4.140", config: true },
+      { version: "1.4.14", config: false },
+    ]) {
+      const out = prelude(opts);
+      assert.equal(out[out.length - 1], "--json", JSON.stringify(opts));
+      assert.equal(out[0], "muse exec isn't Muse Code 1.4.14 with --config, so this run goes without the platform's settings");
+    }
+  });
+
+  it("does nothing without settings", () => {
+    assert.equal(optionalConfigPrelude([], "1.4.14"), "true");
   });
 });
