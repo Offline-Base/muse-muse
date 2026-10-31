@@ -404,11 +404,12 @@ const CAPS_TEMPLATE_DIR = () => process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
 
 /**
  * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
- * commit, then the caps' .env.local lines. A snapshot made with template/caps has them already. One from before them
- * gets them from this checkout on a local run. The live site can't, since its functions have no template/, so a cap
- * whose flag is on there needs a new snapshot.
+ * commit. It runs before anything from the user lands in the product, so the "Caps: ..." commit holds platform files
+ * only. A snapshot made with template/caps has them already. One from before them gets them from this checkout on a
+ * local run. The live site can't, since its functions have no template/, so a cap whose flag is on there needs a new
+ * snapshot.
  */
-async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: string[] }, capEnv: string): Promise<void> {
+async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: string[] }): Promise<void> {
   const installed = (await sh(sandbox, `[ -f ${q(CORE_CAPS_MARKER)} ]`, { allowFail: true })).exitCode === 0;
   if (!installed) {
     if (process.env.VERCEL) throw new Error("This builder snapshot has no platform service overlays. Make a new one with npm run snapshot before turning a cap's flag on.");
@@ -418,11 +419,13 @@ async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: str
   }
   await sh(sandbox, activeCapsScript(caps), { sudo: true });
   await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
-  if (capEnv) {
-    const path = `${PRODUCT_DIR}/.env.local`;
-    const current = (await sandbox.readFileToBuffer({ path }).catch(() => null))?.toString("utf8") ?? "";
-    await sandbox.writeFiles([{ path, content: `${current.replace(/\n*$/, "\n")}${capEnv}` }]);
-  }
+}
+
+/** Appends the caps' lines (capBuildEnv) to the .env.local envLocal wrote. .env*.local is gitignored in the template. */
+async function appendCapEnv(sandbox: Sandbox, capEnv: string): Promise<void> {
+  const path = `${PRODUCT_DIR}/.env.local`;
+  const current = (await sandbox.readFileToBuffer({ path }).catch(() => null))?.toString("utf8") ?? "";
+  await sandbox.writeFiles([{ path, content: `${current.replace(/\n*$/, "\n")}${capEnv}` }]);
 }
 
 /**
@@ -462,6 +465,8 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
   await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
+  // A brief's cap overlays go in before the user's files, so their commit holds platform files only.
+  if (input.caps) await applyCaps(sandbox, input.caps);
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -473,7 +478,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
-  if (input.caps) await applyCaps(sandbox, input.caps, input.capEnv ?? "");
+  if (input.capEnv) await appendCapEnv(sandbox, input.capEnv);
   return { sandboxName: name };
 }
 

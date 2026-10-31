@@ -35,6 +35,8 @@ let failUploads: RegExp | null = null;
 /** The fake sandbox's tags, and every update() call. */
 let tags: Record<string, string> | undefined;
 let updates: Array<Record<string, unknown>> = [];
+/** Commands and file writes, in the order the sandbox got them. */
+let order: string[] = [];
 
 const fakeSandbox = {
   get tags() {
@@ -47,6 +49,7 @@ const fakeSandbox = {
   runCommand: async (opts: { args: string[]; sudo?: boolean }) => {
     const script = opts.args[1] ?? "";
     scripts.push(script);
+    order.push(`run: ${script.split("\n").find((l) => l.trim() && l !== "set -e") ?? ""}`);
     if (opts.sudo) sudoScripts.push(script);
     if (onCommand) {
       const res = onCommand(script);
@@ -58,7 +61,10 @@ const fakeSandbox = {
     return { exitCode: 0, stdout: async () => stdout, stderr: async () => "" };
   },
   writeFiles: async (batch: Array<{ path: string; content: string | Buffer }>) => {
-    for (const f of batch) written.push({ path: f.path, bytes: Buffer.byteLength(f.content), text: String(f.content) });
+    for (const f of batch) {
+      written.push({ path: f.path, bytes: Buffer.byteLength(f.content), text: String(f.content) });
+      order.push(`write: ${f.path}`);
+    }
   },
   readFileToBuffer: async ({ path }: { path: string }) => (path in files ? Buffer.from(files[path]!) : null),
 };
@@ -71,7 +77,7 @@ const shot = (url: string) => ({ url, caption: url });
 before(async () => {
   if (!canMock) return;
   mock.module("@vercel/sandbox", {
-    namedExports: { APIError: class APIError extends Error {}, Sandbox: { get: async () => fakeSandbox } },
+    namedExports: { APIError: class APIError extends Error {}, Sandbox: { get: async () => fakeSandbox, getOrCreate: async () => fakeSandbox } },
   });
   mock.module(new URL("../../storage.ts", import.meta.url).href, {
     namedExports: {
@@ -104,6 +110,61 @@ beforeEach(() => {
   failUploads = null;
   tags = undefined;
   updates = [];
+  order = [];
+});
+
+// Wave 3, unit 2 (docs/CAPABILITIES.md, 2.5).
+describe("provisionSandbox with platform services", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+  const saved = { MODEL_API_KEY: process.env.MODEL_API_KEY, BUILDER_SNAPSHOT_ID: process.env.BUILDER_SNAPSHOT_ID };
+  const input = {
+    buildId: "b1",
+    productId: "11111111-2222-4333-8444-555555555555",
+    slug: "bird-count",
+    references: [],
+    fixtures: [{ fileName: "feeder.jpg", url: "https://b/feeder.jpg" }],
+    promptMarkdown: "# Build this product\n",
+    buildToken: "mm_build_sample",
+    gatewayUrl: "https://platform.example/api/gateway",
+  };
+  beforeEach(() => {
+    process.env.MODEL_API_KEY = "test-model-key";
+    process.env.BUILDER_SNAPSHOT_ID = "snap_test";
+    files = { "/vercel/musemuse/builder.json": "{}" };
+  });
+  const restore = () => {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  };
+
+  it("applies the overlays before the user's files land, then appends the caps' env lines", async () => {
+    try {
+      await builder.provisionSandbox({ ...input, caps: { caps: ["data"], overlays: ["core", "data"] }, capEnv: "MUSEMUSE_DATA=on\n", capHosts: ["pypi.example"] });
+      const at = (match: (line: string) => boolean) => order.findIndex(match);
+      const record = at((l) => l.startsWith("run: ") && l.includes("/vercel/musemuse/caps/active.json"));
+      const apply = at((l) => l.includes("musemuse.caps.json") && l.startsWith("run: if"));
+      const brief = at((l) => l === "write: /vercel/app/brief.md");
+      assert.ok(record >= 0 && apply > record && brief > apply, order.join("\n"));
+      assert.ok(sudoScripts.some((x) => x.includes("chown root:root '/vercel/musemuse/caps/active.json'")), "the record is root-owned");
+      const envWrites = written.filter((w) => w.path === "/vercel/app/.env.local");
+      assert.equal(envWrites.length, 2);
+      assert.ok(envWrites[1]!.text.endsWith("\nMUSEMUSE_DATA=on\n"));
+      const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
+      assert.ok("pypi.example" in policy.allow);
+    } finally {
+      restore();
+    }
+  });
+
+  it("does none of it for a brief with no caps", async () => {
+    try {
+      await builder.provisionSandbox(input);
+      assert.ok(!scripts.some((x) => x.includes("/vercel/musemuse/caps")));
+      assert.equal(written.filter((w) => w.path === "/vercel/app/.env.local").length, 1);
+      const policy = updates.find((u) => u.networkPolicy)?.networkPolicy as { allow: Record<string, unknown> };
+      assert.ok(!("pypi.example" in policy.allow), "no cap host");
+    } finally {
+      restore();
+    }
+  });
 });
 
 describe("writeFixScreenshots", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
