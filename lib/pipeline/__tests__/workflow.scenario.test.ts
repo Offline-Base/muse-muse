@@ -52,6 +52,14 @@ interface Scenario {
   liveCheck?: { ok: boolean; reason?: string };
   /** The engine's round plan briefStep and loadRefineStep return. */
   plan?: { buildMs: number; fixMs: number; verifyMs: number; wallMs: number | null; milestones: Array<{ title: string }> };
+  /** How far each named step moves the fake clock (Date.now), for the build's wall. Unset, time stands still. */
+  advance?: Partial<Record<"previewStep" | "collectVerifyStep" | "judgeStep", number>>;
+}
+
+/** The fake clock the workflow reads with Date.now while a scenario sets `advance`. */
+let clock = 0;
+function tick(step: "previewStep" | "collectVerifyStep" | "judgeStep") {
+  clock += scenario.advance?.[step] ?? 0;
 }
 
 let scenario: Scenario = {};
@@ -144,6 +152,7 @@ const fakeSteps = {
   killStep: async (...args: unknown[]) => record("killStep", ...args),
   previewStep: async (...args: unknown[]) => {
     record("previewStep", ...args);
+    tick("previewStep");
     if (scenario.previewThrows) throw new Error("Preview did not answer 200 on port 3000 (last status 500).");
     return "https://sb-1.vercel.run";
   },
@@ -163,6 +172,7 @@ const fakeSteps = {
   },
   collectVerifyStep: async (input: { round: number }) => {
     record("collectVerifyStep", input);
+    tick("collectVerifyStep");
     const v = currentVerify();
     const all = Object.fromEntries(["typecheck", "build", "start", "console", "smoke", "manifest"].map((n) => [n, v.passed]));
     const steps = Object.entries(v.steps ?? all).map(([name, ok]) => ({ name, ok }));
@@ -174,6 +184,7 @@ const fakeSteps = {
   },
   judgeStep: async (input: unknown) => {
     record("judgeStep", input);
+    tick("judgeStep");
     if (scenario.judgeThrows) throw new Error('Step "judgeStep" failed after 1 retry: judge_verdict: no valid reply');
     const pass = scenario.judgePass ?? true;
     return { pass, blocking: pass ? false : (scenario.judgeBlocking ?? true) };
@@ -948,6 +959,41 @@ describe("engine (docs/CAPABILITIES.md, section 8)", { skip: canMock ? false : "
     assert.deepEqual(verifyEnvs, [undefined, { MUSEMUSE_SCREEN_CHECK: "warn" }]);
     const states = named("milestoneStep").map((c) => { const m = c.args[1] as { index: number; state: string }; return `${m.index}:${m.state}`; });
     assert.deepEqual(states, ["1:building", "1:failed", "2:skipped", "1:failed"]);
+  });
+
+  it("never starts a fix round that no longer fits once the verify and the judge have run, so the wall holds", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    // The review's case: a 15-minute fix and an 8-minute verify, the room check near minute 66, and a verify plus a slow
+    // judge that take 12 minutes. A full fix round and its verify would end past minute 90.
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      // The verify passes and the judge, which takes 4 minutes, fails it, so a fix round would come next.
+      reset({ plan: plan(), verifies: [{ passed: true }, { passed: true }], judgePass: false, judgeBlocking: true, advance: { previewStep: 66 * MIN, collectVerifyStep: 8 * MIN, judgeStep: 4 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t8" }), { status: "failed" });
+      assert.deepEqual(starts().map((r) => r.promptFile), ["brief.md"], "no fix round started past the wall");
+      assert.ok(logs().includes("The build is near its time limit, so no more fix rounds run."));
+      assert.equal(named("collectVerifyStep").length, 1);
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it("starts a fix round that fits, cut to what's left before the wall after its verify", async () => {
+    flags({ ENGINE_ROUND_SCALING: "1" });
+    const real = Date.now;
+    clock = real();
+    Date.now = () => clock;
+    try {
+      reset({ plan: plan(), verifies: [{ passed: false }, { passed: true }], advance: { previewStep: 50 * MIN, collectVerifyStep: 8 * MIN } });
+      assert.deepEqual(await wf.buildProduct({ buildId: "t9" }), { status: "live" });
+      const fix = starts().find((r) => r.promptFile === "fix-1.md");
+      // At minute 58: 90 - 58 - 8 (its verify) - 3 (its judge) leaves 21, so the 15-minute cap holds.
+      assert.equal(fix?.capMs, 15 * MIN);
+    } finally {
+      Date.now = real;
+    }
   });
 
   it("ships as partial, saying so, when the live link fails its check (ENGINE_LIVE_SMOKE)", async () => {

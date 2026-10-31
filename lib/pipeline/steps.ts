@@ -60,6 +60,8 @@ export function stepTimeoutMs(name: StepName): number {
 export const MAX_BUILD_WALL_MS = 90 * MIN;
 /** A Muse Code round shorter than this isn't worth starting near the wall: the checks need the time instead. */
 export const MIN_ROUND_MS = 5 * MIN;
+/** Time kept for the judge after a verify, when a round is fitted inside the wall. */
+export const JUDGE_RESERVE_MS = 3 * MIN;
 
 /** What sets a round's size: the brief's complexity, its cap blocks, and how many screens and actions it lists. */
 export interface RoundSize {

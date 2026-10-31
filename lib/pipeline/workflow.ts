@@ -72,7 +72,7 @@ import {
 } from "@/lib/pipeline/logic";
 import { startProveStep } from "@/lib/pipeline/prove-start";
 import { provePlanStep } from "@/lib/pipeline/prove-steps";
-import { capWithinWall, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
+import { capWithinWall, JUDGE_RESERVE_MS, stepTimeoutMs, type RoundPlan } from "@/lib/pipeline/steps";
 import { MUSE_EXIT, REFINE_ROUND_STRIDE, type BuildModel } from "@/lib/sandbox/muse";
 import { TERMINAL_STATUSES, type BuildStatus } from "@/lib/types";
 
@@ -308,13 +308,17 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     track.stage = "verify";
     await setStatusStep(ctx.buildId, "verifying", { step: "verify" });
     const verifyMs = capFor(ctx, "verify");
-    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), 2 * verifyMs) !== null;
+    // Room for this verify and its judge, a fix round, and the verify and judge after it.
+    const roomForFix = !ctx.plan || capInWall(ctx, capFor(ctx, "fix"), 2 * (verifyMs + JUDGE_RESERVE_MS)) !== null;
     const last = fix >= rounds || !roomForFix;
     const verify = await runVerify(ctx, round, kind === "build" && last);
     const judged = verify.passed ? await judge(ctx, round, verify.screenshots) : null;
     const passed = verify.passed && judged?.pass === true;
     if (passed || fix >= rounds) return { passed, steps: verify.steps, fixes: fix, judge: judged };
-    if (!roomForFix) {
+    // The verify and judge above may have used the margin: a fix round that no longer fits before the wall, with its
+    // own verify and judge after it, isn't started. Without a plan this is today's fix cap.
+    const fixCap = roomForFix ? capInWall(ctx, capFor(ctx, "fix"), verifyMs + JUDGE_RESERVE_MS) : null;
+    if (fixCap === null) {
       await emitStep(ctx.buildId, { type: "log", text: "The build is near its time limit, so no more fix rounds run." });
       return { passed, steps: verify.steps, fixes: fix, judge: judged };
     }
@@ -335,7 +339,6 @@ async function checkAndFix(ctx: Ctx, track: Track, kind: "build" | "refine", off
     await assertSpendOk();
     // A fix run that hits its cap is still checked: it may have fixed enough before it was stopped. One its owner
     // stopped is not, and no fix round comes after it.
-    const fixCap = capInWall(ctx, capFor(ctx, "fix"), verifyMs) ?? capFor(ctx, "fix");
     const fixed = await runMuse(ctx, { promptFile: prompt.promptFile, images: prompt.images, round: offset + fix, capMs: fixCap });
     if (fixed.stopped) throw stoppedByOwner(kind);
   }
