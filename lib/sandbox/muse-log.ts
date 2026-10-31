@@ -24,7 +24,10 @@ interface RawModelUsage {
 
 export interface Condensed {
   lines: MuseLogLine[];
-  /** Priced usage from the last run.usage event seen, or empty. */
+  /**
+   * Priced usage from the run.usage events seen, or empty. One `muse exec` can hold more than one run: a workflow's
+   * completion arrives as a second run with its own run.usage, so they are summed per model.
+   */
   usage: ModelUsage[];
   /** The final message from run.terminal.*, or null. */
   finalText: string | null;
@@ -122,6 +125,42 @@ export function subagentText(tool: string, text: unknown): string | null {
 }
 
 /**
+ * The build-room text for the workflow tool's JSON reply (Muse Code 1.4.14, Oct 30): `{"entryId":"echo-workflow-ok",
+ * "message":"Workflow launched: ...",...}` when it starts one in the background. Null to keep the raw first line.
+ */
+export function workflowText(tool: string, text: unknown): string | null {
+  if (tool !== "workflow" || typeof text !== "string" || !text.trim().startsWith("{")) return null;
+  let reply: Record<string, unknown>;
+  try {
+    reply = obj(JSON.parse(text));
+  } catch {
+    return null;
+  }
+  const name = typeof reply.entryId === "string" ? reply.entryId.trim() : "";
+  if (typeof reply.message === "string" && /^workflow launched/i.test(reply.message)) {
+    return name ? `Muse Code started a workflow: ${name}` : "Muse Code started a workflow";
+  }
+  return null;
+}
+
+/** Adds priced usage into `into`, model by model. */
+function addUsage(into: ModelUsage[], more: ModelUsage[]): ModelUsage[] {
+  const out = into.map((u) => ({ ...u }));
+  for (const u of more) {
+    const same = out.find((o) => o.model === u.model);
+    if (!same) {
+      out.push({ ...u });
+      continue;
+    }
+    same.inputTokens += u.inputTokens;
+    same.cachedInputTokens += u.cachedInputTokens;
+    same.outputTokens += u.outputTokens;
+    same.costUsd = usageCost(same);
+  }
+  return out;
+}
+
+/**
  * Condenses complete JSONL lines. Lines that don't parse are skipped. `announced` is the previous call's
  * `announced` for the same run: Muse Code's reminder agents get one line per run (the skill reminder runs after every
  * model step), so they don't flood the build room.
@@ -179,7 +218,7 @@ export function condenseMuseLines(rawLines: Iterable<string>, announced: Iterabl
       // Edit tools reply "edited"; their edit_facts name the file, which reads better in the log.
       const edit = obj(p.edit_facts);
       const text =
-        (ok && subagentText(tool, p.text)) ||
+        (ok && (subagentText(tool, p.text) || workflowText(tool, p.text))) ||
         (typeof edit.path === "string" ? `Edited \`${edit.path}\`` : firstLine(p.text) || tool);
       out.lines.push({ kind: "tool", tool, ok, text });
     } else if (type === "task.lifecycle.tool_output_ref") {
@@ -211,10 +250,12 @@ export function condenseMuseLines(rawLines: Iterable<string>, announced: Iterabl
       if (attempt && Number(attempt[1]) > 1) out.lines.push({ kind: "status", text: message });
     } else if (type === "run.usage") {
       const models = Array.isArray(p.models) ? (p.models as RawModelUsage[]) : [];
-      out.usage = priceMuseUsage(models);
-      out.childrenIncluded = p.children_included !== false;
+      const usage = priceMuseUsage(models);
+      out.usage = addUsage(out.usage, usage);
+      // One run that leaves its children out is enough for the session log's child calls to be charged.
+      out.childrenIncluded = (out.childrenIncluded ?? true) && p.children_included !== false;
       const calls = num(p.calls) || models.reduce((s, m) => s + num(m.calls), 0);
-      out.lines.push({ kind: "usage", text: usageText(out.usage, calls) });
+      out.lines.push({ kind: "usage", text: usageText(usage, calls) });
     } else if (type.startsWith("run.terminal.")) {
       const terminal = typeof p.terminal === "string" ? p.terminal : type.slice("run.terminal.".length);
       const text = typeof p.text === "string" ? p.text : "";
@@ -271,57 +312,69 @@ export function highlightsFrom(lines: MuseLogLine[], max = 30): string[] {
 // Usage that run.usage leaves out
 
 /**
- * Prints one run's usage records from Muse Code's session logs, as JSON lines. Muse Code writes a
+ * Prints one round's usage records from Muse Code's session logs, as JSON lines. Muse Code writes a
  * goal_usage_attribution record per provider call, while run.usage counts only the main agent (children_included:
- * false). Measured on Muse Code 1.4.14 (Oct 27):
+ * false). Measured on Muse Code 1.4.14 (Oct 27 and 30):
  * - The parent session log has the main agent's calls (owner main_root) and every reminder agent's (reminder_child),
  *   all with owner.run_id set to the run.
- * - A subagent's calls (native_child) are only in its own log, subagent/<child session>/session.jsonl, under its own
- *   run id. A subagent's own subagents nest the same way under its folder.
- * - Reminder agents' own logs, also under subagent/, repeat calls the parent log already has, under other usage ids.
+ * - A subagent's calls (native_child) and a workflow child's (workflow_child) are only in the child's own log,
+ *   subagent/<child session>/session.jsonl, under its own run id. Children's own children nest the same way.
+ * - A reminder agent's own log, also under subagent/, repeats the call its host's log already has, under another usage
+ *   id. Such a copy names its own log's session as owner.owner_id; parseSessionUsage drops it.
  * - A subagent resumed by a later run (a fix round, a refinement) keeps writing to the log it started in.
+ * - One `muse exec` can hold more than one run: a workflow's completion arrives as a second run. On the session bridge,
+ *   each turn is a run whose id is its turn id.
  *
- * So every subagent/**\/session.jsonl under the parent session is read, and only its records from this run's start
- * on count: the recorded_at of the run's first record in the parent log, which uses the same clock. parseSessionUsage
- * drops main_root and reminder_child records found there.
+ * So every subagent/**\/session.jsonl under the parent session is read, and only its records from the round's start
+ * on count: the recorded_at of the round's first record in the parent log, which uses the same clock.
  *
- * Output: first `{ session_id, run_id, model, session_log }`, read from the start of the run's own --json stream
- * (argv[1]). Then each parent record (from the run's first line on, naming the run), then
- * `{ child_session, model, record }` for each record from the run's start on in a log under subagent/. Runs with
- * `node -e`, so the whole read is one sandbox command. It runs when the run has ended and before the next one starts,
- * so "from the start on" is the run itself.
+ * argv[1] is the round's own log: a `muse exec --json` stream, or the session bridge's log (BridgeLogRecord lines,
+ * lib/sandbox/bridge-protocol.ts). Output: first `{ session_id, run_id, run_ids, reported, model, session_log }`, with
+ * every run the log names and the ones whose run.usage it holds. Then each parent record that names one of the runs,
+ * from the round's first line on, then `{ child_session, model, record }` for each record from the round's start on in
+ * a log under subagent/. Runs with `node -e`, so the whole read is one sandbox command. It runs when the round has
+ * ended and before the next one starts, so "from the start on" is the round itself.
  */
 export const SESSION_USAGE_SCRIPT = `
 const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
-const head = { session_id: null, run_id: null, model: null, session_log: null };
-const buf = Buffer.alloc(1 << 20);
-const fd = fs.openSync(process.argv[1], "r");
-const n = fs.readSync(fd, buf, 0, buf.length, 0);
-fs.closeSync(fd);
-for (const line of buf.subarray(0, n).toString("utf8").split("\\n")) {
-  let ev; try { ev = JSON.parse(line); } catch { continue; }
-  const p = ev.payload || {};
-  if (!head.session_id && ev.stream && ev.stream.kind === "session") head.session_id = ev.stream.id;
-  if (!head.run_id && typeof p.command_id === "string") head.run_id = p.command_id;
-  if (ev.payload_type === "run.model.configured" && typeof p.model_id === "string") { head.model = p.model_id; break; }
+const head = { session_id: null, run_id: null, run_ids: [], reported: [], model: null, session_log: null };
+const lines = (file) => readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+const addRun = (id) => { if (typeof id === "string" && id && !head.run_ids.includes(id)) head.run_ids.push(id); };
+async function readRound(file) {
+  for await (const line of lines(file)) {
+    if (line.startsWith('{"t":')) {
+      // The session bridge's log: its session, each turn that ran, and the model the session opened on.
+      if (!line.includes('"kind":"bridge"') && !line.includes('"turn/started"') && !line.includes('"kind":"call"')) continue;
+      let r; try { r = JSON.parse(line); } catch { continue; }
+      if (r.kind === "bridge" && r.event === "session" && !head.session_id) head.session_id = r.sessionId || null;
+      if (r.kind === "note" && r.method === "turn/started" && r.params) { addRun(r.params.turnId); addRun(r.params.commandId); }
+      const session = r.kind === "call" && r.ok && (r.method === "session/start" || r.method === "session/resume") && r.result && r.result.session;
+      if (session && !head.model && typeof session.modelId === "string") head.model = session.modelId;
+      continue;
+    }
+    // muse exec --json: every event names its run in command_id.
+    const id = /"command_id":"([^"]+)"/.exec(line);
+    if (id) addRun(id[1]);
+    if (head.session_id && head.model && !line.includes('"run.usage"')) continue;
+    let ev; try { ev = JSON.parse(line); } catch { continue; }
+    if (!ev || typeof ev !== "object") continue;
+    const p = ev.payload || {};
+    if (!head.session_id && ev.stream && ev.stream.kind === "session") head.session_id = ev.stream.id;
+    if (ev.payload_type === "run.model.configured" && typeof p.model_id === "string" && !head.model) head.model = p.model_id;
+    if (ev.payload_type === "run.usage" && typeof p.command_id === "string" && !head.reported.includes(p.command_id)) head.reported.push(p.command_id);
+  }
+  head.run_id = head.run_ids[0] || null;
 }
 const root = path.join(process.env.XDG_DATA_HOME || path.join(process.env.HOME || "", ".local/share"), "muse/sessions");
 const ls = (dir) => { try { return fs.readdirSync(dir).filter((f) => !f.startsWith(".")); } catch { return []; } };
-// Sessions live in YYYY/MM/DD/<id>/ under the day they were created.
-for (const y of ls(root)) for (const m of ls(path.join(root, y))) for (const d of ls(path.join(root, y, m))) {
-  const file = path.join(root, y, m, d, String(head.session_id), "session.jsonl");
-  if (!head.session_log && head.session_id && fs.existsSync(file)) head.session_log = file;
-}
-console.log(JSON.stringify(head));
 // Every record on a log line. A retained frame holds whole records as JSON strings.
 const recordsOn = (line) => {
   let o; try { o = JSON.parse(line); } catch { return []; }
   if (!o || !o.retained_frame) return [o];
   return (o.children || []).map((c) => { try { return JSON.parse(c.record_json); } catch { return null; } });
 };
-const lines = (file) => readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
 // Every session.jsonl under dir, at any depth. Symlinks are not followed.
 const logsUnder = (dir) => {
   let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
@@ -332,24 +385,32 @@ const logsUnder = (dir) => {
   });
 };
 async function main() {
-  if (!head.session_log || !head.run_id) return;
+  await readRound(process.argv[1]);
+  // Sessions live in YYYY/MM/DD/<id>/ under the day they were created.
+  for (const y of ls(root)) for (const m of ls(path.join(root, y))) for (const d of ls(path.join(root, y, m))) {
+    const file = path.join(root, y, m, d, String(head.session_id), "session.jsonl");
+    if (!head.session_log && head.session_id && fs.existsSync(file)) head.session_log = file;
+  }
+  console.log(JSON.stringify(head));
+  if (!head.session_log || !head.run_ids.length) return;
+  const names = (line) => head.run_ids.some((id) => line.includes(id));
   let inRun = false;
   let start = null;
   for await (const line of lines(head.session_log)) {
-    // Runs in one session never overlap, so everything from the run's first line on is this run's.
-    if (!inRun && !line.includes(head.run_id)) continue;
+    // Runs in one session never overlap, so everything from the round's first line on is this round's.
+    if (!inRun && !names(line)) continue;
     inRun = true;
     if (start === null) for (const r of recordsOn(line)) if (r && Number.isFinite(r.recorded_at)) { start = r.recorded_at; break; }
-    if (!line.includes("goal_usage_attribution") || !line.includes(head.run_id)) continue;
+    if (!line.includes("goal_usage_attribution") || !names(line)) continue;
     for (const r of recordsOn(line)) {
       const p = (r && r.payload) || {};
       if (p.event && p.event.kind === "goal_usage_attribution" && p.event.record) console.log(JSON.stringify(p.event.record));
     }
   }
-  // Without a start, a child record can't be placed in this run, so none count.
+  // Without a start, a child record can't be placed in this round, so none count.
   if (start === null) return;
   for (const file of logsUnder(path.join(path.dirname(head.session_log), "subagent"))) {
-    // recorded_at is in microseconds. A log nobody wrote to since the run started has nothing from it.
+    // recorded_at is in microseconds. A log nobody wrote to since the round started has nothing from it.
     try { if (fs.statSync(file).mtimeMs * 1000 < start) continue; } catch { continue; }
     const child = path.basename(path.dirname(file));
     let model = null;
@@ -371,7 +432,7 @@ main().catch((err) => { console.error(String(err)); process.exit(1); });
 interface RawAttribution {
   usage_id?: unknown;
   usage_family?: unknown;
-  owner?: { owner_type?: unknown; run_id?: unknown };
+  owner?: { owner_type?: unknown; run_id?: unknown; owner_id?: unknown };
   quantity?: { input_tokens?: unknown; cached_tokens?: unknown; output_tokens?: unknown };
 }
 
@@ -383,16 +444,22 @@ export interface UsageGroup {
 }
 
 export interface SessionUsage {
+  /** The round's first run. */
   runId: string | null;
   /** False when the session log wasn't found or the stream named no run, so nothing could be counted. */
   found: boolean;
-  /** The main agent (owner main_root). run.usage reports the same calls. */
+  /** The main agent (owner main_root), in every run of the round. Each run's run.usage reports its share. */
   main: UsageGroup;
-  /** Reminder agents and subagents: what run.usage leaves out when it says children_included: false. */
+  /**
+   * The part of `main` in runs whose run.usage never appeared in the round's log: a run stopped at its cap, and every
+   * run on the session bridge, which has no run.usage. Charged from here, so no call is charged twice or left out.
+   */
+  unreported: UsageGroup;
+  /** Reminder agents, subagents and workflow agents: what run.usage leaves out when it says children_included: false. */
   children: UsageGroup & { owners: string[] };
   /**
-   * Calls by owner types that were never measured (workflow agents, side sessions, anything new), or a known type
-   * found where it wasn't expected. Never charged, since run.usage or another log may already count them.
+   * Calls by owner types that were never measured (side sessions, anything new), or a known type found where it wasn't
+   * expected. Never charged, since run.usage or another log may already count them.
    */
   unknown: UsageGroup & { owners: string[] };
 }
@@ -411,18 +478,30 @@ function priced(tally: Tally): UsageGroup {
 }
 
 /**
- * Where each owner type's calls are charged from, as measured on Muse Code 1.4.14 (see SESSION_USAGE_SCRIPT). A
- * main_root or reminder_child record in a log under subagent/ repeats the parent log, so it is dropped.
+ * Where each owner type's calls are charged from, as measured on Muse Code 1.4.14 (see SESSION_USAGE_SCRIPT): the
+ * main agent and its reminders from the parent log, a subagent's and a workflow child's from the child's own log.
  */
 const PARENT_OWNERS = new Set(["main_root", "reminder_child"]);
-const CHILD_OWNERS = new Set(["native_child"]);
+const CHILD_OWNERS = new Set(["native_child", "workflow_child", "reminder_child"]);
+
+function add(tally: Tally, model: string, quantity: unknown): void {
+  const q = obj(quantity);
+  const t = tally.get(model) ?? { calls: 0, input: 0, cached: 0, output: 0 };
+  t.calls++;
+  t.input += num(q.input_tokens);
+  t.cached += num(q.cached_tokens);
+  t.output += num(q.output_tokens);
+  tally.set(model, t);
+}
 
 /**
- * Sums SESSION_USAGE_SCRIPT output for its run: provider records only (tool records are all zero), each usage_id
- * once. Parent records count only when they name the run. Owner types outside PARENT_OWNERS and CHILD_OWNERS go to
- * `unknown`, which is not charged. Records carry no model: reminder agents run on "same-as-main", so parent records
- * are priced at the run's model (run.model.configured, or `fallbackModel` when the stream didn't say), and a
- * subagent's at its own run's model.
+ * Sums SESSION_USAGE_SCRIPT output for its round: provider records only (tool records are all zero), and every usage_id
+ * once across the parent and all child logs. Parent records count only when they name one of the round's runs. In a
+ * child log, a main_root record repeats the parent's, and so does a reminder_child record that names the log's own
+ * session as its owner (the reminder's own log): both are dropped. Any other reminder_child there is a reminder that ran
+ * inside that child, and counts. Owner types outside PARENT_OWNERS and CHILD_OWNERS go to `unknown`, which is logged
+ * and not charged. Records carry no model: reminder agents run on "same-as-main", so parent records are priced at the
+ * round's model (or `fallbackModel` when its log didn't say), and a child's at its own run's model.
  */
 export function parseSessionUsage(stdout: string, fallbackModel = "muse-wonder-1.0"): SessionUsage {
   const [first = "", ...rest] = stdout.split("\n");
@@ -432,48 +511,50 @@ export function parseSessionUsage(stdout: string, fallbackModel = "muse-wonder-1
   } catch {
     // No header: nothing to count.
   }
-  const runId = typeof head.run_id === "string" ? head.run_id : null;
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && s !== "") : []);
+  const firstRun = typeof head.run_id === "string" && head.run_id ? head.run_id : null;
+  const runs = new Set(strings(head.run_ids).length ? strings(head.run_ids) : firstRun ? [firstRun] : []);
+  const reported = new Set(strings(head.reported));
   const runModel = typeof head.model === "string" && head.model ? head.model : fallbackModel;
   const main: Tally = new Map();
+  const unreported: Tally = new Map();
   const children: Tally = new Map();
   const unknown: Tally = new Map();
   const owners = new Set<string>();
   const unknownOwners = new Set<string>();
   const ids = new Set<string>();
   for (const line of rest) {
-    if (!runId || !line.trim().startsWith("{")) continue;
+    if (!runs.size || !line.trim().startsWith("{")) continue;
     let row: Record<string, unknown>;
     try {
       row = obj(JSON.parse(line));
     } catch {
       continue;
     }
-    const fromChild = typeof row.child_session === "string";
-    const r = (fromChild ? obj(row.record) : row) as RawAttribution;
+    const child = typeof row.child_session === "string" ? row.child_session : null;
+    const r = (child !== null ? obj(row.record) : row) as RawAttribution;
     const owner = obj(r.owner);
     const ownerType = typeof owner.owner_type === "string" ? owner.owner_type : "unknown";
     if (r.usage_family !== "provider") continue;
-    if (fromChild ? PARENT_OWNERS.has(ownerType) : owner.run_id !== runId) continue;
+    if (child === null && !(typeof owner.run_id === "string" && runs.has(owner.run_id))) continue;
+    // A copy of a call its host's log already has, under another usage id.
+    if (child !== null && (ownerType === "main_root" || (ownerType === "reminder_child" && owner.owner_id === child))) continue;
     if (typeof r.usage_id === "string") {
       if (ids.has(r.usage_id)) continue;
       ids.add(r.usage_id);
     }
-    const model = fromChild && typeof row.model === "string" && row.model ? row.model : runModel;
-    const known = (fromChild ? CHILD_OWNERS : PARENT_OWNERS).has(ownerType);
+    const model = child !== null && typeof row.model === "string" && row.model ? row.model : runModel;
+    const known = (child !== null ? CHILD_OWNERS : PARENT_OWNERS).has(ownerType);
     const tally = !known ? unknown : ownerType === "main_root" ? main : children;
     if (tally !== main) (known ? owners : unknownOwners).add(ownerType);
-    const q = obj(r.quantity);
-    const t = tally.get(model) ?? { calls: 0, input: 0, cached: 0, output: 0 };
-    t.calls++;
-    t.input += num(q.input_tokens);
-    t.cached += num(q.cached_tokens);
-    t.output += num(q.output_tokens);
-    tally.set(model, t);
+    add(tally, model, r.quantity);
+    if (tally === main && !reported.has(owner.run_id as string)) add(unreported, model, r.quantity);
   }
   return {
-    runId,
-    found: Boolean(runId && head.session_log),
+    runId: firstRun ?? [...runs][0] ?? null,
+    found: Boolean(runs.size && head.session_log),
     main: priced(main),
+    unreported: priced(unreported),
     children: { ...priced(children), owners: [...owners].sort() },
     unknown: { ...priced(unknown), owners: [...unknownOwners].sort() },
   };

@@ -14,7 +14,10 @@ import { q, sh } from "@/lib/sandbox/shell";
 
 const API = "https://api.vercel.com";
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-/** Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, git, and any env file. */
+/**
+ * Never deployed: dependencies, build and test output, the user's inspo, fix-round screenshots, git, Muse Code's own
+ * folder (the platform's hooks and its subagents' worktrees, lib/sandbox/muse-config.ts), and any env file.
+ */
 export const DEPLOY_EXCLUDE_DIRS = [
   "node_modules",
   ".next",
@@ -24,6 +27,7 @@ export const DEPLOY_EXCLUDE_DIRS = [
   FIX_SCREENSHOTS_DIR,
   ".git",
   ".vercel",
+  ".muse",
 ] as const;
 
 export interface StartDeployInput {

@@ -1,8 +1,8 @@
 /**
  * Runs the real step functions in build-steps.ts with the database, sandbox, judge, policy check and usage faked:
- * the judge on a refinement, Muse Code usage charging (child agents included, never twice), the judge's screenshots on
- * fix rounds, the admin kill switch at register, the brief and the build model copied onto refine rows, and the
- * refinement policy check.
+ * the judge on a refinement, Muse Code usage charging on both engines (child agents included, never twice), the engine
+ * and goal a round starts with, the judge's screenshots on fix rounds, the admin kill switch at register, the brief and
+ * the build model copied onto refine rows, and the refinement policy check.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/*.test.ts
  *
@@ -13,8 +13,9 @@ import { before, beforeEach, describe, it, mock } from "node:test";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
+import { goalObjective } from "@/lib/brief/render";
 import { StructuredOutputError } from "@/lib/brief/structured";
-import type { ModelUsage } from "@/lib/types";
+import type { Brief, ModelUsage } from "@/lib/types";
 
 type Rows = Record<string, unknown>[];
 
@@ -37,6 +38,8 @@ let checkInputs: unknown[] = [];
 let checkImpl: () => Promise<unknown> = async () => ({ refusal: null, usage: [] });
 let pollImpl: () => Promise<unknown> = async () => ({});
 let pollInputs: Array<Record<string, unknown>> = [];
+let startImpl: () => Promise<unknown> = async () => ({ cmdId: "cmd", logPath: "/log", engine: "exec" });
+let startInputs: Array<Record<string, unknown>> = [];
 let demoSpecs: Array<{ sandboxName: string; spec: Record<string, unknown> }> = [];
 let demoVideo: { videoUrl: string | null; posterUrl: string | null } = { videoUrl: null, posterUrl: null };
 
@@ -141,6 +144,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
     mock.module(at("../../sandbox/builder.ts"), {
       namedExports: {
+        startMuse: async (input: Record<string, unknown>) => {
+          startInputs.push(input);
+          return startImpl();
+        },
         pollMuse: async (input: Record<string, unknown>) => {
           pollInputs.push(input);
           return pollImpl();
@@ -174,6 +181,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     fixShots = [];
     fixShotsError = null;
     pollInputs = [];
+    startInputs = [];
+    startImpl = async () => ({ cmdId: "cmd", logPath: "/log", engine: "exec" });
     productFiles = [];
     revoked = [];
     judgeInputs = [];
@@ -232,17 +241,19 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       round: 0,
     };
 
-    it("charges usage read before the process exited, and only once per run", async () => {
+    it("charges usage read before the process exited, and each run's run.usage as a poll reads it", async () => {
       pollImpl = async () => ({ done: false, exitCode: null, offset: 500, lines: [], usage: [USAGE], finalText: null });
       const first = await steps.pollMuseStep(input);
       assert.equal(first.usageRecorded, true);
       assert.equal(first.done, false);
       assert.deepEqual(recorded, [[USAGE]]);
 
-      // Even if a later poll reported usage again, a run that was charged is not charged twice.
+      // Polls read new bytes only, so a later run.usage is another run's: a workflow's completion comes as a second run.
+      const SECOND: ModelUsage = { ...USAGE, inputTokens: 57381, cachedInputTokens: 28273, outputTokens: 251 };
+      pollImpl = async () => ({ done: false, exitCode: null, offset: 900, lines: [], usage: [SECOND], finalText: null });
       const again = await steps.pollMuseStep({ ...input, offset: 500, usageRecorded: true });
       assert.equal(again.usageRecorded, true);
-      assert.equal(recorded.length, 1);
+      assert.deepEqual(recorded, [[USAGE], [SECOND]]);
     });
 
     it("charges nothing until usage appears", async () => {
@@ -253,8 +264,10 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
 
     const CHILDREN: ModelUsage = { model: "muse-spark-1.3", inputTokens: 33775, cachedInputTokens: 0, outputTokens: 1800, costUsd: 0.0499 };
+    /** The session log at done for a run whose run.usage was in the stream: nothing is left unreported. */
     const session = {
       main: { calls: 2, usage: [USAGE] },
+      unreported: { calls: 0, usage: [] },
       children: { calls: 4, usage: [CHILDREN], owners: ["reminder_child"] },
     };
 
@@ -269,11 +282,28 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     });
 
     it("charges the main agent from the session log when the run never wrote run.usage", async () => {
-      pollImpl = async () => ({ done: true, exitCode: 143, offset: 10, lines: [], usage: [], finalText: null, session });
+      pollImpl = async () => ({ done: true, exitCode: 143, offset: 10, lines: [], usage: [], finalText: null, session: { ...session, unreported: session.main } });
       const out = await steps.pollMuseStep(input);
       assert.deepEqual(recorded, [[USAGE], [CHILDREN]]);
       assert.deepEqual(recordedEndpoints, ["muse exec", "muse exec children"]);
       assert.equal(out.usageRecorded, true);
+    });
+
+    it("charges a session bridge round from its session log, under the serve endpoints, and carries the bridge's state", async () => {
+      const bridgeState = { shown: { m1: "Reading the brief" }, announced: ["reminder:goal"] };
+      pollImpl = async () => ({ done: false, exitCode: null, offset: 300, lines: [{ kind: "say", text: "Reading" }], usage: [], finalText: null, bridgeState });
+      const serveRun = { ...input, run: { cmdId: "cmd", logPath: "/vercel/musemuse/logs/muse-r0.msp.jsonl", engine: "serve" as const } };
+      const first = await steps.pollMuseStep(serveRun);
+      assert.equal(pollInputs[0]!.engine, "serve");
+      assert.deepEqual(first.bridgeState, bridgeState);
+      assert.equal(recorded.length, 0);
+      pollImpl = async () => ({ done: true, exitCode: 0, offset: 400, lines: [], usage: [], finalText: "Done.", session: { ...session, unreported: session.main }, childrenIncluded: null });
+      const last = await steps.pollMuseStep({ ...serveRun, offset: 300, bridgeState: first.bridgeState });
+      assert.deepEqual(pollInputs[1]!.bridgeState, bridgeState, "the last poll's state reaches pollMuse");
+      assert.deepEqual(recordedEndpoints, ["muse serve", "muse serve children"]);
+      assert.deepEqual(recorded, [[USAGE], [CHILDREN]]);
+      assert.equal(last.done, true);
+      assert.equal(last.bridgeState, undefined);
     });
 
     it("never charges the main agent twice when run.usage arrived in the same poll", async () => {
@@ -294,6 +324,61 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.deepEqual(recordedEndpoints, ["muse exec"]);
       assert.deepEqual(recorded, [[USAGE]]);
       assert.equal(last.childrenIncluded, true);
+    });
+  });
+
+  describe("startMuseStep", () => {
+    const input = { sandboxName: "sb", sessionId: "0f8fad5b-d9cb-469f-a165-70867728950e", promptFile: "brief.md", images: ["inspo/a.png"], model: "muse-wonder-1.0" as const, round: 0 };
+    const GOAL_BRIEF = { ...BRIEF, slug: "bird-count" } as unknown as Brief;
+    const withEnv = async <T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> => {
+      const old = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+      for (const [k, v] of Object.entries(vars)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      try {
+        return await fn();
+      } finally {
+        for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+      }
+    };
+
+    it("starts today's exec round without looking the build up or adding to the build room", async () => {
+      selects = { builds: [[{ id: "b9", brief: GOAL_BRIEF, productId: "prod-1" }]] };
+      const out = await withEnv({ MUSE_ENGINE: undefined, MUSE_FULL: undefined }, () => steps.startMuseStep(input));
+      assert.deepEqual(out, { cmdId: "cmd", logPath: "/log", engine: "exec" });
+      assert.deepEqual(startInputs, [{ ...input, maxModelSteps: 200, engine: "exec", goal: null }]);
+      assert.equal(selects.builds!.length, 1, "no query");
+      assert.equal(emitted.length, 0);
+    });
+
+    it("gives a serve round the brief's goal and its build, and says how it runs", async () => {
+      selects = { builds: [[{ id: "b9", brief: GOAL_BRIEF, productId: "prod-1" }]] };
+      startImpl = async () => ({ cmdId: "cmd-2", logPath: "/vercel/musemuse/logs/muse-r0.msp.jsonl", engine: "serve", buildMcp: false });
+      const out = await withEnv({ MUSE_ENGINE: "serve", MUSE_FULL: undefined }, () => steps.startMuseStep(input));
+      assert.deepEqual(out, { cmdId: "cmd-2", logPath: "/vercel/musemuse/logs/muse-r0.msp.jsonl", engine: "serve" });
+      assert.equal(startInputs[0]!.engine, "serve");
+      assert.equal(startInputs[0]!.goal, goalObjective(GOAL_BRIEF));
+      assert.equal(startInputs[0]!.buildId, "b9");
+      assert.deepEqual(emitted, [{ buildId: "b9", body: { type: "log", text: "Muse Code runs this round on its session host, so its owner can steer it." } }]);
+    });
+
+    it("says so when the bridge couldn't start, and goes on without a goal when the build isn't found", async () => {
+      selects = { builds: [[]] };
+      startImpl = async () => ({ cmdId: "cmd-3", logPath: "/log", engine: "exec", notice: "The session bridge couldn't install its SDK, so this round runs on muse exec." });
+      const out = await withEnv({ MUSE_ENGINE: "serve", MUSE_FULL: undefined }, () => steps.startMuseStep({ ...input, buildId: "b7" }));
+      assert.equal(out.engine, "exec");
+      assert.equal(startInputs[0]!.goal, null);
+      assert.equal(startInputs[0]!.buildId, "b7");
+      assert.deepEqual(emitted.map((e) => [e.buildId, e.body.text]), [["b7", "The session bridge couldn't install its SDK, so this round runs on muse exec."]]);
+    });
+
+    it("words the build room's line for each engine and setting", () => {
+      assert.equal(steps.museRunLine({ engine: "exec" }, false, 6), null);
+      assert.equal(steps.museRunLine({ engine: "exec" }, true, 6), "Muse Code runs this round with muse exec. It has 6 agent slots, every reminder and the platform's hooks.");
+      assert.equal(
+        steps.museRunLine({ engine: "serve", buildMcp: true }, true, 1),
+        "Muse Code runs this round on its session host, so its owner can steer it. It has 1 agent slot, every reminder and the platform's hooks and build tools.",
+      );
+      assert.equal(steps.museRunLine({ engine: "exec", notice: "The bridge didn't start." }, false, 6), "The bridge didn't start.");
+      for (const line of [steps.museRunLine({ engine: "serve", buildMcp: true }, true, 6)]) assert.ok(!line?.includes("\u2014"));
     });
   });
 
