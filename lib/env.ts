@@ -592,4 +592,21 @@ export const env = {
   get docsIpInFlight() {
     return number("DOCS_IP_IN_FLIGHT", 4);
   },
+
+  // ---------- Wave 3, unit 12: drive export (docs/CAPABILITIES.md) ----------
+
+  /**
+   * DRIVE_EXPORT_ENABLED: the Flash drive card on /device, its links from the board's runs and lab models, and
+   * /api/device/drive (docs/DRIVE_EXPORT.md). Off: the card isn't shown and the routes answer 404, touching nothing.
+   */
+  get driveExportEnabled(): boolean {
+    return flag("DRIVE_EXPORT_ENABLED");
+  },
+  /**
+   * DRIVE_EXPORT_PRODUCTS: the product gadget tools drive_status and export_to_drive. They wait for unit 13's board
+   * registry and owner check, so nothing reads this yet, and it stays off until both land.
+   */
+  get driveExportProducts(): boolean {
+    return flag("DRIVE_EXPORT_PRODUCTS");
+  },
 };

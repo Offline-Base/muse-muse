@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
     "/docs/**": DOCS_MARKDOWN,
     "/api/docs/ask": DOCS_MARKDOWN,
     "/api/build-mcp": DOCS_MARKDOWN,
+    // Drive export builds a drive's pages from drive/ and the kit's list at request time (docs/DRIVE_EXPORT.md).
+    "/api/device/drive": ["./drive/**/*", "./lib/drive/kit-files.json"],
   },
 };
 
