@@ -1,9 +1,12 @@
 // Presses through a glasses product on the iPhone Simulator, so the lab can record the real path with mock glasses.
 // It relies on the automation contract from the glasses template: [data-glasses-action="connect"],
-// [data-glasses-primary] and [data-result].
+// [data-glasses-primary] and [data-result]. The template's button listens from the first script click until the second,
+// so a product's main button that shows aria-pressed="true" gets that second click.
 
 export const AUTOPILOT_LOG = "autopilot.jsonl";
 export const AUTOPILOT_LIMIT_MS = 120_000;
+/** How long the question "lasts" between the two taps. */
+export const AUTOPILOT_LISTEN_MS = 1_500;
 
 export interface AutopilotEntry {
   step: string;
@@ -28,7 +31,7 @@ export function cleanCheckpoint(raw: unknown, at: Date): AutopilotEntry | null {
 }
 
 /** Runs in the page after it loads. */
-export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS): string {
+export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS, listenMs: number = AUTOPILOT_LISTEN_MS): string {
   return `(function () {
   var internal = window.__museNative;
   if (!internal || !internal.checkpoint || window.__museAutopilotStarted) return;
@@ -73,10 +76,17 @@ export function buildAutopilotScript(limitMs: number = AUTOPILOT_LIMIT_MS): stri
       return mark("connect", true, status.mode);
     })
     .then(function () {
-      return waitFor("[data-glasses-primary]");
+      return waitFor("[data-glasses-primary]:not([disabled])");
     })
     .then(function (button) {
       button.click();
+      return new Promise(function (resolve) {
+        setTimeout(resolve, ${Math.max(0, Math.floor(listenMs))});
+      });
+    })
+    .then(function () {
+      var button = find("[data-glasses-primary]");
+      if (button && button.getAttribute("aria-pressed") === "true") button.click();
       return mark("primary", true);
     })
     .then(function () {

@@ -1,4 +1,8 @@
-// Builds the JavaScript the shell puts into the page before any of the page's own code runs.
+// Builds the JavaScript the shell puts into the page.
+//
+// On iOS it runs before any of the page's own code. On Android it does not: react-native-webview 14 calls
+// evaluateJavascript from onPageStarted, which is asynchronous, so a page's first inline script can run ahead of it. The
+// product side must look for window.MuseNative when it's about to use it, and never cache a "no" from early in the load.
 
 import { METHOD_TIMEOUT_MS, MUSE_NATIVE_VERSION } from "./protocol";
 import type { BridgeEvent, BridgeReply, MuseCapabilities, MusePlatform } from "./protocol";

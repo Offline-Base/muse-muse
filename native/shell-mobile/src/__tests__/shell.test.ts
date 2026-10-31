@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { buildConfig } from "../../app.config";
-import { buildAutopilotScript, cleanCheckpoint } from "../glasses/autopilot";
+import { AUTOPILOT_LOG, buildAutopilotScript, cleanCheckpoint } from "../glasses/autopilot";
 import { silentWavBase64 } from "../glasses/wav";
 import { deviceSummary, problemFromSessionError, problemFromStreamError, problemFromThrown } from "../glasses/status";
 import { chooseLaunchTarget, isOpenableUrl, isValidSlug, launchArgsToRequest, parseDeepLink, targetForRunningApp } from "../launch";
 import type { LaunchEnv } from "../launch";
-import { decideNavigation } from "../navigation";
+import { createRateLimiter, decideNavigation, EXTERNAL_OPEN_LIMIT, leftTheProduct, mayOpenExternally } from "../navigation";
 import { createResolveClient, createStubResolveClient, ResolveError } from "../resolve";
-import { buildSelftestScript, cleanPageObservations, finishReport, postSelftestReport } from "../selftest";
+import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport, SELFTEST_SCROLL_MS } from "../selftest";
 import type { NativeObservations, PageObservations } from "../selftest";
 
 const PRODUCTION: LaunchEnv = { variant: "production", glasses: false };
@@ -41,6 +41,44 @@ describe("decideNavigation", () => {
     assert.equal(decideNavigation({ url: "https://other.example/", productOrigin, isTopFrame: false }), "allow");
     assert.equal(decideNavigation({ url: "intent://x", productOrigin, isTopFrame: false }), "block");
     assert.equal(decideNavigation({ url: "file:///x", productOrigin, isTopFrame: false }), "block");
+  });
+});
+
+describe("leftTheProduct", () => {
+  const productOrigin = "https://demo.vercel.app";
+
+  it("catches a top-level load that got past the first check", () => {
+    assert.equal(leftTheProduct("https://evil.example/login", productOrigin), true);
+    assert.equal(leftTheProduct("intent://x", productOrigin), true);
+  });
+
+  it("leaves the product's own pages alone, and events with no URL", () => {
+    assert.equal(leftTheProduct("https://demo.vercel.app/a", productOrigin), false);
+    assert.equal(leftTheProduct("about:blank", productOrigin), false);
+    assert.equal(leftTheProduct("", productOrigin), false);
+    assert.equal(leftTheProduct(undefined, productOrigin), false);
+  });
+});
+
+describe("external opens", () => {
+  it("allows a few, then drops the rest until the window passes", () => {
+    let clock = 1_000;
+    const allow = createRateLimiter(EXTERNAL_OPEN_LIMIT, () => clock);
+    assert.deepEqual([allow(), allow(), allow(), allow()], [true, true, true, false]);
+    clock += EXTERNAL_OPEN_LIMIT.perMs + 1;
+    assert.equal(allow(), true);
+  });
+
+  it("opens phone links on iOS only from a click", () => {
+    const ios = { gestureKnown: true };
+    assert.equal(mayOpenExternally({ url: "tel:+15551234", navigationType: "click", ...ios }), true);
+    assert.equal(mayOpenExternally({ url: "tel:+15551234", navigationType: "other", ...ios }), false);
+    assert.equal(mayOpenExternally({ url: "sms:+15551234", ...ios }), false);
+  });
+
+  it("leaves other links, and Android's phone links, to the rate limit", () => {
+    assert.equal(mayOpenExternally({ url: "https://a.example", navigationType: "other", gestureKnown: true }), true);
+    assert.equal(mayOpenExternally({ url: "tel:+15551234", navigationType: "other", gestureKnown: false }), true);
   });
 });
 
@@ -314,6 +352,12 @@ describe("selftest", () => {
   it("builds a script that parses", () => {
     assert.doesNotThrow(() => new Function(buildSelftestScript(10)));
   });
+
+  it("ignores a report from before the page loaded or the scroll ended", () => {
+    assert.equal(canAcceptPageReport(null, 99_999), false);
+    assert.equal(canAcceptPageReport(1_000, 1_000 + SELFTEST_SCROLL_MS - 1), false);
+    assert.equal(canAcceptPageReport(1_000, 1_000 + SELFTEST_SCROLL_MS), true);
+  });
 });
 
 describe("glasses helpers", () => {
@@ -359,6 +403,69 @@ describe("glasses helpers", () => {
 
   it("builds an autopilot script that parses", () => {
     assert.doesNotThrow(() => new Function(buildAutopilotScript(10)));
+    assert.equal(AUTOPILOT_LOG, "autopilot.jsonl");
+  });
+
+  /** Runs the script against a small fake of the template's connect and primary buttons. */
+  async function runAutopilot(primary: { pressed: boolean; enabledAfterMs?: number }) {
+    const started = Date.now();
+    const clicks: number[] = [];
+    const marks: Array<{ step: string; ok: boolean }> = [];
+    let resultShown = false;
+    const button = (attrs: Record<string, string | null>, onClick: () => void) => ({
+      click: onClick,
+      getAttribute: (name: string) => attrs[name] ?? null,
+    });
+    const connect = button({}, () => {});
+    const attrs: Record<string, string | null> = { "aria-pressed": "false" };
+    const main = button(attrs, () => {
+      clicks.push(Date.now() - started);
+      if (clicks.length === 1 && primary.pressed) {
+        attrs["aria-pressed"] = "true";
+      } else {
+        attrs["aria-pressed"] = "false";
+        resultShown = true;
+      }
+    });
+    const document = {
+      querySelector(selector: string) {
+        if (selector === '[data-glasses-action="connect"]') return connect;
+        if (selector === "[data-glasses-primary]") return main;
+        if (selector === "[data-glasses-primary]:not([disabled])") {
+          return Date.now() - started >= (primary.enabledAfterMs ?? 0) ? main : null;
+        }
+        if (selector === "[data-result]") return resultShown ? { innerText: "done" } : null;
+        return null;
+      },
+    };
+    const page: Record<string, unknown> = {
+      __museNative: {
+        checkpoint: async (entry: { step: string; ok: boolean }) => {
+          marks.push(entry);
+        },
+      },
+      MuseNative: { glasses: { status: async () => ({ state: "ready", mode: "mock" }) } },
+    };
+    new Function("window", "document", buildAutopilotScript(4_000, 50))(page, document);
+    while (!marks.some((mark) => mark.step === "result" || mark.step === "timeout" || mark.step === "error")) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    return { clicks, marks };
+  }
+
+  it("taps twice for the template's button, once it's enabled", async () => {
+    const { clicks, marks } = await runAutopilot({ pressed: true, enabledAfterMs: 300 });
+    assert.equal(clicks.length, 2);
+    assert.ok(clicks[0] >= 300, "the first tap waits for the button to be enabled");
+    assert.ok(clicks[1] - clicks[0] >= 50, "the second tap comes after the listening time");
+    assert.deepEqual(marks.map((mark) => mark.step), ["start", "connect", "primary", "result"]);
+    assert.ok(marks.every((mark) => mark.ok));
+  });
+
+  it("taps once for a button that doesn't stay pressed", async () => {
+    const { clicks, marks } = await runAutopilot({ pressed: false });
+    assert.equal(clicks.length, 1);
+    assert.equal(marks.at(-1)?.step, "result");
   });
 });
 
@@ -394,6 +501,29 @@ describe("app config", () => {
     assert.ok(JSON.stringify(buildConfig({ MUSE_GLASSES: "1", MUSE_GLASSES_MOCK: "1" }).plugins).includes(mock));
     assert.ok(!JSON.stringify(buildConfig({ MUSE_GLASSES: "1" }).plugins).includes(mock));
     assert.ok(!JSON.stringify(buildConfig({ MUSE_GLASSES_MOCK: "1" }).plugins).includes(mock));
+  });
+
+  it("keeps the microphone on Android and gives iOS the shell's own words", () => {
+    for (const env of [{}, { APP_VARIANT: "lab" }, { APP_VARIANT: "lab", MUSE_GLASSES: "1" }]) {
+      const config = buildConfig(env);
+      assert.ok(config.android.permissions.includes("android.permission.RECORD_AUDIO"));
+      assert.ok(config.android.permissions.includes("android.permission.MODIFY_AUDIO_SETTINGS"));
+      const text = "Products you open can hear a question you ask.";
+      for (const name of ["expo-audio", "expo-image-picker"]) {
+        const plugin = config.plugins.find((entry) => Array.isArray(entry) && entry[0] === name);
+        assert.ok(Array.isArray(plugin), name);
+        // false here would make expo-image-picker strip RECORD_AUDIO from the Android manifest.
+        assert.equal(plugin[1].microphonePermission, text, name);
+      }
+    }
+  });
+
+  it("allows cleartext only in the lab, which opens http on the machine itself", () => {
+    const cleartext = (env: Record<string, string>) =>
+      buildConfig(env).plugins.find((entry) => Array.isArray(entry) && entry[0] === "expo-build-properties");
+    assert.deepEqual((cleartext({ APP_VARIANT: "lab" }) as [string, unknown])[1], { android: { usesCleartextTraffic: true } });
+    assert.equal(cleartext({ APP_VARIANT: "production" }), undefined);
+    assert.equal(cleartext({}), undefined);
   });
 
   it("turns updates off in a per-product app", () => {

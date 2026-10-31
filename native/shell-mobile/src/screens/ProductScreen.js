@@ -14,8 +14,8 @@ import { createRouter } from "../bridge/router";
 import { AUTOPILOT_LOG, buildAutopilotScript, cleanCheckpoint } from "../glasses/autopilot";
 import { GlassesPreview } from "../glasses/Preview";
 import { deviceHandlers } from "../native/device";
-import { decideNavigation } from "../navigation";
-import { buildSelftestScript, cleanPageObservations, finishReport, postSelftestReport } from "../selftest";
+import { createRateLimiter, decideNavigation, leftTheProduct, mayOpenExternally, REPIN_LIMIT } from "../navigation";
+import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport } from "../selftest";
 import { currentPlatform, readSettings } from "../settings";
 import { Message } from "./Message";
 
@@ -25,10 +25,8 @@ const WebView = /** @type {import("react").ComponentType<any>} */ (/** @type {un
 /** How long a selftest waits for the page before it reports what it has. */
 const SELFTEST_WATCHDOG_MS = 60_000;
 
-/** @param {string} url */
-function openExternally(url) {
-  Linking.openURL(url).catch(() => {});
-}
+/** Whether this platform says how a navigation started. See mayOpenExternally. */
+const GESTURE_KNOWN = Platform.OS === "ios";
 
 /**
  * @param {{
@@ -40,9 +38,15 @@ function openExternally(url) {
 export function ProductScreen({ url, selftest, glasses }) {
   const settings = useMemo(readSettings, []);
   const origin = useMemo(() => new URL(url).origin, [url]);
-  const webView = useRef(/** @type {{ injectJavaScript(script: string): void; goBack(): void; reload(): void } | null} */ (null));
+  const webView = useRef(
+    /** @type {{ injectJavaScript(script: string): void; goBack(): void; reload(): void; stopLoading(): void } | null} */ (null),
+  );
   const currentUrl = useRef(/** @type {string | null} */ (url));
   const canGoBack = useRef(false);
+  const allowExternalOpen = useMemo(() => createRateLimiter(), []);
+  const allowRepin = useMemo(() => createRateLimiter(REPIN_LIMIT), []);
+  // Several events report the same escape, and only the first should act on it.
+  const repinning = useRef(false);
   const [previewing, setPreviewing] = useState(false);
   const [failure, setFailure] = useState(/** @type {string | null} */ (null));
   const [attempt, setAttempt] = useState(0);
@@ -54,6 +58,8 @@ export function ProductScreen({ url, selftest, glasses }) {
     httpStatus: /** @type {number | null} */ (null),
     crashed: false,
     loadError: /** @type {string | null} */ (null),
+    loadEndedAt: /** @type {number | null} */ (null),
+    bridgeAnswered: false,
     reported: false,
   });
 
@@ -89,7 +95,7 @@ export function ProductScreen({ url, selftest, glasses }) {
           crashed: seen.current.crashed,
           loadError: seen.current.loadError,
         },
-        cleanPageObservations(rawPage),
+        { ...cleanPageObservations(rawPage), handshake: seen.current.bridgeAnswered },
         new Date(),
       );
       // The lab reads this line from the device log, so a lost network post isn't fatal.
@@ -102,6 +108,47 @@ export function ProductScreen({ url, selftest, glasses }) {
     },
     [capabilities, origin, platform, selftest, settings, url],
   );
+
+  const openExternally = useCallback(
+    /**
+     * @param {string} target
+     * @param {string} [navigationType]
+     */
+    (target, navigationType) => {
+      if (!mayOpenExternally({ url: target, navigationType, gestureKnown: GESTURE_KNOWN }) || !allowExternalOpen()) return;
+      Linking.openURL(target).catch(() => {});
+    },
+    [allowExternalOpen],
+  );
+
+  /**
+   * A second check on top-level loads. On Android onShouldStartLoadWithRequest allows the load if the JS thread doesn't
+   * answer within 250 ms, so a page that keeps this thread busy can get past it. This stops such a load and goes back to
+   * the product.
+   */
+  const keepOnProduct = useCallback(
+    (/** @type {unknown} */ pageUrl) => {
+      if (typeof pageUrl === "string" && pageUrl) currentUrl.current = pageUrl;
+      if (!leftTheProduct(pageUrl, origin) || repinning.current) return;
+      repinning.current = true;
+      webView.current?.stopLoading();
+      if (selftest) {
+        // The final URL in the report shows where it went.
+        report({});
+        return;
+      }
+      if (decideNavigation({ url: /** @type {string} */ (pageUrl), productOrigin: origin }) === "external") {
+        openExternally(/** @type {string} */ (pageUrl));
+      }
+      if (allowRepin()) setAttempt((n) => n + 1);
+      else setFailure("This page kept trying to leave. Please try again.");
+    },
+    [allowRepin, openExternally, origin, report, selftest],
+  );
+
+  useEffect(() => {
+    repinning.current = false;
+  }, [attempt]);
 
   const nonce = useMemo(() => Crypto.randomUUID(), []);
   const bridge = useMemo(() => {
@@ -124,7 +171,16 @@ export function ProductScreen({ url, selftest, glasses }) {
         ...(glassesBridge?.handlers ?? {}),
         ...(selftest
           ? {
-              "selftest.report": /** @type {import("../bridge/router").BridgeHandler} */ ((page) => report(page)),
+              // The shell records that its own router answered, so the handshake doesn't rest on the page's word.
+              hello: () => {
+                seen.current.bridgeAnswered = true;
+                return { version: MUSE_NATIVE_VERSION, platform, capabilities };
+              },
+              "selftest.report": /** @type {import("../bridge/router").BridgeHandler} */ (
+                (page) => {
+                  if (canAcceptPageReport(seen.current.loadEndedAt, Date.now())) report(page);
+                }
+              ),
             }
           : {}),
         ...(glasses?.autopilot
@@ -215,7 +271,8 @@ export function ProductScreen({ url, selftest, glasses }) {
         allowsInlineMediaPlayback
         allowsBackForwardNavigationGestures
         mediaPlaybackRequiresUserAction
-        mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
+        // One app opens many products, so each page load asks, instead of the first yes covering them all.
+        mediaCapturePermissionGrantType="prompt"
         allowFileAccess={false}
         allowFileAccessFromFileURLs={false}
         allowUniversalAccessFromFileURLs={false}
@@ -226,9 +283,9 @@ export function ProductScreen({ url, selftest, glasses }) {
         onMessage={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
           bridge.router.receive(nativeEvent.data, nativeEvent.url).catch(() => {});
         }}
-        onShouldStartLoadWithRequest={(/** @type {{ url: string; isTopFrame?: boolean }} */ request) => {
+        onShouldStartLoadWithRequest={(/** @type {{ url: string; isTopFrame?: boolean; navigationType?: string }} */ request) => {
           const decision = decideNavigation({ url: request.url, productOrigin: origin, isTopFrame: request.isTopFrame });
-          if (decision === "external") openExternally(request.url);
+          if (decision === "external") openExternally(request.url, request.navigationType);
           return decision === "allow";
         }}
         onOpenWindow={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
@@ -236,15 +293,16 @@ export function ProductScreen({ url, selftest, glasses }) {
           if (decision === "external") openExternally(nativeEvent.targetUrl);
         }}
         onNavigationStateChange={(/** @type {{ url: string; canGoBack: boolean }} */ state) => {
-          currentUrl.current = state.url;
+          keepOnProduct(state.url);
           canGoBack.current = state.canGoBack;
         }}
         onLoadStart={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
-          currentUrl.current = nativeEvent.url;
+          keepOnProduct(nativeEvent.url);
         }}
         onLoadEnd={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
           if (seen.current.loadMs === null) seen.current.loadMs = Date.now() - seen.current.startedAt;
-          currentUrl.current = nativeEvent.url;
+          if (seen.current.loadEndedAt === null) seen.current.loadEndedAt = Date.now();
+          keepOnProduct(nativeEvent.url);
           if (selftest) webView.current?.injectJavaScript(buildSelftestScript());
           if (glasses?.autopilot) webView.current?.injectJavaScript(buildAutopilotScript());
         }}

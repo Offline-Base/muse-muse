@@ -1,7 +1,8 @@
 // The lab variant's health check. It scrolls the page, then posts a report the device lab can read.
 //
 // The report mixes two sources. What the page says about itself (text length, errors) is only a hint, since an agent
-// wrote that page. What the shell saw natively (final URL, HTTP status, a crash) is what a pass rests on.
+// wrote that page. What the shell saw natively (final URL, HTTP status, a crash, whether the bridge answered this page)
+// is what a pass rests on. A page can still claim a text length, so the lab's pixel check stays the proof of that.
 
 import type { MuseCapabilities, MusePlatform } from "./bridge/protocol";
 
@@ -69,6 +70,14 @@ export function cleanPageObservations(raw: unknown): PageObservations {
       ? page.errors.slice(0, MAX_ERRORS).map((error) => text(error, MAX_ERROR_CHARS))
       : [],
   };
+}
+
+/**
+ * The page holds the report call, so it could end the check early with a good story. A report counts only after the
+ * page has loaded and the scroll has had its time.
+ */
+export function canAcceptPageReport(loadEndedAt: number | null, now: number, scrollMs: number = SELFTEST_SCROLL_MS): boolean {
+  return loadEndedAt !== null && now - loadEndedAt >= scrollMs;
 }
 
 /** Pass rules from the plan: it loaded below 400 on its own origin, isn't blank, and the bridge answered. */

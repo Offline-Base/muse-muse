@@ -13,6 +13,8 @@ const SLUG = "muse-hackathon";
 const PLATFORM_URL = "https://muse-muse.vercel.app";
 const VERSION = "1.0.0";
 const GLASSES_MODULE = "@chrisgocode/expo-meta-wearables-dat";
+// Both plugins below write the iOS microphone text, and the later one wins, so they get the same words.
+const MICROPHONE_TEXT = "Products you open can hear a question you ask.";
 
 export type AppVariant = "production" | "lab";
 
@@ -46,16 +48,19 @@ export function buildConfig(env: Env) {
   const plugins: Array<string | [string, Record<string, unknown>]> = [
     "expo-updates",
     "expo-notifications",
-    "expo-audio",
+    ["expo-audio", { microphonePermission: MICROPHONE_TEXT }],
     [
       "expo-image-picker",
       {
         photosPermission: "Products you open can use a photo you choose.",
         cameraPermission: "Products you open can use a photo you take.",
-        microphonePermission: false,
+        // Don't set this to false. The plugin would then strip RECORD_AUDIO from Android, and every product's mic fails.
+        microphonePermission: MICROPHONE_TEXT,
       },
     ],
   ];
+  // The lab opens http on the machine itself (localhost, or 10.0.2.2 from an emulator), which Android refuses by default.
+  if (variant === "lab") plugins.push(["expo-build-properties", { android: { usesCleartextTraffic: true } }]);
   // The order matters. See the note in without-deterministic-uuids.js.
   if (glasses) plugins.push("./plugins/without-deterministic-uuids.js");
   if (glasses) plugins.push([GLASSES_MODULE, { urlScheme: "musemuse", crashReportingOptOut: true }]);
@@ -80,7 +85,7 @@ export function buildConfig(env: Env) {
               UIBackgroundModes: ["processing", "bluetooth-central", "bluetooth-peripheral", "external-accessory", "audio"],
               NSLocalNetworkUsageDescription: "Used to reach your Meta glasses.",
               NSBonjourServices: ["_bonjour._tcp"],
-              NSMicrophoneUsageDescription: "Products you open can hear a question you ask.",
+              NSMicrophoneUsageDescription: MICROPHONE_TEXT,
               NSCameraUsageDescription: "Products you open can use a photo you take.",
             }
           : {}),
@@ -88,7 +93,14 @@ export function buildConfig(env: Env) {
     },
     android: {
       package: id,
-      permissions: ["android.permission.CAMERA", "android.permission.VIBRATE", "android.permission.POST_NOTIFICATIONS"],
+      permissions: [
+        "android.permission.CAMERA",
+        // The WebView needs both for getUserMedia({ audio: true }).
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+      ],
     },
     runtimeVersion: runtimeVersionFor(variant, glasses),
     updates: {
