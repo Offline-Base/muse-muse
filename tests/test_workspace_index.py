@@ -9,6 +9,7 @@ import pytest
 from base.config import CloudBackendRefused, load_settings
 from base.workspace.embed import EmbedError, chunks
 from base.workspace.index import SNIPPET_CHARS, DocumentIndex, WorkspacePathError, snippet
+from tests.synthetic_helpers import mark_synthetic
 
 FIXTURE = Path(__file__).parent / "fixtures" / "workspace"
 
@@ -41,6 +42,7 @@ def test_list_shows_only_md_and_txt(tmp_path, copy_root):
     (copy_root / "essays" / "scan.pdf").write_bytes(b"%PDF")
     (copy_root / "essays" / ".hidden.md").write_text("hidden")
     (copy_root / "essays" / "notes.docx").write_text("x")
+    mark_synthetic(copy_root)  # the cloud backend reads it only while every new file is listed
     docs = DocumentIndex(make_settings(tmp_path, copy_root)).list("essays")
     assert sorted(d.id for d in docs) == [
         "essays/Corwin Ashgrove.md",
@@ -90,13 +92,21 @@ def test_symlinks_out_of_root_rejected(tmp_path, copy_root):
     (outside / "secret.md").write_text("# Secret\nkeep out")
     os.symlink(outside, copy_root / "linked")
     os.symlink(outside / "secret.md", copy_root / "essays" / "secret.md")
-    idx = DocumentIndex(make_settings(tmp_path, copy_root))
-    with pytest.raises(WorkspacePathError):
-        idx.list("linked")
-    with pytest.raises(WorkspacePathError):
-        idx.read("essays/secret.md")
-    assert "essays/secret.md" not in {d.id for d in idx.list("essays")}
-    assert all("keep out" not in s.text for s in idx.search("secret keep out"))
+    for backend in ("openrouter", "llama_server"):
+        idx = DocumentIndex(make_settings(tmp_path, copy_root, backend))
+        with pytest.raises(WorkspacePathError):
+            idx.list("linked")
+        with pytest.raises(WorkspacePathError):
+            idx.read("essays/secret.md")
+    local = DocumentIndex(make_settings(tmp_path, copy_root, "llama_server"))
+    assert "essays/secret.md" not in {d.id for d in local.list("essays")}
+    assert all("keep out" not in s.text for s in local.search("secret keep out"))
+    # On a cloud backend a link out is a file the manifest can never list, so the folder is refused.
+    cloud = DocumentIndex(make_settings(tmp_path, copy_root))
+    with pytest.raises(CloudBackendRefused):
+        cloud.list("essays")
+    with pytest.raises(CloudBackendRefused):
+        cloud.search("secret keep out")
 
 
 def test_symlink_inside_root_is_fine(tmp_path, copy_root):
@@ -202,6 +212,7 @@ def fake_pdftotext(tmp_path):
 
 def test_pdfs_are_documents_when_pdftotext_is_installed(tmp_path, copy_root, fake_pdftotext):
     (copy_root / "essays" / "resume.pdf").write_bytes(b"%PDF")
+    mark_synthetic(copy_root)
     index = DocumentIndex(make_settings(tmp_path, copy_root, pdftotext=fake_pdftotext))
     docs = {d.id: d for d in index.list("essays")}
     assert docs["essays/resume.pdf"].title == "resume"  # listing never runs the tool
@@ -212,6 +223,7 @@ def test_pdfs_are_documents_when_pdftotext_is_installed(tmp_path, copy_root, fak
 
 def test_an_unreadable_pdf_is_skipped_in_search(tmp_path, copy_root, fake_pdftotext):
     (copy_root / "essays" / "bad.pdf").write_bytes(b"%PDF")
+    mark_synthetic(copy_root)
     index = DocumentIndex(make_settings(tmp_path, copy_root, pdftotext=fake_pdftotext))
     assert all(h.doc_id != "essays/bad.pdf" for h in index.search("robot", folder="essays"))
     with pytest.raises(ValueError):
@@ -246,9 +258,9 @@ class FakeEmbedder:
 def test_search_by_meaning_finds_a_document_with_no_shared_word(tmp_path):
     root = tmp_path / "w"
     root.mkdir()
-    (root / ".synthetic").write_text("invented\n")
     (root / "sea.md").write_text("# Tides\nThe lighthouse keeper watched each wave and tide roll in.")
     (root / "bot.md").write_text("# Bots\nOur robot machine sorts the recycling.")
+    mark_synthetic(root)
     s = make_settings(tmp_path, root)
     assert DocumentIndex(s).search("ocean") == []  # no keyword matches
     hits = DocumentIndex(s, embedder=FakeEmbedder()).search("ocean")
@@ -258,8 +270,8 @@ def test_search_by_meaning_finds_a_document_with_no_shared_word(tmp_path):
 def test_search_falls_back_to_keywords_when_the_embedder_fails(tmp_path):
     root = tmp_path / "w"
     root.mkdir()
-    (root / ".synthetic").write_text("invented\n")
     (root / "bot.md").write_text("# Bots\nOur robot sorts the recycling.")
+    mark_synthetic(root)
     hits = DocumentIndex(make_settings(tmp_path, root), embedder=FakeEmbedder(fail=True)).search("robot")
     assert [h.doc_id for h in hits] == ["bot.md"]
 

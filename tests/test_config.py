@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from base.config import CloudBackendRefused, assert_synthetic, load_settings, read_dotenv
+from tests.synthetic_helpers import mark_synthetic
 
 
 def test_openrouter_defaults(tmp_path):
@@ -33,6 +34,9 @@ def test_cloud_backend_needs_synthetic_marker(tmp_path):
     with pytest.raises(CloudBackendRefused):
         assert_synthetic(s, private)
     (private / ".synthetic").write_text("")
+    with pytest.raises(CloudBackendRefused, match="no readable"):  # a marker needs its manifest too
+        assert_synthetic(s, private)
+    mark_synthetic(private)
     assert_synthetic(s, private)
 
 
@@ -74,12 +78,12 @@ def test_marker_above_the_workspace_root_does_not_count(tmp_path):
     root = tmp_path / "teacher" / "class-2026"
     (root / "essays").mkdir(parents=True)
     s = load_settings({"BASE_HOME": str(tmp_path / "h"), "WORKSPACE_ROOT": str(root)})
-    (tmp_path / ".synthetic").write_text("")
+    mark_synthetic(tmp_path)
     with pytest.raises(CloudBackendRefused):
         assert_synthetic(s, root / "essays")
     with pytest.raises(CloudBackendRefused):
         assert_synthetic(s, tmp_path)  # outside the root: never
-    (root / ".synthetic").write_text("")
+    mark_synthetic(root)
     assert_synthetic(s, root / "essays")
 
 

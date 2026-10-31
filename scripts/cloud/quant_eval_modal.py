@@ -23,8 +23,8 @@ Tokens per second are on the cloud GPU, not on a Jetson.
     uv run --with modal python scripts/cloud/quant_eval_modal.py --run # the paid run
 
 modal is imported only for --run, so --help and --check work without it. Only folders marked
-.synthetic are ever sent. The prompts are built here from base/ and sent in the payload; the
-container never imports base.
+.synthetic, whose .synthetic-manifest.json lists every file in them, are ever sent. The prompts
+are built here from base/ and sent in the payload; the container never imports base.
 """
 
 from __future__ import annotations
@@ -82,21 +82,18 @@ def shipped_prompts(request_topics: dict[str, str]) -> dict:
 
 
 def is_synthetic(folder: Path, root: Path | None = None) -> bool:
-    """The marker in the folder or a parent up to `root`; one above it never counts.
+    """The marker in the folder or a parent up to `root`, with a manifest beside it that lists every
+    file under the marker's folder (base.config.synthetic_marked); one above `root` never counts.
 
     `root` defaults to the repo for a folder inside it (demo/.synthetic marks demo/essays), else
     to the folder's own parent, so a stray marker high above an --essays folder is ignored.
     """
+    from base.config import synthetic_marked
+
     folder = folder.resolve()
     if root is None:
         root = REPO if folder.is_relative_to(REPO.resolve()) else folder.parent
-    root = root.resolve()
-    for p in (folder, *folder.parents):
-        if not p.is_relative_to(root):
-            return False
-        if (p / ".synthetic").is_file():
-            return True
-    return False
+    return synthetic_marked(folder, root)
 
 
 def find_essay_dir(root: Path) -> Path | None:
@@ -172,7 +169,8 @@ def load_inputs(args: argparse.Namespace) -> tuple[dict, list[str]]:
         problems.append("no essay folder: pass --essays or add demo/essays")
     else:
         if not is_synthetic(essay_dir):
-            problems.append(f"{essay_dir.name} has no .synthetic marker; only invented data goes to the cloud")
+            problems.append(f"{essay_dir.name} has no .synthetic marker with a .synthetic-manifest.json that lists "
+                            "every file in it; only invented data goes to the cloud")
         rubric = Path(args.rubric) if args.rubric else find_rubric(essay_dir)
         inputs["rubric"] = model_view(rubric.read_text()) if rubric.is_file() else ""
         if not inputs["rubric"].strip():

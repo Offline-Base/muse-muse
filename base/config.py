@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from base import manifest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SYNTHETIC_MARKER = ".synthetic"
 
@@ -308,8 +310,8 @@ def _read_key(home: str) -> str | None:
         return None
 
 
-def synthetic_marked(folder: Path, root: Path) -> bool:
-    """Whether `folder` or a parent of it inside `root` (root included) holds the marker.
+def synthetic_folder(folder: Path, root: Path) -> Path | None:
+    """The nearest of `folder` and its parents inside `root` (root included) that holds the marker.
 
     A marker above the workspace root does not count: a stray .synthetic in a home folder or a
     shared parent must never mark a real class folder as invented data.
@@ -317,23 +319,38 @@ def synthetic_marked(folder: Path, root: Path) -> bool:
     folder, root = Path(folder).resolve(), Path(root).resolve()
     for candidate in (folder, *folder.parents):
         if not candidate.is_relative_to(root):
-            return False
+            return None
         if (candidate / SYNTHETIC_MARKER).is_file():
-            return True
-    return False
+            return candidate
+    return None
+
+
+def synthetic_marked(folder: Path, root: Path) -> bool:
+    """Whether `folder` or a parent of it inside `root` (root included) holds the marker, and every
+    file under that marker's folder is in its manifest with a matching hash (base/manifest.py)."""
+    marked = synthetic_folder(folder, root)
+    return marked is not None and manifest.check(marked).ok
 
 
 def assert_synthetic(settings: Settings, folder: Path) -> None:
     """Refuse to read a folder with a cloud Glimmer backend unless it is marked synthetic.
 
-    The marker may sit in the folder or a parent of it up to the workspace root, not above it.
+    The marker may sit in the folder or a parent of it up to the workspace root, not above it, and
+    the manifest beside it must list every file under that folder with a matching hash. The
+    refusal names a count of files, never a file name.
     """
     if not settings.is_cloud_backend:
         return
     folder = Path(folder).resolve()
-    if synthetic_marked(folder, settings.workspace_root):
-        return
-    raise CloudBackendRefused(
-        f"GLIMMER_BACKEND={settings.glimmer_backend} sends text to a cloud endpoint, so only folders "
-        f"marked with a {SYNTHETIC_MARKER} file (invented data) can be read. {folder.name} is not marked."
-    )
+    marked = synthetic_folder(folder, settings.workspace_root)
+    if marked is None:
+        raise CloudBackendRefused(
+            f"GLIMMER_BACKEND={settings.glimmer_backend} sends text to a cloud endpoint, so only folders "
+            f"marked with a {SYNTHETIC_MARKER} file (invented data) can be read. {folder.name} is not marked."
+        )
+    found = manifest.check(marked)
+    if not found.ok:
+        raise CloudBackendRefused(
+            f"GLIMMER_BACKEND={settings.glimmer_backend} sends text to a cloud endpoint, and {found.problem()}, "
+            "so nothing in it is read."
+        )

@@ -21,6 +21,7 @@ from base.services import Services
 from base.workspace.index import DocumentIndex
 from base.workspace.rag import NO_ANSWER, Rag
 from base.workspace.scans import ScanError, ScanReader
+from tests.synthetic_helpers import mark_synthetic
 
 CHECKER = "http://127.0.0.1:8083/v1"
 OPENROUTER = "https://openrouter.ai/api/v1"
@@ -321,6 +322,7 @@ def test_images_are_documents_only_with_a_scan_reader(settings):
     root = settings.workspace_root
     (root / "notes.md").write_text("# Notes\nGarden tomatoes.\n")
     (root / "form.png").write_bytes(PNG)
+    mark_synthetic(root)
     assert [d.id for d in DocumentIndex(settings).list()] == ["notes.md"]
     scans = FakeScans({"form.png": "Field trip form. Card 4111 1111 1111 1111."})
     index = DocumentIndex(settings, scans=scans)
@@ -336,6 +338,7 @@ def test_search_skips_an_image_it_cannot_read(settings):
     root = settings.workspace_root
     (root / "notes.md").write_text("# Notes\nField trip on Thursday.\n")
     (root / "bad.png").write_bytes(PNG)
+    mark_synthetic(root)
     index = DocumentIndex(settings, scans=FakeScans({}, fail={"bad.png"}))
     assert [s.doc_id for s in index.search("field trip")] == ["notes.md"]
 
