@@ -6,7 +6,7 @@
  */
 import { CLI_SOURCE } from "@/lib/outputs/assets-source";
 import { makeZip, type ZipEntry } from "@/lib/outputs/zip";
-import { connectorActions, parseManifest, plural } from "@/lib/format";
+import { connectorActions, parseManifest } from "@/lib/format";
 import type { Manifest } from "@/lib/types";
 
 export type OutputAction = Manifest["actions"][number];
@@ -27,12 +27,6 @@ export const NOT_OFFICIAL = "Built with Muse Muse, a hackathon concept. Not an o
  */
 export function publicActions(manifest: unknown): OutputAction[] {
   return connectorActions(parseManifest(manifest));
-}
-
-/** What the page's connector panel says it offers. Empty when an outside caller gets no tools. */
-export function connectorNote(manifest: unknown): string {
-  const offered = publicActions(manifest);
-  return offered.length ? ` It exposes ${plural(offered.length, "action")}: ${offered.map((a) => a.name).join(", ")}.` : "";
 }
 
 /** Where each output lives on the site. */

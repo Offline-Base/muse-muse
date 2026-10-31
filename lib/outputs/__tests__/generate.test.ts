@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { cliSource, connectorNote, outputLinks, pluginEntries, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputProduct } from "@/lib/outputs/generate";
+import { cliSource, outputLinks, pluginEntries, pluginName, pluginZip, publicActions, skillMarkdown, skillName, type OutputProduct } from "@/lib/outputs/generate";
 import { makeZip, readZip } from "@/lib/outputs/zip";
 import type { Manifest } from "@/lib/types";
 
@@ -519,13 +519,5 @@ describe("actions offered", () => {
     assert.deepEqual(publicActions(m).map((a) => a.name), ["split_bill"]);
     assert.doesNotMatch(cliSource(product("https://tip.example", m), origin), /send_mail/);
     assert.doesNotMatch(skillMarkdown(product("https://tip.example", m), origin), /send_mail/);
-  });
-
-  it("has the page's connector panel say only what the connector offers", () => {
-    const owner = { ...split, name: "send_mail", who: "owner" } as Manifest["actions"][number];
-    assert.equal(connectorNote(manifest([split, owner])), " It exposes 1 action: split_bill.");
-    assert.equal(connectorNote(manifest([split, { ...split, name: "other" }])), " It exposes 2 actions: split_bill, other.");
-    assert.equal(connectorNote(manifest([owner])), "");
-    assert.equal(connectorNote(null), "");
   });
 });
