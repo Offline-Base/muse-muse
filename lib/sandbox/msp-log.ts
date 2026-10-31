@@ -510,10 +510,15 @@ function describeCommand(c: Record<string, unknown>): { text: string; delivery?:
 /** Requests made for owner commands, which their `command` records already report. */
 const COMMAND_CALL = /^(turn\/(steer|interrupt|cancel)|userInput\/|workflow\/|subagent\/)/;
 
+/**
+ * The bridge tries to resume the build's session before it starts one, so a new session's first round always has a
+ * failed resume. It says nothing: when the start fails too, its own line and the exit record say why.
+ */
+const RESUME_CALL = "session/resume";
+
 /** The bridge's own requests, in words. Others go by their method's name. */
 const CALL_WORDS: Record<string, string> = {
   "session/start": "start the session",
-  "session/resume": "resume the session",
   "goal/set": "set the goal",
   "goal/edit": "change the goal",
   "turn/start": "start a turn",
@@ -755,7 +760,7 @@ export function condenseBridgeLines(lines: readonly string[], state: BridgeConde
         break;
       case "call": {
         const method = str(r.method);
-        if (r.ok !== false || COMMAND_CALL.test(method)) break;
+        if (r.ok !== false || COMMAND_CALL.test(method) || method === RESUME_CALL) break;
         const message = firstLine(obj(r.error).message);
         put({ kind: "status", text: `Muse Code couldn't ${CALL_WORDS[method] ?? `answer ${method || "a request"}`}${message ? `: ${message}` : ""}` });
         break;

@@ -489,6 +489,45 @@ describe("kinds the spike didn't produce", () => {
     assert.deepEqual(texts(c.lines), ["status: Muse Code couldn't set the goal: objective is empty after trimming", "status: Muse Code couldn't answer usage/read"]);
   });
 
+  it("stays quiet about the failed resume a new session's first round starts with, unless the start fails too", () => {
+    const sessionId = "01a18fef-7c76-73e1-b8e5-35e7c25ebd8b";
+    // The order bridge.mjs opens a session in: resume, which a new build's session can't, then start.
+    const started: BridgeLogRecord = { t: ++t, kind: "bridge", event: "started", sessionId };
+    const resume: BridgeLogRecord = {
+      t: ++t,
+      kind: "call",
+      method: "session/resume",
+      ok: false,
+      error: { message: `no session ${sessionId}`, code: -32011, kind: "notFound" },
+    };
+    const first: BridgeLogRecord[] = [
+      started,
+      resume,
+      { t: ++t, kind: "call", method: "session/start", ok: true, result: { session: { sessionId, activeTurnId: null } } },
+      { t: ++t, kind: "bridge", event: "session", sessionId, reason: "started" },
+      { t: ++t, kind: "call", method: "session/setReasoningEffort", ok: true, result: {} },
+      { t: ++t, kind: "call", method: "turn/start", ok: true, result: { turnId: "turn-1", disposition: "started" } },
+      { t: ++t, kind: "bridge", event: "turn", turnId: "turn-1", reason: "prompt" },
+      { t: ++t, kind: "call", method: "goal/set", ok: true, result: {} },
+    ];
+    assert.deepEqual(texts(condenseBridgeLines(toLines(first)).lines), ["start: Started"]);
+
+    const reason = `host did not start: couldn't open the session (no session ${sessionId}; session_id_conflict)`;
+    const neither = condenseBridgeLines(
+      toLines([
+        started,
+        resume,
+        { t: ++t, kind: "call", method: "session/start", ok: false, error: { message: "session_id_conflict", code: -32030, kind: "commandRejected" } },
+        exitRecord(2, { reason }),
+      ]),
+    );
+    assert.deepEqual(texts(neither.lines), [
+      "start: Started",
+      "status: Muse Code couldn't start the session: session_id_conflict",
+      `error: Muse Code stopped (${reason})`,
+    ]);
+  });
+
   it("skips torn, foreign and unknown lines", () => {
     const good = JSON.stringify(note("session/todoListChanged", { items: [{ text: "Write the page", status: "completed" }, { text: "Test it", status: "inProgress" }] }));
     const raw = ["", "not json", good.slice(0, 30), '{"foo":1}', '{"kind":"other"}', "[1,2]", "null", good];
