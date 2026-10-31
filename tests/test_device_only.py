@@ -386,7 +386,8 @@ def auto_on(tmp_path):
     ("request_text", "raw", "kind", "floor"),
     [
         ("Which students have an IEP?", "- Abigail Thornbury essay\n- Benjamin Adeyemi essay", "document_list", "request:iep"),
-        ("Find essay excerpts about bees.", "Abigail Thornbury wrote about bees. Call 512-555-0143.", "snippet", "identifier:phone"),
+        # a date of birth: the eval policy's identifier_topics refuse a phone or email outright
+        ("Find essay excerpts about bees.", "Abigail Thornbury wrote about bees. DOB: 2015-03-09.", "snippet", "identifier:dob"),
         ("Summarize the class scores to send to the principal", "Most of the class improved.", "class_aggregate", "outside_class"),
     ],
 )
