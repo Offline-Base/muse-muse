@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { del, list, put } from "@vercel/blob";
 import { env } from "@/lib/env";
-import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localFileUrl } from "@/lib/local-files";
+import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localFileUrl, type StoredPrefix } from "@/lib/local-files";
 
 /**
  * Vercel Blob paths, by prefix:
@@ -13,10 +13,12 @@ import { isSafeFileKey, LOCAL_FILES_DIR, localFileKey, localFilesEnabled, localF
  *   demos/<buildId>/...       recorded demo MP4s. Kept.
  *   transcripts/<buildId>/... redacted Muse Code session exports. Kept.
  *   fixtures/<buildId>/...    sample inputs the platform made for a build (Muse Image pictures, text files). Kept.
+ *   native/...                shell templates, per-product packages and lab results (docs/NATIVE.md, "Blob").
+ *   clips/<productId>/...     clips of a product on a real device that its owner uploaded. Kept.
  *
  * Local runs keep the same paths in .data/files instead (lib/local-files.ts).
  */
-export type BlobPrefix = "inspo" | "uploads" | "screens" | "demos" | "transcripts" | "fixtures";
+export type BlobPrefix = StoredPrefix;
 
 async function toBuffer(body: Buffer | Blob | ReadableStream | string): Promise<Buffer> {
   if (typeof body === "string") return Buffer.from(body);

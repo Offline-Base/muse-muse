@@ -131,4 +131,9 @@ test("releaseInFlight, reserveSpend and settleSpend", async () => {
   assert.match(captured.at(-1)!.query, /^delete from "usage" where "usage"\."id" = \$1$/);
   await settleSpend("r-1", { model: "sam-3.1", inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costUsd: 0 });
   assert.match(captured.at(-1)!.query, /^delete from "usage"/, "nothing used: the reservation goes");
+
+  nextResult = { fields: [], rows: [], command: "UPDATE" };
+  await settleSpend("r-1", { model: "composio:SERPAPI_SEARCH", inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd: 0 });
+  q = captured.at(-1)!;
+  assert.match(q.query, /^update "usage" set .*"units" = \$\d+/, "a call with units is kept at $0");
 });

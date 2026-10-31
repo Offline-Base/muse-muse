@@ -90,7 +90,7 @@ export async function reserveSpend(ctx: UsageContext, model: string | null, cost
 
 /** Replaces a reservation with the metered usage in one statement, or deletes it when the call used nothing. */
 export async function settleSpend(id: string, item: ModelUsage | null): Promise<void> {
-  const used = item && (item.inputTokens || item.outputTokens || item.images || item.videoFrames || item.audioSeconds || item.costUsd);
+  const used = item && (item.inputTokens || item.outputTokens || item.images || item.videoFrames || item.audioSeconds || item.units || item.costUsd);
   if (!item || !used) {
     await db().delete(schema.usage).where(eq(schema.usage.id, id));
     return;
@@ -105,6 +105,7 @@ export async function settleSpend(id: string, item: ModelUsage | null): Promise<
       images: item.images ?? 0,
       videoFrames: item.videoFrames ?? 0,
       audioSeconds: item.audioSeconds ?? 0,
+      units: item.units ?? 0,
       costUsd: item.costUsd,
     })
     .where(eq(schema.usage.id, id));

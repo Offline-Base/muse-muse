@@ -9,7 +9,7 @@
  */
 import { issueSignedToken, type IssuedSignedToken } from "@vercel/blob";
 import { handleUploadPresigned, type GeneratePresignedUrlEvent } from "@vercel/blob/client";
-import { isSafeFileKey } from "@/lib/local-files";
+import { isSafeFileKey, STORED_PREFIXES } from "@/lib/local-files";
 import { NO_CALLBACK_KEY } from "@/lib/pipeline/inspo-upload";
 import { blobAuth } from "@/lib/storage";
 
@@ -20,15 +20,18 @@ export const IMPORT_UPLOAD_TTL_MS = 15 * 60_000;
 export const IMPORT_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
 
 /** The paths the platform stores files under (lib/storage.ts BlobPrefix), as the rows name them. */
-const STORED_KEY = /^(?:inspo|uploads|screens|demos|transcripts|fixtures)\/[^?#]+$/;
+const STORED_KEY = new RegExp(`^(?:${STORED_PREFIXES.join("|")})/[^?#]+$`);
+const STORED_FOLDERS = `${STORED_PREFIXES.slice(0, -1).map((p) => `${p}/`).join(", ")} or ${STORED_PREFIXES.at(-1)}/`;
 
 export class ImportPathnameError extends Error {}
 
 /** Why `pathname` can't take a promoted file, or null. The script asks for the key the local run stored it under. */
 export function checkImportPathname(pathname: unknown): string | null {
   if (typeof pathname !== "string" || pathname.length > 300 || !STORED_KEY.test(pathname) || !isSafeFileKey(pathname)) {
-    return "Uploads must go to a stored file's path under inspo/, uploads/, screens/, demos/, transcripts/ or fixtures/.";
+    return `Uploads must go to a stored file's path under ${STORED_FOLDERS}.`;
   }
+  // Every later download is built from these, and a promoted product never needs to change one.
+  if (pathname.startsWith("native/shells/")) return "Uploads can't replace a shell template.";
   return null;
 }
 

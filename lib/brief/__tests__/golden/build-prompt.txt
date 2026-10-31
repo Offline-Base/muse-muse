@@ -1,0 +1,93 @@
+# Build this product
+
+Follow AGENTS.md. Before you write code, read this whole brief, look at every file in `inspo/`, read `.agents/skills/meta-ui` for the look, and read the skill for each model listed below.
+
+## Done means
+
+1. `npm run verify` exits 0.
+2. `musemuse.json` is filled in from this brief and valid against `musemuse.schema.json`.
+3. `BUILD_NOTES.md` says what you built, what you took from the inspo, which Meta models it calls and where, its limits, and anything from the brief you couldn't do.
+
+Then stop.
+
+## Product
+
+- Name: Bird Count
+- Slug: `bird-count` (use it in musemuse.json)
+- Tagline: Count the birds in a photo
+- For: Birders
+- Complexity: simple
+
+## Primary flow
+
+Build this first and make it work end to end with the files in `fixtures/`. Extra screens come after that, if at all.
+
+1. Upload a photo
+2. See the count with boxes
+
+The smoke test's judge screenshots must prove the tagline ("Count the birds in a photo"): each feature it or these steps name shown working at least once, and the last step's result finished on the final screen (verify skill, Screenshots for the judge).
+
+## Meta models
+
+Use only these. The gateway rejects any other model. Call them through the helpers in `lib/meta/`.
+
+- `sam-3.1`: Find birds. Why: It boxes objects. Skill: `.agents/skills/meta-sam`.
+
+## Inputs
+
+- image (required): A photo
+
+## Outputs
+
+- overlay: Boxes
+
+## Actions
+
+Serve each one as `POST /api/actions/<name>` with JSON in and JSON out. List it in `musemuse.json` with input and output JSON schemas and an example input, and have the UI call the same route.
+
+- `count_birds`: Takes a photo, returns a count.
+
+## Limits
+
+Show each limit a user would run into once in the UI, next to the thing it limits, in plain words for this product's users, and list them all in `musemuse.json`.
+
+- Counts are estimates.
+
+## Cost
+
+About $0.01 per run (estimate). One SAM call.
+Put this number in `musemuse.json` as `estimatedCostPerRunUsd`, and keep the smoke test under 5 model calls.
+
+## Inspiration
+
+A photo of a feeder.
+
+The user's references are in `inspo/`. Here's what each one shows:
+
+### `inspo/feeder.jpg` (image)
+
+Three sparrows on a feeder.
+
+Take from them:
+
+- Counting birds from a photo
+
+The look always comes from the meta-ui skill, in Meta blue. The inspo's mood shows only in the copy, the samples and any images the product makes, never as decoration, colors or fonts.
+
+Leave out:
+
+- The exact pixels of the person's photo
+- Always: names, logos, characters, copyrighted text, artwork and photos from the inspo, and the exact look of a real product (AGENTS.md).
+- Except the person's own samples in `fixtures/` (`fixtures/feeder.jpg`). They are test inputs: the smoke test feeds them in, and the result screen may show them as the input or inside the result. Never use them as decoration.
+
+## Sample files
+
+These are in `fixtures/`. The smoke test must use them.
+
+- `fixtures/feeder.jpg` (the person's own sample): The person's feeder photo
+
+## Budget
+
+Stay under 40 steps. If an approach fails twice, pick a simpler one and write the limit in BUILD_NOTES.md.
+
+The product's model calls during this build, every verify, fix round and the demo recording, share one $10.00 Meta budget, and the gateway reserves each call's max_output_tokens up front. Keep those caps close to what an answer needs. If the gateway says the budget is used up, it stays used up for this build: never wait for it, retry it or schedule anything, since nothing runs after your session ends. Make the calls cheaper or stop and say so in BUILD_NOTES.md.

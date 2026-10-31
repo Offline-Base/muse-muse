@@ -1,4 +1,6 @@
+import { TARGETS, type TargetId } from "@/lib/brief/schema";
 import { DRIVE_CARD_TERMS_VERSION, DRIVE_TERMS_DEFAULT_VERSION } from "@/lib/drive/terms";
+import { parseNativeTargets } from "@/lib/native/targets";
 import type { MuseEngine } from "@/lib/sandbox/bridge-protocol";
 import { agentCapacity } from "@/lib/sandbox/muse-config";
 import { publicHost } from "@/lib/sandbox/policy";
@@ -27,6 +29,16 @@ function dollars(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   const value = raw ? Number(raw) : NaN;
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+/** True when a switch is "1", "true", "yes" or "on" (any case). Anything else is off. */
+function flag(name: string): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env[name] ?? "").trim().toLowerCase());
+}
+
+/** A trimmed setting, or null when it is unset or empty. */
+function optional(name: string): string | null {
+  return process.env[name]?.trim() || null;
 }
 
 /** Muse Wonder, Meta's strongest model, is every platform role's default (docs/DESIGN.md, Model routing). */
@@ -285,6 +297,147 @@ export const env = {
    */
   get gadgetsEnabled(): boolean {
     return ["1", "true", "yes", "on"].includes((process.env.GADGETS_ENABLED ?? "").trim().toLowerCase());
+  },
+
+  // ---------- Where a product runs (docs/NATIVE.md). Every switch is off by default ----------
+
+  /**
+   * NATIVE_TARGETS: a comma list of "phone" and "desktop", the targets the native lane makes apps for. Empty or unset is
+   * exactly today's behavior: the same brief schema and prompts, no pill, no native run. Other words are ignored, since
+   * vr, glasses and agent have switches of their own.
+   */
+  get nativeTargets(): TargetId[] {
+    return parseNativeTargets(process.env.NATIVE_TARGETS);
+  },
+  /** VR_ENABLED: the brief writer may pick vr. Turn it on only after the builder snapshot has the VR overlay. */
+  get vrEnabled(): boolean {
+    return flag("VR_ENABLED");
+  },
+  /** GLASSES_ENABLED: the brief writer may pick glasses. Turn it on only after the snapshot has the glasses overlay. */
+  get glassesEnabled(): boolean {
+    return flag("GLASSES_ENABLED");
+  },
+  /** AGENTS_ENABLED: the brief writer may pick agent. Turn it on only after the snapshot has the agent kit. */
+  get agentsEnabled(): boolean {
+    return flag("AGENTS_ENABLED");
+  },
+  /** The targets a new brief may add to web, in TARGETS order. Empty means every brief is web only, as it is today. */
+  get enabledTargets(): TargetId[] {
+    const native = env.nativeTargets;
+    return TARGETS.filter(
+      (t) =>
+        native.includes(t) ||
+        (t === "vr" && env.vrEnabled) ||
+        (t === "glasses" && env.glassesEnabled) ||
+        (t === "agent" && env.agentsEnabled),
+    );
+  },
+
+  // ---------- The native lane: the device lab, Device Farm and their spend (docs/NATIVE.md) ----------
+
+  /** NATIVE_LAB: products are checked on the AWS Mac and Windows lab boxes. */
+  get nativeLab(): boolean {
+    return flag("NATIVE_LAB");
+  },
+  /** NATIVE_DEVICE_FARM: admin builds may run on real phones in AWS Device Farm. */
+  get nativeDeviceFarm(): boolean {
+    return flag("NATIVE_DEVICE_FARM");
+  },
+  /** GLASSES_NATIVE_CHECKS: a shipped glasses product also gets the iPhone Simulator check with Meta's mock glasses. */
+  get glassesNativeChecks(): boolean {
+    return flag("GLASSES_NATIVE_CHECKS");
+  },
+  /** All AWS spend on the lab through the event, in USD. AWS Budgets alerts are the separate backstop. */
+  get nativeSpendCapUsd(): number {
+    return dollars("NATIVE_SPEND_CAP_USD", 150);
+  },
+  /** The ledger warns the admin page at this total, in USD. */
+  get nativeSpendAlertUsd(): number {
+    return dollars("NATIVE_SPEND_ALERT_USD", 120);
+  },
+  get nativeDeviceFarmCapUsd(): number {
+    return dollars("NATIVE_DEVICE_FARM_CAP_USD", 40);
+  },
+  get nativeWindowsCapUsd(): number {
+    return dollars("NATIVE_WINDOWS_CAP_USD", 15);
+  },
+  get nativeMacHourlyUsd(): number {
+    return dollars("NATIVE_MAC_HOURLY_USD", 0.65);
+  },
+  get nativeWindowsHourlyUsd(): number {
+    return dollars("NATIVE_WINDOWS_HOURLY_USD", 0.083);
+  },
+  /** When the Mac host was allocated and when it will be released, as ISO dates. Its whole span is a fixed cost. */
+  get nativeMacAllocatedAt(): string | null {
+    return optional("NATIVE_MAC_ALLOCATED_AT");
+  },
+  get nativeMacReleaseAt(): string | null {
+    return optional("NATIVE_MAC_RELEASE_AT");
+  },
+  get nativeMacInstanceId(): string | null {
+    return optional("NATIVE_MAC_INSTANCE_ID");
+  },
+  get nativeWindowsInstanceId(): string | null {
+    return optional("NATIVE_WINDOWS_INSTANCE_ID");
+  },
+  /** The role the platform reaches AWS through, with its Vercel OIDC identity. There are no long-lived AWS keys. */
+  get awsRoleArn(): string | null {
+    return optional("AWS_ROLE_ARN");
+  },
+  /** The lab boxes' region. Not AWS_REGION, which a Vercel function may have set to its own region. */
+  get nativeAwsRegion(): string {
+    return optional("NATIVE_AWS_REGION") ?? "us-east-1";
+  },
+  get deviceFarmProjectArn(): string | null {
+    return optional("DEVICE_FARM_PROJECT_ARN");
+  },
+  /** DEVICE_FARM_ANDROID_DEVICE_ARNS: a comma list. */
+  get deviceFarmAndroidDeviceArns(): string[] {
+    return (process.env.DEVICE_FARM_ANDROID_DEVICE_ARNS ?? "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean);
+  },
+  /** The packager sandbox's snapshot. Separate from the builder's, and it holds only platform code. */
+  get packagerSnapshotId(): string | null {
+    return optional("PACKAGER_SNAPSHOT_ID");
+  },
+  /** The Android signing key, base64. Reaches the packager sandbox only, for the one repack command. Never logged. */
+  get nativeApkKeystoreB64(): string | null {
+    return optional("NATIVE_APK_KEYSTORE_B64");
+  },
+  get nativeApkKeystorePassword(): string | null {
+    return optional("NATIVE_APK_KEYSTORE_PASSWORD");
+  },
+  get nativeApkKeyAlias(): string | null {
+    return optional("NATIVE_APK_KEY_ALIAS");
+  },
+
+  // ---------- Agent tools (docs/AGENT_TOOLS.md) ----------
+
+  /** The Composio key. Platform only: never in a sandbox, a product, a browser or a log. */
+  get composioApiKey(): string {
+    return required("COMPOSIO_API_KEY").trim();
+  },
+  /** COMPOSIO_PERSONAL_ENABLED: Gmail, Calendar and Slack work for a product's owner, on the owner's own accounts. */
+  get composioPersonalEnabled(): boolean {
+    return flag("COMPOSIO_PERSONAL_ENABLED");
+  },
+  /** What all tools together may spend per UTC day, in USD. Composio has no cap of its own, so this is the only one. 0 pauses them. */
+  get toolsDailySpendCapUsd(): number {
+    return dollars("TOOLS_DAILY_SPEND_CAP_USD", 10);
+  },
+  /** Tool calls per UTC day across every product, which keeps the platform under Composio's 100k calls a month. */
+  get toolsDailyCalls(): number {
+    return number("TOOLS_DAILY_CALLS", 3000);
+  },
+  /** TOOLS_SIGNING_SECRET, or null: toolKey in lib/tools/keys.ts then derives its keys from GATEWAY_TOKEN_PEPPER. */
+  get toolsSigningSecret(): string | null {
+    return optional("TOOLS_SIGNING_SECRET");
+  },
+  /** Products' share of the team's Muse Wonder tokens per minute, so agents can't starve builds. */
+  get gatewayWonderTpm(): number {
+    return number("GATEWAY_WONDER_TPM", 1_500_000);
   },
 
   // ---------- Flash drive order requests (docs/VIBE_TUNING.md, Feature 6; lib/drive) ----------

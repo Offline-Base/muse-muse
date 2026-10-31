@@ -287,6 +287,28 @@ describe("import-product route", { skip: canMock ? false : "needs --experimental
       assert.deepEqual(starts[0]!.args, [{ productId: bundle.product.id, buildId: bundle.product.latestBuildId, sandboxName: bundle.product.sandboxName }]);
     });
 
+    it("saves what a product with targets carries, and fills in a bundle from before they existed", async () => {
+      const withExtras = recent(sampleBundle({ slug: "with-targets" }));
+      const clip = { url: `${STORE}/clips/${withExtras.product.id}/quest.mp4`, posterUrl: null, caption: "Filmed on a Meta Quest 3", addedAt: "2026-11-03T12:00:00.000Z" };
+      withExtras.product.extraClips = [clip];
+      withExtras.builds[0]!.requestedTargets = ["web", "phone"];
+      withExtras.builds[0]!.toolFixtures = { SERPAPI_SEARCH: [{ url: "https://example.com/a" }] };
+      assert.equal((await postRoute(post(withExtras, bot))).status, 201);
+      const [saved] = await testDb.select().from(realSchema.products).where(eq(realSchema.products.id, withExtras.product.id));
+      assert.deepEqual(saved!.extraClips, [clip]);
+      const [build] = await testDb.select().from(realSchema.builds).where(eq(realSchema.builds.id, withExtras.builds[0]!.id));
+      assert.deepEqual(build!.requestedTargets, ["web", "phone"]);
+      assert.deepEqual(build!.toolFixtures, { SERPAPI_SEARCH: [{ url: "https://example.com/a" }] });
+
+      const plain = recent(sampleBundle({ slug: "without-targets" }));
+      assert.equal((await postRoute(post(plain, bot))).status, 201);
+      const [old] = await testDb.select().from(realSchema.products).where(eq(realSchema.products.id, plain.product.id));
+      assert.deepEqual(old!.extraClips, []);
+      const [oldBuild] = await testDb.select().from(realSchema.builds).where(eq(realSchema.builds.id, plain.builds[0]!.id));
+      assert.equal(oldBuild!.requestedTargets, null);
+      assert.equal(oldBuild!.toolFixtures, null);
+    });
+
     it("changes nothing for the same product again, whatever the bundle says now", async () => {
       const bundle = sampleBundle();
       assert.equal((await postRoute(post(bundle, bot))).status, 201);

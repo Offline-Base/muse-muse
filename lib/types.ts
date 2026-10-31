@@ -1,6 +1,6 @@
-import type { Brief, ProductModelId } from "@/lib/brief/schema";
+import type { Brief, ProductModelId, TargetId } from "@/lib/brief/schema";
 
-export type { Brief, ProductModelId };
+export type { Brief, ProductModelId, TargetId };
 
 /** Model ids the platform itself or the gateway may send upstream. */
 export type MetaModelId =
@@ -64,6 +64,7 @@ export interface ModelUsage {
   images?: number;
   videoFrames?: number;
   audioSeconds?: number;
+  units?: number;
   costUsd: number;
 }
 
@@ -191,10 +192,87 @@ export type BuildEventBody =
    * command line as the owner's only when its id is among them, since the agent can write to the bridge's log.
    */
   | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string; commandIds?: string[] }
+  | NativeEventBody
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */
 export type BuildEvent = BuildEventBody & { id: number; at: string };
+
+/** Who started a native run: shipping, the agent mid-build, the owner, or a refinement's re-check. */
+export type NativeOrigin = "ship" | "agent" | "owner" | "refine";
+export type NativeItemState = "planned" | "queued" | "running" | "done" | "failed" | "skipped";
+
+/**
+ * One step of a native run, written to its build's log (docs/NATIVE.md, "The native event"): a package, a lab check or
+ * a Device Farm run. `item` is the step's id within the run, and each event says all that is true of it now, except that
+ * `media` and `artifact` stay from earlier events until a later one replaces them.
+ */
+export interface NativeEventBody {
+  type: "native";
+  runId: string;
+  origin: NativeOrigin;
+  item: string;
+  target: TargetId;
+  state: NativeItemState;
+  title: string;
+  detail?: string;
+  media?: Array<{ kind: "image" | "video"; url: string; posterUrl?: string | null; caption: string }>;
+  artifact?: { kind: string; url: string; bytes: number };
+  /** While queued: the jobs ahead of it and about how long they will take. */
+  queue?: { ahead: number; etaSeconds: number };
+  costUsd?: number;
+}
+
+/** A step of a native run as it stands after every event about it. */
+export type NativeItemView = Omit<NativeEventBody, "type" | "runId" | "origin">;
+
+export interface NativeRunView {
+  runId: string;
+  origin: NativeOrigin;
+  /** Oldest first, by when each step was first mentioned. */
+  items: NativeItemView[];
+  /** True while any step is planned, queued or running. A state this version doesn't know doesn't hold a run open. */
+  active: boolean;
+  costUsd: number;
+}
+
+const NATIVE_UNSETTLED: readonly NativeItemState[] = ["planned", "queued", "running"];
+
+/**
+ * Condenses a build's `native` events into its runs, oldest first. The latest event for a step wins, as Muse Code lines
+ * do by item id. Events may come from a newer branch, so anything that doesn't name a run and a step is skipped.
+ */
+export function condenseNativeEvents(events: ReadonlyArray<{ type: string }>): NativeRunView[] {
+  const runs = new Map<string, { origin: NativeOrigin; items: Map<string, NativeItemView> }>();
+  for (const event of events) {
+    if (event.type !== "native") continue;
+    const { type: _type, runId, origin, ...item } = event as NativeEventBody;
+    if (typeof runId !== "string" || typeof item.item !== "string") continue;
+    let run = runs.get(runId);
+    if (!run) runs.set(runId, (run = { origin, items: new Map() }));
+    const before = run.items.get(item.item);
+    run.items.set(item.item, { ...item, media: item.media ?? before?.media, artifact: item.artifact ?? before?.artifact, costUsd: item.costUsd ?? before?.costUsd });
+  }
+  return [...runs].map(([runId, run]) => {
+    const items = [...run.items.values()];
+    return {
+      runId,
+      origin: run.origin,
+      items,
+      active: items.some((i) => NATIVE_UNSETTLED.includes(i.state)),
+      costUsd: items.reduce((sum, i) => sum + (i.costUsd ?? 0), 0),
+    };
+  });
+}
+
+/** A clip of a product on a real device that its owner uploaded (products.extra_clips). */
+export interface ProductClip {
+  url: string;
+  posterUrl: string | null;
+  /** Says honestly what it shows, such as "Filmed on a Meta Quest 3". */
+  caption: string;
+  addedAt: string;
+}
 
 /** Mirrors template/musemuse.schema.json. */
 export interface Manifest {

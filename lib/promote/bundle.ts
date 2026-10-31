@@ -8,16 +8,20 @@
  * rows aren't in it either, since they would count against the live site's spend caps for today; a build's cost stays
  * on its row and in its cost events.
  */
-import { BriefSchema, type Brief } from "@/lib/brief/schema";
+import { BriefSchema, TARGETS, type Brief, type TargetId } from "@/lib/brief/schema";
+import { STORED_PREFIXES } from "@/lib/local-files";
+import { validateTargets } from "@/lib/native/targets";
 import { normalizeSlug, SLUG_MAX } from "@/lib/pipeline/logic";
 import { MAX_NOTE_CHARS, validateNote, validateReferences } from "@/lib/pipeline/references";
 import { publicHost } from "@/lib/sandbox/policy";
-import { TERMINAL_STATUSES, type BuildEventBody, type BuildStatus, type Reference } from "@/lib/types";
+import type { ToolFixtures } from "@/lib/tools/ids";
+import { TERMINAL_STATUSES, type BuildEventBody, type BuildStatus, type ProductClip, type Reference } from "@/lib/types";
 
 /** What the import route reads: under the 4.5 MB a Vercel Function takes in a request body. */
 export const IMPORT_MAX_BYTES = 4 * 1024 * 1024;
 export const IMPORT_MAX_BUILDS = 100;
 export const IMPORT_MAX_EVENTS = 20_000;
+const IMPORT_MAX_CLIPS = 50;
 const MAX_LINK = 2048;
 const MAX_ERROR = 20_000;
 
@@ -44,6 +48,8 @@ export interface ImportProduct {
   demoVideoUrl: string | null;
   demoPosterUrl: string | null;
   transcriptUrl: string | null;
+  /** Left out when there are none, so a product without clips makes the same bundle it always did. */
+  extraClips?: ProductClip[];
   status: "live";
   createdAt: string;
   updatedAt: string;
@@ -69,6 +75,10 @@ export interface ImportBuild {
   error: string | null;
   startedAt: string;
   finishedAt: string | null;
+  /** Left out when empty, like toolFixtures, so a build with no targets makes the same bundle it always did. */
+  requestedTargets?: TargetId[];
+  /** The canned tool outputs a later refinement's tests start from. */
+  toolFixtures?: ToolFixtures;
 }
 
 /** A build_events row without its local id: the live table numbers it, in the order the bundle lists them. */
@@ -99,8 +109,10 @@ export type BundleParse = { ok: true; value: ImportBundle } | { ok: false; error
  * one of lib/storage.ts's Blob prefixes. Keys end in a letter or digit (an extension or a random suffix), so trailing
  * punctuation in text stays out of the match.
  */
-export const LOCAL_FILE_URL =
-  /https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d{1,5})?\/api\/files\/(?:inspo|uploads|screens|demos|transcripts|fixtures)\/[A-Za-z0-9\-_.!~*'()%/]*[A-Za-z0-9]/g;
+export const LOCAL_FILE_URL = new RegExp(
+  String.raw`https?://(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d{1,5})?/api/files/(?:${STORED_PREFIXES.join("|")})/[A-Za-z0-9\-_.!~*'()%/]*[A-Za-z0-9]`,
+  "g",
+);
 
 /** Every local file URL in a piece of text, in order. */
 export function localFileUrlsIn(text: string): string[] {
@@ -122,11 +134,13 @@ export function isPublicLink(value: string): boolean {
 /** Keys that hold a link: url, posterUrl, demoVideoUrl, previewUrl and so on. */
 const LINK_KEY = /^(?:url|[a-z][A-Za-z0-9]*Url)$/;
 
+const WRITTEN_BY_MODELS = new Set(["manifest", "brief", "toolFixtures"]);
+
 /**
  * Where a bundle (or any JSON) still points at the machine it came from: a local file URL anywhere, or a link field
  * that isn't a public https link. Text that only mentions localhost, such as Muse Code running curl against the
  * product's dev server in its sandbox, or a verify log, is left alone: that localhost is the sandbox, not the laptop.
- * Briefs and manifests are what the models wrote, so only the first rule applies inside them.
+ * Briefs, manifests and canned tool outputs are what the models wrote, so only the first rule applies inside them.
  */
 export function linkProblems(value: unknown): Array<{ field: string; message: string }> {
   const out: Array<{ field: string; message: string }> = [];
@@ -140,7 +154,7 @@ export function linkProblems(value: unknown): Array<{ field: string; message: st
     } else if (Array.isArray(v)) {
       v.forEach((item, i) => walk(item, `${field}[${i}]`, key, written));
     } else if (v && typeof v === "object") {
-      for (const [k, item] of Object.entries(v)) walk(item, field ? `${field}.${k}` : k, k, written || k === "manifest" || k === "brief");
+      for (const [k, item] of Object.entries(v)) walk(item, field ? `${field}.${k}` : k, k, written || WRITTEN_BY_MODELS.has(k));
     }
   };
   walk(value, "", "", false);
@@ -255,7 +269,8 @@ function ownSandbox(name: string, slug: string, productId: string): boolean {
 }
 
 const INSPIRATION_KEYS = ["id", "note", "references", "createdAt"] as const;
-const PRODUCT_KEYS = [
+/** Every column of `products` is here or in the test's list of what an import leaves out (bundle.test.ts). */
+export const PRODUCT_KEYS = [
   "id",
   "slug",
   "name",
@@ -273,7 +288,9 @@ const PRODUCT_KEYS = [
   "createdAt",
   "updatedAt",
 ] as const;
-const BUILD_KEYS = [
+/** Keys an older script's bundle doesn't have, and a bundle leaves out when they're empty. */
+export const OPTIONAL_PRODUCT_KEYS = ["extraClips"] as const;
+export const BUILD_KEYS = [
   "id",
   "inspirationId",
   "kind",
@@ -293,6 +310,8 @@ const BUILD_KEYS = [
   "startedAt",
   "finishedAt",
 ] as const;
+export const OPTIONAL_BUILD_KEYS = ["requestedTargets", "toolFixtures"] as const;
+const CLIP_KEYS = ["url", "posterUrl", "caption", "addedAt"] as const;
 const EVENT_KEYS = ["buildId", "type", "payload", "at"] as const;
 
 function inspiration(v: unknown, field: string): ImportInspiration {
@@ -304,8 +323,26 @@ function inspiration(v: unknown, field: string): ImportInspiration {
   return { id: id(o.id, `${field}.id`), note: note.value, references: references.value, createdAt: when(o.createdAt, `${field}.createdAt`) };
 }
 
+function clip(v: unknown, field: string): ProductClip {
+  const o = fields(v, field, CLIP_KEYS);
+  const url = link(o.url, `${field}.url`);
+  if (url === null) fail(`${field}.url`, `${field}.url must be a public https link.`);
+  return {
+    url,
+    posterUrl: link(o.posterUrl, `${field}.posterUrl`),
+    caption: text(o.caption, `${field}.caption`, 300, 1),
+    addedAt: when(o.addedAt, `${field}.addedAt`),
+  };
+}
+
+function requestedTargets(v: unknown, field: string): TargetId[] {
+  const check = validateTargets(list(v, field, TARGETS.length), TARGETS);
+  if (!check.ok) fail(field, `${field}: ${check.error}`);
+  return check.value;
+}
+
 function product(v: unknown): ImportProduct {
-  const o = fields(v, "product", PRODUCT_KEYS);
+  const o = fields(v, "product", PRODUCT_KEYS, OPTIONAL_PRODUCT_KEYS);
   const productId = id(o.id, "product.id");
   const slug = text(o.slug, "product.slug", SLUG_MAX, 1);
   if (normalizeSlug(slug) !== slug) fail("product.slug", "product.slug must be lowercase letters, digits and single dashes.");
@@ -326,6 +363,9 @@ function product(v: unknown): ImportProduct {
     demoVideoUrl: link(o.demoVideoUrl, "product.demoVideoUrl"),
     demoPosterUrl: link(o.demoPosterUrl, "product.demoPosterUrl"),
     transcriptUrl: link(o.transcriptUrl, "product.transcriptUrl"),
+    ...(o.extraClips === undefined
+      ? {}
+      : { extraClips: list(o.extraClips, "product.extraClips", IMPORT_MAX_CLIPS).map((c, i) => clip(c, `product.extraClips[${i}]`)) }),
     status: "live",
     createdAt: when(o.createdAt, "product.createdAt"),
     updatedAt: when(o.updatedAt, "product.updatedAt"),
@@ -345,7 +385,7 @@ function brief(v: unknown, field: string): Brief | null {
 }
 
 function build(v: unknown, field: string): ImportBuild {
-  const o = fields(v, field, BUILD_KEYS);
+  const o = fields(v, field, BUILD_KEYS, OPTIONAL_BUILD_KEYS);
   if (o.kind !== "build" && o.kind !== "refine") fail(`${field}.kind`, `${field}.kind must be build or refine.`);
   if (!TERMINAL_STATUSES.includes(o.status as BuildStatus)) {
     fail(`${field}.status`, `${field}.status must be one a build ends with (${TERMINAL_STATUSES.join(", ")}).`);
@@ -369,6 +409,8 @@ function build(v: unknown, field: string): ImportBuild {
     error: maybeText(o.error, `${field}.error`, MAX_ERROR),
     startedAt: when(o.startedAt, `${field}.startedAt`),
     finishedAt: maybeWhen(o.finishedAt, `${field}.finishedAt`),
+    ...(o.requestedTargets === undefined ? {} : { requestedTargets: requestedTargets(o.requestedTargets, `${field}.requestedTargets`) }),
+    ...(o.toolFixtures === undefined ? {} : { toolFixtures: plainObject(o.toolFixtures, `${field}.toolFixtures`) as ToolFixtures }),
   };
 }
 

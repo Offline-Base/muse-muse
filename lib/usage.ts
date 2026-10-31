@@ -3,8 +3,11 @@ import { db, schema } from "@/lib/db/client";
 import type { ModelUsage } from "@/lib/types";
 
 export interface UsageContext {
-  /** "docs" is the live docs demos (lib/docs/proxy), which run on the platform's key with no product. */
-  source: "gateway" | "muse_code" | "platform" | "docs";
+  /**
+   * "docs" is the live docs demos (lib/docs/proxy), which run on the platform's key with no product. "tools" is the tool
+   * gateway's calls to Composio (docs/AGENT_TOOLS.md).
+   */
+  source: "gateway" | "muse_code" | "platform" | "docs" | "tools";
   endpoint: string;
   productId?: string | null;
   buildId?: string | null;
@@ -14,7 +17,7 @@ export interface UsageContext {
 /** Records Meta usage. One row per model per call. */
 export async function recordUsage(ctx: UsageContext, items: ModelUsage[]): Promise<void> {
   const rows = items
-    .filter((u) => u.inputTokens || u.outputTokens || u.images || u.videoFrames || u.audioSeconds || u.costUsd)
+    .filter((u) => u.inputTokens || u.outputTokens || u.images || u.videoFrames || u.audioSeconds || u.units || u.costUsd)
     .map((u) => ({
       source: ctx.source,
       endpoint: ctx.endpoint,
@@ -28,6 +31,7 @@ export async function recordUsage(ctx: UsageContext, items: ModelUsage[]): Promi
       images: u.images ?? 0,
       videoFrames: u.videoFrames ?? 0,
       audioSeconds: u.audioSeconds ?? 0,
+      units: u.units ?? 0,
       costUsd: u.costUsd,
     }));
   if (rows.length) await db().insert(schema.usage).values(rows);
