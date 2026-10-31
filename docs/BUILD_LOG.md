@@ -881,6 +881,17 @@ because the sidebar showed a real account.
 - The fine-tune session also freed space: five older 1.7 GB adapter copies deleted after matching their S3 copies; 13 GB
   free.
 
+### 19:29 Work pushed to GitHub
+
+- tuned-model-options pushed as a branch (a5c82b5; Offline-Base/muse-muse). Checked: Vercel made no deployment for it,
+  so the main-only rule in the pushed vercel.json is honored. The recent previews are all from the fine-tune session's
+  `knowledge` branch (run logs, no migrations).
+- Backup refs, which Vercel never builds: refs/backup/tg-decide (02b1b32), tg-preview-db (a66be04), tg-3d (7f826bb),
+  tg-musecode (23525cb), tg-offline (6eb0d2f), tg-replicate (34af886). A key-pattern scan ran first; its only hits were
+  made-up test values.
+- From now on General pushes after each landing with `_plan/push.sh` (scan, then tuned-model-options as a branch and
+  General's other branches as backup refs; wave 3's branches are left to that session).
+
 ## Gaps
 
 What this record doesn't confirm:
