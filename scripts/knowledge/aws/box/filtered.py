@@ -309,7 +309,7 @@ def pmc_batch_safe(job):
 # OpenAlex
 
 
-OA_COLUMNS = ["id", "doi", "title", "ids", "publication_date", "publication_year", "language", "type", "primary_location", "best_oa_location", "open_access", "institutions", "primary_topic", "topics", "keywords", "mesh", "funders", "abstract_inverted_index", "is_retracted", "is_paratext", "cited_by_count", "created_date", "updated_date"]
+OA_COLUMNS = ["id", "doi", "title", "ids", "publication_date", "publication_year", "language", "type", "primary_location", "best_oa_location", "open_access", "authorships.list.element.institutions", "authors_count", "primary_topic", "topics", "keywords", "mesh", "funders", "abstract_inverted_index", "is_retracted", "is_paratext", "cited_by_count", "created_date", "updated_date"]
 OA_WORKERS = 12
 
 
@@ -327,9 +327,19 @@ def oa_abstract(raw):
         return None
 
 
+def oa_institutions(authorships):
+    """Each author's institutions, once per work. The work-level institutions column is empty in this snapshot, and author names stay out."""
+    seen = {}
+    for author in authorships or []:
+        for inst in author.get("institutions") or []:
+            seen.setdefault(inst.get("id") or inst.get("display_name"), {k: inst.get(k) for k in ("id", "display_name", "ror", "country_code", "type")})
+    return list(seen.values())
+
+
 def oa_flatten(t):
     import pyarrow as pa
     import pyarrow.compute as pc
+    institution = pa.struct([(k, pa.string()) for k in ("id", "display_name", "ror", "country_code", "type")])
 
     def whole(name):
         return t.column(name).combine_chunks()
@@ -346,7 +356,8 @@ def oa_flatten(t):
         "publisher": leaf("primary_location", ["source", "host_organization_name"]),
         "is_oa": leaf("open_access", ["is_oa"]), "oa_status": leaf("open_access", ["oa_status"]), "oa_url": leaf("open_access", ["oa_url"]),
         "oa_license": leaf("best_oa_location", ["license"]),
-        "institutions": whole("institutions"), "primary_topic": whole("primary_topic"), "topics": whole("topics"),
+        "institutions": pa.array([oa_institutions(x) for x in whole("authorships").to_pylist()], type=pa.list_(institution)),
+        "authors_count": whole("authors_count"), "primary_topic": whole("primary_topic"), "topics": whole("topics"),
         "keywords": whole("keywords"), "mesh": whole("mesh"), "funders": whole("funders"),
         "abstract": pa.array([oa_abstract(x) for x in whole("abstract_inverted_index").to_pylist()], type=pa.string()),
         "is_retracted": whole("is_retracted"), "is_paratext": whole("is_paratext"), "cited_by_count": whole("cited_by_count"),
@@ -393,7 +404,7 @@ def oa_file(url):
             writer.close()
             upload(path, f"openalex/{item}.parquet")
         result = {"seen": seen, "kept": rows, "oaStatus": status}
-        mark("openalex", item, result)
+        mark("openalex-v2", item, result)
         return item, result
     except Exception as err:
         return item, {"error": repr(err)[:300]}
@@ -409,7 +420,7 @@ def openalex_lane(a):
         "dataset": "OpenAlex works with publication_date from 2026-01-04 to 2026-10-29",
         "source": "s3://openalex/data/parquet/works/ (snapshot 2026-10-14, https://help.openalex.org/access/snapshot/)",
         "license": "CC0 for OpenAlex's metadata. Abstracts belong to their publishers: training-only, never in a public release.",
-        "selection": "Row-level filter on publication_date. Abstracts are rebuilt from the inverted index. Authors' institutions come from the work's institutions list; author names are not kept.",
+        "selection": "Row-level filter on publication_date. Abstracts are rebuilt from the inverted index. institutions is the distinct set across the authors' institutions; author names are not kept.",
         "format": "Parquet (zstd), one part per source file.",
         "note": PRIVATE,
     })
@@ -419,7 +430,7 @@ def openalex_lane(a):
     urls.sort(key=lambda u: u, reverse=True)
     if a.sample:
         urls = urls[:a.sample]
-    done = progress("openalex")
+    done = progress("openalex-v2")
     jobs = [u for u in urls if "%s-%s" % re.search(r"updated_date=([\d-]+)/(part_\d+)", u).groups() not in done]
     total, status = {}, {}
     for r in done.values():

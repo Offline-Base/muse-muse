@@ -11,10 +11,11 @@
  * (its robots.txt disallows everything, so package data comes from ecosyste.ms). GitHub calls use GITHUB_TOKEN when it is
  * set and the gh CLI when it is not; neither ever prints the token.
  */
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -40,7 +41,7 @@ const monthIndex = (name: string) => MONTHS.findIndex((m) => m.startsWith(name.s
 
 /** The first date in a string, as YYYY-MM-DD: 2026-03-01, 2026.03.01, March 1, 2026, March 1st 2026, or 1 March 2026. */
 function findDate(s: string): string | null {
-  const iso = s.match(/\b(20\d{2})[-./](\d{2})[-./](\d{2})\b/);
+  const iso = s.match(/\b(20\d{2})[-./](\d{2})[-./](\d{2})(?!\d)/);
   const us = s.match(new RegExp(`\\b${monthPattern} (\\d{1,2})(?:st|nd|rd|th)?,? (20\\d{2})\\b`));
   const uk = s.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)? ${monthPattern},? (20\\d{2})\\b`));
   const pad = (n: string | number) => String(n).padStart(2, "0");
@@ -270,7 +271,7 @@ const runFile = promisify(execFile);
 let ghTurn: Promise<unknown> = Promise.resolve();
 
 /** One `gh api` call at a time, a second apart, cached like `get`. Null when the route doesn't exist. */
-function ghCli(route: string): Promise<string | null> {
+function ghCli(route: string, flags: string[] = []): Promise<string | null> {
   const turn = ghTurn.then(async () => {
     const file = cacheFile(GITHUB_API + route);
     if (existsSync(file)) return readFile(file, "utf8");
@@ -278,13 +279,13 @@ function ghCli(route: string): Promise<string | null> {
     for (let attempt = 0; attempt < 5; attempt++) {
       await sleep(1000);
       try {
-        const { stdout } = await runFile("gh", ["api", route], { maxBuffer: 512 * 1024 * 1024, encoding: "utf8" });
+        const { stdout } = await runFile("gh", ["api", ...flags, route], { maxBuffer: 512 * 1024 * 1024, encoding: "utf8" });
         await writeFile(file, stdout);
         return stdout;
       } catch (err) {
         const message = String((err as { stderr?: string }).stderr || (err as Error).message);
         if ((err as { code?: string }).code === "ENOENT") throw new Error("GITHUB_TOKEN is not set and the gh CLI is not installed");
-        if (!/rate limit|HTTP 403|HTTP 429|HTTP 5\d\d|timeout|connection/i.test(message)) {
+        if (!/rate limit|HTTP 403|HTTP 429|HTTP 5\d\d|timeout|connection|stream error/i.test(message)) {
           if (!/HTTP 404|HTTP 409/.test(message)) console.warn(`gh api ${route}: ${message.slice(0, 200)}`);
           return null;
         }
@@ -303,6 +304,20 @@ async function github<T>(route: string): Promise<T | null> {
   const token = process.env.GITHUB_TOKEN;
   const body = token ? await get(GITHUB_API + route, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" } }) : await ghCli(route);
   return body ? (JSON.parse(body) as T) : null;
+}
+
+/** Every page of a GitHub list, for routes that only page by cursor. */
+async function githubAll<T>(route: string): Promise<T[]> {
+  const body = await ghCli(route, ["--paginate"]);
+  return body ? (JSON.parse(body) as T[]) : [];
+}
+
+/** A release file, through the REST API, since robots.txt disallows github.com's download links. Not cached, being large. */
+async function githubAsset(repo: string, id: number, file: string): Promise<void> {
+  const child = spawn("gh", ["api", "-H", "Accept: application/octet-stream", `repos/${repo}/releases/assets/${id}`], { stdio: ["ignore", "pipe", "ignore"] });
+  const exit = new Promise<number | null>((resolve, reject) => child.on("error", reject).on("close", resolve));
+  await pipeline(child.stdout, createWriteStream(file));
+  if ((await exit) !== 0) throw new Error(`could not download release asset ${id} of ${repo}`);
 }
 
 const raw = (repo: string, branch: string, file: string) => `https://raw.githubusercontent.com/${repo}/${branch}/${file.split("/").map(encodeURIComponent).join("/")}`;
@@ -365,6 +380,10 @@ function cleanNotes(body: string, rst = false): string {
     .replace(/\{\{[<%][\s\S]*?[>%]\}\}/g, "")
     .replace(/^\s*\*{0,2}Full Changelog\*{0,2}:?.*$/gim, "")
     .replace(/\s+by @[\w-]+ in \S+/g, "")
+    .replace(/^.*@[\w-]+ made (their|his|her) first contribution.*$/gim, "")
+    .replace(/^#+\s*New Contributors\s*$/gim, "")
+    /** GitHub handles name people; a scoped package such as @types/node and a decorator in backticks stay. */
+    .replace(/(?<![\w/.`])@[A-Za-z0-9][\w-]*(?![\w/-])/g, "")
     .replace(/\(?\[`?[0-9a-f]{7,40}`?\]\([^)]*\)\)?/g, "")
     .replace(/\(?\b[0-9a-f]{40}\b\)?/g, "");
   return (rst ? rstToText(stripped) : mdText(stripped)).replace(/\\?\[\\?\]\s*-\s*/g, "").replace(/https?:\/\/\S+/g, "").replace(/[ \t]+$/gm, "").trim();
@@ -675,20 +694,36 @@ interface CveRecord {
   };
 }
 
-/** Records under cves/2026, one raw file a second. A CVE numbered in an earlier year and published in the window is not read. */
+/**
+ * The CVE Program's nightly bulk file, one request where reading cves/2026 file by file would take 15 hours. Every record
+ * is read, since a CVE numbered in an earlier year can be published in the window. A small test reads the day's delta file.
+ */
 async function cvelist(): Promise<SourceRecord[]> {
-  const top = await github<{ tree: Array<{ path: string; type: string }> }>("repos/CVEProject/cvelistV5/git/trees/main:cves/2026");
-  const dirs = (top?.tree ?? []).filter((t) => t.type === "tree").map((t) => t.path);
+  const repo = "CVEProject/cvelistV5";
+  const release = await github<{ assets: Array<{ id: number; name: string }> }>(`repos/${repo}/releases/latest?day=${new Date().toISOString().slice(0, 10)}`);
+  const asset = release?.assets.find((a) => (SAMPLE ? /delta_CVEs/ : /all_CVEs/).test(a.name));
+  if (!asset) throw new Error("no bulk file in the latest cvelistV5 release");
+  const dir = await mkdtemp(path.join(tmpdir(), "cvelist-"));
   const facts: Fact[] = [];
-  for (const dir of SAMPLE ? dirs.slice(1, 2) : dirs) {
-    const listing = await github<{ tree: Array<{ path: string }> }>(`repos/CVEProject/cvelistV5/git/trees/main:cves/2026/${dir}`);
-    const files = (listing?.tree ?? []).map((t) => t.path).filter((p) => p.endsWith(".json"));
-    for (const file of SAMPLE ? files.slice(0, Math.min(LIMIT * 2, 9)) : files) {
+  try {
+    let file = path.join(dir, "bulk.zip");
+    await githubAsset(repo, asset.id, file);
+    /** The full file is a zip holding one zip. */
+    for await (const { data } of zipEntries(file, (name) => name.endsWith(".zip"))) {
+      file = path.join(dir, "inner.zip");
+      await writeFile(file, data);
+    }
+    for await (const { data } of zipEntries(file, (name) => /(^|\/)CVE-\d+-\d+\.json$/.test(name))) {
       if (pauseRequested()) break;
-      const r = await getJson<CveRecord>(raw("CVEProject/cvelistV5", "main", `cves/2026/${dir}/${file}`));
-      const meta = r?.cveMetadata;
+      let r: CveRecord;
+      try {
+        r = JSON.parse(data.toString("utf8"));
+      } catch {
+        continue;
+      }
+      const meta = r.cveMetadata;
       const date = meta?.datePublished?.slice(0, 10);
-      if (!r || meta?.state !== "PUBLISHED" || !inWindow(date)) continue;
+      if (meta?.state !== "PUBLISHED" || !inWindow(date)) continue;
       const cna = r.containers?.cna;
       const description = cna?.descriptions?.find((d) => d.lang?.startsWith("en"))?.value ?? cna?.descriptions?.[0]?.value;
       const affected = [...new Set((cna?.affected ?? []).map((a) => {
@@ -705,29 +740,32 @@ async function cvelist(): Promise<SourceRecord[]> {
       ];
       facts.push({ date, text: parts.filter(Boolean).join(" ") });
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
   return byMonth({ id: "cvelist", source: "CVE List", title: "CVE records published", url: "https://github.com/CVEProject/cvelistV5", license: "CVE Program Terms of Use (reproduction and derivative works allowed, keep the notice)", visibility: "public" }, facts);
 }
 
-/** The reviewed advisories only: the unreviewed tree (about 43,000 in the window) mirrors what cvelist already covers. */
+/** The reviewed advisories only, through the global advisories API, 100 to a request: the unreviewed ones (about 43,000 in the window) mirror what cvelist already covers. */
 async function githubAdvisories(): Promise<SourceRecord[]> {
   const facts: Fact[] = [];
   const months = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10"];
   for (const month of SAMPLE ? ["03"] : months) {
-    const listing = await github<{ tree: Array<{ path: string; type: string }> }>(`repos/github/advisory-database/git/trees/main:advisories/github-reviewed/2026/${month}`);
-    const ids = (listing?.tree ?? []).filter((t) => t.type === "tree").map((t) => t.path);
-    for (const id of SAMPLE ? ids.slice(0, Math.min(LIMIT * 2, 9)) : ids) {
-      if (pauseRequested()) break;
-      const a = await getJson<{ published?: string; withdrawn?: string; summary?: string; details?: string; aliases?: string[]; database_specific?: { severity?: string }; affected?: Array<{ package?: { ecosystem?: string; name?: string } }> }>(raw("github/advisory-database", "main", `advisories/github-reviewed/2026/${month}/${id}/${id}.json`));
-      const date = a?.published?.slice(0, 10);
-      if (!a || a.withdrawn || !inWindow(date)) continue;
-      const packages = [...new Set((a.affected ?? []).map((x) => (x.package?.name ? `${x.package.name} (${x.package.ecosystem})` : "")).filter(Boolean))].slice(0, 4);
+    if (pauseRequested()) break;
+    const first = `2026-${month}-01` < FROM ? FROM : `2026-${month}-01`;
+    const end = new Date(Date.UTC(2026, Number(month), 0)).toISOString().slice(0, 10);
+    const list = await githubAll<{ ghsa_id: string; published_at?: string; withdrawn_at?: string | null; summary?: string; description?: string; severity?: string; identifiers?: Array<{ type: string; value: string }>; vulnerabilities?: Array<{ package?: { ecosystem?: string; name?: string } }> }>(`advisories?type=reviewed&published=${first}..${end > TO ? TO : end}&per_page=100`);
+    for (const a of SAMPLE ? list.slice(0, Math.min(LIMIT * 2, 9)) : list) {
+      const date = a.published_at?.slice(0, 10);
+      if (a.withdrawn_at || !inWindow(date)) continue;
+      const packages = [...new Set((a.vulnerabilities ?? []).map((x) => (x.package?.name ? `${x.package.name} (${x.package.ecosystem})` : "")).filter(Boolean))].slice(0, 4);
+      const aliases = (a.identifiers ?? []).filter((i) => i.type !== "GHSA").map((i) => i.value);
       const parts = [
-        `GitHub published advisory ${id} on ${longDate(date)}${a.database_specific?.severity ? `, rated ${a.database_specific.severity.toLowerCase()} severity` : ""}.`,
+        `GitHub published advisory ${a.ghsa_id} on ${longDate(date)}${a.severity ? `, rated ${a.severity.toLowerCase()} severity` : ""}.`,
         a.summary ? endSentence(oneLine(a.summary)) : "",
         packages.length ? `It affects ${packages.join(", ")}.` : "",
-        a.aliases?.length ? `Also known as ${a.aliases.slice(0, 3).join(", ")}.` : "",
-        a.details ? clip(oneLine(mdText(a.details)), 70) : "",
+        aliases.length ? `Also known as ${aliases.slice(0, 3).join(", ")}.` : "",
+        a.description ? clip(oneLine(mdText(a.description)), 70) : "",
       ];
       facts.push({ date, text: parts.filter(Boolean).join(" ") });
     }
@@ -1346,6 +1384,28 @@ interface GhRepo {
   license?: { spdx_id?: string } | null;
 }
 
+/** A repository's stable releases in the window: a bare dated sentence for each, and the same with its notes where it has any. */
+async function repoReleases(fullName: string): Promise<{ dated: Fact[]; notes: Fact[] }> {
+  const dated: Fact[] = [];
+  const notes: Fact[] = [];
+  for (let page = 1; page <= (SAMPLE ? 1 : 5); page++) {
+    const releases = await github<Array<{ tag_name: string; name?: string | null; body?: string | null; draft?: boolean; prerelease?: boolean; published_at?: string | null }>>(`repos/${fullName}/releases?per_page=100&page=${page}`);
+    for (const r of releases ?? []) {
+      const date = r.published_at?.slice(0, 10);
+      if (!inWindow(date) || r.draft || r.prerelease || UNSTABLE.test(r.tag_name)) continue;
+      const opening = `${fullName} released ${r.tag_name} on ${longDate(date)}.`;
+      dated.push({ date, text: opening });
+      const body = clip(cleanNotes(r.body ?? ""), 800);
+      if (body) notes.push({ date, text: `${opening}\n\n${body}` });
+    }
+    const oldest = releases?.[releases.length - 1]?.published_at?.slice(0, 10);
+    if ((releases ?? []).length < 100 || !oldest || oldest < FROM) break;
+  }
+  return { dated, notes };
+}
+
+const releaseNotesMeta = (fullName: string, license: string, source: string): DocMeta => ({ id: `github-release-notes:${fullName}`, source, title: `${fullName} release notes`, url: `https://github.com/${fullName}/releases`, license: `${license || "No license"} repository; GitHub release notes, training only`, visibility: "private" });
+
 /**
  * Stable releases and CHANGELOG files of the top 500 repositories by stars. Changelogs follow the repository's license,
  * so they are public when it is an open one. Release notes on GitHub are not files in the repository, so their text is
@@ -1365,26 +1425,43 @@ async function githubTop(): Promise<SourceRecord[]> {
     if (pauseRequested()) break;
     const license = repo.license?.spdx_id ?? "";
     const open = PERMISSIVE.test(license);
-    const notes: Fact[] = [];
-    for (let page = 1; page <= (SAMPLE ? 1 : 5); page++) {
-      const releases = await github<Array<{ tag_name: string; name?: string | null; body?: string | null; draft?: boolean; prerelease?: boolean; published_at?: string | null }>>(`repos/${repo.full_name}/releases?per_page=100&page=${page}`);
-      for (const r of releases ?? []) {
-        const date = r.published_at?.slice(0, 10);
-        if (!inWindow(date) || r.draft || r.prerelease || UNSTABLE.test(r.tag_name)) continue;
-        const opening = `${repo.full_name} released ${r.tag_name} on ${longDate(date)}.`;
-        if (open) dates.push({ date, text: opening });
-        const body = clip(cleanNotes(r.body ?? ""), 800);
-        if (body) notes.push({ date, text: `${opening}\n\n${body}` });
-      }
-      const oldest = releases?.[releases.length - 1]?.published_at?.slice(0, 10);
-      if ((releases ?? []).length < 100 || !oldest || oldest < FROM) break;
-    }
+    const { dated, notes } = await repoReleases(repo.full_name);
+    if (open) dates.push(...dated);
     const url = `https://github.com/${repo.full_name}`;
-    records.push(...byMonth({ id: `github-release-notes:${repo.full_name}`, source: "GitHub release notes", title: `${repo.full_name} release notes`, url: `${url}/releases`, license: `${license || "No license"} repository; GitHub release notes, training only`, visibility: "private" }, notes));
+    records.push(...byMonth(releaseNotesMeta(repo.full_name, license, "GitHub release notes"), notes));
     const log = await repoChangelog(repo.full_name, repo.default_branch);
     if (log) records.push(...byMonth({ id: `github-changelog:${repo.full_name}`, source: "GitHub repository changelogs", title: `${repo.full_name} changelog`, url: `${url}/blob/${repo.default_branch}/${log.file}`, license: open ? license : `${license || "No license"} repository, training only`, visibility: open ? "public" : "private" }, log.facts));
   }
   records.unshift(...byMonth({ id: "github-release-dates", source: "GitHub release dates", title: "Releases of popular open-source projects", url: "https://github.com", license: "Facts from openly licensed repositories", visibility: "public" }, dates));
+  return records;
+}
+
+const META_ORGS = ["facebookresearch", "facebookincubator"];
+
+/**
+ * 2026 release notes from Meta's two big research organizations, on the same terms as githubTop. Listed newest push first,
+ * so only repositories pushed to in the window are asked about, which is about 450 of the 1,576.
+ */
+async function githubMetaOrgs(): Promise<SourceRecord[]> {
+  const dates: Fact[] = [];
+  const records: SourceRecord[] = [];
+  for (const org of META_ORGS) {
+    const repos: GhRepo[] = [];
+    for (let page = 1; page <= (SAMPLE ? 1 : 30) && !pauseRequested(); page++) {
+      const found = (await github<Array<GhRepo & { pushed_at?: string | null; fork?: boolean }>>(`orgs/${org}/repos?type=public&sort=pushed&direction=desc&per_page=100&page=${page}`)) ?? [];
+      const active = found.filter((r) => (r.pushed_at ?? "") >= FROM);
+      repos.push(...active.filter((r) => !r.fork));
+      if (active.length < 100) break;
+    }
+    for (const repo of SAMPLE ? repos.slice(0, Math.min(LIMIT, 4)) : repos) {
+      if (pauseRequested()) break;
+      const license = repo.license?.spdx_id ?? "";
+      const { dated, notes } = await repoReleases(repo.full_name);
+      if (PERMISSIVE.test(license)) dates.push(...dated);
+      records.push(...byMonth(releaseNotesMeta(repo.full_name, license, "Meta open-source release notes on GitHub"), notes));
+    }
+  }
+  records.unshift(...byMonth({ id: "github-meta-release-dates", source: "Meta open-source release dates on GitHub", title: "Releases from facebookresearch and facebookincubator", url: "https://github.com/facebookresearch", license: "Facts from openly licensed repositories", visibility: "public" }, dates));
   return records;
 }
 
@@ -1434,6 +1511,7 @@ runAll([
   step("django-releases", djangoReleases),
   step("docker-desktop", dockerDesktop),
   step("github-top-500", githubTop),
+  step("github-meta-orgs", githubMetaOrgs),
 ]).catch((err) => {
   console.error(err);
   process.exit(1);
