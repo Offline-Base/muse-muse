@@ -41,3 +41,12 @@ it("gives drizzle-kit an address that can't resolve on a preview without its own
     assert.equal(new URL(none).hostname.endsWith(".invalid"), true);
   }
 });
+
+it("gives drizzle-kit PREVIEW_DATABASE_URL on a preview, and DATABASE_URL (or \"\") elsewhere, as before", async () => {
+  const PREVIEW = "postgresql://prev_owner:fake-preview-secret@ep-preview-111111-pooler.us-east-2.aws.neon.tech/preview?sslmode=require";
+  assert.equal((await load({ VERCEL_ENV: "preview", DATABASE_URL: PROD, PREVIEW_DATABASE_URL: PREVIEW })).config.dbCredentials?.url, PREVIEW);
+  assert.equal((await load({ VERCEL_ENV: "production", DATABASE_URL: PROD, PREVIEW_DATABASE_URL: PREVIEW })).config.dbCredentials?.url, PROD);
+  assert.equal((await load({ DATABASE_URL: PROD })).config.dbCredentials?.url, PROD);
+  assert.equal((await load({ DATABASE_URL: "pglite:.data/pglite", VERCEL_ENV: "preview" })).config.dbCredentials?.url, "pglite:.data/pglite");
+  assert.equal((await load({})).config.dbCredentials?.url, "");
+});

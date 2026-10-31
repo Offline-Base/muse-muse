@@ -1,7 +1,8 @@
 /**
  * db() opens the database lib/db/url.ts picks: on a preview without PREVIEW_DATABASE_URL it throws before any client
- * exists, and with it the Neon client gets the preview's URL, never DATABASE_URL. The Neon driver and Drizzle are
- * faked, so nothing connects. Every URL here is made up.
+ * exists, and with it the Neon client gets the preview's URL, never DATABASE_URL. In production it opens DATABASE_URL,
+ * as before. db() keeps its client, so each case loads a fresh copy of lib/db/client.ts. The Neon driver and Drizzle
+ * are faked, so nothing connects. Every URL here is made up.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/db/__tests__/client-url.test.ts
  *
@@ -18,7 +19,7 @@ const NAMES = ["VERCEL_ENV", "DATABASE_URL", "PREVIEW_DATABASE_URL"] as const;
 const saved = Object.fromEntries(NAMES.map((n) => [n, process.env[n]]));
 const opened: string[] = [];
 
-describe("db() on a preview", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
+describe("db() per environment", { skip: canMock ? false : "needs --experimental-test-module-mocks" }, () => {
   before(() => {
     mock.module("@neondatabase/serverless", {
       namedExports: {
@@ -52,5 +53,16 @@ describe("db() on a preview", { skip: canMock ? false : "needs --experimental-te
     process.env.PREVIEW_DATABASE_URL = PREVIEW;
     assert.deepEqual(db(), { fake: true });
     assert.deepEqual(opened, [PREVIEW]);
+  });
+
+  it("opens DATABASE_URL in production, and ignores PREVIEW_DATABASE_URL there", async () => {
+    // A query makes a fresh copy of the module, without the client the case above kept.
+    const { db } = (await import(`${"../client.ts"}?production`)) as typeof import("@/lib/db/client");
+    opened.length = 0;
+    process.env.VERCEL_ENV = "production";
+    process.env.DATABASE_URL = PROD;
+    process.env.PREVIEW_DATABASE_URL = PREVIEW;
+    assert.deepEqual(db(), { fake: true });
+    assert.deepEqual(opened, [PROD]);
   });
 });
