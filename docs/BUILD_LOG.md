@@ -175,6 +175,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **17:07** Ethan: this should work as a connector on ChatGPT and Claude too. The relay takes any OAuth client (dynamic registration or a client metadata document, PKCE), and Claude's help center says Claude registers itself with DCR (callback claude.ai/api/mcp/auth_callback); third-party guides say the same of ChatGPT in developer mode. Added `LINKED_APP` (base/apps.py, default Muse): the device's pages, the private-detail note and the receipt's destination name the linked app and its maker; with Muse every text is as before. The relay end-to-end test (integration, skipped by default) had gone stale: its tool list lacked save_on_device and its stand-in device had no job store. Fixed both, and it now links clients registering as Muse, Claude and ChatGPT through a local relay, all three passing. docs/OTHER_APPS.md has the steps; neither app has been tried for real. Not done: the relay's link-expired page still says Muse (needs a redeploy), and the device names one app, since a stateless call does not say which app sent it.
 
+**18:33** Ethan asked me to start the device for the Claude and ChatGPT tests. Started `scripts/start.sh` in ~/muse-privacy (branch ethan/device-only-build, 92ee1a7, so without LINKED_APP: its pages still say Muse). Device only: LFM3-VL-2B and the embedder, no Glimmer, on AC power, workspace with its `.synthetic` marker. The approval page answers on 127.0.0.1:8787 and the relay client logged "connected to the relay".
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
