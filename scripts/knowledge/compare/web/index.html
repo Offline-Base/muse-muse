@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Glimmer Compare</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='7' height='22' rx='2' fill='%234f46e5'/%3E%3Crect x='12.5' y='5' width='7' height='22' rx='2' fill='%230d9488'/%3E%3Crect x='22' y='5' width='7' height='22' rx='2' fill='%23d97706'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="brand-name">Glimmer Compare</span>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" class="tab" data-tab="chat" aria-selected="true">Chat</button>
+    <button type="button" role="tab" class="tab" data-tab="sessions" aria-selected="false">Saved chats</button>
+    <button type="button" role="tab" class="tab" data-tab="reports" aria-selected="false">Eval reports</button>
+  </nav>
+  <div class="top-actions">
+    <button type="button" id="themeBtn" class="ghost small" title="Color theme">Theme: auto</button>
+  </div>
+</header>
+
+<div id="labBanner" class="lab-banner" aria-live="polite"></div>
+
+<main>
+  <section id="tab-chat" class="tab-panel" data-panel="chat">
+    <section id="setup" class="setup">
+      <div class="setup-head">
+        <button type="button" id="setupToggle" class="setup-toggle" aria-expanded="true">
+          <span class="chev" aria-hidden="true"></span>
+          <span class="setup-title">Setup</span>
+          <span id="setupSummary" class="setup-summary"></span>
+        </button>
+      </div>
+      <div id="setupBody" class="setup-body">
+        <div class="setup-block">
+          <div class="block-head">
+            <span class="field-label">Models</span>
+            <button type="button" id="pickReady" class="link">Select all ready</button>
+            <button type="button" id="pickNone" class="link">Clear</button>
+          </div>
+          <div id="modelPicker" class="picker"></div>
+        </div>
+        <div class="setup-grid">
+          <div class="setup-block">
+            <span class="field-label">Chat</span>
+            <label class="check"><input type="checkbox" id="blind"> <span>Blind mode</span> <small>names hidden until you reveal them</small></label>
+            <label class="check"><input type="checkbox" id="saveReasoning"> <span>Save reasoning</span> <small>off: only final answers are saved</small></label>
+            <label class="stack">
+              <span class="field-label">System prompt</span>
+              <textarea id="system" rows="2" spellcheck="false"></textarea>
+              <small>Left empty, the default is used. Every request carries a system message.</small>
+            </label>
+            <p id="lockNote" class="lock-note" hidden>Models, blind mode, saving and the system prompt are fixed for this chat. Start a new chat to change them.</p>
+          </div>
+          <div class="setup-block">
+            <span class="field-label">Sampling, the same for every column</span>
+            <label class="check"><input type="checkbox" id="greedy"> <span>Greedy</span> <small>temperature 0, top-k 1</small></label>
+            <div class="num-grid">
+              <label><span>Temperature</span><input type="number" id="temperature" min="0" max="2" step="0.05"></label>
+              <label><span>Top-p</span><input type="number" id="top_p" min="0" max="1" step="0.01"></label>
+              <label><span>Top-k</span><input type="number" id="top_k" min="0" max="1000" step="1"></label>
+              <label><span>Seed</span><input type="number" id="seed" min="0" step="1" placeholder="random"></label>
+              <label><span>Max tokens, thinking off</span><input type="number" id="max_tokens" min="1" max="32768" step="1"></label>
+              <label><span>Max tokens, thinking on</span><input type="number" id="max_tokens_on" min="1" max="32768" step="1"></label>
+            </div>
+            <small>Vendors recommend different settings per model. Equal settings are the fair choice for a side-by-side.</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span id="chatTitle" class="chat-title">New chat</span>
+        <span id="sessionId" class="mono muted small"></span>
+      </div>
+      <div class="toolbar-right">
+        <div class="seg" role="group" aria-label="Thinking for every column">
+          <span class="seg-label">Thinking for all</span>
+          <button type="button" data-all-mode="off">Off</button>
+          <button type="button" data-all-mode="on">On</button>
+        </div>
+        <button type="button" id="revealBtn" class="accent" hidden>Reveal names</button>
+        <button type="button" id="newChatBtn">New chat</button>
+      </div>
+    </div>
+    <p id="blindNote" class="blind-note" hidden>Blind mode hides names, not behavior: speed, style, length and errors can still give a model away.</p>
+    <p id="tally" class="tally" hidden></p>
+
+    <div id="boardWrap" class="board-wrap">
+      <div id="board" class="board"></div>
+      <div id="empty" class="empty">
+        <h2>Ask every model the same thing</h2>
+        <p>Pick models above, type a prompt below and press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> (<kbd>Cmd</kbd> on a Mac). Each column streams its own reply, with tokens, latency and speed underneath.</p>
+        <p class="muted">Turn on blind mode to judge answers before you see names. Final answers are saved to <span class="mono">.data/compare/chats/</span>.</p>
+      </div>
+    </div>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <textarea id="prompt" rows="2" placeholder="Ask every selected model at once" spellcheck="true"></textarea>
+      <div class="composer-actions">
+        <span class="hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> sends, <kbd>Esc</kbd> stops</span>
+        <button type="button" id="stopAllBtn" class="danger" hidden>Stop all</button>
+        <button type="submit" id="sendBtn" class="primary">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="tab-sessions" class="tab-panel" data-panel="sessions" hidden>
+    <div class="split">
+      <aside class="side">
+        <div class="side-head"><span class="field-label">Saved chats</span><button type="button" id="refreshSessions" class="link">Refresh</button></div>
+        <div id="sessionList" class="list"></div>
+      </aside>
+      <div class="pane">
+        <div id="sessionHead" class="pane-head muted">Pick a chat to read it. Saved chats are read-only.</div>
+        <div class="board-wrap pane-board"><div id="sessionBoard" class="board"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-reports" class="tab-panel" data-panel="reports" hidden>
+    <div class="split">
+      <aside class="side">
+        <div class="side-head"><span class="field-label">Eval runs</span><button type="button" id="refreshReports" class="link">Refresh</button></div>
+        <div id="reportList" class="list"></div>
+      </aside>
+      <div class="pane">
+        <div id="reportHead" class="pane-head muted">Pick a run to view its report. Reports hold private dev questions, so they stay on this Mac.</div>
+        <iframe id="reportFrame" class="report-frame" sandbox="allow-scripts allow-popups" referrerpolicy="no-referrer" title="Eval report"></iframe>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

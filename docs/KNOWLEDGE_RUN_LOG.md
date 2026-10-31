@@ -773,6 +773,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   puts loss on every assistant message (reasoning, tool calls, final). Started helpers on writer-1 for DFlash drafter speed
   and for tool calling plus the cutoff line, and workflow next-training-plan (reads Meta's TorchTitan SFT and RL cookbooks
   and Glimmer post-training docs, then a plan with two critiques; read-only, nothing launched).
+- 7:20 PM: compare lab finished (workflow compare-lab): scripts/knowledge/compare/ (lab.py up/down/add/types with a watch on
+  this Mac that terminates on cap, deadline or 30 idle minutes; chat_server.py page on 127.0.0.1:8788 with side-by-side
+  streaming, reasoning toggle, blind mode and a report viewer; evals.py and report.py, paired against base) and
+  docs/COMPARE.md. Models: Glimmer tuned and base (our Q4_K_M), Qwen3.8 27B, Gemma 4 31B (QAT Q4_0), Granite 4.2 30B, all
+  Apache 2.0 and ungated, on one GH200 (all five fit). Live test $2.40, machine terminated by the idle watch. Review fixes:
+  thinking-off token limits now fair for the other models (--max-tokens-off auto), tests no longer write the real lab log
+  (the earlier fake s3-put lines in .data/compare/lab/lab.log are test noise), memory ladder keeps healthy models. 110 tests
+  pass. Not yet run live: adding the final model, the fixed limits. The honesty grader is unchecked on other models' writing.
+- 7:00 PM: writer-1 copy_out of stage-b-r30 to the NFS still running at 7:04 PM (rsync, 39 min); a helper's read-only ls on
+  that path hung once. writer-1 disk 26 GB free: the next quantize needs cleanup first.
+- PR #3 was squash-merged into main as 5916c37. Commits pushed to knowledge after that are not on main.
 - 3:20 PM: writer-1 disk 57 GB to 200 GB free: deleted stage 1's local GGUFs (copies on NFS, sizes checked), stage 2's merged
   weights and Q8_0 (rebuildable from the adapter), and the gibberish Q1_0, TQ1_0 and Q2_0 test files. Kept stage 2 BF16,
   Q4_K_M, IQ2_XXS, IQ1_M and IQ1_S, which the Muse Privacy, phone and Mac tests use.
