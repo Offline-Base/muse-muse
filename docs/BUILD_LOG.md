@@ -869,6 +869,18 @@ because the sidebar showed a real account.
 - Stopped General's local site on port 3020 and deleted its build cache (about 0.5 GB). Its database copy stays, so it
   can be restarted. 3.6 GB free after. Next alert at 2 GB.
 
+### 19:25 Owner: push the work to GitHub, with previews off
+
+- Owner chose to push with Vercel previews off until the preview database exists, since previews still share
+  production's database and tg-decide carries migration 0017.
+- vercel.json now has git.deploymentEnabled {"main": true, "*": false, "**": false}: only main deploys from git (Vercel's
+  rule: a branch deploys if any matching rule is true). Turn branches back on once PREVIEW_DATABASE_URL is set.
+- tuned-model-options goes to GitHub as a branch. Branches made before this rule (and branches still being built) go
+  up as backup refs, refs/backup/<branch>, which Vercel does not build; each shows as a normal branch once it lands on
+  tuned-model-options. Pushes repeat after each landing.
+- The fine-tune session also freed space: five older 1.7 GB adapter copies deleted after matching their S3 copies; 13 GB
+  free.
+
 ## Gaps
 
 What this record doesn't confirm:
