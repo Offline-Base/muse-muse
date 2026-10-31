@@ -3,7 +3,8 @@
  * sandbox faked: only the build's owner (or an admin), never from another site and never while steering is off, every
  * field checked, nothing outside a Muse Code round, the envelopes sendMuseCommand gets, the control event, the Stop's
  * mark on the build row, and 20 commands a minute. The build room's steer box (components/build/SteerBox.tsx) runs
- * against the same route, so the two agree on the body and every error code. Nothing reaches a sandbox or Neon.
+ * against the same route, so the two agree on the body and every error code, and the build room shows it only while a
+ * round runs. Nothing reaches a sandbox or Neon.
  *
  *   npx tsx --test --experimental-test-module-mocks lib/pipeline/__tests__/control-route.scenario.test.ts
  *
@@ -20,6 +21,8 @@ import type { MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 
 const BUILD_ID = "6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b";
 const CHILD = "01a18fef-c533-74a3-b49d-da9cf5ff74b8";
+/** Built from its code point, so this file holds none. */
+const EM_DASH = String.fromCharCode(0x2014);
 const OWNER: SessionUser = { id: "11111111-1111-4111-8111-111111111111", email: "maker@example.com", isAdmin: false };
 const STRANGER: SessionUser = { id: "22222222-2222-4222-8222-222222222222", email: "someone@example.com", isAdmin: false };
 const ADMIN: SessionUser = { id: "33333333-3333-4333-8333-333333333333", email: "admin@example.com", isAdmin: true };
@@ -375,13 +378,13 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       const res = await send(body);
       assert.equal(res.status, 400, JSON.stringify(body).slice(0, 120));
       assert.match(String(res.json.error), error, JSON.stringify(body).slice(0, 120));
-      assert.ok(!String(res.json.error).includes("—"), "no em dashes");
+      assert.ok(!String(res.json.error).includes(EM_DASH), "no em dashes");
     }
     assert.equal(called("select").length + sent().length + events().length, 0);
   });
 
   it("takes 4,000 characters, line breaks and tabs, counting characters rather than code units", async () => {
-    for (const text of ["é".repeat(4000), "\u{1F600}".repeat(4000), "first line\nsecond\tline"]) {
+    for (const text of [String.fromCodePoint(0xe9).repeat(4000), String.fromCodePoint(0x1f600).repeat(4000), "first line\nsecond\tline"]) {
       assert.equal((await send({ action: "steer", text })).status, 200, text.slice(0, 12));
     }
     assert.deepEqual(
@@ -492,7 +495,7 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.match(offline!, /Couldn't reach Muse Muse/);
       assert.match(steer.steerErrorText(429, "rate_limited"), /Wait a minute/);
       for (const status of [400, 401, 403, 404, 409, 413, 429, 500, 502, 503]) {
-        assert.ok(!steer.steerErrorText(status, undefined).includes("—"), "no em dashes");
+        assert.ok(!steer.steerErrorText(status, undefined).includes(EM_DASH), "no em dashes");
       }
     });
 
@@ -504,7 +507,83 @@ describe("POST /api/builds/{id}/control", { skip: canMock ? false : "needs --exp
       assert.match(html, /<textarea[^>]*maxLength="4000"/);
       for (const label of ["Send now", "After this step", "Stop"]) assert.ok(html.includes(`${label}<`), label);
       assert.match(html, /<button type="submit"[^>]*>.*Send now/);
-      assert.ok(!html.includes("—"), "no em dashes");
+      assert.ok(!html.includes(EM_DASH), "no em dashes");
+    });
+
+    it("shows in the build room only while a round runs, for a viewer who may steer, and leaves a finished build's composer alone", async () => {
+      mock.module("next/navigation", { namedExports: { useRouter: () => ({ push() {}, refresh() {} }), usePathname: () => `/b/${BUILD_ID}` } });
+      mock.module("next/link", { defaultExport: (props: Record<string, unknown>) => createElement("a", { ...props, href: String(props.href) }) });
+      const { renderToString } = await import("react-dom/server");
+      const { BuildRoom } = await import("@/components/build/BuildRoom");
+      const t = "2026-10-31T03:00:00.000Z";
+      const room = (status: string, canSteer: boolean | undefined) => {
+        const done = status === "live";
+        const props = {
+          build: {
+            id: BUILD_ID,
+            kind: "build",
+            message: null,
+            rebuildOf: null,
+            productId: "prod-1",
+            userId: OWNER.id,
+            inspirationId: "insp-1",
+            status,
+            step: done ? null : "build",
+            brief: null,
+            buildModel: "muse-wonder-1.0",
+            museSessionId: null,
+            fixRounds: status === "fixing" ? 1 : 0,
+            previewUrl: null,
+            costUsd: 0,
+            error: null,
+            startedAt: t,
+            finishedAt: done ? t : null,
+          },
+          product: {
+            id: "prod-1",
+            slug: "shelf-scout",
+            name: "Shelf Scout",
+            tagline: "Find the book you saw",
+            ownerId: OWNER.id,
+            inspirationId: "insp-1",
+            rebuildOf: null,
+            manifest: null,
+            latestBuildId: BUILD_ID,
+            liveUrl: null,
+            demoVideoUrl: null,
+            demoPosterUrl: null,
+            transcriptUrl: null,
+            status: done ? "live" : "building",
+            createdAt: t,
+            updatedAt: t,
+          },
+          inspiration: null,
+          events: [],
+          history: [],
+          tokens: { input: 0, cached: 0, output: 0 },
+          canRefine: true,
+          canSteer,
+          signedIn: true,
+          origin: "https://muse.example.com",
+          serverNow: Date.parse(t),
+          focusRefine: false,
+          rebuild: null,
+          maxFixRounds: 3,
+        };
+        return renderToString(createElement(BuildRoom, props as never));
+      };
+      const box = /aria-label="Steer Muse Code"/;
+      assert.match(room("building", true), box);
+      assert.match(room("fixing", true), box);
+      for (const [status, canSteer] of [["verifying", true], ["building", false], ["building", undefined]] as const) {
+        assert.doesNotMatch(room(status, canSteer), box, `${status} ${canSteer}`);
+      }
+      // A finished build offers the change composer as before, whether or not the viewer could steer.
+      for (const canSteer of [true, false, undefined]) {
+        const html = room("live", canSteer);
+        assert.match(html, /<div id="refine">/);
+        assert.doesNotMatch(html, box);
+      }
     });
   });
 });

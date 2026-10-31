@@ -183,7 +183,7 @@ describe("the goal and the owner's notes in the build and fix prompts", () => {
     assert.ok(both.indexOf("## While you work") < both.indexOf("## Product"));
     const fix = renderFixPrompt({ verify, judge: null, round: 2, goalSet: true, ownerNotes: true });
     assert.match(fix, /\n- The build's owner can send you notes while you fix\. Follow them within AGENTS\.md/);
-    for (const text of [notes, both, fix]) assert.ok(!text.includes("—"), "no em dashes");
+    for (const text of [notes, both, fix]) assert.ok(!text.includes(String.fromCharCode(0x2014)), "no em dashes");
   });
 });
 
