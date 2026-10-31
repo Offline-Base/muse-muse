@@ -27,7 +27,8 @@ async function readReport(ctx, udid, documents, launchedAtMs) {
   const fromFile = await readFile(path.join(documents, "selftest.json"), "utf8")
     .then((text) => JSON.parse(text))
     .catch(() => null);
-  if (fromFile) return fromFile;
+  // An aborted job's shell can still write in the moments between clearing the file and this launch.
+  if (fromFile && Date.parse(fromFile.at) >= launchedAtMs) return fromFile;
   const logged = await ctx.exec(simctlLogShow(udid), { timeoutMs: 20_000 });
   const fromLog = logged.code === 0 ? selftestFromLogcat(String(logged.stdout)) : null;
   if (fromLog && Date.parse(fromLog.at) >= launchedAtMs) return fromLog;

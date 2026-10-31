@@ -37,13 +37,15 @@ export function normalizeReport(report) {
     loadError: typeof report.loadError === "string" && report.loadError ? report.loadError : null,
     handshake,
     errors,
+    errorsLeftOut: Number.isInteger(report.errorsLeftOut) && report.errorsLeftOut > 0 ? report.errorsLeftOut : 0,
   };
 }
 
-function consoleWarnings(errors) {
-  if (!Array.isArray(errors) || errors.length === 0) return [];
-  const shown = errors.slice(0, MAX_WARNINGS).map((e) => `Console error: ${String(e).slice(0, 200)}`);
-  const more = errors.length - shown.length;
+/** @param {unknown} errors @param {number} [leftOut] how many the device log line couldn't fit */
+function consoleWarnings(errors, leftOut = 0) {
+  const list = Array.isArray(errors) ? errors : [];
+  const shown = list.slice(0, MAX_WARNINGS).map((e) => `Console error: ${String(e).slice(0, 200)}`);
+  const more = list.length - shown.length + leftOut;
   return more > 0 ? [...shown, `And ${more} more console errors.`] : shown;
 }
 
@@ -116,7 +118,7 @@ export function evaluateCheck(facts) {
 
   add("bridge", report.handshake, report.handshake ? "The app bridge answered." : "The app bridge didn't answer.");
 
-  return verdict(checks, reasons, consoleWarnings(report.errors));
+  return verdict(checks, reasons, consoleWarnings(report.errors, report.errorsLeftOut));
 }
 
 function verdict(checks, reasons, warnings) {
@@ -149,8 +151,8 @@ export function autopilotFinished(events) {
 /**
  * The verdict for the glasses check (vr-glasses design, 3.5). It's informational: it never blocks shipping, and the
  * platform shows it as a clip and a note. The autopilot runs once the page has loaded, so its `start` checkpoint is the
- * load. It has no checkpoint for the capture itself, so that's covered by the result that follows from it. Its checkpoints
- * don't carry page errors either, so the design's "no window.onerror" isn't checked here (docs/NATIVE_LAB.md, "Pass rules").
+ * load. It has no checkpoint for the capture itself, so that's covered by the result that follows from it. The checkpoint
+ * that ends the run carries the page's uncaught errors and console.error calls, and those only warn.
  *
  * @param {{ launched: boolean, crashed?: boolean, timedOut?: boolean, launchedAtMs?: number | null, events: object[] }} facts
  */
@@ -202,5 +204,6 @@ export function evaluateGlasses(facts) {
   if (stopped) add("no_errors", false, `The autopilot stopped: ${String(stopped.detail ?? stopped.step).slice(0, 200)}`);
   else add("no_errors", true, "The autopilot hit no errors.");
 
-  return { passed: reasons.length === 0, informational: true, checks, reasons, warnings: [], loadMs };
+  const pageErrors = events.findLast((e) => Array.isArray(e.errors))?.errors;
+  return { passed: reasons.length === 0, informational: true, checks, reasons, warnings: consoleWarnings(pageErrors), loadMs };
 }

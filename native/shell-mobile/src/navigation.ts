@@ -26,6 +26,23 @@ function protocolOf(url: string): string | null {
   }
 }
 
+/**
+ * What iOS calls a navigation that loads a page, whatever its URL looks like. Going back between two fragments of one
+ * document fires no load start at all, so one that does has left the document.
+ */
+const PAGE_LOAD_TYPES = new Set(["reload", "formsubmit", "formresubmit", "backforward"]);
+
+/**
+ * True when going from one URL to the other only moves within a page, so the page keeps running. It's a browser's own
+ * rule: the target has to name a fragment, so /a#x to /a is a real load, and the same link clicked twice isn't.
+ * navigationType is what iOS says started it. Android doesn't say.
+ */
+export function isSamePageJump(from: string | null | undefined, to: string, navigationType?: string): boolean {
+  if (!from || (navigationType && PAGE_LOAD_TYPES.has(navigationType))) return false;
+  const fragment = to.indexOf("#");
+  return fragment >= 0 && from.split("#")[0] === to.slice(0, fragment);
+}
+
 /** The product's own pages stay in the app, and anything else goes to the system browser or is refused. */
 export function decideNavigation(input: { url: string; productOrigin: string; isTopFrame?: boolean }): NavigationDecision {
   const { url, productOrigin, isTopFrame = true } = input;

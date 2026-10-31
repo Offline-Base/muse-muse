@@ -14,8 +14,8 @@ import { createRouter } from "../bridge/router";
 import { AUTOPILOT_LOG, buildAutopilotScript, cleanCheckpoint } from "../glasses/autopilot";
 import { GlassesPreview } from "../glasses/Preview";
 import { deviceHandlers } from "../native/device";
-import { createRateLimiter, decideNavigation, leftTheProduct, mayOpenExternally, REPIN_LIMIT } from "../navigation";
-import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport } from "../selftest";
+import { createRateLimiter, decideNavigation, isSamePageJump, leftTheProduct, mayOpenExternally, REPIN_LIMIT } from "../navigation";
+import { buildSelftestScript, canAcceptPageReport, cleanPageObservations, finishReport, postSelftestReport, selftestLogLine } from "../selftest";
 import { currentPlatform, readSettings } from "../settings";
 import { Message } from "./Message";
 
@@ -98,8 +98,18 @@ export function ProductScreen({ url, selftest, glasses }) {
         { ...cleanPageObservations(rawPage), handshake: seen.current.bridgeAnswered },
         new Date(),
       );
-      // The lab reads this line from the device log, so a lost network post isn't fatal.
-      console.log(`MUSE_SELFTEST ${JSON.stringify(result)}`);
+      // iOS release builds drop console.log, so there the lab reads this file, and the check doesn't rest on the network.
+      if (Platform.OS === "ios") {
+        try {
+          const file = new File(Paths.document, "selftest.json");
+          if (!file.exists) file.create();
+          file.write(JSON.stringify(result));
+        } catch (error) {
+          console.warn(`MUSE_SELFTEST couldn't write its file: ${String(error)}`);
+        }
+      }
+      // Android's lab reads this line from the device log, so a lost network post isn't fatal.
+      console.log(selftestLogLine(result));
       postSelftestReport({
         platformUrl: selftest.platformUrl ?? settings.platformUrl,
         token: selftest.token,
@@ -202,6 +212,11 @@ export function ProductScreen({ url, selftest, glasses }) {
     return { router, glassesBridge };
   }, [capabilities, glasses, nonce, origin, platform, report, selftest, settings.glasses]);
 
+  // A new WebView is a new page, even on the same URL, and its load start can't tell.
+  useEffect(() => {
+    if (attempt > 0) bridge.glassesBridge?.pageChanged();
+  }, [attempt, bridge]);
+
   useEffect(
     () => () => {
       bridge.router.dispose();
@@ -297,6 +312,7 @@ export function ProductScreen({ url, selftest, glasses }) {
           canGoBack.current = state.canGoBack;
         }}
         onLoadStart={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
+          if (!isSamePageJump(currentUrl.current, nativeEvent.url, nativeEvent.navigationType)) bridge.glassesBridge?.pageChanged();
           keepOnProduct(nativeEvent.url);
         }}
         onLoadEnd={(/** @type {{ nativeEvent: any }} */ { nativeEvent }) => {
@@ -318,6 +334,8 @@ export function ProductScreen({ url, selftest, glasses }) {
         }}
         onContentProcessDidTerminate={() => {
           seen.current.crashed = true;
+          // The page is gone, and the reload below may look like a jump.
+          bridge.glassesBridge?.pageChanged();
           if (selftest) report({});
           else webView.current?.reload();
         }}
