@@ -17,13 +17,18 @@ import {
 import type { ProductClip } from "@/lib/types";
 
 /** Where a lab job's result shows, what it vouches for, and whether what ran it was a real machine. */
-const JOB_KINDS: Record<NativeJobKind, { target: TargetId; download: NativeDownload | null; label: string; simulated: boolean }> = {
-  android_emu: { target: "phone", download: "android", label: "Android emulator", simulated: true },
-  ios_sim: { target: "phone", download: null, label: "iPhone simulator", simulated: true },
-  desktop_mac: { target: "desktop", download: "mac", label: "Mac in the device lab", simulated: false },
-  desktop_windows: { target: "desktop", download: "windows", label: "Windows in the device lab", simulated: false },
-  glasses_sim: { target: "glasses", download: null, label: "iPhone simulator with Meta's mock glasses", simulated: true },
+const JOB_KINDS: Record<NativeJobKind, { target: TargetId; download: NativeDownload | null; label: string; os: string; simulated: boolean }> = {
+  android_emu: { target: "phone", download: "android", label: "Android emulator", os: "Android", simulated: true },
+  ios_sim: { target: "phone", download: null, label: "iPhone simulator", os: "iOS", simulated: true },
+  desktop_mac: { target: "desktop", download: "mac", label: "Mac in the device lab", os: "macOS", simulated: false },
+  desktop_windows: { target: "desktop", download: "windows", label: "Windows in the device lab", os: "Windows", simulated: false },
+  glasses_sim: { target: "glasses", download: null, label: "iPhone simulator with Meta's mock glasses", os: "iOS", simulated: true },
 };
+
+/** A run older than this is stuck, whatever its row says. The workflow gives up on a run after 60 minutes. */
+export const NATIVE_RUN_LIMIT_MS = 2 * 3_600_000;
+/** A lab job's token lasts this long past its deadline (docs/NATIVE_LAB.md), so a claimed job past that can't report. */
+const CLAIM_GRACE_MS = 15 * 60_000;
 
 /** The rows the view is made from, with only the columns it reads. Runs an agent started checked a preview, so they aren't here. */
 export interface NativeArtifactRow {
@@ -47,6 +52,8 @@ export interface NativeJobRow {
   status: NativeJobStatus;
   result: NativeJobResult | null;
   createdAt: Date;
+  expiresAt?: Date | null;
+  deadlineAt?: Date | null;
 }
 
 export type NativeCheckState = "passed" | "failed" | "checking" | "not_checked";
@@ -57,7 +64,7 @@ export interface NativeCheckView {
   /** The package it vouches for. Null for what has no download: the iPhone shell, glasses in the simulator. */
   download: NativeDownload | null;
   label: string;
-  /** "Pixel 7, Android 15", when the lab said. */
+  /** "Pixel 7, Android 15" or "macOS 15.4", from what the lab said. */
   device: string | null;
   /** An emulator, a simulator or mock glasses, not the real thing. Mock and simulated are always said out loud. */
   simulated: boolean;
@@ -83,7 +90,7 @@ export interface ProductNativeView {
   packages: NativePackageView[];
   checks: NativeCheckView[];
   clips: ProductClip[];
-  /** A run is still making or checking things. */
+  /** A run is still making or checking things. A stuck run isn't. */
   working: boolean;
 }
 
@@ -99,18 +106,30 @@ function safeMediaUrl(url: unknown): url is string {
   return safeHttpUrl(url) || (typeof url === "string" && /^data:(image|video)\//i.test(url));
 }
 
-function jobState(job: NativeJobRow): NativeCheckState {
-  if (job.status === "queued" || job.status === "claimed") return "checking";
+/** A job past its time is one the sweep hasn't got to yet. It isn't being checked, so it must not say it is. */
+function stillWaiting(job: NativeJobRow, now: number): boolean {
+  if (job.status === "queued") return !job.expiresAt || job.expiresAt.getTime() > now;
+  const until = job.deadlineAt ?? job.expiresAt;
+  return !until || until.getTime() + CLAIM_GRACE_MS > now;
+}
+
+function jobState(job: NativeJobRow, now: number): NativeCheckState {
+  if (job.status === "queued" || job.status === "claimed") return stillWaiting(job, now) ? "checking" : "not_checked";
   // lab_error means the check never ran, so the product isn't to blame (docs/NATIVE_LAB.md).
   if (job.result?.outcome === "passed") return "passed";
   if (job.result?.outcome === "failed") return "failed";
   return "not_checked";
 }
 
-function deviceName(result: NativeJobResult | null): string | null {
+/**
+ * What ran a check, in words. The lab sends what each box reports (docs/NATIVE_LAB.md): an emulator's name and "15", a
+ * simulator's "26.5" and often no name, a Mac's "15.4" and no name, Windows' whole name for itself.
+ */
+function deviceName(os: string, result: NativeJobResult | null): string | null {
   const device = result?.device as { name?: unknown; os?: unknown } | null | undefined;
-  if (!device || typeof device.name !== "string" || !device.name) return null;
-  return typeof device.os === "string" && device.os ? `${device.name}, ${device.os}` : device.name;
+  const name = typeof device?.name === "string" && device.name ? device.name : null;
+  const version = typeof device?.os === "string" && device.os ? device.os : null;
+  return [name, version && /^\d/.test(version) ? `${os} ${version}` : version].filter(Boolean).join(", ") || null;
 }
 
 function strings(value: unknown): string[] {
@@ -140,9 +159,11 @@ export function buildProductNativeView(input: {
   targets: TargetId[];
   artifacts: readonly NativeArtifactRow[];
   jobs: readonly NativeJobRow[];
-  runs: ReadonlyArray<{ status: NativeRunStatus }>;
+  runs: ReadonlyArray<{ status: NativeRunStatus; createdAt: Date }>;
   clips?: readonly ProductClip[];
+  now?: number;
 }): ProductNativeView {
+  const now = input.now ?? Date.now();
   const artifacts = newestFirst(input.artifacts);
   const newestPackage = new Map<NativeDownload, NativeArtifactRow>();
   for (const [download, kind] of Object.entries(NATIVE_DOWNLOADS) as Array<[NativeDownload, NativeArtifactKind]>) {
@@ -166,9 +187,9 @@ export function buildProductNativeView(input: {
       target: meta.target,
       download: meta.download,
       label: meta.label,
-      device: deviceName(job.result),
+      device: deviceName(meta.os, job.result),
       simulated: meta.simulated,
-      state: jobState(job),
+      state: jobState(job, now),
       summary: typeof job.result?.summary === "string" ? job.result.summary : null,
       reasons: strings(job.result?.reasons),
       ...mediaOf(artifacts.filter((a) => a.jobId === job.id)),
@@ -207,7 +228,7 @@ export function buildProductNativeView(input: {
     packages,
     checks,
     clips: (input.clips ?? []).filter((c) => safeMediaUrl(c?.url)),
-    working: input.runs.some((r) => WORKING.includes(r.status)),
+    working: input.runs.some((r) => WORKING.includes(r.status) && now - r.createdAt.getTime() < NATIVE_RUN_LIMIT_MS),
   };
 }
 

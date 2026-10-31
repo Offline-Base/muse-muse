@@ -1,10 +1,9 @@
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
+import { NATIVE_RUN_LIMIT_MS } from "@/lib/native/product-view";
 import { hasNativeWork } from "@/lib/native/targets";
 
-/** A run older than this is stuck, whatever its row says. The workflow gives up on a run after 60 minutes. */
-const RUN_LIMIT_MS = 2 * 3_600_000;
 /** How long after shipping a run may still be about to start: the workflow starts it once the build is final. */
 const START_GRACE_MS = 90_000;
 
@@ -20,7 +19,7 @@ export async function nativeActive(buildId: string, now = Date.now()): Promise<b
     const runs = await d
       .select({ status: schema.nativeRuns.status })
       .from(schema.nativeRuns)
-      .where(and(eq(schema.nativeRuns.buildId, buildId), gt(schema.nativeRuns.createdAt, new Date(now - RUN_LIMIT_MS))))
+      .where(and(eq(schema.nativeRuns.buildId, buildId), gt(schema.nativeRuns.createdAt, new Date(now - NATIVE_RUN_LIMIT_MS))))
       .orderBy(desc(schema.nativeRuns.createdAt))
       .limit(10);
     if (runs.some((r) => r.status === "planned" || r.status === "running")) return true;

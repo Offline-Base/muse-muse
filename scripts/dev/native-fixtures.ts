@@ -9,7 +9,8 @@
  *     MUSE_ENGINE=serve npx next dev --webpack -H localhost -p 3161
  *
  * Then open /p/<slug> and /b/<id> for each one it prints, and /vr. That is a visitor. Add ADMIN_EMAILS=fixture@example.com
- * for the owner. Leave out the flags to see that the panel stays away.
+ * for the owner, and NEXT_PUBLIC_LOCAL_FILES=1 PLATFORM_URL=http://localhost:3161 to try adding a clip. Leave out the flags to
+ * see that the panel stays away. Seed again after 2 hours: a run older than that counts as stuck, so seed fresh to see a live one.
  *
  * Every clip and picture is a stand-in. `serve` answers for the live sites, and for the clip when given a file after the port.
  */
@@ -94,11 +95,11 @@ const PRODUCTS: ProductFixture[] = [
       { kind: "windows_zip", bytes: 115_000_000 },
     ],
     jobs: [
-      { kind: "android_emu", status: "done", media: true, result: passed("Checked on an Android emulator (Pixel 7, Android 15): opened in 2.1 s.", "Pixel 7", "Android 15") },
-      { kind: "ios_sim", status: "done", media: true, result: passed("Checked on an iPhone simulator (iOS 18.4): opened in 1.8 s.", "iPhone 16", "iOS 18.4") },
-      { kind: "desktop_mac", status: "done", media: true, result: passed("Checked on a Mac (macOS 15.4): opened in 1.2 s.", "Mac mini", "macOS 15.4") },
+      { kind: "android_emu", status: "done", media: true, result: passed("Checked on an Android emulator (Pixel 7, Android 15): opened in 2.1 s.", "Pixel 7", "15") },
+      { kind: "ios_sim", status: "done", media: true, result: passed("Checked on an iPhone simulator (iOS 18.4): opened in 1.8 s.", "", "18.4") },
+      { kind: "desktop_mac", status: "done", media: true, result: passed("Checked on a Mac (macOS 15.4): opened in 1.2 s.", "", "15.4") },
       { kind: "desktop_windows", status: "failed", result: { outcome: "lab_error", summary: "Not checked on Windows: the lab couldn't start the app.", error: { code: "internal", message: "An unexpected error." } } },
-      { kind: "glasses_sim", status: "done", media: true, result: { ...passed("Checked on an iPhone simulator with Meta's mock glasses (iOS 18.4).", "iPhone 16", "iOS 18.4"), informational: true } },
+      { kind: "glasses_sim", status: "done", media: true, result: { ...passed("Checked on an iPhone simulator with Meta's mock glasses (iOS 18.4).", "", "18.4"), informational: true } },
     ],
     deviceFarm: { device: "Galaxy S25", check: "passed" },
     clips: [{ url: CLIP, posterUrl: shot("Filmed on a Quest", 280), caption: "Filmed on a Meta Quest 3", addedAt: "2026-10-31T12:00:00.000Z" }],
@@ -119,9 +120,9 @@ const PRODUCTS: ProductFixture[] = [
         kind: "android_emu",
         status: "failed",
         media: true,
-        result: { outcome: "failed", summary: "Didn't pass on an Android emulator (Pixel 7, Android 15).", device: { name: "Pixel 7", os: "Android 15" }, reasons: ["The screen stayed blank for 60 seconds.", "The app closed once while the page loaded."] },
+        result: { outcome: "failed", summary: "Didn't pass on an Android emulator (Pixel 7, Android 15).", device: { name: "Pixel 7", os: "15" }, reasons: ["The screen stayed blank for 60 seconds.", "The app closed once while the page loaded."] },
       },
-      { kind: "ios_sim", status: "done", result: { outcome: "failed", summary: "Didn't pass on an iPhone simulator (iOS 18.4).", device: { name: "iPhone 16", os: "iOS 18.4" }, reasons: ["The page answered with HTTP 500."] } },
+      { kind: "ios_sim", status: "done", result: { outcome: "failed", summary: "Didn't pass on an iPhone simulator (iOS 18.4).", device: { name: "", os: "18.4" }, reasons: ["The page answered with HTTP 500."] } },
       { kind: "desktop_mac", status: "claimed" },
     ],
     events: doneEvents,
@@ -136,7 +137,7 @@ const PRODUCTS: ProductFixture[] = [
     events: makingEvents,
   },
   { slug: "get-nothing-made", name: "Nothing Made", targets: ["web", "phone", "desktop"], run: "failed", events: [{ item: "package:android", target: "phone", state: "failed", title: "Couldn't package the Android app", detail: "The packager stopped." }, { item: "package:mac", target: "desktop", state: "failed", title: "Couldn't package the Mac app" }] },
-  { slug: "get-not-checked", name: "Not Checked", targets: ["web", "phone"], run: "done", packages: [{ kind: "android_apk", bytes: 38_000_000 }], jobs: [{ kind: "android_emu", status: "done", stale: true, result: passed("An older package passed here.", "Pixel 7", "Android 15") }] },
+  { slug: "get-not-checked", name: "Not Checked", targets: ["web", "phone"], run: "done", packages: [{ kind: "android_apk", bytes: 38_000_000 }], jobs: [{ kind: "android_emu", status: "done", stale: true, result: passed("An older package passed here.", "Pixel 7", "15") }] },
   { slug: "get-vr-only", name: "Tide Pool VR", targets: ["web", "vr"] },
   { slug: "get-glasses-only", name: "What Am I Looking At", targets: ["web", "glasses"] },
   { slug: "get-web-only", name: "Web Only", targets: ["web"] },

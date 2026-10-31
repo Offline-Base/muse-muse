@@ -29,7 +29,7 @@ export async function readProductNative(productId: string, targets: TargetId[]):
   const d = db();
   const [runs, clips] = await Promise.all([
     d
-      .select({ status: schema.nativeRuns.status })
+      .select({ status: schema.nativeRuns.status, createdAt: schema.nativeRuns.createdAt })
       .from(schema.nativeRuns)
       .where(and(eq(schema.nativeRuns.productId, productId), ne(schema.nativeRuns.origin, "agent")))
       .orderBy(desc(schema.nativeRuns.createdAt))
@@ -66,6 +66,8 @@ export async function readProductNative(productId: string, targets: TargetId[]):
         status: schema.nativeJobs.status,
         result: schema.nativeJobs.result,
         createdAt: schema.nativeJobs.createdAt,
+        expiresAt: schema.nativeJobs.expiresAt,
+        deadlineAt: schema.nativeJobs.deadlineAt,
       })
       .from(schema.nativeJobs)
       .innerJoin(schema.nativeRuns, eq(schema.nativeJobs.runId, schema.nativeRuns.id))

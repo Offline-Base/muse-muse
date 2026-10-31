@@ -33,7 +33,7 @@ const pack = (id: string, kind: NativeArtifactRow["kind"], bytes: number): Nativ
 const job = (id: string, kind: NativeJobRow["kind"], result: NativeJobRow["result"], status: NativeJobRow["status"] = "done"): NativeJobRow => ({ id, runId: "r", kind, status, result, createdAt: later });
 
 const view = (targets: TargetId[], input: { artifacts?: NativeArtifactRow[]; jobs?: NativeJobRow[]; working?: boolean } = {}): ProductNativeView =>
-  buildProductNativeView({ targets, artifacts: input.artifacts ?? [], jobs: input.jobs ?? [], runs: input.working ? [{ status: "running" }] : [] });
+  buildProductNativeView({ targets, artifacts: input.artifacts ?? [], jobs: input.jobs ?? [], runs: input.working ? [{ status: "running", createdAt: new Date() }] : [] });
 
 const html = (node: ReactNode) => renderToString(<>{node}</>).replace(/<!-- -->/g, "");
 

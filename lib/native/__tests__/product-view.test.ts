@@ -24,13 +24,13 @@ const artifact = (over: Partial<NativeArtifactRow> & Pick<NativeArtifactRow, "id
 const job = (over: Partial<NativeJobRow> & Pick<NativeJobRow, "id" | "kind">): NativeJobRow => ({
   runId: "run-1",
   status: "done",
-  result: { outcome: "passed", summary: "It opened.", device: { name: "Pixel 7", os: "Android 15" } },
+  result: { outcome: "passed", summary: "It opened.", device: { name: "Pixel 7", os: "15" } },
   createdAt: at(10),
   ...over,
 });
 
 const view = (input: { artifacts?: NativeArtifactRow[]; jobs?: NativeJobRow[]; status?: "done" | "running" }) =>
-  buildProductNativeView({ targets: ["web", "phone"], artifacts: input.artifacts ?? [], jobs: input.jobs ?? [], runs: [{ status: input.status ?? "done" }] });
+  buildProductNativeView({ targets: ["web", "phone"], artifacts: input.artifacts ?? [], jobs: input.jobs ?? [], runs: [{ status: input.status ?? "done", createdAt: new Date() }] });
 
 describe("packages", () => {
   it("offers the newest package of a kind", () => {
@@ -152,6 +152,35 @@ describe("checks", () => {
 });
 
 describe("runs", () => {
+  it("names what ran a check from what each lab box really reports", () => {
+    const device = (kind: NativeJobRow["kind"], d: unknown) => view({ jobs: [job({ id: "j", kind, result: { outcome: "passed", summary: "It opened.", device: d } })] }).checks[0]!.device;
+    assert.equal(device("android_emu", { name: "Pixel 7", os: "15" }), "Pixel 7, Android 15");
+    assert.equal(device("ios_sim", { name: "", os: "26.5" }), "iOS 26.5");
+    assert.equal(device("desktop_mac", { os: "15.4" }), "macOS 15.4");
+    assert.equal(device("desktop_windows", { os: "Windows Server 2022 Datacenter" }), "Windows Server 2022 Datacenter");
+    assert.equal(device("android_emu", {}), null);
+    assert.equal(device("android_emu", "not an object"), null);
+  });
+
+  it("doesn't say a job is still checking once it's past its time", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const state = (over: Partial<NativeJobRow>) =>
+      buildProductNativeView({ targets: ["web", "phone"], artifacts: [], jobs: [job({ id: "j", kind: "ios_sim", result: null, ...over })], runs: [], now }).checks[0]!.state;
+    assert.equal(state({ status: "queued", expiresAt: new Date(now + 60_000) }), "checking");
+    assert.equal(state({ status: "queued", expiresAt: new Date(now - 60_000) }), "not_checked");
+    assert.equal(state({ status: "claimed", deadlineAt: new Date(now - 60_000) }), "checking");
+    assert.equal(state({ status: "claimed", deadlineAt: new Date(now - 16 * 60_000) }), "not_checked");
+    assert.equal(state({ status: "claimed" }), "checking");
+  });
+
+  it("isn't working for a run left behind, whatever its row says", () => {
+    const now = Date.parse("2026-10-31T12:00:00.000Z");
+    const working = (hoursOld: number) =>
+      buildProductNativeView({ targets: ["web"], artifacts: [], jobs: [], runs: [{ status: "running", createdAt: new Date(now - hoursOld * 3_600_000) }], now }).working;
+    assert.equal(working(1), true);
+    assert.equal(working(3), false);
+  });
+
   it("is working while a run is planned or running", () => {
     assert.equal(view({ status: "running" }).working, true);
     assert.equal(view({ status: "done" }).working, false);
