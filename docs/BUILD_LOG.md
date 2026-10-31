@@ -725,7 +725,7 @@ because the sidebar showed a real account.
   agent against every source (2 factual errors and 12 smaller ones fixed). Screenshots showing any email address, even a
   placeholder one, were left out. `docs/log/` is in `.vercelignore`, so screenshots never ship in a deployment.
 
-### 18:00 Decision models D0 to D2 finished; D3 to D9 started
+### 17:54 Decision models D0 to D2 finished; D3 to D9 started
 
 - Review fixes on tg-decide, all five findings held up: 29b00c2 (taskProblem measures the text as given), ef2b987
   (scoring refuses numbers that can't be log-probabilities, so the gateway answers 502 rather than a confident-looking
@@ -737,17 +737,12 @@ because the sidebar showed a real account.
   639 of 676 two-letter pairs are single tokens, and the TypeScript prompt equals the real chat template's output byte
   for byte (jinja2 fixture). New finding: encoding with special tokens adds <|begin_of_text|> by itself, so prompt text
   sent to a backend leaves it out.
-- 18:00: D3 to D7 and D9 started in sequence (wf_50b3b2f5-c82): datasets and migration 0017, GPU decide mode, after-run
+- 17:54: D3 to D7 and D9 started in sequence (wf_50b3b2f5-c82): datasets and migration 0017, GPU decide mode, after-run
   scoring, pages, serving and docs. D8, the real GPU run (about $0.83, capped at $5), waits for the owner.
 - Wave 3 confirmed none of its current units touch lib/train; its unit 11 will import DecideBackend and the /decide
   route rather than edit them.
 
-### 18:23 Decision models D3: datasets and migration 0017
-
-- 2dec882 on tg-decide: decision datasets (CSV or JSONL, the test split held out first), migration 0017_decision_datasets
-  and the GPU's decision pages. D4 (the GPU decide mode, tested against fake torch, no spend) started next.
-
-### 18:25 (about) Owner asked to run the current state locally
+### 18:16 Owner asked to run the current state locally
 
 - Worktree ~/mm-wt/local-run (branch local-run): the meta.ai look branch plus wave 2 plus the build log, served by
   `next dev --webpack` on port 3020. Database: a copy of the local site's `.data/pglite-docs-2` (the older
@@ -756,7 +751,12 @@ because the sidebar showed a real account.
   PRODUCT_OUTPUTS, PROVE_IT, with DAILY_SPEND_CAP_USD=3. Off: NATIVE_LAB, NATIVE_DEVICE_FARM, personal tools, nightly
   Prove it. Home, gallery, How it works, usage, fine-tuning, builds and a product page answered 200 with no errors.
 
-### 18:35 (about) Owner: fine-tuning across several Jetsons, on Meta research
+### 18:23 Decision models D3: datasets and migration 0017
+
+- 2dec882 on tg-decide: decision datasets (CSV or JSONL, the test split held out first), migration 0017_decision_datasets
+  and the GPU's decision pages. D4 (the GPU decide mode, tested against fake torch, no spend) started next.
+
+### 18:34 Owner: fine-tuning across several Jetsons, on Meta research
 
 - The owner shared Meta's "Applied Federated Learning: Architectural Design for Robust and Efficient Learning in Privacy
   Aware Settings" (Stojkovic et al., arXiv 2206.00807) and asked whether it helps train across multiple Jetsons; they
@@ -767,13 +767,13 @@ because the sidebar showed a real account.
   Meta calls), write docs/FLEET_TRAINING.md, then an independent check. No board is touched; the board side is
   Hussam's.
 
-### 18:40 (about) Disk below 6 GB
+### 18:35 (about) Disk below 6 GB
 
 - Free space fell to 4.0 GB, with swap at 5.5 of 6 GB: three dev servers, browsers, agents, and Muse Privacy's two
   local llama-servers (LFM3-VL-2B and an embedding model, not Glimmer). Deleted about 0.7 GB of finished scratch whose
   results are already in the plan files and this log; 5.4 GB free after. New alert at 3 GB.
 
-### 18:55 meta.ai look landed on tuned-model-options (4c412a3)
+### 18:46 meta.ai look landed on tuned-model-options (4c412a3)
 
 - Final fix pass on tg-ui-brand (wf_801146c9-84c), all review findings checked: one script installs every overlay
   (786e675); the look's skill file comes back before every verify and demo (eee71af); a phone or desktop product with
@@ -815,12 +815,12 @@ because the sidebar showed a real account.
   production keeps its snapshot until the Nov 2 one.
 - The local site on port 3020 was restarted with that override and merged up to 566fa98; home and gallery answer 200.
 
-### 19:05 Owner: previews may get their own database
+### 18:52 (about) Owner: previews may get their own database
 
 - Owner: "preview can get its own db or share idc". General chose its own database, which both sessions recommended.
 - The Neon integration (neon-celeste-lantern, Vercel-managed) offers per-preview branching only at connect time, per
   Neon's docs, and the documented way to change it removes the project connection, so it is not used on a live project.
-- Instead: tg-preview-db (wf_7d431c55-cdd) adds one database-URL helper. On a Vercel preview it uses
+- Instead: tg-preview-db (wf_7d431c55-cdd, started 18:54) adds one database-URL helper. On a Vercel preview it uses
   PREVIEW_DATABASE_URL; without it a preview skips migrations and runs with no database; it refuses when the preview URL
   equals production's. The owner then creates a Neon branch "preview" and sets PREVIEW_DATABASE_URL for Preview only.
   Until both are in, no preview deploys of branches with migrations.
