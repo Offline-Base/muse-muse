@@ -1,0 +1,19 @@
+--- phase 2: exit 0 in 16 s
+session 01a190bd-52ca-7000-88e8-9683f3962cbf
+echo exit=0
+resume exit=0
+01a190bd-26da-7000-b47e-b83f5df66b57
+01a190bd-3281-7000-9583-65c54f2f8508
+01a190bd-3c99-7000-ad45-b177fb3e7dda
+01a190bd-4667-7000-a89e-8dcb99536d63
+01a190bd-52ca-7000-88e8-9683f3962cbf
+== exec and serve resuming each other's sessions, by id version
+exec v4 session 679267a4-0915-4174-9817-5f492421bafc exit=0  status exit status: 1; Bubblewrap is unavailable for linux: no capability-valid system bwrap was found on PATH and no usable embedded fallback is available; install your distribution's bwrap package 
+exec v7 session 01a190bd-667a-7000-b316-593601d2fa2b exit=0  status exit status: 1; Bubblewrap is unavailable for linux: no capability-valid system bwrap was found on PATH and no usable embedded fallback is available; install your distribution's bwrap package 
+{"t":1793429695262,"call":"session/resume","ok":true,"result":{"keys":["history","lastTurn","pendingRequests","session","viewCursor"],"session":{"status":"idle","activeTurnId":null,"modelId":null,"keys":["activeTurnId","approvalMode","branch","createdAt","firstUserPrompt","forkedFrom","kind","lastAc
+{"t":1793429697733,"call":"session/resume","ok":true,"result":{"keys":["history","lastTurn","pendingRequests","session","viewCursor"],"session":{"status":"idle","activeTurnId":null,"modelId":null,"keys":["activeTurnId","approvalMode","branch","createdAt","firstUserPrompt","forkedFrom","kind","lastAc
+exec resuming-serve-v7 session 01a190bd-7d12-7000-9f3e-cd64f74717d9 exit=0  status exit status: 1; Bubblewrap is unavailable for linux: no capability-valid system bwrap was found on PATH and no usable embedded fallback is available; install your distribution's bwrap package 
+{"t":1793429703198,"call":"session/resume","ok":true,"result":{"keys":["history","lastTurn","pendingRequests","session","viewCursor"],"session":{"status":"idle","activeTurnId":null,"modelId":null,"keys":["activeTurnId","approvalMode","branch","createdAt","firstUserPrompt","forkedFrom","kind","lastAc
+
+[stderr]
+

@@ -1,0 +1,12 @@
+--- phase 1f: exit 0 in 16 s
+default n=31 web: search,web_fetch,web_search | only here vs default:  | missing vs default: 
+off n=29 web: search | only here vs default:  | missing vs default: web_fetch,web_search
+hosted n=31 web: search,web_fetch,web_search | only here vs default:  | missing vs default: 
+execflag n=31 web: search,image_generation | only here vs default: image_generation,work_status | missing vs default: web_fetch,web_search
+execnoflag n=33 web: search,web_fetch,web_search,image_generation | only here vs default: image_generation,work_status | missing vs default: 
+[-c tools.web_fetch.mode="off"] exit=2 muse: -c tools.web_fetch.mode: refusing run: unknown key: no such setting (see `--help` for the -c/--config shape)
+[-c tools.web_search.mode="off"] exit=0 
+[-c tools.image_generation.mode="off"] exit=2 muse: -c tools.image_generation.mode: refusing run: unknown key: no such setting (see `--help` for the -c/--config shape)
+
+[stderr]
+

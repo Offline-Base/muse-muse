@@ -1,0 +1,23 @@
+--- phase 4: exit 0 in 87 s
+asked after 5s
+{"t":1793431300201,"kind":"note","method":"userInput/requested","params":{"itemId":"01a190d5-e860-7db0-be30-8aadf81f7b50","questions":[{"header":"Color","id":"color","options":[{"description":"Write red to color.txt","label":"red"},{"description":"Write blue to color.txt","label":"blue"}],"question":"Which color should the file say?","selection":{"mode":"single"}}],"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","sourceRange":{"first":{"id":"01a190d5-e864-7003-917f-4bec951cb5e2","sequence":54},"last":{"id":"01a190d5-e864-7003-917f-4bec951cb5e2","sequence":54},"stream":{"id":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","kind":"session"}},"toolCallId":"call_01a190d5e5eb7568b085a9b4972cd873","toolName":"request_user_input","turnId":"01a190d5-de61-7000-a288-4b6dbe6bd48b","userInputId":"01a190d5-e860-7db0-be30-8aadf81f7b50","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:10"}}
+answered {"id":"answer-1","at":"2026-10-31T07:22:55.836Z","by":"owner","command":{"type":"answer","userInputId":"01a190d5-e860-7db0-be30-8aadf81f7b50","answers":[{"questionId":"color","selectedLabel":"blue"}]}}
+bridge exit=0
+color.txt: blue
+{"t":1793431296821,"kind":"bridge","event":"started","sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b"}
+{"t":1793431297374,"kind":"call","method":"session/resume","ok":false,"error":{"message":"session 01a190d5-db0b-7000-8cec-45e8d1ffcf5b not found","code":-32020,"kind":"sessionNotFound"}}
+{"t":1793431297628,"kind":"bridge","event":"session","sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","reason":"started"}
+{"t":1793431297645,"kind":"bridge","event":"turn","turnId":"01a190d5-de61-7000-a288-4b6dbe6bd48b","reason":"prompt"}
+{"t":1793431297650,"kind":"note","method":"session/statusChanged","params":{"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","status":"running","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:5"}}
+{"t":1793431297651,"kind":"note","method":"turn/started","params":{"commandId":"01a190d5-de61-7000-a288-4b6dbe6bd48b","sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","sourceRange":{"first":{"id":"01a190d5-de6f-7d20-90c3-1cdf770ec789","sequence":19},"last":{"id":"01a190d5-de6f-7d20-90c3-1cdf770ec7
+{"t":1793431300200,"kind":"note","method":"session/statusChanged","params":{"attention":["inputPending"],"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","status":"running","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:10"}}
+{"t":1793431360731,"kind":"call","method":"session/read","ok":true,"result":{"history":{"items":null,"mode":"none","noneReason":"excluded","snapshot":null},"pendingRequests":[{"itemId":"01a190d5-e860-7db0-be30-8aadf81f7b50","questions":[{"header":"Color","id":"color","options":[{"description":"Write
+{"t":1793431376756,"kind":"command","id":"answer-1","command":{"type":"answer","userInputId":"01a190d5-e860-7db0-be30-8aadf81f7b50","answers":[{"questionId":"color","selectedLabel":"blue"}]},"ok":true}
+{"t":1793431376759,"kind":"note","method":"session/statusChanged","params":{"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","status":"running","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:11"}}
+{"t":1793431380521,"kind":"note","method":"session/statusChanged","params":{"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","status":"idle","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:24"}}
+{"t":1793431380522,"kind":"note","method":"turn/completed","params":{"durationMs":82873,"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","sourceRange":{"first":{"id":"01a190d7-2226-7ea0-b689-2619a2777392","sequence":109},"last":{"id":"01a190d7-2226-7ea0-b689-2619a2777392","sequence":109},"stream":
+{"t":1793431383783,"kind":"note","method":"session/statusChanged","params":{"sessionId":"01a190d5-db0b-7000-8cec-45e8d1ffcf5b","status":"notLoaded","viewCursor":"v4:01a190d5-db0b-7000-8cec-45e8d1ffcf5b:24"}}
+{"t":1793431383789,"kind":"bridge","event":"exit","exitCode":0,"finalText":"Wrote `blue` to [color.txt](/tmp/w-q/color.txt).","goal":null,"reason":"completed"}
+
+[stderr]
+
