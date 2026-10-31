@@ -109,6 +109,18 @@ So Muse Muse must never hold users' gadget tokens, or reach into their Muse. The
 
 If you want more than this, such as gadgets built for many users, ask Meta first: the terms require their written permission.
 
+### The boards we have
+
+| Board | Count | Role | Notes |
+|---|---|---|---|
+| Raspberry Pi 5 | 2 | One becomes a real Muse gadget on the Linux Device SDK, paired with our own Muse account and token. That's personal use, within the terms, and it's the demo for routes 1 and 2. The other runs `muse-device` for the test bed. | Meta lists the Pi 5 as a supported gadget. Voice and vision need a mic, speaker and camera attached. |
+| Arduino UNO Q, 4 GB | 1 | The actuator board. Its microcontroller drives LEDs, relays, servos and sensors, and its Linux side runs `muse-device` with a new pin tool, so a product's action can move something real. | Not on Meta's gadget list, so it's untested as a gadget. As our own MCP board it needs no SDK. |
+| E-ink tablet | 1 | A display. Products get an e-ink view (high contrast, no motion, large type) that a scheduled job refreshes, such as a morning plan. | Not a gadget in the SDK's sense, because the SDK's e-ink support is for ESP32 boards. It works through the tablet's browser, if it has one. |
+| Jetson Orin Nano | 6 | Model day's edge stage: run the open-weight models that fit in 8 GB (the 3 to 4B student from the knowledge plan, not Glimmer 30B), measure speed and quality on the device, and host `muse-device` with cameras. | Most already serve the offline fleet (Bolt, the LFM models, the router). Use only spare boards, and only through the fleet control plane. |
+| Coral boards (Google, Synaptics) | 2 | On-device vision for the edge stage: compare the boards' NPU detectors with SAM 3.1 on the same images. | Enrolled as coral-01 and coral-02. Online only while tethered to the Mac. |
+
+The demo for the video: a Pi 5 paired as our own Muse gadget, a product's gadget skill pasted into our muse, and the UNO Q moving something when the product's action runs.
+
 ## 6. Model day: a test bed for each new Meta model
 
 A daily job diffs `GET /v1/models`. A new id, or an admin button, starts a run with three stages, under a dollar cap and a sandbox concurrency limit:
@@ -138,6 +150,8 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 ## Open questions
 
 - **Which paper:** these sections use XFaaS, TestGen-LLM and ACH. If a different Meta engineering paper was meant, it may change section 1.
-- **Hardware on hand:** which gadgets or boards we have (a Raspberry Pi, an ESP32 board, Home Link) decides what the hardware demo can show.
+- **The e-ink tablet:** its make and operating system decide whether it can show a web page.
+- **Peripherals:** which Pis and the UNO Q have a camera, microphone or speaker attached.
+- **Spare Jetsons:** which boards are free. The fleet control plane was offline on Oct 30, so this wasn't checked.
 - **Shared or separate data:** a shared Postgres, as proposed, or a separate database per product through the Vercel Marketplace.
 - **Email sender:** which domain products send from, and the provider.
