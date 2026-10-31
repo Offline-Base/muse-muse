@@ -1,8 +1,9 @@
 // Unit tests for scripts/smoke-report.mjs. Run from the repo root:
 //   npx tsx --test template/scripts/__tests__/*.test.mjs
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { finalShotProblems, judgeShotNotes, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
+import { finalShotProblems, glassesGateProblems, glassesProblems, judgeShotNotes, judgeShotProblems, reportTests, smokeReportProblems } from "../smoke-report.mjs";
 
 /** A Playwright JSON report with one file suite per spec file, shaped like reporter "json" writes it. */
 function report(files) {
@@ -180,4 +181,58 @@ test("notes from any screenshot are listed with the screenshot's name", () => {
   const [names, read] = judgeDir({ "01-start": { notes: ['The start screen has no "Try the sample" button.'] }, "02-result": {}, "03-x": "not json" });
   assert.deepEqual(judgeShotNotes(names, read), ['01-start.png: The start screen has no "Try the sample" button.']);
   assert.deepEqual(judgeShotNotes([], () => ""), []);
+});
+
+/** One line of test-results/glasses/calls.jsonl, as tests/glasses.ts writes it. */
+const glassesCall = (fields) => JSON.stringify({ t: 2000, project: "smoke", test: "primary flow", method: "capturePhoto", ok: true, ms: 500, ...fields });
+
+test("a smoke run that took a photo through the glasses has no glasses problems", () => {
+  const calls = [glassesCall({ method: "connect" }), glassesCall({}), ""].join("\n");
+  assert.deepEqual(glassesProblems(calls), []);
+});
+
+test("no photo through the glasses is a problem that says how to fix it", () => {
+  for (const calls of [null, undefined, "", glassesCall({ method: "connect" }), glassesCall({ method: "speak" })]) {
+    const problems = glassesProblems(calls);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /installGlasses/);
+    assert.match(problems[0], /tests\/glasses\.ts/);
+  }
+});
+
+test("a photo that failed doesn't count", () => {
+  assert.equal(glassesProblems(glassesCall({ ok: false, error: "capture_failed" })).length, 1);
+});
+
+test("only this run's smoke project counts", () => {
+  assert.equal(glassesProblems(glassesCall({ project: "demo" })).length, 1);
+  assert.equal(glassesProblems(glassesCall({ project: "studio" })).length, 1);
+  assert.equal(glassesProblems(glassesCall({ t: 999 }), { since: 1000 }).length, 1);
+  assert.deepEqual(glassesProblems(glassesCall({ t: 1000 }), { since: 1000 }), []);
+});
+
+test("verify's glasses check only runs for a glasses product, and only counts this run", () => {
+  const files = (target, calls = null) => (file) => (file === "musemuse.target.json" ? target : file === "test-results/glasses/calls.jsonl" ? calls : null);
+  // A web product, and every way of not being a glasses product.
+  for (const target of [null, "not json", "null", '{"target":"web"}', '{"targets":["web","vr"]}']) {
+    assert.deepEqual(glassesGateProblems(files(target)), [], String(target));
+  }
+  for (const target of ['{"target":"glasses"}', '{"targets":["web","glasses"]}']) {
+    assert.equal(glassesGateProblems(files(target)).length, 1, "no calls at all");
+    assert.equal(glassesGateProblems(files(target, glassesCall({ t: 999 })), { since: 1000 }).length, 1, "an older run's photo");
+    assert.deepEqual(glassesGateProblems(files(target, glassesCall({ t: 1000 })), { since: 1000 }), []);
+  }
+});
+
+test("verify runs the glasses check, timed from before Playwright starts", () => {
+  const verify = readFileSync(new URL("../verify.mjs", import.meta.url), "utf8");
+  assert.match(verify, /\bglassesGateProblems\b[^]*from "\.\/smoke-report\.mjs"/);
+  const started = verify.indexOf("const smokeStarted = Date.now()");
+  assert.ok(started > 0 && started < verify.indexOf('run(BIN("playwright"), ["test", "--project=smoke"'));
+  assert.match(verify, /\.\.\.glassesGateProblems\(readText, \{ since: smokeStarted \}\)/);
+});
+
+test("a broken line in the call log is ignored", () => {
+  assert.deepEqual(glassesProblems(`{"t":\n${glassesCall({})}\nnot json`), []);
+  assert.equal(glassesProblems(`{"t":\nnull\n7`).length, 1);
 });

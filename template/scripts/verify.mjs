@@ -3,7 +3,8 @@
 // Steps: typecheck (next typegen + tsc --noEmit), build (next build), start (next start, GET / must be 200),
 // console (Chromium loads / with no console or page errors), smoke (playwright, smoke project, every spec in tests/,
 // with no test.only and no skipped tests, and a last judge screenshot with no error or empty state, its result near the
-// top and a page that isn't too long; see scripts/smoke-report.mjs), manifest (musemuse.json valid against
+// top and a page that isn't too long, and for a glasses product a photo taken through the fake glasses; see
+// scripts/smoke-report.mjs), manifest (musemuse.json valid against
 // musemuse.schema.json, action routes and fixtures exist).
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
 // {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}
@@ -12,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:f
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { finalShotProblems, judgeShotNotes, judgeShotProblems, smokeReportProblems } from "./smoke-report.mjs";
+import { finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, smokeReportProblems } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
@@ -237,6 +238,7 @@ async function main() {
     await step("smoke", async () => {
       const reportPath = path.join(ROOT, "test-results", "report.json");
       rmSync(reportPath, { force: true });
+      const smokeStarted = Date.now();
       const res = await run(BIN("playwright"), ["test", "--project=smoke", "--forbid-only"], {
         timeoutMs: 900_000,
         env: { MUSEMUSE_PORT: String(port), CI: "1" },
@@ -255,7 +257,15 @@ async function main() {
         const judgeDir = path.join(ROOT, "test-results", "judge");
         const shots = readdirSync(judgeDir);
         const read = (f) => readFileSync(path.join(judgeDir, f), "utf8");
-        const problems = [...smokeReportProblems(report, { requireActions: hasActions() }), ...judgeShotProblems(shots)];
+        const readText = (file) => {
+          const full = path.join(ROOT, file);
+          return existsSync(full) ? readFileSync(full, "utf8") : null;
+        };
+        const problems = [
+          ...smokeReportProblems(report, { requireActions: hasActions() }),
+          ...judgeShotProblems(shots),
+          ...glassesGateProblems(readText, { since: smokeStarted }),
+        ];
         const finalScreen = finalShotProblems(shots, read);
         // MUSEMUSE_SCREEN_CHECK=warn (set by the platform, never by the product) logs them instead, as judgeShot does.
         if (process.env.MUSEMUSE_SCREEN_CHECK === "warn") for (const p of finalScreen) log(`musemuse screen check: ${p}`);

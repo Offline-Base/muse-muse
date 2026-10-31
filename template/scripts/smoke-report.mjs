@@ -125,6 +125,46 @@ export function finalShotProblems(fileNames, read) {
   return problems;
 }
 
+/**
+ * A glasses product's smoke test must take a photo through tests/glasses.ts, or nothing has shown the product works
+ * with glasses at all. Takes the text of test-results/glasses/calls.jsonl, or null when there is no such file. Only
+ * the smoke project's calls count, from `since` (ms) on, so an older run's log can't pass for this one.
+ */
+export function glassesProblems(callsText, { since = 0, project = "smoke" } = {}) {
+  const calls = String(callsText ?? "")
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return line.trim() ? [JSON.parse(line)] : [];
+      } catch {
+        return [];
+      }
+    });
+  const took = calls.some((c) => c?.method === "capturePhoto" && c.ok === true && c.project === project && Number(c.t) >= since);
+  return took
+    ? []
+    : [
+        "A glasses product's smoke test must take at least one photo through the glasses. Call installGlasses(page, " +
+          '{ photos: ["fixtures/pov-1.jpg"], question: "fixtures/question.wav" }) from tests/glasses.ts before page.goto, ' +
+          "connect the glasses, then press the primary button so the product calls capture() (muse-glasses skill).",
+      ];
+}
+
+/**
+ * The glasses check as verify runs it. `read` takes a path under the product and returns its text, or null when it isn't
+ * there. musemuse.target.json says which target this is, and a product without one is a web product with nothing to check.
+ */
+export function glassesGateProblems(read, { since = 0 } = {}) {
+  let target = null;
+  try {
+    target = JSON.parse(read("musemuse.target.json") ?? "null");
+  } catch {
+    return [];
+  }
+  const glasses = target?.target === "glasses" || (Array.isArray(target?.targets) && target.targets.includes("glasses"));
+  return glasses ? glassesProblems(read("test-results/glasses/calls.jsonl"), { since }) : [];
+}
+
 /** Notes judgeShot() left on any screenshot, for verify to print without failing. */
 export function judgeShotNotes(fileNames, read) {
   return checkedFiles(fileNames, read).flatMap(({ shot, checked }) =>

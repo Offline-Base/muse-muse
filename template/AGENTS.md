@@ -25,7 +25,7 @@ The inspo shows what to make. It is not material to copy.
 - Add a dependency only when the brief needs it. The SAM helpers (`@meta-sam/parser`, `@meta-sam/graphics`) are already installed.
 - The build machine can reach only npm, the Meta API and the Muse Muse gateway. Don't use `next/font/google`, remote images or CDNs. The fonts are Inter and Montserrat, installed from npm (`@fontsource-variable/inter`, `@fontsource-variable/montserrat`) and imported in `app/layout.tsx`: use `--font` and `--font-display`, and add no other fonts.
 - Server work goes in route handlers under `app/api/` or in server actions. Client components handle only UI.
-- Don't edit anything in `scripts/`, `playwright.config.ts`, `tests/judge-shot.ts` or `app/api/upload/route.ts`.
+- Don't edit anything in `scripts/`, `playwright.config.ts`, `tests/judge-shot.ts`, `tests/glasses.ts` or `app/api/upload/route.ts`.
 - ffmpeg and espeak-ng are installed. Make speech fixtures with `espeak-ng -w /tmp/raw.wav "some words"`, then `ffmpeg -i /tmp/raw.wav -ar 16000 -ac 1 fixtures/note.wav`. Use ffmpeg for any other fixture conversion.
 
 ## Calling Meta models
