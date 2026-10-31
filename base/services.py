@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from base import events as events_module
-from base import guard
+from base import guard, retention
 from base.approvals import ApprovalStore
 from base.config import Settings
 from base.connector.audit import Audit
@@ -127,6 +127,7 @@ class Services:
             failed = s.jobs.fail_unfinished()
             if failed:
                 log.info("marked %d unfinished job(s) from a previous run as failed", failed)
+            retention.maybe_expire_tags(s)  # tags that stopped working while the device was off
         s.embedder = Embedder(settings) if settings.search_embeddings else None
         s.controls = ControlStore(settings.paths.controls)
         s.router.choice = lambda: s.controls.get().learning

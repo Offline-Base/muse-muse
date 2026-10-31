@@ -149,6 +149,10 @@ class Settings:
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
+    # daily: every tag day gives each person a new tag, and an old tag restores until
+    # tag_grace_hours after its day ends or it was last sent. off: one tag per value, forever.
+    tag_rotation: Literal["daily", "off"] = "daily"
+    tag_grace_hours: float = 36.0
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -245,6 +249,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             api_key = checker_key
         elif backend != "llama_server" or not (_is_loopback_url(answer_url) and _is_loopback_url(router_url)):
             raise ValueError("DEVICE_ONLY=1 needs PRIMARY_MODEL=lfm, or Glimmer on llama-server on this device")
+    rotation = get("TAG_ROTATION", "daily")
+    if rotation not in ("daily", "off"):
+        raise ValueError(f"TAG_ROTATION must be daily or off, not {rotation!r}")
+    try:
+        grace = float(get("TAG_GRACE_HOURS", "36"))
+    except ValueError:
+        grace = 0.0
+    if not grace > 0:
+        raise ValueError("TAG_GRACE_HOURS must be a number of hours above 0")
 
     return Settings(
         device=device,  # type: ignore[arg-type]
@@ -287,6 +300,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
         pdftotext_bin=pdftotext,
         device_only=device_only,
+        tag_rotation=rotation,  # type: ignore[arg-type]
+        tag_grace_hours=grace,
     )
 
 

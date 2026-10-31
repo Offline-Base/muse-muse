@@ -39,6 +39,8 @@ log = logging.getLogger(__name__)
 _REDACTION: ContextVar[Any] = ContextVar("redaction", default=None)
 # True while the release in progress came with a private detail in Muse's own request.
 _RAW_REQUEST: ContextVar[bool] = ContextVar("raw_request", default=False)
+# The tag map for the release in progress, pinned to the tag day of the tags in Muse's request.
+_TAGS: ContextVar[Any] = ContextVar("tags", default=None)
 
 WAITING_TEXT = "Waiting for your OK on the device."
 HELD_TEXT = "Held on your device."
@@ -196,15 +198,37 @@ class Egress:
 
         `sources` are the workspace paths (or folders) the result came from; with the user's
         controls (services.controls) they decide what is redacted for this result.
+
+        With tag rotation, the result is tagged on the newest tag day among the tags in `request`
+        that still restore (TagMap.day_for), else today: a job Muse started with yesterday's tags
+        comes back in those tags.
         """
         token = _REDACTION.set(self._redaction_for(sources))
+        tags = _TAGS.set(self._tags_for(request))
         try:
             return self._release(
                 tool, request, raw_text, result_kind, job_id=job_id, summary=summary, topics=topics,
                 item_id=item_id, day=day, synthetic=synthetic, sources=list(sources),
             )
         finally:
+            _TAGS.reset(tags)
             _REDACTION.reset(token)
+
+    def _tags_for(self, request: str) -> Any:
+        """services.tagmap pinned to the tag day of Muse's request (a TagView), or as it is."""
+        tagmap = getattr(self.services, "tagmap", None)
+        if not callable(getattr(tagmap, "view", None)):
+            return tagmap
+        try:
+            return tagmap.view(tagmap.day_for(request or ""))
+        except Exception as exc:  # today's tags are always a safe answer
+            log.warning("could not read the request's tag day (%s); using today", type(exc).__name__)
+            return tagmap.view()
+
+    def _tags(self) -> Any:
+        """The tag map for tagging in the release in progress (see _tags_for)."""
+        tags = _TAGS.get()
+        return self.services.tagmap if tags is None else tags
 
     def _redaction_for(self, sources: Sequence[str]) -> Any:
         """guard.Redaction from the user's controls for these sources, or None (tag everything)."""
@@ -267,7 +291,7 @@ class Egress:
             held = RouteDecision("refuse", "A privacy toggle is on and a model is not on this device.", "rule", 0, ["compliance:cloud"])
             return Released("refused", refusal_text(held.floors), None, held, None)
         try:
-            tagged = self._tag(raw_text, result_kind, synthetic)
+            tagged = self._tag(self._neutralized(raw_text), result_kind, synthetic)
         except Exception as exc:  # the name pass or the guard broke: hold rather than guess
             log.warning("tagging failed (%s); holding the result", type(exc).__name__)
             self._audit("egress", "name_check_failed")
@@ -431,6 +455,16 @@ class Egress:
 
     # Helpers
 
+    def _neutralized(self, raw_text: str) -> str:
+        """The raw result with tag-shaped document text ("[Student B]") as [Redacted N] tags
+        (guard.neutralize_tags), so Muse never reads it as a real person's tag. Raises if the tag
+        map cannot make one; the caller holds the result."""
+        neutralize = getattr(self.guard, "neutralize_tags", None)
+        tags = self._tags()
+        if not callable(neutralize) or not hasattr(tags, "tag_for"):
+            return raw_text
+        return neutralize(raw_text, tags)
+
     def _tag(self, text: str, result_kind: str, synthetic: bool) -> TagResult:
         """guard.tag with the answer model's second pass for names the roster misses.
 
@@ -443,7 +477,7 @@ class Egress:
         return self.guard.tag(
             text,
             s.roster,
-            s.tagmap,
+            self._tags(),
             llm_names=None if names_off else self._name_pass(result_kind, synthetic),
             never_share=s.policy.never_share,
             **kw,
@@ -454,8 +488,7 @@ class Egress:
         Raises if tagging fails; the caller holds the result."""
         if not request:
             return TagResult(request or "")
-        s = self.services
-        return self.guard.tag(request, s.roster, s.tagmap, **self._red_kw())
+        return self.guard.tag(request, self.services.roster, self._tags(), **self._red_kw())
 
     def _request_topics(
         self, raw_request: str, request: str, result_kind: str, tagged: TagResult, own_topics: list[str], synthetic: bool
@@ -509,11 +542,23 @@ class Egress:
         if _RAW_REQUEST.get():
             text = f"{text}\n\n{RAW_REQUEST_NOTE}"
         if status == "shared":
+            self._mark_sent(text)
             self._emit("sending", detail)  # the light plays one sweep, then shows the next state
             self._emit(self._resting_state(), detail)
         elif status == "waiting":
             self._emit("waiting", detail)
         return Released(status, text, approval_id, route, tagged)
+
+    def _mark_sent(self, text: str) -> None:
+        """Every tag in a shared text now counts as sent (TagMap.touch): Muse may send it back,
+        and it restores until the grace window after this send."""
+        touch = getattr(getattr(self.services, "tagmap", None), "touch", None)
+        if not callable(touch):
+            return
+        try:
+            touch(guard_module.TAG_RE.findall(text))
+        except Exception as exc:  # the text already passed every check; only the send time is lost
+            log.warning("could not mark tags as sent: %s", type(exc).__name__)
 
     def _tagged_summary(
         self, summary: str | None, tagged_text: str, request: str, result_kind: str, synthetic: bool

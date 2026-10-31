@@ -43,8 +43,8 @@ Tool path on LFM (eval/reports/device_smoke_lfm.md): 24 essays graded in about 3
 
 Open:
 
-- Not built: tag rotation (2.6). The connector uses no chat ID and tags stay the same on a device, so results can be linked over time. FERPA counts multiple releases, so this is a known gap.
-- The tag map is not cleared on a retention schedule (docs/RETENTION.md).
+- Tag rotation (2.6) is built on the lane/b-privacy branch: tags change every day, an old tag restores for 36 hours after its day ends or it was last sent, and the device restores only tags it sent. It is daily, not per chat, because no chat ID reaches the device, so results from the same day can still be linked. FERPA counts multiple releases, so linking within a day is a known gap. Not yet on the live app: the first start rewrites tagmap.json as version 2, after copying it and base.db.
+- The tag map is cleared on the retention schedule (docs/RETENTION.md) on the same branch: stopped tags hourly with no toggle, old values not on the roster under COPPA and GDPR.
 - The Prepare page works on the laptop only, not the phone.
 - 90 approval requests in 200 is not yet seamless, and dreaming didn't lower it (see above). Grading has not been measured on LFM.
 - The local model's summaries can add details the result doesn't state. A live check on Oct 30 added a "typical range", and the prompt now forbids that, but it is not measured.

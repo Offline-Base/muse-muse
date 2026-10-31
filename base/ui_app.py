@@ -1346,7 +1346,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     @app.get("/prepare", response_class=HTMLResponse)
     def prepare_page(request: Request) -> HTMLResponse:
-        return page(request, "prepare", "Prepare a question", render("prepare.html", original="", result_html="", note=""))
+        rotation = tag_day_note(getattr(services, "tagmap", None))
+        return page(
+            request, "prepare", "Prepare a question",
+            render("prepare.html", original="", result_html="", note="", rotation=rotation),
+        )
 
     @app.post("/prepare", response_class=HTMLResponse)
     async def prepare_post(request: Request) -> HTMLResponse:
@@ -1359,7 +1363,11 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             if tagged
             else ""
         )
-        return page(request, "prepare", "Prepare a question", render("prepare.html", original=original, result_html=result, note=note))
+        rotation = tag_day_note(getattr(services, "tagmap", None))
+        return page(
+            request, "prepare", "Prepare a question",
+            render("prepare.html", original=original, result_html=result, note=note, rotation=rotation),
+        )
 
     @app.get("/api/audit.csv")
     def api_audit() -> Response:
@@ -1426,6 +1434,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             "profiles": controls.get().profiles,
             "heavy_queue": settings.heavy_queue,
             "login_required": login_required,
+            "tag_rotation": getattr(getattr(services, "tagmap", None), "rotation", "off"),
         }
 
     @app.get("/health")
@@ -1626,7 +1635,22 @@ def prepare_text(services: Any, controls: Any, text: str) -> tuple[str, str]:
         log.warning("prepare could not run the name check: %s", type(exc).__name__)
         result = guard.tag(text, services.roster, services.tagmap, **kw)
         note = "The local model is not running, so only names on your roster and identifiers were tagged. Check the text before you paste it."
+    touch = getattr(services.tagmap, "touch", None)
+    if callable(touch):  # the user pastes these into Muse, so Muse may send them back
+        touch(guard.TAG_RE.findall(result.text))
     return result.text, note
+
+
+def tag_day_note(tagmap: Any) -> str:
+    """One line for the Prepare page: whether tags change every day, and today's tag day."""
+    if getattr(tagmap, "rotation", "off") != "daily":
+        return "Tags stay the same on this device: the daily tag change is off."
+    today = tagmap.today()
+    day = date.fromordinal(today + date(1970, 1, 1).toordinal())
+    return (
+        f"Tags change every day on this device. These are the tags for {day:%B} {day.day} (tag day {today}). "
+        "Muse can use them until about a day and a half after the day ends, then tag your question again."
+    )
 
 
 def _model_label(settings: Any, glimmer: str) -> str:

@@ -102,6 +102,7 @@ USAGE = {
 }
 
 GENERIC_ERROR = "Something went wrong on the device, and nothing was shared. Try again in a moment."
+EXPIRED_TAG = "That tag no longer works on this device. Call list_documents or search_documents again for current tags."
 CLOUD_REFUSED = (
     "The device will not read that folder: its model is running in the cloud for development, so only "
     "folders marked as invented data can be read."
@@ -188,11 +189,20 @@ def _topics(job: Any) -> list[str]:
 
 
 def restore_tags(services: Any, text: str) -> str:
-    """Swap tags like [Student A] back to real values. The result stays on the device."""
+    """Swap tags like [Student A] back to real values. The result stays on the device.
+
+    With a TagMap only the tags this device sent to Muse, still in their grace window, restore
+    (TagMap.for_muse). Any other tag in `text` raises ToolFailure with EXPIRED_TAG (audit
+    expired_tag) before anything is searched or started: old, never-sent and guessed tags get the
+    same sentence, so Muse cannot tell them apart."""
     guard = importlib.import_module("base.guard")
     tagmap = services.tagmap
     if isinstance(tagmap, Mapping):
         mapping = dict(tagmap)
+    elif hasattr(tagmap, "for_muse"):
+        if tagmap.expired(text):
+            raise ToolFailure(EXPIRED_TAG, outcome="expired_tag")
+        mapping = dict(tagmap.for_muse())
     elif hasattr(tagmap, "as_dict"):
         mapping = dict(tagmap.as_dict())
     else:
@@ -329,10 +339,11 @@ class Connector:
         runner = getattr(self.services, "ask_runner", None)
         if runner is None:
             raise ToolFailure(ASK_UNAVAILABLE)
+        real_question = restore_tags(self.services, question)  # before any index call
         real_folder = self._docs(folder)[0] if folder else ""
         request = f"{question}\nPurpose: {purpose}" if purpose else question
         try:
-            job_id = str(runner.start(restore_tags(self.services, question), request, real_folder or None))
+            job_id = str(runner.start(real_question, request, real_folder or None))
         except Exception as exc:
             if type(exc).__name__ == "AskBusy":  # a plain sentence with a count, no content
                 raise ToolFailure(str(exc), outcome="busy") from None
@@ -345,6 +356,7 @@ class Connector:
             raise ToolFailure(
                 "Say what to do in instructions, for example: grade each essay against rubric.md."
             )
+        restore_tags(self.services, instructions)  # an old or guessed tag starts nothing (EXPIRED_TAG)
         real_folder, docs = self._docs(folder)
         if not docs:
             raise ToolFailure(f"The folder {_quote(folder)} has no documents to work on.")
