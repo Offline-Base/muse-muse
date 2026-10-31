@@ -3,17 +3,19 @@
     uv run python -m scripts.compare_modes --name NAME [--set eval/fresh_200_b.jsonl] [--limit N]
 
 Needs the model servers running (scripts/start.sh) and DEVICE_ONLY=1. Writes one eval report per
-mode, and eval/reports/modes_NAME.md with the table. All items are invented.
+mode, and eval/reports/modes_NAME.md with the table, read from each run's --summary-json. All
+items are invented. scripts/model_matrix.py runs the same modes in one process, with paired tests.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -25,24 +27,26 @@ MODES = {
     "tighten": ("Prompt, stricter only", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "tighten"}),
     "decide": ("Prompt, model decides", {"DREAMING_BACKEND": "prompt", "ROUTER_TRUST": "decide"}),
 }
-_SUMMARY = re.compile(r"accuracy ([\d.]+)%, agreement [\d.]+%, approval requests (\d+), leaks (\d+), errors (\d+), fallbacks (\d+)")
 
 
-def parse_summary(output: str) -> dict[str, str] | None:
-    found = _SUMMARY.findall(output)
-    if not found:
+def read_summary(path: Path) -> dict | None:
+    """A run's --summary-json, or None when the run did not write one."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
         return None
-    accuracy, asked, leaks, errors, fallbacks = found[-1]
-    return {"accuracy": accuracy, "asked": asked, "leaks": leaks, "errors": errors, "fallbacks": fallbacks}
 
 
-def table(rows: list[tuple[str, dict[str, str] | None]]) -> list[str]:
-    lines = ["| Mode | Agreement | Approval requests | Leaks | Errors or fallbacks |", "|---|---|---|---|---|"]
+def table(rows: list[tuple[str, dict | None]]) -> list[str]:
+    lines = ["| Mode | Decision accuracy | Approval requests | Leaks | Errors or fallbacks |", "|---|---|---|---|---|"]
     for label, r in rows:
         if r is None:
             lines.append(f"| {label} | did not finish | | | |")
         else:
-            lines.append(f"| {label} | {r['accuracy']}% | {r['asked']} | {r['leaks']} | {int(r['errors']) + int(r['fallbacks'])} |")
+            lines.append(
+                f"| {label} | {r['accuracy'] * 100:.1f}% | {r['approval_requests']} | {r['leaks']} "
+                f"| {r['errors'] + r['fallbacks']} |"
+            )
     return lines
 
 
@@ -56,14 +60,16 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.device_only:
         p.error("this needs DEVICE_ONLY=1, so that no text leaves this device")
     rows = []
-    for mode, (label, env) in MODES.items():
-        cmd = [sys.executable, "-m", "eval.run_eval", "--set", args.set, "--name", f"modes_{args.name}_{mode}",
-               "--device-label", f"{args.name}, {label}"]  # fmt: skip
-        if args.limit:
-            cmd += ["--limit", str(args.limit)]
-        print(f"Running: {label}", flush=True)
-        done = subprocess.run(cmd, env={**os.environ, **env}, capture_output=True, text=True)
-        rows.append((label, parse_summary(done.stdout + done.stderr)))
+    with tempfile.TemporaryDirectory(prefix="base-modes-") as tmp:
+        for mode, (label, env) in MODES.items():
+            summary = Path(tmp) / f"{mode}.json"
+            cmd = [sys.executable, "-m", "eval.run_eval", "--set", args.set, "--name", f"modes_{args.name}_{mode}",
+                   "--device-label", f"{args.name}, {label}", "--summary-json", str(summary)]  # fmt: skip
+            if args.limit:
+                cmd += ["--limit", str(args.limit)]
+            print(f"Running: {label}", flush=True)
+            subprocess.run(cmd, env={**os.environ, **env}, capture_output=True, text=True)
+            rows.append((label, read_summary(summary)))
     command = "uv run python -m scripts.compare_modes " + " ".join(shlex.quote(a) for a in (argv if argv is not None else sys.argv[1:]))
     lines = [
         f"# Router modes: {args.name}", "", f"Command: `{command}`", "",

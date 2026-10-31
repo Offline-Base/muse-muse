@@ -554,3 +554,37 @@ def test_a_taught_list_rule_never_lifts_a_never_share_title(settings, eval_polic
                       blocked=["Mentions an IEP or 504 plan"])  # fmt: skip
     out = list_router(settings, eval_policy, LEARNED_HEAD + LIST_SHARE + "\n").decide(inp)
     assert out.decision == "refuse" and out.floors == ["blocked:iep"] and out.code == "blocked:iep"
+
+
+@pytest.mark.parametrize("level", ["low", "medium", "high", "xhigh"])
+def test_router_reasoning_level_and_budget_reach_llama_server(tmp_path, policy, level):
+    import httpx
+    import respx
+
+    from base.config import load_settings
+    from base.local_llm import LocalLLM
+
+    s = load_settings({"BASE_HOME": str(tmp_path / "h"), "GLIMMER_BACKEND": "llama_server", "LLAMA_API_KEY": "",
+                       "ROUTER_REASONING": level, "ROUTER_MAX_TOKENS": "2400"})  # fmt: skip
+    usage = {"prompt_tokens": 300, "completion_tokens": 90, "completion_tokens_details": {"reasoning_tokens": 70}}
+    answer = {"choices": [{"finish_reason": "stop", "message": {"content": '{"decision": "ask_user", "reason": "r"}'}}],
+              "usage": usage}  # fmt: skip
+    with respx.mock:
+        route = respx.post(f"{s.router_url}/chat/completions").mock(return_value=httpx.Response(200, json=answer))
+        out = Router(s, LocalLLM(s, "router"), policy).decide(route_input())
+    body = json.loads(route.calls.last.request.content)
+    assert body["chat_template_kwargs"] == {"reasoning_strength": level}
+    assert body["max_tokens"] == 2400
+    system = body["messages"][0]["content"]
+    lines = [line for line in system.splitlines() if line.lower().startswith("reasoning strength:")]
+    assert lines == [f"Reasoning strength: {level}"]
+    assert out.source == "model" and out.calls == 1
+    assert (out.prompt_tokens, out.completion_tokens, out.reasoning_tokens) == (300, 90, 70)
+    assert out.finish_reason == "stop"
+
+
+def test_usage_is_empty_on_a_rule_path_and_counted_on_a_fallback(settings, policy):
+    out = make_router(settings, policy, FakeLLM()).decide(route_input(kind="document_list"))
+    assert out.calls == 0 and out.completion_tokens is None
+    down = make_router(settings, policy, FakeLLM(exc=RuntimeError("down"))).decide(route_input())
+    assert down.source == "fallback" and down.calls == 1 and down.reasoning_tokens is None

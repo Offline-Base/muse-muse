@@ -1,0 +1,15 @@
+{
+  "commit": "5dfb2f9",
+  "config": "lfm_tighten",
+  "env": {
+    "DREAMING_BACKEND": "prompt",
+    "ROUTER_TRUST": "tighten"
+  },
+  "set": "eval/fresh_200_b.jsonl",
+  "items": 10,
+  "ids_sha256": "f48e2dad580958e3",
+  "router": "lfm3-vl-2b at port 8083",
+  "reasoning": "low",
+  "max_tokens": 1500,
+  "glimmer_sha256": null
+}

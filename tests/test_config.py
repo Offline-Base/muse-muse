@@ -111,3 +111,14 @@ def test_router_loosen_is_off_unless_turned_on(tmp_path, value, expected):
 def test_router_loosen_refuses_unknown_choices(tmp_path):
     with pytest.raises(ValueError, match="ROUTER_LOOSEN"):
         load_settings({"BASE_HOME": str(tmp_path), "ROUTER_LOOSEN": "lists,everything"})
+
+
+def test_router_reasoning_and_token_budget(tmp_path):
+    s = load_settings({"BASE_HOME": str(tmp_path)})
+    assert s.router_reasoning == "low" and s.router_max_tokens == 1500  # today's behavior
+    s = load_settings({"BASE_HOME": str(tmp_path), "ROUTER_REASONING": "xhigh", "ROUTER_MAX_TOKENS": "4000"})
+    assert s.router_reasoning == "xhigh" and s.router_max_tokens == 4000
+    for bad in ({"ROUTER_REASONING": "none"}, {"ROUTER_REASONING": "High"}, {"ROUTER_MAX_TOKENS": "-5"},
+                {"ROUTER_MAX_TOKENS": "lots"}, {"ROUTER_MAX_TOKENS": "10"}, {"ROUTER_MAX_TOKENS": "99999"}):  # fmt: skip
+        with pytest.raises(ValueError, match="ROUTER_"):
+            load_settings({"BASE_HOME": str(tmp_path), **bad})

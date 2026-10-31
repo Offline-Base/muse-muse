@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Installs Muse Privacy on a Jetson Orin Nano. Run from a checkout of this repo, as root.
-# It creates the service user and directories, copies the app, downloads Glimmer i1-IQ1_S with
-# resume and a SHA-256 check, and installs the systemd units. It leaves the board's settings alone
+# Installs Muse Privacy on a Jetson Orin Nano. Run as root from a checkout of this repo or from a
+# bundle made by scripts/make_bundle.py. It creates the service user and directories, copies the
+# app, downloads Glimmer i1-IQ1_S with resume and a SHA-256 check (or copies a GGUF you brought on
+# a USB stick, --model-file), and installs the systemd units. It leaves the board's settings alone
 # and never restarts the machine. Not yet run on a real board; see README.md.
 set -euo pipefail
 
@@ -16,7 +17,8 @@ MODEL_NAME=Muse-Glimmer-30B.i1-IQ1_S.gguf
 MODEL_URL="https://huggingface.co/$MODEL_REPO/resolve/main/$MODEL_NAME"
 MODEL_API="https://huggingface.co/api/models/$MODEL_REPO/tree/main"
 LLAMA_REPO=https://github.com/ggml-org/llama.cpp
-LLAMA_REF="${LLAMA_REF:-b10353}"
+# The laptop's build: LFM3-VL-2B needs b11960 or newer, Glimmer b10353 or newer.
+LLAMA_REF="${LLAMA_REF:-b11972}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_SRC="$(cd "$HERE/../.." && pwd)"
@@ -24,19 +26,25 @@ APP_SRC="$(cd "$HERE/../.." && pwd)"
 BUILD_LLAMA=0
 START=0
 SKIP_MODEL=0
+MODEL_FILE=""
+MODEL_FILE_SHA=""
 
 usage() {
   cat <<'EOF'
-Usage: sudo deploy/jetson/install.sh [--build-llama] [--skip-model] [--start]
+Usage: sudo deploy/jetson/install.sh [--build-llama] [--skip-model | --model-file FILE --model-sha256 HEX] [--start]
 
-  --build-llama  clone llama.cpp (tag b10353 or LLAMA_REF) into /opt/muse-privacy/llama.cpp
-                 and build llama-server with CUDA if it is not there yet (takes a while)
-  --skip-model   do not download the Glimmer GGUF
-  --start        start the services at the end (otherwise they are only enabled)
+  --build-llama   clone llama.cpp (tag b11972 or LLAMA_REF) into /opt/muse-privacy/llama.cpp
+                  and build llama-server with CUDA if it is not there yet (takes a while)
+  --skip-model    do not download the Glimmer GGUF
+  --model-file F  copy this GGUF (from a USB stick) into /opt/muse-privacy/models instead of
+                  downloading one, and point the model service at it (GLIMMER_GGUF in /etc/muse-privacy/env)
+  --model-sha256  the SHA-256 that file must have (needed with --model-file; plug_in_model --check prints it)
+  --start         start the services at the end (otherwise they are only enabled)
 
 Environment:
-  MODEL_SHA256   expected SHA-256 of the GGUF, if you do not want it read from the Hugging Face API
-  LLAMA_REF      llama.cpp tag to build (default b10353; needs b10353 or newer)
+  MODEL_SHA256   expected SHA-256 of the downloaded GGUF, if you do not want it read from the Hugging Face API
+  LLAMA_REF      llama.cpp tag to build (default b11972, the laptop's build; Glimmer needs b10353 or newer
+                 and LFM3-VL-2B b11960 or newer)
   CUDACXX        the CUDA compiler (default /usr/local/cuda/bin/nvcc)
   BUILD_JOBS     parallel compile jobs for --build-llama (default 2; more can run out of memory)
 EOF
@@ -49,12 +57,22 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --build-llama) BUILD_LLAMA=1 ;;
     --skip-model) SKIP_MODEL=1 ;;
+    --model-file) shift; MODEL_FILE="${1:-}" ;;
+    --model-sha256) shift; MODEL_FILE_SHA="${1:-}" ;;
     --start) START=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
   shift
 done
+
+if [ -n "$MODEL_FILE" ] || [ -n "$MODEL_FILE_SHA" ]; then
+  [ -n "$MODEL_FILE" ] && [ -n "$MODEL_FILE_SHA" ] || die "--model-file and --model-sha256 go together"
+  [ -f "$MODEL_FILE" ] || die "no file at $MODEL_FILE"
+  case "$MODEL_FILE" in *.gguf) ;; *) die "--model-file must be a .gguf file" ;; esac
+  [[ "$MODEL_FILE_SHA" =~ ^[0-9a-f]{64}$ ]] || die "--model-sha256 must be 64 lowercase hex characters"
+  [ "$SKIP_MODEL" -eq 0 ] || die "--skip-model and --model-file do not go together"
+fi
 
 [ "$(uname -s)" = Linux ] || die "run this on the Jetson itself (Linux)"
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo $0"
@@ -124,12 +142,19 @@ fi
 
 say "App"
 # Copy only what git tracks: never .env (secrets stay on the laptop), a virtualenv, node_modules
-# or local state from anywhere in the tree. Without git, fall back to tar with unanchored excludes.
+# or local state from anywhere in the tree. Without git (an unpacked bundle from
+# scripts/make_bundle.py), fall back to tar with unanchored excludes.
 if command -v git >/dev/null 2>&1 && git -C "$APP_SRC" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  CHANGED="$(git -C "$APP_SRC" status --porcelain | wc -l | tr -d ' ')"
+  if [ "$CHANGED" -gt 0 ]; then
+    echo "Warning: $CHANGED file(s) differ from the last commit, and git archive HEAD installs only"
+    echo "committed files. To install this tree as it is, build a bundle on the laptop with"
+    echo "uv run python -m scripts.make_bundle, copy it over and run install.sh from the unpacked bundle."
+  fi
   git -C "$APP_SRC" archive --format=tar HEAD | tar -C "$PREFIX/app" -xf -
 else
   tar -C "$APP_SRC" --exclude=.env --exclude=.venv --exclude=.git --exclude=node_modules \
-    --exclude=.wrangler --exclude=__pycache__ -cf - . | tar -C "$PREFIX/app" -xf -
+    --exclude=.wrangler --exclude=__pycache__ --exclude='*.gguf' -cf - . | tar -C "$PREFIX/app" -xf -
 fi
 chown -R root:root "$PREFIX/app"
 if command -v uv >/dev/null 2>&1; then
@@ -165,7 +190,27 @@ else
 fi
 
 say "Glimmer model"
-if [ "$SKIP_MODEL" -eq 1 ]; then
+if [ -n "$MODEL_FILE" ]; then
+  DEST="$PREFIX/models/$(basename "$MODEL_FILE")"
+  if [ ! -f "$DEST" ] || [ "$(sha256sum "$DEST" | cut -d' ' -f1)" != "$MODEL_FILE_SHA" ]; then
+    FREE_KB="$(df -Pk "$PREFIX/models" | awk 'NR == 2 {print $4}')"
+    NEED_KB=$(( $(stat -c %s "$MODEL_FILE") / 1024 + 1048576 ))
+    [ "$NEED_KB" -le "$FREE_KB" ] || die "not enough free disk in $PREFIX/models for $(basename "$MODEL_FILE")"
+    echo "Copying $(basename "$MODEL_FILE") (no download)."
+    cp "$MODEL_FILE" "$DEST.part"
+    ACTUAL_SHA="$(sha256sum "$DEST.part" | cut -d' ' -f1)"
+    [ "$ACTUAL_SHA" = "$MODEL_FILE_SHA" ] || { rm -f "$DEST.part"; die "SHA-256 mismatch for the copy of $(basename "$MODEL_FILE"). Copy it to the stick again."; }
+    mv -f "$DEST.part" "$DEST"
+  fi
+  chmod 0644 "$DEST"
+  # The model service reads GLIMMER_GGUF from the site settings (glimmer-env.sh).
+  if grep -q '^GLIMMER_GGUF=' "$CONF/env"; then
+    sed -i "s|^GLIMMER_GGUF=.*|GLIMMER_GGUF=$DEST|" "$CONF/env"
+  else
+    printf '# The model the Glimmer service loads (install.sh --model-file).\nGLIMMER_GGUF=%s\n' "$DEST" >>"$CONF/env"
+  fi
+  echo "Model verified; the model service will load $(basename "$DEST")."
+elif [ "$SKIP_MODEL" -eq 1 ]; then
   echo "Skipped (--skip-model)."
 else
   DEST="$PREFIX/models/$MODEL_NAME"
@@ -234,4 +279,5 @@ Next steps:
      and copy $STATE/home/tls/cert.pem to the laptop for the worker's --ca-cert.
   4. After pairing the relay: systemctl enable --now muse-privacy-relay
   The board should boot without the desktop (multi-user.target): the model needs about 6.5 to 7.3 GB.
+  From the unpacked bundle, check a model file first: uv run python -m scripts.plug_in_model FILE --check --device jetson
 EOF

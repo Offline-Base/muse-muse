@@ -425,3 +425,49 @@ def test_llm_names_keeps_names_written_with_other_apostrophes_and_spaces(llama, 
     )
     text = "Ms. O’Donnell phoned. Hunter Price waited."
     assert make(llama, sleeps).llm_names(text) == ["Ms. O'Donnell", "Hunter Price"]
+
+
+@respx.mock
+def test_last_result_keeps_usage_and_adds_up_retries(settings, sleeps):
+    route = respx.post(f"{settings.answer_url}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(200, json=reply("not json")),
+            httpx.Response(200, json=reply('{"decision": "refuse"}', reasoning_tokens=3)),
+        ]
+    )
+    llm = make(settings, sleeps)
+    assert llm.last_result is None
+    assert llm.chat_json([{"role": "user", "content": "Hi"}], SCHEMA, synthetic=True) == {"decision": "refuse"}
+    last = llm.last_result
+    assert route.call_count == 2 and last.calls == 2
+    assert (last.prompt_tokens, last.completion_tokens, last.reasoning_tokens) == (80, 24, 10)
+    assert last.finish_reason == "stop"
+
+
+@respx.mock
+def test_last_result_after_truncation_and_after_a_failure(settings, sleeps):
+    respx.post(f"{settings.answer_url}/chat/completions").mock(
+        side_effect=[
+            httpx.Response(200, json=reply(None, finish="length")),
+            httpx.Response(200, json=reply("done")),
+            httpx.Response(400, json={"error": {"message": "bad"}}),
+        ]
+    )
+    llm = make(settings, sleeps)
+    llm.chat([{"role": "user", "content": "Hi"}], synthetic=True)
+    assert llm.last_result.calls == 2 and llm.last_result.completion_tokens == 24
+    with pytest.raises(LLMError):
+        llm.chat([{"role": "user", "content": "Hi"}], synthetic=True)
+    assert llm.last_result is None  # never the previous call's usage
+
+
+def test_last_result_is_per_thread(settings, sleeps):
+    import threading
+
+    llm = make(settings, sleeps)
+    llm._keep(ChatResult("main", completion_tokens=5))
+    seen = []
+    worker = threading.Thread(target=lambda: seen.append(llm.last_result))
+    worker.start()
+    worker.join()
+    assert seen == [None] and llm.last_result.completion_tokens == 5

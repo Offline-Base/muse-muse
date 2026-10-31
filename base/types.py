@@ -119,3 +119,10 @@ class RouteDecision:
     # What decided it, as a fixed string (never model text): "policy_default", "outside_class",
     # "identifier:phone"... docs/CONTRACTS.md (Router) lists them. Empty when unknown.
     code: str = ""
+    # The router model's usage for this decision: completions sent (0 on a path with no model
+    # call) and the tokens the server reported, None when it reported none.
+    calls: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    finish_reason: str | None = None

@@ -69,6 +69,23 @@ class ChatResult:
     model: str = ""
     finish_reason: str | None = None
     provider: str | None = None
+    calls: int = 1  # completions this result took: a retry after a cut-off reply or bad JSON counts
+
+
+def merged(first: ChatResult, second: ChatResult, latency_ms: int | None = None) -> ChatResult:
+    """`second` with the usage of both tries added up (latency too, unless `latency_ms` is given)."""
+    return ChatResult(
+        content=second.content,
+        tool_calls=second.tool_calls,
+        reasoning_tokens=first.reasoning_tokens + second.reasoning_tokens,
+        prompt_tokens=first.prompt_tokens + second.prompt_tokens,
+        completion_tokens=first.completion_tokens + second.completion_tokens,
+        latency_ms=first.latency_ms + second.latency_ms if latency_ms is None else latency_ms,
+        model=second.model,
+        finish_reason=second.finish_reason,
+        provider=second.provider,
+        calls=first.calls + second.calls,
+    )
 
 
 def response_format(schema: dict, name: str = "result") -> dict:
@@ -266,6 +283,17 @@ class LocalLLM:
         self.liquid = role in ("checker", "jetson") or lfm_only
         self._client = client
         self._sleep = sleep
+        self._local = thread_local()
+
+    @property
+    def last_result(self) -> ChatResult | None:
+        """Usage of this thread's last chat or chat_json call, with every try added up (the
+        eval reads it through the router), or None when that call failed before any reply."""
+        return getattr(self._local, "result", None)
+
+    def _keep(self, result: ChatResult | None) -> ChatResult | None:
+        self._local.result = result
+        return result
 
     @property
     def client(self) -> httpx.Client:
@@ -385,6 +413,7 @@ class LocalLLM:
                 "and the caller did not mark this call synthetic."
             )
         start = time.monotonic()
+        self._keep(None)
 
         def call(budget: int) -> ChatResult:
             body = self.build_body(
@@ -407,11 +436,12 @@ class LocalLLM:
             )
             return self._result(data, start)
 
-        result = call(max_tokens)
+        result = self._keep(call(max_tokens))
         if _truncated(result):
             bigger = min(max_tokens * 2, TRUNCATION_CAP)
             if bigger > max_tokens:
-                result = call(bigger)
+                second = call(bigger)  # its latency counts from this call's start already
+                result = self._keep(merged(result, second, second.latency_ms))
             if _truncated(result):
                 raise LLMTruncated(f"reply hit max_tokens={max(bigger, max_tokens)} before any content")
         return result
@@ -452,7 +482,12 @@ class LocalLLM:
         retry.append({"role": "user", "content": "That was not valid JSON. Reply with only the JSON object."})
         if result.finish_reason == "length":
             kw["max_tokens"] = min(kw.get("max_tokens", 2000) * 2, TRUNCATION_CAP)
-        result = self.chat(retry, json_schema=schema, **kw)
+        first = result
+        try:
+            result = self._keep(merged(first, self.chat(retry, json_schema=schema, **kw)))
+        except LLMError:
+            self._keep(first)
+            raise
         try:
             return parse_json(result.content)
         except ValueError as exc:
