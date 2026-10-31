@@ -116,8 +116,10 @@ If you want more than this, such as gadgets built for many users, ask Meta first
 | Raspberry Pi 5 | 2 | One becomes a real Muse gadget on the Linux Device SDK, paired with our own Muse account and token. That's personal use, within the terms, and it's the demo for routes 1 and 2. The other runs `muse-device` for the test bed. | Meta lists the Pi 5 as a supported gadget. Voice and vision need a mic, speaker and camera attached. |
 | Arduino UNO Q, 4 GB | 1 | The actuator board. Its microcontroller drives LEDs, relays, servos and sensors, and its Linux side runs `muse-device` with a new pin tool, so a product's action can move something real. | Not on Meta's gadget list, so it's untested as a gadget. As our own MCP board it needs no SDK. |
 | E-ink tablet | 1 | A display. Products get an e-ink view (high contrast, no motion, large type) that a scheduled job refreshes, such as a morning plan. | Not a gadget in the SDK's sense, because the SDK's e-ink support is for ESP32 boards. It works through the tablet's browser, if it has one. |
-| Jetson Orin Nano | 6 | Model day's edge stage: run the open-weight models that fit in 8 GB (the 3 to 4B student from the knowledge plan, not Glimmer 30B), measure speed and quality on the device, and host `muse-device` with cameras. | Most already serve the offline fleet (Bolt, the LFM models, the router). Use only spare boards, and only through the fleet control plane. |
+| Jetson Orin Nano | 6 | Run Muse Glimmer quantized to 1 bit and below behind an OpenAI-compatible API, so products and model day can call it, and host `muse-device` with cameras. At 1 bit the 30B weights are about 3.75 GB, and below 1 bit about 3 GB, which leaves room in the board's 8 GB for the runtime and context. | Most already serve the offline fleet (Bolt, the LFM models, the router). Use spare boards first, and only through the fleet control plane. |
 | Coral boards (Google, Synaptics) | 2 | On-device vision for the edge stage: compare the boards' NPU detectors with SAM 3.1 on the same images. | Enrolled as coral-01 and coral-02. Online only while tethered to the Mac. |
+
+**Every board serves an API.** Each board runs `muse-device` for its own hardware and, where the model fits, a local model API. The platform registers each board's endpoints in the gateway, so a product reaches a board's tools or the quantized Glimmer with the same product token it uses for Meta. Board addresses and tokens never leave the server. When a board is offline, the product gets a clear error and falls back to a hosted model where its brief allows.
 
 The demo for the video: a Pi 5 paired as our own Muse gadget, a product's gadget skill pasted into our muse, and the UNO Q moving something when the product's action runs.
 
@@ -128,6 +130,8 @@ A daily job diffs `GET /v1/models`. A new id, or an admin button, starts a run w
 1. **What the API can do.** Run all 154 docs pages' demos and their `DemoSpec`s with the model swapped in. This is already a browser sweep (`sweep.mjs`) that presses every demo's main action. The result is a feature matrix next to the current model's: tool calling, strict schemas, search grounding, reasoning efforts, vision, video, long context, each protocol, plus latency and cost.
 2. **How well it builds.** A fixed suite (the 10 catalog rebuilds, the 11 canary muses and a held-out set) built with the new model in each role: brief, build, judge. Score it with the blind pairwise review already used for the UI rounds, against the current model. Measure live rate, fix rounds, time, cost, judge score and the share of injected faults the tests catch.
 3. **What's new.** A generator writes stretch muses along axes the suite doesn't cover: chains across several models, long multi-step products, video, hardware through `device-tools`, adversarial inputs. Many run in parallel. A judge flags surprises: products the new model finished that the current one failed. Each surprise is rerun three times before anyone calls it a new capability. Confirmed ones join the fixed suite, and the hunt repeats until a round finds nothing new.
+
+An edge pass runs the quantized Glimmer on the Jetsons and compares its speed and answers with full precision and the hosted models, so each new quantization gets a report card too.
 
 The output is a public report card per model, with the diff against the previous one.
 
@@ -144,8 +148,9 @@ The hackathon closes Nov 4 at 9 PM ET, and the demo video is still unrecorded. D
 | 3 | Data and sign-in (section 1) | 2 to 3 days | The biggest jump in what products can be |
 | 4 | Gadget skills on product pages (section 5, route 1) | Half a day | Cheap, within the terms, and a hardware story for the demo |
 | 5 | Model day, stage 1 | 1 day | Reuses the docs sweep |
-| 6 | Jobs, email, outside APIs, nightly re-checks | 2 to 3 days | After the hackathon |
-| 7 | Model day stages 2 and 3, gadget builds, starter shapes | Ongoing | After the hackathon |
+| 6 | Boards as gateway backends: device tools and the quantized Glimmer | 1 to 2 days | When the quantized Glimmer is ready. A product calling Glimmer on a Jetson is a strong demo |
+| 7 | Jobs, email, outside APIs, nightly re-checks | 2 to 3 days | After the hackathon |
+| 8 | Model day stages 2 and 3, gadget builds, starter shapes | Ongoing | After the hackathon |
 
 ## Open questions
 
