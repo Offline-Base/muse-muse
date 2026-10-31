@@ -1,4 +1,7 @@
 import { AuthError, requireAdmin } from "@/lib/auth";
+import { eq } from "drizzle-orm";
+import { capsProductOff, capsWatchProductOff } from "@/lib/caps/cleanup";
+import { db, schema } from "@/lib/db/client";
 import { setProductStatusBySlug } from "@/lib/gateway/store";
 
 // Admin kill switch. "disabled" makes the gateway answer 403 product_disabled for every token of the product and
@@ -27,5 +30,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   }
   const updated = await setProductStatusBySlug(slug, status as SwitchStatus);
   if (!updated) return Response.json({ error: "not_found" }, { status: 404 });
+  // Each cap pauses what it runs for the product (docs/CAPABILITIES.md, 2.9). Nothing is registered until a cap is ready.
+  if (updated.status === "disabled" && capsWatchProductOff()) {
+    const [row] = await db().select({ id: schema.products.id }).from(schema.products).where(eq(schema.products.slug, updated.slug)).limit(1);
+    if (row) await capsProductOff(row.id);
+  }
   return Response.json({ ok: true, slug: updated.slug, status: updated.status });
 }

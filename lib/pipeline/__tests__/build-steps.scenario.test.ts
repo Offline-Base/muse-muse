@@ -10,7 +10,7 @@
  * Without the flag, node:test has no mock.module and this file skips.
  */
 import assert from "node:assert/strict";
-import { before, beforeEach, describe, it, mock } from "node:test";
+import { afterEach, before, beforeEach, describe, it, mock } from "node:test";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as realSchema from "@/lib/db/schema";
@@ -45,6 +45,8 @@ let startImpl: () => Promise<unknown> = async () => ({ cmdId: "cmd", logPath: "/
 let startInputs: Array<Record<string, unknown>> = [];
 let demoSpecs: Array<{ sandboxName: string; spec: Record<string, unknown> }> = [];
 let demoVideo: { videoUrl: string | null; posterUrl: string | null } = { videoUrl: null, posterUrl: null };
+let liveCheckImpl: (input: Record<string, unknown>) => Promise<unknown> = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
+let liveCheckInputs: Array<Record<string, unknown>> = [];
 
 function thenable<T extends object>(q: T, result: () => unknown): T {
   return Object.assign(q, {
@@ -172,6 +174,14 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
         finishDemo: async () => demoVideo,
       },
     });
+    mock.module(at("../../engine/live-check.ts"), {
+      namedExports: {
+        liveCheck: async (input: Record<string, unknown>) => {
+          liveCheckInputs.push(input);
+          return liveCheckImpl(input);
+        },
+      },
+    });
     mock.module("workflow", {
       namedExports: { FatalError: FakeFatalError, getStepMetadata: () => ({ attempt: 1 }) },
     });
@@ -198,6 +208,8 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
     checkInputs = [];
     demoSpecs = [];
     demoVideo = { videoUrl: null, posterUrl: null };
+    liveCheckInputs = [];
+    liveCheckImpl = async () => ({ ok: true, url: "https://x", at: "t", checks: [] });
   });
 
   describe("judgeStep on a refinement", () => {
@@ -451,6 +463,72 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(productFiles[0]!.path, "fix-3.md");
       assert.match(productFiles[0]!.content, /The result is cut off\./);
       assert.doesNotMatch(productFiles[0]!.content, /attached/);
+    });
+  });
+
+  // Wave 3, unit 2 (docs/CAPABILITIES.md, section 8).
+  describe("engine steps", () => {
+    const FULL = (async () => (await import("@/lib/promote/__tests__/fixtures")).BRIEF)();
+    const milestones = [
+      { title: "Play one level", doneMeans: "A built-in level loads and can be won." },
+      { title: "Level maker", doneMeans: "A generated level passes the solver and saves." },
+    ];
+    afterEach(() => {
+      for (const k of ["ENGINE_ROUND_SCALING", "ENGINE_MILESTONES"]) delete process.env[k];
+    });
+
+    it("briefStep gives a round plan only when the engine scales or has milestones", async () => {
+      const brief = { ...(await FULL), complexity: "complex" as const, milestones };
+      selects = { builds: [[{ brief }]] };
+      assert.ok(!("plan" in (await steps.briefStep("b1"))), "flags off: today's summary");
+      process.env.ENGINE_ROUND_SCALING = "1";
+      selects = { builds: [[{ brief }]] };
+      const scaled = await steps.briefStep("b1");
+      assert.equal(scaled.plan?.buildMs, 30 * 60_000);
+      assert.deepEqual(scaled.plan?.milestones, [], "milestones need their own flag");
+      process.env.ENGINE_MILESTONES = "1";
+      selects = { builds: [[{ brief }]] };
+      assert.deepEqual((await steps.briefStep("b1")).plan?.milestones, [{ title: "Play one level" }, { title: "Level maker" }]);
+    });
+
+    it("writeMilestonePromptStep writes milestone-<n>.md with what the last strict check found", async () => {
+      const brief = { ...(await FULL), milestones };
+      const failed = { type: "verify", round: 0, summary: { passed: false, steps: [{ name: "smoke", ok: false, detail: "no board" }], failureOutput: "" }, screenshots: [] };
+      selects = { builds: [[{ brief }]], build_events: [[{ payload: failed }]] };
+      const out = await steps.writeMilestonePromptStep({ buildId: "b1", sandboxName: "sb", index: 2, of: 2, verifiedRound: 0 });
+      assert.deepEqual(out, { promptFile: "milestone-2.md" });
+      assert.equal(productFiles[0]!.path, "milestone-2.md");
+      assert.match(productFiles[0]!.content, /^# Milestone 2 of 2: Level maker/);
+      assert.match(productFiles[0]!.content, /FAILED: smoke: no board/);
+    });
+
+    it("milestoneStep tells the build room and keeps builds.round_plan in step", async () => {
+      selects = { builds: [[{ roundPlan: { capMinutes: 35, milestones: [{ title: "A", state: "planned" }, { title: "B", state: "planned" }] } }]] };
+      await steps.milestoneStep("b1", { index: 2, of: 2, title: "B", state: "building" });
+      assert.deepEqual(emitted, [{ buildId: "b1", body: { type: "milestone", index: 2, of: 2, title: "B", state: "building" } }]);
+      assert.deepEqual(writes, [{ table: "builds", values: { roundPlan: { capMinutes: 35, milestones: [{ title: "A", state: "planned" }, { title: "B", state: "building" }] } } }]);
+      writes = [];
+      selects = { builds: [[{ roundPlan: null }]] };
+      await steps.milestoneStep("b1", { index: 1, of: 2, title: "A", state: "passed" });
+      assert.deepEqual(writes, [], "no plan to keep");
+    });
+
+    it("liveCheckStep checks the live link with the product's actions, saves what it found and never throws", async () => {
+      liveCheckImpl = async () => ({ ok: false, url: "https://musemuse-bird-count.vercel.app", at: "2026-10-31T00:00:00.000Z", reason: "the page answered HTTP 500", checks: [] });
+      selects = { builds: [[{ brief: await FULL, productId: "prod-1" }]] };
+      const out = await steps.liveCheckStep({ buildId: "b1", sandboxName: "sb", url: "https://musemuse-bird-count.vercel.app" });
+      assert.deepEqual(out, { ok: false, reason: "the page answered HTTP 500" });
+      assert.deepEqual(liveCheckInputs[0], { url: "https://musemuse-bird-count.vercel.app", actions: [], health: false });
+      assert.deepEqual(writes, [{ table: "builds", values: { liveCheck: { ok: false, at: "2026-10-31T00:00:00.000Z", url: "https://musemuse-bird-count.vercel.app", reason: "the page answered HTTP 500" } } }]);
+      assert.deepEqual(emitted.map((e) => e.body), [{ type: "live_check", ok: false, url: "https://musemuse-bird-count.vercel.app", reason: "the page answered HTTP 500" }]);
+
+      liveCheckImpl = async () => {
+        throw new Error("dns");
+      };
+      selects = { builds: [[{ brief: await FULL, productId: "prod-1" }]] };
+      const broken = await steps.liveCheckStep({ buildId: "b1", sandboxName: "sb", url: "https://x.vercel.app" });
+      assert.equal(broken.ok, false);
+      assert.match(broken.reason ?? "", /^the check couldn't run \(dns\)$/);
     });
   });
 
