@@ -187,6 +187,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **19:10** ChatGPT works through the relay: since the restart every relayed request answered 200, and ChatGPT ran a search and two asks. Ethan asked it to summarize a resume, and found it was a real person's resume PDF (a family member's) that had been in the demo workspace since Oct 29, in a folder marked `.synthetic`. The device kept all three answers (a never-share keyword in the text, then no passage that answered), so nothing from it left. Not read by me; never in git history on either branch. Ethan chose an invented resume for the test: the real PDF was moved out of the workspace, unchanged, to his own job-search folder, and `demo/Rowan Delacroix-Imura resume.md` was added (invented aquarist, 555-0147, example.com email; no never-share keyword, checked with guard.blocked_topics). Left uncommitted on the live branch for now.
 
+**19:14** Ethan reported the follow-up tests (tagged titles, an approval, never-share refusals, the real-name ask, a grading job, the forms, the dreaming report) as looking good, but the device logged no request after 19:05:54, before the invented resume was added and the list was given. So none of those reached the device; recorded as not run. Starting the Muse app: the connector request with the relay's /mcp address was put on the clipboard (Help Center route: ask Muse in chat to create a custom connector) and a new pairing code made.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
