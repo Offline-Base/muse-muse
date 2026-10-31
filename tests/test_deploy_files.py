@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -220,8 +221,10 @@ def test_start_binds_loopback_only():
 
 
 def run_cloud(name, *args):
+    # A fresh BASE_HOME, so a script's defaults never read the live ~/.base (its tag map holds real names).
+    env = {**os.environ, "BASE_HOME": tempfile.mkdtemp(prefix="base-home-")}
     return subprocess.run([sys.executable, str(CLOUD / name), *args], capture_output=True, text=True, timeout=60,
-                          cwd=str(REPO))
+                          cwd=str(REPO), env=env)
 
 
 def test_modal_not_needed_for_offline_modes():
