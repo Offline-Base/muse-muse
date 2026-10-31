@@ -119,7 +119,8 @@ interface MuseRunEnd {
 
 /**
  * One `muse exec` run, polled every 15 s until it ends, hits its cap or its owner presses Stop (the last two kill a run
- * still going). While it runs, the build row names its round, so the owner's controls can reach it.
+ * still going). While steering is on and it runs, the build row names its round, so the owner's controls can reach it.
+ * The workflow's environment is fixed when it starts, so a replay takes the same steps.
  */
 async function runMuse(
   ctx: Ctx,
@@ -134,7 +135,7 @@ async function runMuse(
     model: ctx.model,
     round,
   });
-  await museRoundStep(ctx.buildId, round);
+  if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
   let offset = 0;
   let usageRecorded = false;
@@ -190,7 +191,7 @@ async function endRun(ctx: Ctx, cmdId: string, poll: () => Promise<MusePollResul
   } catch {
     // The run is stopped either way.
   }
-  return (await museRoundStep(ctx.buildId, null)) || stopped;
+  return (env.steeringEnabled && (await museRoundStep(ctx.buildId, null))) || stopped;
 }
 
 /** The verify or demo task (lib/sandbox/tasks.ts), polled until done or the cap (then it's killed). */
