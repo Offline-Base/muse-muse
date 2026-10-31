@@ -384,6 +384,45 @@
   color: var(--muted);
 }
 
+.getit-removeclip {
+  display: block;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.getit-removeclip:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.getit-addclip {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.getit-owner-clip + .getit-addclip {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.getit-addclip input[type="file"] {
+  max-width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.getit-addclip p {
+  margin: 0;
+}
+
 /* ---------- The VR list. Large tiles, so a controller's ray finds them. ---------- */
 
 .vr-list-head h1 {

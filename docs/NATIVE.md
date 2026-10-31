@@ -174,8 +174,17 @@ and logs it. It never takes the page down.
 - **Simulated** is said out loud on every emulator, simulator and mock glasses check. A Mac or Windows box in the lab and a real
   Device Farm phone don't carry it. Device Farm has no jobs, so its checks come from `native_artifacts` rows with kind `clip`, a
   `device`, no `job_id`, `platform` `android` and `check` set, with a `poster` row with the same run and device.
+- **What ran a check** comes from the result's `device`, as each lab box reports it (docs/NATIVE_LAB.md): "15" reads as "Android 15",
+  and "15.4" as "macOS 15.4".
+- **A lab job's media** must be `native_artifacts` rows with its `job_id`: `clip`, `poster` and `shot`, from the finish call's
+  `artifacts` by `role`. Without them a check shows no clip.
+- **Stuck work doesn't say it's going.** A run over 2 hours old isn't "being made", and a job past its time reads as "Not checked",
+  even before the sweep gets to its row.
 
-**Clips** the owner uploaded (`products.extra_clips`) show under the recorded demo, with their captions.
+**Clips** the owner filmed on a real device (`products.extra_clips`) show under the recorded demo, with their captions. The owner
+adds and removes them there, on a product with a target beyond web, through `POST` and `DELETE /api/products/<slug>/clips`. The
+file goes straight to Blob at `clips/<productId>/` with a presigned URL, as inspo does, and the caption is required, since it says
+what the clip was filmed on. At most 12 a product, 500 MB each. A local run sends the file to the route instead.
 
 ## Links
 

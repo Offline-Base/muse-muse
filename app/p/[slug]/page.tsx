@@ -9,6 +9,7 @@ import { KIND_ICON } from "@/components/composer/AttachmentChip";
 import "@/components/product/get-it.css";
 import { GetItPanel } from "@/components/product/GetItPanel";
 import { nativeSlots } from "@/components/product/NativeSlots";
+import { AddClip, RemoveClip } from "@/components/product/OwnerClips";
 import { StatusControl } from "@/components/product/StatusControl";
 import { EmptyCard, ExternalLink, NotConnected, StatusPill } from "@/components/ui";
 import { FIT_LABEL, compact, modelLabel, plural, relativeTime, statusLabel, truncate, usd } from "@/lib/format";
@@ -73,6 +74,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const native = shipped
     ? await getItSlots({ productId: product.id, slug: product.slug, name: product.name, liveUrl: product.liveUrl, origin, brief, isOwner })
     : { slots: {}, clips: [] };
+  // Only for a product that runs somewhere else too, so with every flag off the page has no trace of this.
+  const canAddClips = shipped && isOwner && env.enabledTargets.length > 0 && briefTargets(brief).some((t) => t !== "web");
 
   return (
     <div className="split">
@@ -291,15 +294,17 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </section>
           ) : null}
 
-          {native.clips.length ? (
+          {native.clips.length || canAddClips ? (
             <section className="panel-section">
               <h2 className="panel-label">Filmed by its owner</h2>
               {native.clips.map((clip) => (
                 <figure key={clip.url} className="getit-owner-clip">
                   <video className="demo" src={clip.url} poster={clip.posterUrl ?? undefined} controls preload="metadata" playsInline aria-label={clip.caption} />
                   <figcaption>{clip.caption}</figcaption>
+                  {canAddClips ? <RemoveClip slug={product.slug} url={clip.url} /> : null}
                 </figure>
               ))}
+              {canAddClips ? <AddClip slug={product.slug} productId={product.id} /> : null}
             </section>
           ) : null}
 
