@@ -181,6 +181,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **18:43** First real tool call from Claude. Asked "how did the class do on the essays?", Claude called ask_device on the essays folder and got job 8b680756f966401a; the device finished it in about 40 s with nothing to approve, but Claude polled get_result about a dozen times inside that window, saw "running" each time, and stopped to tell Ethan it was still working. On "check again" it fetched the result and the job's release status went to shared. Finding: "Call get_result again in a little while" gives no wait, so a fast-polling app gives up early; the running message should say how long to wait. Not changed yet.
 
+**18:46** ChatGPT linked for real. Ethan turned on Developer mode, created an app named Muse Privacy with the relay's /mcp address and OAuth, and typed a fresh pairing code on the relay's page; ChatGPT's app page shows the account connected, authorization OAuth, review status Development, and its permission set to Allow all. The relay client logged one 400 after the link, as with Claude's first connect (the device's stateless MCP endpoint answers some requests with 400; not traced). No tool call in a ChatGPT chat yet.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
