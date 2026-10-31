@@ -33,6 +33,10 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 PDF_TIMEOUT = 30
 RRF_K = 60
 MAX_PIECES_PER_DOC = 3  # passages() never lets one long file fill the whole list
+# passages(): the meaning ranking counts only its closest pieces for each query. Past them a piece
+# needs a keyword match. Every piece has some similarity, so counting them all let unrelated files
+# (class essays, for a question about a credit union) fill every slot.
+MEANING_TOP = 5
 MAX_FILE_BYTES = 5_000_000
 SNIPPET_CHARS = 240
 K1 = 1.5
@@ -184,7 +188,9 @@ class DocumentIndex:
 
         Each piece is ranked by BM25 and, with an embedder, by meaning; every ranking of every query
         adds 1 / (60 + rank) to a piece (reciprocal rank fusion), so a piece that several queries or
-        both methods agree on comes first. At most 3 pieces per document. Snippet.text is the whole
+        both methods agree on comes first. The meaning ranking counts only its MEANING_TOP closest
+        pieces per query, so a piece with no keyword match must be among those. At most 3 pieces
+        per document. Snippet.text is the whole
         piece and Snippet.score the fused score.
         """
         from base.workspace.embed import EmbedError, chunks, cosine
@@ -227,7 +233,8 @@ class DocumentIndex:
                     log.warning("passages used keywords only for a query: %s", exc)
                     continue
                 sims = [cosine(qv, v) for v in vectors]
-                for rank, i in enumerate(sorted(range(len(pieces)), key=lambda i: -sims[i])):
+                closest = sorted(range(len(pieces)), key=lambda i: -sims[i])[:MEANING_TOP]
+                for rank, i in enumerate(closest):
                     fused[i] += 1 / (RRF_K + rank + 1)
         out: list[Snippet] = []
         per_doc: Counter = Counter()

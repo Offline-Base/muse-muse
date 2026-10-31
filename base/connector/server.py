@@ -39,6 +39,7 @@ from base.regions import mark_uncovered, reads_uncovered, unchecked_images, unch
 from base.workspace import merge
 from base.workspace.contacts import ContactsError, load_contacts
 from base.workspace.index import snippet, tokenize
+from base.workspace.rag import held_note, without_never_share
 
 log = logging.getLogger("base.connector")
 
@@ -449,6 +450,21 @@ class Connector:
             passages = bool(found)
             if not found:
                 found = list(self.services.index.search(restored, k=rag.candidates if rag else 5))
+        # A passage that names a never-share topic stays on the device before the device model reads
+        # it; the rest of the search still goes. Only the five closest are counted in the note. A
+        # search that itself names a never-share topic ("asthma inhaler") is checked whole, as before,
+        # so its result is kept rather than turned into a question for the user.
+        never_share = getattr(getattr(self.services, "policy", None), "never_share", None)
+        if self._never_share_topics(request):
+            kept, held = found, []
+        else:
+            kept, held = without_never_share(found, never_share)
+        # The note is left out when the search names someone by tag: "1 close passage stayed on the
+        # device" for "notes about [Student A]" and not for [Student B] would show which one has a
+        # never-share record (RED-F9a). The held passage still stays on the device either way.
+        about_someone = restored != query
+        held_close = 0 if about_someone else sum(1 for p in found[:5] if any(p is h for h in held))
+        found = kept
         snippets, answer = found[:5], None
         if rag is not None and found:
             # The device's own model picks the passages that answer the query and writes a short
@@ -466,6 +482,8 @@ class Connector:
                 raw = f"Answer: {_short(answer, ANSWER_CHARS)}\n\n{raw}"
         else:
             raw = answer or "No matching passages."
+        if held_close:
+            raw = f"{raw}\n\n{held_note(held_close)}"
         if unread:
             raw = f"{raw}\n\n{unchecked_note(len(unread))}"
         # Released as a finished job with get_result's bounded wait, so a slow check answers "still

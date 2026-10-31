@@ -752,11 +752,16 @@ def test_f8_a_summary_that_names_a_tag_or_a_real_name_is_not_shared(device, fake
 
 def test_f9_a_refusal_never_names_the_topic_or_the_routers_reason(device, fake):
     fake.route = lambda c: "refuse"
-    status, out = device.final("search_documents", query="plan notes and accommodations", purpose="for my notes")
-    assert status == "refused" and out.startswith(refusal_text(["blocked"]).split(".")[0])
-    for word in ("IEP", "504", "iep", "medical", "fake router", "speech"):
-        assert word not in out
-    clean(out)
+    # Since Oct 31 a search holds a never-share passage back before release, so a search no longer
+    # gets this refusal; a finished result that names the topic still does.
+    held = release(device, "plan notes", "[Student A] has an IEP with speech goals.")
+    out = held.text
+    assert held.status == "refused" and out.startswith(refusal_text(["blocked"]).split(".")[0])
+    status, searched = device.final("search_documents", query="plan notes and accommodations", purpose="for my notes")
+    for text in (out, searched):
+        for word in ("IEP", "504", "iep", "medical", "fake router", "speech"):
+            assert word not in text
+        clean(text)
 
 
 def test_f9_a_held_back_title_is_counted_but_never_shown(device):
@@ -767,9 +772,12 @@ def test_f9_a_held_back_title_is_counted_but_never_shown(device):
     clean(out)
 
 
-@pytest.mark.xfail(strict=True, reason="RED-F9a the same neutral question shows which tag has a never-share record (needs D1, RED-11)")
 def test_f9_the_same_neutral_question_looks_the_same_for_two_students(device):
-    """D7: one student has an IEP record, the other none; Muse should not be able to tell."""
+    """D7: one student has an IEP record, the other none; Muse should not be able to tell.
+
+    RED-F9a passed from Oct 31: a search holds the never-share passage back before release instead
+    of refusing the whole result, and says nothing about it when the search names someone by tag.
+    """
     seen = []
     for name in (IEP_STUDENT, PLAIN_STUDENT):
         status, out = device.final("search_documents", query=f"notes about {device.tag_of(name)}", purpose="for my notes")

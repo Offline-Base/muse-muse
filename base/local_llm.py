@@ -549,7 +549,8 @@ class LocalLLM:
         """The guard's second pass: person names Glimmer finds in `text`.
 
         Only names that really occur in the text are returned, so a made-up name can never be
-        tagged into the output. A name that does not occur whole ("Bennick Cinderfall" for
+        tagged into the output. With the person-name prompt, a name shaped like an organization
+        ("Harborline Credit Union", guard.looks_like_organization) is dropped. A name that does not occur whole ("Bennick Cinderfall" for
         "Cinderfall, Bennick", or a misspelled last name) keeps the words of it that do. For
         guard.tag, pass functools.partial(llm.llm_names, synthetic=True) on the cloud backend.
         """
@@ -561,13 +562,18 @@ class LocalLLM:
             max_tokens=max_tokens,
             synthetic=synthetic,
         )
-        from base.guard import occurring_names  # lazy: guard does not need this module
+        from base.guard import (  # lazy: guard does not need this module
+            looks_like_organization,
+            occurring_names,
+        )
 
         names: list[str] = []
         for value in data.get("names") or []:
             name = str(value).strip()
             if not name or name.startswith("["):
                 continue
+            if prompt is NAMES_PROMPT and looks_like_organization(name):
+                continue  # people only here; the details pass (a compliance toggle) keeps organizations
             # What occurs in the text, allowing for apostrophe, space and case differences.
             names += [n for n in occurring_names(name, text) if n not in names]
         return names

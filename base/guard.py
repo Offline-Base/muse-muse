@@ -282,6 +282,36 @@ def _is_common(word: str) -> bool:
     return False
 
 
+# The person-name pass (NAMES_PROMPT) sometimes lists an organization as a person: on Oct 31 the
+# device model tagged "Harborline Credit Union", "Pinecrest Property Group" and "Fairhaven County
+# Civil Court" as people, and once they were in the tag map every request with "credit", "union" or
+# "court" counted as one with a private detail. A name ending in one of these words is an
+# organization. A word that is also a surname ("Margaret Court", "Charlotte Church", "Danielle
+# Steel") counts only in a name of three words or more. With a compliance toggle on, the details
+# pass (DETAILS_PROMPT) tags organizations on purpose and this filter does not apply.
+ORG_LAST_WORDS = frozenset(
+    "union group county district council credit supply supplies inc llc ltd corp corporation company "
+    "university college school academy aquarium department agency services foundation association "
+    "institute holdings properties partners clinic hospital pharmacy center centre library museum "
+    "police society apps fabrication".split()
+)
+ORG_LAST_WORDS_LONG = frozenset("court church bank board city town store office steel market studio".split())
+ORG_LEAD_WORDS = frozenset(
+    "bank university college school city county state department office court church museum library board".split()
+)
+
+
+def looks_like_organization(name: str) -> bool:
+    """True for "Harborline Credit Union", "Fairhaven County Civil Court" or "Bank of Fairhaven";
+    False for one word and for a person such as "Margaret Court"."""
+    words = re.findall(r"[^\W\d_]+", name.lower())
+    if len(words) < 2:
+        return False
+    if words[-1] in ORG_LAST_WORDS or (len(words) >= 3 and words[-1] in ORG_LAST_WORDS_LONG):
+        return True
+    return words[0] in ORG_LEAD_WORDS and "of" in words[1:-1]
+
+
 # ------------------------------------------------------------------ roster
 
 

@@ -247,6 +247,15 @@ def test_passages_fuse_several_queries(tmp_path):
     assert index.passages(["  "]) == []
 
 
+def test_a_never_share_passage_is_held_before_the_model_reads_it():
+    held = Snippet("records/health.md", "Health office", "Saw the nurse for an allergy.", 2.0)
+    llm = ScriptedLLM([{"parts": ["What grows in sun?"]}, {"queries": []}, answer("Tomatoes.", [(1, "full sun")])])
+    asker = DeviceAsk(rag_with(llm), FakeIndex([[held, P2]]), never_share={"medical": ["allergy"]})
+    r = asker.run("What grows in sun?")
+    assert r.answer == "Tomatoes."
+    assert "allergy" not in llm.seen[-1] and "Tomatoes grow best" in llm.seen[-1]
+
+
 def test_a_part_that_touches_a_never_share_topic_is_held_and_the_rest_goes():
     llm = ScriptedLLM(
         [

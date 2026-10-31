@@ -363,6 +363,29 @@ async def test_list_documents_holds_back_only_never_share_titles(client, service
     assert text_of(result) == services.egress.outputs()[0]
 
 
+async def test_search_holds_back_only_never_share_passages(client, services, monkeypatch):
+    # Oct 31, a real Muse session: a credit union question found the right file first and a class
+    # essay about a doctor visit second, and that one passage kept the whole result on the device.
+    from base.workspace.rag import held_note
+
+    services.policy = SimpleNamespace(never_share={"medical": ["doctor", "allergic"]})
+    found = [
+        SimpleNamespace(doc_id="f1", title="Quarterly report", text="Members: 4,812, up 3%.", score=3.0),
+        SimpleNamespace(doc_id="e1", title="Garden essay", text="I had to go to the doctor after a sting.", score=2.0),
+        SimpleNamespace(doc_id="f2", title="Branch notes", text="New accounts opened: 233.", score=1.0),
+    ]
+    monkeypatch.setattr(services.index, "search", lambda query, k=5: list(found))
+    await client.call_tool("search_documents", {"query": "credit union last quarter"})
+    raw = services.egress.calls[-1]["raw_text"]
+    assert "4,812" in raw and "233" in raw
+    assert "doctor" not in raw and "Garden essay" not in raw
+    assert raw.endswith(held_note(1))
+
+    monkeypatch.setattr(services.index, "search", lambda query, k=5: [found[1]])
+    await client.call_tool("search_documents", {"query": "garden"})
+    assert services.egress.calls[-1]["raw_text"] == f"No matching passages.\n\n{held_note(1)}"
+
+
 async def test_list_documents_all_held_back(client, services):
     services.policy = SimpleNamespace(never_share={"iep": ["IEP"]})
     services.index.folders["plans"] = [

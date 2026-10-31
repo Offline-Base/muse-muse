@@ -923,3 +923,23 @@ def test_tagging_24_essays_is_fast(tmp_path):
     elapsed = time.perf_counter() - started
     assert elapsed < 0.5, f"{elapsed:.3f} s"
     assert all(leaks(o.text, r, tm) == [] for o in outs)
+
+
+@pytest.mark.parametrize(
+    ("name", "org"),
+    [
+        ("Harborline Credit Union", True),
+        ("Pinecrest Property Group", True),
+        ("Fairhaven County Civil Court", True),
+        ("Kestrel Marine Supply", True),
+        ("Bank of Fairhaven", True),
+        ("Margaret Court", False),  # a surname that is also an organization word
+        ("Charlotte Church", False),
+        ("Wendell Ashgrove", False),
+        ("Union", False),  # one word could be a surname
+    ],
+)
+def test_looks_like_organization(name, org):
+    from base.guard import looks_like_organization
+
+    assert looks_like_organization(name) is org

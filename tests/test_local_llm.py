@@ -338,6 +338,23 @@ def test_llm_names_keeps_the_words_of_a_name_not_written_whole(settings, sleeps)
     assert make(settings, sleeps).llm_names(text, synthetic=True) == ["Bennick", "Cinderfall", "Corvin", "Wren"]
 
 
+@respx.mock
+def test_the_person_name_pass_drops_organizations_but_the_details_pass_keeps_them(settings, sleeps):
+    # Oct 31: the device model listed a credit union, a property group and a court as people.
+    from base.local_llm import DETAILS_PROMPT
+
+    found = ["Harborline Credit Union", "Pinecrest Property Group", "Fairhaven County Civil Court",
+             "Margaret Court", "Wendell Ashgrove"]  # fmt: skip
+    respx.post(f"{settings.answer_url}/chat/completions").mock(
+        return_value=httpx.Response(200, json=reply(json.dumps({"names": found})))
+    )
+    text = ("Wendell Ashgrove banks at Harborline Credit Union. Pinecrest Property Group was sued in "
+            "Fairhaven County Civil Court, where Margaret Court testified.")  # fmt: skip
+    llm = make(settings, sleeps)
+    assert llm.llm_names(text, synthetic=True) == ["Margaret Court", "Wendell Ashgrove"]
+    assert llm.llm_names(text, synthetic=True, prompt=DETAILS_PROMPT) == found
+
+
 def test_llm_names_empty_text_makes_no_call(settings, sleeps):
     assert make(settings, sleeps).llm_names("   ", synthetic=True) == []
 

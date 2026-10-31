@@ -267,6 +267,22 @@ def test_search_by_meaning_finds_a_document_with_no_shared_word(tmp_path):
     assert hits[0].doc_id == "sea.md" and "lighthouse" in hits[0].text
 
 
+def test_passages_need_a_keyword_or_a_close_meaning(tmp_path):
+    # Every piece has some similarity to any query, so counting the whole meaning ranking let
+    # unrelated files fill every slot. Now past the MEANING_TOP closest a piece needs a keyword.
+    from base.workspace.index import MEANING_TOP
+
+    root = tmp_path / "w"
+    root.mkdir()
+    (root / "report.md").write_text("# Quarterly report\nThe credit union added members this quarter.")
+    for i in range(MEANING_TOP + 4):
+        (root / f"garden{i}.md").write_text(f"# Garden {i}\nWe planted tomato seeds by the fence.")
+    mark_synthetic(root)
+    got = DocumentIndex(make_settings(tmp_path, root), embedder=FakeEmbedder()).passages("credit union", k=20)
+    assert got[0].doc_id == "report.md"
+    assert len(got) <= MEANING_TOP + 1  # the keyword match plus at most MEANING_TOP by meaning alone
+
+
 def test_search_falls_back_to_keywords_when_the_embedder_fails(tmp_path):
     root = tmp_path / "w"
     root.mkdir()

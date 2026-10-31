@@ -25,6 +25,7 @@ from typing import Any
 
 from base import events
 from base.regions import mark_uncovered, reads_uncovered, unchecked_images, unchecked_note
+from base.workspace.rag import without_never_share
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ ASK_MAX_TOKENS = 1500
 FAILED = "The device's model could not finish this request."
 
 SPLIT_PROMPT = (
-    "You split a teacher's request into the separate questions it asks, so each can be searched on its "
+    "You split the user's request into the separate questions it asks, so each can be searched on its "
     "own. Each question must stand alone: keep every detail it needs from the request, such as which "
     "document, which person or which folder (for example \"in the resume\"). Copy tags such as "
     "[Student A] exactly. A request that asks one thing stays one question. At most 5. "
@@ -58,7 +59,7 @@ SPLIT_SCHEMA = {
 }
 
 ASK_PROMPT = (
-    "You answer a teacher's question from passages of the teacher's own documents. Read every passage, "
+    "You answer the user's question from passages of the user's own documents. Read every passage, "
     "then answer from what they say: most questions are answered by at least one passage, so answer "
     "whenever any passage is related. People appear as tags such as [Student A] or [Person 1]: copy tags "
     "exactly and never guess who they are. Write two to five sentences, and give up to 3 quotes: the passage "
@@ -94,7 +95,7 @@ ASK_SCHEMA = {
 }
 
 RETRY_PROMPT = (
-    "A search of a teacher's documents found nothing for the question below. Write up to 3 new short "
+    "A search of the user's documents found nothing for the question below. Write up to 3 new short "
     "search queries with different words than the ones already tried: synonyms, broader or narrower "
     'terms. Copy tags such as [Student A] exactly. Reply with JSON only: {"queries": ["..."]}.'
 )
@@ -110,7 +111,7 @@ RETRY_SCHEMA = {
 }
 
 COMBINE_PROMPT = (
-    "You write one finished answer to a teacher's request from the answers to its parts. Use only what "
+    "You write one finished answer to the user's request from the answers to its parts. Use only what "
     "the part answers say, keep every tag such as [Student A] exactly, and say plainly which parts the "
     'documents did not answer. Write a short paragraph or a few lines. Reply with JSON only: {"answer": "..."}.'
 )
@@ -249,8 +250,19 @@ class DeviceAsk:
         data: dict[str, Any] = {}
         views: list[tuple[str, str]] = []
         sources: list[str] = []
+        # A part that asks about a never-share topic reads its passages as before, and an answer that
+        # touches the topic is held whole in run(). Any other part never shows the model a passage
+        # that names one, and says it was held when nothing else answered.
+        about_never_share = bool(self.never_share) and bool(guard.blocked_topics(part, self.never_share))
+        held_close = False
         for round_no in range(self.rounds):
-            passages = list(self.index.passages(queries, k=self.rag.candidates, folder=folder))[:SHOW_PASSAGES]
+            found = list(self.index.passages(queries, k=self.rag.candidates, folder=folder))
+            if about_never_share:
+                passages = found[:SHOW_PASSAGES]
+            else:
+                kept, held = without_never_share(found, self.never_share)
+                held_close = held_close or any(h is p for h in held for p in found[:SHOW_PASSAGES])
+                passages = kept[:SHOW_PASSAGES]
             if passages:
                 sources += [str(_get(p, "doc_id")) for p in passages if str(_get(p, "doc_id")) not in sources]
                 views = [(self.rag._view(_get(p, "title", "")), self.rag._view(_get(p, "text", ""))) for p in passages]
@@ -278,7 +290,7 @@ class DeviceAsk:
             # every query so far: what the first ones agreed on stays on top
             queries += new
         if best is None:
-            return NOT_FOUND, [], sources
+            return (HELD_PART if held_close else NOT_FOUND), [], sources
         data, views = best
         return _flat(data.get("answer") or ""), _quotes(data, views), sources
 

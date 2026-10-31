@@ -21,7 +21,7 @@ NO_ANSWER = "No passage answers this."
 RAG_MAX_TOKENS = 1200
 
 RAG_PROMPT = (
-    "You answer a question from a teacher's own documents, using only the numbered passages you "
+    "You answer a question from the user's own documents, using only the numbered passages you "
     "are given. Pick the passages that help answer the question, at most {keep}, best first. Then "
     "write a short answer, one to three sentences, that uses only what the picked passages say. "
     "People appear as tags such as [Student A] or [Person 1]: copy tags exactly and never guess "
@@ -30,7 +30,7 @@ RAG_PROMPT = (
 )
 
 REWRITE_PROMPT = (
-    "You help search a teacher's own documents. Write up to 3 short search queries for the question: "
+    "You help search the user's own documents. Write up to 3 short search queries for the question: "
     "other words, phrasings and related terms the documents might use, not the question repeated. "
     "People appear as tags such as [Student A]: copy tags exactly. "
     'Reply with JSON only: {"queries": ["...", "..."]}.'
@@ -140,6 +140,33 @@ class Rag:
         from base import guard
 
         return [snippets[n - 1] for n in picked], guard.restore(answer, self.tagmap)
+
+
+def without_never_share(passages: list[Any], never_share: Any) -> tuple[list[Any], list[Any]]:
+    """(the passages that name no never-share topic, the ones held back), each in the given order.
+
+    A passage whose title or text names a never-share topic is held back before the device model
+    reads it, so the model's answer cannot repeat it, and the rest of the result can still go out.
+    Before this, one such passage among the candidates (a class essay that mentions a doctor visit,
+    found for a question about a credit union) kept the whole result on the device. Egress still
+    checks whatever is released.
+    """
+    if not never_share:
+        return list(passages), []
+    from base import guard
+
+    kept: list[Any] = []
+    held: list[Any] = []
+    for p in passages:
+        text = f"{_get(p, 'title', '')}\n{_get(p, 'text', '')}"
+        (held if guard.blocked_topics(text, never_share) else kept).append(p)
+    return kept, held
+
+
+def held_note(count: int) -> str:
+    """The fixed sentence for passages held back; it names no topic, so it says nothing about them."""
+    which = "passage" if count == 1 else "passages"
+    return f"{count} close {which} stayed on the device: they mention a topic you never share."
 
 
 def _get(obj: Any, name: str, default: Any = None) -> Any:
