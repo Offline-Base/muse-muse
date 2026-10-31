@@ -91,7 +91,8 @@ export interface NativeJobResult {
 
 /**
  * native_jobs.selftest: what the shell posted to /api/native/selftest for this job, kept as it was sent, since the agent
- * compares its `at` with the launch. The claim clears it, because a retry keeps its job id.
+ * compares its `at` with the launch. Only text Postgres can't store comes out. The claim clears it, because a retry keeps
+ * its job id.
  */
 export type NativeSelftestReport = Record<string, unknown>;
 

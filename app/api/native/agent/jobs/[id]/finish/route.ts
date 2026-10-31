@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { artifactLinkHolds, gone, isJobId, labGate, readJson, unauthorized, uploadRule } from "@/lib/native/agent-http";
+import { artifactLinkHolds, cleanForJsonb, gone, isJobId, labGate, readJson, unauthorized, uploadRule } from "@/lib/native/agent-http";
 import { bearerToken } from "@/lib/native/lab-token";
 import { finishJob, ownedJob, type FinishedArtifact } from "@/lib/native/queue";
 import type { NativeJobResult } from "@/lib/native/types";
@@ -82,7 +82,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     ...body,
     // Whether a result can block shipping comes from the job, not from the box reporting it.
     informational: job.kind === "glasses_sim",
-    summary: body.summary || FALLBACK_SUMMARY[body.outcome],
+    summary: cleanForJsonb(body.summary) || FALLBACK_SUMMARY[body.outcome],
     artifacts: artifacts.map(({ kind, url, pathname, bytes, sha256, caption }) => ({ kind, url, pathname, bytes, sha256, caption })),
   };
   const finished = await finishJob(job, token, result, artifacts);

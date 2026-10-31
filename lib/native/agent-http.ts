@@ -42,6 +42,22 @@ export async function readJson(req: Request, maxBytes: number): Promise<unknown>
   }
 }
 
+/**
+ * A copy Postgres can store. jsonb refuses NUL and lone surrogates, and a text column refuses NUL, so a stray one would turn
+ * a check's result into a 500. Both come from a product's own text: a console line with a NUL in it, or a cut at N characters
+ * that lands inside an emoji. Keys count too, since a report and a box's capabilities are free-form. A date string comes
+ * through unchanged.
+ */
+export function cleanForJsonb<T>(value: T): T {
+  const clean = (s: string) => s.replaceAll("\u0000", "").toWellFormed();
+  const text = JSON.stringify(value, (_key, v: unknown) => {
+    if (typeof v === "string") return clean(v);
+    if (v && typeof v === "object" && !Array.isArray(v)) return Object.fromEntries(Object.entries(v).map(([k, item]) => [clean(k), item]));
+    return v;
+  });
+  return JSON.parse(text) as T;
+}
+
 export interface UploadRule {
   kind: NativeArtifactKind;
   contentType: string;

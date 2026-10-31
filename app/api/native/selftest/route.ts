@@ -3,7 +3,8 @@ import { bearerToken, verifySelftestToken } from "@/lib/native/lab-token";
 import { saveSelftest } from "@/lib/native/queue";
 
 // The lab shell's health report (native/shell-mobile/src/selftest.ts). Its token is an HMAC naming the job and does nothing
-// else. The report is kept as sent, `at` included, because the agent compares `at` with its own launch.
+// else. The report is kept as sent, `at` included, because the agent compares `at` with its own launch. Only text Postgres
+// can't store comes out, in saveSelftest.
 export const runtime = "nodejs";
 
 /** The shell caps a report at 50 errors of 300 characters each, so this is well above a real one. */

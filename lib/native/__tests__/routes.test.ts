@@ -196,6 +196,17 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal((await claimRoute(post("/c", LAB_TOKEN, claimBody()))).status, 204);
     });
 
+    it("takes text Postgres can't store, in values and in keys, since presence comes first", async () => {
+      const res = await claimRoute(
+        post("/c", LAB_TOKEN, claimBody({ version: "0.1\u0000", running: ["job\u0000x"], capabilities: { ffmpeg: "a\u0000b", "k\u0000ey": "\ud83d", "lone\ud83d": 1 } })),
+      );
+      assert.equal(res.status, 204);
+      const lab = await labRow("mac");
+      assert.equal(lab.version, "0.1");
+      assert.deepEqual(lab.state?.running, ["jobx"]);
+      assert.deepEqual(lab.state?.capabilities, { ffmpeg: "ab", key: "\ufffd", "lone\ufffd": 1 });
+    });
+
     it("hands over a job the agent's own validator accepts, with the token in plain text only here", async () => {
       const s = await seed();
       const id = await enqueue(s, { kind: "ios_sim", selftest: true, input: macInput({ app: { kind: "ios_sim_app", variant: "lab", version: "1", url: "https://x.blob.vercel-storage.com/a.tgz", sha256: "a".repeat(64), bundleId: "ai.musemuse.lab" } }) });
@@ -403,6 +414,18 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.deepEqual(await after.json(), { report });
     });
 
+    it("keeps a report with text Postgres can't store, with its `at` as sent, since on iOS this is the only copy", async () => {
+      const job = await claimed(await seed(), { kind: "ios_sim", selftest: true });
+      const token = ((await jobRow(job.id)).input.selftest as { token: string }).token;
+      // The shell cuts each error at 300 characters, which can land inside an emoji.
+      const cut = `${"y".repeat(299)}\u{1F600}`.slice(0, 300);
+      const at = "2026-11-01T12:00:00.123Z";
+      const res = await selftestRoute(post("/api/native/selftest", token, { at, errors: ["a\u0000b", cut], "k\u0000ey": { deep: ["\ud83d"] } }));
+      assert.equal(res.status, 200);
+      const { report } = (await (await selftestPollRoute(post("/x", job.token), ctx(job.id))).json()) as { report: Record<string, unknown> };
+      assert.deepEqual(report, { at, errors: ["ab", `${"y".repeat(299)}\ufffd`], key: { deep: ["\ufffd"] } });
+    });
+
     it("a retry starts with no report, so it can't pass on the last attempt's", async () => {
       const s = await seed();
       const job = await claimed(s, { kind: "ios_sim", selftest: true });
@@ -488,6 +511,35 @@ describe("the lab's routes", { skip: canMock ? false : "needs --experimental-tes
       assert.equal(clip.caption, "On a Mac in the AWS device lab");
       assert.equal(clip.productId, s.productId);
       assert.equal(clip.platform, "desktop_mac");
+      assert.equal(clip.device, "Mac, macOS 15.5");
+    });
+
+    it("a product's text can't cost the verdict: a failed check stays failed, with its files", async () => {
+      const job = await claimed(await seed());
+      // The route cuts the summary at 1000 and a warning at 500, and either cut can land inside an emoji.
+      const summary = `${"s".repeat(999)}\u{1F600}`;
+      const res = await finishRoute(
+        post("/x", job.token, passed(job, {
+          outcome: "failed",
+          summary,
+          device: { name: "Mac\u0000", os: "macOS 15.5" },
+          checks: [{ id: "loaded", ok: false, detail: "bad\u0000" }],
+          reasons: ["The page threw \u0000."],
+          warnings: ["Console error: \u0000", `${"w".repeat(499)}\u{1F600}`],
+          artifacts: [artifact(job, "clip.mp4", { caption: "On a Mac\u0000" }), artifact(job, "log.txt")],
+        })),
+        ctx(job.id),
+      );
+      assert.equal(res.status, 200);
+      const row = await jobRow(job.id);
+      assert.equal(row.status, "failed");
+      assert.equal(row.result?.outcome, "failed");
+      assert.equal(row.result?.summary, `${"s".repeat(999)}\ufffd`);
+      assert.deepEqual(row.result?.warnings, ["Console error: ", `${"w".repeat(499)}\ufffd`]);
+      const rows = await artifactsOf(job.id);
+      assert.deepEqual(rows.map((a) => a.kind).sort(), ["clip", "log"]);
+      const clip = rows.find((a) => a.kind === "clip")!;
+      assert.equal(clip.caption, "On a Mac");
       assert.equal(clip.device, "Mac, macOS 15.5");
     });
 

@@ -451,6 +451,13 @@ describe("the lab's queue", { skip: canMock ? false : "needs --experimental-test
     assert.deepEqual((await queue.ownedJob(id, token))?.selftest, report);
   });
 
+  it("takes a job whose input has text Postgres can't store, such as a product's name cut inside an emoji", async () => {
+    const s = await seed();
+    const name = "Demo \u{1F600}".slice(0, 6);
+    const id = await enqueued(s, { input: macInput({ product: { name: `${name}\u0000`, slug: "demo" } }) });
+    assert.deepEqual((await row(id)).input.product, { name: "Demo \ufffd", slug: "demo" });
+  });
+
   it("a Windows job wakes the box, and comes straight out again if it can't start", async () => {
     const s = await seed();
     const asked: string[] = [];

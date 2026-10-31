@@ -13,6 +13,7 @@ import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
 import { emit } from "@/lib/events";
+import { cleanForJsonb } from "@/lib/native/agent-http";
 import { hashLabToken, newJobToken, selftestToken } from "@/lib/native/lab-token";
 import {
   JOB_KIND_LANE,
@@ -172,7 +173,7 @@ export async function enqueueJob(input: EnqueueInput, deps: EnqueueDeps = {}): P
     db().execute(sql`select pg_advisory_xact_lock(hashtext('native_jobs_enqueue'))`),
     db().execute(sql`insert into native_jobs (id, run_id, build_id, product_id, lane, kind, priority, input, expires_at)
         select ${jobId}::uuid, ${input.runId}::uuid, ${input.buildId}::uuid, ${input.productId}::uuid, ${lane}, ${input.kind},
-               ${tier.priority}::int, ${JSON.stringify(stored)}::jsonb, ${expiresAt.toISOString()}::timestamptz
+               ${tier.priority}::int, ${JSON.stringify(cleanForJsonb(stored))}::jsonb, ${expiresAt.toISOString()}::timestamptz
         where (select count(*) from native_jobs where ${active}) < ${QUEUE_LIMIT}
           and (select count(*) from native_jobs where ${active} and product_id = ${input.productId}::uuid and kind = ${input.kind}) < ${PRODUCT_KIND_LIMIT}
           and (${tier.priority}::int <> ${NATIVE_JOB_PRIORITY.agent}::int or not exists (
@@ -301,11 +302,11 @@ export async function ownedJob(jobId: string, token: string): Promise<NativeJob 
   return job ?? null;
 }
 
-/** Keeps what the shell posted, exactly as sent. False when this job isn't running, so nothing is waiting for it. */
+/** Keeps what the shell posted, as sent apart from text Postgres can't store. False when this job isn't running, so nothing is waiting for it. */
 export async function saveSelftest(jobId: string, report: NativeSelftestReport): Promise<boolean> {
   const rows = await db()
     .update(schema.nativeJobs)
-    .set({ selftest: report })
+    .set({ selftest: cleanForJsonb(report) })
     .where(and(eq(schema.nativeJobs.id, jobId), eq(schema.nativeJobs.status, "claimed")))
     .returning({ id: schema.nativeJobs.id });
   return rows.length > 0;
@@ -341,9 +342,12 @@ const REQUEUE = {
 export async function finishJob(
   job: NativeJob,
   token: string,
-  result: NativeJobResult,
-  artifacts: FinishedArtifact[],
+  reported: NativeJobResult,
+  reportedArtifacts: FinishedArtifact[],
 ): Promise<FinishResult> {
+  // A product's own text is in here, and it mustn't be able to turn its failed check into a lab error.
+  const result = cleanForJsonb(reported);
+  const artifacts = cleanForJsonb(reportedArtifacts);
   const code = (result.error as { code?: unknown } | null | undefined)?.code;
   const retry = result.outcome === "lab_error" && typeof code === "string" && RETRYABLE_LAB_ERRORS.includes(code) && job.attempts < MAX_JOB_ATTEMPTS;
   if (retry) {

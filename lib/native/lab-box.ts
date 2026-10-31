@@ -14,6 +14,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db/client";
 import { env } from "@/lib/env";
+import { cleanForJsonb } from "@/lib/native/agent-http";
 import { commit, release, reserve, windowsHoldUsd, windowsUsd } from "@/lib/native/ledger";
 import { laneActivity, SILENT_AFTER_MS } from "@/lib/native/queue";
 import type { NativeLabControl, NativeLane } from "@/lib/native/types";
@@ -266,9 +267,9 @@ export async function notePresence(
   lane: NativeLane,
   input: { version: string | null; slots: number | null; running: string[]; kinds: string[]; capabilities: Record<string, unknown> | null },
 ): Promise<void> {
-  const own = { slots: input.slots, running: input.running, kinds: input.kinds, capabilities: input.capabilities };
+  const own = cleanForJsonb({ slots: input.slots, running: input.running, kinds: input.kinds, capabilities: input.capabilities });
   await db().execute(sql`update native_labs
-    set last_seen_at = now(), version = ${input.version}::text, state = coalesce(state, '{}'::jsonb) || ${JSON.stringify(own)}::jsonb
+    set last_seen_at = now(), version = ${cleanForJsonb(input.version)}::text, state = coalesce(state, '{}'::jsonb) || ${JSON.stringify(own)}::jsonb
     where lane = ${lane}`);
 }
 
