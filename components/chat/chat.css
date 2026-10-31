@@ -1,0 +1,619 @@
+/*
+ * The chat kit (components/chat): the Muse app look for Muse Muse's conversation surfaces, measured from the owner's
+ * captures (docs/UI_MUSE_APP.md). Global classes, all prefixed chat-, imported once by app/layout.tsx so every route
+ * can use the kit. Colors come from the chat tokens in app/globals.css, so light and dark follow the rest of the site.
+ * Only the working icon moves and new steps fade in. Nothing else animates.
+ */
+
+/* ---------- Working icon ---------- */
+
+.chat-working-icon {
+  flex: none;
+  display: block;
+  transform-origin: 50% 50%;
+}
+
+.chat-working-icon.is-working {
+  animation: chat-turn 3s linear infinite;
+}
+
+@keyframes chat-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- The person's message ---------- */
+
+.chat-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 75%;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 9px 16px;
+  border-radius: 25px;
+  background: var(--chat-bubble);
+  color: var(--fg);
+  font-size: 16px;
+  line-height: 26px;
+}
+
+.chat-bubble.has-files {
+  padding-right: 9px;
+}
+
+.chat-bubble-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 32px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-bubble-file {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border: 1px solid var(--chat-line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--chat-muted);
+}
+
+.chat-bubble-file img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ---------- The agent's working step ---------- */
+
+.chat-step {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 14px;
+  min-width: 0;
+  color: var(--chat-muted);
+  animation: chat-fade-in 150ms ease-out;
+}
+
+@keyframes chat-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* As tall as the title's first line, so the icon sits beside it however the title wraps. */
+.chat-step-icon {
+  display: grid;
+  place-items: center;
+  height: 26px;
+}
+
+.chat-step.is-failed > .chat-step-icon {
+  color: var(--bad);
+}
+
+.chat-step-title {
+  font-size: 16px;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+
+/* The hairline that drops from under the icon, beside the description and the sub-steps. */
+.chat-step-thread {
+  grid-column: 1;
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 0 2px 8px;
+  background: var(--chat-line);
+}
+
+.chat-step-body {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 4px;
+}
+
+.chat-step-desc {
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.chat-step.is-nested {
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+}
+
+.chat-step.is-nested > .chat-step-icon {
+  height: 22px;
+}
+
+.chat-step.is-nested > .chat-step-title {
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.chat-step.is-nested > .chat-step-thread {
+  margin-left: 7px;
+}
+
+/* ---------- Show thinking ---------- */
+
+.chat-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--chat-muted);
+  font-size: 15px;
+  line-height: 22px;
+  text-align: left;
+}
+
+.chat-thinking:hover {
+  color: var(--fg);
+}
+
+.chat-thinking-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The chevron's drawing starts 9 px into its box: this puts it 4 px after the words. */
+.chat-thinking-chevron {
+  flex: none;
+  margin: 0 -6px 0 -5px;
+}
+
+.chat-thinking[aria-expanded="true"] .chat-thinking-chevron {
+  transform: rotate(90deg);
+}
+
+/* ---------- Segmented tabs ---------- */
+
+.chat-tabs {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  height: 36px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--panel-line);
+}
+
+.chat-tab {
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg);
+  font-size: 15px;
+  line-height: 28px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-tab[aria-selected="true"] {
+  background: var(--chat-segment);
+  box-shadow: var(--shadow-segment);
+}
+
+/* ---------- Steps panel ---------- */
+
+/* A conversation with its steps panel beside it: the panel takes its width from the conversation. */
+.chat-split {
+  display: flex;
+  align-items: flex-start;
+}
+
+.chat-split > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Phones: a full-screen sheet. */
+.chat-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat-bg);
+  color: var(--fg);
+}
+
+.chat-panel[hidden] {
+  display: none;
+}
+
+/* Up to 1100 px: over the conversation from the right. */
+@media (min-width: 640px) {
+  .chat-panel {
+    left: auto;
+    width: 400px;
+    border-left: 1px solid var(--chat-line);
+    box-shadow: var(--shadow-side);
+  }
+}
+
+/* Wider: beside it, full height, no shadow. */
+@media (min-width: 1100px) {
+  .chat-panel {
+    position: sticky;
+    inset: auto;
+    top: 0;
+    z-index: auto;
+    flex: none;
+    height: 100dvh;
+    box-shadow: none;
+  }
+}
+
+.chat-panel-head {
+  position: relative;
+  flex: none;
+  padding: 52px 16px 0;
+}
+
+.chat-panel-close {
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--fg);
+}
+
+.chat-panel-close:hover {
+  background: var(--hover);
+}
+
+.chat-panel-body {
+  flex: 1;
+  min-height: 0;
+  padding: 28px 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-panel-body:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ---------- Steps list ---------- */
+
+.chat-steplist,
+.chat-steplist-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Markers are centered 11 px in, 27 px from the panel's edge, and titles start 18 px right of the thread. */
+.chat-steplist > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 7px;
+  padding-bottom: 14px;
+}
+
+.chat-steplist > li:last-child {
+  padding-bottom: 0;
+}
+
+/* The thread, from 8 px under each marker to 8 px above the next. */
+.chat-steplist > li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 22px;
+  bottom: 2px;
+  left: 10.5px;
+  width: 1px;
+  background: var(--chat-line);
+}
+
+.chat-steplist > li:has(+ .chat-steplist-end)::before {
+  bottom: 5px;
+}
+
+/* As tall as the title's first line. */
+.chat-steplist-marker {
+  display: grid;
+  place-items: center;
+  height: 20px;
+}
+
+.chat-steplist-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chat-muted);
+}
+
+.chat-steplist-row.is-failed > .chat-steplist-marker > .chat-steplist-dot {
+  background: var(--bad);
+}
+
+.chat-steplist-text {
+  min-width: 0;
+}
+
+.chat-steplist-title {
+  color: var(--chat-muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.chat-steplist-desc {
+  margin-top: 5px;
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+}
+
+.chat-steplist-media {
+  position: relative;
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--chat-bubble);
+}
+
+.chat-steplist-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-steplist-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  border-radius: 50%;
+  background: rgba(17, 17, 18, 0.55);
+  color: #ffffff;
+}
+
+/* A triangle looks centered a little right of the middle. */
+.chat-steplist-play svg {
+  margin-left: 2px;
+}
+
+.chat-steplist-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-steplist-children > li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+.chat-steplist-row.is-nested .chat-steplist-title {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.chat-steplist-row.is-nested .chat-steplist-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-steplist-end > .chat-steplist-marker {
+  color: var(--chat-faint);
+}
+
+.chat-steplist-end.is-unfinished > .chat-steplist-marker {
+  color: var(--bad);
+}
+
+/* ---------- Sources ---------- */
+
+.chat-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-source {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  column-gap: 7px;
+}
+
+.chat-source-icon {
+  display: grid;
+  place-items: center;
+  height: 20px;
+  color: var(--chat-muted);
+}
+
+.chat-source-icon img {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.chat-source-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-source-title {
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 20px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+a.chat-source-title:hover {
+  text-decoration: underline;
+}
+
+.chat-source-detail {
+  color: var(--chat-muted);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.chat-sources-empty {
+  color: var(--chat-muted);
+  font-size: 14px;
+}
+
+/* ---------- Output ---------- */
+
+.chat-media {
+  position: relative;
+  width: 100%;
+  margin: 0;
+}
+
+.chat-media-frame {
+  overflow: hidden;
+  border-radius: 24px;
+  background: var(--chat-bubble);
+}
+
+.chat-media-frame > :is(img, video, iframe) {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 0;
+}
+
+.chat-media-frame.has-ratio > :is(img, video, iframe) {
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Straddles the card's top edge at its right corner, on hover and on focus. */
+.chat-media-label {
+  position: absolute;
+  top: -13px;
+  right: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--chat-label);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 18px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chat-media:hover .chat-media-label,
+.chat-media:focus-within .chat-media-label {
+  opacity: 1;
+}
+
+/* ---------- Title chip and floating buttons ---------- */
+
+.chat-title-chip {
+  display: inline-block;
+  max-width: 100%;
+  height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-chip);
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 36px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-float,
+.chat-scroll {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-chip);
+  color: var(--fg);
+}
+
+.chat-scroll {
+  width: 32px;
+  height: 32px;
+}
+
+.chat-float:hover:not(:disabled),
+.chat-scroll:hover {
+  background: var(--surface-2);
+}
+
+.chat-float:disabled {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-working-icon.is-working,
+  .chat-step {
+    animation: none;
+  }
+}
