@@ -208,7 +208,7 @@ On Vercel, set the same variables on the project. A few need care:
 
 ### Preview database
 
-On Vercel, Preview gets the same `DATABASE_URL` (and the Neon integration's `PG*` and `POSTGRES_*` variables) as Production, and every deployment runs `scripts/migrate.ts` before `next build`. So previews never use `DATABASE_URL`. A preview uses `PREVIEW_DATABASE_URL`, a Neon branch of its own, and everything that opens or migrates the database picks it the same way (`lib/db/url.ts`):
+On Vercel, Preview gets the same `DATABASE_URL` (and the Neon integration's `PG*` and `POSTGRES_*` variables) as Production, and every deployment runs `scripts/migrate.ts` before `next build`. So previews never use `DATABASE_URL`. A preview uses `PREVIEW_DATABASE_URL`, an empty database of its own on a Neon branch, and everything that opens or migrates the database picks it the same way (`lib/db/url.ts`). `lib/db/__tests__/no-direct-database.test.ts` fails if other code reads those variables itself.
 
 | Where | Database the site uses | What the build's migrate does |
 | --- | --- | --- |
@@ -218,14 +218,20 @@ On Vercel, Preview gets the same `DATABASE_URL` (and the Neon integration's `PG*
 | Preview without it | none: pages show "Not connected yet" and anything that needs the database fails, as with no `DATABASE_URL` | prints that it skips, since previews never touch production's database, and the build goes on |
 | Preview with production's database in it | none | refuses with exit 1, so the build stops |
 
-"Production's database" means the same host (with or without `-pooler`), port and database name as `DATABASE_URL` or the integration's other URLs, whatever the user, password or options. Crons don't change this: Vercel runs `vercel.json` crons on production deployments only.
+"Production's database" means the same database name on the same Neon endpoint (the `ep-...` id, pooled or not, whatever the rest of the host or the port says) as `DATABASE_URL` or the integration's other URLs, whatever the user, password or options. Off Neon it means the same host, port and database name. Crons don't change this: Vercel runs `vercel.json` crons on production deployments only.
+
+A preview also never publishes a product: a publish goes into production's Vercel project for that name (`musemuse-<slug>`), so it would replace a live product. Builds still run their preview, checks and demo, and the product is saved without a link of its own. A preview takes no card payments and makes no Stripe refunds either, since Stripe's webhook settles on production, so new drive orders there are invoice requests.
 
 To give previews their database (once):
 
-1. In Vercel, open Storage, the Neon database, then Open in Neon. Under Branches, choose Create branch, name it `preview` and keep the default (production) branch as its parent. Copy the branch's pooled connection string (Connect, with connection pooling on).
-2. Run `vercel env add PREVIEW_DATABASE_URL preview`, paste the string, and leave the Git branch empty so every preview gets it. Previews made after that use it.
+1. In Vercel, open Storage, the Neon database, then Open in Neon. Under Branches, choose New branch, name it `preview`, and keep the default (production) branch as its parent and the data as it is. Don't pick Schema only: the copied tables would have no record of their migrations, and the build would stop. On the `preview` branch, open Roles & Databases and add a database named `preview`, owned by the same role as `neondb`. Then open Connect, pick the `preview` branch and the `preview` database (the pickers start on production's), turn connection pooling on, and copy the string.
+2. Run `vercel env add PREVIEW_DATABASE_URL preview`, paste the string, and leave the Git branch empty so every preview gets it. You can also mark it Sensitive in the project's Environment Variables. Previews made after that use it.
 
-Every preview shares that one branch. It starts as a copy of production's rows, so treat it like production data. To start clean, reset the branch from its parent in the Neon console (Branches, `preview`, Reset from parent), then redeploy a preview so its migrations run again. Migrations reach the preview database in number order too: Drizzle skips a migration older than the newest one applied, so once a preview has applied `0021`, a later preview that brings `0020` skips it there. Reset the branch from its parent before deploying that preview.
+The `preview` database starts empty, and the first preview build migrates it. Leave the branch's own `neondb` alone: it is a copy of production's rows, and its products still name production's live Vercel projects and sandboxes, its orders real card payments and its people real emails. A preview pointed at it could refine a live product's sandbox or delete its files.
+
+Every preview shares the `preview` database. To start clean, delete it on the branch (Roles & Databases) and add it again with the same name and owner, then redeploy a preview so its migrations run. Don't use Reset from parent: it puts the branch back to production's current state, which drops the `preview` database and leaves previews failing to connect. Migrations reach the preview database in number order too: Drizzle skips a migration older than the newest one applied, so once a preview has applied `0021`, a later preview that brings `0020` skips it there. Recreate the `preview` database before deploying that preview.
+
+What a preview can prove: products built on a preview reach the gateway at `env.platformUrl`, which on a preview is production's address unless `PLATFORM_URL` is set for that preview's Git branch ([docs/PRODUCT_OUTPUTS.md](docs/PRODUCT_OUTPUTS.md)). Production's gateway and build MCP don't know a preview's tokens or builds, so they refuse them. To prove a gateway path on a preview, set `PLATFORM_URL` for its branch to the preview's own address, and let the build sandboxes through Deployment Protection. The platform doesn't send a protection bypass yet.
 
 `npm run rebuild-all` starts the rebuild batch at `PLATFORM_URL` with the `AUTOMATION_SECRET` bearer and prints a table and a total. `npx tsx --env-file=.env.local scripts/rerecord-demos.ts` re-records the demo of every live product (or the ids and slugs you give it) in its own sandbox with Demo Studio, without a Muse Code run; `--dry-run` records in a throwaway copy of each sandbox and saves the videos locally, changing nothing. Vercel Hobby caps sandbox sessions at 45 minutes and Pro at 24 hours. Builds target well under 30 minutes, so Hobby works for the hackathon.
 
