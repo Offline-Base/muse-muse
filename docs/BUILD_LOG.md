@@ -892,6 +892,23 @@ because the sidebar showed a real account.
 - From now on General pushes after each landing with `_plan/push.sh` (scan, then tuned-model-options as a branch and
   General's other branches as backup refs; wave 3's branches are left to that session).
 
+### 19:35 Owner: commit to main and deploy; shipped to production
+
+- Owner: "commit what you have rn to main and deploy". Shipped tuned-model-options at 6f311e5: a fast-forward of 159
+  commits from 5916c37 (wave 2, the meta.ai look and the muse-app-ui skill behind MUSE_APP_LOOK, the TEST_MODEL fix for
+  metaClient and the agent kit, the build log, and the main-only deploy rule). Work still being built (decision models,
+  the preview database, multi-Jetson, the Glimmer alignment) stays out.
+- Checks first: no migrations beyond 0015 (already on production); typecheck clean; full root suite 4,361 tests, 4,353
+  pass, 0 fail, 8 skipped (live gateway tests that need a key); production already runs sub-daily crons, so the two new
+  ones fit the plan.
+- Production deployment dpl_DBQAd4HcEcX5aj4dpCcNzDsjEfXw (muse-muse-dzahxq4km), created 19:35:41, Ready by 19:37: .vercelignore removed 334 files
+  (including docs/log), `migrate: up to date in 95 ms`, build about 1 minute. Live checks on muse-muse.vercel.app: home
+  (the new "What should Muse make?" page), gallery, How it works, usage and /p/dinner-split-helper answer 200; /docs
+  redirects and resolves to 200.
+- Every new feature flag is off on production (not re-read), so builds and products behave as before; the platform's
+  new look is the visible change. Rollback: the previous production deployment dpl_Dk5fxBe6VsmuGRnouyAcf82p4nYV
+  (5916c37).
+
 ## Gaps
 
 What this record doesn't confirm:
