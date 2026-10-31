@@ -18,27 +18,6 @@ export const OVERLAYS_DIR = TARGETS_DIR;
 /** The commit applyLookScript makes in the product. A product with it was set up with the muse-app look. */
 export const LOOK_COMMIT = "Look: muse-app";
 
-/**
- * Installs an unpacked template/targets (`from`, holding `from/targets/<id>/...`) as OVERLAYS_DIR, then removes `from`.
- * Run with sudo. An overlay already there is replaced, so a refresh can't leave old files behind. Provisioning and
- * snapshots use tasks.ts installTargetsScript, the same script with the owner fixed to root; this one takes an owner so
- * look.test.ts can run it without root.
- */
-export function installOverlaysScript(from: string, dir: string = OVERLAYS_DIR, owner = "root:root"): string {
-  const d = q(dir);
-  return [
-    "set -e",
-    `mkdir -p ${d}`,
-    `for t in ${q(from)}/targets/*; do`,
-    `  rm -rf ${d}/"$(basename "$t")"`,
-    `  cp -R "$t" ${d}/`,
-    "done",
-    `rm -rf ${q(from)}`,
-    `chown -R ${q(owner)} ${d}`,
-    `chmod -R a-w,a+rX ${d}`,
-  ].join("\n");
-}
-
 /** Prints a deps.json's "dependencies" or "devDependencies" as npm's name@version, one a line. */
 function depsOf(file: string, field: "dependencies" | "devDependencies"): string {
   const print = `const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).${field}??{};for(const[k,v]of Object.entries(d))console.log(k+"@"+v)`;

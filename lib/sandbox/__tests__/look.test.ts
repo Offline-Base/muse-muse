@@ -1,6 +1,7 @@
 /**
- * lib/sandbox/look.ts: the scripts that install template/targets and apply the muse-app look, run with bash in a temp
- * folder against this checkout's real overlay. npm is a stand-in that records what it was asked.
+ * lib/sandbox/look.ts: the script that applies the muse-app look, and tasks.ts installTargetsScript, which installs it
+ * beside the targets, run with bash in a temp folder against this checkout's real overlay. npm is a stand-in that records
+ * what it was asked.
  *
  *   npx tsx --test lib/sandbox/__tests__/look.test.ts
  */
@@ -10,8 +11,9 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rm
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { applyLookScript, installOverlaysScript, LOOK_COMMIT, MUSE_APP_OVERLAY, OVERLAYS_DIR } from "@/lib/sandbox/look";
+import { applyLookScript, LOOK_COMMIT, MUSE_APP_OVERLAY, OVERLAYS_DIR } from "@/lib/sandbox/look";
 import { readTargetFiles } from "@/lib/sandbox/setup";
+import { installTargetsScript } from "@/lib/sandbox/tasks";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "musemuse-look-"));
 after(() => {
@@ -46,7 +48,7 @@ function product() {
   return { root, dir, env, npmLog: () => (existsSync(path.join(root, "npm.log")) ? readFileSync(path.join(root, "npm.log"), "utf8") : "") };
 }
 
-/** template/targets unpacked the way installOverlays writes it, then installed by installOverlaysScript. */
+/** template/targets unpacked the way setup.ts installTargets writes it, then installed by installTargetsScript. */
 async function overlays(owner = `${userInfo().username}:${spawnSync("id", ["-gn"], { encoding: "utf8" }).stdout.trim()}`): Promise<string> {
   const root = path.join(tmp, `o${n++}`);
   const from = path.join(root, "from");
@@ -55,13 +57,13 @@ async function overlays(owner = `${userInfo().username}:${spawnSync("id", ["-gn"
     writeFileSync(path.join(from, f.path), f.content);
   }
   const dir = path.join(root, "targets");
-  const res = bash(installOverlaysScript(from, dir, owner));
+  const res = bash(installTargetsScript(from, dir, owner));
   assert.equal(res.code, 0, res.stderr);
   assert.ok(!existsSync(from), "removes what it unpacked");
   return dir;
 }
 
-describe("installOverlaysScript", () => {
+describe("installTargetsScript, with the look", () => {
   it("installs every overlay read-only, in the shape provisioning reads", async () => {
     const dir = await overlays();
     assert.ok(existsSync(path.join(dir, MUSE_APP_OVERLAY, "deps.json")));
@@ -71,7 +73,7 @@ describe("installOverlaysScript", () => {
   });
 
   it("is owned by root in a sandbox, under the work folder", () => {
-    const script = installOverlaysScript("/tmp/it's here");
+    const script = installTargetsScript("/tmp/it's here");
     assert.match(script, /chown -R 'root:root' '\/vercel\/musemuse\/targets'/);
     assert.match(script, /'\/tmp\/it'\\''s here'\/targets\/\*/);
     assert.equal(OVERLAYS_DIR, "/vercel/musemuse/targets");

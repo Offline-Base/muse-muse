@@ -180,9 +180,11 @@ export function targetFileText(targets: readonly string[]): string {
 
 /**
  * Installs an unpacked template/targets (`from`, with `from/targets/<id>/...`) as the read-only TARGETS_DIR, then removes
- * `from`. Run with sudo. A target already there is replaced, so a refresh can't leave old files behind.
+ * `from`. Run with sudo. Every overlay goes in, the brief targets and the muse-app look (lib/sandbox/look.ts) alike. A
+ * target already there is replaced, so a refresh can't leave old files behind. `owner` is root in a sandbox; tests pass
+ * their own user so they can run it without root.
  */
-export function installTargetsScript(from: string, targetsDir: string = TARGETS_DIR): string {
+export function installTargetsScript(from: string, targetsDir: string = TARGETS_DIR, owner = "root:root"): string {
   const dir = q(targetsDir);
   return [
     "set -e",
@@ -192,7 +194,7 @@ export function installTargetsScript(from: string, targetsDir: string = TARGETS_
     `  cp -R "$t" ${dir}/`,
     `done`,
     `rm -rf ${q(from)}`,
-    `chown -R root:root ${dir}`,
+    `chown -R ${q(owner)} ${dir}`,
     `chmod -R a-w,a+rX ${dir}`,
   ].join("\n");
 }
