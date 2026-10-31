@@ -1,8 +1,9 @@
-import { test } from "node:test";
+import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { actionUrl, handleMcp, MAX_ACTION_REPLY_BYTES, type McpDeps, type McpProduct } from "@/lib/mcp/server";
+import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
+import { actionUrl, handleMcp, MAX_ACTION_REPLY_BYTES, toolsFor, type McpDeps, type McpProduct } from "@/lib/mcp/server";
 import type { Manifest } from "@/lib/types";
 
 const manifest: Manifest = {
@@ -248,4 +249,50 @@ test("tools/call: a product whose liveUrl isn't https gets an error, not a reque
   const body = JSON.parse(await res.text());
   assert.equal(body.result.isError, true);
   assert.equal(deps.calls.length, 0);
+});
+
+describe("agent products", () => {
+  const agentProduct = (actions: Manifest["actions"]): McpProduct => ({
+    slug: "scout",
+    name: "Scout",
+    tagline: "Finds things",
+    status: "live",
+    liveUrl: "https://scout.example",
+    manifest: { ...manifest, actions },
+  });
+  const action = (name: string, extra: Partial<Manifest["actions"][number]> = {}): Manifest["actions"][number] => ({
+    name,
+    description: name,
+    input: { type: "object" },
+    output: { type: "object" },
+    ...extra,
+  });
+
+  test("tools/list passes the manifest's annotations on in MCP's words", () => {
+    const [both, one, none] = toolsFor(
+      agentProduct([
+        action("find", { annotations: { readOnly: true, openWorld: true } }),
+        action("draft", { annotations: { readOnly: false } }),
+        action("plain"),
+      ]),
+    );
+    assert.deepEqual(both.annotations, { readOnlyHint: true, openWorldHint: true });
+    assert.deepEqual(one.annotations, { readOnlyHint: false });
+    assert.equal("annotations" in none, false, "an action without annotations keeps today's entry");
+  });
+
+  test("an owner's action is neither listed nor callable, since connector callers are anonymous", async () => {
+    const product = agentProduct([action("find", { who: "anyone" }), action("send_mail", { who: "owner" })]);
+    assert.deepEqual(toolsFor(product).map((t) => t.name), ["find"]);
+    const deps: McpDeps = {
+      findProduct: async () => product,
+      fetch: (async () => assert.fail("the product should never be called")) as typeof fetch,
+    };
+    const res = await rpc(deps, "scout", { jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "send_mail", arguments: {} } });
+    assert.match(JSON.stringify(res.body), /Unknown tool: send_mail/);
+  });
+
+  test("the connector waits longer than an agent action's own 100 s budget", () => {
+    assert.ok(DEFAULT_LIMITS.mcpActionTimeoutMs >= 100_000 + 15_000);
+  });
 });

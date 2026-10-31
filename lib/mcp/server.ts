@@ -8,7 +8,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { parseManifest } from "@/lib/format";
+import { connectorActions, parseManifest } from "@/lib/format";
 import { DEFAULT_LIMITS } from "@/lib/gateway/policy";
 import type { Manifest, ProductStatus } from "@/lib/types";
 
@@ -50,11 +50,29 @@ export function toolInputSchema(input: Record<string, unknown> | undefined): Too
   return { ...schema, type: "object" } as Tool["inputSchema"];
 }
 
+/** The actions a connector caller may run. They're anonymous, so an owner's action is neither listed nor callable. */
+function publicActions(product: McpProduct): Action[] {
+  return connectorActions(parseManifest(product.manifest));
+}
+
+/** The manifest's annotations in MCP's words, or nothing for an action without any, so its entry stays as it was. */
+function toolAnnotations(action: Action): Pick<Tool, "annotations"> {
+  const { readOnly, openWorld } = action.annotations ?? {};
+  if (readOnly === undefined && openWorld === undefined) return {};
+  return {
+    annotations: {
+      ...(readOnly === undefined ? {} : { readOnlyHint: readOnly }),
+      ...(openWorld === undefined ? {} : { openWorldHint: openWorld }),
+    },
+  };
+}
+
 export function toolsFor(product: McpProduct): Tool[] {
-  return (parseManifest(product.manifest)?.actions ?? []).map((a) => ({
+  return publicActions(product).map((a) => ({
     name: a.name,
     description: a.description,
     inputSchema: toolInputSchema(a.input),
+    ...toolAnnotations(a),
   }));
 }
 
@@ -183,7 +201,7 @@ function buildServer(product: McpProduct, deps: McpDeps): McpServer {
     },
     { capabilities: { tools: {} }, instructions: instructionsFor(product) },
   );
-  const actions = new Map((parseManifest(product.manifest)?.actions ?? []).map((a) => [a.name, a]));
+  const actions = new Map(publicActions(product).map((a) => [a.name, a]));
   mcp.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolsFor(product) }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const action = actions.get(request.params.name);

@@ -290,10 +290,20 @@ export interface Manifest {
     input: Record<string, unknown>;
     output: Record<string, unknown>;
     example?: Record<string, unknown>;
+    /** Default anyone. An owner action stays off the connector, whose callers are anonymous. */
+    who?: "anyone" | "owner";
+    annotations?: { readOnly?: boolean; openWorld?: boolean };
   }>;
   fixtures: Array<{ path: string; description: string }>;
   limits: string[];
   estimatedCostPerRunUsd: number;
+  /** Only when the product is an agent. Its tools can narrow what the brief picked, never widen it. */
+  agent?: {
+    task: string;
+    tools: Array<{ id: string; usedFor: string }>;
+    connections: "none" | "owner";
+    limits?: { maxTurns?: number; maxToolCalls?: number; maxCostUsd?: number };
+  };
 }
 
 export type GatewayEndpoint = "responses" | "images/generations" | "images/edits" | "files" | "asr/transcribe";

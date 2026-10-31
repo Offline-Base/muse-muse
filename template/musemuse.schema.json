@@ -39,7 +39,20 @@
           "description": { "type": "string", "minLength": 1 },
           "input": { "type": "object", "description": "JSON Schema for the request body" },
           "output": { "type": "object", "description": "JSON Schema for the response body" },
-          "example": { "type": "object", "description": "Example request body used by tests" }
+          "example": { "type": "object", "description": "Example request body used by tests" },
+          "who": {
+            "enum": ["anyone", "owner"],
+            "description": "Who may run it. An owner action stays off the Muse app connector, whose callers are anonymous. Default anyone."
+          },
+          "annotations": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "What the connector tells other apps about this action.",
+            "properties": {
+              "readOnly": { "type": "boolean", "description": "It only reads, and changes nothing" },
+              "openWorld": { "type": "boolean", "description": "It reaches the web or other outside services" }
+            }
+          }
         }
       }
     },
@@ -56,6 +69,39 @@
       }
     },
     "limits": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "estimatedCostPerRunUsd": { "type": "number", "minimum": 0 }
+    "estimatedCostPerRunUsd": { "type": "number", "minimum": 0 },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "tools", "connections"],
+      "description": "Only when the product is an agent. Its tools can narrow what the brief picked, never widen it.",
+      "properties": {
+        "task": { "type": "string", "minLength": 1, "description": "One line on what the agent does" },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "usedFor"],
+            "properties": {
+              "id": {
+                "enum": ["web_search", "scholar", "places", "events", "read_page", "gmail_read", "gmail_draft", "gmail_send", "calendar_read", "calendar_add", "slack_read", "slack_search", "slack_send"]
+              },
+              "usedFor": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "connections": { "enum": ["none", "owner"], "description": "owner when a tool works on the owner's own account" },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxTurns": { "type": "integer", "minimum": 1 },
+            "maxToolCalls": { "type": "integer", "minimum": 0 },
+            "maxCostUsd": { "type": "number", "minimum": 0 }
+          }
+        }
+      }
+    }
   }
 }

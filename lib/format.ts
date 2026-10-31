@@ -209,6 +209,11 @@ const isObject = (v: unknown): v is Record<string, unknown> => Boolean(v) && typ
 const isString = (v: unknown): v is string => typeof v === "string";
 const listOf = (v: unknown, item: (x: unknown) => boolean): boolean => Array.isArray(v) && v.every(item);
 
+/** The actions the Muse app connector exposes. An owner action stays off it, because its callers are anonymous. */
+export function connectorActions(manifest: Pick<Manifest, "actions"> | null | undefined): Manifest["actions"] {
+  return (manifest?.actions ?? []).filter((a) => a.who !== "owner");
+}
+
 /**
  * A stored musemuse.json when it has the Manifest shape, else null. A partial ship can store whatever Muse Code
  * wrote, so pages read it through this and fall back to the brief instead of crashing on a bad field.
@@ -229,14 +234,32 @@ export function parseManifest(m: unknown): Manifest | null {
         isString(x.description) &&
         isObject(x.input) &&
         isObject(x.output) &&
-        (x.example === undefined || isObject(x.example)),
+        (x.example === undefined || isObject(x.example)) &&
+        (x.who === undefined || x.who === "anyone" || x.who === "owner") &&
+        (x.annotations === undefined ||
+          (isObject(x.annotations) && isOptionalBoolean(x.annotations.readOnly) && isOptionalBoolean(x.annotations.openWorld))),
     ) &&
     listOf(m.fixtures, (x) => isObject(x) && isString(x.path) && isString(x.description)) &&
     listOf(m.limits, isString) &&
     typeof m.estimatedCostPerRunUsd === "number" &&
     Number.isFinite(m.estimatedCostPerRunUsd) &&
-    m.estimatedCostPerRunUsd >= 0;
+    m.estimatedCostPerRunUsd >= 0 &&
+    (m.agent === undefined || isAgentBlock(m.agent));
   return ok ? (m as unknown as Manifest) : null;
+}
+
+function isOptionalBoolean(value: unknown): boolean {
+  return value === undefined || typeof value === "boolean";
+}
+
+function isAgentBlock(agent: unknown): boolean {
+  return (
+    isObject(agent) &&
+    isString(agent.task) &&
+    listOf(agent.tools, (x) => isObject(x) && isString(x.id) && isString(x.usedFor)) &&
+    (agent.connections === "none" || agent.connections === "owner") &&
+    (agent.limits === undefined || isObject(agent.limits))
+  );
 }
 
 /**

@@ -48,7 +48,7 @@ test("primary flow works with the sample photo", async ({ page }) => {
 - Use relative URLs (`page.goto("/")`, `request.post("/api/actions/...")`). verify may run the server on a port other than 3100.
 - Model calls can take a while, so allow up to 90 seconds per step.
 - Assert on the result the brief promises, not on loading text: wait for something only the finished result has, like its heading, a total or its model chip.
-- Keep the whole test under 3 minutes and 5 model calls.
+- Keep the whole test under 3 minutes and 5 model calls. An agent product (`.agents/skills/muse-agent`) has its own budget instead: at most 3 agent runs across all tests, each with `maxTurns` of 3 or 4.
 - Tests can't read `.env.local`, `GATEWAY_URL` or `PRODUCT_TOKEN`. Only the app server can. The tests reach Meta through the app's pages and routes, so never guard a test on an env var.
 - `npm run test:smoke` starts its own server on port 3100 and fails if something already listens there. Stop any server you started yourself (`pkill -f "next start"`) before running it.
 
