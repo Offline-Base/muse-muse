@@ -59,6 +59,41 @@ No verified number exists for how many teachers put identifiable student records
 
 Calculated from our own counts, Oct 31. On `fresh_200_b`, 165 of 200 has a 95% Wilson interval of 76.6% to 87.1%. Zero detected leaks in 200 items has a one-sided 95% upper bound of about 1.49%, if items were independent, which invented sets are not. Neither bounds real-world risk.
 
+## From the deep research brief, Oct 31
+
+Ethan ran the deep research prompt and pasted back a brief. Its citations had no links, so nothing in it counts until it is read at the source. Read at the source on Oct 31:
+
+| Source | What it says | Use |
+|---|---|---|
+| Zuckerberg, "Personal Superintelligence", meta.com/superintelligence, Jul 30, 2025 | "Meta's vision is to bring personal superintelligence to everyone." | Fit with Meta's vision |
+| Meta, "Agents Rule of Two", ai.meta.com/blog/practical-ai-agent-security, Oct 31, 2025 | Until prompt injection can be reliably caught, agents "must satisfy no more than two" of three properties in a session: untrustworthy inputs, access to private data, changing state or communicating externally. It names "exfiltration of private data" as a prompt-injection outcome. When all three are needed, it asks for human-in-the-loop approval or another reliable check | The strongest Meta-tooling framing. Muse's cloud VM reads untrusted input and talks to the world but never holds the raw records. The device needs all three, so it does what the rule asks for that case: every outgoing result passes the router's code floors and, where the policy says, the user's approval. Do not claim the device "holds only two" |
+| Meta AI Research, "Introducing Muse Glimmer", research.meta.ai, Aug 10, 2026 | "optimized for always-on local agent workflows", a Mac or PC with a single consumer GPU, about 4-bit and under 20 GB, Apache 2.0, "all running entirely on your device" | Why Glimmer runs the private steps. The page makes no privacy claim, so do not attribute one to it |
+| Gallup, news.gallup.com/poll/710534 (read through a search excerpt of that page) | 58% of teachers got no guidance on using AI for grading and student feedback; fewer than 1 in 10 got formal guidance on any specific activity | Next to the 18% figure above. It is per activity, not overall |
+
+Not yet read at the source. Do not quote these until someone has:
+
+- **Wang on "discretion"** (Cheeky Pint with Zuckerberg and John Collison, Oct 12, 2026), an agent "disclosing as little as possible". The only trace found is a secondary chapter heading that calls the lane "discreet". If it holds, it is the best single line for fit. Listen to the episode and note the timestamp first.
+- Wang at India's AI Impact Summit (Feb 19, 2026) and YC Startup School (Jul 29, 2026) on AI that knows your goals and context.
+- Muse launch (Sep 8, 2026): "safe, secure, private", approval before sending email or buying; Zuckerberg on a confidential VM (Sources interview, Sep 8).
+- A Glimmer developer docs line, "own the weights, the runtime, and the data". It is not on the research page.
+- AgentDAM (NeurIPS 2025, Meta-affiliated authors, facebookresearch): a data minimization benchmark for agents. It fits the Meta-tooling story if the author list holds.
+- PrivacyLens-Live and PrivacyChecker (leakage cut from 36.08% to 7.30% on DeepSeek-R1, MCP settings); ConfAIde (ICLR 2024); PrivacyLens (NeurIPS 2024).
+- Illuminate Education: an FTC order in 2026 citing 10.1 million students; a multistate $5.1 million settlement, Nov 2025, 1.7 million New York students.
+- PowerSchool: the North Carolina attorney general's "more than 62.4 million current and former students and teachers" (Feb 6, 2025). The split of 62.4 million students plus 9.5 million teachers is the attacker's claim; never use it.
+- CDT 2025: 85% of teachers used AI in 2024-25 (806 teachers, Jun to Aug 2025). NASW 2026: 1,179 social workers, Oct 2025 to Feb 2026. 42 CFR Part 2 compliance date Feb 16, 2026.
+- Personalized privacy assistants (CMU, Sadeh and others, 2016) as prior art for learning from approve and deny; a Jun 2026 preprint on approval fatigue.
+
+Wording for the submission, from the brief's warnings:
+
+- Tags are pseudonymization and data minimization, not anonymization or de-identification. A tagged result can still point at someone through context. The public pages already avoid "de-identified"; docs/COMPLIANCE_PLAN.md's FERPA row still says "de-identified results only" and should read "tagged results only" before any of it is quoted.
+- Cloud processing is not unlawful: FERPA's school-official exception and HIPAA business associate agreements allow it. The case is less exposure, not the only legal way.
+- Neither Zuckerberg nor Wang has said anything found about teachers, so the teacher case is ours. Do not attach it to them.
+- Do not promise Glimmer on the 8 GB Jetson until it is measured there. Our file is IQ1_S at 1.874 bits per weight, not Meta's 4-bit one, and the Jetson is not measured.
+- Present it as hybrid: Muse plans in the cloud, the device keeps the records. That is Muse's own shape too (a cloud VM plus approvals).
+- CUI only for federally connected work.
+
+For Q&A, the counterpoints the brief found: contracts can make cloud processing lawful; teachers adopt AI quickly; Meta's own rule treats human approval as one layer of defense, and too many asks wear people down; local models are weaker, as our stage 2 rows show.
+
 ## When the tuned Glimmer lands
 
 Not before; this is a test design only. Run on identical items with the same policy, prompt, schema and decoding settings:
