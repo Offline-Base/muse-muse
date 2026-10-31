@@ -6410,3 +6410,15 @@ div.md.md-plain {
   gap: 8px;
 }
 
+
+/* ---------- Models and Gadgets (/models, /gadgets) ---------- */
+
+.models-name .chips {
+  margin-top: 6px;
+}
+
+.models-sub {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
