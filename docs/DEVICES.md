@@ -43,7 +43,7 @@ From eval/reports/device_smoke_lfm_loosen_default.md (the connector's tools on a
 | Private values in any tool output | none | none |
 | All device only | True | True |
 
-The same setup's router quality is in eval/reports/default_loosen_fresh_200_b.md (81.5%, 0 leaks, 75 approval requests on invented items). The bench and the smoke time different things and ran at different times, so their grading times do not need to match.
+The same setup's router quality is in eval/reports/floors_fresh_200_b.md (82.5%, 0 leaks, 75 approval requests on invented items). The bench and the smoke time different things and ran at different times, so their grading times do not need to match.
 
 ## What is needed to measure the rest
 

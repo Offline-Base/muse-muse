@@ -123,8 +123,21 @@ Held on lane/w2-docs, not merged: README, MUSE_SETUP and RUBRIC draft plus `test
 
 Router finding for Ethan: a request headed outside the class that both the labeler and the floors miss ("For the yearbook") follows the first matching policy rule. Names stay tags, but a tagged score goes out with no ask. That was already so for per-student results (RED-F3c, 10 of 22 destinations missed); the result_words default extends it to free text holding a score. Fix on offer: widen the floor with those destinations, before the study freeze.
 
+**02:56 to 11:30, Oct 31** The session ended overnight. CI on f253359 passed. The live app was started from that session and stopped with it: ports 8083, 8084, 8787 and 8790 did not answer at 11:35. It has not been restarted; that is Ethan's call.
+
+**11:35** Ethan's answers: `.env.example` ships device-only; the direct tooling line; all three safety fixes before the freeze; start the study right after them.
+
+**11:55** Those are in, and lane/w2-docs is merged (README wording approved by those answers):
+- `router._OUTSIDE` lists the 10 destinations the attacks missed (RED-F3c). New left-out floor (`router._LEFT_OUT`, RED-F5a, RED-F5b): a class number that leaves out a tag or a named group, table, team or pod asks the user, even under a rule the user taught, and Always approve leaves it. MAX_PENDING=20 (RED-F11): past it a new ask is refused with a fixed sentence asking the user to clear some. 17 attack cases flipped; 47 xfails remain.
+- The cap is off in `run_eval.prepare_home`, so in every eval and study run: those runs leave cards unanswered on purpose (27 of 75 on fresh_200_b; all of them for the privacy officer), so a cap would turn later asks into refusals that say nothing about the router. nights.md and PLAN.md say so. So the cap is shown by its test, not by these numbers.
+- `.env.example` is device-only. It also no longer sets DREAMING_BACKEND=prompt, which on that setup would have put the 2B model in charge (43% in the matrix) instead of the policy; a test pins it.
+- Measured on aa19b38, on a separate copy of the LFM server (127.0.0.1:8183, throwaway home), since the live one is down: fresh_200_b 82.5% (165 of 200), 0 leaks, 75 asks, 27 needless, 2 missed, 3 over-refusals (`eval/reports/floors_fresh_200_b.md`); tasks 82.0%, 0 leaks, 27 asks (`floors_tasks.md`); 200 day items 80.0%, 0 leaks, 71 asks (`eval/reports/dev/floors/`). Item by item against the runs before, fresh_200_b moved 2 items and the day items 2, none with a new floor's code: this is label noise, not a gain, and the new floors added no needless ask on these sets. They exist for attacks these sets do not hold.
+- Rehearsal: six scenes as expected, 0 of 18 outputs private. Device smoke passes: 32.9 s, 32.8 s with FERPA. Demo risk: in the FERPA run the grading result was refused, because the model's text used a never-share word (the blocked floor, unchanged today), with the files still saved; the run before shared it. Fail-safe, not a leak. How often it happens is not measured yet.
+- `scripts/run_study.py`: the 24 runs in the plan's order, resumable, applying the stop rule when a run ends. The misplaced strict-teacher smoke files moved to `eval/reports/sim/smoke/strict_teacher/`, where this log already said they were. They had been copied one folder up at 02:45; nothing was overwritten.
+
 ## Open items
 
-- Ethan: README wording and the default setup (lane/w2-docs); widen the outside-class floor (RED-F3c), the differencing floor, MAX_PENDING; when the persona study runs; read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
-- Persona study: pipeline smoke next. The study itself runs on the frozen commit (the plan says Nov 2 night), one run at a time.
+- Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
+- Persona study: starting on the frozen commit, on Ethan's call (not the plan's Nov 2 date), one run at a time.
+- Measure how often grading is refused for a never-share word in the model's own text.
 - Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.

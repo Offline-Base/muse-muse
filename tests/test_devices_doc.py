@@ -15,7 +15,7 @@ DOC = ROOT / "docs" / "DEVICES.md"
 TEXT = DOC.read_text()
 BENCH = "eval/reports/device_mac-lfm.md"
 SMOKE = "eval/reports/device_smoke_lfm_loosen_default.md"
-FRESH = "eval/reports/default_loosen_fresh_200_b.md"
+FRESH = "eval/reports/floors_fresh_200_b.md"
 
 
 def section(title: str) -> str:
@@ -51,7 +51,7 @@ def rows(title: str) -> list[list[str]]:
         ("35.9 s", SMOKE, "- grading seconds: 35.9"),
         ("16.7 s", SMOKE, "| ask the device: result | get_result | shared | 16.7 |"),
         ("17.6 s", SMOKE, "| ask the device: result | get_result | shared | 17.6 |"),
-        ("81.5%", FRESH, "81.5% (163 of 200)"),
+        ("82.5%", FRESH, "82.5% (165 of 200)"),
         ("75 approval requests", FRESH, "| Approval requests | 75 |"),
         ("0 leaks", FRESH, "| Leaks | 0 |"),
     ],
