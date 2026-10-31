@@ -10,13 +10,13 @@ special tokens kept and cut by final_answer(). The helpers come from score_gguf.
 
 Items: every probe in --probes (honesty_probes.jsonl: kinds after_cutoff, false_premise, unknowable), at most
 --max-new-tokens (192) new tokens, since an honest answer explains itself, graded by honesty_grade.grade() as honest,
-hallucinated or unclear. Controls, so a model that refuses everything doesn't look honest: the first --n-controls real
+hallucinated, unclear or degenerate (hit the limit and repeats itself). Controls, so a model that refuses everything doesn't look honest: the first --n-controls real
 probes of eval-probes.jsonl after shuffling with random.Random(7), the same ones score_gguf.py asks first, at its 96
 new tokens and graded by answered(), so control accuracy lines up with its probe accuracy. A control answered wrong
 with a refusal ("I don't know", a cutoff, "no record") counts as over-refused.
 
-Output (--out): per-item reply and verdict, and a summary: honest, hallucinated and unclear rates overall, by kind and
-by topic; control accuracy and over-refusal rate; how many replies hit the token limit. --replies-only regrades the
+Output (--out): per-item reply and verdict, and a summary: honest, hallucinated, unclear and degenerate rates overall,
+by kind and by topic; control accuracy and over-refusal rate; how many replies hit the token limit. --replies-only regrades the
 replies already in one or more --out files with the current rules (no GPU, tokenizer or server) and prints a table.
 
 Usage: python score_honesty.py --gguf FILE --label NAME --out FILE.json --tokenizer BASE_DIR --probes honesty_probes.jsonl
@@ -104,7 +104,7 @@ def print_summaries(paths):
     def pct(x):
         return f"{100 * x:5.1f}"
 
-    head = f"{'label':28s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s} {'ctl_acc':>7s} {'ctl_ref':>7s} {'changed':>7s}"
+    head = f"{'label':28s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s} {'degen':>6s} {'ctl_acc':>7s} {'ctl_ref':>7s} {'changed':>7s}"
     lines, kinds, topics = [head], [], []
     for path in paths:
         with open(path) as f:
@@ -113,12 +113,12 @@ def print_summaries(paths):
         s = summarize(out["rows"])
         label = out.get("label", os.path.basename(path))
         lines.append(f"{label[:28]:28s} {s['n']:4d} {pct(s['honest_rate']):>6s} {pct(s['hallucinated_rate']):>6s} "
-                     f"{pct(s['unclear_rate']):>6s} {pct(s['control_accuracy']):>7s} {pct(s['control_refusal_rate']):>7s} {changed:7d}")
+                     f"{pct(s['unclear_rate']):>6s} {pct(s['degenerate_rate']):>6s} {pct(s['control_accuracy']):>7s} {pct(s['control_refusal_rate']):>7s} {changed:7d}")
         for group, table in (("by_kind", kinds), ("by_topic", topics)):
             for name, r in s[group].items():
                 table.append(f"{label[:28]:28s} {name:16s} {r['n']:4d} {pct(r['honest_rate']):>6s} "
-                             f"{pct(r['hallucinated_rate']):>6s} {pct(r['unclear_rate']):>6s}")
-    sub = f"{'label':28s} {'group':16s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s}"
+                             f"{pct(r['hallucinated_rate']):>6s} {pct(r['unclear_rate']):>6s} {pct(r['degenerate_rate']):>6s}")
+    sub = f"{'label':28s} {'group':16s} {'n':>4s} {'honest':>6s} {'halluc':>6s} {'unclr':>6s} {'degen':>6s}"
     print("\n".join(lines + ["", "By kind (percent)", sub] + kinds + ["", "By topic (percent)", sub] + topics))
     print("\nRates are percent of honesty probes; ctl_acc is control accuracy, ctl_ref the controls answered wrong with a "
           "refusal; changed counts verdicts the current rules grade differently from the stored ones.")
@@ -220,7 +220,7 @@ def main():
         ran = {"tokens": len(toks), "stop": r.get("stop_type")}
         if part == "honesty":
             rows["honesty"].append({k: it.get(k) for k in ("id", "kind", "topic", "question", "premise", "bait", "note")}
-                                   | {"reply": reply, **grade(reply, it), **ran})
+                                   | {"reply": reply, **grade(reply, it | ran), **ran})
         else:
             rows["controls"].append({"question": it["question"], "answer": it["answer"], "aliases": it.get("aliases", []),
                                      "reply": reply, "right": answered(reply, it), "refused": refuses(reply), **ran})

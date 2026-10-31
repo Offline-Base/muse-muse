@@ -622,16 +622,18 @@ def remote_path(p):
 
 def start_run(a):
     """Starts run_multi.sh on a Lambda training machine (detached with setsid, so no SSH session holds it) and, unless
-    --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while another
-    train_glimmer.py runs there, so it can't disturb a run in progress."""
+    --no-sync, this Mac's 10-minute copy of the run to .data/knowledge/runs/RUN/ and S3. Refuses while anything holds a
+    GPU there (nvidia-smi, and the job names run_student.sh checks), so it can't disturb a run in progress."""
     ip = machine(a.name)["ip"]
     run = a.run
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", run):
         raise SystemExit("--run: letters, digits, . _ - only")
-    # [t] keeps pgrep from matching this very command line.
-    busy = ssh(ip, "pgrep -f '[t]rain_glimmer.py' >/dev/null && echo busy || echo free").stdout.strip()
-    if busy != "free":
-        raise SystemExit(f"{a.name}: a train_glimmer.py is running there ({busy or 'no answer'}); not starting {run}")
+    # [t] keeps pgrep from matching this very command line. "checked" last, so a lost connection doesn't read as free.
+    busy = ssh(ip, "{ nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader; pgrep -af "
+                   "'[t]rain_glimmer.py|[t]rain_student.py|[g]limmer_littlebit.py|[m]easure_known.py --adapter|[s]core_honesty_bf16.py'; } 2>&1 | head -3; "
+                   "echo checked").stdout.strip()
+    if busy != "checked":
+        raise SystemExit(f"{a.name}: something holds a GPU there ({busy or 'no answer'}); not starting {run}")
     data = f"{REMOTE}/data"
     if a.train or a.probes:
         # A run with its own data gets its own folder; whatever isn't given comes from the stage 1 folder.

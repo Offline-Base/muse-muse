@@ -18,6 +18,13 @@ Stage 2 from stage 1: KNOWLEDGE_INIT_ADAPTER=<a saved adapter or checkpoint-N fo
 starting adapter (same rank and modules), then trains on the new train.jsonl with a fresh optimizer and schedule.
 If the run's own checkpoint folder already holds a checkpoint, that checkpoint wins (a restarted stage 2 resumes).
 Extra hyperparameters: save_steps (250), tuned_eval (1; 0 skips the answers after training, for speed tests).
+
+Reasoning rows: an assistant message with reasoning_content gets its whole turn trained, from just after the generation
+prompt: ' to=self<|message|>THINK<|eom|><|start|>assistant to=user<|message|>ANSWER<|eot|>'. Training only the answer
+left those control tokens with no loss (stage 1's P("=self") after " to" fell to 0.21, base 0.99999). Such a row may say
+its reasoning_strength and tools; its text is rendered with them. Every other row keeps the final-only labels and prompt,
+and a file with no reasoning rows runs exactly as before. A row must reach a to=user answer (Unsloth drops one with
+nothing after RESPONSE_PART). test_glimmer_labels.py checks all this against the real tokenizer and template.
 """
 
 import json
@@ -117,6 +124,102 @@ def final_answer(raw):
     return raw[:cut].replace(PAD_TOKEN, "").strip()
 
 
+def has_reasoning(row):
+    """A row whose whole assistant turn trains: some assistant message of it carries reasoning_content."""
+    return any(m["role"] == "assistant" and m.get("reasoning_content") for m in row["messages"])
+
+
+def training_text(row, render):
+    """One training example, checked. render(messages, generation, [strength, tools]) is the template without the BOS text.
+    A row without reasoning always renders at REASONING with no tools, as every earlier run did."""
+    turns = has_reasoning(row)
+    text = render(row["messages"], False, row.get("reasoning_strength", REASONING), row.get("tools")) if turns else render(row["messages"], False)
+    for m in row["messages"]:
+        if turns and m.get("tool_calls"):
+            continue  # no content; the template writes the call on its own channel
+        marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
+        if marker and marker + m["content"] not in text:
+            raise RuntimeError("The template didn't put a " + m["role"] + " message right after " + marker + ": " + text[:400])
+    return text
+
+
+def channel_marks(text_tokenizer):
+    """Token ids of the generation prompt and of the reasoning header that follows it, and the <|start|> id."""
+    ids = lambda s: text_tokenizer(s, add_special_tokens=False)["input_ids"]
+    return {"prompt": ids(GENERATION_PROMPT), "header": ids(GENERATION_PROMPT + " to=self<|message|>"), "start": text_tokenizer.convert_tokens_to_ids("<|start|>")}
+
+
+def whole_turn_labels(ids, labels, marks):
+    """labels with each reasoning turn trained whole. A turn opens at the header <|start|>assistant to=self<|message|> and
+    runs through the assistant messages right after it, up to the next <|start|> of another role (a tool result, a user turn)
+    or the end. Training starts just after the generation prompt, which the model is given. A row with no such header
+    comes back untouched, so the labels of every other row stay what train_on_responses_only made them."""
+    prompt, header, start = marks["prompt"], marks["header"], marks["start"]
+    out, i, n = None, 0, len(ids)
+    while i < n:
+        if ids[i] != start or ids[i:i + len(header)] != header:
+            i += 1
+            continue
+        begin = i + len(prompt)
+        i = begin
+        while i < n and not (ids[i] == start and ids[i:i + len(prompt)] != prompt):
+            i += 1
+        out = list(labels) if out is None else out
+        out[begin:i] = ids[begin:i]
+    return labels if out is None else out
+
+
+def wanted_labels_text(row, text, render):
+    """What a reasoning row must train, from the template alone: each reasoning message from the end of the generation
+    prompt to the end of the message, and each other assistant message's answer and end token after RESPONSE_PART."""
+    strength, tools = row.get("reasoning_strength", REASONING), row.get("tools")
+    want = []
+    for k, m in enumerate(row["messages"]):
+        if m["role"] != "assistant":
+            continue
+        prompt = render(row["messages"][:k], True, strength, tools)
+        end = len(render(row["messages"][:k + 1], False, strength, tools))
+        # A message can end in <|eom|> in the full text and <|eot|> where the prompt stops at it; they're the same length.
+        if not text.replace("<|eom|>", "<|eot|>").startswith(prompt.replace("<|eom|>", "<|eot|>")):
+            raise RuntimeError("A generation prompt isn't a prefix of its training text: " + prompt[-200:])
+        if m.get("reasoning_content"):
+            want.append(text[len(prompt):end])
+        elif not m.get("tool_calls"):
+            want.append(text[len(prompt) + len(FINAL_CHANNEL):end])
+    return "".join(want)
+
+
+def check_whole_turns(dataset, texts, rows, render, text_tokenizer):
+    """Every reasoning row in the trainer's tokenized set: its labels decode to wanted_labels_text() and every other token
+    is masked. Rows are matched on their decoded text, because Unsloth drops rows with nothing to train. A row cut at
+    MAX_SEQ_LENGTH is only counted. Returns the counts; any mismatch stops the run."""
+    bos = text_tokenizer.bos_token or ""
+    wanted = {bos + t: i for i, (t, r) in enumerate(zip(texts, rows)) if has_reasoning(r)}
+    marks, seen, cut, trained_total, bad = channel_marks(text_tokenizer), 0, 0, 0, []
+    for ex in dataset:
+        ids, labels = list(ex["input_ids"]), list(ex["labels"])
+        if not any(ids[j:j + len(marks["header"])] == marks["header"] for j, t in enumerate(ids) if t == marks["start"]):
+            continue
+        if len(ids) >= MAX_SEQ_LENGTH:
+            cut += 1
+            continue
+        i = wanted.get(text_tokenizer.decode(ids, skip_special_tokens=False))
+        if i is None:
+            bad.append("a tokenized row with a reasoning header matches no rendered reasoning row")
+            continue
+        seen += 1
+        kept = [t for t, label in zip(ids, labels) if label != -100]
+        trained_total += len(kept)
+        if any(label not in (-100, t) for t, label in zip(ids, labels)):
+            bad.append(f"row {i} has labels that aren't its own tokens")
+        if text_tokenizer.decode(kept, skip_special_tokens=False) != wanted_labels_text(rows[i], texts[i], render):
+            bad.append(f"row {i} trains something other than its whole turn")
+    if bad:
+        raise RuntimeError(f"whole-turn labels failed on {len(bad)} rows, first: {bad[:3]}")
+    return {"reasoning_rows": len(wanted), "checked": seen, "cut_at_max_length": cut, "dropped": len(wanted) - seen - cut,
+            "mean_trained_tokens": round(trained_total / max(1, seen), 1)}
+
+
 def load_adapter(model, path, rank):
     """Stage 2's start: the LoRA weights of a saved adapter (out/adapter, or a checkpoint-N folder) copied into the
     fresh LoRA of the same rank and modules. Every saved tensor must land on a LoRA weight, every LoRA weight must be
@@ -187,8 +290,9 @@ def main():
     text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
     bos = getattr(tokenizer, "bos_token", None) or getattr(text_tokenizer, "bos_token", None) or ""
 
-    def render(messages, generation):
-        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=generation, reasoning_strength=REASONING)
+    def render(messages, generation, strength=REASONING, tools=None):
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=generation, reasoning_strength=strength,
+                                             **({"tools": tools} if tools else {}))
         return text.removeprefix(bos) if bos else text
 
     def ready_to_answer():
@@ -252,14 +356,7 @@ def main():
 
     if hasattr(FastModel, "for_training"):
         FastModel.for_training(model)
-    texts = []
-    for row in train_rows:
-        text = render(row["messages"], False)
-        for m in row["messages"]:
-            marker = {"user": INSTRUCTION_PART, "assistant": RESPONSE_PART}.get(m["role"])
-            if marker and marker + m["content"] not in text:
-                raise RuntimeError("The template didn't put a " + m["role"] + " message right after " + marker + ": " + text[:400])
-        texts.append(text)
+    texts = [training_text(row, render) for row in train_rows]
     from transformers import TrainerCallback
 
     effective_batch = int(h["batch_size"]) * int(h["grad_accum"]) * WORLD
@@ -306,6 +403,15 @@ def main():
         callbacks=[pace],
     )
     trainer = train_on_responses_only(trainer, instruction_part=INSTRUCTION_PART, response_part=RESPONSE_PART)
+    if any(has_reasoning(row) for row in train_rows):
+        # On top of Unsloth's labels, keeping its tokenizing, its filter and its padding collator (which pads labels with
+        # -100). train_on_responses_only can't do this itself: it knows one response marker, the same for every row.
+        marks = channel_marks(text_tokenizer)
+        trainer.train_dataset = trainer.train_dataset.map(
+            lambda b: {"labels": [whole_turn_labels(i, x, marks) for i, x in zip(b["input_ids"], b["labels"])]}, batched=True)
+        if MAIN:
+            say("whole_turns", rows=len(train_rows), kept=len(trainer.train_dataset),
+                **check_whole_turns(trainer.train_dataset, texts, train_rows, render, text_tokenizer))
     first = trainer.train_dataset[0]
     trained = sum(1 for label in first["labels"] if label != -100)
     if not trained:
