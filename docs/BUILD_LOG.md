@@ -139,6 +139,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **12:01** CI on 0f00c79: Python on Linux and macOS and the relay job all pass.
 
+**12:08** Study paused at Ethan's request (fans loud, on battery): its processes are stopped, not ended, and the keep-awake hold is released. The model server stays loaded and idle. The first run had finished and the second (relaxed_teacher, seed 102) was under way. A cause to try before it resumes: the server holds 10 CPU threads, about 430 to 500% CPU, though the model is on the GPU.
+
 ## Open items
 
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
