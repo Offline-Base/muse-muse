@@ -44,6 +44,21 @@ ROLES = ("answer", "router", "checker", "jetson")
 # The model card's recommended sampling for LFM3-VL-2B.
 CHECKER_SAMPLING = {"temperature": 0.1, "top_p": 1.0, "top_k": 50, "min_p": 0.0, "repeat_penalty": 1.1}
 _THINK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+_TO_SELF = re.compile(r"(?:<\|start\|>)?\s*assistant to=self\b")
+_TO_USER = re.compile(r"(?:<\|start\|>)?\s*assistant to=user(?:<\|message\|>)?")
+_END_MARK = re.compile(r"\s*<\|(?:eot|eom|end|return)\|>\s*$")
+
+
+def final_channel(content: str) -> str:
+    """Glimmer's answer when its channel markup reached the content: the text after the last
+    "assistant to=user". Reasoning with no answer after it comes back empty, so it is never used as
+    an answer: that text saw what the model read."""
+    found = None
+    for found in _TO_USER.finditer(content):
+        pass
+    if found is not None:
+        return _END_MARK.sub("", content[found.end() :]).strip()
+    return "" if _TO_SELF.search(content) else content
 
 
 class LLMError(RuntimeError):
@@ -281,6 +296,7 @@ class LocalLLM:
         self.is_cloud = self.backend in ("openrouter", "gateway")
         lfm_only = getattr(settings, "device_only", False) and getattr(settings, "primary_model", "") == "lfm"
         self.liquid = role in ("checker", "jetson") or lfm_only
+        self.reasoning_off = not self.liquid and getattr(settings, "glimmer_reasoning", "on") == "off"
         self._client = client
         self._sleep = sleep
         self._local = thread_local()
@@ -342,7 +358,16 @@ class LocalLLM:
             raise ValueError(f"reasoning must be one of {REASONING_LEVELS}, not {reasoning!r}")
         if self.liquid:
             return self._checker_body(messages, max_tokens=max_tokens, json_schema=json_schema, adapter=adapter)
-        msgs = _with_reasoning_line(messages, reasoning) if reasoning else [dict(m) for m in messages]
+        if self.reasoning_off:
+            reasoning = None
+            msgs = [
+                {**m, "content": _without_reasoning_line(m["content"])}
+                if m.get("role") == "system" and isinstance(m.get("content"), str)
+                else dict(m)
+                for m in messages
+            ]
+        else:
+            msgs = _with_reasoning_line(messages, reasoning) if reasoning else [dict(m) for m in messages]
         body: dict[str, Any] = {"model": self.model, "messages": msgs, "max_tokens": max_tokens}
         if self.backend == "openrouter":
             if adapter is not None:
@@ -457,6 +482,8 @@ class LocalLLM:
         content = message.get("content") or ""
         if self.liquid and "<think>" in content:
             content = _THINK.sub("", content)  # a server without a reasoning parser leaves these in
+        elif not self.liquid:
+            content = final_channel(content)
         return ChatResult(
             content=content,
             tool_calls=list(message.get("tool_calls") or []),

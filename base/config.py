@@ -151,6 +151,9 @@ class Settings:
     # The model for the checks and search: "glimmer" uses the answer model, "lfm" a small Liquid
     # model on this device's own llama-server (always local, so it never needs the .synthetic rule).
     checker_backend: Literal["glimmer", "lfm"] = "glimmer"
+    # GLIMMER_REASONING=off: no reasoning line and no reasoning_strength in Glimmer's requests, for a
+    # file whose reasoning is broken. Pair it with GLIMMER_REASONING_BUDGET=0 (and GLIMMER_TEMPLATE).
+    glimmer_reasoning: Literal["on", "off"] = "on"
     # Who labels Muse's requests: the checker, or Glimmer with its labels checked the same way
     # (LABELS_BACKEND=glimmer, which needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm).
     labels_backend: Literal["checker", "glimmer"] = "checker"
@@ -277,9 +280,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     labels = get("LABELS_BACKEND", "checker")
     if labels not in ("checker", "glimmer"):
         raise ValueError(f"LABELS_BACKEND must be checker or glimmer, not {labels!r}")
+    glimmer_reasoning = get("GLIMMER_REASONING", "on")
+    if glimmer_reasoning not in ("on", "off"):
+        raise ValueError(f"GLIMMER_REASONING must be on or off, not {glimmer_reasoning!r}")
     if labels == "glimmer" and (primary != "glimmer" or checker != "lfm"):
         raise ValueError("LABELS_BACKEND=glimmer needs PRIMARY_MODEL=glimmer and CHECKER_BACKEND=lfm")
-    embed_url =get("EMBED_URL", f"http://127.0.0.1:{EMBED_PORT}/v1").rstrip("/")
+    embed_url = get("EMBED_URL", f"http://127.0.0.1:{EMBED_PORT}/v1").rstrip("/")
     if not _is_loopback_url(embed_url):
         raise ValueError("EMBED_URL must be this device (127.0.0.1 or localhost): it reads raw documents")
     sam_url = get("SAM_URL", f"http://127.0.0.1:{SAM_PORT}").rstrip("/")
@@ -360,6 +366,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         approval_tls_key=Path(get("APPROVAL_TLS_KEY")).expanduser() if get("APPROVAL_TLS_KEY") else None,
         checker_backend=checker,  # type: ignore[arg-type]
         labels_backend=labels,  # type: ignore[arg-type]
+        glimmer_reasoning=glimmer_reasoning,  # type: ignore[arg-type]
         primary_model=primary,  # type: ignore[arg-type]
         jetson_lfm_url=jetson_lfm_url,
         jetson_lfm_model=get("JETSON_LFM_MODEL", "hf.co/LiquidAI/LFM3-1.7B-GGUF:Q4_K_M"),

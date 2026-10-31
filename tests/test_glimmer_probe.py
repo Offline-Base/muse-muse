@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import httpx
 import respx
 
@@ -80,3 +82,27 @@ def test_the_side_servers_script_stays_on_this_device_and_off_the_real_home(tmp_
         env={**os.environ, "HOME": str(tmp_path)}, capture_output=True, text=True, check=False,
     )  # fmt: skip
     assert done.returncode == 1 and "not the app's ~/.base" in done.stderr
+
+
+def test_final_channel_keeps_only_the_answer():
+    from base.local_llm import final_channel
+
+    full = "<|start|>assistant to=self<|message|>private thought<|eom|><|start|>assistant to=user<|message|>The answer.<|eot|>"
+    assert final_channel(full) == "The answer."
+    assert final_channel("assistant to=self private thought assistant to=user The answer.") == "The answer."
+    assert final_channel("<|start|>assistant to=self<|message|>private thought, no answer") == ""
+    assert final_channel('{"decision": "refuse", "reason": "x"}') == '{"decision": "refuse", "reason": "x"}'
+
+
+def test_reasoning_off_sends_no_reasoning_at_all(tmp_path):
+    settings = gp.load_settings({"BASE_HOME": str(tmp_path), "DEVICE_ONLY": "1", "PRIMARY_MODEL": "glimmer", "GLIMMER_BACKEND": "llama_server",
+                                 "CHECKER_BACKEND": "lfm", "GLIMMER_REASONING": "off", "LLAMA_API_KEY": "k"})  # fmt: skip
+    llm = gp.LocalLLM(settings, "router")
+    body = llm.build_body([{"role": "system", "content": "Reasoning strength: low\n\nDecide."}, {"role": "user", "content": "x"}], reasoning="high")
+    assert "chat_template_kwargs" not in body
+    assert "reasoning strength" not in body["messages"][0]["content"].lower()
+    assert body["messages"][0]["content"] == "Decide."
+    llm.close()
+    on = gp.LocalLLM(replace(settings, glimmer_reasoning="on"), "router")
+    assert on.build_body([{"role": "user", "content": "x"}], reasoning="high")["chat_template_kwargs"] == {"reasoning_strength": "high"}
+    on.close()

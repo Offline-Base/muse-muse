@@ -7,6 +7,8 @@
 #   SIDE_CHECKER_PORT  default 8183
 #   SIDE_THREADS       CPU threads per server, default 4 (the models are on the GPU)
 #   SIDE_CTX           default 16384
+#   SIDE_REASONING     off (default) or on; off serves Glimmer with --reasoning-budget 0
+#   SIDE_TEMPLATE      a chat template file for Glimmer (--chat-template-file)
 #
 # HOME_DIR holds a throwaway key file and the logs. It is refused if it is the real ~/.base. Binds
 # 127.0.0.1 only and runs at low priority, in the foreground; Ctrl-C stops both. It prints the
@@ -39,10 +41,16 @@ KEY="$HOME_DIR/llama_api_key"
 chmod 600 "$KEY"
 
 COMMON=(--host 127.0.0.1 -np 1 -ngl 99 -t "$THREADS" -c "$CTX" --jinja --cache-ram 0 --ctx-checkpoints 0 --no-slots --api-key-file "$KEY")
+G_FLAGS=()
+if [ "${SIDE_REASONING:-off}" = off ]; then G_FLAGS+=(--reasoning-budget 0); fi
+if [ -n "${SIDE_TEMPLATE:-}" ]; then
+  [ -f "$SIDE_TEMPLATE" ] || die "no such template: $SIDE_TEMPLATE"
+  G_FLAGS+=(--chat-template-file "$SIDE_TEMPLATE")
+fi
 PIDS=""
 trap 'kill $PIDS 2>/dev/null || true' EXIT INT TERM
 
-nice -n 15 "$BIN" --model "$GGUF" --alias glimmer --port "$G_PORT" "${COMMON[@]}" >"$HOME_DIR/glimmer.log" 2>&1 &
+nice -n 15 "$BIN" --model "$GGUF" --alias glimmer --port "$G_PORT" "${COMMON[@]}" ${G_FLAGS[@]+"${G_FLAGS[@]}"} >"$HOME_DIR/glimmer.log" 2>&1 &
 PIDS="$PIDS $!"
 nice -n 15 "$BIN" --model "$LFM" --alias lfm3-vl-2b --port "$C_PORT" "${COMMON[@]}" --reasoning-budget 0 \
   --temp 0.1 --top-p 1.0 --top-k 50 --min-p 0.0 --repeat-penalty 1.1 >"$HOME_DIR/checker.log" 2>&1 &
@@ -53,6 +61,7 @@ Side models starting. Logs and key file: $HOME_DIR
 
   export BASE_HOME="$HOME_DIR"
   export DEVICE_ONLY=1 PRIMARY_MODEL=glimmer GLIMMER_BACKEND=llama_server CHECKER_BACKEND=lfm
+  export GLIMMER_REASONING=${SIDE_REASONING:-off}
   export ANSWER_URL=http://127.0.0.1:$G_PORT/v1 ROUTER_URL=http://127.0.0.1:$G_PORT/v1 CHECKER_URL=http://127.0.0.1:$C_PORT/v1
   uv run python -m scripts.glimmer_probe --url http://127.0.0.1:$G_PORT/v1 --key-file "$KEY"
 EOF

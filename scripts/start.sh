@@ -9,6 +9,7 @@
 #       GLIMMER_DRAFT_GGUF        a DFlash drafter: -md FILE -ngld 99 --spec-type draft-dflash
 #       GLIMMER_DRAFT_N           tokens drafted per step, --spec-draft-n-max (default 15)
 #       GLIMMER_FA                flash attention, -fa on|off|auto (default auto)
+#       GLIMMER_TEMPLATE          a chat template file for Glimmer (--chat-template-file)
 #       GLIMMER_REASONING_BUDGET  --reasoning-budget: -1 unrestricted (default), 0 none, N tokens
 #   GLIMMER_BACKEND=openrouter: no local models (development mode, invented data only).
 #   CHECKER_BACKEND=lfm: also starts the local checker, LFM3-VL-2B on 127.0.0.1:8083
@@ -74,6 +75,7 @@ values = {
     "GLIMMER_DRAFT_N": env.get("GLIMMER_DRAFT_N") or "15",
     "GLIMMER_FA": env.get("GLIMMER_FA") or "auto",
     "GLIMMER_REASONING_BUDGET": env.get("GLIMMER_REASONING_BUDGET") or "-1",
+    "GLIMMER_TEMPLATE": env.get("GLIMMER_TEMPLATE", ""),
     "ANSWER_CTX": env.get("ANSWER_CTX", "16384"),
     "ROUTER_CTX": env.get("ROUTER_CTX", "8192"),
 }
@@ -130,6 +132,10 @@ elif [ "$BACKEND" = llama_server ]; then
   case "$GLIMMER_REASONING_BUDGET" in -1) ;; ''|*[!0-9]*) die "GLIMMER_REASONING_BUDGET must be -1 or a number of tokens" ;; esac
   # Glimmer's servers only: flash attention, the reasoning budget and, with a drafter, DFlash.
   GLIMMER_FLAGS=(-fa "$GLIMMER_FA" --reasoning-budget "$GLIMMER_REASONING_BUDGET")
+  if [ -n "$GLIMMER_TEMPLATE" ]; then
+    [ -f "$GLIMMER_TEMPLATE" ] || die "GLIMMER_TEMPLATE is not a file: $GLIMMER_TEMPLATE"
+    GLIMMER_FLAGS+=(--chat-template-file "$GLIMMER_TEMPLATE")
+  fi
   if [ -n "$GLIMMER_DRAFT_GGUF" ]; then
     [ -f "$GLIMMER_DRAFT_GGUF" ] || die "GLIMMER_DRAFT_GGUF is not a file: $GLIMMER_DRAFT_GGUF"
     case "$GLIMMER_DRAFT_N" in ''|*[!0-9]*|0) die "GLIMMER_DRAFT_N must be a number of tokens, 1 or more" ;; esac
