@@ -141,8 +141,11 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **12:08** Study paused at Ethan's request (fans loud, on battery): its processes are stopped, not ended, and the keep-awake hold is released. The model server stays loaded and idle. The first run had finished and the second (relaxed_teacher, seed 102) was under way. A cause to try before it resumes: the server holds 10 CPU threads, about 430 to 500% CPU, though the model is on the GPU.
 
+**13:28** Ethan shared an outside research report. Checked it against the code and read its connector rules, the event page and two Gallup surveys at the source. What is worth keeping is in [RESEARCH_NOTES.md](RESEARCH_NOTES.md). Nothing built from it yet; the study stays paused.
+
 ## Open items
 
+- Ethan: decide whether to fix six known attack findings first and restart the study from run 1 (one of 24 is done), or resume on the frozen commit.
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
 - Persona study: starting on the frozen commit, on Ethan's call (not the plan's Nov 2 date), one run at a time.
 - Measure how often grading is refused for a never-share word in the model's own text.
