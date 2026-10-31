@@ -52,6 +52,8 @@ INSTALL_TIMEOUT_S = 280
 MODEL_MAX_BYTES = 8 * 2**30
 # Left free by a download, which also keeps a training run's TRAIN_DISK_GIB safe from one.
 INSTALL_RESERVE_GIB = 1
+# A platform dataset comes to about 8 MB, so this is far past any real one, and short of what a loop of appends could write.
+DATASET_MAX_BYTES = 64 * 2**20
 # start_model holds model_lock for minutes. A call waiting that long outlives its caller, then acts when nobody expects it.
 MODEL_LOCK_WAIT_S = 5
 # The same for a capture: callers give up on a recording of up to 30 seconds, and the queue would go on recording for nobody.
@@ -87,6 +89,8 @@ model_process = None
 model_loaded = None
 train_lock = threading.Lock()
 train_process = None
+# One download at a time: each works out its room alone, so several together could pass the reserve, and they'd share a .part.
+install_lock = threading.Lock()
 
 
 class ToolError(Exception):
@@ -336,6 +340,15 @@ def install_model(args):
         raise ToolError("url must be an https URL.")
     if not isinstance(name, str) or not MODEL_NAME.fullmatch(name):
         raise ToolError("name must be a file name ending in .gguf, with only letters, digits, dots, dashes and underscores.")
+    if not install_lock.acquire(blocking=False):
+        raise ToolError("Another download is running on this board. Try again when it's done.")
+    try:
+        return download_model(url, name)
+    finally:
+        install_lock.release()
+
+
+def download_model(url, name):
     os.makedirs(MODEL_DIR, exist_ok=True)
     path = os.path.join(MODEL_DIR, name)
     if os.path.exists(path):
@@ -517,6 +530,11 @@ def save_dataset(args):
         active = active_run()
         if active and read_json(run_file(active, "config.json"))["dataset"] == name:
             raise ToolError(f"Training run {active} is using dataset {name}. Wait for it, call stop_training, or save under another name.")
+        size = len(lines.encode())
+        if size + (os.path.getsize(path) if append and os.path.exists(path) else 0) > DATASET_MAX_BYTES:
+            raise ToolError(f"That makes dataset {name} too large: a dataset can be {DATASET_MAX_BYTES // 2**20} MiB.")
+        if shutil.disk_usage(DATASET_DIR).free - size < INSTALL_RESERVE_GIB * 2**30:
+            raise ToolError(f"That doesn't fit: saving it would leave under {INSTALL_RESERVE_GIB} GiB of disk free.")
         if append:
             with open(path, "a", encoding="utf-8", newline="\n") as f:
                 f.write(lines)
@@ -645,6 +663,9 @@ def train_model(args):
         active = active_run()
         if active:
             raise ToolError(f"Training run {active} is still going. Wait for it, or call stop_training first.")
+        # install_model looks for a run under train_lock once it has install_lock, so the two can't both go ahead.
+        if install_lock.locked():
+            raise ToolError("A download is running, and it needs this board's disk. Wait for it to finish.")
         refuse_if_model_running()
         memory = meminfo_gib("MemAvailable")
         if memory is not None and memory < needed:

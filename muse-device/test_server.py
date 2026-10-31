@@ -436,6 +436,44 @@ class TrainingTests(unittest.TestCase):
         self.assertNotIn("new.gguf", server.model_files())
         self.assertEqual([name for name in os.listdir(server.MODEL_DIR) if name.endswith(".part")], [])
 
+    def test_only_one_download_runs_at_a_time(self):
+        # Each download works out its room alone, so several together could fill the disk, and same-name ones share a .part.
+        server.install_lock.acquire()
+        try:
+            error, reply = self.install()
+        finally:
+            server.install_lock.release()
+        self.assertTrue(error)
+        self.assertIn("Another download", reply)
+        self.assertNotIn("new.gguf", server.model_files())
+        self.assertFalse(self.install()[0])
+
+    def test_a_run_cannot_start_during_a_download(self):
+        self.save()
+        server.install_lock.acquire()
+        try:
+            self.assert_refused("download", "train_model", name="run1", dataset="data")
+        finally:
+            server.install_lock.release()
+        self.assertEqual(server.run_names(), [])
+
+    def test_save_dataset_leaves_the_disk_its_reserve(self):
+        self.save("data")
+        size = os.path.getsize(os.path.join(server.DATASET_DIR, "data.jsonl"))
+        Usage = type("Usage", (), {"free": server.INSTALL_RESERVE_GIB * 2**30 + 1})
+        with mock.patch.object(server.shutil, "disk_usage", return_value=Usage):
+            self.assert_refused("doesn't fit", "save_dataset", name="data", examples=[EXAMPLE], append=True)
+        self.assertEqual(os.path.getsize(os.path.join(server.DATASET_DIR, "data.jsonl")), size)
+
+    def test_a_dataset_has_a_largest_size(self):
+        self.save("data")
+        size = os.path.getsize(os.path.join(server.DATASET_DIR, "data.jsonl"))
+        with mock.patch.object(server, "DATASET_MAX_BYTES", size + 1):
+            self.assert_refused("too large", "save_dataset", name="data", examples=[EXAMPLE], append=True)
+            # Replacing it doesn't count what's there.
+            self.assertFalse(call("save_dataset", name="data", examples=[EXAMPLE])[0])
+        self.assertEqual(os.path.getsize(os.path.join(server.DATASET_DIR, "data.jsonl")), size)
+
     def test_a_redirect_must_stay_https(self):
         handler = server.HttpsOnlyRedirect()
         request = server.urllib.request.Request("https://models.example/x.gguf")
