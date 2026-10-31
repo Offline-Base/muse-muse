@@ -183,7 +183,7 @@ Every token switches with `prefers-color-scheme`. Draw inline SVG with tokens (`
 ## Accessibility
 
 - These text pairs pass WCAG AA in both modes; keep text on them: `--fg` and `--fg-2` on `--bg`, `--surface`, `--surface-2`, `--glass` or `--signature-soft`; `--link` on the first three; `--tinted-fg` on `--tinted-bg`; `--signature-ink` on `--signature-soft` or `--surface`; `--fg` on `--segment`; white on `--accent` or `--ai-gradient`; `--on-media` on `--scrim`. Check anything else first. White on the send gradient is for its icon only.
-- Every control has a label. FilePicker and Segmented show theirs. The Composer's label is for screen readers, so its placeholder says what to type. Icon-only buttons need `aria-label`.
+- Every control has a label. FilePicker and Segmented show theirs. The Composer's label is for screen readers, so its placeholder says what to type, in 30 characters or fewer: the box grows to fit its placeholder, and a longer one wraps to a second line on a phone. Icon-only buttons need `aria-label`.
 - Never remove focus outlines, the composer's included. Status is never color alone: pair it with an icon and words (pressed chips and the chosen segment show a check by themselves).
 - Controls stay 44 px tall for fingers, even where the look could go smaller. Icon-only buttons are 40 px circles, the composer's Send included (`reference/tokens.md`, Size). Don't shrink either, and don't grow Send to 44.
 
