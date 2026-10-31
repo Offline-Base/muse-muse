@@ -3,8 +3,8 @@
 The lab checks each product on an iPhone simulator, an Android emulator, a Mac and Windows, and records a clip of each. It
 runs on two AWS boxes, which take no inbound connections. An agent on each box asks the platform for work.
 
-The agent and its files live in `native/lab/`. This document is the contract between that code and the parts that come
-later: the routes under `app/api/native/agent/`, the `native_jobs` queue and the sweep. Write those against this page.
+The agent and its files live in `native/lab/`. This document is the contract between that code and the platform: the routes
+under `app/api/native/agent/`, the `native_jobs` queue and the sweep. "The platform's side" below says where those live.
 
 | File | What it is |
 |---|---|
@@ -111,7 +111,7 @@ Job token. Sent every 15 s, and once at the start.
 
 | Status | Meaning |
 |---|---|
-| 200 | `{ "cancel": false }`. With `true`, the agent stops the job and finishes it with code `canceled` |
+| 200 | `{ "cancel": false }`. With `true`, the agent stops the job and finishes it with code `canceled`. The platform never sends `true`: canceling closes the row, so the agent gets a 410, which it treats the same |
 | 401, 404, 410 | The agent takes it as a cancel. See "A job token only works while its run owns the job" |
 | Anything else, or no answer | The agent keeps going and tries again in 15 s |
 
@@ -214,8 +214,9 @@ Job token. The agent retries up to 6 times.
 | 401, 404, 409, 410 | The agent gives up quietly. The job expired or already finished |
 | Anything else | The agent retries, up to about a minute |
 
-**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim, and check that its pathname sits
-under this job's folder before storing it.
+**Trust nothing here for money or for the gallery.** Treat `artifacts[].url` as a claim: keep it only if its pathname sits under
+this job's folder and its host is this platform's own Blob store. `informational` is set from the job's kind, whatever the box
+sends.
 
 **`outcome: failed` means the product didn't pass.** `lab_error` means the check never ran, so the product isn't to blame.
 Show them differently: the summary already does ("Not checked on...").
@@ -237,6 +238,109 @@ Show them differently: the summary already does ("Not checked on...").
 | `internal` | An unexpected error. The message is generic and the log has the detail | Yes |
 
 `RETRYABLE_CODES` in `native/lab/lib/errors.mjs` is the same list.
+
+## The platform's side
+
+All of it is off with `NATIVE_LAB` off: every route answers 404 before it reads anything, `/usage` has no card, and `enqueueJob`
+refuses. Everything here is covered by `lib/native/__tests__/`.
+
+| File | What it is |
+|---|---|
+| `app/api/native/agent/claim`, `jobs/[id]/heartbeat`, `upload`, `selftest`, `finish` | The routes above. `claim` doesn't hold the request open: it answers at once and the agent waits out its 10 s |
+| `app/api/native/agent/jobs/[id]/files/[name]` | The local "put" slot. A 404 on Vercel or with a Blob store |
+| `app/api/native/selftest` | The shell's report. Takes the selftest token, keeps the body as sent |
+| `app/api/cron/native-sweep` | The sweep, every 5 minutes |
+| `lib/native/queue.ts` | Everything that moves a `native_jobs` row |
+| `lib/native/lab-token.ts` | The lab, job and selftest tokens |
+| `lib/native/lab-box.ts` | Starting and stopping Windows, restarting the Mac's agent, a box's presence |
+| `lib/native/aws.ts` | The calls to EC2 and SSM |
+| `lib/native/ledger.ts` | The spend ledger |
+| `scripts/native/lab.ts` | Sets a lane's token |
+
+**The queue.**
+
+```ts
+// The input comes from docs/NATIVE_LAB.md, "Job inputs", without selftest. Pass selftest: true for a lab shell's job, and the
+// queue mints its token.
+const job = await enqueueJob({ runId, buildId, productId, kind: "ios_sim", tier: "ship", input, selftest: true });
+if (job.ok) job.jobId, job.ahead, job.etaSeconds; else job.reason, job.message;
+```
+
+| `tier` | Priority | Waits for up to | Use it for |
+|---|---|---|---|
+| `agent` | 30 | 10 minutes | An agent mid-build, with someone waiting. A build can have one such run going |
+| `ship` | 20 | 45 minutes | A check after shipping. If it expires, a `backfill` copy takes its place |
+| `batch` | 20 | 90 minutes | The same, from a batch of rebuilds |
+| `backfill` | 10 | 6 hours | A second try for an expired check |
+
+Other limits: 30 jobs queued or running in all, and 2 of each kind per product. The design says 2 per product, but it also gives
+each check its own job, and a phone and desktop product has four, so the limit is per kind.
+
+`enqueueJob` can answer `lab_off`, `bad_input`, `queue_full`, `product_full`, `agent_busy` or `box_down`. A Windows job starts the
+Windows box itself, and `box_down` means the box can't start, so the job isn't queued. Every step goes in the build's log as a
+`native` event, with `item` as `check:<kind>`, so the build room needs no polling for lab checks. `runJobs(runId)`,
+`queuePosition(jobId)` and `cancelAgentJobs(buildId)` are the rest of what callers need. `lib/native/lab-box.ts` has
+`labView(lane)` for whether a box is online, and `wakeWindows()` to start Windows early.
+
+**A retry.** A job gets 2 attempts. A silent job or a lab error with a code from the retry table goes back to `queued`, with
+`token_hash`, the deadline and the report cleared. After that it's `failed`, with `outcome: lab_error`. The statuses:
+
+| Status | Means | `result.outcome` |
+|---|---|---|
+| `done` | The check ran and passed | `passed` |
+| `failed` | The check ran and the product didn't pass, or the lab couldn't run it | `failed` or `lab_error` |
+| `expired` | It waited too long, and it may have a `backfill` copy | None |
+| `canceled` | The build ended under an agent's check | None |
+
+**The sweep.** Each task runs on its own, so AWS being down can't stop the queue's:
+
+1. A claimed job silent for 90 s, or past its token's life, is re-queued or failed.
+2. A queued job past its TTL is expired.
+3. Windows: see below.
+4. The Mac: if its agent is silent and SSM says the box is online, it sends `restart-agent`, at most once per 10 minutes. Nothing
+   in the platform can stop the Mac.
+5. The ledger: commits the Mac's cost, and logs an error while spend is past the alert line.
+
+**Windows.** The sweep reads the box's EC2 state and does one thing:
+
+| The box | Then |
+|---|---|
+| Running, and the agent hasn't spoken for 10 minutes | Stop it, and don't start it again for an hour. This is the backstop: the agent's own idle stop can't run if it crash-loops or never starts. The 10 minutes count from the start, and a start takes up to 6 to reach its first claim |
+| Running, with no jobs for 30 minutes | Stop it. The agent's own stop is at 20, so a healthy box stops itself first |
+| Running, near the end of what the ledger holds | Hold 2 more hours. If the ledger refuses, stop it |
+| Running, and started by hand | Note the session, so its hours reach the ledger |
+| Stopped, with a session open | Commit the hours and give back the holds |
+| Stopped, with a job queued | Start it, if the ledger allows and no block applies |
+
+**Two things the sweep can't cover.** With `NATIVE_LAB` off the sweep is a 404, so only the box's own idle stop is left. And it
+skips a box with no `native_labs` row, because nothing can claim without a token and it has nowhere to note a session, so run
+`scripts/native/lab.ts` before starting Windows with the flag on. Once it's set up, a box you've signed in to with its agent
+stopped counts as silent: the sweep stops it after 10 minutes, and it can't start by itself for an hour.
+
+**The role.** `lib/native/aws.ts` signs its own requests rather than using `@aws-sdk/client-ec2` and `client-ssm`, which would be
+tens of megabytes for two small protocols. It offers only what the policy allows: start, stop and read the Windows box, and
+`MuseLab-Control` with one of its enum actions on a box whose id is in the env. It reads credentials through Vercel's OIDC token
+and `AWS_ROLE_ARN`, and its region is always `NATIVE_AWS_REGION`.
+
+**The ledger.**
+
+```ts
+const held = await reserve("device_farm", usd, { ref: runArn, runId });  // { ok: true } or { ok: false, reason, message }
+await commit("device_farm", { usd: actual, holdUsd: usd, ref: runArn, runId });
+await release("device_farm", usd, { ref: runArn });
+await canSpend("device_farm", usd);  // A plan's guess. Only reserve promises anything
+```
+
+Caps come from `lib/env.ts`: $150 total, $40 Device Farm, $15 Windows, and the alert at $120. A hold takes both its budget and the
+total, or neither, under a row lock, so two callers can't both take the last of a cap. The Mac has no cap of its own: `syncMacHost`
+commits its rate from `NATIVE_MAC_ALLOCATED_AT` to `NATIVE_MAC_RELEASE_AT`, with a 24-hour minimum, and that counts against the
+total. A commit always lands, even past a cap, and then later holds are refused.
+
+**Tokens.** `scripts/native/lab.ts <lane> <file> [instance id]` makes a lane's token, stores its hash and writes it to a file only
+you can read. It never prints it. Put the file's contents in Parameter Store, then delete the file.
+
+**Not built:** deleting an agent run's files after 7 days (the table in docs/NATIVE.md), and rate limits on these routes, which are
+token-only.
 
 ## Job inputs
 

@@ -4,8 +4,8 @@ Every build still makes the Next.js web product. A brief can add targets, and ev
 fixes. With every flag off, nothing changes: `lib/brief/__tests__/flags-off.test.ts` compares each prompt and schema, byte
 for byte, with what they were before targets existed (`lib/brief/__tests__/golden/`).
 
-The lab's own contract, with its routes and job inputs, is `docs/NATIVE_LAB.md`, which comes with the lab unit. Agent tools
-are in `docs/AGENT_TOOLS.md`.
+The lab's own contract, with its routes, job inputs, queue and spend ledger, is `docs/NATIVE_LAB.md`. Agent tools are in
+`docs/AGENT_TOOLS.md`.
 
 ## Targets
 
@@ -47,7 +47,7 @@ All in `lib/env.ts`, all in `.env.example`, all off by default. A switch is on f
 | `GLASSES_NATIVE_CHECKS` | `env.glassesNativeChecks` | The Simulator check for glasses. Never blocks shipping |
 
 Spend settings: `NATIVE_SPEND_CAP_USD` (150), `NATIVE_SPEND_ALERT_USD` (120), `NATIVE_DEVICE_FARM_CAP_USD` (40),
-`NATIVE_WINDOWS_CAP_USD` (15), `NATIVE_MAC_HOURLY_USD` (0.65), `NATIVE_WINDOWS_HOURLY_USD` (0.083),
+`NATIVE_WINDOWS_CAP_USD` (15), `NATIVE_MAC_HOURLY_USD` (0.65), `NATIVE_WINDOWS_HOURLY_USD` (0.111),
 `NATIVE_MAC_ALLOCATED_AT`, `NATIVE_MAC_RELEASE_AT`, `NATIVE_AWS_REGION` (us-east-1). A Vercel function may have its own
 region in `AWS_REGION`, so the platform doesn't read that for the lab. `.env.example` has the rest: instance ids,
 `AWS_ROLE_ARN`, Device Farm's ARNs, `PACKAGER_SNAPSHOT_ID` and the Android signing key.
@@ -71,7 +71,7 @@ Migrations run in this order, and `lib/db/__tests__/migrations.test.ts` checks t
 - **`native_jobs.selftest`** holds what the shell posted to `/api/native/selftest`, as it was sent. The claim sets
   `selftest = null` in the same statement, since a retry keeps its job id.
 - **`native_artifacts.check`** is the column `check_result`, because `check` is a reserved word in SQL.
-- **`native_budget`** has no rows yet. The ledger inserts each lane with `onConflictDoNothing`. Lanes are in
+- **`native_budget`** starts with no rows. The ledger inserts each lane with `onConflictDoNothing`. Lanes are in
   `NATIVE_BUDGET_LANES`, with `total` as the cap over the others.
 
 The shapes that go in the `jsonb` columns are in `lib/native/types.ts`.
