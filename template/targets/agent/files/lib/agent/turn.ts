@@ -20,7 +20,12 @@ const SEARCH_USD_PER_QUERY = 0.0025;
 
 /** Each source keeps this much of its page. The page's full text never goes to the screen. */
 const SNIPPET_CHARS = 280;
+/** Rows for pages the model only read, so the page's list stays short and they don't fill the sealed state. */
 const MOST_SOURCES = 40;
+/** Rows in all. An answer can always cite a page it read, up to this many. */
+const MOST_ROWS = 100;
+/** Pages past MOST_SOURCES it still remembers, so an answer can cite one. A resumed run forgets them: they aren't sealed. */
+const MOST_HELD = 200;
 
 type Json = Record<string, unknown>;
 
@@ -42,6 +47,10 @@ function siteOf(url: URL): string {
   return url.hostname.replace(/^www\./, "");
 }
 
+function pageOf(url: URL): string {
+  return `${siteOf(url)}${url.pathname.replace(/\/$/, "")}`;
+}
+
 /** http and https only: a page can put anything in a link, and this one ends up in an href. */
 export function safeUrl(value: unknown): URL | null {
   if (typeof value !== "string") return null;
@@ -56,6 +65,7 @@ export function safeUrl(value: unknown): URL | null {
 /** The run's sources, one per page, with each page cited if any mention of it was. */
 export class SourceBook {
   private readonly byKey = new Map<string, AgentSource>();
+  private readonly held = new Map<string, AgentSource>();
 
   constructor(seed: readonly AgentSource[] = []) {
     for (const source of seed) this.byKey.set(source.id, source);
@@ -69,9 +79,25 @@ export class SourceBook {
     return url.href.replace(/\/$/, "");
   }
 
-  known(value: unknown): boolean {
+  /**
+   * The id of the page this run saw that an address means, or null. The model shortens addresses: in a real run on Oct 31
+   * its Sources line named https://www.acdirect.com for a page deep inside that site. Scheme, www, a last slash and a query
+   * don't matter, and an address with no path means the first page seen on that site. One with a path has to match, so a
+   * made-up page doesn't count.
+   */
+  resolve(value: unknown): string | null {
     const id = this.idOf(value);
-    return !!id && this.byKey.has(id);
+    if (!id) return null;
+    if (this.byKey.has(id) || this.held.has(id)) return id;
+    const url = new URL(id);
+    const seen = [...this.byKey.keys(), ...this.held.keys()];
+    const same = seen.find((key) => pageOf(new URL(key)) === pageOf(url));
+    if (same) return same;
+    return url.pathname === "/" ? (seen.find((key) => siteOf(new URL(key)) === siteOf(url)) ?? null) : null;
+  }
+
+  known(value: unknown): boolean {
+    return this.resolve(value) !== null;
   }
 
   /** The source to tell the page about, or null when this adds nothing new. */
@@ -80,8 +106,8 @@ export class SourceBook {
     const key = this.idOf(input.url);
     if (!url || !key) return null;
     url.hash = "";
-    const known = this.byKey.get(key);
-    if (!known && this.byKey.size >= MOST_SOURCES) return null;
+    const listed = this.byKey.get(key);
+    const known = listed ?? this.held.get(key);
     const title = typeof input.title === "string" && input.title.trim() ? plain(input.title.trim()).slice(0, 200) : siteOf(url);
     const snippet = typeof input.snippet === "string" && input.snippet.trim() ? plain(input.snippet.trim()).slice(0, SNIPPET_CHARS) : undefined;
     const date = typeof input.date === "string" && input.date.trim() ? input.date.trim().slice(0, 40) : undefined;
@@ -95,8 +121,16 @@ export class SourceBook {
       ...((known?.snippet ?? snippet) ? { snippet: known?.snippet ?? snippet } : {}),
       ...((known?.date ?? date) ? { date: known?.date ?? date } : {}),
     };
+    if (!listed) {
+      if (!next.cited && this.byKey.size >= MOST_SOURCES) {
+        if (known || this.held.size < MOST_HELD) this.held.set(key, next);
+        return null;
+      }
+      if (this.byKey.size >= MOST_ROWS) return null;
+      this.held.delete(key);
+    }
     this.byKey.set(key, next);
-    return known && known.cited === next.cited && known.title === next.title && known.snippet === next.snippet ? null : next;
+    return listed && listed.cited === next.cited && listed.title === next.title && listed.snippet === next.snippet ? null : next;
   }
 
   list(): AgentSource[] {
@@ -121,11 +155,10 @@ export type TurnOutcome =
       costUsd: number;
       /** The ids of the sources this turn's text cites. Muse Wonder hasn't sent any so far: see takeSourcesLine. */
       citations: string[];
-      /** The ids of the pages this turn's searches returned, in order. */
-      results: string[];
     }
-  | { kind: "aborted"; responseId: string | null }
-  | { kind: "failed"; code: string; status: number | null; message: string };
+  /** `text` is what the page has been shown of this turn, the words it was reading when the turn ended early. */
+  | { kind: "aborted"; responseId: string | null; text: string }
+  | { kind: "failed"; code: string; status: number | null; message: string; text: string };
 
 /** What one response's usage and searches come to, at list price. */
 export function turnCostUsd(usage: unknown, searches: number): number {
@@ -205,8 +238,8 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
   const searchTitle = o.searchTitle ?? "Searching the web";
   let responseId: string | null = null;
   let text = "";
+  const shown = new AnswerStream();
   const citations = new Set<string>();
-  const results = new Set<string>();
   const commentary = new Set<string>();
   const cite = (annotation: Json): AgentSource | null => {
     const id = o.book.idOf(annotation.url);
@@ -241,8 +274,6 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
         yield { type: "step", step: searchStep(item, item.status === "failed" ? "failed" : "done", searchTitle) };
         for (const hit of hits) {
           if (!isObject(hit)) continue;
-          const hitId = o.book.idOf(hit.url);
-          if (hitId) results.add(hitId);
           const source = o.book.add({ url: hit.url, title: hit.title, snippet: hit.snippet, cited: false });
           if (source) yield { type: "source", source };
         }
@@ -270,7 +301,8 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
           // A preamble before a search or a tool call isn't the answer (protocols/responses, "Message phase").
           if (typeof event.delta === "string" && event.delta && !commentary.has(String(event.item_id))) {
             text += event.delta;
-            yield { type: "text", delta: plainDelta(event.delta), turn: o.turn };
+            const ready = shown.push(event.delta);
+            if (ready) yield { type: "text", delta: plainDelta(ready), turn: o.turn };
           }
           break;
         case "response.output_text.annotation.added": {
@@ -283,6 +315,8 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
         }
         case "response.completed":
         case "response.incomplete": {
+          const last = shown.end();
+          if (last) yield { type: "text", delta: plainDelta(last), turn: o.turn };
           const response = isObject(event.response) ? event.response : {};
           const output = Array.isArray(response.output) ? (response.output as unknown[]).filter(isObject) : [];
           let searches = 0;
@@ -318,24 +352,23 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
             builtInCalls,
             costUsd: turnCostUsd(response.usage, searches),
             citations: [...citations],
-            results: [...results],
           };
         }
         case "response.failed": {
           const response = isObject(event.response) ? event.response : {};
           const error = isObject(response.error) ? response.error : {};
-          return { kind: "failed", code: String(error.code ?? "server_error"), status: null, message: String(error.message ?? "The model call failed.") };
+          return { kind: "failed", code: String(error.code ?? "server_error"), status: null, message: String(error.message ?? "The model call failed."), text: shown.soFar };
         }
         case "error":
-          return { kind: "failed", code: String(event.code ?? "server_error"), status: null, message: String(event.message ?? "The model call failed.") };
+          return { kind: "failed", code: String(event.code ?? "server_error"), status: null, message: String(event.message ?? "The model call failed."), text: shown.soFar };
         default:
           break;
       }
     }
-    if (o.signal.aborted) return { kind: "aborted", responseId };
-    return { kind: "failed", code: "stream_cut_off", status: null, message: "The model's reply was cut off." };
+    if (o.signal.aborted) return { kind: "aborted", responseId, text: shown.soFar };
+    return { kind: "failed", code: "stream_cut_off", status: null, message: "The model's reply was cut off.", text: shown.soFar };
   } catch (err) {
-    if (o.signal.aborted || err instanceof OpenAI.APIUserAbortError) return { kind: "aborted", responseId };
+    if (o.signal.aborted || err instanceof OpenAI.APIUserAbortError) return { kind: "aborted", responseId, text: shown.soFar };
     if (err instanceof OpenAI.APIError) {
       const detail = (err.error ?? {}) as { code?: unknown; message?: unknown };
       return {
@@ -343,16 +376,35 @@ export async function* streamTurn(o: TurnOptions): AsyncGenerator<AgentEvent, Tu
         code: String(detail.code ?? err.code ?? "api_error"),
         status: err.status ?? null,
         message: String(detail.message ?? err.message),
+        text: shown.soFar,
       };
     }
-    return { kind: "failed", code: "unreachable", status: null, message: err instanceof Error ? err.message : "The model call failed." };
+    return { kind: "failed", code: "unreachable", status: null, message: err instanceof Error ? err.message : "The model call failed.", text: shown.soFar };
   }
 }
 
 const WEB_ADDRESS = /https?:\/\/[^\s<>()[\],]+/g;
 
 /** What an instruction asks for when a run's text should say what it used. See takeSourcesLine. */
-export const SOURCES_LINE_RULE = "End with one last line that starts with \"Sources:\" and lists the web addresses you used, separated by spaces.";
+export const SOURCES_LINE_RULE = "End with one last line that starts with \"Sources:\" and lists the full web address of each page you used, exactly as your results gave it, separated by spaces.";
+
+const SOURCES_LINE = /^[\s>*_#-]*sources?[*_]*\s*:/i;
+/** A line that's still arriving and could turn into that one. */
+const MAYBE_SOURCES_LINE = /^[\s>*_#-]*(?:s(?:o(?:u(?:r(?:c(?:es?)?)?)?)?)?)?[*_]*\s*$/i;
+
+/** The line an answer's Sources list starts on, or null when the answer doesn't end in one. */
+function sourcesLineAt(lines: readonly string[]): number | null {
+  for (let at = lines.length - 1; at >= 0; at--) {
+    const line = lines[at];
+    if (SOURCES_LINE.test(line)) {
+      // "Sources: officials said it would reopen" is a sentence, not this line.
+      return !lines.slice(at).join(" ").match(WEB_ADDRESS) && line.length > 60 ? null : at;
+    }
+    // Anything below the line but more addresses means this answer doesn't end in one.
+    if (line.trim() && !line.match(WEB_ADDRESS)) return null;
+  }
+  return null;
+}
 
 /**
  * Pulls the "Sources:" line off the end of an answer. On muse-wonder-1.0 url_citation annotations came back empty in
@@ -361,19 +413,61 @@ export const SOURCES_LINE_RULE = "End with one last line that starts with \"Sour
  */
 export function takeSourcesLine(text: string, book: SourceBook): { text: string; ids: string[] } {
   const lines = text.trimEnd().split("\n");
-  for (let at = lines.length - 1; at >= 0; at--) {
-    const line = lines[at];
-    if (/^[\s>*_#-]*sources?[*_]*\s*:/i.test(line)) {
-      const urls = lines.slice(at).join(" ").match(WEB_ADDRESS) ?? [];
-      // "Sources: officials said it would reopen" is a sentence, not this line.
-      if (!urls.length && line.length > 60) break;
-      const ids = urls.map((u) => (book.known(u) ? book.idOf(u) : null)).filter((id): id is string => !!id);
-      return { text: lines.slice(0, at).join("\n").trimEnd(), ids: [...new Set(ids)] };
-    }
-    // Anything below the line but more addresses means this answer doesn't end in one.
-    if (line.trim() && !line.match(WEB_ADDRESS)) break;
+  const at = sourcesLineAt(lines);
+  if (at === null) return { text, ids: [] };
+  const urls = lines.slice(at).join(" ").match(WEB_ADDRESS) ?? [];
+  const ids = urls.map((u) => book.resolve(u.replace(/[.;:!?'"*_`]+$/, ""))).filter((id): id is string => !!id);
+  return { text: lines.slice(0, at).join("\n").trimEnd(), ids: [...new Set(ids)] };
+}
+
+/**
+ * What of a turn's text the page can see yet. Only `done` takes the Sources line off, so this holds back a line for as
+ * long as it could be that line, and the raw list never shows while the answer streams.
+ */
+export class AnswerStream {
+  private text = "";
+  private shownTo = 0;
+
+  get soFar(): string {
+    return this.text.slice(0, this.shownTo);
   }
-  return { text, ids: [] };
+
+  private show(to: number): string {
+    const ready = this.text.slice(this.shownTo, Math.max(this.shownTo, to));
+    this.shownTo += ready.length;
+    return ready;
+  }
+
+  /** A list so far: an address somewhere, or a line too short to be a sentence, and only addresses on the lines after it. */
+  private stillAList(from: number): boolean {
+    const lines = this.text.slice(from).split("\n");
+    if (lines.length > 1 && lines[0].length > 60 && !lines.join(" ").match(WEB_ADDRESS)) return false;
+    return lines.slice(1, -1).every((line) => !line.trim() || line.match(WEB_ADDRESS));
+  }
+
+  /** Takes a delta, and returns what can go to the page now. */
+  push(delta: string): string {
+    this.text += delta;
+    let at = this.shownTo;
+    for (;;) {
+      const end = this.text.indexOf("\n", at);
+      const line = this.text.slice(at, end < 0 ? undefined : end);
+      if (SOURCES_LINE.test(line) && this.stillAList(at)) break;
+      if (end < 0) {
+        if (!MAYBE_SOURCES_LINE.test(line)) at = this.text.length;
+        break;
+      }
+      at = end + 1;
+    }
+    return this.show(at);
+  }
+
+  /** The turn is over: whatever was held back goes out, unless it's the Sources line. */
+  end(): string {
+    const lines = this.text.trimEnd().split("\n");
+    const at = sourcesLineAt(lines);
+    return this.show(at === null ? this.text.length : lines.slice(0, at).join("\n").length);
+  }
 }
 
 function open(o: TurnOptions) {

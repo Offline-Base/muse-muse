@@ -76,7 +76,7 @@ export function streamResponse(request: RequestLike | null | undefined, signal: 
   });
 }
 
-/** `{ answer, sources, steps, stopped, status }`, or the live events for a caller that asks for them. */
+/** `{ answer, sources, steps, stopped, status }`, with `text` when it stopped short, or the live events for a caller that asks for them. */
 export async function actionResponse(request: Request, signal: AbortSignal | undefined, start: Start): Promise<Response> {
   if (request.headers.get("accept")?.includes(NDJSON)) return streamResponse(request, signal, start);
   const refused = crossSite(request);
@@ -97,7 +97,10 @@ export async function actionResponse(request: Request, signal: AbortSignal | und
       stopped,
       status,
       ...(message ? { message } : {}),
+      // What it found before it had to stop. A connector's caller has no Keep going, so this is all it gets.
+      ...(stopped && view.text ? { text: view.text } : {}),
     },
-    { status: status === "failed" && view.reason !== "no_answer" ? 502 : 200 },
+    // A failure with findings in hand still has something to give, and the connector turns a 502 into a bare error.
+    { status: status === "failed" && view.reason !== "no_answer" && !view.text ? 502 : 200 },
   );
 }

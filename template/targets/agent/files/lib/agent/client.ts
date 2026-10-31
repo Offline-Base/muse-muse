@@ -120,6 +120,8 @@ export function useAgent<T = unknown>(url: string): UseAgent<T> {
       ...latest.current,
       status: "stopped",
       reason: "stopped",
+      // Stopped before its first checkpoint, or too big to have one: there's nothing to keep going from.
+      message: latest.current.resume ? null : "Stopped. Start it again when you're ready.",
       steps: latest.current.steps.map((s) => (s.state === "running" ? { ...s, state: "waiting" as const } : s)),
     });
   }, [update]);
