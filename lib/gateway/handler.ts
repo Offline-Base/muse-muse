@@ -264,7 +264,7 @@ async function handle(req: Request, path: readonly string[], deps: GatewayDeps):
       if (held.toolCalls < toolCalls) {
         parsed = withCalls(held.toolCalls);
         rewritten = true;
-        notes.push(`Lowered max_tool_calls to ${held.toolCalls}: that is all this run has left.`);
+        notes.push(`Lowered max_tool_calls to ${held.toolCalls}: that is all this run has room for.`);
       }
     }
     if (rewritten && parsed.kind === "json") body = new TextEncoder().encode(JSON.stringify(parsed.json));

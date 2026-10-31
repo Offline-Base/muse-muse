@@ -74,7 +74,8 @@ function runLimit(message: string): Response {
  * Holds one call's share of its run: `turns` model turns, up to `toolCalls` built-in tool calls, and `usd` dollars.
  * When fewer tool calls are left than asked for, it holds what's left and says so in `toolCalls`, so the caller can
  * lower max_tool_calls and let the turn run. `usd` can be a function of the tool calls held, since an estimate counts
- * them. Going over a limit returns a 429 run_limit and holds nothing.
+ * them: when the dollars don't cover that many, it holds as many as they do, and refuses only if one doesn't fit.
+ * Going over a limit returns a 429 run_limit and holds nothing.
  */
 export async function holdRun(
   deps: RunCounters,
@@ -110,24 +111,36 @@ export async function holdRun(
       await releaseRun(deps, hold);
       return {
         ok: false,
-        response: runLimit(`This run used its ${limits.toolCalls} built-in tool calls. Send the next turn without them, or start a new run.`),
+        response: runLimit(
+          `This run has none of its ${limits.toolCalls} built-in tool calls left, counting calls still running. Wait for them to finish, send the next turn without built-in tools, or start a new run.`,
+        ),
       };
     }
     hold.toolCalls = calls;
   }
-  const amount = micros(typeof opts.usd === "function" ? opts.usd(hold.toolCalls) : (opts.usd ?? 0));
-  if (amount > 0) {
-    if ((await deps.reserveCounter(hold.usdKey, window, amount, micros(limits.usd))) === null) {
+  const usd = opts.usd;
+  const amountFor = (calls: number) => micros(typeof usd === "function" ? usd(calls) : (usd ?? 0));
+  const fewest = typeof usd === "function" ? Math.min(1, hold.toolCalls) : hold.toolCalls;
+  let calls = hold.toolCalls;
+  let amount = amountFor(calls);
+  while (amount > 0 && (await deps.reserveCounter(hold.usdKey, window, amount, micros(limits.usd))) === null) {
+    if (calls <= fewest) {
       await releaseRun(deps, hold);
       return {
         ok: false,
         response: runLimit(
-          `This call could take this run past its $${limits.usd.toFixed(2)} limit. Ask for fewer output tokens or searches, finish with what it has, or start a new run.`,
+          `This call could take this run past its $${limits.usd.toFixed(2)} limit. Ask for fewer output tokens, send it without built-in tools, finish with what it has, or start a new run.`,
         ),
       };
     }
-    hold.micros = amount;
+    calls -= 1;
+    amount = amountFor(calls);
   }
+  if (calls < hold.toolCalls) {
+    await deps.adjustCounter(hold.callsKey, window, calls - hold.toolCalls);
+    hold.toolCalls = calls;
+  }
+  hold.micros = amount;
   return { ok: true, hold, toolCalls: hold.toolCalls };
 }
 

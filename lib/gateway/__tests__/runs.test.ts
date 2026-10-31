@@ -92,8 +92,8 @@ test("no tool calls left: refused, and the turn it took is given back", async ()
   assert.ok(!over.ok);
   const err = await messageOf(over.response);
   assert.equal(err.code, "run_limit");
-  assert.match(err.message, /used its 8 built-in tool calls/);
-  assert.match(err.message, /without them/);
+  assert.match(err.message, /none of its 8 built-in tool calls left, counting calls still running/);
+  assert.match(err.message, /Wait for them to finish, send the next turn without built-in tools/);
   assert.equal(c.value(KEYS.turns), 1);
   assert.equal(c.value(KEYS.calls), 8);
   assert.ok((await hold(c.deps)).ok, "a turn with no built-in tools still runs");
@@ -120,6 +120,41 @@ test("the dollars held can depend on the tool calls held", async () => {
   assert.ok(held.ok);
   assert.equal(held.toolCalls, 1);
   assert.equal(c.value(KEYS.usd), 100_000);
+});
+
+test("dollars too short for every tool call: holds as many as they cover and gives the other calls back", async () => {
+  const c = counters();
+  assert.ok((await hold(c.deps, { usd: 0.3 })).ok);
+  const held = await hold(c.deps, { toolCalls: 8, usd: (calls) => 0.02 + calls * 0.01 });
+  assert.ok(held.ok);
+  assert.equal(held.toolCalls, 8, "0.10 fits exactly");
+  await releaseRun(c.deps, held.hold);
+
+  const fewer = await hold(c.deps, { toolCalls: 8, usd: (calls) => 0.05 + calls * 0.01 });
+  assert.ok(fewer.ok);
+  assert.equal(fewer.toolCalls, 5);
+  assert.equal(fewer.hold.toolCalls, 5);
+  assert.equal(fewer.hold.micros, 100_000);
+  assert.equal(c.value(KEYS.calls), 5);
+  assert.equal(c.value(KEYS.usd), 400_000);
+
+  await releaseRun(c.deps, fewer.hold);
+  assert.equal(c.value(KEYS.calls), 0, "the hold knows the calls it kept");
+  assert.equal(c.value(KEYS.usd), 300_000);
+});
+
+test("dollars too short for even one tool call: refused, and everything it took is given back", async () => {
+  const c = counters();
+  assert.ok((await hold(c.deps, { usd: 0.35 })).ok);
+  const over = await hold(c.deps, { toolCalls: 8, usd: (calls) => 0.05 + calls * 0.01 });
+  assert.ok(!over.ok);
+  const err = await messageOf(over.response);
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /\$0\.40 limit/);
+  assert.match(err.message, /without built-in tools/);
+  assert.equal(c.value(KEYS.turns), 1);
+  assert.equal(c.value(KEYS.calls), 0);
+  assert.equal(c.value(KEYS.usd), 350_000);
 });
 
 test("settling replaces the hold with what the call used; the turn stays spent", async () => {

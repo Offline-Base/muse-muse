@@ -676,7 +676,7 @@ test("run caps: when few tool calls are left, max_tool_calls comes down and the 
   oneLeft.counters.set(runKeys.calls, 7);
   const low = await handleGateway(gatewayRequest("responses", wonder({ tools: search }), inRun), ["responses"], oneLeft.deps);
   assert.equal(upstreamJson(oneLeft).max_tool_calls, 1);
-  assert.match(low.headers.get("x-musemuse-note") ?? "", /Lowered max_tool_calls to 1: that is all this run has left/);
+  assert.match(low.headers.get("x-musemuse-note") ?? "", /Lowered max_tool_calls to 1: that is all this run has room for/);
 
   const spent = fakeGateway({ token: { ...wonderToken, scope: "build" }, fetch: async () => Response.json(usageReply) });
   spent.counters.set(runKeys.calls, 8);
@@ -695,6 +695,67 @@ test("run caps: the dollars held count only the tool calls the run has left", as
   assert.equal(res.status, 200, "eight searches wouldn't fit in the $0.10 left, and the one left does");
   assert.equal(upstreamJson(g).max_tool_calls, 1);
   assert.ok(g.counters.get(runKeys.usd)! < 750_000);
+});
+
+test("run caps: when the dollars don't cover every search, the call runs with fewer", async () => {
+  // A live agent's default turn on the template: 2,500 output tokens, chained, and no max_tool_calls of its own.
+  const body = () => wonder({ input: "go on", tools: search, max_output_tokens: 2_500, previous_response_id: "resp_1" });
+  let callsHeld = 0;
+  const g = fakeGateway({
+    token: agentToken,
+    fetch: async () => {
+      callsHeld = g.counters.get(runKeys.calls)!;
+      return Response.json(searched(["ws_1"]));
+    },
+  });
+  g.counters.set(runKeys.turns, 4);
+  g.counters.set(runKeys.calls, 3);
+  g.counters.set(runKeys.usd, 400_000);
+  const res = await handleGateway(gatewayRequest("responses", body(), inRun), ["responses"], g.deps);
+  assert.equal(res.status, 200);
+  const lowered = upstreamJson(g).max_tool_calls as number;
+  assert.ok(lowered >= 1 && lowered < 8, `max_tool_calls ${lowered}`);
+  assert.equal(callsHeld, 3 + lowered, "the calls it can't pay for went back before Meta ran");
+  assert.ok(g.counters.get(runKeys.usd)! <= 750_000);
+  assert.match(res.headers.get("x-musemuse-note") ?? "", new RegExp(`Lowered max_tool_calls to ${lowered}: that is all this run has room for`));
+  await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.counters.get(runKeys.calls), 4, "settled to the one search it ran");
+
+  const broke = fakeGateway({ token: agentToken, fetch: async () => Response.json(usageReply) });
+  broke.counters.set(runKeys.usd, 749_000);
+  const err = await errorOf(await handleGateway(gatewayRequest("responses", body(), inRun), ["responses"], broke.deps));
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /\$0\.75 limit/);
+  assert.equal(broke.upstreamCalls.length, 0);
+  assert.equal(broke.counters.get(runKeys.calls), 0, "the refused call's calls came back");
+});
+
+test("run caps: a third call in parallel is told its tool calls are held, not used", async () => {
+  let finish = () => {};
+  const open = new Promise<void>((resolve) => (finish = resolve));
+  const g = fakeGateway({
+    token: agentToken,
+    fetch: async () => {
+      await open;
+      return Response.json(usageReply);
+    },
+  });
+  const send = () => handleGateway(gatewayRequest("responses", wonder({ tools: search, max_output_tokens: 300 }), inRun), ["responses"], g.deps);
+  const first = send();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const second = send();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(g.counters.get(runKeys.calls), 12, "the first holds 8 and the second holds 4");
+  const err = await errorOf(await send());
+  assert.equal(err.code, "run_limit");
+  assert.match(err.message, /none of its 12 built-in tool calls left, counting calls still running/);
+  assert.match(err.message, /Wait for them to finish/);
+  finish();
+  const replies = await Promise.all([first, second]);
+  for (const res of replies) await res.arrayBuffer();
+  await g.settled();
+  assert.equal(g.counters.get(runKeys.calls), 0, "settling gave the unused calls back");
 });
 
 test("run caps: a call estimated past the run's dollars -> 429 run_limit before the budget check", async () => {
