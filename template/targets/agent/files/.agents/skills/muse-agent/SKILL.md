@@ -204,7 +204,7 @@ The gateway answers builds differently, so tests are the same every run:
 
 **At most 3 agent runs across all tests, each with `maxTurns` of 3 or 4.** This replaces verify's "5 model calls" for this product. An agent run is many model calls, and each one spends the build's budget. Share one run between checks. Don't start a run per assertion. A deep research run counts as one run, and takes no `maxTurns`. In a build, use `maxSubQuestions` of 3 or fewer.
 
-- Assert structure: a finished step, a source link, the answer card. Sample results change from build to build, so never assert their words.
+- Assert structure: a finished step, the answer card, and a source link when the agent looks things up on the web. An agent whose tools all work on the owner's accounts (Gmail, Calendar, Slack) has no web sources, so don't assert a link there. Sample results change from build to build, so never assert their words.
 - Wait for the card: `await expect(page.locator("[data-result]")).toBeVisible({ timeout: 180_000 })`, and give that test `test.setTimeout(240_000)`.
 - A finished step is `page.locator('[data-step-state="done"]').first()`. A source is `page.locator("[data-sources] a").first()`.
 - Test a confirm card with the real flow: press "Yes, go ahead" and wait for the answer.
