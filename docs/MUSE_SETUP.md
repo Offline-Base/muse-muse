@@ -49,6 +49,20 @@ Then pick the best mode on the Dreaming page. `uv run python -m scripts.plug_in_
 
 To speed Glimmer up with Meta's DFlash drafter, add `--draft /path/to/drafter.gguf` (it must share the model's vocabulary; `--draft-n N` sets the tokens drafted per step, default 15). `--flash-attn on|off|auto` and `--reasoning-budget N` (-1 unrestricted, 0 none) are written to `.env` the same way, and `scripts/start.sh` passes all of them to Glimmer's llama-server only.
 
+#### Measuring a model before you plug it in
+
+`scripts/model_matrix.py` scores several router setups on the same invented items in one command, and pairs each one against today's "policy decides, LFM labels" (`policy_lfm`). A Glimmer file can be measured while the app keeps running: start a second llama-server for it on a free port on 127.0.0.1, then point the matrix there.
+
+```sh
+uv run python -m scripts.model_matrix --name my_model --preflight \
+  --configs keywords,policy_lfm,lfm_tighten,glimmer_tighten,glimmer_decide \
+  --sets eval/fresh_200_b.jsonl eval/tasks.jsonl \
+  --glimmer-url http://127.0.0.1:8091/v1 --glimmer-gguf /path/to/model.gguf --glimmer-label my_model \
+  --reasoning low
+```
+
+`--preflight` checks that the servers answer, that the side port serves that file (and that its sha256 matches `model_file_my_model.md` from `--check`), and scores 5 items per setup. It stops when more than 1 in 10 could not be scored or one item takes over 20 s at p95, and estimates how long the full run takes. The report is `eval/reports/matrix_my_model.md`; `--resume` picks a stopped run up from its raw rows. Every setup stays on this device; the `base_cloud_*` setups send invented items to OpenRouter and are refused unless you pass `--allow-cloud` and a `--max-usd` above 0. `ROUTER_REASONING` (low, medium, high, xhigh) and `ROUTER_MAX_TOKENS` (default 1500) set the router's call in the app the same way.
+
 Before scoring a tuned model, check its training data against the eval sets: `uv run python -m scripts.check_overlap --train train.jsonl --name my_model` writes counts only to `eval/reports/overlap_my_model.md` and exits 1 on any overlap. It uses only the standard library, so it can also run where the model was trained.
 
 ## 3. Add the connector in the Muse app

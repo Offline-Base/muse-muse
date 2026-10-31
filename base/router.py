@@ -211,6 +211,22 @@ def never_share_floor(
     return "ask_user" if can_ask else "refuse"
 
 
+def model_usage(llm: Any) -> dict[str, Any]:
+    """RouteDecision's usage fields from the client's last call (LocalLLM.last_result): one call
+    and no token counts for a client that keeps none."""
+    last = getattr(llm, "last_result", None)
+    calls = getattr(last, "calls", None)
+    if last is None or not isinstance(calls, int):
+        return {"calls": 1}
+    return {
+        "calls": calls,
+        "prompt_tokens": last.prompt_tokens,
+        "completion_tokens": last.completion_tokens,
+        "reasoning_tokens": last.reasoning_tokens,
+        "finish_reason": last.finish_reason,
+    }
+
+
 class LearnedView(NamedTuple):
     """Everything the learned rules add to one decision: the rule line shown with the result
     and the rule behind the learned floor (with its decision and section). Hashable, so the
@@ -278,8 +294,19 @@ class Router:
             log.warning("could not read router rules file")
         return ""
 
+    def reasoning(self) -> str:
+        """Glimmer's reasoning strength for the router's call (ROUTER_REASONING, default low)."""
+        return getattr(self.settings, "router_reasoning", None) or "low"
+
+    def max_tokens(self) -> int:
+        """The router call's token budget, reasoning included (ROUTER_MAX_TOKENS, default 1500)."""
+        return getattr(self.settings, "router_max_tokens", None) or MAX_TOKENS
+
     def system_prompt(self) -> str:
-        return SYSTEM_PROMPT + (self.rules() or NO_RULES)
+        """The prompt with its `Reasoning strength:` line at the chosen level, so the text and
+        llama-server's chat_template_kwargs agree."""
+        prompt = SYSTEM_PROMPT.replace("Reasoning strength: low", f"Reasoning strength: {self.reasoning()}", 1)
+        return prompt + (self.rules() or NO_RULES)
 
     def learned(self, inp: RouteInput, rules: str | None = None):
         """(the learned rule shown with this result, the learned rule behind its floor), each a
@@ -323,8 +350,9 @@ class Router:
         mode = self.mode(inp)
         outcome = self._rule_path(inp, is_blocked)
         by_policy = outcome is None and mode != "model"
+        usage: dict[str, Any] = {}
         if outcome is None:
-            outcome = self._decide_by_mode(mode, inp, synthetic, learned, learned_floor)
+            outcome = self._decide_by_mode(mode, inp, synthetic, learned, learned_floor, usage)
         decision, reason, source = outcome
 
         floor, floors, floor_reason = self._floors(inp, blocked_topics, learned_floor)
@@ -334,14 +362,16 @@ class Router:
         if floor_reason and STRICTNESS[floor] >= STRICTNESS[final]:
             reason = floor_reason  # the floor decided it, whatever the model said
         ms = int((time.perf_counter() - start) * 1000)
-        return RouteDecision(final, reason, source, latency_ms=ms, floors=floors)
+        return RouteDecision(final, reason, source, latency_ms=ms, floors=floors, **usage)
 
     def _decide_by_mode(
-        self, mode: str, inp: RouteInput, synthetic: bool, learned: Any, learned_floor: Any
+        self, mode: str, inp: RouteInput, synthetic: bool, learned: Any, learned_floor: Any, usage: dict | None = None
     ) -> tuple[Decision, str, str]:
         if mode == "rules":
             return self._policy_path(inp, learned)
-        asked = self._ask_model(inp, synthetic, learned, learned_floor, use_adapter=mode in ("model", "local_lora"))
+        asked = self._ask_model(
+            inp, synthetic, learned, learned_floor, use_adapter=mode in ("model", "local_lora"), usage=usage
+        )
         if mode != "tighten":
             return asked
         base = self._policy_path(inp, learned)
@@ -410,9 +440,10 @@ class Router:
         ]
 
     def _ask_model(
-        self, inp: RouteInput, synthetic: bool, learned=None, learned_floor=None, use_adapter: bool = True
+        self, inp: RouteInput, synthetic: bool, learned=None, learned_floor=None, use_adapter: bool = True,
+        usage: dict | None = None,
     ) -> tuple[Decision, str, str]:
-        kw: dict[str, Any] = {"reasoning": "low", "max_tokens": MAX_TOKENS, "synthetic": synthetic}
+        kw: dict[str, Any] = {"reasoning": self.reasoning(), "max_tokens": self.max_tokens(), "synthetic": synthetic}
         if self.adapter is not None and use_adapter:
             kw["adapter"] = self.adapter
         try:
@@ -420,6 +451,9 @@ class Router:
         except Exception as exc:  # any model or parse failure falls back to asking
             log.warning("router model call failed: %s", type(exc).__name__)
             return "ask_user", FALLBACK_REASON, "fallback"
+        finally:
+            if usage is not None:
+                usage.update(model_usage(self.llm))
         decision = out.get("decision") if isinstance(out, dict) else None
         if decision not in DECISIONS:
             log.warning("router model returned no valid decision")

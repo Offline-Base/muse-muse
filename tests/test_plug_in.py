@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import stat
 import subprocess
 
@@ -153,10 +154,12 @@ def test_the_plugged_in_settings_load_as_one_local_server(tmp_path):
     assert s.dreaming_backend == "rules"
 
 
-def test_the_summary_line_is_read_and_a_failed_run_shows_in_the_table():
-    line = "x: accuracy 73.5%, agreement 73.5%, approval requests 90, leaks 0, errors 1, fallbacks 2, p95 0 ms over 200 items"
-    row = compare_modes.parse_summary(line)
-    assert row == {"accuracy": "73.5", "asked": "90", "leaks": "0", "errors": "1", "fallbacks": "2"}
-    assert compare_modes.parse_summary("Traceback") is None
+def test_the_summary_json_is_read_and_a_failed_run_shows_in_the_table(tmp_path):
+    path = tmp_path / "rules.json"
+    path.write_text(json.dumps({"accuracy": 0.735, "agreement": 0.7, "approval_requests": 90, "leaks": 0,
+                                "errors": 1, "fallbacks": 2}))  # fmt: skip
+    row = compare_modes.read_summary(path)
+    assert compare_modes.read_summary(tmp_path / "missing.json") is None
     text = "\n".join(compare_modes.table([("Rules", row), ("Prompt", None)]))
+    assert "| Mode | Decision accuracy |" in text and "Agreement" not in text  # it was accuracy all along
     assert "| Rules | 73.5% | 90 | 0 | 3 |" in text and "did not finish" in text

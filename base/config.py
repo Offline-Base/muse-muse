@@ -24,6 +24,11 @@ EMBED_PORT = 8084
 APPROVAL_PORT = 8787
 CONNECTOR_PORT = 8790
 
+# Glimmer's reasoning strengths (base/local_llm.py REASONING_LEVELS) and the router's token budget.
+ROUTER_REASONING_LEVELS = ("low", "medium", "high", "xhigh")
+MIN_ROUTER_TOKENS = 64
+MAX_ROUTER_TOKENS = 32768
+
 
 class CloudBackendRefused(RuntimeError):
     """Raised when private data would reach a cloud model endpoint."""
@@ -149,6 +154,11 @@ class Settings:
     # DEVICE_ONLY=1: every model is on this device. No OpenRouter, no Jetson gateway, no Spark key.
     # With PRIMARY_MODEL=lfm (its default) LFM3-VL-2B answers every step, the router included.
     device_only: bool = False
+    # The router's model call: Glimmer's reasoning strength (llama-server's
+    # chat_template_kwargs.reasoning_strength and the system prompt's line) and its token budget,
+    # which reasoning counts against.
+    router_reasoning: Literal["low", "medium", "high", "xhigh"] = "low"
+    router_max_tokens: int = 1500
     extra: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     @property
@@ -236,6 +246,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     checker_key = get("CHECKER_API_KEY") or _read_key(get("BASE_HOME", str(Path.home() / ".base"))) or None
     checker_model = get("CHECKER_MODEL", "lfm3-vl-2b")
     meta_key = get("META_API_KEY") or None
+    router_reasoning = get("ROUTER_REASONING", "low")
+    if router_reasoning not in ROUTER_REASONING_LEVELS:
+        raise ValueError(f"ROUTER_REASONING must be low, medium, high or xhigh, not {router_reasoning!r}")
+    router_max_tokens = get("ROUTER_MAX_TOKENS", "1500")
+    if not router_max_tokens.isdigit() or not MIN_ROUTER_TOKENS <= int(router_max_tokens) <= MAX_ROUTER_TOKENS:
+        raise ValueError(
+            f"ROUTER_MAX_TOKENS must be a whole number from {MIN_ROUTER_TOKENS} to {MAX_ROUTER_TOKENS}, "
+            f"not {router_max_tokens!r}"
+        )
     if device_only:
         jetson_lfm_url, meta_key = None, None
         if primary == "lfm":  # one model on this device for every step, whatever GLIMMER_BACKEND says
@@ -287,6 +306,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embed_model=get("EMBED_MODEL", "embeddinggemma-2"),
         pdftotext_bin=pdftotext,
         device_only=device_only,
+        router_reasoning=router_reasoning,  # type: ignore[arg-type]
+        router_max_tokens=int(router_max_tokens),
     )
 
 

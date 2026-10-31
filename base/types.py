@@ -116,3 +116,10 @@ class RouteDecision:
     source: Literal["model", "rule", "fallback", "cache"]
     latency_ms: int = 0
     floors: list[str] = field(default_factory=list)
+    # The router model's usage for this decision: completions sent (0 on a path with no model
+    # call) and the tokens the server reported, None when it reported none.
+    calls: int = 0
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    finish_reason: str | None = None
