@@ -15,7 +15,7 @@ import path from "node:path";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
 import { BRIDGE_SCRIPT, bridgeConfigPath, type BridgeConfig, type MuseCommandEnvelope } from "@/lib/sandbox/bridge-protocol";
 import { BRIDGE_SOURCE } from "@/lib/sandbox/bridge-source";
-import { HOOKS_DIR, NOTES_DIR } from "@/lib/sandbox/muse-config";
+import { HOOKS_DIR, MUSE_FULL_MARKER, NOTES_DIR } from "@/lib/sandbox/muse-config";
 import { condenseMuseLines, highlightsFrom } from "@/lib/sandbox/muse-log";
 
 const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -162,10 +162,40 @@ describe("startMuse", { skip: canMock ? false : "needs --experimental-test-modul
     assert.equal(mcp.mcpServers.musemuse.url, "https://musemuse.example/api/build-mcp");
     assert.equal(mcp.mcpServers.musemuse.headers.Authorization, "Bearer ${MUSEMUSE_BUILD_MCP_TOKEN}");
     assert.equal(files[`${NOTES_DIR}/.session`], `${SESSION}\n`);
+    assert.ok(files[MUSE_FULL_MARKER], "the sandbox remembers that it has the platform's config");
     const script = runner("muse-r0");
     assert.match(script, /^export MUSEMUSE_BUILD_MCP_TOKEN='mm_build_mcp\.3f2a9c1e-77b0-4d2e-9f00-0123456789ab\.[0-9a-f]{64}'$/m);
     assert.ok(script.includes("cmd+=('--config' 'agents.execution_capacity=8' '--config' 'runtime_capabilities={\"plugin:tbh-reminders:reminder:skill-reminder\""));
     assert.ok(script.includes("muse skills enable bundled:workflow-authoring --scope built-in --json >/dev/null 2>&1 || true"));
+  });
+
+  it("takes the platform's config away again on a start without MUSE_FULL, in a sandbox that had it", async () => {
+    process.env.MUSE_FULL = "1";
+    process.env.PLATFORM_URL = "https://musemuse.example";
+    await start({ buildId: BUILD });
+    delete process.env.MUSE_FULL;
+    commands = [];
+    answer = (script) => {
+      if (script.includes("skills disable")) delete files[MUSE_FULL_MARKER];
+      return {};
+    };
+    const run = await start({ round: 1, buildId: BUILD });
+    assert.equal(run.buildMcp, false);
+    const clear = commands.find((c) => c.script.includes("skills disable"));
+    assert.ok(clear, "the config is cleared first");
+    assert.match(clear.script, /^rm -rf -- '\/vercel\/app\/\.muse\/hooks\.json' '\/vercel\/app\/\.mcp\.json' '\/vercel\/musemuse\/hooks\/guard\.mjs' /);
+    assert.match(clear.script, /^PATH="\$HOME\/\.local\/bin:\$PATH" muse skills disable bundled:workflow-authoring --scope built-in --json /m);
+    assert.match(clear.script, /^rm -f -- '\/vercel\/musemuse\/run\/muse-full'$/m);
+    assert.equal(spawnSync("bash", ["-n", "-c", clear.script]).status, 0);
+    const script = runner("muse-r1");
+    assert.ok(!script.includes("--config") && !script.includes("skills enable") && !script.includes("MUSEMUSE_BUILD_MCP_TOKEN"), "the round runs as it would without the flag");
+    // Cleared once: a later start runs nothing extra.
+    commands = [];
+    await start({ round: 2 });
+    assert.deepEqual(
+      commands.map((c) => c.detached),
+      [true],
+    );
   });
 
   it("leaves the build MCP out when the sandbox can't reach the platform", async () => {

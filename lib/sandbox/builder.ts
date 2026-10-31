@@ -49,15 +49,18 @@ import {
   museExecArgs,
   optionalConfigPrelude,
   optionalFlagsPrelude,
+  SANDBOX_ENV,
 } from "@/lib/sandbox/muse";
 import {
   BUILD_MCP_PATH,
   BUILD_MCP_TOKEN_ENV,
   CHECKED_MUSE_VERSION,
+  MUSE_FULL_MARKER,
   museConfigFiles,
   museSettings,
   NOTES_DIR,
   NOTES_SESSION_FILE,
+  WORKFLOW_SKILL_OFF,
   WORKFLOW_SKILL_PRELUDE,
 } from "@/lib/sandbox/muse-config";
 import {
@@ -610,7 +613,8 @@ function runnerEnv(run: MuseRunSpec): Record<string, string> {
  * at each path first: the hook scripts, .muse/hooks.json, and .mcp.json when the run has a build MCP token (else
  * .mcp.json is just removed). Also records the session id, so owner notes on exec rounds reach the main agent, and
  * keeps .muse/ (with its subagents' worktrees) and .mcp.json out of the product's commits through the checkout's own
- * info/exclude, which changes nothing tracked.
+ * info/exclude, which changes nothing tracked. MUSE_FULL_MARKER goes first, so a later start without MUSE_FULL takes
+ * all of it away again (clearMuseConfig).
  */
 async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void> {
   const files = museConfigFiles({ mcpUrl: run.token ? `${env.platformUrl}${BUILD_MCP_PATH}` : null });
@@ -623,7 +627,33 @@ async function writeMuseConfig(sandbox: Sandbox, run: MuseRunSpec): Promise<void
       `if [ -d ${q(git)} ]; then mkdir -p ${q(`${git}/info`)}; for p in .muse/ .mcp.json; do grep -qxF -- "$p" ${q(exclude)} 2>/dev/null || printf '%s\\n' "$p" >> ${q(exclude)}; done; fi`,
     ].join("\n"),
   );
-  await sandbox.writeFiles([...files.write, { path: NOTES_SESSION_FILE, content: `${run.sessionId}\n` }]);
+  await sandbox.writeFiles([
+    { path: MUSE_FULL_MARKER, content: `${new Date().toISOString()}\n` },
+    ...files.write,
+    { path: NOTES_SESSION_FILE, content: `${run.sessionId}\n` },
+  ]);
+}
+
+/**
+ * Takes the platform's Muse Code config away again before a start without MUSE_FULL, in a sandbox an earlier start
+ * gave it to (MUSE_FULL_MARKER): exec trusts the workspace, so its hooks and .mcp.json would still load, and the
+ * workflow-authoring skill would stay on. A sandbox that never had MUSE_FULL runs nothing here. Best effort: when it
+ * fails, the round runs with what is there and the next start tries again.
+ */
+async function clearMuseConfig(sandbox: Sandbox, sandboxName: string): Promise<void> {
+  const marker = await sandbox.readFileToBuffer({ path: MUSE_FULL_MARKER }).catch(() => null);
+  if (!marker) return;
+  const script = [
+    `rm -rf -- ${museConfigFiles({ mcpUrl: null }).remove.map(q).join(" ")} || exit 1`,
+    `PATH="$HOME/.local/bin:$PATH" ${WORKFLOW_SKILL_OFF}`,
+    `rm -f -- ${q(MUSE_FULL_MARKER)}`,
+  ].join("\n");
+  const res = await sh(sandbox, script, { env: { ...SANDBOX_ENV }, allowFail: true }).catch((err: unknown) => ({
+    exitCode: -1,
+    stdout: "",
+    stderr: String(err),
+  }));
+  if (res.exitCode !== 0) console.warn(`Muse Code config cleanup on ${sandboxName}: exit ${res.exitCode}: ${res.stderr.slice(-500)}`);
 }
 
 /**
@@ -649,6 +679,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   const full = env.museFull;
   const run: MuseRunSpec = { ...input, promptFile, images, tag, full, token: full ? buildMcpTokenFor(input) : null };
   if (full) await writeMuseConfig(sandbox, run);
+  else await clearMuseConfig(sandbox, input.sandboxName);
   const buildMcp = Boolean(run.token);
   let notice: string | undefined;
   if ((input.engine ?? env.museEngine) === "serve") {

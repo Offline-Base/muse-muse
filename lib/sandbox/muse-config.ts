@@ -5,7 +5,7 @@
  * replacing whatever is there. Pure: the hook scripts are strings that Muse Code runs with node, and the tests run them
  * in real node with their paths pointed at a temporary folder.
  */
-import { LOG_DIR, PLATFORM_FILES, PRODUCT_DIR, WORK_DIR } from "@/lib/sandbox/paths";
+import { LOG_DIR, PLATFORM_FILES, PRODUCT_DIR, RUN_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 
 /** The hook scripts, outside the product so the agent never trips over them and they are never deployed. */
 export const HOOKS_DIR = `${WORK_DIR}/hooks`;
@@ -21,6 +21,12 @@ export const HOOK_LOG = `${LOG_DIR}/hooks.jsonl`;
 /** Relative to PRODUCT_DIR. */
 export const HOOKS_FILE = ".muse/hooks.json";
 export const MCP_FILE = ".mcp.json";
+/**
+ * Left by every start under MUSE_FULL, so a later start without it takes the config away again (builder.ts
+ * clearMuseConfig): exec trusts the workspace, so the hooks and .mcp.json would still load on a round meant to run as
+ * it would without the flag.
+ */
+export const MUSE_FULL_MARKER = `${RUN_DIR}/muse-full`;
 
 /** The Muse Code version the settings and hooks here were checked on (docs/MUSE_CODE_FULL.md, Oct 30). */
 export const CHECKED_MUSE_VERSION = "1.4.14";
@@ -62,6 +68,9 @@ export function museSettings(capacity: number): string[] {
  * builds (DISABLED_BUNDLED_SKILLS). A Muse Code without the skill or the command just goes on without it.
  */
 export const WORKFLOW_SKILL_PRELUDE = "muse skills enable bundled:workflow-authoring --scope built-in --json >/dev/null 2>&1 || true";
+
+/** WORKFLOW_SKILL_PRELUDE undone, for a start without MUSE_FULL after one with it: the skill is off again, as setup.ts leaves it. */
+export const WORKFLOW_SKILL_OFF = "muse skills disable bundled:workflow-authoring --scope built-in --json >/dev/null 2>&1 || true";
 
 // ---------------------------------------------------------------------------------------------------------------
 // Hooks
