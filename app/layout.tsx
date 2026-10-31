@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { VoiceInputLayer } from "@/components/voice/VoiceInputLayer";
 import { currentUser } from "@/lib/queries";
 import "./globals.css";
+import "@/components/chat/chat.css";
 
 export const metadata: Metadata = {
   title: { default: "Muse Muse", template: "%s · Muse Muse" },

@@ -43,11 +43,33 @@
   --shadow-float: 0 4px 24px rgba(17, 17, 18, 0.08), 0 1px 2px rgba(17, 17, 18, 0.04);
   --shadow-pop: 0 12px 32px rgba(17, 17, 18, 0.14), 0 2px 6px rgba(17, 17, 18, 0.08);
   --shadow-tab: 0 1px 3px rgba(17, 17, 18, 0.12);
+  /*
+   * The Muse app look (docs/UI_MUSE_APP.md) for the conversation surfaces and the chat kit (components/chat).
+   * Its text color is --fg and its tab track is --panel-line, which already hold those values. The captures were light,
+   * so the dark values are this site's own: the dark placeholder keeps 4.5:1 on the composer card, and on the docs'
+   * lighter #1f1f22 card too.
+   */
+  --chat-bg: #ffffff;
+  --chat-muted: #696b6e;
+  --chat-faint: #a1a3a7;
+  --chat-placeholder: #878787;
+  --chat-line: #e5e5e5;
+  --chat-bubble: #f3f4f5;
+  --chat-label: #e7e8eb;
+  --chat-segment: #ffffff;
+  --work-from: #6547f5;
+  --work-to: #c15af7;
+  --send-from: #2a62cc;
+  --send-to: #5d6df5;
+  --shadow-chip: 0 2px 16px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.07);
+  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.12);
+  --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.08);
 
   --sidebar-w: 260px;
   --panel-w: 360px;
   --col-w: 720px;
-  --composer-w: 760px;
+  --composer-w: 768px;
   --page-w: 1088px;
   --radius-card: 16px;
   --radius-input: 10px;
@@ -99,6 +121,22 @@
     --chart-6: #b9a0f3;
     --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --chat-bg: #0e1013;
+    --chat-muted: #a3a6ad;
+    --chat-faint: #6b6f76;
+    --chat-placeholder: #83878e;
+    --chat-line: #2b2f35;
+    --chat-bubble: #262a30;
+    --chat-label: #2b3037;
+    --chat-segment: #33373e;
+    --work-from: #8068f8;
+    --work-to: #cd78f9;
+    --send-from: #3d74e6;
+    --send-to: #6a78f7;
+    --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
+    --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+    --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
 }
@@ -142,6 +180,22 @@
   --chart-6: #b9a0f3;
   --shadow-float: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --chat-bg: #0e1013;
+  --chat-muted: #a3a6ad;
+  --chat-faint: #6b6f76;
+  --chat-placeholder: #83878e;
+  --chat-line: #2b2f35;
+  --chat-bubble: #262a30;
+  --chat-label: #2b3037;
+  --chat-segment: #33373e;
+  --work-from: #8068f8;
+  --work-to: #cd78f9;
+  --send-from: #3d74e6;
+  --send-to: #6a78f7;
+  --shadow-chip: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 16px rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-segment: 0 1px 6px rgba(0, 0, 0, 0.5);
+  --shadow-side: -8px 0 24px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
@@ -1313,6 +1367,10 @@ pre {
 
 /* ---------- Composer (the muse box) ---------- */
 
+/*
+ * The Muse app's composer (docs/UI_MUSE_APP.md, "The composer"): a white card with a soft shadow and no border, 18 px
+ * text, and a row of 32 px controls 14 px from its edges. The docs assistant's box uses the same classes.
+ */
 .composer-wrap {
   width: 100%;
   max-width: var(--composer-w);
@@ -1325,58 +1383,120 @@ pre {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 12px 12px;
-  border: 1px solid var(--panel-line);
-  border-radius: 24px;
+  gap: 16px;
+  padding: 16px 14px 14px;
+  border: 0;
+  border-radius: 32px;
   background: var(--surface);
-  box-shadow: var(--shadow-float);
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+  box-shadow: var(--shadow-card), var(--composer-floor);
+  /* Nothing under the card, unless it's pinned over a page that scrolls (the Make page's rules). */
+  --composer-floor: 0 0 transparent;
 }
 
-.composer:focus-within {
-  border-color: var(--line);
+/* With no border to darken, a hairline ring shows where typing goes. */
+.composer:has(.composer-input:focus-visible) {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--shadow-card),
+    var(--composer-floor);
 }
 
 .composer.is-dragging {
-  border-color: var(--accent);
   box-shadow:
-    0 0 0 4px var(--accent-soft),
-    var(--shadow-float);
+    0 0 0 2px var(--accent),
+    0 0 0 6px var(--accent-soft),
+    var(--shadow-card),
+    var(--composer-floor);
 }
 
+/* Two lines tall at rest, which makes the card about 130 px. The composer grows it with the text. */
 .composer-input {
   width: 100%;
-  min-height: 24px;
+  min-height: 52px;
   max-height: 260px;
-  padding: 0 4px;
+  padding: 0 6px;
   border: 0;
   outline: none;
   resize: none;
   background: transparent;
   color: var(--fg);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: 18px;
+  line-height: 26px;
 }
 
 .composer-input::placeholder {
-  color: var(--muted);
+  color: var(--chat-placeholder);
+  opacity: 1;
 }
 
 .composer-row {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 32px;
 }
 
 .composer-hint {
   flex: 1;
   min-width: 0;
-  color: var(--muted);
+  color: var(--chat-muted);
   font-size: 13px;
   line-height: 1.35;
+}
+
+/* The mic and send, at the row's right end however long the hint is. */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+/* "+" and the mic: 32 px circles with a hairline outline. The mic widens into a pill while it records. */
+.composer-tool,
+.composer-voice .voice-input-btn {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--chat-line);
+  border-radius: var(--pill);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.composer-tool:hover:not(:disabled),
+.composer-voice .voice-input-btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.composer-tool:disabled {
+  opacity: 0.4;
+}
+
+.composer-voice.is-recording .voice-input-btn {
+  display: inline-flex;
+  border-color: transparent;
+}
+
+/* The mic's starting and transcribing spinner, drawn dark on its white circle. */
+.composer-voice .spinner {
+  border-color: var(--chat-line);
+  border-top-color: var(--fg);
+}
+
+/* "+" opens upward: the composer sits at the bottom of the window. */
+.composer-row .menu {
+  top: auto;
+  bottom: calc(100% + 8px);
+  min-width: 300px;
+}
+
+.composer-row .menu-item svg {
+  flex: none;
 }
 
 .send-btn {
@@ -1388,17 +1508,15 @@ pre {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--send-from), var(--send-to));
   color: var(--accent-ink);
-  transition:
-    opacity 120ms ease,
-    background-color 120ms ease;
 }
 
 .send-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
+  filter: brightness(0.94);
 }
 
+/* Half strength while there's nothing to send. */
 .send-btn:disabled,
 .send-btn[aria-disabled="true"] {
   opacity: 0.5;
@@ -1409,7 +1527,7 @@ pre {
   inset: 0;
   display: grid;
   place-items: center;
-  border-radius: 20px;
+  border-radius: 32px;
   background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
   color: var(--accent-text);
   font-weight: 600;
@@ -1559,22 +1677,13 @@ pre {
   color: var(--fg);
 }
 
-/* Floating composer in the build room */
+/* Floating composer in the build room, 24 px above the window's bottom edge */
 
 .composer-floating {
   position: sticky;
-  bottom: 20px;
+  bottom: 24px;
   z-index: 10;
   margin: 24px auto 0;
-}
-
-.composer-row .icon-btn {
-  width: 32px;
-  height: 32px;
-}
-
-.composer-row .send-btn {
-  margin-left: auto;
 }
 
 .composer-floating .form-error {
@@ -3589,12 +3698,25 @@ a.dash-card:hover {
 
 /* ---------- Playground pages (Make) ---------- */
 
+/* The Make page sits on the Muse app's plain page (docs/UI_MUSE_APP.md, "The page"): white, near-black in dark mode. */
 .play {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 100dvh;
   padding: 12px var(--gutter) 0;
+  background: var(--chat-bg);
+}
+
+/*
+ * The setup panel: a hairline outline on the page, not a gray card. Under the Make column on narrow screens, it stays
+ * in front of the fill under the composer's card (below).
+ */
+.play .panel {
+  position: relative;
+  z-index: 11;
+  border-color: var(--chat-line);
+  background: var(--chat-bg);
 }
 
 .play-main {
@@ -3640,7 +3762,7 @@ a.dash-card:hover {
 }
 
 .play-intro p {
-  color: var(--muted);
+  color: var(--chat-muted);
   font-size: 15px;
 }
 
@@ -3657,14 +3779,25 @@ a.dash-card:hover {
   max-width: var(--composer-w);
 }
 
+/*
+ * Pinned 24 px above the window's bottom edge, the card leaves a gap under it where what scrolls up behind it would
+ * show, and it shows in the card's rounded bottom corners too. The Muse app's page is plain there, so a copy of the
+ * card's shape in the page color sits 56 px lower: the gap plus the corner's 32 px, which keeps the copy's sides
+ * straight from those corners down to the window's edge. As a shadow, it paints under the card's own soft shadow and
+ * only outside the card, and reaches neither above it nor beside it.
+ */
 .play-main > .composer-wrap > .composer {
   position: sticky;
-  bottom: 20px;
+  bottom: 24px;
   z-index: 10;
   margin-top: auto;
+  --composer-floor: 0 56px 0 var(--chat-bg);
 }
 
+/* An error under the card stays in front of that fill. */
 .play-main > .composer-wrap > .form-error {
+  position: relative;
+  z-index: 11;
   margin-bottom: 8px;
 }
 

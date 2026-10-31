@@ -5,7 +5,7 @@ its steps sidebar. This is that look, written down from two screenshots of the a
 Make page composer, the build room, and the docs sidebar chat. Muse Muse still isn't Meta's app: no Meta logos, and the
 footer keeps "Built with Muse Muse. Not an official Meta product."
 
-The first capture showed a turn while it was working. The second (2968 by 1982, a 2x capture of a 1484 by 991 window)
+The first capture showed a turn while it was working, at about 1.6x, so sizes read from it directly come out about 20% small. The second (2968 by 1982, a 2x capture of a 1484 by 991 window)
 showed a finished turn with the steps panel open; every color below was sampled from its pixels, and every size is in
 CSS px (half its pixels).
 
@@ -31,8 +31,8 @@ nothing bold in the stream.
 ## The page
 
 - **Background:** plain white. No cards around the conversation, no gray canvas, lots of empty space.
-- **Column:** one centered column for messages and the composer, up to 768 px wide (it was about 620 px in the first,
-  narrower capture, so it shrinks with the window), with generous gaps (about 48 px between turns).
+- **Column:** one centered column for messages and the composer, up to 768 px wide in both captures, shrinking with
+  the window, with generous gaps (about 48 px between turns).
 
 ## The title chip
 
@@ -54,8 +54,9 @@ shadow and no border: share (a paper plane) and more (three dots), with 16 px ic
 - **Bubble:** right-aligned to the column's edge, `#F3F4F5`, no border, fully rounded (44 px tall for one line), 16 px
   side padding. Its width fits the text, up to about 75% of the column.
 - **Text:** 16 px, text color.
-- **Attachments:** they sit inside the bubble, at its right end. Each is a 32 px square thumbnail with 8 px rounded
-  corners and a hairline border. Several attachments line up in a row.
+- **Attachments:** they sit inside the bubble, at its right end. Each is a 40 px square thumbnail with 8 px rounded
+  corners and a hairline border, in a bubble with 12 px top and bottom padding (64 px tall). Several attachments line up
+  in a row.
 
 ## The agent's working step
 
@@ -65,7 +66,8 @@ shadow and no border: share (a paper plane) and more (three dots), with 16 px ic
 - **Title:** a short present-tense step title ("Generating mascot data center video"), 16 px, secondary color,
   regular weight.
 - **Thread line:** under the title, a 1 px hairline drops from under the icon. It runs beside the step's description:
-  one or two sentences in the secondary color saying in plain words what's happening and why.
+  one or two sentences in the secondary color saying in plain words what's happening and why, 13 px on an 18 px line
+  (measured in the first capture, which is 1.614 device px per CSS px).
 - **Nesting:** sub-steps (subagents, workflow children, observers, tool calls) nest on the same thread line, each with
   its own small icon and one-line title, so a step reads as a quiet tree.
 
@@ -107,7 +109,7 @@ Opened from "Show thinking", it sits at the right edge of the window, full heigh
 ## The composer
 
 A big white card at the bottom of the column, about 24 px above the window's bottom edge:
-- **Card:** about 130 px tall in the second capture (105 px in the first), 32 px corner radius, no border, a soft
+- **Card:** about 130 px tall, 32 px corner radius, no border, a soft
   shadow (about `0 4px 24px rgba(0,0,0,0.07)`).
 - **Text field:** 18 px text; the caret starts 20 px from the left and about 16 px from the top. No visible label: the
   placeholder (in the placeholder color) says what to type.

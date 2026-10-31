@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
+import { Menu } from "@/components/Menu";
 import { CameraCapture, useCameraSupported } from "@/components/camera/CameraCapture";
 import { AttachmentChip, type Attachment } from "@/components/composer/AttachmentChip";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
@@ -85,9 +86,10 @@ function writeDraft(key: string, value: string) {
 }
 
 /**
- * The muse box. "+" attaches inspo (drag-drop and paste work too), each file shows as a chip with a thumbnail and a
- * remove button, audio is converted to 16 kHz mono WAV and big photos are resized before upload, and send starts the
- * build. Uploads begin as soon as a file is attached when the viewer is signed in.
+ * The muse box, in the Muse app's look (docs/UI_MUSE_APP.md, "The composer"). "+" attaches inspo, from files or the
+ * camera where there is one (drag-drop and paste work too), each file shows as a chip with a thumbnail and a remove
+ * button, audio is converted to 16 kHz mono WAV and big photos are resized before upload, and send starts the build.
+ * Uploads begin as soon as a file is attached when the viewer is signed in.
  */
 export function Composer({
   mode,
@@ -402,6 +404,7 @@ export function Composer({
   }
 
   const playground = layout === "playground";
+  const attachOff = submitting || items.length >= MAX_INSPO_FILES;
 
   return (
     <div className={`composer-wrap${floating ? " composer-floating" : ""}`}>
@@ -489,28 +492,46 @@ export function Composer({
           }}
         />
         <div className="composer-row">
-          <button
-            type="button"
-            className="icon-btn icon-btn-outline"
-            aria-label="Attach inspo files"
-            title="Attach photos, video, a voice memo or a PDF"
-            onClick={() => fileInput.current?.click()}
-            disabled={submitting || items.length >= MAX_INSPO_FILES}
-          >
-            <Icon name="plus" />
-          </button>
           {canUseCamera ? (
+            <Menu
+              label="Attach inspo files"
+              icon="plus"
+              iconSize={20}
+              align="start"
+              buttonClassName="composer-tool"
+              disabled={attachOff}
+              closeOnSelect
+            >
+              <ul className="menu-list">
+                <li>
+                  <button type="button" className="menu-item" onClick={() => fileInput.current?.click()}>
+                    <Icon name="image" size={18} />
+                    <span className="menu-item-text">
+                      <span>Photos and files</span>
+                      <span className="muted small">Photos, video, a voice memo or a PDF</span>
+                    </span>
+                  </button>
+                </li>
+                <li>
+                  <button type="button" className="menu-item" onClick={() => setCameraOpen(true)}>
+                    <Icon name="camera" size={18} />
+                    Take a photo
+                  </button>
+                </li>
+              </ul>
+            </Menu>
+          ) : (
             <button
               type="button"
-              className="icon-btn icon-btn-outline"
-              aria-label="Take a photo"
-              title="Take a photo with your camera"
-              onClick={() => setCameraOpen(true)}
-              disabled={submitting || items.length >= MAX_INSPO_FILES}
+              className="composer-tool"
+              aria-label="Attach inspo files"
+              title="Attach photos, video, a voice memo or a PDF"
+              onClick={() => fileInput.current?.click()}
+              disabled={attachOff}
             >
-              <Icon name="camera" />
+              <Icon name="plus" size={20} />
             </button>
-          ) : null}
+          )}
           <input
             ref={fileInput}
             type="file"
@@ -524,7 +545,6 @@ export function Composer({
               e.target.value = "";
             }}
           />
-          <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} />
           <p id={hintId} className={playground && signedIn ? "sr-only" : "composer-hint"}>
             {signedIn
               ? isRefine
@@ -532,15 +552,19 @@ export function Composer({
                 : "Photos, screenshots, sketches, a short video, a voice memo or a PDF."
               : "Sign in to build. Your note is kept, files need adding again."}
           </p>
-          <button
-            type="submit"
-            className="send-btn"
-            aria-label={submitting ? "Starting" : isRefine ? "Send change" : "Make it"}
-            disabled={!canSend && signedIn}
-            aria-disabled={!canSend}
-          >
-            {submitting ? <span className="spinner" aria-hidden /> : <Icon name="arrowUp" />}
-          </button>
+          <div className="composer-actions">
+            {/* The Muse app's "Thinking" pill goes here once builds have a model or effort switch to put in it. */}
+            <VoiceInputButton target={() => textarea.current} className="composer-voice" disabled={submitting} size={22} />
+            <button
+              type="submit"
+              className="send-btn"
+              aria-label={submitting ? "Starting" : isRefine ? "Send change" : "Make it"}
+              disabled={!canSend && signedIn}
+              aria-disabled={!canSend}
+            >
+              {submitting ? <span className="spinner" aria-hidden /> : <Icon name="arrowUp" size={24} />}
+            </button>
+          </div>
         </div>
         {dragging ? (
           <div className="drop-hint" aria-hidden>

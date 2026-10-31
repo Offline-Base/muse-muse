@@ -2,10 +2,11 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { ScrollButton } from "@/components/chat";
+import { Reply, UserMessage } from "@/components/docs/chat/Message";
 import { runTool, currentSlug, ToolError } from "@/components/docs/chat/tools";
 import { performRun } from "@/components/docs/kit/useDocsRun";
 import { Icon } from "@/components/icons";
-import { MarkdownText } from "@/components/markdown/MarkdownText";
 import { VoiceInputButton } from "@/components/voice/VoiceInputButton";
 import { ChatIcon, SparkIcon } from "@/components/docs/page/icons";
 import {
@@ -33,7 +34,8 @@ const NOT_RESTORED: ChatMessage[] = [];
  * The docs assistant: a sidebar on the right of every docs page that answers questions, opens pages and runs demos. It
  * lives in the docs layout, so the conversation carries across pages. Each question is a small loop in the browser:
  * send the conversation to /api/docs/assistant, run any tool the model asks for (components/docs/chat/tools), send the
- * result back, until the model answers in words. Every step shows in the chat, and Stop ends it.
+ * result back, until the model answers in words. Every step shows in the chat, and Stop ends it. It wears the Muse
+ * app's look (docs/UI_MUSE_APP.md): the reader's bubbles, the agent's steps (components/docs/chat/Message) and its box.
  */
 export function DocsChat() {
   const router = useRouter();
@@ -48,6 +50,8 @@ export function DocsChat() {
   const input = useRef<HTMLTextAreaElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  // Scrolled up from the newest message: the scroll button shows.
+  const [scrolledUp, setScrolledUp] = useState(false);
   const launcher = useRef<HTMLButtonElement>(null);
   // So one question's steps don't show the same picture twice. A new question can show it again.
   const shownImages = useRef(new Set<string>());
@@ -135,6 +139,7 @@ export function DocsChat() {
     setError(null);
     setDraft("");
     pinned.current = true;
+    setScrolledUp(false);
     shownImages.current.clear();
 
     const parts: ChatPart[] = [];
@@ -227,7 +232,18 @@ export function DocsChat() {
     abort.current?.abort();
     setMessages([]);
     setError(null);
+    pinned.current = true;
+    setScrolledUp(false);
     input.current?.focus();
+  };
+
+  // Straight to the newest message (nothing in this look slides), then back to the box to type.
+  const toNewest = () => {
+    const el = log.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    pinned.current = true;
+    setScrolledUp(false);
+    input.current?.focus({ preventScroll: true });
   };
 
   return (
@@ -259,16 +275,14 @@ export function DocsChat() {
           onScroll={(e) => {
             const el = e.currentTarget;
             pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+            setScrolledUp(!pinned.current);
           }}
         >
           {messages.length ? (
             <ol className="docs-chat-list" aria-label="Conversation" aria-live="polite" aria-busy={running}>
               {messages.map((m, i) => (
                 <li key={i} className={m.role === "user" ? "docs-chat-user" : "docs-chat-reply"}>
-                  {m.parts.map((p, j) => (
-                    <Part key={j} part={p} role={m.role} streaming={running && i === messages.length - 1 && j === m.parts.length - 1} />
-                  ))}
-                  {running && i === messages.length - 1 && m.role === "assistant" && !m.parts.length ? <p className="docs-chat-thinking">Thinking...</p> : null}
+                  {m.role === "user" ? <UserMessage parts={m.parts} /> : <Reply parts={m.parts} live={running && i === messages.length - 1} />}
                 </li>
               ))}
             </ol>
@@ -279,7 +293,7 @@ export function DocsChat() {
               <ul>
                 {chatStarters(hasPage).map((s) => (
                   <li key={s}>
-                    <button type="button" className="pg-pill" onClick={() => void ask(s)}>
+                    <button type="button" className="docs-chat-starter" onClick={() => void ask(s)}>
                       {s}
                     </button>
                   </li>
@@ -293,8 +307,13 @@ export function DocsChat() {
             </p>
           ) : null}
         </div>
+        {scrolledUp && messages.length ? (
+          <div className="docs-chat-jump">
+            <ScrollButton onClick={toNewest} />
+          </div>
+        ) : null}
         <form
-          className="docs-chat-form"
+          className="composer docs-chat-form"
           onSubmit={(e) => {
             e.preventDefault();
             void ask(draft);
@@ -306,6 +325,7 @@ export function DocsChat() {
           <textarea
             id={`${id}-input`}
             ref={input}
+            className="composer-input"
             data-voice="inline"
             rows={2}
             maxLength={ASSISTANT_MAX_CHARS}
@@ -323,46 +343,22 @@ export function DocsChat() {
               void ask(draft);
             }}
           />
-          <div className="docs-chat-form-row">
-            <VoiceInputButton target={() => input.current} />
-            {running ? (
-              <button type="button" className="send-btn" aria-label="Stop" onClick={() => abort.current?.abort()}>
-                <span className="docs-chat-stop" aria-hidden />
-              </button>
-            ) : (
-              <button type="submit" className="send-btn" aria-label="Send" disabled={!draft.trim()}>
-                <Icon name="arrowUp" />
-              </button>
-            )}
+          <div className="composer-row">
+            <div className="composer-actions">
+              <VoiceInputButton target={() => input.current} className="composer-voice" size={22} />
+              {running ? (
+                <button type="button" className="send-btn" aria-label="Stop" onClick={() => abort.current?.abort()}>
+                  <span className="docs-chat-stop" aria-hidden />
+                </button>
+              ) : (
+                <button type="submit" className="send-btn" aria-label="Send" disabled={!draft.trim()}>
+                  <Icon name="arrowUp" size={24} />
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </aside>
     </>
-  );
-}
-
-function Part({ part, role, streaming }: { part: ChatPart; role: ChatMessage["role"]; streaming: boolean }) {
-  if (part.kind === "images") {
-    return (
-      <div className="docs-chat-images">
-        {part.srcs.map((src) => (
-          // Generated by a demo on this page (isChatImageSrc): next/image can't optimize a data URL.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={src} src={src} alt="Generated by the demo" />
-        ))}
-      </div>
-    );
-  }
-  if (part.kind === "text") {
-    return role === "user" ? <p className="pg-bubble-user">{part.text}</p> : <MarkdownText text={part.text} streaming={streaming} docsLinks />;
-  }
-  return (
-    <div className={`docs-chat-step is-${part.state}`}>
-      {part.state === "running" ? <span className="spinner" aria-hidden /> : <Icon name={part.state === "done" ? "check" : "alert"} size={14} />}
-      <span>
-        {part.label}
-        {part.detail ? <span className="docs-chat-step-detail"> {part.detail}</span> : null}
-      </span>
-    </div>
   );
 }

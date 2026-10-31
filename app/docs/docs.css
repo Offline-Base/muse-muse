@@ -2085,20 +2085,25 @@
   margin-right: auto;
 }
 
+/*
+ * The conversation in the Muse app's look (docs/UI_MUSE_APP.md, "Docs sidebar chat"): the reader's bubbles, the
+ * agent's steps folding into "Show thinking" once a reply is done, plain-text answers, and the composer's card
+ * (app/globals.css) at the sidebar's width. The bubbles, steps and buttons are the chat kit (components/chat).
+ */
 .docs-chat-log {
   flex: 1;
   min-height: 0;
-  padding: 16px;
+  padding: 20px 16px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  font-size: 14.5px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 26px;
 }
 
 .docs-chat-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 28px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2106,68 +2111,27 @@
 
 .docs-chat-user {
   display: flex;
-  justify-content: flex-end;
 }
 
-.docs-chat-reply {
+.docs-chat-reply,
+.docs-chat-steps {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   min-width: 0;
 }
 
-.docs-chat-thinking,
-.docs-chat-step {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.docs-chat-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  line-height: 1.4;
-}
-
-.docs-chat-step > :first-child {
-  flex: none;
-  margin-top: 2px;
-}
-
-.docs-chat-step .spinner {
-  width: 13px;
-  height: 13px;
-}
-
-.docs-chat-step.is-failed > :first-child {
-  color: var(--bad, #c0392b);
-}
-
-.docs-chat-step-detail {
-  display: block;
-  margin-top: 2px;
-}
-
-.docs-chat-images {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.docs-chat-images img {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+.docs-chat-steps[hidden] {
+  display: none;
 }
 
 .docs-chat-empty {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  color: var(--muted);
+  color: var(--chat-muted);
+  font-size: 15px;
+  line-height: 22px;
 }
 
 .docs-chat-empty p {
@@ -2184,12 +2148,23 @@
   list-style: none;
 }
 
-.docs-chat-empty .pg-pill {
-  height: auto;
+/* Starter questions: outlined pills, 32 px tall on one line, with rounder corners when they wrap. */
+.docs-chat-starter {
   min-height: 32px;
-  padding-block: 6px;
+  padding: 5px 14px;
+  border: 1px solid var(--chat-line);
+  border-radius: 16px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
   text-align: left;
-  white-space: normal;
+  cursor: pointer;
+}
+
+.docs-chat-starter:hover {
+  background: var(--hover);
 }
 
 .docs-chat-error {
@@ -2200,44 +2175,39 @@
   font-size: 13.5px;
 }
 
+/* The scroll button, centered 16 px above the box while the conversation is scrolled up. */
+.docs-chat-jump {
+  position: relative;
+  height: 0;
+}
+
+.docs-chat-jump .chat-scroll {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+}
+
 .docs-chat-form {
+  flex: none;
   margin: 0 12px 12px;
-  padding: 10px 10px 8px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 16px;
 }
 
-.docs-chat-form:focus-within {
-  border-color: var(--accent);
+/* The box opens focused, so it keeps the accent ring it always had: the card's hairline ring is too faint to find. */
+.docs-chat-form.composer:has(.composer-input:focus-visible) {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-card);
 }
 
-.docs-chat-form textarea {
-  display: block;
-  width: 100%;
-  max-height: 160px;
-  border: 0;
-  outline: 0;
-  resize: none;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  font-size: 14.5px;
-  line-height: 1.5;
-}
-
-.docs-chat-form-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
+/* Stop, while a reply runs: a white rounded square in the send button. */
 .docs-chat-stop {
   display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  background: currentColor;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
 }
 
 /* With room to spare, the page and the demo panel sit beside the sidebar. On smaller windows it covers them. */
