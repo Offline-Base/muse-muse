@@ -44,14 +44,13 @@ class handler(BaseHTTPRequestHandler):
   TypeScript and passes what Python needs in the body.
 - No web frameworks (Flask, FastAPI, Django and the like): with one in `requirements.txt` Vercel runs the whole project as
   that app, and the Next.js app stops working.
-- `api/py/musemuse_health.py` and `vercel.json` are platform files. Leave them as they are, and add nothing else to
-  `vercel.json`.
+- `api/py/musemuse_health.py`, `vercel.json` and `.python-version` are platform files. Leave them as they are, and add
+  nothing else to `vercel.json`.
 
 ## Packages
 
-List them in `requirements.txt`, one per line, pinned as `name==version`. Pick versions with wheels for Python 3.12, which
-Vercel runs, and for the build machine's Python, which `node scripts/py-local.mjs doctor` prints. Then run
-`node scripts/py-local.mjs install`. It installs wheels from PyPI outside the product folder, so nothing large is
+List them in `requirements.txt`, one per line, pinned as `name==version`. Pick versions with wheels for Python 3.14: the
+build machine runs it, and `.python-version` makes Vercel run the same one. Then run `node scripts/py-local.mjs install`. It installs wheels from PyPI outside the product folder, so nothing large is
 deployed. The build machine reaches PyPI for downloads only.
 
 ## Calling it from an action

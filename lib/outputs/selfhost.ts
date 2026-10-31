@@ -150,7 +150,7 @@ function kitReadme(m: KitManifest, product: OutputProduct): string {
     "",
     "Or deploy it to Vercel: `npx vercel deploy`, then set `PRODUCT_TOKEN` (your Meta API key) and `GATEWAY_URL=https://api.meta.ai` in the project's environment variables.",
     "",
-    `It needs Node ${m.needs.node} or newer${m.needs.python ? ", and Python 3.12 for its Python functions in `api/py/`: Vercel runs them itself, and anywhere else set `MUSEMUSE_PYTHON=local` and run `node scripts/py-local.mjs install`" : ""}.`,
+    `It needs Node ${m.needs.node} or newer${m.needs.python ? ", and for its Python functions in `api/py/` the Python that `.python-version` names: Vercel runs them itself, and anywhere else set `MUSEMUSE_PYTHON=local` and run `node scripts/py-local.mjs install`" : ""}.`,
     "",
     ...(m.platformOnly.length
       ? ["## What doesn't work here", "", "These parts reach Muse Muse itself, so they don't work on your own key:", "", ...m.platformOnly.map((p) => `- ${p.what}`), ""]

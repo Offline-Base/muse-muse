@@ -22,7 +22,7 @@ const packages = (runtime: RuntimeBrief) => runtime.packages.filter((p) => PYPI_
 
 function packagesLine(runtime: RuntimeBrief): string {
   return packages(runtime).length
-    ? `Packages, from PyPI: ${packages(runtime).map((p) => `\`${p}\``).join(", ")}. Pin each in \`requirements.txt\` as \`name==version\` with a version that has wheels for Python 3.12.`
+    ? `Packages, from PyPI: ${packages(runtime).map((p) => `\`${p}\``).join(", ")}. Pin each in \`requirements.txt\` as \`name==version\` with a version that has wheels for Python 3.14, which both the build machine and Vercel run (`.python-version`).`
     : "No packages: the standard library is enough. Keep `requirements.txt` without any.";
 }
 
@@ -47,7 +47,7 @@ export const RUNTIME_RENDER: CapRenderEntry = {
       "- There is no stand-in: during the build `callPython` runs the real function on this machine through the local runner, and the platform runs each function again on the same input in verify's checks.",
       "- Smoke test: run one Python-backed action through its route with `expectPythonAction(request, \"<action>\", input)` from `tests/caps/runtime.ts`, and assert the reply's shape. It records the check.",
       "- `template/AGENTS.md` says the build machine reaches only npm, the Meta API and the Muse Muse gateway. For this brief it also reaches PyPI (pypi.org and files.pythonhosted.org), for downloads only.",
-      "- `lib/platform/python.ts`, `scripts/py-local.mjs`, `api/py/musemuse_health.py`, `vercel.json` and `tests/caps/runtime.ts` are platform files. Leave them as they are.",
+      "- `lib/platform/python.ts`, `scripts/py-local.mjs`, `api/py/musemuse_health.py`, `vercel.json`, `.python-version` and `tests/caps/runtime.ts` are platform files. Leave them as they are.",
     ];
   },
   refine(brief) {

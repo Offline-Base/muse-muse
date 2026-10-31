@@ -23,7 +23,8 @@ function walk(dir, base = dir) {
   );
 }
 
-const hasPython = ["python3.12", "python3.13", "python3.14", "python3"].some((bin) => spawnSync(bin, ["-c", "import sys; assert sys.version_info >= (3, 9)"]).status === 0);
+const hasPythonBin = ["python3.14", "python3.13", "python3.12", "python3"].find((bin) => spawnSync(bin, ["-c", "import sys; assert sys.version_info >= (3, 9)"]).status === 0);
+const hasPython = Boolean(hasPythonBin);
 const needsPython = hasPython ? false : "needs a Python 3 on this machine";
 
 /** A product folder: the overlay's files plus the given functions, with its own package cache. */
@@ -31,6 +32,8 @@ function product(functions = {}, requirements = null) {
   const dir = mkdtempSync(path.join(tmpdir(), "mm-runtime-"));
   dirs.push(dir);
   cpSync(FILES, dir, { recursive: true });
+  // The overlay pins the builder snapshot's Python for Vercel. Here, whatever Python this machine has runs it.
+  rmSync(path.join(dir, ".python-version"));
   for (const [name, source] of Object.entries(functions)) writeFileSync(path.join(dir, "api/py", `${name}.py`), source);
   if (requirements !== null) writeFileSync(path.join(dir, "requirements.txt"), requirements);
   return dir;
@@ -193,6 +196,15 @@ describe("the fixed checks", { skip: needsPython }, () => {
     assert.match(byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).functions.detail, /no Python function/);
     dir = product({ sum_values: SUM }, "numpy\n");
     assert.equal(byId(await (await checker(dir)).check({ record, root: dir, env: env(dir) })).requirements.ok, false);
+  });
+
+  test("fail when the build's Python isn't the one .python-version gives Vercel", async () => {
+    const dir = product({ sum_values: SUM });
+    writeFileSync(path.join(dir, ".python-version"), "3.9\n");
+    const python = byId(await (await checker(dir)).check({ record, root: dir, env: { ...env(dir), MUSEMUSE_PYTHON_BIN: hasPythonBin } }));
+    assert.equal(python.python.ok, python.python.detail.startsWith("Python 3.9"), python.python.detail);
+    if (!python.python.ok) assert.match(python.python.detail, /but \.python-version gives Vercel 3\.9$/);
+    assert.equal(readFileSync(path.join(FILES, ".python-version"), "utf8"), "3.14\n", "the builder snapshot's Python (probe, Oct 31)");
   });
 
   test("compare shapes, not values", async () => {

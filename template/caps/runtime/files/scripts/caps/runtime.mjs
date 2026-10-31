@@ -2,7 +2,7 @@
 //
 // The fixed checks for Python functions. In a build sandbox this is the platform's read-only copy, and it runs the
 // product's api/py/ files with the platform's own runner beside it (../py-local.mjs), never the product's copy:
-//   python         a Python 3 runs on the build machine
+//   python         a Python 3 runs on the build machine, the same minor version .python-version gives Vercel
 //   requirements   requirements.txt pins every package and lists no web framework
 //   functions      every api/py/<name>.py loads and defines class handler(BaseHTTPRequestHandler)
 //   health         api/py/musemuse_health.py answers {"ok": true}, as it must on the live link
@@ -57,8 +57,14 @@ function loggedCalls(root) {
 export async function check({ record, root, env = process.env }) {
   const py = await runner();
   const checks = [];
-  const python = py.findPython({ env });
-  checks.push({ id: "python", ok: Boolean(python), detail: python ? `Python ${python.version}` : "there is no Python 3 on the build machine" });
+  const python = py.findPython({ env, root });
+  const pinned = existsSync(path.join(root, ".python-version")) ? readFileSync(path.join(root, ".python-version"), "utf8").trim() : "";
+  const same = Boolean(python) && (!pinned || pinned === python.minor);
+  checks.push({
+    id: "python",
+    ok: same,
+    detail: !python ? "there is no Python 3 on the build machine" : same ? `Python ${python.version}` : `the build runs Python ${python.version}, but .python-version gives Vercel ${pinned}`,
+  });
   if (!python) return checks;
 
   const req = py.readRequirements(root);

@@ -152,9 +152,19 @@ export class PythonRunError extends Error {
   }
 }
 
-/** The Python that runs here: MUSEMUSE_PYTHON_BIN, else the newest of 3.12, 3.13, 3.14, else python3. Null when none. */
-export function findPython({ env = process.env } = {}) {
-  const tries = env.MUSEMUSE_PYTHON_BIN ? [env.MUSEMUSE_PYTHON_BIN] : ["python3.12", "python3.13", "python3.14", "python3"];
+/**
+ * The Python that runs here: MUSEMUSE_PYTHON_BIN, else the one .python-version names (what Vercel runs), else 3.14,
+ * 3.13, 3.12, else python3. Null when none.
+ */
+export function findPython({ env = process.env, root = null } = {}) {
+  let pinned = null;
+  try {
+    const v = root ? readFileSync(path.join(root, ".python-version"), "utf8").trim() : "";
+    if (/^3\.\d{1,2}$/.test(v)) pinned = `python${v}`;
+  } catch {
+    // No pin: the newest one here.
+  }
+  const tries = env.MUSEMUSE_PYTHON_BIN ? [env.MUSEMUSE_PYTHON_BIN] : [...(pinned ? [pinned] : []), "python3.14", "python3.13", "python3.12", "python3"];
   for (const bin of tries) {
     const res = spawnSync(bin, ["-I", "-c", "import sys; print('%d.%d.%d' % sys.version_info[:3])"], { encoding: "utf8", timeout: 10_000 });
     const version = res.status === 0 ? res.stdout.trim() : "";
@@ -221,7 +231,7 @@ function caBundle(env) {
  * from its PyPI wheel when this Python has none. Does nothing when it is already installed or there are no packages.
  */
 export function install(root, { env = process.env, force = false, log = () => {} } = {}) {
-  const python = findPython({ env });
+  const python = findPython({ env, root });
   if (!python) throw new PythonRunError("no_python", "There is no Python 3 on this machine (python3.12, python3.13, python3.14 or python3).");
   const req = readRequirements(root);
   if (!req.ok) throw new PythonRunError("bad_requirements", `requirements.txt: ${req.problems.join("; ")}`);
@@ -280,7 +290,7 @@ export function runFunction({ root, name, body = "", method = "POST", query = ""
     if (!existsSync(file)) return reject(new PythonRunError("unknown_function", `There is no ${FUNCTIONS_DIR}/${name}.py.`));
     const input = Buffer.isBuffer(body) ? body : Buffer.from(String(body), "utf8");
     if (input.length > MAX_BODY_BYTES) return reject(new PythonRunError("too_large", "The request is over 4.5 MB."));
-    const python = findPython({ env });
+    const python = findPython({ env, root });
     if (!python) return reject(new PythonRunError("no_python", "There is no Python 3 on this machine."));
     let dir = null;
     try {
@@ -390,7 +400,7 @@ if (isMain()) {
   };
   try {
     if (command === "doctor") {
-      const python = findPython();
+      const python = findPython({ root });
       const req = readRequirements(root);
       process.stdout.write(
         `${JSON.stringify({ python: python ? python.version : null, bin: python?.bin ?? null, functions: listFunctions(root), packages: req.packages.map((p) => p.line), problems: req.problems }, null, 2)}\n`,
