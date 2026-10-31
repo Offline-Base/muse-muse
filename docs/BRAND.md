@@ -16,7 +16,7 @@ Every value carries one label. When sources disagree, the higher one in this lis
 | **M** | Measured: computed styles and CSS variables read from live www.meta.ai, Oct 31, 2026, in headless Chromium, signed out, at 1440x900 and 390x844, light and dark | Exact, for what a signed-out visitor sees |
 | **M-demo** | Measured, from the small product demos inside the marketing page | Exact for color and radius. Text there is drawn smaller than in the app, so sizes are weak |
 | **S** | Sampled from pixels of a 2x capture of the signed-in app (`docs/UI_MUSE_APP.md`) | Close, and the only look at the signed-in conversation |
-| **E** | Estimated: the owner's brand spec, a model's reading of screenshots we don't have | A guess. Used only where nothing better exists |
+| **E** | Estimated: the owner's brand spec, a model's reading of screenshots we don't have, kept word for word in [brand-source-gemini-2026-10-31.md](brand-source-gemini-2026-10-31.md) | A guess. Used only where nothing better exists. Its background claims aren't checked |
 | **O** | Ours: a Muse Muse value kept or chosen because no source covers it | Change freely |
 
 **Three samples checked out exactly.** The live secondary text `rgba(0,4,9,.59)` on white is `#696B6E`, and the faint
@@ -391,13 +391,16 @@ retinting `--bg` would retint the docs. To keep their look:
 - Template changes reach builds only through a new snapshot (`npm run snapshot`, then `BUILDER_SNAPSHOT_ID`).
 - A refine keeps the sandbox a product was built in, and its copy of the template, so shipped products never change on
   their own.
-- `setupBuilder` carries `template/targets/` but says it only counts toward the hash: I found nothing yet that copies an
-  overlay into a workspace.
+- `setupBuilder` carried `template/targets/` only toward the hash: nothing copied an overlay into a workspace. The
+  build below adds that for the muse-app overlay (see [Built](#built-the-muse-app-overlay-behind-muse_app_look)).
 - `template/tests/judge-shot.ts` and `template/scripts/smoke-report.mjs` rely on `.card.ai`, `data-result` and `aria-busy`.
 - The look has already been tuned through canaries and undone once (`e21beb5`), so a change here can cost verify and
   judge passes.
 
 ### Recommendation: a second look, behind a flag
+
+The plan as written before the build. [Built](#built-the-muse-app-overlay-behind-muse_app_look) says what changed
+from it and why.
 
 Don't rewrite meta-ui. Add beside it, and gate what tells a build to use it.
 
@@ -418,6 +421,9 @@ An overlay under `template/targets/` is the cleaner home, since flags-off sandbo
 would need a new copy step. It can come later if a stray skill matters.
 
 ### What `look.css` does
+
+The plan's table. The overlay's `app/muse-app.css` and its skill's `reference/tokens.md` replace it; where they differ,
+[Built](#built-the-muse-app-overlay-behind-muse_app_look) says why.
 
 It changes **values, not names**: same tokens, same classes, same components, so verify, the judge's screenshots and the
 demo studio keep working.
@@ -445,6 +451,77 @@ demo studio keep working.
 The skill keeps everything in `meta-ui` about flows, states and copy, and repeats the rules: no Meta logos or marks,
 never "Meta" as the brand, keep the footer, no dead controls. Products keep their own name, and they get no platform
 sidebar or composer unless the brief asks for one.
+
+### Built: the muse-app overlay, behind MUSE_APP_LOOK
+
+Done Oct 31. Off by default, so no build changes until the flag is on and a new snapshot is live.
+
+**What's in it.** `template/targets/muse-app/`, in the shape of the glasses and VR overlays (`deps.json`, `files/`,
+`platform-files.json`):
+
+| File in the product | What it is |
+|---|---|
+| `.agents/skills/muse-app-ui/` | The skill: `SKILL.md` (principles, which pattern, tokens, parts, patterns, the product rules, dark mode, accessibility) and `reference/tokens.md` (every value with its label), `components.md` (markup), `screens.md` (tool, form, results, gallery and chat, with when each fits) and `sources.md` |
+| `app/muse-app.css` | The tokens and a few rule values. Loads after `globals.css`; same token and class names, plus `--glass`, `--send-from`, `--send-to`, `--segment`, `--shadow-card` and `.hero.center` |
+| `app/layout.tsx` | The template's, loading `@fontsource-variable/inter/opsz.css` (the template's own dependency, 5.3.0, OFL), then `globals.css`, then `muse-app.css`, with `themeColor` #ffffff and #181819 |
+| `AGENTS.md`, `.agents/skills/product-ui/SKILL.md`, `app/page.tsx` | The template's, with only the lines that name the look changed to muse-app-ui |
+| `.agents/skills/meta-ui/` | Short pointers to muse-app-ui, so a check or skill that says "meta-ui" still lands on the right page |
+
+`template/scripts/__tests__/muse-app.test.mjs` keeps the copied files in step with the base files (rebuild them with
+`UPDATE_OVERLAY=1`), and checks that the skill's snippets use only the template's classes, components, icons and tokens
+and no raw colors. `contrast.test.mjs` checks the look's text pairs in light and dark, following the real cascade.
+`platform-files.json` lists the skill, as the glasses overlay lists its own. Nothing on this branch puts an overlay's
+platform files back before a check yet (the VR branch adds that for brief targets), and verify reads none of these files.
+
+**What the flag does.** `MUSE_APP_LOOK` in `lib/env.ts` (`env.museAppLook`), in `.env.example` and in the `FLAGS` of
+`flags-off.test.ts`. When it's on:
+
+- `provisionSandbox` runs `applyLookScript` (`lib/sandbox/look.ts`) in the product before the user's files land: it copies
+  the overlay over the template and commits "Look: muse-app". A retry that finds that commit does nothing.
+- The build prompt says to read `.agents/skills/muse-app-ui` and takes the look from it and `app/muse-app.css`. The fix and
+  change prompts keep whichever look the product has: muse-app-ui when it's there, otherwise meta-ui.
+- The judge is told both house styles are expected, since products built before the flag keep meta-ui. Its rules on
+  Meta's logos and marks are unchanged.
+
+With the flag off, every prompt and the judge are byte-identical to the goldens, and no overlay is applied.
+
+**A builder snapshot is needed.** `setupBuilder` now installs `template/targets/` read-only at `/vercel/musemuse/targets`,
+the place the VR branch uses. On the live site, a provision with the flag on and an older snapshot fails with "This
+builder snapshot doesn't have the muse-app overlay", rather than build with a prompt that names a missing skill. A local
+run adds the overlay from this checkout. So, in order: `npm run snapshot`, set `BUILDER_SNAPSHOT_ID`, then turn
+`MUSE_APP_LOOK` on, then run canaries against the same verify and judge checks. Products already shipped keep the
+sandbox and look they were built with.
+
+**Where it differs from the plan above.**
+
+| Plan | Built | Why |
+|---|---|---|
+| Skill `muse-look` in the base template, with a narrow description | Skill `muse-app-ui`, only in the overlay | A flags-off build never sees it, so it can't be picked by mistake |
+| `app/look.css`, imported by the prompt's instruction | `app/muse-app.css`, imported by the overlay's `layout.tsx` | The import is in place before Muse Code starts |
+| `MUSE_LOOK_ENABLED` | `MUSE_APP_LOOK` | Named for the look it turns on |
+| An overlay "needs a new copy step", later | The copy step, for this overlay | So nothing changes until it's applied |
+| Judge told the new house style | Judge told both | Older products keep meta-ui, and a refine is judged too |
+
+**Product values that differ from the platform's.** The platform follows the live page. Products keep AA and touch
+sizes, so these are ours (O):
+
+| Token or part | Platform (live) | Products | Why |
+|---|---|---|---|
+| `--placeholder` | `rgba(0,7,17,.37)`, 2.52:1 | `--fg-2`, 5.36:1 | AA |
+| Primary button | The gradient, white text 4.03:1 at its end | Flat `#0064d4`, 5.57:1 | AA |
+| `--accent` in dark | `#1793ff`, white text 3.16:1 | `#0064d4` for fills; `--link` and `--focus` stay `#1793ff` | AA |
+| `--hover` in dark | `rgba(255,255,255,.12)` | `.08` | Secondary text on a hovered row was 4.49:1 |
+| `--tinted-fg` in dark | none measured | `#5cadff` | `#1793ff` on the hovered tint is 3.98:1 |
+| AI gradient | Working icon `#6547f5` to `#c15af7` | `#6547f5` to `#9b45f0` | White on `#c15af7` is 3.46:1; on `#9b45f0` 4.66:1 |
+| `--scrim` | `rgba(0,0,0,.5)` | `.6` | White over a white photo: 3.98:1 at .5, 5.74:1 at .6 |
+| `--field-line` | hairline only | `#8a8d91`, dark `#6f7276` | A field's edge needs 3:1 |
+| Buttons | 36 px | 44 px pills | Touch |
+| Composer focus | no ring | the template's ring | Keyboard users |
+| Hero | 48 px centered | 28 px, 30 px from 720, left; `.hero.center` only for a chat start | judgeShot's two-line h1 rule, and most products aren't chat |
+
+**Also fixed: test calls on a local platform.** A local platform's products call Meta directly and skipped the gateway's
+`TEST_MODEL` swap. In that mode only, `envLocal` writes `TEST_MODEL` into the product's `.env.local` and the template's
+`respondJson` runs a Muse Wonder call on Spark 1.3 Contributor when it names exactly that. Production doesn't change.
 
 ## Gap list
 
