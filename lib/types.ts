@@ -164,7 +164,7 @@ export type BuildEventBody =
   | { type: "cost"; totalUsd: number; addedUsd: number; what: string }
   | { type: "log"; text: string }
   /** The owner sent a running build a command (docs/MUSE_CODE_FULL.md, "Steering"): a note, a stop, a goal change. */
-  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer"; text?: string; ok: boolean; error?: string }
+  | { type: "control"; round: number; action: "steer" | "queue" | "interrupt" | "stop" | "goal" | "answer" | "workflow" | "subagent"; text?: string; ok: boolean; error?: string }
   | { type: "error"; message: string };
 
 /** A stored event as the SSE route sends it. `id` is the SSE event id. */
