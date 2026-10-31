@@ -42,6 +42,8 @@ interface Scenario {
   stopAtPoll?: number;
   /** The owner's Stop shows up only when a run's round is taken off the build row, as it can just before the cap. */
   stopOnRoundClear?: boolean;
+  /** Every run is on the session bridge, so each poll returns the bridge condenser's state. */
+  bridge?: boolean;
 }
 
 let scenario: Scenario = {};
@@ -101,7 +103,7 @@ const fakeSteps = {
   startMuseStep: async (input: { round: number }) => {
     record("startMuseStep", input);
     musePolled = 0;
-    return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}` };
+    return { cmdId: `cmd-${input.round}`, logPath: `/log/${input.round}`, ...(scenario.bridge ? { engine: "serve" as const } : {}) };
   },
   museRoundStep: async (buildId: string, round: number | null) => {
     record("museRoundStep", buildId, round);
@@ -125,6 +127,7 @@ const fakeSteps = {
       announced,
       childrenIncluded,
       stopRequested,
+      ...(scenario.bridge ? { bridgeState: { shown: { [`item-${musePolled}`]: `line ${musePolled}` }, announced: [`hook:${musePolled}`] } } : {}),
     };
   },
   killStep: async (...args: unknown[]) => record("killStep", ...args),
@@ -275,6 +278,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       images: ["inspo/a.png"],
       model: "muse-spark-1.3",
       round: 0,
+      buildId: "b1",
     });
     assert.equal(named("judgeStep").length, 1);
     assert.equal((named("registerStep")[0]!.args[0] as { status: string }).status, "live");
@@ -503,6 +507,7 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
       images: [],
       model: "muse-spark-1.3",
       round: 10,
+      buildId: "r1",
     });
     assert.equal(named("createProductStep").length, 0);
     assert.equal(named("cleanupStep").length, 1);
@@ -616,6 +621,32 @@ describe("build workflow orchestration", { skip: canMock ? false : "needs --expe
         .map((c) => (c.args[0] as { usageRecorded?: boolean }).usageRecorded),
       [false, true, true],
     );
+  });
+
+  it("hands each poll the session bridge's condenser state from the one before, and names the build at every start", async () => {
+    reset({ musePolls: 3, bridge: true, steering: true, verifies: [{ passed: false }, { passed: true }] });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b29" }), { status: "live" });
+    // A new run starts from nothing: the fix round's first poll carries no state from the build round's last.
+    assert.deepEqual(
+      named("pollMuseStep").map((c) => (c.args[0] as { bridgeState?: unknown }).bridgeState),
+      [
+        undefined,
+        { shown: { "item-1": "line 1" }, announced: ["hook:1"] },
+        { shown: { "item-2": "line 2" }, announced: ["hook:2"] },
+        undefined,
+        { shown: { "item-1": "line 1" }, announced: ["hook:1"] },
+        { shown: { "item-2": "line 2" }, announced: ["hook:2"] },
+      ],
+    );
+    assert.deepEqual(
+      named("startMuseStep").map((c) => (c.args[0] as { buildId?: string }).buildId),
+      ["b29", "b29"],
+    );
+
+    // An exec round's polls never carry one.
+    reset({ musePolls: 3 });
+    assert.deepEqual(await wf.buildProduct({ buildId: "b30" }), { status: "live" });
+    assert.ok(named("pollMuseStep").every((c) => !("bridgeState" in (c.args[0] as object))));
   });
 
   it("names the running round on the build row for the owner's controls, and takes it off a run stopped at its cap", async () => {

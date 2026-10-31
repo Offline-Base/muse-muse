@@ -134,6 +134,7 @@ async function runMuse(
     images: run.images,
     model: ctx.model,
     round,
+    buildId: ctx.buildId,
   });
   if (env.steeringEnabled) await museRoundStep(ctx.buildId, round);
   const startedAt = Date.now();
@@ -141,6 +142,8 @@ async function runMuse(
   let usageRecorded = false;
   let announced: string[] = [];
   let childrenIncluded: boolean | null = null;
+  // The session bridge's condenser state (serve rounds only), so an item's update replaces its line instead of repeating it.
+  let bridgeState: MusePollResult["bridgeState"];
   const poll = () =>
     pollMuseStep({
       buildId: ctx.buildId,
@@ -152,6 +155,7 @@ async function runMuse(
       usageRecorded,
       announced,
       childrenIncluded,
+      ...(bridgeState ? { bridgeState } : {}),
     });
   for (let polls = 1; ; polls++) {
     await sleep(MUSE_POLL_MS);
@@ -160,6 +164,7 @@ async function runMuse(
     usageRecorded = read.usageRecorded;
     announced = read.announced ?? announced;
     childrenIncluded = read.childrenIncluded ?? childrenIncluded;
+    bridgeState = read.bridgeState ?? bridgeState;
     // The owner pressed Stop (POST /api/builds/{id}/control). The session was told to end too, so a run that hasn't
     // ended yet is killed, and nothing more runs after this poll.
     if (read.stopRequested) {
