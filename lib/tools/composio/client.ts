@@ -39,8 +39,8 @@ export interface ComposioApi {
   deleteConnection(connectedAccountId: string): Promise<void>;
 }
 
-/** Composio's refusals, by the number in `error.code`, from the spike. */
-export const COMPOSIO_CODES = { noConnection: 4302, toolNotEnabled: 4310 } as const;
+/** Composio's refusals, by the number in `error.code`. 4324 is the same refusal as 4310, when the whole toolkit is off. */
+export const COMPOSIO_CODES = { noConnection: 4302, toolNotEnabled: 4310, toolkitNotAllowed: 4324 } as const;
 const WALLET_EMPTY = "Metering_WalletBalanceExhausted";
 
 export type ComposioFailure =
@@ -68,6 +68,16 @@ function bodyOf(err: unknown): { code?: unknown; slug?: unknown } {
   }
 }
 
+/**
+ * True when the reply says the tool failed. Most failures come back as resultType "failed", but a page Firecrawl can't
+ * reach comes back "completed" with success: false and its reason in data.error.
+ */
+export function replyFailed(reply: Pick<ToolReply, "resultType" | "data">): boolean {
+  if (reply.resultType !== "completed") return true;
+  const data = reply.data as { success?: unknown; error?: unknown } | null | undefined;
+  return data?.success === false && typeof data.error === "string";
+}
+
 /** Sorts a thrown error from the SDK into what the gateway does about it. */
 export function classifyFailure(err: unknown): ComposioFailure {
   const e = err as { status?: unknown; statusCode?: unknown; cause?: { status?: unknown } } | null;
@@ -77,7 +87,7 @@ export function classifyFailure(err: unknown): ComposioFailure {
     return { kind: "wallet_empty" };
   }
   if (Number(body.code) === COMPOSIO_CODES.noConnection) return { kind: "no_connection" };
-  if (Number(body.code) === COMPOSIO_CODES.toolNotEnabled) return { kind: "not_enabled" };
+  if (Number(body.code) === COMPOSIO_CODES.toolNotEnabled || Number(body.code) === COMPOSIO_CODES.toolkitNotAllowed) return { kind: "not_enabled" };
   if (status >= 400 && status < 500 && status !== 408 && status !== 429) return { kind: "refused", status };
   return { kind: "unknown" };
 }

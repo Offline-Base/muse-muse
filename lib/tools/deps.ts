@@ -11,8 +11,8 @@ import {
   settleSpend,
 } from "@/lib/gateway/store";
 import { findToken } from "@/lib/gateway/tokens";
-import { classifyFailure, composioApi, type ComposioApi } from "@/lib/tools/composio/client";
-import type { ToolsDeps } from "@/lib/tools/handler";
+import { composioApi, type ComposioApi } from "@/lib/tools/composio/client";
+import { revokeConnections, type ToolsDeps } from "@/lib/tools/handler";
 import {
   activeConnections,
   buildFixtures,
@@ -73,20 +73,5 @@ export function toolsDeps(): ToolsDeps {
 export async function revokeDisabledProductConnections(): Promise<number> {
   // With no key there is no reaching the accounts, so the rows stay and a later run tries again.
   const api = composio();
-  if (!api) return 0;
-  let revoked = 0;
-  for (const row of await connectionsOfOffProducts()) {
-    try {
-      await api.deleteConnection(row.connectedAccountId);
-    } catch (err) {
-      const failure = classifyFailure(err);
-      if (!(failure.kind === "refused" && failure.status === 404)) {
-        console.error("[tools] revoking a connection failed, so the next run tries again.");
-        continue;
-      }
-    }
-    await markConnectionRevoked(row.id);
-    revoked += 1;
-  }
-  return revoked;
+  return api ? revokeConnections(api, await connectionsOfOffProducts(), markConnectionRevoked) : 0;
 }

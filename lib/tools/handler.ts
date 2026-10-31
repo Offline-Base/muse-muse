@@ -16,8 +16,8 @@ import {
   toolkitLabel,
   type ListedFunction,
 } from "@/lib/tools/catalog";
-import { classifyFailure, type ComposioApi, type ComposioFailure, type ToolReply } from "@/lib/tools/composio/client";
-import { ensureToolSession, sessionConfigFor, type SessionStore } from "@/lib/tools/composio/sessions";
+import { classifyFailure, replyFailed, type ComposioApi, type ComposioFailure, type ToolReply } from "@/lib/tools/composio/client";
+import { ensureToolSession, sessionConfigFor, STALE_SESSION_HASH, type SessionStore } from "@/lib/tools/composio/sessions";
 import type { CatalogFunction, CatalogTool } from "@/lib/tools/composio/sync";
 import type { ToolErrorCode, ToolFixtures, ToolPrincipal } from "@/lib/tools/ids";
 import { TOOL_ERRORS } from "@/lib/tools/ids";
@@ -261,7 +261,8 @@ function secondsToNextMinute(now: Date): number {
 
 function failedOutput(tool: CatalogTool, reply: ToolReply): Response {
   // The provider's own words help a model fix its call, but must not name the provider.
-  const first = typeof reply.error === "string" ? (reply.error.split("\n").find((l) => l.trim()) ?? "").trim() : "";
+  const said = reply.error ?? (reply.data as { error?: unknown } | null)?.error;
+  const first = typeof said === "string" ? (said.split("\n").find((l) => l.trim()) ?? "").trim().split(/(?<=\.)\s/)[0] : "";
   const detail = first && first.length <= 240 && !/composio/i.test(first) ? ` ${first}` : "";
   return toolError("tool_failed", `${tool.label} didn't work.${detail}`);
 }
@@ -408,9 +409,10 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
 
     const reservation = await deps.reserveSpend(ctx, `composio:${fn.name}`, estimate);
     const release = () => deps.settleSpend(reservation, null);
+    const wanted = sessionFor(tool, token, principal, ownerUserId, allowed);
     let session: string;
     try {
-      session = await ensureToolSession(api as ComposioApi, deps, sessionFor(tool, token, principal, ownerUserId, allowed));
+      session = await ensureToolSession(api as ComposioApi, deps, wanted);
     } catch (err) {
       // No tool ran. A session that can't be made says nothing about the tool, so this is never needs_connection.
       await release();
@@ -434,14 +436,18 @@ async function execute(req: Request, token: GatewayToken, deps: ToolsDeps): Prom
       }
       await release();
       await undoAll();
+      if (failure.kind === "refused" && failure.status === 404) {
+        await deps.saveToolSession({ productId: wanted.productId, composioUserId: wanted.composioUserId, sessionId: session, configHash: STALE_SESSION_HASH });
+      }
       return await refusal(failure, tool, token, principal, ownerUserId, deps, err);
     }
 
-    const costUsd = settledToolUsd(fn, reply);
+    const failed = replyFailed(reply);
+    const costUsd = settledToolUsd(fn, reply, failed);
     await deps.settleSpend(reservation, toolUsage(fn.name, costUsd));
     if (runHold) await settleRun(deps, runHold, { toolCalls: 1, usd: costUsd });
     undo.length = 0;
-    if (reply.resultType !== "completed") return failedOutput(tool, reply);
+    if (failed) return failedOutput(tool, reply);
     if (chargeOf(reply) === null && fn.instant) console.error(`[tools] ${fn.name} came back with no charge, so its estimate stands.`);
     return success(tool, reply.data, costUsd, false);
   } finally {
@@ -604,6 +610,29 @@ async function disconnect(req: Request, token: GatewayToken, deps: ToolsDeps): P
     await deps.revokeConnection(token.productId, userId, toolkit);
   }
   return Response.json({ ok: true, simulated: false });
+}
+
+/** Deletes each account at the provider, then marks its row. One that fails stays for the next run. Returns how many went. */
+export async function revokeConnections(
+  api: Pick<ComposioApi, "deleteConnection">,
+  rows: ReadonlyArray<{ id: string; connectedAccountId: string }>,
+  mark: (id: string) => Promise<void>,
+): Promise<number> {
+  let revoked = 0;
+  for (const row of rows) {
+    try {
+      await api.deleteConnection(row.connectedAccountId);
+    } catch (err) {
+      const failure = classifyFailure(err);
+      if (!(failure.kind === "refused" && failure.status === 404)) {
+        console.error("[tools] revoking a connection failed, so the next run tries again.");
+        continue;
+      }
+    }
+    await mark(row.id);
+    revoked += 1;
+  }
+  return revoked;
 }
 
 function callbackPage(status: number, message: string): Response {

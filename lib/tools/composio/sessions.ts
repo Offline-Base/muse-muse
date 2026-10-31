@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ComposioApi, ComposioSessionConfig } from "@/lib/tools/composio/client";
+import { classifyFailure, type ComposioApi, type ComposioSessionConfig } from "@/lib/tools/composio/client";
 import type { CatalogTool } from "@/lib/tools/composio/sync";
 import { CATALOG } from "@/lib/tools/catalog";
 import { canonicalJson } from "@/lib/tools/sign";
@@ -29,6 +29,9 @@ export function sessionConfigFor(tools: readonly CatalogTool[]): ComposioSession
   };
 }
 
+/** Saved over a session's hash when Composio says it's gone, so the next call replaces it. */
+export const STALE_SESSION_HASH = "stale";
+
 export function sessionConfigHash(config: ComposioSessionConfig): string {
   return createHash("sha256").update(canonicalJson(config)).digest("hex");
 }
@@ -48,9 +51,15 @@ export async function ensureToolSession(
   const existing = await store.findToolSession(o.productId, o.composioUserId);
   if (existing?.configHash === configHash) return existing.sessionId;
   if (existing) {
-    await api.updateSession(existing.sessionId, o.config);
-    await store.saveToolSession({ productId: o.productId, composioUserId: o.composioUserId, sessionId: existing.sessionId, configHash });
-    return existing.sessionId;
+    try {
+      await api.updateSession(existing.sessionId, o.config);
+      await store.saveToolSession({ productId: o.productId, composioUserId: o.composioUserId, sessionId: existing.sessionId, configHash });
+      return existing.sessionId;
+    } catch (err) {
+      // A session Composio no longer has is replaced. Anything else is a real failure.
+      const failure = classifyFailure(err);
+      if (!(failure.kind === "refused" && failure.status === 404)) throw err;
+    }
   }
   const { sessionId } = await api.createSession(o.composioUserId, o.config);
   await store.saveToolSession({ productId: o.productId, composioUserId: o.composioUserId, sessionId, configHash });

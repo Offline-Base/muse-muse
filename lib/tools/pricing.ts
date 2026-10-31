@@ -25,14 +25,14 @@ export function chargeOf(reply: { instantCharge?: { amount?: unknown } | null })
 }
 
 /**
- * What to book for a reply. A charge settles at the charge plus the call fee, and a failed call with no charge at $0
- * (the spike's failure and this unit's check both showed no charge). A success with no charge keeps the estimate, the
- * way the docs proxy settles what it can't read.
+ * What to book for a reply. A real charge settles at the charge plus the call fee. A failed call with no charge is $0
+ * (both failures seen live: a bad address with no charge, and an unreachable host charged "0.000000"). A success with no
+ * charge keeps the estimate, the way the docs proxy settles what it can't read.
  */
-export function settledToolUsd(fn: Pick<CatalogFunction, "estimateUsd" | "instant">, reply: { resultType?: string; instantCharge?: { amount?: unknown } | null }): number {
+export function settledToolUsd(fn: Pick<CatalogFunction, "estimateUsd" | "instant">, reply: { instantCharge?: { amount?: unknown } | null }, failed: boolean): number {
   const charge = chargeOf(reply);
+  if (failed && !charge) return 0;
   if (charge !== null) return charge + COMPOSIO_CALL_USD;
-  if (reply.resultType !== "completed") return 0;
   return estimateToolUsd(fn);
 }
 

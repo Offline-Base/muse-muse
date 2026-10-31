@@ -74,10 +74,11 @@ test("settling: the charge plus the fee, $0 for a failure with no charge, and th
   assert.equal(chargeOf({ instantCharge: { amount: "0.000798" } }), 0.000798);
   assert.equal(chargeOf({ instantCharge: { amount: "nope" } }), null);
   assert.equal(chargeOf({}), null);
-  assert.equal(settledToolUsd(instant, { resultType: "completed", instantCharge: { amount: "0.000798" } }), 0.000798 + COMPOSIO_CALL_USD);
-  assert.equal(settledToolUsd(instant, { resultType: "failed" }), 0);
-  assert.equal(settledToolUsd(instant, { resultType: "failed", instantCharge: { amount: "0.001" } }), 0.001 + COMPOSIO_CALL_USD);
-  assert.equal(settledToolUsd(instant, { resultType: "completed" }), estimateToolUsd(instant));
+  assert.equal(settledToolUsd(instant, { instantCharge: { amount: "0.000798" } }, false), 0.000798 + COMPOSIO_CALL_USD);
+  assert.equal(settledToolUsd(instant, {}, true), 0);
+  assert.equal(settledToolUsd(instant, { instantCharge: { amount: "0.000000" } }, true), 0);
+  assert.equal(settledToolUsd(instant, { instantCharge: { amount: "0.001" } }, true), 0.001 + COMPOSIO_CALL_USD);
+  assert.equal(settledToolUsd(instant, {}, false), estimateToolUsd(instant));
   assert.deepEqual(toolUsage("X", 0), { model: "composio:X", inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, units: 1, costUsd: 0 });
 });
 

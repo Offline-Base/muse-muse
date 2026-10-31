@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { agentModels, BUILD_TOKEN, errorOf, fakeComposio, fakeTools, NOW, OTHER_PRODUCT, PRODUCT, TOKEN, toolsRequest } from "@/lib/tools/__tests__/helpers";
 import type { ToolReply } from "@/lib/tools/composio/client";
-import { handleOwnerExchange, handleTools, type ToolsDeps } from "@/lib/tools/handler";
+import { handleOwnerExchange, handleTools, revokeConnections, type ToolsDeps } from "@/lib/tools/handler";
 import { composioUserId, mintOwnerCode, mintOwnerSession, productComposioUserId } from "@/lib/tools/principal";
 import { COMPOSIO_CALL_USD } from "@/lib/tools/pricing";
 import { mintConnectState } from "@/lib/tools/sign";
@@ -381,6 +381,16 @@ test("step 9: a failed call is a plain tool_failed, settled at $0 with its unit,
   assert.doesNotMatch((await errorOf(await exec(named.deps, SCHOLAR))).message, /composio/i);
 });
 
+test("step 9: an unreachable page comes back completed with success: false, which is a failure at $0", async () => {
+  const g = withReply({ data: { code: "SCRAPE_DNS_RESOLUTION_ERROR", error: 'DNS resolution failed for hostname "x.example". This means the domain name could not be translated.', success: false }, error: null, resultType: "completed", instantCharge: { amount: "0.000000" } });
+  const err = await errorOf(await exec(g.deps, { name: "FIRECRAWL_SCRAPE", arguments: { url: "https://x.example/" }, userInput: "https://x.example/" }));
+  assert.equal(err.status, 502);
+  assert.equal(err.code, "tool_failed");
+  assert.match(err.message, /DNS resolution failed for hostname "x\.example"\.$/);
+  assert.equal(g.settled[0].item?.costUsd, 0);
+  assert.equal(g.settled[0].item?.units, 1);
+});
+
 test("step 9: a failed call with a charge still pays the charge", async () => {
   const g = withReply({ data: null, error: "x", resultType: "failed", instantCharge: { amount: "0.002" } });
   await exec(g.deps, SCHOLAR);
@@ -440,6 +450,25 @@ test("400 code 4310 is tool_not_allowed, and owes nothing", async () => {
   assert.equal(err.status, 403);
   assert.equal(err.code, "tool_not_allowed");
   assert.deepEqual(g.settled[0].item, null);
+});
+
+test("a session Composio no longer has owes nothing, and the next call replaces it", async () => {
+  let attempt = 0;
+  const fake = fakeComposio({
+    execute: async () => {
+      attempt += 1;
+      if (attempt === 1) throw Object.assign(new Error("not found"), { status: 404 });
+      return { data: { results: { organic_results: [] } }, error: null, resultType: "completed", instantCharge: { amount: "0.01" } };
+    },
+    updateSession: async () => {
+      throw Object.assign(new Error("not found"), { status: 404 });
+    },
+  });
+  const g = fakeTools({ composio: fake.api });
+  assert.equal((await errorOf(await exec(g.deps, SCHOLAR))).code, "tool_failed");
+  assert.deepEqual(g.settled[0].item, null);
+  assert.equal((await exec(g.deps, SCHOLAR)).status, 200);
+  assert.equal(fake.calls.create.length, 2);
 });
 
 test("a timeout keeps the estimate, because the tool may have done billable work, and isn't retried", async () => {
@@ -668,6 +697,23 @@ test("owner exchange: a code works once, on its own product, and gives a working
   assert.equal((await errorOf(await handleOwnerExchange(toolsRequest("/x", { code: old }), g.deps))).code, "sign_in_required");
   assert.equal((await errorOf(await handleOwnerExchange(toolsRequest("/x", { code: mintOwnerCode({ productId: PRODUCT, subject: SUBJECT }, NOW) }, {}, BUILD_TOKEN), g.deps))).code, "sign_in_required");
   assert.equal((await handleOwnerExchange(toolsRequest("/x", { code }, {}, null), g.deps)).status, 401);
+});
+
+test("cleanup: deleted accounts and ones already gone are marked, and a failure stays for the next run", async () => {
+  const deleted: string[] = [];
+  const marked: string[] = [];
+  const api = {
+    deleteConnection: async (id: string) => {
+      if (id === "ca_gone") throw Object.assign(new Error("not found"), { status: 404 });
+      if (id === "ca_down") throw new Error("down");
+      deleted.push(id);
+    },
+  };
+  const rows = [{ id: "1", connectedAccountId: "ca_1" }, { id: "2", connectedAccountId: "ca_down" }, { id: "3", connectedAccountId: "ca_gone" }];
+  const count = await revokeConnections(api, rows, async (id) => void marked.push(id));
+  assert.equal(count, 2);
+  assert.deepEqual(deleted, ["ca_1"]);
+  assert.deepEqual(marked, ["1", "3"]);
 });
 
 test("bad requests get plain answers", async () => {

@@ -172,7 +172,7 @@ export function argumentsProblem(tool: CatalogTool, fn: CatalogFunction, args: R
     if (typeof value !== "string" || !isPublicHttpUrl(value)) return `${inputParam} must be a public web address.`;
     const comparable = comparableUrl(value);
     if (!comparable || !urlsInInput(userInput ?? "").has(comparable)) {
-      return `${tool.label} only opens an address the person gave. Use web_search to find pages.`;
+      return "This tool only opens an address the person gave. Use web_search to find pages.";
     }
   }
   return recipientProblem(tool, args);
