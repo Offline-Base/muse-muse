@@ -6,7 +6,7 @@ For device-only mode, the FERPA, COPPA and HIPAA toggles and the dated schedule,
 
 ## What changed on Oct 29, and why it matters
 
-- Every model step but the privacy router now runs on Liquid's LFM3-VL-2B on the laptop (`PRIMARY_MODEL=lfm`), with LFM3-1.7B on Ethan's Jetson (through the Offline Base gateway) as the fallback. The router stays on Muse Glimmer (OpenRouter), because the 2B model shared results that Glimmer asks about first.
+- Every model step but the privacy router now runs on Liquid's LFM3-VL-2B on the laptop (`PRIMARY_MODEL=lfm`), with LFM3-1.7B on Ethan's Jetson (through the Jetson gateway) as the fallback. The router stays on Muse Glimmer (OpenRouter), because the 2B model shared results that Glimmer asks about first.
 - Search ranks ~800-character passages by keyword (BM25) and meaning (EmbeddingGemma 2 on the laptop), and the local model rewrites queries. ask_device is a second way to ask: the device's model splits a request into parts, keeps searching, and returns one finished answer with quotes it checked against the passages.
 - The approval page has Always approve and a Controls tab (what gets redacted, which folders Muse can see).
 
