@@ -3,6 +3,9 @@
  * tested without a sandbox.
  */
 import {
+  ACTIVE_CAPS_FILE,
+  CAPS_DIR,
+  CAPS_FILE,
   DEMO_OUT_DIR,
   DEMO_RECORDING_DIR,
   DEMO_SPEC_PATH,
@@ -31,6 +34,8 @@ export interface TaskPaths {
   pristineDir?: string;
   specPath?: string;
   outDir?: string;
+  /** Where the cap overlays are (CAPS_DIR). Tests move it to a temp dir. */
+  capsDir?: string;
 }
 
 /**
@@ -197,6 +202,8 @@ export function taskScript(task: SandboxTask, outPath: string, opts: TaskPaths =
   return [
     "set -o pipefail",
     restorePlatformFilesScript(opts.pristineDir),
+    // Does nothing in a sandbox without caps (no ACTIVE_CAPS_FILE), which is every product today.
+    restoreCapFilesScript(opts.capsDir),
     ...(task === "demo"
       ? [freeProductPortsScript(), demoScript(outPath, opts)]
       : [`{ ${TASK_COMMANDS[task]} 2>&3 | tee ${q(outPath)}; } 3>&1`]),
@@ -220,5 +227,117 @@ export function shrinkImagesScript(files: string[], maxBytes: number): string {
     `  if fits "$f"; then echo "$f"; else rm -f "$f"; fi`,
     `done`,
     `exit 0`,
+  ].join("\n");
+}
+
+// ---------- Wave 3, unit 2: cap overlays (docs/CAPABILITIES.md, 2.5), side by side with the target overlays ----------
+
+/** musemuse.caps.json and ACTIVE_CAPS_FILE: which caps the product has, and the overlays they brought. */
+export function capsFileText(file: { caps: readonly string[]; overlays: readonly string[] }): string {
+  return `${JSON.stringify({ caps: [...file.caps], overlays: [...file.overlays] })}\n`;
+}
+
+/**
+ * Installs an unpacked template/caps (`from`, with `from/caps/<overlay>/...`) as the read-only CAPS_DIR, then removes
+ * `from`. Run with sudo. An overlay already there is replaced, so a refresh can't leave old files behind.
+ */
+export function installCapsScript(from: string, capsDir: string = CAPS_DIR): string {
+  const dir = q(capsDir);
+  return [
+    "set -e",
+    `mkdir -p ${dir}`,
+    `for o in ${q(from)}/caps/*; do`,
+    `  [ -d "$o" ] || continue`,
+    `  rm -rf ${dir}/"$(basename "$o")"`,
+    `  cp -R "$o" ${dir}/`,
+    `done`,
+    `rm -rf ${q(from)}`,
+    `chown -R root:root ${dir}`,
+    `chmod -R a-w,a+rX ${dir}`,
+  ].join("\n");
+}
+
+/** Writes ACTIVE_CAPS_FILE, root-owned and read-only. Run with sudo, once the overlays are there. */
+export function activeCapsScript(file: { caps: readonly string[]; overlays: readonly string[] }, activeFile: string = ACTIVE_CAPS_FILE): string {
+  const target = q(activeFile);
+  return [
+    "set -e",
+    `mkdir -p "$(dirname ${target})"`,
+    `chmod u+w "$(dirname ${target})"`,
+    `rm -f ${target}`,
+    `printf '%s' ${q(capsFileText(file))} > ${target}`,
+    `chown root:root ${target}`,
+    `chmod 444 ${target}`,
+    `chmod a-w "$(dirname ${target})"`,
+  ].join("\n");
+}
+
+/** An overlay's deps.json as npm's name@version, one a line, for "dependencies" or "devDependencies". */
+function capDeps(depsFile: string, field: "dependencies" | "devDependencies"): string {
+  const print = `const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[process.argv[2]]||{};for(const k of Object.keys(d))console.log(k+"@"+d[k])`;
+  return `node -e ${q(print)} ${q(depsFile)} ${field}`;
+}
+
+/**
+ * Applies a brief's cap overlays to the product in the current directory (PRODUCT_DIR), right after any target overlay:
+ * copies each overlay's files, installs its deps at their exact versions, writes CAPS_FILE and commits "Caps: data, jobs".
+ * Runs as the default user. A retry that finds it done does nothing, since the build's own files may be there by then.
+ */
+export function applyCapsScript(file: { caps: readonly string[]; overlays: readonly string[] }, capsDir: string = CAPS_DIR): string {
+  const want = capsFileText(file);
+  const lines = [
+    "set -e",
+    `if [ "$(cat ${CAPS_FILE} 2>/dev/null)" = ${q(want.trimEnd())} ] && [ -n "$(git log --format=%s --grep='^Caps: ' -1 2>/dev/null)" ]; then exit 0; fi`,
+    `deps=""; dev=""`,
+  ];
+  for (const o of file.overlays) {
+    const dir = `${capsDir}/${o}`;
+    lines.push(
+      `[ -f ${q(`${dir}/deps.json`)} ] || { echo "musemuse: the ${o} cap overlay isn't in this sandbox" >&2; exit 1; }`,
+      `if [ -d ${q(`${dir}/files`)} ]; then`,
+      `  (cd ${q(`${dir}/files`)} && find . -type f) | while IFS= read -r f; do`,
+      `    mkdir -p -- "$(dirname -- "$f")"`,
+      `    rm -f -- "$f"`,
+      `    cat ${q(`${dir}/files`)}/"$f" > "$f"`,
+      `  done`,
+      `fi`,
+      `deps="$deps $(${capDeps(`${dir}/deps.json`, "dependencies")} | tr '\n' ' ')"`,
+      `dev="$dev $(${capDeps(`${dir}/deps.json`, "devDependencies")} | tr '\n' ' ')"`,
+    );
+  }
+  const install = "npm install --save-exact --prefer-offline --no-audit --no-fund --loglevel=error";
+  lines.push(
+    `if [ -n "$(echo $deps)" ]; then ${install} $deps; fi`,
+    `if [ -n "$(echo $dev)" ]; then ${install} --save-dev $dev; fi`,
+    `printf '%s' ${q(want)} > ${CAPS_FILE}`,
+    `git add -A`,
+    `git diff --cached --quiet || git commit -qm ${q(`Caps: ${file.caps.join(", ")}`)}`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Before every verify and demo, in a sandbox with caps: rewrites CAPS_FILE from the read-only record and puts back each
+ * overlay's platform files (helpers, tests/caps/<id>.ts, scripts/caps/<id>.mjs), so an edit can't change which checks
+ * run or fake a pass. Does nothing in a sandbox without ACTIVE_CAPS_FILE, which is every product with no caps.
+ */
+export function restoreCapFilesScript(capsDir: string = CAPS_DIR): string {
+  const dir = q(capsDir);
+  const active = `${capsDir}/active.json`;
+  const list = [
+    `const fs=require("fs");const[active,root]=process.argv.slice(1);`,
+    `for(const o of JSON.parse(fs.readFileSync(active,"utf8")).overlays||[]){`,
+    `const f=root+"/"+o+"/platform-files.json";if(!fs.existsSync(f))continue;`,
+    `for(const p of JSON.parse(fs.readFileSync(f,"utf8")))console.log(o+"\\t"+p)}`,
+  ].join("");
+  return [
+    `if [ -f ${q(active)} ]; then`,
+    `  rm -f ${CAPS_FILE} && cat ${q(active)} > ${CAPS_FILE}`,
+    `  node -e ${q(list)} ${q(active)} ${dir} | while IFS=$'\t' read -r o p; do`,
+    `    rm -rf -- "$p"`,
+    `    mkdir -p -- "$(dirname -- "$p")"`,
+    `    cp -R -- ${dir}/"$o"/files/"$p" "$p" && chmod -R u+w -- "$p" || echo "musemuse: couldn't restore $p" >&2`,
+    `  done`,
+    `fi`,
   ].join("\n");
 }

@@ -18,7 +18,7 @@ import { Sandbox } from "@vercel/sandbox";
 import { execFlags, flagsMissingFromHelp, SANDBOX_ENV } from "@/lib/sandbox/muse";
 import { PLATFORM_FILES, PRISTINE_DIR, WORK_DIR } from "@/lib/sandbox/paths";
 import { SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
-import { DISABLED_BUNDLED_SKILLS, readTargetFiles, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
+import { DISABLED_BUNDLED_SKILLS, readCapFiles, readTargetFiles, readTemplateFiles, setupBuilder, skillsNotOff, type TemplateFile, templateHash } from "@/lib/sandbox/setup";
 import { q, sh } from "@/lib/sandbox/shell";
 
 const MIN = 60_000;
@@ -80,7 +80,8 @@ async function main() {
 
   const files = await readTemplateFiles(path.join(process.cwd(), "template"));
   const targets = await readTargetFiles(path.join(process.cwd(), "template"));
-  console.log(`template: ${files.length} files, ${targets.length} in targets/, hash ${templateHash([...files, ...targets])}`);
+  const caps = await readCapFiles(path.join(process.cwd(), "template"));
+  console.log(`template: ${files.length} files, ${targets.length} in targets/, ${caps.length} in caps/, hash ${templateHash([...files, ...targets, ...caps])}`);
 
   let t = Date.now();
   const sandbox = await Sandbox.create({
@@ -96,7 +97,7 @@ async function main() {
 
   let snapshotId: string | null = null;
   try {
-    const info = await setupBuilder(sandbox, files, log, targets);
+    const info = await setupBuilder(sandbox, files, log, targets, caps);
     console.log("builder:", JSON.stringify(info));
     await checkPristine(sandbox, files);
     console.log(`pristine: ${PLATFORM_FILES.join(", ")} match template/`);

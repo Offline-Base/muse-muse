@@ -5,20 +5,26 @@
 // with no test.only and no skipped tests, and a last judge screenshot with no error or empty state, its result near the
 // top and a page that isn't too long, and for a glasses product a photo taken through the fake glasses; see
 // scripts/smoke-report.mjs), manifest (musemuse.json valid against
-// musemuse.schema.json, action routes and fixtures exist).
+// musemuse.schema.json, action routes and fixtures exist). A product with platform services (musemuse.caps.json) also
+// gets a caps step after smoke: scripts/caps-check.mjs runs each cap's fixed checks against what the smoke test recorded
+// and what the gateway saw.
 // Exits 0 only when every step passes. The LAST line of stdout is always one JSON summary for the platform:
-// {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}
+// {"musemuse_verify":1,"passed":bool,"steps":[{"name","ok","ms","detail"}],"failure":"..."}, plus "caps":[...] with caps.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, smokeReportProblems } from "./smoke-report.mjs";
+import { finalShotProblems, glassesGateProblems, judgeShotNotes, judgeShotProblems, readCapsFile, smokeReportProblems, verifyStepNames } from "./smoke-report.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = (name) => path.join(ROOT, "node_modules", ".bin", name);
 const FAILURE_MAX = 6000;
-const STEP_NAMES = ["typecheck", "build", "start", "console", "smoke", "manifest"];
+const readRootText = (file) => (existsSync(path.join(ROOT, file)) ? readFileSync(path.join(ROOT, file), "utf8") : null);
+// null for a product without platform services, which verifies exactly as before they existed.
+const CAPS = readCapsFile(readRootText);
+const STEP_NAMES = verifyStepNames(CAPS !== null);
+let capsResult = null;
 
 const steps = [];
 const failures = [];
@@ -164,7 +170,7 @@ function summarize() {
   const share = failures.length ? Math.floor(FAILURE_MAX / failures.length) : 0;
   let failure = failures.map((f) => `## ${f.name}\n${tail(f.output, Math.max(200, share - f.name.length - 8))}`).join("\n\n");
   if (failure.length > FAILURE_MAX) failure = failure.slice(-FAILURE_MAX);
-  return { musemuse_verify: 1, passed, steps, failure };
+  return { musemuse_verify: 1, passed, steps, failure, ...(capsResult ? { caps: capsResult } : {}) };
 }
 
 async function finish() {
@@ -191,6 +197,7 @@ process.on("uncaughtException", (err) => {
 async function main() {
   rmSync(path.join(ROOT, "test-results", "judge"), { recursive: true, force: true });
   mkdirSync(path.join(ROOT, "test-results", "judge"), { recursive: true });
+  if (CAPS) rmSync(path.join(ROOT, "test-results", "caps"), { recursive: true, force: true });
 
   const typecheckOk = await step("typecheck", async () => {
     const gen = await run(BIN("next"), ["typegen"], { timeoutMs: 120_000 });
@@ -282,14 +289,39 @@ async function main() {
         output: `${res.out}${srvLog ? `\n\nServer log (last lines):\n${tail(srvLog, 1500)}` : ""}`,
       };
     });
+    if (CAPS) await step("caps", checkCaps);
   } else {
     skip("console");
     skip("smoke");
+    if (CAPS) skip("caps");
   }
   await stopServer();
 
   await step("manifest", checkManifest);
   await finish();
+}
+
+/**
+ * The caps step: scripts/caps-check.mjs (a platform file from the core overlay) checks each active cap against what the
+ * smoke test recorded in test-results/caps/ and what the gateway saw for this build. Its last line is one JSON result.
+ */
+async function checkCaps() {
+  const script = path.join(ROOT, "scripts", "caps-check.mjs");
+  if (!existsSync(script)) return { ok: false, detail: "scripts/caps-check.mjs is missing, so the platform services can't be checked" };
+  const res = await run(process.execPath, [script], { timeoutMs: 120_000 });
+  const line = res.out.trim().split("\n").reverse().find((l) => l.startsWith("{") && l.includes("musemuse_caps"));
+  let parsed = null;
+  try {
+    parsed = line ? JSON.parse(line) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || !Array.isArray(parsed.caps)) return { ok: false, detail: "the caps check printed no result", output: res.out };
+  capsResult = parsed.caps;
+  const failed = parsed.caps.flatMap((c) => (c.checks ?? []).filter((k) => !k.ok).map((k) => `${c.cap}, ${k.id}: ${k.detail ?? "failed"}`));
+  const total = parsed.caps.reduce((n, c) => n + (c.checks?.length ?? 0), 0);
+  if (res.code === 0 && parsed.ok === true && !failed.length) return { ok: true, detail: `${total} fixed check(s) passed for ${parsed.caps.map((c) => c.cap).join(", ")}` };
+  return { ok: false, detail: failed[0] ?? "the caps check failed", output: failed.join("\n") || res.out };
 }
 
 /** True when the product has actions, so tests/actions.spec.ts must run too. */

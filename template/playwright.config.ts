@@ -1,4 +1,7 @@
 import { defineConfig } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Three runs of the same test:
 //   smoke:  phone-sized check that the primary flow works (npm run verify runs every spec in tests/ except the studio
@@ -13,6 +16,28 @@ import { defineConfig } from "@playwright/test";
 // to test-results/playwright, so the judge screenshots in test-results/judge and the demo recording in
 // test-results/demo survive its cleanup.
 const port = Number(process.env.MUSEMUSE_PORT) || 3100;
+// Platform services (musemuse.caps.json): Chromium args the active caps ask for, merged into the smoke project. And
+// MUSEMUSE_BASE_URL, set only by the platform, points the tests at a live link with no local server. Neither applies to a
+// product without platform services.
+const root = path.dirname(fileURLToPath(import.meta.url));
+function capsLaunchArgs(): string[] {
+  const read = (file: string): unknown => JSON.parse(readFileSync(path.join(root, file), "utf8"));
+  if (!existsSync(path.join(root, "musemuse.caps.json"))) return [];
+  const args: string[] = [];
+  try {
+    for (const id of (read("musemuse.caps.json") as { caps?: unknown[] }).caps ?? []) {
+      const file = `scripts/caps/${String(id)}.browser.json`;
+      if (!/^[a-z][a-z0-9-]*$/.test(String(id)) || !existsSync(path.join(root, file))) continue;
+      for (const a of (read(file) as { args?: unknown[] }).args ?? []) if (typeof a === "string" && a.startsWith("--") && !args.includes(a)) args.push(a);
+    }
+  } catch {
+    // A caps file that isn't JSON adds nothing here; verify's caps step reports it.
+  }
+  return args;
+}
+const capsArgs = capsLaunchArgs();
+const liveBase = (process.env.MUSEMUSE_BASE_URL ?? "").trim().replace(/\/+$/, "");
+const target = /^https?:\/\/[^\s/]+/.test(liveBase) ? { baseURL: liveBase, localServer: false } : { baseURL: `http://localhost:${port}`, localServer: true };
 
 export default defineConfig({
   testDir: "tests",
@@ -22,13 +47,13 @@ export default defineConfig({
   timeout: 180_000,
   reporter: [["list"], ["json", { outputFile: "test-results/report.json" }]],
   use: {
-    baseURL: `http://localhost:${port}`,
+    baseURL: target.baseURL,
   },
   projects: [
     {
       name: "smoke",
       testIgnore: /\.demo\.spec\.ts$/,
-      use: { viewport: { width: 390, height: 844 } },
+      use: { viewport: { width: 390, height: 844 }, ...(capsArgs.length ? { launchOptions: { args: capsArgs } } : {}) },
     },
     {
       name: "demo",
@@ -54,12 +79,12 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
+  webServer: target.localServer ? {
     command: `npx next start -p ${port}`,
     url: `http://localhost:${port}`,
     // Reuse only verify's own server. npm run demo and test:smoke start a fresh one, so a stale server left on 3100
     // makes them fail instead of testing or recording an old build.
     reuseExistingServer: Boolean(process.env.MUSEMUSE_PORT),
     timeout: 60_000,
-  },
+  } : undefined,
 });

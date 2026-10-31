@@ -1,0 +1,6 @@
+[
+  "scripts/caps-check.mjs",
+  "tests/caps/index.ts",
+  "app/api/musemuse/health/route.ts",
+  ".agents/skills/muse-caps/SKILL.md"
+]

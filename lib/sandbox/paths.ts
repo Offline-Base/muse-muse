@@ -53,3 +53,14 @@ export const PRODUCT_PORTS = { first: 3100, last: 3199 } as const;
 /** Exact tool versions the snapshot installs. Keep in step with template/package.json. */
 export const PLAYWRIGHT_VERSION = "1.64.1";
 export const MUSE_INSTALL_URL = "https://dev.meta.ai/install.sh";
+
+// ---------- Wave 3, unit 2: cap overlays (docs/CAPABILITIES.md, 2.5) ----------
+
+/** template/caps in the sandbox: root-owned and read-only, one folder per overlay (files/, deps.json, platform-files.json). */
+export const CAPS_DIR = `${WORK_DIR}/caps`;
+/** Which caps and overlays this product has, root-owned, written once at provision. Restores read it. */
+export const ACTIVE_CAPS_FILE = `${CAPS_DIR}/active.json`;
+/** The product's copy (in PRODUCT_DIR), which verify, Playwright and the tests read. Put back before every verify and demo. */
+export const CAPS_FILE = "musemuse.caps.json";
+/** The overlay every product with a cap gets. Its deps.json marks a sandbox whose snapshot has the cap overlays. */
+export const CORE_CAPS_MARKER = `${CAPS_DIR}/core/deps.json`;

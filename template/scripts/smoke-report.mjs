@@ -171,3 +171,23 @@ export function judgeShotNotes(fileNames, read) {
     Array.isArray(checked.notes) ? checked.notes.map((note) => `${shot}: ${note}`) : [],
   );
 }
+
+// ---------- Platform services (docs/CAPABILITIES.md, 2.8). Nothing here applies to a product without musemuse.caps.json ----------
+
+/** verify's steps, in order. A product with platform services gets a caps step after smoke. */
+export function verifyStepNames(capsActive) {
+  return ["typecheck", "build", "start", "console", "smoke", ...(capsActive ? ["caps"] : []), "manifest"];
+}
+
+/** musemuse.caps.json as { caps, overlays }, or null when the product has none (or it isn't valid). */
+export function readCapsFile(readText) {
+  const text = readText("musemuse.caps.json");
+  if (text === null) return null;
+  try {
+    const file = JSON.parse(text);
+    const ids = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && /^[a-z][a-z0-9-]*$/.test(x)) : []);
+    return { caps: ids(file?.caps), overlays: ids(file?.overlays) };
+  } catch {
+    return { caps: [], overlays: [] };
+  }
+}

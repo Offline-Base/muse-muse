@@ -80,11 +80,14 @@ import {
   PRISTINE_DIR,
   PRODUCT_DIR,
   RUN_DIR,
+  CORE_CAPS_MARKER,
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { makeDirs, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
+import { installCaps, makeDirs, readCapFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
+  activeCapsScript,
+  applyCapsScript,
   PREVIEW_WAIT_S,
   previewAnswered,
   previewWaitScript,
@@ -228,13 +231,15 @@ function productsCallMetaDirectly(): boolean {
   return publicHost(env.platformUrl) === null;
 }
 
-function lockedPolicy(sandboxName: string) {
+function lockedPolicy(sandboxName: string, capHosts: readonly string[] = []) {
   return builderNetworkPolicy({
     modelApiKey: env.modelApiKey,
     placeholderKey: sandboxPlaceholder(sandboxName),
     platformHost: publicHost(env.platformUrl),
     blobUploads: true,
     directProducts: productsCallMetaDirectly(),
+    // Hosts a brief's caps need (lib/caps/hosts.ts). None for every product today.
+    ...(capHosts.length ? { capHosts } : {}),
   });
 }
 
@@ -385,6 +390,39 @@ export interface ProvisionInput {
   /** Build-scoped gateway token and URL, written to .env.local for the product's smoke tests. */
   buildToken: string;
   gatewayUrl: string;
+  // ---------- Wave 3, unit 2: caps (docs/CAPABILITIES.md, 2.5). All absent for a brief with no cap blocks ----------
+  /** The caps and overlays: applied right after the template is in place, and written to musemuse.caps.json. */
+  caps?: { caps: string[]; overlays: string[] };
+  /** Lines appended to .env.local (capBuildEnv). */
+  capEnv?: string;
+  /** Hosts the caps' build may reach (capBuildHosts). */
+  capHosts?: string[];
+}
+
+/** Where a sandbox from an older snapshot gets the cap overlays. template/ isn't deployed with the platform. */
+const CAPS_TEMPLATE_DIR = () => process.env.MUSEMUSE_TEMPLATE_DIR ?? "template";
+
+/**
+ * Applies a brief's cap overlays (docs/CAPABILITIES.md, 2.5): the read-only record first, then the files, deps and
+ * commit, then the caps' .env.local lines. A snapshot made with template/caps has them already. One from before them
+ * gets them from this checkout on a local run. The live site can't, since its functions have no template/, so a cap
+ * whose flag is on there needs a new snapshot.
+ */
+async function applyCaps(sandbox: Sandbox, caps: { caps: string[]; overlays: string[] }, capEnv: string): Promise<void> {
+  const installed = (await sh(sandbox, `[ -f ${q(CORE_CAPS_MARKER)} ]`, { allowFail: true })).exitCode === 0;
+  if (!installed) {
+    if (process.env.VERCEL) throw new Error("This builder snapshot has no platform service overlays. Make a new one with npm run snapshot before turning a cap's flag on.");
+    const files = await readCapFiles(CAPS_TEMPLATE_DIR());
+    if (!files.length) throw new Error(`This builder snapshot has no platform service overlays, and there's no ${CAPS_TEMPLATE_DIR()}/caps here to add them from.`);
+    await installCaps(sandbox, files, () => {});
+  }
+  await sh(sandbox, activeCapsScript(caps), { sudo: true });
+  await sh(sandbox, applyCapsScript(caps), { cwd: PRODUCT_DIR, timeoutMs: 5 * MIN });
+  if (capEnv) {
+    const path = `${PRODUCT_DIR}/.env.local`;
+    const current = (await sandbox.readFileToBuffer({ path }).catch(() => null))?.toString("utf8") ?? "";
+    await sandbox.writeFiles([{ path, content: `${current.replace(/\n*$/, "\n")}${capEnv}` }]);
+  }
 }
 
 /**
@@ -423,7 +461,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   }
 
   // Lock egress before anything from the user lands in the VM. Saved on the sandbox, so resumed sessions keep it.
-  await sandbox.update({ networkPolicy: lockedPolicy(name) });
+  await sandbox.update({ networkPolicy: lockedPolicy(name, input.capHosts) });
 
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, `${PRODUCT_DIR}/fixtures`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download([
@@ -435,6 +473,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
+  if (input.caps) await applyCaps(sandbox, input.caps, input.capEnv ?? "");
   return { sandboxName: name };
 }
 
@@ -445,10 +484,12 @@ export async function reopenSandbox(input: {
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
+  /** Hosts the product's caps need, so a refinement keeps them (capBuildHosts). */
+  capHosts?: string[];
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
   await claimSandbox(sandbox, input.sandboxName, input.productId);
-  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName) });
+  await sandbox.update({ networkPolicy: lockedPolicy(input.sandboxName, input.capHosts) });
   await ensureTime(sandbox, LONG_WORK_MS);
   await makeDirs(sandbox, [`${PRODUCT_DIR}/inspo`, LOG_DIR, RUN_DIR, `${RUN_DIR}/by-id`, OUT_DIR]);
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
@@ -584,6 +625,8 @@ export interface StartMuseInput {
   goal?: string | null;
   /** The build, for its build MCP token under MUSE_FULL. Without it the round runs without the build MCP server. */
   buildId?: string;
+  /** A scaled round's cap (ENGINE_ROUND_SCALING): the session keeps the cap plus a poll's time. Unset keeps LONG_WORK_MS. */
+  capMs?: number;
 }
 
 export interface MuseStart {
@@ -693,7 +736,7 @@ export async function startMuse(input: StartMuseInput): Promise<MuseStart> {
   const tag = `muse-r${input.round}`;
 
   const sandbox = await openSandbox(input.sandboxName);
-  await ensureTime(sandbox, LONG_WORK_MS);
+  await ensureTime(sandbox, input.capMs ? Math.max(LONG_WORK_MS, input.capMs + POLL_WORK_MS) : LONG_WORK_MS);
   const running = await runningCommand(sandbox, tag);
   if (running) {
     const engine = await roundEngine(sandbox, input.round);
