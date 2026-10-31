@@ -153,8 +153,10 @@ export async function takePhoto(input: TakePhotoInput = {}): Promise<PhotoResult
 }
 
 /**
- * Shows a notification, now or after delaySeconds. True when it was shown or scheduled, false when this device has none or
- * the person said no. In a browser a delayed one is lost if the tab closes, and on desktop if the app closes.
+ * Shows a notification, now or after delaySeconds. True when it was shown or scheduled, false when this device has none, the
+ * person said no or the app couldn't. It never rejects. In a browser a delayed one is lost if the tab closes, and on desktop
+ * if the app closes. A phone's browser pauses a page's timers and may have no page notifications at all, so a delayed one
+ * there is false.
  */
 export async function notify(input: NotifyInput): Promise<boolean> {
   const native = await bridge();
@@ -163,15 +165,27 @@ export async function notify(input: NotifyInput): Promise<boolean> {
       await native.notify(input);
       return true;
     } catch (err) {
-      if (codeOf(err) === "denied") return false;
-      if (codeOf(err) !== "unsupported") throw err;
+      if (codeOf(err) !== "unsupported") return false;
     }
   }
   if (typeof Notification === "undefined") return false;
-  const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
-  if (permission !== "granted") return false;
-  const show = () => new Notification(input.title, input.body ? { body: input.body } : undefined);
-  if (input.delaySeconds && input.delaySeconds > 0) setTimeout(show, input.delaySeconds * 1000);
-  else show();
+  try {
+    const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    if (permission !== "granted") return false;
+  } catch {
+    return false;
+  }
+  // Chrome on Android has the Notification name but throws when a page calls it.
+  const show = () => {
+    try {
+      new Notification(input.title, input.body ? { body: input.body } : undefined);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!input.delaySeconds || input.delaySeconds <= 0) return show();
+  if (/Android|iPhone|iPad/i.test(navigator.userAgent)) return false;
+  setTimeout(show, input.delaySeconds * 1000);
   return true;
 }

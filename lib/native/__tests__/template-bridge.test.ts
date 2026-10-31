@@ -145,6 +145,16 @@ describe("the bridge", () => {
     await assert.rejects(share({ text: "x" }), { code: "denied" });
   });
 
+  it("notify never rejects, whatever the app answers", async () => {
+    const p = page();
+    for (const code of ["timeout", "failed", "rate_limited", "busy"]) {
+      p.win.MuseNative = shell({ notify: () => Promise.reject(Object.assign(new Error("No"), { code })) });
+      assert.equal(await notify({ title: "Hi" }), false, code);
+    }
+    p.win.MuseNative = shell({ notify: () => Promise.reject(new Error("no code")) });
+    assert.equal(await notify({ title: "Hi" }), false);
+  });
+
   it("never lets a haptic throw", async () => {
     const p = page();
     p.win.MuseNative = shell({ haptic: () => Promise.reject(new Error("boom")) });
@@ -197,7 +207,7 @@ describe("the web fallbacks", () => {
   });
 
   it("notify waits for a delay", async () => {
-    page();
+    page({ userAgent: "Mozilla/5.0 (Macintosh)" });
     const shown: string[] = [];
     put("Notification", Object.assign(function (this: unknown, title: string) { shown.push(title); }, { permission: "granted" }));
     mock.timers.enable({ apis: ["setTimeout"] });
@@ -205,6 +215,46 @@ describe("the web fallbacks", () => {
     assert.deepEqual(shown, []);
     mock.timers.tick(60_000);
     assert.deepEqual(shown, ["Later"]);
+  });
+
+  const THROWS = Object.assign(
+    function () {
+      throw new TypeError("Illegal constructor");
+    },
+    { permission: "granted" },
+  );
+
+  it("notify is false, not a rejection, where a page can't make a notification, as in Chrome on Android", async () => {
+    page({ userAgent: "Mozilla/5.0 (Linux; Android 15)" });
+    put("Notification", THROWS);
+    assert.equal(await notify({ title: "Hi" }), false);
+  });
+
+  it("notify makes no promise about a delay in a phone's browser", async () => {
+    for (const userAgent of ["Mozilla/5.0 (Linux; Android 15)", "Mozilla/5.0 (iPhone)"]) {
+      page({ userAgent });
+      const shown: string[] = [];
+      put("Notification", Object.assign(function (this: unknown, title: string) { shown.push(title); }, { permission: "granted" }));
+      mock.timers.enable({ apis: ["setTimeout"] });
+      assert.equal(await notify({ title: "Later", delaySeconds: 60 }), false, userAgent);
+      mock.timers.tick(60_000);
+      assert.deepEqual(shown, []);
+      mock.timers.reset();
+    }
+  });
+
+  it("a delayed notify that fails when its time comes throws nothing", async () => {
+    page({ userAgent: "Mozilla/5.0 (Macintosh)" });
+    put("Notification", THROWS);
+    mock.timers.enable({ apis: ["setTimeout"] });
+    assert.equal(await notify({ title: "Later", delaySeconds: 60 }), true);
+    assert.doesNotThrow(() => mock.timers.tick(60_000));
+  });
+
+  it("notify is false when asking for permission fails", async () => {
+    page();
+    put("Notification", Object.assign(function () {}, { permission: "default", requestPermission: () => Promise.reject(new Error("No")) }));
+    assert.equal(await notify({ title: "Hi" }), false);
   });
 
   it("takePhoto opens a file picker, on the camera by default, and a cancel is null", async () => {

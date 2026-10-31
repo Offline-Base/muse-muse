@@ -24,7 +24,7 @@ import { haptic, notify, share, takePhoto } from "@/lib/native/bridge";
 await haptic("success");                                       // true, or false when this device can't
 const { shared, via } = await share({ title, url });           // the share sheet, or the clipboard
 const photo = await takePhoto({ source: "camera", maxSize: 1600 }); // { dataUrl, width, height }, or null when canceled
-const shown = await notify({ title: "Your plan is ready", delaySeconds: 60 }); // false when the person said no
+const shown = await notify({ title: "Your plan is ready", delaySeconds: 60 }); // false when the person said no or this device can't
 ```
 
 - Every call works in a browser too, through web APIs, so the product needs no second path.
@@ -40,7 +40,7 @@ What each place supports:
 | `haptic` | Yes | No, returns false | Where the browser can vibrate |
 | `share` | The system sheet | Browser share or clipboard | Browser share or clipboard |
 | `takePhoto` | Camera or library | A file picker | A file picker, or the camera on a phone |
-| `notify` | Yes, with a delay | Yes, and a delayed one is lost if the app closes | Asks first, and a delayed one is lost if the tab closes |
+| `notify` | Yes, with a delay | Yes, and a delayed one is lost if the app closes | Asks first, and a delayed one is lost if the tab closes. In a phone's browser a delayed one returns false, and some show none at all |
 
 ## Phone
 
