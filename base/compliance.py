@@ -174,6 +174,19 @@ _GROUP = re.compile(
 )
 
 
+# A small group Muse's request names: "the 3 students", "3 students in group B", "the average of 3
+# students". Plural people only, so "the 3 student essays" is not one, and "pick 3 students to
+# present" or "tables of 4 students" are plans, not a group a number could describe.
+_MANY = r"(?:students|kids|children|pupils|learners|patients|people|families|parents|individuals)"
+_REQUEST_COUNT = r"(\d{1,3}|one|two|three|four|five|six|seven|eight|nine)"
+_REQUEST_GROUP = re.compile(
+    rf"\bthe\s+{_REQUEST_COUNT}\s+(?:\w+\s+)?{_MANY}\b"
+    rf"|\b{_REQUEST_COUNT}\s+{_MANY}\s+(?:in|at|on|from)\s+(?:\w+\s+){{0,2}}(?:group|table|team|pod)\b"
+    rf"|\b(?:average|mean|median)\s+(?:\w+\s+)?(?:of|for)\s+(?:only\s+|just\s+)?{_REQUEST_COUNT}\s+{_MANY}\b",
+    re.IGNORECASE,
+)
+
+
 def clean(profiles: Iterable[str] | None) -> list[str]:
     """The known toggles in `profiles`, in the page's order."""
     wanted = {str(p).lower() for p in profiles or ()}
@@ -206,6 +219,16 @@ def describes_small_group(text: str) -> bool:
     return False
 
 
+def request_names_small_group(request: str) -> bool:
+    """Whether Muse's request picks out a small group, which the result need not repeat."""
+    for m in _REQUEST_GROUP.finditer(request or ""):
+        value = next(g for g in m.groups() if g).lower()
+        n = _WORDS.get(value, int(value) if value.isdigit() else None)
+        if n is not None and 0 < n < SMALL_GROUP_MIN:
+            return True
+    return False
+
+
 def _has_word(words: Iterable[str], text: str) -> bool:
     return any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text, re.IGNORECASE) for w in words)
 
@@ -215,11 +238,13 @@ def local_only(profiles: Iterable[str]) -> bool:
 
 
 def check(
-    text: str, sources: Sequence[str], profiles: Iterable[str], raw: str = "", image_kinds: Mapping[str, int] | None = None
+    text: str, sources: Sequence[str], profiles: Iterable[str], raw: str = "", image_kinds: Mapping[str, int] | None = None,
+    request: str = "",
 ) -> tuple[Decision, str, str] | None:
     """(decision, floor label, reason) when the toggles hold this result, else None. `raw` is the
     untagged text, since a keyword can sit inside a tag. `image_kinds` counts what the SAM sidecar
-    covered on the result's source images (face, signature, id_card, barcode)."""
+    covered on the result's source images (face, signature, id_card, barcode). `request` is Muse's
+    tagged request: a small group named only there counts, since the result need not repeat it."""
     keys = clean(profiles)
     chosen = [PROFILES[k] for k in keys]
     if not chosen:
@@ -229,7 +254,7 @@ def check(
     both = f"{text}\n{raw}"
     if any(_has_word(p.keep_words, both) for p in chosen):
         return "refuse", "compliance:sensitive", KEEP_WORD_REASON
-    if describes_small_group(text):
+    if describes_small_group(text) or request_names_small_group(request):
         return "refuse", "compliance:small_group", SMALL_GROUP_REASON
     kinds = image_kinds or {}
     if kinds.get("face") and any(k in FACE_TOGGLES for k in keys):

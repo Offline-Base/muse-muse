@@ -183,6 +183,14 @@ def test_summary_that_names_a_student_is_refused(make):
     assert_clean(out)
 
 
+def test_summary_that_describes_one_student_is_refused_off_device_only(make):
+    """Device-only drops the sentence (tests/test_attacks.py); otherwise the whole summary stays."""
+    egress, _ = make("share_summary")
+    summary = "Most did well. The only student who uses a wheelchair scored a 4."
+    out = egress.release("get_result", "Summarize", RAW, "class_aggregate", summary=summary)
+    assert out.status == "refused" and "wheelchair" not in out.text
+
+
 def test_ask_user_waits_and_records_pending(make, seen):
     egress, svc = make("ask_user", "Per-student scores.")
     out = egress.release("get_result", "Scores please", RAW, "per_student", job_id="j2", item_id="t007", day=4)

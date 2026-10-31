@@ -23,7 +23,7 @@ from base import events as events_module
 from base import guard as guard_module
 from base.approvals import AutoApprove, needs_a_person
 from base.config import CloudBackendRefused, assert_synthetic
-from base.router import checked_labels, lfm_labels, loosened, never_share_floor
+from base.router import checked_labels, lfm_labels, loosened, never_share_floor, singles_out
 from base.types import (
     IDENTIFIER_KINDS,
     STRICTNESS,
@@ -166,6 +166,11 @@ def route_input(
     )
 
 
+def _points_at_someone(sentence: str) -> bool:
+    """A summary sentence with a person's tag, or one that describes a single student."""
+    return bool(_PERSON_TAG.search(sentence)) or singles_out(sentence)
+
+
 def refusal_text(floors: list[str] | tuple[str, ...] | None = None) -> str:
     """'Kept on your device.' plus one fixed sentence for the floor that kept it.
 
@@ -267,12 +272,12 @@ class Egress:
 
     def _with_toggles(
         self, route: RouteDecision, text: str, sources: Sequence[str], profiles: Sequence[str], raw: str = "",
-        images: regions.ImageCheck | None = None,
+        images: regions.ImageCheck | None = None, request: str = "",
     ) -> RouteDecision:
         """The router's decision, or the stricter one a compliance toggle asks for. With SAM_ENABLED=1,
         a result from an image the sidecar never checked is refused (floor regions:unchecked)."""
         kinds = images.counts if images is not None else None
-        hold = compliance.check(text, sources, profiles, raw, image_kinds=kinds)
+        hold = compliance.check(text, sources, profiles, raw, image_kinds=kinds, request=request)
         unchecked = images is not None and images.unchecked  # images is None unless SAM_ENABLED=1
         if unchecked and (hold is None or hold[0] != "refuse"):  # a toggle's own refusal keeps its reason
             hold = ("refuse", "regions:unchecked", IMAGE_UNCHECKED)
@@ -353,7 +358,7 @@ class Egress:
         all_topics = inp.topics
         images = None if result_kind == "document_list" else self._images(sources)  # a listing never reads an image
         route = self._with_toggles(
-            s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text, images
+            s.router.decide(inp, synthetic=synthetic), tagged.text, sources, profiles, raw_text, images, request
         )
         shown_form = default_share_form(result_kind, all_topics)
 
@@ -372,7 +377,7 @@ class Egress:
                 )
             else:
                 outgoing = made
-                route = self._with_toggles(route, outgoing, sources, profiles, raw_text, images)
+                route = self._with_toggles(route, outgoing, sources, profiles, raw_text, images, request)
 
         row = {
             "tool": tool,
@@ -664,15 +669,15 @@ class Egress:
         except Exception as exc:
             log.warning("summary tagging failed: %s", type(exc).__name__)
             return None, "model"
-        if _PERSON_TAG.search(tagged) and getattr(getattr(self.services, "settings", None), "device_only", False):
+        if _points_at_someone(tagged) and getattr(getattr(self.services, "settings", None), "device_only", False):
             # A local model often adds an example. Its sentences about the class are still
-            # a class summary once the ones that name someone are gone.
-            kept = [p for p in re.split(r"(?<=[.!?])\s+", tagged) if p.strip() and not _PERSON_TAG.search(p)]
+            # a class summary once the ones that name or describe someone are gone.
+            kept = [p for p in re.split(r"(?<=[.!?])\s+", tagged) if p.strip() and not _points_at_someone(p)]
             tagged = " ".join(kept)
             if not kept:
                 return None, "named"
-        elif _PERSON_TAG.search(tagged):
-            log.warning("summary named a student or person; not sharing it")
+        elif _points_at_someone(tagged):
+            log.warning("summary named or singled out a student or person; not sharing it")
             return None, "named"
         return tagged, None
 

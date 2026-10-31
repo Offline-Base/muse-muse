@@ -427,6 +427,45 @@ def _normalize(text: str) -> _Norm:
     return _Norm(out, tuple(starts), tuple(ends))
 
 
+# Letters that look like a Latin letter, one to one, which NFKC leaves alone: Cyrillic, then Greek.
+_LOOKALIKES = str.maketrans(
+    "\u0430\u0441\u0435\u043e\u0440\u0445\u0443\u0456\u0458\u0455\u04bb\u0501\u051b\u051d"
+    "\u0410\u0412\u0421\u0415\u041d\u0406\u0408\u041a\u041c\u041e\u0420\u0405\u0422\u0425\u0423\u04ae"
+    "\u03b1\u03b9\u03ba\u03bd\u03bf\u03c1\u03c5"
+    "\u0391\u0392\u0395\u0397\u0399\u039a\u039c\u039d\u039f\u03a1\u03a4\u03a5\u03a7\u0396",
+    "aceopxyijshdqw"
+    "ABCEHIJKMOPSTXYY"
+    "aikvopu"
+    "ABEHIKMNOPTYXZ",
+)
+_WORD = re.compile(r"[^\W\d_]+")
+_LATIN_END = "\u0250"  # below this: Latin letters, accented ones included
+
+
+def _detection_view(text: str) -> _Norm:
+    """The normalized copy with look-alike letters folded, for finding names and identifiers only.
+
+    It has the same length as the normalized copy, so its spans map back the same way, and nothing
+    written or sent is ever folded. Only a word whose letters all read as Latin once folded changes,
+    so Russian and Greek words keep their letters. A word with no Latin letter of its own (the
+    Russian word that looks like "Ty") changes only in a text that is mostly Latin letters.
+    """
+    norm = _normalize(text)
+    if (text or "").isascii() or norm.text.translate(_LOOKALIKES) == norm.text:
+        return norm
+    letters = [ch for ch in norm.text if ch.isalpha()]
+    mostly_latin = 2 * sum(ch < _LATIN_END for ch in letters) > len(letters)
+
+    def fold(m: re.Match[str]) -> str:
+        word = m.group()
+        folded = word.translate(_LOOKALIKES)
+        if folded == word or any(ch >= _LATIN_END for ch in folded):
+            return word
+        return folded if mostly_latin or any(ch < _LATIN_END for ch in word) else word
+
+    return _Norm(_WORD.sub(fold, norm.text), norm.starts, norm.ends)
+
+
 def _remap(cands: Iterable[_Cand], text: str, norm: _Norm) -> list[_Cand]:
     """Candidates found in the normalized copy, with spans and values in the original text."""
     out: list[_Cand] = []
@@ -899,6 +938,19 @@ _TITLE_WORDS = frozenset(
 _NEXT_WORD = re.compile(r"[ \t]+([^\W\d_]+|\d)")
 
 
+# A student's initials, "C.R." or "C. R.", but not a piece of "G.P.A." or "J. R. R.". The last dot is
+# required: "Group B. A student read" is a sentence ending, not initials.
+_INITIALS = re.compile(r"(?<![\w.])([^\W\d_])\.[ \t]?([^\W\d_])\.(?!\w)(?![ \t]?[^\W\d_]\.)")
+# Ordinary abbreviations are never read as initials, whoever is on the roster.
+_NOT_INITIALS = frozenset("AD AM BC DC EG EU HW ID IE IT LA MD NY OK PE PM PO PS RN TA TV UK US".split())
+_CLASS_CONTEXT = re.compile(
+    r"\b(?:seat(?:s|ed|ing)?|sits?|sat|desks?|tables?|partners?|next to|beside|behind|groups?|absent|tardy|late|"
+    r"scored?|grades?|essays?|wrote|reads?|reading|class|classroom|students?|recess|homework|quiz|test|rubric|attendance)\b",
+    re.IGNORECASE,
+)
+_CONTEXT_REACH = 60  # characters on each side of the initials
+
+
 def _used_as_word(text: str, start: int, end: int, form: str) -> bool:
     """For a capitalized name that is also a common word: whether the text uses it as the word."""
     nxt = _NEXT_WORD.match(text, end)
@@ -939,6 +991,7 @@ class _NameIndex:
     def __init__(self, roster: Any):
         self.people: list[Person] = [roster.teacher, *roster.students]
         self.forms: dict[str, list[_Form]] = {}
+        self.initials: dict[str, list[_Form]] = {}
         firsts = [_norm(p.first) for p in self.people]
         for i, p in enumerate(self.people):
             forms = list(_forms_for(p))
@@ -949,6 +1002,9 @@ class _NameIndex:
                 entries = self.forms.setdefault(key, [])
                 if key and not any(e.person == i and e.ftype == ftype for e in entries):
                     entries.append(_Form(i, ftype, form))
+            if i and p.first[:1].isalpha() and p.last[:1].isalpha():  # students only: 0 is the teacher
+                pair = (p.first[0] + p.last[0]).upper()
+                self.initials.setdefault(pair, []).append(_Form(i, "initials", pair))
         texts = sorted({e.form for es in self.forms.values() for e in es}, key=len, reverse=True)
         self.regex = (
             re.compile(
@@ -1020,8 +1076,25 @@ class _NameIndex:
         """
         return _given_names_start(text, start, self.forms)
 
-    def cands(self, text: str) -> list[_Cand]:
+    def _initials_cands(self, text: str) -> list[_Cand]:
+        """A roster student's initials next to class context."""
         out: list[_Cand] = []
+        for m in _INITIALS.finditer(text):
+            a, b = m.group(1), m.group(2)
+            pair = a + b
+            entries = self.initials.get(pair)
+            if not entries or not (a.isupper() and b.isupper()) or pair in _NOT_INITIALS:
+                continue
+            nxt = _NEXT_WORD.match(text, m.end())
+            if nxt and nxt.group(1)[:1].isupper() and not _is_common(nxt.group(1)):
+                continue  # "C.R. Fenwick" is someone's own name
+            nearby = text[max(0, m.start() - _CONTEXT_REACH) : m.start()] + " " + text[m.end() : m.end() + _CONTEXT_REACH]
+            if _CLASS_CONTEXT.search(nearby):
+                out.append(self._cand(m.group(), m.start(), m.end(), entries))
+        return out
+
+    def cands(self, text: str) -> list[_Cand]:
+        out = self._initials_cands(text)
         if self.regex is not None:
             for m in self.regex.finditer(text):
                 entries = self.forms.get(_norm(m.group()))
@@ -1904,10 +1977,10 @@ def _scan(
     model: list[_Cand] | None = None,
     redaction: Redaction | None = None,
 ) -> list[_Cand]:
-    """Every private value in `text`, found in its normalized copy, with spans in `text`.
+    """Every private value in `text`, found in its detection view, with spans in `text`.
     `model` collects every candidate from the model's names, overlapped ones included.
     `redaction` applies the user's controls (None: tag everything)."""
-    norm = _normalize(text)
+    norm = _detection_view(text)
     t = norm.text
     cands = _identifier_cands(t, roster)
     stops = [(c.start, c.end) for c in cands]
@@ -2158,7 +2231,7 @@ def _compact_cands(text: str, roster: Any, tagmap: Any) -> list[_Cand]:
     targets = _compact_targets(roster, tagmap)
     if not targets:
         return []
-    norm = _normalize(TAG_RE.sub(lambda m: "|" * len(m.group()), text))
+    norm = _detection_view(TAG_RE.sub(lambda m: "|" * len(m.group()), text))
     letters: list[str] = []
     where: list[int] = []
     for i, ch in enumerate(norm.text.lower()):
