@@ -126,6 +126,8 @@ def read_json(path):
 def write_json(path, value, mode=None):
     part = f"{path}.part"
     with open(os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode or 0o644), "w", encoding="utf-8") as f:
+        # A .part left from a crash keeps its old mode, and urls.json holds links that are secrets while they last.
+        os.fchmod(f.fileno(), mode or 0o644)
         json.dump(value, f)
     os.replace(part, path)
 

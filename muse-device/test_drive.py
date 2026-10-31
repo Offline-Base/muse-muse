@@ -453,6 +453,14 @@ class ExportTests(DriveTestCase):
         self.assertEqual([c for c in self.drives.calls if c[1] == "sda"], [("mount", "sda"), ("unmount", "sda"), ("mount", "sda"), ("unmount", "sda"), ("power_off", "sda")])
         self.assertEqual(drive.find_drives(), [], "powered off, so it's gone")
         self.assertFalse(os.path.exists(os.path.join(drive.EXPORT_DIR, plan["export"], "urls.json")))
+
+    def test_the_links_file_is_private_even_over_a_leftover(self):
+        path = os.path.join(self.home, "urls.json")
+        with open(f"{path}.part", "w") as f:
+            f.write("{}")
+        os.chmod(f"{path}.part", 0o644)
+        drive.write_json(path, {"a": "https://x.example/y?sig=1"}, 0o600)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         # ~/models is read and never changed.
         self.assertEqual(sorted(os.listdir(self.models)), sorted(self.fixture["board"]))
 
