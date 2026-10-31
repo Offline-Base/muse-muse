@@ -166,7 +166,16 @@ PLIST="$HOME/Library/LaunchAgents/ai.musemuse.lab.plist"
 GUI_DOMAIN="gui/$(id -u)"
 if launchctl print "$GUI_DOMAIN" >/dev/null 2>&1; then
   launchctl bootout "$GUI_DOMAIN/ai.musemuse.lab" >/dev/null 2>&1 || true
-  launchctl bootstrap "$GUI_DOMAIN" "$PLIST" || echo "The agent will start at the next login."
+  # The old agent takes some seconds to shut down, and until it has gone bootstrap fails with an I/O error.
+  STARTED=""
+  for _ in $(seq 1 30); do
+    if launchctl bootstrap "$GUI_DOMAIN" "$PLIST" >/dev/null 2>&1; then
+      STARTED=1
+      break
+    fi
+    sleep 3
+  done
+  [ -n "$STARTED" ] || echo "The agent didn't start. It will start at the next login."
 else
   echo "There's no GUI session yet. Reboot once, and auto-login will start the agent."
 fi

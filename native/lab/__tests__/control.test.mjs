@@ -182,6 +182,13 @@ describe("setup/mac.sh", () => {
       assert.ok(!reply.stdout.includes("xcode-select -s"), reply.stdout);
     });
   });
+  test("a second run waits for the old agent to go before starting the new one", () => {
+    // On the real Mac, bootstrap right after bootout failed with an I/O error and left no agent running.
+    const start = script.indexOf('launchctl bootout "$GUI_DOMAIN');
+    const loop = script.indexOf("for _ in $(seq", start);
+    const bootstrap = script.indexOf('launchctl bootstrap "$GUI_DOMAIN"', start);
+    assert.ok(start > 0 && start < loop && loop < bootstrap);
+  });
   test("run from an installed release, it stays on that release", () => {
     assert.match(script, /pwd -P/, "the real path, not the current link");
     assert.match(script, /"\$ROOT\/releases\/"\*\) RELEASE="\$HERE"/);
