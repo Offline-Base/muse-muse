@@ -377,8 +377,9 @@ mode, epochs and the run estimate for the GPU.
   how to call it) is later work (Owner decisions).
 - **decide.json**, written next to the adapter: the format's contract, so llama.cpp users, the drive (wave 3 unit 12) and
   other apps render the same prompt: `{format: "muse-decide/1", system, separator, letters, none, question, labels, T,
-  groupsOf: 4, template: {repo, revision, sha256}, maxTokens: 2048, read: "first-token log-probabilities, bare and
-  space-led letter summed, renormalized over the shown letters, divided by T"}`.
+  groupsOf: 4, template: {repo, revision, sha256}, prompt: {prefix, suffix}, maxTokens: 2048, read: "first-token
+  log-probabilities, bare and space-led letter summed, renormalized over the shown letters, divided by T"}`. The prompt
+  is `prefix + task + separator + task + suffix`, without `<|begin_of_text|>`, so an app needs no template engine.
 - **Local files:** `quantProblem` refuses decide adapters until `glimmer-quantize` learns a decision check: its channel
   check asks for a final answer under a stock app's prompt, which is the wrong test here. The decision check instead
   scores the test renderings on Q4_K_M with `llama-server` (`/completion`, `n_probs`) and passes a build only when its
@@ -443,9 +444,12 @@ POST {GATEWAY_URL}/decide   Authorization: Bearer <product token>
 { "state": "...", "question": "...", "options": ["Billing", {"option": "Shipping", "description": "..."}],
   "model": "muse-decide" | "<decision model's training job id>", "none": true }
 -> 200 { "decision": "Billing", "id": "billing", "confidence": 0.91,
-         "probabilities": [{"option": "Billing", "p": 0.91}, ...], "none": 0.02,
+         "probabilities": [{"option": "Billing", "id": "billing", "p": 0.91}, ...], "none": 0.02,
          "model": "...", "calibrated": true, "simulated": false, "ms": 840, "note": null }
 ```
+
+- When `none` wins, `decision` and `id` are null and `confidence` is the `none` probability (`Decision` in
+  `lib/decide/types.ts`).
 
 - **Permission:** the brief's capability `muse-decide`, which puts that id in the token's `allowedModels` the way
   `muse-gadget` does; otherwise 403 `decide_not_allowed`.
@@ -491,6 +495,43 @@ merges, as wave 3 agreed.
 - **Unit 12 (drive export):** a decision model is one more source: its adapter at `<cache>/models/<jobId>/` (or on the
   Hub), its GGUF files once decide quantize exists, and `decide.json`, which the drive needs so its launcher renders the
   prompt the model was trained on. A decision model on a drive is not a chat model, and its launcher must not open one.
+
+The shared types are in `lib/decide/types.ts` (D0): the task, option, letter, rendering, decision and summary shapes,
+`DecideJson`, and the backend unit 11 implements:
+
+```ts
+interface DecideBackend {
+  score(input: {
+    prompts: { messages: DecideMessage[]; text: string }[]; // 1 to 3, one per group; text has no <|begin_of_text|>
+    letters: DecideLetter[][]; // what each prompt shows, in order
+    adapter: string | null; // the decision model's training job id, or null for base Glimmer
+    signal?: AbortSignal;
+  }): Promise<{ logprobs: number[][]; ms: number }>; // log of bare plus space-led letter probability, not renormalized
+}
+```
+
+The gateway's deps hand it one backend per open serving window, or null (503 `decide_offline`), as `/gadget`'s deps
+hand it a board. `score` rejects when it can't answer: 504 `timeout` once `signal` aborted, else 502
+`decide_unavailable`. The platform renormalizes, applies T and combines groups (`decisionFromScores` in
+`lib/decide/format.ts`), so a backend only reads logits.
+
+### Files a decision model produces
+
+For unit 12, by where they live. `<id8>` is the first 8 characters of the training job id, `<slug>` is `hubSlug` of the
+dataset title (`lib/train/hub-cards.ts`).
+
+| Where | Path or name | What | When |
+|---|---|---|---|
+| Lambda filesystem, the job's region | `<cache>/models/<jobId>/adapter_config.json`, `adapter_model.safetensors` | the LoRA adapter, as glimmer-lora saves it today | every decide job but `scoreOnly` and dry runs |
+| same folder | `tokenizer.json`, `tokenizer_config.json` and the other files `tokenizer.save_pretrained` writes | the tokenizer, saved beside the adapter as today | same |
+| same folder | `decide.json` | the format's contract (`DecideJson`, built by `decideJson` in `lib/decide/format.ts`) | written by D4 |
+| the platform's database | `training_jobs.eval_summary` | `DecisionSummary`, with each model's fitted T | after `scoreDecisionStep` (D5) |
+| Hugging Face, only with `publish: 1` | `<namespace>/muse-glimmer-30b-<slug>-lora-<id8>` (`modelRepoName`) | adapter files and card; never the person's rows | off by default; adapter-only publishing is later work |
+| Hugging Face, once decide quantize exists | `<namespace>/muse-glimmer-30b-<slug>-gguf-<id8>` (`ggufRepoName`), files `muse-glimmer-30b-<slug>-<LEVEL>.gguf` (`ggufFileName`), Q4_K_M first | merged GGUF builds, with `decide.json` beside them | cut for now (Cut order 5) |
+
+One thing for unit 12 to know: T is fit after the run, from dev scores the GPU sent, so the `decide.json` the GPU
+writes beside the adapter can only hold T = 1. The drive should write its own `decide.json` with `decideJson` and the
+tuned T from `eval_summary` (`tuned.T`, and `tuned.calibrated` for the wording), not copy the GPU's.
 
 ### Wording
 
