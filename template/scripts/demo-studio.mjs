@@ -98,6 +98,7 @@ function readSpec(file) {
   return {
     title: plainText(raw.title, 60) || "Untitled",
     tagline: plainText(raw.tagline, 150),
+    note: plainText(raw.note, 120),
     models: (Array.isArray(raw.models) ? raw.models : []).map((m) => plainText(m, 40)).filter(Boolean).slice(0, 5),
     url: typeof raw.url === "string" && /^https?:\/\//i.test(raw.url) ? raw.url : null,
     timeline: path.resolve(raw.timeline),
@@ -269,6 +270,7 @@ h1{margin-top:30px;font-size:${shot ? 74 : 88}px;line-height:1.06;font-weight:70
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .tag{margin-top:20px;font-size:${shot ? 30 : 34}px;line-height:1.36;color:${C.muted};text-wrap:balance;
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.note{margin-top:28px;font-size:24px;line-height:1.36;color:${C.muted}}
 .chips{margin-top:36px;display:flex;flex-wrap:wrap;gap:12px}
 .chip{display:inline-flex;align-items:center;height:46px;padding:0 22px;border-radius:23px;background:${C.wash};color:${C.ink};
   font-size:21px;font-weight:600;white-space:nowrap}
@@ -285,7 +287,7 @@ h1{margin-top:30px;font-size:${shot ? 74 : 88}px;line-height:1.06;font-weight:70
   const host = hostOf(spec.url);
   const chips = spec.models.map((m) => `<span class="chip">${escapeHtml(m)}</span>`).join("");
   const card = `<div class="card"><div class="made">Made with Muse Muse</div><h1>${escapeHtml(spec.title)}</h1>
-${spec.tagline ? `<p class="tag">${escapeHtml(spec.tagline)}</p>` : ""}${chips ? `<div class="chips">${chips}</div>` : ""}</div>`;
+${spec.tagline ? `<p class="tag">${escapeHtml(spec.tagline)}</p>` : ""}${chips ? `<div class="chips">${chips}</div>` : ""}${spec.note ? `<p class="note">${escapeHtml(spec.note)}</p>` : ""}</div>`;
   const window = shot
     ? `<div class="shot"><div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">${host ? LOCK() : ""}<span>${escapeHtml(host ?? spec.title)}</span></div></div><img src="${posterUrl}" alt=""></div>`
     : "";

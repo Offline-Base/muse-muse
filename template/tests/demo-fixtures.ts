@@ -10,7 +10,8 @@
 // other project this module is plain @playwright/test. The choreography never changes what an action does: an error
 // in it is swallowed, the typing is only drawn (the app sees the action's own events and nothing else), and the
 // original action always runs with the arguments the test gave it. The time the choreography adds is added to the
-// test's timeout.
+// test's timeout. In a VR product (tests/xr.ts) each scripted move in the headset is an "xr" action kept at real speed, and
+// a result fills the whole view, so it gets a hold and no zoom.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
@@ -66,7 +67,7 @@ interface Rect {
   w: number;
   h: number;
 }
-type ActionKind = "goto" | "click" | "type" | "upload" | "select" | "check" | "press" | "hover";
+type ActionKind = "goto" | "click" | "type" | "upload" | "select" | "check" | "press" | "hover" | "xr";
 type ActionMethod = "click" | "dblclick" | "check" | "uncheck" | "selectOption" | "setInputFiles" | "fill" | "hover" | "press";
 
 /** The Locator methods the recorder choreographs, and the timeline kind each one records. */
@@ -358,6 +359,10 @@ class DemoRecorder {
   private readonly actionTimeout: number;
   /** Inter for the file chip (scripts/demo-inter.woff2) as base64, when the product has it. */
   private readonly font: string | null;
+  /** A VR product records at 1x on purpose (playwright.config.ts). */
+  private readonly vr: boolean;
+  /** A VR move ran since the last VR hold, so the view may show something new. */
+  private xrUnheld = false;
   /** The viewport the recording started with, which the timeline's rects are measured in. */
   private viewport = { width: 1280, height: 720 };
   /** The viewport now, after any page.setViewportSize. */
@@ -407,6 +412,14 @@ class DemoRecorder {
       // The chip uses the system's fonts.
     }
     this.font = font;
+    let vr = false;
+    try {
+      const { targets } = JSON.parse(readFileSync(path.join(root, "musemuse.target.json"), "utf8")) as { targets?: unknown };
+      vr = Array.isArray(targets) && targets.includes("vr");
+    } catch {
+      // A web product.
+    }
+    this.vr = vr;
   }
 
   /** Sets everything up before the test opens the product. The screencast starts once the app is on screen. */
@@ -455,6 +468,53 @@ class DemoRecorder {
     return this.starting;
   }
 
+  /** One move in VR. ready = t1, so Demo Studio keeps all of it at real speed, and "xr" isn't a kind the camera cuts to. */
+  async xrAction<T>(label: string, run: () => Promise<T>): Promise<T> {
+    // The 3D preview on the landing page looks like a result to the recorder. It would get the zoom and the poster.
+    if (!this.actions.some((a) => a.kind === "xr")) this.results.length = 0;
+    if (!this.stepStart) this.beginStep(Date.now());
+    this.active();
+    await this.start();
+    await this.cursor("rest");
+    const entry: ActionEntry = { kind: "xr", t0: Date.now(), ready: 0, t1: 0, label, waited: 0 };
+    try {
+      return await run();
+    } finally {
+      entry.ready = entry.t1 = Date.now();
+      this.actions.push(entry);
+      this.xrUnheld = true;
+      this.quiet();
+    }
+  }
+
+  /**
+   * A result that fills the whole view, held a moment. The planner doesn't zoom past 60% of the screen, and the last one
+   * becomes the poster, unless the test goes back to a result on the 2D page afterwards.
+   */
+  async holdXr(): Promise<void> {
+    await this.start();
+    this.xrUnheld = false;
+    const now = Date.now();
+    const rect = { x: 0, y: 0, w: this.screen.width, h: this.screen.height };
+    this.results.push({ t: now, at: now, rect, scrollY: 0, waited: 0, busy: true, media: 1, heads: [], blanks: [], pressed: null });
+    this.active();
+    this.extendTimeout(RESULT_HOLD_MS);
+    await sleep(RESULT_HOLD_MS);
+    this.quiet();
+  }
+
+  /** A top-level step that moved in VR ends on what it shows, unless the test already held it with xr.hold. */
+  async endXrStep(): Promise<void> {
+    if (this.xrUnheld && !this.page.isClosed()) await this.holdXr();
+  }
+
+  /** True when the page is in a VR session now: nothing on the 2D page is on screen. Only asked once a VR move has run. */
+  private async inVrSession(): Promise<boolean> {
+    if (!this.actions.some((a) => a.kind === "xr")) return false;
+    const call = this.page.evaluate(() => (window as unknown as { __musemuseXR?: { inSession(): boolean } }).__musemuseXR?.inSession() === true);
+    return within(call, "checking the VR session").catch(() => false);
+  }
+
   /** Ends the recording: restores Playwright, holds the final state, stops the screencast and writes the timeline. */
   async finish(testInfo: TestInfo): Promise<void> {
     for (const restore of this.restores.splice(0)) restore();
@@ -462,7 +522,10 @@ class DemoRecorder {
       if (!this.page.isClosed()) {
         await this.start();
         // A passing test ends on its strongest result after the last model wait.
-        if (testInfo.status === "passed") await this.settleResult(true);
+        if (testInfo.status === "passed") {
+          await this.endXrStep();
+          await this.settleResult(true);
+        }
         this.extendTimeout(HOLD_MS);
         await sleep(HOLD_MS);
       }
@@ -502,6 +565,7 @@ class DemoRecorder {
    */
   async settleResult(final = false): Promise<number> {
     if (!this.starting || this.page.isClosed()) return 0;
+    if (await this.inVrSession()) return 0;
     const started = Date.now();
     this.active();
     try {
@@ -991,7 +1055,7 @@ class DemoRecorder {
     if (!size) return;
     this.dpr = Math.round((size.width / this.viewport.width) * 100) / 100;
     const fits = Math.min(2560 / this.viewport.width, 1440 / this.viewport.height);
-    if (this.dpr < Math.min(2, fits) - 0.05) {
+    if (!this.vr && this.dpr < Math.min(2, fits) - 0.05) {
       this.note(`frames are ${size.width}x${size.height}: launch Chromium with --force-device-scale-factor=2 for sharp text`);
     }
   }
@@ -1890,6 +1954,16 @@ function demoPageScript({ binding, api, font, modelMs }: { binding: string; api:
   }, 100);
 }
 
+/** Records one move in VR on the demo's timeline. Outside the studio project it only runs it. */
+export function recordXrAction<T>(page: Page, label: string, run: () => Promise<T>): Promise<T> {
+  return current?.page === page ? current.xrAction(label, run) : run();
+}
+
+/** Holds a result that fills the view in the demo. Outside the studio project it does nothing. */
+export async function holdXrResult(page: Page): Promise<void> {
+  if (current?.page === page) await current.holdXr();
+}
+
 /** The recording runs only in the studio project, and only for the first test a worker runs. */
 export const test = base.extend({
   // The recorder hangs off the page fixture instead of an auto fixture of its own, so a test that never opens a page
@@ -1932,7 +2006,10 @@ function recordedStep(title: string, body: (step: TestStepInfo) => unknown, opti
         if (depth === 0) recorder.beginStep(entry.t0);
         try {
           const result = await body(step);
-          if (current === recorder) await recorder.settleResult();
+          if (current === recorder) {
+            if (depth === 0) await recorder.endXrStep();
+            await recorder.settleResult();
+          }
           return result;
         } finally {
           entry.t1 = Date.now();
