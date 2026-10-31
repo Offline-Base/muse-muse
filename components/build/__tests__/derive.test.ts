@@ -466,3 +466,26 @@ describe("groupLog on bridge lines", () => {
     assert.notEqual(sessionOf([{ kind: "tool", itemId: "t", tool: "bash", ok: true, text: "ls" }]), null);
   });
 });
+
+describe("a log line just before a round", () => {
+  const bodies = (after: BuildEventBody[]): BuildEvent[] =>
+    ([{ type: "status", status: "briefing", step: "brief" }, { type: "brief", brief: {} as never }, { type: "status", status: "building", step: "build" }, { type: "log", text: "How the round runs." }, ...after] as BuildEventBody[]).map(
+      (b, i) => ({ ...b, id: i + 1, at: `2026-10-31T12:00:${String(i).padStart(2, "0")}.000Z` }) as BuildEvent,
+    );
+
+  it("goes with the round, not the turn before it", () => {
+    const room = deriveRoom(build, bodies([{ type: "muse", round: 0, lines: [{ kind: "say", text: "Hello" }] }]));
+    assert.deepEqual(room.segments[0]!.notes, []);
+    assert.deepEqual(room.segments[1]!.notes.map((n) => [n.text, n.leading]), [["How the round runs.", true]]);
+  });
+
+  it("stays with the last turn when no round follows", () => {
+    const room = deriveRoom(build, bodies([]));
+    assert.deepEqual(room.segments[0]!.notes.map((n) => n.text), ["How the round runs."]);
+  });
+
+  it("leaves a line during a round in that round, unmarked", () => {
+    const room = deriveRoom(build, bodies([{ type: "muse", round: 0, lines: [] }, { type: "log", text: "A build note." }]));
+    assert.deepEqual(room.segments[1]!.notes.map((n) => [n.text, n.leading]), [["How the round runs.", true], ["A build note.", undefined]]);
+  });
+});
