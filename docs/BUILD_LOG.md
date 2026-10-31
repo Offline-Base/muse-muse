@@ -167,6 +167,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **16:30** Ethan: a use case for parents letting their kids use this, or people setting it up for older family members, so they don't send very private things. Added families to README's "Who it's for", with its limits: what someone types into Muse reaches Meta before the device sees it, so the device guards files, not chat; Meta's minimum age for Muse is 13; anyone at the device can change its settings today. Not built: a guardian lock, asks routed to the guardian, a family preset.
 
+**16:35** Ethan chose the guardian lock and a family preset for the families case. Added `base/guardian.py`: a PIN kept as a salted PBKDF2 hash in BASE_HOME/guardian.json (0600), 5 misses lock it for 15 minutes, an unlock lasts 10 minutes in one browser. With a PIN set, changing Controls, Setup, learning mode or Always approve, or deleting a decision, needs the guardian; with its approvals box on, approving a result does too, and "don't ask again" always does. Denying never does. Added a `family` toggle: codes, passwords, account numbers and a home address stay on the device, money, health and custody are asked, faces are asked, and the fewer-than-10-people hold is off for it, since a family's files are about one or two people. Limits written in THREAT_MODEL and the toggle's own text: an administrator can delete the file, and nothing typed into Muse is seen. Unit and page tests only.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.

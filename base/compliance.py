@@ -34,6 +34,7 @@ class Profile:
     ask_all: bool = False  # the user sees every result that would go to Muse
     keep_words: tuple[str, ...] = ()  # a result with one of these stays on the device
     ask_words: tuple[str, ...] = ()  # a result with one of these waits for the user
+    small_groups: bool = True  # hold results about fewer than 10 people (off where a few people is the point)
 
 
 _TAGS_MORE = "Tags places, dates, organizations, record numbers and links, and keeps results about fewer than 10 people."
@@ -123,6 +124,25 @@ _PROFILES = (
         ask_words=("precise geolocation", "immigration", "citizenship", "racial", "ethnic origin", "religion", "sexual orientation", "genetic", "biometric"),
     ),
     Profile(
+        "family", "A family member", "Family",
+        "For a teen or an older relative using Muse with your rules. Tags places, dates, organizations, record numbers, "
+        "links and ages. Results with passwords, codes, account numbers or a home address stay on the device, and "
+        "results about money, health or custody wait for an OK. Set a guardian PIN on the Setup page, or anyone here can turn this off.",
+        "It guards the files on this device, not what someone types into Muse, which reaches Meta first. Meta's terms "
+        "set a minimum age of 13 for Muse. Word matching can miss things.",
+        kinds=_ALL_DETAIL | {"age"},
+        small_groups=False,  # a family's files are about one or two people by design
+        keep_words=(
+            "password", "passcode", "pin number", "security question", "security answer", "verification code",
+            "one-time code", "routing number", "account number", "social security", "medicare number",
+            "home address", "locker combination", "wire transfer", "gift card",
+        ),
+        ask_words=(
+            "diagnosis", "medication", "prescription", "therapist", "bank", "account balance", "credit card",
+            "loan", "insurance", "custody", "court",
+        ),
+    ),
+    Profile(
         "cui", "CUI and federal contracts", "Government",
         f"For controlled unclassified information. {_LOCAL}",
         "Under DFARS, a cloud provider handling covered defense information must meet FedRAMP Moderate or equivalent. Muse's terms make no such claim, so ask your security officer before changing this.",
@@ -151,7 +171,7 @@ SCAN_REASON = "This was read from an image, and that reading is less reliable, s
 # on HIPAA's Safe Harbor list (45 CFR 164.514(b)(2)(i)(Q)) and a photo of a child is in COPPA's
 # definition of personal information (16 CFR 312.2); a signature is a mark of who someone is in
 # health, legal and HR records. These ask first even though the page was covered before reading.
-FACE_TOGGLES = ("hipaa", "coppa")
+FACE_TOGGLES = ("hipaa", "coppa", "family")
 SIGNATURE_TOGGLES = ("hipaa", "legal", "hr")
 FACE_REASON = "This came from a page with a photo of a person, covered on this device before reading, so you decide."
 SIGNATURE_REASON = "This came from a page with a signature, covered on this device before reading, so you decide."
@@ -254,7 +274,7 @@ def check(
     both = f"{text}\n{raw}"
     if any(_has_word(p.keep_words, both) for p in chosen):
         return "refuse", "compliance:sensitive", KEEP_WORD_REASON
-    if describes_small_group(text) or request_names_small_group(request):
+    if any(p.small_groups for p in chosen) and (describes_small_group(text) or request_names_small_group(request)):
         return "refuse", "compliance:small_group", SMALL_GROUP_REASON
     kinds = image_kinds or {}
     if kinds.get("face") and any(k in FACE_TOGGLES for k in keys):

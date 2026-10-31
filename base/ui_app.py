@@ -47,6 +47,9 @@ from base.compliance import GROUPS, NOT_FOR, PROFILES, local_only
 from base.config import REPO_ROOT
 from base.controls import KIND_LABELS, TOP, Controls, ControlStore
 from base.flow import flow_html
+from base.guardian import APPROVE_LOCKED, UNLOCK_SECONDS, Guardian, GuardianError
+from base.guardian import COOKIE as GUARDIAN_COOKIE
+from base.guardian import LOCKED as GUARDIAN_LOCKED
 from base.router import LEARNING_MODES, routing_mode
 from base.types import default_share_form
 
@@ -930,6 +933,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     sessions = SessionStore(settings.home / "approval_sessions.json")
     pairing = Pairing(misses_path=settings.home / "pairing_misses")
     login_required = not is_loopback(settings.approval_host)
+    guardian = getattr(services, "guardian", None) or Guardian(settings.home)
 
     app = FastAPI(
         title="Muse Privacy",
@@ -949,6 +953,21 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     def authorized(request: Request) -> bool:
         return not login_required or sessions.valid(request.cookies.get(SESSION_COOKIE))
+
+    def guardian_token(request: Request) -> str | None:
+        return request.cookies.get(GUARDIAN_COOKIE)
+
+    def need_guardian(request: Request) -> None:
+        """A guardian PIN is set and this browser is not unlocked: settings stay as they are."""
+        if not guardian.allows(guardian_token(request)):
+            raise HTTPException(403, GUARDIAN_LOCKED)
+
+    def guardian_cookie(response: Response, token: str) -> Response:
+        response.set_cookie(
+            GUARDIAN_COOKIE, token, max_age=UNLOCK_SECONDS, httponly=True, samesite="strict",
+            secure=bool(getattr(settings, "approval_tls", False)), path="/",
+        )  # fmt: skip
+        return response
 
     def pending_rows() -> list[Any]:
         return _newest_first(r for r in store.pending() if not _val(r, "deleted"))
@@ -1007,6 +1026,9 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
                 "It turns itself off then.</div>"
                 if on
                 else ""
+            ) + (
+                f'<div class="auto-banner" role="status">{esc(APPROVE_LOCKED)} You can still deny.</div>'
+                if not guardian.allows_approval(guardian_token(request)) else ""
             ),
             auto_state="on" if on else "off",
             auto_note=(
@@ -1203,6 +1225,10 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
         if approve is None:
             raise HTTPException(400, "Say approve: true or false.")
         remember = bool(_truthy(data.get("remember")))
+        if approve and not guardian.allows_approval(guardian_token(request)):
+            raise HTTPException(403, APPROVE_LOCKED)
+        if approve and remember and not guardian.allows(guardian_token(request)):
+            raise HTTPException(403, GUARDIAN_LOCKED)  # "don't ask again" is a standing rule
         rid = _coerce_id(approval_id)
         row = store.get(rid)
         if row is None or _val(row, "deleted"):
@@ -1256,7 +1282,12 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             image_note_html=image_note,
             profiles_html=profiles,
             profile_note="" if device_only else "These need every model on this device. Set DEVICE_ONLY=1 first.",
-            lock_note="Locked while a toggle is on. Your own settings come back when it goes off." if c.profiles else "",
+            lock_note=" ".join(
+                note for note in (
+                    "Locked while a toggle is on. Your own settings come back when it goes off." if c.profiles else "",
+                    GUARDIAN_LOCKED if not guardian.allows(guardian_token(request)) else "",
+                ) if note
+            ),
             never_lock=lock,
             kinds_html=kinds,
             always="\n".join(c.always_redact),
@@ -1273,6 +1304,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.post("/api/controls")
     async def api_controls_save(request: Request) -> Any:
         """Save the Controls page (a form) or a JSON body shaped like GET /api/controls' "controls"."""
+        need_guardian(request)
         data = await _read_body(request)
         old = controls.get()
         if _is_form(request):
@@ -1304,6 +1336,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.post("/api/learning")
     async def api_learning(request: Request) -> Any:
         """Choose how dreaming's rules are used. Like every POST here: this device's page only."""
+        need_guardian(request)
         choice = str((await _read_body(request)).get("learning") or "")
         if choice not in LEARNING_MODES:
             raise HTTPException(400, "Choose rules, tighten, decide or local_lora.")
@@ -1319,6 +1352,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
     @app.post("/api/auto-approve")
     async def api_auto_approve(request: Request) -> Any:
         """Turn always-approve mode on or off. Like every POST here: this device's page only."""
+        need_guardian(request)
         on = _truthy((await _read_body(request)).get("on"))
         if on is None:
             raise HTTPException(400, "Say on: true or false.")
@@ -1366,11 +1400,56 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
             training_checked=" checked" if setup_flag("muse_training_off") else "",
             toggles=", ".join(p.upper() for p in c.profiles) or "none",
             saved="Saved." if saved else "",
+            guardian_html=guardian_html(guardian, guardian.unlocked(guardian_token(request))),
         )
         return page(request, "setup", "Setup", content)
 
+    @app.post("/api/guardian")
+    async def api_guardian_set(request: Request) -> Any:
+        """Set, change or remove the guardian PIN. Changing or removing it needs this browser unlocked."""
+        data = await _read_body(request)
+        token = guardian_token(request)
+        try:
+            if _truthy(data.get("remove")):
+                guardian.remove(token)
+                log.info("guardian PIN removed")
+                response: Response = RedirectResponse("/setup?saved=1", status_code=303) if _is_form(request) else JSONResponse({"ok": True, "set": False})
+                response.delete_cookie(GUARDIAN_COOKIE, path="/")
+                return response
+            pin = str(data.get("pin") or "")
+            if "pin_again" in data and str(data.get("pin_again") or "") != pin:
+                raise HTTPException(400, "The two PINs do not match.")
+            guardian.set(pin, approvals=bool(_truthy(data.get("approvals"))), token=token)
+        except GuardianError as exc:
+            raise HTTPException(403 if str(exc) == GUARDIAN_LOCKED else 400, str(exc)) from None
+        log.info("guardian PIN set")
+        new = guardian.unlock(pin)  # whoever just set it is the guardian: this browser stays unlocked a while
+        response = RedirectResponse("/setup?saved=1", status_code=303) if _is_form(request) else JSONResponse({"ok": True, "set": True})
+        return guardian_cookie(response, new) if new else response
+
+    @app.post("/api/guardian/unlock")
+    async def api_guardian_unlock(request: Request) -> Any:
+        pin = str((await _read_body(request)).get("pin") or "")
+        try:
+            token = guardian.unlock(pin)
+        except GuardianError as exc:
+            raise HTTPException(429, str(exc)) from None
+        if token is None:
+            raise HTTPException(403, "That PIN did not work.")
+        response: Response = (RedirectResponse("/setup", status_code=303) if _is_form(request)
+                              else JSONResponse({"ok": True, "minutes": UNLOCK_SECONDS // 60}))  # fmt: skip
+        return guardian_cookie(response, token)
+
+    @app.post("/api/guardian/lock")
+    def api_guardian_lock(request: Request) -> Any:
+        guardian.lock(guardian_token(request))
+        response: Response = RedirectResponse("/setup", status_code=303) if _is_form(request) else JSONResponse({"ok": True})
+        response.delete_cookie(GUARDIAN_COOKIE, path="/")
+        return response
+
     @app.post("/api/setup")
     async def api_setup(request: Request) -> Any:
+        need_guardian(request)
         data = await _read_body(request)
         state = _read_setup(settings)
         state["muse_training_off"] = bool(data.get("muse_training_off"))
@@ -1480,6 +1559,7 @@ def create_app(services: Any, *, nights_csv: Path | None = None) -> FastAPI:
 
     @app.post("/api/history/{approval_id}/delete")
     async def api_delete(approval_id: str, request: Request) -> Any:
+        need_guardian(request)  # deleting a decision changes what dreaming learns
         rid = _coerce_id(approval_id)
         if store.get(rid) is None:
             raise HTTPException(404, "There is no such decision.")
@@ -1580,6 +1660,47 @@ LEARNING_TEXT = {
     "decide": ("Prompt, model decides", "The local model decides using your rules, inside the safety checks. A privacy toggle turns this back to stricter only."),
     "local_lora": ("Local fine-tune", "The model decides with a fine-tuned adapter, inside the safety checks. Needs Glimmer on this device and an adapter."),
 }
+
+
+def guardian_html(guardian: Guardian, unlocked: bool) -> str:
+    """The Setup page's guardian section, outside its main form. Each form posts on its own."""
+    head = (
+        '<h2 class="section">Guardian PIN</h2>\n<p class="section-lede">For a device you set up for someone else, '
+        "such as a teen or an older relative. With a PIN, only you can change these settings, and with the box "
+        "below ticked, only you can approve a result. Anyone can still deny one. It does not stop what they type "
+        "into Muse, and someone with an administrator account on this computer can remove it.</p>\n"
+    )
+    pin = '<input type="password" name="{name}" autocomplete="new-password" minlength="6" maxlength="64" required aria-label="{label}">'
+    if not guardian.is_set():
+        return head + (
+            '<form method="post" action="/api/guardian" class="controls glance">\n'
+            f'  <div class="glance-row"><div class="glance-label">New PIN, 6 or more characters</div><div class="glance-value">{pin.format(name="pin", label="New PIN")}</div></div>\n'
+            f'  <div class="glance-row"><div class="glance-label">The same PIN again</div><div class="glance-value">{pin.format(name="pin_again", label="The same PIN again")}</div></div>\n'
+            '  <div class="glance-row"><label class="switch"><input type="checkbox" name="approvals" value="1" checked> Only I can approve results</label></div>\n'
+            '  <div class="save-row"><button class="btn primary" type="submit">Set the PIN</button></div>\n</form>\n'
+        )
+    approvals = "Only the guardian approves results." if guardian.approvals_locked() else "Anyone here can approve results."
+    if not unlocked:
+        until = guardian.locked_until()
+        wait = f" Too many wrong tries: try again after {esc(_when(until))}." if until else ""
+        return head + (
+            f'<p class="section-lede">A guardian PIN is set. {approvals}{wait}</p>\n'
+            '<form method="post" action="/api/guardian/unlock" class="controls glance">\n'
+            f'  <div class="glance-row"><div class="glance-label">PIN</div><div class="glance-value">{pin.format(name="pin", label="PIN").replace("new-password", "current-password")}</div></div>\n'
+            '  <div class="save-row"><button class="btn primary" type="submit">Unlock for 10 minutes</button></div>\n</form>\n'
+        )
+    return head + (
+        f'<p class="section-lede">Unlocked in this browser for up to 10 minutes. {approvals}</p>\n'
+        '<form method="post" action="/api/guardian/lock" class="controls"><div class="save-row">'
+        '<button class="btn primary" type="submit">Lock now</button></div></form>\n'
+        '<form method="post" action="/api/guardian" class="controls glance">\n'
+        f'  <div class="glance-row"><div class="glance-label">New PIN</div><div class="glance-value">{pin.format(name="pin", label="New PIN")}</div></div>\n'
+        f'  <div class="glance-row"><div class="glance-label">The same PIN again</div><div class="glance-value">{pin.format(name="pin_again", label="The same PIN again")}</div></div>\n'
+        f'  <div class="glance-row"><label class="switch"><input type="checkbox" name="approvals" value="1"{" checked" if guardian.approvals_locked() else ""}> Only I can approve results</label></div>\n'
+        '  <div class="save-row"><button class="btn secondary" type="submit">Change the PIN</button></div>\n</form>\n'
+        '<form method="post" action="/api/guardian" class="controls"><input type="hidden" name="remove" value="1">'
+        '<div class="save-row"><button class="btn secondary" type="submit">Remove the PIN</button></div></form>\n'
+    )
 
 
 def toggles_html(on: Iterable[str], enabled: bool = True) -> str:
