@@ -815,6 +815,16 @@ because the sidebar showed a real account.
   production keeps its snapshot until the Nov 2 one.
 - The local site on port 3020 was restarted with that override and merged up to 566fa98; home and gallery answer 200.
 
+### 19:05 Owner: previews may get their own database
+
+- Owner: "preview can get its own db or share idc". General chose its own database, which both sessions recommended.
+- The Neon integration (neon-celeste-lantern, Vercel-managed) offers per-preview branching only at connect time, per
+  Neon's docs, and the documented way to change it removes the project connection, so it is not used on a live project.
+- Instead: tg-preview-db (wf_7d431c55-cdd) adds one database-URL helper. On a Vercel preview it uses
+  PREVIEW_DATABASE_URL; without it a preview skips migrations and runs with no database; it refuses when the preview URL
+  equals production's. The owner then creates a Neon branch "preview" and sets PREVIEW_DATABASE_URL for Preview only.
+  Until both are in, no preview deploys of branches with migrations.
+
 ## Gaps
 
 What this record doesn't confirm:
