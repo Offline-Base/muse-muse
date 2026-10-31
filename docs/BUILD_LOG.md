@@ -72,7 +72,17 @@ The 2B model as router over-refuses (86 to 88 on fresh_200_b), so policy decides
 - Needs Ethan (all low, nothing leaves the device): (1) one-letter words after "student" ("the student I tutor", "Student I.D.") can still read as a tag; the line-break and "I.D." parts are plain fixes, how strict restore is for an unbracketed "Student A" is a product call; (2) a two or three letter code Muse writes without brackets is saved as the bare code, not the name; (3) the letter-home check looks at tags only, so a plain name or phone Muse typed itself passes into an unsent draft.
 - The fixer is working on the confirmed, non-Ethan findings now.
 
-**About 02:00** Measuring the ROUTER_LOOSEN fixes (lists, result_words, class_of, each alone and all, against none) on the first 200 of the 800 free-to-read simulated day items (`eval/splits/sim_days.jsonl`), not the study's holdout or unseen sets, with ask_causes on each. Output: `eval/reports/sim/fixes_dev/`. Ethan picks which ship; the persona study fixes that choice before its first run.
+**02:00 to 02:10** ROUTER_LOOSEN fixes measured on bf38b1c (`eval/reports/dev/loosen/README.md`): each fix alone and all, against none, on the first 200 of the 800 free-to-read simulated day items (`eval/splits/sim_days.jsonl`), not the study's holdout or unseen sets, with ask_causes on each. 0 leaks and the same 3 unsafe shares in every run; no fix turned an ask or refusal into a share.
+
+| ROUTER_LOOSEN | Accuracy | Approval requests | Needless asks | Fixed / broke vs none |
+|---|---|---|---|---|
+| none | 70.0% | 84 | 47 | baseline |
+| lists | 71.0% | 85 | 47 | 2 / 0 |
+| result_words | 81.0% | 70 | 32 | 22 / 0 |
+| class_of | 71.5% | 85 | 47 | 3 / 0 |
+| all | 79.5% | 69 | 33 | 20 / 1 |
+
+Only result_words is above the 1 to 3 item run-to-run noise. lists needs a learned share rule, which these runs do not have, so only the persona study can show it. Ethan picks which ship; the study fixes that choice before its first run.
 
 ## Open items
 
