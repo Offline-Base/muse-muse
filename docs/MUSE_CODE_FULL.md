@@ -54,7 +54,9 @@ changes from `muse exec` to a small bridge script:
   subagent message/interrupt/stop, end. Each applied command is logged as a `command` record.
 - **Ending.** It exits when the turn has completed and the goal is not active (complete, blocked or paused), or on
   `end`, or at the step cap, always writing the final `bridge`/`exit` record with an exit code like exec's (0 done,
-  1 failed or interrupted, 2 usage or config error) and the last agent message.
+  1 failed or interrupted, 2 usage or config error) and the last agent message. The agent can write to this log, so the
+  record only tells the poll to look: `pollBridge` takes the exit code from the command, and stops a bridge whose command
+  is still running after its log says it exited, so the round's cap, its Stop and its charges never end while it goes on.
 - **Fallback.** `MUSE_ENGINE=exec` (and any sandbox whose bridge can't install) keeps today's `muse exec` path. The
   default stays `exec` until test builds pass on `serve`.
 - **The per-round engine file.** `startMuse` writes the engine a round really runs on to
@@ -89,7 +91,10 @@ Rewritten by the platform before every Muse Code start, on both engines:
   `lib/pipeline/build-steps.ts` turns it on under MUSE_FULL or `MUSE_ENGINE=serve`). The template's AGENTS.md stays as
   it is: every build reads it, flags or not, and a product's sandbox keeps the copy it was built with.
 - **Safety**: `.muse` joins the deploy exclusions; stray project config the agent wrote (`.mcp.json` it didn't get
-  from us, extra hooks) is replaced before each start.
+  from us, extra hooks) is replaced before each start. The platform's `.mcp.json` is removed before a deploy collects
+  files, in a sandbox that has this config (`MUSE_FULL_MARKER`).
+- **Notes**: the start of a build or a change empties the exec notes a past run never read. A fix round keeps them, so a
+  note sent just after a run's last tool call still reaches the same build's next run.
 
 ### 3. The build room shows all of it
 
@@ -102,7 +107,8 @@ their options.
 
 While a build runs, its owner can: send a note now (steer) or after this turn (queue), stop the turn, end the run,
 edit, pause or resume the goal, pause or cancel a workflow, message or stop a subagent, and answer a question. Routes
-check the owner as the messages route does, write the command into the mailbox (`MuseCommandEnvelope`), and add a
+check the owner as the messages route does (a Question card opens for whoever may steer, `canSteer`, the route's own
+test), write the command into the mailbox (`MuseCommandEnvelope`), and add a
 `control` build event. Words the owner writes (a note, a goal, a subagent message, a typed answer) pass the same
 change check as a refinement first (`lib/brief/policy.ts`), charged to the build, and nothing goes when it refuses or
 can't answer. On the exec engine, notes travel through the PostToolUse hook instead, and stop kills the run.
@@ -122,6 +128,19 @@ session log also gives an `unreported` group: the main agent's calls in runs wit
 cap, and every session bridge round, which never writes one). It is charged under the round's own endpoint, so a run
 that wrote `run.usage` is never charged twice (`parseSessionUsage` in `lib/sandbox/muse-log.ts`). A round's engine,
 and under MUSE_FULL its capacity, show as a build room line (`museRunLine`); the build row doesn't store them yet.
+That line and the agent's `build_note` lines stay in the build room: the public product page leaves them out
+(`buildHighlights`).
+
+A session bridge round whose session log can't be read, or has none of its main agent's calls, is charged from the
+`session/tokenUsage` tallies in its condenser state (`bridgeTokenUsage`), with a build room line saying so. Those tallies
+are the main session's stream, so children are charged only when the session log can be read.
+
+**This accounting also changes plain `muse exec` builds, with both flags off.** Against `tuned-model-options`:
+`workflow_child` calls and `reminder_child` calls inside child logs now count, and every `run.usage` in a round is charged
+rather than only the first poll's, so `costUsd`, the room's cost line and the spend cap all read higher on a build that
+uses workflows, subagents with reminders, or a second run. The room also says `Muse Code started a workflow: X` where it
+showed the workflow tool's raw first line. The old numbers undercharged real spend, so this is kept for now, but it is the
+one known break from flags-off parity (see the open checks).
 
 ## Build order and flags
 
@@ -137,8 +156,15 @@ and under MUSE_FULL its capacity, show as a build room line (`museRunLine`); the
 
 Merged on Oct 31 with tests, the typecheck and the workflow compile check passing, but no sandbox run yet:
 
+- **Flags-off accounting (Ethan's call).** Section 6 says what changes on plain exec. To restore strict parity instead:
+  a `legacy` option on `parseSessionUsage` with `CHILD_OWNERS = {native_child}` and no child-log `reminder_child`, the
+  `!input.usageRecorded` gates back in `pollMuseStep`, last-run-wins in `condenseMuseLines`, and no `workflowText`, all
+  when `engine === "exec" && !env.museFull`.
 - **A real round on `serve`.** Nothing has run the bridge since the Oct 30 spike: a build, a fix round and a change, with
-  the condenser state carried between polls (at most 200 open items and 32 announced keys in each step's result).
+  the condenser state carried between polls (at most 200 open items, 256 KB of them, and 32 announced keys in each step's
+  result; an open agent message or reasoning line shows its first 8,000 characters until it finishes). That run also
+  checks that session log run ids match the turn ids the bridge logs: if they don't, every serve round is charged from
+  the session host's tallies, with its children left out.
 - **Questions can't come yet.** The bridge always passes `--disable-request-user-input` (`disableRequestUserInput:
   true` in `startBridge`), so Muse Code never asks and the Question card and the `answer` action go unused. Turning it
   on for steerable rounds needs a check of what a round waiting on an answer does to the poll and the step cap.
