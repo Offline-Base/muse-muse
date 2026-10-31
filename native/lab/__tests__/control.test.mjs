@@ -1,12 +1,13 @@
 // The SSM document, the control script and the setup scripts. Only the Mac script can be syntax-checked here, since this
-// machine has no PowerShell, so the Windows script is checked for the settings the design requires.
+// machine has no PowerShell, so the Windows script is checked for the settings the design requires. Both have also run on
+// the real boxes (docs/NATIVE_LAB.md).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, parseAgentPid, restartCommands } from "../control.mjs";
+import { ACTIONS, bundleParameterName, bundleProblem, cleanupCommands, parseAgentPid, restartCommands, s3CopyCommand } from "../control.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const read = (relative) => readFileSync(path.join(HERE, "..", relative), "utf8");
@@ -86,6 +87,13 @@ describe("control.mjs", () => {
     assert.ok(bundleProblem({ ...pin, sha256: "nope" }));
     assert.ok(bundleProblem({ ...pin, url: undefined }));
   });
+  test("a bundle can also be pinned in the lab's bucket", () => {
+    const pin = { version: "0.1.1-abc", sha256: "a".repeat(64), url: "s3://muse-knowledge-916979311153/lab/bundles/x.tgz" };
+    assert.equal(bundleProblem(pin), null);
+    assert.ok(bundleProblem({ ...pin, url: "s3://bucket/a b" }));
+    assert.ok(bundleProblem({ ...pin, url: "s3:evil" }));
+    assert.deepEqual(s3CopyCommand(pin.url, "/tmp/x", "us-east-1").slice(0, 5), ["aws", "s3", "cp", pin.url, "/tmp/x"]);
+  });
   test("it refuses anything off the list, and reboot, which the document handles", () => {
     const script = path.join(HERE, "..", "control.mjs");
     for (const action of ["reboot", "rm -rf /", ""]) {
@@ -117,6 +125,32 @@ describe("setup/mac.sh", () => {
       assert.ok(script.includes(part), part);
     }
   });
+  test("every license step sits behind MUSE_LAB_ACCEPT_LICENSES, and nothing here sets it", () => {
+    const lines = script.split("\n");
+    const gated = (needle) => {
+      const at = lines.findIndex((line) => line.includes(needle));
+      assert.ok(at > 0, needle);
+      let depth = 0;
+      for (let i = at; i >= 0; i--) {
+        if (/^\s*fi\b/.test(lines[i])) depth += 1;
+        if (/^\s*if\b/.test(lines[i])) {
+          if (depth === 0 && lines[i].includes('"$ACCEPT_LICENSES" = "1"')) return true;
+          if (depth > 0) depth -= 1;
+        }
+      }
+      return false;
+    };
+    for (const needle of ["xcodebuild -license accept", "xcodebuild -runFirstLaunch", "xcodebuild -downloadPlatform iOS", "--licenses", "--cask android-commandlinetools", "--install"]) {
+      assert.ok(gated(needle), needle);
+    }
+    assert.ok(!/MUSE_LAB_ACCEPT_LICENSES=1(?! )/.test(script.replace(/#.*$/gm, "").replace(/echo ".*"/g, "")), "only the owner sets it");
+    assert.match(script, /ACCEPT_LICENSES="\$\{MUSE_LAB_ACCEPT_LICENSES:-\}"/);
+  });
+  test("the finish script refuses to run without the owner's flag", () => {
+    const reply = spawnSync("bash", [path.join(HERE, "..", "setup", "mac-finish.sh")], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: "/nonexistent" } });
+    assert.equal(reply.status, 2);
+    assert.match(reply.stderr, /MUSE_LAB_ACCEPT_LICENSES=1/);
+  });
   test("never prints the password", () => {
     assert.ok(!/echo .*PASSWORD/.test(script));
     assert.ok(!script.includes("set -x"));
@@ -138,8 +172,8 @@ describe("setup/windows.ps1", () => {
   const script = read("setup/windows.ps1");
   test("has what the design asks for", () => {
     for (const part of [
-      "Autologon64.exe",
-      "/accepteula",
+      "LsaStorePrivateData",
+      "AutoAdminLogon",
       "-AtLogOn",
       "-LogonType Interactive",
       "-RunLevel Limited",
@@ -154,6 +188,9 @@ describe("setup/windows.ps1", () => {
     ]) {
       assert.ok(script.includes(part), part);
     }
+  });
+  test("it takes no tool that makes the box accept a license", () => {
+    assert.ok(!/accepteula|autologon64/i.test(script));
   });
   test("the lab user isn't an administrator", () => {
     assert.ok(!/Add-LocalGroupMember\s+-Group\s+"?Administrators/i.test(script));

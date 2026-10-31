@@ -6,6 +6,10 @@
 #
 # Auto-login needs a password on ec2-user. Set MUSE_LAB_USER_PASSWORD to choose one, which you'll also need for screen
 # sharing. Otherwise the script makes a random one and doesn't show it. Nothing here prints a secret.
+#
+# Accepting Xcode's and the Android SDK's licenses is the owner's call, so those steps and everything that needs them only
+# run with MUSE_LAB_ACCEPT_LICENSES=1, which only the owner sets. Without it, the box gets everything else and can run
+# desktop_mac jobs. docs/NATIVE_LAB.md has the one command that finishes the rest.
 set -euo pipefail
 
 PLATFORM="${MUSE_LAB_PLATFORM:-https://muse-muse.vercel.app}"
@@ -18,6 +22,9 @@ AVD_NAME="mm_pixel"
 AVD_DEVICE="pixel_7"
 SYSTEM_IMAGE="system-images;android-35;google_apis;arm64-v8a"
 SDK_ROOT="/opt/homebrew/share/android-commandlinetools"
+XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+CLT_DIR="/Library/Developer/CommandLineTools"
+ACCEPT_LICENSES="${MUSE_LAB_ACCEPT_LICENSES:-}"
 
 step() { printf '\n== %s\n' "$1"; }
 
@@ -51,6 +58,14 @@ sudo /usr/bin/pmset -a sleep 0 displaysleep 0 disksleep 0 standby 0 powernap 0 a
 /usr/bin/defaults write com.apple.screensaver askForPassword -int 0
 sudo /usr/bin/defaults write /Library/Preferences/com.apple.screensaver loginWindowIdleTime -int 0
 
+step "Developer tools"
+# With Xcode selected and its license not accepted, every developer tool stops at the license, including the git Homebrew
+# runs. The AMI's Command Line Tools have what the box needs until then.
+if [ "$ACCEPT_LICENSES" != "1" ] && [ "$(/usr/bin/xcode-select -p 2>/dev/null)" = "$XCODE_DIR" ] && [ -d "$CLT_DIR" ]; then
+  sudo /usr/bin/xcode-select -s "$CLT_DIR"
+  echo "Using the Command Line Tools, because Xcode's license hasn't been accepted."
+fi
+
 step "Homebrew packages"
 if ! command -v brew >/dev/null 2>&1; then
   [ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"
@@ -66,34 +81,43 @@ brew install node@22 ffmpeg openjdk@17 awscli
 brew install ffmpeg-full || echo "ffmpeg-full didn't install. Captions will use the system font."
 
 step "Android SDK and the $AVD_NAME emulator"
-brew install --cask android-commandlinetools
-export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-export ANDROID_HOME="$SDK_ROOT" ANDROID_SDK_ROOT="$SDK_ROOT"
-export PATH="/opt/homebrew/opt/node@22/bin:$JAVA_HOME/bin:$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
-SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-[ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager)"
-AVDMANAGER="$(dirname "$SDKMANAGER")/avdmanager"
-yes | "$SDKMANAGER" --licenses >/dev/null || true
-"$SDKMANAGER" --install "platform-tools" "emulator" "platforms;android-35" "$SYSTEM_IMAGE"
-if ! "$AVDMANAGER" list avd -c 2>/dev/null | grep -qx "$AVD_NAME"; then
-  echo no | "$AVDMANAGER" create avd --name "$AVD_NAME" --package "$SYSTEM_IMAGE" --device "$AVD_DEVICE" --force
-fi
-AVD_CONFIG="$HOME/.android/avd/$AVD_NAME.avd/config.ini"
-if [ -f "$AVD_CONFIG" ]; then
-  for pair in "hw.ramSize=4096" "hw.keyboard=yes" "disk.dataPartition.size=8G" "hw.gpu.enabled=yes" "hw.gpu.mode=swiftshader_indirect"; do
-    key="${pair%%=*}"
-    /usr/bin/sed -i '' "/^${key}[ =]/d" "$AVD_CONFIG"
-    echo "$pair" >>"$AVD_CONFIG"
-  done
+if [ "$ACCEPT_LICENSES" = "1" ]; then
+  brew install --cask android-commandlinetools
+  export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+  export ANDROID_HOME="$SDK_ROOT" ANDROID_SDK_ROOT="$SDK_ROOT"
+  export PATH="/opt/homebrew/opt/node@22/bin:$JAVA_HOME/bin:$SDK_ROOT/platform-tools:$SDK_ROOT/emulator:$PATH"
+  SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+  [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager)"
+  AVDMANAGER="$(dirname "$SDKMANAGER")/avdmanager"
+  yes | "$SDKMANAGER" --licenses >/dev/null || true
+  "$SDKMANAGER" --install "platform-tools" "emulator" "platforms;android-35" "$SYSTEM_IMAGE"
+  if ! "$AVDMANAGER" list avd -c 2>/dev/null | grep -qx "$AVD_NAME"; then
+    echo no | "$AVDMANAGER" create avd --name "$AVD_NAME" --package "$SYSTEM_IMAGE" --device "$AVD_DEVICE" --force
+  fi
+  AVD_CONFIG="$HOME/.android/avd/$AVD_NAME.avd/config.ini"
+  if [ -f "$AVD_CONFIG" ]; then
+    for pair in "hw.ramSize=4096" "hw.keyboard=yes" "disk.dataPartition.size=8G" "hw.gpu.enabled=yes" "hw.gpu.mode=swiftshader_indirect"; do
+      key="${pair%%=*}"
+      /usr/bin/sed -i '' "/^${key}[ =]/d" "$AVD_CONFIG"
+      echo "$pair" >>"$AVD_CONFIG"
+    done
+  fi
+else
+  echo "Skipped: the Android SDK's licenses haven't been accepted. MUSE_LAB_ACCEPT_LICENSES=1 runs this step."
 fi
 
-step "Xcode"
-if xcode-select -p 2>/dev/null | grep -q "Xcode" && [ -d /Applications/Xcode.app ]; then
-  sudo xcodebuild -license accept
-  sudo xcodebuild -runFirstLaunch
-  xcodebuild -downloadPlatform iOS || echo "The iOS platform didn't download. Run: xcodebuild -downloadPlatform iOS"
+step "Xcode and the iOS Simulator"
+if [ "$ACCEPT_LICENSES" = "1" ]; then
+  if [ -d /Applications/Xcode.app ]; then
+    sudo /usr/bin/xcode-select -s "$XCODE_DIR"
+    sudo xcodebuild -license accept
+    sudo xcodebuild -runFirstLaunch
+    xcodebuild -downloadPlatform iOS
+  else
+    echo "Xcode isn't installed yet. Install it, then run this script again. See docs/NATIVE_LAB.md."
+  fi
 else
-  echo "Xcode isn't installed yet. Install it, then run this script again. See docs/NATIVE_LAB.md."
+  echo "Skipped: Xcode's license hasn't been accepted. MUSE_LAB_ACCEPT_LICENSES=1 runs this step."
 fi
 
 step "The agent"
