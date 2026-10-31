@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { buildConfig } from "../../app.config";
@@ -356,6 +357,12 @@ describe("app config", () => {
     const glasses = buildConfig({ MUSE_GLASSES: "1" });
     assert.ok(JSON.stringify(glasses.plugins).includes("@chrisgocode/expo-meta-wearables-dat"));
     assert.ok(glasses.ios.infoPlist.UIBackgroundModes?.includes("external-accessory"));
+  });
+
+  it("links the glasses module before EAS installs pods, which is ahead of its post-install hook", () => {
+    const { scripts } = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    assert.equal(scripts["eas-build-pre-install"], "node scripts/glasses-autolink.mjs");
+    assert.equal(scripts["eas-build-post-install"], undefined);
   });
 
   it("lists the Podfile fix ahead of the module, so it runs after the module's plugin", () => {

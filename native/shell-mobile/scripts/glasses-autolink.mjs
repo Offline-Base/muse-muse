@@ -1,6 +1,7 @@
 // The generic shell must never carry the glasses SDK's native code, so the module is left out of autolinking by
-// default. Only a MUSE_GLASSES=1 build links it. EAS runs this after installing packages, before the native build.
-// Run it by hand before a local glasses prebuild. Its JavaScript stays installed either way, unused by other builds.
+// default. Only a MUSE_GLASSES=1 build links it. This has to be EAS's pre-install hook, since EAS installs pods before
+// its post-install hook runs. Run it by hand before a local glasses prebuild. The module's JavaScript stays installed
+// either way, unused by other builds.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

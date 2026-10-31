@@ -8,7 +8,7 @@
     "ios": "expo run:ios",
     "android": "expo run:android",
     "typecheck": "tsc --noEmit -p .",
-    "eas-build-post-install": "node scripts/glasses-autolink.mjs"
+    "eas-build-pre-install": "node scripts/glasses-autolink.mjs"
   },
   "dependencies": {
     "@chrisgocode/expo-meta-wearables-dat": "2.2.0",

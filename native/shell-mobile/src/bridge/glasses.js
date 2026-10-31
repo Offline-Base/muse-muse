@@ -1,6 +1,7 @@
 // @ts-check
 // window.MuseNative.glasses, mapped onto the wearables module, expo-audio and expo-speech.
 
+import { requireOptionalNativeModule } from "expo";
 import { AudioModule, IOSOutputFormat, requestRecordingPermissionsAsync, setAudioModeAsync } from "expo-audio";
 import { File } from "expo-file-system";
 import * as Speech from "expo-speech";
@@ -90,8 +91,17 @@ export function createGlassesBridge({ mock, emitStatus, setPreview }) {
   let recordingStarted = 0;
   let recordingSource = /** @type {"glasses" | "phone"} */ ("phone");
 
-  /** Loaded on demand, because importing it crashes a build that doesn't link the module. */
-  const wearables = () => /** @type {typeof import("@chrisgocode/expo-meta-wearables-dat")} */ (require("@chrisgocode/expo-meta-wearables-dat"));
+  /**
+   * Loaded on demand, because importing it crashes a build that doesn't link the module, and the crash can't be caught.
+   * So this checks first.
+   */
+  function wearables() {
+    if (!requireOptionalNativeModule("EMWDAT")) {
+      setStatus({ state: "unavailable", error: null });
+      throw new BridgeError("unsupported", "This app can't reach glasses.");
+    }
+    return /** @type {typeof import("@chrisgocode/expo-meta-wearables-dat")} */ (require("@chrisgocode/expo-meta-wearables-dat"));
+  }
 
   /** @param {Partial<GlassesStatus>} next */
   function setStatus(next) {
