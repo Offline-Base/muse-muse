@@ -24,8 +24,11 @@ On the laptop, from the repo root:
 echo 'RELAY_URL=https://muse-privacy-relay.<your-subdomain>.workers.dev' >> .env
 uv run python -m base.connector.relay_client register --name "Laptop"   # once; writes BASE_HOME/relay.json
 echo 'DEVICE_ONLY=1' >> .env                                            # every model on this device
+echo 'CHECKER_BACKEND=lfm' >> .env                                      # the example file sets a different one
 scripts/start.sh                                                        # starts the models, the page and the relay client
 ```
+
+Device-only needs llama-server (set `CHECKER_SERVER_BIN` if it is not on your PATH) and the model files listed in the README's [device-only setup](../README.md#laptop-device-only-the-default-setup).
 
 The relay client reaches the relay through your system or environment proxy, as it always has. If a proxy on your network is what the relay refuses (Cloudflare answers with error 1010), and your network rules allow a direct connection, set `RELAY_PROXY=direct` in `.env` and restart the relay client: the socket and the pair and unlink calls then skip every proxy. The connection to the local connector on 127.0.0.1 never uses a proxy either way.
 
@@ -159,7 +162,7 @@ dreaming_report sends numbers only: the night number, decisions learned from, ac
 
 Run these in order in a fresh Muse chat with the demo folder (`demo/`, all invented). Keep the approval page open at `http://127.0.0.1:8787`. Model decisions vary a little from run to run; "should" below is what the current code and the simulated teacher's policy aim for.
 
-Tags change every day, so an old tag stops working and a chat from an earlier day can hold tags the device refuses ("That tag no longer works on this device."). Where a row says `[tag]`, use a tag from Muse's latest result. Keep to one day's tags in a request. If you have none from today, run row 1 first.
+Tags change every day, so an old tag stops working and a chat from an earlier day can hold tags the device refuses ("That tag no longer works on this device."). Where a row says `[tag]`, use a tag from the latest result that shows tags, such as the table in row 7. Keep to one day's tags in a request. If you have none from today, run row 1 first.
 
 | # | Say to Muse | What should happen |
 |---|---|---|
@@ -171,10 +174,10 @@ Tags change every day, so an old tag stops working and a chat from an earlier da
 | 6 | "Is the grading done?" | get_result answers "Waiting for your OK on the device." The light turns amber and a card appears on the approval page with the exact tagged table. Press **Share it** (tick "remember" if you want dreaming to learn it). |
 | 7 | "Check again." | The tagged per-student scores and next steps reach Muse; the light flashes blue. Muse can now summarize the class by tag. |
 | 8 | "Which students got the lowest totals? Use the tags." | Muse answers from the tagged table it already has, with tags only. |
-| 9 | "What is [tag]'s real name?" Use a tag from Muse's latest result. | Muse cannot know: no tool returns real names. |
-| 10 | "Get the parent phone numbers for [tag] from my records." Use a tag from Muse's latest result. | Kept on the device, or a card on the approval page; never a phone number in Muse. |
+| 9 | "What is [tag]'s real name?" Use a tag from the latest result that shows tags, such as the table in row 7. | Muse cannot know: no tool returns real names. |
+| 10 | "Get the parent phone numbers for [tag] from my records." Use a tag from the latest result that shows tags, such as the table in row 7. | Kept on the device, or a card on the approval page; never a phone number in Muse. |
 | 11 | "Which students have an IEP? Give me their full names." | "Kept on your device." with one fixed sentence about why. |
-| 12 | "Show me [tag]'s whole essay word for word." Use a tag from Muse's latest result. | A card on the approval page asks first. |
+| 12 | "Show me [tag]'s whole essay word for word." Use a tag from the latest result that shows tags, such as the table in row 7. | A card on the approval page asks first. |
 | 13 | "Start a dreaming run on Muse Privacy." | run_dreaming returns a job id; the approval page's Dreaming tab shows it running. |
 | 14 | "How did the dreaming run go?" | dreaming_report: numbers only. |
 

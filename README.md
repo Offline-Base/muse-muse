@@ -75,7 +75,7 @@ Every model runs on the laptop. You need llama.cpp b11960 or newer, the LFM3-VL-
 ```sh
 git clone https://github.com/Offline-Base/muse-privacy.git && cd muse-privacy
 uv sync
-cp .env.example .env                 # then set DEVICE_ONLY=1, PRIMARY_MODEL=lfm and CHECKER_SERVER_BIN
+cp .env.example .env                 # then set DEVICE_ONLY=1, PRIMARY_MODEL=lfm, CHECKER_BACKEND=lfm and CHECKER_SERVER_BIN
 scripts/start.sh                     # models, approval page and relay client; Ctrl-C stops all
 open http://127.0.0.1:8787/setup     # say who you're protecting and finish the checklist
 scripts/install_login.sh             # optional: start at login
