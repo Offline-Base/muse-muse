@@ -315,6 +315,15 @@ describe("build steps", { skip: canMock ? false : "needs --experimental-test-mod
       assert.equal(last.bridgeState, undefined);
     });
 
+    it("charges what a session bridge round's host reported once, when its session log couldn't say", async () => {
+      const serveRun = { ...input, run: { cmdId: "cmd", logPath: "/vercel/musemuse/logs/muse-r0.msp.jsonl", engine: "serve" as const } };
+      pollImpl = async () => ({ done: true, exitCode: 0, offset: 400, lines: [], usage: [USAGE], finalText: null, childrenIncluded: null });
+      const out = await steps.pollMuseStep(serveRun);
+      assert.deepEqual(recordedEndpoints, ["muse serve"]);
+      assert.deepEqual(recorded, [[USAGE]]);
+      assert.equal(out.usageRecorded, true);
+    });
+
     it("never charges the main agent twice when run.usage arrived in the same poll", async () => {
       pollImpl = async () => ({ done: true, exitCode: 0, offset: 10, lines: [], usage: [USAGE], finalText: null, session, childrenIncluded: false });
       await steps.pollMuseStep(input);

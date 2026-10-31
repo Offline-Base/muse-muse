@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import type { BridgeLogRecord } from "@/lib/sandbox/bridge-protocol";
-import { type BridgeCondenseState, condenseBridgeLines, emptyBridgeState, parseBridgeLines } from "@/lib/sandbox/msp-log";
+import { type BridgeCondenseState, bridgeTokenUsage, condenseBridgeLines, emptyBridgeState, parseBridgeLines } from "@/lib/sandbox/msp-log";
 import type { MuseLogLine } from "@/lib/types";
 import { probeToBridge, toLines, upsert } from "./msp-records";
 
@@ -574,6 +574,21 @@ describe("kinds the spike didn't produce", () => {
     const kept = Object.keys(state.shown);
     assert.ok(kept.length < 60 && kept.includes("m59") && !kept.includes("m0"), `${kept.length} kept`);
     assert.equal(condenseBridgeLines(toLines([line(0)]), state).lines.length, 1);
+  });
+
+  it("adds up what session/tokenUsage reported, priced", () => {
+    const { state } = condenseBridgeLines(
+      toLines([
+        note("session/tokenUsage", { modelId: "muse-wonder-1.0", promptTokens: 1_000_000, usage: { cachedTokens: 500_000, outputTokens: 100_000 } }),
+        note("session/tokenUsage", { modelId: "muse-wonder-1.0", promptTokens: 1_000_000, usage: { cachedTokens: 0, outputTokens: 0 } }),
+      ]),
+    );
+    // Muse Wonder 1.0: $4 in, $0.20 cached, $20 out per million.
+    assert.deepEqual(bridgeTokenUsage(state), {
+      calls: 2,
+      usage: [{ model: "muse-wonder-1.0", inputTokens: 2_000_000, cachedInputTokens: 500_000, outputTokens: 100_000, costUsd: 8.1 }],
+    });
+    assert.deepEqual(bridgeTokenUsage(emptyBridgeState()), { calls: 0, usage: [] });
   });
 
   it("skips torn, foreign and unknown lines", () => {

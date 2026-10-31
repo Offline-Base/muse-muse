@@ -450,6 +450,12 @@ describe("pollMuse on the session bridge", { skip: canMock ? false : "needs --ex
   const LOG = "/vercel/musemuse/logs/muse-r0.msp.jsonl";
   const jsonl = (records: unknown[]) => records.map((r) => JSON.stringify(r)).join("\n").concat("\n");
   const exitRecord = (exitCode: number) => ({ t: 3, kind: "bridge", event: "exit", exitCode, finalText: "All done", goal: null, reason: "completed" });
+  const tokenNote = (t: number, input: number, output: number) => ({
+    t,
+    kind: "note",
+    method: "session/tokenUsage",
+    params: { modelId: "muse-wonder-1.0", promptTokens: input, usage: { cachedTokens: 0, outputTokens: output } },
+  });
   /** Answers the log's read with `log`, runs `onRead` when it is read, and answers the session log's read with `session`. */
   const serve = (log: string, session: { exitCode?: number; stdout?: string } = {}, onRead = () => {}) => {
     answer = (script) => {
@@ -514,5 +520,52 @@ describe("pollMuse on the session bridge", { skip: canMock ? false : "needs --ex
     commandExit = null as unknown as number;
     serve(jsonl([exitRecord(0)]));
     assert.equal((await poll()).exitCode, 0);
+  });
+
+  describe("charging when the session log can't say", () => {
+    const tokens = jsonl([tokenNote(1, 1_000_000, 100_000), tokenNote(2, 1_000_000, 100_000), exitRecord(0)]);
+    const finished = () => {
+      commandAlive = false;
+      commandExit = 0;
+    };
+    // Muse Wonder 1.0: $4 in, $20 out per million.
+    const reported = [{ model: "muse-wonder-1.0", inputTokens: 2_000_000, cachedInputTokens: 0, outputTokens: 200_000, costUsd: 12 }];
+
+    it("charges what the session host reported when the session log's read fails", async () => {
+      finished();
+      serve(tokens, { exitCode: 1 });
+      const read = await poll();
+      assert.deepEqual(read.usage, reported);
+      assert.equal(read.session, undefined);
+      assert.ok(read.lines.some((l) => l.kind === "status" && l.text === "Muse Code's session log couldn't be read, so this round is charged from the 2 model calls its session host reported."));
+    });
+
+    it("charges what the session host reported when no record in the session log names the round's runs", async () => {
+      finished();
+      const head = { session_id: SESSION, run_id: "turn-1", run_ids: ["turn-1"], reported: [], model: "muse-wonder-1.0", session_log: "/s/session.jsonl" };
+      const other = { usage_id: "u1", usage_family: "provider", owner: { owner_type: "main_root", run_id: "another" }, quantity: { input_tokens: 5, cached_tokens: 0, output_tokens: 5 } };
+      serve(tokens, { stdout: `${JSON.stringify(head)}\n${JSON.stringify(other)}\n` });
+      const read = await poll();
+      assert.deepEqual(read.usage, reported);
+      assert.equal(read.session?.main.calls, 0);
+      assert.ok(read.lines.some((l) => l.kind === "status" && /session log has none of its main agent's calls/.test(l.text)));
+    });
+
+    it("prefers the session log when it has the main agent's calls, and charges nothing early", async () => {
+      finished();
+      const head = { session_id: SESSION, run_id: "turn-1", run_ids: ["turn-1"], reported: [], model: "muse-wonder-1.0", session_log: "/s/session.jsonl" };
+      const main = { usage_id: "u1", usage_family: "provider", owner: { owner_type: "main_root", run_id: "turn-1" }, quantity: { input_tokens: 5, cached_tokens: 0, output_tokens: 5 } };
+      serve(tokens, { stdout: `${JSON.stringify(head)}\n${JSON.stringify(main)}\n` });
+      const read = await poll();
+      assert.deepEqual(read.usage, []);
+      assert.equal(read.session?.unreported.calls, 1);
+      assert.ok(!read.lines.some((l) => /session log/.test(l.text)));
+
+      commandAlive = true;
+      serve(jsonl([tokenNote(1, 1000, 100)]));
+      const running = await poll();
+      assert.equal(running.done, false);
+      assert.deepEqual(running.usage, []);
+    });
   });
 });

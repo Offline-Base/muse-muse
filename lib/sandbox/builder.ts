@@ -30,7 +30,7 @@ import {
   wrapText,
 } from "@/lib/sandbox/artifacts";
 import { BRIDGE_SOURCE } from "@/lib/sandbox/bridge-source";
-import { condenseBridgeLines, emptyBridgeState, type BridgeCondenseState } from "@/lib/sandbox/msp-log";
+import { bridgeTokenUsage, condenseBridgeLines, emptyBridgeState, type BridgeCondenseState } from "@/lib/sandbox/msp-log";
 import {
   childUsageLine,
   completeLines,
@@ -910,8 +910,9 @@ export interface MusePoll {
   lines: MuseLogLine[];
   /**
    * From run.usage, priced with lib/meta/pricing.ts. Muse Code emits it once per run, just before the run ends, so it
-   * is non-empty in the poll that reads it: record it when it appears. Empty until then, and always empty on the
-   * session bridge, which is charged from `session` instead.
+   * is non-empty in the poll that reads it: record it when it appears. Empty until then. The session bridge is charged
+   * from `session` instead, so it is empty there too, except in a done poll whose session log gave no main agent calls:
+   * then it holds the calls the session host reported (bridgeTokenUsage).
    */
   usage: ModelUsage[];
   /** The final message from run.terminal.completed. */
@@ -1039,8 +1040,10 @@ export async function pollMuse(input: {
  * pollMuse for a session bridge round. The round is done once a poll reads the bridge's exit record, its last line,
  * or when the bridge ended without one. The agent can write to this log too, so an exit record only says to look: a
  * real bridge exits right after writing it, and one whose command is still running is stopped here, so the round's
- * cap, its Stop and its charges never end while it goes on. The exit code is the command's whenever it has one. Its
- * calls are all charged from the session log, read in the poll that reports done, so `usage` stays empty.
+ * cap, its Stop and its charges never end while it goes on. The exit code is the command's whenever it has one.
+ *
+ * Its calls are charged from the session log, read in the poll that reports done. When that log can't be read or has
+ * none of the main agent's calls, `usage` holds the calls the session host reported instead, so a round is never free.
  */
 async function pollBridge(
   sandbox: Sandbox,
@@ -1067,6 +1070,12 @@ async function pollBridge(
   const done = condensed.exit !== null || (state.finished && atEof);
   const session = done ? await readSessionUsage(sandbox, input.logPath) : null;
   if (session?.children.calls) extra.push(childUsageLine(session.children));
+  const reported = done && !session?.main.calls ? bridgeTokenUsage(condensed.state) : null;
+  if (reported?.calls) {
+    const why = session ? "has none of its main agent's calls" : "couldn't be read";
+    console.warn(`Muse Code round ${input.logPath}: the session log ${why}, charging the ${reported.calls} calls the session host reported`);
+    extra.push({ kind: "status", text: `Muse Code's session log ${why}, so this round is charged from the ${reported.calls} model call${reported.calls === 1 ? "" : "s"} its session host reported.` });
+  }
   if (done && !condensed.exit) {
     const err = (await tailText(sandbox, errPath, 4000))
       .split("\n")
@@ -1083,7 +1092,7 @@ async function pollBridge(
     exitCode: done ? (state.exitCode ?? recorded) : null,
     offset: input.offset + consumed,
     lines: [...(falseExit ? condensed.lines.filter((l) => l.kind !== "done") : condensed.lines), ...extra],
-    usage: [],
+    usage: reported?.usage ?? [],
     finalText: falseExit ? null : condensed.finalText,
     announced: condensed.state.announced,
     childrenIncluded: null,

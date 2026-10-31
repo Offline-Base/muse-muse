@@ -38,8 +38,8 @@ export interface BridgeCondensed {
   lines: MuseLogLine[];
   state: BridgeCondenseState;
   /**
-   * Always empty: the engine charges a bridge run from Muse Code's session logs, which count every agent once. The
-   * main agent's calls show as the usage line when the bridge exits.
+   * Always empty: the engine charges a bridge run from Muse Code's session logs, which count every agent once, or from
+   * bridgeTokenUsage when those can't say. The main agent's calls show as the usage line when the bridge exits.
    */
   usage: ModelUsage[];
   /** The last agent message, once the bridge has exited. */
@@ -140,13 +140,24 @@ export function parseBridgeLines(lines: readonly string[]): BridgeLogRecord[] {
 // ---------------------------------------------------------------------------------------------------------------
 // One line per kind of item
 
+/**
+ * What a bridge run's session/tokenUsage notes add up to so far, priced. The session log counts every agent once and is
+ * what the engine charges; this is what it charges when that log can't say (pollMuse).
+ */
+export function bridgeTokenUsage(state: BridgeCondenseState): { calls: number; usage: ModelUsage[] } {
+  const tallies = Object.entries(state.tokens ?? {});
+  return {
+    calls: tallies.reduce((s, [, t]) => s + t.calls, 0),
+    usage: tallies.map(([model, t]) => {
+      const u = { model, inputTokens: t.input, cachedInputTokens: t.cached, outputTokens: t.output };
+      return { ...u, costUsd: usageCost(u) };
+    }),
+  };
+}
+
 /** muse-log.ts's usage line, from session/tokenUsage. */
 function usageLine(tokens: Record<string, Tally>): MuseLogLine | null {
-  const usage = Object.entries(tokens).map(([model, t]) => {
-    const u = { model, inputTokens: t.input, cachedInputTokens: t.cached, outputTokens: t.output };
-    return { ...u, costUsd: usageCost(u) };
-  });
-  const calls = Object.values(tokens).reduce((s, t) => s + t.calls, 0);
+  const { calls, usage } = bridgeTokenUsage({ ...emptyBridgeState(), tokens });
   if (!calls) return null;
   const input = usage.reduce((s, u) => s + u.inputTokens, 0);
   const cached = usage.reduce((s, u) => s + u.cachedInputTokens, 0);
