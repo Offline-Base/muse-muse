@@ -179,6 +179,8 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **18:38** Claude linked for real. Ethan added a custom connector in Claude with the relay's /mcp address; Claude detected OAuth and offered its published identity (a client ID metadata document), which the relay's OAuth provider has enabled, so nothing was registered by hand. He typed a one-time pairing code on the relay's page and Ethan reports it works. The relay client logged the MCP calls arriving (one 400 among them, then 202 and 200s). No tool call in a chat yet.
 
+**18:43** First real tool call from Claude. Asked "how did the class do on the essays?", Claude called ask_device on the essays folder and got job 8b680756f966401a; the device finished it in about 40 s with nothing to approve, but Claude polled get_result about a dozen times inside that window, saw "running" each time, and stopped to tell Ethan it was still working. On "check again" it fetched the result and the job's release status went to shared. Finding: "Call get_result again in a little while" gives no wait, so a fast-polling app gives up early; the running message should say how long to wait. Not changed yet.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
