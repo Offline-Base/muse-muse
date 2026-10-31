@@ -725,6 +725,23 @@ because the sidebar showed a real account.
   agent against every source (2 factual errors and 12 smaller ones fixed). Screenshots showing any email address, even a
   placeholder one, were left out. `docs/log/` is in `.vercelignore`, so screenshots never ship in a deployment.
 
+### 18:00 Decision models D0 to D2 finished; D3 to D9 started
+
+- Review fixes on tg-decide, all five findings held up: 29b00c2 (taskProblem measures the text as given), ef2b987
+  (scoring refuses numbers that can't be log-probabilities, so the gateway answers 502 rather than a confident-looking
+  pick), 84ec618 (training renderings take the eval groups' shapes above 4 labels), 1d4b7cb (decide.json carries its
+  groups and the rendering rules, checked by a test that reads only the file), d842328 (the temperature fit uses its own
+  golden-section helper; the reviewer had flagged its loop's shape as close to Scion's unlicensed code).
+- Checks at d842328: tsc exit 0; lib/decide and the light lib/train tests 389 pass, 0 fail.
+- Tokenizer facts confirmed against Glimmer's tokenizer.json at cec94fcf: A to Z are single tokens bare and space-led,
+  639 of 676 two-letter pairs are single tokens, and the TypeScript prompt equals the real chat template's output byte
+  for byte (jinja2 fixture). New finding: encoding with special tokens adds <|begin_of_text|> by itself, so prompt text
+  sent to a backend leaves it out.
+- 18:00: D3 to D7 and D9 started in sequence (wf_50b3b2f5-c82): datasets and migration 0017, GPU decide mode, after-run
+  scoring, pages, serving and docs. D8, the real GPU run (about $0.83, capped at $5), waits for the owner.
+- Wave 3 confirmed none of its current units touch lib/train; its unit 11 will import DecideBackend and the /decide
+  route rather than edit them.
+
 ## Gaps
 
 What this record doesn't confirm:
