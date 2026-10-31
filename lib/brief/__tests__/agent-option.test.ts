@@ -109,6 +109,12 @@ describe("applyTargets on an agent", () => {
     assert.equal(settle(out, true).limits.length, out.limits.length, "the limit isn't added twice");
   });
 
+  it("doesn't add the owner limit when the writer already said it", () => {
+    const said = "Only the product owner can use the Gmail tools, after connecting their own account.";
+    const brief = { ...(withAgent({ ...AGENT, tools: [{ id: "gmail_read", need: "Read mail", why: "The job" }] }) as Brief), limits: [said] };
+    assert.deepEqual(settle(brief, true).limits, [said]);
+  });
+
   it("drops a tool whose flag is off, and leaves connections none with nothing to connect", () => {
     const out = settle(withAgent({ ...AGENT, tools: [...AGENT.tools, { id: "gmail_read", need: "Read mail", why: "The job" }], connections: "owner" }) as Brief, false);
     assert.deepEqual(out.agent?.tools.map((t) => t.id), ["web_search"]);

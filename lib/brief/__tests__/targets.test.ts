@@ -130,6 +130,7 @@ describe("the writer's instructions", () => {
     const text = briefInstructions();
     assert.match(text, /- glasses: works with the wearer's Meta AI glasses/);
     assert.match(text, /For glasses, primaryFlow starts with connecting the glasses/);
+    assert.match(text, /The platform adds these limits itself[^\n]*"Start it on your phone\. The glasses can't open it\."/);
     assert.doesNotMatch(text, /- vr: |- phone: |- desktop: |For vr, /);
     delete process.env.GLASSES_ENABLED;
     process.env.VR_ENABLED = "1";
@@ -176,6 +177,16 @@ describe("limits a target brings", () => {
     const glasses = applyTargets(on([web, { id: "glasses", why: "Hands free" }]), { enabled: ["glasses"] });
     assert.ok(glasses.limits.includes("Needs the Muse Muse iPhone app and Meta glasses. Without them it uses your phone's camera."));
     assert.ok(glasses.limits.includes("Start it on your phone. The glasses can't open it."));
+  });
+
+  it("doesn't repeat what the writer already said in other words", () => {
+    const writer = {
+      ...on([web, { id: "glasses", why: "Hands free" }]),
+      limits: ["The Muse Muse iPhone app must be open on the phone first, since the glasses cannot start the product on their own.", "In a browser without the app it uses the phone camera or a sample view instead of the glasses."],
+    };
+    assert.deepEqual(applyTargets(writer, { enabled: ["glasses"] }).limits, writer.limits);
+    const vr = { ...on([web, { id: "vr", why: "A room" }]), limits: ["On a laptop it runs in a simulated headset."] };
+    assert.deepEqual(applyTargets(vr, { enabled: ["vr"] }).limits, vr.limits);
   });
 
   it("adds none for web or a target that was dropped", () => {

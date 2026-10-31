@@ -1,7 +1,7 @@
 import type { TargetId } from "@/lib/brief/schema";
 import { env } from "@/lib/env";
 import { targetLabel } from "@/lib/format";
-import { TARGET_GUIDE } from "@/lib/native/targets";
+import { TARGET_GUIDE, TARGET_LIMITS } from "@/lib/native/targets";
 import { catalogSummary } from "@/lib/prompts/catalog";
 import type { RebuildFit, RebuildTarget, Reference } from "@/lib/types";
 
@@ -25,7 +25,10 @@ function whereItRuns(enabled: readonly TargetId[]): string {
   if (has("glasses")) {
     lines.push("- For glasses, primaryFlow starts with connecting the glasses, and fixtures include one or two photos taken at the wearer's eye level of what they would look at.");
   }
-  if (has("vr") || has("glasses")) lines.push("- Don't list where it runs as a limit: the platform adds those lines itself.");
+  const added = enabled.flatMap((t) => TARGET_LIMITS[t] ?? []);
+  if (added.length) {
+    lines.push(`- The platform adds these limits itself to a product with that target. Leave them out, and don't say the same thing in other words: ${added.map((l) => `"${l.text}"`).join(" ")}`);
+  }
   if (has("agent")) {
     lines.push(
       "- agent is null unless targets has agent. When it does, fill it in:",

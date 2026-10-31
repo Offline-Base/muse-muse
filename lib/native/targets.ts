@@ -84,15 +84,22 @@ const PICKED_WHY = "You asked for it.";
 const WEB_WHY = "Every product runs on the web.";
 const AGENT_WHY = "It works in several steps with tools.";
 
-/** Limits a target always brings, added if the writer left them out. Each is checked by its first few words. */
-const TARGET_LIMITS: Partial<Record<TargetId, string[]>> = {
-  vr: ["Made for Meta Quest in Quest Browser. On a computer it runs in a simulated headset."],
-  glasses: ["Needs the Muse Muse iPhone app and Meta glasses. Without them it uses your phone's camera.", "Start it on your phone. The glasses can't open it."],
+/**
+ * Limits a target always brings. Each is added unless the writer already said the same thing, which `said` looks for,
+ * since a product shows each limit once.
+ */
+export const TARGET_LIMITS: Partial<Record<TargetId, Array<{ text: string; said: RegExp }>>> = {
+  vr: [{ text: "Made for Meta Quest in Quest Browser. On a computer it runs in a simulated headset.", said: /simulated headset/i }],
+  glasses: [
+    { text: "Needs the Muse Muse iPhone app and Meta glasses. Without them it uses your phone's camera.", said: /(without|no) (the app|them|glasses)\b.*camera/i },
+    { text: "Start it on your phone. The glasses can't open it.", said: /glasses (can't|cannot|can not) (start|open)/i },
+  ],
 };
 
-function withLimit(limits: string[], limit: string): string[] {
-  const opening = limit.toLowerCase().split(" ").slice(0, 3).join(" ");
-  return limits.some((l) => l.toLowerCase().startsWith(opening)) ? limits : [...limits, limit];
+const OWNER_LIMIT = /only (this app's |the product's |the product |the )?owner/i;
+
+function withLimit(limits: string[], text: string, said: RegExp): string[] {
+  return limits.some((l) => said.test(l)) ? limits : [...limits, text];
 }
 
 const isPersonal = (id: string) => (PERSONAL_TOOL_IDS as readonly string[]).includes(id);
@@ -123,7 +130,7 @@ function withAgentFacts(brief: Brief, agent: NonNullable<Brief["agent"]>): Brief
   if (agent.connections !== "owner") return { ...brief, capabilities, agent };
   const labels = agent.tools.filter((t) => isPersonal(t.id)).map((t) => toolLabel(t.id));
   const limit = `Only this app's owner can connect an account for now. That covers: ${labels.join(", ")}.`;
-  return { ...brief, capabilities, agent, limits: withLimit(brief.limits, limit) };
+  return { ...brief, capabilities, agent, limits: withLimit(brief.limits, limit, OWNER_LIMIT) };
 }
 
 /**
@@ -142,7 +149,7 @@ export function applyTargets(brief: Brief, opts: { enabled: readonly TargetId[];
   const picks = opts.requested?.length ? opts.requested : [...written.keys()];
   const ids = briefTargets({ targets: picks.filter((id) => allowed.has(id)).map((id) => ({ id })) });
   let out: Brief = { ...withoutAgent, targets: ids.map((id) => ({ id, why: written.get(id) ?? (id === "web" ? WEB_WHY : PICKED_WHY) })) };
-  for (const id of ids) for (const limit of TARGET_LIMITS[id] ?? []) out = { ...out, limits: withLimit(out.limits, limit) };
+  for (const id of ids) for (const { text, said } of TARGET_LIMITS[id] ?? []) out = { ...out, limits: withLimit(out.limits, text, said) };
   if (ids.includes("agent")) out = withAgentFacts(out, settleAgent(brief, opts.personalTools ?? false));
   return out;
 }
