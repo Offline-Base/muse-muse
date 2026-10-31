@@ -603,6 +603,12 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   Q1_0 is 1.125 bpw, with Metal support and community Glimmer files about 4.85 GB. Workflow glimmer-on-devices started:
   Q1_0, TQ1_0 and Q2_0 built and scored, runs on this Mac and one Android phone (Device Farm, budget $40). Jetson waits
   for the owner's OK. Device rule from muse-muse-devices/docs/DEVICES.md: budget 70% of RAM on Android and Linux, 60% on Mac.
+- 12:58 PM: GPU collision, my error. The owner's other coding agent started 8 vLLM servers for the reasoning rows at 12:50
+  PM; I started dev honesty and channel checks on GPUs 0 to 4 at 12:52 PM after checking only for training. Four of my
+  jobs crashed (`Tensor.item() cannot be called on meta tensors`; not confirmed to be from the collision) and some of its
+  servers failed for lack of memory until it restarted them. Stopped my jobs by name; dev scoring waits. train-1 belongs to
+  the rows agent until it reports. Base's dev run and the channel checks need rerunning. Its log warns "Auto-initialization
+  of reasoning token IDs failed", so the rows' token round trip must be checked.
 
 ## Problems and fixes
 
