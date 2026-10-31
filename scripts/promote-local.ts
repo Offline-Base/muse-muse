@@ -21,15 +21,17 @@
  * already has is reported, with nothing uploaded or sent again, unless it has no link of its own yet and --republish
  * is passed: then the live site publishes it again, once its last try has ended.
  *
- * Needs AUTOMATION_SECRET (the live site's), and VERCEL_OIDC_TOKEN (vercel env pull, good for 12 hours) for the
- * uploads, which sign in to the store --store-id names the way lib/storage.ts blobAuth() does on Vercel. Neither is
- * ever printed. A dry run needs neither.
+ * Needs AUTOMATION_SECRET (the live site's), never printed. The uploads don't sign in to the store from here (this
+ * machine's OIDC token is for the development environment, which the live store isn't connected to): the live site
+ * hands out a presigned URL for each file (POST /api/admin/import-product/upload) and the file goes straight to Blob.
+ * --store-id only says where the links will point, for the checks before anything is sent. A dry run needs nothing.
  */
 import { realpathSync } from "node:fs";
 import { cp, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { uploadPresigned } from "@vercel/blob/client";
 import { asc, eq, inArray } from "drizzle-orm";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -47,14 +49,18 @@ import {
   whyNotSend,
   type LocalRows,
 } from "@/lib/promote/local";
-import { localFilePaths, putBlobAt } from "@/lib/storage";
+import { localFilePaths } from "@/lib/storage";
 
 const DEFAULT_TO = "https://muse-muse.vercel.app";
 /** The live site's public Blob store. */
 const DEFAULT_STORE = "store_8A701wVtiqVp1x3e";
+/** Where the live site hands out presigned upload URLs (app/api/admin/import-product/upload/route.ts). */
+const UPLOAD_ROUTE = "/api/admin/import-product/upload";
 const POLL_MS = 15_000;
 const WAIT_MS = 10 * 60_000;
 const UPLOADS_AT_ONCE = 4;
+/** Files bigger than this go in parts, as lib/storage.ts uploads them. */
+const MULTIPART_BYTES = 16 * 1024 * 1024;
 const USAGE =
   "Usage: npx tsx --env-file=.env.local scripts/promote-local.ts --db <pglite folder> --slug a,b [--to URL] [--files DIR] [--store-id ID] [--republish] [--dry-run]";
 /** Flags that take no value. */
@@ -130,19 +136,6 @@ export function options(argv: string[]): Options {
     republish: values.has("republish"),
     dryRun: values.has("dry-run"),
   };
-}
-
-/**
- * Points @vercel/blob at the live store with this machine's OIDC token, as blobAuth() signs in on Vercel: BLOB_STORE_ID
- * set and no read-write token. A BLOB_READ_WRITE_TOKEN from .env.local is dropped for this run, so no upload can go to
- * another store.
- */
-function useLiveStore(storeId: string): void {
-  if (!process.env.VERCEL_OIDC_TOKEN?.trim()) {
-    throw new Error("VERCEL_OIDC_TOKEN isn't set, so nothing can be uploaded. Run vercel env pull .env.local (it's good for 12 hours).");
-  }
-  delete process.env.BLOB_READ_WRITE_TOKEN;
-  process.env.BLOB_STORE_ID = storeId;
 }
 
 function automation(): Record<string, string> {
@@ -293,7 +286,15 @@ export async function promote(local: LocalDb, slug: string, opts: Options): Prom
   const links = new Map<string, string>();
   await eachAtOnce([...files.values()], UPLOADS_AT_ONCE, async (f) => {
     const [body, type] = await Promise.all([readFile(f.file), readFile(f.type, "utf8").catch(() => "")]);
-    links.set(f.key, await putBlobAt(f.key, body, type.trim() || "application/octet-stream"));
+    // The live site signs the URL for exactly this path, with no random suffix and overwriting allowed.
+    const blob = await uploadPresigned(f.key, body, {
+      access: "public",
+      handleUploadUrl: `${opts.to}${UPLOAD_ROUTE}`,
+      headers: automation(),
+      contentType: type.trim() || "application/octet-stream",
+      multipart: body.length > MULTIPART_BYTES,
+    });
+    links.set(f.key, blob.url);
     console.log(`  [${slug}] uploaded ${f.key} (${bytes(f.size)})`);
   });
   const out = relink(bundle, keys, (key) => links.get(key)!);
@@ -343,10 +344,7 @@ function printTable(rows: Row[]): void {
 
 async function main(): Promise<void> {
   const opts = options(process.argv.slice(2));
-  if (!opts.dryRun) {
-    automation();
-    useLiveStore(opts.storeId);
-  }
+  if (!opts.dryRun) automation();
   const copy = await copyDatabase(opts.db);
   const client = new PGlite(copy);
   try {

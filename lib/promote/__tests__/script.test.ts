@@ -78,13 +78,17 @@ describe("promote-local", { skip: canMock ? false : "needs --experimental-test-m
     filesDir = await mkdtemp(path.join(tmpdir(), "promote-local-"));
     process.env.AUTOMATION_SECRET = AUTOMATION;
 
-    const realStorage = (await import(at("../../storage.ts"))) as typeof import("../../storage");
-    mock.module(at("../../storage.ts"), {
+    // Uploads go through the live site's presigned URLs: each asks its upload route with the automation secret.
+    const realClient = await import("@vercel/blob/client");
+    mock.module("@vercel/blob/client", {
       namedExports: {
-        ...realStorage,
-        putBlobAt: async (pathname: string) => {
+        ...realClient,
+        uploadPresigned: async (pathname: string, _body: unknown, o: { access: string; handleUploadUrl: string; headers?: Record<string, string> }) => {
+          assert.equal(o.access, "public");
+          assert.equal(o.handleUploadUrl, `${TO}/api/admin/import-product/upload`);
+          assert.equal(o.headers?.authorization, `Bearer ${AUTOMATION}`);
           log.push(`upload ${pathname}`);
-          return `${STORE}/${pathname}`;
+          return { url: `${STORE}/${pathname}`, pathname };
         },
       },
     });

@@ -24,7 +24,7 @@ export const INSPO_UPLOAD_TTL_MS = 15 * 60_000;
  * callback and the route takes only blob.generate-presigned-url, so a store with no BLOB_WEBHOOK_PUBLIC_KEY (one
  * connected with BLOB_READ_WRITE_TOKEN) gets this stand-in. It isn't a key: no signature verifies against it.
  */
-const NO_CALLBACK_KEY = "none";
+export const NO_CALLBACK_KEY = "none";
 
 export class InspoPathnameError extends Error {}
 
