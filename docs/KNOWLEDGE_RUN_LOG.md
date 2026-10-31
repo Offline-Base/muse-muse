@@ -609,6 +609,17 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   servers failed for lack of memory until it restarted them. Stopped my jobs by name; dev scoring waits. train-1 belongs to
   the rows agent until it reports. Base's dev run and the channel checks need rerunning. Its log warns "Auto-initialization
   of reasoning token IDs failed", so the rows' token round trip must be checked.
+- 1:01 PM: knowledge tests on Q4_K_M (scripts/knowledge/aws/job/salient_probes.jsonl, grade_recall.py). Verbatim recall on
+  1,503 auto-gradable training questions: stage 2 24.9% (22.8 to 27.1), base 17.4%; hand grade of 80 rows 32.5%; on rows base
+  got wrong 15.2%. So one pass at rank 64, lr 1e-4 didn't memorize most single facts: a dose or learning-rate problem, which
+  meets the audit's condition for a dose pilot. Salient events, 246 questions frozen before any model ran, from outside
+  lists: base 26.0%, stage 1 57.7%, stage 2 69.1% (63 to 75; hand audit 69.9%). AI 54.5%, Meta 57.1%, world 77.9%. Stage 2
+  stated all 76 wrong answers as fact. One author chose and graded the questions. Slip: that helper sent 4 metadata calls
+  to en.wikipedia.org/w/api.php, a path robots.txt disallows, then kept to /wiki/ pages. Noted against the robots rule.
+- 1:24 PM: rows agent passed setup and is writing: 11,310 kept, 3,045 rejected, 26 minutes left. Small files: Q1_0 4.85 GB
+  scores 0 of 600 and 0 of 40 old facts on stage 2 and base, so it's unusable; pure Q1 3.94 GB also 0. First custom mix: IQ1_S
+  with lowest-bit embedding and output, 5.75 GB, 55 of 600 (9.2%), 35 of 40. Others still running. Bolt student stopped by
+  owner's priority at step 1,391 of 36,114 (killed by PID); GH200 idle, decision pending.
 
 ## Problems and fixes
 
