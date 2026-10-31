@@ -620,6 +620,10 @@ at about 64 KB/s. Only train_multi runs are synced; the GH200's stage1 stays on 
   scores 0 of 600 and 0 of 40 old facts on stage 2 and base, so it's unusable; pure Q1 3.94 GB also 0. First custom mix: IQ1_S
   with lowest-bit embedding and output, 5.75 GB, 55 of 600 (9.2%), 35 of 40. Others still running. Bolt student stopped by
   owner's priority at step 1,391 of 36,114 (killed by PID); GH200 idle, decision pending.
+- 1:27 PM: owner: "No need to test/ train the jetson right now. We can do that later when it is done." No Jetson test and no
+  student for now. So the GH200 has no job: NanoQuant logs, scores and settings copied to .data/knowledge/models/, stage
+  2's 0.8-bit text weights streaming to the cache filesystem (models/stage2-nanoquant/, sha256 checked), then terminated by id
+  (log .data/knowledge/logs/gh200-off.log). The Mac's offlinebase AWS session has expired: S3 uploads need `aws login`.
 
 ## Problems and fixes
 
