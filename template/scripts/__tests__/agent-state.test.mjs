@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { TOKEN, useEnv } from "./agent-kit.mjs";
 
-const { AgentStateError, STATE_TTL_MS, openState, sealState } = await import("../../targets/agent/files/lib/agent/state.ts");
+const { AgentStateError, STATE_TTL_MS, openState, sealState, sealToResume } = await import("../../targets/agent/files/lib/agent/state.ts");
 
 const scope = "agent:abc";
 const state = { previousResponseId: "resp_1", outputs: ["a tool's private result"] };
@@ -61,4 +61,17 @@ test("anything that isn't a sealed state is refused", () => {
 test("sealing needs the product's token, and never falls back to a known key", () => {
   delete process.env.PRODUCT_TOKEN;
   assert.throws(() => sealState(state, { scope }), /Missing PRODUCT_TOKEN/);
+});
+
+test("a tag cut short is refused, so a forgery can't get by on a few bytes", () => {
+  const [prefix, iv, body, tag] = sealState(state, { scope }).split(".");
+  for (const bytes of [4, 8, 12, 15]) {
+    const short = Buffer.from(tag, "base64url").subarray(0, bytes).toString("base64url");
+    refused(() => openState([prefix, iv, body, short].join("."), { scope }), "invalid");
+  }
+});
+
+test("a state too big to open again isn't handed out", () => {
+  assert.equal(sealToResume({ photo: "A".repeat(700_000) }, { scope }), undefined);
+  assert.deepEqual(openState(sealToResume(state, { scope }), { scope }), state);
 });

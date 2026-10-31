@@ -140,5 +140,5 @@ test("other paths don't exist", async () => {
 
 test("samePath keeps a path and its query, and turns everything else into /", () => {
   assert.equal(samePath("/a/b?c=1#d"), "/a/b?c=1#d");
-  for (const bad of [null, 7, "", "a", "//x", "/\\x", "https://x", "/\u0000x", "/\nx"]) assert.equal(samePath(bad), "/");
+  for (const bad of [null, 7, "", "a", "//x", "/\\x", "https://x", "/\u0000x", "/\nx", "/.//evil.example/x", "/..//evil.example", "/a/..//evil.example"]) assert.equal(samePath(bad), "/");
 });

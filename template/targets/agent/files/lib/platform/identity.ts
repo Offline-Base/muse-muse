@@ -49,6 +49,14 @@ export function ownerSession(from?: RequestLike | null): string | null {
   return session && OWNER_SESSION.test(session) ? session : null;
 }
 
+/**
+ * Who that session names, from os1.<product>.<subject>.<exp>.<sig>, or "" for anyone without one. A renewed session
+ * names the same owner. Like ownerSession it proves nothing: it's for telling one person's run from another's.
+ */
+export function ownerSubject(from?: RequestLike | null): string {
+  return ownerSession(from)?.split(".")[2] ?? "";
+}
+
 export function isOwnerSession(session: unknown): session is string {
   return typeof session === "string" && OWNER_SESSION.test(session);
 }
@@ -81,7 +89,8 @@ export function samePath(value: unknown): string {
   if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\u0000-\u001f]/.test(value)) return "/";
   try {
     const url = new URL(value, "https://this-site.invalid");
-    return url.origin === "https://this-site.invalid" ? `${url.pathname}${url.search}${url.hash}` : "/";
+    // The parser can tidy "/.//x" into "//x", which a browser reads as another site.
+    return url.origin === "https://this-site.invalid" && !url.pathname.startsWith("//") ? `${url.pathname}${url.search}${url.hash}` : "/";
   } catch {
     return "/";
   }

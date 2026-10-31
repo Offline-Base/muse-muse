@@ -29,13 +29,19 @@ function stateKey(): Buffer {
   return createHash("sha256").update(`musemuse-run-state:${token}`).digest();
 }
 
-/** `scope` ties the state to one route's tools, so it can't go on under a route with other tools. */
+/** `scope` ties the state to one route's tools and to who ran it, so it can't go on under other tools or without the owner. */
 export function sealState(state: unknown, opts: { scope: string; now?: number }): string {
   const now = opts.now ?? Date.now();
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", stateKey(), iv);
   const body = Buffer.concat([cipher.update(JSON.stringify({ exp: now + STATE_TTL_MS, scope: opts.scope, state }), "utf8"), cipher.final()]);
   return [PREFIX, iv.toString("base64url"), body.toString("base64url"), cipher.getAuthTag().toString("base64url")].join(".");
+}
+
+/** sealState, or undefined when the result is too big for openState to take back: a photo in a run's first turn can do it. */
+export function sealToResume(state: unknown, opts: { scope: string; now?: number }): string | undefined {
+  const sealed = sealState(state, opts);
+  return sealed.length <= MAX_SEALED_CHARS ? sealed : undefined;
 }
 
 /** The state, or AgentStateError when it isn't one this product sealed for this scope, or it's over an hour old. */
@@ -46,7 +52,7 @@ export function openState<T>(sealed: unknown, opts: { scope: string; now?: numbe
   if (prefix !== PREFIX || !iv || !body || !tag || extra !== undefined) throw invalid();
   let payload: { exp?: unknown; scope?: unknown; state?: unknown };
   try {
-    const decipher = createDecipheriv("aes-256-gcm", stateKey(), Buffer.from(iv, "base64url"));
+    const decipher = createDecipheriv("aes-256-gcm", stateKey(), Buffer.from(iv, "base64url"), { authTagLength: 16 });
     decipher.setAuthTag(Buffer.from(tag, "base64url"));
     payload = JSON.parse(Buffer.concat([decipher.update(Buffer.from(body, "base64url")), decipher.final()]).toString("utf8"));
   } catch {
