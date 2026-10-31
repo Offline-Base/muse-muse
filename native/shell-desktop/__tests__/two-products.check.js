@@ -31,8 +31,11 @@ function launch(dir) {
   const { ELECTRON_RUN_AS_NODE: _ignored, ...env } = process.env;
   const child = spawn(electron, [dir], { stdio: "ignore", env });
   const state = { child, exitCode: undefined };
-  child.on("exit", (code) => {
-    state.exitCode = code;
+  state.exited = new Promise((done) => {
+    child.on("exit", (code) => {
+      state.exitCode = code;
+      done();
+    });
   });
   return state;
 }
@@ -62,7 +65,10 @@ function listen() {
     assert.notEqual(again.exitCode, undefined, "A second launch of Product A should give way to the first");
     console.log("Pass: two products ran together, and a second launch of one gave way.");
   } finally {
-    for (const { child } of [first, other, again]) child.kill();
+    const running = [first, other, again];
+    for (const { child } of running) child.kill();
+    // Gone first, or an app still shutting down would write its profile folder back.
+    await Promise.all(running.map(({ exited }) => exited));
     a.server.close();
     b.server.close();
     rmSync(root, { recursive: true, force: true });

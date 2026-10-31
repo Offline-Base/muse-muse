@@ -7,43 +7,43 @@
   },
   "builds": {
     "lab-android": {
-      "id": "f98fe88b-5bdc-4d0a-92cc-a552ae2e3185",
+      "id": "b26dd58c-dd6e-407c-a755-ebafa0854dad",
       "profile": "lab-android",
       "platform": "android",
       "appId": "ai.musemuse.lab",
       "sdk": "58.0.0",
       "runtime": "lab-1",
       "channel": "lab",
-      "artifactUrl": "https://expo.dev/artifacts/eas/EE6D9KU8viXc3wTvYhLJIEZbclXVumGnhGGVlFRxeXk.apk",
-      "sourceCommit": "967f349",
-      "createdAt": "2026-10-31T06:39:45.671Z",
-      "expiresAt": "2026-11-14T06:39:45.703Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/2rxCFlRkWrbLRgjKU9qEKVFdxQMS2QKcJGLIrv8GAfU.apk",
+      "sourceCommit": "b345354",
+      "createdAt": "2026-10-31T07:55:40.382Z",
+      "expiresAt": "2026-11-14T07:55:40.424Z"
     },
     "lab-ios-sim": {
-      "id": "332cab5b-e055-410e-90c2-ea754031ed3c",
+      "id": "06eb8ad2-326c-4cfc-b8cb-2e7155dd3f49",
       "profile": "lab-ios-sim",
       "platform": "ios",
       "appId": "ai.musemuse.lab",
       "sdk": "58.0.0",
       "runtime": "lab-1",
       "channel": "lab",
-      "artifactUrl": "https://expo.dev/artifacts/eas/v6TTaiRcuH0fqLmYg5MF6xmbGNDmFIyIrwic0lAvSRQ.tar.gz",
-      "sourceCommit": "967f349",
-      "createdAt": "2026-10-31T06:39:16.917Z",
-      "expiresAt": "2026-11-14T06:39:16.947Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/sEKGoabDtttb5dTJ3dB04sjlFih877OsQDNzD8C1ask.tar.gz",
+      "sourceCommit": "b345354",
+      "createdAt": "2026-10-31T07:55:53.050Z",
+      "expiresAt": "2026-11-14T07:55:53.090Z"
     },
     "glasses-ios-sim": {
-      "id": "41db5a6e-efb2-459e-8bec-c3923af3c25f",
+      "id": "68c9d5ab-9816-40df-8dd8-39e3351f91a7",
       "profile": "glasses-ios-sim",
       "platform": "ios",
       "appId": "app.musemuse.glasses",
       "sdk": "58.0.0",
       "runtime": "glasses-1",
       "channel": "glasses",
-      "artifactUrl": "https://expo.dev/artifacts/eas/Al8d_ehITpxLq82YnIK0eQH0clGE2SuMQEevI_MEyCM.tar.gz",
-      "sourceCommit": "5d760ed",
-      "createdAt": "2026-10-31T07:18:58.706Z",
-      "expiresAt": "2026-11-14T07:18:58.744Z"
+      "artifactUrl": "https://expo.dev/artifacts/eas/C51vzA6iEWWEDYNof-QrasjHoIjmm2UvrtJnAl8jyOs.tar.gz",
+      "sourceCommit": "b345354",
+      "createdAt": "2026-10-31T07:56:04.478Z",
+      "expiresAt": "2026-11-14T07:56:04.510Z"
     }
   },
   "productionUpdate": null
