@@ -1,0 +1,76 @@
+{
+  "directOlderVersion": {
+    "requested": "20261026_00",
+    "status": 403,
+    "error": {
+      "message": "Instant accounts run the latest version of FIRECRAWL_SCRAPE, not version 20261026_00",
+      "code": 6605,
+      "slug": "ManagedCredential_NotEnabled",
+      "status": 403,
+      "request_id": "75e5b9bc-c860-46fa-91d7-f9b2cd010113",
+      "suggested_fix": "Drop the version pin, or pass the user's own connected account in connected_account_id."
+    }
+  },
+  "eventsStructured": {
+    "ms": 2220,
+    "resultType": "completed",
+    "instantCharge": {
+      "amount": "0.009166666667",
+      "currency": "USD",
+      "charged_by": "composio"
+    },
+    "dataBytes": 131544,
+    "topKeys": [
+      "ads",
+      "ai_overview",
+      "events_results",
+      "filters",
+      "local_map",
+      "local_results",
+      "organic_results",
+      "pagination",
+      "related_questions",
+      "related_searches",
+      "search_information",
+      "search_metadata",
+      "search_parameters",
+      "serpapi_pagination"
+    ],
+    "innerKeys": [
+      "ads",
+      "ai_overview",
+      "events_results",
+      "filters",
+      "local_map",
+      "local_results",
+      "organic_results",
+      "pagination",
+      "related_questions",
+      "related_searches",
+      "search_information",
+      "search_metadata",
+      "search_parameters",
+      "serpapi_pagination"
+    ],
+    "eventsCount": 9,
+    "firstEventKeys": [
+      "address",
+      "date",
+      "event_token",
+      "serpapi_event_details_link",
+      "thumbnail",
+      "time",
+      "title",
+      "type"
+    ],
+    "firstEventSample": {
+      "title": "Halloweird Music & Art Showcase",
+      "date": "Oct 31",
+      "address": [
+        "Half Step",
+        "Austin, TX"
+      ]
+    }
+  },
+  "toolkitCount": 1714
+}

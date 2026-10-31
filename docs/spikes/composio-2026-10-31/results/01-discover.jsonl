@@ -1,0 +1,505 @@
+{"toolkit":"tavily","slug":"TAVILY_CRAWL","version":"20261030_01","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"tavily","slug":"TAVILY_EXTRACT","version":"20261030_01","tags":["important","openWorldHint","readOnlyHint","content_extraction"],"instant":{"supported":true,"price":{"description":"$0.008 per 5 successful URL extractions.","discount":"37"}}}
+{"toolkit":"tavily","slug":"TAVILY_GET_USAGE","version":"20261030_01","tags":["readOnlyHint","openWorldHint","usage"]}
+{"toolkit":"tavily","slug":"TAVILY_MAP","version":"20261030_01","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"tavily","slug":"TAVILY_SEARCH","version":"20261030_01","tags":["openWorldHint","createHint"],"instant":{"supported":true,"price":{"description":"$0.008 per web search.","discount":"37"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_AMAZON_SEARCH","version":"20261030_00","tags":["readOnlyHint","important","ecommerce"]}
+{"toolkit":"serpapi","slug":"SERPAPI_BAIDU_SEARCH","version":"20261030_00","tags":["important","Search","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_BING_MAPS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","local_places_maps_and_reviews"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_BING_SEARCH","version":"20261030_00","tags":["important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_DUCK_DUCK_GO_LIGHT_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","web_search_and_settings"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_DUCK_DUCK_GO_MAPS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","local_places_maps_and_reviews"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_DUCK_DUCK_GO_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_EBAY_SEARCH","version":"20261030_00","tags":["ebay","search","important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_EVENT_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_FINANCE_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_ACCOUNT","version":"20261030_00","tags":["readOnlyHint","important"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_AMAZON_PRODUCT","version":"20261030_00","tags":["readOnlyHint","important","ecommerce"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_AVAILABLE_LOCATION_OPTIONS_FOR_GOOGLE_SEARCHES","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","web_search_and_settings"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_FACEBOOK_PROFILE","version":"20261030_00","tags":["openWorldHint","readOnlyHint","media"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_ABOUT_THIS_RESULT","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","web_search_and_settings"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_AI_OVERVIEW","version":"20261030_00","tags":["readOnlyHint","important","ai"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_HOTELS_AUTOCOMPLETE_SUGGESTIONS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","autocomplete"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_IMAGES_RELATED_CONTENT","version":"20261030_00","tags":["openWorldHint","readOnlyHint","images_and_visual_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_JOB_EMPLOYER_RATINGS","version":"20261030_00","tags":["readOnlyHint","important","jobs"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_GOOGLE_PATENT_DETAILS","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","scholarly_research"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_SEARCH_ARCHIVE","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","search"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_YOUTUBE_VIDEO","version":"20261030_00","tags":["readOnlyHint","important","media"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GET_YOUTUBE_VIDEO_TRANSCRIPT","version":"20261030_00","tags":["readOnlyHint","important","media"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_DOMAINS_LIST","version":"20261030_00","tags":["important","readOnlyHint"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_FORUMS_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint","web_search_and_settings"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_JOBS_SEARCH","version":"20261030_00","tags":["jobs","important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_LENS_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","images_and_visual_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_LIGHT_SEARCH","version":"20261030_00","tags":["important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_MAPS_POSTS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","local_places_maps_and_reviews"]}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_MAPS_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_PLAY_PRODUCT","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","shopping_and_product_data"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_SCHOLAR_AUTHOR","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","scholarly_research"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_SCHOLAR_CITE","version":"20261030_00","tags":["readOnlyHint","openWorldHint","scholarly_research"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_GOOGLE_VIDEOS_LIGHT","version":"20261030_00","tags":["readOnlyHint","openWorldHint","video_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_HOTEL_SEARCH","version":"20261030_00","tags":["google","travel","important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_IMAGE_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_LIST_GOOGLE_MAPS_REVIEWS","version":"20261030_00","tags":["readOnlyHint","important","local_places_maps_and_reviews"]}
+{"toolkit":"serpapi","slug":"SERPAPI_NAVER_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","web_search_and_settings"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_NEWS_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_OPEN_TABLE_REVIEWS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","local_places_maps_and_reviews"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_PLAY_SEARCH","version":"20261030_00","tags":["important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_QUERY_GOOGLE_AI_MODE","version":"20261030_00","tags":["createHint","important","ai"]}
+{"toolkit":"serpapi","slug":"SERPAPI_SCHOLAR_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_APPLE_APP_STORE","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","shopping_and_product_data"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_GOOGLE_IMAGES_LIGHT","version":"20261030_00","tags":["openWorldHint","readOnlyHint","image_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_GOOGLE_LOCAL_SERVICES","version":"20261030_00","tags":["openWorldHint","readOnlyHint","local_places_maps_and_reviews"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_INDEX","version":"20261030_00","tags":["readOnlyHint","important","search"]}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_PUBLIC_GOOGLE_ADS","version":"20261030_00","tags":["readOnlyHint","openWorldHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SEARCH_YELP","version":"20261030_00","tags":["openWorldHint","readOnlyHint","local_places_maps_and_reviews"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_SHOPPING_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_TRENDS_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_WALMART_PRODUCT_REVIEWS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","important","shopping_and_product_data"]}
+{"toolkit":"serpapi","slug":"SERPAPI_WALMART_SEARCH","version":"20261030_00","tags":["important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_YAHOO_SEARCH","version":"20261030_00","tags":["important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_YAHOO_VIDEOS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","video_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_YANDEX_IMAGES_SEARCH","version":"20261030_00","tags":["readOnlyHint","openWorldHint","images_and_visual_search"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_YANDEX_SEARCH","version":"20261030_00","tags":["search","yandex","important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"serpapi","slug":"SERPAPI_YOU_TUBE_SEARCH","version":"20261030_00","tags":["media","important","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.025 per successful search","discount":"63"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_AGENT_CANCEL","version":"20261030_00","tags":["updateHint","idempotentHint","openWorldHint","agent_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_BULK_ENRICH","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_ENRICH","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_INFO","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_JOB_POSTINGS","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_NEWS","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_COMPANIES_SEARCH","version":"20261030_00","tags":["readOnlyHint","apollo","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_PEOPLE_BULK_MATCH","version":"20261030_00","tags":["readOnlyHint","apollo","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_PEOPLE_INFO","version":"20261030_00","tags":["readOnlyHint","apollo","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_APOLLO_PEOPLE_MATCH","version":"20261030_00","tags":["readOnlyHint","apollo","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BATCH_SCRAPE","version":"20261030_00","tags":["important","openWorldHint","crawl_and_scrape_jobs","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BATCH_SCRAPE_CANCEL","version":"20261030_00","tags":["updateHint","idempotentHint","openWorldHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BATCH_SCRAPE_GET","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BATCH_SCRAPE_GET_ERRORS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_CONSENSUS_RATINGS","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_MERGERS_ACQUISITIONS","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_RATINGS","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_RATINGS_ANALYSTS","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_RATINGS_FIRMS","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_CALENDAR_REMOVED","version":"20261030_00","tags":["readOnlyHint","benzinga","calendar","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_NEWS_PRESS_RELEASES","version":"20261030_00","tags":["readOnlyHint","benzinga","news","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_NEWS_REMOVED","version":"20261030_00","tags":["readOnlyHint","benzinga","news","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_NEWS_SEARCH","version":"20261030_00","tags":["readOnlyHint","benzinga","news","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_NEWS_WIIMS","version":"20261030_00","tags":["readOnlyHint","benzinga","news","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_BENZINGA_SIGNALS_OPTIONS_ACTIVITY","version":"20261030_00","tags":["readOnlyHint","benzinga","signals","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL","version":"20261030_00","tags":["web","scraping","crawling","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_CANCEL","version":"20261030_00","tags":["updateHint","important","openWorldHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_DELETE","version":"20261030_00","tags":["updateHint","idempotentHint","openWorldHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_GET","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_GET_ERRORS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_LIST_ACTIVE","version":"20261030_00","tags":["openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_PARAMS_PREVIEW","version":"20261030_00","tags":["openWorldHint","createHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CRAWL_V2","version":"20261030_00","tags":["web","scraping","crawling","v2","recommended","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CREDIT_USAGE_GET","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","usage_and_billing"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_CREDIT_USAGE_GET_HISTORICAL","version":"20261030_00","tags":["openWorldHint","readOnlyHint","usage_and_billing"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_COMPANIES_ENRICH_BASE","version":"20261030_00","tags":["readOnlyHint","datalegion","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_COMPANIES_ENRICH_PREMIUM","version":"20261030_00","tags":["readOnlyHint","datalegion","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_PEOPLE_ENRICH_BASE_NO_CONTACT","version":"20261030_00","tags":["readOnlyHint","datalegion","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_PEOPLE_ENRICH_BASE_WITH_CONTACT","version":"20261030_00","tags":["readOnlyHint","datalegion","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_PEOPLE_ENRICH_PREMIUM_NO_CONTACT","version":"20261030_00","tags":["readOnlyHint","datalegion","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DATALEGION_PEOPLE_ENRICH_PREMIUM_WITH_CONTACT","version":"20261030_00","tags":["readOnlyHint","datalegion","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_DEEP_RESEARCH","version":"20261030_00","tags":["important","openWorldHint","ai_generation_and_research","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_EXTRACT","version":"20261030_00","tags":["web","scraping","extraction","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_EXTRACT_GET","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_COMPANY_LIST","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_COMPANY_PROFILE","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_COMPANY_SEGMENTS_AND_KPIS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_COMPANY_SHARES_OUTSTANDING","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_EVENTS_CALENDAR","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","events","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_EVENTS_IR_EVENTS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","events","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_EVENTS_TRANSCRIPT","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","events","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FILINGS_LIST","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","filings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_ADJUSTED_METRICS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_BALANCE_SHEET","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_BALANCE_SHEET_AS_REPORTED","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_CASH_FLOW_STATEMENT","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_CASH_FLOW_STATEMENT_AS_REPORTED","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_INCOME_STATEMENT","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FINANCIALS_INCOME_STATEMENT_AS_REPORTED","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","financials","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_COMPANIES","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_COMPANY","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_DETAIL","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_INVESTOR","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_INVESTORS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_FUND_LETTERS_LIST","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","fund-letters","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_METRICS_RATIOS_LIST","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","metrics","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_METRICS_STANDARDIZED","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","metrics","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_METRICS_STANDARDIZED_BY_TEMPLATE","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","metrics","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_OWNERSHIP_HOLDER_HOLDINGS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ownership","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_OWNERSHIP_HOLDERS_LIST","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ownership","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_OWNERSHIP_INSIDER_HOLDERS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ownership","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_OWNERSHIP_INSIDER_TRANSACTIONS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ownership","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_OWNERSHIP_INSTITUTIONAL_HOLDERS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ownership","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_PRICES_DAILY","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","prices","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_PRICES_INTRADAY","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","prices","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_PRICES_SPLITS","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","prices","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_RATIOS_DAILY","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ratios","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FISCAL_AI_RATIOS_SERIES","version":"20261030_00","tags":["readOnlyHint","fiscal-ai","ratios","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_COMPANIES_LOOKUP","version":"20261030_00","tags":["readOnlyHint","fullenrich","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_COMPANIES_MATCH","version":"20261030_00","tags":["readOnlyHint","fullenrich","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_COMPANIES_SEARCH","version":"20261030_00","tags":["readOnlyHint","fullenrich","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_CONTACTS_MOBILE","version":"20261030_00","tags":["readOnlyHint","fullenrich","contacts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_CONTACTS_PERSONAL_EMAIL","version":"20261030_00","tags":["readOnlyHint","fullenrich","contacts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_CONTACTS_REVERSE_EMAIL","version":"20261030_00","tags":["readOnlyHint","fullenrich","contacts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_CONTACTS_WORK_EMAIL","version":"20261030_00","tags":["readOnlyHint","fullenrich","contacts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_PEOPLE_LOOKUP","version":"20261030_00","tags":["readOnlyHint","fullenrich","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_FULLENRICH_PEOPLE_MATCH","version":"20261030_00","tags":["readOnlyHint","fullenrich","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_GET_AGENT_STATUS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","agent_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_GET_DEEP_RESEARCH_STATUS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","ai_generation_and_research"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_GET_THE_STATUS_OF_A_CRAWL_JOB","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_LIST_INTERACT_SESSIONS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","interact"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_LIST_MONITOR_CHECKS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","monitoring"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_LLMS_TXT_GENERATE","version":"20261030_00","tags":["openWorldHint","ai_generation_and_research","createHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_LLMS_TXT_GET","version":"20261030_00","tags":["openWorldHint","readOnlyHint","ai_generation_and_research"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_MAP_MULTIPLE_URLS_BASED_ON_OPTIONS","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint"],"instant":{"supported":true,"price":{"description":"$0.003 per basic Map call","discount":"79"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_INSTAGRAM_POST_LOOKUP","version":"20261030_00","tags":["readOnlyHint","oriane","instagram","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_INSTAGRAM_POSTS_SEARCH","version":"20261030_00","tags":["readOnlyHint","oriane","instagram","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_INSTAGRAM_PROFILE_LOOKUP","version":"20261030_00","tags":["readOnlyHint","oriane","instagram","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_INSTAGRAM_PROFILES_SEARCH","version":"20261030_00","tags":["readOnlyHint","oriane","instagram","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_TIKTOK_POSTS_SEARCH","version":"20261030_00","tags":["readOnlyHint","oriane","tiktok","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_TIKTOK_PROFILE_LOOKUP","version":"20261030_00","tags":["readOnlyHint","oriane","tiktok","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_TIKTOK_PROFILES_SEARCH","version":"20261030_00","tags":["readOnlyHint","oriane","tiktok","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_ORIANE_TIKTOK_VIDEO_LOOKUP","version":"20261030_00","tags":["readOnlyHint","oriane","tiktok","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_COMPANY","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_COMPANY_OVERVIEW","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_COMPANY_PLACEMENTS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_COMPANY_PROSPECTS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_COMPANY_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_CO_OCCURRENCE","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_EPISODE","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_LEADERBOARD","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_LEADERBOARD_PREVIEW","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_PUBLISHER","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_PUBLISHER_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_PUBLISHERS_LEADERBOARD","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_PUBLISHER_SPONSORS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SHOW","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SHOW_PROSPECTS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SHOW_SPONSORS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSOR","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSOR_PUBLISHERS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSORS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSOR_SEGMENTS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSOR_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_SPONSORS_TRENDING","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ADVERTISING_TIMESERIES","version":"20261030_00","tags":["readOnlyHint","particle","advertising","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_BIAS_PUBLISHER","version":"20261030_00","tags":["readOnlyHint","particle","bias","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_BIAS_PUBLISHERS_BY_BUCKET","version":"20261030_00","tags":["readOnlyHint","particle","bias","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_BIAS_PUBLISHER_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","bias","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_BIAS_PUBLISHERS_LEADERBOARD","version":"20261030_00","tags":["readOnlyHint","particle","bias","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_BIAS_SHOW","version":"20261030_00","tags":["readOnlyHint","particle","bias","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_CHARTS_CHART","version":"20261030_00","tags":["readOnlyHint","particle","charts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_CHARTS_LIST","version":"20261030_00","tags":["readOnlyHint","particle","charts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_COMPANIES_COMPETITORS","version":"20261030_00","tags":["readOnlyHint","particle","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_COMPANIES_EXTERNAL_LINKS","version":"20261030_00","tags":["readOnlyHint","particle","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_COMPANIES_PEOPLE","version":"20261030_00","tags":["readOnlyHint","particle","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_COMPANIES_PRODUCTS","version":"20261030_00","tags":["readOnlyHint","particle","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_COMPANIES_SEARCH","version":"20261030_00","tags":["readOnlyHint","particle","companies","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_GET","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_LIST","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_LOOKUP","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_SEARCH","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_TOPIC","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_TOPICS","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_ENTITIES_TYPES","version":"20261030_00","tags":["readOnlyHint","particle","entities","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_EXTERNAL_LINKS","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUEST","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUEST_APPEARANCES","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUEST_PITCH_LIST","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUESTS","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUEST_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_GUESTS_TRENDING","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_PROFILE","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_SHOW_GUESTS","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PEOPLE_SHOW_RECOMMENDED_GUESTS","version":"20261030_00","tags":["readOnlyHint","particle","people","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_CLIP","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_CLIPS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_CLIP_TRANSCRIPT","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_CLIPS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_ENTITIES","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_RELATED","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_SEGMENTS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODES_FEED","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODES_LIST","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODES_LOOKUP","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_SPEAKERS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODES_SEARCH","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODES_TIMESERIES","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_EPISODE_TOPICS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_LIST","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_LOOKUP","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_MENTIONS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_MENTIONS_TIMESERIES","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_PUBLISHER","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_PUBLISHERS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_PUBLISHER_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SEARCH","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SEGMENT","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SEGMENTS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SEGMENT_TRANSCRIPT","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_EPISODES","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_EXTERNAL_LINKS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_FORMAT","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_MENTIONS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_RATINGS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_RATINGS_SUMMARY","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_SHOW_RELATED","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_TOPICS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_TRANSCRIPT","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_TRANSCRIPT_MENTIONS","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_PODCASTS_TRANSCRIPT_PREVIEW","version":"20261030_00","tags":["readOnlyHint","particle","podcasts","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_CATEGORIES","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_CHARTS","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_COUNTRIES","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_HISTORY","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_MOVERS","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_SHOW","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_SHOW_HISTORY","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_SHOW_SUMMARY","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_RANKINGS_SOURCES","version":"20261030_00","tags":["readOnlyHint","particle","rankings","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_CATEGORY_PUBLISHERS","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_GUEST","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_PUBLISHER","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_PUBLISHER_SHOWS","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_PUBLISHERS_LEADERBOARD","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PARTICLE_SUITABILITY_SHOW","version":"20261030_00","tags":["readOnlyHint","particle","suitability","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PEOPLE_DATA_LABS_COMPANY_ENRICH","version":"20261030_00","tags":["readOnlyHint","people-data-labs","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_PEOPLE_DATA_LABS_COMPANY_SEARCH","version":"20261030_00","tags":["readOnlyHint","people-data-labs","company","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_QUEUE_GET","version":"20261030_00","tags":["openWorldHint","readOnlyHint","crawl_and_scrape_jobs"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SCRAPE","version":"20261030_00","tags":["web","scraping","extraction","createHint"],"instant":{"supported":true,"price":{"description":"$0.003 per basic page scraped","discount":"79"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SEARCH","version":"20261030_00","tags":["createHint"],"instant":{"supported":true,"price":{"description":"$0.007 per basic search with up to 10 results","discount":"79"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SEARCH_PEOPLE_APOLLO","version":"20261030_00","tags":["readOnlyHint","people","search","alexandria"],"instant":{"supported":true,"price":{"description":"$0 per Apollo people-search request","discount":"0"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SEARCH_PEOPLE_FULLENRICH","version":"20261030_00","tags":["readOnlyHint","people","search","alexandria"],"instant":{"supported":true,"price":{"description":"$0.019 per returned person","discount":"79"}}}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_CHANNELS_SHARE","version":"20261030_00","tags":["readOnlyHint","similarweb","channels","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_CHANNELS_TRAFFIC","version":"20261030_00","tags":["readOnlyHint","similarweb","channels","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_GEOGRAPHY","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_INCOMING_REFERRALS","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_PPC_SPEND","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_REFERRALS","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_TRAFFIC","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_SIMILARWEB_WEB_WEBSITE_REFERRALS_OUTGOING_REFERRALS","version":"20261030_00","tags":["readOnlyHint","similarweb","web","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_START_AGENT","version":"20261030_00","tags":["important","openWorldHint","agent_jobs","destructiveHint"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_STOP_SCRAPE_INTERACTION","version":"20261030_00","tags":["destructiveHint","idempotentHint","openWorldHint","crawl_and_scrape_jobs","interact"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_TOKEN_USAGE_GET","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","usage_and_billing"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_TOKEN_USAGE_GET_HISTORICAL","version":"20261030_00","tags":["openWorldHint","readOnlyHint","usage_and_billing"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADS_BREAKDOWN","version":"20261030_00","tags":["readOnlyHint","upspring","ads","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADS_BROWSE","version":"20261030_00","tags":["readOnlyHint","upspring","ads","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADS_DETAIL","version":"20261030_00","tags":["readOnlyHint","upspring","ads","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADS_SEARCH","version":"20261030_00","tags":["readOnlyHint","upspring","ads","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADS_SIMILAR","version":"20261030_00","tags":["readOnlyHint","upspring","ads","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_BRIEF","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_BY_DOMAIN","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_COMPARE","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_PEERS","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_REQUEST","version":"20261030_00","tags":["createHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_SEARCH","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_ADVERTISERS_SIMILAR","version":"20261030_00","tags":["readOnlyHint","upspring","advertisers","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_TAXONOMY_VERTICAL","version":"20261030_00","tags":["readOnlyHint","upspring","taxonomy","alexandria"]}
+{"toolkit":"firecrawl","slug":"FIRECRAWL_UPSPRING_TAXONOMY_VERTICALS","version":"20261030_00","tags":["readOnlyHint","upspring","taxonomy","alexandria"]}
+{"toolkit":"exa","slug":"EXA_ANSWER","version":"20261030_00","tags":["openWorldHint","createHint","important"],"instant":{"supported":true,"price":{"description":"$0.005 per answer","discount":"0"}}}
+{"toolkit":"exa","slug":"EXA_BATCH_SEARCH_MONITORS","version":"20261030_00","tags":["destructiveHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_CANCEL_AGENT_RUN","version":"20261030_00","tags":["openWorldHint","destructiveHint","Agent"]}
+{"toolkit":"exa","slug":"EXA_CANCEL_WEBSET","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_CANCEL_WEBSET_ENRICHMENT","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_CANCEL_WEBSET_SEARCH","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_CREATE_AGENT_RUN","version":"20261030_00","tags":["important","openWorldHint","Research","createHint"]}
+{"toolkit":"exa","slug":"EXA_CREATE_API_KEY","version":"20261030_00","tags":["openWorldHint","createHint","Team Management"]}
+{"toolkit":"exa","slug":"EXA_CREATE_IMPORT","version":"20261030_00","tags":["openWorldHint","important","Imports","createHint"]}
+{"toolkit":"exa","slug":"EXA_CREATE_MONITOR","version":"20261030_00","tags":["important","createHint"]}
+{"toolkit":"exa","slug":"EXA_CREATE_SEARCH_MONITOR","version":"20261030_00","tags":["createHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_CREATE_WEBHOOK","version":"20261030_00","tags":["Webhooks","createHint","openWorldHint"]}
+{"toolkit":"exa","slug":"EXA_CREATE_WEBSET","version":"20261030_00","tags":["important","Webset Management","createHint"]}
+{"toolkit":"exa","slug":"EXA_CREATE_WEBSET_ENRICHMENT","version":"20261030_00","tags":["openWorldHint","createHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_CREATE_WEBSET_SEARCH","version":"20261030_00","tags":["openWorldHint","createHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_DELETE_AGENT_RUN","version":"20261030_00","tags":["Agent","openWorldHint","destructiveHint"]}
+{"toolkit":"exa","slug":"EXA_DELETE_API_KEY","version":"20261030_00","tags":["Team Management","openWorldHint","destructiveHint"]}
+{"toolkit":"exa","slug":"EXA_DELETE_IMPORT","version":"20261030_00","tags":["deleteHint","destructiveHint"]}
+{"toolkit":"exa","slug":"EXA_DELETE_SEARCH_MONITOR","version":"20261030_00","tags":["destructiveHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_DELETE_WEBHOOK","version":"20261030_00","tags":["Webhooks","destructiveHint","openWorldHint"]}
+{"toolkit":"exa","slug":"EXA_DELETE_WEBSET","version":"20261030_00","tags":["destructiveHint","idempotentHint","important","Webset Management"]}
+{"toolkit":"exa","slug":"EXA_DELETE_WEBSET_ENRICHMENT","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets","Enrichments"]}
+{"toolkit":"exa","slug":"EXA_DELETE_WEBSET_ITEM","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_DELETE_WEBSETS_MONITOR","version":"20261030_00","tags":["openWorldHint","destructiveHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_FIND_SIMILAR","version":"20261030_00","tags":["openWorldHint","createHint","deprecated"]}
+{"toolkit":"exa","slug":"EXA_GET_AGENT_RUN","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","Agent"]}
+{"toolkit":"exa","slug":"EXA_GET_API_KEY","version":"20261030_00","tags":["important","openWorldHint","readOnlyHint","API Keys"]}
+{"toolkit":"exa","slug":"EXA_GET_API_KEY_USAGE","version":"20261030_00","tags":["readOnlyHint","openWorldHint","Team Management"]}
+{"toolkit":"exa","slug":"EXA_GET_CONTENTS_ACTION","version":"20261030_00","tags":["createHint","openWorldHint","important"],"instant":{"supported":true,"price":{"description":"$0.001 per page per content type","discount":"0"}}}
+{"toolkit":"exa","slug":"EXA_GET_EVENT","version":"20261030_00","tags":["readOnlyHint"]}
+{"toolkit":"exa","slug":"EXA_GET_IMPORT","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_SEARCH_MONITOR","version":"20261030_00","tags":["readOnlyHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_GET_SEARCH_MONITOR_RUN","version":"20261030_00","tags":["readOnlyHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBHOOK","version":"20261030_00","tags":["Webhooks","readOnlyHint","openWorldHint"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSET","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSET_ENRICHMENT","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSET_ITEM","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSET_SEARCH","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSETS_MONITOR","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSETS_MONITOR_RUN","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_GET_WEBSETS_TEAM_INFO","version":"20261030_00","tags":["readOnlyHint","openWorldHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_LIST_AGENT_RUN_EVENTS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Agent"]}
+{"toolkit":"exa","slug":"EXA_LIST_AGENT_RUNS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Agent"]}
+{"toolkit":"exa","slug":"EXA_LIST_API_KEYS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Team Management"]}
+{"toolkit":"exa","slug":"EXA_LIST_EVENTS","version":"20261030_00","tags":["readOnlyHint","important"]}
+{"toolkit":"exa","slug":"EXA_LIST_IMPORTS","version":"20261030_00","tags":["readOnlyHint","important"]}
+{"toolkit":"exa","slug":"EXA_LIST_SEARCH_MONITOR_RUNS","version":"20261030_00","tags":["readOnlyHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_LIST_SEARCH_MONITORS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBHOOK_ATTEMPTS","version":"20261030_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBHOOKS","version":"20261030_00","tags":["readOnlyHint"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBSET_ITEMS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBSETS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBSETS_MONITOR_RUNS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_LIST_WEBSETS_MONITORS","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_PREVIEW_WEBSET","version":"20261030_00","tags":["openWorldHint","readOnlyHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_SEARCH","version":"20261030_00","tags":["important","openWorldHint","createHint"],"instant":{"supported":true,"price":{"description":"$0.007 per search","discount":"0"}}}
+{"toolkit":"exa","slug":"EXA_STOP_AGENT_RUN","version":"20261030_00","tags":["openWorldHint","destructiveHint","Agent"]}
+{"toolkit":"exa","slug":"EXA_TRIGGER_SEARCH_MONITOR","version":"20261030_00","tags":["createHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_API_KEY","version":"20261030_00","tags":["updateHint","openWorldHint","idempotentHint","Team Management"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_IMPORT","version":"20261030_00","tags":["updateHint"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_SEARCH_MONITOR","version":"20261030_00","tags":["updateHint","openWorldHint","Monitors"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_WEBHOOK","version":"20261030_00","tags":["updateHint","Webhooks","openWorldHint"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_WEBSET","version":"20261030_00","tags":["updateHint","openWorldHint","Websets"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_WEBSET_ENRICHMENT","version":"20261030_00","tags":["updateHint","openWorldHint","Websets","Enrichments"]}
+{"toolkit":"exa","slug":"EXA_UPDATE_WEBSETS_MONITOR","version":"20261030_00","tags":["updateHint","openWorldHint","Websets"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_AMAZON","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_DUCK_DUCK_GO","version":"20260903_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_EVENT","version":"20260903_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_EXA_ANSWER","version":"20260903_00","tags":["readOnlyHint","openWorldHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_EXA_SIMILARLINK","version":"20260903_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_FETCH_URL_CONTENT","version":"20260903_00","tags":["important","openWorldHint","readOnlyHint","content_retrieval"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_FINANCE","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_FLIGHTS","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_GOOGLE_MAPS","version":"20260903_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_GROQ_CHAT","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_HOTELS","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_IMAGE","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_NEWS","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_NPPESNPI_LOOKUP","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_SCHOLAR","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_SEC_FILINGS","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_SHOPPING","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_TAVILY","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_TRENDS","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_TRIP_ADVISOR","version":"20260903_00","tags":["openWorldHint","readOnlyHint","important"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_WALMART","version":"20260903_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"composio_search","slug":"COMPOSIO_SEARCH_WEB","version":"20260903_00","tags":["readOnlyHint","openWorldHint","important"]}
+{"toolkit":"gmail","slug":"GMAIL_ADD_LABEL_TO_EMAIL","version":"20261029_00","tags":["idempotentHint","openWorldHint","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_BATCH_DELETE_MESSAGES","version":"20261029_00","tags":["gmail","destructiveHint","batch","messages"]}
+{"toolkit":"gmail","slug":"GMAIL_BATCH_MODIFY_MESSAGES","version":"20261029_00","tags":["gmail","important","batch","labels","inbox","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_CREATE_EMAIL_DRAFT","version":"20261029_00","tags":["important","openWorldHint","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_CREATE_FILTER","version":"20261029_00","tags":["openWorldHint","filters","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_CREATE_LABEL","version":"20261029_00","tags":["openWorldHint","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_DELETE_DRAFT","version":"20261029_00","tags":["destructiveHint","idempotentHint","important","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_DELETE_FILTER","version":"20261029_00","tags":["destructiveHint","openWorldHint","filters"]}
+{"toolkit":"gmail","slug":"GMAIL_DELETE_LABEL","version":"20261029_00","tags":["destructiveHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_DELETE_MESSAGE","version":"20261029_00","tags":["destructiveHint","important","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_DELETE_THREAD","version":"20261029_00","tags":["destructiveHint","important","openWorldHint","gmail"]}
+{"toolkit":"gmail","slug":"GMAIL_FETCH_EMAILS","version":"20261029_00","tags":["important","openWorldHint","readOnlyHint"]}
+{"toolkit":"gmail","slug":"GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID","version":"20261029_00","tags":["important","readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_FETCH_MESSAGE_BY_THREAD_ID","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_FORWARD_MESSAGE","version":"20261029_00","tags":["openWorldHint","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_ATTACHMENT","version":"20261029_00","tags":["important","readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_AUTO_FORWARDING","version":"20261029_00","tags":["readOnlyHint","openWorldHint","mailbox_automation"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_CONTACTS","version":"20261029_00","tags":["openWorldHint","readOnlyHint"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_DRAFT","version":"20261029_00","tags":["important","readOnlyHint","openWorldHint","gmail"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_FILTER","version":"20261029_00","tags":["readOnlyHint","openWorldHint","filters"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_LABEL","version":"20261029_00","tags":["readOnlyHint","openWorldHint","labels"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_LANGUAGE_SETTINGS","version":"20261029_00","tags":["readOnlyHint","openWorldHint","mailbox_automation"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_PEOPLE","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_PROFILE","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_GET_VACATION_SETTINGS","version":"20261029_00","tags":["readOnlyHint","openWorldHint","mailbox_automation"]}
+{"toolkit":"gmail","slug":"GMAIL_IMPORT_MESSAGE","version":"20261029_00","tags":["openWorldHint","messages","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_INSERT_MESSAGE","version":"20261029_00","tags":["openWorldHint","messages","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_CSE_IDENTITIES","version":"20261029_00","tags":["readOnlyHint","openWorldHint","security_encryption"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_CSE_KEYPAIRS","version":"20261029_00","tags":["readOnlyHint","openWorldHint","security_encryption"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_DRAFTS","version":"20261029_00","tags":["important","openWorldHint","readOnlyHint"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_FILTERS","version":"20261029_00","tags":["readOnlyHint","openWorldHint","filters"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_FORWARDING_ADDRESSES","version":"20261029_00","tags":["readOnlyHint","openWorldHint","forwarding"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_HISTORY","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_LABELS","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_MESSAGES","version":"20261029_00","tags":["important","readOnlyHint","openWorldHint","messages","deprecated"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_SEND_AS","version":"20261029_00","tags":["readOnlyHint","openWorldHint","send_as_aliases"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_SMIME_INFO","version":"20261029_00","tags":["readOnlyHint","openWorldHint","security_encryption"]}
+{"toolkit":"gmail","slug":"GMAIL_LIST_THREADS","version":"20261029_00","tags":["readOnlyHint","openWorldHint"]}
+{"toolkit":"gmail","slug":"GMAIL_MODIFY_THREAD_LABELS","version":"20261029_00","tags":["idempotentHint","openWorldHint","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_MOVE_THREAD_TO_TRASH","version":"20261029_00","tags":["important","openWorldHint","gmail","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_MOVE_TO_TRASH","version":"20261029_00","tags":["important","openWorldHint","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_PATCH_LABEL","version":"20261029_00","tags":["idempotentHint","important","labels","openWorldHint","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_PATCH_SEND_AS","version":"20261029_00","tags":["idempotentHint","important","openWorldHint","send_as_aliases","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_REMOVE_LABEL","version":"20261029_00","tags":["destructiveHint","openWorldHint","deprecated"]}
+{"toolkit":"gmail","slug":"GMAIL_REPLY_TO_THREAD","version":"20261029_00","tags":["important","openWorldHint","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_SEARCH_PEOPLE","version":"20261029_00","tags":["important","openWorldHint","readOnlyHint"]}
+{"toolkit":"gmail","slug":"GMAIL_SEND_DRAFT","version":"20261029_00","tags":["important","openWorldHint","destructiveHint","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_SEND_EMAIL","version":"20261029_00","tags":["important","openWorldHint","createHint"]}
+{"toolkit":"gmail","slug":"GMAIL_SETTINGS_GET_IMAP","version":"20261029_00","tags":["readOnlyHint","openWorldHint","mail_protocols"]}
+{"toolkit":"gmail","slug":"GMAIL_SETTINGS_GET_POP","version":"20261029_00","tags":["readOnlyHint","openWorldHint","mail_protocols"]}
+{"toolkit":"gmail","slug":"GMAIL_SETTINGS_SEND_AS_GET","version":"20261029_00","tags":["readOnlyHint","openWorldHint","send_as_aliases"]}
+{"toolkit":"gmail","slug":"GMAIL_STOP_WATCH","version":"20261029_00","tags":["openWorldHint","watch","updateHint","destructiveHint"]}
+{"toolkit":"gmail","slug":"GMAIL_UNTRASH_MESSAGE","version":"20261029_00","tags":["important","openWorldHint","messages","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_UNTRASH_THREAD","version":"20261029_00","tags":["openWorldHint","important","gmail","updateHint"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_CONTACT","version":"20261029_00","tags":["important","openWorldHint","updateHint","contacts"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_DRAFT","version":"20261029_00","tags":["important","openWorldHint","updateHint","messages"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_IMAP_SETTINGS","version":"20261029_00","tags":["updateHint","openWorldHint","mail_protocols"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_LABEL","version":"20261029_00","tags":["updateHint","important","openWorldHint","labels"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_LANGUAGE_SETTINGS","version":"20261029_00","tags":["updateHint","openWorldHint","settings"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_POP_SETTINGS","version":"20261029_00","tags":["updateHint","openWorldHint","mail_protocols"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_SEND_AS","version":"20261029_00","tags":["updateHint","openWorldHint","send_as_aliases"]}
+{"toolkit":"gmail","slug":"GMAIL_UPDATE_VACATION_SETTINGS","version":"20261029_00","tags":["updateHint","openWorldHint","mailbox_automation"]}
+{"toolkit":"gmail","slug":"GMAIL_WHO_AM_I","version":"20261029_00","tags":["important","readOnlyHint","idempotentHint","auth"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_DELETE","version":"20261010_00","tags":["important","destructiveHint","idempotentHint","openWorldHint","access_control"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_GET","version":"20261010_00","tags":["important","readOnlyHint","openWorldHint","access_control"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_INSERT","version":"20261010_00","tags":["important","openWorldHint","access_control","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_LIST","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","Access Control"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_PATCH","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","Access Control"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_UPDATE","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","Access Control"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_ACL_WATCH","version":"20261010_00","tags":["openWorldHint","notifications_and_channels","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_BATCH_EVENTS","version":"20261010_00","tags":["Events Management","batch","createHint","destructiveHint","updateHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_DELETE","version":"20261010_00","tags":["important","destructiveHint","idempotentHint","openWorldHint","calendar_list"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_GET","version":"20261010_00","tags":["important","readOnlyHint","openWorldHint","calendar_list"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_INSERT","version":"20261010_00","tags":["openWorldHint","idempotentHint","important","Calendars Management","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_PATCH","version":"20261010_00","tags":["important","updateHint","idempotentHint","openWorldHint","calendar_list"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_UPDATE","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","CalendarList"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDAR_LIST_WATCH","version":"20261010_00","tags":["openWorldHint","notifications_and_channels","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDARS_DELETE","version":"20261010_00","tags":["destructiveHint","idempotentHint","openWorldHint","important","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CALENDARS_UPDATE","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","important","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CHANNELS_STOP","version":"20261010_00","tags":["important","idempotentHint","openWorldHint","notifications_and_channels","updateHint","destructiveHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CLEAR_CALENDAR","version":"20261010_00","tags":["destructiveHint","idempotentHint","openWorldHint","Calendars Management","updateHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_COLORS_GET","version":"20261010_00","tags":["readOnlyHint","openWorldHint","configuration"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CREATE_CALENDAR","version":"20261010_00","tags":["createHint","openWorldHint","important","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_CREATE_EVENT","version":"20261010_00","tags":["openWorldHint","important","Events Management","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_DELETE_EVENT","version":"20261010_00","tags":["destructiveHint","idempotentHint","openWorldHint","important","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_DUPLICATE_CALENDAR","version":"20261010_00","tags":["openWorldHint","important","Calendars Management","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_GET","version":"20261010_00","tags":["important","readOnlyHint","openWorldHint","events"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_IMPORT","version":"20261010_00","tags":["openWorldHint","events","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_INSTANCES","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","important","Instances and Queries"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_LIST","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS","version":"20261010_00","tags":["important","readOnlyHint","openWorldHint","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_MOVE","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_EVENTS_WATCH","version":"20261010_00","tags":["openWorldHint","idempotentHint","Notifications and Watching","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_FIND_EVENT","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","important","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_FIND_FREE_SLOTS","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","Instances and Queries"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_FREE_BUSY_QUERY","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","important","Instances and Queries"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_GET_CALENDAR","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","important","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_GET_CALENDAR_PROFILE","version":"20261010_00","tags":["important","readOnlyHint","openWorldHint","profile","deprecated"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_GET_CURRENT_DATE_TIME","version":"20261010_00","tags":["readOnlyHint","idempotentHint","Time and Date Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_GET_CURRENT_USER","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","profile"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_LIST_BUILDINGS","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","configuration"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_LIST_CALENDAR_RESOURCES","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_LIST_CALENDARS","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_LIST_SETTINGS","version":"20261010_00","tags":["readOnlyHint","openWorldHint","configuration","deprecated"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_PATCH_CALENDAR","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","important","Calendars Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_PATCH_EVENT","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","important","Events Management"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_QUICK_ADD","version":"20261010_00","tags":["openWorldHint","Quick Operations","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_REMOVE_ATTENDEE","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","Events Management","destructiveHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_SETTINGS_GET","version":"20261010_00","tags":["readOnlyHint","openWorldHint","configuration"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_SETTINGS_LIST","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","Settings and Configuration"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_SETTINGS_WATCH","version":"20261010_00","tags":["openWorldHint","idempotentHint","Notifications and Watching","createHint"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_SYNC_EVENTS","version":"20261010_00","tags":["readOnlyHint","idempotentHint","openWorldHint","important","Events Management","deprecated"]}
+{"toolkit":"googlecalendar","slug":"GOOGLECALENDAR_UPDATE_EVENT","version":"20261010_00","tags":["updateHint","idempotentHint","openWorldHint","important","Events Management"]}

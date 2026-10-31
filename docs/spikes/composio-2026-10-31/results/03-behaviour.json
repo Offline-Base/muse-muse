@@ -1,0 +1,529 @@
+{
+  "usageBefore": {
+    "status": 200,
+    "ms": 226,
+    "json": {
+      "entities": {
+        "sessions": {
+          "unit": "count",
+          "total_quantity": "1",
+          "event_count": 1
+        },
+        "tool_calls": {
+          "unit": "count",
+          "total_quantity": "3",
+          "event_count": 3
+        }
+      },
+      "instant_charge": "0.014964666667"
+    }
+  },
+  "scholar": {
+    "ms": 1893,
+    "resultType": "completed",
+    "error": null,
+    "instantCharge": {
+      "amount": "0.009166666667",
+      "currency": "USD",
+      "charged_by": "composio"
+    },
+    "dataBytes": 9733,
+    "containsApiKeyParam": false,
+    "containsSerpSearchUrl": true,
+    "dataShape": {
+      "results": {
+        "organic_results": [
+          "(3 items)",
+          {
+            "inline_links": {
+              "cached_page_link": "https://scholar.googleusercontent.com/scholar?q=cache:L-mWCQ... (129 chars)",
+              "cited_by": "{...}",
+              "related_pages_link": "https://scholar.google.com/scholar?q=related:L-mWCQrySxIJ:sc... (126 chars)",
+              "serpapi_cite_link": "https://serpapi.com/search.json?engine=google_scholar_cite&h... (79 chars)",
+              "serpapi_related_pages_link": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (127 chars)",
+              "versions": "{...}"
+            },
+            "link": "https://arxiv.org/abs/2412.16321",
+            "position": 1,
+            "publication_info": {
+              "authors": [
+                "(5 items)",
+                "{...}"
+              ],
+              "summary": "D Killough, TF Ji, K Zhang, Y Hu, Y Huang… - arXiv preprint ... (85 chars)"
+            },
+            "resources": [
+              "(2 items)",
+              "{...}"
+            ],
+            "result_id": "L-mWCQrySxIJ",
+            "snippet": "… culture hindering accessible development; and the lack of ... (192 chars)",
+            "title": "XR for All: Understanding Developers' Perspectives on Access... (99 chars)"
+          }
+        ],
+        "pagination": {
+          "current": 1,
+          "next": "https://scholar.google.com/scholar?start=3&q=WebXR+accessibi... (87 chars)",
+          "other_pages": {
+            "2": "https://scholar.google.com/scholar?start=3&q=WebXR+accessibi... (87 chars)",
+            "3": "https://scholar.google.com/scholar?start=6&q=WebXR+accessibi... (87 chars)",
+            "4": "https://scholar.google.com/scholar?start=9&q=WebXR+accessibi... (87 chars)",
+            "5": "https://scholar.google.com/scholar?start=12&q=WebXR+accessib... (88 chars)",
+            "6": "https://scholar.google.com/scholar?start=15&q=WebXR+accessib... (88 chars)",
+            "7": "https://scholar.google.com/scholar?start=18&q=WebXR+accessib... (88 chars)",
+            "8": "https://scholar.google.com/scholar?start=21&q=WebXR+accessib... (88 chars)",
+            "9": "https://scholar.google.com/scholar?start=24&q=WebXR+accessib... (88 chars)",
+            "10": "https://scholar.google.com/scholar?start=27&q=WebXR+accessib... (88 chars)"
+          }
+        },
+        "search_information": {
+          "organic_results_state": "Results for exact spelling",
+          "query_displayed": "WebXR accessibility",
+          "time_taken_displayed": 0.14,
+          "total_results": 3020
+        },
+        "search_metadata": {
+          "created_at": "2026-10-31 06:14:42 UTC",
+          "google_scholar_url": "https://scholar.google.com/scholar?q=WebXR+accessibility&hl=... (68 chars)",
+          "id": "6ae58752c346eddde17c9a5f",
+          "json_endpoint": "https://serpapi.com/searches/<redacted>/6ae58752c346eddde17c... (102 chars)",
+          "markdown_endpoint": "https://serpapi.com/searches/<redacted>/6ae58752c346eddde17c... (100 chars)",
+          "processed_at": "2026-10-31 06:14:42 UTC",
+          "raw_html_file": "https://serpapi.com/searches/<redacted>/6ae58752c346eddde17c... (102 chars)",
+          "status": "Success",
+          "total_time_taken": 0.99
+        },
+        "search_parameters": {
+          "engine": "google_scholar",
+          "hl": "en",
+          "num": "3",
+          "q": "WebXR accessibility"
+        },
+        "serpapi_pagination": {
+          "current": 1,
+          "next": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (108 chars)",
+          "next_link": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (108 chars)",
+          "other_pages": {
+            "2": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (108 chars)",
+            "3": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (108 chars)",
+            "4": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (108 chars)",
+            "5": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)",
+            "6": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)",
+            "7": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)",
+            "8": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)",
+            "9": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)",
+            "10": "https://serpapi.com/search.json?as_sdt=0%2C5&engine=google_s... (109 chars)"
+          }
+        }
+      }
+    }
+  },
+  "places": {
+    "ms": 1557,
+    "resultType": "completed",
+    "error": null,
+    "instantCharge": {
+      "amount": "0.009166666667",
+      "currency": "USD",
+      "charged_by": "composio"
+    },
+    "dataBytes": 42657,
+    "containsApiKeyParam": false,
+    "containsSerpSearchUrl": true,
+    "dataShape": {
+      "results": {
+        "local_results": [
+          "(20 items)",
+          {
+            "address": "133 O'Farrell St, San Francisco, CA 94102",
+            "country": "United States",
+            "data_cid": "968646744073608992",
+            "data_id": "0x8085808f4af68c3b:0xd715314e5589f20",
+            "description": "Gourmet roasts in a cool coffee shop. Organic, micro-roasted... (122 chars)",
+            "extensions": [
+              "(1 items)",
+              "{...}"
+            ],
+            "gps_coordinates": {
+              "latitude": 37.786417799999995,
+              "longitude": -122.40730429999999
+            },
+            "hours": "Closed · Opens 7 AM Sat",
+            "open_state": "Closed · Opens 7 AM Sat",
+            "operating_hours": {
+              "friday": "7 AM–7 PM",
+              "monday": "7 AM–7 PM",
+              "saturday": "7 AM–7 PM",
+              "sunday": "7 AM–7 PM",
+              "thursday": "7 AM–7 PM",
+              "tuesday": "7 AM–7 PM",
+              "wednesday": "7 AM–7 PM"
+            },
+            "order_online": "https://www.google.com/searchviewer/42?cvd=CLw_EicKJeICIjIgE... (294 chars)",
+            "phone": "(415) 374-2000",
+            "photos_link": "https://serpapi.com/search.json?data_id=0x8085808f4af68c3b%3... (110 chars)",
+            "place_id": "ChIJO4z2So-AhYARIJ9Y5RRTcQ0",
+            "place_id_search": "https://serpapi.com/search.json?engine=google_maps&google_do... (118 chars)",
+            "position": 1,
+            "provider_id": "/g/11b6gdw48c",
+            "rating": 4.5,
+            "reviews": 1669,
+            "reviews_link": "https://serpapi.com/search.json?data_id=0x8085808f4af68c3b%3... (111 chars)",
+            "serpapi_thumbnail": "https://serpapi.com/images/url/-AkdNHicHcRJDoIwFADQE1UQBIfER... (287 chars)",
+            "thumbnail": "https://lh3.googleusercontent.com/grass-cs/AABkmLfQ6yje-f-Bg... (198 chars)",
+            "title": "Caffe Central",
+            "type": "Coffee shop",
+            "types": [
+              "(6 items)",
+              "Coffee shop"
+            ],
+            "website": "http://www.caffecentral.com/"
+          }
+        ],
+        "search_information": {
+          "local_results_state": "Results for exact spelling",
+          "query_displayed": "coffee shops near Union Square San Francisco"
+        },
+        "search_metadata": {
+          "created_at": "2026-10-31 06:14:44 UTC",
+          "google_maps_url": "https://www.google.com/maps/search/coffee+shops+near+Union+S... (112 chars)",
+          "id": "6ae58754f479a3c5c5fddf2e",
+          "json_endpoint": "https://serpapi.com/searches/<redacted>/6ae58754f479a3c5c5fd... (102 chars)",
+          "markdown_endpoint": "https://serpapi.com/searches/<redacted>/6ae58754f479a3c5c5fd... (100 chars)",
+          "prettify_html_file": "https://serpapi.com/searches/<redacted>/6ae58754f479a3c5c5fd... (106 chars)",
+          "processed_at": "2026-10-31 06:14:44 UTC",
+          "raw_html_file": "https://serpapi.com/searches/<redacted>/6ae58754f479a3c5c5fd... (102 chars)",
+          "status": "Success",
+          "total_time_taken": 1.1
+        },
+        "search_parameters": {
+          "engine": "google_maps",
+          "google_domain": "google.com",
+          "hl": "en",
+          "q": "coffee shops near Union Square San Francisco",
+          "type": "search"
+        },
+        "serpapi_pagination": {
+          "next": "https://serpapi.com/search.json?engine=google_maps&google_do... (149 chars)"
+        }
+      }
+    }
+  },
+  "events": {
+    "ms": 10390,
+    "resultType": "completed",
+    "error": null,
+    "instantCharge": {
+      "amount": "0.009166666667",
+      "currency": "USD",
+      "charged_by": "composio"
+    },
+    "dataBytes": 59548,
+    "containsApiKeyParam": false,
+    "containsSerpSearchUrl": true,
+    "dataShape": {
+      "ai_overview": {
+        "page_token": "iyuCZXiczVZbcuI4FN3AbGP8kwQwb1Ll6pJkHk4gtCE0Sf-4jCxkJzYCy8SQ... (1410 chars)",
+        "serpapi_link": "https://serpapi.com/search.json?engine=google_ai_overview&pa... (1479 chars)"
+      },
+      "organic_results": [
+        "(9 items)",
+        {
+          "about_page_link": "https://www.google.com/search/about-this-result?origin=www.g... (1586 chars)",
+          "about_page_serpapi_link": "https://serpapi.com/search.json?engine=google_about_this_res... (1611 chars)",
+          "about_this_result": {
+            "languages": [
+              "(1 items)",
+              "en"
+            ],
+            "regions": [
+              "(1 items)",
+              "US"
+            ],
+            "source": {
+              "description": "Bienvenue sur le groupe WebXR Francophone, un espace dédié a... (158 chars)",
+              "icon": "https://serpapi.com/searches/<redacted>/images/YspznQZmaz7IU... (129 chars)",
+              "source_info_link": "https://www.meetup.com/fr-FR/webxrfr/"
+            }
+          },
+          "displayed_link": "https://www.meetup.com › webxrfr",
+          "favicon": "https://serpapi.com/searches/<redacted>/images/YspznQZmaz7IU... (108 chars)",
+          "link": "https://www.meetup.com/fr-FR/webxrfr/",
+          "position": 1,
+          "read_more_link": "https://www.google.com/goto?url=CAESqAEB6zswFe7_qchhYoxnsTq7... (263 chars)",
+          "redirect_link": "https://www.google.com/url?sa=t&source=web&rct=j&opi=8997844... (254 chars)",
+          "snippet": "Bienvenue sur le groupe WebXR Francophone, un espace dédié a... (158 chars)",
+          "snippet_highlighted_words": [
+            "(1 items)",
+            "des technologies immersives du web"
+          ],
+          "source": "Meetup",
+          "title": "WebXR Francophone"
+        }
+      ],
+      "pagination": {
+        "current": 1,
+        "next": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)",
+        "other_pages": {
+          "2": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)",
+          "3": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)",
+          "4": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)",
+          "5": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)",
+          "6": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&s... (349 chars)"
+        }
+      },
+      "related_searches": [
+        "(2 items)",
+        {
+          "block_position": 1,
+          "link": "https://www.google.com/search?sca_esv=d4c7325171e763c8&gl=us... (212 chars)",
+          "query": "Webxr meetup san francisco tickets",
+          "serpapi_link": "https://serpapi.com/search.json?device=desktop&engine=google... (134 chars)"
+        }
+      ],
+      "search_information": {
+        "organic_results_state": "Results for exact spelling",
+        "query_displayed": "WebXR meetup San Francisco",
+        "time_taken_displayed": 0.16,
+        "total_results": 55
+      },
+      "search_metadata": {
+        "created_at": "2026-10-31 06:14:45 UTC",
+        "google_url": "https://www.google.com/search?q=WebXR+meetup+San+Francisco&o... (113 chars)",
+        "id": "6ae587553eba3d11b80a7b9d",
+        "json_endpoint": "https://serpapi.com/searches/<redacted>/6ae587553eba3d11b80a... (102 chars)",
+        "markdown_endpoint": "https://serpapi.com/searches/<redacted>/6ae587553eba3d11b80a... (100 chars)",
+        "pixel_position_endpoint": "https://serpapi.com/searches/<redacted>/6ae587553eba3d11b80a... (122 chars)",
+        "processed_at": "2026-10-31 06:14:45 UTC",
+        "raw_html_file": "https://serpapi.com/searches/<redacted>/6ae587553eba3d11b80a... (102 chars)",
+        "status": "Success",
+        "total_time_taken": 9.72
+      },
+      "search_parameters": {
+        "device": "desktop",
+        "engine": "google",
+        "google_domain": "google.com",
+        "q": "WebXR meetup San Francisco"
+      },
+      "serpapi_pagination": {
+        "current": 1,
+        "next": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+        "next_link": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+        "other_pages": {
+          "2": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+          "3": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+          "4": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+          "5": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)",
+          "6": "https://serpapi.com/search.json?device=desktop&engine=google... (135 chars)"
+        }
+      }
+    }
+  },
+  "firecrawl_bad_url": {
+    "ms": 450,
+    "resultType": "failed",
+    "error": "Invalid request data provided\n- Value error, The 'url' parameter must be a valid URL starting with 'http://' or 'https://'. Received: 'not a url'",
+    "instantCharge": null,
+    "dataBytes": 178,
+    "containsApiKeyParam": false,
+    "containsSerpSearchUrl": false,
+    "dataShape": {
+      "message": "Invalid request data provided\n- Value error, The 'url' param... (145 chars)",
+      "status_code": 400
+    }
+  },
+  "not_enabled": {
+    "ms": 185,
+    "threw": {
+      "name": "Error",
+      "status": 400,
+      "message": "400 {\"error\":{\"message\":\"[Session Restriction] Tool 'TAVILY_EXTRACT' is not enabled for this session. You cannot execute this tool.\",\"code\":4310,\"slug\":\"ToolRouterV2_ToolNotInEnabledList\",\"status\":400,\"request_id\":\"a5f2f401-f3c2-4e02-a566-ac68c4e286e7\",\"suggested_fix\":\"\"}}",
+      "body": {
+        "error": {
+          "message": "[Session Restriction] Tool 'TAVILY_EXTRACT' is not enabled for this session. You cannot execute this tool.",
+          "code": 4310,
+          "slug": "ToolRouterV2_ToolNotInEnabledList",
+          "status": 400,
+          "request_id": "a5f2f401-f3c2-4e02-a566-ac68c4e286e7",
+          "suggested_fix": ""
+        }
+      }
+    }
+  },
+  "sessionExecuteWithBogusVersion": {
+    "status": 200,
+    "ms": 541,
+    "keys": [
+      "data",
+      "error",
+      "log_id",
+      "instant_charge",
+      "result_type"
+    ],
+    "error": null,
+    "instant_charge": {
+      "amount": "0.000798",
+      "currency": "USD",
+      "charged_by": "composio"
+    }
+  },
+  "directExecutePinned": {
+    "status": 200,
+    "ms": 400,
+    "keys": [
+      "data",
+      "successful",
+      "error",
+      "log_id"
+    ],
+    "successful": true,
+    "error": null,
+    "log_id": "log_GJkJg29tgg8S",
+    "dataKeys": [
+      "data",
+      "success"
+    ]
+  },
+  "sessionReuse": {
+    "ok": true,
+    "before": 1,
+    "after": 2,
+    "updatedKeys": [
+      "user_id",
+      "toolkits",
+      "instant",
+      "manage_connections",
+      "tools",
+      "tags",
+      "workbench",
+      "multi_account",
+      "preload",
+      "search",
+      "execute"
+    ]
+  },
+  "ownerSession": {
+    "tools": [
+      "GMAIL_DELETE_DRAFT",
+      "GMAIL_FETCH_EMAILS",
+      "TAVILY_SEARCH"
+    ],
+    "warnings": []
+  },
+  "gmail_not_connected": {
+    "ms": 198,
+    "threw": {
+      "name": "Error",
+      "status": 400,
+      "message": "400 {\"error\":{\"message\":\"No active connection found for toolkit(s) 'gmail' in this session.\",\"code\":4302,\"slug\":\"ToolRouterV2_NoActiveConnection\",\"status\":400,\"request_id\":\"1a4d834e-1659-48fa-8cf8-f20da0332b95\",\"suggested_fix\":\"\"}}",
+      "body": {
+        "error": {
+          "message": "No active connection found for toolkit(s) 'gmail' in this session.",
+          "code": 4302,
+          "slug": "ToolRouterV2_NoActiveConnection",
+          "status": 400,
+          "request_id": "1a4d834e-1659-48fa-8cf8-f20da0332b95",
+          "suggested_fix": ""
+        }
+      }
+    }
+  },
+  "destructive_blocked": {
+    "ms": 207,
+    "threw": {
+      "name": "Error",
+      "status": 400,
+      "message": "400 {\"error\":{\"message\":\"No active connection found for toolkit(s) 'gmail' in this session.\",\"code\":4302,\"slug\":\"ToolRouterV2_NoActiveConnection\",\"status\":400,\"request_id\":\"8752bbae-d2e2-4aed-922a-ebfae55e62bf\",\"suggested_fix\":\"\"}}",
+      "body": {
+        "error": {
+          "message": "No active connection found for toolkit(s) 'gmail' in this session.",
+          "code": 4302,
+          "slug": "ToolRouterV2_NoActiveConnection",
+          "status": 400,
+          "request_id": "8752bbae-d2e2-4aed-922a-ebfae55e62bf",
+          "suggested_fix": ""
+        }
+      }
+    }
+  },
+  "toolkitsStatus": {
+    "items": [
+      "(1 items)",
+      {
+        "slug": "gmail",
+        "name": "Gmail",
+        "logo": "https://logos.composio.dev/api/gmail",
+        "isNoAuth": false,
+        "connection": {
+          "isActive": false,
+          "authConfig": null
+        }
+      }
+    ],
+    "totalPages": 1
+  },
+  "connectLink": {
+    "ok": true,
+    "ms": 483,
+    "json": {
+      "id": "ca_7x3L8nxIz4E1",
+      "status": "INITIATED",
+      "redirectUrl": "https://connect.composio.dev/link/<redacted>"
+    },
+    "host": "connect.composio.dev",
+    "pathPrefix": "/link",
+    "queryKeys": [],
+    "idPrefix": "ca_",
+    "pageStatus": 307,
+    "pageLocationHost": "dashboard.composio.dev",
+    "activeAccounts": 0,
+    "pendingAccount": [
+      {
+        "status": "INITIALIZING",
+        "toolkit": "gmail",
+        "keys": [
+          "id",
+          "authConfig",
+          "wordId",
+          "alias",
+          "data",
+          "status",
+          "statusReason",
+          "toolkit",
+          "state",
+          "testRequestEndpoint",
+          "isDisabled",
+          "createdAt",
+          "updatedAt",
+          "experimental"
+        ],
+        "authConfig": {
+          "isComposioManaged": true,
+          "isDisabled": false
+        }
+      }
+    ],
+    "deleted": {
+      "success": true
+    }
+  },
+  "usageAfter": {
+    "status": 200,
+    "ms": 152,
+    "json": {
+      "entities": {
+        "sessions": {
+          "unit": "count",
+          "total_quantity": "3",
+          "event_count": 3
+        },
+        "tool_calls": {
+          "unit": "count",
+          "total_quantity": "8",
+          "event_count": 8
+        }
+      },
+      "instant_charge": "0.044060666668"
+    }
+  }
+}

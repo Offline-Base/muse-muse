@@ -1,0 +1,15 @@
+2026-10-31T06:12:42.204Z TAVILY_SEARCH 1407ms {"amount":"0.005000","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:12:44.486Z SERPAPI_NEWS_SEARCH 2278ms {"amount":"0.009166666667","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:12:44.957Z FIRECRAWL_SCRAPE 469ms {"amount":"0.000798","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:14:43.824Z SERPAPI_SCHOLAR_SEARCH scholar 1893ms {"amount":"0.009166666667","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:14:45.385Z SERPAPI_GOOGLE_MAPS_SEARCH places 1557ms {"amount":"0.009166666667","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:14:55.776Z SERPAPI_EVENT_SEARCH events 10390ms {"amount":"0.009166666667","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:14:56.228Z FIRECRAWL_SCRAPE firecrawl_bad_url 450ms null failed
+2026-10-31T06:14:56.416Z TAVILY_EXTRACT not_enabled threw Error
+2026-10-31T06:14:56.960Z FIRECRAWL_SCRAPE session-with-version status 200 {"amount":"0.000798","currency":"USD","charged_by":"composio"}
+2026-10-31T06:14:57.363Z FIRECRAWL_SCRAPE direct-pinned status 200 null
+2026-10-31T06:14:58.947Z GMAIL_FETCH_EMAILS gmail_not_connected threw Error
+2026-10-31T06:14:59.158Z GMAIL_DELETE_DRAFT destructive_blocked threw Error
+2026-10-31T06:15:52.394Z TAVILY_SEARCH tag-filter {"amount":"0.005000","currency":"USD","charged_by":"composio"} completed
+2026-10-31T06:23:39.004Z FIRECRAWL_SCRAPE direct-older-version status 403 charge unknown
+2026-10-31T06:23:41.546Z SERPAPI_EVENT_SEARCH events-structured 2220ms {"amount":"0.009166666667","currency":"USD","charged_by":"composio"} completed

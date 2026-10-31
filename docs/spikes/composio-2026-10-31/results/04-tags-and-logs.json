@@ -1,0 +1,85 @@
+{
+  "tagFilter": {
+    "toolsListed": [
+      "TAVILY_EXTRACT",
+      "TAVILY_SEARCH"
+    ],
+    "execute": {
+      "resultType": "completed",
+      "instantCharge": {
+        "amount": "0.005000",
+        "currency": "USD",
+        "charged_by": "composio"
+      },
+      "error": null
+    }
+  },
+  "logs": {
+    "sessionCall": {
+      "status": 200,
+      "keys": [
+        "id",
+        "timestamp",
+        "type",
+        "status",
+        "level",
+        "metadata",
+        "metrics",
+        "parent",
+        "timings",
+        "context",
+        "source",
+        "data"
+      ],
+      "metadata": {
+        "user_id": "spike_c0_public",
+        "connected_account_id": "",
+        "credential_source": "instant_account",
+        "instant_charge": "0.000798",
+        "toolkit": {
+          "slug": "firecrawl",
+          "icon": "https://logos.composio.dev/api/firecrawl"
+        },
+        "tool": {
+          "slug": "FIRECRAWL_SCRAPE",
+          "version": "20261030_00",
+          "is_deprecated": false
+        }
+      },
+      "charge": "0.000798"
+    },
+    "directPinnedCall": {
+      "status": 200,
+      "keys": [
+        "id",
+        "timestamp",
+        "type",
+        "status",
+        "level",
+        "metadata",
+        "metrics",
+        "parent",
+        "timings",
+        "context",
+        "source",
+        "data"
+      ],
+      "metadata": {
+        "user_id": "spike_c0_public",
+        "connected_account_id": "",
+        "credential_source": "instant_account",
+        "instant_charge": "0.000798",
+        "toolkit": {
+          "slug": "firecrawl",
+          "icon": "https://logos.composio.dev/api/firecrawl"
+        },
+        "tool": {
+          "slug": "FIRECRAWL_SCRAPE",
+          "version": "20261030_00",
+          "is_deprecated": false
+        }
+      },
+      "charge": "0.000798"
+    }
+  }
+}
