@@ -149,10 +149,13 @@ Router finding for Ethan: a request headed outside the class that both the label
 
 **14:05** Six attack findings closed and merged (RED-F3a, F3b, F5c, F6b, F8, F10a): xfailed cases 47 to 16, full suite 3827 passed, 6 skipped, 16 xfailed. Keywords row on fresh_200_b unchanged, 64.5%, but the new patterns match almost nothing in the development sets, so only the hand-written negative tests exercise them. Over-refusal risks are in the merge's report and THREAT_MODEL's residual list. LFM baseline on this code: 82.0% on fresh_200_b (164 of 200, 76 asks, 28 needless, 2 missed, 3 over-refusals, 0 leaks) and 81.0% on tasks (27 asks, 0 leaks), eval/reports/matrix_baseline_attack_fixes.md. The change from 82.5% and 82.0% is within the runs' label noise. With `CHECKER_THREADS=4` the server sampled at 123 to 140% CPU during that run, against about 430 to 500% with 10 threads during the study, on a different workload.
 
+**14:12** Base i1-IQ1_S downloaded, sha256 matches Hugging Face, and the header check passed: 1.874 bits per weight measured, not the 1.6 we had been saying, 27.85 B parameters (eval/reports/model_file_base_iq1s.md, no model run). Started it with LFM on side ports. The laptop got too hot, Ethan stopped the probe before any result was seen, and both servers were stopped. Ethan's instruction: do not run Muse Glimmer locally. No Glimmer reply has been measured on our server. The Glimmer steps in SCORE_PLAN that run on this Mac need another machine or a different plan; that is Ethan's call.
+
 ## Open items
 
 - Ethan: which mode the routing tune targets; whether to hand over stage 2 IQ1_S early.
-- Persona study: on Glimmer once the file lands, sized from its speed test.
+- Ethan: where Glimmer gets measured and filmed, since it no longer runs on the laptop.
+- Persona study: on Glimmer, on that machine, sized from its speed test.
 - Ethan: restart the live app (it is down); read the Oct 28 History row before deleting it; what the fine-tune trained on (decides sealing fresh_200_c or the templated set); restart window to move the live app to this code; Always approve is on in the live app.
 - Measure how often grading is refused for a never-share word in the model's own text.
 - Before submitting: check the `mlx-community/sam3.1-bf16` license in THIRD_PARTY_NOTICES.md.

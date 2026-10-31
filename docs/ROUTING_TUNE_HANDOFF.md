@@ -20,7 +20,7 @@ Each row is `{"messages": [system, user, assistant]}`. `manifest.json` has count
 - **route.jsonl, for `--mode decide` or `tighten`.** The assistant replies with only `{"decision": "...", "reason": "..."}`. The decision is one of share_tagged, share_summary, ask_user or refuse.
 - **labels.jsonl, for `--mode labels`.** The assistant replies with only `{"topics": [...]}`, using the names listed in the system prompt.
 
-Recommendation: train both, and weigh labels at least as heavily. On LFM, the policy deciding on the model's labels scored 81.5% and the model deciding scored 43.0%, on the same set in one run (eval/reports/matrix_lfm_loosen_default.md). Labels are a small closed-set task, which suits a roughly 1.6-bit file, and the code's floors and policy still decide.
+Recommendation: train both, and weigh labels at least as heavily. On LFM, the policy deciding on the model's labels scored 81.5% and the model deciding scored 43.0%, on the same set in one run (eval/reports/matrix_lfm_loosen_default.md). Labels are a small closed-set task, which suits a low-bit file (the base i1-IQ1_S measures 1.874 bits per weight), and the code's floors and policy still decide.
 
 The candidate mode for the pre-registered claim is "model decides" unless changed. It can be switched once, in the Amendments of eval/reports/glimmer_prereg.md, before any tuned row runs. Tell the Muse Privacy session which mode the tune targets before handing over the file.
 
