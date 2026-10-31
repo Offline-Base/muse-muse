@@ -87,7 +87,7 @@ import {
 } from "@/lib/sandbox/paths";
 import { builderNetworkPolicy, placeholderKey, publicHost, SNAPSHOT_POLICY } from "@/lib/sandbox/policy";
 import { q, readBytes, sh, tailText, writeRunner } from "@/lib/sandbox/shell";
-import { applyLookScript, MUSE_APP_OVERLAY, OVERLAYS_DIR } from "@/lib/sandbox/look";
+import { applyLookScript, LOOK_CSS, MUSE_APP_OVERLAY, OVERLAYS_DIR, withLookColors } from "@/lib/sandbox/look";
 import { installTargets, makeDirs, readTargetFiles, readTemplateFiles, setupBuilder } from "@/lib/sandbox/setup";
 import {
   activeTargetsScript,
@@ -403,7 +403,7 @@ export interface ProvisionInput {
   gatewayUrl: string;
   /** MUSE_APP_LOOK: put the muse-app look in before anything from the user (applyLook). Off leaves the template as it is. */
   museAppLook?: boolean;
-  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). */
+  /** Files beyond the template, by path in the product, for a brief's targets (lib/native/template-files.ts). With the look, in its colors (withLookColors). */
   extraFiles?: Array<{ path: string; content: string }>;
   /** Where the product runs (briefTargets). Nothing, or web alone, leaves the sandbox exactly as the template made it. */
   targets?: readonly string[];
@@ -516,7 +516,7 @@ export async function provisionSandbox(input: ProvisionInput): Promise<{ sandbox
   ]);
   await writeBatched(sandbox, [
     ...downloaded,
-    ...(await productWrites(sandbox, input.extraFiles ?? [])),
+    ...(await productWrites(sandbox, input.museAppLook ? withLookColors(input.extraFiles ?? []) : (input.extraFiles ?? []))),
     { path: `${PRODUCT_DIR}/brief.md`, content: input.promptMarkdown },
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(name, input.gatewayUrl, input.buildToken) },
   ]);
@@ -530,7 +530,10 @@ export async function reopenSandbox(input: {
   buildToken: string;
   gatewayUrl: string;
   newReferences: Reference[];
-  /** Written only where missing: a product from before its target's files, and never over what Muse Code changed. */
+  /**
+   * Written only where missing: a product from before its target's files, and never over what Muse Code changed. A
+   * product with the muse-app look (its LOOK_CSS) gets them in the look's colors, whatever the flag says now.
+   */
   extraFiles?: Array<{ path: string; content: string }>;
 }): Promise<void> {
   const sandbox = await openSandbox(input.sandboxName);
@@ -541,9 +544,10 @@ export async function reopenSandbox(input: {
   const downloaded = await download(input.newReferences.map((r) => ({ dir: "inspo" as const, fileName: r.fileName, url: r.url })));
   const present = await Promise.all((input.extraFiles ?? []).map((f) => sandbox.readFileToBuffer({ path: productPath(f.path) }).catch(() => null)));
   const missing = (input.extraFiles ?? []).filter((_, i) => !present[i]);
+  const look = missing.length > 0 && Boolean(await sandbox.readFileToBuffer({ path: productPath(LOOK_CSS) }).catch(() => null));
   await writeBatched(sandbox, [
     ...downloaded,
-    ...(await productWrites(sandbox, missing)),
+    ...(await productWrites(sandbox, look ? withLookColors(missing) : missing)),
     { path: `${PRODUCT_DIR}/.env.local`, content: envLocal(input.sandboxName, input.gatewayUrl, input.buildToken) },
   ]);
 }

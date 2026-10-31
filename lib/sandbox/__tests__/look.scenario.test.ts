@@ -9,10 +9,13 @@
  */
 import assert from "node:assert/strict";
 import { after, before, beforeEach, describe, it, mock } from "node:test";
+import { NATIVE_TEMPLATE_FILES } from "@/lib/native/template-source";
 import { BUILDER_MARKER } from "@/lib/sandbox/paths";
 
 /** Everything the fake sandbox was asked to do, in order. */
 let events: Array<{ kind: "run"; script: string; sudo: boolean; cwd?: string } | { kind: "write"; paths: string[] }> = [];
+/** What each written file holds, by its path in the sandbox. */
+let contents: Record<string, string> = {};
 /** Whether the snapshot holds the muse-app overlay. */
 let hasOverlay = true;
 
@@ -25,8 +28,9 @@ const fakeSandbox = {
     const probe = script.startsWith("[ -f ") && script.includes("/targets/muse-app/deps.json");
     return { exitCode: probe && !hasOverlay ? 1 : 0, stdout: async () => "", stderr: async () => "" };
   },
-  writeFiles: async (batch: Array<{ path: string }>) => {
+  writeFiles: async (batch: Array<{ path: string; content?: string | Buffer }>) => {
     events.push({ kind: "write", paths: batch.map((f) => f.path) });
+    for (const f of batch) contents[f.path] = String(f.content ?? "");
   },
   readFileToBuffer: async ({ path }: { path: string }) => (path === BUILDER_MARKER ? Buffer.from("{}") : null),
 };
@@ -55,6 +59,7 @@ after(() => {
 
 beforeEach(() => {
   events = [];
+  contents = {};
   hasOverlay = true;
   process.env.MODEL_API_KEY = "test-model-key";
   process.env.BUILDER_SNAPSHOT_ID = "snap_test";
@@ -62,7 +67,7 @@ beforeEach(() => {
   delete process.env.VERCEL;
 });
 
-const provision = (museAppLook?: boolean, targets?: string[]) =>
+const provision = (museAppLook?: boolean, targets?: string[], extraFiles: Array<{ path: string; content: string }> = [{ path: "lib/native/bridge.ts", content: "export {};\n" }]) =>
   builder.provisionSandbox({
     buildId: "b1",
     productId: "3f2a9c1e-77b0-4d2e-9f00-0123456789ab",
@@ -73,7 +78,7 @@ const provision = (museAppLook?: boolean, targets?: string[]) =>
     buildToken: "mm_build_x",
     gatewayUrl: "https://g",
     ...(museAppLook === undefined ? {} : { museAppLook }),
-    ...(targets ? { targets, extraFiles: [{ path: "lib/native/bridge.ts", content: "export {};\n" }] } : {}),
+    ...(targets ? { targets, extraFiles } : {}),
   });
 
 const runs = () => events.flatMap((e) => (e.kind === "run" ? [e] : []));
@@ -133,5 +138,21 @@ describe("provisionSandbox and the muse-app look", { skip: canMock ? false : "ne
     const install = events.findIndex((e) => e.kind === "run" && e.sudo && e.script.includes("cp -R"));
     const apply = events.findIndex((e) => e.kind === "run" && isApply(e.script));
     assert.ok(copied < install && install < apply && apply < userFilesAt(), "copy, install as root, apply, then the user's files");
+  });
+
+  it("writes a phone product's manifest and icon in the look's colors, and in meta-ui's with the flag off", async () => {
+    const native = NATIVE_TEMPLATE_FILES.map((f) => ({ ...f }));
+    const manifest = "/vercel/app/app/manifest.ts";
+    const icon = "/vercel/app/lib/native/app-icon.tsx";
+    await provision(true, ["web", "phone"], native);
+    assert.match(contents[manifest]!, /background_color: "#ffffff"/);
+    assert.match(contents[manifest]!, /theme_color: "#ffffff"/);
+    assert.match(contents[icon]!, /background: "#0064d4"/);
+    assert.equal(contents["/vercel/app/lib/native/bridge.ts"], native.find((f) => f.path === "lib/native/bridge.ts")!.content, "other files as they are");
+    for (const flag of [undefined, false]) {
+      contents = {};
+      await provision(flag, ["web", "phone"], native);
+      for (const f of native) assert.equal(contents[`/vercel/app/${f.path}`], f.content, `${f.path} with the flag ${flag}`);
+    }
   });
 });

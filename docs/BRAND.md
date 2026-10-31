@@ -499,8 +499,18 @@ build's to change. Verify reads none of these files.
   change prompts keep whichever look the product has: muse-app-ui when it's there, otherwise meta-ui.
 - The judge is told both house styles are expected, since products built before the flag keep meta-ui. Its rules on
   Meta's logos and marks are unchanged.
+- A phone or desktop product's own files (`app/manifest.ts` and the home screen icon in `lib/native/app-icon.tsx`) come
+  in the look's colors (`withLookColors`): a white splash and title bar, as the overlay's `themeColor`, and the icon on
+  `#0064d4`, the look's action blue, in place of meta-ui's `#f0f2f5` and `#0866ff`. A refine that adds them to a product
+  with `app/muse-app.css` does the same, whatever the flag says by then.
 
 With the flag off, every prompt and the judge are byte-identical to the goldens, and no overlay is applied.
+
+**Left in meta-ui on purpose: the VR panels.** The VR overlay's in-headset panels
+(`template/targets/vr/files/components/xr/Panel.tsx`) keep their colors with the look on: a white panel, `#0064e0`
+buttons and a `#a033ff` answer border. They are already a white surface with one blue for actions, 12 RGB steps from the
+look's `#0064d4`, and the panels are drawn in 3D by uikit, so they can't take the CSS tokens. Changing them means a
+look-aware VR overlay applied after the look, a provisioning change with no visible gain in a headset.
 
 **Once a muse-app product exists, don't turn the flag back off.** The judge and the fix and change prompts read the
 flag when they run, not the look the product was built with ("Look: muse-app" in its history). With the flag off again,

@@ -444,6 +444,18 @@ describe("product sandboxes", { skip: canMock ? false : "needs --experimental-te
       await builder.reopenSandbox({ sandboxName: "product-bird-finder", productId: PRODUCT, buildToken: "mm_build_x", gatewayUrl: "https://g", newReferences: [], extraFiles });
       assert.deepEqual(written.map((w) => w.path), ["/vercel/app/.agents/skills/muse-native/SKILL.md", "/vercel/app/.env.local"]);
     });
+
+    it("on a reopen, a product with the muse-app look gets the missing ones in its colors, and one without in meta-ui's", async () => {
+      const manifest = { path: "app/manifest.ts", content: 'background_color: "#f0f2f5",\n    theme_color: "#0866ff",' };
+      const reopenWith = () =>
+        builder.reopenSandbox({ sandboxName: "product-bird-finder", productId: PRODUCT, buildToken: "mm_build_x", gatewayUrl: "https://g", newReferences: [], extraFiles: [manifest] });
+      await reopenWith();
+      assert.equal(written.find((w) => w.path === "/vercel/app/app/manifest.ts")?.text, manifest.content);
+      written = [];
+      files["/vercel/app/app/muse-app.css"] = ":root { --accent: #0064d4; }";
+      await reopenWith();
+      assert.equal(written.find((w) => w.path === "/vercel/app/app/manifest.ts")?.text, 'background_color: "#ffffff",\n    theme_color: "#ffffff",');
+    });
   });
 
   it("refuses a sandbox tagged with another product before touching it", async () => {

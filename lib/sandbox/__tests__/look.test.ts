@@ -11,7 +11,8 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { applyLookScript, LOOK_COMMIT, MUSE_APP_OVERLAY, OVERLAYS_DIR, restoreLookFilesScript } from "@/lib/sandbox/look";
+import { NATIVE_TEMPLATE_FILES } from "@/lib/native/template-source";
+import { applyLookScript, LOOK_COMMIT, LOOK_CSS, LOOK_NATIVE_COLORS, MUSE_APP_OVERLAY, OVERLAYS_DIR, restoreLookFilesScript, withLookColors } from "@/lib/sandbox/look";
 import { readTargetFiles } from "@/lib/sandbox/setup";
 import { installTargetsScript } from "@/lib/sandbox/tasks";
 
@@ -185,5 +186,46 @@ describe("restoreLookFilesScript", () => {
     const p = product();
     assert.equal(bash(applyLookScript(dir), { cwd: p.dir, env: p.env }).code, 0);
     assert.deepEqual(Object.values(bash(restoreLookFilesScript(path.join(tmp, "nowhere")), { cwd: p.dir, env: p.env })), [0, "", ""]);
+  });
+});
+
+describe("withLookColors", () => {
+  const overlayFile = (f: string) => readFileSync(path.join("template/targets", MUSE_APP_OVERLAY, "files", f), "utf8");
+
+  it("finds every meta-ui color it swaps, once, in the native template", () => {
+    for (const c of LOOK_NATIVE_COLORS) {
+      const file = NATIVE_TEMPLATE_FILES.find((f) => f.path === c.path);
+      assert.ok(file, c.path);
+      assert.equal(file.content.split(c.from).length - 1, 1, `${c.path}: ${c.from}`);
+    }
+  });
+
+  it("leaves no meta-ui color in the native files, and changes nothing else", () => {
+    const swapped = withLookColors(NATIVE_TEMPLATE_FILES);
+    assert.deepEqual(swapped.map((f) => f.path), NATIVE_TEMPLATE_FILES.map((f) => f.path));
+    for (const [i, f] of swapped.entries()) {
+      assert.doesNotMatch(f.content, /#0866ff|#f0f2f5/i, f.path);
+      if (!LOOK_NATIVE_COLORS.some((c) => c.path === f.path)) assert.equal(f, NATIVE_TEMPLATE_FILES[i], `${f.path} is the same object`);
+    }
+    const manifest = swapped.find((f) => f.path === "app/manifest.ts")!.content;
+    const icon = swapped.find((f) => f.path === "lib/native/app-icon.tsx")!.content;
+    assert.match(manifest, /background_color: "#ffffff",\n {4}theme_color: "#ffffff",/);
+    assert.match(icon, /background: "#0064d4",/);
+  });
+
+  it("uses the overlay's own values: its light themeColor and its action blue", () => {
+    const light = overlayFile("app/layout.tsx").match(/media: "\(prefers-color-scheme: light\)", color: "(#[0-9a-f]{6})"/)?.[1];
+    const accent = overlayFile(LOOK_CSS).match(/--accent: (#[0-9a-f]{6});/)?.[1];
+    assert.ok(light && accent);
+    const to = (from: string) => LOOK_NATIVE_COLORS.find((c) => c.from.startsWith(from))!.to;
+    assert.equal(to("background_color"), `background_color: "${light}"`);
+    assert.equal(to("theme_color"), `theme_color: "${light}"`);
+    assert.equal(to("background:"), `background: "${accent}"`);
+  });
+
+  it("leaves a file it doesn't know, or text it doesn't find, as it is", () => {
+    const other = { path: "app/page.tsx", content: 'background: "#0866ff"' };
+    const drifted = { path: "app/manifest.ts", content: 'theme_color: "#123456"' };
+    assert.deepEqual(withLookColors([other, drifted]), [other, drifted]);
   });
 });
