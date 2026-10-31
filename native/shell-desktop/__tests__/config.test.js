@@ -2,10 +2,19 @@ const assert = require("node:assert/strict");
 const { describe, it } = require("node:test");
 const { join } = require("node:path");
 
-const { ConfigError, configPath, isOpenableUrl, loadConfig, parseConfig } = require("../src/config");
+const { ConfigError, configPath, isOpenableUrl, loadConfig, parseConfig, profileFolderFor } = require("../src/config");
 
 const GOOD = { name: "Dinner Split", url: "https://dinner.vercel.app/start?x=1", shellVersion: "1.0.0" };
 const PATHS = { isPackaged: true, resourcesPath: "/app/resources", appPath: "/app/resources/app.asar" };
+
+describe("profileFolderFor", () => {
+  it("gives each product its own stable folder, safe in a path", () => {
+    const a = profileFolderFor("https://a.vercel.app");
+    assert.match(a, /^[0-9a-f]{16}$/);
+    assert.equal(profileFolderFor("https://a.vercel.app"), a);
+    assert.notEqual(profileFolderFor("https://b.vercel.app"), a);
+  });
+});
 
 describe("parseConfig", () => {
   it("returns the known fields and the origin", () => {

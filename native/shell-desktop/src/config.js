@@ -1,6 +1,7 @@
 // Reads the one product this app opens, from resources/muse-product.json outside the asar. The packager rewrites that
 // file for each product, so it's checked like any other input. With no Electron in it, this file tests alone.
 
+const { createHash } = require("node:crypto");
 const { readFileSync } = require("node:fs");
 const { join } = require("node:path");
 
@@ -67,4 +68,12 @@ function loadConfig(paths, read = readFileSync) {
   return parseConfig(parsed);
 }
 
-module.exports = { CONFIG_FILE, ConfigError, configPath, isOpenableUrl, loadConfig, parseConfig };
+/**
+ * Each product keeps its own folder under the app data folder. Every packaged app carries the same productName, so
+ * without this they'd share one profile and one single-instance lock, and a second product would quit on launch.
+ */
+function profileFolderFor(origin) {
+  return createHash("sha256").update(origin).digest("hex").slice(0, 16);
+}
+
+module.exports = { CONFIG_FILE, ConfigError, configPath, isOpenableUrl, loadConfig, parseConfig, profileFolderFor };

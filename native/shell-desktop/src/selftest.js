@@ -119,7 +119,10 @@ async function runSelftest({ win, dir, config, shellVersion, platform }) {
 
   const loaded = new Promise((done) => {
     contents.once("did-finish-load", done);
-    contents.once("did-fail-load", done);
+    // An inner frame that fails says nothing about the page, which may still be loading.
+    contents.on("did-fail-load", (_event, _code, _description, _url, isMainFrame) => {
+      if (isMainFrame) done();
+    });
     contents.once("render-process-gone", done);
     setTimeout(done, LOAD_LIMIT_MS);
   });

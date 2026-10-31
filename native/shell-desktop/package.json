@@ -8,9 +8,11 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"__tests__/*.test.js\"",
+    "test:two-products": "node __tests__/two-products.check.js",
     "dir": "electron-builder --dir",
     "linux": "electron-builder --linux AppImage",
-    "mac": "electron-builder --mac zip",
+    "mac": "electron-builder --mac",
+    "mac:selftest": "electron-builder --mac dir",
     "windows": "electron-builder --win dir"
   },
   "devDependencies": {
@@ -43,7 +45,12 @@
     },
     "mac": {
       "target": [
-        "zip"
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "identity": "-",
